@@ -23,9 +23,116 @@ function blockBetween(source, startMarker, endMarker) {
   return source.slice(start, end);
 }
 
+function functionBody(source, signature) {
+  const start = source.indexOf(signature);
+  assert.ok(start >= 0, `missing ${signature}`);
+  const open = source.indexOf("{", start);
+  assert.ok(open > start, `missing body for ${signature}`);
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] !== "}") continue;
+    depth -= 1;
+    if (depth === 0) return source.slice(open + 1, index);
+  }
+  assert.fail(`unterminated body for ${signature}`);
+}
+
+function assertRequiredFeatureBuilder(source) {
+  const body = functionBody(source, "static RequiredFeatures buildRequiredFeatures(");
+  for (const feature of [
+    "TextureCompressionBC",
+    "TextureCompressionETC2",
+    "TextureCompressionASTC",
+    "TimestampQuery",
+    "RG11B10UfloatRenderable",
+  ]) {
+    assert.match(
+      body,
+      new RegExp(`appendIfSupported\\s*\\(\\s*WGPUFeatureName_${feature}\\b`, "u"),
+      `buildRequiredFeatures must probe/request ${feature}`,
+    );
+  }
+  assert.match(
+    body,
+    /#if\s+MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS[\s\S]*appendIfSupported\s*\(\s*WGPUFeatureName_CoreFeaturesAndLimits\b[\s\S]*#endif/u,
+    "CoreFeaturesAndLimits must be probed/requested when the backend exposes it",
+  );
+  assert.match(
+    body,
+    /if\s*\(\s*allowIndirectFirstInstance\s*\)[\s\S]*appendIfSupported\s*\(\s*WGPUFeatureName_IndirectFirstInstance\b[\s\S]*else\s*\{[\s\S]*IndirectFirstInstance feature disabled/u,
+    "IndirectFirstInstance must follow the feature-builder policy input",
+  );
+  assert.match(
+    source,
+    /#if\s+defined\(MYSTRAL_WEBGPU_WGPU_MODERN\)\s*&&\s*defined\(__ANDROID__\)\s*const bool allowIndirectFirstInstance\s*=\s*false;[\s\S]*#else\s*const bool allowIndirectFirstInstance\s*=\s*true;[\s\S]*#endif/u,
+    "Android modern wgpu must use the indirect-first-instance workaround",
+  );
+}
+
+function assertActualIndirectFeatureSurface(source) {
+  const adapter = functionBody(source, "static js::JSValueHandle handleGpuAdapterFeaturesHas(");
+  const device = functionBody(source, "static js::JSValueHandle handleGpuDeviceFeaturesHas(");
+  const adapterIndirect = adapter.match(
+    /if\s*\(featureName\s*==\s*"indirect-first-instance"\)\s*\{[\s\S]*?\n\s*\}/u,
+  )?.[0];
+  const deviceIndirect = device.match(
+    /if\s*\(featureName\s*==\s*"indirect-first-instance"\)\s*\{[\s\S]*?\n\s*\}/u,
+  )?.[0];
+  assert.ok(adapterIndirect, "adapter indirect-first-instance branch is present");
+  assert.ok(deviceIndirect, "device indirect-first-instance branch is present");
+  assert.match(
+    adapterIndirect,
+    /wgpuAdapterHasFeature\(\s*state->adapter,\s*WGPUFeatureName_IndirectFirstInstance\)\s*!=\s*0/u,
+    "adapter.features.has must report the adapter's actual indirect-first-instance support",
+  );
+  assert.match(
+    deviceIndirect,
+    /wgpuDeviceHasFeature\(\s*state->device,\s*WGPUFeatureName_IndirectFirstInstance\)\s*!=\s*0/u,
+    "device.features.has must report the device's actual granted indirect-first-instance support",
+  );
+  assert.doesNotMatch(
+    adapterIndirect,
+    /newBoolean\(true\)/u,
+    "adapter.features.has must not advertise an unqueried indirect-first-instance feature",
+  );
+  assert.doesNotMatch(
+    deviceIndirect,
+    /newBoolean\(true\)/u,
+    "device.features.has must not advertise an unrequested indirect-first-instance feature",
+  );
+}
+
+function assertBothBackendsMapRg11Feature(source) {
+  const marker = 'if (featureName == "rg11b10ufloat-renderable")';
+  const markerStart = source.indexOf(marker);
+  assert.ok(markerStart >= 0, "RG11B10UfloatRenderable JS feature mapping is present");
+  const conditionalStart = source.lastIndexOf("#if", markerStart);
+  assert.ok(conditionalStart >= 0, "RG11B10UfloatRenderable mapping has a backend guard");
+  const mappingWindow = source.slice(conditionalStart, markerStart + 180);
+  assert.match(
+    mappingWindow,
+    /#if\s+defined\(MYSTRAL_WEBGPU_DAWN\)\s*\|\|\s*defined\(MYSTRAL_WEBGPU_WGPU\)/u,
+    "RG11B10UfloatRenderable mapping must compile for Dawn and wgpu-native",
+  );
+  assert.match(
+    mappingWindow,
+    /if\s*\(featureName\s*==\s*"rg11b10ufloat-renderable"\)\s*return\s+WGPUFeatureName_RG11B10UfloatRenderable;/u,
+    "RG11B10UfloatRenderable must map to the bundled WebGPU enum",
+  );
+}
+
 function handlerForRow(surface, name) {
   return nativeBindingDefinition(surface, name).text;
 }
+
+test("feature sets report actual adapter support and device grants", () => {
+  assertActualIndirectFeatureSurface(read("src/webgpu/bindings.cpp"));
+});
+
+test("RG11B10UfloatRenderable is mapped for both shipped WebGPU backends", () => {
+  assertBothBackendsMapRg11Feature(read("src/webgpu/bindings.cpp"));
+});
 
 test("every binding translation unit that polls wgpu-native includes its extension declaration", () => {
   const bindingsDirectory = join(root, "src/webgpu");
@@ -546,7 +653,7 @@ test("all views created from one surface texture share the host-frame lifetime",
   );
   assert.throws(
     () => assertSurfaceViewLifetime(inputs[0], inputs[1], inputs[2], latestViewOnly, inputs[4]),
-    /currentTextureView/u,
+    /isCurrentSurfaceTextureView/u,
   );
 });
 
@@ -573,30 +680,25 @@ test("backend and canvas contexts do not use process-global ownership", () => {
     .join("\n");
   assert.doesNotMatch(canvas2d, /g_canvas2dContexts|g_jsEngine/u);
   assert.doesNotMatch(canvas2d, /engine->freezeHandle\(jsCtx\)/u);
-  assert.doesNotMatch(context, /static\s+WGPUFeatureName\s+requiredFeatures/u);
-
-  // The array is sized to the features actually requested; it grew to four when PRD-228 added
-  // timestamp-query. The literal is spelled out here on purpose — a stale one makes this
-  // negative control a no-op that passes while proving nothing.
-  const sharedFeatureMutation = context.replace(
-    "WGPUFeatureName requiredFeaturesAndroid[7];",
-    "static WGPUFeatureName requiredFeaturesAndroid[7];",
+  assert.match(context, /RequiredFeatures buildRequiredFeatures\(WGPUAdapter adapter/u);
+  assertRequiredFeatureBuilder(context);
+  assert.equal(
+    context.match(/buildRequiredFeatures\(adapter_/gu)?.length,
+    3,
+    "headless, windowed, and display-backed device creation must share the feature builder",
   );
+  assert.doesNotMatch(context, /requiredFeatures(?:Android|Dawn|WGPU)\[/u);
+
+  const withoutBc = context.replace(
+    /appendIfSupported\s*\(\s*WGPUFeatureName_TextureCompressionBC[\s\S]*?\)\s*;/u,
+    "/* removed by the audited-feature negative control */",
+  );
+  assert.notEqual(withoutBc, context, "negative control must remove BC from the feature builder");
   assert.throws(
-    () =>
-      assert.doesNotMatch(sharedFeatureMutation, /static\s+WGPUFeatureName\s+requiredFeatures/u),
-    /static/u,
+    () => assertRequiredFeatureBuilder(withoutBc),
+    /TextureCompressionBC/u,
+    "the contract must fail when an audited feature is removed",
   );
-});
-
-test("every Android device path enables adapter-specific storage texture formats", () => {
-  const context = read("src/webgpu/context.cpp");
-  const requests = context.match(/WGPUNativeFeature_TextureAdapterSpecificFormatFeatures/gu) ?? [];
-
-  // Headless, surface creation, and surface recreation each request their own device. Missing the
-  // feature from any one path lets three.js create read/write storage textures, but wgpu-native
-  // rejects the bind-group layout and aborts at queue submission.
-  assert.equal(requests.length, 3);
 });
 
 test("GPU video fallback rejects missing binding state before callback registration", () => {

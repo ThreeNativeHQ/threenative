@@ -11,6 +11,9 @@
 #include <windows.h>
 #include <shlobj.h>
 #else
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
 #include <unistd.h>
 #include <pwd.h>
 #endif
@@ -251,7 +254,12 @@ std::string LocalStorage::deriveStorageFilename(const std::string& identifier) {
 // LocalStorage implementation
 // ============================================================================
 
+LocalStorage::~LocalStorage() {
+    flushIfDirty();
+}
+
 void LocalStorage::init(const std::string& filePath) {
+    flushIfDirty();
     filePath_ = filePath;
 
     // Create parent directories if they don't exist
@@ -271,6 +279,7 @@ void LocalStorage::init(const std::string& filePath) {
 void LocalStorage::load() {
     data_.clear();
     insertionOrder_.clear();
+    dirty_ = false;
 
     std::ifstream file(filePath_);
     if (!file.is_open()) {
@@ -294,8 +303,8 @@ void LocalStorage::load() {
     std::cout << "[Storage] Loaded " << data_.size() << " entries from " << filePath_ << std::endl;
 }
 
-void LocalStorage::flush() {
-    if (filePath_.empty()) return;
+bool LocalStorage::flush() {
+    if (filePath_.empty()) return false;
 
     std::string json = toJson(data_, insertionOrder_);
 
@@ -305,22 +314,92 @@ void LocalStorage::flush() {
         std::ofstream file(tmpPath, std::ios::trunc);
         if (!file.is_open()) {
             std::cerr << "[Storage] Failed to write to " << tmpPath << std::endl;
-            return;
+            std::remove(tmpPath.c_str());
+            return false;
         }
         file << json;
         file.flush();
+        if (!file) {
+            std::cerr << "[Storage] Failed to flush " << tmpPath << std::endl;
+            file.close();
+            std::remove(tmpPath.c_str());
+            return false;
+        }
+    }
+
+#ifdef _WIN32
+    if (!MoveFileExA(tmpPath.c_str(), filePath_.c_str(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        std::cerr << "[Storage] Failed to atomically replace " << filePath_ << std::endl;
+        std::remove(tmpPath.c_str());
+        return false;
+    }
+#else
+    const int syncFd = ::open(tmpPath.c_str(), O_WRONLY);
+    if (syncFd == -1) {
+        const int openError = errno;
+        std::cerr << "[Storage] Failed to open " << tmpPath
+                  << " for synchronization: " << std::strerror(openError) << std::endl;
+        std::remove(tmpPath.c_str());
+        return false;
+    }
+
+    const int syncResult = ::fsync(syncFd);
+    const int syncError = syncResult == 0 ? 0 : errno;
+    const int closeResult = ::close(syncFd);
+    const int closeError = closeResult == 0 ? 0 : errno;
+    if (syncResult != 0) {
+        std::cerr << "[Storage] Failed to synchronize " << tmpPath
+                  << ": " << std::strerror(syncError) << std::endl;
+        std::remove(tmpPath.c_str());
+        return false;
+    }
+    if (closeResult != 0) {
+        std::cerr << "[Storage] Failed to close " << tmpPath
+                  << " after synchronization: " << std::strerror(closeError) << std::endl;
+        std::remove(tmpPath.c_str());
+        return false;
     }
 
     std::error_code ec;
     std::filesystem::rename(tmpPath, filePath_, ec);
     if (ec) {
         std::cerr << "[Storage] Failed to rename " << tmpPath << " -> " << filePath_ << ": " << ec.message() << std::endl;
-        // Fallback: try direct write
-        std::ofstream file(filePath_, std::ios::trunc);
-        if (file.is_open()) {
-            file << json;
-        }
+        std::remove(tmpPath.c_str());
+        return false;
     }
+
+    const std::filesystem::path parentPath = std::filesystem::path(filePath_).parent_path();
+    const std::string directoryPath = parentPath.empty() ? "." : parentPath.string();
+    const int directoryFd = ::open(directoryPath.c_str(), O_RDONLY);
+    if (directoryFd == -1) {
+        const int openError = errno;
+        std::cerr << "[Storage] Failed to open containing directory " << directoryPath
+                  << " for synchronization: " << std::strerror(openError) << std::endl;
+        return false;
+    }
+
+    const int directorySyncResult = ::fsync(directoryFd);
+    const int directorySyncError = directorySyncResult == 0 ? 0 : errno;
+    const int directoryCloseResult = ::close(directoryFd);
+    const int directoryCloseError = directoryCloseResult == 0 ? 0 : errno;
+    if (directorySyncResult != 0) {
+        std::cerr << "[Storage] Failed to synchronize containing directory " << directoryPath
+                  << ": " << std::strerror(directorySyncError) << std::endl;
+        return false;
+    }
+    if (directoryCloseResult != 0) {
+        std::cerr << "[Storage] Failed to close containing directory " << directoryPath
+                  << " after synchronization: " << std::strerror(directoryCloseError) << std::endl;
+        return false;
+    }
+#endif
+    return true;
+}
+
+void LocalStorage::flushIfDirty() {
+    if (dirty_ && flush())
+        dirty_ = false;
 }
 
 std::string LocalStorage::getItem(const std::string& key) const {
@@ -336,11 +415,15 @@ bool LocalStorage::has(const std::string& key) const {
 }
 
 void LocalStorage::setItem(const std::string& key, const std::string& value) {
-    if (data_.find(key) == data_.end()) {
+    const auto it = data_.find(key);
+    if (it == data_.end()) {
         insertionOrder_.push_back(key);
+        data_[key] = value;
+        dirty_ = true;
+    } else if (it->second != value) {
+        it->second = value;
+        dirty_ = true;
     }
-    data_[key] = value;
-    flush();
 }
 
 void LocalStorage::removeItem(const std::string& key) {
@@ -349,7 +432,7 @@ void LocalStorage::removeItem(const std::string& key) {
             std::remove(insertionOrder_.begin(), insertionOrder_.end(), key),
             insertionOrder_.end()
         );
-        flush();
+        dirty_ = true;
     }
 }
 
@@ -357,7 +440,7 @@ void LocalStorage::clear() {
     if (!data_.empty()) {
         data_.clear();
         insertionOrder_.clear();
-        flush();
+        dirty_ = true;
     }
 }
 

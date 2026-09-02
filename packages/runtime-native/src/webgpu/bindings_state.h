@@ -9,6 +9,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "mystral/canvas/canvas2d.h"
@@ -249,6 +250,24 @@ struct PresentationState {
     WGPUCommandEncoder surfaceRenderEncoder = nullptr;
 };
 
+// Scratch owned by the bindings state so a packed frame does not rebuild its registries and
+// temporary argument vectors on every replay. The maps are cleared at the replay boundary, while
+// their buckets and vector capacities stay warm for the next frame.
+struct FrameReplayState {
+    std::unordered_map<uint32_t, WGPUCommandEncoder> encoders;
+    std::unordered_map<uint32_t, WGPURenderPassEncoder> renderPasses;
+    std::unordered_map<uint32_t, WGPUCommandEncoder> renderOwners;
+    std::unordered_map<uint32_t, WGPUComputePassEncoder> computePasses;
+    std::unordered_map<uint32_t, WGPUCommandEncoder> computeOwners;
+    std::unordered_map<uint32_t, WGPUCommandBuffer> commandBuffers;
+    std::vector<WGPURenderPassColorAttachment> renderPassColors;
+    std::vector<uint32_t> dynamicOffsets;
+    std::vector<WGPURenderBundle> renderBundles;
+    std::vector<std::pair<uint32_t, WGPUCommandBuffer>> submittedCommandBuffers;
+    std::vector<WGPUCommandBuffer> rawCommandBuffers;
+    std::vector<uint8_t> externalImageCrop;
+};
+
 struct FrameProfiling {
     uint64_t frameEndCount = 0;
 #if TN_ANDROID_JS_PROFILE
@@ -290,6 +309,9 @@ struct FrameProfiling {
     uint64_t frameOpStreamLastOpCount = 0;
     bool captureFrameOpStreamTrace = false;
     std::vector<std::string> frameOpStreamLastOrder;
+    // Test-only observer. Production leaves it null; malformed replay tests use it to prove a
+    // failed native handle lookup never reaches the corresponding wgpu-native entry point.
+    void (*frameOpStreamNativeCallObserver)(const char*) = nullptr;
     int frameCount = 0;
     int submitCount = 0;
     bool firstPresentReported = false;
@@ -334,6 +356,7 @@ struct BindingsState {
 
     ResourceRegistries registries;
     PresentationState presentation;
+    FrameReplayState frameReplay;
     FrameProfiling profiling;
     ScreenshotCapture screenshot;
     Canvas2DComposite canvas2D;

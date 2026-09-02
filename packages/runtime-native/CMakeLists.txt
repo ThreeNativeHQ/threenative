@@ -1279,8 +1279,6 @@ set(MYSTRAL_SOURCES
     src/webgpu/wrapper_factories.cpp
     src/webgpu/checked_handle.cpp
     src/webgpu/context.cpp
-    src/canvas/canvas.cpp
-    src/input/input_shim.cpp
     src/platform/window.cpp
     src/platform/input.cpp
     src/platform/crash_handlers.cpp
@@ -1491,9 +1489,6 @@ if(APPLE)
         )
     endif()
 elseif(WIN32)
-    target_sources(mystral-runtime PRIVATE
-        src/platform/surface_win32.cpp
-    )
     target_link_libraries(mystral-runtime PRIVATE
         d3d11.lib
         dxgi.lib
@@ -1524,10 +1519,21 @@ elseif(ANDROID)
         src/platform/surface_android.cpp
         src/platform/android_main.cpp
     )
-elseif(UNIX)
-    target_sources(mystral-runtime PRIVATE
-        src/platform/surface_linux.cpp
-    )
+endif()
+
+find_program(TN_NODE_EXECUTABLE node REQUIRED)
+execute_process(
+    COMMAND "${TN_NODE_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-source-list.mjs"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE TN_SOURCE_LIST_RESULT
+    OUTPUT_VARIABLE TN_SOURCE_LIST_OUTPUT
+    ERROR_VARIABLE TN_SOURCE_LIST_ERROR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_STRIP_TRAILING_WHITESPACE
+)
+if(NOT TN_SOURCE_LIST_RESULT EQUAL 0)
+    message(FATAL_ERROR
+        "TN_NATIVE_SOURCE_LIST_FAILED: ${TN_SOURCE_LIST_OUTPUT}${TN_SOURCE_LIST_ERROR}")
 endif()
 
 # JS engine linkage
@@ -1999,6 +2005,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_include_directories(threenative-local-storage-test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(threenative-local-storage-test PRIVATE mystral-runtime)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_compile_definitions(threenative-local-storage-test PRIVATE
+            TN_TEST_WRAP_STORAGE_SYNC=1)
+        target_link_options(threenative-local-storage-test PRIVATE
+            "-Wl,--wrap=fsync"
+            "-Wl,--wrap=close")
+    endif()
 
     # Same lane for the embedded-bundle VFS: synthesizes real container files
     # and proves the loader accepts the documented format and rejects damage.

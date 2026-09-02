@@ -25,6 +25,7 @@
     "android/settings.gradle.kts",
     "scripts/asset-preflight.mjs",
     "scripts/bundle.mjs",
+    "scripts/check-source-list.mjs",
     "scripts/device-preflight.mjs",
     "scripts/install-prebuilt.mjs",
     "scripts/package-android.mjs",

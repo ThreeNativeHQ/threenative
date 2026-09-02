@@ -9,24 +9,23 @@ targets could not be built and are named below.
 | --- | ---: | ---: | ---: |
 | `src/async/` | 73 | 53 | 72.60% |
 | `src/audio/` | 1051 | 603 | 57.37% |
-| `src/canvas/` | 996 | 482 | 48.39% |
+| `src/canvas/` | 985 | 482 | 48.93% |
 | `src/cli/` | 1568 | 0 | 0.00% |
 | `src/fs/` | 235 | 88 | 37.45% |
 | `src/http/` | 402 | 175 | 43.53% |
-| `src/input/` | 33 | 0 | 0.00% |
 | `src/js/` | 2609 | 1018 | 39.02% |
-| `src/platform/` | 971 | 217 | 22.35% |
+| `src/platform/` | 963 | 217 | 22.53% |
 | `src/raytracing/` | 458 | 60 | 13.10% |
-| `src/runtime.cpp` | 2041 | 864 | 42.33% |
-| `src/storage/` | 260 | 225 | 86.54% |
+| `src/runtime.cpp` | 2052 | 870 | 42.40% |
+| `src/storage/` | 327 | 283 | 86.54% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 175 | 73.22% |
-| `src/webgpu/` | 7266 | 3035 | 41.77% |
+| `src/webgpu/` | 7747 | 3251 | 41.96% |
 | `src/webtransport/` | 770 | 145 | 18.83% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **19587** | **7667** | **39.14%** |
+| **TOTAL** | **20094** | **7947** | **39.55%** |
 
-Source digest: `sha256:2f67233f67469bd1e1e2752563dd9125d93b71f427ad50737f565dd36e89ac54`
+Source digest: `sha256:90fcf08ef59dcfd5b4dc1f74ff214601515efb7b661cd665b8e789fc2e75e330`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -40,7 +39,6 @@ change requires this opt-in command to refresh the record.
 | `src/cli/` | 0.00% |
 | `src/fs/` | 37.45% |
 | `src/http/` | 43.53% |
-| `src/input/` | 0.00% |
 | `src/js/` | 38.23% |
 | `src/platform/` | 21.87% |
 | `src/raytracing/` | 13.10% |
@@ -62,7 +60,6 @@ change requires this opt-in command to refresh the record.
 - `src/platform/android_main.cpp`
 - `src/platform/surface_android.cpp`
 - `src/platform/surface_metal.mm`
-- `src/platform/surface_win32.cpp`
 - `src/raytracing/dxr_rt.cpp`
 - `src/raytracing/metal_rt.mm`
 - `src/raytracing/vulkan_rt.cpp`

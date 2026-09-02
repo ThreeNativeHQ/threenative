@@ -15,6 +15,11 @@
 #include <sstream>
 #include <string>
 
+#if defined(TN_TEST_WRAP_STORAGE_SYNC)
+#include <cerrno>
+#include <sys/stat.h>
+#endif
+
 #ifdef _WIN32
 #include <process.h>
 #define TN_TEST_GETPID _getpid
@@ -24,6 +29,65 @@
 #endif
 
 using mystral::storage::LocalStorage;
+
+#if defined(TN_TEST_WRAP_STORAGE_SYNC)
+namespace {
+
+bool failNextFsync = false;
+bool failNextClose = false;
+int fsyncCalls = 0;
+int directoryFsyncCalls = 0;
+int closeCalls = 0;
+int directoryCloseCalls = 0;
+int failFsyncCall = 0;
+int failCloseCall = 0;
+
+}  // namespace
+
+extern "C" int __real_close(int fd);
+extern "C" int __real_fsync(int fd);
+
+bool isDirectoryFd(int fd) {
+    struct stat info {};
+    return ::fstat(fd, &info) == 0 && S_ISDIR(info.st_mode);
+}
+
+extern "C" int __wrap_fsync(int fd) {
+    fsyncCalls += 1;
+    if (isDirectoryFd(fd)) directoryFsyncCalls += 1;
+    if (failNextFsync || (failFsyncCall != 0 && fsyncCalls == failFsyncCall)) {
+        failNextFsync = false;
+        if (failFsyncCall == fsyncCalls) failFsyncCall = 0;
+        errno = EIO;
+        return -1;
+    }
+    return __real_fsync(fd);
+}
+
+extern "C" int __wrap_close(int fd) {
+    closeCalls += 1;
+    if (isDirectoryFd(fd)) directoryCloseCalls += 1;
+    if (failNextClose || (failCloseCall != 0 && closeCalls == failCloseCall)) {
+        failNextClose = false;
+        if (failCloseCall == closeCalls) failCloseCall = 0;
+        const int result = __real_close(fd);
+        errno = EIO;
+        return result == 0 ? -1 : result;
+    }
+    return __real_close(fd);
+}
+
+void resetSyncObservations() {
+    failNextFsync = false;
+    failNextClose = false;
+    fsyncCalls = 0;
+    directoryFsyncCalls = 0;
+    closeCalls = 0;
+    directoryCloseCalls = 0;
+    failFsyncCall = 0;
+    failCloseCall = 0;
+}
+#endif
 
 namespace {
 
@@ -82,6 +146,24 @@ int main() {
         expect(!std::filesystem::exists(storePath), "init does not create the file");
     }
 
+    // --- Writes defer disk work until the storage owner reaches a boundary -------------
+    {
+        const std::string storePath = temp.file("deferred/store.json");
+        {
+            LocalStorage storage;
+            storage.init(storePath);
+            storage.setItem("progress", "in-memory-first");
+            expect(!std::filesystem::exists(storePath),
+                   "setItem updates memory without a synchronous disk round-trip");
+        }
+        expect(std::filesystem::exists(storePath),
+               "storage destructor flushes dirty data before shutdown");
+        LocalStorage reopened;
+        reopened.init(storePath);
+        expectEq(reopened.getItem("progress"), "in-memory-first",
+                 "deferred data survives the shutdown flush");
+    }
+
     // --- Round-trip + restart persistence ---------------------------------
     {
         const std::string storePath = temp.file("persist/store.json");
@@ -130,6 +212,9 @@ int main() {
         storage.removeItem("never-existed");  // no-op, no flush error
         expect(storage.length() == 3, "removing a missing key changes nothing");
 
+        // Runtime boundaries, rather than individual mutations, flush the dirty snapshot.
+        storage.flushIfDirty();
+
         // Order must survive restart too.
         LocalStorage reopened;
         reopened.init(storePath);
@@ -177,10 +262,104 @@ int main() {
         LocalStorage storage;
         storage.init(storePath);
         storage.setItem("k", "v");
+        storage.flushIfDirty();
         expect(std::filesystem::exists(storePath), "flush created the store file");
         expect(!std::filesystem::exists(storePath + ".tmp"),
                "atomic rename consumed the tmp file");
     }
+
+#if defined(TN_TEST_WRAP_STORAGE_SYNC)
+    // --- POSIX directory sync: a visible rename is not a durable save until its parent is synced ----
+    {
+        resetSyncObservations();
+        const std::string storePath = temp.file("directory-sync/store.json");
+        LocalStorage storage;
+        storage.init(storePath);
+        storage.setItem("k", "v");
+        storage.flushIfDirty();
+        expect(fsyncCalls == 2, "successful save syncs both the temp file and its parent directory");
+        expect(directoryFsyncCalls == 1, "successful save syncs the containing directory");
+        expect(std::filesystem::exists(storePath), "directory-synced save publishes the store");
+        expect(!std::filesystem::exists(storePath + ".tmp"),
+               "directory-synced save consumes the temporary file");
+    }
+    {
+        resetSyncObservations();
+        const std::string storePath = temp.file("directory-fsync-failure/store.json");
+        LocalStorage storage;
+        storage.init(storePath);
+        storage.setItem("k", "v");
+        failFsyncCall = 2;
+        storage.flushIfDirty();
+        expect(directoryFsyncCalls == 1, "directory fsync failure is injected after the rename");
+        expect(std::filesystem::exists(storePath),
+               "directory fsync failure does not remove the published store");
+        expect(!std::filesystem::exists(storePath + ".tmp"),
+               "directory fsync failure leaves no temporary file");
+    }
+    {
+        resetSyncObservations();
+        const std::string storePath = temp.file("directory-close-failure/store.json");
+        LocalStorage storage;
+        storage.init(storePath);
+        storage.setItem("k", "v");
+        failCloseCall = 2;
+        storage.flushIfDirty();
+        expect(directoryCloseCalls == 1, "directory close failure is injected after the rename");
+        expect(std::filesystem::exists(storePath),
+               "directory close failure does not remove the published store");
+        expect(!std::filesystem::exists(storePath + ".tmp"),
+               "directory close failure leaves no temporary file");
+    }
+    {
+        const std::filesystem::path directory = temp.path / "directory-open-failure";
+        std::filesystem::create_directories(directory);
+        const std::string storePath = (directory / "store.json").string();
+        {
+            LocalStorage storage;
+            storage.init(storePath);
+            storage.setItem("k", "v");
+            // Rename needs write+execute access, while opening the directory for fsync also
+            // needs read access. This reaches the post-rename open failure without mocking open.
+            ::chmod(directory.c_str(), 0300);
+            storage.flushIfDirty();
+            expect(std::filesystem::exists(storePath),
+                   "directory open failure does not remove the published store");
+            expect(!std::filesystem::exists(storePath + ".tmp"),
+                   "directory open failure leaves no temporary file");
+            ::chmod(directory.c_str(), 0700);
+        }
+        std::filesystem::remove_all(directory);
+    }
+
+    // --- POSIX sync failures: close every descriptor and remove the uncommitted temp file ----
+    {
+        resetSyncObservations();
+        const std::string storePath = temp.file("fsync-failure/store.json");
+        LocalStorage storage;
+        storage.init(storePath);
+        storage.setItem("k", "v");
+        failNextFsync = true;
+        storage.flushIfDirty();
+        expect(!std::filesystem::exists(storePath),
+               "fsync failure does not publish the temp file");
+        expect(!std::filesystem::exists(storePath + ".tmp"),
+               "fsync failure removes the temp file");
+    }
+    {
+        resetSyncObservations();
+        const std::string storePath = temp.file("close-failure/store.json");
+        LocalStorage storage;
+        storage.init(storePath);
+        storage.setItem("k", "v");
+        failNextClose = true;
+        storage.flushIfDirty();
+        expect(!std::filesystem::exists(storePath),
+               "close failure does not publish the temp file");
+        expect(!std::filesystem::exists(storePath + ".tmp"),
+               "close failure removes the temp file");
+    }
+#endif
 
     // --- Corrupt file: fail soft, start fresh ------------------------------
     {

@@ -199,6 +199,7 @@ struct HostGapMeter {
         kGpuDrain,       // diagnostic post-present blocking poll; adds to period/next hostGap
         kDevicePoll,     // endDawnFrame: wgpuDevicePoll(false) / wgpuDeviceTick
         kEndFrameOther,  // endDawnFrame remainder: profile emission, 2D composite, pacing
+        kStorage,        // synchronous localStorage serialize/sync/rename
         kHandles,        // clearFrameHandles
         kScreenshot,     // playtest screenshot mailbox file polling
         kSegmentCount
@@ -207,11 +208,12 @@ struct HostGapMeter {
     static constexpr std::array<const char*, kSegmentCount> kNames = {
         "events", "io", "audio", "timers", "microtasks", "preFrame",
         "frameDrain", "frameReplay", "present", "gpuDrain", "devicePoll", "endFrameOther",
-        "handles", "screenshot",
+        "storage", "handles", "screenshot",
     };
 
     struct Sample {
         uint64_t micros[kSegmentCount] = {};
+        uint64_t periodMicros = 0;
     };
 
     using Clock = std::chrono::steady_clock;
@@ -221,7 +223,6 @@ struct HostGapMeter {
     Sample current_{};
     bool inSegment_ = false;
     std::vector<Sample> samples_;
-    std::vector<uint64_t> periodMicros_;
 
     void begin(Segment segment) {
         (void)segment;
@@ -246,8 +247,8 @@ struct HostGapMeter {
         if (lastRafBegin_.time_since_epoch().count() != 0) {
             const auto period = std::chrono::duration_cast<std::chrono::microseconds>(
                 now - lastRafBegin_);
-            if (period.count() > 0) periodMicros_.push_back(
-                static_cast<uint64_t>(period.count()));
+            if (period.count() > 0)
+                current_.periodMicros = static_cast<uint64_t>(period.count());
         }
         lastRafBegin_ = now;
     }
@@ -268,12 +269,13 @@ struct HostGapMeter {
     // debug pause cannot poison a percentile. A paused frame never reaches here; drop its
     // partial accumulation instead of carrying it into the resumed frame.
     void closeFrame() {
-        const bool hitched =
-            !periodMicros_.empty() &&
-            periodMicros_.back() > kHitchPeriodMicros;
+        if (current_.periodMicros == 0) {
+            current_ = Sample{};
+            return;
+        }
+        const bool hitched = current_.periodMicros > kHitchPeriodMicros;
         if (hitched) {
             current_ = Sample{};
-            periodMicros_.clear();
             return;
         }
         samples_.push_back(current_);
@@ -286,13 +288,18 @@ struct HostGapMeter {
     void report() {
         double periodP50 = 0.0;
         double periodMean = 0.0;
-        if (!periodMicros_.empty()) {
-            std::vector<uint64_t> sorted = periodMicros_;
-            std::sort(sorted.begin(), sorted.end());
-            periodP50 = static_cast<double>(sorted[sorted.size() / 2]) / 1000.0;
+        std::vector<uint64_t> periods;
+        periods.reserve(samples_.size());
+        for (const Sample& sample : samples_) {
+            if (sample.periodMicros > 0)
+                periods.push_back(sample.periodMicros);
+        }
+        if (!periods.empty()) {
+            std::sort(periods.begin(), periods.end());
+            periodP50 = static_cast<double>(periods[periods.size() / 2]) / 1000.0;
             uint64_t sum = 0;
-            for (const uint64_t v : periodMicros_) sum += v;
-            periodMean = static_cast<double>(sum) / static_cast<double>(periodMicros_.size()) /
+            for (const uint64_t v : periods) sum += v;
+            periodMean = static_cast<double>(sum) / static_cast<double>(periods.size()) /
                          1000.0;
         }
 
@@ -326,7 +333,6 @@ struct HostGapMeter {
         LOGI("%s", marker.c_str());
 
         samples_.clear();
-        periodMicros_.clear();
     }
 };
 
@@ -714,6 +720,7 @@ public:
     void shutdown() {
         std::cout << "[Mystral] Shutting down runtime..." << std::endl;
         running_ = false;
+        localStorage_.flushIfDirty();
 
         // Worker callbacks close over the main engine. Stop and join every worker before any
         // callback handle or the engine itself can be released.
@@ -991,6 +998,7 @@ public:
     void run() override {
         // Check if script already called process.exit() during loading
         if (!running_) {
+            localStorage_.flushIfDirty();
             std::cout << "[Mystral] Skipping main loop (process.exit already called)" << std::endl;
             return;
         }
@@ -1207,6 +1215,10 @@ public:
             // that came due are counted and dropped rather than replayed all at once on resume;
             // `FixedStepLoop` clamps the elapsed time on the TypeScript side either way.
             countAndDropDueTimers();
+            // Input callbacks run inside platform::pollEvents(), so they can dirty localStorage
+            // immediately before a lifecycle event pauses the loop. Persist that snapshot at this
+            // boundary before the paused process can be reclaimed by a mobile OS.
+            localStorage_.flushIfDirty();
             // A paused stretch is not a frame and must not leak into the next one's sample.
             hostGapMeter_.dropPartialFrame();
             // Desktop does not block its pump the way Android does, so without this the paused
@@ -1323,10 +1335,10 @@ public:
         processPlaytestScreenshotRequest();
         hostGapMeter_.end(HostGapMeter::kScreenshot);
 
+        hostGapMeter_.begin(HostGapMeter::kStorage);
+        localStorage_.flushIfDirty();
+        hostGapMeter_.end(HostGapMeter::kStorage);
         hostGapMeter_.closeFrame();
-
-        // TODO: Translate to Web events via InputShim
-        // TODO: Dispatch to JS
 
         return running_;
     }
