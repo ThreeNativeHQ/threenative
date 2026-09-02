@@ -243,10 +243,9 @@ describe("starter visual floor", () => {
     expect(labels).toEqual(["preview-pending", "move-before-refinement", "refinement-settles"]);
     expect(scenario.warmupFrames).toBe(1);
     expect(scenario.steps[0]).toMatchObject({
-      holdTicks: 1,
-      kind: "input",
+      kind: "wait",
       label: "preview-pending",
-      press: "ArrowRight",
+      waitTicks: 1,
       release: true,
     });
     const movementIndex = scenario.steps.findIndex(

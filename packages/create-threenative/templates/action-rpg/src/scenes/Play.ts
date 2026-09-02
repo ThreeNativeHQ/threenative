@@ -25,7 +25,6 @@ import { createDungeon, createLootVisual } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { createArcaneSurge, createAttackArc, createHitBurst } from "../render/vfx.js";
-import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 import { StatBlock } from "../stats/StatBlock.js";
 
