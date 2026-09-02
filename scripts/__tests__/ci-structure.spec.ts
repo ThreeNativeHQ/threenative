@@ -147,6 +147,27 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  it("caches what the Android lane would otherwise re-download every run", async () => {
+    // Measured on run 33675488456: ~6 min re-installing SDK/emulator packages and ~5 min on the
+    // Gradle build plus the Rust cross-compile, in a 35 min job. `third_party` was already cached
+    // and restored in about 4 s; these three simply had no cache step at all.
+    const source = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const android = requiredJob(source, "android-emulator-parity");
+    for (const [what, needle] of [
+      ["the Android SDK packages", "system-images/android-35"],
+      ["the Gradle caches", "~/.gradle/caches"],
+      ["the Rust cross-compile output", ".runtime/physics-target"],
+    ] as const) {
+      expect(android, `the Android lane stopped caching ${what}`).toContain(needle);
+    }
+    // The cargo key has to follow the lockfile that actually drives the build; a `**/Cargo.lock`
+    // glob would also hash third_party's and miss on churn that changes nothing here.
+    expect(android).toContain("packages/runtime-native/native/physics/Cargo.lock");
+  });
+
   it("bounds every runner job with an explicit timeout", async () => {
     for (const relative of workflows) {
       const source = await readFile(path.join(repo, relative), "utf8");
