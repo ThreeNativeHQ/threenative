@@ -81,7 +81,11 @@ export interface IStartupStatus {
    * once the world is safe to show.
    */
   readonly phase: "observing" | "collapsing" | "ready";
-  /** 0 while first-use work or the sustained frame window is pending, then 1. */
+  /**
+   * 0 to 1, monotonic and honest: the loader's settled/requested ratio carries the first 0.7
+   * while the start scene loads, 0.8 once the world is entered, 0.9 once first-use compilation
+   * settled, 1 when `whenReady()` resolves.
+   */
   readonly progress: number;
   /** When each milestone happened; members appear as they are reached. */
   readonly timeline: IStartupTimeline;

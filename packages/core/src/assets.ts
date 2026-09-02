@@ -71,6 +71,12 @@ export interface IAssetLoader {
    * hard-code a hashed output name, which changes on every rebuild.
    */
   resolve(path: string): Promise<readonly string[]>;
+  /**
+   * How many loads this loader has been asked for and how many have settled (resolved or
+   * rejected). A loading view reads the ratio; the runtime folds it into `ctx.startup.progress`
+   * while the start scene loads, so the bar moves with the bytes instead of jumping 0 to 1.
+   */
+  readonly progress: { readonly requested: number; readonly settled: number };
   clear(): void;
 }
 
@@ -478,10 +484,13 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     );
   };
 
+  let requested = 0;
+  let settled = 0;
   const cached = <T>(kind: string, path: string, load: (url: string) => Promise<T>): Promise<T> => {
     const key = `${kind}:${path}`;
     const existing = cache.get(key);
     if (existing !== undefined) return existing.promise as Promise<T>;
+    requested += 1;
     const entry: IAssetEntry = {
       disposed: false,
       kind: kind as AssetKind,
@@ -500,6 +509,14 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     entry.promise.catch(() => {
       if (cache.get(key) === entry) cache.delete(key);
     });
+    entry.promise.then(
+      () => {
+        settled += 1;
+      },
+      () => {
+        settled += 1;
+      },
+    );
     cache.set(key, entry);
     return entry.promise as Promise<T>;
   };
@@ -578,6 +595,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         await attachCompiledLightmaps(path, value);
         return value;
       }),
+    get progress() {
+      return { requested, settled };
+    },
     resolve: (path) => resolveCandidates(path),
     release: (kind, path) => {
       const key = `${kind}:${path}`;

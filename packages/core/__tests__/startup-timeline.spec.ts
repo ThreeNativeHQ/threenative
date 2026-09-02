@@ -50,6 +50,8 @@ describe("startup timeline", () => {
     });
     try {
       await game.start();
+      // Progress is honest and monotonic: entered is 0.8, compile settled 0.9, ready 1.
+      expect(capturedCtx?.startup.progress).toBeGreaterThanOrEqual(0.8);
       expect(seenAtLoad?.loadStartedMs).toBeTypeOf("number");
       expect(seenAtLoad?.enteredMs).toBeUndefined();
       expect(seenAtEnter?.enteredMs).toBeUndefined();
@@ -70,6 +72,7 @@ describe("startup timeline", () => {
       }
       await capturedCtx?.startup.whenReady();
       const ready = capturedCtx?.startup.timeline;
+      expect(capturedCtx?.startup.progress).toBe(1);
       expect(ready?.compileSettledMs).toBeTypeOf("number");
       expect(ready?.readyMs).toBeTypeOf("number");
       expect(ready?.readyMs ?? 0).toBeGreaterThanOrEqual(

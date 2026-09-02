@@ -881,8 +881,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         get compileSettled() {
           return startupReadiness.compileSettled;
         },
+        // Honest and monotonic: the asset ratio carries the first 70% while the start scene
+        // loads, entering the world is 80%, compile settling 90%, and only readiness is 1.
         get progress() {
-          return projectionSettled ? 1 : 0;
+          if (projectionSettled) return 1;
+          if (startupReadiness.compileSettled) return 0.9;
+          if (timeline.enteredMs !== undefined) return 0.8;
+          const { requested, settled } = assets.progress;
+          return requested === 0 ? 0 : 0.7 * Math.min(1, settled / requested);
         },
         get timeline() {
           return { ...timeline };

@@ -216,6 +216,30 @@ describe("IAssetLoader through the asset manifest", () => {
     );
   });
 
+  it("should count requested and settled loads for a loading view", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => manifestResponse("gone", 404)),
+    );
+    const assets = createAssetLoader({
+      basePath: "/",
+      // Settles on the next macrotask, so the counters can be read while the load is in flight.
+      texture: (url) =>
+        url.includes("nope")
+          ? Promise.reject(new Error("no such texture"))
+          : new Promise<Texture>((resolve) => setTimeout(() => resolve(new Texture()), 0)),
+    });
+    expect(assets.progress).toEqual({ requested: 0, settled: 0 });
+    const first = assets.texture("a.png");
+    void assets.texture("a.png"); // cached: one request, not two
+    expect(assets.progress).toEqual({ requested: 1, settled: 0 });
+    await first;
+    expect(assets.progress).toEqual({ requested: 1, settled: 1 });
+    await expect(assets.texture("nope.png")).rejects.toThrow(/no such texture/u);
+    // A rejected load settles too: a bar that waits for a texture that failed never finishes.
+    expect(assets.progress).toEqual({ requested: 2, settled: 2 });
+  });
+
   it("should load the raw path when no manifest is served", async () => {
     const fetchAsset = vi.fn(async () => manifestResponse("gone", 404));
     vi.stubGlobal("fetch", fetchAsset);
