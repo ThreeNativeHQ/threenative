@@ -42,7 +42,7 @@ Godot's ~5.3 — all inside three.js's own WebGPU submission path.
 | + fancy town materials | 24.22 ms | ≈ 3.3 ms |
 | + the whole town | 13.55 ms | ≈ 11.5 ms |
 | + sky and soldiers | 6.66 ms | ≈ 6.9 ms |
-| + reflections (`scene.environment`) | **0.35 ms** | **6.31 ms staged nearly-empty ablation upper bound (`6.66 − 0.35`); the −0.37 ms static-versus-none inversion is the observed resolution/noise-floor control, not a bakeable delta. Environment sampling is not bakeable, and the bakeable steady-state benefit is unresolvable in this control** |
+| + reflections (`scene.environment`) | **0.35 ms** | **6.31 ms staged nearly-empty ablation upper bound (`6.66 − 0.35`); the −0.37 ms static-versus-none inversion is a lower-bound/noise observation, not a resolution floor or bakeable delta. Environment sampling is not bakeable, and the bakeable steady-state benefit is unresolvable in this control** |
 
 Browser agrees: RTX 2080, five-stage post chain — **all on 14.7 ms GPU, all off 2.2 ms.** The post
 chain is 12.5 of the 14.7.

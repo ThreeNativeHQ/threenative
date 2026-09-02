@@ -4,9 +4,10 @@
 
 **Decision: REFUTED for the standing ≥2 ms steady-state frame threshold.** The Bayview game sets
 its environment once and does not drive a per-frame PMREM update. Repeating the prefilter every
-frame costs **+1.61 ms**. The static-versus-none result is a **−0.37 ms inversion**, the observed
-resolution/noise-floor control: differences smaller than **0.37 ms** are unreportable, but the control
-does not rule out differences larger than **0.37 ms**. Environment sampling is not bakeable; the bakeable steady-state benefit for Bayview's static path is unresolvable in this control.
+frame costs **+1.61 ms**. The static-versus-none result is a **−0.37 ms inversion**, a lower-bound/noise
+observation rather than a complete resolution floor. Environment sampling is not bakeable; an
+independent positive resolution observation is required to resolve the bakeable steady-state benefit,
+and none is recorded for this historical control.
 
 ## Measurement provenance
 
@@ -23,11 +24,16 @@ claimed here.
 | `dirty/2` — prefilter every 2nd frame | 2.23 | 0.51–4.57 |
 | `dirty/1` — prefilter every frame | 3.79 | 3.65–6.48 |
 
-The resolved deltas are:
+The recorded median differences are:
 
-- `dirty/1 − static = 3.79 − 2.18 = +1.61 ms`: a per-frame prefilter is measurable and costly.
+- `dirty/1 − static = 3.79 − 2.18 = +1.61 ms`: the historical median attribution for a per-frame
+  prefilter remains accurate and costly; the repaired report requires a positive resolution
+  observation before it will emit this as a resolved cost.
 - `static − none = 2.18 − 2.55 = −0.37 ms`: the expected causal ordering (`none ≤ static`) is
-  inverted: this inversion is the observed resolution/noise-floor control. Differences smaller than **0.37 ms** are unreportable, but the control does not rule out larger differences; for Bayview's static path, the bakeable steady-state benefit is unresolvable and environment sampling is not bakeable.
+  inverted: this inversion is a lower-bound/noise observation, not the complete resolution floor.
+  The repaired report cannot resolve a delta from this historical control without an independent
+  positive resolution observation; for Bayview's static path, the bakeable steady-state benefit is
+  unresolvable and environment sampling is not bakeable.
 
 The `dirty/1` control proves what a game that actually dirties its environment would pay. It does
 not describe Bayview: its source audit found no `needsPMREMUpdate`, `ProbeVolume`, or `CubeCamera`,
@@ -40,7 +46,10 @@ frame, not a repeated prefilter cost that baking could remove.
 The staged nearly-empty ablation measured `gpuDrain p50` of **6.66 ms** before and **0.35 ms** after `scene.environment` was nulled:
 **6.66 − 0.35 = 6.31 ms**, the source of the approximate 6.3 ms number. The full-scene ablation is separate: **27.57 − 22.24 = 5.33 ms**, not the source of 6.3 ms.
 Both ablations remove prefilter work and environment sampling, so staged **6.31 ms** is an upper bound on what a build-time bake could recover, not a bakeable steady-state estimate.
-The static-versus-none inversion is the observed **0.37 ms** resolution/noise-floor control: differences smaller than 0.37 ms are unreportable, but the control does not rule out larger differences.
+The static-versus-none inversion is an observed **0.37 ms** lower-bound/noise observation, not the
+complete resolution floor: the control does not establish zero measurement error or rule out larger
+differences. The repaired report therefore requires an independent positive resolution observation
+before it can resolve the bakeable static path.
 For Bayview's static path, the bakeable steady-state benefit is unresolvable in this control; environment sampling is not bakeable.
 
 ## Phone launch-time arm — excluded
@@ -62,5 +71,5 @@ Evidence is inherited from the architecture follow-up's recorded run; the planne
 command was:
 
 ```sh
-sh scripts/xvfb.sh pnpm tsx scripts/env-cost-probe.ts <port> 60
+sh scripts/xvfb.sh pnpm tsx scripts/env-cost-probe.ts <port> 60 <resolutionMs>
 ```

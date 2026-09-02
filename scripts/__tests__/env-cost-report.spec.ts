@@ -54,13 +54,17 @@ describe("quantile", () => {
 });
 
 describe("noiseFloor", () => {
-  it("is zero when the negative control holds — none does less work than static", () => {
-    expect(noiseFloor(2.5, 2.0)).toBe(0);
+  it("does not infer a zero floor when a noisy negative control holds", () => {
+    expect(noiseFloor(2.5, 2.0, 0.18)).toBeCloseTo(0.18, 5);
   });
 
-  it("is the size of the inversion when none reads above static", () => {
+  it("preserves an inverted control as a lower bound on the supplied resolution", () => {
     // The real 2026-09-01 run: static 2.18, none 2.55.
-    expect(noiseFloor(2.18, 2.55)).toBeCloseTo(0.37, 5);
+    expect(noiseFloor(2.18, 2.55, 0.12)).toBeCloseTo(0.37, 5);
+  });
+
+  it("fails closed when no resolution observation was supplied", () => {
+    expect(() => noiseFloor(2.5, 2.0)).toThrow(/resolution/i);
   });
 });
 
@@ -77,13 +81,17 @@ describe("resolveDelta", () => {
   it("withholds a difference exactly at the floor — the floor is not itself resolvable", () => {
     expect(resolveDelta(0.37, 0.37)).toBeUndefined();
   });
+
+  it("withholds an impossible negative cost even when its magnitude clears the floor", () => {
+    expect(resolveDelta(-1.61, 0.37)).toBeUndefined();
+  });
 });
 
 describe("summarise", () => {
   const arms: readonly IArmSample[] = [
-    { gpuMs: [2.1, 2.18, 4.07], label: "static" },
-    { gpuMs: [0.41, 2.55, 5.64], label: "none" },
-    { gpuMs: [3.65, 3.79, 6.48], label: "dirty/1" },
+    { gpuMs: [2.1, 2.18, 4.07], label: "static", resolutionMs: 0.12 },
+    { gpuMs: [0.41, 2.55, 5.64], label: "none", resolutionMs: 0.12 },
+    { gpuMs: [3.65, 3.79, 6.48], label: "dirty/1", resolutionMs: 0.12 },
   ];
 
   it("names the prefilter cost and withholds the sampling cost under an inverted control", () => {
@@ -94,7 +102,28 @@ describe("summarise", () => {
     expect(summary.samplingPerFrame).toBeUndefined();
   });
 
+  it("carries a nonzero resolution floor through a correctly ordered noisy control", () => {
+    const summary = summarise([
+      { gpuMs: [2.4, 2.5, 2.7], label: "static", resolutionMs: 0.18 },
+      { gpuMs: [2.0, 2.1, 2.3], label: "none", resolutionMs: 0.18 },
+      { gpuMs: [2.6, 2.7, 2.9], label: "dirty/1", resolutionMs: 0.18 },
+    ]);
+    expect(summary.controlHeld).toBe(true);
+    expect(summary.floor).toBeCloseTo(0.18, 5);
+    expect(summary.samplingPerFrame).toBeCloseTo(0.4, 5);
+  });
+
   it("fails closed when an arm the conclusion depends on never reported", () => {
     expect(() => summarise([{ gpuMs: [1], label: "static" }])).toThrow(/none/);
+  });
+
+  it("fails closed when the complete sample has no resolution observation", () => {
+    expect(() =>
+      summarise([
+        { gpuMs: [2.1, 2.18, 4.07], label: "static" },
+        { gpuMs: [0.41, 2.55, 5.64], label: "none" },
+        { gpuMs: [3.65, 3.79, 6.48], label: "dirty/1" },
+      ]),
+    ).toThrow(/resolution/i);
   });
 });

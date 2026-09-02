@@ -17,6 +17,8 @@ export interface IFrameWindow {
 export interface IArmSample {
   readonly label: string;
   readonly gpuMs: readonly number[];
+  /** An independently observed, positive meter resolution/noise value in ms. */
+  readonly resolutionMs?: number;
 }
 
 /** What the five arms together do and do not establish. */
@@ -32,6 +34,12 @@ export interface IEnvironmentSummary {
 }
 
 const MARKER = "TN_FRAME_BUDGET:";
+
+/** Fail the arm, and therefore the whole probe, for every recorded page or measurement failure. */
+export function assertNoArmFailures(label: string, failures: readonly string[]): void {
+  if (failures.length === 0) return;
+  throw new Error(`Arm ${label} failed: ${failures.join(" | ")}`);
+}
 
 /**
  * Parse the frame-budget markers out of a page's console lines and drop the first window.
@@ -84,34 +92,63 @@ export function quantile(sorted: readonly number[], fraction: number): number {
  * The noise floor, in ms, from the run's own negative control.
  *
  * `none` (no environment at all) does strictly less GPU work than `static` (environment set once),
- * so `none <= static` must hold. Any amount by which `none` reads *higher* is measurement noise
- * this run demonstrably contains, and nothing smaller may be claimed as a difference. A control
- * that holds yields a floor of zero — which is a claim about this run, not about the meter.
+ * so `none <= static` must hold. An expected ordering proves only that sign; it is not an observation
+ * that the meter has zero error. The caller must supply a positive resolution/noise observation.
+ * When `none` reads higher, that inversion is an additional lower bound on the floor, not a
+ * substitute for the resolution observation.
  */
-export function noiseFloor(staticMedian: number, noneMedian: number): number {
-  return Math.max(0, noneMedian - staticMedian);
+export function noiseFloor(
+  staticMedian: number,
+  noneMedian: number,
+  resolutionMs?: number,
+): number {
+  if (!Number.isFinite(staticMedian) || !Number.isFinite(noneMedian)) {
+    throw new Error("Noise floor needs finite static and none medians.");
+  }
+  if (resolutionMs === undefined || !Number.isFinite(resolutionMs) || resolutionMs <= 0) {
+    throw new Error(
+      "Noise floor needs a positive resolution/noise observation; expected ordering alone is not enough.",
+    );
+  }
+  return Math.max(resolutionMs, Math.max(0, noneMedian - staticMedian));
 }
 
 /** A difference, or `undefined` when it is not larger than the floor. */
 export function resolveDelta(delta: number, floor: number): number | undefined {
-  return Math.abs(delta) > floor ? delta : undefined;
+  if (!Number.isFinite(floor) || floor < 0) {
+    throw new Error(`Delta resolution floor must be a finite nonnegative number: ${floor}.`);
+  }
+  if (!Number.isFinite(delta) || delta < 0) return undefined;
+  return delta > floor ? delta : undefined;
 }
 
 /** Reduce the arms to what they establish, refusing to conclude from an arm that never reported. */
 export function summarise(arms: readonly IArmSample[]): IEnvironmentSummary {
-  const median = (label: string): number => {
+  const findArm = (label: string): IArmSample => {
     const arm = arms.find((candidate) => candidate.label === label);
     if (arm === undefined) {
       throw new Error(`Arm ${label} never reported; the summary depends on it and will not guess.`);
     }
+    return arm;
+  };
+  const median = (label: string): number => {
     return quantile(
-      [...arm.gpuMs].sort((a, b) => a - b),
+      [...findArm(label).gpuMs].sort((a, b) => a - b),
       0.5,
     );
   };
   const staticMedian = median("static");
   const noneMedian = median("none");
-  const floor = noiseFloor(staticMedian, noneMedian);
+  const resolutions = [findArm("static"), findArm("none")].flatMap((arm) =>
+    arm.resolutionMs === undefined ? [] : [arm.resolutionMs],
+  );
+  for (const resolution of resolutions) {
+    if (!Number.isFinite(resolution) || resolution <= 0) {
+      throw new Error(`Resolution observation must be positive and finite: ${resolution}.`);
+    }
+  }
+  const observedResolution = resolutions.length === 0 ? undefined : Math.max(...resolutions);
+  const floor = noiseFloor(staticMedian, noneMedian, observedResolution);
   return {
     controlHeld: noneMedian <= staticMedian,
     floor,

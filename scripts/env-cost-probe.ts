@@ -12,11 +12,11 @@
  * ## The negative control is the point
  *
  * `none` removes strictly more work than `static`, so `gpuMs(none) <= gpuMs(static)` must hold. When
- * it does not, the lane is reading noise, and the size of the inversion is the **noise floor** —
- * the smallest difference this run may honestly claim. The first run of this probe reported
- * `none` 0.37 ms *above* `static`, which is exactly how the sampling arm was kept out of the
- * PRD-307 record. That check is built in here rather than left to whoever reads the table, because
- * the reader who most needs it is the one who already believes the result.
+ * it does not, the lane is reading noise, and the inversion is a **lower bound** on its noise floor,
+ * not the complete floor. The first run of this probe reported `none` 0.37 ms *above* `static`;
+ * that is useful noise evidence, but an independently observed `resolutionMs` is still required
+ * before any delta can be resolved. That check is built in here rather than left to whoever reads
+ * the table, because the reader who most needs it is the one who already believes the result.
  *
  * Reported differences smaller than the measured floor print as `below noise floor`, never as a
  * number. An arm that produced no steady window throws: an unmeasured arm is a failure, never an
@@ -25,8 +25,11 @@
  * ## Running it
  *
  * ```sh
- * pnpm tsx scripts/env-cost-probe.ts [port] [secondsPerArm]
+ * pnpm tsx scripts/env-cost-probe.ts [port] [secondsPerArm] [resolutionMs]
  * ```
+ *
+ * `resolutionMs` is an independently observed positive meter resolution/noise value. Omitting it
+ * makes the report fail closed after collection; the negative control cannot manufacture one.
  *
  * Needs a real GPU adapter — the run prints `adapter:` and a SwiftShader fallback makes every
  * number meaningless. Vsync is disabled so the GPU holds sustained clocks; even so this lane is
@@ -35,7 +38,13 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { chromium } from "@playwright/test";
-import { type IArmSample, type IFrameWindow, steadyWindows, summarise } from "./env-cost-report.js";
+import {
+  type IArmSample,
+  type IFrameWindow,
+  assertNoArmFailures,
+  steadyWindows,
+  summarise,
+} from "./env-cost-report.js";
 import { stopVisualServer } from "./visual-gate.js";
 
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
@@ -62,9 +71,12 @@ const RUNS = [
 
 const port = Number(process.argv[2] ?? 5491);
 const seconds = Number(process.argv[3] ?? 60);
+const resolutionMs = process.argv[4] === undefined ? undefined : Number(process.argv[4]);
 if (!Number.isInteger(port) || port < 1) throw new Error(`Unusable port ${process.argv[2]}.`);
 if (!Number.isFinite(seconds) || seconds <= 0)
   throw new Error(`Unusable seconds ${process.argv[3]}.`);
+if (resolutionMs !== undefined && (!Number.isFinite(resolutionMs) || resolutionMs <= 0))
+  throw new Error(`Unusable resolution ${process.argv[4]}.`);
 
 async function waitForServer(url: string): Promise<void> {
   for (let attempt = 0; attempt < 240; attempt += 1) {
@@ -98,10 +110,11 @@ try {
     for (const [index, run] of RUNS.entries()) {
       const page = await browser.newPage({ viewport: { height: 1080, width: 1920 } });
       const lines: string[] = [];
+      const failures: string[] = [];
       page.on("console", (message) => lines.push(message.text()));
-      page.on("pageerror", (error) => lines.push(`PAGEERROR ${error.message}`));
+      page.on("pageerror", (error) => failures.push(`PAGEERROR ${error.message}`));
+      page.on("crash", () => failures.push("PAGECRASH page crashed"));
 
-      let failure: string | undefined;
       try {
         await page.goto(`http://127.0.0.1:${port}/?${run.query}`, {
           waitUntil: "domcontentloaded",
@@ -125,24 +138,31 @@ try {
         }
         await page.waitForTimeout(seconds * 1000);
       } catch (error) {
-        failure = (error as Error).message.split("\n")[0];
+        failures.push(`RUN ${((error as Error).message ?? String(error)).split("\n")[0]}`);
       }
 
-      await page.close().catch(() => undefined);
+      try {
+        await page.close();
+      } catch (error) {
+        failures.push(`PAGE_CLOSE ${((error as Error).message ?? String(error)).split("\n")[0]}`);
+      }
 
-      // steadyWindows throws on an arm that produced nothing — the failure the page reported is
-      // attached so the throw names a cause rather than just an absence.
-      let windows: readonly IFrameWindow[];
+      // Keep the meter failure separate from ordinary console lines. Every recorded failure is
+      // checked below even when the arm did collect valid steady windows.
+      let windows: readonly IFrameWindow[] | undefined;
       try {
         windows = steadyWindows(lines);
       } catch (error) {
-        const pageError = lines.find((line) => line.startsWith("PAGEERROR"));
-        throw new Error(
-          `Arm ${run.label}: ${(error as Error).message} ${failure ?? pageError ?? ""}`.trim(),
-        );
+        failures.push(`FRAME_BUDGET ${(error as Error).message}`);
       }
+      assertNoArmFailures(run.label, failures);
+      if (windows === undefined) throw new Error(`Arm ${run.label} has no frame-budget windows.`);
 
-      arms.push({ gpuMs: windows.map((window) => window.gpuMs), label: run.label });
+      arms.push({
+        gpuMs: windows.map((window) => window.gpuMs),
+        label: run.label,
+        resolutionMs,
+      });
       fpsByArm.set(run.label, windows.reduce((total, w) => total + w.fps, 0) / windows.length);
     }
   } finally {
