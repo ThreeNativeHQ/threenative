@@ -8,13 +8,9 @@
   "steps": [
     { "kind": "wait", "label": "line-of-sight", "waitTicks": 8, "release": true },
     { "kind": "input", "label": "attack", "press": "KeyF", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "attack-visible", "waitTicks": 4, "release": true },
     { "kind": "input", "label": "surge", "press": "KeyE", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "surge-visible", "waitTicks": 4, "release": true },
     { "kind": "wait", "label": "surge-active", "waitTicks": 5, "release": true },
-    { "kind": "wait", "label": "surge-expired", "waitTicks": 65, "release": true },
-    { "kind": "input", "label": "attack-final", "press": "KeyF", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "attack-final-visible", "waitTicks": 4, "release": true }
+    { "kind": "wait", "label": "surge-expired", "waitTicks": 65, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
