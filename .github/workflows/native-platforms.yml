@@ -179,7 +179,15 @@ jobs:
           for (const key of ["pass", "fail", "blocked"]) {
             if (!Number.isInteger(summary?.[key])) throw new Error(`Missing integer summary.${key}`);
           }
-          const exit = summary.fail > 0 ? 1 : summary.blocked > 0 ? 2 : 0;
+          // The runner's own rule, imported rather than restated. The copy that used to
+          // live here knew only `fail` and `blocked`, so a report whose Android multitouch
+          // proof had failed was written down as exit 2 while the runner emits 1 — and
+          // `parity:ledger`, which exists precisely to recompute this cell, then reported
+          // the contradiction as a second failure stacked on top of the real one.
+          const { reportExitCode } = await import(
+            "./packages/runtime-native/conformance/run-conformance.mjs"
+          );
+          const exit = reportExitCode(report);
           const ledger = [
             "# PRD-215 Android parity ledger",
             "",
@@ -308,7 +316,15 @@ jobs:
           for (const key of ["pass", "fail", "blocked"]) {
             if (!Number.isInteger(summary?.[key])) throw new Error(`Missing integer summary.${key}`);
           }
-          const exit = summary.fail > 0 ? 1 : summary.blocked > 0 ? 2 : 0;
+          // The runner's own rule, imported rather than restated. The copy that used to
+          // live here knew only `fail` and `blocked`, so a report whose Android multitouch
+          // proof had failed was written down as exit 2 while the runner emits 1 — and
+          // `parity:ledger`, which exists precisely to recompute this cell, then reported
+          // the contradiction as a second failure stacked on top of the real one.
+          const { reportExitCode } = await import(
+            "./packages/runtime-native/conformance/run-conformance.mjs"
+          );
+          const exit = reportExitCode(report);
           const ledger = [
             "# PRD-303 desktop parity ledger",
             "",
