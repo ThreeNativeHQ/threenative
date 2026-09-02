@@ -734,6 +734,8 @@
       "category": "webgpu-tsl",
       "status": "implemented",
       "scene": "../../examples/prd140-picking/src/conformance.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
       "tolerance": {
         "pixelMismatchRatio": 0.01,
         "perceptualDeltaE": 0.2

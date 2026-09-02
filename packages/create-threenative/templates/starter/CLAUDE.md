@@ -78,10 +78,10 @@ caught where a bone-direction check reads zero. `clipTrackBindings` names tracks
 clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
 supposed to be touching.
 
-One directional shadow over a big outdoor level: `sun.shadow.shadowNode = new VirtualShadowNode(sun,
-{ clipExtents: [12, 40, 120] })` from `@threenative/core` gives every material camera-centred,
-texel-snapped, cached clip levels; bias and map size stay on `sun.shadow`, `trackCaster(object)`
-refreshes a mover in place, and `TN_VIRTUAL_SHADOW` reports rendered against cached levels.
+## Fused rock authoring
+`src/render/rockRidge.ts` owns the granite field, seed, bounds, ridge material handoff, and quality choice; `src/render/implicitSurface.ts` is the local renderer-independent extractor and final-array topology audit. A fused mass is one implicit field; separate debris may be instanced.
+After changing bounds, field, or resolution, run three fixed seeds and require the audit to report zero boundary edges, degenerate triangles, and winding conflicts with positive signed volume. Never hide holes with `DoubleSide` or a normal map.
+`Play.enter` attaches Preview immediately, then the classic Worker refinement swaps atomically; do not add a main-thread showcase fallback.
 
 ## Quality and proof
 

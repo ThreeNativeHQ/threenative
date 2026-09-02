@@ -53,9 +53,17 @@ const rough = scenePass.getTextureNode("roughness");   // ←
 no fragment shader writes, and WebGPU refuses that pipeline outright. The frame comes out black
 while every report says the chain is fine, which is the worst shape a failure can take.
 
-The corroborating detail: **`sailing` is the one template that never had those four lines**, because
-it runs no SSGI and no SSR at any tier. It is also the one template whose mobile look was never
-black.
+**`sailing` already carried this fix, and the reasoning, in a comment** — added 2026-08-31 in
+`326c053f`:
+
+> `PassNode` adds every named colour texture requested through `getTextureNode()` to its
+> framebuffer. Keep the surface-data attachments lazy: a bloom-only outdoor scene does not need MRT,
+> and asking for `normal`/`metalness`/`roughness` here would give ordinary materials extra targets
+> with no fragment outputs.
+
+So this defect was found once, understood exactly, fixed in **one** template — and the other seven
+kept it. That is the whole argument for a gate rather than a fix: the knowledge existed, written
+down, in this repository, and did not travel.
 
 ## The fix
 
@@ -112,6 +120,29 @@ of those three lines.
 - One trap worth knowing when grepping a device log: `TN_COLD_START`, `TN_UI_OVERLAY` and friends
   are **Android's own**, a prefix collision with ours.
 
+## The gate
+
+A fix that lived in one template's comment did not travel, so this is now checked. The
+`template quality` gate — already in the `budgets` chain — refuses a `worldEnvironment.ts` that
+requests `normal`, `metalness` or `roughness` outside a deferred accessor:
+
+```
+### the exact regression: shooter asks for normal eagerly again
+- shooter: worldEnvironment.ts requests normal (line 383) eagerly — that attaches a colour target
+  no fragment shader writes, and the frame renders black while the chain reports success
+(exit 1)
+
+### the wrapped form too: sailing's metalness accessor un-deferred
+- sailing: worldEnvironment.ts requests metalness (line 374) eagerly — …
+(exit 1)
+```
+
+Both reds observed. The check is index-based rather than line-based on purpose: the accessors wrap
+across two lines, so a line-based match reads the `=>` as absent and calls the fix a defect — the
+first version of this gate did exactly that and failed `sailing`, the one template that was already
+correct. `depth` and `output` are deliberately not checked: the pass carries them either way, so
+requesting them eagerly costs nothing.
+
 ## Gates
 
 | Gate | Result |
@@ -122,10 +153,31 @@ of those three lines.
 | Desktop capture, default and forced `low` | above |
 | Pixel 8, scaffolded starter | above |
 
+## Three templates, not one — added 2026-09-01
+
+The first version of this record proved the starter and said so. Two more were then scaffolded with
+`tier: "low"` forced at their own `setupPost` call, chosen to span the two chain shapes among the
+seven affected files:
+
+| template | chain at `high` | tier reported | distinctColors | luminanceStdDev |
+| --- | --- | --- | ---: | ---: |
+| starter | SSGI + SSR + sharpen + bloom | `low … source=override` | 16,312 | 0.0710 |
+| shooter | SSGI + SSR + sharpen + bloom | `low … source=override` | **51,968** | **0.1558** |
+| minimal | SSR + sharpen + bloom, no SSGI | `low … source=override` | 1,841 | 0.0832 |
+
+Compare the blank this replaces: `distinctColors 637`, `luminanceStdDev 0.0181`. `minimal` has the
+fewest distinct colours of the three because its sky is a volumetric `Atmosphere` — smooth
+gradients, not flat fill — and its `luminanceStdDev` is 4.6x the blank's, which is the number that
+separates a picture from a uniform frame.
+
+`action-rpg` was attempted and **did not report**: its page never produced a canvas inside the 60 s
+wait while the machine was busy. That is the harness under load, not a result, and it is recorded
+as unrun rather than counted either way.
+
 ## Not executed
 
 - No iOS, macOS or Windows run; no emulator run.
-- The other six affected templates were not captured individually. They share the identical
-  `worldEnvironment.ts` (one md5 across all seven), all eight still typecheck as pristine scaffolds,
-  and the starter is proved on two platforms — but *shown* is the starter, and that is what this
-  file claims.
+- **Four of the seven affected templates were not captured**: `action-rpg` (attempted, timed out),
+  `defense`, `platformer` and `racing`. All seven share one identical `worldEnvironment.ts` (a
+  single md5 across them) and all eight typecheck as pristine scaffolds, but shown is shown —
+  three templates on desktop, one of them also on a phone.

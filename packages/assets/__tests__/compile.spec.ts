@@ -12,6 +12,12 @@ import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
 
 const TRANSCODER = basisTranscoderPaths();
+const THREE_INSTALL = path.resolve(import.meta.dirname, "../node_modules/three");
+
+async function installThree(root: string): Promise<void> {
+  await mkdir(path.join(root, "node_modules"), { recursive: true });
+  await symlink(THREE_INSTALL, path.join(root, "node_modules/three"));
+}
 
 /**
  * A torus knot, the shape `virtual-pass.spec.ts` settled on: closed, indexed, every vertex
@@ -155,6 +161,7 @@ describe("compileAssets", () => {
   it("should not rewrite an output whose hash is unchanged", async () => {
     const root = await makeTempDir("threenative-compile-idempotent-");
     await mkdir(path.join(root, "assets"));
+    await installThree(root);
     await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
 
     const first = await compileAssets({ cwd: root });
@@ -425,6 +432,7 @@ describe("compileAssets", () => {
     try {
       const root = await makeTempDir("threenative-compile-model-");
       await mkdir(path.join(root, "assets"));
+      await installThree(root);
       const source = Buffer.from(await buildFixtureGlb());
       await writeFile(path.join(root, "assets", "character.glb"), source);
 

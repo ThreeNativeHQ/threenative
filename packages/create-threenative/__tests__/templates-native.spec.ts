@@ -9,6 +9,7 @@ import { assertNativeBundleCompatible, build } from "../src/build.js";
 const run = promisify(execFile);
 const roots: string[] = [];
 const bundler = path.resolve("packages/runtime-native/scripts/bundle.mjs");
+const viteInstall = path.resolve(import.meta.dirname, "../node_modules/vite");
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
@@ -19,7 +20,7 @@ async function projectRoot(prefix: string): Promise<string> {
   roots.push(project);
   await mkdir(path.join(project, "src"), { recursive: true });
   await mkdir(path.join(project, "node_modules"), { recursive: true });
-  await symlink(path.resolve("node_modules/vite"), path.join(project, "node_modules/vite"));
+  await symlink(viteInstall, path.join(project, "node_modules/vite"));
   await writeFile(path.join(project, "package.json"), '{"name":"entry-proof","type":"module"}\n');
   return project;
 }

@@ -21,12 +21,12 @@ targets could not be built and are named below.
 | `src/storage/` | 260 | 225 | 86.54% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 175 | 73.22% |
-| `src/webgpu/` | 7266 | 3051 | 41.99% |
+| `src/webgpu/` | 7266 | 3035 | 41.77% |
 | `src/webtransport/` | 770 | 145 | 18.83% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **19587** | **7683** | **39.22%** |
+| **TOTAL** | **19587** | **7667** | **39.14%** |
 
-Source digest: `sha256:e94a5725ecc94d891b4a0f8bb5eaef83aa7c964c93bc8f328e13443bddd8d57e`
+Source digest: `sha256:2f67233f67469bd1e1e2752563dd9125d93b71f427ad50737f565dd36e89ac54`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation

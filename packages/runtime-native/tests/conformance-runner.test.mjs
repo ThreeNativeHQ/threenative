@@ -39,7 +39,9 @@ import {
   buildProvenance,
   captureBrowserCanvas,
   hardwareAdapterBlocker,
+  missingHardwareReferenceBlocker,
   makeEntry,
+  launchAndroidConformanceActivity,
   runCommand,
   temporalCaptureLabel,
   unexpectedBlockedRows,
@@ -88,6 +90,28 @@ test("a software adapter blocks a hardware row instead of failing it", () => {
   assert.equal(hardwareAdapterBlocker("TN_CONFORMANCE_FROZEN_TEMPORAL_HISTORY:realism-taa"), null);
   assert.equal(hardwareAdapterBlocker("Error: page crashed"), null);
   assert.equal(hardwareAdapterBlocker(undefined), null);
+});
+
+test("native lanes do not launch hardware rows without a browser reference", () => {
+  const missing = "/tmp/three-native-missing-hardware-reference.png";
+  assert.match(
+    missingHardwareReferenceBlocker({ requiresHardwareAdapter: true }, missing, () => false),
+    /Missing browser reference capture/u,
+  );
+  assert.equal(
+    missingHardwareReferenceBlocker({ requiresHardwareAdapter: false }, missing, () => false),
+    null,
+  );
+  assert.equal(
+    missingHardwareReferenceBlocker({ requiresHardwareAdapter: true }, missing, () => true),
+    null,
+  );
+});
+
+test("the GPU scene BVH row requires a hardware adapter", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const row = registry.tests.find(({ id }) => id === "76-gpu-scene-bvh");
+  assert.equal(row?.requiresHardwareAdapter, true);
 });
 
 test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () => {
@@ -486,6 +510,29 @@ test("a capture is refused when any window but the app owns focus", () => {
   assert.match(source, /const afterCaptureBlocker = androidForegroundBlocker\(/u);
 });
 
+test("Android conformance dismisses immersive confirmation before its first activity launch", () => {
+  const calls = [];
+  const common = (...args) => {
+    calls.push(args);
+    return { stdout: args.includes("start") ? "Status: ok" : "" };
+  };
+
+  const result = launchAndroidConformanceActivity(common, "emulator-5554");
+
+  assert.deepEqual(calls, [
+    ["shell", "settings", "put", "secure", "immersive_mode_confirmations", "confirmed"],
+    [
+      "shell",
+      "am",
+      "start",
+      "-W",
+      "-n",
+      "com.threenative.game/com.threenative.runtime.MystralActivity",
+    ],
+  ]);
+  assert.equal(result.stdout, "Status: ok");
+});
+
 test("a leaked capture-size override is reset rather than restored back onto the device", () => {
   // The 2026-08-17 defect, as a unit. A previous run left `Override size: 1280x720` on a physical
   // Pixel 8; every later row read that as the operator's setting and put it back, so the phone
@@ -538,6 +585,19 @@ test("Android parity owns the standalone multitouch proof without contaminating 
     source,
     /androidMultitouch\?\.status === "fail" \? 1 : reportExitCode/u,
     "the runner must not maintain a second Android-only exit rule",
+  );
+});
+
+test("Android runs its standalone multitouch proof before the serial parity rows", () => {
+  const source = readFileSync(runner, "utf8");
+  const supplemental = source.indexOf("androidMultitouch: runAndroidMultitouchProof({");
+  const rows = source.indexOf("if (dryRun || target !== \"web\") await executeRows(0);");
+
+  assert.ok(supplemental >= 0, "the Android supplemental proof must remain wired into the report");
+  assert.ok(rows >= 0, "the serial parity rows must remain wired into the runner");
+  assert.ok(
+    supplemental < rows,
+    "the required device proof must run while the emulator is fresh, before the parity rows",
   );
 });
 

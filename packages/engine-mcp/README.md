@@ -30,4 +30,3 @@ The first that exists wins, so the manifest can never drift from the engine the 
 
 A project copy committed at scaffold time is therefore inert whenever the package is installed:
 the two never need re-syncing by hand.
-

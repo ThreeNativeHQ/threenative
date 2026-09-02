@@ -779,10 +779,10 @@ localStorage gates the host reads from `files/mystral/storage/<cwd-stem>.json` (
 | shadow off + flat town materials | 24.22 (materials ≈ 3.3) |
 | + town hidden | 13.55 (flat town pass ≈ 11.5) |
 | + sky and soldiers hidden | 6.66 (soldiers + sky ≈ 6.9) |
-| + `scene.environment` null | **0.35 — the IBL is ~6.3 ms on a nearly-empty scene** |
+| + `scene.environment` null | **0.35 — the IBL ablation is ~6.3 ms on a nearly-empty scene; this is an upper bound, not the bakeable frame cost** |
 | full scene, IBL null | 22.24 (IBL ≈ 5.3 across the covered scene) |
 
-Conclusion: the 720p GPU frame is spread per-pixel — IBL ~5–6, the flat town pass ~9–11
+Conclusion: the 720p GPU frame is spread per-pixel — the IBL ablation is ~5–6, the flat town pass ~9–11
 (geometry/dispatch/PBR core, not the texture fetches: `triTop2` cut fetches 24 → 10 and moved
 gpuDrain not at all), material graphs ~2.5, soldiers/sky ~7 — over a true floor of 0.35. The
 1080p arm stays GPU-bound (present 14.4 of a 49 ms period; 20.2 fps, unchanged by the CPU wins).
@@ -792,6 +792,19 @@ mailbox); PCFSoft/shadow cost (~0); town texture fetches as the GPU cost (top-2 
 hemisphere-fill IBL replacement (−5.3 ms GPU but visibly darker in shaded faces at two tuning
 attempts — `TN_NO_IBL` gate ships off by default; the A/B screenshots are
 `/tmp/draw-budget-tritop.png` (IBL) vs `/tmp/draw-budget-hemisphere*.png`).
+
+### Environment attribution — PRD-307, 2026-09-01
+
+The `scene.environment` ablation above removes both one-time PMREM work and per-fragment
+environment sampling, so its ≈6.3 ms difference is an upper bound on what a build-time bake could
+recover. A same-session five-arm control measured a set-once environment at 2.18 ms and no
+environment at 2.55 ms; the −0.37 ms inversion is a lower-bound/noise observation, not a complete
+resolution floor, and an independent positive resolution observation is required. Forcing PMREM every
+frame measured 3.79 ms, or **+1.61 ms** over the static arm. Bayview assigns `scene.environment`
+once and has no `ProbeVolume`, `CubeCamera`, or `needsPMREMUpdate` path, so the +1.61 ms control is
+not its workload. The static bakeable benefit is unresolvable and below the standing 2 ms bar.
+
+Full attribution record: [`environment-cost-attribution-2026-09-01`](environment-cost-attribution-2026-09-01.md).
 
 The designed path to 60 (each measured, none yet a pass): the GPU needs −2 ms of the ~18.7
 presented — candidates in order: a cheap single-fetch IBL approximation (TSL `pmremTexture` at a
@@ -1449,6 +1462,7 @@ run's 13 steady-state tail spikes.
 | 14 | Swapchain `desiredMaximumFrameLatency` infrastructure | kept, never an fps lever |
 | 15 | Optimising three.js renderer internals inside the host | refused on the ownership rule |
 | 16 | Cutting Bayview draw counts in `packages/` | reverted; game code is experiment-only |
+| 17 | PRD-307 set-once environment prefilter | **refuted for steady-state**: `dirty/1 − static` = **+1.61 ms**, while `static − none` = **−0.37 ms**, a lower-bound/noise observation; an independent positive resolution observation is required. Bayview has no per-frame dirty path |
 
 Also closed by evidence: the node-system megamorphic IC population is a **load-time compile
 burst**, not per-frame churn (0 `Node.build()` calls/frame steady state); the `clock_gettime`

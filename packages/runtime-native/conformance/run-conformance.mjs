@@ -18,6 +18,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node
 import { fileURLToPath } from "node:url";
 import { SDL3_ANDROID_VERSION, stageAndroidAssets } from "../scripts/package-android.mjs";
 import { stageDesktopFiles } from "../scripts/package-desktop.mjs";
+import { prepareAndroidEmulator } from "../scripts/android-emulator.mjs";
 import {
   androidMultitouchScript,
   MULTITOUCH_PROOF_POINTS,
@@ -1349,6 +1350,11 @@ export function androidForegroundBlocker(windowDump, appId = APP_ID) {
   return null;
 }
 
+export function launchAndroidConformanceActivity(common, serial, extras = []) {
+  prepareAndroidEmulator(serial, common);
+  return common("shell", "am", "start", "-W", "-n", ACTIVITY, ...extras);
+}
+
 /** The landscape size the Android lane pins so its captures compare against the web reference. */
 export const ANDROID_CAPTURE_SIZE = "1280x720";
 
@@ -1623,16 +1629,12 @@ async function runAndroid(
         temporalRemoteCaptures["frame-zero"],
       );
     }
-    const launch = common(
-      "shell",
-      "am",
-      "start",
-      "-W",
-      "-n",
-      ACTIVITY,
-      ...(temporalRemoteCaptures === null
+    const launch = launchAndroidConformanceActivity(
+      common,
+      serial,
+      temporalRemoteCaptures === null
         ? []
-        : ["--es", "TN_PLAYTEST_MAILBOX_ROOT", androidMailboxRoot]),
+        : ["--es", "TN_PLAYTEST_MAILBOX_ROOT", androidMailboxRoot],
     );
     if (!/Status:\s*ok/iu.test(String(launch.stdout)))
       throw new Error(`Android activity failed to start: ${launch.stdout}`);
@@ -2167,6 +2169,11 @@ function referencePath(referenceArg, id, test) {
   return join(referenceRootPath(referenceArg), `${id}${suffix}.png`);
 }
 
+export function missingHardwareReferenceBlocker(test, reference, exists = existsSync) {
+  if (test?.requiresHardwareAdapter !== true || exists(reference)) return null;
+  return `Missing browser reference capture: ${reference}`;
+}
+
 function applyReferenceAndMetrics(test, result, reference) {
   if (result.status !== "pass") return;
   if (!existsSync(reference)) {
@@ -2389,6 +2396,13 @@ async function main(argv = process.argv.slice(2)) {
   const executeRows = async (port, broker = null) => {
     for (const test of registry.tests) {
       const result = createResult(test);
+      const hardwareReferenceBlocker =
+        !dryRun && ["android", "android-hardware", "desktop"].includes(target)
+          ? missingHardwareReferenceBlocker(
+              test,
+              referencePath(valueAfter(argv, "--reference"), test.id, test),
+            )
+          : null;
       const expiredRowExclusion = expired.find(
         (entry) => entry.target === target && entry.row === test.id,
       );
@@ -2405,6 +2419,9 @@ async function main(argv = process.argv.slice(2)) {
       } else if (targetBlocker) {
         result.status = "blocked";
         result.blockedReason = targetBlocker;
+      } else if (hardwareReferenceBlocker !== null) {
+        result.status = "blocked";
+        result.blockedReason = hardwareReferenceBlocker;
       } else if (!dryRun && target === "desktop" && test.inputProof === "multitouch") {
         result.status = "blocked";
         result.blockedReason =
@@ -2500,11 +2517,6 @@ async function main(argv = process.argv.slice(2)) {
       report.results.push(result);
     }
   };
-  if (dryRun || target !== "web") await executeRows(0);
-  else
-    await withServer(captureRoot, project?.publicDir, ({ port, broker }) =>
-      executeRows(port, broker),
-    );
   if (shouldRunAndroidMultitouch({ dryRun, project, target })) {
     report.supplemental = {
       ...report.supplemental,
@@ -2514,6 +2526,11 @@ async function main(argv = process.argv.slice(2)) {
       }),
     };
   }
+  if (dryRun || target !== "web") await executeRows(0);
+  else
+    await withServer(captureRoot, project?.publicDir, ({ port, broker }) =>
+      executeRows(port, broker),
+    );
   const reportErrors = validateReport(report, registry);
   if (reportErrors.length > 0) {
     throw new Error(`Generated an invalid conformance report:\n- ${reportErrors.join("\n- ")}`);
