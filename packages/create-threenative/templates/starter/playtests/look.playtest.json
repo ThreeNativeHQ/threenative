@@ -32,6 +32,48 @@
       "noNetworkErrors": true,
       "runtimeReady": true
     },
+    "components": [
+      {
+        "entity": "scenery.ridge",
+        "component": "state",
+        "equals": "refined",
+        "allowTrivial": "A fast Worker may refine before the baseline sample; the final state still proves the attached result is refined."
+      },
+      {
+        "entity": "scenery.ridge",
+        "component": "generation",
+        "gte": 1,
+        "allowTrivial": "A fast Worker may complete before the baseline sample; generation one still proves the refinement dispatch ran."
+      },
+      {
+        "entity": "scenery.ridge",
+        "component": "topology",
+        "path": "boundaryEdges",
+        "equals": 0,
+        "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
+      },
+      {
+        "entity": "scenery.ridge",
+        "component": "topology",
+        "path": "degenerateTriangles",
+        "equals": 0,
+        "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
+      },
+      {
+        "entity": "scenery.ridge",
+        "component": "topology",
+        "path": "windingConflicts",
+        "equals": 0,
+        "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
+      },
+      {
+        "entity": "scenery.ridge",
+        "component": "topology",
+        "path": "signedVolume",
+        "gte": 1,
+        "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
+      }
+    ],
     "camera": {
       "entity": "camera.main",
       "follows": "player",
@@ -61,6 +103,17 @@
           "y": 0,
           "width": 1280,
           "height": 720,
+          "minNonblankPixelRatio": 0.95,
+          "minDarkPixelRatio": 0.2,
+          "maxLuminance": 0.25
+        }
+      },
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 360,
           "minNonblankPixelRatio": 0.95,
           "minDarkPixelRatio": 0.2,
           "maxLuminance": 0.25

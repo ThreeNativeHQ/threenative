@@ -509,6 +509,13 @@ describe("generated template ordinary-frame runtime cost", () => {
     }
 
     const starterPhysics = await physicsFixture();
+    class IdleWorker {
+      onerror: unknown = null;
+      onmessage: unknown = null;
+      postMessage(): void {}
+      terminate(): void {}
+    }
+    vi.stubGlobal("Worker", IdleWorker);
     try {
       const context = sceneContext(starterPhysics.physics, starter.Play.initialState);
       const play = new starter.Play();
@@ -531,6 +538,7 @@ describe("generated template ordinary-frame runtime cost", () => {
         patchWarmHighWater,
       );
     } finally {
+      vi.unstubAllGlobals();
       starterPhysics.dispose();
     }
 

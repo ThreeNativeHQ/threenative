@@ -470,6 +470,26 @@ describe("template contracts", () => {
     }
   });
 
+  it("should keep the starter ridge on one classic Worker path with disposal", async () => {
+    const [controller, worker, play] = await Promise.all([
+      readFile(path.join(templateRoot, "starter/src/render/rockRidge.ts"), "utf8"),
+      readFile(path.join(templateRoot, "starter/src/render/rockRidge.worker.ts"), "utf8"),
+      readFile(path.join(templateRoot, "starter/src/scenes/Play.ts"), "utf8"),
+    ]);
+    expect(controller).toContain("new Blob");
+    expect(controller).toContain("new Worker(url)");
+    expect(controller).toContain("state.requestedGeneration");
+    expect(controller).toContain("message.generation !== state.requestedGeneration");
+    expect(controller).toContain("previous.geometry.dispose()");
+    expect(controller).toContain('error.name = "TN_ROCK_RIDGE_TOPOLOGY_INVALID"');
+    expect(controller).not.toContain('type: "module"');
+    expect(worker).toContain("createImplicitSurfaceWorkerSource");
+    expect(worker).toContain("[result.indices.buffer, result.positions.buffer]");
+    expect(worker).not.toContain("@threenative/");
+    expect(play).toContain("this.#scenery?.dispose()");
+    expect(play).toContain('ctx.entities.add("scenery.ridge", scenery)');
+  });
+
   it("should use roundedBox for starter meshes and never teach the old vertical path", async () => {
     const sources = await sourceFiles(path.join(templateRoot, "starter"));
     for (const [file, source] of sources) {

@@ -1,6 +1,8 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { buildImplicitSurface } from "../templates/starter/src/render/implicitSurface.js";
+import { createRockRidge, sampleGraniteField } from "../templates/starter/src/render/rockRidge.js";
 
 const starter = path.resolve("packages/create-threenative/templates/starter");
 const minimal = path.resolve("packages/create-threenative/templates/minimal");
@@ -133,6 +135,205 @@ describe("starter visual floor", () => {
     expect(play).toContain("createRandom");
     expect(play).toMatch(/createScenery\([^)]*createRandom\(\d[\d_]*\)\)/u);
     expect(play).not.toContain("Math.random(");
+  });
+
+  it("should build deterministic watertight granite from the live field", () => {
+    const bounds = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -24, minZ: -74 } as const;
+    const build = (seed: number, cellSize = 2.1) =>
+      buildImplicitSurface({
+        bounds,
+        cellSize,
+        latticeCap: 100_000,
+        closed: true,
+        protectBoundary: true,
+        sample: (x, y, z) => sampleGraniteField(x, y, z, seed, bounds),
+      });
+    const bytes = (array: Float32Array | Uint32Array) =>
+      Buffer.from(array.buffer, array.byteOffset, array.byteLength).toString("hex");
+    for (const seed of [20_260_821, 11, 99]) {
+      const result = build(seed);
+      expect(result.report).toMatchObject({
+        boundaryEdges: 0,
+        degenerateTriangles: 0,
+        windingConflicts: 0,
+      });
+      expect(result.report.signedVolume).toBeGreaterThan(1);
+    }
+    const first = build(20_260_821);
+    const same = build(20_260_821);
+    const different = build(11);
+    expect(bytes(first.positions)).toBe(bytes(same.positions));
+    expect(bytes(first.indices)).toBe(bytes(same.indices));
+    expect(bytes(first.positions)).not.toBe(bytes(different.positions));
+  });
+
+  it("should protect a boundary-touching surface and reject malformed fields", () => {
+    const bounds = { maxX: 1, maxY: 1, maxZ: 1, minX: 0, minY: 0, minZ: 0 } as const;
+    const touching = (x: number, y: number, z: number) =>
+      Math.hypot(x - 0.2, y - 0.5, z - 0.5) - 0.4;
+    const build = (sample: (x: number, y: number, z: number) => number, protectBoundary = true) =>
+      buildImplicitSurface({
+        bounds,
+        cellSize: 0.25,
+        latticeCap: 10_000,
+        closed: true,
+        protectBoundary,
+        sample,
+      });
+    expect(build(touching).report).toMatchObject({
+      boundaryEdges: 0,
+      degenerateTriangles: 0,
+      windingConflicts: 0,
+    });
+    expect(() => build(touching, false)).toThrow("TN_IMPLICIT_SURFACE_TOPOLOGY_INVALID");
+    expect(() => build(() => Number.NaN)).toThrow("TN_IMPLICIT_SURFACE_SAMPLE_INVALID");
+    expect(() => build(() => 1, true)).toThrow("TN_IMPLICIT_SURFACE_EMPTY");
+    expect(() =>
+      buildImplicitSurface({
+        bounds,
+        cellSize: 0.01,
+        latticeCap: 10_000,
+        closed: true,
+        protectBoundary: true,
+        sample: () => 1,
+      }),
+    ).toThrow("TN_IMPLICIT_SURFACE_LATTICE_OVERFLOW");
+  });
+
+  it("should replace the block horizon with a game-owned Worker refinement", async () => {
+    const [scenery, ridge, surface, worker, play, instructions, mirror] = await Promise.all([
+      readFile(path.join(starter, "src/render/scenery.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/rockRidge.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/implicitSurface.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/rockRidge.worker.ts"), "utf8"),
+      readFile(path.join(starter, "src/scenes/Play.ts"), "utf8"),
+      readFile(path.join(starter, "AGENTS.md"), "utf8"),
+      readFile(path.join(starter, "CLAUDE.md"), "utf8"),
+    ]);
+    expect(scenery).toContain("createRockRidge");
+    expect(scenery).toContain("scenery.object.add");
+    expect(scenery).not.toContain("MIDGROUND");
+    expect(scenery).not.toContain("index < 9");
+    expect(ridge).toContain("sampleGraniteField");
+    expect(ridge).toContain("smoothMin");
+    expect(ridge).toContain("field = smoothMin(field, lobe, 0.22)");
+    expect(ridge).toContain("for (let index = -4;");
+    expect(ridge).toContain("cellSize: 10");
+    expect(ridge).toContain("cellSize: 8");
+    expect(ridge).toContain("new Worker(url)");
+    expect(ridge).toContain("new Blob");
+    expect(ridge).toContain("URL.revokeObjectURL");
+    expect(ridge).not.toContain('type: "module"');
+    expect(`${ridge}\n${surface}\n${worker}`).not.toContain("@threenative/");
+    expect(surface).not.toMatch(/\b(?:color|colour)\b/iu);
+    expect(ridge.indexOf("object.add(next.mesh)")).toBeLessThan(
+      ridge.indexOf("object.remove(previous)"),
+    );
+    expect(play).toContain('ctx.entities.add("scenery.ridge", scenery)');
+    expect(play).toContain("this.#scenery?.dispose()");
+    expect(instructions).toContain("rockRidge.ts");
+    expect(instructions).toContain("implicitSurface.ts");
+    expect(instructions).toContain("topology audit");
+    expect(instructions).toContain("Preview immediately");
+    expect(mirror).toContain("rockRidge.ts");
+    expect(mirror).toContain("Preview immediately");
+  });
+
+  it("should fail closed when Worker refinement is unavailable", () => {
+    vi.stubGlobal("Worker", undefined);
+    try {
+      expect(() => createRockRidge({ dispose: vi.fn() } as never, 20_260_821)).toThrow(
+        "TN_ROCK_RIDGE_WORKER_FAILED",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("should keep Preview visible and discard stale Worker generations", () => {
+    class FakeWorker {
+      static instances: FakeWorker[] = [];
+      onmessage:
+        | ((
+            event: MessageEvent<{
+              generation: number;
+              indices: Uint32Array;
+              positions: Float32Array;
+              report: Record<string, number>;
+            }>,
+          ) => void)
+        | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      terminated = false;
+      constructor() {
+        FakeWorker.instances.push(this);
+      }
+      postMessage(): void {}
+      terminate(): void {
+        this.terminated = true;
+      }
+      emit(result: {
+        generation: number;
+        indices: Uint32Array;
+        positions: Float32Array;
+        report: Record<string, number>;
+      }): void {
+        this.onmessage?.({ data: result } as MessageEvent<typeof result>);
+      }
+    }
+    vi.stubGlobal("Worker", FakeWorker);
+    try {
+      const material = { dispose: vi.fn() } as never;
+      const controller = createRockRidge(material, 20_260_821);
+      expect(controller.state).toBe("preview");
+      expect(controller.debug().generation).toBe(0);
+      expect(controller.object.children).toHaveLength(1);
+      const bounds = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -24, minZ: -74 } as const;
+      const build = (seed: number) =>
+        buildImplicitSurface({
+          bounds,
+          cellSize: 2.1,
+          latticeCap: 100_000,
+          closed: true,
+          protectBoundary: true,
+          sample: (x, y, z) => sampleGraniteField(x, y, z, seed, bounds),
+        });
+      const initialWorker = FakeWorker.instances[0];
+      if (initialWorker === undefined) throw new Error("fake Worker was not dispatched");
+      const first = build(20_260_821);
+      initialWorker.emit({ ...first, generation: 1 });
+      expect(controller.state).toBe("refined");
+      expect(controller.debug().generation).toBe(1);
+      expect(initialWorker.terminated).toBe(true);
+      expect(controller.object.children).toHaveLength(1);
+
+      controller.rebuild(11);
+      controller.rebuild(99);
+      const staleWorker = FakeWorker.instances[1];
+      const currentWorker = FakeWorker.instances[2];
+      if (staleWorker === undefined || currentWorker === undefined)
+        throw new Error("fake Worker generations were not dispatched");
+      const stale = build(11);
+      staleWorker.emit({ ...stale, generation: 2 });
+      expect(controller.debug().generation).toBe(1);
+      expect(staleWorker.terminated).toBe(true);
+      const current = build(99);
+      currentWorker.emit({ ...current, generation: 3 });
+      expect(controller.state).toBe("refined");
+      expect(controller.debug().generation).toBe(3);
+      expect(currentWorker.terminated).toBe(true);
+      expect(controller.object.children).toHaveLength(1);
+      controller.rebuild(123);
+      const pendingWorker = FakeWorker.instances[3];
+      if (pendingWorker === undefined) throw new Error("pending fake Worker was not dispatched");
+      controller.dispose();
+      expect(controller.state).toBe("disposed");
+      expect(controller.object.children).toHaveLength(0);
+      expect(pendingWorker.terminated).toBe(true);
+      controller.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("should not ship an unused high-poly sculpture helper", async () => {
