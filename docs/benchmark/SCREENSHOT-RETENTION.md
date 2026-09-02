@@ -14,9 +14,9 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
 | `docs/benchmark` | 5361 | 213142943 | 781 |
-| `docs/verification` | 796 | 75541417 | 241 |
+| `docs/verification` | 797 | 75552209 | 242 |
 
-**1022 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
+**1023 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories
 
@@ -65,6 +65,7 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/PRD-315-phase5-animals.md` | 3381 |
 | `docs/verification/PRD-315-vsm-proof-2026-09-02.json` | 5628 |
 | `docs/verification/PRD-315-vsm-proof-2026-09-02.md` | 1582 |
+| `docs/verification/PRD-325-phase0-visibility.md` | 10792 |
 | `docs/verification/abstraction-mining-2026-08-16.md` | 19762 |
 | `docs/verification/android-16kb-alignment-2026-08-24.md` | 3710 |
 | `docs/verification/android-js-engine-spike-2026-08-10.md` | 4965 |
@@ -86,6 +87,5 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/assets/prd-316-vfx-gallery/page-1.png` | 165583 |
 | `docs/verification/assets/prd-316-vfx-gallery/page-2.png` | 125071 |
 | `docs/verification/assets/prd-316-vfx-gallery/page-3.png` | 133289 |
-| `docs/verification/assets/prd-316-vfx-gallery/page-4.png` | 133184 |
-| …and 191 more | |
+| …and 192 more | |
 
