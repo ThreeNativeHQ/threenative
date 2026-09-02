@@ -161,7 +161,8 @@ describe("the offline Unreal replay (PRD-320)", () => {
         await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
       ) as { entries: Record<string, { kind: string; output: string; bytes: number }> };
       const entry = manifest.entries["SM_cube.glb"];
-      if (entry === undefined) throw new Error("the compile produced no manifest entry for SM_cube.glb");
+      if (entry === undefined)
+        throw new Error("the compile produced no manifest entry for SM_cube.glb");
       expect(entry.kind).toBe("model");
       expect(entry.output).toMatch(/^SM_cube\.[0-9a-f]{8}\.glb$/u);
 
