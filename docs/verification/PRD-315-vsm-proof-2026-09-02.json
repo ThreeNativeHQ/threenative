@@ -1,0 +1,330 @@
+{
+ "region": {
+  "x": 200,
+  "y": 256,
+  "value": 39.19921875
+ },
+ "stock": {
+  "adapter": "nvidia | turing",
+  "under": 39,
+  "beside": 102,
+  "visibleShadow": true,
+  "mode": "stock",
+  "history": null,
+  "levels": null,
+  "stats": null
+ },
+ "virtual": {
+  "adapter": "nvidia | turing",
+  "under": 41,
+  "beside": 102,
+  "visibleShadow": true,
+  "mode": "virtual",
+  "history": [
+   {
+    "cached": 0,
+    "frame": 1,
+    "moverRenders": 3,
+    "movers": 1,
+    "rendered": 3
+   },
+   {
+    "cached": 3,
+    "frame": 2,
+    "moverRenders": 3,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 3,
+    "frame": 3,
+    "moverRenders": 3,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 3,
+    "frame": 4,
+    "moverRenders": 3,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 3,
+    "frame": 5,
+    "moverRenders": 3,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 3,
+    "frame": 6,
+    "moverRenders": 3,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 3,
+    "frame": 7,
+    "moverRenders": 3,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 3,
+    "frame": 8,
+    "moverRenders": 3,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 3,
+    "frame": 9,
+    "moverRenders": 3,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 3,
+    "frame": 10,
+    "moverRenders": 3,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 3,
+    "frame": 11,
+    "moverRenders": 3,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 3,
+    "frame": 12,
+    "moverRenders": 3,
+    "movers": 1,
+    "rendered": 0
+   }
+  ],
+  "levels": [
+   {
+    "mapAssigned": true,
+    "needsUpdate": false,
+    "position": [
+     73,
+     186.6,
+     43.5
+    ],
+    "target": [
+     0,
+     4,
+     7
+    ],
+    "left": -6,
+    "far": 600,
+    "matrix": [
+     0.037,
+     -0.068,
+     -0.001,
+     0
+    ]
+   },
+   {
+    "mapAssigned": true,
+    "needsUpdate": false,
+    "position": [
+     73,
+     186.6,
+     43.5
+    ],
+    "target": [
+     0,
+     4,
+     7
+    ],
+    "left": -18,
+    "far": 600,
+    "matrix": [
+     0.012,
+     -0.023,
+     -0.001,
+     0
+    ]
+   },
+   {
+    "mapAssigned": true,
+    "needsUpdate": false,
+    "position": [
+     73,
+     186.6,
+     43.5
+    ],
+    "target": [
+     0,
+     4,
+     6.9
+    ],
+    "left": -54,
+    "far": 600,
+    "matrix": [
+     0.004,
+     -0.008,
+     -0.001,
+     0
+    ]
+   }
+  ],
+  "stats": {
+   "cached": 3,
+   "frame": 12,
+   "invalidated": 0,
+   "levels": 3,
+   "moved": 0,
+   "moverRenders": 3,
+   "movers": 1,
+   "rendered": 0,
+   "reuseRatio": 0.9166666666666666
+  },
+  "counts": {
+   "inner": 33,
+   "innerRender": 0,
+   "outer": 12
+  },
+  "marker": "TN_VIRTUAL_SHADOW:{\"cached\":3,\"frame\":10,\"invalidated\":0,\"levels\":3,\"moved\":0,\"moverRenders\":3,\"movers\":1,\"rendered\":0,\"reuseRatio\":0.9}"
+ },
+ "one": {
+  "adapter": "nvidia | turing",
+  "under": 52,
+  "beside": 102,
+  "visibleShadow": true,
+  "mode": "virtual",
+  "history": [
+   {
+    "cached": 0,
+    "frame": 1,
+    "moverRenders": 1,
+    "movers": 1,
+    "rendered": 1
+   },
+   {
+    "cached": 1,
+    "frame": 2,
+    "moverRenders": 1,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 1,
+    "frame": 3,
+    "moverRenders": 1,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 1,
+    "frame": 4,
+    "moverRenders": 1,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 1,
+    "frame": 5,
+    "moverRenders": 1,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 1,
+    "frame": 6,
+    "moverRenders": 1,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 1,
+    "frame": 7,
+    "moverRenders": 1,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 1,
+    "frame": 8,
+    "moverRenders": 1,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 1,
+    "frame": 9,
+    "moverRenders": 1,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 1,
+    "frame": 10,
+    "moverRenders": 1,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 1,
+    "frame": 11,
+    "moverRenders": 1,
+    "movers": 1,
+    "rendered": 0
+   },
+   {
+    "cached": 1,
+    "frame": 12,
+    "moverRenders": 1,
+    "movers": 1,
+    "rendered": 0
+   }
+  ],
+  "levels": [
+   {
+    "mapAssigned": true,
+    "needsUpdate": false,
+    "position": [
+     73,
+     186.6,
+     43.4
+    ],
+    "target": [
+     0,
+     4,
+     6.9
+    ],
+    "left": -60,
+    "far": 600,
+    "matrix": [
+     0.004,
+     -0.007,
+     -0.001,
+     0
+    ]
+   }
+  ],
+  "stats": {
+   "cached": 1,
+   "frame": 12,
+   "invalidated": 0,
+   "levels": 1,
+   "moved": 0,
+   "moverRenders": 1,
+   "movers": 1,
+   "rendered": 0,
+   "reuseRatio": 0.9166666666666666
+  },
+  "counts": {
+   "inner": 11,
+   "innerRender": 0,
+   "outer": 12
+  },
+  "marker": "TN_VIRTUAL_SHADOW:{\"cached\":1,\"frame\":10,\"invalidated\":0,\"levels\":1,\"moved\":0,\"moverRenders\":1,\"movers\":1,\"rendered\":0,\"reuseRatio\":0.9}"
+ },
+ "changedPixelRatio": 0.0022
+}
