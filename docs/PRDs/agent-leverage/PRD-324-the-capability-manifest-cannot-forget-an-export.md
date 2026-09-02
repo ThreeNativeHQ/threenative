@@ -3,7 +3,9 @@
 **Status:** PROPOSED (scoping complete, measured on `HEAD` 2026-09-01)
 **Complexity:** 3 (10+ files) + 2 (multi-package) + 2 (new module: the session hook) = **7 → HIGH mode**
 **Owner:** unassigned
-**Predecessor:** PRD-187 (built the search mechanism; proved prose lists fail at authoring time)
+**Predecessors:** PRD-187 (built the search mechanism; proved prose lists fail at authoring time);
+[ORIGIN-authoring-discoverability-2026-08-31](../authoring/ORIGIN-authoring-discoverability-2026-08-31.md)
+and PRD-297/298/299/300/301 (recall quality — see §1f for the division of labour)
 
 ---
 
@@ -21,7 +23,7 @@ loop will tell them.
 | --- | --- | --- |
 | MCP server instructions at `initialize` | `packages/engine-mcp/src/index.ts:90-91,377` | the `AUTHORING_INSTRUCTIONS` block every connected host injects |
 | Tool descriptions on both tools | `packages/engine-mcp/src/index.ts:283-284,303-304` | decompose-then-search guidance is on the tool itself |
-| Template rule #1, "Critical planning gate" | `templates/{starter,minimal,platformer}/AGENTS.md:13-16` | invoke `threenative-capabilities` before `prd-creator` |
+| Template rule #1, "Critical planning gate" | all 8 templates (`templates/starter/AGENTS.md:13-15` and seven siblings) | invoke `threenative-capabilities` before `prd-creator` |
 | Skills shipped into every generated project (dual adapter) | `packages/create-threenative/agent-files/.claude/skills/threenative-capabilities/SKILL.md` + `.agents/` mirror | copied verbatim by the scaffolder (`create-threenative/src/index.ts:333-340`) |
 | MCP-free fallback reference | `agent-docs/capability-reference.md` in every generated project | named by the skill for the "MCP unavailable" path |
 | `.mcp.json` written by core's postinstall | `packages/core/mcp/install.mjs`, `MCP_HOSTS` list | freshness of the host list is budgeted (`scripts/sync-mcp-configs.ts --check` in `pnpm budgets`) |
@@ -98,6 +100,27 @@ capability manifest fresh: 254 entries at .../packages/create-threenative/capabi
 ```
 
 The check costs ~1.6 s on this checkout — cheap enough for `pnpm test`.
+
+### 1f. Prior art — the authoring batch owns recall quality; this PRD owns currency
+
+The [ORIGIN note](../authoring/ORIGIN-authoring-discoverability-2026-08-31.md) and PRD-297
+(recall is a measured number), PRD-298 (search fails closed), PRD-299 (decomposition index),
+PRD-300 (vocabulary expansion) and PRD-301 (manifest covers every shipped package) attack a
+different half of the problem: when an agent *does* search, the results are right. Their measured
+baseline (11/46 mechanics return zero) is a search-quality record; none of those PRDs changes
+*when* or *whether* the manifest is regenerated. PRD-324 is complementary and ordered after them
+in outcome, independent of them in code: a recall number measured against a stale manifest is
+still a number for the wrong engine. One proof the currency gap is live: the ORIGIN baseline
+records "`@threenative/assets` has zero manifest entries"; today's manifest carries 11 entries for
+that package — the investigation docs themselves drift when nothing regenerates them. PRD-301's
+coverage intent is executed here for the shapes both scanners skip (Phase 2), and its
+package-level census is already enforced by `check-capability-docs.ts --census`.
+
+Two sweep findings recorded for the next lane, not this one: no PRD covers the launch-directory
+trap (a session started in a parent of the game directory never registers the MCP servers, and
+`doctor` checks file contents, not whether the running session loaded them); and no hook or
+SessionStart automation exists anywhere in the templates or core — confirming Phase 3 lands the
+first one.
 
 ---
 
@@ -252,7 +275,9 @@ export. If the hook never ran (other harness, hook disabled), `pnpm test` is red
 - [ ] The six const symbols each have either a manifest entry or an allowlist reason (paste census output post-change)
 - [ ] No `AGENTS.md`/`CLAUDE.md` instruction text added except the single Verification-section line (instruction-budget gate green)
 
-**Out of scope, named:** behavioral measurement of discovery rate (sandbox arms, sweep judging) —
-that belongs to the self-improvement loop and needs a sealed-brief arm; this PRD only guarantees
-the list being planned against is current. `pnpm test` timing must stay within noise; if the
-freshness spec measures slower than ~3 s, move it behind the same suite but document the cost.
+**Out of scope, named:** behavioral measurement of discovery rate — that is PRD-297's instrument
+(plus the self-improvement loop's sealed-brief arms); this PRD only guarantees the list being
+planned against is current. Recall quality (situations that return zero, vocabulary, decomposition)
+belongs to PRD-298/299/300. The launch-directory MCP trap gets its own PRD. `pnpm test` timing
+must stay within noise; if the freshness spec measures slower than ~3 s, move it behind the same
+suite but document the cost.
