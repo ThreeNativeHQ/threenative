@@ -112,6 +112,10 @@ describe("the ktx2 texture pass", () => {
     expect(entry.transcodeTargets).toEqual(["astc4x4", "bc7"]);
     expect(String(entry.output)).toMatch(/^decal\.[0-9a-f]{8}\.ktx2$/u);
     expect(ktx2Magic(outputBytes)).toBe(true);
+    // UASTC ships Zstandard-supercompressed (KTX2 scheme 2): raw UASTC is 8 bits per texel and
+    // a 2K map would be 5.3 MB on the wire; the encoder's default keeps a 2K normal at 4.3 MB
+    // and three's KTX2Loader inflates it before transcoding. Pinned so the default cannot slip.
+    expect(readKTX2(outputBytes).supercompressionScheme).toBe(2);
   });
 
   it("should honour a config override over the heuristic", async () => {
