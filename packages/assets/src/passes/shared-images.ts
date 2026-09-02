@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type Document, Format, type GLTF, type NodeIO } from "@gltf-transform/core";
 
@@ -143,7 +143,12 @@ export function createSharedImageStore(outputRoot?: string): ISharedImageStore {
       const known = await onDisk();
       if (known.has(key)) return;
       await mkdir(directory, { recursive: true });
-      await writeFile(path.join(directory, name), image.buffer);
+      // Temp file + rename: a concurrent reader (another worker's get, a parallel build's) must
+      // never observe a truncated image, and two writers of identical bytes must not be able to
+      // interleave into a torn file. Content-addressed, so the rename is idempotent.
+      const temporary = `${path.join(directory, name)}.${process.pid}.${KEY_LENGTH.toString(16)}.tmp`;
+      await writeFile(temporary, image.buffer);
+      await rename(temporary, path.join(directory, name));
       known.set(key, name);
     },
   };
