@@ -231,6 +231,23 @@ describe("CI pipeline structure", () => {
     expect(desktop).toContain("if-no-files-found: error");
   });
 
+  it("Android parity lets the ledger classify expected blocked rows", async () => {
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const android = requiredJob(native, "android-emulator-parity");
+    const emulator = android.slice(
+      android.indexOf("- name: Run checksum-locked APKs on the emulator"),
+      android.indexOf("- name: Verify captured parity ledger"),
+    );
+
+    expect(emulator).toContain("set +e");
+    expect(emulator).toContain("status=$?");
+    expect(emulator).toContain('test "$status" -eq 0 -o "$status" -eq 2');
+    expect(android).toContain("check-lane-blocks.mjs");
+  });
+
   it("every template's non-visual scenarios run on main pushes and nightly", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const job = requiredJob(ci, "template-nonvisual");
@@ -375,14 +392,9 @@ describe("CI pipeline structure", () => {
       expect(job, name).not.toContain("github.event_name != 'pull_request'");
       expect(job, name).not.toContain("contains(github.event.pull_request.labels");
     }
-    // Advisory until PRD-295 (owner-approved 2026-09-01): the leg runs and reports everywhere,
-    // but its known red — 88/88 conformance failures at the emulator's GPU layer — must neither
-    // fail the run nor cancel its siblings. The advisory must be explicit and removable: when
-    // the lane is fixed, continue-on-error comes off in the same commit and this assertion flips
-    // with it.
     const android = requiredJob(native, "android-emulator-parity");
-    expect(android).toContain("continue-on-error: true");
-    expect(android).not.toContain("uses: ./.github/actions/cancel-run-on-failure");
+    expect(android).not.toContain("continue-on-error: true");
+    expect(android).toContain("uses: ./.github/actions/cancel-run-on-failure");
   });
 
   it("job-level env never reads the runner context", async () => {

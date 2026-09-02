@@ -61,14 +61,7 @@ jobs:
     # platform legs behind pushes to main and a `native` label, and the lane then spent its runs
     # being cancelled by the next push instead of reporting anything. A leg that is skipped on the
     # branch where the work happens is a leg nobody is watching.
-    #
-    # Advisory for one proving run after the 2026-09-01 focus failure: Android's
-    # ImmersiveModeConfirmation owned the foreground instead of the conformance app. The harness now
-    # dismisses that emulator prompt before its first activity launch. continue-on-error keeps this
-    # proving run from cancelling its siblings; remove it as soon as the hosted emulator confirms
-    # the fix, so a later Android regression fails closed like iOS.
     if: inputs.ios_only != true
-    continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -156,11 +149,15 @@ jobs:
             -no-window -no-audio -no-boot-anim -no-snapshot -camera-back none -camera-front none
             -gpu swiftshader_indirect -accel auto
           emulator-boot-timeout: 900
-          script: >-
+          script: |
+            set +e
             node packages/runtime-native/conformance/run-conformance.mjs
-            --target android --device emulator-5554
-            --reference artifacts/conformance/web
-            --out artifacts/conformance/android
+              --target android --device emulator-5554 \
+              --reference artifacts/conformance/web \
+              --out artifacts/conformance/android
+            status=$?
+            set -e
+            test "$status" -eq 0 -o "$status" -eq 2
       - name: Verify captured parity ledger
         if: always()
         run: |
@@ -203,10 +200,8 @@ jobs:
           name: native-android-emulator-parity
           path: packages/runtime-native/artifacts/conformance/
           if-no-files-found: error
-      # No cancel-run-on-failure here, and that is deliberate: this job is advisory, and
-      # `failure()` still reads a failed step even under job-level continue-on-error — an advisory
-      # job that cancelled its own run on its known red would take desktop-parity down with it
-      # every single time, which is exactly what happened on 2026-09-01 (twice).
+      - if: failure()
+        uses: ./.github/actions/cancel-run-on-failure
 
   desktop-parity:
     name: Desktop web/native parity
