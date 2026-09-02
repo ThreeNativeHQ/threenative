@@ -62,8 +62,8 @@ async function buildIndex(root: string): Promise<string> {
   const uncitedVerification = verification.filter((a) => a.classification === "uncited");
 
   lines.push("## Summary", "");
-  lines.push(`| Tree | Tracked files | Bytes | Uncited |`);
-  lines.push(`|---|---:|---:|---:|`);
+  lines.push("| Tree | Tracked files | Bytes | Uncited |");
+  lines.push("|---|---:|---:|---:|");
   lines.push(
     `| \`docs/benchmark\` | ${benchmark.length} | ${benchmark.reduce((total, artifact) => total + artifact.bytes, 0)} | ${benchmark.filter((a) => a.classification === "uncited").length} |`,
   );

@@ -43,7 +43,8 @@ export async function checkEvidenceBudget(
   budgets: Readonly<Record<string, { bytes: number; files: number }>> = EVIDENCE_BUDGETS,
 ): Promise<IEvidenceBudgetReport> {
   const findings: string[] = [];
-  const trees: Array<{ readonly bytes: number; readonly files: number; readonly tree: string }> = [];
+  const trees: Array<{ readonly bytes: number; readonly files: number; readonly tree: string }> =
+    [];
   for (const [tree, budget] of Object.entries(budgets)) {
     const files = trackedFiles(root, tree);
     let bytes = 0;
