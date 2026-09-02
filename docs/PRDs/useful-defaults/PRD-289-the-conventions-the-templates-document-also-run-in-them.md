@@ -4,13 +4,21 @@ prd_contract: v1
 
 # PRD-289 — the conventions the templates document also run in them
 
-**Status: DONE — integrated 2026-09-01.** Part of the [useful-defaults batch](../useful-defaults/README.md).
-Evidence: [PRD-289 verification](../../verification/PRD-289-conventions-2026-08-31.md).
+**Status: PARTIAL — verified 2026-09-02; AC4 remains open because the visual score manifest is
+missing `sailing`.** See the [recovery verification record](../../verification/PRD-289-conventions-2026-08-31.md).
+Part of the [useful-defaults batch](./README.md). Depends on nothing; the code it needs already
+ships.
 
 **Goal: a scaffolded game arrives with the framework's conventions already running in its own
 source, so the first thing a cold agent reads is a working call site rather than a promise.** Feet
 meet the floor, one metre is one metre, and a weapon stays in the hand that holds it — in the
 generated project, before anyone asks.
+
+The convention implementation and generated-template evidence are recorded above. The remaining
+visual evidence is exact: `pnpm visuals` captured nonblank frames for all eight current templates
+but exited with `TN_VISUAL_SCORE_TEMPLATES_MISMATCH: missing sailing; stale none` because
+`docs/verification/visuals/scores.json` has seven template scores while the gate requires eight.
+No human score or visual baseline was fabricated or changed.
 
 ## The gap, verified in this tree
 
