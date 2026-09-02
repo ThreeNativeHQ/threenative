@@ -179,7 +179,7 @@ if [[ "$resume_mode" -eq 1 ]]; then
       run_phase unit vitest run || test_status=$?
       ;;
     package-test)
-      run_phase package-test pnpm -r --workspace-concurrency=1 --if-present run test || test_status=$?
+      run_phase package-test pnpm -r --filter '!.' --workspace-concurrency=1 --if-present run test || test_status=$?
       ;;
     *)
       printf 'cannot resume unknown phase %q\n' "$resume_phase" >&2
@@ -192,7 +192,7 @@ else
     run_phase build pnpm run build || test_status=$?
   fi
   if [[ "$test_status" -eq 0 ]]; then
-    run_phase package-test pnpm -r --workspace-concurrency=1 --if-present run test || test_status=$?
+    run_phase package-test pnpm -r --filter '!.' --workspace-concurrency=1 --if-present run test || test_status=$?
   fi
   if [[ "$test_status" -eq 0 ]]; then
     run_phase unit vitest run || test_status=$?
