@@ -362,6 +362,106 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  // Three Linux jobs — ci `test`, native `desktop-parity` and native `starter-linux` — each
+  // compiled a different set of targets and all three saved under `native-ccache-Linux-X64-gcc-`.
+  // The key carries `github.run_id`, so every save is a new entry, and `restore-keys` takes the
+  // newest match: each lane therefore restored whichever sibling had finished last and recompiled
+  // its own objects against it. Measured on run 33690597861, ci `test` reported
+  // `Hits: 184 / 574 (32.06%)` on a tree whose native sources had not changed, and the stored
+  // entry sat at 23 MiB run after run instead of growing to hold all three lanes. A restore-key
+  // prefix is a namespace; sharing one between jobs that build different things is a cache that
+  // reports as warm and behaves as cold.
+  it("gives every native compiler cache a restore namespace no other job writes to", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const jobs = [
+      ["ci test", requiredJob(ci, "test")],
+      ["native desktop parity", requiredJob(native, "desktop-parity")],
+      ["native desktop matrix", requiredJob(native, "desktop")],
+      ["native starter linux", requiredJob(native, "starter-linux")],
+    ] as const;
+
+    const namespaces = new Map<string, string>();
+    for (const [name, section] of jobs) {
+      const restoreKey = section
+        .match(/^\s+restore-keys:\s*(.+)$/mu)?.[1]
+        ?.trim()
+        .replace(/^["']|["']$/gu, "");
+      expect(restoreKey, `${name} has no ccache restore-keys prefix`).toBeDefined();
+      const previous = namespaces.get(restoreKey ?? "");
+      expect(
+        previous,
+        `${name} shares the ccache restore namespace ${restoreKey} with ${previous}`,
+      ).toBeUndefined();
+      namespaces.set(restoreKey ?? "", name);
+
+      // The save key must start with the prefix it restores by, or the lane saves into a
+      // namespace it never reads back and the restore silently falls through to a sibling's.
+      const saveKey = [...section.matchAll(/^\s+key:\s*(.+)$/gmu)]
+        .map((match) => (match[1] ?? "").trim())
+        .find((key) => key.includes("native-ccache"));
+      expect(saveKey, `${name} has no native-ccache save key`).toBeDefined();
+      expect(saveKey, `${name} saves outside the namespace it restores from`).toContain(
+        restoreKey ?? "",
+      );
+    }
+  });
+
+  // `golden-path-template` used to scaffold starter and platformer and run their non-visual
+  // scenarios itself, then run `verify:golden-path`, which packs and scaffolds the same template
+  // all over again. Since 2026-09-01 `template-nonvisual` runs that identical sweep for all eight
+  // templates on every event, so the copy inside the golden-path lane proved nothing new and cost
+  // 350s of the run's critical path (run 33690597861, step "Run the scaffold's GPU-free
+  // assertions"). The verifier is what this lane is for; the sweep belongs to the job that owns it.
+  it("leaves the non-visual scenario sweep to template-nonvisual", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const goldenPath = requiredJob(ci, "golden-path-template");
+    const nonVisual = requiredJob(ci, "template-nonvisual");
+
+    expect(nonVisual).toContain("non-visual-scenarios.mjs");
+    expect(nonVisual).toContain("threenative-playtest");
+    // Both templates the golden-path matrix drives must be covered by the sweep that replaces it.
+    for (const template of ["starter", "platformer"]) expect(nonVisual).toContain(`- ${template}`);
+
+    expect(
+      goldenPath,
+      "golden-path-template re-runs the sweep template-nonvisual already owns",
+    ).not.toContain("non-visual-scenarios.mjs");
+    expect(goldenPath, "golden-path-template still drives scenarios itself").not.toContain(
+      "threenative-playtest",
+    );
+    expect(goldenPath).toContain("pnpm verify:golden-path");
+  });
+
+  // Every matrix leg ran `workspace-packages.ts build` and then `pnpm pack` per package: ten legs
+  // paying ~70s each to produce byte-identical tarballs from the same commit. `build` already
+  // compiles the workspace, so it packs once and the legs download the result.
+  it("packs the workspace tarballs once and shares them with every matrix leg", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const build = requiredJob(ci, "build");
+    expect(build, "build does not publish the packed tarballs").toContain(
+      "actions/upload-artifact",
+    );
+    expect(build).toContain("pnpm tsx scripts/workspace-packages.ts --archives");
+
+    for (const name of ["golden-path-template", "template-nonvisual"]) {
+      const job = requiredJob(ci, name);
+      expect(job, `${name} does not consume the shared tarballs`).toContain(
+        "actions/download-artifact",
+      );
+      expect(job, `${name} still packs the workspace itself`).not.toMatch(
+        /pnpm --filter "\$package_name" pack/u,
+      );
+      // Nothing may re-derive the specs file locally; the artifact is the single source.
+      expect(job, `${name} re-runs the workspace build`).not.toContain(
+        "pnpm tsx scripts/workspace-packages.ts build",
+      );
+    }
+  });
+
   it("every native leg runs on every event", async () => {
     // Until 2026-09-01 the platform legs ran only on pushes to main, the nightly cron, and PRs
     // carrying the `native` label; a PR read skips where the legs should have reported, and on
