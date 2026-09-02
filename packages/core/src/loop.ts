@@ -1,11 +1,53 @@
 import type { FrameBudget, IFramePhaseSample } from "./frame-budget.js";
 
+export type AfterPhysicsCallback = (dt: number) => void;
+
+export interface IAfterPhysicsContext {
+  readonly afterPhysics: (callback: AfterPhysicsCallback) => () => void;
+}
+
+export interface IAfterPhysicsPhase {
+  clear(): void;
+  register(callback: AfterPhysicsCallback): () => void;
+  run(dt: number): void;
+}
+
+export function createAfterPhysicsPhase(): IAfterPhysicsPhase {
+  const callbacks = new Set<AfterPhysicsCallback>();
+  return {
+    clear: () => callbacks.clear(),
+    register: (callback) => {
+      if (typeof callback !== "function")
+        throw new Error("afterPhysics requires a callback function.");
+      callbacks.add(callback);
+      return () => callbacks.delete(callback);
+    },
+    run: (dt) => {
+      if (!Number.isFinite(dt) || dt <= 0)
+        throw new Error(`afterPhysics requires a positive finite dt, received ${String(dt)}.`);
+      for (const callback of [...callbacks]) callback(dt);
+    },
+  };
+}
+
+/** Register work that reads transforms after every simulation step and before the frame renders. */
+export function afterPhysics(
+  context: IAfterPhysicsContext,
+  callback: AfterPhysicsCallback,
+): () => void {
+  if (typeof context?.afterPhysics !== "function")
+    throw new Error("afterPhysics requires a game context.");
+  return context.afterPhysics(callback);
+}
+
 export interface IFixedStepLoopOptions {
   readonly step?: number;
   readonly maxSteps?: number;
   /** Collect per-frame render samples for diagnostics consumers. Default false. */
   readonly collectMetrics?: boolean;
   readonly onUpdate: (dt: number) => void;
+  /** Runs after `onUpdate` has completed and before `onRender` starts. */
+  readonly onAfterPhysics?: (dt: number) => void;
   readonly onRender?: () => undefined | IRenderPerformanceMetrics;
   /** Actual wall time spent in one simulation+render callback, for startup gates and diagnostics. */
   readonly onFrame?: (frameMs: number) => void;
@@ -38,6 +80,7 @@ export class FixedStepLoop {
   readonly step: number;
   readonly maxSteps: number;
   #onUpdate: (dt: number) => void;
+  #onAfterPhysics: (dt: number) => void;
   #onRender: () => undefined | IRenderPerformanceMetrics;
   #onFrame: (frameMs: number) => void;
   #requestFrame: (callback: (time: number) => void) => number;
@@ -79,6 +122,7 @@ export class FixedStepLoop {
     this.#budget = options.budget;
     this.#now = options.now ?? (() => globalThis.performance?.now() ?? Date.now());
     this.#onUpdate = options.onUpdate;
+    this.#onAfterPhysics = options.onAfterPhysics ?? (() => undefined);
     this.#onRender = options.onRender ?? (() => undefined);
     this.#onFrame = options.onFrame ?? (() => undefined);
     this.#requestFrame =
@@ -164,6 +208,7 @@ export class FixedStepLoop {
     let updates = 0;
     while (this.#accumulator + Number.EPSILON >= this.step && updates < this.maxSteps) {
       this.#onUpdate(this.step);
+      this.#onAfterPhysics(this.step);
       this.#tick += 1;
       this.#accumulator -= this.step;
       updates += 1;
@@ -231,6 +276,7 @@ export class FixedStepLoop {
     this.#lastTime = Number.POSITIVE_INFINITY;
     for (let index = 0; index < ticks; index += 1) {
       this.#onUpdate(this.step);
+      this.#onAfterPhysics(this.step);
       this.#tick += 1;
     }
     return ticks;

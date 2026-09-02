@@ -3,6 +3,7 @@ import type { IAssetLoader } from "./assets.js";
 import type { CanvasLayer } from "./canvas-layer.js";
 import type { Registry } from "./entities.js";
 import type { InputMap } from "./input.js";
+import type { AfterPhysicsCallback } from "./loop.js";
 import type { IRaycastOptions } from "./picking.js";
 import type { IPointerEvents3D } from "./pointer-events.js";
 import type { IRandom } from "./random.js";
@@ -117,6 +118,8 @@ export interface ICtx<
   readonly pointer: IPointerEvents3D;
   readonly assets: IAssetLoader;
   readonly after: (delay: number, callback: () => void) => ScheduleHandle;
+  /** Register a callback for the engine-owned phase after physics writes solved transforms. */
+  readonly afterPhysics: (callback: AfterPhysicsCallback) => () => void;
   readonly every: (callback: (dt: number) => void) => ScheduleHandle;
   readonly state: GameStore<TState>;
   readonly tween: <T extends object>(

@@ -16,8 +16,10 @@ import { FrameBudget, type IFrameBudgetOptions, type IFrameBudgetWindow } from "
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
 import {
   FixedStepLoop,
+  type IAfterPhysicsPhase,
   type IRenderPerformanceMetrics,
   type IRenderPerformanceSample,
+  createAfterPhysicsPhase,
 } from "./loop.js";
 import { ScenePicker } from "./picking.js";
 import { getPlatform } from "./platform.js";
@@ -459,6 +461,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #picker: ScenePicker | undefined;
   #pointerEvents: PointerEvents3D | undefined;
   #scheduler: Scheduler | undefined;
+  #afterPhysicsPhase: IAfterPhysicsPhase | undefined;
   #frameBudget: FrameBudget | undefined;
   #activePlugins: Array<IGamePluginHooks<TState, TPhysics>> = [];
   #disposedPlugins = new Set<IGamePluginHooks<TState, TPhysics>>();
@@ -579,6 +582,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
 
     this.#hasDepthCoupledOutput = false;
     this.#sceneFrame = undefined;
+    this.#afterPhysicsPhase?.clear();
     this.#scene?.exit(ctx);
     this.#pointerEvents?.clear();
     this.#sceneEntered = false;
@@ -736,6 +740,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const entities = new Registry();
     const random = createRandom(this.#config.seed);
     const scheduler = new Scheduler();
+    const afterPhysicsPhase = createAfterPhysicsPhase();
     const input = this.#input;
     const picker = new ScenePicker({
       camera,
@@ -851,6 +856,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       },
       assets,
       after: (delay, callback) => scheduler.after(delay, callback),
+      afterPhysics: (callback) => afterPhysicsPhase.register(callback),
       camera,
       canvasLayer,
       entities,
@@ -908,6 +914,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#entities = entities;
     this.#random = random;
     this.#scheduler = scheduler;
+    this.#afterPhysicsPhase = afterPhysicsPhase;
     const devToolsHost =
       platform === undefined
         ? typeof window === "undefined"
@@ -1079,6 +1086,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             : addRenderPerformanceMetrics(worldMetrics, overlayMetrics);
         }
         return this.#renderMetricsEnabled ? worldMetrics : undefined;
+      },
+      onAfterPhysics: (dt) => {
+        if (this.#paused) return;
+        afterPhysicsPhase.run(dt);
       },
       onUpdate: (dt) => {
         if (this.#paused) return;
@@ -1285,6 +1296,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#uiBridge?.close();
     this.#uiBridge = undefined;
     this.#loop?.stop();
+    this.#afterPhysicsPhase?.clear();
     if (this.#sceneEntered && ctx !== undefined) this.#scene?.exit(ctx);
     this.#sceneFrame = undefined;
     this.#sceneEntered = false;
@@ -1331,6 +1343,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#picker?.dispose();
     this.#picker = undefined;
     this.#scheduler = undefined;
+    this.#afterPhysicsPhase = undefined;
     this.#disposedPlugins.clear();
     this.#paused = false;
     this.#started = false;

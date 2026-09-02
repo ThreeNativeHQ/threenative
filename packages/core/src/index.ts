@@ -275,6 +275,16 @@ export type {
   IFramePhaseSample,
 } from "./frame-budget.js";
 /**
+ * Register work that reads a body or camera after physics has moved it and before this frame draws.
+ * The engine owns the phase ordering; a callback cannot be misplaced by plugin-array order.
+ * @situation read a body after physics has moved it
+ * @situation place a camera or aim from the solved character transform
+ * @constraint register from a scene context; callbacks are cleared when that scene exits
+ * @example afterPhysics(ctx, (dt) => camera.position.copy(player.mesh.position));
+ */
+export { afterPhysics } from "./loop.js";
+export type { AfterPhysicsCallback } from "./loop.js";
+/**
  * Compose game-provided render nodes in a measured, fail-closed chain.
  * @situation compose screen-space effects in a canonical order
  * @situation report which render tier and velocity route actually ran

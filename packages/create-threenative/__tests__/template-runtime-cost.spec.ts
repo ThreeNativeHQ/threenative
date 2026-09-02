@@ -160,6 +160,7 @@ function sceneContext(
       return object;
     },
     after: () => ({ cancel: () => undefined }),
+    afterPhysics: () => () => undefined,
     every: () => ({ cancel: () => undefined }),
     assets,
     camera,

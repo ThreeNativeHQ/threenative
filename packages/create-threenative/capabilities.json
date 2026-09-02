@@ -214,6 +214,22 @@
       "symbol": "watchAssets"
     },
     {
+      "constraints": ["register from a scene context; callbacks are cleared when that scene exits"],
+      "example": "afterPhysics(ctx, (dt) => camera.position.copy(player.mesh.position));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function afterPhysics( context: IAfterPhysicsContext, callback: AfterPhysicsCallback, ): () => void { … }",
+      "situations": [
+        "read a body after physics has moved it",
+        "place a camera or aim from the solved character transform"
+      ],
+      "summary": "Register work that reads a body or camera after physics has moved it and before this frame draws. The engine owns the phase ordering; a callback cannot be misplaced by plugin-array order.",
+      "supersedes": [],
+      "symbol": "afterPhysics"
+    },
+    {
       "constraints": [
         "name the body a game moves as strideRoot when the animated rig is a child of it",
         "a one-shot clip always plays at its authored rate; the matched rate re-times loops only"
@@ -1973,6 +1989,25 @@
       "summary": "Detect overlaps without turning the body into a moving collider.",
       "supersedes": [],
       "symbol": "Area3D"
+    },
+    {
+      "constraints": [
+        "supply the game-owned predicate for decorative meshes; the helper throws when it selects nothing",
+        "generated bodies use trimesh geometry and world-space instance transforms"
+      ],
+      "example": "const colliders = buildStaticColliders(ctx, level, { predicate: (object) => object.name.startsWith(\"wall\") });",
+      "importPath": "@threenative/physics",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export function buildStaticColliders( context: IStaticColliderContext, root: Object3D, filter?: StaticColliderFilter, ): readonly RigidBody3D[] { … }",
+      "situations": [
+        "make the level I built stop the player",
+        "turn a cathedral or map scene into static collision"
+      ],
+      "summary": "Build fixed trimesh bodies from the meshes a game authored in a scene root.",
+      "supersedes": [],
+      "symbol": "buildStaticColliders"
     },
     {
       "constraints": ["supply hull points, density, drag, and the height source"],

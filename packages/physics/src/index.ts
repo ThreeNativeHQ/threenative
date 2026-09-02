@@ -65,6 +65,20 @@ export type {
  */
 export { PhysicsDirectSpaceState3D } from "./PhysicsDirectSpaceState3D.js";
 /**
+ * Build fixed trimesh bodies from the meshes a game authored in a scene root.
+ * @situation make the level I built stop the player
+ * @situation turn a cathedral or map scene into static collision
+ * @constraint supply the game-owned predicate for decorative meshes; the helper throws when it selects nothing
+ * @constraint generated bodies use trimesh geometry and world-space instance transforms
+ * @example const colliders = buildStaticColliders(ctx, level, { predicate: (object) => object.name.startsWith("wall") });
+ */
+export { buildStaticColliders } from "./static-colliders.js";
+export type {
+  IBuildStaticCollidersOptions,
+  IStaticColliderContext,
+  StaticColliderPredicate,
+} from "./static-colliders.js";
+/**
  * Feed existing rigid-body boxes into `SoftBody3D` without inventing a second collider API.
  * @situation stop a cloth flag, cape, or curtain at an existing physics wall
  * @situation collide SoftBody3D with fixed box bodies
