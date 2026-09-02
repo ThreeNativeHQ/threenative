@@ -39,7 +39,6 @@ import {
 import { withTargetAbortSignal } from "./deviceSignal.js";
 import { buildReport, playtestStepDrivesMovement, writeObservationArtifacts } from "./runner.js";
 import { analyzeFramebufferCoverageRecording } from "./videoAnalysis.js";
-import { applyScenarioSetup } from "./setup.js";
 import {
   accumulatedPathLength,
   appendPosition,
@@ -214,7 +213,7 @@ async function runDevicePlaytestInternal(
       ), target.name);
     }
     await throwIfAborted(target);
-    if (scenario.setup !== undefined) setupApplication = await applyScenarioSetup(bridge, scenario);
+    setupApplication = bridge.setupApplication;
     await throwIfAborted(target);
     if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
     await throwIfAborted(target);
