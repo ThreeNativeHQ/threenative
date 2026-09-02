@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 16259)
-Total output lines: 1391
-
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
@@ -216,17 +213,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "a269d9529a414c6f06c747d59ff1fc4ae06f6a5ab8c379e4a721f486c7111c90",
-  defense: "4fc8ff88638c462039ba18e682ce7b67341afa074874c1e931b45d66146302aa",
+  "action-rpg": "33d21283e47a7773da2bb05b3b9bf0d8066bb2426abfd3f8a5c3dc7b2151b5f1",
+  defense: "3b1092ce97fa623b75517cc8cac7607f086c321d901752650d2f3ba111d1682e",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "67fee7bec043f9da1c54d683e9cc5f6c598d87da774ce556f1554539c415266b",
-  platformer: "e434f030496f5b4238d53f258f467da08ccafbb9bf0a2769b2ccd9b511cffd6b",
-  racing: "9b7a6d856abfea5074ca17a29b83c105868edf22a039f20de1e46618b13b2db7",
-  shooter: "063fdb18e95073517603b27c25f56b2e077dfdcda4b2bfed36305b76bb481e60",
+  minimal: "4e74faf3c155b2e7bee81f763a78f12a93a47479a2d707e2d21359e3f73c5fa8",
+  platformer: "080ee170134430016d40a70d0be38af043a6d9ed24e33ccf4e04dfe836a8ad5d",
+  racing: "662cb23caefee673a8ff6e62f031c9845b0d2039f7586b8270b5c9e72232e055",
+  shooter: "629d2cb00d0cb8a21d2c4eed5fc1caf6c84d37df390e70bd1f0635253d920578",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "bf63e92deb36a3efdfbb51e262e997f8a82f7457ec12d5382355462c199eca80",
+  starter: "b6ba45f7ceabbaca48d01ee4f58cb72978d5df9dd0bf31b24679575d30b23d9a",
+  // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
+  // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
+  // eight parent trees move together.
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -237,7 +237,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "822068ab9e1d53f596438e397eca1ffa51c0e2ced42b23478d8cf691965c0ddd",
+  sailing: "a6b52394ef4732578daa19c9f1f5f7251abd1d0ad2a31c4c64a9fc9cc80c3a74",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -586,7 +586,27 @@ describe("create-threenative", () => {
         const contents = await Promise.all(
           AGENT_ROLE_PATHS.map(async (relativePath) => {
             const content = await readFile(path.join(result.target, relativePath), "utf8");
-            expect(content, relativePath).not.toCon…259 tokens truncated…tive-builder/SKILL.md",
+            expect(content, relativePath).not.toContain("__PROJECT_NAME__");
+            expect(content, relativePath).not.toContain("__PROJECT_ID__");
+            return [relativePath, content] as const;
+          }),
+        );
+        const files = new Map(contents);
+        const builder = files.get(".threenative/agents/builder.md") ?? "";
+        const verifier = files.get(".threenative/agents/verifier.md") ?? "";
+        expect(builder).toContain("one bounded player-visible outcome");
+        expect(builder).toContain("engine-owned or game-owned");
+        expect(builder).toContain("production readiness");
+        expect(verifier.toLowerCase()).toContain("read-only");
+        expect(verifier).toContain("must not edit");
+        expect(new Set(verifier.match(/`(?:PASS|REQUEST_CHANGES|NOT_OBSERVED)`/gu))).toEqual(
+          new Set(["`PASS`", "`REQUEST_CHANGES`", "`NOT_OBSERVED`"]),
+        );
+
+        const adapterPaths = [
+          [".claude/agents/threenative-builder.md", ".claude/agents/threenative-verifier.md"],
+          [
+            ".agents/skills/threenative-builder/SKILL.md",
             ".agents/skills/threenative-verifier/SKILL.md",
           ],
         ] as const;
@@ -1376,4 +1396,3 @@ describe("create-threenative", () => {
     }
   });
 });
-
