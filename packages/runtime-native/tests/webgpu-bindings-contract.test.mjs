@@ -70,9 +70,69 @@ function assertRequiredFeatureBuilder(source) {
   );
 }
 
+function assertActualIndirectFeatureSurface(source) {
+  const adapter = functionBody(source, "static js::JSValueHandle handleGpuAdapterFeaturesHas(");
+  const device = functionBody(source, "static js::JSValueHandle handleGpuDeviceFeaturesHas(");
+  const adapterIndirect = adapter.match(
+    /if\s*\(featureName\s*==\s*"indirect-first-instance"\)\s*\{[\s\S]*?\n\s*\}/u,
+  )?.[0];
+  const deviceIndirect = device.match(
+    /if\s*\(featureName\s*==\s*"indirect-first-instance"\)\s*\{[\s\S]*?\n\s*\}/u,
+  )?.[0];
+  assert.ok(adapterIndirect, "adapter indirect-first-instance branch is present");
+  assert.ok(deviceIndirect, "device indirect-first-instance branch is present");
+  assert.match(
+    adapterIndirect,
+    /wgpuAdapterHasFeature\(\s*state->adapter,\s*WGPUFeatureName_IndirectFirstInstance\)\s*!=\s*0/u,
+    "adapter.features.has must report the adapter's actual indirect-first-instance support",
+  );
+  assert.match(
+    deviceIndirect,
+    /wgpuDeviceHasFeature\(\s*state->device,\s*WGPUFeatureName_IndirectFirstInstance\)\s*!=\s*0/u,
+    "device.features.has must report the device's actual granted indirect-first-instance support",
+  );
+  assert.doesNotMatch(
+    adapterIndirect,
+    /newBoolean\(true\)/u,
+    "adapter.features.has must not advertise an unqueried indirect-first-instance feature",
+  );
+  assert.doesNotMatch(
+    deviceIndirect,
+    /newBoolean\(true\)/u,
+    "device.features.has must not advertise an unrequested indirect-first-instance feature",
+  );
+}
+
+function assertBothBackendsMapRg11Feature(source) {
+  const marker = 'if (featureName == "rg11b10ufloat-renderable")';
+  const markerStart = source.indexOf(marker);
+  assert.ok(markerStart >= 0, "RG11B10UfloatRenderable JS feature mapping is present");
+  const conditionalStart = source.lastIndexOf("#if", markerStart);
+  assert.ok(conditionalStart >= 0, "RG11B10UfloatRenderable mapping has a backend guard");
+  const mappingWindow = source.slice(conditionalStart, markerStart + 180);
+  assert.match(
+    mappingWindow,
+    /#if\s+defined\(MYSTRAL_WEBGPU_DAWN\)\s*\|\|\s*defined\(MYSTRAL_WEBGPU_WGPU\)/u,
+    "RG11B10UfloatRenderable mapping must compile for Dawn and wgpu-native",
+  );
+  assert.match(
+    mappingWindow,
+    /if\s*\(featureName\s*==\s*"rg11b10ufloat-renderable"\)\s*return\s+WGPUFeatureName_RG11B10UfloatRenderable;/u,
+    "RG11B10UfloatRenderable must map to the bundled WebGPU enum",
+  );
+}
+
 function handlerForRow(surface, name) {
   return nativeBindingDefinition(surface, name).text;
 }
+
+test("feature sets report actual adapter support and device grants", () => {
+  assertActualIndirectFeatureSurface(read("src/webgpu/bindings.cpp"));
+});
+
+test("RG11B10UfloatRenderable is mapped for both shipped WebGPU backends", () => {
+  assertBothBackendsMapRg11Feature(read("src/webgpu/bindings.cpp"));
+});
 
 test("every binding translation unit that polls wgpu-native includes its extension declaration", () => {
   const bindingsDirectory = join(root, "src/webgpu");

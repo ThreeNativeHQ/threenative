@@ -29,3 +29,16 @@ test("the source-list guard fails closed for a newly added unlisted source", () 
   });
   assert.deepEqual(report.unlisted, ["src/new-unlisted.cpp"]);
 });
+
+test("the source-list guard rejects a source commented out of CMake", () => {
+  const commentedCmake = cmake.replace(
+    /^([ \t]*)src\/runtime\.cpp$/mu,
+    "$1# src/runtime.cpp",
+  );
+  assert.notEqual(commentedCmake, cmake, "negative control must comment out a CMake source entry");
+  const report = checkSourceList({
+    cmakeSource: commentedCmake,
+    sourcePaths: ["src/runtime.cpp"],
+  });
+  assert.deepEqual(report.unlisted, ["src/runtime.cpp"]);
+});

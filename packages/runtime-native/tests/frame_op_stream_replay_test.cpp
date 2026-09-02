@@ -253,6 +253,9 @@ void runContract(bool disableStreamControl) {
         "() => { const b=new ArrayBuffer(24),v=new DataView(b); v.setUint32(0,0x544e4652,true); v.setUint32(4,1,true); v.setUint32(8,24,true); v.setUint32(12,1,true); v.setUint32(16,99,true); v.setUint32(20,8,true); return b; }",
         "malformed record header", "native parser rejects an unknown opcode");
     expectMalformed(state,
+        "() => { const b=new ArrayBuffer(24),v=new DataView(b); v.setUint32(0,0x544e4652,true); v.setUint32(4,1,true); v.setUint32(8,24,true); v.setUint32(12,1,true); v.setUint32(16,35,true); v.setUint32(20,8,true); return b; }",
+        "malformed record header", "native parser rejects unsupported query-set destroy opcode");
+    expectMalformed(state,
         "() => { const b=new ArrayBuffer(40),v=new DataView(b); v.setUint32(0,0x544e4652,true); v.setUint32(4,1,true); v.setUint32(8,40,true); v.setUint32(12,1,true); v.setUint32(16,1,true); v.setUint32(20,24,true); v.setUint32(24,0xffffffff,true); return b; }",
         "unknown buffer id", "native parser rejects an unknown resource id");
     if (!state->registries.bufferRegistry.empty()) {

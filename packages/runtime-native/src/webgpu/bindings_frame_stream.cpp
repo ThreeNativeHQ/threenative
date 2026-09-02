@@ -168,7 +168,7 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
                                                  : WGPUTextureAspect_All;
     };
     auto readExtent = [&]() { return WGPUExtent3D{r.u32(), r.u32(), r.u32()}; };
-    static const char* names[] = {"", "writeBuffer", "createCommandEncoder", "beginRenderPass", "render.setPipeline", "render.setBindGroup", "render.setVertexBuffer", "render.setIndexBuffer", "render.draw", "render.drawIndexed", "render.drawIndirect", "render.drawIndexedIndirect", "render.setViewport", "render.setScissorRect", "render.setBlendConstant", "render.setStencilReference", "render.executeBundles", "render.end", "beginComputePass", "compute.setPipeline", "compute.setBindGroup", "compute.dispatchWorkgroups", "compute.end", "copyBufferToBuffer", "copyBufferToTexture", "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish", "submit", "writeTexture", "copyExternalImageToTexture", "buffer.destroy", "texture.destroy", "resolveQuerySet", "querySet.destroy"};
+    static const char* names[] = {"", "writeBuffer", "createCommandEncoder", "beginRenderPass", "render.setPipeline", "render.setBindGroup", "render.setVertexBuffer", "render.setIndexBuffer", "render.draw", "render.drawIndexed", "render.drawIndirect", "render.drawIndexedIndirect", "render.setViewport", "render.setScissorRect", "render.setBlendConstant", "render.setStencilReference", "render.executeBundles", "render.end", "beginComputePass", "compute.setPipeline", "compute.setBindGroup", "compute.dispatchWorkgroups", "compute.end", "copyBufferToBuffer", "copyBufferToTexture", "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish", "submit", "writeTexture", "copyExternalImageToTexture", "buffer.destroy", "texture.destroy", "resolveQuerySet"};
     uint32_t seen = 0;
     uint32_t replaySubmits = 0;
     while (r.cursor < declaredBytes && r.ok) {
@@ -871,6 +871,9 @@ bool replayPackedFrameOpStream(BindingsState* state, js::JSValueHandle frame) {
                                                   static_cast<uint64_t>(offset));
                 break;
             }
+            default:
+                fail("unsupported frame op opcode " + std::to_string(opcode));
+                break;
         }
 #if TN_ANDROID_JS_PROFILE
         switch (opcode) {

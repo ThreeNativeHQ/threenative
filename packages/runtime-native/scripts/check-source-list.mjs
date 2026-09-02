@@ -12,6 +12,14 @@ function normalizePath(path) {
   return path.replaceAll("\\", "/");
 }
 
+function stripCmakeComments(cmakeSource) {
+  const withoutBracketComments = cmakeSource.replace(
+    /#\[(=*)\[[\s\S]*?\]\1\]/gu,
+    (comment) => comment.replace(/[^\r\n]/gu, " "),
+  );
+  return withoutBracketComments.replace(/#[^\r\n]*/gu, "");
+}
+
 function sourcePathsOnDisk(directory, root = directory) {
   const paths = [];
   for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) =>
@@ -39,8 +47,9 @@ export function checkSourceList({ cmakeSource, sourceRoot, sourcePaths } = {}) {
   if (typeof cmakeSource !== "string")
     throw new TypeError("checkSourceList requires the CMake source text");
 
-  const excluded = excludedSourcePaths(cmakeSource);
-  const listed = new Set(cmakeSource.match(sourceToken) ?? []);
+  const activeCmakeSource = stripCmakeComments(cmakeSource);
+  const excluded = excludedSourcePaths(activeCmakeSource);
+  const listed = new Set(activeCmakeSource.match(sourceToken) ?? []);
   for (const path of excluded) listed.delete(path);
 
   const hasExplicitSourcePaths = Array.isArray(sourcePaths);

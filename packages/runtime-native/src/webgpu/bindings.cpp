@@ -897,12 +897,11 @@ static WGPUFeatureName jsFeatureNameToWGPU(const std::string& featureName) {
     // resolveQuerySet. Answered from the real adapter and device below, so an adapter without it
     // still reports false — the feature is advertised because it works, not because it is named.
     if (featureName == "timestamp-query") return WGPUFeatureName_TimestampQuery;
-#if defined(MYSTRAL_WEBGPU_DAWN)
+#if defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU)
     // The feature behind three's SSGI target format (RGBFormat + UnsignedInt101111Type maps to
-    // an rg11b10ufloat render target). Without the name mapped here, adapter.features.has() and
-    // device.features.has() both answered false regardless of what the hardware supported, and
-    // a game enabling GI on native died in a device loss instead of degrading. Dawn-only: the
-    // wgpu-native C header has not been verified to carry this enum member.
+    // an rg11b10ufloat render target). Both shipped WebGPU C headers define this enum; without
+    // the mapping, adapter.features.has() and device.features.has() answer false regardless of
+    // what the hardware supports.
     if (featureName == "rg11b10ufloat-renderable") return WGPUFeatureName_RG11B10UfloatRenderable;
 #endif
     return static_cast<WGPUFeatureName>(0);
@@ -1190,10 +1189,12 @@ static js::JSValueHandle handleGpuGetPreferredCanvasFormat(BindingsState* state,
 static js::JSValueHandle handleGpuAdapterFeaturesHas(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                     if (args.empty()) return state->engine->newBoolean(false);
                     std::string featureName = state->engine->toString(args[0]);
-                    // indirect-first-instance is required for indirect draws with non-zero firstInstance
-                    // This is supported by Dawn on all backends
+                    // Report adapter support directly. The device may deliberately omit this
+                    // feature on modern Android because of the wgpu-native emulator workaround.
                     if (featureName == "indirect-first-instance") {
-                        return state->engine->newBoolean(true);
+                        return state->engine->newBoolean(
+                            wgpuAdapterHasFeature(
+                                state->adapter, WGPUFeatureName_IndirectFirstInstance) != 0);
                     }
                     // three.js reads this one feature to decide whether the whole renderer is
                     // talking to a WebGPU *compatibility* device:
@@ -1288,9 +1289,12 @@ static js::JSValueHandle handleGpuDevicePushErrorScope(BindingsState* state, Bin
 static js::JSValueHandle handleGpuDeviceFeaturesHas(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                             if (args.empty()) return state->engine->newBoolean(false);
                             std::string featureName = state->engine->toString(args[0]);
-                            // indirect-first-instance enables non-zero firstInstance in indirect draws
+                            // Report only features actually granted to this device. Modern Android
+                            // intentionally does not request indirect-first-instance.
                             if (featureName == "indirect-first-instance") {
-                                return state->engine->newBoolean(true);
+                                return state->engine->newBoolean(
+                                    wgpuDeviceHasFeature(
+                                        state->device, WGPUFeatureName_IndirectFirstInstance) != 0);
                             }
                             // three.js reads this one feature to decide whether the whole renderer is
                             // talking to a WebGPU *compatibility* device:
