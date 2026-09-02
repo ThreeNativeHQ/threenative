@@ -67,14 +67,10 @@ touch target `data-tn-interactive`. Rigged assets: put a `.glb` in `assets/`, aw
 `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's state. Seeded
 randomness is deterministic only when `defineGame({ seed })` is configured.
 
-When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
-retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
-own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is
-caught where a bone-direction check reads zero. `clipTrackBindings` names tracks that bind nothing
-(the `<bone>.undefined` failure that plays the bind pose instead of the animation),
-`clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous
-clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
-supposed to be touching.
+When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a retargeted clip against its source per bone in degrees — whole quaternions relative to each
+rig's own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is caught where a bone-direction check reads zero. `clipTrackBindings` names
+tracks that bind nothing (the `<bone>.undefined` failure that plays the bind pose instead of the animation), `clipBoneCoverage` names bones the clip does not drive and which
+therefore keep the previous clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is supposed to be touching.
 
 ## Fused rock authoring
 `src/render/rockRidge.ts` owns the granite field, seed, bounds, ridge material handoff, and quality choice; `src/render/implicitSurface.ts` is the local renderer-independent extractor and final-array topology audit. A fused mass is one implicit field; separate debris may be instanced.
@@ -88,6 +84,9 @@ override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUA
 the source. The bridge flushes about 100 ms; keep state human-readable and frame feedback in Three.js.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. A scenario
 with no assertions or missing observations fails; open a real capture after visual changes.
+
+## One shadow for a big outdoor level
+When one directional light must shadow a whole valley and a 2048² map smudges, set `sun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] })` from `@threenative/core`: camera-centred, texel-snapped clip levels, cached until the window moves and shared through Three's shadow slot. Bias, normal bias, intensity, radius, blur samples, map type and filter stay on `sun.shadow`; map sizes come from the options. For movers call `trackCaster(object)` — tracking or untracking refreshes the cached levels once, then movement draws a per-level mover map every frame without invalidating them; call `invalidateAll()` when static geometry changes. `TN_VIRTUAL_SHADOW` reports rendered, mover-map and cached-level work.
 
 ## Budget real time for the look
 

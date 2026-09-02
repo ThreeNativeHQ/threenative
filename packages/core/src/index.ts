@@ -363,7 +363,9 @@ export {
 export type { IVelocityRenderPass } from "./render/velocity.js";
 /**
  * One directional shadow for a whole open world: camera-centred clip levels, each snapped to its
- * own texel grid and re-rendered only when its window moves or a tracked caster changes inside it.
+ * own texel grid and re-rendered only when its window moves. Tracked casters draw into a
+ * per-level mover map every frame, so animated casters do not invalidate the cached levels after
+ * the one refresh caused by tracking or untracking them.
  * Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.
  * @situation crisp shadows close to the player across a large outdoor level
  * @situation shadow map too coarse over a big terrain
@@ -371,8 +373,8 @@ export type { IVelocityRenderPass } from "./render/velocity.js";
  * @situation shadows shimmer when the camera moves
  * @constraint the light must be a DirectionalLight with `castShadow` and a target in the scene
  * @constraint clipExtents are half-widths in world units, finest first, strictly increasing
- * @constraint call `trackCaster(object)` for movers whose shadow must refresh in place; untracked movement refreshes only when a window moves
- * @override bias, normalBias, intensity and mapSize stay on `light.shadow`; every option has a default and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement
+ * @constraint call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves
+ * @override bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement
  * @example
  * const sun = new DirectionalLight(0xffffff, 3);
  * sun.castShadow = true;
@@ -380,9 +382,10 @@ export type { IVelocityRenderPass } from "./render/velocity.js";
  */
 export {
   VIRTUAL_SHADOW_MARKER,
+  VIRTUAL_SHADOW_MOVER_LAYER,
   VirtualShadowNode,
-  readVirtualShadowMarker,
 } from "./render/virtual-shadow.js";
+export { readVirtualShadowMarker } from "./render/virtual-shadow.js";
 export type { IVirtualShadowOptions, IVirtualShadowStats } from "./render/virtual-shadow.js";
 export { warmUpScene } from "./warmup.js";
 export type {
@@ -636,7 +639,7 @@ export type { ITweenOptions, ScheduleHandle } from "./schedule.js";
  * @example class Play extends Scene { update(ctx, dt) {} }
  */
 export { Scene } from "./scene.js";
-export type { ICtx, IStartupTimeline, SceneFrame } from "./scene.js";
+export type { ICtx, SceneFrame } from "./scene.js";
 /**
  * Advance a game-owned non-uniform sprite atlas on the fixed step.
  * @situation play an animated pickup or sprite-sheet effect

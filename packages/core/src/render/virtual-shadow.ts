@@ -1,5 +1,17 @@
 import { type Camera, type DirectionalLight, Object3D, Vector3 } from "three";
-import { Fn, If, abs, float, max, positionWorld, shadow, uniform, vec3, vec4 } from "three/tsl";
+import {
+  Fn,
+  If,
+  abs,
+  float,
+  max,
+  min,
+  positionWorld,
+  shadow,
+  uniform,
+  vec3,
+  vec4,
+} from "three/tsl";
 import {
   type Node,
   type NodeBuilder,
@@ -7,7 +19,7 @@ import {
   ShadowBaseNode,
   type UniformNode,
 } from "three/webgpu";
-import { DirectionalClipmap } from "./virtual-shadow-pages.js";
+import { DirectionalClipmap, ShadowInvalidationTracker } from "./virtual-shadow-pages.js";
 
 /**
  * Options for {@link VirtualShadowNode}. Every value is a mechanism parameter; the light's own
@@ -46,11 +58,11 @@ export interface IVirtualShadowStats {
   readonly levels: number;
   /** Levels whose window moved this frame and were re-rendered. */
   readonly moved: number;
-  /** Levels re-rendered because `invalidateAll()` asked for it. */
+  /** Levels re-rendered because `invalidateAll()` or explicit tracker invalidation asked for it. */
   readonly invalidated: number;
   /** Tracked casters, as of this frame. */
   readonly movers: number;
-  /** Mover maps rendered this frame: one per level, every frame, so a mover's shadow is never stale. */
+  /** Mover maps rendered this frame: one per level when at least one caster is tracked. */
   readonly moverRenders: number;
   /** Levels served from their cached map this frame. */
   readonly cached: number;
@@ -95,8 +107,35 @@ interface ILevel {
   minY: number;
 }
 
+type ShadowWithFilter = DirectionalLight["shadow"] & { filterNode?: unknown };
+
 const _direction = new Vector3();
 const _center = new Vector3();
+
+/** Keep each stock node's source-owned settings aligned with the public light shadow. */
+function syncShadowSettings(
+  source: DirectionalLight["shadow"],
+  target: DirectionalLight["shadow"],
+): void {
+  target.bias = source.bias;
+  target.biasNode = source.biasNode;
+  target.blurSamples = source.blurSamples;
+  target.intensity = source.intensity;
+  target.mapType = source.mapType;
+  target.normalBias = source.normalBias;
+  target.radius = source.radius;
+  (target as ShadowWithFilter).filterNode = (source as ShadowWithFilter).filterNode;
+}
+
+function syncLevelShadowSettings(
+  source: DirectionalLight["shadow"],
+  levels: readonly ILevel[],
+): void {
+  for (const level of levels) {
+    syncShadowSettings(source, level.shadow);
+    syncShadowSettings(source, level.moverShadow);
+  }
+}
 
 /** The stock node's render entry, called here so the mover exclusion brackets exactly one render. */
 interface IRenderingShadowNode {
@@ -114,8 +153,10 @@ interface IRenderingShadowNode {
  *
  * What it owns is mechanism: level windows, texel snapping, per-level caching, invalidation,
  * level selection and the statistics. The light's `shadow` keeps bias, normal bias, intensity,
- * map type and filter, and each level is rendered by the stock {@link ShadowNode} through the
- * renderer's shadow-map type, so the look is the same code path a plain shadow uses.
+ * map type and filter, and those source settings are mirrored into each stock level node before
+ * rendering. Per-level map sizes, cameras, `autoUpdate` and `needsUpdate` are owned by this node.
+ * Each level is rendered by the stock {@link ShadowNode} through the renderer's shadow-map type,
+ * so the look is the same code path a plain shadow uses.
  *
  * Ported from the virtual-shadow-map prototype's clipmap and invalidation; the sparse page atlas
  * is deliberately not the first cut — a page needs the scene rendered once per page, and on a
@@ -128,8 +169,8 @@ interface IRenderingShadowNode {
  * @situation shadows shimmer when the camera moves
  * @constraint the light must be a DirectionalLight with `castShadow` and a target in the scene
  * @constraint clipExtents are half-widths in world units, finest first, strictly increasing
- * @constraint call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, and untracked movement refreshes only when a window moves
- * @override bias, normalBias, intensity and mapSize stay on `light.shadow`; every option here has a default
+ * @constraint call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves
+ * @override bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults
  * @example
  * const sun = new DirectionalLight(0xffffff, 3);
  * sun.castShadow = true;
@@ -144,11 +185,19 @@ export class VirtualShadowNode extends ShadowBaseNode {
     readonly markerEvery: number;
   };
   readonly clipmap: DirectionalClipmap;
+  /**
+   * Compatibility handle for explicit page invalidation. Automatic caster motion uses mover maps;
+   * callers that already update this tracker still invalidate the affected cached levels.
+   */
+  readonly tracker: ShadowInvalidationTracker;
   #levels: ILevel[] = [];
   #invalidateAll = false;
   #casters = new Map<string, Object3D>();
+  #casterChildren = new Map<string, Set<Object3D>>();
+  #moverLayerStates = new Map<Object3D, { originallyEnabled: boolean; references: number }>();
   #centerU: UniformNode<"float", number> = uniform(0);
   #centerV: UniformNode<"float", number> = uniform(0);
+  #moversActive: UniformNode<"float", number> = uniform(0);
   #basisU: UniformNode<"vec3", Vector3> = uniform(new Vector3(1, 0, 0));
   #basisV: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 0, 1));
   #frame = 0;
@@ -164,6 +213,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (!Number.isInteger(mapSize) || mapSize <= 0) {
       throw new RangeError(
         `TN_VIRTUAL_SHADOW_INVALID: mapSize must be a positive integer, got ${String(mapSize)}.`,
+      );
+    }
+    const moverMapSize =
+      options.moverMapSize ?? Math.max(MIN_MOVER_MAP_SIZE, Math.floor(mapSize / 2));
+    if (!Number.isInteger(moverMapSize) || moverMapSize <= 0) {
+      throw new RangeError(
+        `TN_VIRTUAL_SHADOW_INVALID: moverMapSize must be a positive integer, got ${String(moverMapSize)}.`,
       );
     }
     for (const [name, value] of [
@@ -183,13 +239,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
       pagesPerAxis: mapSize,
       selectionGuard: options.selectionGuard ?? 0.9,
     });
+    this.tracker = new ShadowInvalidationTracker(this.clipmap);
     const marker = options.marker ?? DEFAULT_MARKER_EVERY;
     this.options = {
       clipExtents: [...clipExtents],
       depthRange: options.depthRange ?? 400,
       lightDistance: options.lightDistance ?? 200,
       mapSize,
-      moverMapSize: options.moverMapSize ?? Math.max(MIN_MOVER_MAP_SIZE, Math.floor(mapSize / 2)),
+      moverMapSize,
       markerEvery: marker === false ? 0 : marker === true ? DEFAULT_MARKER_EVERY : marker,
       selectionGuard: options.selectionGuard ?? 0.9,
     };
@@ -226,14 +283,58 @@ export class VirtualShadowNode extends ShadowBaseNode {
     return this.#levels.map((level) => level.light);
   }
 
+  #rememberMoverChildren(object: Object3D): void {
+    let children = this.#casterChildren.get(object.uuid);
+    if (children === undefined) {
+      children = new Set<Object3D>();
+      this.#casterChildren.set(object.uuid, children);
+    }
+    object.traverse((child) => {
+      if (children.has(child)) return;
+      children.add(child);
+      const state = this.#moverLayerStates.get(child);
+      if (state === undefined) {
+        this.#moverLayerStates.set(child, {
+          originallyEnabled: child.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER),
+          references: 1,
+        });
+      } else {
+        state.references += 1;
+      }
+      child.layers.enable(VIRTUAL_SHADOW_MOVER_LAYER);
+    });
+  }
+
+  #restoreMoverChildren(id: string): void {
+    const children = this.#casterChildren.get(id);
+    if (children === undefined) return;
+    for (const child of children) {
+      const state = this.#moverLayerStates.get(child);
+      if (state === undefined) continue;
+      state.references -= 1;
+      if (state.references > 0) continue;
+      if (state.originallyEnabled) child.layers.enable(VIRTUAL_SHADOW_MOVER_LAYER);
+      else child.layers.disable(VIRTUAL_SHADOW_MOVER_LAYER);
+      this.#moverLayerStates.delete(child);
+    }
+    this.#casterChildren.delete(id);
+  }
+
   /**
    * Make an object a mover: it leaves the cached level maps and draws into every level's mover
    * map each frame, so its shadow follows it without a level render. Static geometry never
    * needs this — a level re-renders whenever its window moves anyway.
    */
   trackCaster(object: Object3D): string {
+    const previous = this.#casters.get(object.uuid);
+    if (previous === object) {
+      this.#rememberMoverChildren(object);
+      return object.uuid;
+    }
+    if (previous !== undefined && previous !== object) this.#restoreMoverChildren(object.uuid);
     this.#casters.set(object.uuid, object);
-    object.traverse((child) => child.layers.enable(VIRTUAL_SHADOW_MOVER_LAYER));
+    this.#rememberMoverChildren(object);
+    this.invalidateAll();
     return object.uuid;
   }
 
@@ -241,13 +342,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const id = typeof objectOrId === "string" ? objectOrId : objectOrId.uuid;
     const object = this.#casters.get(id);
     if (object === undefined) return false;
-    object.traverse((child) => child.layers.disable(VIRTUAL_SHADOW_MOVER_LAYER));
-    return this.#casters.delete(id);
+    this.#restoreMoverChildren(id);
+    this.tracker.remove(id);
+    const removed = this.#casters.delete(id);
+    if (removed) this.invalidateAll();
+    return removed;
   }
 
   /** Force every level to re-render on the next frame — a tree fell, a door opened. */
   invalidateAll(): void {
     this.#invalidateAll = true;
+    this.tracker.invalidateAll();
   }
 
   #init(): void {
@@ -256,6 +361,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const source = this.light as DirectionalLight;
     this.options.clipExtents.forEach((extent, index) => {
       const levelShadow = source.shadow.clone();
+      syncShadowSettings(source.shadow, levelShadow);
       levelShadow.mapSize.set(this.options.mapSize, this.options.mapSize);
       levelShadow.camera.left = -extent;
       levelShadow.camera.right = extent;
@@ -271,6 +377,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       levelShadow.autoUpdate = false;
       levelShadow.needsUpdate = false;
       const moverShadow = levelShadow.clone();
+      syncShadowSettings(source.shadow, moverShadow);
       moverShadow.mapSize.set(this.options.moverMapSize, this.options.moverMapSize);
       moverShadow.camera.updateProjectionMatrix();
       moverShadow.autoUpdate = false;
@@ -288,9 +395,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
         minY: Number.NaN,
         moverShadow,
         // One placeholder light serves both maps: the stock node reads only its placement.
-        moverNode: shadow(light as unknown as DirectionalLight, moverShadow), // quality-allow: the stock shadow node reads only position, target and shadow off its light
-        // A placeholder Object3D stands in for a light, exactly as three's own CSMShadowNode does.
-        node: shadow(light as unknown as DirectionalLight, levelShadow), // quality-allow: the stock shadow node reads only position, target and shadow off its light
+        // quality-allow: the stock shadow node reads only position, target and shadow off its light
+        moverNode: shadow(light as unknown as DirectionalLight, moverShadow),
+        // quality-allow: the stock shadow node reads only position, target and shadow off its light
+        node: shadow(light as unknown as DirectionalLight, levelShadow),
         shadow: levelShadow,
       });
     });
@@ -303,6 +411,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const guard = this.options.selectionGuard;
     const centerU = this.#centerU;
     const centerV = this.#centerV;
+    const moversActive = this.#moversActive;
     const basisU = this.#basisU;
     const basisV = this.#basisV;
     return Fn(() => {
@@ -312,9 +421,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const distance = max(abs(u), abs(v)).toVar("virtualShadowDistance");
       const coarsest = levels[levels.length - 1];
       if (coarsest === undefined) return vec4(1, 1, 1, 1);
-      const result = vec4(coarsest.node as never)
-        .mul(vec4(coarsest.moverNode as never))
-        .toVar("virtualShadowValue");
+      const moverResult = (level: ILevel) =>
+        moversActive.greaterThan(0).select(vec4(level.moverNode as never), vec4(1, 1, 1, 1));
+      const result = min(vec4(coarsest.node as never), moverResult(coarsest)).toVar(
+        "virtualShadowValue",
+      );
       // Coarse to fine, so the finest containing level assigns last and wins.
       for (let index = levels.length - 2; index >= 0; index -= 1) {
         const level = levels[index];
@@ -324,12 +435,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
             (level.extentUniform as never as ReturnType<typeof float>).mul(float(guard)),
           ),
           () => {
-            result.assign(vec4(level.node as never).mul(vec4(level.moverNode as never)));
+            result.assign(min(vec4(level.node as never), moverResult(level)));
           },
         );
       }
       return result;
-    })();
+      // quality-allow: Three's Fn invocation loses the concrete node type.
+    })() as unknown as Node;
   }
 
   override updateBefore(frame: NodeFrame): undefined {
@@ -337,6 +449,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const camera = frame.camera as Camera | null;
     if (camera === null) return undefined;
     const source = this.light as DirectionalLight;
+    syncLevelShadowSettings(source.shadow, this.#levels);
+    this.#moversActive.value = this.#casters.size > 0 ? 1 : 0;
     const parent = source.parent;
     for (const level of this.#levels) {
       if (level.light.parent === null && parent !== null) {
@@ -370,62 +484,78 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
     // Movers leave the cached maps and are drawn into the mover maps below. A child attached
     // after `trackCaster` — a loaded mesh under a placeholder group — picks up the layer here.
-    const excluded: Object3D[] = [];
-    for (const object of this.#casters.values()) {
-      object.traverse((child) => {
-        child.layers.enable(VIRTUAL_SHADOW_MOVER_LAYER);
-        if (child.castShadow) {
-          child.castShadow = false;
-          excluded.push(child);
-        }
-      });
+    const excluded: Array<{ object: Object3D; castShadow: boolean }> = [];
+    if (this.#casters.size > 0) {
+      for (const object of this.#casters.values()) {
+        this.#rememberMoverChildren(object);
+        object.traverse((child) => {
+          if (child.castShadow) {
+            excluded.push({ castShadow: child.castShadow, object: child });
+            child.castShadow = false;
+          }
+        });
+      }
     }
     const invalidateAll = this.#invalidateAll;
-    this.#invalidateAll = false;
+    const invalidatedKeys = this.tracker.consumeInvalidatedKeys();
+    const invalidatedLevels = new Set<number>();
+    for (const key of invalidatedKeys) invalidatedLevels.add(Number(key.split(":")[0]));
     const canRender = (frame as { renderer?: unknown }).renderer !== undefined;
 
     let moved = 0;
     let invalidated = 0;
     let rendered = 0;
-    this.#levels.forEach((level, index) => {
-      const window = windows[index];
-      if (window === undefined) return;
-      const windowMoved =
-        directionChanged || window.minX !== level.minX || window.minY !== level.minY;
-      level.minX = window.minX;
-      level.minY = window.minY;
-      // The window's centre in light space, snapped to whole texels, back in world space at the
-      // camera's own depth along the light — that is what keeps the map stable under motion.
-      const half = this.clipmap.pagesPerAxis / 2;
-      const centre = this.clipmap.unproject({
-        u: (window.minX + half) * window.pageWorldSize,
-        v: (window.minY + half) * window.pageWorldSize,
-        w: this.clipmap.centerLight.w,
+    try {
+      this.#levels.forEach((level, index) => {
+        const window = windows[index];
+        if (window === undefined) return;
+        const windowMoved =
+          directionChanged || window.minX !== level.minX || window.minY !== level.minY;
+        level.minX = window.minX;
+        level.minY = window.minY;
+        // The window's centre in light space, snapped to whole texels, back in world space at the
+        // camera's own depth along the light — that is what keeps the map stable under motion.
+        const half = this.clipmap.pagesPerAxis / 2;
+        const centre = this.clipmap.unproject({
+          u: (window.minX + half) * window.pageWorldSize,
+          v: (window.minY + half) * window.pageWorldSize,
+          w: this.clipmap.centerLight.w,
+        });
+        level.light.target.position.set(centre.x, centre.y, centre.z);
+        level.light.position.set(
+          centre.x + this.clipmap.basisW.x * this.options.lightDistance,
+          centre.y + this.clipmap.basisW.y * this.options.lightDistance,
+          centre.z + this.clipmap.basisW.z * this.options.lightDistance,
+        );
+        level.light.updateMatrixWorld(true);
+        level.light.target.updateMatrixWorld(true);
+        if (windowMoved) moved += 1;
+        if (invalidateAll || invalidatedLevels.has(index)) invalidated += 1;
+        if (
+          windowMoved ||
+          invalidateAll ||
+          invalidatedLevels.has(index) ||
+          source.shadow.needsUpdate
+        ) {
+          // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
+          // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
+          if (canRender) (level.node as unknown as IRenderingShadowNode).updateShadow(frame);
+          rendered += 1;
+        }
       });
-      level.light.target.position.set(centre.x, centre.y, centre.z);
-      level.light.position.set(
-        centre.x + this.clipmap.basisW.x * this.options.lightDistance,
-        centre.y + this.clipmap.basisW.y * this.options.lightDistance,
-        centre.z + this.clipmap.basisW.z * this.options.lightDistance,
-      );
-      level.light.updateMatrixWorld(true);
-      level.light.target.updateMatrixWorld(true);
-      if (windowMoved) moved += 1;
-      if (invalidateAll) invalidated += 1;
-      if (windowMoved || invalidateAll || source.shadow.needsUpdate) {
-        // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
-        if (canRender) (level.node as unknown as IRenderingShadowNode).updateShadow(frame); // quality-allow: every node here is built by this file and always exposes updateShadow
-        rendered += 1;
-      }
-    });
-    source.shadow.needsUpdate = false;
-    for (const child of excluded) child.castShadow = true;
-    // The mover maps every frame, with nothing tracked as well: an unrendered map is not empty,
-    // it is undefined, and a level must never read one.
+      source.shadow.needsUpdate = false;
+      this.#invalidateAll = false;
+    } finally {
+      for (const { castShadow, object } of excluded) object.castShadow = castShadow;
+    }
+    // An untracked node keeps a neutral mover contribution in the shader and does no mover work.
     let moverRenders = 0;
-    for (const level of this.#levels) {
-      if (canRender) (level.moverNode as unknown as IRenderingShadowNode).updateShadow(frame); // quality-allow: the mover node is built by this file and always exposes updateShadow
-      moverRenders += 1;
+    if (this.#casters.size > 0) {
+      for (const level of this.#levels) {
+        // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
+        if (canRender) (level.moverNode as unknown as IRenderingShadowNode).updateShadow(frame);
+        moverRenders += 1;
+      }
     }
     this.#frame += 1;
     this.#rendered += rendered;
@@ -459,20 +589,63 @@ export class VirtualShadowNode extends ShadowBaseNode {
       level.moverShadow.dispose();
     }
     this.#levels = [];
+    for (const id of this.#casters.keys()) this.#restoreMoverChildren(id);
     for (const object of this.#casters.values()) {
-      object.traverse((child) => child.layers.disable(VIRTUAL_SHADOW_MOVER_LAYER));
+      this.tracker.remove(object.uuid);
     }
     this.#casters.clear();
+    this.tracker.clear();
     this.#initialised = false;
     super.dispose();
   }
 }
 
-/** Parse a `TN_VIRTUAL_SHADOW` console line back into its stats, or `undefined`. */
+const VIRTUAL_SHADOW_STAT_FIELDS = [
+  "cached",
+  "frame",
+  "invalidated",
+  "levels",
+  "moved",
+  "moverRenders",
+  "movers",
+  "rendered",
+  "reuseRatio",
+] as const;
+
+function isVirtualShadowStats(value: unknown): value is IVirtualShadowStats {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const stats = value as Record<string, unknown>;
+  if (
+    VIRTUAL_SHADOW_STAT_FIELDS.some(
+      (field) => typeof stats[field] !== "number" || !Number.isFinite(stats[field]),
+    )
+  ) {
+    return false;
+  }
+  const countFields = VIRTUAL_SHADOW_STAT_FIELDS.filter((field) => field !== "reuseRatio");
+  if (
+    countFields.some((field) => !Number.isInteger(stats[field]) || (stats[field] as number) < 0)
+  ) {
+    return false;
+  }
+  const reuseRatio = stats.reuseRatio as number;
+  return reuseRatio >= 0 && reuseRatio <= 1;
+}
+
+/**
+ * Parse a `TN_VIRTUAL_SHADOW` console line back into its complete stats, or `undefined`.
+ *
+ * @situation inspect virtual shadow cache and mover counters from a renderer log
+ * @constraint non-marker lines and markers with incomplete or non-numeric stats return `undefined`
+ * @example
+ * const stats = readVirtualShadowMarker(line);
+ * if (stats !== undefined) console.log(stats.reuseRatio);
+ */
 export function readVirtualShadowMarker(line: string): IVirtualShadowStats | undefined {
   if (!line.startsWith(`${VIRTUAL_SHADOW_MARKER}:`)) return undefined;
   try {
-    return JSON.parse(line.slice(VIRTUAL_SHADOW_MARKER.length + 1)) as IVirtualShadowStats;
+    const value: unknown = JSON.parse(line.slice(VIRTUAL_SHADOW_MARKER.length + 1));
+    return isVirtualShadowStats(value) ? value : undefined;
   } catch {
     return undefined;
   }

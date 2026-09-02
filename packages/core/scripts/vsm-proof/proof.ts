@@ -118,21 +118,45 @@ const ball = new Mesh(new SphereGeometry(1, 32, 16), new MeshStandardMaterial({ 
 ball.position.set(0, 1.5, 0);
 ball.castShadow = true;
 scene.add(ball);
+if (mode === "virtual") node?.trackCaster(ball);
 
 const adapter = await navigator.gpu?.requestAdapter();
 const info = adapter?.info as { vendor?: string; architecture?: string } | undefined;
+const history: Array<{
+  cached: number;
+  frame: number;
+  moverRenders: number;
+  movers: number;
+  rendered: number;
+}> = [];
 // One real animation frame per render: three advances its node frame counter from its own
 // animation loop, and a shadow requested in a frame already answered is skipped.
 const nextFrame = (): Promise<void> =>
   new Promise((resolve) => requestAnimationFrame(() => resolve()));
 for (let frame = 0; frame < 12; frame += 1) {
+  if (mode === "virtual") {
+    const phase = ((frame + 1) * Math.PI) / 6;
+    ball.position.x = Math.sin(phase) * 0.75;
+    ball.position.z = Math.sin(phase * 2) * 0.35;
+  }
   await renderer.renderAsync(scene, camera);
   (window as unknown as { __WRAP__?: () => void }).__WRAP__?.();
+  if (node !== undefined) {
+    const { cached, frame: statsFrame, moverRenders, movers, rendered } = node.stats;
+    history.push({
+      cached,
+      frame: statsFrame,
+      moverRenders,
+      movers,
+      rendered,
+    });
+  }
   await nextFrame();
 }
 (window as unknown as { __PROOF__: unknown }).__PROOF__ = {
   adapter: `${info?.vendor ?? "?"} | ${info?.architecture ?? "?"}`,
   mode,
+  history: node === undefined ? null : history,
   stats: node?.stats ?? null,
   levels:
     node?.levelLights.map((light) => {

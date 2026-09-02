@@ -1,13 +1,17 @@
 import {
   BoxGeometry,
   DirectionalLight,
+  FloatType,
+  HalfFloatType,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
   Scene,
 } from "three";
-import type { NodeBuilder, NodeFrame } from "three/webgpu";
+import { float, mix, vec4 } from "three/tsl";
+import { type Node, type NodeBuilder, type NodeFrame, WGSLNodeBuilder } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
+import { VIRTUAL_SHADOW_MOVER_LAYER as PUBLIC_VIRTUAL_SHADOW_MOVER_LAYER } from "../src/index.js";
 import {
   VIRTUAL_SHADOW_MARKER,
   VIRTUAL_SHADOW_MOVER_LAYER,
@@ -16,8 +20,8 @@ import {
 } from "../src/render/virtual-shadow.js";
 
 /**
- * The mechanism, without a GPU: level windows snap to their own texel grid, a level re-renders
- * only when its window moves or a tracked caster changes inside it, and the counters say so.
+ * The mechanism, without a GPU: level windows snap to their own texel grid, cached levels stay
+ * stable while tracked casters render through mover maps, and the counters say so.
  */
 
 function world(): { light: DirectionalLight; scene: Scene; camera: PerspectiveCamera } {
@@ -51,12 +55,38 @@ function setupNode(light: DirectionalLight, options = {}): VirtualShadowNode {
   return node;
 }
 
+interface IShaderGraphBuilder extends NodeBuilder {
+  setShaderStage(shaderStage: "fragment"): void;
+  flowStagesNode(node: Node, output: "vec4"): { code: string };
+}
+
+function shadowGraphBuilder(): IShaderGraphBuilder {
+  const object = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+  const renderer = {
+    backend: { isWebGPUBackend: true },
+    hasCompatibility: () => true,
+    library: { fromMaterial: () => null },
+    shadowMap: { enabled: true, type: 1 },
+  };
+  const graphBuilder = new WGSLNodeBuilder(
+    object,
+    renderer as never,
+  ) as unknown as IShaderGraphBuilder;
+  graphBuilder.setShaderStage("fragment");
+  return graphBuilder;
+}
+
 describe("VirtualShadowNode", () => {
+  it("should expose the mover layer from the main core entry point", () => {
+    expect(PUBLIC_VIRTUAL_SHADOW_MOVER_LAYER).toBe(VIRTUAL_SHADOW_MOVER_LAYER);
+  });
+
   it("should reject a non-positive map size and a non-increasing clip list by name", () => {
     const { light } = world();
     expect(() => new VirtualShadowNode(light, { mapSize: 0 })).toThrow(
       /TN_VIRTUAL_SHADOW_INVALID/u,
     );
+    expect(() => new VirtualShadowNode(light, { moverMapSize: 0 })).toThrow(/moverMapSize/u);
     expect(() => new VirtualShadowNode(light, { clipExtents: [40, 10] })).toThrow(/increase/u);
     expect(() => new VirtualShadowNode(light, { lightDistance: -1 })).toThrow(/lightDistance/u);
   });
@@ -94,6 +124,125 @@ describe("VirtualShadowNode", () => {
     });
   });
 
+  it("should invalidate cached levels when a caster is tracked or untracked", () => {
+    const { camera, light, scene } = world();
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    node.updateBefore(frameFor(camera));
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
+
+    const caster = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    scene.add(caster);
+    node.trackCaster(caster);
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({
+      cached: 0,
+      invalidated: 2,
+      movers: 1,
+      moverRenders: 2,
+      rendered: 2,
+    });
+
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
+
+    expect(node.untrackCaster(caster)).toBe(true);
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({
+      cached: 0,
+      invalidated: 2,
+      movers: 0,
+      moverRenders: 0,
+      rendered: 2,
+    });
+  });
+
+  it("should copy source shadow settings to cached and mover shadow nodes", () => {
+    const { camera, light } = world();
+    const filterNode = vi.fn();
+    light.shadow.bias = -0.003;
+    light.shadow.normalBias = 0.17;
+    light.shadow.intensity = 0.35;
+    light.shadow.radius = 3;
+    light.shadow.blurSamples = 5;
+    light.shadow.mapType = HalfFloatType;
+    light.shadow.biasNode = float(0.01);
+    (light.shadow as unknown as { filterNode: unknown }).filterNode = filterNode;
+    const node = setupNode(light, { clipExtents: [8], mapSize: 64 });
+
+    const shadowNodes = [...node.levelNodes, ...node.moverNodes];
+    for (const shadowNode of shadowNodes) {
+      const shadow = (shadowNode as unknown as { shadow: DirectionalLight["shadow"] }).shadow;
+      expect(shadow).toMatchObject({
+        bias: -0.003,
+        blurSamples: 5,
+        intensity: 0.35,
+        mapType: HalfFloatType,
+        normalBias: 0.17,
+        radius: 3,
+      });
+      expect(shadow.biasNode).toBe(light.shadow.biasNode);
+      expect((shadow as unknown as { filterNode: unknown }).filterNode).toBe(filterNode);
+    }
+
+    light.shadow.bias = 0.004;
+    light.shadow.normalBias = 0.23;
+    light.shadow.intensity = 0.62;
+    light.shadow.radius = 6;
+    light.shadow.blurSamples = 11;
+    light.shadow.mapType = FloatType;
+    const updatedFilterNode = vi.fn();
+    light.shadow.biasNode = float(0.02);
+    (light.shadow as unknown as { filterNode: unknown }).filterNode = updatedFilterNode;
+    node.updateBefore(frameFor(camera));
+
+    for (const shadowNode of shadowNodes) {
+      const shadow = (shadowNode as unknown as { shadow: DirectionalLight["shadow"] }).shadow;
+      expect(shadow).toMatchObject({
+        bias: 0.004,
+        blurSamples: 11,
+        intensity: 0.62,
+        mapType: FloatType,
+        normalBias: 0.23,
+        radius: 6,
+      });
+      expect(shadow.biasNode).toBe(light.shadow.biasNode);
+      expect((shadow as unknown as { filterNode: unknown }).filterNode).toBe(updatedFilterNode);
+    }
+  });
+
+  it("should combine stock intensity-adjusted shadow factors by the darker result", () => {
+    const { light } = world();
+    light.shadow.intensity = 0.35;
+    const node = new VirtualShadowNode(light, { clipExtents: [8, 32], marker: false });
+    const graphBuilder = shadowGraphBuilder();
+    const root = node.setup(graphBuilder);
+    expect(root).not.toBeNull();
+
+    // ShadowNode already turns a raw factor into mix(1, raw, shadow.intensity). If the same
+    // intensity is applied again by this node, two identical adjusted factors multiply instead
+    // of preserving the darker one. The mocked stock nodes keep this test on the graph contract
+    // while leaving their renderer-owned setup out of the unit test.
+    const rawFactors = [0.2, 0.6, 0.2, 0.6];
+    [...node.levelNodes, ...node.moverNodes].forEach((shadowNode, index) => {
+      const raw = rawFactors[index];
+      if (raw === undefined) return;
+      vi.spyOn(
+        shadowNode as Node & { setup: (builder: NodeBuilder) => Node },
+        "setup",
+      ).mockImplementation(() => vec4(mix(1, float(raw), float(light.shadow.intensity))));
+    });
+
+    const flow = graphBuilder.flowStagesNode(root as Node, "vec4");
+    const adjusted = rawFactors.map((raw) => 1 - (1 - raw) * light.shadow.intensity);
+    expect(Math.min(adjusted[0] ?? 1, adjusted[1] ?? 1)).toBeCloseTo(0.72);
+    expect(Math.min(adjusted[0] ?? 1, adjusted[1] ?? 1)).not.toBeCloseTo(0.72 * 0.86);
+    expect(flow.code).toMatch(/min\(/u);
+    expect(flow.code).not.toMatch(/vec4<f32>[^\n]*\*\s*vec4<f32>/u);
+    expect(flow.code).toContain("0.35");
+    expect(flow.code).toContain("vec4<f32>( 1.0, 1.0, 1.0, 1.0 )");
+  });
+
   it("should re-render only the level whose window moved by a whole texel", () => {
     const { camera, light } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
@@ -106,6 +255,27 @@ describe("VirtualShadowNode", () => {
     // Negative control: a level that never moves is never re-rendered.
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
+  });
+
+  it("should keep the mover contribution neutral and skip mover renders with no tracked casters", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    for (const levelNode of node.levelNodes) {
+      vi.spyOn(
+        levelNode as Node & { updateShadow(frame: NodeFrame): void },
+        "updateShadow",
+      ).mockImplementation(() => undefined);
+    }
+    const moverSpies = node.moverNodes.map((moverNode) =>
+      vi
+        .spyOn(moverNode as Node & { updateShadow(frame: NodeFrame): void }, "updateShadow")
+        .mockImplementation(() => undefined),
+    );
+
+    node.updateBefore({ camera, renderer: {} } as unknown as NodeFrame);
+
+    expect(node.stats).toMatchObject({ movers: 0, moverRenders: 0 });
+    expect(moverSpies.every((spy) => spy.mock.calls.length === 0)).toBe(true);
   });
 
   it("should draw a tracked caster through the mover layer every frame and leave the cached levels alone", () => {
@@ -130,7 +300,35 @@ describe("VirtualShadowNode", () => {
     expect(node.untrackCaster(mover)).toBe(true);
     expect(hoof.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(false);
     node.updateBefore(frameFor(camera));
-    expect(node.stats).toMatchObject({ movers: 0, rendered: 0 });
+    expect(node.stats).toMatchObject({
+      cached: 0,
+      invalidated: 2,
+      moverRenders: 0,
+      movers: 0,
+      rendered: 2,
+    });
+  });
+
+  it("should restore a mover's pre-existing layer when it is untracked", () => {
+    const { light } = world();
+    const node = setupNode(light, { clipExtents: [8] });
+    const mover = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    mover.layers.enable(VIRTUAL_SHADOW_MOVER_LAYER);
+    node.trackCaster(mover);
+    expect(node.untrackCaster(mover)).toBe(true);
+    expect(mover.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(true);
+  });
+
+  it("should keep explicit tracker invalidation working for existing callers", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    node.updateBefore(frameFor(camera));
+    node.tracker.update("manual", {
+      min: { x: 0.2, y: 0, z: -0.8 },
+      max: { x: 0.8, y: 2, z: -0.2 },
+    });
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ invalidated: 2, rendered: 2 });
   });
 
   it("should keep a tracked caster out of the cached level render and put it back afterwards", () => {
@@ -184,6 +382,38 @@ describe("VirtualShadowNode", () => {
         rendered: 0,
       });
       expect(readVirtualShadowMarker("TN_FRAME_BUDGET:{}")).toBeUndefined();
+      expect(readVirtualShadowMarker(`${VIRTUAL_SHADOW_MARKER}:{bad`)).toBeUndefined();
+      expect(readVirtualShadowMarker(`${VIRTUAL_SHADOW_MARKER}:null`)).toBeUndefined();
+      expect(readVirtualShadowMarker(`${VIRTUAL_SHADOW_MARKER}:{}`)).toBeUndefined();
+      expect(
+        readVirtualShadowMarker(
+          `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify({
+            cached: 0,
+            frame: "2",
+            invalidated: 0,
+            levels: 1,
+            moved: 1,
+            moverRenders: 1,
+            movers: 1,
+            rendered: 1,
+            reuseRatio: 0,
+          })}`,
+        ),
+      ).toBeUndefined();
+      expect(
+        readVirtualShadowMarker(
+          `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify({
+            cached: 0,
+            frame: 2,
+            invalidated: 0,
+            levels: 1,
+            moved: 1,
+            moverRenders: 1,
+            movers: 1,
+            rendered: 1,
+          })}`,
+        ),
+      ).toBeUndefined();
     } finally {
       info.mockRestore();
     }
