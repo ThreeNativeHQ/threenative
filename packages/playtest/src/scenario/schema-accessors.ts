@@ -28,7 +28,7 @@ export function validateVisualAssertion(value: unknown, scenarioPath: string, ob
       }
       region = {
         element,
-        ...present("maxDarkPixelRatio", optionalNumber(regionRecord, "maxDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
+        ...present("maxDarkPixelRatio", optionalRatio(regionRecord, "maxDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
         ...present("maxLuminance", optionalNumber(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
         ...present("minDarkPixelRatio", optionalNumber(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
         ...present("minNonblankPixelRatio", optionalNumber(regionRecord, "minNonblankPixelRatio", scenarioPath, `${objectPath}.region`)),
@@ -44,7 +44,7 @@ export function validateVisualAssertion(value: unknown, scenarioPath: string, ob
       }
       region = {
         ...edges,
-        ...present("maxDarkPixelRatio", optionalNumber(regionRecord, "maxDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
+        ...present("maxDarkPixelRatio", optionalRatio(regionRecord, "maxDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
         ...present("maxLuminance", optionalNumber(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
         ...present("minDarkPixelRatio", optionalNumber(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
         ...present("minNonblankPixelRatio", optionalNumber(regionRecord, "minNonblankPixelRatio", scenarioPath, `${objectPath}.region`)),
@@ -197,6 +197,15 @@ export function optionalNumber(value: Record<string, unknown>, key: string, scen
   if (raw === undefined) return undefined;
   if (typeof raw !== "number" || !Number.isFinite(raw)) {
     throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be a finite number, received ${describeValue(raw)}.`);
+  }
+  return raw;
+}
+
+export function optionalRatio(value: Record<string, unknown>, key: string, scenarioPath: string, objectPath: string): number | undefined {
+  const raw = value[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0 || raw > 1) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must be a finite number between 0 and 1, received ${describeValue(raw)}.`);
   }
   return raw;
 }

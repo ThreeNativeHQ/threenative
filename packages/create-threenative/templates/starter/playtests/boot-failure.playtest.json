@@ -36,6 +36,7 @@
           "element": {
             "id": "threenative-canvas-error"
           },
+          "maxDarkPixelRatio": 0.5,
           "minNonblankPixelRatio": 0.002
         }
       }

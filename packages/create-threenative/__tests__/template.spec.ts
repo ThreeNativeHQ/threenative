@@ -323,6 +323,26 @@ describe("template contracts", () => {
     }
   });
 
+  it("requires the starter boot-failure screenshot to keep its error text readable", async () => {
+    const scenario = JSON.parse(
+      await readFile(
+        path.join(templateRoot, "starter/playtests/boot-failure.playtest.json"),
+        "utf8",
+      ),
+    ) as {
+      assert?: {
+        visual?: Array<{
+          region?: { maxDarkPixelRatio?: number };
+        }>;
+      };
+    };
+    const maxDarkPixelRatio = scenario.assert?.visual?.[0]?.region?.maxDarkPixelRatio;
+
+    expect(maxDarkPixelRatio).toBeDefined();
+    expect(maxDarkPixelRatio).toBeGreaterThanOrEqual(0);
+    expect(maxDarkPixelRatio).toBeLessThan(1);
+  });
+
   it("declares a packaged native icon in every template config", async () => {
     for (const template of brandingTemplates) {
       const root = path.join(templateRoot, template);

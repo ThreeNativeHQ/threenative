@@ -24,7 +24,7 @@ import {
   createWebPhysicsSimulation,
 } from "../src/simulation.js";
 
-function bodyOptions(type: "dynamic" | "fixed" = "dynamic") {
+function bodyOptions(type: "dynamic" | "fixed" | "kinematic" = "dynamic") {
   return {
     mass: type === "dynamic" ? 1 : 0,
     position: { x: 0, y: 0, z: 0 },
@@ -185,6 +185,8 @@ describe("native physics contract", () => {
 
     native.createBody({ ...bodyOptions(), continuousCollision: false });
     native.createBody(bodyOptions());
+    native.createBody({ ...bodyOptions("fixed"), continuousCollision: true });
+    native.createBody({ ...bodyOptions("kinematic"), continuousCollision: true });
 
     expect(createBody).toHaveBeenNthCalledWith(
       1,
@@ -193,6 +195,14 @@ describe("native physics contract", () => {
     expect(createBody).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ continuousCollision: true }),
+    );
+    expect(createBody).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ type: "fixed", continuousCollision: false }),
+    );
+    expect(createBody).toHaveBeenNthCalledWith(
+      4,
+      expect.objectContaining({ type: "kinematic", continuousCollision: false }),
     );
   });
 

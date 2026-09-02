@@ -62,6 +62,14 @@ export interface IPhysicsShapeDescriptor {
 
 export type PhysicsBodyType = "character" | "dynamic" | "fixed" | "kinematic";
 
+/** Return the backend-effective CCD setting; only dynamic bodies can use continuous collision. */
+export function effectiveContinuousCollision(
+  type: PhysicsBodyType,
+  requested: boolean | undefined,
+): boolean {
+  return type === "dynamic" && (requested ?? true);
+}
+
 export interface IPhysicsBodyCreateOptions {
   readonly type: PhysicsBodyType;
   readonly shape: IPhysicsShapeDescriptor;
@@ -76,7 +84,7 @@ export interface IPhysicsBodyCreateOptions {
   readonly mass: number;
   /** Must match `shape.sensor`; conflicting values are rejected during body creation. */
   readonly sensor: boolean;
-  /** Enable continuous collision for fast-moving dynamic bodies. Defaults to true. */
+  /** Enable continuous collision for fast-moving dynamic bodies. Defaults true for dynamic bodies and is always false for non-dynamic bodies. */
   readonly continuousCollision?: boolean;
 }
 
@@ -844,7 +852,7 @@ export function createWebPhysicsSimulation(
           bodyOptions.position,
           bodyOptions.rotation,
           bodyOptions.mass,
-          bodyOptions.continuousCollision ?? true,
+          effectiveContinuousCollision(bodyOptions.type, bodyOptions.continuousCollision),
         ),
       );
       const rawCollider = options.world.createCollider(rawShape, rawBody);

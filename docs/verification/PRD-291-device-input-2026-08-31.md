@@ -207,3 +207,11 @@ final affected template/scaffold/native-smoke suite passed 3 files and 86 tests.
 passed while writing the repaired template mirrors. Shared repository gate outcomes are recorded
 in the PRD-292 integration record. Physical Android/iOS execution remains unverified, as recorded
 above.
+
+## Review repair — 2026-09-02
+
+`maxDarkPixelRatio` now fails closed unless it is a finite ratio in `[0,1]`. The malformed
+`maxDarkPixelRatio: 2` schema test was red before the accessor change and passes afterward with the
+same `TN_PLAYTEST_SCENARIO_INVALID` contract used by the other schema boundaries. The generated
+starter boot-failure scenario uses the bounded field to make its rendered readability proof
+observable.

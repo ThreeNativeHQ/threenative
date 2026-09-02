@@ -15,6 +15,7 @@ import type {
 } from "../simulation.js";
 import {
   PHYSICS_TRANSFORM_STRIDE,
+  effectiveContinuousCollision,
   requireFiniteRotation,
   requireFiniteVector,
   requirePhysicsBodySensor,
@@ -403,7 +404,10 @@ export function createNativePhysicsSimulation(
         sensor,
         shape,
         type: options.type,
-        continuousCollision: options.continuousCollision ?? true,
+        continuousCollision: effectiveContinuousCollision(
+          options.type,
+          options.continuousCollision,
+        ),
       });
       if (!Number.isInteger(id) || id < 0)
         throw new Error("TN_NATIVE_PHYSICS_INVALID: runtime returned an invalid body id");

@@ -48,7 +48,7 @@ describe("scenario schema boundaries", () => {
     const parsed = validatePlaytestScenario({
       ...scenario({
         hud: [{ id: "threenative-canvas-error", textIncludes: "Error creating WebGL context", visible: true }],
-        visual: [{ region: { element: { id: "threenative-canvas-error" }, minNonblankPixelRatio: 0.002 } }],
+        visual: [{ region: { element: { id: "threenative-canvas-error" }, maxDarkPixelRatio: 0.5, minNonblankPixelRatio: 0.002 } }],
       }),
       bootFailure: "renderer-no-adapter",
       target: "web",
@@ -59,6 +59,7 @@ describe("scenario schema boundaries", () => {
     expect(parsed.assert?.hud?.[0]?.visible).toBe(true);
     expect(parsed.assert?.visual?.[0]?.region).toEqual({
       element: { id: "threenative-canvas-error" },
+      maxDarkPixelRatio: 0.5,
       minNonblankPixelRatio: 0.002,
     });
   });
@@ -471,6 +472,7 @@ describe("scenario schema boundaries", () => {
 
     expect(() => validateVisualAssertion({ region: { height: "large", width: 1, x: 0, y: 0 } }, "invalid.json", "assert.visual[0]")).toThrow(/height/u);
     expect(() => validateVisualAssertion({ region: { height: 1, maxDarkPixelRatio: "dark", width: 1, x: 0, y: 0 } }, "invalid.json", "assert.visual[0]")).toThrow(/maxDarkPixelRatio/u);
+    expect(() => validateVisualAssertion({ region: { height: 1, maxDarkPixelRatio: 2, width: 1, x: 0, y: 0 } }, "invalid.json", "assert.visual[0]")).toThrow(/between 0 and 1/u);
     expect(() => validateVisualAssertion({ entityVisible: { entity: "player", minProjectedPixels: "many" } }, "invalid.json", "assert.visual[0]")).toThrow(/minProjectedPixels/u);
     expect(() => validateVisualAssertion({ frameDiff: { baselineImage: "/base.png" } }, "invalid.json", "assert.visual[0]")).toThrow(/baselineImage/u);
     expect(() => validateRenderChainAssertion({ tier: "ultra" }, "invalid.json", "assert.renderChain")).toThrow(/tier/u);

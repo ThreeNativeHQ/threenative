@@ -53,4 +53,23 @@ describe("continuous collision", () => {
     expect(projectileMesh.position.x).toBeGreaterThan(0.1);
     expect(projectile.continuousCollision).toBe(false);
   });
+
+  it.each(["fixed", "kinematic"] as const)(
+    "reports and applies continuous collision as disabled for %s bodies",
+    async (type) => {
+      await RAPIER.init();
+      const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
+      worlds.push(world);
+      const body = new RigidBody3D({
+        object: new Mesh(),
+        shape: CollisionShape3D.sphere(0.5),
+        type,
+        continuousCollision: true,
+        world,
+      });
+
+      expect(body.continuousCollision).toBe(false);
+      expect((body.body.raw as RAPIER.RigidBody).isCcdEnabled()).toBe(false);
+    },
+  );
 });
