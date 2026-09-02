@@ -54,6 +54,22 @@
       "symbol": "formatModelSizes"
     },
     {
+      "constraints": ["one row per pass in registry order, per-asset rows sorted by logical path"],
+      "example": "const lines = formatPassCosts(result.passCosts);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function formatPassCosts(rows: readonly IPassCostRow[]): readonly string[] { … }",
+      "situations": [
+        "see which asset pass owns the wall clock after a bake",
+        "compare pass costs between two builds before optimizing the pipeline"
+      ],
+      "summary": "Formats per-pass wall-clock costs for a build report.",
+      "supersedes": [],
+      "symbol": "formatPassCosts"
+    },
+    {
       "constraints": ["an empty row list produces no report lines"],
       "example": "const lines = formatTextureSizes(textureRows);",
       "importPath": "@threenative/assets",

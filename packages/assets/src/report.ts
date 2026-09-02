@@ -54,6 +54,54 @@ export interface ISimplifyRow {
   readonly trianglesBefore: number;
 }
 
+/** Whether the pass executed this bake or every input that reached it was compile-cache-served. */
+export type PassCostStatus = "cached" | "ran";
+
+/** What one input cost the pass that processed it, as the pass driver measured it. */
+export interface IPassCostAssetRow {
+  readonly durationMs: number;
+  readonly logicalPath: string;
+}
+
+/**
+ * What one pass cost the whole bake: totals across inputs plus the per-asset attribution a
+ * 274-file pack needs to name its expensive members. Durations are measured by the pass driver,
+ * never reported by the pass itself, so a pass cannot opt out of measurement.
+ */
+export interface IPassCostRow {
+  /** Per-input wall clock for the ran inputs, sorted by logical path; empty when cached. */
+  readonly assets: readonly IPassCostAssetRow[];
+  readonly cachedInputs: number;
+  readonly durationMs: number;
+  readonly pass: string;
+  readonly ranInputs: number;
+  readonly status: PassCostStatus;
+}
+
+/**
+ * Formats the per-pass cost lines the compile prints after the size report: one line per pass,
+ * then one line per input it ran on. A cached pass names its input count instead of a duration —
+ * the cache decision is the source, never a threshold inferred from a fast run.
+ */
+export function formatPassCosts(rows: readonly IPassCostRow[]): readonly string[] {
+  if (rows.length === 0) return [];
+  return rows.flatMap((row) => {
+    const summary =
+      row.status === "cached"
+        ? `cost pass ${row.pass}: cached for ${row.cachedInputs} input(s)`
+        : `cost pass ${row.pass}: ran on ${row.ranInputs} input(s), ${Math.round(row.durationMs)} ms`;
+    // Sorted here as well as where the rows are built: the stable-order property holds at the
+    // formatting boundary, whatever order a caller's rows arrive in.
+    const assets = [...row.assets].sort((left, right) =>
+      left.logicalPath < right.logicalPath ? -1 : 1,
+    );
+    return [
+      summary,
+      ...assets.map((asset) => `  cost ${asset.logicalPath}: ${Math.round(asset.durationMs)} ms`),
+    ];
+  });
+}
+
 /** One compiled model plus a total, before against after the optimization pass. */
 export interface IModelSizeRow {
   readonly after: number;

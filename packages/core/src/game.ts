@@ -28,7 +28,7 @@ import { SceneRenderProjection } from "./renderProjection.js";
 import { resolveRendererAntialias, resolveRendererScaleSetting } from "./renderer-config.js";
 import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
 import { ResolutionScaler } from "./resolution-scaler.js";
-import type { ICtx, Scene, SceneConstructor, SceneFrame } from "./scene.js";
+import type { ICtx, IStartupTimeline, Scene, SceneConstructor, SceneFrame } from "./scene.js";
 import { Scheduler } from "./schedule.js";
 import {
   STARTUP_COMPILE_BUDGET_MS,
@@ -100,6 +100,8 @@ export interface IGamePluginRuntime {
    * must be reported rather than inferred from a phase that cannot distinguish the two.
    */
   readonly startupCompileSettled?: () => boolean;
+  /** When the startup milestones happened, for the playtest bridge's startup observation. */
+  readonly startupTimeline?: () => IStartupTimeline;
   readonly step: number;
 }
 
@@ -673,10 +675,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       ...this.#config.renderer,
       canvas: this.#config.canvas ?? this.#config.renderer?.canvas,
       preferWebGPU: this.#config.render?.preferWebGPU ?? this.#config.renderer?.preferWebGPU,
-      // Native measures its canvas in logical pixels and reports a real ratio; web reports a real
-      // ratio too but deliberately draws at DPR 1, so only the native seam applies it. Unifying
-      // web onto device density is a separate decision with its own visuals gate.
-      pixelRatio: getPlatform().runtime === "native" ? (globalThis.devicePixelRatio ?? 1) : 1,
+      // One rule on both runtimes, decided 2026-09-01 after a HiDPI desktop browser upscaled a
+      // DPR-1 web buffer into visible pixelation: the device's real density, with an explicit
+      // `renderer.pixelRatio` winning over it (the old branch silently clobbered that value).
+      // Headless capture lanes run at DPR 1 and are unaffected; the resolution scaler composes
+      // on top, so a density the GPU cannot afford is trimmed by rungs, not by the developer.
+      pixelRatio: this.#config.renderer?.pixelRatio ?? globalThis.devicePixelRatio ?? 1,
       antialias: resolveRendererAntialias(
         this.#config.render,
         this.#config.renderer?.antialias,
@@ -777,7 +781,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       markProjectionSettled = resolve;
     });
     const startupReadiness = new StartupReadiness();
+    const timeline: { -readonly [K in keyof IStartupTimeline]: IStartupTimeline[K] } = {};
+    const now = (): number => globalThis.performance?.now() ?? Date.now();
     void startupReadiness.whenReady().then(() => {
+      // A renderer without first-use compilation settles without running the compile closure
+      // below, so the settle stamp is guaranteed here at the latest.
+      timeline.compileSettledMs ??= now();
+      timeline.readyMs ??= now();
       projectionSettled = true;
       markProjectionSettled();
       // A host capturing a frame has no other way to know the world is on screen. Counting frames
@@ -799,12 +809,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
+      timeline.compileSettledMs ??= now();
       console.log(
         `TN_STARTUP_WARMUP:${JSON.stringify(
           report === undefined
             ? { failed: failure ?? "unknown" }
             : {
                 compiled: report.compiled,
+                pipelines: report.pipelines,
                 slices: report.slices,
                 elapsedMs: Math.round(report.elapsedMs),
                 unsupported: report.unsupported,
@@ -871,8 +883,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         get compileSettled() {
           return startupReadiness.compileSettled;
         },
+        // Honest and monotonic: the asset ratio carries the first 70% while the start scene
+        // loads, entering the world is 80%, compile settling 90%, and only readiness is 1.
         get progress() {
-          return projectionSettled ? 1 : 0;
+          if (projectionSettled) return 1;
+          if (startupReadiness.compileSettled) return 0.9;
+          if (timeline.enteredMs !== undefined) return 0.8;
+          const { requested, settled } = assets.progress;
+          return requested === 0 ? 0 : 0.7 * Math.min(1, settled / requested);
+        },
+        get timeline() {
+          return { ...timeline };
         },
         whenReady: () => projectionReady,
       },
@@ -1102,6 +1123,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       rapier: null,
       seed: this.#config.seed ?? null,
       startupCompileSettled: () => startupReadiness.compileSettled,
+      startupTimeline: () => ({ ...timeline }),
       step: gameLoop.step,
       runtimeDiagnosticsSeries: () => gameLoop.runtimeDiagnosticsSeries(),
     };
@@ -1136,6 +1158,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // and no elapsed time is banked before the release below.
     gameLoop.setHeld(true);
     gameLoop.start();
+    timeline.loadStartedMs ??= now();
     try {
       await scene.load(ctx);
     } catch (error) {
@@ -1148,6 +1171,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     }
     try {
       this.#enterScene(scene, ctx);
+      timeline.enteredMs ??= now();
     } catch (error) {
       this.#teardown(ctx);
       throw error;

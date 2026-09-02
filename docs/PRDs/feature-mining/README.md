@@ -4,7 +4,7 @@
 > 2026-08-30. It stays in the mining table below because that is where it was found.
 
 
-**Status:** IN FLIGHT — twenty-three PRDs filed across six rounds. **Fifteen are archived in
+**Status:** IN FLIGHT — twenty-three PRDs filed across seven rounds. **Fifteen are archived in
 [`../done/`](../done/):** [242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) and
 [244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) with web *and* native desktop evidence;
 [237](../done/PRD-237-objects-answer-their-own-pointer-events.md),

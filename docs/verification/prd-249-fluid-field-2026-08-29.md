@@ -13,7 +13,8 @@ documented target is desktop and web until a physical Android lane is available.
 - `packages/runtime-native/conformance/registry.json`
 - generated capability manifests and reference
 - `docs/verification/prd-249-fluid-field-2026-08-29.md`
-- `docs/verification/assets/prd-249-fluid-field/*.png`
+- `docs/verification/assets/prd-249-fluid-field/*.png` (captures removed from the repo by
+  `79aa9de1`, 2026-09-01; the table above carries the measured evidence)
 - `pnpm-lock.yaml`
 
 The native execution used an isolated prerequisite overlay containing PRD-242 at commit
@@ -30,9 +31,8 @@ The native execution used an isolated prerequisite overlay containing PRD-242 at
 | Desktop native conformance | PASS | `MYSTRAL_BIN=/tmp/prd249-base.p9qZb0/packages/runtime-native/build/tn-linux/mystral node packages/runtime-native/conformance/run-conformance.mjs --target desktop --only-tests 77-fluid-field` — report `pass 1 fail 0 blocked 70`; the runner exits `2` because unselected rows are blocked; pixel mismatch `0.0020941840277777777`, DeltaE `0.022014509476168138`, GPU validation errors `[]`. |
 | Look ownership | PASS | The smoke and fire surfaces read the same `field.dye` sampler from `examples/prd249-fluid-field/src/render/fluid.ts`; the captures below are separate crops from one post-splat frame. |
 
-![Smoke material](assets/prd-249-fluid-field/smoke.png)
-
-![Fire material](assets/prd-249-fluid-field/fire.png)
+The smoke and fire captures that illustrated this section were removed from the repository by
+`79aa9de1`; the pass/fail rows above are the retained evidence.
 
 The executable conformance assertion and generated `FluidField2D` capability entry carry the
 threshold: mean absolute velocity divergence must stay below `0.0025`; the measured sample was

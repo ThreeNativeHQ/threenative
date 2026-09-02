@@ -1,4 +1,12 @@
-import { type AudioLoader, Object3D, Texture, type TextureLoader } from "three";
+import {
+  type AudioLoader,
+  BufferAttribute,
+  type BufferGeometry,
+  Mesh,
+  Object3D,
+  Texture,
+  type TextureLoader,
+} from "three";
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
 
 export interface IAssetLoaderOptions {
@@ -64,6 +72,19 @@ export interface IAssetLoader {
   texture(path: string): Promise<Texture>;
   audio(path: string): Promise<AudioBuffer>;
   release(kind: "audio" | "model" | "texture", path: string): boolean;
+  /**
+   * Where a logical path is served from, in the order worth trying — the manifest's
+   * content-addressed output when a manifest exists, otherwise the verbatim and source paths.
+   * For loaders this surface does not wrap (an HDR sky, a font, a data file) — a game must never
+   * hard-code a hashed output name, which changes on every rebuild.
+   */
+  resolve(path: string): Promise<readonly string[]>;
+  /**
+   * How many loads this loader has been asked for and how many have settled (resolved or
+   * rejected). A loading view reads the ratio; the runtime folds it into `ctx.startup.progress`
+   * while the start scene loads, so the bar moves with the bytes instead of jumping 0 to 1.
+   */
+  readonly progress: { readonly requested: number; readonly settled: number };
   clear(): void;
 }
 
@@ -339,6 +360,54 @@ export async function createKtx2Loader(options: {
   return loader as unknown as IKTX2LoaderLike;
 }
 
+/**
+ * Widen every quantized `POSITION` a loaded model carries back to float32.
+ *
+ * The asset pipeline emits `KHR_mesh_quantization`, so positions arrive as *normalized* int16:
+ * each component encodes a value in [-1, 1] and the real metre scale lives on the node (or, for a
+ * skinned mesh, in the inverse bind matrices). That is a correct glTF file and three renders it
+ * correctly — but it is a landmine for the game, because three's own geometry helpers write back
+ * through `BufferAttribute.setXYZ`, which **re-normalizes and clamps to +/-1**. `applyMatrix4`,
+ * `translate`, `scale`, `rotateX/Y/Z`, `center` and `toNonIndexed` all take that path. A game that
+ * bakes a node transform into an imported prop — the most ordinary thing there is to do with one —
+ * gets every vertex past 1 unit slammed onto the faces of the unit cube, with no error, no warning
+ * and a perfectly valid draw of ruined geometry. Wildwood lost 99.7% of a pine's canopy that way.
+ *
+ * Widening costs 2 bytes per component in RAM and changes nothing on screen: the values written are
+ * exactly what `getX/getY/getZ` already returned. The wire payload keeps the pipeline's win.
+ *
+ * Meshopt-compressed models decode to `InterleavedBufferAttribute`, which is not a `BufferAttribute`
+ * at all — an `instanceof BufferAttribute` guard here silently skips every compressed model, which
+ * is most of them. Read through the attribute interface both types share instead.
+ */
+function widenQuantizedPositions(root: Object3D): void {
+  const widened = new Set<BufferGeometry>();
+  root.traverse((object) => {
+    if (!(object instanceof Mesh)) return;
+    const geometry = object.geometry as BufferGeometry;
+    if (widened.has(geometry)) return;
+    const position = geometry.getAttribute("position");
+    if (position === undefined) return;
+    const plain = position instanceof BufferAttribute;
+    if (plain && !position.normalized && position.array instanceof Float32Array) return;
+    const values = new Float32Array(position.count * 3);
+    for (let index = 0; index < position.count; index += 1) {
+      values[index * 3] = position.getX(index);
+      values[index * 3 + 1] = position.getY(index);
+      values[index * 3 + 2] = position.getZ(index);
+    }
+    geometry.setAttribute("position", new BufferAttribute(values, 3));
+    widened.add(geometry);
+  });
+}
+
+/** The `{ scene }` a GLTF result carries, when it carries one. */
+function modelRoot(value: unknown): Object3D | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const scene = (value as { scene?: unknown }).scene;
+  return scene instanceof Object3D ? scene : undefined;
+}
+
 export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoader {
   const basePath = options.basePath ?? "";
   // `assets` is what `@threenative/assets` compiles from unless a project says otherwise, so it is
@@ -471,10 +540,13 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     );
   };
 
+  let requested = 0;
+  let settled = 0;
   const cached = <T>(kind: string, path: string, load: (url: string) => Promise<T>): Promise<T> => {
     const key = `${kind}:${path}`;
     const existing = cache.get(key);
     if (existing !== undefined) return existing.promise as Promise<T>;
+    requested += 1;
     const entry: IAssetEntry = {
       disposed: false,
       kind: kind as AssetKind,
@@ -493,6 +565,14 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     entry.promise.catch(() => {
       if (cache.get(key) === entry) cache.delete(key);
     });
+    entry.promise.then(
+      () => {
+        settled += 1;
+      },
+      () => {
+        settled += 1;
+      },
+    );
     cache.set(key, entry);
     return entry.promise as Promise<T>;
   };
@@ -568,9 +648,17 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         const value = await new Promise<T>((resolve, reject) =>
           loader.parse(data, resourcePathOf(url), resolve as never, reject),
         );
+        // Before the game ever sees it: a quantized POSITION is a trap for every ordinary
+        // three.js geometry call. See `widenQuantizedPositions`.
+        const root = modelRoot(value);
+        if (root !== undefined) widenQuantizedPositions(root);
         await attachCompiledLightmaps(path, value);
         return value;
       }),
+    get progress() {
+      return { requested, settled };
+    },
+    resolve: (path) => resolveCandidates(path),
     release: (kind, path) => {
       const key = `${kind}:${path}`;
       const entry = cache.get(key);

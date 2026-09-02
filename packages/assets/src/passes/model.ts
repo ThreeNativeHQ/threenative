@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import path from "node:path";
 import {
   Accessor,
   type Document,
@@ -6,11 +8,25 @@ import {
   type Primitive as GltfPrimitive,
   NodeIO,
   type Skin,
+  type Texture,
 } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, EXTMeshoptCompression } from "@gltf-transform/extensions";
-import { dedup, prune, quantize, reorder, simplify } from "@gltf-transform/functions";
+import {
+  dedup,
+  getTextureColorSpace,
+  listTextureSlots,
+  prune,
+  quantize,
+  reorder,
+  simplify,
+} from "@gltf-transform/functions";
 import { MeshoptEncoder, MeshoptSimplifier } from "meshoptimizer";
-import { type IAssetPass, type IAssetPassOutput, classify } from "../compile.js";
+import {
+  type IAssetAuxiliaryOutput,
+  type IAssetPass,
+  type IAssetPassOutput,
+  classify,
+} from "../compile.js";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
 import {
   type IModelVirtualOptions,
@@ -22,10 +38,20 @@ import { TNVirtualGeometry } from "../virtual/extension.js";
 import {
   type IEmbeddedTextureSummary,
   type IModelTexturesOptions,
+  type IRecalledTexture,
   assertNoTextureDrift,
   compressEmbeddedTextures,
   textureBindings,
+  textureKeys,
 } from "./model-textures.js";
+import {
+  type ISharedImage,
+  type ISharedImageStore,
+  readSharedGlb,
+  sharedImageKey,
+  sharedImageUri,
+  writeSharedGlb,
+} from "./shared-images.js";
 
 export {
   assertNoTextureDrift,
@@ -99,6 +125,14 @@ export interface IModelPassOptions {
   readonly quantize?: IModelQuantizeOptions;
   /** LOD simplification; absent means no simplification at all. */
   readonly simplify?: IModelSimplifyOptions;
+  /**
+   * Share embedded images across models: each distinct image is written once, content-addressed
+   * under `shared/images/`, and every model that carries it references that one file. The store
+   * remembers encoded results within a build and, when it was given the output root, across
+   * builds — so a pack whose eight pines embed the same bark map encodes it once, not eight
+   * times per build. Absent means every model keeps its images embedded.
+   */
+  readonly sharedImages?: ISharedImageStore;
   /** Embedded-texture compression: options, or `"none"` to ship every image as authored. */
   readonly textures?: IModelTexturesOptions | "none";
   /**
@@ -603,6 +637,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
               ...(options.virtual === undefined ? {} : options.virtual),
               bakeVersion: VIRTUAL_BAKE_VERSION,
             },
+      sharedImages: options.sharedImages !== undefined,
       textures:
         options.textures === "none"
           ? "none"
@@ -690,10 +725,15 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // *this* stage plus the writer preserved each binding — prune's documented drops of
       // unreferenced material are already settled by then.
       const sourceTextures = textureBindings(document.getRoot());
+      const store = options.sharedImages;
+      const shared =
+        store === undefined ? undefined : await recallSharedImages(document, store, textureOptions);
       const embeddedTextures =
         textureOptions === undefined
           ? undefined
-          : await compressEmbeddedTextures(document, logicalPath, textureOptions);
+          : await compressEmbeddedTextures(document, logicalPath, textureOptions, shared?.recalled);
+      if (store !== undefined && shared !== undefined)
+        await rememberSharedImages(document, store, shared, embeddedTextures?.formats);
       if (enabled.meshopt) {
         document
           .createExtension(EXTMeshoptCompression)
@@ -720,8 +760,10 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         );
       }
 
-      const { buffer, extensions } = await writeDocument(document, logicalPath);
-      const verified = (await readDocument(buffer, logicalPath)).getRoot();
+      const { auxiliaryOutputs, buffer, extensions, verified } =
+        store === undefined || shared === undefined
+          ? await writeAndVerify(document, logicalPath)
+          : await writeAndVerifyShared(document, logicalPath, store, shared);
       const output = reachableStats(verified);
       if (options.simplify === undefined) {
         assertNoDrift(source, output, logicalPath);
@@ -747,7 +789,238 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         vertices: output.vertices,
         ...(virtual === undefined ? {} : { virtual }),
       };
-      return { buffer, entry: { ...entry } };
+      return {
+        ...(auxiliaryOutputs.length === 0 ? {} : { auxiliaryOutputs }),
+        buffer,
+        entry: { ...entry },
+      };
     },
   };
+}
+
+async function writeAndVerify(
+  document: Document,
+  logicalPath: string,
+): Promise<{
+  auxiliaryOutputs: IAssetAuxiliaryOutput[];
+  buffer: Buffer;
+  extensions: readonly string[];
+  verified: RootOf;
+}> {
+  const { buffer, extensions } = await writeDocument(document, logicalPath);
+  const verified = (await readDocument(buffer, logicalPath)).getRoot();
+  return { auxiliaryOutputs: [], buffer, extensions, verified };
+}
+
+/** Per-texture bookkeeping between the recall before compression and the write after it. */
+interface ISharedImagePlan {
+  /** Texture index → key. */
+  readonly keys: readonly string[];
+  /** Textures whose image came from the store, so they are neither re-encoded nor re-put. */
+  readonly recalled: ReadonlyMap<number, IRecalledTexture>;
+}
+
+interface ISharedImageCandidate {
+  readonly image: ISharedImage;
+  readonly key: string;
+}
+
+function sharedSettings(
+  texture: Texture,
+  textureOptions: IModelTexturesOptions | undefined,
+): Record<string, unknown> {
+  return {
+    colorSpace: getTextureColorSpace(texture),
+    slots: [...listTextureSlots(texture)].sort(),
+    textures:
+      textureOptions === undefined
+        ? "none"
+        : {
+            maxSize: textureOptions.maxSize ?? null,
+            overrides: textureOptions.overrides ?? [],
+            quality: textureOptions.quality ?? null,
+          },
+  };
+}
+
+/**
+ * Before compression: every texture whose source image, under these settings, is already in
+ * the store gets the stored bytes now, so `compressEmbeddedTextures` sees a finished image and
+ * leaves it alone. The pass pays for each distinct image once.
+ */
+async function recallSharedImages(
+  document: Document,
+  store: ISharedImageStore,
+  textureOptions: IModelTexturesOptions | undefined,
+): Promise<ISharedImagePlan> {
+  const keys: string[] = [];
+  const recalled = new Map<number, IRecalledTexture>();
+  const textures = document.getRoot().listTextures();
+  for (const [index, texture] of textures.entries()) {
+    const image = texture.getImage();
+    if (image === null) {
+      keys.push("");
+      continue;
+    }
+    const key = sharedImageKey(image, sharedSettings(texture, textureOptions));
+    keys.push(key);
+    const stored = await store.get(key);
+    if (stored === undefined) continue;
+    texture.setImage(new Uint8Array(stored.buffer)).setMimeType(stored.mimeType);
+    recalled.set(index, { codec: stored.codec, sourceBytes: image.byteLength });
+  }
+  return { keys, recalled };
+}
+
+function codecOf(
+  mimeType: string,
+  formats: Readonly<Record<string, string>> | undefined,
+  name: string,
+): string {
+  if (mimeType !== "image/ktx2") return "none";
+  return formats?.[name] ?? "uastc";
+}
+
+/** After compression: put every freshly encoded image into the store under its source key. */
+async function rememberSharedImages(
+  document: Document,
+  store: ISharedImageStore,
+  plan: ISharedImagePlan,
+  formats?: Readonly<Record<string, string>>,
+): Promise<void> {
+  const textures = document.getRoot().listTextures();
+  const names = textureKeys(document.getRoot());
+  for (const [index, texture] of textures.entries()) {
+    if (plan.recalled.has(index)) continue;
+    const key = plan.keys[index];
+    const image = texture.getImage();
+    if (key === undefined || key === "" || image === null) continue;
+    await store.put(key, {
+      buffer: Buffer.from(image.buffer, image.byteOffset, image.byteLength),
+      codec: codecOf(texture.getMimeType(), formats, names[index] ?? ""),
+      mimeType: texture.getMimeType(),
+    });
+  }
+}
+
+function declareSharedImage(
+  store: ISharedImageStore,
+  logicalPath: string,
+  auxiliaryOutputs: Map<string, IAssetAuxiliaryOutput>,
+  candidate: ISharedImageCandidate,
+): string {
+  const outputPath = store.outputPath(candidate.key, candidate.image);
+  auxiliaryOutputs.set(outputPath, {
+    buffer: candidate.image.buffer,
+    extension: path.extname(outputPath),
+    manifestField: "sharedImages",
+    metadata: { codec: candidate.image.codec, key: candidate.key },
+    outputPath,
+    role: "image",
+  });
+  return sharedImageUri(logicalPath, outputPath);
+}
+
+function declareSharedImageCandidates(
+  byDigest: ReadonlyMap<string, readonly ISharedImageCandidate[]>,
+  store: ISharedImageStore,
+  logicalPath: string,
+  auxiliaryOutputs: Map<string, IAssetAuxiliaryOutput>,
+): void {
+  for (const candidates of byDigest.values()) {
+    for (const candidate of candidates) {
+      declareSharedImage(store, logicalPath, auxiliaryOutputs, candidate);
+    }
+  }
+}
+
+/**
+ * Writes the model with its images outside it, one shared file per distinct image, then re-reads
+ * the output through the same store to verify it exactly as the runtime will resolve it.
+ */
+async function writeAndVerifyShared(
+  document: Document,
+  logicalPath: string,
+  store: ISharedImageStore,
+  plan: ISharedImagePlan,
+): Promise<{
+  auxiliaryOutputs: IAssetAuxiliaryOutput[];
+  buffer: Buffer;
+  extensions: readonly string[];
+  verified: RootOf;
+}> {
+  await MeshoptEncoder.ready;
+  const io = new NodeIO()
+    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry])
+    .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
+  // Encoded bytes → every store key they were filed under. Equal encoded bytes can come from
+  // distinct source keys, so each writer callback consumes one deterministic candidate rather
+  // than letting the last source key overwrite the earlier ones.
+  const byDigest = new Map<string, ISharedImageCandidate[]>();
+  const textures = document.getRoot().listTextures();
+  for (const [index, texture] of textures.entries()) {
+    const key = plan.keys[index];
+    const image = texture.getImage();
+    if (key === undefined || key === "" || image === null) continue;
+    const stored = await store.get(key);
+    if (stored === undefined) {
+      throw new Error(
+        `TN_ASSETS_SHARED_IMAGE_MISSING: '${logicalPath}' texture #${String(index)} was never stored.`,
+      );
+    }
+    const digest = digestOf(image);
+    const candidates = byDigest.get(digest) ?? [];
+    candidates.push({ image: stored, key });
+    byDigest.set(digest, candidates);
+  }
+  const auxiliaryOutputs = new Map<string, IAssetAuxiliaryOutput>();
+  // Store writes happen before this point. Declare every candidate now, rather than only the
+  // ones the writer happens to request: a writer may collapse equal resources into fewer
+  // callbacks, but that must not leave a source-keyed file undeclared for the output guard.
+  declareSharedImageCandidates(byDigest, store, logicalPath, auxiliaryOutputs);
+  let written: Awaited<ReturnType<typeof writeSharedGlb>>;
+  try {
+    written = await writeSharedGlb(io, document, logicalPath, (bytes) => {
+      const found = byDigest.get(digestOf(bytes))?.shift();
+      if (found === undefined) {
+        throw new Error("the writer emitted an image the pass did not file in the shared store");
+      }
+      return declareSharedImage(store, logicalPath, auxiliaryOutputs, found);
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`TN_ASSETS_MODEL_WRITE_FAILED: could not write '${logicalPath}': ${detail}`);
+  }
+  const reader = await createGltfReader(written.buffer);
+  const uriToBytes = new Map<string, Uint8Array>();
+  for (const output of auxiliaryOutputs.values()) {
+    uriToBytes.set(sharedImageUri(logicalPath, output.outputPath ?? ""), output.buffer);
+  }
+  let verified: Document;
+  try {
+    verified = await readSharedGlb(reader, written.buffer, async (uri) => {
+      const bytes = uriToBytes.get(uri);
+      if (bytes === undefined) throw new Error(`'${uri}' is not one of this model's shared images`);
+      return bytes;
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `TN_ASSETS_MODEL_UNREADABLE: could not parse '${logicalPath}' for the model pass: ${detail}.`,
+    );
+  }
+  return {
+    auxiliaryOutputs: [...auxiliaryOutputs.values()].sort((left, right) => {
+      const leftPath = left.outputPath ?? "";
+      const rightPath = right.outputPath ?? "";
+      return leftPath < rightPath ? -1 : leftPath > rightPath ? 1 : 0;
+    }),
+    buffer: written.buffer,
+    extensions: written.extensionsUsed,
+    verified: verified.getRoot(),
+  };
+}
+
+function digestOf(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
 }

@@ -42,6 +42,15 @@ author chose.
 - `third person camera follow` → zero results, though camera damping and `CameraShake` exist.
 - `make a platformer with double jump` → zero results, though `templates/platformer/` ships.
 - `pick up an item` → `ClusteredMesh`, a token coincidence.
+- `find which frames hitch and which part of my code caused the spike` → **zero results**, and
+  `measure frame time percentiles and count stutters during play` → `warmUpScene`, a token
+  coincidence — though `FrameBudget` (`packages/core/src/index.ts:268`) is exported, is in the
+  manifest (`capabilities.json:664`), and does exactly this. Its one `@situation` reads *"attribute
+  a frame to present wait, simulation, three.js render, or overlay"*, so it is reachable only from
+  the author's framing of the answer, never from the caller's framing of the problem. **Measured
+  cost:** the `bayview` sandbox game hand-wrote `src/perf.ts` — 190 lines of ring-buffered
+  percentiles, per-section peaks and a spike counter — against a shipped export it could not find.
+  That is the miss list producing a real 190-line duplicate, not a hypothetical.
 - `@situation` serves two jobs at once: it is the match key **and** the `matchedSituation` string
   shown back to the agent to explain the hit. Adding ten phrasings to improve matching would
   degrade the explanation and inflate both manifest copies.

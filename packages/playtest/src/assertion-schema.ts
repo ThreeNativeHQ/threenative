@@ -463,6 +463,23 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "A clip can already be playing at the first sample; an entered assertion must prove a transition or document why the clip is held.",
   },
   {
+    description: "Bounds when the application's startup milestones happened: the world entered, first-use compilation settled, readiness reached — in milliseconds since navigation, from the runtime's own startup timeline.",
+    example: { startup: { maxEnteredMs: 2500, maxReadyMs: 8000 } },
+    fields: [
+      { description: "Ceiling on when the start scene's enter() returned, in ms since navigation.", name: "maxEnteredMs", type: "number" },
+      { description: "Ceiling on when first-use compilation settled or its budget expired, in ms since navigation.", name: "maxCompileSettledMs", type: "number" },
+      { description: "Ceiling on when startup readiness resolved, in ms since navigation.", name: "maxReadyMs", type: "number" },
+    ],
+    cardinality: "object",
+    kind: "startup",
+    observationPath: "startup",
+    requiredCapabilities: ["runtime.startup"],
+    resultIdPrefix: "startup.",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+    trivialityRationale: "The timeline is stamped by the runtime as milestones happen; a missing milestone fails the ceiling rather than passing it.",
+  },
+  {
     description: "Proves the render chain reports the requested quality tier and, when asserted, a bounded temporal-history rejection fraction.",
     example: { renderChain: { tier: "high", velocity: { maxRejectionFraction: 0.2 } } },
     fields: [

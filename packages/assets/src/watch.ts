@@ -8,6 +8,8 @@ import {
   compileAssets,
   resolveBasisTranscoder,
 } from "./compile.js";
+import type { IPassCostRow } from "./report.js";
+import { DEFAULT_CONCURRENCY } from "./worker-pool.js";
 
 /**
  * Dev-mode compilation: watches the asset source directory and recompiles changed inputs into
@@ -24,6 +26,12 @@ import {
 export interface IAssetWatchSummary {
   readonly compiled: readonly string[];
   readonly failed: readonly string[];
+  /**
+   * One cost row per pass across this burst's compiles, the same record shape a build emits.
+   * Present only when the burst compiled something; a scratch compile never reports `cached`
+   * because it starts from an empty output root.
+   */
+  readonly passCosts?: readonly IPassCostRow[];
 }
 
 export interface IAssetWatchOptions extends IAssetCompileOptions {
@@ -68,6 +76,40 @@ const DEFAULT_DEBOUNCE_MS = 100;
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Folds a burst's per-file cost rows into one row per pass, in first-seen registry order. */
+function mergePassCosts(perFile: readonly (readonly IPassCostRow[])[]): readonly IPassCostRow[] {
+  const merged = new Map<
+    string,
+    { assets: IPassCostRow["assets"]; cachedInputs: number; durationMs: number; ranInputs: number }
+  >();
+  for (const rows of perFile) {
+    for (const row of rows) {
+      const record = merged.get(row.pass) ?? {
+        assets: [],
+        cachedInputs: 0,
+        durationMs: 0,
+        ranInputs: 0,
+      };
+      merged.set(row.pass, {
+        assets: [...record.assets, ...row.assets],
+        cachedInputs: record.cachedInputs + row.cachedInputs,
+        durationMs: record.durationMs + row.durationMs,
+        ranInputs: record.ranInputs + row.ranInputs,
+      });
+    }
+  }
+  return [...merged].map(([pass, record]) => ({
+    assets: [...record.assets].sort((left, right) =>
+      left.logicalPath < right.logicalPath ? -1 : 1,
+    ),
+    cachedInputs: record.cachedInputs,
+    durationMs: record.durationMs,
+    pass,
+    ranInputs: record.ranInputs,
+    status: record.ranInputs > 0 ? ("ran" as const) : ("cached" as const),
+  }));
 }
 
 function resolveWatchLayout(cwd: string, options: IAssetWatchOptions): IWatchLayout {
@@ -126,6 +168,12 @@ async function writeManifestAtomically(
  * that file, then copying the hashed output out. Delegating keeps hashing, classification and
  * pass semantics in one place, so a dev save can never produce names the build would not.
  */
+interface IRecompiled {
+  readonly entry: ICompiledEntry;
+  /** The driver-measured per-pass costs this one input produced, from the scratch compile. */
+  readonly passCosts: readonly IPassCostRow[];
+}
+
 async function recompileOne(
   layout: IWatchLayout,
   compileOptions: {
@@ -136,7 +184,7 @@ async function recompileOne(
     readonly transcoder?: IBasisTranscoder;
   },
   logical: string,
-): Promise<ICompiledEntry> {
+): Promise<IRecompiled> {
   const scratch = await mkdtemp(path.join(tmpdir(), "threenative-watch-"));
   try {
     const stagedInput = path.join(scratch, DEFAULT_SOURCE, logical);
@@ -146,7 +194,7 @@ async function recompileOne(
     // project's transcoder paths so a single-texture save produces exactly what a build
     // would — including the Basis runtime files the KTX2 loader fetches. cwd/output/source
     // stay the scratch lane's own: the resolved options must never override them.
-    await compileAssets({
+    const compiled = await compileAssets({
       cwd: scratch,
       output: "out",
       source: DEFAULT_SOURCE,
@@ -164,7 +212,7 @@ async function recompileOne(
     const destination = path.join(layout.outputRoot, entry.output);
     await mkdir(path.dirname(destination), { recursive: true });
     await writeFile(destination, await readFile(path.join(scratch, "out", entry.output)));
-    return entry;
+    return { entry, passCosts: compiled.passCosts };
   } finally {
     await rm(scratch, { force: true, recursive: true });
   }
@@ -258,10 +306,18 @@ export function watchAssets(options: IAssetWatchOptions = {}): IAssetWatchHandle
     }
   };
 
-  const reportBurst = (compiled: readonly string[], failed: readonly string[]): void => {
+  const reportBurst = (
+    compiled: readonly string[],
+    failed: readonly string[],
+    passCosts: readonly IPassCostRow[],
+  ): void => {
     if (options.onChange === undefined || (compiled.length === 0 && failed.length === 0)) return;
     try {
-      options.onChange({ compiled, failed });
+      options.onChange({
+        compiled,
+        failed,
+        ...(compiled.length > 0 ? { passCosts } : {}),
+      });
     } catch (error) {
       logFailure(`onChange listener threw: ${messageOf(error)}`);
     }
@@ -271,20 +327,50 @@ export function watchAssets(options: IAssetWatchOptions = {}): IAssetWatchHandle
     if (reconcileAll) await fullRebuild();
     const compiled: string[] = [];
     const failed: string[] = [];
+    const passCostRows: (readonly IPassCostRow[])[] = [];
     const merged = new Map<string, ICompiledEntry>();
-    for (const logical of batch) {
-      try {
-        merged.set(logical, await recompileOne(layout, compileOptions, logical));
+    // The burst runs through the same execution model as a build: bounded workers, results
+    // merged on this thread keyed by logical path. A scratch compile is one input, so the
+    // parallelism lives here — a burst of saves recompiles together, not one per drain.
+    const queue = [...batch];
+    const runners = Math.min(queue.length, Math.max(1, DEFAULT_CONCURRENCY));
+    const record = (
+      logical: string,
+      error: unknown,
+      entry?: ICompiledEntry,
+      costs?: readonly IPassCostRow[],
+    ): void => {
+      if (entry !== undefined && costs !== undefined) {
+        merged.set(logical, entry);
+        passCostRows.push(costs);
         compiled.push(logical);
-      } catch (error) {
-        // The previous output (content-addressed, never overwritten) and previous manifest
-        // entry stay untouched; the path is reported and the next good save heals it.
-        failed.push(logical);
-        logFailure(`could not recompile '${logical}': ${messageOf(error)}`);
+        return;
       }
-    }
+      // The previous output (content-addressed, never overwritten) and previous manifest
+      // entry stay untouched; the path is reported and the next good save heals it.
+      failed.push(logical);
+      logFailure(`could not recompile '${logical}': ${messageOf(error)}`);
+    };
+    await Promise.all(
+      Array.from({ length: runners }, () =>
+        (async () => {
+          for (;;) {
+            const logical = queue.shift();
+            if (logical === undefined) return;
+            try {
+              const recompiled = await recompileOne(layout, compileOptions, logical);
+              record(logical, undefined, recompiled.entry, recompiled.passCosts);
+            } catch (error) {
+              record(logical, error);
+            }
+          }
+        })(),
+      ),
+    );
     await mergeEntries(merged);
-    reportBurst(compiled, failed);
+    // A dev save reports the same per-pass records a build does; without them the watch loop
+    // is blind to which pass a slow save paid for.
+    reportBurst(compiled, failed, mergePassCosts(passCostRows));
   };
 
   const runFlush = (): void => {

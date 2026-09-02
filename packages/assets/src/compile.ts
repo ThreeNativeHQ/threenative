@@ -6,6 +6,7 @@ import {
   readFile,
   readdir,
   realpath,
+  rename,
   rm,
   stat,
   writeFile,
@@ -14,6 +15,8 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
+import { applyPasses } from "./pass-chain.js";
+import type { IAppliedPasses, IPassTiming } from "./pass-chain.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import { modelPass } from "./passes/model.js";
@@ -26,15 +29,21 @@ import type {
   IModelTexturesOptions,
   IModelVirtualOptions,
 } from "./passes/model.js";
+import { createSharedImageStore } from "./passes/shared-images.js";
 import { texturePass } from "./passes/texture.js";
 import type { ITextureOverride, ITexturePassOptions } from "./passes/texture.js";
-import { formatModelSizes, formatTextureSizes } from "./report.js";
+import { formatModelSizes, formatPassCosts, formatTextureSizes } from "./report.js";
 import type {
   IEmbeddedTextureRow,
   IModelSizeRow,
+  IPassCostAssetRow,
+  IPassCostRow,
   ISimplifyRow,
   ITextureSizeRow,
+  PassCostStatus,
 } from "./report.js";
+import { createPassPool, resolveConcurrency } from "./worker-pool.js";
+import type { PassSpec } from "./worker-protocol.js";
 
 export type AssetKind = "audio" | "model" | "other" | "texture";
 
@@ -65,6 +74,12 @@ export interface IAssetAuxiliaryOutput {
   /** Manifest array receiving this output, for example `lightmaps`. */
   readonly manifestField: string;
   readonly metadata?: Readonly<Record<string, unknown>>;
+  /**
+   * An output the pass already content-addressed itself, relative to the output root — the
+   * shared image several models reference by the same relative URL. Absent means the compile
+   * names it `<stem>.<role>.<digest><extension>` beside the input's own output.
+   */
+  readonly outputPath?: string;
   /** Stable filename segment, for example `lightmap`. */
   readonly role: string;
 }
@@ -88,6 +103,12 @@ export interface IAssetPass {
 
 export interface IAssetSourceConfig {
   /**
+   * The bound on how many workers a bake may use. A direct `concurrency` option overrides it;
+   * absent means the driver's default (`min(4, cores - 1)`). CI boxes and laptops differ, and
+   * a 6.8 GB pack does not get to decide the machine's fate.
+   */
+  readonly concurrency?: number;
+  /**
    * Model optimization: an object of options, or the string `"none"` to ship every model
    * exactly as committed. Absent means optimization runs with defaults.
    */
@@ -107,6 +128,13 @@ export interface IModelsConfig {
   readonly lightmap?: ILightmapPassOptions;
   readonly passes?: IModelPassesOptions;
   readonly quantize?: IModelQuantizeOptions;
+  /**
+   * Write each distinct embedded image once under `shared/images/` and reference it from every
+   * model that carries it, instead of embedding a copy in each. A marketplace pack's eight pines
+   * stop shipping eight copies of the same bark map, and a rebuild reuses last build's encodes.
+   * Default false: the served GLB then references files beside it, which a host must serve.
+   */
+  readonly sharedImages?: boolean;
   /** LOD simplification. Absent means none: it is the one lossy stage, and it is opt-in. */
   readonly simplify?: IModelSimplifyOptions;
   /**
@@ -123,11 +151,13 @@ export interface IModelsConfig {
 }
 
 export interface ITexturesConfig {
+  readonly maxSize?: number;
   readonly overrides?: readonly ITextureOverride[];
   readonly quality?: number;
 }
 
 export interface IAssetCompileOptions {
+  readonly concurrency?: number;
   readonly config?: IAssetSourceConfig;
   readonly cwd?: string;
   /** Includes the machine-readable health report on the result. */
@@ -138,6 +168,14 @@ export interface IAssetCompileOptions {
    * registry (the KTX2 texture pass) runs unless `config.textures` is `"none"`.
    */
   readonly passes?: readonly IAssetPass[];
+  /**
+   * The order inputs are processed in, which under a scheduler is the order their work
+   * completes. `"sorted"` (the default) is the documented behaviour; `"reversed"` exists for
+   * the determinism gate, which must be able to run the same inputs through the driver in a
+   * different completion order and compare every emitted byte. It is a test seam, not a
+   * project setting, and a game config never carries it.
+   */
+  readonly processingOrder?: "reversed" | "sorted";
   readonly source?: string;
   /** Overrides resolution of three's Basis transcoder for the copy into the output root. */
   readonly transcoder?: IBasisTranscoder;
@@ -149,6 +187,10 @@ export interface IBasisTranscoder {
 }
 
 export interface IAssetCompileResult {
+  /** How many workers the driver actually used: 1 for a sequential bake (custom passes, or a bound of 1). */
+  readonly concurrencyUsed: number;
+  /** One cost row per pass, driver-measured; empty when no bake ran. */
+  readonly passCosts: readonly IPassCostRow[];
   readonly receipt?: IBakeReceipt;
   readonly report?: IAssetHealthReport;
   readonly skipped: number;
@@ -206,7 +248,11 @@ interface IAssetManifest {
 }
 
 interface ICompileLayout {
+  /** `assets.concurrency` from the game config, when it declared one. */
+  readonly concurrency: number | undefined;
   readonly outputRoot: string;
+  /** The built-in registry's serialisable mirror; empty when the caller supplied passes. */
+  readonly passSpecs: readonly PassSpec[];
   readonly passes: readonly IAssetPass[];
   readonly sourceRoot: string;
   readonly targets: IAssetTargets;
@@ -412,11 +458,14 @@ function parseTexturesConfig(raw: unknown): ITexturePassOptions | undefined {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.textures must be "none" or an object.');
   }
   for (const key of Object.keys(raw)) {
-    if (key !== "quality" && key !== "overrides") {
+    if (key !== "maxSize" && key !== "quality" && key !== "overrides") {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.textures.${key} is not recognised.`);
     }
   }
   return {
+    ...(raw.maxSize === undefined
+      ? {}
+      : { maxSize: positiveTextureSize(raw.maxSize, "assets.textures.maxSize") }),
     ...(raw.quality === undefined
       ? {}
       : { quality: textureQuality(raw.quality, "assets.textures.quality") }),
@@ -424,14 +473,33 @@ function parseTexturesConfig(raw: unknown): ITexturePassOptions | undefined {
   };
 }
 
+function positiveTextureSize(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 4) {
+    throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must be a positive integer of at least 4.`);
+  }
+  return value;
+}
+
 /** `"none"` disables the built-in model pass; an object configures it; absent means defaults. */
-function parseModelsConfig(raw: unknown): IModelPassOptions | undefined {
+type ParsedModelsConfig = Omit<IModelPassOptions, "sharedImages"> & {
+  readonly sharedImages?: boolean;
+};
+
+function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
   if (raw === undefined) return {};
   if (raw === "none") return undefined;
   if (!isRecord(raw)) {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models must be "none" or an object.');
   }
-  const allowed = ["lightmap", "passes", "quantize", "simplify", "textures", "virtual"];
+  const allowed = [
+    "lightmap",
+    "passes",
+    "quantize",
+    "sharedImages",
+    "simplify",
+    "textures",
+    "virtual",
+  ];
   for (const key of Object.keys(raw)) {
     if (!allowed.includes(key)) {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.${key} is not recognised.`);
@@ -445,7 +513,11 @@ function parseModelsConfig(raw: unknown): IModelPassOptions | undefined {
   const simplify = raw.simplify === undefined ? undefined : parseModelSimplify(raw.simplify);
   const textures = raw.textures === undefined ? undefined : parseModelTextures(raw.textures);
   const virtual = raw.virtual === undefined ? undefined : parseModelVirtual(raw.virtual);
+  if (raw.sharedImages !== undefined && typeof raw.sharedImages !== "boolean") {
+    throw new Error("TN_ASSETS_CONFIG_INVALID: assets.models.sharedImages must be a boolean.");
+  }
   return {
+    ...(raw.sharedImages === true ? { sharedImages: true } : {}),
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(Object.keys(passes).length === 0 ? {} : { passes }),
     ...(Object.keys(quantize).length === 0 ? {} : { quantize }),
@@ -668,6 +740,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   }
   for (const key of Object.keys(config)) {
     if (
+      key !== "concurrency" &&
       key !== "source" &&
       key !== "output" &&
       key !== "targets" &&
@@ -695,19 +768,45 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
     ?.lightmap;
   // The built-in registry runs only when the caller did not replace it wholesale; each
-  // built-in pass drops out individually through its `"none"` shorthand.
-  const builtinPasses =
-    options.passes === undefined
-      ? [
-          ...(textures !== undefined ? [texturePass(textures)] : []),
-          ...(lightmap !== undefined ? [lightmapPass(lightmap)] : []),
-          ...(models !== undefined
-            ? [modelPass({ ...models, preserveLightmapUv: lightmap !== undefined })]
-            : []),
-        ]
-      : [];
+  // built-in pass drops out individually through its `"none"` shorthand. Its serialisable
+  // mirror rides along so a bounded worker pool can rebuild the identical chain — custom
+  // passes cannot cross a worker boundary, so a compile that supplies any runs sequential.
+  const builtinPasses: IAssetPass[] = [];
+  const passSpecs: PassSpec[] = [];
+  if (options.passes === undefined) {
+    if (textures !== undefined) {
+      builtinPasses.push(texturePass(textures));
+      passSpecs.push({ kind: "texture", options: textures });
+    }
+    if (lightmap !== undefined) {
+      builtinPasses.push(lightmapPass(lightmap));
+      passSpecs.push({ kind: "lightmap", options: lightmap });
+    }
+    if (models !== undefined) {
+      builtinPasses.push(
+        modelPass({
+          ...models,
+          preserveLightmapUv: lightmap !== undefined,
+          // Bound to the output root so a second build finds last build's encodes on
+          // disk instead of paying for them again.
+          sharedImages:
+            models.sharedImages === true ? createSharedImageStore(outputRoot) : undefined,
+        }),
+      );
+      passSpecs.push({
+        kind: "model",
+        options: {
+          ...models,
+          preserveLightmapUv: lightmap !== undefined,
+          sharedImages: models.sharedImages === true,
+        },
+      });
+    }
+  }
   return {
+    concurrency: config.concurrency as number | undefined,
     outputRoot,
+    passSpecs,
     passes: [...builtinPasses, ...(options.passes ?? [])],
     sourceRoot,
     targets: config.targets === undefined ? {} : validateTargets(config.targets),
@@ -815,6 +914,8 @@ interface IResolvedAuxiliaryOutput {
   readonly manifestField: string;
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly output: string;
+  /** Named by the pass and possibly referenced by several inputs. */
+  readonly shared: boolean;
   /** The producer's own name for this output — `lightmap` for the lightmap pass's atlas. */
   readonly role: string;
 }
@@ -827,11 +928,9 @@ function resolveAuxiliaryOutputs(
   const stem = logical.slice(0, -sourceExtension.length);
   return outputs.map((auxiliary) => {
     const digest = createHash("sha256").update(auxiliary.buffer).digest("hex").slice(0, 8);
-    const output = outputNameFor(
-      `${stem}.${auxiliary.role}${auxiliary.extension}`,
-      digest,
-      auxiliary.extension,
-    );
+    const output =
+      auxiliary.outputPath ??
+      outputNameFor(`${stem}.${auxiliary.role}${auxiliary.extension}`, digest, auxiliary.extension);
     return {
       buffer: auxiliary.buffer,
       manifestField: auxiliary.manifestField,
@@ -842,6 +941,7 @@ function resolveAuxiliaryOutputs(
       },
       output,
       role: auxiliary.role,
+      shared: auxiliary.outputPath !== undefined,
     };
   });
 }
@@ -856,6 +956,66 @@ function auxiliaryManifestFields(
     fields[output.manifestField] = field;
   }
   return fields;
+}
+
+/**
+ * The files a manifest entry declares beyond its own output: every array field whose records
+ * carry an `output` path (lightmaps, shared images), as the receipt records them.
+ */
+function declaredAuxiliaryOutputs(
+  entry: IAssetManifestEntry,
+): { readonly bytes: number; readonly path: string; readonly producer: string }[] {
+  const outputs: { bytes: number; path: string; producer: string }[] = [];
+  for (const [field, value] of Object.entries(entry)) {
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      if (!isRecord(item) || typeof item.output !== "string") continue;
+      outputs.push({
+        bytes: typeof item.bytes === "number" ? item.bytes : 0,
+        path: item.output,
+        producer: field === "lightmaps" ? "lightmap" : field === "sharedImages" ? "image" : field,
+      });
+    }
+  }
+  return outputs;
+}
+
+/**
+ * The previous entry, when it is exactly what this build would produce and every file it
+ * declares still exists — or `undefined`, in which case the passes run.
+ */
+async function reusableEntry(
+  outputRoot: string,
+  logical: string,
+  digest: string,
+  existing: IAssetManifestEntry,
+): Promise<
+  { readonly bytes: number; readonly path: string; readonly producer: string }[] | undefined
+> {
+  const expected = outputNameFor(logical, digest, path.extname(existing.output));
+  if (existing.output !== expected) return undefined;
+  const auxiliary = declaredAuxiliaryOutputs(existing);
+  const present = await Promise.all(
+    [existing.output, ...auxiliary.map((output) => output.path)].map((relative) =>
+      outputExists(path.join(outputRoot, relative)),
+    ),
+  );
+  return present.every(Boolean) ? auxiliary : undefined;
+}
+
+/** The paths the previous bake's receipt declared, or none when there is no readable receipt. */
+async function readPreviousReceiptPaths(receiptPath: string): Promise<ReadonlySet<string>> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(receiptPath, "utf8"));
+    if (!isRecord(parsed) || !Array.isArray(parsed.outputs)) return new Set();
+    return new Set(
+      parsed.outputs.flatMap((output) =>
+        isRecord(output) && typeof output.path === "string" ? [output.path] : [],
+      ),
+    );
+  } catch {
+    return new Set();
+  }
 }
 
 async function readExistingManifest(
@@ -919,41 +1079,70 @@ async function readInput(sourceRoot: string, logical: string): Promise<Buffer> {
   }
 }
 
-interface IAppliedPasses {
-  readonly auxiliaryOutputs: readonly IAssetAuxiliaryOutput[];
-  readonly buffer: Buffer;
-  readonly entry: Record<string, unknown> | undefined;
-  readonly extension: string | undefined;
+/** The per-pass cost bookkeeping one bake accumulates, keyed in registry order. */
+interface IPassCostRecord {
+  cachedInputs: number;
+  ranInputs: number;
+  timings: IPassCostAssetRow[];
 }
 
-async function applyPasses(
-  passes: readonly IAssetPass[],
-  input: Buffer,
+/** Counts one compile-cache-served input for every pass: the cache decision is the source. */
+function recordCachedInputs(
+  costInputs: Map<string, IPassCostRecord>,
+  passNames: readonly string[],
+): void {
+  for (const name of passNames) {
+    const record = costInputs.get(name);
+    if (record !== undefined) record.cachedInputs += 1;
+  }
+}
+
+function recordRanTimings(
+  costInputs: Map<string, IPassCostRecord>,
   logical: string,
-): Promise<IAppliedPasses> {
-  let buffer = input;
-  const auxiliaryOutputs: IAssetAuxiliaryOutput[] = [];
-  let entry: Record<string, unknown> | undefined;
-  let extension: string | undefined;
-  for (const pass of passes) {
-    let result: Buffer | IAssetPassOutput;
-    try {
-      result = await pass.apply(buffer, logical);
-    } catch (error) {
+  timings: readonly IPassTiming[],
+): void {
+  for (const timing of timings) {
+    const record = costInputs.get(timing.name);
+    if (record === undefined) continue;
+    record.ranInputs += 1;
+    record.timings.push({ durationMs: timing.durationMs, logicalPath: logical });
+  }
+}
+
+/** Fails closed: every pass must account for every input, ran or cached, or nothing is emitted. */
+function assertCompletePassCosts(
+  costInputs: ReadonlyMap<string, IPassCostRecord>,
+  inputCount: number,
+): void {
+  for (const [pass, record] of costInputs) {
+    if (record.ranInputs + record.cachedInputs !== inputCount) {
       throw new Error(
-        `TN_ASSETS_PASS_FAILED: pass '${pass.name}' failed for '${logical}': ${messageOf(error)}`,
+        `TN_ASSETS_PASS_COST_INCOMPLETE: pass '${pass}' accounts for ${record.ranInputs} ran + ${record.cachedInputs} cached of ${inputCount} input(s); refusing to emit a cost report with a hole in it.`,
       );
     }
-    if (Buffer.isBuffer(result)) {
-      buffer = result;
-      continue;
-    }
-    buffer = result.buffer;
-    if (result.auxiliaryOutputs !== undefined) auxiliaryOutputs.push(...result.auxiliaryOutputs);
-    if (result.entry !== undefined) entry = { ...(entry ?? {}), ...result.entry };
-    if (result.outputExtension !== undefined) extension = result.outputExtension;
   }
-  return { auxiliaryOutputs, buffer, entry, extension };
+}
+
+/** Rows in registry order; per-asset rows sorted by logical path so two bakes diff cleanly. */
+function buildPassCostRows(
+  costInputs: ReadonlyMap<string, IPassCostRecord>,
+): readonly IPassCostRow[] {
+  const rows: IPassCostRow[] = [];
+  for (const [pass, record] of costInputs) {
+    const status: PassCostStatus = record.ranInputs > 0 ? "ran" : "cached";
+    rows.push({
+      assets: [...record.timings].sort((left, right) =>
+        left.logicalPath < right.logicalPath ? -1 : 1,
+      ),
+      cachedInputs: record.cachedInputs,
+      durationMs: record.timings.reduce((total, timing) => total + timing.durationMs, 0),
+      pass,
+      ranInputs: record.ranInputs,
+      status,
+    });
+  }
+  return rows;
 }
 
 async function writeOutput(
@@ -1012,11 +1201,16 @@ async function assertNoUndeclaredOutputs(
   outputRoot: string,
   declared: ReadonlySet<string>,
   since: number,
+  writtenBefore: ReadonlySet<string>,
 ): Promise<void> {
   const undeclared: string[] = [];
   for (const relative of await walkOutputFiles(outputRoot)) {
     if (relative === MANIFEST_NAME || relative === RECEIPT_NAME) continue;
     if (declared.has(relative)) continue;
+    // A file the previous receipt lists was written by an earlier bake, however close its mtime
+    // is to this run's start: with the cache skipping unchanged inputs, two bakes can be one
+    // millisecond apart, and the previous bake's now-stale output is not this bake's leak.
+    if (writtenBefore.has(relative)) continue;
     const info = await stat(path.join(outputRoot, relative));
     if (info.mtimeMs + 1 >= since) undeclared.push(relative);
   }
@@ -1044,7 +1238,17 @@ async function writeReceipt(
     );
   }
   const seen = new Map<string, IBakeReceiptOutput>();
-  for (const output of outputs) seen.set(output.path, output);
+  for (const output of outputs) {
+    // Several inputs can declare one shared output (an image two models embed). The survivor is
+    // chosen by the lexicographically smallest source, not by arrival: under a scheduler whose
+    // completion order is not input order, a last-writer-wins merge would make the receipt's
+    // provenance depend on which worker finished first. The path, bytes and producer are
+    // identical across the contenders; only this tie-break needs a stable rule.
+    const existing = seen.get(output.path);
+    if (existing === undefined || (output.source ?? "") < (existing.source ?? "")) {
+      seen.set(output.path, output);
+    }
+  }
   const receipt: IBakeReceipt = {
     outputs: [...seen.values()].sort((left, right) => (left.path < right.path ? -1 : 1)),
     pipelineVersion: PIPELINE_VERSION,
@@ -1098,11 +1302,12 @@ export async function compileAssets(
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const layout = resolveLayout(cwd, options);
   const receiptPath = path.join(layout.outputRoot, RECEIPT_NAME);
+  const writtenBefore = await readPreviousReceiptPaths(receiptPath);
   if (!(await hasSourceDirectory(layout.sourceRoot))) {
     // No bake ran, so no receipt describes this output root. A stale one from a previous build
     // would have the delete-test remove files nothing produces any more.
     await rm(receiptPath, { force: true });
-    return { skipped: 0, written: 0 };
+    return { concurrencyUsed: 1, passCosts: [], skipped: 0, written: 0 };
   }
   const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
   const previous = await readExistingManifest(manifestPath);
@@ -1116,6 +1321,9 @@ export async function compileAssets(
   });
   const entries: Record<string, IAssetManifestEntry> = {};
   const receiptOutputs: IBakeReceiptOutput[] = [];
+  const costInputs = new Map<string, IPassCostRecord>();
+  for (const name of passNames)
+    costInputs.set(name, { cachedInputs: 0, ranInputs: 0, timings: [] });
   // Read before the first write, so the undeclared-output guard can tell this run's files from
   // the project's own static ones. It never reaches the receipt: that stays deterministic.
   const runStart = Date.now();
@@ -1128,6 +1336,9 @@ export async function compileAssets(
   let compressedModelCount = 0;
 
   const logicals = await walkSources(layout.sourceRoot);
+  // The determinism gate's seam: reversed processing order reverses which input's work completes
+  // first, so the gate can prove the emitted bytes do not depend on it.
+  if (options.processingOrder === "reversed") logicals.reverse();
 
   // An empty (or dotfile-only) source must never publish an empty manifest: the runtime treats
   // a served manifest as authoritative and would reject every load against it. A source that
@@ -1137,19 +1348,103 @@ export async function compileAssets(
     await rm(receiptPath, { force: true });
     const report = await runHealthReport([], layout.targets);
     return options.health === true
-      ? { report, skipped: 0, written: 0 }
-      : { skipped: 0, written: 0 };
+      ? { concurrencyUsed: 1, passCosts: [], report, skipped: 0, written: 0 }
+      : { concurrencyUsed: 1, passCosts: [], skipped: 0, written: 0 };
   }
 
-  for (const logical of logicals) {
+  /** Everything one entry contributes to the receipt, the health report and the size report. */
+  const bookkeep = (
+    logical: string,
+    input: Buffer,
+    entry: IAssetManifestEntry,
+    auxiliary: readonly {
+      readonly bytes: number;
+      readonly path: string;
+      readonly producer: string;
+    }[],
+    lightmap: IModelSizeRow["lightmap"] | undefined,
+  ): void => {
+    // Declared from the entry rather than from the write below, because a cache hit skips the
+    // write and the file is still this bake's output: the delete-test has to remove it too.
+    receiptOutputs.push({
+      bytes: entry.bytes,
+      path: entry.output,
+      producer: passNames.join("+"),
+      source: logical,
+    });
+    for (const output of auxiliary) receiptOutputs.push({ ...output, source: logical });
+    if (entry.extensions?.includes(BASISU_EXTENSION) === true) compressedModelCount += 1;
+    // The health report measures the source, not the compiled bytes — deliberately for both
+    // kinds. Texture dimensions, alpha and power-of-two are authoring properties a KTX2
+    // output hides; model triangles and materials are the counts targets are declared
+    // against, and the pass's self-verification guarantees they survive compilation within
+    // tolerance. Byte savings are reported per kind below instead.
+    healthInputs.push({ data: input, logicalPath: logical });
+    if (entry.bytesBefore === undefined) return;
+    if (entry.triangles !== undefined) {
+      modelRows.push({
+        after: entry.bytes,
+        before: entry.bytesBefore,
+        ...(entry.embeddedTextures === undefined
+          ? {}
+          : { embeddedTextures: entry.embeddedTextures }),
+        ...(entry.simplify === undefined ? {} : { simplify: entry.simplify }),
+        extensions: entry.extensions,
+        logicalPath: logical,
+        ...(lightmap === undefined ? {} : { lightmap }),
+        triangles: entry.triangles,
+      });
+    } else {
+      textureRows.push({
+        after: entry.bytes,
+        before: entry.bytesBefore,
+        format: entry.format,
+        logicalPath: logical,
+      });
+      textureCount += 1;
+    }
+  };
+
+  // The scheduler: independent work runs bounded-concurrent, everything that depends on order
+  // — the merge, the writes, the counters — stays on this thread and is keyed or
+  // stable-merged, which the determinism gate proves. A compile with custom passes has no
+  // serialisable mirror and runs sequential.
+  const concurrency = resolveConcurrency(options.concurrency ?? layout.concurrency);
+  const pool =
+    layout.passSpecs.length > 0 && concurrency > 1
+      ? createPassPool(concurrency, layout.passSpecs, layout.outputRoot)
+      : undefined;
+
+  const processOne = async (logical: string): Promise<void> => {
     const input = await readInput(layout.sourceRoot, logical);
-    const applied = await applyPasses(layout.passes, input, logical);
-    const auxiliaryOutputs = resolveAuxiliaryOutputs(logical, applied.auxiliaryOutputs);
-    const auxiliaryFields = auxiliaryManifestFields(auxiliaryOutputs);
     const digest = createHash("sha256")
       .update(input)
       .update(passConfiguration, "utf8")
       .digest("hex");
+    // The output name carries the digest of the input bytes and the whole pass configuration,
+    // so a previous entry under that exact name, with every file it declares still on disk, is
+    // this build's answer already: the passes are not run again. A build once applied every
+    // pass to every input and only then compared — minutes of texture encoding per `pnpm dev`
+    // for bytes that already existed.
+    const previousEntry = previous.entries[logical];
+    const reusable =
+      previousEntry === undefined
+        ? undefined
+        : await reusableEntry(layout.outputRoot, logical, digest.slice(0, 8), previousEntry);
+    if (previousEntry !== undefined && reusable !== undefined) {
+      entries[logical] = previousEntry;
+      bookkeep(logical, input, previousEntry, reusable, undefined);
+      recordCachedInputs(costInputs, passNames);
+      skipped += 1;
+      return;
+    }
+    const applied =
+      pool === undefined
+        ? await applyPasses(layout.passes, input, logical)
+        : await pool.run(logical, input);
+    recordRanTimings(costInputs, logical, applied.timings);
+    const auxiliaryOutputs = resolveAuxiliaryOutputs(logical, applied.auxiliaryOutputs);
+    const auxiliaryFields = auxiliaryManifestFields(auxiliaryOutputs);
     const entry: IAssetManifestEntry = {
       bytes: applied.buffer.length,
       kind: classify(logical),
@@ -1180,74 +1475,36 @@ export async function compileAssets(
           }),
     };
     entries[logical] = entry;
-    // Declared from the entry rather than from the write below, because a cache hit skips the
-    // write and the file is still this bake's output: the delete-test has to remove it too.
-    receiptOutputs.push({
-      bytes: entry.bytes,
-      path: entry.output,
-      producer: passNames.join("+"),
-      source: logical,
-    });
-    for (const auxiliary of auxiliaryOutputs) {
-      receiptOutputs.push({
-        bytes: auxiliary.buffer.length,
-        path: auxiliary.output,
-        producer: auxiliary.role,
-        source: logical,
-      });
-    }
-    if (entry.extensions?.includes(BASISU_EXTENSION) === true) compressedModelCount += 1;
-    // The health report measures the source, not the compiled bytes — deliberately for both
-    // kinds. Texture dimensions, alpha and power-of-two are authoring properties a KTX2
-    // output hides; model triangles and materials are the counts targets are declared
-    // against, and the pass's self-verification guarantees they survive compilation within
-    // tolerance. Byte savings are reported per kind below instead.
-    healthInputs.push({ data: input, logicalPath: logical });
-    if (entry.bytesBefore !== undefined) {
-      if (entry.triangles !== undefined) {
-        const lightmapOutput = auxiliaryOutputs.find(
-          (output) => output.manifestField === "lightmaps",
-        );
-        const lightmapMetadata = lightmapOutput?.metadata;
-        const lightmapAtlas = applied.entry?.lightmapAtlas;
-        const lightmap =
-          lightmapOutput !== undefined &&
-          isRecord(lightmapMetadata) &&
-          isRecord(lightmapAtlas) &&
-          typeof applied.entry?.lightmapBakeMs === "number"
-            ? {
-                atlasHeight: Number(lightmapAtlas.height),
-                atlasWidth: Number(lightmapAtlas.width),
-                bakeMs: applied.entry.lightmapBakeMs,
-                bytesAfter: lightmapOutput.buffer.length,
-                bytesBefore: Number(lightmapMetadata.bytesBefore),
-                dilatedTexels: Number(lightmapMetadata.dilatedTexels),
-                occludedTexels: Number(lightmapMetadata.occludedTexels),
-                validTexels: Number(lightmapMetadata.validTexels),
-              }
-            : undefined;
-        modelRows.push({
-          after: entry.bytes,
-          before: entry.bytesBefore,
-          ...(entry.embeddedTextures === undefined
-            ? {}
-            : { embeddedTextures: entry.embeddedTextures }),
-          ...(entry.simplify === undefined ? {} : { simplify: entry.simplify }),
-          extensions: entry.extensions,
-          logicalPath: logical,
-          ...(lightmap === undefined ? {} : { lightmap }),
-          triangles: entry.triangles,
-        });
-      } else {
-        textureRows.push({
-          after: entry.bytes,
-          before: entry.bytesBefore,
-          format: entry.format,
-          logicalPath: logical,
-        });
-        textureCount += 1;
-      }
-    }
+    const lightmapOutput = auxiliaryOutputs.find((output) => output.manifestField === "lightmaps");
+    const lightmapMetadata = lightmapOutput?.metadata;
+    const lightmapAtlas = applied.entry?.lightmapAtlas;
+    const lightmap =
+      lightmapOutput !== undefined &&
+      isRecord(lightmapMetadata) &&
+      isRecord(lightmapAtlas) &&
+      typeof applied.entry?.lightmapBakeMs === "number"
+        ? {
+            atlasHeight: Number(lightmapAtlas.height),
+            atlasWidth: Number(lightmapAtlas.width),
+            bakeMs: applied.entry.lightmapBakeMs,
+            bytesAfter: lightmapOutput.buffer.length,
+            bytesBefore: Number(lightmapMetadata.bytesBefore),
+            dilatedTexels: Number(lightmapMetadata.dilatedTexels),
+            occludedTexels: Number(lightmapMetadata.occludedTexels),
+            validTexels: Number(lightmapMetadata.validTexels),
+          }
+        : undefined;
+    bookkeep(
+      logical,
+      input,
+      entry,
+      auxiliaryOutputs.map((output) => ({
+        bytes: output.buffer.length,
+        path: output.output,
+        producer: output.role,
+      })),
+      lightmap,
+    );
     const existing = previous.entries[logical];
     if (
       existing !== undefined &&
@@ -1262,14 +1519,40 @@ export async function compileAssets(
       ).every(Boolean)
     ) {
       skipped += 1;
-      continue;
+      return;
     }
     await writeOutput(layout.outputRoot, entry, applied.buffer);
     for (const output of auxiliaryOutputs) {
-      await mkdir(path.dirname(path.join(layout.outputRoot, output.output)), { recursive: true });
-      await writeFile(path.join(layout.outputRoot, output.output), output.buffer);
+      const absolute = path.join(layout.outputRoot, output.output);
+      // A shared image is content-addressed and may already have been written by another model
+      // in this run or a previous one; identical bytes are not written twice. The write itself
+      // is temp-then-rename: a concurrent merge of the same image must never observe a torn
+      // file, and two identical-content writers cannot interleave.
+      if (output.shared && (await outputExists(absolute))) continue;
+      await mkdir(path.dirname(absolute), { recursive: true });
+      const temporary = `${absolute}.${process.pid}.tmp`;
+      await writeFile(temporary, output.buffer);
+      await rename(temporary, absolute);
     }
     written += 1;
+  };
+
+  const queue = [...logicals];
+  const runnerCount = Math.min(pool === undefined ? 1 : concurrency, queue.length);
+  try {
+    await Promise.all(
+      Array.from({ length: runnerCount }, () =>
+        (async () => {
+          for (;;) {
+            const logical = queue.shift();
+            if (logical === undefined) return;
+            await processOne(logical);
+          }
+        })(),
+      ),
+    );
+  } finally {
+    await pool?.dispose();
   }
 
   // The transcoder ships once per build next to the compiled assets; the runtime loader points
@@ -1302,10 +1585,13 @@ export async function compileAssets(
 
   // The report runs unconditionally — it is the one place a user learns why their game is
   // slow. Only declared targets can fail it.
+  assertCompletePassCosts(costInputs, logicals.length);
+  const passCosts = buildPassCostRows(costInputs);
   const report = await runHealthReport(healthInputs, layout.targets);
   for (const line of formatHealthReport(report)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
+  for (const line of formatPassCosts(passCosts)) console.log(line);
   if (report.failed) {
     const failedAssets = report.findings
       .filter((finding) => finding.grade === "fail")
@@ -1319,9 +1605,11 @@ export async function compileAssets(
     layout.outputRoot,
     new Set(receiptOutputs.map((output) => output.path)),
     runStart,
+    writtenBefore,
   );
   const receipt = await writeReceipt(layout.outputRoot, receiptOutputs);
+  const concurrencyUsed = pool === undefined ? 1 : Math.min(concurrency, logicals.length);
   return options.health === true
-    ? { receipt, report, skipped, written }
-    : { receipt, skipped, written };
+    ? { concurrencyUsed, passCosts, receipt, report, skipped, written }
+    : { concurrencyUsed, passCosts, receipt, skipped, written };
 }

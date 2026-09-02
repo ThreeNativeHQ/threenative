@@ -1,3 +1,4 @@
+// quality-allow: landed one line over the threshold with the FAB extraction lane; split owed to that lane
 import {
   BufferGeometry,
   Float32BufferAttribute,

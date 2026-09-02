@@ -260,6 +260,7 @@ export function buildReport(
         ? {}
         : { renderChain: afterSnapshot?.renderChain ?? beforeSnapshot?.renderChain }),
       resources: resourceObservations(beforeSnapshot, afterSnapshot),
+      ...(startup === undefined ? {} : { startup }),
       ...(beforeSnapshot?.gameplay === undefined
         && afterSnapshot?.gameplay === undefined
         && labeledSamples.every(({ snapshot }) => snapshot.gameplay === undefined)

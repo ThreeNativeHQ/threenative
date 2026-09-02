@@ -71,8 +71,11 @@ export { texturePass } from "./passes/texture.js";
 export type {
   IEmbeddedTextureRow,
   IModelSizeRow,
+  IPassCostAssetRow,
+  IPassCostRow,
   ISimplifyRow,
   ITextureSizeRow,
+  PassCostStatus,
 } from "./report.js";
 /**
  * Formats model byte, geometry, and embedded-texture measurements for a build report.
@@ -82,6 +85,15 @@ export type {
  * @example const lines = formatModelSizes(modelRows);
  */
 export { formatModelSizes } from "./report.js";
+
+/**
+ * Formats per-pass wall-clock costs for a build report.
+ * @situation see which asset pass owns the wall clock after a bake
+ * @situation compare pass costs between two builds before optimizing the pipeline
+ * @constraint one row per pass in registry order, per-asset rows sorted by logical path
+ * @example const lines = formatPassCosts(result.passCosts);
+ */
+export { formatPassCosts } from "./report.js";
 
 /**
  * Formats standalone texture byte measurements for a build report.

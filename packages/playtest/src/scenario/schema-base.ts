@@ -263,6 +263,16 @@ export interface IPlaytestRenderChainAssertion {
   };
 }
 
+/** Ceilings on the application's startup milestones, in milliseconds since navigation. */
+export interface IPlaytestStartupAssertion {
+  /** The start scene's `enter()` returned: a controllable world exists. */
+  maxEnteredMs?: number;
+  /** First-use compilation settled or its budget expired. */
+  maxCompileSettledMs?: number;
+  /** `whenReady()` resolved: the world is safe to show. */
+  maxReadyMs?: number;
+}
+
 export interface IPlaytestFramebufferCoverageAssertion {
   backdrop: [number, number, number];
   grid?: {
@@ -353,6 +363,7 @@ export interface IPlaytestScenarioAssertions {
   resources?: IPlaytestResourceAssertion[];
   settled?: IPlaytestSettledAssertion[];
   signals?: IPlaytestSignalAssertion[];
+  startup?: IPlaytestStartupAssertion;
   states?: IPlaytestStateAssertion[];
   tags?: IPlaytestTagCountAssertion[];
   visibility?: IPlaytestVisibilityAssertion[];

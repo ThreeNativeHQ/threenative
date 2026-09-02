@@ -98,6 +98,16 @@ Desktop spawn under a headless session rides the same Xvfb rule as any pixel run
 The command never launches a browser — the browser lane already bounds performance through
 `assert.performance` — and it never tunes anything; it is a meter reader.
 
+## Startup time is an observation
+
+The runtime stamps its startup milestones on its own clock — `loadStartedMs`, `enteredMs`,
+`compileSettledMs`, `readyMs`, in milliseconds since navigation — and publishes them as
+`observations.startup.timeline`. Scenarios bound them with `assert.startup`: `maxEnteredMs`,
+`maxCompileSettledMs`, `maxReadyMs`. A milestone the run never reached fails closed
+(`TN_PLAYTEST_STARTUP_UNOBSERVABLE`); one past its ceiling fails
+`TN_PLAYTEST_STARTUP_TOO_SLOW` with the measured value. Before this, startup was a console
+anecdote read off `TN_STARTUP_WARMUP` after the fact.
+
 ## Device thermal, power and battery
 
 Every `--target android` run measures the phone around itself and reports it as

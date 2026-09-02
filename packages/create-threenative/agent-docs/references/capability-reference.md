@@ -55,6 +55,21 @@ export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly strin
 const lines = formatModelSizes(modelRows);
 ```
 
+### `formatPassCosts`
+
+`function` — Formats per-pass wall-clock costs for a build report.
+
+```ts
+export function formatPassCosts(rows: readonly IPassCostRow[]): readonly string[] { … }
+```
+
+- **Use when:** see which asset pass owns the wall clock after a bake · compare pass costs between two builds before optimizing the pipeline
+- **Constraints:** one row per pass in registry order, per-asset rows sorted by logical path
+
+```ts
+const lines = formatPassCosts(result.passCosts);
+```
+
 ### `formatTextureSizes`
 
 `function` — Formats standalone texture byte measurements for a build report.

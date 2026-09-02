@@ -182,13 +182,11 @@ export interface IRendererOptions {
   /** Whether the game pinned that scale or the engine chose it. Reported, never inferred. */
   scaleSource?: "pinned" | "auto" | "auto-pinned";
   /**
-   * Physical pixels per logical (CSS) pixel of the canvas this draws into. Default 1.
-   *
-   * Native reports a real `devicePixelRatio` and a canvas measured in logical pixels, so the
-   * buffer is `logical × pixelRatio × resolutionScale` — arithmetic that reproduces the physical
-   * surface exactly and moves no tuned game's frame. Web keeps the default of 1 and its
-   * intentional DPR-1 buffer; unifying web onto real device density is a separate decision with
-   * its own visuals gate, and this option is where it would be made.
+   * Physical pixels per logical (CSS) pixel of the canvas this draws into. Default: the device's
+   * own `devicePixelRatio` on both runtimes (unified 2026-09-01; web's old DPR-1 buffer read as
+   * pixelation on any HiDPI display). The resolution scaler composes on top, so an unaffordable
+   * density is trimmed by scaler rungs rather than by the developer. An explicit value wins on
+   * both runtimes.
    */
   pixelRatio?: number;
   source?: IRendererPlatformSource;

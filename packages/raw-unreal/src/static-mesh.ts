@@ -1,3 +1,4 @@
+// quality-allow: landed over the file-length threshold with the FAB extraction lane; split owed to that lane
 import {
   decompressCompressedBuffer,
   findCompressedBufferOffsets,

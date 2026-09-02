@@ -253,7 +253,15 @@ describe("scene warm-up", () => {
     const scene = sceneOf(200);
     const report = await warmUpScene(renderer as never, scene as never, {} as never);
     expect(calls).toEqual([scene]);
-    expect(report).toMatchObject({ compiled: 1, slices: 1, abandoned: 0, timedOut: false });
+    // One call, but the report still says how much it covered: an 11-second whole-scene compile
+    // is a number a game can act on only next to the pipeline count it built.
+    expect(report).toMatchObject({
+      abandoned: 0,
+      compiled: 1,
+      pipelines: 200,
+      slices: 1,
+      timedOut: false,
+    });
   });
 
   test("should abandon a whole-scene compile that never returns", async () => {

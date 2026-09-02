@@ -40,6 +40,65 @@ function ktx2Magic(bytes: Buffer): boolean {
 }
 
 describe("the ktx2 texture pass", () => {
+  it("should keep a non-block-aligned maxSize as an actual maximum", async () => {
+    // Removing the floor snap makes this 16x8 source encode at 12x8 for maxSize 10, exceeding
+    // the game-owned cap. The literal 8x4 result preserves this source's 2:1 aspect ratio.
+    const { outputBytes } = await compileOne(
+      "threenative-tex-max-size-ten-",
+      "cliff.png",
+      rgbaPng({ height: 8, width: 16 }),
+      { textures: { maxSize: 10 } },
+    );
+
+    const ktx2 = readKTX2(outputBytes);
+    expect([ktx2.pixelWidth, ktx2.pixelHeight]).toEqual([8, 4]);
+    expect(Math.max(ktx2.pixelWidth, ktx2.pixelHeight)).toBeLessThanOrEqual(10);
+    expect(ktx2.pixelWidth % 4).toBe(0);
+    expect(ktx2.pixelHeight % 4).toBe(0);
+  });
+
+  it("should cap standalone colour and normal textures through the encoder decoder without upscaling or changing none bytes", async () => {
+    // Removing maxSize from the pass configuration makes the first two KTX2 dimensions stay
+    // 12x8, so this asserts the encoded artifact rather than a decoder mock.
+    const root = await makeTempDir("threenative-tex-max-size-");
+    await mkdir(path.join(root, "assets", "ui"), { recursive: true });
+    const source = rgbaPng({ height: 8, width: 12 });
+    const small = rgbaPng({ height: 4, width: 4 });
+    await writeFile(path.join(root, "assets", "cliff.png"), source);
+    await writeFile(path.join(root, "assets", "ridge_normal.png"), source);
+    await writeFile(path.join(root, "assets", "small.png"), small);
+    await writeFile(path.join(root, "assets", "ui", "icon.png"), source);
+
+    await compileAssets({
+      config: {
+        textures: {
+          maxSize: 8,
+          overrides: [{ codec: "none", glob: "ui/**" }],
+        },
+      },
+      cwd: root,
+      transcoder: TRANSCODER,
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    );
+    for (const logicalPath of ["cliff.png", "ridge_normal.png"]) {
+      const compiled = await readFile(
+        path.join(root, "public", manifest.entries[logicalPath].output),
+      );
+      const ktx2 = readKTX2(compiled);
+      expect([ktx2.pixelWidth, ktx2.pixelHeight]).toEqual([8, 4]);
+    }
+    const smallOutput = await readFile(
+      path.join(root, "public", manifest.entries["small.png"].output),
+    );
+    expect([readKTX2(smallOutput).pixelWidth, readKTX2(smallOutput).pixelHeight]).toEqual([4, 4]);
+    expect(
+      await readFile(path.join(root, "public", manifest.entries["ui/icon.png"].output)),
+    ).toEqual(source);
+  });
+
   it("should encode to UASTC when the source has an alpha channel", async () => {
     // Alpha varies across the row, so stripping it changes the codec choice — that is the
     // negative control for this test.
@@ -53,6 +112,10 @@ describe("the ktx2 texture pass", () => {
     expect(entry.transcodeTargets).toEqual(["astc4x4", "bc7"]);
     expect(String(entry.output)).toMatch(/^decal\.[0-9a-f]{8}\.ktx2$/u);
     expect(ktx2Magic(outputBytes)).toBe(true);
+    // UASTC ships Zstandard-supercompressed (KTX2 scheme 2): raw UASTC is 8 bits per texel and
+    // a 2K map would be 5.3 MB on the wire; the encoder's default keeps a 2K normal at 4.3 MB
+    // and three's KTX2Loader inflates it before transcoding. Pinned so the default cannot slip.
+    expect(readKTX2(outputBytes).supercompressionScheme).toBe(2);
   });
 
   it("should honour a config override over the heuristic", async () => {

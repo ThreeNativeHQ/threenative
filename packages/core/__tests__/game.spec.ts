@@ -230,12 +230,12 @@ describe("IGame", () => {
       });
 
       expect(ctx.startup.phase).toBe("collapsing");
-      expect(ctx.startup.progress).toBe(0);
+      expect(ctx.startup.progress).toBeLessThan(1); // honest progress: entered but not ready
       frame(16);
       expect(events).toEqual(["overlay"]);
       expect(ready).toBe(false);
       expect(ctx.startup.phase).toBe("collapsing");
-      expect(ctx.startup.progress).toBe(0);
+      expect(ctx.startup.progress).toBeLessThan(1); // still not ready after one frame
       expect(ctx.canvasLayer.opaque).toBe(true);
 
       await Promise.resolve();

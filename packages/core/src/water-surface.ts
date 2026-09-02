@@ -159,12 +159,10 @@ export class WaterSurface3D {
     const node = this.#reflector;
     if (node === undefined)
       throw new Error("WaterSurface3D was built without reflection; there is nothing to sample.");
-    // quality-allow: Three's reflector component loses its concrete vec3 node type.
-    if (offset === undefined) return node.rgb as unknown as Node<"vec3">;
+    if (offset === undefined) return node.rgb as unknown as Node<"vec3">; // quality-allow: TSL result shape is set by construction; three 0.185 types swizzles and Fn loosely
     // The mirrored pass is flipped in x; the offset rides on top of that, not instead of it.
-    const sample = node.sample(clamp(screenUV.flipX().add(offset), vec2(0, 0), vec2(1, 1))).rgb;
-    // quality-allow: Three's reflector sample component loses its concrete vec3 node type.
-    return sample as unknown as Node<"vec3">;
+    return node.sample(clamp(screenUV.flipX().add(offset), vec2(0, 0), vec2(1, 1)))
+      .rgb as unknown as Node<"vec3">; // quality-allow: TSL result shape is set by construction; three 0.185 types swizzles and Fn loosely
   }
 
   /**
@@ -176,12 +174,10 @@ export class WaterSurface3D {
    * wrong the first time every game writes one.
    */
   refractionAt(offset?: Node<"vec2">): Node<"vec3"> {
-    // quality-allow: Three's viewport texture component loses its concrete vec3 node type.
-    if (offset === undefined) return viewportSharedTexture().rgb as unknown as Node<"vec3">;
+    if (offset === undefined) return viewportSharedTexture().rgb as unknown as Node<"vec3">; // quality-allow: TSL result shape is set by construction; three 0.185 types swizzles and Fn loosely
     const safe = select(this.thicknessAt(offset).greaterThan(float(0)), offset, vec2(0, 0));
-    const sample = viewportSharedTexture(clamp(screenUV.add(safe), vec2(0, 0), vec2(1, 1))).rgb;
-    // quality-allow: Three's sampled viewport component loses its concrete vec3 node type.
-    return sample as unknown as Node<"vec3">;
+    return viewportSharedTexture(clamp(screenUV.add(safe), vec2(0, 0), vec2(1, 1)))
+      .rgb as unknown as Node<"vec3">; // quality-allow: TSL result shape is set by construction; three 0.185 types swizzles and Fn loosely
   }
 
   /**
@@ -200,8 +196,7 @@ export class WaterSurface3D {
     // once, so every reading downstream is in metres and stays in metres when the camera changes.
     const span = cameraFar.sub(cameraNear);
     const metres = behind.sub(linearDepth()).mul(span);
-    // quality-allow: Three's clamp helper loses the concrete float node type.
-    return clamp(metres, float(0), float(this.maxThickness)) as unknown as Node<"float">;
+    return clamp(metres, float(0), float(this.maxThickness)) as unknown as Node<"float">; // quality-allow: TSL result shape is set by construction; three 0.185 types swizzles and Fn loosely
   }
 
   /** Drop the mirrored pass and its render target. */

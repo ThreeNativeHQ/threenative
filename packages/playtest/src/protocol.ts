@@ -57,6 +57,18 @@ export interface IPlaytestBridgeDescription {
  * can wait for the world instead of photographing the loader and asserting against a frozen
  * simulation.
  */
+/**
+ * When the application's startup milestones happened, in milliseconds on the host's monotonic
+ * clock (since navigation on the web, since process start on native). Absent members have not
+ * happened yet.
+ */
+export interface IPlaytestStartupTimeline {
+  loadStartedMs?: number;
+  enteredMs?: number;
+  compileSettledMs?: number;
+  readyMs?: number;
+}
+
 export interface IPlaytestStartupObservation {
   phase: "observing" | "collapsing" | "ready";
   /** 0 while first-use work is pending, then 1. */
@@ -68,6 +80,8 @@ export interface IPlaytestStartupObservation {
    * the machine has no GPU has already conceded it is not measuring that.
    */
   compileSettled?: boolean;
+  /** Present when the application records its startup milestones. */
+  timeline?: IPlaytestStartupTimeline;
 }
 
 /**

@@ -1,0 +1,59 @@
+{
+  "mode": "probe.html",
+  "debug": {
+    "probe": "sphere-footprint",
+    "sphereCenter": {
+      "x": 6,
+      "y": 5,
+      "z": 2
+    },
+    "radius": 2,
+    "expected": {
+      "x": 3.1999999999999997,
+      "z": 0.2000000000000004
+    },
+    "virtual": {
+      "count": 7179,
+      "x": 9.588703162000279,
+      "z": 9.678618191948736
+    },
+    "stock": {
+      "count": 6697,
+      "x": 3.4113632969986583,
+      "z": -0.37850530088099177
+    },
+    "virtualToExpected": 11.430648753281412,
+    "stockToExpected": 0.6159081315143927,
+    "virtualToStock": 11.80276496240461,
+    "changedPixelRatio": 0.02168125,
+    "darkPixelRatio": 1.071972525011199,
+    "level0PageWorldSize": 5,
+    "stats": {
+      "frame": 5,
+      "requested": 89,
+      "resident": 89,
+      "rendered": 0,
+      "cached": 89,
+      "invalidated": 0,
+      "evicted": 0,
+      "overflow": 0,
+      "reuseRatio": 1,
+      "dirtyResident": 0,
+      "pageSize": 128,
+      "atlasPagesPerAxis": 12,
+      "atlasTextureSize": 1536,
+      "virtualPagesPerAxis": 8,
+      "clipLevels": 4,
+      "virtualAddressPages": 256,
+      "physicalCapacity": 144,
+      "cumulative": {
+        "rendered": 89,
+        "cached": 331,
+        "invalidated": 0,
+        "evicted": 0,
+        "overflow": 0
+      }
+    }
+  },
+  "errors": []
+}

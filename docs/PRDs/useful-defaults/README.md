@@ -8,6 +8,9 @@ a game that asks for nothing still ends up better because the work was done. A g
 repository honest is valuable and does not belong here. An instrument that measures a frame is
 valuable and does not belong here. **Value that arrives at a stranger's `pnpm dev` belongs here.**
 
+Pending PRD-289 through PRD-292 work is inventoried, ordered, and given a safe single-worktree
+recovery procedure in [RESUME-2026-09-01.md](./RESUME-2026-09-01.md).
+
 ## What earns a place in this folder
 
 All three clauses, not two:

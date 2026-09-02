@@ -561,6 +561,9 @@ importers:
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3
+      ooz-wasm:
+        specifier: 2.0.0
+        version: 2.0.0
       publint:
         specifier: 0.3.22
         version: 0.3.22

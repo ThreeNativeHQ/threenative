@@ -365,6 +365,26 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).rejects.toThrow(/between 1 and 255/u);
   });
 
+  it("rejects an invalid standalone texture maxSize with the named code", async () => {
+    for (const value of ["0", "-1", "1.5", '"2048"']) {
+      const root = await project();
+      await config(root, `export default { assets: { textures: { maxSize: ${value} } } };`);
+      await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+      await expect(loadConfig(root)).rejects.toThrow(
+        /assets\.textures\.maxSize must be a positive integer/u,
+      );
+    }
+
+    for (const value of ["1", "2", "3"]) {
+      const root = await project();
+      await config(root, `export default { assets: { textures: { maxSize: ${value} } } };`);
+      await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+      await expect(loadConfig(root)).rejects.toThrow(
+        /assets\.textures\.maxSize must be a positive integer of at least 4/u,
+      );
+    }
+  });
+
   it("parses the models block and the none shorthand into the resolved config", async () => {
     const configured = await project();
     await config(
@@ -463,9 +483,56 @@ describe("threenative.config.ts", () => {
     // No assets/ directory, so the pipeline returns early — but only after it has parsed the
     // config, which is the step that used to throw.
     await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      concurrencyUsed: 1,
+      passCosts: [],
       skipped: 0,
       written: 0,
     });
+  });
+
+  it("hands assets.models.sharedImages to the pipeline that receives it", async () => {
+    // The same seam again: the pipeline grew `sharedImages` for packs whose models all embed
+    // the same textures, and this validator's key list is where a documented setting dies
+    // before an asset compiles.
+    const root = await project();
+    await config(root, "export default { assets: { models: { sharedImages: true } } };");
+    const resolved = await loadConfig(root);
+    expect(resolved.assets).toMatchObject({ models: { sharedImages: true } });
+    await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      concurrencyUsed: 1,
+      passCosts: [],
+      skipped: 0,
+      written: 0,
+    });
+  });
+
+  it("rejects a non-boolean assets.models.sharedImages with the named code", async () => {
+    const root = await project();
+    await config(root, 'export default { assets: { models: { sharedImages: "yes" } } };');
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+    await expect(loadConfig(root)).rejects.toThrow(/assets\.models\.sharedImages/u);
+  });
+
+  it("hands assets.concurrency to the pipeline that receives it", async () => {
+    // The bounded-concurrency seam (PRD-319): the config validates the value and the driver
+    // reads it — a key the driver ignored would pass this producer half and ship nothing.
+    const root = await project();
+    await config(root, "export default { assets: { concurrency: 3 } };");
+    const resolved = await loadConfig(root);
+    expect(resolved.assets).toMatchObject({ concurrency: 3 });
+    await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      concurrencyUsed: 1,
+      passCosts: [],
+      skipped: 0,
+      written: 0,
+    });
+  });
+
+  it("rejects a non-integer assets.concurrency with the named code", async () => {
+    const root = await project();
+    await config(root, 'export default { assets: { concurrency: "lots" } };');
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+    await expect(loadConfig(root)).rejects.toThrow(/assets\.concurrency/u);
   });
 
   it("rejects an unknown key under assets.models.virtual with the named code", async () => {

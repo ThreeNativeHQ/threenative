@@ -1,9 +1,12 @@
 import {
+  Box3,
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   type CompressedTexture,
   Group,
+  InterleavedBuffer,
+  InterleavedBufferAttribute,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -188,6 +191,56 @@ describe("IAssetLoader through the asset manifest", () => {
     expect(texture).toBeInstanceOf(Texture);
     expect(fetchAsset).toHaveBeenCalledWith("/assets/my-assets.json");
     expect(requests).toEqual(["/assets/rock.a1b2c3.png"]);
+  });
+
+  it("should hand a game the served urls of a path its own loader has to fetch", async () => {
+    // An HDR sky, a font, a data file: loaders this surface does not wrap. Without this a game
+    // hard-codes the hashed output name and breaks on the next bake — Wildwood's sky did.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        manifestResponse({
+          version: 1,
+          entries: {
+            "hdri/sky.hdr": {
+              output: "hdri/sky.da8e1984.hdr",
+              kind: "other",
+              bytes: 5,
+              passes: [],
+            },
+          },
+        }),
+      ),
+    );
+    const assets = createAssetLoader({ basePath: "/", manifest: "assets.manifest.json" });
+    await expect(assets.resolve("hdri/sky.hdr")).resolves.toEqual(["/hdri/sky.da8e1984.hdr"]);
+    await expect(assets.resolve("hdri/missing.hdr")).rejects.toThrow(
+      /not listed in the asset manifest/u,
+    );
+  });
+
+  it("should count requested and settled loads for a loading view", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => manifestResponse("gone", 404)),
+    );
+    const assets = createAssetLoader({
+      basePath: "/",
+      // Settles on the next macrotask, so the counters can be read while the load is in flight.
+      texture: (url) =>
+        url.includes("nope")
+          ? Promise.reject(new Error("no such texture"))
+          : new Promise<Texture>((resolve) => setTimeout(() => resolve(new Texture()), 0)),
+    });
+    expect(assets.progress).toEqual({ requested: 0, settled: 0 });
+    const first = assets.texture("a.png");
+    void assets.texture("a.png"); // cached: one request, not two
+    expect(assets.progress).toEqual({ requested: 1, settled: 0 });
+    await first;
+    expect(assets.progress).toEqual({ requested: 1, settled: 1 });
+    await expect(assets.texture("nope.png")).rejects.toThrow(/no such texture/u);
+    // A rejected load settles too: a bar that waits for a texture that failed never finishes.
+    expect(assets.progress).toEqual({ requested: 2, settled: 2 });
   });
 
   it("should load the raw path when no manifest is served", async () => {
@@ -604,6 +657,130 @@ describe("IAssetLoader compressed textures", () => {
     expect(setKtx2Spy).toHaveBeenCalledTimes(1);
     expect(setKtx2Spy.mock.calls[0]?.[0]).toBe(shared);
     expect(detectSpy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * `KHR_mesh_quantization` positions are normalized int16: every component means a value in
+   * [-1, 1], and `BufferAttribute.setXYZ` re-normalizes with a **clamp**. So every three.js
+   * geometry helper that writes back — `applyMatrix4`, `translate`, `scale`, `rotateY`, `center` —
+   * silently flattens a quantized mesh onto the unit cube. Wildwood lost 99.7% of a pine's canopy
+   * to exactly this, with zero errors, so the loader must widen positions before a game sees them.
+   */
+  const quantizedModel = (interleaved: boolean): { scene: Group } => {
+    // A unit cube in quantized space; the node scale carries the real 5 m size.
+    const corners = [
+      [-1, -1, -1],
+      [1, -1, -1],
+      [1, 1, 1],
+    ].flat();
+    const raw = Int16Array.from(corners.map((value) => value * 32_767));
+    const geometry = new BufferGeometry();
+    if (interleaved) {
+      geometry.setAttribute(
+        "position",
+        new InterleavedBufferAttribute(new InterleavedBuffer(raw, 3), 3, 0, true),
+      );
+    } else {
+      geometry.setAttribute("position", new BufferAttribute(raw, 3, true));
+    }
+    const scene = new Group();
+    const mesh = new Mesh(geometry, new MeshBasicMaterial());
+    mesh.scale.setScalar(5);
+    scene.add(mesh);
+    scene.updateMatrixWorld(true);
+    return { scene };
+  };
+
+  const loadQuantized = async (interleaved: boolean): Promise<{ scene: Group }> => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | RequestInfo) =>
+        String(url).endsWith(".glb")
+          ? new Response(
+              JSON.stringify({
+                asset: { version: "2.0" },
+                extensionsUsed: ["KHR_mesh_quantization"],
+              }),
+            )
+          : manifestResponse({
+              version: 1,
+              entries: {
+                "b.glb": { output: "b.22222222.glb", kind: "model", bytes: 9, passes: [] },
+              },
+            }),
+      ),
+    );
+    const model = quantizedModel(interleaved);
+    vi.spyOn(GLTFLoader.prototype, "parse").mockImplementation(function (
+      this: GLTFLoader,
+      _data: ArrayBuffer,
+      _path: string,
+      onLoad: never,
+    ) {
+      (onLoad as (value: unknown) => void)(model);
+      return this;
+    } as never);
+    const assets = createAssetLoader({ basePath: "/assets", renderer: webglRenderer({}) });
+    return assets.model<{ scene: Group }>("b.glb");
+  };
+
+  it.each([
+    ["a plain quantized attribute", false],
+    ["a meshopt-interleaved quantized attribute", true],
+  ])(
+    "should widen %s so baking a node transform does not clamp the mesh",
+    async (_name, interleaved) => {
+      const loaded = await loadQuantized(interleaved as boolean);
+      const mesh = loaded.scene.children[0] as Mesh;
+      const position = mesh.geometry.getAttribute("position");
+
+      expect(position.normalized).toBe(false);
+      expect(position.array).toBeInstanceOf(Float32Array);
+
+      // What the game does with an imported prop: bake the world matrix into a clone.
+      const baked = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
+      const bounds = new Box3().setFromBufferAttribute(
+        baked.getAttribute("position") as BufferAttribute,
+      );
+      // The node scale is 5, so the baked cube must span 10 units — not the 2 units of the
+      // quantization cube it collapses to when `setXYZ` clamps.
+      expect(bounds.max.x - bounds.min.x).toBeCloseTo(10, 2);
+      expect(bounds.max.y - bounds.min.y).toBeCloseTo(10, 2);
+      expect(bounds.max.z - bounds.min.z).toBeCloseTo(10, 2);
+    },
+  );
+
+  it("should leave a float model's positions untouched", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | RequestInfo) =>
+        String(url).endsWith(".glb")
+          ? new Response(JSON.stringify({ asset: { version: "2.0" } }))
+          : manifestResponse({
+              version: 1,
+              entries: {
+                "b.glb": { output: "b.22222222.glb", kind: "model", bytes: 9, passes: [] },
+              },
+            }),
+      ),
+    );
+    const scene = new Group();
+    const source = new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3);
+    scene.add(new Mesh(new BufferGeometry().setAttribute("position", source)));
+    vi.spyOn(GLTFLoader.prototype, "parse").mockImplementation(function (
+      this: GLTFLoader,
+      _data: ArrayBuffer,
+      _path: string,
+      onLoad: never,
+    ) {
+      (onLoad as (value: unknown) => void)({ scene });
+      return this;
+    } as never);
+    const assets = createAssetLoader({ basePath: "/assets", renderer: webglRenderer({}) });
+
+    const loaded = await assets.model<{ scene: Group }>("b.glb");
+
+    expect((loaded.scene.children[0] as Mesh).geometry.getAttribute("position")).toBe(source);
   });
 
   it("should not require KTX2 support for a model that does not declare Basis textures", async () => {

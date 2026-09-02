@@ -224,6 +224,30 @@ describe("compileAssets", () => {
     expect(secondManifest.entries["rock.png"].output).not.toBe(first.entries["rock.png"].output);
   });
 
+  it("should recompile when standalone texture maxSize changes instead of re-serving stale bytes", async () => {
+    const root = await makeTempDir("threenative-compile-texture-max-size-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 16, width: 16 }));
+
+    await compileAssets({
+      config: { textures: { maxSize: 12 } },
+      cwd: root,
+      transcoder: TRANSCODER,
+    });
+    const manifestPath = path.join(root, "public", "assets.manifest.json");
+    const first = JSON.parse(await readFile(manifestPath, "utf8"));
+
+    const second = await compileAssets({
+      config: { textures: { maxSize: 8 } },
+      cwd: root,
+      transcoder: TRANSCODER,
+    });
+    const secondManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+
+    expect(second.written).toBe(1);
+    expect(secondManifest.entries["rock.png"].output).not.toBe(first.entries["rock.png"].output);
+  });
+
   it("should skip compilation without touching the output when no source directory exists", async () => {
     // The pre-pipeline state: projects built before this step have no assets/ and their
     // builds must keep working unchanged.
@@ -231,7 +255,7 @@ describe("compileAssets", () => {
 
     const result = await compileAssets({ cwd: root });
 
-    expect(result).toEqual({ skipped: 0, written: 0 });
+    expect(result).toEqual({ concurrencyUsed: 1, passCosts: [], skipped: 0, written: 0 });
     await expect(stat(path.join(root, "public"))).rejects.toThrow();
   });
 
@@ -293,7 +317,7 @@ describe("compileAssets", () => {
 
     const result = await compileAssets({ cwd: root });
 
-    expect(result).toEqual({ skipped: 0, written: 0 });
+    expect(result).toEqual({ concurrencyUsed: 1, passCosts: [], skipped: 0, written: 0 });
     await expect(stat(path.join(root, "public", "assets.manifest.json"))).rejects.toThrow();
   });
 
@@ -387,6 +411,20 @@ describe("compileAssets", () => {
     await expect(compileAssets({ config: badQuality, cwd: root })).rejects.toThrow(
       /between 1 and 255/u,
     );
+
+    for (const value of [0, -1, 1.5, "2048"]) {
+      const badMaxSize = { textures: { maxSize: value } } as unknown as IAssetSourceConfig;
+      await expect(compileAssets({ config: badMaxSize, cwd: root })).rejects.toThrow(
+        /assets\.textures\.maxSize must be a positive integer/u,
+      );
+    }
+
+    for (const value of [1, 2, 3]) {
+      const tooSmallMaxSize = { textures: { maxSize: value } } as unknown as IAssetSourceConfig;
+      await expect(compileAssets({ config: tooSmallMaxSize, cwd: root })).rejects.toThrow(
+        /assets\.textures\.maxSize must be a positive integer of at least 4/u,
+      );
+    }
   });
 
   it("should optimize a model through the built-in registry and record the manifest fields", async () => {
@@ -580,5 +618,67 @@ describe("compileAssets and assets.models.virtual", () => {
     await expect(compileAssets({ config: bogus, cwd: root })).rejects.toThrow(
       /TN_ASSETS_CONFIG_UNKNOWN_KEY.*assets\.models\.virtual\.minTriangls/u,
     );
+  });
+});
+
+describe("compile cache", () => {
+  it("should not run a pass again for an input whose bytes and pass configuration are unchanged", async () => {
+    // Every build applied every pass to every input and only then compared the result with the
+    // manifest to decide whether to write. For a valley of 58 textured models that is minutes of
+    // KTX2 encoding on every `pnpm dev`, all of it producing bytes that already exist.
+    const root = await makeTempDir("threenative-compile-skip-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 16, width: 16 }));
+    await writeFile(
+      path.join(root, "assets", "moss.png"),
+      rgbaPng({ green: () => 200, height: 16, width: 16 }),
+    );
+    let applied = 0;
+    const counting = {
+      apply: (input: Buffer) => {
+        applied += 1;
+        return Buffer.concat([input, Buffer.from("!")]);
+      },
+      configuration: { salt: 1 },
+      name: "counting",
+    };
+
+    const first = await compileAssets({ cwd: root, passes: [counting] });
+    expect(first.written).toBe(2);
+    expect(applied).toBe(2);
+
+    const second = await compileAssets({ cwd: root, passes: [counting] });
+    expect(second.written).toBe(0);
+    expect(second.skipped).toBe(2);
+    expect(applied).toBe(2);
+
+    // Negative controls: a changed input or a changed configuration runs the pass again.
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({ height: 16, red: () => 9, width: 16 }),
+    );
+    const third = await compileAssets({ cwd: root, passes: [counting] });
+    expect(third.written).toBe(1);
+    expect(applied).toBe(3);
+    const fourth = await compileAssets({
+      cwd: root,
+      passes: [{ ...counting, configuration: { salt: 2 } }],
+    });
+    expect(fourth.written).toBe(2);
+    expect(applied).toBe(5);
+
+    // A deleted output is rebuilt even though the manifest still describes it.
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as {
+      entries: Record<string, { output: string }>;
+    };
+    await rm(path.join(root, "public", manifest.entries["moss.png"]?.output ?? ""));
+    const fifth = await compileAssets({
+      cwd: root,
+      passes: [{ ...counting, configuration: { salt: 2 } }],
+    });
+    expect(fifth.written).toBe(1);
+    expect(applied).toBe(6);
   });
 });

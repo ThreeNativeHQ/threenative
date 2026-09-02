@@ -31,6 +31,8 @@ export interface IThreeNativeBootSplash {
 
 /** Texture compression options for the asset compile step; `"none"` ships sources verbatim. */
 export interface IThreeNativeTexturesConfig {
+  /** Integer at least 4; caps the longest edge, preserving aspect and 4x4 alignment; never upscales. */
+  readonly maxSize?: number;
   readonly overrides?: readonly {
     readonly codec: "etc1s" | "none" | "uastc";
     readonly glob: string;
@@ -62,6 +64,12 @@ export interface IThreeNativeModelsConfig {
     readonly positionBits?: number;
     readonly uvBits?: number;
   };
+  /**
+   * Write each distinct embedded image once under `shared/images/` and reference it from every
+   * model that carries it. A marketplace pack whose eight pines all embed the same bark map then
+   * ships and encodes it once. Default false; the served GLB references files beside it.
+   */
+  readonly sharedImages?: boolean;
   /**
    * Embedded-texture compression for images carried inside a `.glb`.
    *

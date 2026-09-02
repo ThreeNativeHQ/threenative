@@ -1,7 +1,8 @@
 import type { IPlaytestComponentAssertion, IPlaytestDiagnosticsAssertion, IPlaytestPathAssertion } from "./scenario.js";
 import type { IPlaytestDeviceMetricsObservation } from "./runner/deviceMetrics.js";
 import type { IPlaytestDiagnosticsPolicy } from "./report.js";
-import type { IPlaytestRenderChainObservation } from "./protocol.js";
+import type { IPlaytestRenderChainObservation,
+  IPlaytestStartupTimeline } from "./protocol.js";
 
 export type Vec3 = [number, number, number];
 
@@ -50,6 +51,14 @@ export interface IPlaytestObservations {
   performanceSeries?: unknown[];
   renderChain?: IPlaytestRenderChainObservation;
   resources: Record<string, { after?: unknown; before?: unknown }>;
+  /** The startup observation the runner waited on, with the rule it resolved under. */
+  startup?: {
+    compileSettled?: boolean;
+    phase: string;
+    progress: number;
+    rule?: string;
+    timeline?: IPlaytestStartupTimeline;
+  };
   resourceSeries?: Array<{ label: string; snapshots: Record<string, unknown>; tick: number }>;
   runtimeObservations?: unknown;
   runtimeDiagnostics?: unknown;

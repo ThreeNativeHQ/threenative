@@ -55,6 +55,8 @@ export interface IResolvedThreeNativeConfig {
     readonly renderer: ThreeNativeUiRenderer;
   };
   readonly assets?: {
+    /** The bound on how many workers a bake may use; absent means the driver's default. */
+    readonly concurrency?: number;
     readonly models?: "none" | IThreeNativeModelsConfig;
     readonly output?: string;
     readonly source?: string;
@@ -977,13 +979,23 @@ function validateAssetTargets(
   };
 }
 
-const ASSET_TEXTURE_KEYS: readonly string[] = ["overrides", "quality"];
+const ASSET_TEXTURE_KEYS: readonly string[] = ["maxSize", "overrides", "quality"];
 const TEXTURE_OVERRIDE_KEYS: readonly string[] = ["codec", "glob", "quality"];
 const TEXTURE_CODECS: readonly string[] = ["etc1s", "none", "uastc"];
 
 function textureQuality(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > 255) {
     fail("TN_CONFIG_ASSETS_INVALID", `${label} must be an integer between 1 and 255.`);
+  }
+  return value;
+}
+
+function textureMaxSize(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 4) {
+    fail(
+      "TN_CONFIG_ASSETS_INVALID",
+      "assets.textures.maxSize must be a positive integer of at least 4.",
+    );
   }
   return value;
 }
@@ -1035,6 +1047,7 @@ function validateTextures(
   const textures = assertRecord(raw, "assets.textures");
   assertKeys(textures, "assets.textures", ASSET_TEXTURE_KEYS);
   return {
+    ...(textures.maxSize === undefined ? {} : { maxSize: textureMaxSize(textures.maxSize) }),
     ...(textures.quality === undefined
       ? {}
       : { quality: textureQuality(textures.quality, "assets.textures.quality") }),
@@ -1070,10 +1083,15 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
     "lightmap",
     "passes",
     "quantize",
+    "sharedImages",
     "simplify",
     "textures",
     "virtual",
   ]);
+  if (models.sharedImages !== undefined && typeof models.sharedImages !== "boolean") {
+    fail("TN_CONFIG_ASSETS_INVALID", "assets.models.sharedImages must be true or false.");
+  }
+  const sharedImages = models.sharedImages as boolean | undefined;
   let lightmap: IThreeNativeModelsConfig["lightmap"];
   if (models.lightmap !== undefined) {
     const rawLightmap = assertRecord(models.lightmap, "assets.models.lightmap");
@@ -1164,6 +1182,7 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(passes === undefined || Object.keys(passes).length === 0 ? {} : { passes }),
     ...(quantize === undefined || Object.keys(quantize).length === 0 ? {} : { quantize }),
+    ...(sharedImages === undefined ? {} : { sharedImages }),
     ...(simplify === undefined ? {} : { simplify }),
     ...(textures === undefined ? {} : { textures }),
     ...(virtual === undefined ? {} : { virtual }),
@@ -1172,11 +1191,31 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
 
 function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
   const assets = assertRecord(raw, "assets");
-  assertKeys(assets, "assets", ["models", "source", "output", "targets", "textures"]);
+  assertKeys(assets, "assets", [
+    "concurrency",
+    "models",
+    "source",
+    "output",
+    "targets",
+    "textures",
+  ]);
   const targets = assets.targets === undefined ? undefined : validateAssetTargets(assets.targets);
   const models = assets.models === undefined ? undefined : validateModels(assets.models);
   const textures = assets.textures === undefined ? undefined : validateTextures(assets.textures);
   return {
+    // The worker bound a bake may use. Validated here so a malformed value fails at config
+    // load with the named code, and handed to the driver unchanged, which re-checks it —
+    // the producer→consumer seam the config spec proves by running the pipeline.
+    ...(assets.concurrency === undefined
+      ? {}
+      : {
+          concurrency: positiveInteger(
+            assets.concurrency,
+            1,
+            "TN_CONFIG_ASSETS_INVALID",
+            "assets.concurrency",
+          ),
+        }),
     ...(assets.source === undefined
       ? {}
       : { source: nonEmptyString(assets.source, "TN_CONFIG_ASSETS_INVALID", "assets.source") }),
