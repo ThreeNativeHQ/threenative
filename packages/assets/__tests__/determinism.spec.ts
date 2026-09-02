@@ -135,4 +135,46 @@ describe("the determinism gate (PRD-319 phase 0)", () => {
       await rm(root, { force: true, recursive: true });
     }
   });
+
+  it("bakes byte-identical output at concurrency 1 and at concurrency 4 through real workers", async () => {
+    // AC1's core, with the self-comparison guard the PRD demands: the two runs must not resolve
+    // to the same execution path, so the result's concurrencyUsed must differ before the bytes
+    // are compared. The built-in registry is what a worker can rebuild; the model pass carries
+    // its shared-image store per worker.
+    const root = await stageTwoSharedModels();
+    try {
+      const sequential = await compileAssets({
+        concurrency: 1,
+        cwd: root,
+        output: "public",
+        processingOrder: "sorted",
+        source: "assets",
+        config: { models: { sharedImages: true } },
+      });
+      const sequentialHashes = await hashOutputRoot(path.join(root, "public"));
+
+      await rm(path.join(root, "public"), { force: true, recursive: true });
+      const concurrent = await compileAssets({
+        concurrency: 4,
+        cwd: root,
+        output: "public",
+        processingOrder: "reversed",
+        source: "assets",
+        config: { models: { sharedImages: true } },
+      });
+      const concurrentHashes = await hashOutputRoot(path.join(root, "public"));
+
+      // The two sides took different paths, or this gate compares a run to itself. The bound is
+      // min(concurrency, inputs): two staged inputs mean two workers, not four.
+      expect(sequential.concurrencyUsed).toBe(1);
+      expect(concurrent.concurrencyUsed).toBeGreaterThan(1);
+      expect(sequential.written).toBe(concurrent.written);
+      expect([...sequentialHashes.keys()].sort()).toEqual([...concurrentHashes.keys()].sort());
+      for (const [file, hash] of sequentialHashes) {
+        expect(concurrentHashes.get(file), `${file} differs at concurrency 4`).toBe(hash);
+      }
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
 });

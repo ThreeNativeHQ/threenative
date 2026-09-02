@@ -6,6 +6,7 @@ import {
   readFile,
   readdir,
   realpath,
+  rename,
   rm,
   stat,
   writeFile,
@@ -14,6 +15,8 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
+import { applyPasses } from "./pass-chain.js";
+import type { IAppliedPasses, IPassTiming } from "./pass-chain.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import { modelPass } from "./passes/model.js";
@@ -39,6 +42,8 @@ import type {
   ITextureSizeRow,
   PassCostStatus,
 } from "./report.js";
+import { createPassPool, resolveConcurrency } from "./worker-pool.js";
+import type { PassSpec } from "./worker-protocol.js";
 
 export type AssetKind = "audio" | "model" | "other" | "texture";
 
@@ -146,6 +151,7 @@ export interface ITexturesConfig {
 }
 
 export interface IAssetCompileOptions {
+  readonly concurrency?: number;
   readonly config?: IAssetSourceConfig;
   readonly cwd?: string;
   /** Includes the machine-readable health report on the result. */
@@ -175,6 +181,8 @@ export interface IBasisTranscoder {
 }
 
 export interface IAssetCompileResult {
+  /** How many workers the driver actually used: 1 for a sequential bake (custom passes, or a bound of 1). */
+  readonly concurrencyUsed: number;
   /** One cost row per pass, driver-measured; empty when no bake ran. */
   readonly passCosts: readonly IPassCostRow[];
   readonly receipt?: IBakeReceipt;
@@ -235,6 +243,8 @@ interface IAssetManifest {
 
 interface ICompileLayout {
   readonly outputRoot: string;
+  /** The built-in registry's serialisable mirror; empty when the caller supplied passes. */
+  readonly passSpecs: readonly PassSpec[];
   readonly passes: readonly IAssetPass[];
   readonly sourceRoot: string;
   readonly targets: IAssetTargets;
@@ -749,28 +759,44 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
     ?.lightmap;
   // The built-in registry runs only when the caller did not replace it wholesale; each
-  // built-in pass drops out individually through its `"none"` shorthand.
-  const builtinPasses =
-    options.passes === undefined
-      ? [
-          ...(textures !== undefined ? [texturePass(textures)] : []),
-          ...(lightmap !== undefined ? [lightmapPass(lightmap)] : []),
-          ...(models !== undefined
-            ? [
-                modelPass({
-                  ...models,
-                  preserveLightmapUv: lightmap !== undefined,
-                  // Bound to the output root so a second build finds last build's encodes on
-                  // disk instead of paying for them again.
-                  sharedImages:
-                    models.sharedImages === true ? createSharedImageStore(outputRoot) : undefined,
-                }),
-              ]
-            : []),
-        ]
-      : [];
+  // built-in pass drops out individually through its `"none"` shorthand. Its serialisable
+  // mirror rides along so a bounded worker pool can rebuild the identical chain — custom
+  // passes cannot cross a worker boundary, so a compile that supplies any runs sequential.
+  const builtinPasses: IAssetPass[] = [];
+  const passSpecs: PassSpec[] = [];
+  if (options.passes === undefined) {
+    if (textures !== undefined) {
+      builtinPasses.push(texturePass(textures));
+      passSpecs.push({ kind: "texture", options: textures });
+    }
+    if (lightmap !== undefined) {
+      builtinPasses.push(lightmapPass(lightmap));
+      passSpecs.push({ kind: "lightmap", options: lightmap });
+    }
+    if (models !== undefined) {
+      builtinPasses.push(
+        modelPass({
+          ...models,
+          preserveLightmapUv: lightmap !== undefined,
+          // Bound to the output root so a second build finds last build's encodes on
+          // disk instead of paying for them again.
+          sharedImages:
+            models.sharedImages === true ? createSharedImageStore(outputRoot) : undefined,
+        }),
+      );
+      passSpecs.push({
+        kind: "model",
+        options: {
+          ...models,
+          preserveLightmapUv: lightmap !== undefined,
+          sharedImages: models.sharedImages === true,
+        },
+      });
+    }
+  }
   return {
     outputRoot,
+    passSpecs,
     passes: [...builtinPasses, ...(options.passes ?? [])],
     sourceRoot,
     targets: config.targets === undefined ? {} : validateTargets(config.targets),
@@ -1043,69 +1069,11 @@ async function readInput(sourceRoot: string, logical: string): Promise<Buffer> {
   }
 }
 
-interface IAppliedPasses {
-  readonly auxiliaryOutputs: readonly IAssetAuxiliaryOutput[];
-  readonly buffer: Buffer;
-  readonly entry: Record<string, unknown> | undefined;
-  readonly extension: string | undefined;
-  /** One duration per pass, opened and closed by the driver around each `apply`. */
-  readonly timings: readonly IPassTiming[];
-}
-
-/** What the driver measured for one pass on one input. */
-interface IPassTiming {
-  readonly durationMs: number;
-  readonly name: string;
-}
-
 /** The per-pass cost bookkeeping one bake accumulates, keyed in registry order. */
 interface IPassCostRecord {
   cachedInputs: number;
   ranInputs: number;
   timings: IPassCostAssetRow[];
-}
-
-/**
- * The driver — never the pass — owns the clock: each `apply` is bracketed here, so a pass cannot
- * opt out of measurement and cannot report a number of its own choosing. A pass that ends without
- * a closed record is a driver bug and throws rather than emitting a report with a hole in it.
- */
-async function applyPasses(
-  passes: readonly IAssetPass[],
-  input: Buffer,
-  logical: string,
-): Promise<IAppliedPasses> {
-  let buffer = input;
-  const auxiliaryOutputs: IAssetAuxiliaryOutput[] = [];
-  const timings: IPassTiming[] = [];
-  let entry: Record<string, unknown> | undefined;
-  let extension: string | undefined;
-  for (const pass of passes) {
-    const started = performance.now();
-    let result: Buffer | IAssetPassOutput;
-    try {
-      result = await pass.apply(buffer, logical);
-    } catch (error) {
-      throw new Error(
-        `TN_ASSETS_PASS_FAILED: pass '${pass.name}' failed for '${logical}': ${messageOf(error)}`,
-      );
-    }
-    timings.push({ durationMs: performance.now() - started, name: pass.name });
-    if (Buffer.isBuffer(result)) {
-      buffer = result;
-      continue;
-    }
-    buffer = result.buffer;
-    if (result.auxiliaryOutputs !== undefined) auxiliaryOutputs.push(...result.auxiliaryOutputs);
-    if (result.entry !== undefined) entry = { ...(entry ?? {}), ...result.entry };
-    if (result.outputExtension !== undefined) extension = result.outputExtension;
-  }
-  if (timings.length !== passes.length) {
-    throw new Error(
-      `TN_ASSETS_PASS_COST_UNCLOSED: ${logical}: ${passes.length - timings.length} of ${passes.length} pass record(s) left open; refusing to report a partial cost.`,
-    );
-  }
-  return { auxiliaryOutputs, buffer, entry, extension, timings };
 }
 
 /** Counts one compile-cache-served input for every pass: the cache decision is the source. */
@@ -1329,7 +1297,7 @@ export async function compileAssets(
     // No bake ran, so no receipt describes this output root. A stale one from a previous build
     // would have the delete-test remove files nothing produces any more.
     await rm(receiptPath, { force: true });
-    return { passCosts: [], skipped: 0, written: 0 };
+    return { concurrencyUsed: 1, passCosts: [], skipped: 0, written: 0 };
   }
   const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
   const previous = await readExistingManifest(manifestPath);
@@ -1370,8 +1338,8 @@ export async function compileAssets(
     await rm(receiptPath, { force: true });
     const report = await runHealthReport([], layout.targets);
     return options.health === true
-      ? { passCosts: [], report, skipped: 0, written: 0 }
-      : { passCosts: [], skipped: 0, written: 0 };
+      ? { concurrencyUsed: 1, passCosts: [], report, skipped: 0, written: 0 }
+      : { concurrencyUsed: 1, passCosts: [], skipped: 0, written: 0 };
   }
 
   /** Everything one entry contributes to the receipt, the health report and the size report. */
@@ -1427,7 +1395,17 @@ export async function compileAssets(
     }
   };
 
-  for (const logical of logicals) {
+  // The scheduler: independent work runs bounded-concurrent, everything that depends on order
+  // — the merge, the writes, the counters — stays on this thread and is keyed or
+  // stable-merged, which the determinism gate proves. A compile with custom passes has no
+  // serialisable mirror and runs sequential.
+  const concurrency = resolveConcurrency(options.concurrency);
+  const pool =
+    layout.passSpecs.length > 0 && concurrency > 1
+      ? createPassPool(concurrency, layout.passSpecs, layout.outputRoot)
+      : undefined;
+
+  const processOne = async (logical: string): Promise<void> => {
     const input = await readInput(layout.sourceRoot, logical);
     const digest = createHash("sha256")
       .update(input)
@@ -1448,9 +1426,12 @@ export async function compileAssets(
       bookkeep(logical, input, previousEntry, reusable, undefined);
       recordCachedInputs(costInputs, passNames);
       skipped += 1;
-      continue;
+      return;
     }
-    const applied = await applyPasses(layout.passes, input, logical);
+    const applied =
+      pool === undefined
+        ? await applyPasses(layout.passes, input, logical)
+        : await pool.run(logical, input);
     recordRanTimings(costInputs, logical, applied.timings);
     const auxiliaryOutputs = resolveAuxiliaryOutputs(logical, applied.auxiliaryOutputs);
     const auxiliaryFields = auxiliaryManifestFields(auxiliaryOutputs);
@@ -1528,18 +1509,40 @@ export async function compileAssets(
       ).every(Boolean)
     ) {
       skipped += 1;
-      continue;
+      return;
     }
     await writeOutput(layout.outputRoot, entry, applied.buffer);
     for (const output of auxiliaryOutputs) {
       const absolute = path.join(layout.outputRoot, output.output);
       // A shared image is content-addressed and may already have been written by another model
-      // in this run or a previous one; identical bytes are not written twice.
+      // in this run or a previous one; identical bytes are not written twice. The write itself
+      // is temp-then-rename: a concurrent merge of the same image must never observe a torn
+      // file, and two identical-content writers cannot interleave.
       if (output.shared && (await outputExists(absolute))) continue;
       await mkdir(path.dirname(absolute), { recursive: true });
-      await writeFile(absolute, output.buffer);
+      const temporary = `${absolute}.${process.pid}.tmp`;
+      await writeFile(temporary, output.buffer);
+      await rename(temporary, absolute);
     }
     written += 1;
+  };
+
+  const queue = [...logicals];
+  const runnerCount = Math.min(pool === undefined ? 1 : concurrency, queue.length);
+  try {
+    await Promise.all(
+      Array.from({ length: runnerCount }, () =>
+        (async () => {
+          for (;;) {
+            const logical = queue.shift();
+            if (logical === undefined) return;
+            await processOne(logical);
+          }
+        })(),
+      ),
+    );
+  } finally {
+    await pool?.dispose();
   }
 
   // The transcoder ships once per build next to the compiled assets; the runtime loader points
@@ -1595,7 +1598,8 @@ export async function compileAssets(
     writtenBefore,
   );
   const receipt = await writeReceipt(layout.outputRoot, receiptOutputs);
+  const concurrencyUsed = pool === undefined ? 1 : Math.min(concurrency, logicals.length);
   return options.health === true
-    ? { passCosts, receipt, report, skipped, written }
-    : { passCosts, receipt, skipped, written };
+    ? { concurrencyUsed, passCosts, receipt, report, skipped, written }
+    : { concurrencyUsed, passCosts, receipt, skipped, written };
 }
