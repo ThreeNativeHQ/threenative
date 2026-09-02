@@ -1,4 +1,11 @@
-import { type ICtx, Scene, type SceneFrame, WaveField, isMobile } from "@threenative/core";
+import {
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  WaveField,
+  isMobile,
+  isTouchscreenAvailable,
+} from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import { Fog, Mesh, type PerspectiveCamera, PlaneGeometry } from "three";
 import { Ship } from "../entities/Ship.js";
@@ -10,6 +17,7 @@ import { SAILING_DOMAIN_WARP, SAILING_WAVES, palette } from "../render/palette.j
 import { setupPost } from "../render/postprocessing.js";
 import { createBuoy, createIsland } from "../render/props.js";
 import { setupSky } from "../render/sky.js";
+import { TouchControls } from "../render/touch-controls.js";
 import { createWaterMaterial } from "../render/water-material.js";
 import type { GameState } from "../state.js";
 
@@ -37,6 +45,10 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     const loading = createLoadingScreen(ctx);
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
+    const showTouchControls = isMobile() && isTouchscreenAvailable();
+    const touchControls = showTouchControls
+      ? ctx.entities.add("touch-controls", new TouchControls(camera))
+      : undefined;
 
     const field = new WaveField({ waves: SAILING_WAVES, domainWarp: SAILING_DOMAIN_WARP });
     const water = new Mesh(new PlaneGeometry(80, 80, 96, 96), createWaterMaterial(field));
@@ -64,7 +76,12 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
         status = "lost";
         return;
       }
-      ship.update(frameCtx, deltaTime, wind);
+      ship.update(
+        frameCtx,
+        deltaTime,
+        wind,
+        touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
+      );
       const nextBuoy = COURSE_BUOYS[buoysRounded];
       if (nextBuoy === undefined || ship.mesh.position.z > nextBuoy) {
         if (wind <= 0) status = "lost";

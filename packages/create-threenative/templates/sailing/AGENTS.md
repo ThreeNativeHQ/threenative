@@ -57,6 +57,10 @@ wave constants in `src/render/palette.ts`, hull points in `src/entities/Ship.ts`
 in `src/scenes/Sailing.ts`. The single React HUD reads published state; keep
 `playtests/survives.playtest.json` as smoke proof and native scenarios honest.
 
+On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), the local
+`src/render/touch-controls.ts` adds a left movement stick. `Sailing` passes its returned vector to
+`Ship`; keyboard input remains the desktop fallback.
+
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.

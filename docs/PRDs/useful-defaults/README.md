@@ -2,7 +2,8 @@
 
 **Status: OPEN — assembled 2026-08-30 against `c064b6a0`. PRD-289 remains PARTIAL because its
 visual score manifest is missing `sailing`; PRD-290 through PRD-292 were recovered and archived on
-2026-09-02. The other fifteen keep the status they arrived with.**
+2026-09-02. The current delivery tree has eight templates; the other fifteen PRDs keep the status
+they arrived with.**
 
 Every PRD in this folder pays out to somebody who never read it. That is the whole admission test:
 a game that asks for nothing still ends up better because the work was done. A gate that keeps this
@@ -50,7 +51,7 @@ before touching the visual half.
 | --- | --- |
 | [289 — the conventions the templates document also run in them](./PRD-289-the-conventions-the-templates-document-also-run-in-them.md) | `GroundSnap`, `normaliseToMetres`, `attachToBone` and `AnimationPlayer` appear in **7 of 7** templates' `AGENTS.md` and **0 of 7** templates' `src/`. `CharacterBody3D`, which a template cannot run without, appears in 8 source files. **PARTIAL — AC4 remains open: the eight-template visual score manifest is missing `sailing`.** |
 | [290 — a game that fails to start says why, on the screen](../done/PRD-290-a-game-that-fails-to-start-says-why-on-the-screen.md) | `GameCanvas.tsx:38` catches a rejected boot and writes the message to the DOM. `style.css:58` puts the launch card over it at `z-index: 9999`, and `main.ts` only removes that card once a `<canvas>` appears — which a pre-renderer failure never produces. **DONE — 2026-09-02.** |
-| [291 — a template is playable with the input the device has](../done/PRD-291-a-template-is-playable-with-the-input-the-device-has.md) | One template ships 238 lines of touch controls and gates them on `isNative() && isMobile() && isTouchscreenAvailable()`, so no mobile **browser** ever sees them. The other six bind movement to keys only. **DONE — 2026-09-02.** |
+| [291 — a template is playable with the input the device has](../done/PRD-291-a-template-is-playable-with-the-input-the-device-has.md) | The historical seven-template parent had one local touch renderer gated on `isNative() && isMobile() && isTouchscreenAvailable()`, so no mobile **browser** saw it; the other six bound movement to keys only. The current eight-template recovery adds sailing's local control, leaving defense's pointer-driven loop in scope as a pass. **DONE — 2026-09-02.** |
 | [292 — a fast body does not pass through a wall](../done/PRD-292-a-fast-body-does-not-pass-through-a-wall.md) | `grep -rn 'ccd\|continuous' packages/physics/src/` returns nothing. A game cannot enable continuous collision on either backend without editing package code. **DONE — 2026-09-02.** |
 
 Each opens with a Phase 0 that can close it as DECLINED with a number. Three of the four are
@@ -73,7 +74,7 @@ flowchart TD
 | 2 | [290 — a game that fails to start says why](../done/PRD-290-a-game-that-fails-to-start-says-why-on-the-screen.md) | DONE — 2026-09-02 | An invisible boot failure poisons every other row's evidence: a stuck launch card and a working game look identical in a capture. |
 | 3 | [278 — every template ships the render chain, and says which stages ran](./PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) | SCOPING | The largest visual-default delta available, and charter-safe: it ships as generated source. Six templates, six integration problems. |
 | 4 | [266 — the render chain names the tier it actually ran](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) | PROPOSED | Unblocked by the owner ruling recorded in the origin memo. The spine of rows 5 and 6. |
-| 5 | [193 — all templates model allocation-free ordinary frames](./PRD-193-all-templates-model-allocation-free-frames.md) + [194 — every template carries a real performance proof](./PRD-194-every-template-carries-a-real-performance-proof.md) | NOT STARTED | The regression net under row 3. Run **with** it, not after: five TSL stages across seven templates with no per-template proof is how a good default silently becomes a 30 fps one. |
+| 5 | [193 — all templates model allocation-free ordinary frames](./PRD-193-all-templates-model-allocation-free-frames.md) + [194 — every template carries a real performance proof](./PRD-194-every-template-carries-a-real-performance-proof.md) | NOT STARTED | The regression net under row 3. Run **with** it, not after: five TSL stages across eight templates with no per-template proof is how a good default silently becomes a 30 fps one. |
 | 6 | [287 — the default look holds the phone's budget](./PRD-287-the-default-look-holds-the-phones-budget.md) | OPEN | The device arm nothing else owns, plus the correction to the tier ladder's selection meter. |
 | 7 | [288 — the first frame is not the compile bill](./PRD-288-the-first-frame-is-not-the-compile-bill.md) | OPEN | `warmup.ts` compiles the scene and never walks the post chain, so the chain's pipelines are built after the loading screen leaves. |
 | 8 | [291 — a template is playable with the input the device has](../done/PRD-291-a-template-is-playable-with-the-input-the-device-has.md) | DONE — 2026-09-02 | A default look on a phone is worth nothing if the phone cannot move the character. |
@@ -106,7 +107,7 @@ flowchart TD
 
 - [ ] Every PRD above is DONE or explicitly DECLINED with the numbers that declined it.
 - [ ] `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` exits 0.
-- [ ] `pnpm test:templates` executes all seven generated projects, each on its default path with no
+- [ ] `pnpm test:templates` executes all eight generated projects, each on its default path with no
       flag set — the path a stranger takes.
 - [ ] One physical-device run appears in `docs/verification/`, naming the serial, the thermal
       status and the adapter. An unexecuted target is recorded as `UNVERIFIED` and never inferred.

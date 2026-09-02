@@ -10,6 +10,7 @@ import { Group } from "three";
 import { prepareShipConventions } from "../conventions.js";
 import { createMaterials } from "../render/materials.js";
 import { createShipModel } from "../render/props.js";
+import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
@@ -57,8 +58,13 @@ export class Ship {
     });
   }
 
-  update(ctx: GameCtx, deltaTime: number, wind: number): void {
+  update(ctx: GameCtx, deltaTime: number, wind: number, touch?: ITouchInput): void {
     const move = ctx.input.vector("move");
+    if (touch !== undefined) {
+      move.x += touch.move.x;
+      move.y += touch.move.y;
+      move.clampLength(0, 1);
+    }
     const speed = MAX_SPEED * Math.max(0, Math.min(1, wind));
     const targetX = move.x * STEERING_SPEED * Math.max(0.4, wind);
     const targetZ = -move.y * speed;

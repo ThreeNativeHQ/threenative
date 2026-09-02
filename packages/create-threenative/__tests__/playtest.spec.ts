@@ -263,6 +263,54 @@ describe("starter playtest proof", () => {
     expect(level).not.toContain("isNative() && isMobile()");
   });
 
+  it("should drive sailing movement with browser touch", async () => {
+    const scenario = JSON.parse(
+      await readFile(
+        path.resolve(
+          "packages/create-threenative/templates/sailing/playtests/touch-controls.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      assert: {
+        diagnostics: Record<string, boolean>;
+        movement: { entity: string; minDistance: number };
+        resources: Array<{ id: string; path: string; changed?: boolean }>;
+        visibility: Array<{ entity: string; present: boolean }>;
+      };
+      steps: Array<{ pointers?: Array<{ id: number }>; kind?: string }>;
+      target: string;
+    };
+    const [scene, ship] = await Promise.all([
+      readFile(
+        path.resolve("packages/create-threenative/templates/sailing/src/scenes/Sailing.ts"),
+        "utf8",
+      ),
+      readFile(
+        path.resolve("packages/create-threenative/templates/sailing/src/entities/Ship.ts"),
+        "utf8",
+      ),
+    ]);
+
+    expect(scenario.target).toBe("web");
+    expect(scenario.steps.some((step) => (step.pointers?.length ?? 0) > 0)).toBe(true);
+    expect(scenario.assert.diagnostics).toEqual({
+      noConsoleErrors: true,
+      noNetworkErrors: true,
+      noRuntimeDiagnostics: true,
+      runtimeReady: true,
+    });
+    expect(scenario.assert.movement).toEqual({ entity: "player", minDistance: 0.1 });
+    expect(scenario.assert.resources).toContainEqual({ id: "state", path: "shipZ", changed: true });
+    expect(scenario.assert.visibility).toContainEqual({
+      entity: "touch-controls",
+      present: true,
+      allowTrivial: expect.any(String),
+    });
+    expect(scene).toContain("const showTouchControls = isMobile() && isTouchscreenAvailable();");
+    expect(ship).toContain("touch?: ITouchInput");
+  });
+
   it("should form the same native touch scenario for Android and iOS targets", async () => {
     const scenarioPath =
       "packages/create-threenative/templates/platformer/playtests/native/touch-controls.playtest.json";
