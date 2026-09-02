@@ -279,7 +279,7 @@ describe("starter playtest proof", () => {
           noRuntimeDiagnostics: boolean;
           runtimeReady: boolean;
         };
-        movement: { entity: string; minDistance: number };
+        resources: Array<{ changed?: boolean; id: string; lte?: number; path: string }>;
         visibility: Array<{ allowTrivial?: string; entity: string; present: boolean }>;
       };
       steps: Array<{ pointers?: Array<{ id: number }>; kind?: string }>;
@@ -302,8 +302,13 @@ describe("starter playtest proof", () => {
       noRuntimeDiagnostics: true,
       runtimeReady: true,
     });
-    expect(scenario.assert.movement).toEqual({ entity: "player", minDistance: expect.any(Number) });
-    expect(scenario.assert.movement.minDistance).toBeGreaterThan(0);
+    expect(scenario.assert.resources).toContainEqual({
+      changed: true,
+      id: "state",
+      lte: expect.any(Number),
+      path: "shipZ",
+    });
+    expect(scenario.assert.resources.find(({ path }) => path === "shipZ")?.lte).toBeLessThan(7);
     expect(scenario.assert.visibility).toContainEqual({
       entity: "touch-controls",
       present: true,
