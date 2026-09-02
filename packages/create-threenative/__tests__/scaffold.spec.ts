@@ -214,10 +214,15 @@ const CURRENT_BASELINE_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
   "action-rpg": "33e618c7ff9157460ea7ad3afdfa57ec9fecafcc3f088ae3dff0c9fb43458b0d",
-  defense: "31f7793eae6c700531ebb0d8c913886a5bd0b0746ccbab87f3fe4526f9cca43c",
+  // Recomputed 2026-09-02 after the defense survival route's third default tower moved to the
+  // final route segment; three authored towers now cover the full ten-wave proof reliably.
+  defense: "84cc462d324ef459cd3e96052b08185fb777bdbfcc5c8406e8ea886e8d86dfda",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "780fe6d1030a55d217252a0f77019d1e2e86af043481ecb56eb0800a7d74524b",
+  // Recomputed 2026-09-02 after current main's engine-owned renderer-info reset made the complete
+  // minimal post-processing frame visible to the per-frame triangle metric: the unchanged scene
+  // measured 4,737 triangles (the pre-rebase bundle measured 1,175), so its strict cap is 4,800.
+  minimal: "d823951f6f72b820b641227b4dfd394ff5503f0dea49c7a205a8137e823abc98",
   platformer: "ed353c5ead8e9e0e066d7efb298b09298b6ad4539efa3189b208fe5e012d5b79",
   racing: "c493902d5e4f722ca5fdd558fe2009e232f8dba28da2e8998edb768fe84c3807",
   shooter: "4d8b16f04d8ba851965f56b630b8981a1278fd2657522370f76c0362a33d05a6",

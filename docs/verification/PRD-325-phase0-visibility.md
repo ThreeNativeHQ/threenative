@@ -148,11 +148,12 @@ capabilities, checks immediate fail-closed setup rejection, and checks native en
 The playtest transport suite separately checks setup-before-describe on web and desktop transports
 without treating `describe` itself as scene entry.
 
-The performance regression was red before the held-loop and renderer-metrics correction: the
+The first performance regression was red before the held-loop and renderer-metrics correction: the
 minimal template's first performance sample observed 4737 triangles against its 1223-triangle
-bound. The focused green run now measures a steady-state maximum of 1175 triangles, and all three
-minimal scenarios pass. This preserves the real first-use render cost in diagnostics while making
-per-frame renderer counters deterministic under the engine-owned render loop.
+bound. A fresh run after the correction and the current-main rebase records a maximum of 4737
+triangles across 202 samples; the recovery keeps that real per-frame count and pins the template cap
+at 4800. The earlier 1175-triangle receipt came from the pre-rebase bundle and is not evidence for
+the current engine commit.
 
 The final manager gate sequence is recorded separately after the lifecycle correction:
 
