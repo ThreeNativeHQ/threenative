@@ -82,6 +82,11 @@ supposed to be touching.
 
 ## Look and evidence
 
+VFX appearance belongs in `src/render/vfx.ts`: keep its TSL material, geometry, colour, blend,
+curves, timing and capacity there. Gameplay creates `GPUParticles3D` or an `IComputeDriven`
+object once, adds it with `ctx.add`, and calls `restart()` from the real attack or Arcane Surge
+path; do not move appearance into core or replace the existing event with a demo-only caller.
+
 ## Budget real time for the look
 
 Edit game-owned `src/render/` directly. `src/render/quality.ts` defines `low`, `medium`, and
