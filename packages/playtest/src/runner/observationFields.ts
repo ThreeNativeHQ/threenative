@@ -17,6 +17,7 @@ export const STANDALONE_PLAYTEST_OBSERVATION_FIELDS = [
   "runtimeObservations",
   "signals",
   "signalSeries",
+  "startup",
   "visual",
 ] as const;
 

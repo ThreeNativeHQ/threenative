@@ -24,6 +24,8 @@ import {
 } from "../src/runner/runner.js";
 import { playtestStepHoldTicks, playtestStepWaitTicks } from "../src/scenario.js";
 import type { Page } from "playwright";
+import { PLAYTEST_ASSERTION_REGISTRY } from "../src/index.js";
+import { HOST_PLAYTEST_OBSERVATION_FIELDS } from "../src/runner/observationFields.js";
 
 const CONFIG: IStandalonePlaytestConfig = {
   artifactDirectory: "artifacts/playtest",
@@ -264,6 +266,26 @@ test("a scenario with only waived triviality assertions fails closed", () => {
 
 test("standalone reports retain framebuffer coverage observations", () => {
   expect(STANDALONE_PLAYTEST_OBSERVATION_FIELDS).toContain("framebufferCoverage");
+});
+
+test("every registered assertion kind names an observation some runner produces", () => {
+  // A kind registered with an observation path no runner lists fails every scenario with
+  // 'The standalone runner does not produce an X observation' — which is how the startup kind
+  // shipped: evaluator, schema and docs green, the runner unable to run it.
+  const produced = new Set<string>([
+    ...STANDALONE_PLAYTEST_OBSERVATION_FIELDS,
+    ...HOST_PLAYTEST_OBSERVATION_FIELDS,
+  ]);
+  const orphans = PLAYTEST_ASSERTION_REGISTRY.filter(
+    (entry) => !produced.has(entry.observationPath),
+  ).map((entry) => `${entry.kind} -> ${entry.observationPath}`);
+  // Three kinds predate this guard and are not produced by either runner today; they are pinned
+  // here as known debt so that a fourth cannot join them unnoticed.
+  expect(orphans).toEqual([
+    "reachability -> entityTransforms",
+    "overlayNodes -> overlayNodes",
+    "occluded -> effectLog",
+  ]);
 });
 
 test("framebuffer coverage passes only after observing readable matching frames in the complete window", () => {
