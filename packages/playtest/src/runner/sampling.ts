@@ -44,9 +44,15 @@ interface IVisibilityIsolationState {
   elements: Element[];
   hiddenElements: IVisibilityIsolationElementState[];
   markerAttribute: string;
+  mutationTracker: IVisibilityIsolationMutationTracker;
   probe: Element;
   probeAttribute: string;
   style: HTMLStyleElement;
+}
+
+interface IVisibilityIsolationMutationTracker {
+  changed: boolean;
+  stop: () => void;
 }
 
 interface IVisibilityIsolationCleanupResult {
@@ -126,6 +132,7 @@ export async function sampleElementVisibility(
     const hiddenElements: IVisibilityIsolationElementState[] = [];
     let isolationStyle: HTMLStyleElement | undefined;
     let isolationProbe: Element | undefined;
+    let stopMutationTracking: (() => void) | undefined;
     const restoreHiddenElements = (): boolean => {
       let cleaned = true;
       for (const { element, properties } of hiddenElements) {
@@ -145,6 +152,11 @@ export async function sampleElementVisibility(
     };
     const cleanupIsolation = (): boolean => {
       let cleaned = true;
+      try {
+        stopMutationTracking?.();
+      } catch {
+        cleaned = false;
+      }
       try {
         isolationStyle?.remove();
       } catch {
@@ -258,10 +270,92 @@ export async function sampleElementVisibility(
       if (targetVisibility !== "visible" || probeVisibility !== "hidden" || !rootsAreTransparent || !nonTargetElementsAreHidden) {
         throw new Error("Cannot verify active visibility isolation rules");
       }
+      const trackedElements = new Map<Element, Set<string>>();
+      const mutationTracker: IVisibilityIsolationMutationTracker = { changed: false, stop: () => undefined };
+      const restorations: Array<() => void> = [];
+      for (const { element, properties } of hiddenElements) {
+        const names = new Set(properties.map(({ name }) => name));
+        trackedElements.set(element, names);
+        const style = (element as HTMLElement).style;
+        const originalSetProperty = style.setProperty;
+        const temporarySetProperty = function(this: CSSStyleDeclaration, property: string, value: string, priority?: string): void {
+          originalSetProperty.call(this, property, value, priority);
+          const normalizedPriority = priority?.trim().toLowerCase();
+          if (this === style && names.has(property.trim().toLowerCase())
+            && (normalizedPriority === undefined || normalizedPriority === "" || normalizedPriority === "important")) {
+            mutationTracker.changed = true;
+          }
+        };
+        const originalDescriptor = Object.getOwnPropertyDescriptor(style, "setProperty");
+        Object.defineProperty(style, "setProperty", { configurable: true, value: temporarySetProperty });
+        restorations.push(() => {
+          if (style.setProperty !== temporarySetProperty) return;
+          if (originalDescriptor === undefined) Reflect.deleteProperty(style, "setProperty");
+          else Object.defineProperty(style, "setProperty", originalDescriptor);
+        });
+      }
+      const propertyState = (style: CSSStyleDeclaration, name: string): { priority: string; value: string } => ({
+        priority: style.getPropertyPriority(name),
+        value: style.getPropertyValue(name),
+      });
+      const propertyStatesDiffer = (first: CSSStyleDeclaration, second: CSSStyleDeclaration, names: Set<string>): boolean => [...names].some((name) => {
+        const firstState = propertyState(first, name);
+        const secondState = propertyState(second, name);
+        return firstState.value !== secondState.value || firstState.priority !== secondState.priority;
+      });
+      const styleFromText = (text: string | null): CSSStyleDeclaration => {
+        const style = document.createElement("span").style;
+        style.cssText = text ?? "";
+        return style;
+      };
+      const trackElementMutationRecords = (
+        element: Element,
+        elementRecords: readonly MutationRecord[],
+        names: Set<string>,
+      ): void => {
+        elementRecords.forEach((record, index) => {
+          const nextRecord = elementRecords[index + 1];
+          const before = styleFromText(record.oldValue);
+          const after = styleFromText(nextRecord === undefined ? element.getAttribute("style") : nextRecord.oldValue);
+          if (propertyStatesDiffer(before, after, names)) mutationTracker.changed = true;
+        });
+      };
+      const mutationRecords = (records: readonly MutationRecord[]): void => {
+        for (const element of trackedElements.keys()) {
+          const names = trackedElements.get(element);
+          if (names === undefined) continue;
+          const elementRecords = records.filter((record) => record.type === "attributes"
+            && record.attributeName === "style"
+            && record.target === element);
+          if (elementRecords.length === 0) continue;
+          trackElementMutationRecords(element, elementRecords, names);
+        }
+      };
+      const observer = trackedElements.size === 0 || typeof MutationObserver === "undefined"
+        ? undefined
+        : new MutationObserver(mutationRecords);
+      let tracking = true;
+      const stop = (): void => {
+        if (!tracking) return;
+        tracking = false;
+        if (observer !== undefined) {
+          mutationRecords(observer.takeRecords());
+          observer.disconnect();
+        }
+        for (let index = restorations.length - 1; index >= 0; index -= 1) restorations[index]?.();
+      };
+      stopMutationTracking = stop;
+      if (observer !== undefined) {
+        for (const element of trackedElements.keys()) {
+          observer.observe(element, { attributeFilter: ["style"], attributeOldValue: true, attributes: true });
+        }
+      }
+      mutationTracker.stop = stop;
       (window as unknown as Record<string, IVisibilityIsolationState>)[isolationKey] = {
         elements: markedElements,
         hiddenElements,
         markerAttribute,
+        mutationTracker,
         probe: isolationProbe,
         probeAttribute,
         style: isolationStyle,
@@ -306,6 +400,12 @@ export async function sampleElementVisibility(
       const state = (window as unknown as Record<string, IVisibilityIsolationState | undefined>)[key];
       if (state === undefined) return { cleaned: false, isolationIntact: false };
       let isolationIntact = true;
+      try {
+        state.mutationTracker.stop();
+      } catch {
+        isolationIntact = false;
+      }
+      if (state.mutationTracker.changed) isolationIntact = false;
       for (const { element, properties } of state.hiddenElements) {
         try {
           const inlineStyle = (element as HTMLElement).style;
