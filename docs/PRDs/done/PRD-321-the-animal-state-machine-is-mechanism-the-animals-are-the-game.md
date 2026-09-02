@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-321 — the animal state machine is mechanism; the animals stay the game's
 
-**Status: PROPOSED, 2026-09-01.** Mined from `sandbox/wildwood` at `92a343b`.
+**Status: DECLINED, 2026-09-02 (Phase 0, no product code).** Mined from `sandbox/wildwood` at `92a343b`.
+
+**Decline record.** §6's first condition holds: no second consumer exists that needs the same four pieces. Search at decline time: the templates (`action-rpg`, `shooter`) use `attachToBone` for the weapon-in-hand convention and no animal rig; `examples/prd140-picking` builds a hand-made `SkinnedMesh` for raycast tests; `examples/prd314-clip-audit` is a diagnostic fixture rig; no template or example imports a rigged GLB, clones a skeleton, normalises a bind pose, measures anatomical forward, or follows ground with an animal entity. Wildwood is the only consumer, and the kill switch says one consumer is not an abstraction. The pose defect that motivated this batch was found and fixed independently in PRD-324 (`docs/verification/PRD-324-phase1-phase2.md`); its instrument (`boneLengths`, `boneLengthDeviations`) and the loader repair (`reconcileMirroredClips`) are the pieces that were real. If a second game ever needs the four pieces, re-file with that consumer named.
 
 **Complexity:** +2 proposes a new core export, +2 must hold the rule-3 look boundary under
 pressure, +1 needs a second consumer to justify itself, +1 crosses core and the templates,
