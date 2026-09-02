@@ -99,6 +99,34 @@ feet corrected to the floor where `GroundSnap` is enabled, and held weapons atta
 `RightHand` in action-rpg and shooter. The score file remains the pre-existing seven-template,
 model-only baseline, so it was not fabricated or edited to conceal the missing `sailing` score.
 
+## Review repair — 2026-09-02
+
+The applicable convention contract now requires every call-cell symbol to appear in its template's
+`AGENTS.md`; reasoned `N/A` cells remain exempt. The red test temporarily removed `GroundSnap` from
+the fixture documentation and the focused suite exited `1` with the expected missing-name finding
+instead of silently returning an empty result. The real gate initially exposed one additional
+applicable omission, shooter `attachToBone`; that source `AGENTS.md` was repaired and its generated
+mirror was refreshed with `pnpm sync:agents`.
+
+```text
+pnpm exec vitest run scripts/__tests__/check-template-conventions.spec.ts \
+packages/create-threenative/__tests__/touch-controls.spec.ts \
+packages/create-threenative/__tests__/playtest.spec.ts \
+packages/playtest/__tests__/sampling.spec.ts \
+packages/playtest/__tests__/runner.spec.ts --reporter=dot
+RED, exit 1; 7 failed and 128 passed. The convention mutation reported that the expected
+applicable GroundSnap name was absent from AGENTS.md.
+
+pnpm exec tsx scripts/check-template-conventions.ts
+PASS, exit 0; Template convention applicability and source-call checks passed.
+
+pnpm sync:agents --check
+PASS, exit 0; 17 CLAUDE.md mirrors are in sync.
+
+same focused Vitest command after the documentation and gate repair
+PASS, exit 0; 5 files and 135 tests passed.
+```
+
 The fresh worktree also required the repository-native setup before the root test could run:
 `pnpm --filter @threenative/physics build`, `pnpm native:build`, and the documented V8/QuickJS
 native test targets all completed successfully. The remaining root-test failures are the

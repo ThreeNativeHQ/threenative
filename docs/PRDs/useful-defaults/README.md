@@ -67,7 +67,7 @@ flowchart TD
 
 | # | PRD | Status it arrived with | Why here |
 | --- | --- | --- | --- |
-| 1 | [289 — the conventions the templates document also run in them](../done/PRD-289-the-conventions-the-templates-document-also-run-in-them.md) | DONE | Cheapest row on the table and the widest promise gap; generated call sites, N/A reasons, drift gate, and evidence are complete. |
+| 1 | [289 — the conventions the templates document also run in them](../done/PRD-289-the-conventions-the-templates-document-also-run-in-them.md) | DONE | Cheapest row on the table and the widest promise gap; generated call sites, applicable-template names, N/A reasons, drift gate, and evidence are complete. |
 | 2 | [290 — a game that fails to start says why](../done/PRD-290-a-game-that-fails-to-start-says-why-on-the-screen.md) | DONE | Boot failures now have a visible, styled, assertable surface; browser proof is green and native limits are recorded. |
 | 3 | [278 — every template ships the render chain, and says which stages ran](./PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) | SCOPING | The largest visual-default delta available, and charter-safe: it ships as generated source. Six templates, six integration problems. |
 | 4 | [266 — the render chain names the tier it actually ran](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) | PROPOSED | Unblocked by the owner ruling recorded in the origin memo. The spine of rows 5 and 6. |

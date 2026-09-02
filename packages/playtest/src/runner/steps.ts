@@ -23,6 +23,7 @@ import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
+import { sampleElementVisibility } from "./sampling.js";
 import {
   PERFORMANCE_BROWSER_ARGS,
   reconcileBrowserPointers,
@@ -95,40 +96,15 @@ export async function sampleVisualElementBounds(
       : [];
   });
   if (requested.length === 0) return [];
-  return page.evaluate((targets) => targets.map(({ assertionIndex, element }) => {
-    const node = element.id === undefined
-      ? (() => {
-          try {
-            return document.querySelector(element.selector!);
-          } catch {
-            return null;
-          }
-        })()
-      : document.getElementById(element.id);
-    if (node === null) return { assertionIndex, element, rendered: false };
-    const rect = node.getBoundingClientRect();
-    const bounds: IPlaytestVisualRegionBounds | undefined = [rect.height, rect.width, rect.left, rect.top].every(Number.isFinite) && rect.width > 0 && rect.height > 0
-      ? { height: rect.height, width: rect.width, x: rect.left, y: rect.top }
-      : undefined;
-    let rendered = bounds !== undefined;
-    for (let current: Element | null = node; rendered && current !== null; current = current.parentElement) {
-      const style = window.getComputedStyle(current);
-      const opacity = Number.parseFloat(style.opacity);
-      const contentVisibility = style.getPropertyValue?.("content-visibility") || style.contentVisibility;
-      rendered = style.display !== "none"
-        && style.visibility !== "hidden"
-        && style.visibility !== "collapse"
-        && contentVisibility !== "hidden"
-        && (!Number.isFinite(opacity) || opacity > 0);
-    }
-    if (rendered && bounds !== undefined) {
-      const centerX = Math.min(Math.max(bounds.x + bounds.width / 2, 0), Math.max(0, window.innerWidth - 1));
-      const centerY = Math.min(Math.max(bounds.y + bounds.height / 2, 0), Math.max(0, window.innerHeight - 1));
-      const topmost = document.elementFromPoint(centerX, centerY);
-      rendered = topmost === node || (topmost !== null && node.contains(topmost));
-    }
-    return { assertionIndex, ...(bounds === undefined ? {} : { bounds }), element, rendered };
-  }), requested);
+  return Promise.all(requested.map(async ({ assertionIndex, element }) => {
+    const visibility = await sampleElementVisibility(page, element);
+    return {
+      assertionIndex,
+      ...(visibility.bounds === undefined ? {} : { bounds: visibility.bounds }),
+      element,
+      rendered: visibility.rendered,
+    };
+  }));
 }
 
 export function buildObservations(candidate: Partial<IPlaytestObservations>): IPlaytestObservations {

@@ -4,6 +4,8 @@ import {
   type IPlaytestObservationSnapshot,
   type IPlaytestPathAssertion,
   type IPlaytestScenario,
+  type IPlaytestVisualRegionBounds,
+  type IPlaytestVisualRegionTarget,
 } from "../index.js";
 import { PlaytestBridgeError } from "./bridgeClient.js";
 import { resolveBrowserArguments } from "./browser.js";
@@ -12,10 +14,108 @@ import { pixelBoundsToNdc } from "./camera.js";
 import { entityPosition, length, subtract } from "./shared.js";
 import type { IMovementSampleInterval, IRunnerConsoleEntry } from "./shared.js";
 import type { Page } from "playwright";
+import { PNG } from "pngjs";
+
+interface IElementVisibilitySample {
+  bounds?: IPlaytestVisualRegionBounds;
+  rendered: boolean;
+}
+
+interface IDomElementVisibilitySample extends IElementVisibilitySample {
+  clip?: { height: number; width: number; x: number; y: number };
+}
+
+/** Proves a DOM target contributes visible pixels and is not hidden by another painted node. */
+export async function sampleElementVisibility(
+  page: Page,
+  target: IPlaytestVisualRegionTarget,
+): Promise<IElementVisibilitySample> {
+  const domSample = await page.evaluate((requestedTarget): IDomElementVisibilitySample => {
+    const node = requestedTarget.id === undefined
+      ? (() => {
+          try {
+            return requestedTarget.selector === undefined ? null : document.querySelector(requestedTarget.selector);
+          } catch {
+            return null;
+          }
+        })()
+      : document.getElementById(requestedTarget.id);
+    if (node === null) return { rendered: false };
+
+    const rect = node.getBoundingClientRect();
+    const bounds: IPlaytestVisualRegionBounds | undefined = [rect.height, rect.width, rect.left, rect.top].every(Number.isFinite) && rect.width > 0 && rect.height > 0
+      ? { height: rect.height, width: rect.width, x: rect.left, y: rect.top }
+      : undefined;
+    if (bounds === undefined) return { rendered: false };
+
+    let rendered = true;
+    for (let current: Element | null = node; rendered && current !== null; current = current.parentElement) {
+      const style = window.getComputedStyle(current);
+      const opacity = Number.parseFloat(style.opacity);
+      const contentVisibility = style.getPropertyValue?.("content-visibility") || style.contentVisibility;
+      rendered = style.display !== "none"
+        && style.visibility !== "hidden"
+        && style.visibility !== "collapse"
+        && contentVisibility !== "hidden"
+        && (!Number.isFinite(opacity) || opacity > 0);
+    }
+    if (!rendered) return { bounds, rendered: false };
+
+    const left = Math.max(0, bounds.x);
+    const top = Math.max(0, bounds.y);
+    const right = Math.min(window.innerWidth, bounds.x + bounds.width);
+    const bottom = Math.min(window.innerHeight, bounds.y + bounds.height);
+    if (right <= left || bottom <= top) return { bounds, rendered: false };
+
+    const centerX = Math.min(Math.max(bounds.x + bounds.width / 2, 0), Math.max(0, window.innerWidth - 1));
+    const centerY = Math.min(Math.max(bounds.y + bounds.height / 2, 0), Math.max(0, window.innerHeight - 1));
+    const pointerEventsStyle = document.createElement("style");
+    pointerEventsStyle.textContent = "* { pointer-events: auto !important; }";
+    if (document.head === null) return { bounds, rendered: false };
+    document.head.appendChild(pointerEventsStyle);
+    try {
+      const topmost = document.elementFromPoint(centerX, centerY);
+      rendered = topmost === node || (topmost !== null && node.contains(topmost));
+    } catch {
+      rendered = false;
+    } finally {
+      pointerEventsStyle.remove();
+    }
+
+    return {
+      bounds,
+      clip: { height: bottom - top, width: right - left, x: left, y: top },
+      rendered,
+    };
+  }, target).catch(() => undefined);
+
+  if (domSample === undefined || !domSample.rendered || domSample.clip === undefined) {
+    return { ...(domSample?.bounds === undefined ? {} : { bounds: domSample.bounds }), rendered: false };
+  }
+  const screenshot = await page.screenshot({ clip: domSample.clip }).catch(() => undefined);
+  return {
+    bounds: domSample.bounds,
+    rendered: screenshot !== undefined && containsPaintedPixels(screenshot),
+  };
+}
+
+function containsPaintedPixels(screenshot: Buffer): boolean {
+  try {
+    const png = PNG.sync.read(screenshot);
+    for (let offset = 0; offset < png.data.length; offset += 4) {
+      const alpha = png.data[offset + 3] ?? 0;
+      const luminance = Math.max(png.data[offset] ?? 0, png.data[offset + 1] ?? 0, png.data[offset + 2] ?? 0) / 255;
+      if (alpha > 0 && luminance > 0.01) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
 
 export async function sampleHud(page: Page, assertions: readonly IPlaytestPathAssertion[]): Promise<Record<string, unknown>> {
   if (assertions.length === 0) return {};
-  return page.evaluate((requestedAssertions) => Object.fromEntries(requestedAssertions.flatMap(({ id, path, visible }) => {
+  const snapshots: Record<string, unknown> = await page.evaluate((requestedAssertions) => Object.fromEntries(requestedAssertions.flatMap(({ id, path }) => {
     const element = path === undefined
       ? document.getElementById(id)
       : (() => {
@@ -30,30 +130,25 @@ export async function sampleHud(page: Page, assertions: readonly IPlaytestPathAs
     const rawValue = element.getAttribute("data-value");
     const value = rawValue === null ? undefined : Number.isFinite(Number(rawValue)) ? Number(rawValue) : rawValue;
     const snapshot = value === undefined ? text : value;
-    const observed = visible === undefined
-      ? snapshot
-      : (() => {
-          const rect = element.getBoundingClientRect();
-          if (rect.width <= 0 || rect.height <= 0) return { text: snapshot, visible: false };
-          let rendered = true;
-          for (let current: Element | null = element; rendered && current !== null; current = current.parentElement) {
-            const style = window.getComputedStyle(current);
-            const opacity = Number.parseFloat(style.opacity);
-            const contentVisibility = style.getPropertyValue?.("content-visibility") || style.contentVisibility;
-            rendered = style.display !== "none"
-              && style.visibility !== "hidden"
-              && style.visibility !== "collapse"
-              && contentVisibility !== "hidden"
-              && (!Number.isFinite(opacity) || opacity > 0);
-          }
-          if (!rendered) return { text: snapshot, visible: false };
-          const centerX = Math.min(Math.max(rect.left + rect.width / 2, 0), Math.max(0, window.innerWidth - 1));
-          const centerY = Math.min(Math.max(rect.top + rect.height / 2, 0), Math.max(0, window.innerHeight - 1));
-          const topmost = document.elementFromPoint(centerX, centerY);
-          return { text: snapshot, visible: topmost === element || (topmost !== null && element.contains(topmost)) };
-        })();
-    return [[id, path === undefined ? observed : { [path]: observed }] as const];
+    return [[id, path === undefined ? snapshot : { [path]: snapshot }] as const];
   })), assertions);
+  for (const assertion of assertions) {
+    if (assertion.visible === undefined || !Object.hasOwn(snapshots, assertion.id)) continue;
+    const visibility = await sampleElementVisibility(
+      page,
+      assertion.path === undefined ? { id: assertion.id } : { selector: assertion.path },
+    );
+    const snapshot = snapshots[assertion.id];
+    if (assertion.path === undefined) {
+      snapshots[assertion.id] = { text: snapshot, visible: visibility.rendered };
+      continue;
+    }
+    const pathSnapshot = typeof snapshot === "object" && snapshot !== null && !Array.isArray(snapshot)
+      ? (snapshot as Record<string, unknown>)[assertion.path]
+      : snapshot;
+    snapshots[assertion.id] = { [assertion.path]: { text: pathSnapshot, visible: visibility.rendered } };
+  }
+  return snapshots;
 }
 
 export function pairObservations(

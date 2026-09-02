@@ -48,6 +48,12 @@ function installGlobal(name: string, value: unknown): () => void {
   };
 }
 
+function brightScreenshot(): Buffer {
+  const png = new PNG({ height: 4, width: 4 });
+  png.data.fill(255);
+  return PNG.sync.write(png);
+}
+
 test("visual capture reads the largest canvas instead of composited page UI", async () => {
   const smallCanvas = { height: 1, width: 1 } as HTMLCanvasElement;
   const renderCanvas = { height: 2, width: 4 } as HTMLCanvasElement;
@@ -112,8 +118,10 @@ test("browser visual capture records id or selector bounds and renderability", a
     parentElement: null,
   };
   const restoreDocument = installGlobal("document", {
+    createElement: () => ({ remove: () => undefined }),
     elementFromPoint: () => visible,
     getElementById: (id: string) => id === "visible" ? visible : transparent,
+    head: { appendChild: () => undefined },
     querySelector: () => visible,
   });
   const restoreWindow = installGlobal("window", {
@@ -129,6 +137,7 @@ test("browser visual capture records id or selector bounds and renderability", a
   try {
     const page = {
       evaluate: async (callback: (targets: unknown) => unknown, targets: unknown) => callback(targets),
+      screenshot: async () => brightScreenshot(),
     } as unknown as Page;
     await expect(sampleVisualElementBounds(page, [
       { region: { element: { id: "visible" } } },
@@ -151,6 +160,88 @@ test("browser visual capture records id or selector bounds and renderability", a
         assertionIndex: 2,
         bounds: { height: 10, width: 12, x: 4, y: 3 },
         element: { id: "transparent" },
+        rendered: false,
+      },
+    ]);
+  } finally {
+    restoreWindow();
+    restoreDocument();
+  }
+});
+
+test("browser visual element regions accept painted noninteractive nodes", async () => {
+  const canvas = {};
+  const target = {
+    contains: () => false,
+    getBoundingClientRect: () => ({ height: 10, left: 4, top: 3, width: 12 }),
+    parentElement: null,
+  };
+  let forcedPointerEvents = false;
+  const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
+  const restoreDocument = installGlobal("document", {
+    createElement: () => pointerEventsStyle,
+    elementFromPoint: () => forcedPointerEvents ? target : canvas,
+    getElementById: () => target,
+    head: { appendChild: () => { forcedPointerEvents = true; } },
+  });
+  const restoreWindow = installGlobal("window", {
+    getComputedStyle: () => ({ display: "block", getPropertyValue: () => "", opacity: "1", visibility: "visible" }),
+    innerHeight: 720,
+    innerWidth: 1280,
+  });
+  try {
+    const page = {
+      evaluate: async (callback: (targets: unknown) => unknown, targets: unknown) => callback(targets),
+      screenshot: async () => brightScreenshot(),
+    } as unknown as Page;
+    await expect(sampleVisualElementBounds(page, [
+      { region: { element: { id: "target" } } },
+    ] as never)).resolves.toEqual([
+      {
+        assertionIndex: 0,
+        bounds: { height: 10, width: 12, x: 4, y: 3 },
+        element: { id: "target" },
+        rendered: true,
+      },
+    ]);
+  } finally {
+    restoreWindow();
+    restoreDocument();
+  }
+});
+
+test("browser visual element regions reject nodes hidden by a noninteractive overlay", async () => {
+  const target = {
+    contains: () => false,
+    getBoundingClientRect: () => ({ height: 720, left: 0, top: 0, width: 1280 }),
+    parentElement: null,
+  };
+  const overlay = {};
+  let forcedPointerEvents = false;
+  const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
+  const restoreDocument = installGlobal("document", {
+    createElement: () => pointerEventsStyle,
+    elementFromPoint: () => forcedPointerEvents ? overlay : target,
+    getElementById: () => target,
+    head: { appendChild: () => { forcedPointerEvents = true; } },
+  });
+  const restoreWindow = installGlobal("window", {
+    getComputedStyle: () => ({ display: "block", getPropertyValue: () => "", opacity: "1", visibility: "visible" }),
+    innerHeight: 720,
+    innerWidth: 1280,
+  });
+  try {
+    const page = {
+      evaluate: async (callback: (targets: unknown) => unknown, targets: unknown) => callback(targets),
+      screenshot: async () => brightScreenshot(),
+    } as unknown as Page;
+    await expect(sampleVisualElementBounds(page, [
+      { region: { element: { id: "target" } } },
+    ] as never)).resolves.toEqual([
+      {
+        assertionIndex: 0,
+        bounds: { height: 720, width: 1280, x: 0, y: 0 },
+        element: { id: "target" },
         rendered: false,
       },
     ]);

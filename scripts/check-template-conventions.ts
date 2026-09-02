@@ -97,7 +97,11 @@ function checkConvention(
 ): readonly string[] {
   if (cell === undefined)
     return [`Template '${template}' convention '${symbol}' is missing from the table.`];
-  if (!agents.includes(symbol)) return [];
+  if (!agents.includes(symbol)) {
+    return cell.kind === "call"
+      ? [`Template '${template}' applicable convention '${symbol}' is missing from AGENTS.md.`]
+      : [];
+  }
   const sourceCalls = callSites.filter(({ symbol: callSymbol }) => callSymbol === symbol);
   if (cell.kind === "na") {
     return sourceCalls.length === 0

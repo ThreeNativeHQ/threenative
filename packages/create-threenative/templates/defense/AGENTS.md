@@ -59,6 +59,7 @@ entities with `ctx.entities`; the single React HUD reads `GameState`, never an e
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets:
 put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive
 `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without resetting game state; from

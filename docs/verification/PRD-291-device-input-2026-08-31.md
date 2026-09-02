@@ -215,3 +215,44 @@ above.
 same `TN_PLAYTEST_SCENARIO_INVALID` contract used by the other schema boundaries. The generated
 starter boot-failure scenario uses the bounded field to make its rendered readability proof
 observable.
+
+## Integration follow-up — sailing touch path — 2026-09-02
+
+The historical seven-template result above predates the current integration follow-up. The sailing
+template now owns a generated `src/render/touch-controls.ts` movement surface. Its scene registers
+that surface only for `isMobile() && isTouchscreenAvailable()`, passes raw pointers to it every
+frame, and `Ship.update` merges the resulting movement vector with the existing keyboard vector.
+The new `playtests/touch-controls.playtest.json` uses touch pointers only and asserts player
+movement plus the visible `touch-controls` entity. This does not change the native/device
+qualification, which remains explicitly `UNVERIFIED`.
+
+Red-green evidence:
+
+```text
+focused review suite before the sailing repair
+RED, exit 1; the sailing source and touch scenario were missing. The suite reported the missing
+touch-controls.ts and touch-controls.playtest.json files.
+
+TN_TEMPLATE_ONLY=sailing pnpm test:templates
+PASS, exit 0; the audit found 6 sailing scenarios and every scaffolded scenario passed, including
+`sailing-touch-controls` (runtime-ready, no console/network/runtime diagnostics, player movement,
+and visible touch-controls assertions). The browser capture used NVIDIA/Turing WebGPU.
+
+After the full-template sweep exposed a physics-sensitive `0.5m` movement floor, the sailing
+scenario was kept at its original 90-tick touch gesture and set to the same `0.1m` minimum used by
+the other short touch-control scenarios. The sailing-only command was rerun afterward and passed
+all 6 scenarios, including `sailing-touch-controls`.
+
+The intervening full `pnpm test:templates` run is not claimed green: it exited 1 because the
+unchanged `defense-survive-ten-waves` scenario failed its existing `resource.state.leaks` assertion
+and the first sailing run failed only its then-`0.5m` floor (`0.474947m` observed). The focused
+sailing rerun above is the fresh result after that evidence threshold was corrected.
+
+The final full sweep after that correction again reported `sailing-touch-controls` passed, then
+ended with exit 1 when Chromium closed during the unrelated `starter-zoom-wheel` `mouse.wheel`
+step. This remains an environment-level runner failure; no native or device result is inferred.
+```
+
+Native/device status is `UNVERIFIED`: `adb devices` returned only `List of devices attached` with
+no serial; `xcrun --version` and `emulator -list-avds` were unavailable. No native result is
+inferred from the browser run.

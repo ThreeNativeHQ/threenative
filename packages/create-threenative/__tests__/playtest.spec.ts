@@ -263,6 +263,58 @@ describe("starter playtest proof", () => {
     expect(level).not.toContain("isNative() && isMobile()");
   });
 
+  it("should drive sailing movement and render touch controls with browser touch", async () => {
+    const scenario = JSON.parse(
+      await readFile(
+        path.resolve(
+          "packages/create-threenative/templates/sailing/playtests/touch-controls.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      assert: {
+        diagnostics: {
+          noConsoleErrors: boolean;
+          noNetworkErrors: boolean;
+          noRuntimeDiagnostics: boolean;
+          runtimeReady: boolean;
+        };
+        movement: { entity: string; minDistance: number };
+        visibility: Array<{ allowTrivial?: string; entity: string; present: boolean }>;
+      };
+      steps: Array<{ pointers?: Array<{ id: number }>; kind?: string }>;
+      target: string;
+    };
+    const scene = await readFile(
+      path.resolve("packages/create-threenative/templates/sailing/src/scenes/Sailing.ts"),
+      "utf8",
+    );
+    const ship = await readFile(
+      path.resolve("packages/create-threenative/templates/sailing/src/entities/Ship.ts"),
+      "utf8",
+    );
+
+    expect(scenario.target).toBe("web");
+    expect(scenario.steps.some((step) => (step.pointers?.length ?? 0) > 0)).toBe(true);
+    expect(scenario.assert.diagnostics).toEqual({
+      noConsoleErrors: true,
+      noNetworkErrors: true,
+      noRuntimeDiagnostics: true,
+      runtimeReady: true,
+    });
+    expect(scenario.assert.movement).toEqual({ entity: "player", minDistance: expect.any(Number) });
+    expect(scenario.assert.movement.minDistance).toBeGreaterThan(0);
+    expect(scenario.assert.visibility).toContainEqual({
+      entity: "touch-controls",
+      present: true,
+      allowTrivial: expect.any(String),
+    });
+    expect(scene).toContain("isMobile() && isTouchscreenAvailable()");
+    expect(scene).toContain("touchControls?.update(frameCtx.input.raw.pointers");
+    expect(ship).toContain("ITouchInput");
+    expect(ship).toContain("touch.move");
+  });
+
   it("should form the same native touch scenario for Android and iOS targets", async () => {
     const scenarioPath =
       "packages/create-threenative/templates/platformer/playtests/native/touch-controls.playtest.json";

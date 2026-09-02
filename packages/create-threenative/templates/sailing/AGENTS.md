@@ -58,6 +58,7 @@ in `src/scenes/Sailing.ts`. The single React HUD reads published state; keep
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Generated conventions call `normaliseToMetres` for authored ship scale; buoyancy owns water contact.
 `input.vector("move").y` is +up and means forward wind; use one explicit `-move.y` conversion.
 Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`,
 then drive `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without resetting game

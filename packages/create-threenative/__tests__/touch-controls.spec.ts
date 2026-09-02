@@ -100,6 +100,7 @@ const TOUCH_TEMPLATES = [
   "minimal",
   "platformer",
   "racing",
+  "sailing",
   "shooter",
   "starter",
 ] as const;

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Page } from "playwright";
+import { PNG } from "pngjs";
 
 import type { IPlaytestObservationSnapshot, IPlaytestScenario } from "../src/index.js";
 import {
@@ -47,6 +48,12 @@ function installGlobal(name: string, value: unknown): () => void {
   };
 }
 
+function brightScreenshot(): Buffer {
+  const png = new PNG({ height: 4, width: 4 });
+  png.data.fill(255);
+  return PNG.sync.write(png);
+}
+
 describe("playtest sampling", () => {
   test("samples HUD values by id and selector without dropping absent nodes", async () => {
     const score = { getAttribute: () => "7", textContent: " Score " };
@@ -78,8 +85,10 @@ describe("playtest sampling", () => {
       textContent: " TN_TEST: boot failed ",
     };
     const restore = installGlobal("document", {
+      createElement: () => ({ remove: () => undefined }),
       elementFromPoint: () => error,
       getElementById: () => error,
+      head: { appendChild: () => undefined },
     });
     const restoreWindow = installGlobal("window", {
       getComputedStyle: () => ({ display: "block", opacity: "1", visibility: "visible" }),
@@ -89,9 +98,82 @@ describe("playtest sampling", () => {
     try {
       const page = {
         evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
+        screenshot: async () => brightScreenshot(),
       } as unknown as Page;
       await expect(sampleHud(page, [{ id: "error", textIncludes: "TN_TEST", visible: true }])).resolves.toEqual({
         error: { text: "TN_TEST: boot failed", visible: true },
+      });
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
+  test("samples painted HUD content when the node is noninteractive", async () => {
+    const canvas = {};
+    const error = {
+      contains: () => false,
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ bottom: 80, height: 80, left: 0, right: 200, top: 0, width: 200 }),
+      parentElement: null,
+      textContent: " TN_TEST: visible ",
+    };
+    let forcedPointerEvents = false;
+    const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
+    const restore = installGlobal("document", {
+      createElement: () => pointerEventsStyle,
+      elementFromPoint: () => forcedPointerEvents ? error : canvas,
+      getElementById: () => error,
+      head: { appendChild: () => { forcedPointerEvents = true; } },
+    });
+    const restoreWindow = installGlobal("window", {
+      getComputedStyle: () => ({ display: "block", opacity: "1", visibility: "visible" }),
+      innerHeight: 720,
+      innerWidth: 1280,
+    });
+    try {
+      const page = {
+        evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
+        screenshot: async () => brightScreenshot(),
+      } as unknown as Page;
+      await expect(sampleHud(page, [{ id: "error", visible: true }])).resolves.toEqual({
+        error: { text: "TN_TEST: visible", visible: true },
+      });
+    } finally {
+      restoreWindow();
+      restore();
+    }
+  });
+
+  test("rejects HUD content hidden by an opaque noninteractive overlay", async () => {
+    const error = {
+      contains: () => false,
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ bottom: 720, height: 720, left: 0, right: 1280, top: 0, width: 1280 }),
+      parentElement: null,
+      textContent: " TN_TEST: boot failed ",
+    };
+    const overlay = {};
+    let forcedPointerEvents = false;
+    const pointerEventsStyle = { remove: () => { forcedPointerEvents = false; } };
+    const restore = installGlobal("document", {
+      createElement: () => pointerEventsStyle,
+      elementFromPoint: () => forcedPointerEvents ? overlay : error,
+      getElementById: () => error,
+      head: { appendChild: () => { forcedPointerEvents = true; } },
+    });
+    const restoreWindow = installGlobal("window", {
+      getComputedStyle: () => ({ display: "block", opacity: "1", visibility: "visible" }),
+      innerHeight: 720,
+      innerWidth: 1280,
+    });
+    try {
+      const page = {
+        evaluate: async (callback: (assertions: unknown) => unknown, assertions: unknown) => callback(assertions),
+        screenshot: async () => brightScreenshot(),
+      } as unknown as Page;
+      await expect(sampleHud(page, [{ id: "error", visible: true }])).resolves.toEqual({
+        error: { text: "TN_TEST: boot failed", visible: false },
       });
     } finally {
       restoreWindow();

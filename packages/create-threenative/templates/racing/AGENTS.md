@@ -58,6 +58,7 @@ the last ray-probed road transform; `Ranking.ts` ranks route progress. `RacingCa
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Generated conventions call `normaliseToMetres` for authored vehicle scale; suspension owns floor contact.
 `input.vector("move").y` is +up and means throttle here; forward still uses one explicit `-move.y`
 conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in
 `Scene.load()`, then drive `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without
