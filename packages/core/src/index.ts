@@ -674,6 +674,17 @@ export { prewarm } from "./renderer.js";
 export { normaliseToMetres } from "./scale.js";
 export type { INormaliseToMetresOptions, NormaliseAxis } from "./scale.js";
 /**
+ * Repair an exported rig whose animation clips are z-mirrored against its own bind pose.
+ * @situation find out why a skinned character renders deformed
+ * @situation repair an imported character that walks backwards with its spine folded
+ * @situation load a rigged GLB through a custom loader and keep the framework's repair
+ * @constraint the model loader already applies this automatically; only a game loading GLBs around it needs the call
+ * @constraint detection votes per tracked bone and converts only on an overwhelming signature; a file that does not carry it is left byte-identical
+ * @example import { reconcileMirroredClips } from "@threenative/core";
+ * if (reconcileMirroredClips(gltf.scene, gltf.animations)) console.info("clips were z-mirrored; repaired");
+ */
+export { reconcileMirroredClips } from "./assets.js";
+/**
  * Attach a game-owned object to a named skeleton bone.
  * @situation put a weapon in a character's hand
  * @situation hold a rifle in a character's right hand

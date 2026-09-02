@@ -1174,6 +1174,26 @@
       "symbol": "readVirtualShadowMarker"
     },
     {
+      "constraints": [
+        "the model loader already applies this automatically; only a game loading GLBs around it needs the call",
+        "detection votes per tracked bone and converts only on an overwhelming signature; a file that does not carry it is left byte-identical"
+      ],
+      "example": "import { reconcileMirroredClips } from \"@threenative/core\";\nif (reconcileMirroredClips(gltf.scene, gltf.animations)) console.info(\"clips were z-mirrored; repaired\");",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function reconcileMirroredClips(root: Object3D, clips: readonly AnimationClip[]): boolean { … }",
+      "situations": [
+        "find out why a skinned character renders deformed",
+        "repair an imported character that walks backwards with its spine folded",
+        "load a rigged GLB through a custom loader and keep the framework's repair"
+      ],
+      "summary": "Repair an exported rig whose animation clips are z-mirrored against its own bind pose.",
+      "supersedes": [],
+      "symbol": "reconcileMirroredClips"
+    },
+    {
       "constraints": ["stage factories own colour, strength, and all other appearance choices"],
       "example": "const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: [\"bloom\"], tier: \"auto\" } });",
       "importPath": "@threenative/core",

@@ -1015,6 +1015,22 @@ const stats = readVirtualShadowMarker(line);
 if (stats !== undefined) console.log(stats.reuseRatio);
 ```
 
+### `reconcileMirroredClips`
+
+`function` — Repair an exported rig whose animation clips are z-mirrored against its own bind pose.
+
+```ts
+export function reconcileMirroredClips(root: Object3D, clips: readonly AnimationClip[]): boolean { … }
+```
+
+- **Use when:** find out why a skinned character renders deformed · repair an imported character that walks backwards with its spine folded · load a rigged GLB through a custom loader and keep the framework's repair
+- **Constraints:** the model loader already applies this automatically; only a game loading GLBs around it needs the call · detection votes per tracked bone and converts only on an overwhelming signature; a file that does not carry it is left byte-identical
+
+```ts
+import { reconcileMirroredClips } from "@threenative/core";
+if (reconcileMirroredClips(gltf.scene, gltf.animations)) console.info("clips were z-mirrored; repaired");
+```
+
 ### `RenderChain`
 
 `class` — Compose game-provided render nodes in a measured, fail-closed chain.

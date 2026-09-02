@@ -76,12 +76,14 @@ function mirroredClip(rig: Group): AnimationClip {
   for (const track of healthy.tracks) {
     if (track.name.endsWith(".position")) {
       const values = track.values;
-      for (let index = 2; index < values.length; index += 3) values[index] = -values[index];
+      for (let index = 2; index < values.length; index += 3) {
+        values[index] = -(values[index] ?? 0);
+      }
     } else if (track.name.endsWith(".quaternion")) {
       const values = track.values;
       for (let index = 0; index < values.length; index += 4) {
-        values[index] = -values[index];
-        values[index + 1] = -values[index + 1];
+        values[index] = -(values[index] ?? 0);
+        values[index + 1] = -(values[index + 1] ?? 0);
       }
     }
   }
@@ -137,7 +139,7 @@ describe("reconcileMirroredClips", () => {
     // Keep only one position track, mirrored: a single vote is not the pack-wide signature.
     clip.tracks = clip.tracks.filter((track) => track.name === "spine.position");
     const values = clip.tracks[0]!.values;
-    for (let index = 2; index < values.length; index += 3) values[index] = -values[index];
+    for (let index = 2; index < values.length; index += 3) values[index] = -(values[index] ?? 0);
     const before = clip.tracks.map((track) => [...track.values]);
     expect(reconcileMirroredClips(rig, [clip])).toBe(false);
     for (const [index, track] of clip.tracks.entries()) {
