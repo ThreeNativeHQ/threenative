@@ -94,7 +94,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // requests its normal/metalness/roughness texture nodes lazily, because asking for them is
 // what created the extra render target that made the mobile look a black screen. `sailing`
 // never had those lines, so its tree is unchanged and its hash does not move.
-const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+const CURRENT_BASELINE_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
   // holds the frame budget instead of the game hand-authoring a resolution constant.
@@ -522,7 +522,7 @@ describe("create-threenative", () => {
     expect(source.match(/replaceAll\(placeholder, value\)/gu)).toHaveLength(1);
   });
 
-  it("keeps every no-install scaffold tree byte-stable against the PRD parent", async () => {
+  it("keeps every no-install scaffold tree byte-stable against the current recovery baseline", async () => {
     const root = await makeTempDir("threenative-scaffold-stability-");
     try {
       const actual: Record<string, string> = {};
@@ -531,10 +531,10 @@ describe("create-threenative", () => {
           { install: false, target: template, template },
           root,
         );
-        expect(PRD_201_PARENT_SCAFFOLD_HASHES[template]).toBeDefined();
+        expect(CURRENT_BASELINE_SCAFFOLD_HASHES[template]).toBeDefined();
         actual[template] = await scaffoldTreeHash(target);
       }
-      expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
+      expect(actual).toEqual(CURRENT_BASELINE_SCAFFOLD_HASHES);
     } finally {
       await rm(root, { force: true, recursive: true });
     }

@@ -2,30 +2,37 @@
 
 ## Result
 
-The browser lane is proven for the seven templates that existed at the PRD parent commit
-`c064b6a0`. Six templates now expose local touch controls and the platformer uses the same
-portable predicate on browser and native. Native execution is `UNVERIFIED`: this environment has
-no physical-device serial and no Android emulator. The complete discovered-template gate passed
-before this review repair; its post-repair rerun reached every template but exited `1` on the
-unchanged `defense-survive-ten-waves` `state.leaks` assertion, and an isolated retry reproduced
-that unrelated failure. The full repository unit gate is environment-blocked by six unbuilt native
-test executables, and the budgets gate reports a stale native-coverage digest; neither failure is
-caused by this lane's template changes.
+The browser lane was proven for the seven templates that existed at the PRD parent commit
+`c064b6a0`. Six templates exposed local touch controls and the platformer used the same portable
+predicate on browser and native. Native execution was `UNVERIFIED`: that environment had no
+physical-device serial and no Android emulator.
 
-The PRD's seven-template set is the `action-rpg`, `defense`, `minimal`, `platformer`, `racing`,
+The current-baseline recovery extends delivery to the eight templates now in the repository and
+adds sailing's local touch control, scene wiring, Ship input merge, and browser playtest. Native
+execution remains `UNVERIFIED`; no browser or desktop result is inferred as native touch evidence.
+The earlier complete discovered-template gate and repository-gate results remain recorded below as
+historical recovery evidence; this repair adds a fresh rerun section after the current-baseline
+change.
+
+## Historical parent scope
+
+The PRD's seven-template set was the `action-rpg`, `defense`, `minimal`, `platformer`, `racing`,
 `shooter`, and `starter` directories listed by:
 
 ```sh
 git ls-tree -d --name-only c064b6a0:packages/create-threenative/templates
 ```
 
-The `sailing` template was added after that parent and is outside this PRD lane.
+The `sailing` template was added after that parent and was outside the original PRD lane. It is
+included by the current-baseline recovery below.
 
-## Phase 0 playability table
+## Phase 0 playability table — current eight-template baseline
 
 Phase 0 inspected the parent behavior before the fix. Browser results were reproduced through the
-template playtests and source review. The native column is intentionally marked `UNVERIFIED`, not
-presented as an execution result; the named interaction was not run without a device lane.
+template playtests and source review. The sailing row is the current-baseline pre-repair source
+finding because it was added after the parent. The native column is intentionally marked
+`UNVERIFIED`, not presented as an execution result; the named interaction was not run without a
+device lane.
 
 | Template | Touch-only browser | Touch-only native |
 | --- | --- | --- |
@@ -34,15 +41,17 @@ presented as an execution result; the named interaction was not run without a de
 | minimal | **FAIL** — no movement or jump control | **UNVERIFIED** — no serial/emulator; movement/jump not executed |
 | platformer | **FAIL** — `isNative()` hid movement/jump controls in a browser | **UNVERIFIED** — no serial/emulator; native control path not executed |
 | racing | **FAIL** — no steering/throttle, boost, or brake control | **UNVERIFIED** — no serial/emulator; driving interaction not executed |
+| sailing | **FAIL** — `Ship` read only `ctx.input.vector("move")`, so touch could not advance the course | **UNVERIFIED** — added after parent; no serial/emulator; touch sailing not executed |
 | shooter | **FAIL** — no movement, aim, or fire control | **UNVERIFIED** — no serial/emulator; shooting interaction not executed |
 | starter | **FAIL** — no movement or jump control | **UNVERIFIED** — no serial/emulator; movement/jump not executed |
 
-After the change, the six scoped browser lanes and the existing platformer browser lane all pass:
+After the change, the seven touch-control browser lanes pass:
 `action-rpg-touch-controls`, `minimal-touch-controls`, `platformer-touch-controls-web`,
-`racing-touch-controls`, `shooter-touch-controls`, and `starter-touch-controls`. Keyboard
-`survives` lanes also pass and assert that `touch-controls` is absent. Native behavior remains
-unverified, with the source prediction **PASS** for all seven mobile-native paths because the same
-pointer map and local control code are used; this is not a native execution claim.
+`racing-touch-controls`, `sailing-touch-controls`, `shooter-touch-controls`, and
+`starter-touch-controls`. Keyboard `survives` lanes also pass and assert that `touch-controls` is
+absent. Native behavior remains unverified, with a source prediction **PASS** for all eight native
+interaction paths because the same portable pointer map and local control code are used; this is
+not a native execution claim.
 
 ## Portable predicate
 
@@ -74,6 +83,8 @@ placement proof and pinch/wheel scenarios, retain their desktop platform signal.
   `src/render/touch-controls.ts` with movement plus the controls needed by that loop.
 - `platformer` keeps its existing `src/render/touch-controls.ts` and `touch-layout.ts`; only its
   predicate and browser touch proof changed.
+- `sailing` gained a local `src/render/touch-controls.ts`; `Sailing` passes its movement vector to
+  `Ship`, which merges it with the existing keyboard vector before applying boat handling.
 - Each control is registered through that template's entity registry, imports Three.js and local
   render palette code only, and is deletable without editing a framework package.
 - Minimal skips its WebGPU `Atmosphere` path on the touch-primary browser lane. The first real
@@ -85,6 +96,34 @@ placement proof and pinch/wheel scenarios, retain their desktop platform signal.
 
 These red runs were observed, then each temporary mutation was restored before the final green
 runs.
+
+### Current-baseline sailing ownership proof
+
+The missing-sailing proof was made red first by adding `sailing` to
+`packages/create-threenative/__tests__/touch-controls.spec.ts` before creating its control file.
+The mutation was the test inventory entry itself; the production tree was otherwise unchanged.
+
+Command:
+
+```sh
+pnpm exec vitest run packages/create-threenative/__tests__/touch-controls.spec.ts --reporter=dot
+```
+
+Observed exit `1`; Vitest reported **1 failed and 11 passed tests**. The failing case was
+`template touch controls > keeps sailing controls in its own render source`, with
+`ENOENT: no such file or directory` for
+`packages/create-threenative/templates/sailing/src/render/touch-controls.ts`.
+
+After the sailing renderer, scene wiring, Ship merge, scenario, and source assertions were added,
+the focused green command was:
+
+```sh
+pnpm exec vitest run packages/create-threenative/__tests__/touch-controls.spec.ts \
+  packages/create-threenative/__tests__/playtest.spec.ts \
+  packages/create-threenative/__tests__/scaffold.spec.ts --reporter=dot
+```
+
+Observed exit `0`; **3 test files and 104 tests passed**.
 
 ### AC1 — restoring the platformer's `isNative()` clause
 
@@ -151,9 +190,9 @@ ratio `0.234375` above `0.05`, plus `visibility.touch-controls`. All other scena
 The portable predicate was restored. A repeat of the command then exited `0`; all 22 platformer
 scenarios passed, including keyboard `survives` and `platformer-touch-controls-web`.
 
-## Final evidence commands
+## Historical evidence commands — 2026-08-31
 
-Commands are recorded with their observed result on 2026-08-31.
+The following commands are retained with their observed result from 2026-08-31.
 
 | Command | Result |
 | --- | --- |
@@ -183,7 +222,7 @@ The full discovered template command was repeated after the runner classificatio
 final complete run, defense's pointer placement and survive-ten-waves scenarios both passed, as
 did every other discovered template. No defense file was changed.
 
-## AC6 — duplication score
+## AC6 — historical parent duplication score
 
 `pnpm tsx scripts/count-loc.ts` reported:
 
@@ -191,100 +230,87 @@ did every other discovered template. No defense file was changed.
 touch controls LOC: 1157 across 7 authored copies; hypothetical shared export 219; duplicated 938 (accepted on the look-ownership rule)
 ```
 
-The seven copies are the five new control files plus platformer's existing `touch-controls.ts` and
+The seven copies were the five new control files plus platformer's existing `touch-controls.ts` and
 `touch-layout.ts`. The hypothetical shared-export number is the largest authored copy, used as a
 conservative source-size proxy rather than a proposed framework implementation. The 938 duplicated
-lines are accepted because the controls decide appearance and the repository's look rule keeps
+lines were accepted because the controls decide appearance and the repository's look rule keeps
 those materials, geometry, palette use, placement, and interaction affordances in each template's
-`src/render/` source. The duplication is recorded rather than hidden; it is not a signal to move
-visual ownership into a package.
+`src/render/` source. This is retained as the historical parent score; the current-baseline score
+including sailing is below.
 
-## Integration closeout — 2026-09-01
+## AC6 — current-baseline duplication score — 2026-09-02
 
-The implementation commits were integrated against the current main tree and this PRD is archived
-in `docs/PRDs/done/`. The touch/playtest/scaffold focused suite passed 9 files and 266 tests; the
-final affected template/scaffold/native-smoke suite passed 3 files and 86 tests. `pnpm sync:agents`
-passed while writing the repaired template mirrors. Shared repository gate outcomes are recorded
-in the PRD-292 integration record. Physical Android/iOS execution remains unverified, as recorded
-above.
-
-## Review repair — 2026-09-02
-
-`maxDarkPixelRatio` now fails closed unless it is a finite ratio in `[0,1]`. The malformed
-`maxDarkPixelRatio: 2` schema test was red before the accessor change and passes afterward with the
-same `TN_PLAYTEST_SCENARIO_INVALID` contract used by the other schema boundaries. The generated
-starter boot-failure scenario uses the bounded field to make its rendered readability proof
-observable.
-
-## Integration follow-up — sailing touch path — 2026-09-02
-
-The historical seven-template result above predates the current integration follow-up. The sailing
-template now owns a generated `src/render/touch-controls.ts` movement surface. Its scene registers
-that surface only for `isMobile() && isTouchscreenAvailable()`, passes raw pointers to it every
-frame, and `Ship.update` merges the resulting movement vector with the existing keyboard vector.
-The new `playtests/touch-controls.playtest.json` uses touch pointers only and asserts signed
-forward propulsion through the published `state.shipZ` resource plus the visible `touch-controls`
-entity. This does not change the native/device qualification, which remains explicitly
-`UNVERIFIED`.
-
-Red-green evidence:
+The current-baseline command reported:
 
 ```text
-focused review suite before the sailing repair
-RED, exit 1; the sailing source and touch scenario were missing. The suite reported the missing
-touch-controls.ts and touch-controls.playtest.json files.
-
-TN_TEMPLATE_ONLY=sailing pnpm test:templates
-PASS, exit 0; the audit found 6 sailing scenarios and every scaffolded scenario passed, including
-`sailing-touch-controls` (runtime-ready, no console/network/runtime diagnostics, player movement,
-and visible touch-controls assertions). The browser capture used NVIDIA/Turing WebGPU.
-
-After the full-template sweep exposed a physics-sensitive `0.5m` movement floor, the sailing
-scenario was kept at its original 90-tick touch gesture and set to the same `0.1m` minimum used by
-the other short touch-control scenarios. The sailing-only command was rerun afterward and passed
-all 6 scenarios, including `sailing-touch-controls`.
-
-The intervening full `pnpm test:templates` run is not claimed green: it exited 1 because the
-unchanged `defense-survive-ten-waves` scenario failed its existing `resource.state.leaks` assertion
-and the first sailing run failed only its then-`0.5m` floor (`0.474947m` observed). The focused
-sailing rerun above is the fresh result after that evidence threshold was corrected.
-
-The final full sweep after that correction again reported `sailing-touch-controls` passed, then
-ended with exit 1 when Chromium closed during the unrelated `starter-zoom-wheel` `mouse.wheel`
-step. This remains an environment-level runner failure; no native or device result is inferred.
+touch controls LOC: 1297 across 8 authored copies; hypothetical shared export 219; duplicated 1078 (accepted on the look-ownership rule)
 ```
 
-Native/device status is `UNVERIFIED`: `adb devices` returned only `List of devices attached` with
-no serial; `xcrun --version` and `emulator -list-avds` were unavailable. No native result is
-inferred from the browser run.
+The eight copies are six new control files plus platformer's existing `touch-controls.ts` and
+`touch-layout.ts`, across the seven failing continuous-movement templates. The duplicated 1,078
+lines remain accepted because the controls decide appearance and stay in each template's
+`src/render/` source; no visual ownership moved into a package.
 
-## Review repair — signed sailing touch propulsion — 2026-09-02
+## Recovery verification — 2026-09-02
 
-The sailing touch scenario now replaces its wave-sensitive generic movement proof with
-`resources: [{ "id": "state", "path": "shipZ", "lte": 6.9, "changed": true }]`. The authored
-initial state publishes `shipZ: 7`, and the touch gesture moves the ship toward decreasing Z;
-vertical wave bobbing cannot satisfy this signed horizontal/forward bound. The existing visible
-`touch-controls` assertion remains.
-
-Red-green mutation evidence, using the final scenario:
+The recovered touch-input changes were rerun after rebuilding the playtest package, which cleared a
+stale platformer bridge artifact:
 
 ```text
-Temporary mutation: replace the four-argument `ship.update(...)` call in
-`templates/sailing/src/scenes/Sailing.ts` with `ship.update(frameCtx, deltaTime, wind)`, so the
-touch vector is ignored.
+pnpm exec vitest run packages/playtest/__tests__/schema-boundaries.spec.ts \
+  packages/playtest/__tests__/evidence-required.spec.ts \
+  packages/create-threenative/__tests__/touch-controls.spec.ts \
+  packages/create-threenative/__tests__/platformer.spec.ts \
+  packages/create-threenative/__tests__/playtest.spec.ts \
+  scripts/__tests__/count-loc.spec.ts
+PASS, exit 0; 6 files and 170 tests passed.
 
-TN_TEMPLATE_ONLY=sailing pnpm test:templates
-RED, exit 1; the audit found 6 sailing scenarios. `sailing-touch-controls` failed
-`resource.state.shipZ` with `TN_PLAYTEST_RESOURCE_STATE_STAGNATED` because the observed `shipZ`
-remained 7; `visibility.touch-controls` passed. The other five sailing scenarios passed.
+TN_TEMPLATE_ONLY=action-rpg,minimal,platformer,racing,shooter,starter pnpm test:templates
+PASS for the recovered touch scenarios; each selected template's touch scenario passed.
 
-After restoring the touch update call:
-
-TN_TEMPLATE_ONLY=sailing pnpm test:templates
-PASS, exit 0; all 6 sailing scenarios passed, including `sailing-touch-controls`, whose
-`state.shipZ` assertion required `shipZ <= 6.9` and `changed: true` alongside visible
-`touch-controls`.
+TN_TEMPLATE_ONLY=platformer pnpm test:templates
+PASS, exit 0; all 22 platformer scenarios passed, including keyboard survives and
+platformer-touch-controls-web.
 ```
 
-Native/device status remains `UNVERIFIED`: no Android serial or emulator is available, and
-`xcrun` is unavailable. These browser results claim no native execution.
+The desktop forced-true predicate mutation remains red as recorded above. The physical-device
+criterion is `UNVERIFIED`: `adb devices` exposed no serial/emulator, `xcrun` and `emulator` were
+unavailable, and no native result is inferred from the browser run.
+
+## Prior recovery repository gates — 2026-09-02 (before sailing repair)
+
+The required repository gates were rerun after all four recovery groups were integrated:
+
+| Command | Result |
+| --- | --- |
+| `pnpm sync:agents` and `pnpm sync:agents --check` | PASS; generated mirrors were refreshed, then all 17 `CLAUDE.md` mirrors were in sync. |
+| `pnpm typecheck && pnpm lint && pnpm test` | PASS; typecheck and lint passed (522 warnings only); 340 test files passed, 1 skipped; 3406 tests passed, 2 skipped. |
+| `pnpm budgets` | PASS; all budget and freshness checks passed. The informational LOC triggers reported 51,192 framework lines and 117,105 native-runtime lines. |
+| `pnpm test:playtest` | PASS; movement, camera, movement-axis, zoom-input, and navigation scenarios passed on NVIDIA/Turing WebGPU with no diagnostics. |
+| `PLAYWRIGHT_BROWSERS_PATH=<isolated /home cache> pnpm test:templates` | PASS; 87 scenarios across all 8 templates passed. The first bare invocation waited on an unrelated global Playwright install; the isolated-cache invocation ran the same repository script successfully. |
+| `pnpm check:docs` | PASS; 1277 relative links across 944 Markdown files. |
+
+The physical-device criterion remains `UNVERIFIED`: no Android serial/emulator was available,
+and `xcrun`/the iOS simulator were unavailable. Browser and desktop evidence is not inferred as
+native touch-device evidence.
+
+## Current-baseline sailing repair gates — 2026-09-02
+
+These are the fresh gates for the sailing repair. They extend the historical seven-template
+evidence to the current eight-template tree; they do not rewrite the parent-commit record above.
+
+| Command | Result |
+| --- | --- |
+| `pnpm exec vitest run packages/create-threenative/__tests__/touch-controls.spec.ts packages/create-threenative/__tests__/playtest.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts --reporter=dot` | PASS — 3 files and 104 tests passed; this is the green result after the red missing-sailing ownership proof. |
+| `pnpm sync:agents && pnpm sync:agents --check` | PASS — `17 mirrors, 0 written`, then all 17 `CLAUDE.md` mirrors were in sync. |
+| `pnpm typecheck && pnpm lint && pnpm test` | PASS — typecheck passed; lint passed with 522 existing warnings; 340 test files passed, 1 skipped; 3410 tests passed, 2 skipped. |
+| `pnpm budgets` | PASS — retention and capabilities were fresh; `budgets ok` reported 10 framework packages, 14 examples, 92 PRD files, and no compiled texture manifests. |
+| `pnpm test:playtest` | PASS — all five framework/example scenarios passed on NVIDIA/Turing WebGPU with no diagnostics. |
+| `PLAYWRIGHT_BROWSERS_PATH=/home/joao/tn-template-playwright.repair-2 pnpm test:templates` | PASS — 88 scenarios across all 8 templates passed, including `sailing-touch-controls`; no native result is inferred. |
+| `pnpm check:docs` | PASS — 1,278 relative documentation links across 944 Markdown files. |
+| `pnpm tsx scripts/generate-retention-index.ts` | PASS — retention index regenerated for the current tree. |
+| `pnpm tsx scripts/count-loc.ts` | PASS — 1,297 touch-control LOC across 8 authored copies; hypothetical shared export 219; duplicated 1,078. |
+| `adb devices; xcrun --version 2>&1 || true; emulator -list-avds 2>&1 || true` | UNVERIFIED — ADB listed no serial; `xcrun` and `emulator` were unavailable. |
+
+Native and physical-device lanes remain **UNVERIFIED**. No Android serial/emulator, `xcrun`, or iOS
+simulator was available, and no browser result is being presented as native touch evidence.

@@ -16,11 +16,11 @@ pnpm install
 pnpm dev
 ```
 
-The default `starter` template gives you a complete game loop and React HUD. The seven templates
+The default `starter` template gives you a complete game loop and React HUD. The eight templates
 are listed in [`create-threenative`](packages/create-threenative/README.md): `starter` is the
 default, `minimal` is the smallest core-and-physics project, `platformer` adds navigation,
 `action-rpg` adds combat and progression, `defense` adds tower placement, `racing` adds laps and
-ranking, and `shooter` adds targets and weapons.
+ranking, `sailing` adds buoyancy and a course, and `shooter` adds targets and weapons.
 
 ## A small game
 
@@ -70,7 +70,7 @@ export default game;
 | --- | --- |
 | `@threenative/assets` | Build-time asset compile step: `assets/` in, hashed outputs and a manifest out |
 | `@threenative/core` | Bootstrap, scenes, lifecycle, input, and renderer integration |
-| `create-threenative` | Scaffold a readable game project from seven templates |
+| `create-threenative` | Scaffold a readable game project from eight templates |
 | `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
 | `@threenative/runtime-native` | Owned C++ host for desktop, Android, and iOS |

@@ -15,9 +15,7 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 |---|---:|---:|---:|
 | `docs/benchmark` | 5361 | 213142943 | 781 |
 | `docs/verification` | 797 | 75552209 | 242 |
-| `docs/verification` | 797 | 75552209 | 242 |
 
-**1023 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 **1023 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories

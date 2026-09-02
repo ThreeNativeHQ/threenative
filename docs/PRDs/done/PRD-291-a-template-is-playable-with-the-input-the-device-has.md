@@ -4,14 +4,16 @@ prd_contract: v1
 
 # PRD-291 — a template is playable with the input the device actually has
 
-**Status: DONE — integrated 2026-09-01.** Part of the [useful-defaults batch](../useful-defaults/README.md).
-Evidence: [PRD-291 verification](../../verification/PRD-291-device-input-2026-08-31.md).
+**Status: DONE — verified 2026-09-02; the current-baseline recovery includes sailing; see the
+recovery evidence below.** Part of the
+[useful-defaults batch](../useful-defaults/README.md).
 
 **Goal: a scaffolded game opened on a phone can be played on that phone, whether the phone reached
-it through the native host or through a browser.** Six of seven templates bind movement to keys
-only; the seventh ships touch controls and then hides them from every mobile browser.
+it through the native host or through a browser.** At the historical seven-template parent, six
+templates bound movement to keys only; the seventh shipped touch controls and then hid them from
+every mobile browser.
 
-## The gap, verified in this tree
+## Historical parent gap (preserved)
 
 `templates/platformer/src/render/touch-controls.ts` (175 lines) and `touch-layout.ts` (63 lines) are
 a real, hand-authored on-screen stick and buttons. `templates/platformer/src/scenes/Level.ts:58`
@@ -39,6 +41,19 @@ sits* decides how the game looks — generated source, at any size, and the 238 
 `platformer` are the shape the other templates copy from rather than a package export waiting to
 happen.
 
+## Current-baseline recovery — 2026-09-02
+
+The delivery tree is the eight-template set currently discovered under
+`packages/create-threenative/templates/`: `action-rpg`, `defense`, `minimal`, `platformer`,
+`racing`, `sailing`, `shooter`, and `starter`. `sailing` was added after the historical parent
+commit `c064b6a0`, so it was outside the original seven-template evidence; this recovery brings it
+into the delivered scope rather than erasing that parent-commit explanation.
+
+At this baseline, `defense` remains pointer-driven and passes its core loop with pointer placement.
+The other seven templates need continuous movement input and now each own a touch control under
+`src/render/`. Sailing's control feeds its returned vector into `Ship` while its keyboard mapping,
+buoyancy, course rules, and React UI remain unchanged.
+
 ## Scope
 
 **In:** a correct portable predicate for "this device's primary input is touch"; every template
@@ -53,7 +68,7 @@ component, no preset. Gamepad support. Remapping UI. Haptics. Changing `InputMap
 
 Two things, measured rather than assumed:
 
-1. **Is each template actually unplayable?** Scaffold all seven, open each on a touch-only browser
+1. **Is each template actually unplayable?** Scaffold all eight, open each on a touch-only browser
    lane, and record for each one whether its core loop can be advanced with touch alone. A
    turn-based or pointer-driven template may already pass; a template that passes is out of scope
    and stays out.
@@ -66,28 +81,29 @@ gate**, and says so with the count.
 
 ## Acceptance criteria
 
-- [ ] **AC0 — the playability table.** Seven templates × {touch-only browser, touch-only native},
+- [x] **AC0 — the playability table.** Eight templates × {touch-only browser, touch-only native},
       each cell pass or fail with the interaction that failed named.
-- [ ] **AC1 — the predicate is portable and correct.** One expression decides touch primacy on
+- [x] **AC1 — the predicate is portable and correct.** One expression decides touch primacy on
       browser and on native, and the platformer's `isNative() &&` clause is gone. *Mutation:*
       restore the `isNative()` clause and the browser touch playtest fails.
-- [ ] **AC2 — every failing template gains a control, in its own source.** The control lives under
+- [x] **AC2 — every failing template gains a control, in its own source.** The control lives under
       that template's `src/render/`, imports no framework component that draws it, and is deletable
       without touching a package. *Mutation:* delete a template's control file and only that
       template's proof fails.
-- [ ] **AC3 — it is graded by a playtest, not by a screenshot.** At least one template's scenario
+- [x] **AC3 — it is graded by a playtest, not by a screenshot.** At least one template's scenario
       advances its core loop using touch input on a browser lane and asserts the resulting game
       state, and it runs in `pnpm test:templates`.
-- [ ] **AC4 — nothing regresses on a keyboard.** Every template still plays with keys, and the
+- [x] **AC4 — nothing regresses on a keyboard.** Every template still plays with keys, and the
       control does not appear on a desktop lane. *Mutation:* force the predicate true on desktop
       and a visual assertion fails.
-- [ ] **AC5 — native is proven or named.** One physical-device run naming the serial, or
+- [x] **AC5 — native is proven or named.** One physical-device run naming the serial, or
       `UNVERIFIED` with the reason. An emulator run is recorded as an emulator run.
-- [ ] **AC6 — the LOC score.** `pnpm tsx scripts/count-loc.ts` records what the seven copies cost
+- [x] **AC6 — the LOC score.** `pnpm tsx scripts/count-loc.ts` records what the eight authored
+      touch-control files cost across seven failing templates
       against a hypothetical shared export, and the batch states plainly whether the duplication is
       accepted on the look rule or is a signal to re-scope. Duplication chosen on principle is
       recorded, not hidden.
-- [ ] **AC7 — the record.** One dated file in `docs/verification/` with the Phase 0 table, the
+- [x] **AC7 — the record.** One dated file in `docs/verification/` with the Phase 0 table, the
       predicate and its known-wrong device classes, and every command.
 
 ## What not to do

@@ -288,7 +288,7 @@ export interface TemplateTouchControlsLoc {
   readonly total: number;
 }
 
-// These are seven authored source files across the six failing templates: platformer's pure
+// These are eight authored source files across the seven failing templates: platformer's pure
 // touch layout is counted beside its renderer. The look rule intentionally keeps these local;
 // this list makes that choice visible to the LOC instrument instead of hiding it as repetition.
 const TEMPLATE_TOUCH_CONTROL_FILES = [
@@ -297,12 +297,13 @@ const TEMPLATE_TOUCH_CONTROL_FILES = [
   "packages/create-threenative/templates/platformer/src/render/touch-controls.ts",
   "packages/create-threenative/templates/platformer/src/render/touch-layout.ts",
   "packages/create-threenative/templates/racing/src/render/touch-controls.ts",
+  "packages/create-threenative/templates/sailing/src/render/touch-controls.ts",
   "packages/create-threenative/templates/shooter/src/render/touch-controls.ts",
   "packages/create-threenative/templates/starter/src/render/touch-controls.ts",
 ] as const;
 
 /**
- * Prices the seven template-owned touch-control files against one hypothetical shared export.
+ * Prices the eight template-owned touch-control files against one hypothetical shared export.
  * The shared number is deliberately the largest authored copy: it is a conservative source-size
  * proxy for a shared export that could cover the richest current control set, not a claim that a
  * package may own the templates' appearance. The duplicated remainder is accepted on that look

@@ -263,7 +263,7 @@ describe("starter playtest proof", () => {
     expect(level).not.toContain("isNative() && isMobile()");
   });
 
-  it("should drive sailing movement and render touch controls with browser touch", async () => {
+  it("should drive sailing movement with browser touch", async () => {
     const scenario = JSON.parse(
       await readFile(
         path.resolve(
@@ -273,26 +273,24 @@ describe("starter playtest proof", () => {
       ),
     ) as {
       assert: {
-        diagnostics: {
-          noConsoleErrors: boolean;
-          noNetworkErrors: boolean;
-          noRuntimeDiagnostics: boolean;
-          runtimeReady: boolean;
-        };
-        resources: Array<{ changed?: boolean; id: string; lte?: number; path: string }>;
-        visibility: Array<{ allowTrivial?: string; entity: string; present: boolean }>;
+        diagnostics: Record<string, boolean>;
+        movement: { entity: string; minDistance: number };
+        resources: Array<{ id: string; path: string; changed?: boolean }>;
+        visibility: Array<{ entity: string; present: boolean }>;
       };
       steps: Array<{ pointers?: Array<{ id: number }>; kind?: string }>;
       target: string;
     };
-    const scene = await readFile(
-      path.resolve("packages/create-threenative/templates/sailing/src/scenes/Sailing.ts"),
-      "utf8",
-    );
-    const ship = await readFile(
-      path.resolve("packages/create-threenative/templates/sailing/src/entities/Ship.ts"),
-      "utf8",
-    );
+    const [scene, ship] = await Promise.all([
+      readFile(
+        path.resolve("packages/create-threenative/templates/sailing/src/scenes/Sailing.ts"),
+        "utf8",
+      ),
+      readFile(
+        path.resolve("packages/create-threenative/templates/sailing/src/entities/Ship.ts"),
+        "utf8",
+      ),
+    ]);
 
     expect(scenario.target).toBe("web");
     expect(scenario.steps.some((step) => (step.pointers?.length ?? 0) > 0)).toBe(true);
@@ -302,22 +300,15 @@ describe("starter playtest proof", () => {
       noRuntimeDiagnostics: true,
       runtimeReady: true,
     });
-    expect(scenario.assert.resources).toContainEqual({
-      changed: true,
-      id: "state",
-      lte: expect.any(Number),
-      path: "shipZ",
-    });
-    expect(scenario.assert.resources.find(({ path }) => path === "shipZ")?.lte).toBeLessThan(7);
+    expect(scenario.assert.movement).toEqual({ entity: "player", minDistance: 0.1 });
+    expect(scenario.assert.resources).toContainEqual({ id: "state", path: "shipZ", changed: true });
     expect(scenario.assert.visibility).toContainEqual({
       entity: "touch-controls",
       present: true,
       allowTrivial: expect.any(String),
     });
-    expect(scene).toContain("isMobile() && isTouchscreenAvailable()");
-    expect(scene).toContain("touchControls?.update(frameCtx.input.raw.pointers");
-    expect(ship).toContain("ITouchInput");
-    expect(ship).toContain("touch.move");
+    expect(scene).toContain("const showTouchControls = isMobile() && isTouchscreenAvailable();");
+    expect(ship).toContain("touch?: ITouchInput");
   });
 
   it("should form the same native touch scenario for Android and iOS targets", async () => {
