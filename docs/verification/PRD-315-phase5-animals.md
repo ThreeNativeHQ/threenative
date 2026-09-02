@@ -41,5 +41,21 @@ TN_NAV_REGION_BAKED triangles=62065 of 72200
 
 ## Negative controls
 
-Recorded in `## Controls` below when the background runs finish; the rows the PRD asks for are a
-180° fox (forward agreement must fail) and no navmesh (water overlaps must fail).
+Both mutations applied, run through the same scenario, and reverted (`git checkout --` on the
+one file each):
+
+```text
+fox yawOffset: 0 -> Math.PI        pass false
+  FAIL animalsForwardAgreement     0.718 -> 0.677   (the fox's fifth of the samples face backwards)
+  ok   animalsWaterOverlaps        0 -> 0
+  ok   animalsTargetsReached       3 -> 20
+
+navigation: undefined (straight lines, no navmesh)   pass false
+  FAIL animalsNavigating           0 -> 0
+  FAIL animalsWaterOverlaps        666 -> 3392        (through the pond and the lake)
+  FAIL animalsTargetsReached       0 -> 0             (no agent, no arrival events)
+  ok   animalsForwardAgreement     1 -> 1             (a straight line still faces its way)
+```
+
+The scenario therefore measures both things it claims to: facing is proved by the forward ratio,
+and staying on land is proved by the navmesh, not by the animals happening to spawn far from water.
