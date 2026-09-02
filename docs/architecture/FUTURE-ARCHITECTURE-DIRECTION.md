@@ -42,7 +42,7 @@ Godot's ~5.3 — all inside three.js's own WebGPU submission path.
 | + fancy town materials | 24.22 ms | ≈ 3.3 ms |
 | + the whole town | 13.55 ms | ≈ 11.5 ms |
 | + sky and soldiers | 6.66 ms | ≈ 6.9 ms |
-| + reflections (`scene.environment`) | **0.35 ms** | **≈ 6.3 ms** |
+| + reflections (`scene.environment`) | **0.35 ms** | **6.31 ms staged nearly-empty ablation upper bound (`6.66 − 0.35`); the −0.37 ms static-versus-none inversion is a lower-bound/noise observation, not a resolution floor or bakeable delta. Environment sampling is not bakeable, and the bakeable steady-state benefit is unresolvable in this control** |
 
 Browser agrees: RTX 2080, five-stage post chain — **all on 14.7 ms GPU, all off 2.2 ms.** The post
 chain is 12.5 of the 14.7.
@@ -56,7 +56,7 @@ texture lookups 24 → 10 (moved nothing), removing 224 decals (0.6 ms).
 
 | # | Move | Why | Evidence |
 | --- | --- | --- | --- |
-| **1** | **Bake it before the game ships.** three.js computes at runtime what engines compute at build time — reflections prefiltered on-device every launch, shaders compiled mid-frame, the bundle parsed as source every launch, no LODs unless hand-made | The GPU is doing work it could have been handed | Reflections alone: **6.3 ms of an 18–19 ms frame** |
+| **1** | **Bake it before the game ships.** three.js computes at runtime what engines compute at build time — reflections prefiltered on-device every launch, shaders compiled mid-frame, the bundle parsed as source every launch, no LODs unless hand-made | The GPU is doing work it could have been handed | Environment ablation upper bound: **6.3 ms of an 18–19 ms frame**; PRD-307 found no ≥2 ms steady-state bakeable win |
 | **2** | **Stop running the frame on one thread.** The frame is already recorded in JS and replayed in C++ with a packed buffer between them — that buffer is the hand-off a render thread needs | CPU and GPU currently run one after the other | **9.3 ms CPU then 18–19 ms GPU**, in series |
 | **3** | **Send the GPU fewer things.** Extend `SceneRenderProjection` to objects that move; add LOD switching | three.js charges a fixed CPU cost per object | One game cut draws **780 → 315**: 34.6 → 53 fps, **0 of 921,600 pixels changed** |
 
@@ -90,7 +90,7 @@ Sorted by impact against effort. **🟢 a day or two · 🟡 days to a week · �
 
 | # | Task | | Impact | Depends on |
 | --- | --- | --- | --- | --- |
-| 4 | **Bake prefiltered reflections into `@threenative/assets`** — **un-stop-gated 2026-09-01**: #3 is green, so the existing pass passes the delete-test and a second one may be built against a gate that works | 🟡 | **~6.3 ms of an 18–19 ms GPU frame — about a third of it.** The single biggest measured win available, and it needs no new instrument. The cheap alternative was tried and **made shaded faces visibly darker at two attempts**; baking changes *when* the work happens, not what it produces | nothing |
+| 4 | ✅ **Bake prefiltered reflections into `@threenative/assets`** — **refuted 2026-09-01, PRD-307** ([record](../verification/environment-cost-attribution-2026-09-01.md)): the static-versus-none result was a −0.37 ms inversion, a lower-bound/noise observation; an independent positive resolution observation is required, so the bakeable steady-state benefit is unresolvable in this control. Forcing PMREM every frame cost +1.61 ms, but Bayview never dirties it. The falsification test fired, so Phases 2–3 were skipped | 🟡 | The earlier **≈6.3 ms** staged environment ablation is an upper bound, not a bakeable steady-state win. The cheaper hemisphere alternative was also visibly darker | nothing |
 | 5 | **Measure GPU time per pass, on the phone** — **unblocked**: #2 landed and the meter reports on device | 🟡 | Turns days into minutes. Three separate sessions worked out GPU cost by rebuilding the app once per experiment and pushing a settings file through `run-as`. **Unblocks #8 and #9** — the town pass (9–11 ms) is our biggest cost and is still unattributed | #2 |
 | 6 | **Get Android conformance running on every commit** | 🟡 | It last executed **0 of 74 rows** — it stopped before Gradle on a stale dependency pin. Every "runs everywhere" claim rests on a lane that is not running | nothing |
 | 7 | **Scene projection that works on moving objects** | 🟡 | Extends a lever already worth **780 → 315 draws** (34.6 → 53 fps, zero pixels changed). Today it only covers meshes that never move | nothing |
@@ -101,20 +101,23 @@ Sorted by impact against effort. **🟢 a day or two · 🟡 days to a week · �
 
 | # | Task | | Impact | Depends on |
 | --- | --- | --- | --- | --- |
-| 10 | **Render thread over the frame buffer we already build** | 🔴 | Up to **9.3 ms of a ~28 ms phone frame**, and **owed anyway** — `Worker` currently runs worker code on the main thread, which is a correctness bug that only shows on native | #4 first (see below) |
+| 10 | **Render thread over the frame buffer we already build** | 🔴 | Up to **9.3 ms of a ~28 ms phone frame**, and **owed anyway** — `Worker` currently runs worker code on the main thread, which is a correctness bug that only shows on native | **re-plan after PRD-307 refuted the former #4 precondition** |
 | 11 | **LOD baking + LOD switching** | 🔴 | Drawing the town: **9–11 ms**, the biggest GPU cost we cannot yet explain | #5 |
 | 12 | **Job system; make `Worker` a real worker** | 🔴 | Correctness first, speed second | #10 |
 | 13 | **Push fixes upstream to three.js** — per-object submission cost, indirect/multi-draw, render bundles | 🔴, no schedule | The **11.3 µs vs Godot's 5.3 µs** per-object gap is three.js's code. Fixed there it speeds up web *and* native, forever, for everyone. We have the best measurement rig of any three.js user — that is the contribution | nothing |
 
 ### Two sequencing rules
 
-**Do not ship #10 without #4.** Overlapping threads cannot beat an 18–19 ms GPU frame, and #4 cannot
-reach 60 fps while the CPU still runs in series. They multiply. We have twice shipped half of a
-two-part change and got nothing for it (F12, and PRD-227's second change).
+**Do not ship #10 against the former #4 precondition.** PRD-307 refuted the bakeable steady-state
+win, so the #10 gate must be re-planned before the render-thread work is filed; do not silently
+treat the refuted #4 as satisfied. Overlapping threads cannot beat an 18–19 ms GPU frame, and we
+have twice shipped half of a two-part change and got nothing for it (F12, and PRD-227's second
+change).
 
 **Stop-gate on #5.** If it lands and the GPU numbers in *Where we actually are* do not reproduce,
 **stop and re-plan** before starting #11. Our model of what is slow has been wrong twice. This gate
-does not block #4 — that 6.3 ms was measured directly by ablation, not derived from a model.
+does not block the now-refuted #4; any replacement for #10's former #4 precondition needs fresh
+evidence.
 
 ### Alongside — not speed, but it decides whether speed matters
 
@@ -137,7 +140,8 @@ API in, same commands out, same picture.
 The actual reasons:
 
 1. **Most expensive path to the smallest win.** Months of C++ against a term we have not attributed,
-   while reflections (6.3 ms) are days of work in the asset pipeline.
+   while the environment ablation (~6.3 ms) was initially treated as a days-sized asset-pipeline
+   win; PRD-307 refuted that steady-state attribution.
 2. **It only helps one arm.** Half the product is the browser. Native-only culling gives the same
    game two performance profiles, and tuning decisions get made against whichever platform the
    developer tested on.
@@ -149,7 +153,11 @@ The actual reasons:
 
 1. P0.1 lands and the GPU numbers above do not reproduce.
 2. Baked reflections land and the phone frame does not move ≥2 ms (our standing threshold; five
-   ideas have already died against it).
+   ideas have already died against it). **FIRED 2026-09-01 (PRD-307):** the set-once environment
+   result was a −0.37 ms lower-bound/noise observation; an independent positive resolution observation is
+   required for a resolved set-once delta. The only resolved repeated-prefilter delta was +1.61 ms on the
+   named desktop adapter; Bayview has no per-frame dirty path. See the
+   [attribution record](../verification/environment-cost-attribution-2026-09-01.md).
 3. A second real game turns out CPU-bound, not GPU-bound — one game and one template carry this
    whole argument.
 4. The render thread lands and the frame is flat: then the GPU wait is not overlappable and P2.1

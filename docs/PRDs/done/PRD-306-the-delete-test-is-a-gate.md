@@ -29,7 +29,7 @@ find: native-proof.76e567c1.glb
 same-code band 0.293/255, unbaked run 0.288/255 — the game runs identically without its bake
 ```
 
-**Un-stop-gates [PRD-307](../architecture/PRD-307-reflections-are-prefiltered-before-the-game-ships.md).**
+**Un-stop-gates [PRD-307](PRD-307-reflections-are-prefiltered-before-the-game-ships.md).**
 The direction document's fifth falsifier — *a baking pass that cannot pass the delete-test is an IR
 and does not ship* — fired on 2026-08-31 and is now cleared: the existing pass passes, so a second
 one may be built against a gate that works.
@@ -41,7 +41,7 @@ baking pass from v1's IR stops being a paragraph in an architecture document and
 that goes red.
 
 **Depends on:** nothing. Best landed with, and immediately before,
-[PRD-307](../architecture/PRD-307-reflections-are-prefiltered-before-the-game-ships.md) — the gate is cheap to
+[PRD-307](PRD-307-reflections-are-prefiltered-before-the-game-ships.md) — the gate is cheap to
 write now and expensive to retrofit once a second baking pass exists to get it wrong.
 
 **Task 3 of Band 1.** See [README](../architecture/README.md) for the tick-back rule.
