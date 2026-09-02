@@ -38,13 +38,14 @@ Every file is copied verbatim, then `__PROJECT_NAME__` is replaced everywhere. A
 placeholder needs the same treatment in `renderTemplate`. `pnpm budgets` reports each
 template's LOC but no longer caps it.
 
-Long recipes live in `agent-docs/references/*.md`, not in the templates. The scaffolder copies
-that bundle to `<project>/agent-docs/` with the same placeholder substitution and fails closed
-when a template names a page it does not ship; `scripts/instruction-budget.ts` bounds every
-template's rendered word count and validates its references and `CLAUDE.md` mirror. Keep
-mandatory rules (first-use capability search, platform constraints, fail-closed playtest
-rules) inline; move only step-by-step recipes out, and link them by their generated path
-(`agent-docs/<page>.md`).
+Reusable workflows live in `agent-files/.agents/skills/` and `agent-files/.claude/skills/`; each
+template links both adapters, and the scaffolder copies them unchanged. Long recipes live in
+`agent-docs/references/*.md`, not in the templates. The scaffolder copies that bundle to
+`<project>/agent-docs/` with placeholder substitution and fails closed when a template names a
+page it does not ship. Keep each template `AGENTS.md` under 100 lines; `scripts/instruction-budget.ts`
+still bounds rendered words, references, and the `CLAUDE.md` mirror. Keep mandatory rules (first-use
+capability search, platform constraints, fail-closed playtest rules) in the root; move detailed
+workflows into a named skill or reference and link its generated path.
 
 **A template's platform claims must match what was executed.** The status paragraph under
 each template's Commands block is a fail-closed statement, not marketing; narrow it when a
@@ -73,8 +74,11 @@ The scaffolder itself takes a target directory plus `inspect <file.glb> [--json]
 boring: `--template`, `--no-install`, and the `--*-package` overrides CI uses to test against
 local tarballs. `pnpm dev` inside a generated project is a package script, never a CLI command.
 
-The MCP servers reach a generated project through the `.mcp.json` that installing
-`@threenative/core` writes — asset, sculpt and capability servers, each launching through a shim
-inside core. The asset server itself remains the externally pinned `threenative-asset-mcp`;
-never vendor it. Its recorded surface is `asset-mcp-tools.json`, updated by running the pinned
+The MCP servers reach a generated project through the configs installing `@threenative/core`
+writes — asset, sculpt and capability servers, each launching through a shim inside core, wired
+for every host that reads a project-scoped config. `MCP_HOSTS` in `packages/core/mcp/install.mjs`
+is that list and the only one; `pnpm sync:mcp` writes it into every template and `--check` fails
+the budgets when one is stale. A host that only reads a machine-wide config is deliberately
+absent: installing a library into one game must never edit a file governing every other project.
+The asset server itself remains the externally pinned `threenative-asset-mcp`; never vendor it. Its recorded surface is `asset-mcp-tools.json`, updated by running the pinned
 server — never by reading its docs.

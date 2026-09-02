@@ -90,7 +90,9 @@ test('iOS workflow dispatch can run without unrelated platform cancellation', ()
 });
 
 test('iOS consumer proof is a required gate after the simulator proof passes', () => {
-  expect(workflow).not.toContain('continue-on-error: true');
+  // Fail-closed since the simulator's worker proof passed in isolated run 33498394620.
+  const iosJob = workflow.slice(workflow.indexOf('  ios-simulator:'));
+  expect(iosJob).not.toContain('continue-on-error: true');
   expect(workflow).not.toContain('worker proof is unresolved');
 });
 

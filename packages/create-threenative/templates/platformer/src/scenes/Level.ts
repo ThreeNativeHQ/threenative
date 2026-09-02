@@ -14,7 +14,7 @@ import { Chaser } from "../entities/Chaser.js";
 import { Patrol } from "../entities/Patrol.js";
 import { Pickup, coinArc } from "../entities/Pickup.js";
 import { Checkpoints } from "../level/Checkpoints.js";
-import { createPlatform } from "../level/Platform.js";
+import { type IPlatform, createPlatform } from "../level/Platform.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { setupCamera } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
@@ -62,10 +62,20 @@ export class Level extends Scene<GameState, IPhysicsContext> {
       ? ctx.entities.add("touch-controls", new TouchControls(camera))
       : undefined;
     ctx.viewport.resize();
-    createPlatform(ctx, new Vector3(0, 0, 0), 18, { depth: 7, seed: 3 });
-    createPlatform(ctx, new Vector3(14, 0, 0), 10, { depth: 7, seed: 7 });
-    createPlatform(ctx, new Vector3(25, 0, 0), 8, { depth: 7, seed: 11 });
-    createPlatform(ctx, new Vector3(0, 2.6, 0), 6, { depth: 5, oneWay: true, seed: 17 });
+    const platforms: IPlatform[] = [
+      createPlatform(ctx, new Vector3(0, 0, 0), 18, { depth: 7, seed: 3 }),
+      createPlatform(ctx, new Vector3(14, 0, 0), 10, { depth: 7, seed: 7 }),
+      createPlatform(ctx, new Vector3(25, 0, 0), 8, { depth: 7, seed: 11 }),
+      createPlatform(ctx, new Vector3(0, 2.6, 0), 6, { depth: 5, oneWay: true, seed: 17 }),
+    ];
+    const supportSurfaceY = (position: Pick<Vector3, "x" | "y" | "z">): number | undefined => {
+      let surfaceY: number | undefined;
+      for (const platform of platforms) {
+        if (!platform.contains(position) || platform.surfaceY > position.y) continue;
+        if (surfaceY === undefined || platform.surfaceY > surfaceY) surfaceY = platform.surfaceY;
+      }
+      return surfaceY;
+    };
     const crate = crateMesh();
     crate.position.set(-3, 1, 0);
     crate.castShadow = crate.receiveShadow = true;
@@ -150,6 +160,7 @@ export class Level extends Scene<GameState, IPhysicsContext> {
         frameCtx,
         dt,
         touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
+        supportSurfaceY,
       );
       // The chasers walk a measured route, and `pathLength` assertions read how much of it was
       // walked while a runner was watching. Stepping them before the world reports startup ready

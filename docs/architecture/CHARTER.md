@@ -12,6 +12,8 @@ subpath; the vanilla main entry and scene graph remain React-free.
 every target, through the platform's own browser-class renderer. `@threenative/core/react`'s quad
 renderer stays as the opt-in with no WebView. The old rule assumed embedding a browser meant
 shipping one; a measured Pixel 8 run showed the platform composites its own for free.
+**Amended 2026-08-31 (PRD-314):** §5b — pose conformance measurement is named as mechanism, on the
+same footing as the tracer and instancing entries.
 **Supersedes:** `~/projects/threejs-to-bevy` (abandoned 2026-08-02, ~790k lines, 7 weeks).
 
 ---
@@ -341,6 +343,20 @@ game's own instance recolours every draw; each transform is the game's; `build` 
 so instances stay animatable by the index `place` and `span` returned. Nothing about the appearance
 is decided in the package, and an empty batch returns `undefined` rather than the count-zero mesh
 that satisfies every type check and draws nothing. It clears the same veto as every mechanism above.
+
+### Pose conformance measurement is mechanism
+
+A game shipped this week played its whole cast in bind pose because a retarget wrote glTF rotation
+channels under the wrong target path: every track loaded as `<bone>.undefined`, bound nothing, and
+nothing in the toolchain said so. The same rig's clips then rolled every limb about its own axis,
+which a bone-direction check scores at zero degrees while the skin tears on screen. `clipPoseError`,
+`clipTrackBindings`, `clipBoneCoverage` and `boneContact` are the instruments for that class of
+defect: they drive a clip, read the pose, and report degrees, names and metres. They are the test
+harness §5b already admits, and they own no appearance — they select no clip, move nothing, and
+have no geometry, material, colour, curve or timing to decide. The reason they belong here rather
+than in each game is not size: the measurement that survives a bind-convention difference is a
+whole-quaternion delta from each rig's own rest pose, and a game that reaches for the obvious
+comparison instead gets a number that is zero on the bug it was written to find.
 
 ### Queryable heightfield storage is mechanism
 

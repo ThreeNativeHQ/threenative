@@ -17,7 +17,7 @@ import { RESOLUTION_SCALER, ResolutionScaler } from "../src/resolution-scaler.js
  */
 const budget = (fps: number, p95 = 17.5, p99 = p95) => ({
   fps,
-  presented: { p50: 1_000 / fps, p95, p99 },
+  presented: { max: p99, p50: 1_000 / fps, p95, p99 },
 });
 
 /** A window that is comfortably meeting a 60 fps target on a vsync-capped 60 Hz panel. */

@@ -1,12 +1,14 @@
 import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { Group, Vector3 } from "three";
+import { type IPlatformerConventions, prepareCharacterConventions } from "../conventions.js";
 import { ONE_WAY_LAYER } from "../level/Platform.js";
 import { animateCharacter, createCharacterRig } from "../render/rig.js";
 import type { ITouchInput } from "../render/touch-layout.js";
 import type { GameState } from "../state.js";
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 export const PLAYER_LAYER = 1;
+const VISUAL_ATTACHMENT_TOLERANCE = 0.1;
 export const PLATFORMER_FEEL = {
   airAcceleration: 24,
   blinkRate: 18,
@@ -54,8 +56,15 @@ export class Character {
   #dashCooldown = 0;
   #airJumpUsed = false;
   #time = 0;
+  #supportSurfaceY = 0;
   #dashDirection = new Vector3(1, 0, 0);
   #wants = new Vector3();
+  #bodyWorldPosition = new Vector3();
+  #visualWorldPosition = new Vector3();
+  #visualBodyOffsetY: number | undefined;
+  #visualWasGrounded = false;
+  #visualBaselineSupportY: number | undefined;
+  #conventions: IPlatformerConventions;
 
   constructor(ctx: GameCtx, spawn: Vector3) {
     this.mesh = new Group();
@@ -65,6 +74,7 @@ export class Character {
     this.visual = this.#rig.root;
     this.visual.position.y = -0.72;
     this.mesh.add(this.visual);
+    this.#conventions = prepareCharacterConventions(this.visual);
     this.body = new CharacterBody3D({
       autostep: { maxHeight: 0.35, minWidth: 0.2 },
       collisionLayer: PLAYER_LAYER,
@@ -80,7 +90,12 @@ export class Character {
     });
   }
 
-  update(ctx: GameCtx, dt: number, touch?: ITouchInput): void {
+  update(
+    ctx: GameCtx,
+    dt: number,
+    touch?: ITouchInput,
+    supportSurfaceY?: (position: Pick<Vector3, "x" | "y" | "z">) => number | undefined,
+  ): void {
     this.#time += dt;
     this.#dashTimer = Math.max(0, this.#dashTimer - dt);
     this.#dashCooldown = Math.max(0, this.#dashCooldown - dt);
@@ -113,6 +128,16 @@ export class Character {
     this.#face(dt);
     this.#applyState();
     animateCharacter(this.#rig, this.state, this.#time, this.body.velocity.x);
+    const supportingSurfaceY = supportSurfaceY?.(this.mesh.position);
+    const canCorrectGrounding =
+      this.body.grounded && this.body.velocity.y <= 0 && supportingSurfaceY !== undefined;
+    // The platform resolver identifies the supporting collider and supplies the authored surface
+    // plane GroundSnap must use. This stays correct when a one-way controller reports the
+    // underside of a slab after passing through it, and keeps the visual on its body.
+    if (canCorrectGrounding) this.#supportSurfaceY = supportingSurfaceY;
+    this.#conventions.groundSnap.enabled = canCorrectGrounding;
+    this.#conventions.applyGrounding(this.#supportSurfaceY, dt);
+    this.#captureVisualBodyOffset(supportingSurfaceY);
   }
 
   bounce(): void {
@@ -128,13 +153,21 @@ export class Character {
   }
 
   debug(): Record<string, unknown> {
+    const visualAttachmentDrift = this.#visualAttachmentDrift();
     return {
       dashes: this.dashes,
       grounded: this.body.grounded,
+      groundClearance: this.#conventions.groundSnap.clearance,
+      groundCorrectionEnabled: this.#conventions.groundSnap.enabled,
+      groundSurfaceY: this.#supportSurfaceY,
       health: this.health,
       jumps: this.jumps,
+      normaliseFactor: this.#conventions.normaliseFactor,
       position: this.mesh.position.toArray(),
       state: this.state,
+      visualAttached:
+        visualAttachmentDrift !== null && visualAttachmentDrift <= VISUAL_ATTACHMENT_TOLERANCE,
+      visualAttachmentDrift,
       velocity: this.body.velocity.toArray(),
     };
   }
@@ -142,6 +175,35 @@ export class Character {
   dispose(): void {
     this.body.dispose();
     this.mesh.removeFromParent();
+  }
+
+  #captureVisualBodyOffset(supportingSurfaceY: number | undefined): void {
+    if (!this.body.grounded || this.body.velocity.y > 0) {
+      this.#visualWasGrounded = false;
+      return;
+    }
+    const supportChanged =
+      supportingSurfaceY !== undefined &&
+      this.#visualBaselineSupportY !== undefined &&
+      Math.abs(supportingSurfaceY - this.#visualBaselineSupportY) > VISUAL_ATTACHMENT_TOLERANCE;
+    if (this.#visualWasGrounded && !supportChanged) return;
+    // GroundSnap may move the visual relative to a one-way body's collider. Capture that offset
+    // once after each grounded contact, then compare only visual and body positions so a later
+    // visual detachment cannot be hidden by a continuously refreshed baseline.
+    this.mesh.getWorldPosition(this.#bodyWorldPosition);
+    this.visual.getWorldPosition(this.#visualWorldPosition);
+    this.#visualBodyOffsetY = this.#visualWorldPosition.y - this.#bodyWorldPosition.y;
+    this.#visualBaselineSupportY = supportingSurfaceY;
+    this.#visualWasGrounded = true;
+  }
+
+  #visualAttachmentDrift(): number | null {
+    if (this.#visualBodyOffsetY === undefined) return null;
+    this.mesh.getWorldPosition(this.#bodyWorldPosition);
+    this.visual.getWorldPosition(this.#visualWorldPosition);
+    return Math.abs(
+      this.#visualWorldPosition.y - this.#bodyWorldPosition.y - this.#visualBodyOffsetY,
+    );
   }
 
   #tryJump(): void {

@@ -3,16 +3,25 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
-// @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
-import { ensureCodexMcpConfig, ensureMcpConfig, installTarget } from "../mcp/install.mjs";
+import {
+  MCP_HOSTS,
+  ensureCodexMcpConfig,
+  ensureHostMcpConfigs,
+  ensureMcpConfig,
+  installTarget,
+  // @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
+} from "../mcp/install.mjs";
 // @ts-expect-error — same module graph as the shims themselves.
 import { MCP_SERVERS, mergeMcpServers } from "../mcp/servers.mjs";
 
 const packageRoot = path.resolve(fileURLToPath(import.meta.url), "..", "..");
 
-function project(name = "game"): string {
+function project(
+  name = "game",
+  dependencies: Record<string, string> = { "@threenative/core": "0.3.0" },
+): string {
   const directory = makeTempDirSync("tn-mcp-");
-  writeFileSync(path.join(directory, "package.json"), JSON.stringify({ name }));
+  writeFileSync(path.join(directory, "package.json"), JSON.stringify({ dependencies, name }));
   return directory;
 }
 
@@ -54,7 +63,7 @@ describe("MCP_SERVERS", () => {
       dependencies?: Record<string, string>;
     };
     expect(manifest.dependencies).toMatchObject({
-      "threenative-asset-mcp": "0.6.0",
+      "threenative-asset-mcp": "0.7.0",
       "threenative-sculpt-mcp": "0.1.1",
     });
   });
@@ -91,8 +100,19 @@ describe("installTarget", () => {
     expect(installTarget({ INIT_CWD: project("@threenative/core") })).toBeUndefined();
   });
 
+  it("skips a workspace root that does not depend on core", () => {
+    expect(installTarget({ INIT_CWD: project("threenative", {}) })).toBeUndefined();
+  });
+
   it("skips a directory that is not a project", () => {
     expect(installTarget({ INIT_CWD: makeTempDirSync("tn-bare-") })).toBeUndefined();
+  });
+
+  it("skips a package manifest whose JSON root is not an object", () => {
+    const directory = makeTempDirSync("tn-invalid-manifest-");
+    writeFileSync(path.join(directory, "package.json"), "null");
+
+    expect(installTarget({ INIT_CWD: directory })).toBeUndefined();
   });
 });
 
@@ -146,5 +166,107 @@ describe("ensureCodexMcpConfig", () => {
     expect(written.match(/\[mcp_servers\.threenative-engine\]/gu)).toHaveLength(1);
     expect(written).toContain("[mcp_servers.threenative-assets]");
     expect(written).toContain("[mcp_servers.threenative-sculpt]");
+  });
+});
+
+describe("ensureHostMcpConfigs", () => {
+  it("wires every host this project can auto-configure", () => {
+    const directory = project();
+
+    const outcomes = ensureHostMcpConfigs(directory);
+
+    expect([...outcomes.keys()].sort()).toEqual(
+      ["claude-code", "codex", "cursor", "gemini-cli", "opencode", "vscode", "zed"].sort(),
+    );
+    for (const [host, outcome] of outcomes) expect(outcome, host).toBe("created");
+    for (const host of MCP_HOSTS as { file: string; id: string }[]) {
+      expect(existsSync(path.join(directory, host.file)), host.id).toBe(true);
+    }
+    expect(ensureHostMcpConfigs(directory).get("cursor")).toBe("unchanged");
+  });
+
+  it("writes each host the shape that host actually reads", () => {
+    const directory = project();
+    ensureHostMcpConfigs(directory);
+    const read = (file: string): unknown =>
+      JSON.parse(readFileSync(path.join(directory, file), "utf8")) as unknown;
+
+    const cursor = read(".cursor/mcp.json") as { mcpServers: Record<string, { args: string[] }> };
+    expect(cursor.mcpServers["threenative-assets"]?.args[0]).toBe(
+      "./node_modules/@threenative/core/mcp/assets.mjs",
+    );
+
+    const code = read(".vscode/mcp.json") as {
+      servers: Record<string, { args: string[]; type: string }>;
+    };
+    expect(code.servers["threenative-engine"]?.type).toBe("stdio");
+    expect(code.servers["threenative-engine"]?.args[0]).toBe(
+      "./node_modules/@threenative/core/mcp/engine.mjs",
+    );
+
+    const gemini = read(".gemini/settings.json") as { mcpServers: Record<string, unknown> };
+    expect(Object.keys(gemini.mcpServers)).toHaveLength(3);
+
+    const opencode = read("opencode.json") as {
+      mcp: Record<
+        string,
+        { command: string[]; enabled: boolean; environment?: object; type: string }
+      >;
+    };
+    expect(opencode.mcp["threenative-assets"]?.type).toBe("local");
+    expect(opencode.mcp["threenative-assets"]?.command).toEqual([
+      "node",
+      "./node_modules/@threenative/core/mcp/assets.mjs",
+    ]);
+    expect(opencode.mcp["threenative-assets"]?.environment).toMatchObject({
+      ASSET_DOWNLOAD_DIR: "./public/assets",
+    });
+
+    const zed = read(".zed/settings.json") as {
+      context_servers: Record<string, { command: string; source: string }>;
+    };
+    expect(zed.context_servers["threenative-sculpt"]?.source).toBe("custom");
+    expect(zed.context_servers["threenative-sculpt"]?.command).toBe("node");
+  });
+
+  it("keeps unrelated settings a host config already holds", () => {
+    const directory = project();
+    mkdirSync(path.join(directory, ".gemini"), { recursive: true });
+    writeFileSync(
+      path.join(directory, ".gemini", "settings.json"),
+      JSON.stringify({ mcpServers: { mine: { command: "node" } }, theme: "Dracula" }),
+    );
+
+    expect(ensureHostMcpConfigs(directory).get("gemini-cli")).toBe("updated");
+    const written = JSON.parse(
+      readFileSync(path.join(directory, ".gemini", "settings.json"), "utf8"),
+    ) as { mcpServers: Record<string, unknown>; theme: string };
+    expect(written.theme).toBe("Dracula");
+    expect(written.mcpServers.mine).toEqual({ command: "node" });
+    expect(written.mcpServers["threenative-engine"]).toBeDefined();
+  });
+
+  it("never overwrites a host config it cannot parse", () => {
+    const directory = project();
+    mkdirSync(path.join(directory, ".cursor"), { recursive: true });
+    const configPath = path.join(directory, ".cursor", "mcp.json");
+    writeFileSync(configPath, "{ not json");
+
+    expect(ensureHostMcpConfigs(directory).get("cursor")).toBe("unreadable");
+    expect(readFileSync(configPath, "utf8")).toBe("{ not json");
+  });
+
+  // The Codex block was three hand-written TOML strings beside the same three servers declared in
+  // `MCP_SERVERS`. Two lists of the same thing drift, and the drift is silent.
+  it("derives the Codex block from the same server table as the JSON hosts", () => {
+    const directory = project();
+
+    ensureHostMcpConfigs(directory);
+
+    const codex = readFileSync(path.join(directory, ".codex", "config.toml"), "utf8");
+    for (const [name, server] of Object.entries(MCP_SERVERS) as [string, { args: string[] }][]) {
+      expect(codex).toContain(`[mcp_servers.${name}]`);
+      expect(codex).toContain(`args = ["${server.args[0]}"]`);
+    }
   });
 });

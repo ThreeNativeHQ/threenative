@@ -70,6 +70,7 @@ export function createPlayerVisual(materials: RpgMaterials): Group {
   head.castShadow = true;
   group.add(head);
   const blade = new Mesh(new BoxGeometry(0.08, 0.75, 0.16), materials.accent);
+  blade.name = "held-blade";
   blade.position.set(0.52, 0.66, -0.1);
   blade.rotation.z = -0.32;
   blade.castShadow = true;

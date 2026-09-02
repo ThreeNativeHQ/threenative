@@ -4,6 +4,10 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
+// @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
+import { MCP_HOSTS } from "../../core/mcp/install.mjs";
+// @ts-expect-error — same module graph as the shims themselves.
+import { MCP_SERVERS } from "../../core/mcp/servers.mjs";
 import { createProject } from "../src/index.js";
 
 const templates = [
@@ -168,4 +172,37 @@ describe("scaffolded engine MCP", () => {
       await probeEngineServer(target);
     }
   }, 30_000);
+});
+
+// A host whose config the scaffold does not write is a host whose agent silently has no asset,
+// sculpt or capability tools — the failure looks like "the framework has no such feature", not
+// like a missing file. Every host in `MCP_HOSTS` is checked, so adding one to that table fails
+// here until the templates carry it.
+describe("scaffolded host MCP configs", () => {
+  it("wires every project-scoped agent host from every template", async () => {
+    for (const template of templates) {
+      const root = await makeTempDir(`threenative-scaffold-hosts-${template}-`);
+      temporaryRoots.push(root);
+      const { target } = await createProject({ install: false, target: "game", template }, root);
+
+      for (const host of MCP_HOSTS) {
+        const source = await readFile(path.join(target, host.file), "utf8").catch(() => undefined);
+        expect(source, `${template} is missing ${host.file} for ${host.label}`).toBeDefined();
+        for (const name of Object.keys(MCP_SERVERS)) {
+          expect(source, `${template} ${host.file} omits ${name}`).toContain(name);
+        }
+      }
+
+      const cursor = JSON.parse(await readFile(path.join(target, ".cursor/mcp.json"), "utf8")) as {
+        mcpServers: Record<string, { args: string[] }>;
+      };
+      expect(cursor.mcpServers["threenative-assets"]?.args[0], template).toBe(
+        "./node_modules/@threenative/core/mcp/assets.mjs",
+      );
+      const code = JSON.parse(await readFile(path.join(target, ".vscode/mcp.json"), "utf8")) as {
+        servers: Record<string, { type: string }>;
+      };
+      expect(code.servers["threenative-engine"]?.type, template).toBe("stdio");
+    }
+  }, 60_000);
 });

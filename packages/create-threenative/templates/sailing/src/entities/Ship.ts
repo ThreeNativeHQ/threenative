@@ -7,6 +7,7 @@ import {
   RigidBody3D,
 } from "@threenative/physics";
 import { Group } from "three";
+import { prepareShipConventions } from "../conventions.js";
 import { createMaterials } from "../render/materials.js";
 import { createShipModel } from "../render/props.js";
 import type { GameState } from "../state.js";
@@ -21,11 +22,14 @@ export class Ship {
   readonly body: RigidBody3D;
   readonly buoyancy: Buoyancy3D;
   #capsized = false;
+  #normaliseFactor: number;
 
   constructor(ctx: GameCtx, field: WaveField) {
     this.mesh.position.set(0, 0.24, 7);
     this.mesh.castShadow = true;
-    this.mesh.add(createShipModel(createMaterials()));
+    const model = createShipModel(createMaterials());
+    this.#normaliseFactor = prepareShipConventions(model);
+    this.mesh.add(model);
     ctx.add(this.mesh);
 
     this.body = new RigidBody3D({
@@ -84,6 +88,7 @@ export class Ship {
     return {
       capsized: this.#capsized,
       linearVelocity: [velocity.x, velocity.y, velocity.z],
+      normaliseFactor: this.#normaliseFactor,
       position: this.mesh.position.toArray(),
       submergedFraction: this.buoyancy.submergedFraction,
     };

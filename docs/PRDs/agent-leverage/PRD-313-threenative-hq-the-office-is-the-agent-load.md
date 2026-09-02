@@ -4,7 +4,11 @@ prd_contract: v1
 
 # PRD-313 — ThreeNative HQ: the office population *is* this machine's agent load
 
-**Status:** OPEN, filed 2026-08-31 against `4e1e1166`. Planning only.
+**Status:** PHASES 0–5 COMPLETE, 2026-08-31, in `sandbox/threenative-hq` (`dc84ec8`, pushed to
+`ThreeNativeHQ/examples`). Three proof lanes green in one `pnpm test`. Evidence:
+[docs/verification/prd313-threenative-hq-2026-08-31.md](../../verification/prd313-threenative-hq-2026-08-31.md).
+Two engine bugs the game found are fixed in `d114c509`. Open: inbound messaging and the native
+target, both listed as out of scope below.
 
 **Outcome:** a sandbox game at `/home/joao/projects/threenative/sandbox/threenative-hq` that renders
 an office in which **every worker at a desk is a live Claude Code or Codex session on this machine**.
@@ -64,10 +68,16 @@ artifact that makes that visible.
 - A **bridge daemon** (`tools/office-bridge/`, inside the game, Node) is the only thing that touches
   the filesystem and the hosts. It owns one truth: the set of live sessions and each one's state.
 - Sessions reach it **two ways, and the cheap one is authoritative**: host hooks `POST` events to
-  `http://127.0.0.1:7373/event` (fast, semantic), and a transcript tailer over
-  `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl` discovers sessions that never
-  installed a hook (every Codex session started before this lands, every session on a checkout with
-  its own settings).
+  `http://127.0.0.1:7373/event` (fast, semantic), and a second lane discovers the sessions that
+  never installed a hook.
+
+  **Corrected during implementation:** that second lane was specified as a transcript tailer over
+  `~/.claude/projects/**/*.jsonl` and `~/.codex/sessions/**/*.jsonl`, keyed on modification time.
+  On the machine this was built for that reported **606 live sessions** — 4,413 transcripts, May's
+  included, had been touched inside one minute. Liveness now comes from the **process table**: a
+  live session is a live process, `/proc/<pid>/cwd` names the repository, and CPU time between two
+  scans says whether it is doing anything. The transcript lane remains as the fallback for a host
+  without a readable `/proc`, and every session says which lane produced it.
 - The game connects over **WebSocket** (`ws://127.0.0.1:7373/office`), receives one full snapshot on
   connect and deltas after. WebSocket over polling because arrival/departure should look immediate,
   and over an in-browser file watcher because a browser cannot read `~/.claude` and a native build

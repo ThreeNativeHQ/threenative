@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { deflateSync } from "node:zlib";
 import { Document, type Material, NodeIO } from "@gltf-transform/core";
@@ -439,5 +440,39 @@ describe("runHealthReport", () => {
     expect(printed).toContain("[warn] rock.png: license: unknown");
     expect(printed).toMatch(/asset health: 2 asset\(s\), \d+ ok, \d+ warn, \d+ fail/u);
     expect(formatHealthReport(await runHealthReport([])).length).toBeGreaterThan(0);
+  });
+});
+
+describe("health over compressed source models", () => {
+  it("should measure a Meshopt-compressed model instead of refusing it", async () => {
+    // A source GLB compressed with EXT_meshopt_compression is what any asset importer or a
+    // previous compile writes. The model pass reads it (it registers the Meshopt decoder), but
+    // the health report built a reader without one, so `models: "none"` — the one mode whose
+    // whole promise is "ship these bytes untouched" — died with
+    // `[EXT_meshopt_compression] Please install extension dependency, "meshopt.decoder"`.
+    const { buildFixtureGlb } = await import("../../../test-support/generate-fixture-model.js");
+    const { modelPass } = await import("../src/passes/model.js");
+    const compressed = await modelPass().apply(Buffer.from(await buildFixtureGlb()), "pine.glb");
+    if (Buffer.isBuffer(compressed)) throw new Error("the model pass did not compress the fixture");
+    const root = await assetsDir("threenative-health-meshopt-");
+    await writeFile(path.join(root, "assets", "models", "pine.glb"), compressed.buffer);
+
+    const result = await compileAssets({ config: { models: "none" }, cwd: root });
+    expect(result.written).toBeGreaterThan(0);
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string }> };
+    const output = manifest.entries["models/pine.glb"]?.output;
+    if (output === undefined) throw new Error("the manifest has no models/pine.glb entry");
+    const served = await readFile(path.join(root, "public", output));
+    // `models: "none"` promises byte-identical output; a decode-then-rewrite would change them.
+    expect(createHash("sha256").update(served).digest("hex")).toBe(
+      createHash("sha256").update(compressed.buffer).digest("hex"),
+    );
+    // The report measured the real geometry through the decoder, not a placeholder.
+    const health = await runHealthReport([
+      { data: compressed.buffer, logicalPath: "models/pine.glb" },
+    ]);
+    expect(entryOf(health, "models/pine.glb").model?.triangles).toBe(20);
   });
 });

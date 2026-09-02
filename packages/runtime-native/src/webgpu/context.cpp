@@ -446,7 +446,7 @@ bool Context::initializeHeadless() {
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesAndroid[6];
+    WGPUFeatureName requiredFeaturesAndroid[7];
     size_t featureCount = 0;
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
@@ -456,6 +456,11 @@ bool Context::initializeHeadless() {
         if (wgpuAdapterHasFeature(adapter_, compression)) {
             requiredFeaturesAndroid[featureCount++] = compression;
         }
+    }
+    const auto adapterSpecificFormats = static_cast<WGPUFeatureName>(
+        WGPUNativeFeature_TextureAdapterSpecificFormatFeatures);
+    if (wgpuAdapterHasFeature(adapter_, adapterSpecificFormats)) {
+        requiredFeaturesAndroid[featureCount++] = adapterSpecificFormats;
     }
     // `timestamp-query`, when the adapter advertises it. Requested as an ordinary optional
     // feature — never behind a diagnostic flag — so the same code path measures on device and in
@@ -826,7 +831,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesAndroid[6];
+    WGPUFeatureName requiredFeaturesAndroid[7];
     size_t featureCount = 0;
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
@@ -836,6 +841,11 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
         if (wgpuAdapterHasFeature(adapter_, compression)) {
             requiredFeaturesAndroid[featureCount++] = compression;
         }
+    }
+    const auto adapterSpecificFormats = static_cast<WGPUFeatureName>(
+        WGPUNativeFeature_TextureAdapterSpecificFormatFeatures);
+    if (wgpuAdapterHasFeature(adapter_, adapterSpecificFormats)) {
+        requiredFeaturesAndroid[featureCount++] = adapterSpecificFormats;
     }
     // `timestamp-query`, when the adapter advertises it, and `core-features-and-limits`, which
     // three.js reads to decide whether the whole renderer is on a reduced-capability
@@ -1124,7 +1134,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     // Compression features are requested when the adapter advertises them,
     // mirroring the non-Android branches below; a format the hardware lacks
     // stays unrequested and truthfully absent from the device's feature set.
-    WGPUFeatureName requiredFeaturesAndroid[6];
+    WGPUFeatureName requiredFeaturesAndroid[7];
     size_t featureCount = 0;
     for (WGPUFeatureName compression : {WGPUFeatureName_TextureCompressionBC,
                                         WGPUFeatureName_TextureCompressionETC2,
@@ -1134,6 +1144,11 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
         if (wgpuAdapterHasFeature(adapter_, compression)) {
             requiredFeaturesAndroid[featureCount++] = compression;
         }
+    }
+    const auto adapterSpecificFormats = static_cast<WGPUFeatureName>(
+        WGPUNativeFeature_TextureAdapterSpecificFormatFeatures);
+    if (wgpuAdapterHasFeature(adapter_, adapterSpecificFormats)) {
+        requiredFeaturesAndroid[featureCount++] = adapterSpecificFormats;
     }
     // `timestamp-query`, when the adapter advertises it, and `core-features-and-limits`, which
     // three.js reads to decide whether the whole renderer is on a reduced-capability

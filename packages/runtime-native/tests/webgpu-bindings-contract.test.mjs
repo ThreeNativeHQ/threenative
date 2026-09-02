@@ -579,14 +579,24 @@ test("backend and canvas contexts do not use process-global ownership", () => {
   // timestamp-query. The literal is spelled out here on purpose — a stale one makes this
   // negative control a no-op that passes while proving nothing.
   const sharedFeatureMutation = context.replace(
-    "WGPUFeatureName requiredFeaturesAndroid[6];",
-    "static WGPUFeatureName requiredFeaturesAndroid[6];",
+    "WGPUFeatureName requiredFeaturesAndroid[7];",
+    "static WGPUFeatureName requiredFeaturesAndroid[7];",
   );
   assert.throws(
     () =>
       assert.doesNotMatch(sharedFeatureMutation, /static\s+WGPUFeatureName\s+requiredFeatures/u),
     /static/u,
   );
+});
+
+test("every Android device path enables adapter-specific storage texture formats", () => {
+  const context = read("src/webgpu/context.cpp");
+  const requests = context.match(/WGPUNativeFeature_TextureAdapterSpecificFormatFeatures/gu) ?? [];
+
+  // Headless, surface creation, and surface recreation each request their own device. Missing the
+  // feature from any one path lets three.js create read/write storage textures, but wgpu-native
+  // rejects the bind-group layout and aborts at queue submission.
+  assert.equal(requests.length, 3);
 });
 
 test("GPU video fallback rejects missing binding state before callback registration", () => {

@@ -12,7 +12,7 @@ import { PLAYTEST_ROOT_KEYS, PLAYTEST_STEP_KEYS } from "../src/scenario.js";
  * the validator. Both directions are checked:
  *
  * 1. within the sections that teach scenario authoring (the templates' playtest
- *    sections and the fail-closed page), every backtick-quoted camelCase key must be
+ *    sections and the playtest skill), every backtick-quoted camelCase key must be
  *    accepted by the real validator or carry a reasoned exception below;
  * 2. every assertion kind the registry ships must be named somewhere in those docs —
  *    an assertion type no doc mentions is one agents cannot discover.
@@ -31,6 +31,7 @@ const PROSE_TOKENS: Readonly<Record<string, string>> = {
   acceptHotUpdate: "engine core export quoted by the hot-reload rule",
   attachToBone: "engine core export named in the capability table",
   clearance: "GroundSnap field quoted from the capability table",
+  checks: "derived fields in a scene probe, not scenario JSON",
   createRandom: "engine core export",
   createReplayDriver: "engine core export",
   ctx: "the game-side context object, not scenario JSON",
@@ -68,6 +69,7 @@ const PROSE_TOKENS: Readonly<Record<string, string>> = {
   starter: "template name in prose",
   state: "the game state resource id, not a step/assertion key",
   three: "library name in prose",
+  true: "boolean literal in the allowTrivial warning",
   typecheck: "repo command name",
   update: "scene lifecycle method",
 };
@@ -97,7 +99,7 @@ function playtestSections(content: string): string {
 }
 
 /** The documents that teach scenario authoring: every template's playtest sections,
- * the shared fail-closed fragment they render from, and the generated assertion
+ * the playtest skill they scaffold, and the generated assertion
  * reference. General engine reference pages (ctx cookbook, capture recipes, asset
  * loop) teach other vocabularies and are deliberately out of scope. */
 async function teachingDocuments(): Promise<{ path: string; content: string }[]> {
@@ -111,8 +113,12 @@ async function teachingDocuments(): Promise<{ path: string; content: string }[]>
       content: playtestSections(await readFile(agents, "utf8")),
     });
   }
-  for (const page of ["playtest-fail-closed.md", "references/assertion-reference.md"]) {
-    const absolute = path.join(scaffoldRoot, "agent-docs", page);
+  const pages = [
+    "agent-files/.agents/skills/threenative-playtest/SKILL.md",
+    "agent-docs/references/assertion-reference.md",
+  ];
+  for (const page of pages) {
+    const absolute = path.join(scaffoldRoot, page);
     documents.push({ path: path.relative(repoRoot, absolute), content: await readFile(absolute, "utf8") });
   }
   return documents;

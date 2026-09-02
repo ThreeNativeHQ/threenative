@@ -1,0 +1,41 @@
+{
+  "name": "@threenative/ueformat",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "UEFormat v10 .uemodel parser and Three.js loader for meshes exported from Unreal packages by CUE4Parse/FModel.",
+  "type": "module",
+  "files": ["dist", "README.md"],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "ueformat-inspect": "./dist/cli.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup --config tsup.config.ts && publint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. ueformat && pnpm run build && publint --strict"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "@types/three": "0.185.3",
+    "publint": "0.3.22",
+    "tsup": "8.5.1",
+    "typescript": "catalog:"
+  },
+  "dependencies": {
+    "fflate": "catalog:",
+    "three": "catalog:"
+  }
+}

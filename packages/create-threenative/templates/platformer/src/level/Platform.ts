@@ -5,6 +5,14 @@ import type { GameCtx } from "../scenes/Level.js";
 
 export const ONE_WAY_LAYER = 2;
 
+export interface IPlatform {
+  readonly body: RigidBody3D;
+  readonly contains: (position: Pick<Vector3, "x" | "z">) => boolean;
+  readonly surfaceY: number;
+  readonly visual: ReturnType<typeof platformMesh>;
+  dispose(): void;
+}
+
 export function createPlatform(
   ctx: GameCtx,
   at: Vector3,
@@ -23,12 +31,16 @@ export function createPlatform(
     shape: CollisionShape3D.box(width, height, depth),
     type: "fixed",
   });
+  const center = at.clone();
   return {
     body,
+    contains: (position: Pick<Vector3, "x" | "z">) =>
+      Math.abs(position.x - center.x) <= width / 2 && Math.abs(position.z - center.z) <= depth / 2,
     dispose: () => {
       body.dispose();
       visual.removeFromParent();
     },
+    surfaceY: at.y,
     visual,
-  };
+  } satisfies IPlatform;
 }

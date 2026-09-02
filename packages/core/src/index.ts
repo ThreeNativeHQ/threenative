@@ -447,11 +447,29 @@ export type { IFluidFieldOptions, IFluidFieldSampler, IFluidFieldVector2 } from 
 export { WaveField } from "./wave-field.js";
 export type {
   IWaveFieldDomainWarp,
+  IWaveFieldGraphOptions,
   IWaveFieldOptions,
   IWaveFieldSample,
   IWaveFieldWave,
   WaveDirection,
 } from "./wave-field.js";
+/**
+ * Give a horizontal water surface the world mirrored in it, the world beneath it, and the metres
+ * of water between them.
+ * @situation reflect the sky and the shoreline in a lake, pond or river
+ * @situation see the bed through the water and have the shallows fade at the shore
+ * @situation know how deep the water is under a pixel without a second render pass
+ * @situation stop a water surface repeating in visible bands or stripes
+ * @constraint it draws nothing; the game supplies the mesh, the material and every colour
+ * @constraint the material must be transparent so the frame beneath it is already drawn
+ * @constraint thickness is metres, saturating at maxThickness; sky behind the surface reads deep
+ * @constraint one reflection is a second draw of the world, so resolutionScale is the whole cost
+ * @constraint the mirror plane is level, from level alone; do not parent target to a scaled mesh
+ * @example const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5 } });
+ * material.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);
+ */
+export { WaterSurface3D } from "./water-surface.js";
+export type { IWaterReflectionOptions, IWaterSurfaceOptions } from "./water-surface.js";
 /**
  * Build a soft round sprite as pixel data instead of painting a canvas.
  * @situation give smoke, flash, or glow sprites a radial alpha falloff
@@ -651,6 +669,56 @@ export { attachToBone } from "./skeleton.js";
  * const bones = skeletonBones(character);
  */
 export { skeletonBones } from "./skeleton.js";
+/**
+ * Measure whether a named bone reaches the object it is supposed to be touching, in metres.
+ * @situation check that a seated character's hands reach the keyboard
+ * @situation check that a character's hips meet the chair it is sitting on
+ * @situation turn "the character is not touching the prop" into a number a scenario can assert
+ * @constraint this walks the target's vertices; call it on a check or a debug sample, not every frame
+ * @example import { boneContact } from "@threenative/core";
+ * const contact = boneContact(worker, "hand_r", keyboard);
+ */
+export { boneContact } from "./skeleton.js";
+export type { IBoneContactReport } from "./skeleton.js";
+/**
+ * Score a retargeted clip against the source it came from, per bone, in degrees.
+ * @situation find out why a retargeted animation looks wrong on a character
+ * @situation tell a fixed retarget from one that merely moved
+ * @situation catch a retarget that rolled every limb about its own axis
+ * @constraint each bone is compared as a whole quaternion relative to its own rig's bind pose, so the two rigs never have to share a bind convention; a bone-direction check reports zero on the roll this catches
+ * @constraint both rigs must face the same way in world space, and both are driven and then restored to the transforms they arrived with
+ * @override bones maps one rig's bone names onto the other's when they differ; samples sets how many poses are compared
+ * @example import { clipPoseError } from "@threenative/core";
+ * const report = clipPoseError({ root: rig, clip: retargeted }, { root: source, clip: original });
+ */
+export { clipPoseError } from "./clip-audit.js";
+/**
+ * Report which of a clip's tracks bind to nothing on a character.
+ * @situation find out why a character plays its bind pose instead of the animation
+ * @situation check that a loaded clip actually drives the model it was written for
+ * @constraint the reason is Three.js's own, captured off its console hook so a scenario's console assertions stay clean
+ * @example import { clipTrackBindings } from "@threenative/core";
+ * const bindings = clipTrackBindings(character, clip);
+ */
+export { clipTrackBindings } from "./clip-audit.js";
+/**
+ * Report which bones of a character a clip does not drive.
+ * @situation find out why a character keeps the previous animation's hand shape
+ * @situation check how much of a rig a clip covers before shipping it
+ * @constraint a track that binds nothing counts as driving nothing
+ * @example import { clipBoneCoverage } from "@threenative/core";
+ * const coverage = clipBoneCoverage(character, clip);
+ */
+export { clipBoneCoverage } from "./clip-audit.js";
+export type {
+  IBonePoseError,
+  IClipBindingReport,
+  IClipCoverageReport,
+  IClipPoseErrorOptions,
+  IClipPoseErrorReport,
+  IClipPoseSubject,
+  IClipTrackBinding,
+} from "./clip-audit.js";
 export type {
   ContextMenuPolicy,
   IInputAction,

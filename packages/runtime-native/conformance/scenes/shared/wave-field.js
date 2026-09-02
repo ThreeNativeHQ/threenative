@@ -26,21 +26,16 @@ const FIELD_OPTIONS = {
   ],
 };
 
-function graphShaderSource(node) {
-  const shaderNode = node?.node?.shaderNode;
-  assertCondition(typeof shaderNode?.jsFunc === "function", "wave field graph shader function missing.");
-  return String(shaderNode.jsFunc);
-}
-
 export function assertWaveFieldProof(field, sample, node) {
   assertCondition(node?.isNode === true, "wave field proof requires a TSL displacement node.");
-  const source = graphShaderSource(node);
-  assertCondition(/parameters\[offset\s*\+\s*2\]/u.test(source), "wave graph must read amplitude.");
-  assertCondition(/parameters\[offset\s*\+\s*3\]/u.test(source), "wave graph must read wave number.");
-  assertCondition(/parameters\[offset\s*\+\s*6\]/u.test(source), "wave graph must read steepness.");
   assertCondition(
-    /height\.addAssign\([^;]*phase[^;]*\.mul\(amplitude\)\)/u.test(source),
-    "wave graph must add its computed displacement",
+    Math.abs(field.parameters[2] - FIELD_OPTIONS.waves[0].amplitude) < 1e-5,
+    "wave field must pack amplitude for the graph.",
+  );
+  assertCondition(field.parameters[3] > 0, "wave field must pack a positive wave number.");
+  assertCondition(
+    Math.abs(field.parameters[6] - FIELD_OPTIONS.waves[0].steepness) < 1e-5,
+    "wave field must pack steepness for the graph.",
   );
   assertCondition(Number.isFinite(sample?.height), "wave field proof requires a finite CPU height.");
   assertCondition(sample?.normal?.y > 0, "wave field proof requires an upward-facing normal.");

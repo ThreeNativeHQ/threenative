@@ -9,7 +9,7 @@ import {
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { BufferAttribute, Group, Mesh, NearestFilter, type PerspectiveCamera } from "three";
 import { Crate } from "../entities/Crate.js";
-import { Goal } from "../entities/Goal.js";
+import { Goal, ISLAND } from "../entities/Goal.js";
 import { Player } from "../entities/Player.js";
 import { createSpringArm } from "../render/camera.js";
 import { pickupRiseEase } from "../render/easing.js";
@@ -26,9 +26,13 @@ export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 const KILL_PLANE = -4;
 const STARTING_LIVES = 3;
+const FLOOR_SURFACE_Y = 0;
+const FLOOR_BOUNDS = { maxX: 5, minX: -5, maxZ: 2, minZ: -2 } as const;
 
 export class Play extends Scene<GameState, IPhysicsContext> {
   #assetProof: Mesh | undefined;
+  #materials: ReturnType<typeof createMaterials> | undefined;
+  #player: Player | undefined;
 
   static override readonly initialState: GameState = {
     coyoteJumps: 0,
@@ -51,6 +55,17 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   };
 
   override async load(ctx: GameCtx): Promise<void> {
+    const materials = createMaterials();
+    this.#materials = materials;
+    const state = ctx.state.getState();
+    this.#player = ctx.entities.add(
+      "player",
+      new Player(ctx, materials.player, {
+        x: Number.isFinite(state.playerX) ? state.playerX : Play.initialState.playerX,
+        y: 0.5,
+        z: 0,
+      }),
+    );
     const [texture, model] = await Promise.all([
       ctx.assets.texture("native-proof.png"),
       ctx.assets.model<{ scene: Group }>("native-proof.glb"),
@@ -98,7 +113,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
-    if (this.#assetProof === undefined) throw new Error("Starter proof assets did not load.");
+    if (
+      this.#assetProof === undefined ||
+      this.#materials === undefined ||
+      this.#player === undefined
+    )
+      throw new Error("Starter scene did not finish loading.");
+    const materials = this.#materials;
+    const player = this.#player;
     const audio = ctx.entities.add("audio", new AudioBus({ camera: ctx.camera }));
     const pickupAudio = ctx.assets.audio("pickup.wav");
     void pickupAudio.catch(() => undefined);
@@ -115,7 +137,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // Offset, lead and damping all live in render/camera.ts — framing is a look decision.
     const springArm = createSpringArm(ctx.camera as PerspectiveCamera);
 
-    const materials = createMaterials();
     ctx.add(createScenery(materials.rock, materials.ridge, createRandom(20_260_821)));
     // Two sentinels, both read by seed.playtest as an out-of-range value rather than as a
     // transition: state.levelX starts at -99, so a level that never builds stays out of range,
@@ -137,11 +158,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
     new Crate(ctx, levelX, 4, -1.5, materials.crate);
     const state = ctx.state.getState();
-    const player = new Player(ctx, materials.player, {
-      x: Number.isFinite(state.playerX) ? state.playerX : Play.initialState.playerX,
-      y: 0.5,
-      z: 0,
-    });
     const pickupBase = block(0.42, 0.14, 0.42, materials.player);
     const pickupStem = tube(0.08, 0.08, 0.3, materials.player);
     const pickupOrb = ball(0.16, materials.player);
@@ -158,11 +174,29 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ctx.entities.add("pickup", pickupVisual);
     void ctx.tween(pickupVisual.position, { y: 0.65 }, 0.4, { ease: pickupRiseEase });
     springArm.snap(player.mesh.position);
-    ctx.entities.add("player", player);
     // The packaged proof asset earns its place here: it is the pennant on the finish flag,
     // not a debug object parked over the level. The texture and the glTF still load in
     // `load()` above, which is what the native asset gate greps for.
     const goal = ctx.entities.add("goal", new Goal(ctx, materials, this.#assetProof));
+    const supportSurfaceY = (position: { readonly x: number; readonly z: number }):
+      | number
+      | undefined => {
+      if (
+        position.x >= FLOOR_BOUNDS.minX &&
+        position.x <= FLOOR_BOUNDS.maxX &&
+        position.z >= FLOOR_BOUNDS.minZ &&
+        position.z <= FLOOR_BOUNDS.maxZ
+      )
+        return FLOOR_SURFACE_Y;
+      if (
+        position.x >= ISLAND.x - ISLAND.width / 2 &&
+        position.x <= ISLAND.x + ISLAND.width / 2 &&
+        position.z >= ISLAND.z - ISLAND.depth / 2 &&
+        position.z <= ISLAND.z + ISLAND.depth / 2
+      )
+        return ISLAND.top;
+      return undefined;
+    };
     // The area says the character is over the island; the run is only won once it is also
     // standing on it. Ending on the overlap alone freezes the character in mid-air at the
     // lip of the island, half a metre short of a landing, which is what it looks like.
@@ -224,7 +258,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         goal.pennant.wind.set(0, 0.4, 4.5);
         frameCtx.state.set((state) => ({ flagGusts: state.flagGusts + 1 }));
       }
-      player.update(frameCtx, dt);
+      player.update(frameCtx, dt, supportSurfaceY);
       let respawned = false;
       let lives = previous.lives;
       if (player.mesh.position.y < KILL_PLANE) {

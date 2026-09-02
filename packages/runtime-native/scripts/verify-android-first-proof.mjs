@@ -20,18 +20,15 @@ import {
 // drift, and the weaker one would be the device's, which is the lane that had never asserted it.
 import { analyzePresentTicks, inspectOverlayBuffer } from './verify-desktop-core.mjs';
 import { suppressPlayProtectOnAdbInstalls } from './device-preflight.mjs';
+import { prepareAndroidEmulator } from './android-emulator.mjs';
 
 export { AUDIO_PROMISE_MARKER, FIRST_FRAME_MARKER, FRAME_MARKER, READY_MARKER, THREE_VERSION_MARKER };
+export { prepareAndroidEmulator } from './android-emulator.mjs';
 
 export const APP_ID = 'com.threenative.game';
 export const ACTIVITY_CLASS = 'com.threenative.runtime.MystralActivity';
 export const ACTIVITY = `${APP_ID}/${ACTIVITY_CLASS}`;
-export const SUCCESS_MARKER = FRAME_MARKER,
-  prepareAndroidEmulator = (serial, execute) => {
-    if (serial.startsWith('emulator-'))
-      execute('shell', 'settings', 'put', 'secure', 'immersive_mode_confirmations', 'confirmed');
-    return { prepared: serial.startsWith('emulator-') };
-  };
+export const SUCCESS_MARKER = FRAME_MARKER;
 export const REQUIRED_MARKERS = [THREE_VERSION_MARKER, READY_MARKER, FIRST_FRAME_MARKER, FRAME_MARKER];
 // Required but deliberately outside REQUIRED_MARKERS: those are order-checked, and where a
 // microtask-delivered result lands relative to the frame markers is timing, not contract.

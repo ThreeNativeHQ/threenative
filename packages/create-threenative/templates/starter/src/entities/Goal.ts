@@ -13,7 +13,7 @@ import type { GameState } from "../state.js";
  * within a couple of frames of the edge; dropping 0.4 m widens that window to about half
  * a second, which is what makes coyote time feel generous instead of decorative.
  */
-const ISLAND = { depth: 2.6, height: 0.4, top: -0.4, width: 3, x: 7.9, z: 0 } as const;
+export const ISLAND = { depth: 2.6, height: 0.4, top: -0.4, width: 3, x: 7.9, z: 0 } as const;
 const POLE = { height: 2.4, radius: 0.05, x: 8.4, z: -0.5 } as const;
 const PENNANT_SCALE = 0.55;
 

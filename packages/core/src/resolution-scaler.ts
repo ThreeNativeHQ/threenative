@@ -65,6 +65,12 @@ export const RESOLUTION_SCALER = {
    * near 1. The lumen-hall window's ratio was 200. Nothing real sits between.
    */
   stallP99Multiple: 10,
+  /**
+   * p99 needs at least three bad samples in a 300-frame window. One profiler or debugger pause can
+   * still pull fps-from-mean below the down threshold, so the maximum gets the same stall test.
+   * Ordinary missed presents are around 2x p50 and stay far below this boundary.
+   */
+  stallMaxMultiple: 10,
   /** React to a deficit immediately; climb only on sustained evidence. Asymmetric by design. */
   downWindows: 1,
   upWindows: 4,
@@ -117,11 +123,16 @@ export interface IScalerWindow {
   /** Frames per second this window achieved, from the mean presented interval. */
   readonly fps: number;
   /**
-   * `p50` says what an ordinary frame of this window cost and `p99` says what its worst ones cost.
-   * The controller needs both to tell a slow game from a stalled one: `fps` alone cannot, because
-   * a mean cannot.
+   * `p50` says what an ordinary frame cost; `p99` and `max` expose recurring and isolated stalls.
+   * The controller needs them to tell a slow game from a stalled one: `fps` alone cannot, because
+   * it comes from a mean.
    */
-  readonly presented: { readonly p50: number; readonly p95: number; readonly p99: number };
+  readonly presented: {
+    readonly max: number;
+    readonly p50: number;
+    readonly p95: number;
+    readonly p99: number;
+  };
 }
 
 export class ResolutionScaler {
@@ -221,13 +232,17 @@ export class ResolutionScaler {
   }
 
   /**
-   * True when this window's tail is an order of magnitude past its middle, which is a stall rather
-   * than a frame rate. A window with no p50 to compare against says nothing either way.
+   * True when this window's recurring tail or single worst sample is an order of magnitude past
+   * its middle, which is a stall rather than a frame rate. A window with no p50 to compare against
+   * says nothing either way.
    */
   #stalled(window: IScalerWindow): boolean {
-    const { p50, p99 } = window.presented;
-    if (!(p50 > 0) || !Number.isFinite(p99)) return false;
-    return p99 >= p50 * RESOLUTION_SCALER.stallP99Multiple;
+    const { max, p50, p99 } = window.presented;
+    if (!(p50 > 0) || !Number.isFinite(p99) || !Number.isFinite(max)) return false;
+    return (
+      p99 >= p50 * RESOLUTION_SCALER.stallP99Multiple ||
+      max >= p50 * RESOLUTION_SCALER.stallMaxMultiple
+    );
   }
 
   /**

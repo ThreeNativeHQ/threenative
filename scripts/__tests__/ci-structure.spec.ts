@@ -65,6 +65,26 @@ const expectedTemplates = [
 ] as const;
 
 describe("CI pipeline structure", () => {
+  it("syncs capability artifacts on relevant commits and rejects stale manifests in CI", async () => {
+    const packageJson = JSON.parse(await readFile(path.join(repo, "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    const hook = await readFile(path.join(repo, "githooks/pre-commit"), "utf8");
+
+    expect(packageJson.scripts["capabilities:sync"]).toContain("build-capability-manifest.ts");
+    expect(packageJson.scripts["capabilities:sync"]).toContain("generate-capability-reference.ts");
+    expect(packageJson.scripts["capabilities:check"]).toContain(
+      "build-capability-manifest.ts --check",
+    );
+    expect(packageJson.scripts.budgets).toContain("pnpm capabilities:check");
+    expect(hook).toContain("git diff --cached --name-only");
+    expect(hook).toContain("packages/[^/]+/(src/.*|package\\.json)");
+    expect(hook).toContain("pnpm capabilities:sync");
+    expect(hook).toContain("git add --");
+    expect(hook).not.toContain("git add -A");
+    expect(hook).not.toContain("git add .");
+  });
+
   it("a failed job cancels its own run and nothing on another branch", async () => {
     const action = await readFile(
       path.join(repo, ".github/actions/cancel-run-on-failure/action.yml"),
@@ -89,6 +109,12 @@ describe("CI pipeline structure", () => {
       const source = await readFile(path.join(repo, relative), "utf8");
       expect(triggerSection(source), relative).toContain("actions: write");
       for (const [job, section] of jobSections(source)) {
+        // The one exemption is android-emulator-parity, asserted explicitly below: an advisory
+        // job must not cancel its own run on its known red — that cancel step killed
+        // desktop-parity twice on 2026-09-01 while desktop-parity was mid-run.
+        if (relative.endsWith("native-platforms.yml") && job === "android-emulator-parity") {
+          continue;
+        }
         expect(section, `${relative} ${job}`).toContain("if: failure()");
         expect(section, `${relative} ${job}`).toContain(
           "uses: ./.github/actions/cancel-run-on-failure",
@@ -205,10 +231,30 @@ describe("CI pipeline structure", () => {
     expect(desktop).toContain("if-no-files-found: error");
   });
 
+  it("Android parity lets the ledger classify expected blocked rows", async () => {
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const android = requiredJob(native, "android-emulator-parity");
+    const emulator = android.slice(
+      android.indexOf("- name: Run checksum-locked APKs on the emulator"),
+      android.indexOf("- name: Verify captured parity ledger"),
+    );
+
+    expect(emulator).toContain("set +e");
+    expect(emulator).toMatch(/run-conformance\.mjs \\\n\s+--target android/u);
+    expect(emulator).toContain("status=$?");
+    expect(emulator).toContain('test "$status" -eq 0 -o "$status" -eq 2');
+    expect(android).toContain("check-lane-blocks.mjs");
+  });
+
   it("every template's non-visual scenarios run on main pushes and nightly", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const job = requiredJob(ci, "template-nonvisual");
-    expect(job).toContain("if: github.event_name == 'push' || github.event_name == 'schedule'");
+    // Runs on every event since 2026-09-01 (owner call): the PR skip reported nothing on the
+    // branch where the regression was written, and the merge that shipped it reported too late.
+    expect(job).not.toContain("github.event_name == 'push'");
     expect(job).not.toContain("pull_request");
     expect(job).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
     expect(job).toContain("non-visual-scenarios.mjs");
@@ -235,13 +281,17 @@ describe("CI pipeline structure", () => {
   it("PR CI reviews dependencies and scans changed commits for leaked secrets", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const supplyChain = requiredJob(ci, "supply-chain");
-    expect(supplyChain).toContain("if: github.event_name == 'pull_request'");
+    // Runs on pushes too since 2026-09-01 (owner call): a skipped job on main read as a pass.
+    expect(supplyChain).toContain(
+      "if: github.event_name == 'pull_request' || github.event_name == 'push'",
+    );
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
     expect(supplyChain).toContain("fail-on-severity: moderate");
     expect(supplyChain).not.toContain("allow-licenses");
     expect(supplyChain).toContain("fetch-depth: 0");
     expect(supplyChain).toContain("ghcr.io/gitleaks/gitleaks@sha256:");
     expect(supplyChain).toContain("github.event.pull_request.base.sha");
+    expect(supplyChain).toContain("Scan the full git history for leaked secrets");
     expect(supplyChain).toContain("github.event.pull_request.head.sha");
     expect(supplyChain).toContain('git rev-list --count "$range"');
     expect(supplyChain).toContain("git --redact --verbose");
@@ -321,25 +371,31 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("only the Linux native legs run on a pull request", async () => {
-    // 100 runs of this workflow: 37 failed, 37 cancelled by a competing push, none succeeded. The
-    // four platform legs reported the same red every time while holding six runners per PR ahead
-    // of the gates people read. They report on main, on the nightly cron, and on a PR that opts in
-    // with the `native` label. The Linux legs keep running on every PR — that is where a core or
-    // playtest change breaking the native bundle shows up, on the target ROADMAP licenses.
+  it("every native leg runs on every event", async () => {
+    // Until 2026-09-01 the platform legs ran only on pushes to main, the nightly cron, and PRs
+    // carrying the `native` label; a PR read skips where the legs should have reported, and on
+    // main the lane cancelled itself before finishing anyway (owner call: run everything,
+    // everywhere, and let a red be a red). The only condition any leg may still carry is the
+    // manual `ios_only` dispatch toggle, which runs the iOS lane alone on demand.
     const native = await readFile(
       path.join(repo, ".github/workflows/native-platforms.yml"),
       "utf8",
     );
-    const guarded = ["android-emulator-parity", "desktop", "ios-simulator"] as const;
-    for (const name of guarded) {
+    const legs = [
+      "android-emulator-parity",
+      "desktop",
+      "ios-simulator",
+      "desktop-parity",
+      "starter-linux",
+    ] as const;
+    for (const name of legs) {
       const job = requiredJob(native, name);
-      expect(job, name).toContain("github.event_name != 'pull_request'");
-      expect(job, name).toContain("contains(github.event.pull_request.labels.*.name, 'native')");
+      expect(job, name).not.toContain("github.event_name != 'pull_request'");
+      expect(job, name).not.toContain("contains(github.event.pull_request.labels");
     }
-    for (const name of ["desktop-parity", "starter-linux"] as const) {
-      expect(requiredJob(native, name), name).not.toContain("github.event_name != 'pull_request'");
-    }
+    const android = requiredJob(native, "android-emulator-parity");
+    expect(android).not.toContain("continue-on-error: true");
+    expect(android).toContain("uses: ./.github/actions/cancel-run-on-failure");
   });
 
   it("job-level env never reads the runner context", async () => {

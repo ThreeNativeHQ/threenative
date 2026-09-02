@@ -22,6 +22,14 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
+    "components": [
+      {
+        "allowTrivial": "The ship has an authored non-unit size; this retained factor proves normaliseToMetres ran in the generated vessel.",
+        "component": "normaliseFactor",
+        "entity": "player",
+        "lte": 0.99
+      }
+    ],
     "movement": { "entity": "player", "minDistance": 0.5 },
     "visual": [
       {

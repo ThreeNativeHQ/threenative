@@ -1,5 +1,6 @@
 import type { ICtx } from "@threenative/core";
 import { type Group, Vector3 } from "three";
+import { type IDefenseConventions, prepareCommanderConventions } from "../conventions.js";
 import type { DefensePhysics } from "../physics.js";
 import { commander as commanderMesh } from "../render/shapes.js";
 import type { GameState } from "../state.js";
@@ -13,11 +14,13 @@ const BOARD_BOUNDS = { maxX: 12, maxZ: 8, minX: -12, minZ: -8 } as const;
 export class Player {
   readonly mesh: Group;
   readonly tags = ["player", "commander"];
+  #conventions: IDefenseConventions;
 
   constructor(ctx: GameCtx) {
     this.mesh = commanderMesh();
     this.mesh.name = "player";
     this.mesh.position.copy(SPAWN);
+    this.#conventions = prepareCommanderConventions(this.mesh);
     ctx.add(this.mesh);
   }
 
@@ -32,10 +35,15 @@ export class Player {
       Math.min(BOARD_BOUNDS.maxZ, this.mesh.position.z - move.y * MOVE_SPEED * dt),
     );
     if (move.lengthSq() > 0) this.mesh.rotation.y = Math.atan2(move.x, -move.y);
+    this.#conventions.applyGrounding(0, dt);
   }
 
   debug(): Record<string, unknown> {
-    return { position: this.mesh.position.toArray() };
+    return {
+      groundClearance: this.#conventions.groundSnap.clearance,
+      normaliseFactor: this.#conventions.normaliseFactor,
+      position: this.mesh.position.toArray(),
+    };
   }
 
   dispose(): void {

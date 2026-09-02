@@ -299,6 +299,7 @@ export function createPlayerVisual(materials: ShooterMaterials): Group {
     new CylinderGeometry(0.08, 0.1, 0.5, 6).rotateX(Math.PI / 2),
     materials.shadow,
   );
+  muzzle.name = "held-rifle";
   muzzle.position.set(0, 0.52, -0.55);
   muzzle.castShadow = true;
   group.add(muzzle);

@@ -33,7 +33,6 @@ async function countPlaytestFiles(directory: string): Promise<number> {
 
 interface IShippedPackage {
   readonly public: boolean;
-  readonly version: string;
 }
 
 async function shippedPackages(): Promise<Map<string, IShippedPackage>> {
@@ -43,11 +42,10 @@ async function shippedPackages(): Promise<Map<string, IShippedPackage>> {
     if (!entry.isDirectory()) continue;
     const manifest = JSON.parse(
       await readFile(path.join(repoRoot, "packages", entry.name, "package.json"), "utf8"),
-    ) as { name?: string; publishConfig?: { access?: string }; version?: string };
-    if (manifest.name === undefined || manifest.version === undefined) continue;
+    ) as { name?: string; publishConfig?: { access?: string } };
+    if (manifest.name === undefined) continue;
     packages.set(manifest.name, {
       public: manifest.publishConfig?.access === "public",
-      version: manifest.version,
     });
   }
   return packages;
@@ -169,9 +167,11 @@ describe("primary documentation agrees with the shipped surfaces", () => {
     }
   });
 
-  it("should list every published package in the README at its manifest version", async () => {
+  it("should list every published package in the README without a version column", async () => {
     const readme = await readRepoFile("README.md");
     const tokens = packageTokens(readme);
+    expect(readme).toContain("| Package | Purpose |\n| --- | --- |");
+    expect(readme).not.toContain("| Package | Version | Purpose |");
     for (const [name, shipped] of [...(await shippedPackages()).entries()].sort()) {
       if (!shipped.public) continue;
       expect(tokens.has(name), `README omits the shipped package ${name}`).toBe(true);
@@ -179,10 +179,6 @@ describe("primary documentation agrees with the shipped surfaces", () => {
         .split("\n")
         .find((line) => line.startsWith("| ") && line.includes(`\`${name}\``));
       expect(row, `README has no Packages table row for ${name}`).toBeDefined();
-      expect(
-        row?.includes(`\`${shipped.version}\``),
-        `README row for ${name} states a version other than the manifest's ${shipped.version}`,
-      ).toBe(true);
     }
   });
 

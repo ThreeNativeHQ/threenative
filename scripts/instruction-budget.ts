@@ -36,8 +36,8 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // Every number carries a uniform +60 re-measured on 2026-08-22 (PRD-187): the generated
   // superseded-constructs region became mandatory inline content in all seven templates, and
   // survives the triplication cut that paid for most of it (the same override rule had been
-  // stated in the ctx-surface prose, the generated trailer, and the engine-capabilities
-  // fragment). See docs/verification/instruction-budgets-2026-08-22.md.
+  // stated in the context-surface prose, the generated trailer, and the engine-capabilities
+  // instructions). See docs/verification/instruction-budgets-2026-08-22.md.
   // `minimal` and `starter` each carry a further re-measured increment from PRD-209
   // (2026-08-23): +53 and +65 rendered words for the portable-HUD convention. Both templates
   // had under 25 words of headroom, so stating the convention at all needed the override the
@@ -49,12 +49,12 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // docs/verification/prd-209-2026-08-23.md; the before/after table is
   // docs/verification/instruction-budgets-2026-08-23.md.
   // A second uniform bump, +22, re-measured on 2026-08-23 (PRD-214): the frame budget ships on
-  // by default and prints `TN_FRAME_BUDGET` on every platform, so the performance-default
-  // fragment now has to name the marker, its five phases and the `frameBudget: false` override
+  // by default and prints `TN_FRAME_BUDGET` on every platform, so the performance instructions
+  // now have to name the marker, its five phases and the `frameBudget: false` override
   // — a convention missing from the templates' AGENTS.md does not exist. Measured worst case was
   // platformer at 2981 against 2960. See docs/verification/prd-214-2026-08-23.md.
   //
-  // And a uniform +34 on 2026-08-23 (PRD-213): the `performance-default` fragment gained a
+  // And a uniform +34 on 2026-08-23 (PRD-213): the performance instructions gained a
   // three-line mobile-memory pointer. It is the smallest form that survives — the table, the
   // arithmetic and the fix all live in `agent-docs/mobile-memory-budget.md`, so only the hook is
   // charged. It buys the one number a cold agent cannot derive and pays 48 MiB the first time it
@@ -64,7 +64,7 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // docs/verification/instruction-budgets-2026-08-23.md.
   // PRD-217 adds one shared pointer line to the reference index, naming the web-view UI page
   // (`agent-docs/webview-ui.md`): +11 rendered words in every template, measured. It is in the
-  // shared fragment rather than per template because the page ships to all seven, and a page the
+  // shared skill rather than per template because the page ships to all seven, and a page the
   // instructions never name does not exist. Four templates sat exactly at their cap and carry the
   // increment here; `action-rpg`, `racing` and `starter` absorbed it inside existing headroom,
   // starter after trimming a `data-tn-interactive` sentence the new page states in full.
@@ -81,9 +81,9 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // does not exist, and this one has to name its override, its validation and its per-window
   // reporting or a game can neither turn it off nor tell which resolution produced an fps number.
   // `defense`, the template sitting exactly at the default cap, renders 2930 against 2753.
-  // It is its own `agent-docs/pixel-budget.md` fragment: `performance-default.md` carries an
+  // It is its own performance skill section: the lightmap and frame-budget guidance carries an
   // executable 130-word cap of its own, and this is a different subject from the target table.
-  // And a uniform +82 on 2026-08-28 (PRD-237 + PRD-241): the shared ctx-surface table gained the
+  // And a uniform +82 on 2026-08-28 (PRD-237 + PRD-241): the shared context table gained the
   // `ctx.pointer` row and paragraph (PRD-237's portable 3D pointer events) and the tween row grew
   // an `ease` option (PRD-241). Both are conventions a game cannot discover by grep, so they must
   // render inline; twelve redundant words were trimmed first (`optional fourth options argument`,
@@ -92,6 +92,14 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // Measured per template on 2026-08-28: action-rpg 2933, defense 3012, minimal 3849, platformer
   // 3389, racing 2979, shooter 3077, starter 4223 — every cap moves by exactly +82.
   // PRD-256 adds the shared 24-word static-lightmap setup, rollback, and platform warning.
+  //
+  // Re-measured 2026-08-31 against 81698466 (the PRD-278 cap bump) because the gate had gone
+  // red on main before this change: template-growth commits since that cap — the PRD-268 probe
+  // volumes, the godrays refusal, and the see-it-in-numbers section (e5d64b5f) — added +530
+  // (minimal, platformer, starter) or +569 (action-rpg, defense, racing, shooter) rendered
+  // words without moving a limit. This change then adds the shared engine-bug-report instructions,
+  // a uniform +104 measured everywhere. Caps now sit on the measured values; the per-template
+  // table is docs/verification/instruction-budgets-2026-08-31.md.
   // And a uniform +134 on 2026-08-31 (PRD-304): every template now ships
   // `src/render/quality.ts`, a named three-tier quality switch whose presets carry the measured
   // GPU cost of each stage they enable. A convention missing from the templates' AGENTS.md does
@@ -101,16 +109,18 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // first — the per-stage numbers live in `quality.ts` itself and are not repeated here — and
   // then measured: `defense` and `shooter`, the two templates sitting exactly at their caps,
   // both render exactly +134. `sailing` absorbed all of it in headroom (2971 against 3036).
-  defaultMaxWords: 3170,
+  // The merged tree re-measures the quality section at +137 against the combined local template
+  // text. Final counts are recorded in docs/verification/instruction-budgets-2026-08-31.md.
+  defaultMaxWords: 3574,
   // The same measured +26 rides every override below — +27 on `platformer` and `shooter`, whose
-  // own wrapping splits one more word — because the stride-sync line is in the shared fragment, so all seven
+  // own wrapping splits one more word — because the stride-sync line is in the shared skill, so all seven
   // templates carry it and none of them absorbed it in headroom.
   overrides: {
     // Touch-controls mapping, the stated desktop-has-no-HUD gap, and checkpoint level structure.
     // PRD-216 adds the complete native React style vocabulary (+76 measured rendered words).
-    platformer: 3547,
+    platformer: 3912,
     // PRD-216 adds the complete native React style vocabulary (+64 measured rendered words).
-    shooter: 3235,
+    shooter: 3639,
     // The no-React geometry HUD contract and its native-portability rules have no genre-kit peer.
     // PRD-248 adds +84 measured rendered words, `minimal` only, because only this template ships
     // the atmosphere: its sky dome, sun colour and depth haze now come from one `Atmosphere` node
@@ -125,13 +135,13 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
     // game that hits one has nothing to read. The detail is in the reference page, which this
     // budget does not count; only the naming is inline, and it was trimmed to its shortest form
     // before the limit moved.
-    minimal: 4015,
+    minimal: 4344,
     // React state bridge, native-proof game contract, the four-difference portability list, and
     // the React-HUD-is-invisible-natively rule that list has to carry.
     // PRD-216 replaces the web-only warning with the native mount and full style contract (+60).
     // PRD-218 adds the scene-backed menu recipe, carried state, and its click proof (+59).
     // +4 measured for the TSL silent-no-op traps; see the note on `minimal` for the reasoning.
-    starter: 4385,
+    starter: 4691,
   },
 };
 

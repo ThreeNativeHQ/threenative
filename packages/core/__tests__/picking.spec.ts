@@ -1,12 +1,19 @@
 import {
+  Bone,
   BoxGeometry,
   type BufferAttribute,
+  BufferGeometry,
+  Float32BufferAttribute,
+  Group,
   type Intersection,
   Mesh,
+  MeshBasicMaterial,
   Object3D,
   PerspectiveCamera,
   PlaneGeometry,
   type Raycaster,
+  Skeleton,
+  SkinnedMesh,
   Sprite,
   SpriteMaterial,
   Vector2,
@@ -80,6 +87,42 @@ function plane(name: string, z: number): Mesh {
   return mesh;
 }
 
+/**
+ * A skinned quad, bound to one bone, facing the camera.
+ *
+ * Characters arrive as skinned meshes and a game that wants one clickable has no other shape to
+ * offer the picker, so this is the case that decides whether `ctx.pointer.on` works on a loaded
+ * model at all.
+ */
+function skinnedQuad(name: string, z: number): Group {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new Float32BufferAttribute([-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0], 3),
+  );
+  geometry.setIndex([0, 1, 2, 2, 1, 3]);
+  geometry.setAttribute(
+    "skinIndex",
+    new Float32BufferAttribute([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 4),
+  );
+  geometry.setAttribute(
+    "skinWeight",
+    new Float32BufferAttribute([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], 4),
+  );
+  const mesh = new SkinnedMesh(geometry, new MeshBasicMaterial());
+  mesh.name = `${name}-mesh`;
+  const bone = new Bone();
+  bone.name = "Root";
+  mesh.add(bone);
+  mesh.bind(new Skeleton([bone]));
+  const group = new Group();
+  group.name = name;
+  group.position.z = z;
+  group.add(mesh);
+  group.updateWorldMatrix(true, true);
+  return group;
+}
+
 function box(name: string, z: number): Mesh {
   const mesh = new Mesh(new BoxGeometry(2, 2, 2));
   mesh.name = name;
@@ -88,6 +131,35 @@ function box(name: string, z: number): Mesh {
 }
 
 describe("ScenePicker", () => {
+  it("should hit a skinned mesh the same way it hits a static one", () => {
+    const rig = skinnedQuad("character", 0);
+    const { picker } = scenePicker(rig);
+    const hit = picker.raycast({ screen: new Vector2(640, 360) });
+    expect(hit?.object.name).toBe("character-mesh");
+  });
+
+  it("should follow a skinned mesh to where its bones moved it", () => {
+    const rig = skinnedQuad("character", 0);
+    const bone = rig.getObjectByName("Root") as Bone;
+    // Move the whole quad two metres to the left by moving the only bone that drives it. On
+    // screen the character is now over there; a click where it used to be should miss.
+    bone.position.x = -2;
+    bone.updateMatrixWorld(true);
+    rig.updateWorldMatrix(true, true);
+    const { picker } = scenePicker(rig);
+    // Nothing is at the centre any more, and something is two metres to its left.
+    expect(picker.raycast({ screen: new Vector2(640, 360) })?.object.name).toBeUndefined();
+    const moved = picker.raycast({ screen: new Vector2(455, 360) });
+    expect(moved?.object.name).toBe("character-mesh");
+  });
+
+  it("should hit a skinned mesh reached through the group a game registers", () => {
+    const rig = skinnedQuad("character", 0);
+    const { picker } = scenePicker(rig);
+    const hits = picker.raycastAll({ screen: new Vector2(640, 360), targets: [rig] });
+    expect(hits.map((entry) => entry.object.name)).toContain("character-mesh");
+  });
+
   it("returns the nearest hit under the pointer and nothing when the ray misses", () => {
     const near = plane("near", 2);
     const far = plane("far", 0);

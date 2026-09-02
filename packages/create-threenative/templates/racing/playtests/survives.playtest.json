@@ -16,6 +16,14 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
+    "components": [
+      {
+        "allowTrivial": "The vehicle has an authored non-unit size; this retained factor proves normaliseToMetres ran in the generated car.",
+        "component": "normaliseFactor",
+        "entity": "player",
+        "gte": 1.01
+      }
+    ],
     "movement": { "entity": "player", "minDistance": 0.5 },
     "visual": [
       {

@@ -37,6 +37,13 @@ const AGENT_ROLE_PATHS = [
   "AGENT-ROLES.md",
 ] as const;
 
+// The engine-bug report skill ships through `agent-files` to every scaffold, in the two skill
+// directories hosts discover: Claude Code reads `.claude/skills`, Codex reads `.agents/skills`.
+const BUG_REPORT_SKILL_PATHS = [
+  ".claude/skills/file-engine-bug/SKILL.md",
+  ".agents/skills/file-engine-bug/SKILL.md",
+] as const;
+
 // Refreshed for the startup-readiness loading gate: each template's `src/render/loading.ts` was
 // reduced to the shared `startup.whenReady()` contract and every template's AGENTS.md carries
 // the readiness wording into the shipped scaffold.
@@ -80,6 +87,9 @@ const AGENT_ROLE_PATHS = [
 // `postprocessing.ts` was rewritten to read it, and its AGENTS.md/CLAUDE.md pair gained the
 // quality-tier section — three files per scaffold, so all eight trees move. Computed from a
 // committed lane worktree rebased onto origin/main, with no sibling edits in it.
+// Recomputed 2026-08-31 for PRD-314: every template's AGENTS.md/CLAUDE.md pair gained the clip
+// conformance paragraph (clipPoseError, clipTrackBindings, clipBoneCoverage, boneContact), and the
+// generated capability reference embedded in every scaffold gained their four entries.
 // Recomputed 2026-09-01 for PRD-304's repair: seven templates' `worldEnvironment.ts` now
 // requests its normal/metalness/roughness texture nodes lazily, because asking for them is
 // what created the extra render target that made the mobile look a black screen. `sailing`
@@ -176,18 +186,40 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
   // its 33 ms ceiling.
   // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
+  // Recomputed 2026-08-31 after squashing PRD-289 onto local main 6b91f42f: current main's
+  // scaffold assets and the convention-enabled generated trees are measured together.
+  // Recomputed 2026-08-31 after PRD-251 added the terrain entries to the generated manifest.
+  // Recomputed 2026-08-31 when every template began shipping the MCP config each agent host
+  // reads. Claude Code and Codex already had theirs; Cursor, VS Code, the Gemini CLI, opencode and
+  // Zed each gained a project-scoped file, and the shared asset-MCP instructions now name all
+  // seven instead of `.mcp.json` alone. Five new files and one paragraph move all eight trees.
   // Recomputed 2026-09-01 for PRD-301: the capability manifest and the reference generated
   // from it now walk @threenative/assets, so the authoring surface those bytes describe grew
   // in every scaffold tree.
-  "action-rpg": "90b45a1c792ddae0a6b06ad0ee342b2e91a5ebafc81a682494347e8796a4203d",
-  defense: "905171f849349d7084155b9ed36e0da4441b514dc8c8a9abbb3a03af2358a3df",
+  // Recomputed 2026-09-01 for the main-sync merge of the two capability-manifest lineages
+  // (local 8c158a56 and origin #29): values measured from the committed merge tree.
+  // Recomputed 2026-09-01 after every game gained the bundled prd-creator skill, approval gate,
+  // and expanded Fab authentication and Unreal conversion instructions.
+  // Recomputed 2026-09-01 after capability discovery became a critical pre-PRD planning gate in
+  // every generated AGENTS.md/CLAUDE.md pair and both shipped host skill adapters.
+  // Recomputed 2026-09-01 for the main-sync merge carrying #40's lazy MRT texture nodes: values
+  // measured from the committed merge tree, per the clean-checkout rule above.
+  // Recomputed 2026-09-01 when @threenative/ueformat entered the public surface: the capability
+  // manifest and the reference generated from it both gained the UEFormat entries, and those
+  // bytes are embedded in every scaffold.
+  // Recomputed 2026-09-01 when @threenative/raw-unreal entered the public surface: the
+  // capability manifest and the reference generated from it gained the raw .uasset loader
+  // entries (parseUAssetStaticMesh, UAssetLoader, the FRawMesh and FMeshDescription readers),
+  // and those bytes are embedded in every scaffold.
+  "action-rpg": "da5a9bd14b0b51d6652334e999ca770cf5f4b6f036b9b94a9919805e0354ea3e",
+  defense: "4fc8ff88638c462039ba18e682ce7b67341afa074874c1e931b45d66146302aa",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "da60e5bfcb389774fa887a67794a60cc19039c5002ac221c619e29f2d2f1d078",
-  platformer: "bcac08b2b9024fcbc329933f2286129e7c3136f024c568a34ca5f539e80a6390",
-  racing: "5782023a294d4cda5045f046334ad7b61e8604eda65e3097cc66f1c153b13bf4",
-  shooter: "8778212362ebbbb056afa25feb936489a9d1b79471856de6c7ab85e01b35b825",
-  starter: "9d800848ad4e0021fff71e819fd79b7850b36e1949f3b93ca7b203fa66915a4e",
+  minimal: "67fee7bec043f9da1c54d683e9cc5f6c598d87da774ce556f1554539c415266b",
+  platformer: "e434f030496f5b4238d53f258f467da08ccafbb9bf0a2769b2ccd9b511cffd6b",
+  racing: "9b7a6d856abfea5074ca17a29b83c105868edf22a039f20de1e46618b13b2db7",
+  shooter: "208b9087addcf69fe2e8a4a45b426442922aae4a76aa279e22b9e4b24d3f57a6",
+  starter: "42200ccdb076ffc7427162ab439c5cb13bb16eb613a1a8fa11ac73119091f7c9",
   // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
   // steady-state allocation-free frame path, and every scaffold carries the updated capability
   // manifest/reference bytes.
@@ -198,7 +230,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "b0bfedcd9714313bc30a6c40aa382a286df187dbd870fdbef48b046e1db27333",
+  sailing: "822068ab9e1d53f596438e397eca1ffa51c0e2ced42b23478d8cf691965c0ddd",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -589,6 +621,22 @@ describe("create-threenative", () => {
         expect(guide).not.toContain(".codex/skills");
         expect(guide).toContain("threenative-builder");
         expect(guide).toContain("threenative-verifier");
+
+        const bugSkillBodies = await Promise.all(
+          BUG_REPORT_SKILL_PATHS.map(async (relativePath) => {
+            const content = await readFile(path.join(result.target, relativePath), "utf8");
+            expect(content, relativePath).not.toContain("__PROJECT_NAME__");
+            expect(content, relativePath).not.toContain("__PROJECT_ID__");
+            return content;
+          }),
+        );
+        for (const skill of bugSkillBodies) {
+          expect(skill).toContain("gh auth status");
+          expect(skill).toContain("gh issue create");
+          expect(skill).toContain("ThreeNativeHQ/threenative");
+        }
+        // Both host adapters ship one recipe; a drift between them ships two contracts.
+        expect(new Set(bugSkillBodies).size).toBe(1);
         const packageJson = JSON.parse(
           await readFile(path.join(result.target, "package.json"), "utf8"),
         ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
@@ -657,7 +705,7 @@ describe("create-threenative", () => {
       ).resolves.toContain("debug()");
       await expect(
         readFile(path.join(result.target, "src/scenes/Play.ts"), "utf8"),
-      ).resolves.toContain('ctx.entities.add("player"');
+      ).resolves.toMatch(/ctx\.entities\.add\(\s*"player"/u);
       const renderFiles = await Promise.all(
         ["lighting.ts", "postprocessing.ts", "materials.ts"].map((file) =>
           readFile(path.join(result.target, "src/render", file), "utf8"),
@@ -1094,14 +1142,28 @@ describe("create-threenative", () => {
     const namespaces = new Set(surface.tools.map((tool) => tool.split("_")[0]));
     for (const template of ALL_TEMPLATES) {
       const agents = await readFile(path.join(TEMPLATE_ROOT, template, "AGENTS.md"), "utf8");
-      const mentioned = [...agents.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/gu)]
+      const assetSkill = await readFile(
+        path.join(
+          TEMPLATE_ROOT,
+          "..",
+          "agent-files",
+          ".agents",
+          "skills",
+          "threenative-assets",
+          "SKILL.md",
+        ),
+        "utf8",
+      );
+      const authoringText = `${agents}\n${assetSkill}`;
+      const mentioned = [...authoringText.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/gu)]
         .map((match) => match[1] as string)
         .filter((name) => namespaces.has(name.split("_")[0] as string));
       expect(
         mentioned.filter((name) => !served.has(name)),
         template,
       ).toEqual([]);
-      for (const name of surface.recommended) expect(agents, `${template}/${name}`).toContain(name);
+      for (const name of surface.recommended)
+        expect(authoringText, `${template}/${name}`).toContain(name);
     }
   });
 

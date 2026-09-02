@@ -1,5 +1,5 @@
 import { BufferGeometry, Mesh } from "three";
-import { positionLocal } from "three/tsl";
+import { float, positionLocal, vec2 } from "three/tsl";
 import { MeshBasicNodeMaterial, WGSLNodeBuilder } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 import { WaveField } from "../src/wave-field.js";
@@ -207,10 +207,17 @@ function evaluateOperator(candidate: IWaveNode, context: IWaveEvaluationContext)
 
 function evaluateMath(candidate: IWaveNode, context: IWaveEvaluationContext): NumericValue {
   const value = evaluateNode(requireNode(candidate.aNode, "TSL math operand"), context);
-  if (candidate.method === "sin")
-    return typeof value === "number"
-      ? Math.sin(value)
-      : value.map((component) => Math.sin(component));
+  const unary = (operation: (component: number) => number): NumericValue =>
+    typeof value === "number" ? operation(value) : value.map(operation);
+  if (candidate.method === "sin") return unary(Math.sin);
+  if (candidate.method === "cos") return unary(Math.cos);
+  if (candidate.method === "negate") return unary((component) => -component);
+  if (candidate.method === "normalize") {
+    const parts = components(value);
+    const length = Math.hypot(...parts);
+    if (length === 0) throw new Error("TSL numeric evaluator cannot normalize a zero vector.");
+    return parts.map((component) => component / length);
+  }
   throw new Error(
     `TSL numeric evaluator does not support math method ${candidate.method ?? "<missing>"}.`,
   );
@@ -237,6 +244,11 @@ function expandTslGraph(graph: unknown): IWaveNode {
   builder.shaderStage = "vertex";
   builder.setBuildStage("setup");
   return requireNode(graphNode.getOutputNode(builder), "wave graph output");
+}
+
+function numberValue(value: NumericValue): number {
+  if (typeof value !== "number") throw new Error("wave graph did not return a scalar");
+  return value;
 }
 
 function displacementHeight(value: NumericValue): number {
@@ -268,17 +280,37 @@ describe("WaveField", () => {
 
   it("contracts the graph's displacement structure and packed wave parameters", () => {
     const field = new WaveField(options);
-    const graph = field.displacementNode();
-    const source = graphShaderSource(graph);
+    const source = graphShaderSource(field.displacementNode());
     const firstWave = options.waves[0];
     if (firstWave === undefined) throw new Error("test wave missing");
 
     expect(field.parameters[2]).toBeCloseTo(firstWave.amplitude, 5);
-    expect(source).toMatch(/parameters\[offset\s*\+\s*2\]/u);
-    expect(source).toMatch(/parameters\[offset\s*\+\s*3\]/u);
-    expect(source).toMatch(/parameters\[offset\s*\+\s*6\]/u);
-    expect(source).toMatch(/height\.addAssign\([^;]*phase[^;]*\.mul\(amplitude\)\)/u);
     expect(source).toMatch(/positionLocal\.add\([^;]*height[^;]*\)/u);
+
+    // Amplitude, wave number and steepness reach the graph as values, not as spelling: doubling
+    // the packed amplitude of every wave doubles what the graph returns at any point.
+    const doubled = new WaveField({
+      ...options,
+      waves: options.waves.map((wave) => ({
+        ...wave,
+        amplitude: wave.amplitude * 2,
+        steepness: (wave.steepness ?? 0) * 2,
+      })),
+    });
+    for (const [x, z] of [
+      [0, 0],
+      [3.5, -1.25],
+      [-7.75, 12.5],
+    ] as const) {
+      const single = displacementHeight(
+        evaluateTslGraph(expandTslGraph(field.displacementNode()), [x, 0, z]),
+      );
+      const twice = displacementHeight(
+        evaluateTslGraph(expandTslGraph(doubled.displacementNode()), [x, 0, z]),
+      );
+      expect(twice).toBeCloseTo(single * 2, 4);
+      expect(single).toBeCloseTo(field.sample(x, z, 0).height, 4);
+    }
   });
 
   it("uses steepness alongside amplitude in both sampled and graph displacement", () => {
@@ -291,7 +323,56 @@ describe("WaveField", () => {
     const baseHeight = base.sample(1, 0, 0).height;
     const steepHeight = steep.sample(1, 0, 0).height;
     expect(steepHeight - baseHeight).toBeCloseTo(0.5 / (Math.PI / 2), 4);
-    expect(graphShaderSource(steep.displacementNode())).toMatch(/parameters\[offset\s*\+\s*6\]/u);
+    // The same difference has to show up in the graph, or steepness is a CPU-only parameter.
+    const baseGraph = displacementHeight(
+      evaluateTslGraph(expandTslGraph(base.displacementNode()), [1, 0, 0]),
+    );
+    const steepGraph = displacementHeight(
+      evaluateTslGraph(expandTslGraph(steep.displacementNode()), [1, 0, 0]),
+    );
+    expect(steepGraph - baseGraph).toBeCloseTo(0.5 / (Math.PI / 2), 4);
+  });
+
+  it("matches CPU sample normals to the numerically evaluated normal graph", () => {
+    const field = new WaveField(options);
+    const graphRoot = expandTslGraph(
+      field.normalNode({ point: vec2(positionLocal.x, positionLocal.z) }),
+    );
+    for (const time of [0, 0.17, 1.5, 9.25, 31.75]) {
+      field.setTime(time);
+      for (const [x, z] of [
+        [0, 0],
+        [3.5, -1.25],
+        [-7.75, 12.5],
+        [21.25, 4.5],
+      ] as const) {
+        const expected = field.sample(x, z, time).normal;
+        const actual = components(evaluateTslGraph(graphRoot, [x, 0, z]));
+        expect(actual[0]).toBeCloseTo(expected.x, 4);
+        expect(actual[1]).toBeCloseTo(expected.y, 4);
+        expect(actual[2]).toBeCloseTo(expected.z, 4);
+      }
+    }
+  });
+
+  it("fades only the waves marked detail, and only in the graph", () => {
+    const waves = [
+      { amplitude: 0.5, direction: [1, 0] as const, wavelength: 8, speed: 0 },
+      { amplitude: 0.25, detail: true, direction: [0, 1] as const, wavelength: 1.5, speed: 0 },
+    ];
+    const field = new WaveField({ waves });
+    const full = displacementHeight(
+      evaluateTslGraph(expandTslGraph(field.displacementNode()), [1.3, 0, 0.7]),
+    );
+    const faded = evaluateTslGraph(
+      expandTslGraph(field.heightNode({ fade: float(0) })),
+      [1.3, 0, 0.7],
+    );
+    const coarseOnly = new WaveField({ waves: [waves[0] as (typeof waves)[0]] });
+    // Faded to nothing, the graph is the coarse wave alone; the CPU sample keeps both, always.
+    expect(numberValue(faded)).toBeCloseTo(coarseOnly.sample(1.3, 0.7, 0).height, 5);
+    expect(full).toBeCloseTo(field.sample(1.3, 0.7, 0).height, 5);
+    expect(full).not.toBeCloseTo(numberValue(faded), 3);
   });
 
   it("returns a flat upward sample for zero waves and rejects malformed entries", () => {
