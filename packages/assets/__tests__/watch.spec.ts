@@ -13,6 +13,12 @@ import {
 } from "../src/index.js";
 
 const DEBOUNCE_MS = 25;
+// The burst test needs a window wider than the burst that is supposed to fit inside it. 60ms was
+// wide enough on an idle machine and not on a loaded CI runner, where five sequential writes to a
+// container filesystem overran it: the watcher then compiled after write 1, and the test failed on
+// the compiled content rather than on the coalescing it exists to check. This is that window with
+// room to spare, and the test measures the burst against it rather than assuming it fits.
+const BURST_DEBOUNCE_MS = 500;
 
 interface IBurstRecorder {
   onChange(summary: IAssetWatchSummary): void;
@@ -239,18 +245,27 @@ describe("watchAssets", () => {
       watchAssets({
         cwd: root,
         config: { textures: "none" },
-        debounceMs: 60,
+        debounceMs: BURST_DEBOUNCE_MS,
         onChange: recorder.onChange,
       }),
     );
     await openHandles[0]?.ready;
 
+    const burstStartedAt = Date.now();
     for (let index = 1; index <= 5; index += 1) {
       await writeFile(path.join(root, "assets", "rock.png"), `burst write ${index}`);
     }
+    const burstMs = Date.now() - burstStartedAt;
+    // Fail on the premise, not on a downstream symptom. A burst that outruns its own debounce
+    // window is not a coalescing bug: the writes were never in one window to begin with, and every
+    // assertion below would be measuring a machine, not the watcher.
+    expect(
+      burstMs,
+      `the burst took ${burstMs}ms and does not fit the ${BURST_DEBOUNCE_MS}ms window it is meant to coalesce inside; raise BURST_DEBOUNCE_MS rather than trusting the assertions below`,
+    ).toBeLessThan(BURST_DEBOUNCE_MS);
     await recorder.waitForCount(1);
     // Any straggler event outside the debounced burst would have fired well within 3 windows.
-    await new Promise((resolve) => setTimeout(resolve, 180));
+    await new Promise((resolve) => setTimeout(resolve, BURST_DEBOUNCE_MS * 3));
 
     expect(recorder.summaries).toHaveLength(1);
     expect(recorder.summaries[0]).toEqual({
