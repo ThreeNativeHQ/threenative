@@ -5,6 +5,7 @@ import {
   type IPlaytestGameplayObservation,
   type IPlaytestObservationSnapshot,
   type IPlaytestSampleRequest,
+  type IPlaytestStrideObservation,
   type IPlaytestWorldObservation,
   type JsonValue,
   PLAYTEST_PROTOCOL_LIMITS,
@@ -322,7 +323,12 @@ function gameplayObservations<TState extends Record<string, unknown>, TPhysics>(
   for (const id of Object.keys(snapshot)) {
     const entity = ctx.entities.get(id) as
       | {
-          animation?: { advancedFrames?: unknown; current?: unknown; finished?: unknown };
+          animation?: {
+            advancedFrames?: unknown;
+            current?: unknown;
+            finished?: unknown;
+            stride?: unknown;
+          };
           state?: unknown;
         }
       | undefined;
@@ -332,10 +338,12 @@ function gameplayObservations<TState extends Record<string, unknown>, TPhysics>(
       typeof entity?.animation?.current === "string" &&
       typeof entity.animation.advancedFrames === "number"
     ) {
+      const stride = strideObservation(entity.animation.stride);
       animation[id] = {
         advancedFrames: entity.animation.advancedFrames,
         clip: entity.animation.current,
         ...(finished === undefined ? {} : { finished }),
+        ...(stride === undefined ? {} : { stride }),
       };
     }
     if (typeof entity?.state === "string") states[id] = entity.state;
@@ -353,6 +361,31 @@ function gameplayObservations<TState extends Record<string, unknown>, TPhysics>(
     ...runtimeObservation(seed, replayRuntime),
   };
 }
+/**
+ * Read an animation player's stride report, or report nothing.
+ *
+ * A partially shaped report is dropped whole rather than filled in: a stride number the producer
+ * did not measure would be read downstream as a measurement, and the one thing this harness may
+ * never do is hand back an unmeasured zero. `strideSync: false` still reports — that is the
+ * override being honest about what it turned off.
+ */
+function strideObservation(value: unknown): IPlaytestStrideObservation | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const report = value as Record<string, unknown>;
+  const numbers = ["clipGroundSpeed", "groundSpeed", "rate"] as const;
+  const flags = ["overridden", "synced"] as const;
+  if (!numbers.every((key) => typeof report[key] === "number" && Number.isFinite(report[key])))
+    return undefined;
+  if (!flags.every((key) => typeof report[key] === "boolean")) return undefined;
+  return {
+    clipGroundSpeed: report.clipGroundSpeed as number,
+    groundSpeed: report.groundSpeed as number,
+    overridden: report.overridden as boolean,
+    rate: report.rate as number,
+    synced: report.synced as boolean,
+  };
+}
+
 type GameplayChannel = "runtime.contacts" | "runtime.tags";
 interface IContactEvent {
   readonly body: object;

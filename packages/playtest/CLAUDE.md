@@ -147,6 +147,62 @@ output in `__tests__/fixtures/device-metrics/`. Add real captures there rather t
 `packages/runtime-native/scripts/device-preflight.mjs`, and they share the same battery floor so
 an operator is never told two different stories.
 
+## The room, and the feet
+
+Two things the harness measured and nothing could read.
+
+`doctor --url` used to end its report with *not observed: lights, materials and textures* and
+*not observed: camera framing*. An agent looking at a black or washed-out frame therefore had
+nothing between "the bridge answered" and a screenshot, which is the one instrument that cannot
+say **why**. The bridge now reports the room as `observations.scene` — lights with their colours
+and intensities, materials counted per distinct material by constructor name, fog with its own
+near/far or density, the background, the camera's position, forward, fov and clip planes, and the
+scene's world extent. Counts and names only: it decides nothing about how anything looks, and a
+value the scene does not carry is absent rather than zero. The walk is capped
+(`SCENE_WALK_OBJECT_CAP`, `SCENE_LIGHT_CAP`) and a scene past either reports `truncated: true`,
+so a floor is never read as a total.
+
+`doctor --url` reads it back as three lines — `lighting`, `materials`, `camera` — and names the
+ways a frame dies while every other number stays healthy: **lit materials with no visible light**,
+a **fog far plane in front of the scene it is fogging**, and a **camera far plane that clips it**.
+The second is round 9's lost visual column, where a radius-90 sky dome sat behind `Fog(bottom, 18,
+80)` and rendered as one flat wash; no gate could see it.
+
+`AnimationPlayer.stride` has measured the *feet meet the floor* convention since it shipped — what
+the clip carries against what the body covered — and it never crossed the bridge either, so a game
+that set `strideSync: false` had turned the measurement off as far as any proof was concerned.
+It now rides in `gameplay.animation.<entity>.stride`, and `assert.animation[]` bounds it:
+
+- `maxFootSlide` — ceiling on `|feet − ground| / ground`. The feet move at the rate the clip is
+  *actually playing*, which is the measured `rate` only when `synced`; an overridden clip keeps
+  its authored rate. Reading `rate` unconditionally scored an overridden run at zero slide —
+  the exact case the bound exists to catch, found by the locomotion scenario, not by a unit test.
+- `strideSynced` — require the convention applied (`true`) or deliberately overridden (`false`).
+
+Both fail closed, and each failure names which kind: `TN_PLAYTEST_STRIDE_UNOBSERVED` when the
+producer reported no stride, reported half of one, or the body covered no ground to compare
+against; `TN_PLAYTEST_STRIDE_NOT_SYNCED`; `TN_PLAYTEST_FOOT_SLIDE` with both speeds and the
+ceiling. A game that does not measure stride has not measured zero slide.
+
+A scenario bounds the same numbers with `assert.scene`, so the check outlives whoever ran
+`doctor` once:
+
+- `minVisibleLights` — floor on lights the renderer will actually see. An invisible light is no
+  light.
+- `litMaterialsAreLit` — fail when lit materials are mounted and nothing lights them. A scene of
+  `MeshBasicMaterial` needs no light and is not failed for having none.
+- `fogClearsScene` — fail when a linear fog goes opaque in front of the scene's furthest corner.
+- `cameraClearsScene` — fail when the camera's far plane cuts the world it is pointed at.
+
+A run with no scene observation fails once as `scene.observed`
+(`TN_PLAYTEST_SCENE_UNOBSERVED`) rather than failing each bound against nothing, and an
+`assert.scene` that sets no bound throws at load. An unmeasurable comparison — no world extent,
+no far plane — fails; it never counts as cleared.
+
+Advertised as the `scene.observe` capability. A capability the runner's registry does not define
+is rejected (`TN_PLAYTEST_BRIDGE_CAPABILITY_UNKNOWN`), so a new observation channel is registered
+in `src/capabilities.ts` in the same change that starts advertising it.
+
 ## Scenario-controlled spawn & aim
 
 The scenario `setup` block carries a placement vocabulary so capturing a vantage frame is
@@ -180,25 +236,6 @@ an overridden spawn must be visible in diagnostics, never green-with-silence. Th
 its own spawn constants; scenarios override them for determinism, through this one channel.
 The template-teaching copy of this vocabulary ships via the create-threenative shared
 fragment when games adopt it; until then this section is the harness contract.
-
-## A held mouse button is not observable; a keyboard hold is
-
-Keyboard state survives across fixed-step ticks — `press` with `holdTicks` gives the game a real
-hold, which is how a hold-to-fire cadence gets proved. **Mouse buttons do not.** A step that
-presses a pointer button and releases it in the same step leaves the game one *latched edge* and
-never a non-zero `input.raw.pointer.buttons` on any tick, because the browser dispatches the down
-and the up between two advances of the virtual clock. `justPressed` sees it; `pressed` does not.
-
-Two consequences, both measured on the shooter kit:
-
-- A game that fires only on `input.pressed("fire")` fires nothing from the mouse in a scenario
-  while working perfectly for a person. Accept the edge as well as the hold.
-- Chorded buttons — pressing left while right is already held, the ADS-and-fire combination every
-  shooter uses — do not arrive at all. Hold the modifier on a **key** and press the mouse button
-  alone, or the scenario proves nothing about either.
-
-A held pointer button *across* steps does work: `release: false` keeps it down, and
-`input.pressed` reports it on every tick until a later step releases it.
 
 ## Determinism
 

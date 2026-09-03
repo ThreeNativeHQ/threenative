@@ -1,4 +1,11 @@
 import { softwareAdapterName } from "./browser.js";
+import {
+  type IFootSlideReading,
+  type ISceneRoomSummary,
+  formatRoomLines,
+  readSceneRoom,
+  roomWarnings,
+} from "./sceneRoom.js";
 import type {
   IPlaytestBridgeDescription,
   IPlaytestEntityObservation,
@@ -73,6 +80,11 @@ export interface ISceneOverview {
     tags: Record<string, number>;
   };
   readonly notObserved: readonly string[];
+  /**
+   * Lights, materials, fog, background and camera framing, plus what the feet are doing against
+   * the ground. Absent when the bridge does not report the scene — unobserved, never empty.
+   */
+  readonly room?: { slides: readonly IFootSlideReading[]; summary: ISceneRoomSummary };
   readonly render: {
     drawCalls?: number;
     fps?: number;
@@ -213,6 +225,8 @@ function warningsFor(
   overview: Omit<ISceneOverview, "warnings">,
 ): string[] {
   const warnings: string[] = [];
+  if (overview.room !== undefined)
+    warnings.push(...roomWarnings(overview.room.summary, overview.room.slides));
   if (overview.screen?.blank === true) {
     warnings.push("the frame is blank — the game is running but nothing reached the screen");
   }
@@ -249,6 +263,7 @@ function warningsFor(
 
 export function summariseScene(observation: ISceneObservation): ISceneOverview {
   const { snapshot } = observation;
+  const room = readSceneRoom(snapshot);
   const entities = snapshot.entities ?? [];
   const visible = entities.filter(({ visible }) => visible !== false).length;
   const points = positions(entities);
@@ -290,10 +305,17 @@ export function summariseScene(observation: ISceneObservation): ISceneOverview {
         Object.entries(snapshot.gameplay?.tags ?? {}).map(([tag, { count }]) => [tag, count]),
       ),
     },
-    notObserved: [
-      "lights, materials and textures — the bridge reports entities, not renderer resources",
-      "camera framing beyond its entity transform",
-    ],
+    ...(room === undefined ? {} : { room }),
+    // What is genuinely still dark, recomputed rather than fixed: a bridge that reports the scene
+    // has answered two of these, and leaving them listed would send an agent to a screenshot for
+    // something the report already holds.
+    notObserved:
+      room === undefined
+        ? [
+            "lights, materials and textures — the bridge reports entities, not renderer resources",
+            "camera framing beyond its entity transform",
+          ]
+        : ["texture contents and shader graphs — the bridge counts materials, it does not read them"],
     render: {
       drawCalls: snapshot.performance?.drawCalls,
       fps: frameMs === undefined || frameMs <= 0 ? undefined : Math.round(1000 / frameMs),
@@ -415,6 +437,7 @@ export function formatSceneOverview(overview: ISceneOverview): string {
         : ` · ${render.frameMs.toFixed(1)} ms/frame (${render.fps} fps)`
     }`,
     renderablesLine(overview),
+    ...(overview.room === undefined ? [] : formatRoomLines(overview.room)),
     livenessLine(overview),
     `  gameplay     ${gameplay.states} states · ${
       gameplay.clipsAdvancing.length === 0 ? "no clips advancing" : `clips ${gameplay.clipsAdvancing.join(", ")}`

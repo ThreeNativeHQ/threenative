@@ -70,14 +70,14 @@ explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await
 `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's state. Seeded
 randomness is deterministic only when `defineGame({ seed })` is configured.
 
-When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
-retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
-own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is
-caught where a bone-direction check reads zero. `clipTrackBindings` names tracks that bind nothing
-(the `<bone>.undefined` failure that plays the bind pose instead of the animation),
-`clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous
-clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
-supposed to be touching.
+`AnimationPlayer` re-times a looping clip to the ground the body covers so feet do not skate;
+`strideSync: false` opts out and `assert.animation[].maxFootSlide` bounds it either way. Measure a
+wrong-looking animation before rewriting it. `clipPoseError` scores a retarget against its source
+per bone in degrees — whole quaternions relative to each rig's bind pose, so bind conventions
+cancel and an axis-rolled limb is caught where a bone-direction check reads zero.
+`clipTrackBindings` names tracks that bind nothing (`<bone>.undefined`, which plays the bind
+pose), `clipBoneCoverage` names bones the clip does not drive, which keep the previous clip's
+pose, and `boneContact` reports in metres whether a bone reaches its prop.
 
 ## Look and evidence
 

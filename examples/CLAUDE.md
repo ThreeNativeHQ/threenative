@@ -44,7 +44,13 @@ look, world-ray `raycast`/`raycastAll`, `RigidBody3D` from a bare `position`, an
 `AnimationPlayer` clip. It exists because a sweep archive is a frozen record — the call sites
 cannot live there and be kept working against the current framework at the same time.
 
-Its geometry is boxes and its death clip is built in code on purpose: no third-party asset, so
+It also carries the only walking character in this repository — a patroller on a looping clip
+whose root travels two metres per clip-second, so the stride convention (feet meet the floor) has
+a live caller that actually covers ground. `playtests/stride-locomotion.playtest.json` bounds it
+with `assert.animation[].maxFootSlide`; turning `strideSync: false` on the player is its negative
+control and takes the measured slide to 25%.
+
+Its geometry is boxes and its clips are built in code on purpose: no third-party asset, so
 nothing here is redistributed. `look`, `fire` and `animation-death` run on web and
 `--target desktop`; `renders` is web-only because `visual` needs a browser screenshot, and it is
 the one scenario whose capture names the adapter. Evidence lives in

@@ -3282,6 +3282,21 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
 const bridge = installThreePlaytestBridge(options);
 ```
 
+### `observeSceneResources`
+
+`function` — Observe the room a game is played in — lights, materials, fog, background and camera framing.
+
+```ts
+export function observeSceneResources(scene: Scene, camera: Camera): IPlaytestSceneObservation { … }
+```
+
+- **Use when:** ask why a frame is black or washed out without opening a screenshot · ask what lights, materials and framing a running game actually has
+- **Constraints:** reports counts and names only; it decides nothing about how the game looks · reports counts and names only; nothing here decides how the game looks · a walk that hits {@link SCENE_WALK_OBJECT_CAP} reports `truncated: true`
+
+```ts
+const room = observeSceneResources(scene, camera);
+```
+
 ### `readPlaytestEndpoint`
 
 `function` — Connect a device-hosted game to the playtest bridge.
