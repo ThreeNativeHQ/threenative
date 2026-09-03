@@ -7,7 +7,21 @@ Everything here was found while auditing `packages/core/src/audio.ts` against th
 wildwood's ambient bed. The core-side half of each item is already landed and green; these are the
 native halves that would let core stop reporting the capability as missing.
 
-## 1. `loopStart` / `loopEnd` never reach the C++ source node — blocks a trimmed seamless loop
+## 1. `loopStart` / `loopEnd` never reach the C++ source node — a trimmed loop clicks on native
+
+> **State it plainly, because a green browser run does not say it.** A loop authored the ordinary
+> way — encode the file, then trim the encoder's padding at runtime with `loopStart`/`loopEnd` —
+> **is seamless on web and clicks on every native target today**. The two properties are accepted
+> and silently ignored over there, so the loop wraps at the whole buffer, padding included. Nothing
+> reports it. Under this project's rule that a feature working on web only is unfinished, runtime
+> loop trimming is not a shipped feature.
+>
+> The narrow exception, and the reason wildwood is not affected: a buffer that is *already* gapless
+> and continuous from its last sample to its first loops correctly on native, because wrapping at
+> the whole buffer is then exactly the right thing to do. That is why this game cross-fades its
+> loops offline before encoding rather than trimming them at runtime — see `CREDITS-AUDIO.md` in
+> the game. It is a workaround for this gap, not evidence that the gap is closed.
+
 
 `packages/runtime-native/src/audio/audio_bindings.cpp:192-193` sets `loopStart` and `loopEnd` as
 plain JS numbers on the buffer-source object. Nothing forwards them. The C++ node reads
@@ -55,7 +69,21 @@ exists to prevent. Core now reports this one too, discriminating a real `AudioPa
 
 Playback-rate detune in the C++ mixer would fix both properties at once.
 
-## 4. There is no streaming path on either target — a long bed is resident PCM
+## 4. Codec coverage is narrow, and already gated — no request, recorded so nobody re-finds it
+
+`decodeAudioFile` sniffs the header and implements exactly two containers: RIFF/WAVE and Ogg
+Vorbis. An mp3, AAC, FLAC or Opus file falls through to the WAV decoder and returns `nullptr`, which
+reaches the game as a rejected `decodeAudioData` — a game shipping mp3 audio would simply be silent
+on every native target.
+
+**This is already caught**, and loudly: `packages/runtime-native/scripts/asset-preflight.mjs`
+sniffs the same twelve bytes and fails the native build naming the container it found and the two
+it accepts, and `tests/audio-decode-ogg.test.mjs` fails if that list and the decoder ever disagree.
+So nobody ships an mp3 bed by accident. It is written down here only because it is the reason
+wildwood's audio is Ogg Vorbis: it is the one lossy codec both targets read, and it is not a
+preference.
+
+## 5. There is no streaming path on either target — a long bed is resident PCM
 
 Not a native-only gap, and not a request yet — recorded so the next lane does not rediscover it.
 
