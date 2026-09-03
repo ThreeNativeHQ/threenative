@@ -72,8 +72,11 @@ test('packaged Android asset must match the generated bundle metadata', () => {
 
 test('first proof prepares emulator before installation and launch', async () => {
   const calls = [];
-  assert.deepEqual(prepareAndroidEmulator('emulator-5554', (...args) => calls.push(args)), { prepared: true }); assert.deepEqual(prepareAndroidEmulator('physical-device', (...args) => calls.push(args)), { prepared: false }); assert.equal(calls.length, 1);
+  assert.deepEqual(prepareAndroidEmulator('emulator-5554', (...args) => calls.push(args)), { prepared: true }); assert.deepEqual(prepareAndroidEmulator('physical-device', (...args) => calls.push(args)), { prepared: false }); assert.equal(calls.length, 2);
   assert.deepEqual(calls[0], ['shell', 'settings', 'put', 'secure', 'immersive_mode_confirmations', 'confirmed']);
+  // A physical device keeps its error dialogs; only the emulator is told to swallow them, and
+  // only because the launcher's ANR under software GL was failing every conformance row.
+  assert.deepEqual(calls[1], ['shell', 'settings', 'put', 'global', 'hide_error_dialogs', '1']);
   assert.throws(() => parseArgs(['--timeout-ms', '999']), /at least 1000/); assert.throws(() => parseArgs(['--unknown']), /Unknown option/); calls.length = 0;
   const temporary = makeTempDirSync('threenative-android-proof-');
   const apk = join(temporary, 'app-debug.apk');
