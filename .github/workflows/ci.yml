@@ -216,7 +216,7 @@ jobs:
             packages/runtime-native/build/tn-linux-quickjs
             packages/runtime-native/.runtime/physics-target
             packages/runtime-native/native/ui-overlay/target
-          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**/*.cpp', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}-${{ github.run_id }}
+          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**/*.cpp', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}
           restore-keys: native-build-${{ runner.os }}-${{ runner.arch }}-
       - name: Restore native compiler cache
         uses: actions/cache@v4

@@ -703,9 +703,15 @@ describe("CI pipeline structure", () => {
     ]) {
       expect(buildKey, `the build-tree key ignores ${input}`).toContain(input);
     }
-    // Run-scoped so every run saves, and a prefix so every run restores the newest — a partial
-    // match still hands ninja most of its objects.
-    expect(buildKey).toContain("github.run_id");
+    // Deliberately NOT run-scoped, unlike the compiler cache. A ccache directory grows with
+    // every run and wants a fresh entry; a build tree is a pure function of its sources, so a
+    // run-scoped key stores the same 1.1 GiB repeatedly. On 2026-09-03 four entries carried the
+    // identical source hash, `native-build-Linux` held 5.57 GiB of the repository's 10 GiB
+    // budget, and the cache evicted itself and its neighbours — total runner work went up.
+    expect(
+      buildKey,
+      "a run-scoped build-tree key stores the same tree once per run and evicts the budget",
+    ).not.toContain("github.run_id");
     expect(native).toContain("restore-keys: native-build-");
     // Both configured build directories, or the QuickJS variant recompiles from nothing.
     expect(native).toContain("packages/runtime-native/build/tn-linux");
