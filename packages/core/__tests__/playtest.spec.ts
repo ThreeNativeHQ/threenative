@@ -308,7 +308,13 @@ describe("playtest plugin", () => {
             // The stride convention is measured whether or not it applies, so it crosses the
             // bridge on every clip. This one carries no root translation, so its feet carry no
             // ground — reported as the zero it measured, not as an absent field.
-            stride: { clipGroundSpeed: 0, groundSpeed: 0, overridden: false, rate: 1, synced: false },
+            stride: {
+              clipGroundSpeed: 0,
+              groundSpeed: 0,
+              overridden: false,
+              rate: 1,
+              synced: false,
+            },
           },
         },
         audio: { pooled: 0, queued: 0, voices: 0 },

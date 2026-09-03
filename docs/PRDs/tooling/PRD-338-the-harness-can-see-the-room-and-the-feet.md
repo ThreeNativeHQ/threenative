@@ -159,8 +159,10 @@ and two SwiftShader teardown errors. The identical run at `main` fails identical
 - **`maxFootSlide` has no end-to-end proof against a locomoting character.** `AnimationPlayer` has
   two live callers in this repository and neither walks, so the bound has unit and schema proof
   only. `strideSynced` has both. Carried to round 14.
-- **`scripts/alpha-bar.ts` reads a file that no longer exists** — it names
-  `docs/PRDs/alpha-readiness/README.md` as its batch README, deleted in `ada4c10b`. Found while
-  repairing the dead links that were blocking `check:docs`; not fixed here.
+- **Nine dead documentation links will break `check:docs` for everyone once two local commits are
+  pushed.** `8d680023` and `ada4c10b` delete `docs/audits/` and `docs/PRDs/alpha-readiness/` without
+  repairing the index rows and cross-references that point at them. Both directories are still on
+  `origin/main`, so the links are valid there today and a repair on this branch would be wrong.
+  `scripts/alpha-bar.ts` also names the deleted `alpha-readiness/README.md` as its batch README.
 - **`pnpm round:next` is stale for the second time in the loop's history**, printing `close round
   12` against a round already closed on disk.

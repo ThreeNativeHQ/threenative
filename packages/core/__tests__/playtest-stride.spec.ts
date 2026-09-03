@@ -1,15 +1,12 @@
-import {
-  type IPlaytestBridgeV1,
-  PLAYTEST_BRIDGE_GLOBAL,
-} from "@threenative/playtest";
+import { type IPlaytestBridgeV1, PLAYTEST_BRIDGE_GLOBAL } from "@threenative/playtest";
 import {
   AnimationClip,
   BoxGeometry,
   Group,
   Mesh,
   MeshBasicMaterial,
-  VectorKeyframeTrack,
   type Vector2,
+  VectorKeyframeTrack,
 } from "three";
 import { describe, expect, it } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
