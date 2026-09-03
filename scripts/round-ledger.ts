@@ -569,6 +569,33 @@ export interface RoundLedgerFile {
  * evidence. A malformed file that looks like a ledger still fails closed so a damaged ledger is
  * never silently omitted.
  */
+/**
+ * The filename a round's closure is recorded under, beside the ledger it closes.
+ *
+ * A round is finished when someone records that it is, and until 2026-09-03 nothing read that
+ * record: `round-12-close-2026-08-22.md` sat on disk for eleven days while `pnpm round:next`
+ * kept printing `close round 12`. The resume command told every session to do a thing that was
+ * already done, which is the same class of defect as pointing at an archive that cannot be
+ * re-run — a resume instrument that is confidently wrong is worse than one that says nothing.
+ */
+const ROUND_CLOSE_FILE = /^round-(\d+)-close-.+\.md$/u;
+
+/**
+ * The file recording that a round was closed, or nothing when it is still open.
+ * @situation ask whether a round ledger has already been closed
+ * @constraint absence means open, so a missing record never reads as closed
+ * @example const closed = roundCloseFile(repo, 12);
+ */
+export function roundCloseFile(repo: string, round: number): string | undefined {
+  const directory = path.join(repo, "docs", "verification");
+  if (!fs.existsSync(directory)) return undefined;
+  for (const file of fs.readdirSync(directory).sort()) {
+    const match = ROUND_CLOSE_FILE.exec(file);
+    if (match !== null && Number(match[1]) === round) return path.join(directory, file);
+  }
+  return undefined;
+}
+
 export function roundLedgerFiles(repo: string): RoundLedgerFile[] {
   const directory = path.join(repo, "docs", "verification");
   const rejected: string[] = [];
@@ -576,6 +603,10 @@ export function roundLedgerFiles(repo: string): RoundLedgerFile[] {
   const files = fs.readdirSync(directory).flatMap((file) => {
     const match = /^round-(\d+)-.+\.md$/u.exec(file);
     if (match === null) return [];
+    // A close record sits in the same directory under the same prefix and is not a ledger. It
+    // used to be parsed as one, fail, and land in `rejected` — which is why nothing could tell
+    // that a round had been closed.
+    if (ROUND_CLOSE_FILE.test(file)) return [];
     const candidate = path.join(directory, file);
     let markdown: string | undefined;
     try {

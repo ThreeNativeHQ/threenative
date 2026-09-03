@@ -28,7 +28,7 @@ Installed by `playtest()` (core plugin) or `installThreePlaytestBridge`
 | --- | --- | --- |
 | `describe()` | `{ name, protocolVersion, capabilities, limits }` | First call. Tells you what this game's bridge supports and the protocol limits. |
 | `ready()` | `{ ready: true }` | Liveness check before sampling. |
-| `sample(request)` | JSON-safe observation snapshot (entities, camera, renderer stats, resources, components) | The main probe. Pass `{}` for the default sample; `request.include` names optional series such as `physicsDebugSeries`. |
+| `sample(request)` | JSON-safe observation snapshot (entities, camera, renderer stats, resources, components, and `scene`: the lights, materials, fog, background, camera framing and world extent) | The main probe. Pass `{}` for the default sample; `request.include` names optional series such as `physicsDebugSeries`. |
 | `advance(ticks)` | fixed-step bridges only: advances exactly N ticks and returns `{ clock, ticks }`; throws if the step count mismatches | Deterministic stepping without wall-clock waits. Throws when the bridge is render-frame. |
 | `applySetup(request)` | applies scenario `setup` placements/resources through the registry | What scenario setup uses; also usable by hand for one-off staging. |
 | `drainEvents(limit)` | event-queue bridges only: returns up to `limit` queued events | Reads events shorter than one state flush. |
@@ -58,6 +58,11 @@ plugin marks the expected runner contract) and `__THREENATIVE_FRAMEBUFFER_COVERA
 ## What does not exist
 
 There is no `__THREENATIVE_SCENE__` global. Scene-graph inspection goes through
-`sample()` (which reports counts, extents and visibility) or through your own
-registered entities' `debug()` output — never by reaching into three.js objects from
+`sample()` — which reports counts, extents and visibility, and under `scene` the lights,
+materials, fog, background and camera framing the renderer was handed — or through your
+own registered entities' `debug()` output, never by reaching into three.js objects from
 the console and treating what you find as an observation surface.
+
+`scene` counts and names; it does not read texture contents or shader graphs, and a scene
+past the walk's cap reports `truncated: true` so a floor is never read as a total. A value
+the scene does not carry is absent rather than zero.

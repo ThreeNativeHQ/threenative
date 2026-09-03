@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
+  ALPHA_TABLE_FILE,
   type RegistryProbe,
   alphaBar,
   pairedRoundRow,
@@ -219,7 +220,7 @@ async function fixture(): Promise<string> {
   parityLedgers(root);
   write(
     root,
-    "docs/PRDs/alpha-readiness/README.md",
+    ALPHA_TABLE_FILE,
     "# Batch\n\n<!-- BEGIN GENERATED: alpha-bar -->\n<!-- END GENERATED: alpha-bar -->\n\nTail.\n",
   );
   return root;
@@ -229,7 +230,7 @@ type AlphaBarReport = Awaited<ReturnType<typeof alphaBar>>;
 
 /** Regenerates the README table, exactly as `pnpm alpha:bar --write` does. */
 function writeGeneratedTable(root: string, report: AlphaBarReport): void {
-  const file = path.join(root, "docs/PRDs/alpha-readiness/README.md");
+  const file = path.join(root, ALPHA_TABLE_FILE);
   const rows = report.rows.filter((row) => row.id !== "A7");
   fs.writeFileSync(file, writeTable(fs.readFileSync(file, "utf8"), renderTable(rows), file));
 }
@@ -413,7 +414,7 @@ describe("pnpm alpha:bar", () => {
 
   it("reverts a hand edit to the generated README table", async () => {
     const root = await fixture();
-    const file = path.join(root, "docs/PRDs/alpha-readiness/README.md");
+    const file = path.join(root, ALPHA_TABLE_FILE);
     const green = await greenBar(root);
     expect(green.rows.find((row) => row.id === "A7")?.status).toBe("pass");
     const generated = fs.readFileSync(file, "utf8");
@@ -429,7 +430,7 @@ describe("pnpm alpha:bar", () => {
 
   it("refuses to generate into a README with no marker pair", async () => {
     const root = await fixture();
-    const file = path.join(root, "docs/PRDs/alpha-readiness/README.md");
+    const file = path.join(root, ALPHA_TABLE_FILE);
     fs.writeFileSync(file, "# Batch\n\nNo markers here.\n");
     const after = await alphaBar({ registry: registryHasEverything, repo: root });
     const a7 = after.rows.find((row) => row.id === "A7");
@@ -440,7 +441,7 @@ describe("pnpm alpha:bar", () => {
   it("creates a generated README when the baseline file is missing", async () => {
     const root = await makeTempDir("threenative-alpha-write-");
     roots.push(root);
-    const file = path.join(root, "docs/PRDs/alpha-readiness/README.md");
+    const file = path.join(root, ALPHA_TABLE_FILE);
     const rows = [
       {
         detail: "The registry query passed.",
