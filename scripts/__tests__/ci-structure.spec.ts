@@ -376,7 +376,7 @@ describe("CI pipeline structure", () => {
       "utf8",
     );
     const jobs = [
-      ["ci test", requiredJob(ci, "test")],
+      ["ci test-native", requiredJob(ci, "test-native")],
       ["native desktop parity", requiredJob(native, "desktop-parity")],
       ["native desktop matrix", requiredJob(native, "desktop")],
       ["native starter linux", requiredJob(native, "starter-linux")],
@@ -436,7 +436,7 @@ describe("CI pipeline structure", () => {
       "utf8",
     );
     const jobs = [
-      ["ci test", requiredJob(ci, "test")],
+      ["ci test-native", requiredJob(ci, "test-native")],
       ["native desktop parity", requiredJob(native, "desktop-parity")],
       ["native desktop matrix", requiredJob(native, "desktop")],
       ["native starter linux", requiredJob(native, "starter-linux")],
@@ -531,6 +531,52 @@ describe("CI pipeline structure", () => {
     expect(uploaded).toMatch(/^\s+artifacts\/workspace-packages$/mu);
     // An empty upload must fail the job rather than hand every downstream leg a silent nothing.
     expect(uploaded).toContain("if-no-files-found: error");
+  });
+
+  // `test` used to compile the C++ host for 279s before running a single JS test, because one
+  // package's suite drives real contract executables. Splitting that off is only safe if the two
+  // halves still cover every package between them — a `--filter` that names a package neither job
+  // runs is a gate that goes green by running less, which is the failure this repository fails
+  // closed against everywhere else. So this computes the partition rather than trusting it.
+  it("splits the suite in two without dropping a package on the floor", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const js = requiredJob(ci, "test");
+    const native = requiredJob(ci, "test-native");
+
+    // The JS half must not compile anything, or the split bought nothing.
+    expect(js, "the JS half still builds the native host").not.toContain("native:build");
+    expect(js, "the JS half still carries the compiler cache").not.toContain("CCACHE_DIR");
+    expect(js).toContain("- run: pnpm test");
+
+    // The native half must build what its suite executes, and run only that suite.
+    expect(native).toContain("native:build");
+    expect(native).toContain("CCACHE_DIR");
+    expect(native, "the native half re-runs the whole suite").not.toMatch(
+      /^\s+- run: pnpm test$/mu,
+    );
+
+    const excluded = (js.match(/TN_SUITE_EXCLUDE_PACKAGES:\s*"([^"]*)"/u)?.[1] ?? "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter((name) => name !== "");
+    expect(excluded.length, "the JS half excludes nothing, so the split is a duplicate").toBe(1);
+
+    const filtered = [...native.matchAll(/pnpm --filter (\S+) test/gu)].map((match) => match[1]);
+    expect(
+      filtered.sort(),
+      "the packages the JS half skips are not the ones the native half runs",
+    ).toEqual([...excluded].sort());
+
+    // And the excluded name has to be a package that exists and has a suite to run, or the
+    // filter is a typo that quietly excludes nothing and the native job runs nothing.
+    for (const name of excluded) {
+      const directory = name.replace(/^@threenative\//u, "");
+      const manifest = JSON.parse(
+        await readFile(path.join(repo, "packages", directory, "package.json"), "utf8"),
+      ) as { name?: string; scripts?: Record<string, string> };
+      expect(manifest.name, `${name} is not the package at packages/${directory}`).toBe(name);
+      expect(manifest.scripts?.test, `${name} has no test script to run`).toBeDefined();
+    }
   });
 
   it("every native leg runs on every event", async () => {
@@ -657,7 +703,7 @@ describe("CI pipeline structure", () => {
 
   it("keeps the native contracts and primary CI documentation honest", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const test = requiredJob(ci, "test");
+    const test = requiredJob(ci, "test-native");
     expect(test).toContain("grep -oE 'add_executable\\(\\s*threenative-[a-z0-9-]+-test'");
     expect(test).toContain("Build the QuickJS engine variant the cross-engine contracts need");
     expect(test).toContain("-DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF");

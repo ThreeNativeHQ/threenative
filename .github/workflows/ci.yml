@@ -65,7 +65,32 @@ jobs:
   # `pnpm test` needs the native contract executables; nothing else here does. Keeping the browser
   # and playtest lanes in their own jobs means one run reports every failure instead of teaching us
   # one per push — which is what made the first-ever green take five sequential runs to find.
+  # The JS half of `pnpm test`. Everything here — `check:docs`, the workspace build, every
+  # package's own `test` script bar one, and the ~2,400-test root vitest run — needs a Node
+  # toolchain and nothing more. The C++ host it used to compile for 279s serves exactly one
+  # consumer: `@threenative/runtime-native`'s own `test` script, which drives real contract
+  # executables. That moved to `test-native` below, which runs beside this job instead of in front
+  # of it. `scripts/__tests__/ci-structure.spec.ts` asserts the two halves partition the workspace.
   test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TN_SUITE_EXCLUDE_PACKAGES: "@threenative/runtime-native"
+      # The orphan gate waits for Playwright's asynchronous profile cleanup and fails when it never
+      # settles. Its 30s default is a quiet-machine number and this job is not one.
+      TN_ORPHAN_SETTLE_SECONDS: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm test
+
+  test-native:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -114,8 +139,8 @@ jobs:
           # run after run instead of growing to hold what any one lane needs. A restore-key prefix
           # is a namespace; sharing one between jobs that build different things is a cache that
           # reports warm and behaves cold.
-          key: native-ccache-ci-test-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
-          restore-keys: native-ccache-ci-test-${{ runner.os }}-${{ runner.arch }}-gcc-
+          key: native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
+          restore-keys: native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -181,7 +206,9 @@ jobs:
         if: always()
         shell: bash
         run: ccache --show-stats
-      - run: pnpm test
+      # Only the suite that needs what the steps above built. `publint` and
+      # `native:physics:parity` ride along inside that script, which is the package's whole gate.
+      - run: pnpm --filter @threenative/runtime-native test
 
   test-browser:
     runs-on: ubuntu-latest
