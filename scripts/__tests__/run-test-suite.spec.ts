@@ -30,7 +30,11 @@ describe("run-test-suite phase contract", () => {
   // the exclusion knob adds goes between those two ends and can only ever remove packages.
   it("walks every workspace serially unless it is told to exclude one", async () => {
     const source = await readFile(scriptPath, "utf8");
-    expect(source).toContain("package_test_command=(pnpm -r --workspace-concurrency=1)");
+    // `--filter '!.'` keeps the root workspace out of the walk; it arrived on main in #57 and
+    // belongs at the head of the composed command, not at either call site.
+    expect(source).toContain(
+      "package_test_command=(pnpm -r --filter '!.' --workspace-concurrency=1)",
+    );
     expect(source).toContain("package_test_command+=(--if-present run test)");
     expect(source).toContain('package_test_command+=(--filter "!$tn_excluded_package")');
     // Unset means unfiltered: a developer running `pnpm test` still runs the whole gate.
