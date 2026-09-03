@@ -198,7 +198,17 @@ describe("IGame", () => {
 
       const firstTime = (globalThis.performance?.now() ?? 0) + 16;
       frame(firstTime);
-      expect(trace).toEqual(["overlayRendered"]);
+      // What the first frame has to prove is that nothing was dispatched and no world was drawn
+      // behind the opaque loader — not the exact contents of the frame. `toEqual([...])` also
+      // pinned whether a fixed-step gameplay update ran inside this frame, and that is a function
+      // of the wall-clock gap between the loop starting and this timestamp, not of the startup
+      // policy. A CI runner produces a longer first frame than a quiet machine, runs one fixed
+      // step before the render, and the assertion failed with
+      // ["gameplayUpdated", "overlayRendered"] while every invariant below still held.
+      // Gameplay's ordering is asserted by index at the end of this test, where it belongs.
+      expect(trace).toContain("overlayRendered");
+      expect(trace).not.toContain("computeDispatched");
+      expect(trace).not.toContain("worldRendered");
       expect(game.ctx.startup.phase).toBe("collapsing");
 
       for (let time = firstTime + 16; time <= firstTime + 304; time += 16) {
