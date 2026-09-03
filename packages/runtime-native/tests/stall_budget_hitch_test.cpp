@@ -20,42 +20,55 @@
 #include <cstring>
 #include <string>
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#include <io.h>
+#else
 #include <unistd.h>
 #endif
 
 namespace {
+
+#if defined(_WIN32)
+constexpr int kStdoutFd = 1;
+inline int tnDup(int fd) { return ::_dup(fd); }
+inline int tnDup2(int from, int to) { return ::_dup2(from, to); }
+inline int tnClose(int fd) { return ::_close(fd); }
+inline int tnFileNo(std::FILE* file) { return ::_fileno(file); }
+#else
+constexpr int kStdoutFd = STDOUT_FILENO;
+inline int tnDup(int fd) { return ::dup(fd); }
+inline int tnDup2(int from, int to) { return ::dup2(from, to); }
+inline int tnClose(int fd) { return ::close(fd); }
+inline int tnFileNo(std::FILE* file) { return ::fileno(file); }
+#endif
 
 /**
  * Captures everything the instruments print to stdout while the guard lives.
  *
  * `TN_STALL_SEGMENTS` and `TN_FRAME_HITCH` are printf'd on desktop — the payload is the contract,
  * and the only way to assert on a payload is to read it off the stream the reader would read.
+ *
+ * MSVC spells the same three POSIX calls with a leading underscore in `<io.h>`. Stubbing the
+ * Windows side instead — `text()` returning `{}` — does not skip the payload assertions, it fails
+ * all six of them, which is what `Windows desktop core` reported on run 33798233009 while Linux
+ * and macOS were green.
  */
 class StdoutCapture {
   public:
     StdoutCapture() {
-#if !defined(_WIN32)
         std::fflush(stdout);
         file_ = std::tmpfile();
-        saved_ = ::dup(STDOUT_FILENO);
-        ::dup2(fileno(file_), STDOUT_FILENO);
-#else
-        (void)file_;
-        (void)saved_;
-#endif
+        saved_ = tnDup(kStdoutFd);
+        tnDup2(tnFileNo(file_), kStdoutFd);
     }
 
     ~StdoutCapture() {
-#if !defined(_WIN32)
         std::fflush(stdout);
-        ::dup2(saved_, STDOUT_FILENO);
-        ::close(saved_);
-#endif
+        tnDup2(saved_, kStdoutFd);
+        tnClose(saved_);
     }
 
     std::string text() {
-#if !defined(_WIN32)
         std::fflush(stdout);
         rewind(file_);
         std::string out;
@@ -63,9 +76,6 @@ class StdoutCapture {
         size_t read = 0;
         while ((read = std::fread(buffer, 1, sizeof(buffer), file_)) > 0) out.append(buffer, read);
         return out;
-#else
-        return {};
-#endif
     }
 
     StdoutCapture(const StdoutCapture&) = delete;
