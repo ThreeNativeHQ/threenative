@@ -220,6 +220,12 @@ async function waitForHotReload(
   // rebuilding its scene — then this waits for the player to be grounded again, which needs
   // rendered frames. Fifteen seconds is a machine with a GPU; CI serves WebGPU from SwiftShader
   // and does all of that an order of magnitude slower, ten times over.
+  //
+  // `>=`, not `===`. One write does not always produce exactly one reload: vite can see a single
+  // save twice and rebuild twice. An equality poll then waits for a number the counter has
+  // already passed and burns the full 90 seconds on a page that reloaded correctly —
+  //   Error: HMR reload 7 was not observed within 90 seconds: {"diagnostics":{"reloads":8,...}}
+  // which is a green run reported as a red one.
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     const ready = await page
@@ -236,7 +242,8 @@ async function waitForHotReload(
           const diagnostics = tools?.hot?.();
           const player = tools?.snapshot?.().player;
           return (
-            diagnostics?.reloads === reloads &&
+            diagnostics !== undefined &&
+            diagnostics.reloads >= reloads &&
             diagnostics.canvases === 1 &&
             diagnostics.physics !== null &&
             player?.position?.[0] !== undefined &&
@@ -356,6 +363,11 @@ test("preserves starter state and stays flat across ten real HMR updates", async
   if (jumpExpression === undefined) throw new Error("Starter jump constant was not found.");
 
   try {
+    // Count what the page reports rather than assuming one reload per write, for the same reason
+    // the wait uses `>=`: vite can rebuild twice for a single save. What this has to prove is that
+    // every edit reached the running game and that the scene stayed flat across all ten — not that
+    // vite's rebuild count matched the loop counter.
+    let observedReloads = 0;
     for (let reload = 1; reload <= 10; reload += 1) {
       await writeFile(
         playerFile,
@@ -364,9 +376,13 @@ test("preserves starter state and stays flat across ten real HMR updates", async
           `const JUMP_SPEED = (${jumpExpression}) + (Number.isFinite(${reload}) ? 0 : 1);`,
         ),
       );
-      await waitForHotReload(page, reload);
+      await waitForHotReload(page, observedReloads + 1);
       const after = await runtimeSnapshot(page);
-      expect(after.diagnostics.reloads).toBe(reload);
+      expect(
+        after.diagnostics.reloads,
+        `edit ${reload} did not reach the running game`,
+      ).toBeGreaterThan(observedReloads);
+      observedReloads = after.diagnostics.reloads;
       expect(after.diagnostics.canvases).toBe(1);
       expect(after.diagnostics.sceneObjects).toBe(before.diagnostics.sceneObjects);
       expect(after.diagnostics.entities).toBe(before.diagnostics.entities);
