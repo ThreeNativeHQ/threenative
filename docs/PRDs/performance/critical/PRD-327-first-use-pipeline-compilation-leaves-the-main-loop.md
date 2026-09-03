@@ -7,8 +7,10 @@ prd_contract: v1
 **Status:** **PHASES 0–2 DONE, DEVICE ACCEPTANCE UNVERIFIED** — executed 2026-09-03.
 Phase 0 measured the backends and chose the mechanism; Phase 1 made `createRenderPipelineAsync`
 native and off-loop (0.27 ms of a 70 ms compile, ratio 0.0038 against a 0.25 bar, red-green in
-`threenative-async-pipeline-thread-test`); Phase 2 flipped the native `warmUp` default with its own
-red-green. Phases 3 and 4 are open. **Acceptance criterion 3 — three cold launches ≤ 8 s median on
+`threenative-async-pipeline-thread-test`); **Phase 2 was executed and not adopted**: the framework
+already warms up by default from inside the loading layer's readiness gate, and flipping the
+`warmUp` default removed the loading screen (macOS, Windows) and then double-compiled the scene
+past the desktop physics gate's frame budget. The mechanism, not the default, was the defect. Phases 3 and 4 are open. **Acceptance criterion 3 — three cold launches ≤ 8 s median on
 a physical Pixel 8 — did not run**, so PRD-218's criteria 1 and 2 stay open and no launch-time
 claim is made. Evidence: `docs/verification/runtime-perf-state.md` §5a.
 

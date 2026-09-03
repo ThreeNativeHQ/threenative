@@ -1768,15 +1768,30 @@ slowed it down: 600 `pollEvents()` calls take about 60 ms and the compile takes 
 wall-clock bounded now. Recorded because a green that depends on machine speed is the failure this
 repository's method rules exist to prevent, and it very nearly shipped.
 
-### Phase 2: the default
+### Phase 2: not adopted, and the reason is the result
 
-`warmUp` is on by default on native as of this change, and unchanged on web. The marker inverts
-from what PRD-218 recorded:
+Phase 2 prescribed flipping `warmUp` on by default for native. **It was not adopted**, because
+executing it showed the framework already warms up by default in a better place: `startupCompile`
+calls the same `warmUpScene` from inside the loading layer's bounded readiness gate — opaque layer
+on screen, loop turning — whenever `warmUp` is unset and the layer is opaque. The `warmUp` option
+only moves that work earlier, to before `start()` releases the loop and while nothing presents.
 
-| | `TN_WARMUP` |
-| --- | --- |
-| PRD-218, Pixel 8, pre-fix | `{"compiled":0,"abandoned":1,"timedOut":true,"elapsedMs":15325}` |
-| now, native default, unit lane | `{"compiled":1,"slices":1,"elapsedMs":1,"abandoned":0,"timedOut":false}` |
+What was broken was the mechanism, and Phase 1 fixed it: the default path compiled nothing only
+because `compileAsync` could not resolve. It started working without its default moving.
+
+Flipping it anyway cost two regressions, both caught by CI and neither by a local run — recorded
+because they are the evidence the prescription was wrong:
+
+1. the loading screen stopped covering startup, on macOS and Windows —
+   `verify-desktop-loading.mjs`, `loadingVisible: false, startupReady: true` at every startup
+   sample. A launch that shows the player nothing where a loading screen belongs is the opposite of
+   what this PRD is for;
+2. and after the first repair, the scene compiled twice — once before the loop, once inside the
+   gate — which pushed `verify-desktop-physics.mjs` past its 180-frame budget on macOS:
+   `desktop physics proof missed the completed parity marker`.
+
+Green with the default back where it was: `913920 startup loading pixels, 0 settled`; physics
+14 assertions; `packages/core` 977 tests.
 
 **PRD-218's criteria 1 and 2 are NOT ticked.** They are device criteria — three cold launches on
 the physical Pixel 8, tap-to-playable ≤ 8 s median, first-present `pipelineCompile ≤ 500 ms` — and
