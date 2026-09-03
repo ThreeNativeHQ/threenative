@@ -51,6 +51,7 @@ describe("playtest plugin", () => {
         "entity.bounds",
         "entity.observe",
         "entity.setup",
+        "scene.observe",
         "runtime.fixedStep",
         "runtime.resources",
         "runtime.animation",
@@ -95,6 +96,7 @@ describe("playtest plugin", () => {
         "entity.bounds",
         "entity.observe",
         "entity.setup",
+        "scene.observe",
         "runtime.fixedStep",
         "runtime.resources",
         "runtime.animation",
@@ -280,6 +282,7 @@ describe("playtest plugin", () => {
         "entity.bounds",
         "entity.observe",
         "entity.setup",
+        "scene.observe",
         "runtime.fixedStep",
         "runtime.resources",
         "runtime.animation",
@@ -297,7 +300,17 @@ describe("playtest plugin", () => {
       expect(snapshot.entities?.map(({ id }) => id)).toEqual(["camera.main", "player"]);
       expect(snapshot.entities?.find(({ id }) => id === "camera.main")?.transform).toBeDefined();
       expect(snapshot.gameplay).toEqual({
-        animation: { player: { advancedFrames: 1, clip: "once", finished: true } },
+        animation: {
+          player: {
+            advancedFrames: 1,
+            clip: "once",
+            finished: true,
+            // The stride convention is measured whether or not it applies, so it crosses the
+            // bridge on every clip. This one carries no root translation, so its feet carry no
+            // ground — reported as the zero it measured, not as an absent field.
+            stride: { clipGroundSpeed: 0, groundSpeed: 0, overridden: false, rate: 1, synced: false },
+          },
+        },
         audio: { pooled: 0, queued: 0, voices: 0 },
         contacts: [],
         states: {},

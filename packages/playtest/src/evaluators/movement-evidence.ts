@@ -2,7 +2,7 @@ import { PLAYTEST_ASSERTION_REGISTRY } from '../assertion-schema.js';
 import { consoleErrors, resolveDiagnosticsPolicy, runtimeDiagnostics, parseMovementAxisExpectation, axisIndex, vectorDistance, isRecord } from '../assertion-report.js';
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import type { IEvaluationContext } from "./context.js";
-import { evaluateDiagnosticsPolicy, maxResolvedAxisDelta, rotationDelta, tiltDegrees, finalTiltDegrees, minimumResolvedDistance, movementFacingEvidence, finalFacingAngleToEntity, finalFacingAngleToPosition, evaluateVisibilityAssertion, runtimeGameplayAtStep, mergeEffectLogs, countMatchingEntries, countRuntimeContacts, physicsDebugContactEvidence, runtimeContactEvidence, summarizeMatchingEntries, settledCandidate, physicsDebugOmittedBodies, physicsDebugMeanPoseDistance, initialPhysicsDebugSnapshot, matchingOccludedRaycasts, initialEffectLog, runtimeAnimationObservations, runtimeGameplayBefore, animationObservationPass, assertionEvaluatedByBaseProbe, assertionNotEvaluatedDiagnostic, allTrivialityEligibleAssertionsWaived } from "./helpers.js";
+import { evaluateDiagnosticsPolicy, maxResolvedAxisDelta, rotationDelta, tiltDegrees, finalTiltDegrees, minimumResolvedDistance, movementFacingEvidence, finalFacingAngleToEntity, finalFacingAngleToPosition, evaluateVisibilityAssertion, runtimeGameplayAtStep, mergeEffectLogs, countMatchingEntries, countRuntimeContacts, physicsDebugContactEvidence, runtimeContactEvidence, summarizeMatchingEntries, settledCandidate, physicsDebugOmittedBodies, physicsDebugMeanPoseDistance, initialPhysicsDebugSnapshot, matchingOccludedRaycasts, initialEffectLog, runtimeAnimationObservations, runtimeGameplayBefore, animationObservationPass, footSlideRatio, strideFailure, strideReading, assertionEvaluatedByBaseProbe, assertionNotEvaluatedDiagnostic, allTrivialityEligibleAssertionsWaived } from "./helpers.js";
 
 export function emitMovementEvidence(ctx: IEvaluationContext): void {
   const { assertions, diagnostics } = ctx;
@@ -511,11 +511,12 @@ export function emitMovementEvidence(ctx: IEvaluationContext): void {
       const clip = typeof observed?.clip === "string" ? observed.clip : undefined;
       const advancedFrames = typeof observed?.advancedFrames === "number" ? observed.advancedFrames : undefined;
       const finished = typeof observed?.finished === "boolean" ? observed.finished : undefined;
-      const pass = observed !== undefined
-        && (assertion.clip === undefined || clip === assertion.clip)
-        && (assertion.entered !== true || clip !== undefined)
-        && (assertion.finished === undefined || (finished !== undefined && finished === assertion.finished))
-        && (assertion.advancedFrames === undefined || (advancedFrames !== undefined && advancedFrames >= assertion.advancedFrames));
+      // One predicate for the observed sample and the initial one. They were written twice and
+      // drifted the moment a field was added to only one of them.
+      const pass = animationObservationPass(assertion, observed);
+      const stride = strideReading(observed);
+      const slide = stride === undefined ? undefined : footSlideRatio(stride);
+      const strideMiss = strideFailure(assertion, observed);
       const initialGameplay = runtimeGameplayBefore(input.report.observations?.runtimeObservations);
       const initialAnimations = isRecord(initialGameplay?.animation) ? initialGameplay.animation : undefined;
       const initialObserved = isRecord(initialAnimations?.[entity]) ? initialAnimations[entity] : undefined;
@@ -530,6 +531,8 @@ export function emitMovementEvidence(ctx: IEvaluationContext): void {
           expected: assertion,
           finished,
           initialPass,
+          ...(slide === undefined ? {} : { footSlide: slide }),
+          ...(stride === undefined ? {} : { stride }),
           trivial,
           ...(trivial && typeof assertion.allowTrivial === "string" ? { trivialityOptOut: true } : {}),
         },
@@ -537,17 +540,22 @@ export function emitMovementEvidence(ctx: IEvaluationContext): void {
         pass: guardedPass,
       });
       if (!guardedPass) {
+        const triviallyHeld = trivial && typeof assertion.allowTrivial !== "string";
         diagnostics.push({
-          code: trivial && typeof assertion.allowTrivial !== "string"
+          code: triviallyHeld
             ? "TN_PLAYTEST_ASSERTION_TRIVIAL"
-            : "TN_PLAYTEST_ANIMATION_NOT_OBSERVED",
-          message: trivial && typeof assertion.allowTrivial !== "string"
+            : (strideMiss?.code ?? "TN_PLAYTEST_ANIMATION_NOT_OBSERVED"),
+          message: triviallyHeld
             ? `Assertion 'animation.${entity}' was already satisfied before the scenario ran.`
-            : `Expected animation evidence for '${entity}'${assertion.clip === undefined ? "" : ` clip '${assertion.clip}'`} was not observed.`,
+            : strideMiss === undefined
+              ? `Expected animation evidence for '${entity}'${assertion.clip === undefined ? "" : ` clip '${assertion.clip}'`} was not observed.`
+              : `Stride bound on '${entity}' did not hold: ${strideMiss.detail}.`,
           severity: "error",
-          suggestion: trivial && typeof assertion.allowTrivial !== "string"
+          suggestion: triviallyHeld
             ? "Drive the asserted animation from a different initial clip, or provide allowTrivial with the reason the clip is intentionally held."
-            : "Check model animation clip wiring and runtime animation playback state.",
+            : strideMiss === undefined
+              ? "Check model animation clip wiring and runtime animation playback state."
+              : "Read the stride line in 'doctor --url', then either retime the clip, correct the body speed, or state the override the game intends.",
         });
       }
       continue;

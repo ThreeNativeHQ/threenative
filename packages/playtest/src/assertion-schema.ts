@@ -452,6 +452,8 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Require entering the animation state.", name: "entered", type: "boolean" },
       { description: "Require animation advancement evidence.", name: "advancedFrames", type: "number" },
       { description: "Require the observed clip to report its completion state.", name: "finished", type: "boolean" },
+      { description: "Ceiling on how far the feet and the ground disagree, as |feet - ground| / ground. Fails closed when the producer reports no stride.", name: "maxFootSlide", type: "number" },
+      { description: "Require the stride convention to be applied (true) or deliberately overridden (false).", name: "strideSynced", type: "boolean" },
       { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
     ],
     cardinality: "array",

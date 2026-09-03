@@ -3647,6 +3647,26 @@
       "symbol": "installThreePlaytestBridge"
     },
     {
+      "constraints": [
+        "reports counts and names only; it decides nothing about how the game looks",
+        "reports counts and names only; nothing here decides how the game looks",
+        "a walk that hits {@link SCENE_WALK_OBJECT_CAP} reports `truncated: true`"
+      ],
+      "example": "const room = observeSceneResources(scene, camera);",
+      "importPath": "@threenative/playtest/three",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function observeSceneResources(scene: Scene, camera: Camera): IPlaytestSceneObservation { … }",
+      "situations": [
+        "ask why a frame is black or washed out without opening a screenshot",
+        "ask what lights, materials and framing a running game actually has"
+      ],
+      "summary": "Observe the room a game is played in — lights, materials, fog, background and camera framing.",
+      "supersedes": [],
+      "symbol": "observeSceneResources"
+    },
+    {
       "constraints": ["use the device transport selected by the runner"],
       "example": "const connection = await connectDevicePlaytestBridge();",
       "importPath": "@threenative/playtest/three",

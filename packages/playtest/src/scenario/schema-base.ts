@@ -211,6 +211,14 @@ export interface IPlaytestAnimationAssertion {
   entered?: boolean;
   entity?: string;
   finished?: boolean;
+  /**
+   * Ceiling on |feet − ground| / ground for the observed clip. A run whose producer reports no
+   * stride fails closed: the convention is on by default, so silence is a missing observation,
+   * not agreement.
+   */
+  maxFootSlide?: number;
+  /** Require the stride convention to be applied (`true`) or deliberately overridden (`false`). */
+  strideSynced?: boolean;
 }
 
 export interface IPlaytestTagCountAssertion {

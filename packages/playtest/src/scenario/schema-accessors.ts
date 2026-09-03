@@ -489,7 +489,7 @@ export function validateSignalAssertion(value: unknown, scenarioPath: string, ob
 
 export function validateAnimationAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestAnimationAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["advancedFrames", "allowTrivial", "clip", "entered", "entity", "finished"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["advancedFrames", "allowTrivial", "clip", "entered", "entity", "finished", "maxFootSlide", "strideSynced"], scenarioPath, objectPath);
   return {
     ...present("advancedFrames", optionalNumber(record, "advancedFrames", scenarioPath, objectPath)),
     ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
@@ -497,6 +497,8 @@ export function validateAnimationAssertion(value: unknown, scenarioPath: string,
     ...present("entered", optionalBoolean(record, "entered", scenarioPath, objectPath)),
     ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
     ...present("finished", optionalBoolean(record, "finished", scenarioPath, objectPath)),
+    ...present("maxFootSlide", optionalNumber(record, "maxFootSlide", scenarioPath, objectPath)),
+    ...present("strideSynced", optionalBoolean(record, "strideSynced", scenarioPath, objectPath)),
   };
 }
 

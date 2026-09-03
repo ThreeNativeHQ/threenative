@@ -84,6 +84,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     "entity.bounds",
     "entity.observe",
     "entity.setup",
+    "scene.observe",
     ...(options.fixedStep === undefined ? [] : ["runtime.fixedStep"]),
     ...(options.resources === undefined ? [] : ["runtime.resources"]),
     ...(options.diagnostics === undefined ? [] : ["runtime.diagnostics"]),
