@@ -1,0 +1,58 @@
+name: Build the workspace, or restore the last build of the same sources
+description: >-
+  Six jobs need packages/*/dist and each compiled it from scratch, ~50-65s every time. tsup keeps
+  no incremental state to cache, but its output is a pure function of the sources, so the output is
+  what gets cached.
+
+inputs:
+  key-suffix:
+    description: Extra text to vary the cache key when a caller needs its own entry.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # The key names everything the bundles are built from and nothing else. `src/**`, the package
+    # manifests, the tsup configs, the per-package generators that write files into the bundle, and
+    # the script that decides which packages get built at all. Templates are deliberately absent:
+    # they ship as files and no bundle embeds their bytes, so keying on them would miss on every
+    # template edit and buy nothing. `__tests__` is absent for the same reason.
+    #
+    # A key that names too little serves a stale bundle, which is the one failure this must not
+    # have — so when in doubt an input belongs in the list. A key that names too much only costs a
+    # rebuild nobody needed.
+    - name: Restore the compiled workspace
+      id: dist
+      uses: actions/cache@v4
+      with:
+        path: packages/*/dist
+        key: workspace-dist-${{ runner.os }}-${{ hashFiles('packages/*/src/**', 'packages/*/package.json', 'packages/*/tsup.config.ts', 'packages/*/scripts/**', 'scripts/workspace-packages.ts', 'pnpm-lock.yaml') }}${{ inputs.key-suffix }}
+    - if: steps.dist.outputs.cache-hit == 'true'
+      shell: bash
+      run: echo "workspace dist restored for these sources; skipping the build"
+    - if: steps.dist.outputs.cache-hit != 'true'
+      shell: bash
+      run: pnpm tsx scripts/workspace-packages.ts build
+    # Fail closed rather than hand the caller a partial restore. A cache entry saved from a run
+    # that died mid-build would otherwise be indistinguishable from a good one, and every consumer
+    # of this action imports from these files.
+    # Fail closed rather than hand the caller a partial restore. An entry saved from a run that
+    # died mid-build would otherwise be indistinguishable from a good one, and every consumer of
+    # this action imports from these files. The set is derived, not listed: a package builds a
+    # bundle exactly when it has a tsup config, which is true of all nine today and stays true for
+    # the tenth without anyone remembering to edit this.
+    - name: Check every bundling package has its bundle
+      shell: bash
+      run: |
+        set -euo pipefail
+        missing=()
+        for config in packages/*/tsup.config.ts; do
+          directory="$(dirname "$config")"
+          [ -d "$directory/dist" ] || missing+=("$directory/dist")
+        done
+        if [ "${#missing[@]}" -gt 0 ]; then
+          echo "TN_WORKSPACE_DIST_INCOMPLETE: ${missing[*]}" >&2
+          exit 1
+        fi
+        echo "workspace dist complete: $(ls -d packages/*/dist | wc -l) bundles"
