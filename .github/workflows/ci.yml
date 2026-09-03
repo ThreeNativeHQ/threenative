@@ -104,6 +104,19 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
+      # Not `CCACHE_SLOPPINESS: pch_defines,time_macros`, tried and reverted. The verbose report
+      # showed half of every compiler invocation was not a cache candidate at all — run
+      # 33714810237, host build:
+      #   Uncacheable calls:                   280 / 552 (50.72%)
+      #     Could not use precompiled header:  266 / 280 (95.00%)
+      # Those 266 are SDL3, which builds its ~391 objects behind `target_precompile_headers`.
+      # The sloppiness setting did make them eligible — 538/552 cacheable, 14 uncacheable — and
+      # produced *no hits at all*: two consecutive runs both read `Hits: 77 / 538`, the same 77
+      # this lane had before, while the first paid 154s -> 211s to store objects the second never
+      # read. GCC needs `-fpch-preprocess` on the compile line for a PCH compile to be reusable
+      # and CMake does not add it, so the setting bought a better-looking report and nothing else.
+      # The next thing to try is `CMAKE_DISABLE_PRECOMPILE_HEADERS=ON` for this build, which makes
+      # SDL3's objects ordinary cacheable compiles rather than eligible-but-unhittable ones.
       # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
       # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
       # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
@@ -125,6 +138,25 @@ jobs:
         with:
           path: packages/runtime-native/third_party
           key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      # The compiled tree itself, not just the object cache in front of it. ccache has never paid
+      # off on this lane — 195 of 272 cacheable compiles miss on every run, and the half hidden
+      # behind SDL3's precompiled header cannot be cached at all without `-fpch-preprocess` (see
+      # the notes above and the two reverts in this branch's history). Restoring the build
+      # directory sidesteps the question: ninja re-stats every input and rebuilds exactly what
+      # changed, so a stale entry costs a recompile rather than a wrong binary, and an unchanged
+      # tree costs a download. Measured locally at 315 MB for `build/tn-linux`, against ~240s of
+      # compiling on the runner (host 154s + contract targets 53s + QuickJS 33s).
+      #
+      # The key hashes what the build is made of. `restore-keys` matters more than an exact hit
+      # here: a partial match still hands ninja most of its objects and it rebuilds the rest.
+      - name: Restore the compiled native tree
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/runtime-native/build/tn-linux
+            packages/runtime-native/build/tn-linux-quickjs
+          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**/*.cpp') }}-${{ github.run_id }}
+          restore-keys: native-build-${{ runner.os }}-${{ runner.arch }}-
       - name: Restore native compiler cache
         uses: actions/cache@v4
         with:
@@ -153,6 +185,12 @@ jobs:
       # never built them, so `pnpm test` had four permanently failing tests and this workflow had
       # never once gone green. The build is what makes the native half of the suite real here.
       - name: Install Linux desktop build dependencies
+        # Not `--no-install-recommends`, tried and reverted. It took this step from 63s to 36s
+        # and then failed `distribution.test.mjs > an installed runtime verifier uses packaged
+        # Linux display support` with `scripts/xvfb.sh: Xvfb did not report a display within 10
+        # seconds` (run 33715557861). Something the X stack needs on this runner arrives as a
+        # recommended package of one of the development packages below, and 27s is not worth
+        # finding out which one by bisection.
         run: >-
           sudo apt-get update && sudo apt-get install -y
           ccache
@@ -161,11 +199,32 @@ jobs:
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev
           libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+      # `ccache --show-stats` at the end of the job reports one number for three builds, and that
+      # number has been stuck at `Hits: 184 / 574 (32.06%)` on every run measured — identical
+      # before and after each lane got its own restore-key namespace, and with the restore
+      # demonstrably hitting (`Cache restored from key: native-ccache-ci-test-native-…`). One
+      # total cannot tell the two candidate explanations apart:
+      #
+      #   * the restored cache is worthless and all 184 hits are this run recompiling something
+      #     it already compiled — the V8 and QuickJS build directories share sources, so the
+      #     third step would hit what the first step just stored; or
+      #   * the restore works for a stable subset and 390 objects genuinely hash differently
+      #     run over run.
+      #
+      # Reading the counters between the builds separates them: if the host build reports zero
+      # hits and the hits only appear in the QuickJS step, it is the first. This is measurement,
+      # not a fix, and it is cheap enough to keep either way.
       - name: Zero the compiler cache counters
         shell: bash
-        run: ccache --zero-stats
+        run: |
+          echo "restored cache on disk: $(du -sh "$CCACHE_DIR" 2>/dev/null | cut -f1 || echo 'absent')"
+          ccache --zero-stats
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
+      - name: Compiler cache after the host build
+        if: always()
+        shell: bash
+        run: ccache --show-stats --verbose
       # The target names are discovered from CMakeLists.txt rather than listed here: a
       # hand-maintained list in a workflow file is the drift that leaves a new contract target
       # unbuilt on CI and only failing for whoever pushes next.
@@ -190,6 +249,10 @@ jobs:
                 echo "target $target is not buildable in build/tn-linux"
             done
           fi
+      - name: Compiler cache after the V8 contract executables
+        if: always()
+        shell: bash
+        run: ccache --show-stats --verbose
       # timestamp-query and rg11b10-renderable are cross-engine contracts and the JS engine is
       # a build-time choice, so QuickJS needs its own configured build directory. Without it
       # those tests fail closed on CI naming build/tn-linux-quickjs, exactly as happened to
@@ -202,6 +265,10 @@ jobs:
           cmake -S . -B build/tn-linux-quickjs -DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF
           cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test \
             --target threenative-rg11b10-renderable-test --parallel "$(nproc)"
+      - name: Compiler cache after the QuickJS variant
+        if: always()
+        shell: bash
+        run: ccache --show-stats --verbose
       - name: Report the compiler cache hit rate
         if: always()
         shell: bash
@@ -397,6 +464,14 @@ jobs:
         if: steps.proof.outputs.cache-hit != 'true'
         env:
           TN_GOLDEN_PATH_ARCHIVES: ${{ github.workspace }}/artifacts/workspace-packages
+          # The `test` layer proves a stranger's `pnpm test` reaches a running scene and comes
+          # back green. It does not have to prove every scenario in the template passes:
+          # `template-nonvisual` runs this identical list — same `non-visual-scenarios.mjs`
+          # classifier, same `threenative-playtest` runner, same flags — for all eight templates,
+          # in a job beside this one. On run 33712230560 the whole sweep took 353s of a 375s step
+          # on the run's critical path and proved nothing the run did not already know. The layer
+          # prints which scenarios it drove and which it left to the other lane.
+          TN_GOLDEN_PATH_SCENARIOS: "1"
       - name: Record the proof for this tree
         if: success() && steps.proof.outputs.cache-hit != 'true'
         run: |

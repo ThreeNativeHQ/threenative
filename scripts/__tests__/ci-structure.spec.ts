@@ -444,10 +444,12 @@ describe("CI pipeline structure", () => {
 
     const namespaces = new Map<string, string>();
     for (const [name, section] of jobs) {
-      const restoreKey = section
-        .match(/^\s+restore-keys:\s*(.+)$/mu)?.[1]
-        ?.trim()
-        .replace(/^["']|["']$/gu, "");
+      // By name, not by position: these jobs restore more than one cache, and `test-native` also
+      // restores the compiled build tree. Picking the first `restore-keys` in the block asserted
+      // against whichever cache happened to be declared first.
+      const restoreKey = [...section.matchAll(/^\s+restore-keys:\s*(.+)$/gmu)]
+        .map((match) => (match[1] ?? "").trim().replace(/^["']|["']$/gu, ""))
+        .find((key) => key.includes("native-ccache"));
       expect(restoreKey, `${name} has no ccache restore-keys prefix`).toBeDefined();
       const previous = namespaces.get(restoreKey ?? "");
       expect(
@@ -484,11 +486,17 @@ describe("CI pipeline structure", () => {
     // Both templates the golden-path matrix drives must be covered by the sweep that replaces it.
     for (const template of ["starter", "platformer"]) expect(nonVisual).toContain(`- ${template}`);
 
+    // Commands, not prose: the job's comments name the classifier and the runner precisely
+    // because it delegates to them, and a raw-text match cannot tell an explanation from a step.
+    const commands = goldenPath
+      .split("\n")
+      .filter((line) => !/^\s*#/u.test(line))
+      .join("\n");
     expect(
-      goldenPath,
+      commands,
       "golden-path-template re-runs the sweep template-nonvisual already owns",
     ).not.toContain("non-visual-scenarios.mjs");
-    expect(goldenPath, "golden-path-template still drives scenarios itself").not.toContain(
+    expect(commands, "golden-path-template still drives scenarios itself").not.toContain(
       "threenative-playtest",
     );
     expect(goldenPath).toContain("pnpm verify:golden-path");
@@ -585,6 +593,59 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  // One hit rate for three builds cannot say which build produced the hits, and ci `test-native`
+  // has been stuck at `Hits: 184 / 574 (32.06%)` on every run measured — unchanged by giving each
+  // lane its own restore namespace, and with the restore demonstrably landing. Either the restored
+  // cache is worthless and the hits are this run recompiling shared sources into a second build
+  // directory, or 390 objects really do hash differently run over run. A counter read between the
+  // builds is what tells those apart, so it is a measurement the job has to keep.
+  it("reads the compiler cache counters between builds, not only at the end", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const native = requiredJob(ci, "test-native");
+
+    const readings = [...native.matchAll(/^\s+- name: Compiler cache after (.+)$/gmu)].map(
+      (match) => (match[1] ?? "").trim(),
+    );
+    expect(readings, "the native job reports one total for three builds").toEqual([
+      "the host build",
+      "the V8 contract executables",
+      "the QuickJS variant",
+    ]);
+    // And the size of what the restore actually put on disk, because a hit rate cannot
+    // distinguish a cold cache from one restored into the wrong directory.
+    expect(native).toContain('du -sh "$CCACHE_DIR"');
+  });
+
+  // ccache has never paid off on this lane: 195 of 272 cacheable compiles miss on every run, and
+  // the other half of the invocations sit behind SDL3's precompiled header where ccache cannot
+  // reach them at all. Caching the compiled tree instead is safe because ninja re-stats every
+  // input — a stale entry costs a recompile, never a wrong binary — but only while the key still
+  // hashes the sources, or a source change would be served a tree built from different code.
+  it("keys the cached native build tree on the sources it was built from", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const native = requiredJob(ci, "test-native");
+
+    const keys = [...native.matchAll(/^\s+key:\s*(.+)$/gmu)].map((match) =>
+      (match[1] ?? "").trim(),
+    );
+    const buildKey = keys.find((key) => key.includes("native-build-"));
+    expect(buildKey, "the native build tree is not cached").toBeDefined();
+    for (const input of [
+      "packages/runtime-native/CMakeLists.txt",
+      "packages/runtime-native/src/**",
+      "packages/runtime-native/include/**",
+    ]) {
+      expect(buildKey, `the build-tree key ignores ${input}`).toContain(input);
+    }
+    // Run-scoped so every run saves, and a prefix so every run restores the newest — a partial
+    // match still hands ninja most of its objects.
+    expect(buildKey).toContain("github.run_id");
+    expect(native).toContain("restore-keys: native-build-");
+    // Both configured build directories, or the QuickJS variant recompiles from nothing.
+    expect(native).toContain("packages/runtime-native/build/tn-linux");
+    expect(native).toContain("packages/runtime-native/build/tn-linux-quickjs");
+  });
+
   it("every native leg runs on every event", async () => {
     // Until 2026-09-01 the platform legs ran only on pushes to main, the nightly cron, and PRs
     // carrying the `native` label; a PR read skips where the legs should have reported, and on
@@ -664,6 +725,30 @@ describe("CI pipeline structure", () => {
     expect(verifier, "adoption does not fail closed on an unclaimed tarball").toContain(
       "TN_GOLDEN_PATH_ARCHIVE_UNKNOWN",
     );
+  });
+
+  // The golden path drives one scenario because `template-nonvisual` drives them all. That is only
+  // true while template-nonvisual actually covers the templates this matrix names — the moment it
+  // stops, capping this layer stops being delegation and starts being a hole.
+  it("only caps its own scenario sweep while template-nonvisual covers the same templates", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const goldenPath = requiredJob(ci, "golden-path-template");
+    const nonVisual = requiredJob(ci, "template-nonvisual");
+
+    const cap = goldenPath.match(/TN_GOLDEN_PATH_SCENARIOS:\s*"(\d+)"/u)?.[1];
+    if (cap === undefined) return; // uncapped is always honest; nothing to check.
+
+    expect(Number(cap)).toBeGreaterThan(0);
+    // The lane it delegates to has to run the same classifier and runner, on every event.
+    expect(nonVisual).toContain("non-visual-scenarios.mjs");
+    expect(nonVisual).toContain("threenative-playtest");
+    expect(nonVisual).not.toContain("github.event_name == 'push'");
+    // And it has to cover every template this matrix drives.
+    const driven = [...goldenPath.matchAll(/^\s+- ([a-z-]+)$/gmu)].map((match) => match[1] ?? "");
+    expect(driven.length).toBeGreaterThan(0);
+    for (const template of driven) {
+      expect(nonVisual, `template-nonvisual does not cover ${template}`).toContain(`- ${template}`);
+    }
   });
 
   it("the golden-path proof cache cannot record a run that failed", async () => {

@@ -20,6 +20,7 @@ import {
   runCommand,
   runGoldenPathTemplate,
   scaffold,
+  scenarioCap,
   verifyPackedMutationControl,
   workspacePackages,
   writeScaffoldScript,
@@ -258,6 +259,29 @@ describe("golden path matrix", () => {
     it("names the tarball pnpm pack writes for scoped and unscoped packages", () => {
       expect(packedArchivePrefix("@threenative/core")).toBe("threenative-core-");
       expect(packedArchivePrefix("create-threenative")).toBe("create-threenative-");
+    });
+  });
+
+  // The golden path proves the journey; `template-nonvisual` proves the scenarios. Capping how
+  // many this layer drives is the difference between 353s and one scenario on the critical path —
+  // but a cap that silently became zero, or that swallowed a typo, would turn the layer into
+  // decoration, which is the failure this repository fails closed against everywhere.
+  describe("how many scenarios the golden path drives itself", () => {
+    it("runs every scenario when nothing asks otherwise", () => {
+      expect(scenarioCap(13, undefined)).toBe(13);
+      expect(scenarioCap(13, "")).toBe(13);
+      expect(scenarioCap(13, "   ")).toBe(13);
+    });
+
+    it("never drives more than the template actually has", () => {
+      expect(scenarioCap(2, "9")).toBe(2);
+      expect(scenarioCap(13, "1")).toBe(1);
+    });
+
+    it("refuses a cap that is not a positive integer instead of narrowing to one", () => {
+      for (const raw of ["0", "-1", "1.5", "all", "one", "٣"]) {
+        expect(() => scenarioCap(13, raw), raw).toThrow(/TN_GOLDEN_PATH_SCENARIOS_INVALID/u);
+      }
     });
   });
 
