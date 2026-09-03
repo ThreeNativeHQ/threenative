@@ -631,7 +631,11 @@ void presentPendingSurface(BindingsState* state) {
                 mystral::stallBudget().report(mystral::coldStartNowMs());
             }
             // Hitches are what the player feels after launch, and they are invisible to a mean.
-            mystral::frameHitches().record();
+            // This frame's drain of the late-compile accumulator rides along, so a synchronous
+            // pipeline compile mid-game is a named hitch, not an anonymous spike (PRD-327 Phase 4).
+            const mystral::StallBudget::PostPresentCompile lateCompile =
+                mystral::stallBudget().takePostPresentPipelineCompile();
+            mystral::frameHitches().record(lateCompile.ms, lateCompile.calls);
         } else {
             std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
         }

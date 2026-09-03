@@ -39,6 +39,15 @@ const hostGapLine = "TN_HOST_GAP:{\"frames\":300,\"periodP50Ms\":48.75,\"periodM
   "\"devicePoll\":{\"p50Ms\":0.28,\"meanMs\":0.3},\"timers\":{\"p50Ms\":0.001,\"meanMs\":0.002}}," +
   "\"sumP50Ms\":23.02}";
 
+/** TN_FRAME_HITCH is emitted by packages/runtime-native/include/mystral/cold_start.h. */
+const hitchLine =
+  "TN_FRAME_HITCH:{\"window\":300,\"maxMs\":203.114,\"maxAtFrame\":41,\"p99Ms\":8.221," +
+  "\"p50Ms\":7.940,\"pipelineCompileMs\":198.400,\"pipelineCompileCalls\":1}";
+
+/** The pre-PRD-327 shape: no pipelineCompile fields. Must keep parsing. */
+const legacyHitchLine =
+  "TN_FRAME_HITCH:{\"window\":300,\"maxMs\":12.002,\"maxAtFrame\":3,\"p99Ms\":9.1,\"p50Ms\":7.8}";
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -98,6 +107,24 @@ describe("parsePerformanceMarkers", () => {
     const parsed = parsePerformanceMarkers("no markers here\njust a log\n");
     expect(parsed.budgets).toHaveLength(0);
     expect(assessPerfMarkers(parsed, { requireWindows: 2 }, "test").pass).toBe(false);
+  });
+
+  it("reads a hitch window with its late-sync-compile fields, and a pre-PRD-327 line without them", () => {
+    const parsed = parsePerformanceMarkers(`noise\n${hitchLine}\n${legacyHitchLine}\n`);
+    expect(parsed.hitches).toHaveLength(2);
+    expect(parsed.hitches[0]?.maxMs).toBeCloseTo(203.114);
+    expect(parsed.hitches[0]?.pipelineCompileMs).toBeCloseTo(198.4);
+    expect(parsed.hitches[0]?.pipelineCompileCalls).toBe(1);
+    // Old hosts omit the fields; absence parses as absence, never as a measured zero.
+    expect(parsed.hitches[1]?.pipelineCompileMs).toBeUndefined();
+    expect(parsed.hitches[1]?.pipelineCompileCalls).toBeUndefined();
+  });
+
+  it("counts a mirrored hitch line once", () => {
+    const parsed = parsePerformanceMarkers(
+      `I MystralStdio: [log] ${hitchLine}\nI MystralJS: [log] ${hitchLine}\n`,
+    );
+    expect(parsed.hitches).toHaveLength(1);
   });
 });
 
@@ -242,6 +269,35 @@ describe("formatPerfReport", () => {
     const report = assessPerfMarkers(parsed, { minFps: 30, requireWindows: 2 }, "test");
     const text = formatPerfReport(report);
     expect(text).toMatch(/FAIL TN_PERF_MIN_FPS: window [23] observed 20\.\d+ against bound 30/u);
+  });
+
+  it("names the late sync compile a hitch window covered, and says nothing when there was none", () => {
+    const parsed = parsePerformanceMarkers(
+      `${budgetLine(1, 30, 40, 20)}\n${hitchLine}\n${budgetLine(2, 53, 20, 10)}\n${legacyHitchLine}\n`,
+    );
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 1 }, "log"));
+    expect(text).toContain("hitch windows (post-launch, 2): worst 203.114 ms");
+    expect(text).toContain(
+      "late sync compile: 198.400 ms across 1 call(s) in the window whose worst frame landed at frame 41",
+    );
+    expect(text).not.toContain("none reported");
+  });
+
+  it("names the absence rather than reading an old host's missing field as a zero", () => {
+    const parsed = parsePerformanceMarkers(
+      `${budgetLine(1, 30, 40, 20)}\n${legacyHitchLine}\n${budgetLine(2, 53, 20, 10)}\n`,
+    );
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 1 }, "log"));
+    expect(text).toContain(
+      "late sync compile: none reported — either none happened, or this host predates the " +
+        "pipelineCompile fields (TN_FRAME_HITCH without them)",
+    );
+  });
+
+  it("prints no hitch section for a stream without hitch lines", () => {
+    const parsed = parsePerformanceMarkers(sampleStream());
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 2 }, "test"));
+    expect(text).not.toContain("hitch windows");
   });
 });
 
