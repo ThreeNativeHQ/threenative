@@ -104,6 +104,17 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
+      # Half of every compiler invocation in this job is currently not cached at all, and the
+      # verbose report names why: on run 33714810237 the host build read
+      #   Uncacheable calls:                   280 / 552 (50.72%)
+      #     Could not use precompiled header:  266 / 280 (95.00%)
+      # Those 266 are SDL3, which builds its ~391 objects behind `target_precompile_headers`.
+      # ccache refuses to cache a PCH compile under its default sloppiness because a precompiled
+      # header bakes in macro definitions and expansion times it cannot otherwise account for;
+      # `pch_defines,time_macros` is the documented opt-in that lets it try. Whether GCC then
+      # produces hits without `-fpch-preprocess` is the open question, and the next run measures
+      # it — the per-step counters above are there to say so plainly either way.
+      CCACHE_SLOPPINESS: pch_defines,time_macros
       # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
       # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
       # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
