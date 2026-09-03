@@ -1,5 +1,6 @@
 import { copyFile, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
+import { resolveBlender } from "threenative-blender-mcp/bridge";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { classify, compileAssets } from "../src/compile.js";
@@ -15,6 +16,19 @@ import { blenderImportPass, needsBlenderImport } from "../src/passes/blender-imp
  */
 
 const fixtures = path.resolve("packages/assets/__tests__/fixtures/blender");
+
+// A conversion gate needs a real Blender. Where there is none — CI, by design, since this
+// framework never installs a 350 MB dependency for a user — the gate says so on stderr and skips.
+// A skipped gate reported as a pass is the failure PRD-346's verification section exists to
+// prevent, so the name is printed and the assertions that do NOT need Blender still run.
+const blender = resolveBlender();
+if (!blender.available) {
+  process.stderr.write(
+    `TN_BLENDER_TESTS_SKIPPED: ${blender.detail} Install Blender to run the conversion gates in packages/assets/__tests__/blender-import.spec.ts.\n`,
+  );
+}
+const withBlender = blender.available ? describe : describe.skip;
+const itWithBlender = blender.available ? it : it.skip;
 const CHARACTER = "character.fbx";
 const PROP = "flag_A_blue.fbx";
 
@@ -76,37 +90,46 @@ describe("blender source classification", () => {
 });
 
 describe("blenderImportPass", () => {
-  it("should convert a rigged fbx to a loadable glb", async () => {
-    const input = await readFile(path.join(fixtures, CHARACTER));
-    const result = await blenderImportPass().apply(input, CHARACTER);
-    expect(Buffer.isBuffer(result)).toBe(false);
-    if (Buffer.isBuffer(result)) return;
-    expect(result.outputExtension).toBe(".glb");
-    expect(result.entry).toMatchObject({ importedFrom: "fbx" });
+  itWithBlender(
+    "should convert a rigged fbx to a loadable glb",
+    async () => {
+      const input = await readFile(path.join(fixtures, CHARACTER));
+      const result = await blenderImportPass().apply(input, CHARACTER);
+      expect(Buffer.isBuffer(result)).toBe(false);
+      if (Buffer.isBuffer(result)) return;
+      expect(result.outputExtension).toBe(".glb");
+      expect(result.entry).toMatchObject({ importedFrom: "fbx" });
 
-    const facts = await readGlbFacts(result.buffer);
-    expect(facts.meshes).toBe(2);
-    expect(facts.materials.length).toBeGreaterThanOrEqual(2);
-    expect(facts.materials).toEqual(expect.arrayContaining(["Cloth", "Skin"]));
-    expect(facts.animations.length).toBeGreaterThanOrEqual(2);
-    expect(facts.joints).toBeGreaterThan(0);
-    expect(facts.images).toBeGreaterThan(0);
-    // The fixture's own triangle count, measured by Blender at authoring time. Within 1%: the
-    // exporter may retriangulate, and a count that drifted further is geometry loss.
-    expect(facts.triangles).toBeGreaterThan(620 * 0.99);
-    expect(facts.triangles).toBeLessThan(620 * 1.01);
-  }, 180_000);
+      const facts = await readGlbFacts(result.buffer);
+      expect(facts.meshes).toBe(2);
+      expect(facts.materials.length).toBeGreaterThanOrEqual(2);
+      expect(facts.materials).toEqual(expect.arrayContaining(["Cloth", "Skin"]));
+      expect(facts.animations.length).toBeGreaterThanOrEqual(2);
+      expect(facts.joints).toBeGreaterThan(0);
+      expect(facts.images).toBeGreaterThan(0);
+      // The fixture's own triangle count, measured by Blender at authoring time. Within 1%: the
+      // exporter may retriangulate, and a count that drifted further is geometry loss.
+      expect(facts.triangles).toBeGreaterThan(620 * 0.99);
+      expect(facts.triangles).toBeLessThan(620 * 1.01);
+    },
+    180_000,
+  );
 
-  it("should convert an untouched third-party fbx", async () => {
-    const input = await readFile(path.join(fixtures, PROP));
-    const result = await blenderImportPass().apply(input, PROP);
-    if (Buffer.isBuffer(result)) throw new Error("the prop fixture was passed through unconverted");
-    const facts = await readGlbFacts(result.buffer);
-    expect(facts.meshes).toBe(1);
-    expect(facts.materials).toEqual(["platformer"]);
-    expect(facts.triangles).toBeGreaterThan(502 * 0.99);
-    expect(facts.triangles).toBeLessThan(502 * 1.01);
-  }, 180_000);
+  itWithBlender(
+    "should convert an untouched third-party fbx",
+    async () => {
+      const input = await readFile(path.join(fixtures, PROP));
+      const result = await blenderImportPass().apply(input, PROP);
+      if (Buffer.isBuffer(result))
+        throw new Error("the prop fixture was passed through unconverted");
+      const facts = await readGlbFacts(result.buffer);
+      expect(facts.meshes).toBe(1);
+      expect(facts.materials).toEqual(["platformer"]);
+      expect(facts.triangles).toBeGreaterThan(502 * 0.99);
+      expect(facts.triangles).toBeLessThan(502 * 1.01);
+    },
+    180_000,
+  );
 
   it("should leave a glb alone", async () => {
     const input = Buffer.from("not really a glb");
@@ -129,25 +152,29 @@ describe("blenderImportPass", () => {
     await expect(pass.apply(input, CHARACTER)).rejects.toThrow(/Install Blender and rebuild/u);
   }, 60_000);
 
-  it("should fail when conversion produces no meshes", async () => {
-    const root = await makeTempDir("tn-blender-empty-");
-    try {
-      // A syntactically valid but empty OBJ: Blender imports it happily and produces no mesh.
-      const empty = path.join(root, "empty.obj");
-      await import("node:fs/promises").then(({ writeFile }) =>
-        writeFile(empty, "# nothing in here\n"),
-      );
-      const input = await readFile(empty);
-      await expect(blenderImportPass().apply(input, "empty.obj")).rejects.toThrow(
-        /TN_ASSETS_BLENDER_IMPORT_FAILED.*no-meshes/su,
-      );
-    } finally {
-      await rm(root, { force: true, recursive: true });
-    }
-  }, 120_000);
+  itWithBlender(
+    "should fail when conversion produces no meshes",
+    async () => {
+      const root = await makeTempDir("tn-blender-empty-");
+      try {
+        // A syntactically valid but empty OBJ: Blender imports it happily and produces no mesh.
+        const empty = path.join(root, "empty.obj");
+        await import("node:fs/promises").then(({ writeFile }) =>
+          writeFile(empty, "# nothing in here\n"),
+        );
+        const input = await readFile(empty);
+        await expect(blenderImportPass().apply(input, "empty.obj")).rejects.toThrow(
+          /TN_ASSETS_BLENDER_IMPORT_FAILED.*no-meshes/su,
+        );
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    },
+    120_000,
+  );
 });
 
-describe("compileAssets with a blender source", () => {
+withBlender("compileAssets with a blender source", () => {
   it("should compile a downloaded fbx into a hashed glb the manifest names", async () => {
     const { manifest, outputRoot, root } = await compileFixture(CHARACTER);
     try {
