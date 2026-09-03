@@ -589,6 +589,10 @@ test("Android conformance dismisses immersive confirmation before its first acti
 
   assert.deepEqual(calls, [
     ["shell", "settings", "put", "secure", "immersive_mode_confirmations", "confirmed"],
+    // Suppresses the system ANR dialog. On run 33703705629, 73 of this lane's 74 failures were
+    // `TN_ANDROID_SYSTEM_DIALOG: Application Not Responding: com.android.launcher3` — the
+    // launcher, not the game, going Not Responding on a software-GL runner and taking focus.
+    ["shell", "settings", "put", "global", "hide_error_dialogs", "1"],
     [
       "shell",
       "am",
