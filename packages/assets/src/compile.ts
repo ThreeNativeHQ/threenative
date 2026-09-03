@@ -17,6 +17,7 @@ import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
 import { applyPasses } from "./pass-chain.js";
 import type { IAppliedPasses, IPassTiming } from "./pass-chain.js";
+import { blenderImportPass, needsBlenderImport } from "./passes/blender-import.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import { modelPass } from "./passes/model.js";
@@ -257,6 +258,9 @@ interface IAssetManifestEntry {
   /** Extensions the compiled output declares (model pass), sorted. */
   readonly extensions?: readonly string[];
   readonly format?: string;
+  /** The source extension a GLB was converted from (`fbx`, `blend`, `obj`, `dae`), so a report can
+   * say a model was converted rather than authored. Absent for a model the game shipped as glTF. */
+  readonly importedFrom?: string;
   readonly kind: AssetKind;
   readonly lightmapAtlas?: Readonly<Record<string, unknown>>;
   readonly lightmaps?: readonly Readonly<Record<string, unknown>>[];
@@ -326,8 +330,15 @@ const BASISU_EXTENSION = "KHR_texture_basisu";
 const PIPELINE_VERSION = 8;
 
 const KIND_BY_EXTENSION: Readonly<Record<string, AssetKind>> = {
+  // Converted to GLB by `blenderImportPass` before `modelPass` sees them. Until PRD-346 these four
+  // classified as "other", were copied through untouched, and the build reported success on a file
+  // no runtime can load.
+  blend: "model",
+  dae: "model",
+  fbx: "model",
   glb: "model",
   gltf: "model",
+  obj: "model",
   jpeg: "texture",
   jpg: "texture",
   mp3: "audio",
@@ -820,6 +831,10 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       builtinPasses.push(lightmapPass(lightmap));
       passSpecs.push({ kind: "lightmap", options: lightmap });
     }
+    // Ahead of `modelPass`: it converts the source into the GLB that pass then optimizes. A game
+    // with no importable source pays one extension test per input.
+    builtinPasses.push(blenderImportPass());
+    passSpecs.push({ kind: "blender-import" });
     if (models !== undefined) {
       builtinPasses.push(
         modelPass({
@@ -935,6 +950,7 @@ function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): b
   return (
     existing.output === entry.output &&
     existing.kind === entry.kind &&
+    existing.importedFrom === entry.importedFrom &&
     JSON.stringify(existing.lightmapAtlas) === JSON.stringify(entry.lightmapAtlas) &&
     JSON.stringify(existing.lightmaps) === JSON.stringify(entry.lightmaps) &&
     JSON.stringify(existing.embeddedTextures) === JSON.stringify(entry.embeddedTextures) &&
@@ -1402,10 +1418,15 @@ export async function compileAssets(
       : { concurrencyUsed: 1, passCosts: [], skipped: 0, skippedCompression: [], written: 0 };
   }
 
-  /** Everything one entry contributes to the receipt, the health report and the size report. */
+  /** Everything one entry contributes to the receipt, the health report and the size report.
+   *
+   * `measured` is what the health report reads. For everything the runtime can already load it is
+   * the source, deliberately — see the comment at the `healthInputs.push` below. For a `.fbx`,
+   * `.blend`, `.obj` or `.dae` it is the converted GLB, because the source is not a document this
+   * reader knows: measuring it raised TN_ASSETS_MODEL_UNREADABLE and failed the whole compile. */
   const bookkeep = (
     logical: string,
-    input: Buffer,
+    measured: Buffer,
     entry: IAssetManifestEntry,
     auxiliary: readonly {
       readonly bytes: number;
@@ -1428,8 +1449,9 @@ export async function compileAssets(
     // kinds. Texture dimensions, alpha and power-of-two are authoring properties a KTX2
     // output hides; model triangles and materials are the counts targets are declared
     // against, and the pass's self-verification guarantees they survive compilation within
-    // tolerance. Byte savings are reported per kind below instead.
-    healthInputs.push({ data: input, logicalPath: logical });
+    // tolerance. Byte savings are reported per kind below instead. A Blender-imported source is
+    // the exception the caller resolves: its earliest readable form is the converted GLB.
+    healthInputs.push({ data: measured, logicalPath: logical });
     if (entry.bytesBefore === undefined) return;
     if (entry.triangles !== undefined) {
       modelRows.push({
@@ -1483,7 +1505,12 @@ export async function compileAssets(
         : await reusableEntry(layout.outputRoot, logical, digest.slice(0, 8), previousEntry);
     if (previousEntry !== undefined && reusable !== undefined) {
       entries[logical] = previousEntry;
-      bookkeep(logical, input, previousEntry, reusable, undefined);
+      // A cache hit never ran the converter, so the GLB the report must measure is the one already
+      // on disk under this entry's output name.
+      const measured = needsBlenderImport(logical)
+        ? await readFile(path.join(layout.outputRoot, previousEntry.output))
+        : input;
+      bookkeep(logical, measured, previousEntry, reusable, undefined);
       recordCachedInputs(costInputs, passNames);
       skipped += 1;
       return;
@@ -1512,6 +1539,10 @@ export async function compileAssets(
               ? (applied.entry.extensions as string[])
               : undefined,
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
+            importedFrom:
+              typeof applied.entry.importedFrom === "string"
+                ? applied.entry.importedFrom
+                : undefined,
             lightmapAtlas: isRecord(applied.entry.lightmapAtlas)
               ? applied.entry.lightmapAtlas
               : undefined,
@@ -1546,7 +1577,7 @@ export async function compileAssets(
         : undefined;
     bookkeep(
       logical,
-      input,
+      needsBlenderImport(logical) ? applied.buffer : input,
       entry,
       auxiliaryOutputs.map((output) => ({
         bytes: output.buffer.length,

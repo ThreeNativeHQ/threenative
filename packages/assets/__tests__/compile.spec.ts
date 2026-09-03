@@ -93,7 +93,7 @@ describe("compileAssets", () => {
     expect(entry.kind).toBe("texture");
     expect(entry.format).toBe("etc1s");
     expect(entry.transcodeTargets).toEqual(["bc1", "etc2"]);
-    expect(entry.passes).toEqual(["ktx2", "model"]);
+    expect(entry.passes).toEqual(["ktx2", "blender-import", "model"]);
     expect(entry.bytesBefore).toBe(source.length);
     expect(entry.bytesAfter).toBeLessThan(source.length);
     expect(entry.bytes).toBe(entry.bytesAfter);
@@ -470,7 +470,7 @@ describe("compileAssets", () => {
     expect(entry.format).toBeUndefined();
     expect(entry.bytesBefore).toBeUndefined();
     // Textures: none — the model pass is the only built-in in this configuration.
-    expect(entry.passes).toEqual(["model"]);
+    expect(entry.passes).toEqual(["blender-import", "model"]);
     expect((await readFile(path.join(root, "public", entry.output))).equals(source)).toBe(true);
     await expect(stat(path.join(root, "public", "basis"))).rejects.toThrow();
   });
@@ -545,7 +545,7 @@ describe("compileAssets", () => {
       const entry = manifest.entries["character.glb"];
       expect(entry.output).toMatch(/^character\.[0-9a-f]{8}\.glb$/u);
       expect(entry.kind).toBe("model");
-      expect(entry.passes).toEqual(["ktx2", "model"]);
+      expect(entry.passes).toEqual(["ktx2", "blender-import", "model"]);
       expect(entry.extensions).toEqual([
         "EXT_meshopt_compression",
         "KHR_mesh_quantization",
@@ -602,7 +602,7 @@ describe("compileAssets", () => {
       await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
     );
     const entry = manifest.entries["room.glb"];
-    expect(entry.passes).toEqual(["ktx2", "lightmap-uv2", "model"]);
+    expect(entry.passes).toEqual(["ktx2", "lightmap-uv2", "blender-import", "model"]);
     expect(entry.lightmapAtlas).toMatchObject({ padding: 2, skippedMeshes: [] });
     expect(entry.lightmapAtlas.chartCount).toBeGreaterThan(0);
     expect(entry.lightmapAtlas.width).toBeGreaterThan(0);
@@ -629,7 +629,7 @@ describe("compileAssets", () => {
     );
     const entry = manifest.entries["character.glb"];
     expect(entry.output).toMatch(/^character\.[0-9a-f]{8}\.glb$/u);
-    expect(entry.passes).toEqual(["ktx2"]);
+    expect(entry.passes).toEqual(["ktx2", "blender-import"]);
     expect(entry.triangles).toBeUndefined();
     expect(entry.extensions).toBeUndefined();
     expect((await readFile(path.join(root, "public", entry.output))).equals(source)).toBe(true);

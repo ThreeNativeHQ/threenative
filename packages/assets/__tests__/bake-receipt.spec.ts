@@ -44,7 +44,7 @@ describe("bake receipt", () => {
     expect(result.receipt).toEqual(receipt);
     const compiled = receipt.outputs.find((output) => output.source === "rock.png");
     expect(compiled?.path).toMatch(/^rock\.[0-9a-f]{8}\.ktx2$/u);
-    expect(compiled?.producer).toBe("ktx2+model");
+    expect(compiled?.producer).toBe("ktx2+blender-import+model");
     expect(compiled?.bytes).toBeGreaterThan(0);
   });
 

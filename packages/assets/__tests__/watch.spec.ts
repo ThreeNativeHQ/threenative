@@ -152,7 +152,11 @@ describe("watchAssets", () => {
       failed: [],
       passCosts: expect.any(Array),
     });
-    expect(recorder.summaries[0]?.passCosts?.map((row) => row.pass)).toEqual(["ktx2", "model"]);
+    expect(recorder.summaries[0]?.passCosts?.map((row) => row.pass)).toEqual([
+      "ktx2",
+      "blender-import",
+      "model",
+    ]);
     expect(
       recorder.summaries[0]?.passCosts?.every(
         (row) => row.status === "ran" && row.ranInputs === 1 && row.cachedInputs === 0,
@@ -274,7 +278,10 @@ describe("watchAssets", () => {
       passCosts: expect.any(Array),
     });
     // textures: "none" drops the ktx2 pass; the model pass still ran and reports itself.
-    expect(recorder.summaries[0]?.passCosts?.map((row) => row.pass)).toEqual(["model"]);
+    expect(recorder.summaries[0]?.passCosts?.map((row) => row.pass)).toEqual([
+      "blender-import",
+      "model",
+    ]);
     const entries = await readManifestEntries(path.join(root, "public", "assets.manifest.json"));
     const compiled = await readFile(
       path.join(root, "public", requireEntry(entries, "rock.png").output),

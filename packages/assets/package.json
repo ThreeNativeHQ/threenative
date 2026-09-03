@@ -55,6 +55,7 @@
     "pngjs": "7.0.0",
     "three": "catalog:",
     "three-mesh-bvh": "catalog:",
+    "threenative-blender-mcp": "workspace:*",
     "xatlasjs": "0.2.0"
   }
 }

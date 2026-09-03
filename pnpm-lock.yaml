@@ -548,6 +548,9 @@ importers:
       three-mesh-bvh:
         specifier: 'catalog:'
         version: 0.9.14(three@0.185.1(patch_hash=baf077414020ff2399cac6cf7bf0e4079aef27f79b16ffed5eeec31d58906043))
+      threenative-blender-mcp:
+        specifier: workspace:*
+        version: link:../blender-mcp
       xatlasjs:
         specifier: 0.2.0
         version: 0.2.0

@@ -154,7 +154,10 @@ export function resolveBlender(
   options: IResolveBlenderOptions = {},
 ): IBlenderStatus {
   const platformName = options.platform ?? osPlatform();
-  const home = options.home ?? homedir();
+  // The caller's environment describes the machine, and that includes where "home" is. Reading the
+  // real `homedir()` while honouring the caller's `PATH` was a half-override: a scrubbed
+  // environment still resolved `~/.local/bin/blender` and reported Blender present.
+  const home = options.home ?? environment.HOME ?? environment.USERPROFILE ?? homedir();
   const probeVersion = options.probeVersion ?? probeBlenderVersion;
   const minimumVersion = floorString();
   const install = BLENDER_INSTALL_GUIDANCE;

@@ -2,7 +2,14 @@ import { realpathSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import {
+  BLENDER_SOURCE_EXTENSIONS,
+  convertModel,
+  inspectModel,
+  runBlenderScript,
+} from "./bridge.js";
 import { type IBlenderStatus, installCommandFor, resolveBlender } from "./detect.js";
+import { RECIPES, findRecipe, recipePath, recipeSource, runRecipe } from "./recipes.js";
 
 /**
  * `threenative-blender-mcp` — a stdio MCP server that drives an installed Blender headlessly.
@@ -21,7 +28,7 @@ const SERVER_NAME = "threenative-blender-mcp";
 const SERVER_VERSION = "0.1.0";
 
 const AUTHORING_INSTRUCTIONS =
-  "Call blender_status before anything else: it answers whether this machine can convert models at all, and when it cannot it names the install command rather than failing. Blender is never installed for the user — ask first, then let them run the command. An .fbx, .blend, .obj or .dae placed in a game's assets directory is converted by the build itself; these tools are for inspecting a source before committing it and for operations the build does not perform.";
+  "Call blender_status before anything else: it answers whether this machine can convert models at all, and when it cannot it names the install command rather than failing. Blender is never installed for the user — ask first, then let them run the command. An .fbx, .blend, .obj or .dae placed in a game's assets directory is converted by the build itself; these tools are for inspecting a source before committing it and for operations the build does not perform. For anything no named tool covers, read a shipped recipe with blender_recipes and adapt it, then run it with blender_run_python.";
 
 interface IBlenderTool {
   readonly annotations: {
@@ -41,6 +48,70 @@ export const TOOL_DEFINITIONS: readonly IBlenderTool[] = [
     description:
       "Report whether this machine has a supported Blender, where it is and what version. Never fails: when Blender is absent it returns available:false with the install command for each platform.",
     inputSchema: { additionalProperties: false, properties: {}, type: "object" },
+  },
+  {
+    annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
+    name: "blender_inspect",
+    description: `Report what a model file contains without writing anything: mesh, triangle, vertex and bone counts, material names, animation clip names and image names. Accepts ${BLENDER_SOURCE_EXTENSIONS.join(", ")}, .gltf and .glb.`,
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        source: { description: "Path to the model file to inspect.", type: "string" },
+      },
+      required: ["source"],
+      type: "object",
+    },
+  },
+  {
+    annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: false },
+    name: "blender_convert",
+    description:
+      "Convert a model file to a GLB a ThreeNative game can load, preserving skeletons, animation clips, materials and textures. A conversion that produces no meshes fails rather than writing an empty GLB. Note that a game's build converts these files itself: use this to check a source before committing it, or to write a GLB somewhere else.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        out: { description: "Path of the .glb to write.", type: "string" },
+        source: { description: "Path to the model file to convert.", type: "string" },
+      },
+      required: ["source", "out"],
+      type: "object",
+    },
+  },
+  {
+    annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: false },
+    name: "blender_recipes",
+    description:
+      "List the shipped bpy recipes, read one's full source text, or run one. Read before you write: a working recipe adapted into your game beats bpy written cold. Omit 'name' to list; pass 'name' alone to read; pass 'name' with 'arguments' to run.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        arguments: {
+          description: "Recipe arguments. Present means run it; absent means return its source.",
+          type: "object",
+        },
+        name: { description: "Recipe name. Omit to list every recipe.", type: "string" },
+      },
+      type: "object",
+    },
+  },
+  {
+    annotations: { destructiveHint: true, openWorldHint: false, readOnlyHint: false },
+    name: "blender_run_python",
+    description:
+      "Run a bpy script of your own inside Blender, with a timeout, returning its result line, stderr and exit code. This is NOT a sandbox and does not claim to be: the script runs with your own privileges, exactly as it would if you invoked Blender through Bash yourself. What it adds is a resolved Blender, the same fail-closed handling every other tool here uses, and discoverability — not privilege. Read blender_recipes first; the shipped recipes are the worked examples.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        arguments: {
+          description: "The JSON request handed to the script after '--'.",
+          type: "object",
+        },
+        script: { description: "Path to the .py file to run inside Blender.", type: "string" },
+        timeoutMs: { description: "Kill the run after this many milliseconds.", type: "number" },
+      },
+      required: ["script"],
+      type: "object",
+    },
   },
 ];
 
@@ -80,11 +151,75 @@ export function blenderStatusResult(
   };
 }
 
-export function handleToolCall(params: Record<string, unknown>): {
-  content: [{ type: "text"; text: string }];
-} {
+function requiredString(
+  argumentsValue: Record<string, unknown>,
+  key: string,
+  tool: string,
+): string {
+  const value = argumentsValue[key];
+  // The raw value goes to the check, never through String(): a numeric or null argument must come
+  // back as a tool error the agent can read, not a conversion of the file "undefined".
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${tool} requires a non-empty string '${key}' argument.`);
+  }
+  return value;
+}
+
+/** List, read or run. Reading returns the recipe's own text: an agent adapts what it can see. */
+async function handleRecipes(argumentsValue: Record<string, unknown>): Promise<unknown> {
+  if (argumentsValue.name === undefined) {
+    return {
+      recipes: RECIPES.map((recipe) => ({
+        description: recipe.description,
+        name: recipe.name,
+        parameters: recipe.parameters,
+        script: recipePath(recipe),
+      })),
+    };
+  }
+  const recipe = findRecipe(argumentsValue.name);
+  if (argumentsValue.arguments === undefined) {
+    return {
+      description: recipe.description,
+      name: recipe.name,
+      parameters: recipe.parameters,
+      script: recipePath(recipe),
+      source: recipeSource(recipe),
+    };
+  }
+  if (!isRecord(argumentsValue.arguments)) {
+    throw new Error("blender_recipes 'arguments' must be an object.");
+  }
+  return runRecipe(recipe.name, argumentsValue.arguments);
+}
+
+export async function handleToolCall(
+  params: Record<string, unknown>,
+): Promise<{ content: [{ type: "text"; text: string }] }> {
   const name = params.name;
+  const argumentsValue = isRecord(params.arguments) ? params.arguments : {};
   if (name === "blender_status") return toolText(blenderStatusResult());
+  if (name === "blender_inspect") {
+    const source = requiredString(argumentsValue, "source", "blender_inspect");
+    return toolText(await inspectModel(source));
+  }
+  if (name === "blender_convert") {
+    const source = requiredString(argumentsValue, "source", "blender_convert");
+    const out = requiredString(argumentsValue, "out", "blender_convert");
+    return toolText(await convertModel(source, out));
+  }
+  if (name === "blender_recipes") return toolText(await handleRecipes(argumentsValue));
+  if (name === "blender_run_python") {
+    const script = requiredString(argumentsValue, "script", "blender_run_python");
+    const request = isRecord(argumentsValue.arguments) ? argumentsValue.arguments : {};
+    const timeoutMs = argumentsValue.timeoutMs;
+    if (timeoutMs !== undefined && typeof timeoutMs !== "number") {
+      throw new Error("blender_run_python 'timeoutMs' must be a number.");
+    }
+    return toolText(
+      await runBlenderScript(script, request, timeoutMs === undefined ? {} : { timeoutMs }),
+    );
+  }
   throw new Error(`Unknown blender MCP tool '${String(name)}'.`);
 }
 
@@ -92,7 +227,7 @@ export function handleToolCall(params: Record<string, unknown>): {
  * One raw stdin line to the JSON-RPC response to write, or `undefined` when the line is consumed
  * silently. Extracted so the stdio contract is testable without a live `process.stdin`.
  */
-export function handleLine(line: string): string | undefined {
+export async function handleLine(line: string): Promise<string | undefined> {
   if (line.trim().length === 0) return undefined;
   let request: unknown;
   try {
@@ -116,7 +251,7 @@ export function handleLine(line: string): string | undefined {
     }
     if (request.method === "tools/call") {
       if (!isRecord(request.params)) throw new Error("tools/call requires an object params value.");
-      return jsonRpcResult(request.id, handleToolCall(request.params));
+      return jsonRpcResult(request.id, await handleToolCall(request.params));
     }
     return jsonRpcError(request.id, -32601, `Method not found: ${request.method}`);
   } catch (error) {
@@ -130,9 +265,14 @@ export function handleLine(line: string): string | undefined {
  */
 export function runServer(): void {
   const input = createInterface({ input: process.stdin });
+  // Serialised: a conversion takes seconds, and two Blender processes racing on one stdio channel
+  // would interleave their replies. The client's requests are answered in the order they arrived.
+  let queue: Promise<void> = Promise.resolve();
   input.on("line", (line) => {
-    const response = handleLine(line);
-    if (response !== undefined) writeLine(response);
+    queue = queue.then(async () => {
+      const response = await handleLine(line);
+      if (response !== undefined) writeLine(response);
+    });
   });
 }
 
