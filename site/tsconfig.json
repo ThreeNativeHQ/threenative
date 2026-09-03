@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
+    "allowJs": false,
+    "baseUrl": "..",
+    "paths": {
+      "@threenative/core": ["packages/core/src/index.ts"],
+      "@threenative/core/*": ["packages/core/src/*.ts"],
+      "@threenative/physics": ["packages/physics/src/index.ts"],
+      "@threenative/playtest": ["packages/playtest/src/index.ts"],
+      "@threenative/ui": ["packages/ui/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "scripts/**/*.ts", "__tests__/**/*.ts", "*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
