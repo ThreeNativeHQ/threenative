@@ -6,6 +6,7 @@
  */
 
 #include "mystral/js/engine.h"
+#include "mystral/cold_start.h"
 #include <iostream>
 #include <sstream>
 #include <cstring>
@@ -114,6 +115,20 @@ public:
         JSStringRef scriptStr = JSStringCreateWithUTF8CString(code);
         JSStringRef sourceURL = filename ? JSStringCreateWithUTF8CString(filename) : nullptr;
 
+        // Every other member funnels here — `eval`, `evalScript` and `evalScriptWithResult` all
+        // delegate — so this is the whole of JavaScriptCore's launch instrumentation.
+        //
+        // `JSEvaluateScript` parses and runs in one call and JavaScriptCore's C API exposes no
+        // compile-only entry, so the compile boundary is not observable here: `compile_complete`
+        // and `execute_begin` are stamped at the same instant and the reader's "JavaScript parse
+        // and compile" segment reads 0 ms by construction, with the parse folded into "bundle
+        // top-level execution". That is a real limit of this engine, not a fast compile. Splitting
+        // it needs the `JSScript` API (`JSScriptCreateFromString`), which is a separate change and
+        // has no lane here — iOS runs on no physical device in this repository.
+        mystral::ColdStartEvalScope coldStart;
+        coldStart.compiled();
+        coldStart.executing();
+
         JSValueRef exception = nullptr;
         JSValueRef result = JSEvaluateScript(context_, scriptStr, nullptr, sourceURL, 0, &exception);
 
@@ -124,6 +139,7 @@ public:
             recordException(exception);
             return {nullptr, context_};
         }
+        coldStart.executed();
 
         return storeHandle(result);
     }

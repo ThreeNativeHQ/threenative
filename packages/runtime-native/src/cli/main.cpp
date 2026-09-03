@@ -11,6 +11,7 @@
  */
 
 #include "mystral/js/engine.h"
+#include "mystral/cold_start.h"
 #include "mystral/runtime.h"
 #include "tool_dispatch.h"
 #include "mystral/platform/ui_overlay.h"
@@ -1639,9 +1640,17 @@ int runScript(const CLIOptions& opts) {
         std::cerr << "Error: Failed to create runtime!" << std::endl;
         return 1;
     }
+    // Mirrors `android_main.cpp`. Before PRD-328 the desktop CLI emitted no launch markers at
+    // all, so `first_frame` was the only one on the record and the whole of host bring-up, runtime
+    // creation, JavaScript compile and top-level execution sat inside `residualMs` — 69.6 of a
+    // 111.7 ms launch, unattributed, in the 2026-09-02 probe.
+    mystral::coldStartMark("runtime_created");
     if (!attachUiOverlayIfConfigured(opts, *runtime)) return 1;
     if (!wirePlaytestMailboxBridge(runtime)) return 1;
     // Load and execute the script after host bridges exist and before mode dispatch starts.
+    // The runtime evaluates its own bootstrap scripts first, so the engine's compile markers fire
+    // more than once a launch. This brackets the one that is the game.
+    mystral::coldStartMark("game_eval_begin");
     if (!runtime->loadScript(opts.scriptPath)) {
         std::cerr << "Error: Failed to evaluate script!" << std::endl;
         return 1;
@@ -1650,6 +1659,9 @@ int runScript(const CLIOptions& opts) {
 }
 
 int main(int argc, char* argv[]) {
+    // First marker of the launch, and the one that pins the launch thread for `ColdStartEvalScope`
+    // (see `mystral/cold_start.h`). It must stay the first `coldStartMark` on this entry point.
+    mystral::coldStartMark("process");
     CLIOptions opts = parseArgs(argc, argv);
     std::string embeddedEntry = mystral::vfs::getEmbeddedEntryPath();
 

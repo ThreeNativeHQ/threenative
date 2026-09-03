@@ -9,6 +9,7 @@
  */
 
 #include "mystral/js/engine.h"
+#include "mystral/cold_start.h"
 #include "mystral/js/module_system.h"
 #include <deque>
 #include <iostream>
@@ -346,6 +347,11 @@ public:
 
         v8::TryCatch try_catch(isolate_);
 
+        // The desktop entry takes this member: `ModuleSystem::loadEntry` sends an ESM entry to
+        // `loadEsmEntry`, which calls `eval`. Instantiation is part of the compile segment because
+        // it links — and therefore compiles — the imported graph.
+        mystral::ColdStartEvalScope coldStart;
+
         v8::ScriptCompiler::Source script_source(source, origin);
         v8::Local<v8::Module> module;
         if (!v8::ScriptCompiler::CompileModule(isolate_, &script_source).ToLocal(&module)) {
@@ -363,13 +369,16 @@ public:
             reportException(try_catch);
             return false;
         }
+        coldStart.compiled();
 
         // Evaluate the module
+        coldStart.executing();
         v8::Local<v8::Value> result;
         if (!module->Evaluate(context).ToLocal(&result)) {
             reportException(try_catch);
             return false;
         }
+        coldStart.executed();
 
         return true;
     }
@@ -394,6 +403,8 @@ public:
 
         v8::TryCatch try_catch(isolate_);
 
+        mystral::ColdStartEvalScope coldStart;
+
         v8::ScriptCompiler::Source script_source(source, origin);
         v8::Local<v8::Module> module;
         if (!v8::ScriptCompiler::CompileModule(isolate_, &script_source).ToLocal(&module)) {
@@ -410,12 +421,15 @@ public:
             reportException(try_catch);
             return {nullptr, isolate_};
         }
+        coldStart.compiled();
 
+        coldStart.executing();
         v8::Local<v8::Value> result;
         if (!module->Evaluate(context).ToLocal(&result)) {
             reportException(try_catch);
             return {nullptr, isolate_};
         }
+        coldStart.executed();
 
         // Store persistent handle
         v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, result);
@@ -441,17 +455,23 @@ public:
             0, 0, false, -1, v8::Local<v8::Value>(), false, false, false);
 
         v8::TryCatch try_catch(isolate_);
+        // The Android entry takes this member: `android_main.cpp` reads the bundle out of the APK
+        // and hands it to `runtime->evalScript`, which reaches here.
+        mystral::ColdStartEvalScope coldStart;
         v8::Local<v8::Script> script;
         if (!v8::Script::Compile(context, source, &origin).ToLocal(&script)) {
             reportException(try_catch);
             return false;
         }
+        coldStart.compiled();
 
+        coldStart.executing();
         v8::Local<v8::Value> result;
         if (!script->Run(context).ToLocal(&result)) {
             reportException(try_catch);
             return false;
         }
+        coldStart.executed();
 
         return true;
     }
@@ -474,17 +494,23 @@ public:
             0, 0, false, -1, v8::Local<v8::Value>(), false, false, false);
 
         v8::TryCatch try_catch(isolate_);
+        // CommonJS modules reach here through `ModuleSystem::executeCjsModule`, nested inside the
+        // entry's own evaluation, so the scope's depth guard leaves them unmarked.
+        mystral::ColdStartEvalScope coldStart;
         v8::Local<v8::Script> script;
         if (!v8::Script::Compile(context, source, &origin).ToLocal(&script)) {
             reportException(try_catch);
             return {nullptr, isolate_};
         }
+        coldStart.compiled();
 
+        coldStart.executing();
         v8::Local<v8::Value> result;
         if (!script->Run(context).ToLocal(&result)) {
             reportException(try_catch);
             return {nullptr, isolate_};
         }
+        coldStart.executed();
 
         v8::Persistent<v8::Value>* persistent = acquirePersistent(isolate_, result);
         frameHandles_.insert(persistent);
