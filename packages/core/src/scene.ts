@@ -61,7 +61,22 @@ export interface IStartupTimeline {
   readonly enteredMs?: number;
   /** First-use compilation settled or its budget expired. */
   readonly compileSettledMs?: number;
-  /** `whenReady()` resolved: the world is safe to show. */
+  /**
+   * The framework's own launch work finished: compilation settled and the frame window held.
+   *
+   * Equal to `readyMs` unless the game registered a `startup.hold()`. Kept separate so that making
+   * `readyMs` honest about the player's wait does not delete the only measurement of the
+   * framework's own cost — a game with a slow asset tier would otherwise hide a framework
+   * regression inside its own loading time.
+   */
+  readonly frameworkReadyMs?: number;
+  /**
+   * `whenReady()` resolved: the world is safe to show, including anything the game held for.
+   *
+   * This is the number to compare against what a player experiences. It used to be the
+   * framework's own readiness and nothing else, which reported 1.5 s on a valley that took 8.8 s
+   * to appear — and `assert.startup`'s `maxReadyMs` passed on it.
+   */
   readonly readyMs?: number;
 }
 
@@ -90,8 +105,27 @@ export interface IStartupStatus {
   readonly progress: number;
   /** When each milestone happened; members appear as they are reached. */
   readonly timeline: IStartupTimeline;
-  /** Resolves after first-use work and the sustained frame window, so it is always awaitable. */
+  /** Resolves after first-use work, the sustained frame window, and every game `hold()`. */
   whenReady(): Promise<void>;
+  /**
+   * Add the game's own launch work to the readiness gate, so every framework-owned observation of
+   * startup describes the moment the player actually reached the world.
+   *
+   * For a game that streams a second asset tier after the framework is done. Without it the only
+   * options are to show a half-built world or to hold a curtain past `whenReady()`, and the second
+   * leaves `progress`, `phase`, `timeline.readyMs` and the playtest bridge's `assert.startup` all
+   * describing a moment nobody experienced.
+   *
+   * Fails open twice: a hold that rejects counts as settled, and `budgetMs` bounds how long it may
+   * delay the world (45 s by default). A launch slower than it could be is a disappointment; a
+   * launch that never finishes because one asset 404'd is a bug.
+   *
+   * Throws on an empty or duplicate label, and on a hold registered after startup already
+   * resolved — each means the caller believes it is gating something it is not.
+   *
+   * @situation hold the loading screen until the game's own asset tier has landed
+   */
+  hold(label: string, work: Promise<unknown>, budgetMs?: number): void;
 }
 
 export interface ICtx<

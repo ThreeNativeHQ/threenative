@@ -828,10 +828,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const startupReadiness = new StartupReadiness();
     const timeline: { -readonly [K in keyof IStartupTimeline]: IStartupTimeline[K] } = {};
     const now = (): number => globalThis.performance?.now() ?? Date.now();
+    // Stamped when the FRAMEWORK is done, which is before `whenReady()` whenever the game has
+    // registered a `startup.hold()`. Two stamps, because one number cannot be both "what the
+    // framework cost" and "what the player waited for", and collapsing them is how a valley that
+    // took 8.8 s to appear reported 1.5 s.
+    void startupReadiness.whenFrameworkReady().then(() => {
+      timeline.compileSettledMs ??= now();
+      timeline.frameworkReadyMs ??= now();
+    });
     void startupReadiness.whenReady().then(() => {
       // A renderer without first-use compilation settles without running the compile closure
       // below, so the settle stamp is guaranteed here at the latest.
       timeline.compileSettledMs ??= now();
+      timeline.frameworkReadyMs ??= now();
       timeline.readyMs ??= now();
       projectionSettled = true;
       markProjectionSettled();
@@ -933,10 +942,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // loads, entering the world is 80%, compile settling 90%, and only readiness is 1.
         get progress() {
           if (projectionSettled) return 1;
+          // A registered hold owns the last tenth. Without this the bar sat at 0.9 for the whole
+          // of the game's own tier and then jumped, which is the reading a player calls frozen.
+          if (startupReadiness.frameworkReady) {
+            const held = startupReadiness.holdReport.length;
+            if (held === 0) return 0.9;
+            const settled = held - startupReadiness.pendingHolds.length;
+            return 0.9 + 0.1 * (settled / held);
+          }
           if (startupReadiness.compileSettled) return 0.9;
           if (timeline.enteredMs !== undefined) return 0.8;
           const { requested, settled } = assets.progress;
           return requested === 0 ? 0 : 0.7 * Math.min(1, settled / requested);
+        },
+        hold: (label, work, budgetMs) => {
+          startupReadiness.hold(label, work, budgetMs);
         },
         get timeline() {
           return { ...timeline };
