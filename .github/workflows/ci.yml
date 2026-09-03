@@ -887,6 +887,14 @@ jobs:
           git --redact --verbose
           --gitleaks-ignore-path /repo/.gitleaksignore
           /repo
+      # dependency-review diffs a base ref against a head ref, and only a pull_request /
+      # pull_request_target / merge_group event supplies them. This job stopped being PR-only on
+      # 2026-09-01 (#39) so gitleaks could scan the full history on main, and every step added
+      # then was guarded by event — except this one. Ungated it has errored on every push to main
+      # since, with "Both a base ref and head ref must be provided", which is why main has not
+      # reported a green supply-chain in three days. The secrets scan runs on both events; the
+      # dependency diff cannot.
       - uses: actions/dependency-review-action@v4
+        if: github.event_name == 'pull_request'
         with:
           fail-on-severity: moderate

@@ -399,6 +399,14 @@ describe("CI pipeline structure", () => {
       "if: github.event_name == 'pull_request' || github.event_name == 'push'",
     );
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
+    // ...but the dependency diff itself stays pull_request-only: it needs a base ref and a head
+    // ref, which a push does not supply, and ungating it made every push-to-main run red.
+    expect(
+      supplyChain,
+      "dependency-review must stay pull_request-only; on push it has no base/head ref",
+    ).toContain(
+      "- uses: actions/dependency-review-action@v4\n        if: github.event_name == 'pull_request'",
+    );
     expect(supplyChain).toContain("fail-on-severity: moderate");
     expect(supplyChain).not.toContain("allow-licenses");
     expect(supplyChain).toContain("fetch-depth: 0");
