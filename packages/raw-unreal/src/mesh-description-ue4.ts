@@ -1,9 +1,16 @@
 import { BinaryReader } from "./binary.js";
 import { UAssetError, assertUAsset } from "./errors.js";
+import {
+  type IUe4AttributeEntry,
+  type Ue4AttributeSet,
+  readAttributeSet,
+} from "./mesh-attributes-ue4.js";
+
+export type { IUe4AttributeEntry, Ue4AttributeSet };
 
 /**
  * The UE4.2x serialization of `FMeshDescription`, which is not the UE5 one in
- * `mesh-description.ts`. Two things differ, and both matter:
+ * `mesh-description.ts`. Three things differ, and all of them matter:
  *
  *  - The element containers are a **fixed sequence** with no names — vertices, vertex instances,
  *    edges, polygons, polygon groups — each an allocation bit array followed by that element
@@ -11,52 +18,35 @@ import { UAssetError, assertUAsset } from "./errors.js";
  *  - The **triangles trail the attribute sets**. `MeshDescriptionTriangles` appended the
  *    triangle container and its attribute set after the five attribute sets that were already
  *    being written, so a reader that stops at the last attribute set never sees a corner index.
+ *  - A container's **elements are written once per allocated slot**, while its attribute arrays
+ *    stay dense over every slot. A mesh whose containers have no holes hides this completely —
+ *    the two counts coincide — and a reader that strides by slot count then runs long by one
+ *    element per hole and lands inside the next container. Seven Office Pack meshes carry a
+ *    holed edge container; the other 134 do not.
  *
- * Attribute entries are also one field shorter: UE5's per-attribute and per-channel `extent`
- * does not exist here, so an entry is name, type, element count, channel count, channels.
+ * The attribute entries themselves are read by `mesh-attributes-ue4.ts`.
  */
 
 const MAX_MESH_ELEMENTS = 10_000_000;
-const MAX_ATTRIBUTE_VALUES = 100_000_000;
-
-interface IAttributeType {
-  readonly name: string;
-  readonly components: number;
-  readonly byteSize: number | undefined;
-  readonly kind: "float" | "int" | "bool" | "name";
-}
-
-const ATTRIBUTE_TYPES: readonly IAttributeType[] = Object.freeze([
-  { name: "FVector4f", components: 4, byteSize: 16, kind: "float" },
-  { name: "FVector3f", components: 3, byteSize: 12, kind: "float" },
-  { name: "FVector2f", components: 2, byteSize: 8, kind: "float" },
-  { name: "float", components: 1, byteSize: 4, kind: "float" },
-  { name: "int32", components: 1, byteSize: 4, kind: "int" },
-  { name: "bool", components: 1, byteSize: 1, kind: "bool" },
-  { name: "FName", components: 1, byteSize: undefined, kind: "name" },
-]);
-
-export interface IUe4AttributeEntry {
-  name: string;
-  type: string;
-  components: number;
-  numElements: number;
-  values: Float32Array | Int32Array | Uint8Array | string[];
-}
-
-export type Ue4AttributeSet = Map<string, IUe4AttributeEntry>;
 
 export interface IUe4MeshDescription {
   byteLength: number;
+  /** Allocated vertices; `vertexSlots` is how many ids the container spans. */
   vertexCount: number;
-  /** Vertex index of each vertex instance. */
+  vertexSlots: number;
+  validVertexIds: readonly number[];
+  /** Vertex-instance ids the file allocated, ascending. */
+  validVertexInstanceIds: readonly number[];
+  /** Vertex index of each vertex-instance **slot**; unallocated slots hold −1. */
   vertexInstanceVertices: Int32Array;
-  /** Polygon-group index of each polygon. */
+  /** Polygon-group index of each polygon **slot**; unallocated slots hold −1. */
   polygonGroups: Int32Array;
   polygonGroupCount: number;
-  /** Three vertex-instance indices per triangle, in file order. */
+  /** Triangle ids the file allocated, ascending. */
+  validTriangleIds: readonly number[];
+  /** Three vertex-instance indices per triangle **slot**. */
   triangleVertexInstances: Int32Array;
-  /** Polygon index of each triangle. */
+  /** Polygon index of each triangle **slot**. */
   trianglePolygons: Int32Array;
   vertexAttributes: Ue4AttributeSet;
   vertexInstanceAttributes: Ue4AttributeSet;
@@ -67,169 +57,38 @@ function meshError(message: string, details: Record<string, unknown>): UAssetErr
   return new UAssetError("INVALID_MESH_DESCRIPTION", message, details);
 }
 
-/** An allocation `TBitArray`: a bit count then its words. Every container in a saved static
- * mesh is fully allocated, but holes are read rather than assumed. */
-function readBitArray(reader: BinaryReader, what: string): { numBits: number; allocated: number } {
+interface IContainerAllocation {
+  /** How many element ids the container spans, holes included. */
+  numBits: number;
+  /** The ids that carry an element, ascending. One element is serialized for each. */
+  validIds: number[];
+}
+
+/** An allocation `TBitArray`: a bit count then its words. The set bits are the element ids that
+ * exist, and their count — not the bit count — is how many elements follow. */
+function readBitArray(reader: BinaryReader, what: string): IContainerAllocation {
   const offset = reader.pos;
   const numBits = reader.int32(`${what} TBitArray NumBits`);
   if (numBits < 0 || numBits > MAX_MESH_ELEMENTS) {
     throw meshError(`Invalid ${what} allocation length`, { offset, numBits });
   }
   const wordCount = Math.ceil(numBits / 32);
-  let allocated = 0;
+  const words = new Uint32Array(wordCount);
   for (let index = 0; index < wordCount; index += 1) {
-    const word = reader.uint32(`${what} TBitArray word`);
-    const remaining = numBits - index * 32;
-    const mask = remaining >= 32 ? 0xffff_ffff : (1 << remaining) - 1;
-    allocated += popCount(word & mask);
+    words[index] = reader.uint32(`${what} TBitArray word`);
   }
-  return { numBits, allocated };
-}
-
-function popCount(value: number): number {
-  let bits = value - ((value >>> 1) & 0x5555_5555);
-  bits = (bits & 0x3333_3333) + ((bits >>> 2) & 0x3333_3333);
-  return (((bits + (bits >>> 4)) & 0x0f0f_0f0f) * 0x0101_0101) >>> 24;
+  const validIds: number[] = [];
+  for (let id = 0; id < numBits; id += 1) {
+    const word = words[id >>> 5];
+    if (word !== undefined && (word & (1 << (id & 31))) !== 0) validIds.push(id);
+  }
+  return { numBits, validIds };
 }
 
 function readInt32Array(reader: BinaryReader, count: number, what: string): Int32Array {
   const values = new Int32Array(count);
   for (let index = 0; index < count; index += 1) values[index] = reader.int32(what);
   return values;
-}
-
-function readAttributeEntry(reader: BinaryReader, rawName: string): IUe4AttributeEntry {
-  const name = rawName.trimEnd();
-  const typeIndex = reader.uint32(`${name} type`);
-  const type = ATTRIBUTE_TYPES[typeIndex];
-  assertUAsset(type !== undefined, "INVALID_MESH_DESCRIPTION", "Unknown attribute type", {
-    attribute: name,
-    typeIndex,
-  });
-  const numElements = reader.int32(`${name} element count`);
-  const numChannels = reader.int32(`${name} channel count`);
-  if (numElements < 0 || numElements > MAX_MESH_ELEMENTS || numChannels < 0 || numChannels > 128) {
-    throw meshError(`Invalid attribute shape for ${name}`, { name, numElements, numChannels });
-  }
-
-  let values: IUe4AttributeEntry["values"] = new Float32Array(0);
-  for (let channel = 0; channel < numChannels; channel += 1) {
-    const channelValues = readAttributeChannel(reader, type, name, numElements);
-    // Only channel 0 is kept: the static-mesh attributes this reader consumes are all
-    // single-channel, and a later channel would need an `extent` this format does not have.
-    if (channel === 0) values = channelValues;
-  }
-
-  readDefaultValue(reader, type);
-  reader.uint32(`${name} flags`);
-  return { name, type: type.name, components: type.components, numElements, values };
-}
-
-function readAttributeChannel(
-  reader: BinaryReader,
-  type: IAttributeType,
-  name: string,
-  numElements: number,
-): IUe4AttributeEntry["values"] {
-  if (type.kind === "name") {
-    const count = reader.int32(`${name} FName count`);
-    if (count < 0 || count > MAX_ATTRIBUTE_VALUES) {
-      throw meshError(`Invalid FName count for ${name}`, { name, count });
-    }
-    assertUAsset(
-      count === numElements,
-      "INVALID_MESH_DESCRIPTION",
-      `Serialized value count mismatch for ${name}`,
-      { name, expected: numElements, actual: count },
-    );
-    const names: string[] = new Array(count);
-    for (let index = 0; index < count; index += 1)
-      names[index] = reader.fstring(`${name}[${index}]`);
-    return names;
-  }
-
-  const elementSize = reader.int32(`${name} bulk element size`);
-  const count = reader.int32(`${name} bulk element count`);
-  assertUAsset(
-    type.byteSize !== undefined && elementSize === type.byteSize,
-    "INVALID_MESH_DESCRIPTION",
-    `${name} has an unexpected element size`,
-    { name, expected: type.byteSize, actual: elementSize },
-  );
-  assertUAsset(
-    count === numElements,
-    "INVALID_MESH_DESCRIPTION",
-    `Serialized value count mismatch for ${name}`,
-    { name, expected: numElements, actual: count },
-  );
-  const requiredBytes = count * elementSize;
-  assertUAsset(
-    Number.isSafeInteger(requiredBytes) && requiredBytes <= reader.remaining,
-    "INVALID_MESH_DESCRIPTION",
-    `${name} exceeds the remaining MeshDescription payload`,
-    { name, requiredBytes, remaining: reader.remaining },
-  );
-
-  if (type.kind === "float") {
-    const values = new Float32Array(count * type.components);
-    for (let index = 0; index < values.length; index += 1) values[index] = reader.float32(name);
-    return values;
-  }
-  if (type.kind === "int") return readInt32Array(reader, count, name);
-  const values = new Uint8Array(count);
-  values.set(reader.raw(count, name));
-  return values;
-}
-
-function readDefaultValue(reader: BinaryReader, type: IAttributeType): void {
-  switch (type.kind) {
-    case "float":
-      for (let index = 0; index < type.components; index += 1) reader.float32(type.name);
-      return;
-    case "int":
-    case "bool":
-      reader.int32(type.name);
-      return;
-    case "name":
-      reader.fstring(type.name);
-      return;
-  }
-}
-
-function readAttributeSet(
-  reader: BinaryReader,
-  what: string,
-  expectedElements: number,
-): Ue4AttributeSet {
-  const numElements = reader.int32(`${what} attribute-set element count`);
-  const attributeCount = reader.int32(`${what} attribute count`);
-  if (
-    numElements < 0 ||
-    numElements > MAX_MESH_ELEMENTS ||
-    attributeCount < 0 ||
-    attributeCount > 1024
-  ) {
-    throw meshError(`Invalid ${what} attribute set`, { what, numElements, attributeCount });
-  }
-  assertUAsset(
-    numElements === expectedElements,
-    "INVALID_MESH_DESCRIPTION",
-    `${what} attribute set disagrees with its element container`,
-    { what, numElements, expectedElements },
-  );
-  const attributes: Ue4AttributeSet = new Map();
-  for (let index = 0; index < attributeCount; index += 1) {
-    const rawName = reader.fstring(`${what} attribute name ${index}`);
-    const entry = readAttributeEntry(reader, rawName);
-    assertUAsset(
-      entry.numElements === numElements,
-      "INVALID_MESH_DESCRIPTION",
-      `${what} attribute "${entry.name}" disagrees with its set`,
-      { what, attribute: entry.name, numElements: entry.numElements, expected: numElements },
-    );
-    attributes.set(entry.name, entry);
-  }
-  return attributes;
 }
 
 /**
@@ -242,28 +101,29 @@ export function parseMeshDescriptionUe4(input: Uint8Array, offset = 0): IUe4Mesh
 
   const vertices = readBitArray(reader, "VertexArray");
   const vertexInstances = readBitArray(reader, "VertexInstanceArray");
-  const vertexInstanceVertices = readInt32Array(
-    reader,
-    vertexInstances.numBits,
-    "FMeshVertexInstance.VertexID",
-  );
+  const vertexInstanceVertices = new Int32Array(vertexInstances.numBits).fill(-1);
+  for (const instanceId of vertexInstances.validIds) {
+    vertexInstanceVertices[instanceId] = reader.int32("FMeshVertexInstance.VertexID");
+  }
   const edges = readBitArray(reader, "EdgeArray");
-  reader.skip(edges.numBits * 8, "FMeshEdge.VertexIDs");
+  reader.skip(edges.validIds.length * 8, "FMeshEdge.VertexIDs");
 
   const polygons = readBitArray(reader, "PolygonArray");
-  const polygonGroups = new Int32Array(polygons.numBits);
-  for (let index = 0; index < polygons.numBits; index += 1) {
+  const polygonGroups = new Int32Array(polygons.numBits).fill(-1);
+  for (const polygonId of polygons.validIds) {
     // A polygon's triangulation is rebuilt on load, so the array is written empty; reading it as
     // an array rather than skipping four bytes keeps a non-empty one from silently derailing.
     const triangleCount = reader.int32("FMeshPolygon.TriangleIDs count");
     if (triangleCount < 0 || triangleCount > MAX_MESH_ELEMENTS) {
-      throw meshError("Invalid polygon triangulation count", { polygon: index, triangleCount });
+      throw meshError("Invalid polygon triangulation count", { polygonId, triangleCount });
     }
     reader.skip(triangleCount * 4, "FMeshPolygon.TriangleIDs");
-    polygonGroups[index] = reader.int32("FMeshPolygon.PolygonGroupID");
+    polygonGroups[polygonId] = reader.int32("FMeshPolygon.PolygonGroupID");
   }
   const polygonGroupArray = readBitArray(reader, "PolygonGroupArray");
 
+  // Attribute arrays are dense over slots even where the container is holed, so they are sized
+  // by the bit count while the elements above were sized by the allocated count.
   const vertexAttributes = readAttributeSet(reader, "Vertex", vertices.numBits);
   const vertexInstanceAttributes = readAttributeSet(
     reader,
@@ -280,21 +140,24 @@ export function parseMeshDescriptionUe4(input: Uint8Array, offset = 0): IUe4Mesh
 
   // The triangle container and its attribute set trail the five attribute sets above.
   const triangles = readBitArray(reader, "TriangleArray");
-  const triangleVertexInstances = new Int32Array(triangles.numBits * 3);
-  const trianglePolygons = new Int32Array(triangles.numBits);
-  for (let index = 0; index < triangles.numBits; index += 1) {
+  const triangleVertexInstances = new Int32Array(triangles.numBits * 3).fill(-1);
+  const trianglePolygons = new Int32Array(triangles.numBits).fill(-1);
+  for (const triangleId of triangles.validIds) {
     for (let corner = 0; corner < 3; corner += 1) {
-      triangleVertexInstances[index * 3 + corner] = reader.int32("FMeshTriangle.VertexInstanceIDs");
+      triangleVertexInstances[triangleId * 3 + corner] = reader.int32(
+        "FMeshTriangle.VertexInstanceIDs",
+      );
     }
-    trianglePolygons[index] = reader.int32("FMeshTriangle.PolygonID");
+    trianglePolygons[triangleId] = reader.int32("FMeshTriangle.PolygonID");
   }
   readAttributeSet(reader, "Triangle", triangles.numBits);
 
   validateReferences({
-    vertexCount: vertices.numBits,
-    vertexInstanceCount: vertexInstances.numBits,
-    polygonCount: polygons.numBits,
+    vertices,
+    vertexInstances,
+    polygons,
     polygonGroupCount: polygonGroupArray.numBits,
+    triangles,
     vertexInstanceVertices,
     polygonGroups,
     triangleVertexInstances,
@@ -312,10 +175,14 @@ export function parseMeshDescriptionUe4(input: Uint8Array, offset = 0): IUe4Mesh
 
   return {
     byteLength: reader.pos,
-    vertexCount: vertices.numBits,
+    vertexCount: vertices.validIds.length,
+    vertexSlots: vertices.numBits,
+    validVertexIds: vertices.validIds,
+    validVertexInstanceIds: vertexInstances.validIds,
     vertexInstanceVertices,
     polygonGroups,
     polygonGroupCount: polygonGroupArray.numBits,
+    validTriangleIds: triangles.validIds,
     triangleVertexInstances,
     trianglePolygons,
     vertexAttributes,
@@ -324,54 +191,80 @@ export function parseMeshDescriptionUe4(input: Uint8Array, offset = 0): IUe4Mesh
   };
 }
 
-/** Every index a triangle, vertex instance or polygon carries must land inside the container it
- * names. A payload that fails this walked cleanly and still describes geometry that cannot be
- * drawn, which is the failure mode worth catching before any array is built. */
-function validateReferences(counts: {
-  vertexCount: number;
-  vertexInstanceCount: number;
-  polygonCount: number;
+/** Every index a triangle, vertex instance or polygon carries must name an **allocated** id in
+ * the container it points at. A payload that fails this walked cleanly and still describes
+ * geometry that cannot be drawn, which is the failure worth catching before any array is built. */
+function validateReferences(inputs: {
+  vertices: IContainerAllocation;
+  vertexInstances: IContainerAllocation;
+  polygons: IContainerAllocation;
   polygonGroupCount: number;
+  triangles: IContainerAllocation;
   vertexInstanceVertices: Int32Array;
   polygonGroups: Int32Array;
   triangleVertexInstances: Int32Array;
   trianglePolygons: Int32Array;
 }): void {
   assertUAsset(
-    counts.vertexCount > 0 && counts.vertexInstanceCount > 0 && counts.polygonCount > 0,
+    inputs.vertices.validIds.length > 0 &&
+      inputs.vertexInstances.validIds.length > 0 &&
+      inputs.triangles.validIds.length > 0,
     "INVALID_MESH_DESCRIPTION",
     "UE4 MeshDescription contains no renderable geometry",
     {
-      vertexCount: counts.vertexCount,
-      vertexInstanceCount: counts.vertexInstanceCount,
-      polygonCount: counts.polygonCount,
+      vertices: inputs.vertices.validIds.length,
+      vertexInstances: inputs.vertexInstances.validIds.length,
+      triangles: inputs.triangles.validIds.length,
     },
   );
-  const inRange = (values: Int32Array, limit: number, what: string, container: string): void => {
-    for (const value of values) {
-      if (value < 0 || value >= limit) {
-        throw meshError(`${what} references an index outside ${container}`, {
-          value,
-          limit,
-          container,
+
+  const allocatedVertices = new Set(inputs.vertices.validIds);
+  const allocatedInstances = new Set(inputs.vertexInstances.validIds);
+  const allocatedPolygons = new Set(inputs.polygons.validIds);
+
+  for (const instanceId of inputs.vertexInstances.validIds) {
+    const vertexId = inputs.vertexInstanceVertices[instanceId];
+    if (vertexId === undefined || !allocatedVertices.has(vertexId)) {
+      throw meshError("Vertex instance references a vertex the file did not allocate", {
+        instanceId,
+        vertexId,
+      });
+    }
+  }
+  for (const polygonId of inputs.polygons.validIds) {
+    const groupId = inputs.polygonGroups[polygonId];
+    if (groupId === undefined || groupId < 0 || groupId >= inputs.polygonGroupCount) {
+      throw meshError("Polygon references an invalid polygon group", {
+        polygonId,
+        groupId,
+        polygonGroupCount: inputs.polygonGroupCount,
+      });
+    }
+  }
+  for (const triangleId of inputs.triangles.validIds) {
+    for (let corner = 0; corner < 3; corner += 1) {
+      const instanceId = inputs.triangleVertexInstances[triangleId * 3 + corner];
+      if (instanceId === undefined || !allocatedInstances.has(instanceId)) {
+        throw meshError("Triangle references a vertex instance the file did not allocate", {
+          triangleId,
+          corner,
+          instanceId,
         });
       }
     }
-  };
-  inRange(counts.vertexInstanceVertices, counts.vertexCount, "Vertex instance", "VertexArray");
-  inRange(counts.polygonGroups, counts.polygonGroupCount, "Polygon", "PolygonGroupArray");
-  inRange(
-    counts.triangleVertexInstances,
-    counts.vertexInstanceCount,
-    "Triangle",
-    "VertexInstanceArray",
-  );
-  inRange(counts.trianglePolygons, counts.polygonCount, "Triangle", "PolygonArray");
+    const polygonId = inputs.trianglePolygons[triangleId];
+    if (polygonId === undefined || !allocatedPolygons.has(polygonId)) {
+      throw meshError("Triangle references a polygon the file did not allocate", {
+        triangleId,
+        polygonId,
+      });
+    }
+  }
 }
 
-/** The serialized signature of a UE4 MeshDescription payload: a fully allocated vertex bit
- * array followed by a second bit array whose own words start where the first one ends. Strong
- * enough to gate a full parse attempt, not strong enough to trust alone. */
+/** The serialized signature of a UE4 MeshDescription payload: a vertex allocation bit array
+ * followed by a second one whose own bit count starts exactly where the first one ends. Strong
+ * enough to gate a full parse attempt, not strong enough to trust alone — the parse decides. */
 export function looksLikeMeshDescriptionUe4(bytes: Uint8Array, offset = 0): boolean {
   if (offset < 0 || offset + 12 > bytes.byteLength) return false;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -380,5 +273,5 @@ export function looksLikeMeshDescriptionUe4(bytes: Uint8Array, offset = 0): bool
   const instanceOffset = offset + 4 + Math.ceil(vertexBits / 32) * 4;
   if (instanceOffset + 4 > bytes.byteLength) return false;
   const instanceBits = view.getInt32(instanceOffset, true);
-  return instanceBits > 0 && instanceBits <= MAX_MESH_ELEMENTS && instanceBits % 3 === 0;
+  return instanceBits >= vertexBits && instanceBits <= MAX_MESH_ELEMENTS;
 }

@@ -101,6 +101,19 @@ export function parseBulkDataHeader(
       offsetInFile,
     });
   }
+  // An `FByteBulkData` element is one byte, so an uncompressed payload occupies exactly its
+  // element count on disk. Unreal's own invariant, and the sharpest filter the scan has: it
+  // takes SM_Bar_1 from 112 byte patterns that parse as headers to 3.
+  const compression =
+    (flags & BULK_DATA_FLAG.SERIALIZE_COMPRESSED_ZLIB) !== 0 ? "zlib" : ("none" as const);
+  if (compression === "none" && elementCount !== sizeOnDisk) {
+    throw bulkError("Uncompressed bulk data does not occupy one byte per element", {
+      offset,
+      flags,
+      elementCount,
+      sizeOnDisk,
+    });
+  }
 
   // Unreal writes an end-of-file offset relative to the summary's BulkDataStartOffset unless
   // BULKDATA_NoOffsetFixUp says the offset is already absolute.
@@ -116,7 +129,7 @@ export function parseBulkDataHeader(
     flags,
     storage,
     file: fileOf(flags, storage),
-    compression: (flags & BULK_DATA_FLAG.SERIALIZE_COMPRESSED_ZLIB) !== 0 ? "zlib" : "none",
+    compression,
     elementCount,
     sizeOnDisk,
     offsetInFile,
@@ -162,9 +175,18 @@ export function findBulkDataHeaders(
   return headers;
 }
 
-/** Whether the payload range lands inside the file it names. A separate-file payload whose
- * bytes the caller did not supply still counts as a candidate — the caller is told what is
- * missing rather than told the layout is unsupported. */
+/**
+ * Whether the payload range lands inside the file it names.
+ *
+ * A separate-file candidate whose sibling bytes the caller did not supply is **dropped**, not
+ * kept as a maybe. Nothing in the `.uasset` can range-check it, so a byte run that happens to
+ * parse as a header is indistinguishable from a real one — and this scan finds plenty. One
+ * material asset in the Paragon pack yielded eleven such patterns claiming payloads of up to
+ * eight terabytes; acting on any of them would have told a caller to go and find a `.ubulk` for
+ * a package that has never had one. The `supported:` line on the unsupported-layout error is
+ * where a caller learns that these payloads need `bulkDataFiles`, because that statement is
+ * true of the format rather than a claim about the package in hand.
+ */
 function payloadFits(
   header: IBulkDataHeader,
   bytes: Uint8Array,
@@ -173,7 +195,7 @@ function payloadFits(
 ): boolean {
   if (header.storage === "separate-file") {
     const sibling = siblingBytes(files, header.file);
-    if (sibling === undefined) return true;
+    if (sibling === undefined) return false;
     return header.payloadOffset + header.sizeOnDisk <= sibling.byteLength;
   }
   if (header.storage === "inline") {

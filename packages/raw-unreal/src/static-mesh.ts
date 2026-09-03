@@ -576,7 +576,7 @@ export function parseUAssetStaticMesh(
         // payload forms, not a broken package.
         probed: "compressed-buffer, inline mesh-description, bulk-data, raw-mesh — none matched",
         supported:
-          "UE4.26–5.x editor static meshes whose FMeshDescription is serialized inline or in a compressed buffer (UE5 compressed payloads need an `oodle` codec); UE4.2x editor packages whose FMeshDescription or FRawMesh source model is kept in FByteBulkData, inline, at the end of the package, or in a sibling .ubulk/.uptnl file whose bytes the caller supplies (zlib-compressed payloads need a `zlib` codec); and UE4.18-era packages with inline uncompressed FRawMesh source models. IoStore containers, PAK archives, cooked render buffers, Nanite clusters and skeletal meshes are not read.",
+          "UE4.26–5.x editor static meshes whose FMeshDescription is serialized inline or in a compressed buffer (UE5 compressed payloads need an `oodle` codec); UE4.2x editor packages whose FMeshDescription or FRawMesh source model is kept in FByteBulkData, inline, at the end of the package, or in a sibling .ubulk/.uptnl file whose bytes the caller supplies through `bulkDataFiles` (zlib-compressed payloads need a `zlib` codec); and UE4.18-era packages with inline uncompressed FRawMesh source models. IoStore containers, PAK archives, cooked render buffers, Nanite clusters and skeletal meshes are not read.",
       },
     );
   }

@@ -311,3 +311,138 @@ export function editorPackage(fixture: IEditorPackageFixture): Uint8Array {
   out.uint32(0x9e2a83c1); // Unreal's end-of-file tag
   return out.concat();
 }
+
+/** Attribute type indices as `mesh-description-ue4.ts` orders them. */
+const UE4_ATTRIBUTE_TYPE = { FVector4f: 0, FVector3f: 1, FVector2f: 2, float: 3, FName: 6 };
+
+/** An allocation `TBitArray`: the slot count, then its words with the allocated bits set. */
+function bitArray(writer: Writer, slots: number, allocated: readonly number[]): void {
+  const words = new Uint32Array(Math.ceil(slots / 32));
+  for (const id of allocated) {
+    const word = words[id >>> 5] ?? 0;
+    words[id >>> 5] = word | (1 << (id & 31));
+  }
+  writer.int32(slots);
+  for (const word of words) writer.uint32(word);
+}
+
+interface IUe4Attribute {
+  name: string;
+  type: keyof typeof UE4_ATTRIBUTE_TYPE;
+  /** One entry per element **slot**: attribute arrays are dense over slots, holes included. */
+  values: readonly (readonly number[])[] | readonly string[];
+}
+
+function attributeSet(writer: Writer, slots: number, attributes: readonly IUe4Attribute[]): void {
+  writer.int32(slots).int32(attributes.length);
+  for (const attribute of attributes) {
+    const typeIndex = UE4_ATTRIBUTE_TYPE[attribute.type];
+    writer.fstring(attribute.name).uint32(typeIndex).int32(slots).int32(1);
+    if (attribute.type === "FName") {
+      const names = attribute.values as readonly string[];
+      writer.int32(names.length);
+      for (const name of names) writer.fstring(name);
+      writer.fstring(""); // default value
+    } else {
+      const components =
+        attribute.type === "FVector4f"
+          ? 4
+          : attribute.type === "FVector3f"
+            ? 3
+            : attribute.type === "FVector2f"
+              ? 2
+              : 1;
+      const rows = attribute.values as readonly (readonly number[])[];
+      writer.int32(components * 4).int32(rows.length);
+      for (const row of rows) for (const value of row) writer.float32(value);
+      for (let index = 0; index < components; index += 1) writer.float32(0);
+    }
+    writer.uint32(0); // attribute flags
+  }
+}
+
+export interface IUe4MeshDescriptionFixture {
+  /** Per-vertex positions, Unreal Z-up. */
+  vertices: readonly (readonly [number, number, number])[];
+  /** Vertex index of each vertex instance, one per instance **slot**. */
+  instanceVertices: readonly number[];
+  /** UV of each vertex-instance slot. */
+  instanceUvs: readonly (readonly [number, number])[];
+  /** Vertex-instance slots that are actually allocated. Defaults to all of them. */
+  allocatedInstances?: readonly number[];
+  /** Edge slot count; edges themselves carry no geometry this reader uses. */
+  edgeSlots: number;
+  /** Edge slots that are allocated — fewer than `edgeSlots` leaves the container holed. */
+  allocatedEdges: readonly number[];
+  /** Polygon-group index of each polygon slot. */
+  polygonGroups: readonly number[];
+  /** Three vertex-instance ids then a polygon id, per allocated triangle. */
+  triangles: readonly (readonly [number, number, number, number])[];
+  /** Triangle slot count, if larger than the triangle list (leaving holes). */
+  triangleSlots?: number;
+  /** Allocated triangle slots, in slot order. Defaults to the first `triangles.length`. */
+  allocatedTriangles?: readonly number[];
+  materialSlotNames?: readonly string[];
+}
+
+/**
+ * Builds a UE4.2x `FMeshDescription` payload: the five element containers, their five attribute
+ * sets, then the triangle container and its attribute set that `MeshDescriptionTriangles`
+ * appended after them. Elements are written once per **allocated** slot; attribute arrays stay
+ * dense over every slot, which is the pairing a container with holes exposes.
+ */
+export function ue4MeshDescription(fixture: IUe4MeshDescriptionFixture): Uint8Array {
+  const writer = new Writer();
+  const vertexSlots = fixture.vertices.length;
+  const instanceSlots = fixture.instanceVertices.length;
+  const allocatedInstances =
+    fixture.allocatedInstances ?? Array.from({ length: instanceSlots }, (_, index) => index);
+  const polygonSlots = fixture.polygonGroups.length;
+  const triangleSlots = fixture.triangleSlots ?? fixture.triangles.length;
+  const allocatedTriangles =
+    fixture.allocatedTriangles ?? fixture.triangles.map((_, index) => index);
+  const groupCount = Math.max(1, ...fixture.polygonGroups.map((group) => group + 1));
+
+  bitArray(writer, vertexSlots, [...fixture.vertices.keys()]);
+  bitArray(writer, instanceSlots, allocatedInstances);
+  for (const id of allocatedInstances) writer.int32(fixture.instanceVertices[id] ?? 0);
+  bitArray(writer, fixture.edgeSlots, fixture.allocatedEdges);
+  for (let index = 0; index < fixture.allocatedEdges.length; index += 1) writer.int32(0).int32(0);
+  bitArray(writer, polygonSlots, [...fixture.polygonGroups.keys()]);
+  for (const group of fixture.polygonGroups) writer.int32(0).int32(group);
+  bitArray(
+    writer,
+    groupCount,
+    Array.from({ length: groupCount }, (_, index) => index),
+  );
+
+  attributeSet(writer, vertexSlots, [
+    { name: "Position", type: "FVector3f", values: fixture.vertices.map((v) => [...v]) },
+  ]);
+  attributeSet(writer, instanceSlots, [
+    {
+      name: "TextureCoordinate",
+      type: "FVector2f",
+      values: fixture.instanceUvs.map((v) => [...v]),
+    },
+    { name: "Normal", type: "FVector3f", values: fixture.instanceUvs.map(() => [0, 0, 1]) },
+  ]);
+  attributeSet(writer, fixture.edgeSlots, []);
+  attributeSet(writer, polygonSlots, []);
+  attributeSet(writer, groupCount, [
+    {
+      name: "ImportedMaterialSlotName",
+      type: "FName",
+      values:
+        fixture.materialSlotNames ??
+        Array.from({ length: groupCount }, (_, index) => `Material_${index}`),
+    },
+  ]);
+
+  bitArray(writer, triangleSlots, allocatedTriangles);
+  for (const [a, b, c, polygon] of fixture.triangles) {
+    writer.int32(a).int32(b).int32(c).int32(polygon);
+  }
+  attributeSet(writer, triangleSlots, []);
+  return writer.concat();
+}

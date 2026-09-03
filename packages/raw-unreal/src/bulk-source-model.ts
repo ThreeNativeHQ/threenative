@@ -77,7 +77,12 @@ function intAt(values: Int32Array, index: number, what: string): number {
 function expandUe4Instances(
   description: IUe4MeshDescription,
   options: GeometryOptions,
-): { positions: Float32Array; normals: Float32Array | undefined; uvs: Float32Array } {
+): {
+  positions: Float32Array;
+  normals: Float32Array | undefined;
+  uvs: Float32Array;
+  instanceToOutput: Map<number, number>;
+} {
   const positionsByVertex = attributeValues(
     description.vertexAttributes,
     "Position",
@@ -94,15 +99,20 @@ function expandUe4Instances(
     false,
   ) as Float32Array | undefined;
 
-  const instanceCount = description.vertexInstanceVertices.length;
-  const positions = new Float32Array(instanceCount * 3);
-  const uvs = new Float32Array(instanceCount * 2);
-  const normals = normalsByInstance ? new Float32Array(instanceCount * 3) : undefined;
+  // One output slot per **allocated** instance: a holed container's unallocated ids carry no
+  // element, so emitting a slot for them would put a hole in the middle of the vertex buffer.
+  const instanceIds = description.validVertexInstanceIds;
+  const positions = new Float32Array(instanceIds.length * 3);
+  const uvs = new Float32Array(instanceIds.length * 2);
+  const normals = normalsByInstance ? new Float32Array(instanceIds.length * 3) : undefined;
+  const instanceToOutput = new Map<number, number>();
 
-  for (let instance = 0; instance < instanceCount; instance += 1) {
+  for (let output = 0; output < instanceIds.length; output += 1) {
+    const instanceId = instanceIds[output] ?? -1;
+    instanceToOutput.set(instanceId, output);
     const vertexId = intAt(
       description.vertexInstanceVertices,
-      instance,
+      instanceId,
       "FMeshVertexInstance.VertexID",
     );
     const [x, y, z] = convertVector(
@@ -111,28 +121,30 @@ function expandUe4Instances(
       floatAt(positionsByVertex, vertexId * 3 + 2, "Position"),
       options.convertCoordinates,
     );
-    positions[instance * 3] = x;
-    positions[instance * 3 + 1] = y;
-    positions[instance * 3 + 2] = z;
+    positions[output * 3] = x;
+    positions[output * 3 + 1] = y;
+    positions[output * 3 + 2] = z;
 
-    uvs[instance * 2] = floatAt(uvsByInstance, instance * 2, "TextureCoordinate");
-    const v = floatAt(uvsByInstance, instance * 2 + 1, "TextureCoordinate");
-    uvs[instance * 2 + 1] = options.flipV ? 1 - v : v;
+    // Attribute arrays stay dense over slots, so they are read at the instance id, not the slot
+    // this instance was written into.
+    uvs[output * 2] = floatAt(uvsByInstance, instanceId * 2, "TextureCoordinate");
+    const v = floatAt(uvsByInstance, instanceId * 2 + 1, "TextureCoordinate");
+    uvs[output * 2 + 1] = options.flipV ? 1 - v : v;
 
     if (normals && normalsByInstance) {
       const [nx, ny, nz] = convertVector(
-        floatAt(normalsByInstance, instance * 3, "Normal"),
-        floatAt(normalsByInstance, instance * 3 + 1, "Normal"),
-        floatAt(normalsByInstance, instance * 3 + 2, "Normal"),
+        floatAt(normalsByInstance, instanceId * 3, "Normal"),
+        floatAt(normalsByInstance, instanceId * 3 + 1, "Normal"),
+        floatAt(normalsByInstance, instanceId * 3 + 2, "Normal"),
         options.convertCoordinates,
       );
-      normals[instance * 3] = nx;
-      normals[instance * 3 + 1] = ny;
-      normals[instance * 3 + 2] = nz;
+      normals[output * 3] = nx;
+      normals[output * 3 + 1] = ny;
+      normals[output * 3 + 2] = nz;
     }
   }
 
-  return { positions, normals, uvs };
+  return { positions, normals, uvs, instanceToOutput };
 }
 
 /** Builds geometry from a UE4 MeshDescription: every triangle's corners come from the file's
@@ -142,34 +154,38 @@ export function buildGeometryFromUe4MeshDescription(
   options: GeometryOptions,
 ): IGeometryBuild {
   const expanded = expandUe4Instances(description, options);
-  const triangleCount = description.trianglePolygons.length;
+  const triangleIds = description.validTriangleIds;
   assertUAsset(
-    triangleCount > 0,
+    triangleIds.length > 0,
     "UNSUPPORTED_STATIC_MESH_LAYOUT",
     "UE4 MeshDescription contains no triangles",
   );
 
   const trianglesByGroup = new Map<number, number[]>();
-  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
-    const corners: [number, number, number] = [
-      intAt(description.triangleVertexInstances, triangle * 3, "FMeshTriangle.VertexInstanceIDs"),
-      intAt(
+  for (const triangleId of triangleIds) {
+    const corners: [number, number, number] = [0, 0, 0];
+    for (let corner = 0; corner < 3; corner += 1) {
+      const instanceId = intAt(
         description.triangleVertexInstances,
-        triangle * 3 + 1,
+        triangleId * 3 + corner,
         "FMeshTriangle.VertexInstanceIDs",
-      ),
-      intAt(
-        description.triangleVertexInstances,
-        triangle * 3 + 2,
-        "FMeshTriangle.VertexInstanceIDs",
-      ),
-    ];
+      );
+      const output = expanded.instanceToOutput.get(instanceId);
+      if (output === undefined) {
+        throw new UAssetError(
+          "INVALID_MESH_REFERENCE",
+          "Triangle references a vertex instance with no output slot",
+          { triangleId, corner, instanceId },
+        );
+      }
+      corners[corner] = output;
+    }
     if (options.flipWinding) {
       const second = corners[1];
       corners[1] = corners[2];
       corners[2] = second;
     }
-    const polygonId = intAt(description.trianglePolygons, triangle, "FMeshTriangle.PolygonID");
+    const polygonId = intAt(description.trianglePolygons, triangleId, "FMeshTriangle.PolygonID");
     const group = intAt(description.polygonGroups, polygonId, "FMeshPolygon.PolygonGroupID");
     const groupTriangles = trianglesByGroup.get(group) ?? [];
     groupTriangles.push(corners[0], corners[1], corners[2]);
@@ -190,8 +206,8 @@ export function buildGeometryFromUe4MeshDescription(
     (group) => slotNames?.[group] ?? String(group),
     {
       vertices: description.vertexCount,
-      vertexInstances: description.vertexInstanceVertices.length,
-      triangles: triangleCount,
+      vertexInstances: description.validVertexInstanceIds.length,
+      triangles: triangleIds.length,
     },
   );
 }
