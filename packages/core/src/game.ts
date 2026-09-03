@@ -878,11 +878,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       // and captures the loading state. The native screenshot path waits on this flag.
       (globalThis as Record<string, unknown>)[STARTUP_READY_GLOBAL] = true;
     });
-    const warmUp = async (
-      marker: string,
-      budgetMs: number,
-      stamp: boolean,
-    ): Promise<void> => {
+    const warmUp = async (marker: string, budgetMs: number, stamp: boolean): Promise<void> => {
       if (this.#aborted || this.#renderer === undefined) return;
       let report: IWarmUpReport | undefined;
       let failure: string | undefined;
@@ -1054,6 +1050,22 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               if (this.#config.frameBudget !== false)
                 this.#config.frameBudget?.onWindow?.(reported);
               if (scaler === undefined) return;
+              // **Not while the world is still arriving.** The scaler judges the game by closed
+              // frame-budget windows, and the windows that close during a launch are not the game:
+              // they are asset decode, scene construction and first-use compilation. Measured on
+              // sandbox/wildwood, a 46,190-instance forest, the first two windows reported 18.8
+              // and 27.3 fps against a 60 fps budget — a deficit large enough that `#rungsToDrop`
+              // crossed three rungs at once and the buffer went from 1600x900 to 976x549 before
+              // the player had control. It then settled at 0.72, which is 52% of the pixels, and
+              // re-probed 0.85 every thirty seconds, missed, and fell back — so the picture went
+              // soft a few seconds in and never fully recovered. The owner's report was "after a
+              // while everything becomes blurry, and keeps getting worse".
+              //
+              // Readiness is the right gate rather than a frame count or a timer: it is the moment
+              // the framework already defines as "the world is safe to show", it now includes
+              // anything the game held startup for, and a host that never reaches it still gets
+              // there on the bounded fallbacks inside `StartupReadiness`.
+              if (!startupReadiness.ready) return;
               const stepped = scaler.observe(reported);
               if (stepped !== undefined) renderer.setResolutionScale(stepped, scaler.scaleSource);
             },
