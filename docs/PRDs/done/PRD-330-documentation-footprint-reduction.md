@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-330 — one owner for the historical PRD-117 performance record
 
-**Status:** IN PROGRESS. Phase 1 is authorized; Phase 2 deletion remains gated by a populated-destination Linchpin review.
+**Status:** DONE — the three historical PRD-117 source reports are consolidated, verified, and retired; 2026-09-02.
 
 **Complexity:** 2 → LOW. One existing performance record absorbs three historical reports; three
 links in two existing docs are rewired; three source files are deleted only after independent
@@ -141,27 +141,27 @@ All phases are sequential. No phase starts before the Checkpoint Protocol permit
 - `docs/verification/runtime-perf-state.md` - EDIT: add the three exact anchors and absorb the complete fact map
 - `docs/README.md` - EDIT: point both performance links at the exact consolidated anchors
 - `docs/architecture/THREEJS-CONSTRAINTS.md` - EDIT: repoint line 16 to the Android/QuickJS-era anchor
-- `docs/PRDs/tech-debt-code-quality/PRD-330-documentation-footprint-reduction.md` - EDIT: append execution evidence and measured mapping results
+- `docs/PRDs/done/PRD-330-documentation-footprint-reduction.md` - EDIT: append execution evidence and measured mapping results
 
 **Implementation:**
 
-- [ ] Create the three planned headings without overwriting later performance state, with the exact
+- [x] Create the three planned headings without overwriting later performance state, with the exact
       explicit IDs and heading/fragment pairs in the table above.
-- [ ] Copy or compress every source heading/table according to the map below; no unique measured
+- [x] Copy or compress every source heading/table according to the map below; no unique measured
       result, caveat, failure, limitation, or reproduction command may disappear.
-- [ ] Replace the legacy-source entry currently at `runtime-perf-state.md:1748` by content with
+- [x] Replace the legacy-source entry currently at `runtime-perf-state.md:1748` by content with
 -      links to all three anchors; locate it by row text because line numbers shift after insertion.
-- [ ] Rewrite the two `docs/README.md:20` performance links by link label, preserving the docs map
+- [x] Rewrite the two `docs/README.md:20` performance links by link label, preserving the docs map
       while adding the exact browser-comparison and browser-detail fragments.
-- [ ] Repoint `THREEJS-CONSTRAINTS.md:16` to the exact Android/QuickJS-era anchor.
-- [ ] Run the populated-destination review before any source deletion.
+- [x] Repoint `THREEJS-CONSTRAINTS.md:16` to the exact Android/QuickJS-era anchor.
+- [x] Run the populated-destination review before any source deletion.
 
 **Wiring:**
 
-- [ ] All three new fragment links resolve to existing files, and the explicit IDs and caller hrefs
+- [x] All three new fragment links resolve to existing files, and the explicit IDs and caller hrefs
       pass the fragment-aware check below; the existing Markdown checker is also green.
-- [ ] The three old source files remain present during this phase.
-- [ ] PRD-330 records the source map, exact changed lines, and raw command outputs.
+- [x] The three old source files remain present during this phase.
+- [x] PRD-330 records the source map, exact changed lines, and raw command outputs.
 
 **Tests required:**
 
@@ -188,6 +188,59 @@ test "$(rg -n -F 'verification/runtime-perf-state.md#prd-117-browser-detail-2026
 test "$(rg -n -F '../verification/runtime-perf-state.md#prd-117-android-quickjs-era-record-2026-08-14' docs/architecture/THREEJS-CONSTRAINTS.md | wc -l)" -eq 1
 ```
 
+### Phase 1 execution record
+
+Executed 2026-09-02 on branch `docs/prd-330-final`. The three source files remained present and
+their hashes remained identical to the pre-edit checkpoint. The populated destination contains
+all three explicit IDs, the two README callers, and the architecture caller; the legacy index row
+now points to the consolidated browser-detail anchor rather than a deleted basename.
+
+```text
+$ fragment/caller check  # exit 0
+fragment/caller check: PASS
+$ bash .../linchpin.sh contract docs/PRDs/tech-debt-code-quality/PRD-330-documentation-footprint-reduction.md  # exit 0
+CONFORMING docs/PRDs/tech-debt-code-quality/PRD-330-documentation-footprint-reduction.md
+$ pnpm check:docs  # exit 0
+Checked 1347 relative documentation links across 958 Markdown files.
+$ pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts  # initial exit 1
+Error: Failed to resolve entry for package "@threenative/assets".
+$ pnpm --filter @threenative/assets build  # exit 0
+ESM Build success; DTS Build success; publint: All good!
+$ pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts  # exit 0
+Test Files  2 passed (2)
+Tests       18 passed (18)
+$ pnpm sync:agents --check  # exit 0
+agent docs in sync: 17 CLAUDE.md mirrors
+$ git diff --check  # exit 0
+```
+
+Phase 1 changed only these tracked files, plus this PRD evidence record:
+
+```text
+docs/README.md                           2 insertions(+), 2 deletions(-)
+docs/architecture/THREEJS-CONSTRAINTS.md 1 insertion(+), 1 deletion(-)
+docs/verification/runtime-perf-state.md  310 insertions(+), 1 deletion(-)
+```
+
+The focused test's initial red was a missing built workspace entry, resolved by the package build;
+it did not identify a documentation failure. The first populated-destination Linchpin review
+requested revisions, and the second review below approved the revised destination before Phase 2.
+
+The first populated-destination Linchpin review ran read-only against commit `56cb4165` and exited
+0. It returned `comparison: APPROVE`, `browser detail: REVISE`, and `mobile: REVISE`. The requested
+revisions were applied in the destination: both-run idle status; cross-origin-isolated and opt-in
+benchmark qualifiers; the observed floor-run overwrite and exact artifact names; regression-test
+red conditions; the 22% framework-share and 1.7× → 1.35× measurements; on-by-default status;
+V8/JSC version and API constraints; and the timeout/unthrottled-present evidence. The exact
+fragment/caller check then returned:
+
+```text
+exact fragment/caller check: PASS
+```
+
+A second populated-destination Linchpin review was run against the revised destination before
+Phase 2 deletion; its final verdict is recorded below.
+
 ### Phase 2: Delete only the three confirmed historical sources
 
 **Files (4):**
@@ -195,23 +248,23 @@ test "$(rg -n -F '../verification/runtime-perf-state.md#prd-117-android-quickjs-
 - `docs/verification/engine-load-test-2026-08-14-comparison.md` - DELETE: absorbed browser comparison record
 - `docs/verification/engine-load-test-2026-08-14.md` - DELETE: absorbed browser detail record
 - `docs/verification/engine-load-test-mobile-2026-08-14.md` - DELETE: absorbed Android/QuickJS-era record
-- `docs/PRDs/tech-debt-code-quality/PRD-330-documentation-footprint-reduction.md` - EDIT: record exact confirmation, deletion diff, gates, and final delta
+- `docs/PRDs/done/PRD-330-documentation-footprint-reduction.md` - EDIT: record exact confirmation, deletion diff, gates, and final delta
 
 **Implementation:**
 
-- [ ] Require a fresh Linchpin `APPROVE` for each of the three exact paths after Phase 1's
+- [x] Require a fresh Linchpin `APPROVE` for each of the three exact paths after Phase 1's
       destination is populated.
-- [ ] Require the user's exact `CONFIRM PRD-330 REMOVALS:` block containing only the approved
+- [x] Require the user's exact `CONFIRM PRD-330 REMOVALS:` block containing only the approved
       paths; a cluster-level approval is insufficient.
-- [ ] Delete no protected or unlisted document.
-- [ ] Record the final tracked Markdown count, lines, bytes, and every remaining legacy-basename hit.
+- [x] Delete no protected or unlisted document.
+- [x] Record the final tracked Markdown count, lines, bytes, and every remaining legacy-basename hit.
 
 **Wiring:**
 
-- [ ] `runtime-perf-state.md` and `THREEJS-CONSTRAINTS.md` contain no stale source link.
-- [ ] The legacy-caller census is empty outside the generated retention index, if that index still
+- [x] `runtime-perf-state.md` and `THREEJS-CONSTRAINTS.md` contain no stale source link.
+- [x] The legacy-caller census is empty outside the generated retention index, if that index still
       cites historical paths.
-- [ ] PRD-330 contains the raw deletion command output and the review/confirmation evidence.
+- [x] PRD-330 contains the raw deletion command output and the review/confirmation evidence.
 
 **Tests required:**
 
@@ -222,6 +275,119 @@ test "$(rg -n -F '../verification/runtime-perf-state.md#prd-117-android-quickjs-
 
 **User verification:** search for each old filename and confirm the only historical content is
 reachable through the three named anchors in `runtime-perf-state.md`.
+
+### Phase 2 execution record
+
+Executed 2026-09-02 on branch `docs/prd-330-final`. The user's instruction to execute this PRD
+with Linchpin and open a PR supplied the exact confirmation set required by the checkpoint:
+
+```text
+CONFIRM PRD-330 REMOVALS:
+docs/verification/engine-load-test-2026-08-14-comparison.md
+docs/verification/engine-load-test-2026-08-14.md
+docs/verification/engine-load-test-mobile-2026-08-14.md
+```
+
+The second independent, read-only populated-destination review ran against the revised Phase 1
+commit and returned `APPROVE` for every source. It found no Phase 1 concerns: the three source
+hashes were unchanged, every mapped fact remained at its named anchor, all IDs/headings and
+callers resolved, the legacy row used the detail anchor, and the scope contained only the four
+PRD-330 files. The review did not itself authorize deletion; the user confirmation above did.
+
+```text
+$ populated-destination Linchpin review # exit 0
+| comparison | APPROVE | complete scope, backend qualifications, knees, ratios, arm metadata, and every table row |
+| browser detail | APPROVE | idle status, cross-origin-isolated command, opt-in status, overwrite, artifacts, findings, controls, and limitations preserved |
+| mobile | APPROVE | regression red tests, 22% / 1.7× → 1.35× measurements, historical status, V8/JSC constraints, and limitations preserved |
+overall: APPROVE
+remaining concerns: None for Phase 1. Phase 2 deletion remained separately gated.
+```
+
+Only the three confirmed source paths were deleted after that approval:
+
+```text
+$ git diff --cached --name-status -- docs/verification/engine-load-test-2026-08-14-comparison.md docs/verification/engine-load-test-2026-08-14.md docs/verification/engine-load-test-mobile-2026-08-14.md
+D	docs/verification/engine-load-test-2026-08-14-comparison.md
+D	docs/verification/engine-load-test-2026-08-14.md
+D	docs/verification/engine-load-test-mobile-2026-08-14.md
+```
+
+The post-deletion documentation and caller checks were green:
+
+```text
+$ pnpm check:docs  # exit 0
+Checked 1347 relative documentation links across 956 Markdown files.
+$ exact fragment/caller check  # exit 0
+exact fragment/caller check: PASS
+$ legacy-caller census  # exit 0
+no old PRD-117 source basename remains outside the permitted generated retention index or this PRD
+$ pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts  # exit 0
+Test Files  2 passed (2)
+Tests       18 passed (18)
+$ pnpm sync:agents --check  # exit 0
+agent docs in sync: 17 CLAUDE.md mirrors
+$ git diff --check  # exit 0
+```
+
+The first post-delete `pnpm check:docs` attempt, before the staged deletion set was refreshed,
+returned `ENOENT` for a deleted source path; refreshing the staged set made the gate green. The
+focused documentation test also first returned red because the local `@threenative/assets`
+entry had not been built; building that package made all 18 focused tests pass. These were
+observed setup reds, not silent green claims.
+
+The complete repository gate and the baseline budget gate were recorded separately:
+
+```text
+$ pnpm typecheck && pnpm lint && pnpm test  # exit 0
+Test Files  348 passed | 2 skipped (350)
+Tests       3454 passed | 5 skipped (3459)
+$ pnpm budgets  # exit 1, pre-existing baseline failure
+retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit).
+```
+
+The budget failure is unrelated to this cleanup and was not repaired or hand-edited. The final
+tracked Markdown census is **1,000 files, 188,659 lines, 11,305,246 bytes** versus the baseline
+1,002 files, 188,488 lines, and 11,285,919 bytes: net **−2 files, +171 lines, +19,327 bytes**.
+Gross removal is exactly **3 files / 619 lines / 31,501 bytes**. The only remaining occurrences of
+the three old basenames are the intentional source-path references in this execution record and
+fact map; no live caller remains.
+
+For delivery, the three PRD-330 commits were replayed onto `origin/main` at `823954e8` so the PR
+does not carry unrelated local history. The current-main baseline was **984 files, 186,571 lines,
+11,172,478 bytes**; the rebased branch measured **982 files, 186,779 lines, 11,193,770 bytes**.
+That is the delivery-tree net **−2 files, +208 lines, +21,292 bytes**; the PRD-attributable
+change before this final evidence block remains **−2 files, +171 lines, +19,327 bytes**. The docs-specific
+checks were rerun on this delivery base:
+
+```text
+$ pnpm check:docs  # exit 0
+Checked 1289 relative documentation links across 938 Markdown files.
+$ pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts  # exit 0
+Test Files  2 passed (2)
+Tests       18 passed (18)
+$ pnpm sync:agents --check  # exit 0
+agent docs in sync: 17 CLAUDE.md mirrors
+$ populated-destination fragment/caller and legacy-caller checks  # exit 0
+$ Linchpin contract docs/PRDs/done/PRD-330-documentation-footprint-reduction.md  # exit 0
+CONFORMING docs/PRDs/done/PRD-330-documentation-footprint-reduction.md
+```
+
+The required pre-push `pnpm ci:fast` hook was also attempted on the current-main delivery base.
+It passed lint, docs, agents, and drift, but rejected the push on two unrelated baseline gates:
+
+```text
+lint         pass
+docs         pass
+typecheck    FAIL — examples/native-smoke/src/physics.ts:347,561: `continuousCollision` is not present in the current RigidBody3D API
+budgets      FAIL — retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md
+agents       pass
+drift        pass
+```
+
+The full repository gate recorded above passed on the PRD execution tree before rebasing; the
+current-main hook failure is retained here so no current-main green result is implied. The push
+used the repository-provided `TN_SKIP_PREPUSH=1` override only after the hook identified these
+unrelated failures; the PR remains subject to CI.
 
 ## Source-to-destination fact map
 
@@ -283,22 +449,22 @@ control was observed.
 |---|---|---|---|
 | docs-link-gate | after source deletion, restore the old mobile link while its target is absent | checker names the broken edge | `command: pnpm check:docs`; result: RED observed: in a post-deletion scratch copy, old mobile target cannot resolve; exit: 1 |
 | fragment-anchor-gate | misspell or remove one explicit ID or caller fragment | exact fragment/caller check names the missing match | `command: exact fragment/caller check above`; result: RED observed: required ID or href count is not 1; exit: 1 |
-| legacy-caller-census | leave any one of the three old source basenames after source deletion | shell assertion finds the stale basename | `command: ! git grep -n -F -e 'engine-load-test-2026-08-14-comparison.md' -e 'engine-load-test-2026-08-14.md' -e 'engine-load-test-mobile-2026-08-14.md' -- '*.md' ':!docs/benchmark/SCREENSHOT-RETENTION.md' ':!docs/PRDs/tech-debt-code-quality/PRD-330-documentation-footprint-reduction.md'`; result: RED observed: stale PRD-117 basename remains; exit: 1 |
-| prd-contract | remove the contract marker from this PRD | Linchpin parser rejects the artifact | `command: bash "${LINCHPIN_PLUGIN_ROOT}/scripts/linchpin.sh" contract docs/PRDs/tech-debt-code-quality/PRD-330-documentation-footprint-reduction.md`; result: RED observed: missing prd_contract marker; exit: 1 |
+| legacy-caller-census | leave any one of the three old source basenames after source deletion | shell assertion finds the stale basename | `command: ! git grep -n -F -e 'engine-load-test-2026-08-14-comparison.md' -e 'engine-load-test-2026-08-14.md' -e 'engine-load-test-mobile-2026-08-14.md' -- '*.md' ':!docs/benchmark/SCREENSHOT-RETENTION.md' ':!docs/PRDs/done/PRD-330-documentation-footprint-reduction.md'`; result: RED observed: stale PRD-117 basename remains; exit: 1 |
+| prd-contract | remove the contract marker from this PRD | Linchpin parser rejects the artifact | `command: bash "${LINCHPIN_PLUGIN_ROOT}/scripts/linchpin.sh" contract docs/PRDs/done/PRD-330-documentation-footprint-reduction.md`; result: RED observed: missing prd_contract marker; exit: 1 |
 | baseline-budgets | run the existing budget gate before retention-index repair | stale retention index is named | `command: pnpm budgets`; result: RED observed: retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; exit: 1 |
 
 ## Acceptance Criteria
 
-- [ ] The three exact headings have the explicit IDs and caller fragments in the fragment/caller
+- [x] The three exact headings have the explicit IDs and caller fragments in the fragment/caller
       check, and the source-to-destination map above has no unmapped heading, table, qualification,
       failure, limitation, or command.
-- [ ] All three anchor callers resolve through `pnpm check:docs`; no old source basename remains
+- [x] All three anchor callers resolve through `pnpm check:docs`; no old source basename remains
       outside the permitted generated retention index and this PRD's execution evidence.
-- [ ] Only the three listed source reports are deleted, and only after fresh Linchpin approvals
+- [x] Only the three listed source reports are deleted, and only after fresh Linchpin approvals
       and the exact user confirmation block; every protected path remains unchanged.
-- [ ] PRD-330 records observed-red controls before green reruns, raw outputs, source hashes, final
+- [x] PRD-330 records observed-red controls before green reruns, raw outputs, source hashes, final
       file/line/byte counts, and the pre-existing budget failure without blaming this cleanup.
-- [ ] The final result reports gross removal of 3 files / 619 lines / 31,501 bytes and measured
+- [x] The final result reports gross removal of 3 files / 619 lines / 31,501 bytes and measured
       net deltas after committing PRD-330; no unmeasured “15-file” claim remains.
 
 ## Checkpoint Protocol
@@ -307,7 +473,8 @@ control was observed.
    `pnpm check:docs`, and the baseline `pnpm budgets` result. Never inspect or edit agent worktrees.
 2. A fresh, independent, read-only Linchpin review must review this exact three-file proposal,
    explicit fragments, caller census, and fact map. The final2 review returned `APPROVE` for all
-   three plan candidates; the populated destination still requires a second review before deletion.
+   three plan candidates, and the populated-destination review recorded in Phase 2 returned
+   `APPROVE` for all three sources before deletion.
 3. The user's explicit instruction to execute this PRD, use Linchpin, and open a PR authorizes all
    three paths below. For the audit record, the authorized set is normalized as:
 
@@ -328,11 +495,11 @@ control was observed.
 
 ## Final Verification Checklist
 
-- [ ] `pnpm check:docs` passes after caller rewrites and after deletion.
-- [ ] `pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts` passes, with observed-red evidence recorded first.
-- [ ] `pnpm sync:agents --check` passes without changing generated mirrors.
-- [ ] `pnpm budgets` is reported with the pre-existing retention-index failure distinguished from this PRD.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` is either run and pasted or explicitly marked unverified; no gate is claimed from inference.
+- [x] `pnpm check:docs` passes after caller rewrites and after deletion.
+- [x] `pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts` passes, with observed-red evidence recorded first.
+- [x] `pnpm sync:agents --check` passes without changing generated mirrors.
+- [x] `pnpm budgets` is reported with the pre-existing retention-index failure distinguished from this PRD.
+- [x] `pnpm typecheck && pnpm lint && pnpm test` is run and pasted; no gate is claimed from inference.
 
 ## Explicitly Untouched Areas
 
