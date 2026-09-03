@@ -2,7 +2,7 @@
 prd_contract: v1
 ---
 
-# PRD-332 — The JavaScript render term is named, on the engine that ships
+# PRD-334 — The JavaScript render term is named, on the engine that ships
 
 **Status:** PROPOSED, filed 2026-09-02 against `8d680023`. Planning only. Nothing here is
 implemented.
@@ -89,7 +89,7 @@ What that costs, concretely, three times over:
 | PRD-226 (frame budget by ablation) | Produced the 14.77 ms figure by subtraction | Ablation says how big; this says what of. No ablation arm is re-run here |
 | PRD-227 (the frame crosses once) | Closed the seam around the term | Closed. This PRD must not re-propose a transport, wrapper, backend or GC lever — the critical README forbids it without a new measurement, and this PRD's output *is* that measurement, produced before any lever is written |
 | `TN_JS_CPU_PROFILE` (`v8_engine.cpp`) | The native instrument | Becomes this PRD's native half, made runnable and windowed. Not rewritten |
-| PRD-331 (frame-shape counters) | Sibling instrument | Counts the frame's shape; this decomposes its CPU time. Independent; either can land first |
+| PRD-333 (frame-shape counters) | Sibling instrument | Counts the frame's shape; this decomposes its CPU time. Independent; either can land first |
 
 **Replaces:** nothing. The profiling build stays; this PRD makes its output attributable and adds
 the missing web arm.
@@ -267,7 +267,7 @@ same failure mode.
 
 - `docs/verification/runtime-perf-state.md` — EDIT: **append one dated section.** Contended file;
   rebase before committing; do not restructure.
-- `docs/PRDs/performance/PRD-332-*.md` — EDIT: check the criteria.
+- `docs/PRDs/performance/PRD-334-*.md` — EDIT: check the criteria.
 - Optionally: one new PRD or one upstream three.js issue draft, filed by whatever the table says.
 
 **The verdict is one of exactly three sentences, written before anyone proposes anything:**

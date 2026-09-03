@@ -46,10 +46,20 @@ control arm reads **12.3–12.5 ms** `render.p50` today where 22.2 ms was record
 | Mali driver | 2.3 | stays |
 
 **The seam is 22.3 ms of that 37.7** — per-crossing V8 scaffolding, bridge dispatch, allocator
-churn, and the megamorphic inline caches our dynamically-shaped wrappers force on three.js. **Chrome
-runs the same three.js on the same phone at 59.99 fps.** The JavaScript is not the problem; what
-surrounds it is. The device split is inherited from one profile on a Bayview build that is not
-today's — desktop gate P1 tests the model before anyone spends a device night.
+churn, and the megamorphic inline caches our dynamically-shaped wrappers force on three.js. The
+device split is inherited from one profile on a Bayview build that is not today's.
+
+> **Corrected 2026-09-02.** This paragraph used to end *"Chrome runs the same three.js on the same
+> phone at 59.99 fps. The JavaScript is not the problem; what surrounds it is."* **Both halves are
+> withdrawn.** The 59.99 fps figure was PRD-222 Phase 0's, and it is falsified — by rAF plus
+> SurfaceFlinger on the same phone, Chrome runs Bayview at **~30 fps at 864×303** while native runs
+> it at ~20 fps at 2400×1080, and the record states that **no matched parity claim remains**
+> ([runtime-perf-state](../verification/runtime-perf-state.md) §1.0, §5, and the §8 index row for
+> `prd-222-2026-08-25.md`). The inference drawn from it is refuted independently: PRD-227 Change 1
+> removed the seam (desktop `bridgeNs` 9.31 → 0.81 ms) and the device read **20.02 fps against
+> 20.39** — if the surround had been the problem, deleting it would have moved the frame.
+> The matched-pixel comparison that would settle the question has still never been run; it is
+> PRD-329.
 
 The device meter was audited against `dumpsys SurfaceFlinger --latency` and agrees within 2%: the
 game truly runs at ~20 fps. **`dumpsys gfxinfo` reads ~5× flattering** because it meters the Skia

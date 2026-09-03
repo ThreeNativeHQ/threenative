@@ -2,7 +2,7 @@
 prd_contract: v1
 ---
 
-# PRD-331 — The frame's shape is a first-class meter: passes, encoders, command buffers, submits
+# PRD-333 — The frame's shape is a first-class meter: passes, encoders, command buffers, submits
 
 **Status:** PROPOSED, filed 2026-09-02 against `8d680023`. Planning only. Nothing here is
 implemented.
@@ -284,7 +284,7 @@ private Xvfb present segment is a FIFO throttle). Use
 
 - `docs/verification/runtime-perf-state.md` — EDIT: **append one dated section only.** That file
   is contended; do not restructure it, and rebase before committing.
-- `docs/PRDs/performance/PRD-331-*.md` — EDIT: check the criteria.
+- `docs/PRDs/performance/PRD-333-*.md` — EDIT: check the criteria.
 
 **What must land:** the frame-shape row for (a) a scaffolded template and (b) one real
 Bayview-class game, on the browser and on the Pixel 8, in the shape the external review asked for:

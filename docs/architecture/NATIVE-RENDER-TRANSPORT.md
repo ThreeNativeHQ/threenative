@@ -95,8 +95,10 @@ are unglamorous: **submit fewer objects** (instancing, merged geometry, LOD, all
 `src/render/`, plus `SceneRenderProjection` mirroring an authored scene into instanced draws), or
 **run the same JavaScript on a faster engine**, which is already spent.
 
-**The draw-count knee** — the ~20 ms step between 500 and 1,000 draws — is also untouched by a
-transport aimed at the linear term, and still has no named mechanism.
+**Correction, 2026-09-02:** this section used to name *"the draw-count knee — the ~20 ms step
+between 500 and 1,000 draws"* as a second open problem. There is no knee under the shipped engine
+(PRD-069 Phase 0, 2026-08-21); the step was a QuickJS artefact measured on a frustum-culled
+subject. The linear term above is the whole of it.
 
 ## Where each piece lives
 
@@ -113,14 +115,28 @@ transport aimed at the linear term, and still has no named mechanism.
 ## Status of every claim here
 
 **Measured:** the desktop ablation split and its 0.09 ms cross-check, the 5,713-crossing /
-15,005-argument frame, the 22.3 ms device seam, Chrome's 59.99 fps on the same phone, the draw-count
-knee, and the GPU sitting idle on every subject run.
+15,005-argument frame, the 22.3 ms device seam, and the GPU sitting idle on every subject run.
 
-**Built but unverified:** the op stream. Gate P1 has no record, so no prediction above is claimed as
-met.
+**Built and verified:** the op stream. **Gate P1 passed** — desktop `bridgeNs` 9.31 → 0.81 ms,
+`work` 23.19 → 14.32 ms ([record](../verification/runtime-perf-state.md) §2.2) — and the device
+frame rate did not move (20.39 → 20.02 fps), which is the result, not a missing one.
 
-**Not measured:** what the remaining JavaScript term is made of, the knee's mechanism, cold start
-under V8, and what a crossing costs on a varied-material scene.
+**Withdrawn, 2026-09-02:**
+
+- *Chrome's 59.99 fps on the same phone.* Falsified by rAF plus SurfaceFlinger: Chrome runs Bayview
+  at ~30 fps at 864×303, native at ~20 fps at 2400×1080, and **no matched parity claim remains**
+  ([runtime-perf-state](../verification/runtime-perf-state.md) §1.0, §5). PRD-329 owns the
+  matched-pixel comparison that would replace it.
+- *The draw-count knee.* Refuted under the shipped engine (PRD-069 Phase 0, 2026-08-21): frame time
+  is flat ~4.0 ms from 100 to 1,000 objects and linear at ≈0.70 µs/object beyond. The historical
+  5.6× step was a QuickJS artefact on a frustum-culled subject whose x-axis was never draws.
+  **Do not re-hunt it.**
+
+**Not measured:** what the remaining JavaScript term is made of (now owned by
+[PRD-334](../PRDs/performance/PRD-334-the-javascript-render-term-is-named.md)); how many render
+passes, encoders, command buffers and submits a real frame contains, in any shipped build (now
+owned by [PRD-333](../PRDs/performance/PRD-333-the-frames-shape-is-a-first-class-meter.md)); cold
+start under V8; and what a crossing costs on a varied-material scene.
 
 **No claim here applies to iOS.** No Apple hardware is attached to this repository and the hosted
 runner produces simulator-class evidence only.
