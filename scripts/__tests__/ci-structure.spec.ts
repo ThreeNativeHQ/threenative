@@ -53,6 +53,24 @@ function kvmProvisioning(source: string): readonly string[] {
     );
 }
 
+/**
+ * Which templates a matrix job actually covers.
+ *
+ * These assertions used to match `- <template>` in the job text, which read the matrix only while
+ * the matrix was a bare list of names. `template-nonvisual` shards its two heavy templates now, so
+ * an entry is `- { template: platformer, shard: "1/2" }` and the old match found nothing while the
+ * coverage it was checking was unchanged. Reading the entries is what the assertion always meant.
+ */
+function matrixTemplates(section: string): readonly string[] {
+  const listed = [...section.matchAll(/^\s+-\s+([a-z][a-z0-9-]*)\s*$/gmu)].map(
+    (match) => match[1] ?? "",
+  );
+  const included = [...section.matchAll(/^\s+-\s*\{[^}]*\btemplate:\s*([a-z][a-z0-9-]*)/gmu)].map(
+    (match) => match[1] ?? "",
+  );
+  return [...new Set([...listed, ...included])].sort();
+}
+
 const expectedTemplates = [
   "action-rpg",
   "defense",
@@ -308,7 +326,7 @@ describe("CI pipeline structure", () => {
     expect(job).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
     expect(job).toContain("non-visual-scenarios.mjs");
     expect(job).toContain("threenative-playtest");
-    for (const template of expectedTemplates) expect(job).toContain(`- ${template}`);
+    expect(matrixTemplates(job)).toEqual([...expectedTemplates].sort());
 
     const templateRoot = path.join(repo, "packages/create-threenative/templates");
     const actualTemplates = (await readdir(templateRoot, { withFileTypes: true }))
@@ -325,6 +343,52 @@ describe("CI pipeline structure", () => {
       expect(result.status, `${template}: ${result.stderr}`).toBe(0);
       expect(result.stdout.trim(), `${template}: classifier returned no scenarios`).not.toBe("");
     }
+  });
+
+  // Sharding a lane is how coverage disappears without anyone noticing: a slice that selects
+  // nothing, or two slices that miss the same scenario, both report green. The step's own
+  // arithmetic is the guard at run time; this is the guard on the matrix that feeds it.
+  it("shards every template across slices that add back up to one whole", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "template-nonvisual");
+
+    const entries = [
+      ...job.matchAll(
+        /^\s+-\s*\{\s*template:\s*([a-z][a-z0-9-]*)\s*,\s*shard:\s*"(\d+)\/(\d+)"/gmu,
+      ),
+    ].map((match) => ({
+      template: match[1] ?? "",
+      index: Number(match[2]),
+      count: Number(match[3]),
+    }));
+    expect(entries.length, "template-nonvisual declares no shards").toBeGreaterThan(0);
+
+    const byTemplate = new Map<string, number[]>();
+    for (const { template, index, count } of entries) {
+      expect(index, `${template} shard index`).toBeGreaterThanOrEqual(1);
+      expect(index, `${template} shard ${index}/${count} is out of range`).toBeLessThanOrEqual(
+        count,
+      );
+      const seen = byTemplate.get(template) ?? [];
+      expect(seen, `${template} declares shard ${index} twice`).not.toContain(index);
+      byTemplate.set(template, [...seen, index]);
+    }
+
+    // Every template names one shard count, and every slice of it exists exactly once — so the
+    // slices are a partition, not a sample.
+    for (const [template, indices] of byTemplate) {
+      const counts = new Set(entries.filter((e) => e.template === template).map((e) => e.count));
+      expect(counts.size, `${template} mixes shard counts`).toBe(1);
+      const [count] = [...counts];
+      expect(
+        indices.sort((left, right) => left - right),
+        `${template} is missing a shard`,
+      ).toEqual(Array.from({ length: count ?? 0 }, (_, offset) => offset + 1));
+    }
+
+    // And the step must refuse a slice that selected nothing rather than report on an empty set.
+    expect(job).toContain('test "${#mine[@]}" -gt 0');
+    expect(job).toContain("non-visual-scenarios.mjs");
   });
 
   it("PR CI reviews dependencies and scans changed commits for leaked secrets", async () => {
@@ -484,7 +548,9 @@ describe("CI pipeline structure", () => {
     expect(nonVisual).toContain("non-visual-scenarios.mjs");
     expect(nonVisual).toContain("threenative-playtest");
     // Both templates the golden-path matrix drives must be covered by the sweep that replaces it.
-    for (const template of ["starter", "platformer"]) expect(nonVisual).toContain(`- ${template}`);
+    for (const template of ["starter", "platformer"]) {
+      expect(matrixTemplates(nonVisual)).toContain(template);
+    }
 
     // Commands, not prose: the job's comments name the classifier and the runner precisely
     // because it delegates to them, and a raw-text match cannot tell an explanation from a step.
@@ -778,10 +844,11 @@ describe("CI pipeline structure", () => {
     expect(nonVisual).toContain("threenative-playtest");
     expect(nonVisual).not.toContain("github.event_name == 'push'");
     // And it has to cover every template this matrix drives.
-    const driven = [...goldenPath.matchAll(/^\s+- ([a-z-]+)$/gmu)].map((match) => match[1] ?? "");
+    const driven = matrixTemplates(goldenPath);
     expect(driven.length).toBeGreaterThan(0);
+    const covered = matrixTemplates(nonVisual);
     for (const template of driven) {
-      expect(nonVisual, `template-nonvisual does not cover ${template}`).toContain(`- ${template}`);
+      expect(covered, `template-nonvisual does not cover ${template}`).toContain(template);
     }
   });
 
