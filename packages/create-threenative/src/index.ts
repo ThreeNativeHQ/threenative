@@ -5,6 +5,7 @@ import { cp, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promise
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
+import { MCP_SERVERS, serverEntryPath } from "./mcp-servers.js";
 
 export { createEngineFreshnessPlugin, hashEngineDist } from "./engine-freshness.js";
 export { createWebBrandPlugin, renderWebManifest } from "./web-brand.js";
@@ -497,11 +498,13 @@ const NODE_MODULES_PREFIX = "./node_modules/";
 // project always has as a direct dependency. Pointing straight at `threenative-asset-mcp` only
 // works where the package manager hoists, so a project that installed the library without
 // scaffolding — or one on pnpm whose lockfile nests differently — silently lost its asset tools.
-const REQUIRED_MCP_SERVERS = {
-  "threenative-assets": `${NODE_MODULES_PREFIX}@threenative/core/mcp/assets.mjs`,
-  "threenative-sculpt": `${NODE_MODULES_PREFIX}@threenative/core/mcp/sculpt.mjs`,
-  "threenative-engine": `${NODE_MODULES_PREFIX}@threenative/core/mcp/engine.mjs`,
-} as const;
+//
+// Derived from core's table rather than retyped beside it: a server added there must appear in a
+// scaffolded project, and a hand-kept copy here would have let the scaffold pass while shipping
+// a project that is missing it.
+const REQUIRED_MCP_SERVERS: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(MCP_SERVERS).map(([name, server]) => [name, serverEntryPath(server)]),
+);
 
 function mcpPackageName(entry: string): string {
   const segments = entry.slice(NODE_MODULES_PREFIX.length).split("/");

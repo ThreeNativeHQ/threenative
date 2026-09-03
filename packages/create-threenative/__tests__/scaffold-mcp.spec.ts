@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { afterEach, describe, expect, it } from "vitest";
+import { staleHostConfigs } from "../../../scripts/sync-mcp-configs.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 // @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
@@ -197,4 +198,15 @@ describe("scaffolded host MCP configs", () => {
       expect(code.servers["threenative-engine"]?.type, template).toBe("stdio");
     }
   }, 60_000);
+});
+
+// `pnpm sync:mcp` writes these files and `pnpm budgets` runs its `--check`. That gate lives at the
+// end of a chain that takes minutes; this one runs in the unit suite, so a hand-edited template
+// config is caught by a plain `pnpm test` too. It calls the generator's own comparison rather than
+// re-deriving the expectation: a second derivation would be a second generator, green against its
+// own copy of the rule.
+describe("committed template MCP host configs", () => {
+  it("should keep every template host config equal to the generator output", () => {
+    expect(staleHostConfigs()).toEqual([]);
+  });
 });
