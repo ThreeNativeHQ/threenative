@@ -213,6 +213,15 @@ jobs:
       # Reading the counters between the builds separates them: if the host build reports zero
       # hits and the hits only appear in the QuickJS step, it is the first. This is measurement,
       # not a fix, and it is cheap enough to keep either way.
+      # `actions/checkout` stamps every file with the time it ran, so the build tree restored above
+      # is always older than its own inputs and ninja rebuilds all of it — which is why the host
+      # build stayed at ~108s with a warm cache. The content is identical to the commit; only the
+      # timestamps are new. This makes them the commit's, which is the same on every checkout, so
+      # an unchanged source really reads as unchanged. A source that did move carries a newer
+      # commit time and is rebuilt, and a file differing from HEAD is left alone entirely — the
+      # two properties that keep this from being a way to ship a stale object.
+      - name: Date the native sources by their last commit, not by the checkout
+        run: node packages/runtime-native/scripts/restore-source-mtimes.mjs
       - name: Zero the compiler cache counters
         shell: bash
         run: |
