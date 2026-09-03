@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 import { createProject, templateRoot } from "../packages/create-threenative/src/index.js";
 import { TEMPLATE_NAMES, inspectAllTemplates, packageLocalFramework } from "./visual-gate.js";
 
-const ALREADY_BOOTED_TEMPLATES = new Set(["platformer", "starter"]);
+/**
+ * The two kits `golden-path-template` already boots, so this matrix covers the rest.
+ *
+ * Exported so the suite can derive the expected matrix from it and from the templates on
+ * disk, instead of keeping a third copy of the list that goes stale the day a kit ships.
+ */
+export const ALREADY_BOOTED_TEMPLATES = new Set(["platformer", "starter"]);
 export const TEMPLATE_PLAYTEST_NAMES = TEMPLATE_NAMES.filter(
   (template) => !ALREADY_BOOTED_TEMPLATES.has(template),
 );

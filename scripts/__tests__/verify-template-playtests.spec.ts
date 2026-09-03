@@ -3,7 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
+import { allTemplates } from "../../test-support/templates.js";
 import {
+  ALREADY_BOOTED_TEMPLATES,
   TEMPLATE_PLAYTEST_NAMES,
   assertTemplatePlaytestsPassed,
   auditTemplatePlaytests,
@@ -26,15 +28,18 @@ async function writeScenario(
 }
 
 describe("template playtest matrix", () => {
-  it("selects the six templates outside the existing golden-path boot matrix", () => {
-    expect(TEMPLATE_PLAYTEST_NAMES).toEqual([
-      "action-rpg",
-      "defense",
-      "minimal",
-      "racing",
-      "sailing",
-      "shooter",
-    ]);
+  it("selects every template outside the existing golden-path boot matrix", () => {
+    // Derived from disk, not listed here. This assertion named six templates and went red the day
+    // `puzzle` and `runner` shipped — while the code under test was already reading the directory
+    // and was therefore correct. A kit is covered the day it ships a directory, and a hardcoded
+    // list here only ever records how many kits existed when someone last edited it.
+    expect(TEMPLATE_PLAYTEST_NAMES).toEqual(
+      allTemplates().filter((name) => !ALREADY_BOOTED_TEMPLATES.has(name)),
+    );
+    // ...and the split is real: neither side is empty, so a discovery that silently returned
+    // nothing cannot pass this.
+    expect(TEMPLATE_PLAYTEST_NAMES.length).toBeGreaterThan(0);
+    expect(ALREADY_BOOTED_TEMPLATES.size).toBeGreaterThan(0);
   });
 
   it("reports every template and continues after a failing template", async () => {
