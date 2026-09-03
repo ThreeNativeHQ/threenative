@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 import { test } from "vitest";
+import { workflowBlockScalars } from "./runtime-test-utils.js";
 import { absoluteErrorRatio } from "../conformance/metrics.mjs";
 import { isMultitouchProofSatisfied } from "../conformance/multitouch-proof.mjs";
 import {
@@ -151,6 +152,73 @@ test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () 
     }],
   };
   assert.deepEqual(unexpectedBlockedRows(missingHardwareReference, registry), []);
+});
+
+test("a registered, unexpired exclusion is an expected block; anything else is not", () => {
+  // The desktop parity lane failed on every run before this: `desktop-multitouch-input` has been
+  // registered, owned by PRD-077 and dated since 2026-08-15, the runner blocks the row with a
+  // TN_PARITY_ROW_EXCLUDED reason that names it — and this gate had never heard of the exclusion
+  // list, so it reported the row as an unexpected lane defect and `check-lane-blocks.mjs` exited 1.
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const exclusion = registry.exclusions.find(({ id }) => id === "desktop-multitouch-input");
+  assert.equal(exclusion?.target, "desktop");
+  assert.equal(exclusion?.row, "90-multitouch-input");
+
+  const blockedReason = `TN_PARITY_ROW_EXCLUDED: ${exclusion.id} — host constraint.`;
+  const report = {
+    target: "desktop",
+    results: [{ id: exclusion.row, status: "blocked", blockedReason }],
+    summary: { blocked: 1, fail: 0, pass: 0 },
+  };
+  const before = Date.parse(`${exclusion.expires}T00:00:00.000Z`) - 1;
+  assert.deepEqual(unexpectedBlockedRows(report, registry, before), []);
+
+  // Expiry still bites. `expiredExclusions` exits 2 for a lapsed entry; forgiving it here as well
+  // would leave the date enforcing nothing at all.
+  const after = Date.parse(`${exclusion.expires}T00:00:00.000Z`);
+  assert.deepEqual(unexpectedBlockedRows(report, registry, after), [
+    { id: exclusion.row, reason: blockedReason },
+  ]);
+
+  // The marker is not a free pass: the same row on a lane the exclusion does not name is a defect.
+  assert.deepEqual(
+    unexpectedBlockedRows({ ...report, target: "android" }, registry, before),
+    [{ id: exclusion.row, reason: blockedReason }],
+  );
+
+  // And a marker with no registry entry behind it stays a defect too.
+  const unregistered = {
+    ...report,
+    results: [{
+      id: "01-basic-cube",
+      status: "blocked",
+      blockedReason: "TN_PARITY_ROW_EXCLUDED: invented-on-the-spot",
+    }],
+  };
+  assert.deepEqual(unexpectedBlockedRows(unregistered, registry, before), [
+    { id: "01-basic-cube", reason: "TN_PARITY_ROW_EXCLUDED: invented-on-the-spot" },
+  ]);
+});
+
+test("both parity ledgers compute their exit cell with the runner's own rule", async () => {
+  // The workflow used to restate the rule inline, and the copy knew only `fail` and `blocked`. A
+  // report whose Android multitouch proof failed was therefore written down as exit 2 while the
+  // runner emits 1, and `parity:ledger` — which recomputes the cell precisely to catch a
+  // hand-written number — reported the contradiction on top of the real failure.
+  const workflow = readFileSync(
+    join(root, "../../.github/workflows/native-platforms.yml"),
+    "utf8",
+  );
+  assert.equal(workflow.includes("summary.fail > 0 ? 1 : summary.blocked > 0 ? 2 : 0"), false);
+  assert.equal(workflow.split("reportExitCode(report)").length - 1, 2);
+
+  const { reportExitCode } = await import("../conformance/run-conformance.mjs");
+  const summary = { blocked: 18, fail: 0, pass: 74 };
+  assert.equal(reportExitCode({ summary }), 2);
+  assert.equal(
+    reportExitCode({ summary, supplemental: { androidMultitouch: { status: "fail" } } }),
+    1,
+  );
 });
 
 test("velocity conformance captures the motion window instead of the settled frame", () => {
@@ -521,6 +589,10 @@ test("Android conformance dismisses immersive confirmation before its first acti
 
   assert.deepEqual(calls, [
     ["shell", "settings", "put", "secure", "immersive_mode_confirmations", "confirmed"],
+    // Suppresses the system ANR dialog. On run 33703705629, 73 of this lane's 74 failures were
+    // `TN_ANDROID_SYSTEM_DIALOG: Application Not Responding: com.android.launcher3` — the
+    // launcher, not the game, going Not Responding on a software-GL runner and taking focus.
+    ["shell", "settings", "put", "global", "hide_error_dialogs", "1"],
     [
       "shell",
       "am",
@@ -924,12 +996,52 @@ test("root parity command and Gradle lane use an explicit checksum-locked overri
   assert.match(gradle, /else dependsOn\("buildAndroidFirstProofBundle"\)/u);
 });
 
+// The assertion above is only worth anything if the fold it reads through still tells the two
+// shapes apart. `|` is what the lane shipped between 2026-09-01 and 2026-09-02: the action feeds
+// the emulator one line at a time, so everything after the first line vanished and
+// `run-conformance.mjs` ran with no `--target` at all. `>-` is the fix. A helper that flattened
+// both to the same string would report the broken lane as healthy.
+test("the workflow scalar fold tells a dropped-argument literal block from a folded one", () => {
+  const folded = [
+    "        with:",
+    "          script: >-",
+    "            node run-conformance.mjs --target android",
+    "            --device emulator-5554 --out artifacts/conformance/android",
+    "        - name: next",
+  ].join("\n");
+  const literal = folded.replace("script: >-", "script: |").replace(
+    "--target android",
+    "--target android \\",
+  );
+
+  assert.deepEqual(workflowBlockScalars(folded, "script"), [
+    "node run-conformance.mjs --target android --device emulator-5554 --out artifacts/conformance/android",
+  ]);
+  // Every line after the first is a separate command to the emulator shell, so the arguments are
+  // not on the invocation the lane actually runs.
+  const [literalScript] = workflowBlockScalars(literal, "script");
+  assert.equal(literalScript?.split("\n")[0], "node run-conformance.mjs --target android \\");
+  assert.doesNotMatch(
+    literalScript?.split("\n")[0] ?? "",
+    /--device emulator-5554/u,
+    "a literal block hands the emulator a first line with no device",
+  );
+});
+
 test("native workflow runs the complete checksum-locked Android emulator parity lane", () => {
   const workflow = readFileSync(join(root, "../../.github/workflows/native-platforms.yml"), "utf8");
   assert.match(workflow, /packages\/runtime-native\/\*\*/u);
   assert.match(workflow, /android-actions\/setup-android@v4/u);
   assert.match(workflow, /download-deps\.mjs --android/u);
-  assert.match(workflow, /--target android --device emulator-5554/u);
+  // The folded value, not the file's wrapping: the emulator action hands `script` to the shell as
+  // one string, so this asserts the command the lane runs rather than where the line happens to
+  // break. Matching the raw text pinned a `\`-continued shape whose every argument the action
+  // dropped, and would reject the one-line form that fixed it.
+  const emulatorScript = workflowBlockScalars(workflow, "script").find((script) =>
+    script.includes("run-conformance.mjs"),
+  );
+  assert.ok(emulatorScript, "the emulator lane has no run-conformance script block");
+  assert.match(emulatorScript, /--target android --device emulator-5554/u);
   assert.doesNotMatch(workflow, /implemented-only/u);
 });
 

@@ -8,10 +8,12 @@ import {
   SpriteAnimator3D,
   afterPhysics,
   isMobile,
+  isTouchscreenAvailable,
 } from "@threenative/core";
 import {
   CollisionShape3D,
   type IPhysicsContext,
+  type IRayHit,
   RigidBody3D,
   buildStaticColliders,
 } from "@threenative/physics";
@@ -28,9 +30,9 @@ import {
 } from "../entities/Player.js";
 import { Target } from "../entities/Target.js";
 import { SpawnPoints } from "../level/SpawnPoints.js";
-import type { IRayHit } from "../physics.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
-import { createArenaCamera, createArenaShakeOptions } from "../render/camera.js";
+import { createArenaShakeOptions, createFirstPersonRig } from "../render/camera.js";
+import { DecalField } from "../render/decals.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
@@ -42,19 +44,17 @@ import {
   createWallVisual,
 } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
+import { TouchControls } from "../render/touch-controls.js";
+import type { ITouchInput } from "../render/touch-controls.js";
 import { createImpactDust, createImpactSparks, createMuzzleFlash } from "../render/vfx.js";
 import type { GameState } from "../state.js";
 import { WaveDirector } from "../waves.js";
 import { Hitscan } from "../weapons/Hitscan.js";
 import { Projectile } from "../weapons/Projectile.js";
+import { MAGAZINE, RESERVE, Viewmodel } from "../weapons/Viewmodel.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
-const AIM = new Vector3(0, 0, -1);
-const UP = new Vector3(0, 1, 0);
-// Relative mouse pixels to radians. Mouse look is applied per pixel moved, not per second —
-// the delta is already frame-rate independent, so no dt scaling.
-const LOOK_RADIANS_PER_PIXEL = 0.005;
 const DEMO_POSITION = new Vector3(0, 0.85, -4);
 const WAVE_POSITION = new Vector3(0, 0.9, -9);
 const SCAN_POSITION = new Vector3(3, 0.9, 0);
@@ -78,6 +78,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     uiReady: false,
     aimedShots: 0,
     aiming: 0,
+    ammo: MAGAZINE,
+    reserve: RESERVE,
+    reloading: 0,
     armor: 0,
     cameraShakes: 0,
     deaths: 0,
@@ -96,6 +99,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     pickupFrame: 0,
     pickupFrameChanges: 0,
     pickups: 0,
+    pitchDegrees: 0,
     radiusInsideDeaths: 0,
     radiusMidAlive: 1,
     radiusNearAlive: 1,
@@ -122,8 +126,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupPost(ctx.renderer, ctx.scene, camera, { godraysLight: sun, mobile: isMobile() });
     const loading = createLoadingScreen(ctx);
     ctx.add(camera);
+    const showTouchControls = isMobile() && isTouchscreenAvailable();
+    const touchControls = showTouchControls
+      ? ctx.entities.add("touch-controls", new TouchControls(camera))
+      : undefined;
     const shake = new CameraShake(createArenaShakeOptions());
-    const rig = createArenaCamera(camera, shake);
+    const rig = createFirstPersonRig(camera, shake);
     const billboards: Billboard3D[] = [];
     const billboardFront = new Vector3(0, 0, 1);
     const billboardExpected = new Vector3();
@@ -158,13 +166,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const hitscan = new Hitscan();
     const spawnPoints = SPAWN_POINTS;
     const elapsed = { value: 0 };
-    // Look state: relative mouse pixels accumulate here, the camera rig orbits by it, and the
-    // aim direction rotates with it. Reported through ctx.state so a playtest can observe the
-    // rotation after the real input path.
-    const lookState = { yaw: 0 };
-    const aimDirection = new Vector3();
     const enemyDirection = new Vector3();
-    const aimForward = (): Vector3 => aimDirection.copy(AIM).applyAxisAngle(UP, -lookState.yaw);
+    const decalPoint = new Vector3();
+    const decalNormal = new Vector3();
 
     const onEnemyProjectileHit = (hit: IRayHit): void => {
       if (hit.body.id === getPlayer().body.body.id) {
@@ -262,9 +266,18 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       });
     };
 
-    const player = new Player(ctx, materials, SPAWN.clone(), onDamage, onDeath);
+    const player = new Player(ctx, camera, materials, SPAWN.clone(), onDamage, onDeath);
     playerRef.value = player;
     ctx.entities.add("player", player);
+    const viewmodel = new Viewmodel(player.visual);
+    ctx.entities.add("viewmodel", viewmodel);
+    // Marks live on the scene root, not on what they hit: a hole is stuck to the world, and a
+    // target that dies should not take the holes in the wall behind it with it.
+    const decals = new DecalField(ctx.scene, { count: 24 });
+    ctx.entities.add("decals", decals);
+    // Two seconds in, every material this pool needs has been compiled; stop drawing the slots
+    // nobody has used.
+    ctx.after(2, () => decals.settle());
 
     const muzzleVfx = ctx.add(new GPUParticles3D(createMuzzleFlash()));
     const impactVfx = ctx.add(new GPUParticles3D(createImpactSparks()));
@@ -295,14 +308,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     registerTarget("scan-target", SCAN_POSITION, { health: 20, onFire: () => undefined });
     const friendly = createFriendlyVisual(materials);
     friendly.name = "friendly-drone";
-    friendly.position.set(0, 1, 2.2);
+    friendly.position.set(0, 1, 1.4);
     ctx.add(friendly);
     const friendlyBody = new RigidBody3D({
       collisionLayer: FRIENDLY_LAYER,
       collisionMask: 0,
       object: friendly,
       physics: ctx.physics,
-      shape: CollisionShape3D.box(0.9, 1.4, 0.9),
+      shape: CollisionShape3D.box(0.34, 1.5, 0.34),
       type: "fixed",
     });
 
@@ -338,10 +351,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       false,
     );
 
+    // Well clear of every respawn point. At 1.2 m the player landed inside the pack's trigger the
+    // instant they respawned, which handed back a full bar for dying — the opposite of what a
+    // health pickup is for.
     const pickup = new Pickup(
       ctx,
       materials,
-      new Vector3(-1.2, SPAWN.y, SPAWN.z),
+      new Vector3(-2.6, SPAWN.y, SPAWN.z),
       player.body.body.id,
       () => {
         player.health = Math.min(player.maxHealth, player.health + 60);
@@ -378,8 +394,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       emitPlaytestEvent({ entity: "wave", name: "started", wave });
     };
     waveDirector.start(spawnWave);
-    rig.snap(player.mesh.position);
-    afterPhysics(ctx, (dt) => rig.follow(player.mesh.position, dt, lookState.yaw));
+    rig.snap(player);
+    // The eye is placed here, after the solver wrote the step, and never inside the frame
+    // callback. Placing it from `update` leaves the camera one physics step behind the body.
+    afterPhysics(ctx, (dt) => rig.follow(player, dt));
 
     const resolveHitscanImpact = (
       hit: NonNullable<ReturnType<typeof hitscan.fire>>,
@@ -389,6 +407,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (target !== undefined) applyDirectDamage(targets, hit.body.id, 40);
       burst(impactVfx, hit.position, "vfx-impact");
       burst(impactDustVfx, hit.position, "vfx-impact-dust");
+      // A round that leaves nothing behind teaches the player their shots land nowhere.
+      decalPoint.set(hit.position.x, hit.position.y, hit.position.z);
+      decalNormal.set(hit.normal.x, hit.normal.y, hit.normal.z);
+      decals.place(decalPoint, decalNormal, target === undefined ? 1 : 0.7);
       const demoHit = hit.body.id === demo.body.body.id;
       shake.trigger();
       ctx.state.set({
@@ -413,28 +435,42 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (target?.alive === false) emitPlaytestEvent({ entity: "target", name: "defeated" });
     };
 
+    /**
+     * One round.
+     *
+     * The ray starts at the camera and runs down the camera's own forward axis, because that is
+     * where the crosshair is drawn. Starting it at the muzzle instead puts the round a hand's
+     * width to the right of where the player aimed, which is invisible at range and infuriating
+     * up close. The muzzle is where the *flash* goes, and the weapon leans to meet this ray.
+     */
     const fireHitscan = (whileAiming: boolean): void => {
+      if (!viewmodel.fire()) return;
       const state = ctx.state.getState();
-      const originOffset = player
-        .aimOrigin()
-        .sub(player.mesh.position)
-        .applyAxisAngle(UP, -lookState.yaw)
-        .add(player.mesh.position);
-      const hit = hitscan.fire(ctx.physics, originOffset, aimForward(), HOSTILE_LAYER);
-      burst(muzzleVfx, originOffset, "vfx-muzzle");
+      const ray = player.aimRay();
+      const hit = hitscan.fire(ctx.physics, ray.origin, ray.direction, HOSTILE_LAYER | WORLD_LAYER);
+      burst(muzzleVfx, viewmodel.muzzlePoint(), "vfx-muzzle");
       ctx.state.set({
         aimedShots: whileAiming ? state.aimedShots + 1 : state.aimedShots,
+        ammo: viewmodel.ammo,
         shotsFired: state.shotsFired + 1,
       });
       emitPlaytestEvent({ entity: "player", name: "fired", aimed: whileAiming ? 1 : 0 });
       if (hit !== undefined) resolveHitscanImpact(hit, state);
     };
 
+    const reload = (): void => {
+      if (viewmodel.reloading || viewmodel.ammo >= MAGAZINE || viewmodel.reserve <= 0) return;
+      viewmodel.reload(ctx);
+      ctx.state.set({ reloading: 1 });
+      emitPlaytestEvent({ entity: "player", name: "reload-started" });
+    };
+
     const fireProjectile = (): void => {
-      burst(muzzleVfx, player.aimOrigin(), "vfx-muzzle");
+      const ray = player.aimRay();
+      burst(muzzleVfx, viewmodel.muzzlePoint(), "vfx-muzzle");
       acquireProjectile(
-        player.aimOrigin(),
-        AIM,
+        ray.origin,
+        ray.direction,
         HOSTILE_LAYER | WORLD_LAYER,
         onPlayerProjectileHit,
       );
@@ -456,7 +492,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
 
     const probeWall = (): void => {
-      const from = player.mesh.position.clone().add(new Vector3(0, 0.75, 0));
+      const from = player.mesh.position.clone().add(new Vector3(0, player.eyeHeight, 0));
       const to = from.clone().add(new Vector3(10, 0, 0));
       const hit = hitscan.probe(ctx.physics, from, to, WORLD_LAYER | FRIENDLY_LAYER);
       if (hit?.body.id !== wallBody.body.id) return;
@@ -497,9 +533,18 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       }
     };
 
-    const handleInput = (frameCtx: GameCtx): void => {
+    const handleInput = (frameCtx: GameCtx, touch?: ITouchInput): void => {
       handleAimEdges(frameCtx);
-      if (frameCtx.input.justPressed("fire")) fireHitscan(frameCtx.input.pressed("aim"));
+      // Held *or* just pressed, and the weapon's cyclic cooldown decides which of those frames
+      // sends a round — so a tap and a held trigger run exactly the same path. The edge is not
+      // redundant: a mouse button that goes down and up between two fixed-step ticks leaves a
+      // latched edge and no held state, which is how a click can otherwise fire nothing at all.
+      const trigger =
+        frameCtx.input.pressed("fire") ||
+        frameCtx.input.justPressed("fire") ||
+        touch?.firePressed === true;
+      if (trigger) fireHitscan(player.aiming);
+      if (frameCtx.input.justPressed("reload") || touch?.reloadPressed === true) reload();
       if (frameCtx.input.justPressed("projectile")) fireProjectile();
       if (frameCtx.input.justPressed("blast")) fireRadius();
       if (frameCtx.input.justPressed("probe")) probeWall();
@@ -520,6 +565,29 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         emitPlaytestEvent({ entity: "wave", name: "cleared", wave });
       });
       if (waveDirector.won) frameCtx.state.set({ gameWon: 1, phase: "won" });
+    };
+
+    let lastAmmo = -1;
+    let lastReserve = -1;
+    let lastReloading = -1;
+    const weaponPatch: Partial<GameState> = {};
+    const publishWeapon = (frameCtx: GameCtx): void => {
+      const reloading = viewmodel.reloading ? 1 : 0;
+      if (
+        viewmodel.ammo === lastAmmo &&
+        viewmodel.reserve === lastReserve &&
+        reloading === lastReloading
+      )
+        return;
+      if (lastReloading === 1 && reloading === 0)
+        emitPlaytestEvent({ entity: "player", name: "reloaded" });
+      lastAmmo = viewmodel.ammo;
+      lastReserve = viewmodel.reserve;
+      lastReloading = reloading;
+      weaponPatch.ammo = viewmodel.ammo;
+      weaponPatch.reserve = viewmodel.reserve;
+      weaponPatch.reloading = reloading;
+      frameCtx.state.set(weaponPatch);
     };
 
     const hudPatch: Partial<GameState> = {};
@@ -590,24 +658,41 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       frameCtx.state.set(hudPatch);
     };
 
-    // Relative mouse pixels accumulate here once per frame; the same yaw drives both the
-    // camera orbit and the aim direction, and the total is published for playtests.
-    const applyLook = (frameCtx: GameCtx): void => {
-      const look = frameCtx.input.vector("look");
-      if (look.x === 0) return;
-      lookState.yaw += look.x * LOOK_RADIANS_PER_PIXEL;
-      lookPatch.yawDegrees = Math.round((lookState.yaw * 180) / Math.PI);
-      ctx.state.set(lookPatch);
+    /**
+     * Publish where the player is looking.
+     *
+     * The player integrates the look deltas itself, inside `update`, on the same path a native
+     * build takes. This only reports the result, and only when it changed — a state write every
+     * frame would flush the bridge for nothing on a still mouse.
+     */
+    let lastYawDegrees = Number.NaN;
+    let lastPitchDegrees = Number.NaN;
+    const publishLook = (frameCtx: GameCtx): void => {
+      const yawDegrees = Math.round(player.yawDegrees);
+      const pitchDegrees = Math.round(player.pitchDegrees);
+      if (yawDegrees === lastYawDegrees && pitchDegrees === lastPitchDegrees) return;
+      lastYawDegrees = yawDegrees;
+      lastPitchDegrees = pitchDegrees;
+      lookPatch.yawDegrees = yawDegrees;
+      lookPatch.pitchDegrees = pitchDegrees;
+      frameCtx.state.set(lookPatch);
     };
 
     return (frameCtx, dt) => {
       loading.update();
       elapsed.value += dt;
       if (restart(frameCtx)) return;
-      handleInput(frameCtx);
-      applyLook(frameCtx);
+      const touch = touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
+      // Look and stance first: the weapon pose and the shot both read this frame's aim, so a
+      // round fired below would otherwise use last frame's crosshair.
+      player.update(frameCtx, dt, touch);
+      handleInput(frameCtx, touch);
+      publishLook(frameCtx);
 
-      player.update(frameCtx, dt);
+      const ray = player.aimRay();
+      viewmodel.converge(ray.origin, ray.direction);
+      viewmodel.update(dt, player.aiming, player.moving);
+      publishWeapon(frameCtx);
       hitscan.update(dt);
       updateProjectiles(frameCtx, dt);
       for (const target of targets.values()) target.update(dt);

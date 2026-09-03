@@ -65,7 +65,32 @@ jobs:
   # `pnpm test` needs the native contract executables; nothing else here does. Keeping the browser
   # and playtest lanes in their own jobs means one run reports every failure instead of teaching us
   # one per push — which is what made the first-ever green take five sequential runs to find.
+  # The JS half of `pnpm test`. Everything here — `check:docs`, the workspace build, every
+  # package's own `test` script bar one, and the ~2,400-test root vitest run — needs a Node
+  # toolchain and nothing more. The C++ host it used to compile for 279s serves exactly one
+  # consumer: `@threenative/runtime-native`'s own `test` script, which drives real contract
+  # executables. That moved to `test-native` below, which runs beside this job instead of in front
+  # of it. `scripts/__tests__/ci-structure.spec.ts` asserts the two halves partition the workspace.
   test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TN_SUITE_EXCLUDE_PACKAGES: "@threenative/runtime-native"
+      # The orphan gate waits for Playwright's asynchronous profile cleanup and fails when it never
+      # settles. Its 30s default is a quiet-machine number and this job is not one.
+      TN_ORPHAN_SETTLE_SECONDS: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm test
+
+  test-native:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -104,8 +129,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.cache/ccache
-          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
-          restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-
+          # `ci-test` names the lane, and that is the whole point of it. Three Linux jobs compile
+          # different target sets — this one, native `desktop-parity` and native `starter-linux` —
+          # and all three used to save under `native-ccache-<os>-<arch>-gcc-`. The key carries the
+          # run id so every run stores a new entry, and `restore-keys` takes the newest match, so
+          # each lane restored whichever sibling had finished last and then recompiled its own
+          # objects against it. On run 33690597861 this job reported `Hits: 184 / 574 (32.06%)`
+          # against a tree whose native sources had not moved, and the stored entry sat at 23 MiB
+          # run after run instead of growing to hold what any one lane needs. A restore-key prefix
+          # is a namespace; sharing one between jobs that build different things is a cache that
+          # reports warm and behaves cold.
+          key: native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
+          restore-keys: native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -171,7 +206,18 @@ jobs:
         if: always()
         shell: bash
         run: ccache --show-stats
-      - run: pnpm test
+      # The contract tests import the compiled workspace — `production-profile.test.mjs` loads
+      # `@threenative/playtest` to run its generated workload through the validator, and the
+      # conformance dry run bundles rows through the same path. `pnpm test` used to build this for
+      # them inside its own `build` phase; now that this job no longer runs `pnpm test`, it builds
+      # what it imports. Run 33702063755 is what skipping it looks like:
+      #   Cannot find module '.../packages/playtest/dist/index.js'
+      #     imported from '.../packages/runtime-native/tests/production-profile.test.mjs'
+      - name: Build workspace packages the native contract tests import
+        run: pnpm tsx scripts/workspace-packages.ts build
+      # Only the suite that needs what the steps above built. `publint` and
+      # `native:physics:parity` ride along inside that script, which is the package's whole gate.
+      - run: pnpm --filter @threenative/runtime-native test
 
   test-browser:
     runs-on: ubuntu-latest
@@ -226,14 +272,12 @@ jobs:
           - starter
           - platformer
     runs-on: ubuntu-latest
-    # 30 was a guess from when a page load cost seconds, and it is now measurably too small. Run
-    # 33355317922 completed twelve scenarios 65s apart on this lane; at 13 non-visual scenarios for
-    # starter and 17 for platformer that is ~38 minutes, and the job has never once reached the
-    # platformer half because it kept failing inside starter first. The software-lane readiness rule
-    # brings the per-scenario cost from ~56s to ~33s, which projects to ~25 minutes here — inside 30,
-    # but with about five minutes of margin rather than comfort, and projected from another machine.
-    # 45 is that projection plus room to be wrong about it. It is a ceiling on patience, not a
-    # performance assertion: nothing in this job measures how long it took.
+    # The scenario arithmetic this number came from moved out to `template-nonvisual`, which now
+    # owns the non-visual sweep for all eight templates. What is left is `verify:golden-path` —
+    # pack, scaffold, install, dev, test, build, assert, once per matrix leg — which measured 309s
+    # (starter) and 412s (platformer) on run 33690597861, plus a 27s browser smoke. 45 minutes is
+    # a ceiling on patience with room to be wrong, not a performance assertion: nothing in this
+    # job measures how long it took.
     timeout-minutes: 45
     env:
       # This job proves a stranger can scaffold a project, install it, build it and have its own
@@ -276,46 +320,38 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
         if: steps.proof.outputs.cache-hit != 'true'
-      - name: Pack local framework packages
+      # Everything this lane needs before the smoke, and nothing template-nonvisual already does.
+      # It used to pack the workspace, scaffold both templates and run their non-visual scenarios
+      # here, and then `verify:golden-path` below packed and scaffolded the same template all over
+      # again. Since 2026-09-01 `template-nonvisual` runs that identical sweep — same classifier,
+      # same runner, same flags — for all eight templates on every event, so the copy proved
+      # nothing the run did not already know and cost 350s of the critical path (run 33690597861,
+      # step "Run the scaffold's GPU-free assertions"). What is left here is the verifier, which is
+      # this lane's subject, plus the one thing nothing else covers: the starter booting in a
+      # browser against its own dev server and moving when a key is pressed.
+      # Both legs, not just the one that scaffolds. `verify:golden-path` runs through
+      # `create-threenative/src/config.ts`, which imports `@threenative/assets` — resolved by pnpm
+      # into `packages/assets/dist`. Gate this on the template and the platformer leg dies on
+      # ERR_MODULE_NOT_FOUND before the verifier reaches its first step, which is what run
+      # 33697267947 did. The scaffold below stays starter-only; the compiled workspace does not.
+      - name: Take the packed workspace from build
         if: steps.proof.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p "$RUNNER_TEMP/threenative-packages"
-          pnpm tsx scripts/workspace-packages.ts build
-          pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
-          while IFS=$'\t' read -r package_name archive_prefix; do
-            [ -n "$package_name" ] || continue
-            pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
-          done < "$RUNNER_TEMP/threenative-package-specs"
-      - name: Scaffold the golden-path template from local tarballs
-        if: steps.proof.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace-packages
+      - name: Scaffold the starter the HUD smoke drives
+        if: matrix.template == 'starter' && steps.proof.outputs.cache-hit != 'true'
         uses: ./.github/actions/scaffold-from-tarballs
         with:
-          archives-directory: ${{ runner.temp }}/threenative-packages
-          specs-file: ${{ runner.temp }}/threenative-package-specs
-          target: ${{ runner.temp }}/threenative-${{ matrix.template }}
-          template: ${{ matrix.template }}
+          archives-directory: ${{ github.workspace }}/artifacts/workspace-packages
+          specs-file: ${{ github.workspace }}/artifacts/workspace-packages/specs
+          target: ${{ runner.temp }}/threenative-starter
+          template: starter
+      - name: Install the scaffolded starter
+        if: matrix.template == 'starter' && steps.proof.outputs.cache-hit != 'true'
+        run: pnpm --dir "$RUNNER_TEMP/threenative-starter" install
       - uses: ./.github/actions/playwright-chromium
         if: steps.proof.outputs.cache-hit != 'true'
-      - name: Run the scaffold's GPU-free assertions
-        if: steps.proof.outputs.cache-hit != 'true'
-        run: |
-          target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
-          pnpm --dir "$target" install
-          # The template advertises this script, so a stranger runs it on day one. `vite build`
-          # does not typecheck, so nothing else in this job would notice it going red.
-          pnpm --dir "$target" run typecheck
-          # MCP surface validation is centralized in verify-golden-path.ts below.
-          # This job proves the golden path, not the pixels: a runner with no GPU cannot serve the
-          # scenarios that capture frames, and test-browser and visuals already cover those. The
-          # split is computed from the scenario files, and the script prints what it left out.
-          scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
-          mapfile -t scenarios <<< "$scenario_list"
-          test "${#scenarios[@]}" -gt 0
-          scenario_args=()
-          for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
-          pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
-            --browser-recipe webgpu --headed --no-screenshots \
-            --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
       - name: Drive the starter's interactive HUD smoke
         if: matrix.template == 'starter' && steps.proof.outputs.cache-hit != 'true'
         run: |
@@ -352,8 +388,15 @@ jobs:
           }
           await browser.close();
           NODE
+      # `build` already compiled this workspace and packed every tarball from this commit, and the
+      # step above downloaded them. Without this the verifier packs the whole set a second time —
+      # the workspace `tsc` plus ten `pnpm pack` runs — inside the job that sets the run's critical
+      # path. Measured on run 33710335121: `verify:golden-path` 425s of a 472s job, behind `build`
+      # at 98s. Unset on a developer machine, so `pnpm verify:golden-path` still packs its own.
       - run: pnpm verify:golden-path
         if: steps.proof.outputs.cache-hit != 'true'
+        env:
+          TN_GOLDEN_PATH_ARCHIVES: ${{ github.workspace }}/artifacts/workspace-packages
       - name: Record the proof for this tree
         if: success() && steps.proof.outputs.cache-hit != 'true'
         run: |
@@ -398,20 +441,16 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Pack local framework packages
-        run: |
-          mkdir -p "$RUNNER_TEMP/threenative-packages"
-          pnpm tsx scripts/workspace-packages.ts build
-          pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
-          while IFS=$'\t' read -r package_name archive_prefix; do
-            [ -n "$package_name" ] || continue
-            pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
-          done < "$RUNNER_TEMP/threenative-package-specs"
+      # Packed once by `build`. See the note there.
+      - name: Take the packed workspace from build
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace-packages
       - name: Scaffold the template from local tarballs
         uses: ./.github/actions/scaffold-from-tarballs
         with:
-          archives-directory: ${{ runner.temp }}/threenative-packages
-          specs-file: ${{ runner.temp }}/threenative-package-specs
+          archives-directory: ${{ github.workspace }}/artifacts/workspace-packages
+          specs-file: ${{ github.workspace }}/artifacts/workspace-packages/specs
           target: ${{ runner.temp }}/threenative-${{ matrix.template }}
           template: ${{ matrix.template }}
       - uses: ./.github/actions/playwright-chromium
@@ -515,6 +554,37 @@ jobs:
       - run: pnpm --filter abyss-framework build
       - name: Enforce entity registry boundaries
         run: pnpm exec tsx scripts/check-core-boundary.ts
+      # Ten jobs downstream scaffold a template from packed workspace tarballs, and every one of
+      # them used to build the workspace and run `pnpm pack` itself: ~70s each, ten times, for
+      # byte-identical archives from one commit (run 33690597861, step "Pack local framework
+      # packages", 55-72s per leg). This job has already compiled the workspace by the line above,
+      # so it packs once and the legs download the result. The specs file travels with the
+      # archives because it names them; deriving it again on the other side would be a second
+      # source of truth for which packages exist.
+      - name: Pack the workspace once for every lane that scaffolds from tarballs
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/workspace-packages
+          pnpm tsx scripts/workspace-packages.ts --archives > artifacts/workspace-packages/specs
+          while IFS=$'\t' read -r package_name archive_prefix; do
+            [ -n "$package_name" ] || continue
+            pnpm --filter "$package_name" pack --pack-destination artifacts/workspace-packages
+          done < artifacts/workspace-packages/specs
+      # Every `packages/*/dist` rides along, not just the CLI's. The scaffold action runs
+      # `create-threenative` from `dist/index.js`, and that file imports `@threenative/assets`,
+      # which pnpm resolves through a workspace symlink to `packages/assets/dist/index.js`. Ship
+      # only the CLI's own output and the first scaffold dies on ERR_MODULE_NOT_FOUND for a
+      # sibling it never mentions. 4.3 MB for the set. One day of retention: nothing outside this
+      # run ever reads these.
+      - name: Publish the packed workspace
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-packages
+          path: |
+            artifacts/workspace-packages
+            packages/*/dist
+          retention-days: 1
+          if-no-files-found: error
 
   budgets:
     needs: build

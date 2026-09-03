@@ -5,7 +5,8 @@ analytic sea moves underneath the hull. `WaveField` measures the water for `Buoy
 same packed parameters drive the WebGPU displacement node. `src/entities/Ship.ts` is deliberately
 ordinary game code, so handling, hull points, density, and course rules are easy to replace.
 
-Controls: WASD or the arrow keys steer and sail forward; `C` is a capsize/fail test; `R` restarts.
+Controls: drag the left touch stick to steer and sail forward, or use WASD/the arrow keys; `C` is a
+capsize/fail test; `R` restarts.
 
 ## Rendering credit
 

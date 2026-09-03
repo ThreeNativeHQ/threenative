@@ -305,6 +305,44 @@ describe("template contracts", () => {
     }
   });
 
+  it("ships a generated, restyleable boot-failure surface in every template", async () => {
+    for (const template of brandingTemplates) {
+      const root = path.join(templateRoot, template);
+      const [style, main] = await Promise.all([
+        readFile(path.join(root, "src/style.css"), "utf8"),
+        readFile(path.join(root, "src/main.ts"), "utf8"),
+      ]);
+      expect(style, template).toContain('[data-threenative-canvas-error="true"]');
+      expect(style, template).toMatch(/position:\s*fixed/u);
+      expect(style, template).toMatch(/z-index:\s*1000/u);
+      expect(style, template).toContain("overflow-wrap: anywhere");
+      if (template === "minimal") {
+        expect(main, template).toContain("threenative-canvas-error");
+        expect(main.replace(/\s+/gu, ""), template).toContain("game.start().then");
+      }
+    }
+  });
+
+  it("requires the starter boot-failure screenshot to keep its error text readable", async () => {
+    const scenario = JSON.parse(
+      await readFile(
+        path.join(templateRoot, "starter/playtests/boot-failure.playtest.json"),
+        "utf8",
+      ),
+    ) as {
+      assert?: {
+        visual?: Array<{
+          region?: { maxDarkPixelRatio?: number };
+        }>;
+      };
+    };
+    const maxDarkPixelRatio = scenario.assert?.visual?.[0]?.region?.maxDarkPixelRatio;
+
+    expect(maxDarkPixelRatio).toBeDefined();
+    expect(maxDarkPixelRatio).toBeGreaterThanOrEqual(0);
+    expect(maxDarkPixelRatio).toBeLessThan(1);
+  });
+
   it("declares a packaged native icon in every template config", async () => {
     for (const template of brandingTemplates) {
       const root = path.join(templateRoot, template);

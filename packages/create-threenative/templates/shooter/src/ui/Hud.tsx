@@ -26,7 +26,7 @@ export function Hud() {
   // Nothing to draw until the game publishes its first snapshot, a few milliseconds in. Rendering
   // zeroes instead would put wrong numbers on screen and then correct them.
   if (state === undefined) return null;
-  const { health, lives, wave, wavesCleared, phase } = state;
+  const { ammo, health, lives, reloading, reserve, wave, wavesCleared, phase } = state;
   const targets = state.targetsRemaining;
   return (
     <section className={shooterUi.hud.root}>
@@ -38,6 +38,12 @@ export function Hud() {
       <div className={shooterUi.hud.summary}>
         <span>{shooterUi.hud.copy.targets(targets)}</span>
         <span>{shooterUi.hud.copy.clear(wavesCleared)}</span>
+      </div>
+      <div className={shooterUi.hud.ammo.root}>
+        <b className={shooterUi.hud.ammo.count}>{shooterUi.hud.copy.ammo(ammo, reserve)}</b>
+        {reloading === 1 && (
+          <span className={shooterUi.hud.ammo.reloading}>{shooterUi.hud.copy.reloading}</span>
+        )}
       </div>
       {phase !== "playing" && (
         <div className={shooterUi.hud.phase[phase]}>{shooterUi.hud.phaseCopy[phase]}</div>

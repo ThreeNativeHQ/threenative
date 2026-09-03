@@ -81,16 +81,30 @@ function assertScenarioRegistered(registry = readJson(registryPath)) {
   assert.equal(scenario.steps[0]?.label, "no-input-control");
   assert.deepEqual(labeled.get("aim-down")?.pointerPosition, { buttons: 2, x: 0.5, y: 0.5 });
   assert.deepEqual(labeled.get("look-right")?.pointerPosition, { x: 0.75, y: 0.5 });
-  assert.deepEqual(labeled.get("fire-while-aiming")?.pointerPosition, {
-    buttons: 3,
-    x: 0.5,
-    y: 0.5,
-  });
   assert.deepEqual(labeled.get("release-buttons")?.pointerPosition, {
     buttons: 0,
     x: 0.5,
     y: 0.5,
   });
+  // The trigger is pressed alone, with the aim held on a key.
+  //
+  // This row used to pin `buttons: 3` — left and right down together, which is how a person
+  // fires down the sights. Measured on the browser lane, that chorded press never reaches the
+  // page at all: `pointer.buttons` stayed at 2 for the whole step and the game recorded no shot.
+  // A scenario that presses two mouse buttons at once therefore proves nothing about either, so
+  // the aim is held on `KeyQ` and the left button is pressed on its own.
+  assert.deepEqual(labeled.get("aim-key")?.press, "KeyQ");
+  assert.deepEqual(labeled.get("fire-while-aiming")?.pointerPosition, {
+    buttons: 1,
+    x: 0.5,
+    y: 0.5,
+  });
+  // The aim is released before the shot, so the two mouse buttons are never down together.
+  const order = scenario.steps.map((step) => step.label);
+  assert.ok(
+    order.indexOf("release-buttons") < order.indexOf("fire-while-aiming"),
+    "the aim button must be released before the trigger is pressed",
+  );
   return { entry, scenario, scenarioPath };
 }
 
@@ -255,28 +269,38 @@ test("should preserve button order on the native target", async () => {
   // The runner owns the down/move/up state machine; these are the exact deliveries its steps
   // must produce for this scenario's mouse contract, in arrival order, after device.ts maps
   // them onto DOM PointerEvent type names at the native host seam. The wake-pointer step
-  // absorbs the browser's one-off pointer warp; reset-heading (KeyR) zeroes the view heading
+  // absorbs the browser's one-off pointer warp; reset-heading (Enter) zeroes the view heading
   // through the template's own restart binding before the measured looks.
+  //
+  // The aim is released before the trigger is pressed, so the two buttons are never down at
+  // once. That is deliberate: a chorded press — left while right is held — was measured on the
+  // browser lane never reaching the page at all, so a scenario built on one proves nothing.
   const pointers = deliveries.filter((delivery) => delivery.kind === "pointer");
+  const expectedOrder = [
+    { buttons: 0, type: "pointermove", x: 640 },   // wake-pointer: absorb the first-move warp
+    { buttons: 2, type: "pointerdown", x: 640 },   // aim-down: right button press
+    { buttons: 2, type: "pointermove", x: 960 },   // look-right: relative move while aiming
+    { buttons: 2, type: "pointermove", x: 640 },   // look-back: equal and opposite
+    { buttons: 0, type: "pointermove", x: 640 },   // release-buttons clears the mask in-step
+    { buttons: 0, type: "pointerup", x: 0 },       // that release closes the pointer
+    { buttons: 1, type: "pointerdown", x: 640 },   // fire-while-aiming: the trigger, alone
+    { buttons: 0, type: "pointerup", x: 0 },       // end-of-step release closes it again
+  ];
   assert.deepEqual(
     pointers.map(({ buttons, type, x }) => ({ buttons, type, x })),
-    [
-      { buttons: 0, type: "pointermove", x: 640 },   // wake-pointer: absorb the first-move warp
-      { buttons: 2, type: "pointerdown", x: 640 },   // aim-down: right button press
-      { buttons: 2, type: "pointermove", x: 960 },   // look-right: relative move while aiming
-      { buttons: 2, type: "pointermove", x: 640 },   // look-back: equal and opposite
-      { buttons: 3, type: "pointermove", x: 640 },   // fire-while-aiming: left joins the held right
-      { buttons: 0, type: "pointermove", x: 640 },   // release-buttons clears the mask in-step
-      { buttons: 0, type: "pointerup", x: 0 },       // end-of-step release closes the pointer
-    ],
-    "native delivery must preserve the right-hold -> left-while-held -> release order",
+    expectedOrder,
+    "native delivery must preserve the right-hold -> release -> left-alone order",
   );
   assert.deepEqual(
     deliveries.filter(({ kind }) => kind === "key"),
     [
-      // device.ts derives the DOM key from the scenario code: KeyR arrives as "r".
-      { kind: "key", key: "r", type: "keydown" },
-      { kind: "key", key: "r", type: "keyup" },
+      // device.ts derives the DOM key from the scenario code: Enter arrives as "Enter" and
+      // KeyQ — the aim held while the trigger is pressed — arrives as "q".
+      { kind: "key", key: "Enter", type: "keydown" },
+      { kind: "key", key: "Enter", type: "keyup" },
+      // No `q` release: the aim is held from its own step to the end of the scenario, which is
+      // the whole point — the shot has to be taken while it is down.
+      { kind: "key", key: "q", type: "keydown" },
     ],
   );
 
@@ -284,15 +308,6 @@ test("should preserve button order on the native target", async () => {
   const withoutAimPress = pointers.filter(
     ({ buttons, type }) => !(type === "pointerdown" && buttons === 2),
   );
-  const expectedOrder = [
-    { buttons: 0, type: "pointermove", x: 640 },
-    { buttons: 2, type: "pointerdown", x: 640 },
-    { buttons: 2, type: "pointermove", x: 960 },
-    { buttons: 2, type: "pointermove", x: 640 },
-    { buttons: 3, type: "pointermove", x: 640 },
-    { buttons: 0, type: "pointermove", x: 640 },
-    { buttons: 0, type: "pointerup", x: 0 },
-  ];
   const matches = (sequence) =>
     JSON.stringify(sequence.map(({ buttons, type }) => [type, buttons])) ===
     JSON.stringify(expectedOrder.map(({ buttons, type }) => [type, buttons]));

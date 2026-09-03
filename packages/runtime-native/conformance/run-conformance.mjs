@@ -2230,8 +2230,27 @@ function writeReport(report, path) {
  * likewise expected. Anything else blocked is a lane defect and is returned for the caller to fail
  * on, so a newly-broken row can never hide inside the allowance.
  */
-export function unexpectedBlockedRows(report, registry) {
+/**
+ * The lane/row pairs a live registry exclusion covers, as `<target>\u0000<row>` keys.
+ *
+ * Expiry is deliberately not forgiven here. `expiredExclusions` already drives exit 2 for a lapsed
+ * entry; tolerating it a second time in this gate would leave the date enforcing nothing, and an
+ * exclusion nobody has to re-justify is how a permanent hole gets dug.
+ */
+function liveExclusionKeys(registry, now = Date.now()) {
+  const expired = new Set(expiredExclusions(registry, now).map((entry) => entry.id));
+  const keys = new Set();
+  for (const entry of registry.exclusions ?? []) {
+    if (typeof entry?.target !== "string" || typeof entry?.row !== "string") continue;
+    if (expired.has(entry.id)) continue;
+    keys.add(`${entry.target}\u0000${entry.row}`);
+  }
+  return keys;
+}
+
+export function unexpectedBlockedRows(report, registry, now = Date.now()) {
   const byId = new Map(registry.tests.map((test) => [test.id, test]));
+  const live = liveExclusionKeys(registry, now);
   const unexpected = [];
   for (const result of report.results) {
     if (result.status !== "blocked") continue;
@@ -2242,6 +2261,16 @@ export function unexpectedBlockedRows(report, registry) {
     }
     if (test.status !== "implemented") continue;
     const reason = String(result.blockedReason ?? "");
+    // A row the registry excludes for this exact lane, by name and within its date, is expected.
+    // Without this the exclusion list changed nothing a gate could read: `desktop-multitouch-input`
+    // has been registered, owned and dated since PRD-077, and the desktop parity lane still failed
+    // every run because this function had never heard of it. A `TN_PARITY_ROW_EXCLUDED` reason with
+    // no matching live entry stays a lane defect, which is what keeps the marker from being a
+    // free pass.
+    if (
+      /^TN_PARITY_ROW_EXCLUDED:/u.test(reason)
+      && live.has(`${String(report.target ?? "")}\u0000${result.id}`)
+    ) continue;
     // A hardware row has no browser reference when the browser lane correctly refuses the
     // software adapter. Keep that environment block distinct from a missing reference on an
     // ordinary row, which remains an unexpected lane defect.

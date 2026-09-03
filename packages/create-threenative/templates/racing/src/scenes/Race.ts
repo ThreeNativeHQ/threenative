@@ -1,4 +1,10 @@
-import { type ICtx, Scene, type SceneFrame, isMobile } from "@threenative/core";
+import {
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  isMobile,
+  isTouchscreenAvailable,
+} from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import { type PerspectiveCamera, Vector3 } from "three";
 import { RACING_FEEL, RacingCar } from "../entities/RacingCar.js";
@@ -11,6 +17,7 @@ import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { flag } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
+import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, type RaceStatus, resolveRaceStatus } from "../state.js";
 import { Lap } from "../track/Lap.js";
 import { type IRankedRacer, type IRankedRacerScratch, rankRacers } from "../track/Ranking.js";
@@ -71,6 +78,10 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
     ctx.add(camera);
+    const showTouchControls = isMobile() && isTouchscreenAvailable();
+    const touchControls = showTouchControls
+      ? ctx.entities.add("touch-controls", new TouchControls(camera))
+      : undefined;
     const track = buildTrack(ctx);
     const car = new RacingCar(ctx, SPAWN);
     const spawnDistance = track.route.project(SPAWN).distanceFromStart % track.route.totalLength;
@@ -136,7 +147,11 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       if (status !== "RACING") return;
       lap.observe(observedPosition, car.mesh.position);
       observedPosition.copy(car.mesh.position);
-      car.update(frameCtx, dt);
+      car.update(
+        frameCtx,
+        dt,
+        touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
+      );
       rival.update(dt);
       sector.update(car.mesh.position, car.forward, dt);
       if (sector.rescue(car)) {

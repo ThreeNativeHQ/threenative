@@ -4,6 +4,7 @@ import { Group, Vector3 } from "three";
 import { type IActionRpgConventions, preparePlayerConventions } from "../conventions.js";
 import { createPlayerVisual } from "../render/shapes.js";
 import type { RpgMaterials } from "../render/shapes.js";
+import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
 export const WORLD_LAYER = 1;
@@ -51,9 +52,14 @@ export class Player {
     });
   }
 
-  update(ctx: GameCtx, dt: number): void {
+  update(ctx: GameCtx, dt: number, touch?: ITouchInput): void {
     if (this.dead) return;
     const move = ctx.input.vector("move");
+    if (touch !== undefined) {
+      move.x += touch.move.x;
+      move.y += touch.move.y;
+      move.clampLength(0, 1);
+    }
     this.body.velocity.set(move.x * 4.8, 0, -move.y * 4.8);
     this.body.moveAndSlide(dt);
     this.#conventions.applyGrounding(0, dt);

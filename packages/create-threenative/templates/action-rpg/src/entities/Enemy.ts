@@ -6,7 +6,6 @@ import {
   type IPhysicsContext,
 } from "@threenative/physics";
 import { type Group, Vector3 } from "three";
-import { directSpaceState } from "../physics.js";
 import { type RpgMaterials, createEnemyVisual } from "../render/shapes.js";
 import type { GameState } from "../state.js";
 import { HOSTILE_LAYER, PLAYER_LAYER, WORLD_LAYER } from "./Player.js";
@@ -68,7 +67,7 @@ export class Enemy {
 
   update(ctx: GameCtx, dt: number, playerPosition: Vector3): void {
     if (!this.alive) return;
-    const rangeHits = directSpaceState(ctx.physics).intersectShape({
+    const rangeHits = ctx.physics.directSpaceState.intersectShape({
       collisionMask: PLAYER_LAYER,
       maxResults: 4,
       position: this.mesh.position,
@@ -87,7 +86,7 @@ export class Enemy {
       from.y += this.boss ? 0.9 : 0.5;
       const to = this.#to.copy(playerPosition);
       to.y += 0.5;
-      const ray = directSpaceState(ctx.physics).intersectRay({
+      const ray = ctx.physics.directSpaceState.intersectRay({
         collisionMask: WORLD_LAYER | PLAYER_LAYER,
         from,
         to,

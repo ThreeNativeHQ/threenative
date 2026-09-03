@@ -130,9 +130,7 @@ describe("platformer checkpoints", () => {
     expect(controls).toContain("ReadonlyMap<number, ITouchPointer>");
     expect(controls).toContain("TouchControls");
     expect(controls).toContain("readonly object = this.root;");
-    expect(level).toContain(
-      "const showTouchControls = isNative() && isMobile() && isTouchscreenAvailable();",
-    );
+    expect(level).toContain("const showTouchControls = isMobile() && isTouchscreenAvailable();");
     expect(level).toContain('ctx.entities.add("touch-controls", new TouchControls(camera))');
     expect(level).toContain("touchControls?.update(frameCtx.input.raw.pointers");
     expect(level).not.toContain('ctx.entities.add("touch-controls", new TouchControls(camera));');

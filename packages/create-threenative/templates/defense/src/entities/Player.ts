@@ -1,11 +1,11 @@
 import type { ICtx } from "@threenative/core";
+import type { IPhysicsContext } from "@threenative/physics";
 import { type Group, Vector3 } from "three";
 import { type IDefenseConventions, prepareCommanderConventions } from "../conventions.js";
-import type { DefensePhysics } from "../physics.js";
 import { commander as commanderMesh } from "../render/shapes.js";
 import type { GameState } from "../state.js";
 
-type GameCtx = ICtx<GameState, DefensePhysics>;
+type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 const MOVE_SPEED = 4;
 const SPAWN = new Vector3(9, 0, 8);

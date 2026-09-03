@@ -46,6 +46,21 @@ describe("template convention drift gate", () => {
     await expect(checkTemplateConventions(root)).resolves.toEqual([]);
   });
 
+  it("fails when an applicable convention name is removed from AGENTS.md", async () => {
+    const root = await fixtureRoot(
+      "new GroundSnap(model);\nnormaliseToMetres(model);\nattachToBone(model);\n",
+    );
+    await writeFile(
+      path.join(root, "packages/create-threenative/templates/alpha/AGENTS.md"),
+      "normaliseToMetres attachToBone AnimationPlayer\n",
+    );
+
+    const findings = await checkTemplateConventions(root);
+    expect(findings).toContain(
+      "Template 'alpha' applicable convention 'GroundSnap' is missing from AGENTS.md.",
+    );
+  });
+
   it("names the template and symbol when a call is removed", async () => {
     const root = await fixtureRoot(
       "// GroundSnap was removed.\nnormaliseToMetres(model);\nattachToBone(model);\n",

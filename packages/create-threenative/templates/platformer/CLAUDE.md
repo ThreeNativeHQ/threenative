@@ -21,6 +21,7 @@ and look; `src/game.ts` is portable and React mounts from `src/main.ts`.
    the chasers use editable routes so desktop/native remains honest.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -59,6 +60,7 @@ proof and keep `touch-controls.ts`/`touch-layout.ts` aligned with the native pla
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets:
 put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive
 `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without resetting game state; from

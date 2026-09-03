@@ -8,6 +8,7 @@ export const PLAYTEST_ROOT_KEYS = [
   "artifacts",
   "assert",
   "awaitStartup",
+  "bootFailure",
   "inputDelivery",
   "name",
   "parity",
@@ -38,9 +39,15 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   if (value.awaitStartup !== undefined && typeof value.awaitStartup !== "boolean") {
     throw invalidScenario(scenarioPath, "Scenario awaitStartup must be a boolean when present.");
   }
+  if (value.bootFailure !== undefined && value.bootFailure !== "renderer-no-adapter") {
+    throw invalidScenario(scenarioPath, "Scenario bootFailure must be 'renderer-no-adapter' when present.");
+  }
   const target = value.target === undefined ? "web" : value.target;
   if (target !== "web" && target !== "desktop" && target !== "bevy") {
     throw invalidScenario(scenarioPath, "Scenario target must be one of: web, desktop, bevy.");
+  }
+  if (value.bootFailure !== undefined && target !== "web") {
+    throw invalidScenario(scenarioPath, "Scenario bootFailure is browser-only and requires target 'web'.");
   }
   const inputDelivery = value.inputDelivery ?? "deterministic";
   if (inputDelivery !== "deterministic" && inputDelivery !== "focused-dom") {
@@ -64,6 +71,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     ...(isRecord(value.artifacts) ? { artifacts: validateArtifacts(value.artifacts, scenarioPath) } : {}),
     ...(assertions === undefined ? {} : { assert: assertions }),
     ...(typeof value.awaitStartup === "boolean" ? { awaitStartup: value.awaitStartup } : {}),
+    ...(value.bootFailure === "renderer-no-adapter" ? { bootFailure: value.bootFailure } : {}),
     inputDelivery,
     name,
     ...(isRecord(value.parity) ? { parity: validateParityConfig(value.parity, scenarioPath) } : {}),

@@ -9,8 +9,15 @@
   "steps": [
     {
       "kind": "input",
-      "label": "keyboard-movement",
-      "press": "ArrowUp",
+      "label": "movement-anchor",
+      "pointers": [{ "id": 7, "x": 0.18, "y": 0.75 }],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "simultaneous-move-and-jump",
+      "pointers": [{ "id": 7, "x": 0.3, "y": 0.75 }, { "id": 3, "x": 0.922, "y": 0.861 }],
       "holdTicks": 45,
       "release": true
     },
@@ -24,11 +31,15 @@
       "runtimeReady": true
     },
     "movement": { "entity": "player", "minDistance": 0.5 },
+    "resources": [
+      { "id": "state", "path": "jumps", "gte": 1, "changed": true },
+      { "id": "state", "path": "playerX", "gte": 0.05, "changed": true }
+    ],
     "visibility": [
       {
         "entity": "touch-controls",
-        "present": false,
-        "allowTrivial": "Web targets intentionally omit the native touch-controls entity; keyboard movement proves the web path while this absence remains held."
+        "present": true,
+        "allowTrivial": "Touch-primary lanes keep the authored controls visible while state assertions prove they are live."
       }
     ],
     "visual": [

@@ -39,9 +39,9 @@
     ],
     "visibility": [
       {
-        "allowTrivial": "The shooter scene begins with the player visible and in frame; the gameplay signals and frame diff carry the VFX proof.",
-        "entity": "player",
-        "minProjectedPixels": 20
+        "allowTrivial": "The player's own capsule is invisible in first person; the viewmodel is what the player sees of themselves, so this row measures the weapon in frame.",
+        "entity": "viewmodel",
+        "minProjectedPixels": 400
       }
     ]
   }

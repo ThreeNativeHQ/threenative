@@ -45,9 +45,9 @@
     "signals": [{ "name": "hit", "entity": "player", "minCount": 1, "atStep": "hit" }],
     "visibility": [
       {
-        "allowTrivial": "The shooter scene begins with the player visible and in frame; the hit and animation assertions prove the new mechanisms also ran.",
-        "entity": "player",
-        "minProjectedPixels": 20
+        "allowTrivial": "The player's own capsule is invisible in first person; the viewmodel is what the player sees of themselves, so this row measures the weapon in frame.",
+        "entity": "viewmodel",
+        "minProjectedPixels": 400
       }
     ],
     "movement": {

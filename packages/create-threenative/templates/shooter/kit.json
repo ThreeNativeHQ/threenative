@@ -1,7 +1,7 @@
 {
   "name": "shooter",
-  "title": "Arena shooter",
-  "blurb": "Hitscan and projectile weapons, targets that hunt you, pickups on a timer.",
+  "title": "First-person shooter",
+  "blurb": "Mouse look, a weapon in your hands, aim down the sights, reload, and targets that hunt you.",
   "genre": "shooter",
   "kit": true
 }

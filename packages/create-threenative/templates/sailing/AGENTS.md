@@ -19,6 +19,7 @@ water, and look; `src/game.ts` is portable and React mounts from `src/main.ts`.
    this kit uses its analytic wave field and measured hull points instead.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -49,14 +50,25 @@ pnpm test:native
 ```
 
 `Ship.ts` uses `RigidBody3D` plus `Buoyancy3D`; apply forces before fixed-step simulation.
+The same field shades the sea as displaces it. `src/render/water-material.ts` feeds
+`WaveField.heightNode()` and `normalNode()` into `waterColourNode`, so crests, troughs and the
+sun's glint all come from the wave sum rather than from a texture. Hand that colour function a
+constant and the surface still moves and the picture stops changing: the sea photographs as one
+flat sheet. Prefer `normalNode()` over differencing the height — the field differentiates its own
+wave sum, and a differenced normal repeats wherever the sampling grid does.
+
 `WaveField.sample(x, z, time)` drives both hull measurements and packed water displacement. Tune
 wave constants in `src/render/palette.ts`, hull points in `src/entities/Ship.ts`, and course order
 in `src/scenes/Sailing.ts`. The single React HUD reads published state; keep
 `playtests/survives.playtest.json` as smoke proof and native scenarios honest.
 
+On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), `src/render/touch-controls.ts`
+adds a left movement stick whose vector `Sailing` passes to `Ship`; keyboard is the desktop fallback.
+
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Generated conventions call `normaliseToMetres` for authored ship scale; buoyancy owns water contact.
 `input.vector("move").y` is +up and means forward wind; use one explicit `-move.y` conversion.
 Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`,
 then drive `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without resetting game

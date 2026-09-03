@@ -24,7 +24,7 @@ import {
   createWebPhysicsSimulation,
 } from "../src/simulation.js";
 
-function bodyOptions(type: "dynamic" | "fixed" = "dynamic") {
+function bodyOptions(type: "dynamic" | "fixed" | "kinematic" = "dynamic") {
   return {
     mass: type === "dynamic" ? 1 : 0,
     position: { x: 0, y: 0, z: 0 },
@@ -173,6 +173,37 @@ describe("native physics contract", () => {
       ).toThrow(/mass must be a finite non-negative number/);
     }
     expect(createBody).not.toHaveBeenCalled();
+  });
+
+  it("forwards continuous collision and its effective default to the native host", () => {
+    let nextId = 0;
+    const createBody = vi.fn(() => nextId++);
+    const native = createNativePhysicsSimulation(
+      { createBody } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+
+    native.createBody({ ...bodyOptions(), continuousCollision: false });
+    native.createBody(bodyOptions());
+    native.createBody({ ...bodyOptions("fixed"), continuousCollision: true });
+    native.createBody({ ...bodyOptions("kinematic"), continuousCollision: true });
+
+    expect(createBody).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ continuousCollision: false }),
+    );
+    expect(createBody).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ continuousCollision: true }),
+    );
+    expect(createBody).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ type: "fixed", continuousCollision: false }),
+    );
+    expect(createBody).toHaveBeenNthCalledWith(
+      4,
+      expect.objectContaining({ type: "kinematic", continuousCollision: false }),
+    );
   });
 
   it("fails closed when syncFromPhysics hits a backend without readBodyTransform", () => {

@@ -170,7 +170,7 @@ bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
   if (!engine->isObject(value))
     return false;
   options = {id, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-             0.0f, 0.0f, 0.0f, 0.0f, 1,    0xffff, false};
+             0.0f, 0.0f, 0.0f, 0.0f, 1,    0xffff, false, true};
   const auto type = engine->getProperty(value, "type");
   if (!engine->isString(type))
     return false;
@@ -207,6 +207,13 @@ bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
     if (!engine->isBoolean(sensor))
       return false;
     options.sensor = engine->toBoolean(sensor);
+  }
+  const auto continuousCollision =
+      engine->getProperty(value, "continuousCollision");
+  if (!engine->isUndefined(continuousCollision)) {
+    if (!engine->isBoolean(continuousCollision))
+      return false;
+    options.continuous_collision = engine->toBoolean(continuousCollision);
   }
   return readVector(engine, value, "position", options.position_x,
                     options.position_y, options.position_z) &&

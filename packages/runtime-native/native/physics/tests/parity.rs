@@ -287,6 +287,7 @@ fn preserves_repeated_area_crossing_edges_in_order() {
             collision_layer: 1,
             collision_mask: u16::MAX.into(),
             sensor: true,
+            continuous_collision: true,
         },
     ));
     assert!(tn_physics_add_body(
@@ -309,6 +310,7 @@ fn preserves_repeated_area_crossing_edges_in_order() {
             collision_layer: 1,
             collision_mask: u16::MAX.into(),
             sensor: false,
+            continuous_collision: true,
         },
     ));
 
@@ -361,6 +363,7 @@ fn validation_outcomes(scenario: &Scenario) -> BTreeMap<String, String> {
         collision_layer: 1,
         collision_mask: 65535,
         sensor: false,
+        continuous_collision: true,
     };
     assert!(tn_physics_add_body(simulation, &body));
     let unknown = [999.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0];
@@ -441,6 +444,7 @@ fn run_scenario(scenario: &Scenario, sha: &str, version: &str) -> Observation {
             collision_layer: body.collision_layer,
             collision_mask: body.collision_mask,
             sensor: body.sensor,
+            continuous_collision: true,
         };
         assert!(
             tn_physics_add_body(simulation, &options),

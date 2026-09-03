@@ -13,10 +13,9 @@
   },
   "steps": [
     {
-      "kind": "input",
+      "kind": "wait",
       "label": "preview-pending",
-      "press": "ArrowRight",
-      "holdTicks": 1,
+      "waitTicks": 1,
       "release": true
     },
     {

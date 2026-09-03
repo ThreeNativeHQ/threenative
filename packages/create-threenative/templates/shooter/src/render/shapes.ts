@@ -162,7 +162,7 @@ function createTargetNameplate(): Group {
   const group = new Group();
   group.name = "target-nameplate";
   const mesh = new Mesh(
-    new PlaneGeometry(2.4, 0.6),
+    new PlaneGeometry(1.05, 0.26),
     new MeshBasicMaterial({
       depthWrite: false,
       map: createNameplateTexture(),
@@ -253,56 +253,175 @@ function block(width: number, height: number, depth: number, material: Material)
 export function createArena(materials: ShooterMaterials) {
   const group = new Group();
   group.name = "arena";
-  const floor = block(22, 0.4, 20, materials.arena);
+  const floor = block(22, 0.4, 24, materials.arena);
   floor.name = "arena-floor";
-  floor.position.set(0, -0.2, -2);
+  floor.position.set(0, -0.2, -1);
   group.add(floor);
+  // Four walls, not three. In first person the player turns around, and an arena open at the back
+  // shows the void the third-person camera never pointed at.
   const walls = [
-    { depth: 20, position: [-11, 1.7, -2] as const, width: 0.4 },
-    { depth: 20, position: [11, 1.7, -2] as const, width: 0.4 },
-    { depth: 0.4, position: [0, 1.7, -12] as const, width: 22 },
+    { depth: 24, position: [-11, 1.9, -1] as const, width: 0.4 },
+    { depth: 24, position: [11, 1.9, -1] as const, width: 0.4 },
+    { depth: 0.4, position: [0, 1.9, -13] as const, width: 22 },
+    { depth: 0.4, position: [0, 1.9, 11] as const, width: 22 },
   ].map(({ depth, position, width }, index) => {
-    const wall = block(width, 3.8, depth, materials.shadow);
+    const wall = block(width, 4.2, depth, materials.shadow);
     wall.name = `arena-wall-${index}`;
     wall.position.set(position[0], position[1], position[2]);
     group.add(wall);
     return wall;
   });
+  // Cover. An arena with a flat floor is a shooting gallery: these are what turns "walk forward
+  // and hold fire" into peeking, and they are what the crouch is for.
+  const cover = [
+    { height: 1.15, position: [-4.6, 0, -3.2] as const, size: [2.4, 1.2] as const },
+    { height: 1.15, position: [4.6, 0, -3.2] as const, size: [2.4, 1.2] as const },
+    { height: 0.95, position: [0, 0, -7.4] as const, size: [3.6, 1.1] as const },
+    { height: 2.6, position: [-7.4, 0, -8.6] as const, size: [1.5, 1.5] as const },
+    { height: 2.6, position: [7.4, 0, -8.6] as const, size: [1.5, 1.5] as const },
+    { height: 0.9, position: [-2.4, 0, 2.4] as const, size: [1.4, 1.4] as const },
+    { height: 0.9, position: [2.4, 0, 2.4] as const, size: [1.4, 1.4] as const },
+  ].map(({ height, position, size }, index) => {
+    const crate = block(size[0], height, size[1], materials.cover);
+    crate.name = `arena-wall-cover-${index}`;
+    crate.position.set(position[0], height / 2, position[2]);
+    group.add(crate);
+    // A lit lip along the top edge, so cover reads as cover at a glance in a dim arena.
+    const lip = new Mesh(compactBox(size[0] + 0.06, 0.05, size[1] + 0.06), materials.edge);
+    lip.position.set(position[0], height + 0.02, position[2]);
+    lip.castShadow = false;
+    lip.receiveShadow = false;
+    group.add(lip);
+    return crate;
+  });
   for (let x = -9; x <= 9; x += 3) {
-    const strip = new Mesh(compactBox(0.035, 0.012, 19), materials.trim);
-    strip.position.set(x, 0.012, -2);
+    const strip = new Mesh(compactBox(0.035, 0.012, 22), materials.trim);
+    strip.position.set(x, 0.012, -1);
     strip.castShadow = false;
     strip.receiveShadow = false;
     group.add(strip);
   }
-  for (let z = -11; z <= 7; z += 3) {
+  for (let z = -12; z <= 9; z += 3) {
     const strip = new Mesh(compactBox(21, 0.012, 0.035), materials.trim);
     strip.position.set(0, 0.014, z);
     strip.castShadow = false;
     strip.receiveShadow = false;
     group.add(strip);
   }
-  return { floor, group, walls };
+  return { cover, floor, group, walls };
 }
 
-export function createPlayerVisual(materials: ShooterMaterials): Group {
+/**
+ * The carbine and the hands that hold it, authored pointing -z.
+ *
+ * Deliberately built from primitives rather than loaded from a `.glb`: a kit that ships a
+ * 12 MB weapon model teaches an agent to reach for one, and this reads as a weapon at a
+ * fraction of the download. Swap it for a real model by loading a `.glb` in `Scene.load()` and
+ * handing it to `preparePlayerConventions` instead — `normaliseToMetres` sizes either one.
+ *
+ * It is authored at roughly 0.55 m so `normaliseToMetres` has real work to do: the size that
+ * ships is the one in `render/scale.ts`, never the one that happened to be convenient here.
+ */
+export function createViewmodelVisual(materials: ShooterMaterials): Group {
   const group = new Group();
-  group.name = "player-visual";
-  const body = block(0.76, 1.35, 0.76, materials.player);
-  body.position.y = 0.62;
-  group.add(body);
-  const visor = new Mesh(compactBox(0.56, 0.22, 0.08), materials.trim);
-  visor.position.set(0, 0.88, -0.4);
-  visor.castShadow = true;
-  group.add(visor);
-  const muzzle = new Mesh(
-    new CylinderGeometry(0.08, 0.1, 0.5, 6).rotateX(Math.PI / 2),
-    materials.shadow,
+  group.name = "viewmodel";
+
+  const rifle = new Group();
+  rifle.name = "held-rifle";
+
+  const part = (
+    geometry: BufferGeometry,
+    material: Material,
+    x: number,
+    y: number,
+    z: number,
+  ): Mesh => {
+    const mesh = new Mesh(geometry, material);
+    mesh.position.set(x, y, z);
+    // The viewmodel is drawn over the arena and never casts into it: a weapon held at the eye
+    // throws a shadow the size of the room.
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.frustumCulled = false;
+    rifle.add(mesh);
+    return mesh;
+  };
+
+  part(compactBox(0.062, 0.072, 0.24), materials.gunmetal, 0, 0, -0.02);
+  part(compactBox(0.05, 0.052, 0.15), materials.polymer, 0, -0.002, -0.2);
+  part(
+    new CylinderGeometry(0.011, 0.011, 0.2, 6).rotateX(Math.PI / 2),
+    materials.gunmetal,
+    0,
+    0.012,
+    -0.31,
   );
-  muzzle.name = "held-rifle";
-  muzzle.position.set(0, 0.52, -0.55);
-  muzzle.castShadow = true;
-  group.add(muzzle);
+  part(
+    new CylinderGeometry(0.021, 0.019, 0.07, 6).rotateX(Math.PI / 2),
+    materials.gunmetal,
+    0,
+    0.012,
+    -0.43,
+  );
+  // Magazine and pistol grip, both raked back the way a real one sits in the hand.
+  const magazine = part(compactBox(0.04, 0.13, 0.062), materials.polymer, 0, -0.09, -0.04);
+  magazine.rotation.x = -0.16;
+  const grip = part(compactBox(0.038, 0.1, 0.05), materials.polymer, 0, -0.075, 0.07);
+  grip.rotation.x = 0.3;
+  part(compactBox(0.055, 0.062, 0.13), materials.polymer, 0, -0.006, 0.13);
+  // The optic. `preparePlayerConventions` does not look for it by name, but a rigged replacement
+  // usually ships one called this, and the aiming pose is authored against its position.
+  const optic = part(compactBox(0.036, 0.038, 0.07), materials.gunmetal, 0, 0.057, -0.01);
+  optic.name = "optic";
+  part(compactBox(0.008, 0.008, 0.008), materials.sight, 0, 0.058, -0.045);
+  part(compactBox(0.044, 0.012, 0.09), materials.gunmetal, 0, 0.04, -0.02);
+
+  group.add(rifle);
+
+  // Two gloved forearms. They live outside `held-rifle` so `normaliseToMetres` measures the
+  // weapon and not the person carrying it.
+  const arms = new Group();
+  arms.name = "viewmodel-arms";
+  const forearm = (x: number, y: number, z: number, pitch: number, yaw: number): void => {
+    const mesh = new Mesh(compactBox(0.048, 0.046, 0.3), materials.glove);
+    mesh.position.set(x, y, z);
+    mesh.rotation.set(pitch, yaw, 0);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.frustumCulled = false;
+    arms.add(mesh);
+  };
+  forearm(0.075, -0.15, 0.02, 0.5, -0.26);
+  forearm(-0.055, -0.12, -0.2, 0.36, 0.32);
+  group.add(arms);
+  return group;
+}
+
+/**
+ * What the player sees when they look down: hips, thighs, shins, boots.
+ *
+ * Nothing above the waist, because a chest at eye height fills the frame and clips through the
+ * near plane. `GroundSnap` measures this group, so the boots are what meets the floor.
+ */
+export function createLegsVisual(materials: ShooterMaterials): Group {
+  const group = new Group();
+  group.name = "player-legs";
+  const leg = (side: number): void => {
+    const thigh = block(0.19, 0.44, 0.21, materials.player);
+    thigh.position.set(side * 0.13, -0.24, 0);
+    group.add(thigh);
+    const shin = block(0.15, 0.4, 0.17, materials.shadow);
+    shin.position.set(side * 0.13, -0.64, 0.01);
+    group.add(shin);
+    const boot = block(0.17, 0.11, 0.3, materials.trim);
+    boot.position.set(side * 0.13, -0.855, -0.04);
+    group.add(boot);
+  };
+  leg(-1);
+  leg(1);
+  const hips = block(0.42, 0.2, 0.24, materials.player);
+  hips.position.y = -0.02;
+  group.add(hips);
   return group;
 }
 
@@ -324,18 +443,23 @@ export function createTargetVisual(materials: ShooterMaterials): Group {
   crossbar.castShadow = true;
   group.add(crossbar);
   const nameplate = createTargetNameplate();
-  nameplate.position.y = 2.1;
+  nameplate.position.y = 2.05;
   group.add(nameplate);
   return group;
 }
 
 export function createFriendlyVisual(materials: ShooterMaterials): Group {
   const group = new Group();
-  const body = block(0.9, 1.4, 0.9, materials.player);
-  body.position.y = 0.7;
+  // Slim on purpose. It has to stand in the player's line of fire for the friendly-layer proof to
+  // mean anything, and at 0.9 m across that put a cyan wall two metres in front of the eye.
+  const body = block(0.34, 1.5, 0.34, materials.player);
+  body.position.y = 0.75;
   group.add(body);
-  const antenna = new Mesh(new CylinderGeometry(0.04, 0.04, 0.5, 8), materials.trim);
-  antenna.position.y = 1.65;
+  const collar = new Mesh(compactBox(0.5, 0.06, 0.5), materials.trim);
+  collar.position.y = 1.2;
+  group.add(collar);
+  const antenna = new Mesh(new CylinderGeometry(0.03, 0.03, 0.5, 6), materials.trim);
+  antenna.position.y = 1.72;
   group.add(antenna);
   return group;
 }

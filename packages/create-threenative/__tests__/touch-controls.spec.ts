@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { Vector2 } from "three";
 import { describe, expect, it } from "vitest";
 import {
@@ -90,5 +92,50 @@ describe("platformer thumbstick", () => {
         expect(point.y).toBeLessThan(size.height);
       }
     }
+  });
+});
+
+const TOUCH_TEMPLATES = [
+  "action-rpg",
+  "minimal",
+  "platformer",
+  "racing",
+  "sailing",
+  "shooter",
+  "starter",
+] as const;
+
+describe("template touch controls", () => {
+  it.each(TOUCH_TEMPLATES)("keeps %s controls in its own render source", async (template) => {
+    const source = await readFile(
+      path.resolve(
+        `packages/create-threenative/templates/${template}/src/render/touch-controls.ts`,
+      ),
+      "utf8",
+    );
+
+    expect(source).toContain("class TouchControls");
+    expect(source).toContain("readonly object");
+    expect(source).not.toMatch(/@threenative\/(?:core|ui)/u);
+  });
+
+  it("wires sailing touch movement through its scene and ship", async () => {
+    const [scene, ship] = await Promise.all([
+      readFile(
+        path.resolve("packages/create-threenative/templates/sailing/src/scenes/Sailing.ts"),
+        "utf8",
+      ),
+      readFile(
+        path.resolve("packages/create-threenative/templates/sailing/src/entities/Ship.ts"),
+        "utf8",
+      ),
+    ]);
+
+    expect(scene).toContain("const showTouchControls = isMobile() && isTouchscreenAvailable();");
+    expect(scene).toContain('ctx.entities.add("touch-controls", new TouchControls(camera))');
+    expect(scene).toContain("touchControls?.update(frameCtx.input.raw.pointers");
+    expect(ship).toContain('import type { ITouchInput } from "../render/touch-controls.js";');
+    expect(ship).toContain("touch.move");
+    expect(ship).toContain("move.clampLength(0, 1)");
   });
 });

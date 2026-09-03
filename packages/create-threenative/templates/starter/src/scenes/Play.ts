@@ -5,6 +5,7 @@ import {
   type SceneFrame,
   createRandom,
   isMobile,
+  isTouchscreenAvailable,
 } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { BufferAttribute, Group, Mesh, NearestFilter, type PerspectiveCamera } from "three";
@@ -20,6 +21,7 @@ import { setupPost } from "../render/postprocessing.js";
 import { createScenery } from "../render/scenery.js";
 import { ball, block, roundedBox, spike, tube } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
+import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
@@ -135,6 +137,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
+    const showTouchControls = isMobile() && isTouchscreenAvailable();
+    const touchControls = showTouchControls
+      ? ctx.entities.add("touch-controls", new TouchControls(ctx.camera as PerspectiveCamera))
+      : undefined;
     // Offset, lead and damping all live in render/camera.ts — framing is a look decision.
     const springArm = createSpringArm(ctx.camera as PerspectiveCamera);
 
@@ -264,12 +270,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         goal.pennant.wind.set(0, 0.4, 4.5);
         frameCtx.state.set((state) => ({ flagGusts: state.flagGusts + 1 }));
       }
+      const touch = touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
       const move = frameCtx.input.vector("move");
-      if (!refinementStarted && (move.x !== 0 || move.y !== 0)) {
+      if (
+        !refinementStarted &&
+        (move.x !== 0 || move.y !== 0 || (touch?.move.x ?? 0) !== 0 || (touch?.move.y ?? 0) !== 0)
+      ) {
         scenery.rebuild();
         refinementStarted = true;
       }
-      player.update(frameCtx, dt, supportSurfaceY);
+      player.update(frameCtx, dt, supportSurfaceY, touch);
       let respawned = false;
       let lives = previous.lives;
       if (player.mesh.position.y < KILL_PLANE) {

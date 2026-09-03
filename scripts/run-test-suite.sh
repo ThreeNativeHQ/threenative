@@ -166,6 +166,22 @@ run_phase() {
   return "$status_finish"
 }
 
+# Which packages the `package-test` phase walks. Empty by default, so `pnpm test` on a developer
+# machine still runs every package and this file stays the whole gate. CI splits the walk in two:
+# the native contract suite needs a compiled C++ host and nothing else in the run does, so it gets
+# its own job and this one is told to skip it. `scripts/__tests__/ci-structure.spec.ts` asserts the
+# two halves partition the workspace, because a filter that names a package neither job runs is a
+# gate that goes green by running less.
+package_test_command=(pnpm -r --filter '!.' --workspace-concurrency=1)
+if [[ -n "${TN_SUITE_EXCLUDE_PACKAGES:-}" ]]; then
+  IFS=',' read -r -a tn_excluded_packages <<< "$TN_SUITE_EXCLUDE_PACKAGES"
+  for tn_excluded_package in "${tn_excluded_packages[@]}"; do
+    [[ -n "$tn_excluded_package" ]] || continue
+    package_test_command+=(--filter "!$tn_excluded_package")
+  done
+fi
+package_test_command+=(--if-present run test)
+
 test_status=0
 if [[ "$resume_mode" -eq 1 ]]; then
   case "$resume_phase" in
@@ -179,7 +195,7 @@ if [[ "$resume_mode" -eq 1 ]]; then
       run_phase unit vitest run || test_status=$?
       ;;
     package-test)
-      run_phase package-test pnpm -r --workspace-concurrency=1 --if-present run test || test_status=$?
+      run_phase package-test "${package_test_command[@]}" || test_status=$?
       ;;
     *)
       printf 'cannot resume unknown phase %q\n' "$resume_phase" >&2
@@ -192,7 +208,7 @@ else
     run_phase build pnpm run build || test_status=$?
   fi
   if [[ "$test_status" -eq 0 ]]; then
-    run_phase package-test pnpm -r --workspace-concurrency=1 --if-present run test || test_status=$?
+    run_phase package-test "${package_test_command[@]}" || test_status=$?
   fi
   if [[ "$test_status" -eq 0 ]]; then
     run_phase unit vitest run || test_status=$?

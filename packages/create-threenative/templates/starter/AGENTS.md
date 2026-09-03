@@ -17,8 +17,7 @@ state bridge. This repository owns gameplay and every visible choice in `src/ren
    direct the user to review it, and wait for explicit approval plus an instruction to implement it.
 3. Treat returned constraints as binding. `@threenative/physics/navigation` is browser-only WASM;
    use returned subpaths and `attachToBone` rather than rebuilding installed systems.
-4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
-   `npx @threenative/playtest doctor`; missing observations are not zero.
+4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and `npx @threenative/playtest doctor`; missing observations are not zero. For *"a bullet passes through a wall"*, `RigidBody3D` enables continuous collision by default; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web and native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -56,9 +55,11 @@ The game boots straight into `Play`: a ledge, pickup, crate, chasm, and flag pro
 gameplay, `src/render/` owns the look, `src/ui/Hud.tsx`/`Menu.tsx` own UI, and `state.ts` publishes
 JSON-safe values. Keep `playtests/survives.playtest.json` as smoke proof and update outcome tests.
 
+On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), local `src/render/touch-controls.ts` adds a left movement stick and right jump button; the scene passes its input to `Player`, with keyboard mapping as the desktop fallback.
+
 ## Portable authoring contracts
 
-Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable; generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
 React never touches the scene graph. Native UI reads published state and sends intents; mark every
 touch target `data-tn-interactive`. Rigged assets: put a `.glb` in `assets/`, await
 `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity.

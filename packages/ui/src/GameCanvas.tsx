@@ -66,7 +66,7 @@ export function GameCanvas<TState extends Record<string, unknown>, TPhysics>({
       style={{ height: "100%", width: "100%" }}
     >
       {failure === undefined ? null : (
-        <div data-threenative-canvas-error="true" role="alert">
+        <div id="threenative-canvas-error" data-threenative-canvas-error="true" role="alert">
           {failure}
         </div>
       )}

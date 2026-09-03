@@ -5,7 +5,11 @@ import type { CollisionShape3D } from "./CollisionShape3D.js";
 import { interactionGroups } from "./collision.js";
 import type { IPhysicsBodyHandle, IPhysicsColliderHandle, IPhysicsWorldHandle } from "./handles.js";
 import type { IPhysicsContext } from "./plugin.js";
-import { type IPhysicsSimulation, requirePhysicsSimulation } from "./simulation.js";
+import {
+  type IPhysicsSimulation,
+  effectiveContinuousCollision,
+  requirePhysicsSimulation,
+} from "./simulation.js";
 import { bulkTransformValue } from "./transformRecord.js";
 
 export type RigidBodyType = "dynamic" | "fixed" | "kinematic";
@@ -26,6 +30,8 @@ export interface IRigidBody3DOptions {
   readonly collisionLayer?: number;
   /** Godot's collision_mask — which layers this body scans. Default 0xffff. */
   readonly collisionMask?: number;
+  /** Enable continuous collision for fast-moving dynamic bodies. Dynamic defaults true; fixed and kinematic bodies are always disabled. */
+  readonly continuousCollision?: boolean;
 }
 
 export class RigidBody3D {
@@ -36,6 +42,8 @@ export class RigidBody3D {
   readonly shape: CollisionShape3D;
   readonly type: RigidBodyType;
   readonly mass: number;
+  /** The effective continuous-collision setting; dynamic defaults true, fixed and kinematic are always false. */
+  readonly continuousCollision: boolean;
   buoyancy: Buoyancy3D | undefined;
   readonly #simulation: IPhysicsSimulation;
   readonly #physics: IPhysicsContext | undefined;
@@ -58,6 +66,12 @@ export class RigidBody3D {
     this.#object = options.object;
     this.type = type;
     this.mass = options.mass ?? 0;
+    if (
+      options.continuousCollision !== undefined &&
+      typeof options.continuousCollision !== "boolean"
+    )
+      throw new Error("RigidBody3D continuousCollision must be a boolean.");
+    this.continuousCollision = effectiveContinuousCollision(type, options.continuousCollision);
     this.buoyancy = undefined;
     const shape = options.shape.descriptor;
     if (options.collisionLayer !== undefined || options.collisionMask !== undefined) {
@@ -73,6 +87,7 @@ export class RigidBody3D {
       sensor: shape.sensor,
       shape,
       type: this.type,
+      continuousCollision: this.continuousCollision,
     });
     options.shape.bindRaw(registration.rawShape);
     this.body = registration.body;

@@ -1,10 +1,10 @@
 import { type ICtx, Scene, type SceneFrame, isMobile } from "@threenative/core";
+import type { IPhysicsContext } from "@threenative/physics";
 import { type Object3D, type PerspectiveCamera, Vector3 } from "three";
 import { Attacker } from "../attackers/Attacker.js";
 import { ROUTE_TEST_SLOT, RouteBoard, SAFE_BUILD_SLOTS } from "../board/Route.js";
 import { Economy, TOWER_COST } from "../economy.js";
 import { Player } from "../entities/Player.js";
-import { type DefensePhysics, directSpaceState } from "../physics.js";
 import { Buildable, type PlacementReason } from "../placement/Buildable.js";
 import { setupCamera } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
@@ -16,15 +16,15 @@ import { type GameState, INITIAL_STATE, MAX_LEAKS, registerLeak } from "../state
 import { Tower } from "../towers/Tower.js";
 import { WaveSchedule } from "../waves.js";
 
-export type GameCtx = ICtx<GameState, DefensePhysics>;
+export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 const SAFE_BUILD_HEIGHT = 0;
 const EMPTY_POSITION = new Vector3();
 
-export class Defense extends Scene<GameState, DefensePhysics> {
+export class Defense extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState = INITIAL_STATE;
 
-  override enter(ctx: GameCtx): SceneFrame<GameState, DefensePhysics> {
+  override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     setupSky(ctx.scene);
     const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
@@ -38,7 +38,7 @@ export class Defense extends Scene<GameState, DefensePhysics> {
     ctx.add(buildSurface);
     const player = new Player(ctx);
     ctx.entities.add("player", player);
-    const query = directSpaceState(ctx.physics);
+    const query = ctx.physics.directSpaceState;
     const buildable = new Buildable(query);
     const economy = new Economy();
     const attackers = new Map<string, Attacker>();

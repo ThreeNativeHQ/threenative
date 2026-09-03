@@ -225,7 +225,7 @@ describe("starter playtest proof", () => {
     },
   );
 
-  it("should keep touch controls absent in the normal web platformer run", async () => {
+  it("should drive platformer movement and jumping with browser touch", async () => {
     const scenario = JSON.parse(
       await readFile(
         path.resolve(
@@ -238,7 +238,7 @@ describe("starter playtest proof", () => {
         diagnostics: { noConsoleErrors: boolean; noNetworkErrors: boolean; runtimeReady: boolean };
         visibility: Array<{ entity: string; present: boolean }>;
       };
-      steps: Array<{ press?: string }>;
+      steps: Array<{ pointers?: Array<{ id: number }> }>;
       target: string;
     };
     const level = await readFile(
@@ -247,24 +247,68 @@ describe("starter playtest proof", () => {
     );
 
     expect(scenario.target).toBe("web");
-    expect(scenario.steps).toContainEqual(expect.objectContaining({ press: "ArrowUp" }));
+    expect(scenario.steps.some((step) => (step.pointers?.length ?? 0) > 0)).toBe(true);
     expect(scenario.assert.diagnostics).toEqual({
       noConsoleErrors: true,
       noNetworkErrors: true,
       noRuntimeDiagnostics: true,
       runtimeReady: true,
     });
-    expect(scenario.assert.visibility).toEqual([
-      {
-        allowTrivial:
-          "Web targets intentionally omit the native touch-controls entity; keyboard movement proves the web path while this absence remains held.",
-        entity: "touch-controls",
-        present: false,
-      },
+    expect(
+      scenario.assert.visibility.some(
+        (entry) => entry.entity === "touch-controls" && entry.present === true,
+      ),
+    ).toBe(true);
+    expect(level).toContain("const showTouchControls = isMobile() && isTouchscreenAvailable();");
+    expect(level).not.toContain("isNative() && isMobile()");
+  });
+
+  it("should drive sailing movement with browser touch", async () => {
+    const scenario = JSON.parse(
+      await readFile(
+        path.resolve(
+          "packages/create-threenative/templates/sailing/playtests/touch-controls.playtest.json",
+        ),
+        "utf8",
+      ),
+    ) as {
+      assert: {
+        diagnostics: Record<string, boolean>;
+        movement: { entity: string; minDistance: number };
+        resources: Array<{ id: string; path: string; changed?: boolean }>;
+        visibility: Array<{ entity: string; present: boolean }>;
+      };
+      steps: Array<{ pointers?: Array<{ id: number }>; kind?: string }>;
+      target: string;
+    };
+    const [scene, ship] = await Promise.all([
+      readFile(
+        path.resolve("packages/create-threenative/templates/sailing/src/scenes/Sailing.ts"),
+        "utf8",
+      ),
+      readFile(
+        path.resolve("packages/create-threenative/templates/sailing/src/entities/Ship.ts"),
+        "utf8",
+      ),
     ]);
-    expect(level).toContain(
-      "const showTouchControls = isNative() && isMobile() && isTouchscreenAvailable();",
-    );
+
+    expect(scenario.target).toBe("web");
+    expect(scenario.steps.some((step) => (step.pointers?.length ?? 0) > 0)).toBe(true);
+    expect(scenario.assert.diagnostics).toEqual({
+      noConsoleErrors: true,
+      noNetworkErrors: true,
+      noRuntimeDiagnostics: true,
+      runtimeReady: true,
+    });
+    expect(scenario.assert.movement).toEqual({ entity: "player", minDistance: 0.1 });
+    expect(scenario.assert.resources).toContainEqual({ id: "state", path: "shipZ", changed: true });
+    expect(scenario.assert.visibility).toContainEqual({
+      entity: "touch-controls",
+      present: true,
+      allowTrivial: expect.any(String),
+    });
+    expect(scene).toContain("const showTouchControls = isMobile() && isTouchscreenAvailable();");
+    expect(ship).toContain("touch?: ITouchInput");
   });
 
   it("should form the same native touch scenario for Android and iOS targets", async () => {
@@ -517,6 +561,7 @@ describe("starter playtest proof", () => {
         kind?: string;
         label?: string;
         pointerPosition?: { buttons?: number; x: number; y: number };
+        press?: string;
         waitTicks?: number;
       }>;
       target: string;
@@ -532,20 +577,27 @@ describe("starter playtest proof", () => {
     const labeled = new Map(scenario.steps.map((step) => [step.label ?? "", step]));
     expect(labeled.get("aim-down")?.pointerPosition).toMatchObject({ buttons: 2, x: 0.5 });
     expect(labeled.get("look-right")?.pointerPosition).not.toHaveProperty("buttons");
+    // The trigger is pressed alone, after the aim button is released and the aim is held on a
+    // key instead. A chorded press — left while right is down — never reaches the page through
+    // the harness, so a scenario built on one proves nothing about either button.
+    expect(labeled.get("aim-key")?.press).toBe("KeyQ");
     expect(labeled.get("fire-while-aiming")?.pointerPosition).toMatchObject({
-      buttons: 3,
+      buttons: 1,
       x: 0.5,
     });
     expect(labeled.get("release-buttons")?.pointerPosition).toMatchObject({ buttons: 0 });
 
     const resources = scenario.assert?.resources ?? [];
     const yaw = resources.find(({ path }) => path === "yawDegrees");
-    expect(yaw?.atSteps).toContainEqual({ label: "look-right-settle", equals: 92 });
+    // Half of the ninety-two degrees that same pointer travel used to produce: the right button is
+    // held through the look, and aiming down the sights halves the sensitivity.
+    expect(yaw?.atSteps).toContainEqual({ label: "look-right-settle", equals: 46 });
     const shots = resources.find(({ path }) => path === "shotsFired");
     expect(shots?.atSteps).toEqual([{ label: "fire-settle", equals: 1 }]);
     // The heading is zeroed through the template's own restart binding before the measured
-    // looks, so the rotation proof starts from a known baseline on every target.
-    expect(labeled.get("reset-heading")).toMatchObject({ press: "KeyR" });
+    // looks, so the rotation proof starts from a known baseline on every target. Restart is
+    // Enter, not R: a first-person kit owes R to the reload every shooter binds there.
+    expect(labeled.get("reset-heading")).toMatchObject({ press: "Enter" });
     const signalNames = (scenario.assert?.signals ?? []).map(({ name }) => name);
     for (const name of ["aim-engaged", "fired", "hit", "defeated", "aim-released"]) {
       expect(signalNames).toContain(name);
@@ -557,17 +609,27 @@ describe("starter playtest proof", () => {
       path.resolve("packages/create-threenative/templates/shooter/src/game.ts"),
       "utf8",
     );
+    const player = await readFile(
+      path.resolve("packages/create-threenative/templates/shooter/src/entities/Player.ts"),
+      "utf8",
+    );
     const scene = await readFile(
       path.resolve("packages/create-threenative/templates/shooter/src/scenes/Play.ts"),
       "utf8",
     );
 
-    expect(game).toContain("aim: { mouseButtons: [2] }");
-    expect(game).toContain('fire: { buttons: [0], keys: ["KeyF"], mouseButtons: [0] }');
+    expect(game).toContain('aim: { keys: ["KeyQ"], mouseButtons: [2] }');
+    expect(game).toContain('fire: { buttons: [0], keys: ["KeyF", "Space"], mouseButtons: [0] }');
     expect(game).toContain("look: { pointerRelative: true }");
-    // The scene consumes all three through the real input map after the bridge path.
-    expect(scene).toContain('frameCtx.input.vector("look")');
-    expect(scene).toContain('fireHitscan(frameCtx.input.pressed("aim"))');
+    expect(game).toContain('reload: { buttons: [3], keys: ["KeyR"] }');
+    // The player consumes the look axis through the real input map, on the same path a native
+    // build takes; nothing in this kit reads `movementX` or the DOM.
+    expect(player).toContain('ctx.input.vector("look")');
+    expect(player).toContain('ctx.input.pressed("aim")');
+    // Held, not edge-triggered: hold-to-fire and a single tap take one path through the weapon's
+    // cyclic cooldown.
+    expect(scene).toContain('frameCtx.input.pressed("fire")');
+    expect(scene).toContain("fireHitscan(player.aiming)");
     expect(scene).toContain('emitPlaytestEvent({ entity: "player", name: "fired", aimed:');
   });
 });

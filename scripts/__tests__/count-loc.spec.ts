@@ -12,6 +12,7 @@ import {
   countLines,
   countPlatformerTemplateLoc,
   countSoftBodyFeatureLoc,
+  countTemplateTouchControlsLoc,
   countWorldHeightfieldLoc,
   normaliseSource,
   renderLocTable,
@@ -96,6 +97,18 @@ describe("count-loc", () => {
 
   it("reports the platformer template LOC without capping it", () => {
     expect(countPlatformerTemplateLoc()).toBeGreaterThan(0);
+  });
+
+  it("prices the eight authored touch-control copies against a shared-export estimate", () => {
+    const comparison = countTemplateTouchControlsLoc();
+
+    expect(comparison.copies).toHaveLength(8);
+    expect(comparison.total).toBe(comparison.copies.reduce((sum, copy) => sum + copy.lines, 0));
+    expect(comparison.hypotheticalSharedExport).toBe(
+      Math.max(...comparison.copies.map((copy) => copy.lines)),
+    );
+    expect(comparison.duplicated).toBe(comparison.total - comparison.hypotheticalSharedExport);
+    expect(comparison.duplicated).toBeGreaterThan(0);
   });
 
   // PRD-217 removed the starter's second HUD, so what this prices now is the one HUD that runs

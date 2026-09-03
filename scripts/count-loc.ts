@@ -281,6 +281,52 @@ export function countPlatformerTemplateLoc(rootDirectory = process.cwd()): numbe
   );
 }
 
+export interface TemplateTouchControlsLoc {
+  readonly copies: readonly { readonly file: string; readonly lines: number }[];
+  readonly duplicated: number;
+  readonly hypotheticalSharedExport: number;
+  readonly total: number;
+}
+
+// These are eight authored source files across the seven failing templates: platformer's pure
+// touch layout is counted beside its renderer. The look rule intentionally keeps these local;
+// this list makes that choice visible to the LOC instrument instead of hiding it as repetition.
+const TEMPLATE_TOUCH_CONTROL_FILES = [
+  "packages/create-threenative/templates/action-rpg/src/render/touch-controls.ts",
+  "packages/create-threenative/templates/minimal/src/render/touch-controls.ts",
+  "packages/create-threenative/templates/platformer/src/render/touch-controls.ts",
+  "packages/create-threenative/templates/platformer/src/render/touch-layout.ts",
+  "packages/create-threenative/templates/racing/src/render/touch-controls.ts",
+  "packages/create-threenative/templates/sailing/src/render/touch-controls.ts",
+  "packages/create-threenative/templates/shooter/src/render/touch-controls.ts",
+  "packages/create-threenative/templates/starter/src/render/touch-controls.ts",
+] as const;
+
+/**
+ * Prices the eight template-owned touch-control files against one hypothetical shared export.
+ * The shared number is deliberately the largest authored copy: it is a conservative source-size
+ * proxy for a shared export that could cover the richest current control set, not a claim that a
+ * package may own the templates' appearance. The duplicated remainder is accepted on that look
+ * rule and is recorded here for review.
+ */
+export function countTemplateTouchControlsLoc(
+  rootDirectory = process.cwd(),
+): TemplateTouchControlsLoc {
+  const root = resolve(rootDirectory);
+  const copies = TEMPLATE_TOUCH_CONTROL_FILES.map((file) => {
+    const path = join(root, file);
+    return { file, lines: lineCount(normaliseSource(readFileSync(path, "utf8"), path, root)) };
+  });
+  const total = copies.reduce((sum, copy) => sum + copy.lines, 0);
+  const hypotheticalSharedExport = Math.max(...copies.map((copy) => copy.lines));
+  return {
+    copies,
+    duplicated: total - hypotheticalSharedExport,
+    hypotheticalSharedExport,
+    total,
+  };
+}
+
 /**
  * The generated HUD's source, against the geometry HUD it replaces.
  *
@@ -519,6 +565,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   // Reported, not capped: the template LOC caps were retired by owner decision 2026-08-09.
   process.stdout.write(`platformer template LOC: ${countPlatformerTemplateLoc(root)}\n`);
+  const touchControls = countTemplateTouchControlsLoc(root);
+  process.stdout.write(
+    `touch controls LOC: ${touchControls.total} across ${touchControls.copies.length} authored copies; hypothetical shared export ${touchControls.hypotheticalSharedExport}; duplicated ${touchControls.duplicated} (accepted on the look-ownership rule)\n`,
+  );
   const hud = countGeneratedHudLoc(root);
   process.stdout.write(`generated HUD LOC: ${hud.generated} (geometry HUD ${hud.geometry})\n`);
   const cloth = countSoftBodyFeatureLoc(root);

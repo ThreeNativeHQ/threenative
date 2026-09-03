@@ -3,7 +3,6 @@ import { CollisionShape3D } from "@threenative/physics";
 import type { Vector3 } from "three";
 import { HOSTILE_LAYER } from "../entities/Player.js";
 import type { Target } from "../entities/Target.js";
-import { directSpaceState } from "../physics.js";
 
 export function applyDirectDamage(
   targets: ReadonlyMap<number, Target>,
@@ -21,7 +20,7 @@ export function applyRadiusDamage(
   amount: number,
   targets: ReadonlyMap<number, Target>,
 ): Set<number> {
-  const hits = directSpaceState(physics).intersectShape({
+  const hits = physics.directSpaceState.intersectShape({
     collisionMask: HOSTILE_LAYER,
     maxResults: 16,
     position: centre,

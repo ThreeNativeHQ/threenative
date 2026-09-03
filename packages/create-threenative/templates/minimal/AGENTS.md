@@ -20,6 +20,7 @@ ordinary user code, and nothing in `@threenative/*` reads or chooses their appea
    use portable `ctx`/Three.js for this cross-target template.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -54,9 +55,14 @@ is a plain class; `src/render/hud.ts` is the one camera-parented, instanced-geom
 on every target. Register it with `ctx.entities`; rewrite its glyphs and colours freely, but do not
 add a second DOM readout. `playtests/survives.playtest.json` is the durable smoke proof.
 
+On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), the local
+`src/render/touch-controls.ts` adds a left movement stick and a right jump button. The scene
+passes its returned input to `Player`; keep the keyboard mapping as the desktop fallback.
+
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets:
 put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive
 `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without resetting game state; from

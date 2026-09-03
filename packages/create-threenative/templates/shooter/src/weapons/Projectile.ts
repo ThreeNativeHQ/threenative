@@ -1,8 +1,13 @@
 import type { ICtx } from "@threenative/core";
-import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
+import {
+  CollisionShape3D,
+  type IPhysicsContext,
+  type IRayHit,
+  RigidBody3D,
+} from "@threenative/physics";
 import { type Mesh, Vector3 } from "three";
 import { PROJECTILE_LAYER } from "../entities/Player.js";
-import { type IRayHit, directSpaceState } from "../physics.js";
+
 import { createProjectileVisual } from "../render/shapes.js";
 import type { GameState } from "../state.js";
 
@@ -66,7 +71,7 @@ export class Projectile {
     }
     const from = this.#from.copy(this.mesh.position);
     const to = this.#to.copy(from).addScaledVector(this.#direction, this.#speed * dt);
-    const hit = directSpaceState(ctx.physics).intersectRay({
+    const hit = ctx.physics.directSpaceState.intersectRay({
       collisionMask: this.#collisionMask,
       from,
       to,

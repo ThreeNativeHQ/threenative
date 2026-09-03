@@ -19,8 +19,7 @@ visual decision; `src/game.ts` stays portable and `src/main.ts` is the web-only 
    direct the user to review it, and wait for explicit approval plus an instruction to implement it.
 3. Treat returned constraints as binding. `@threenative/physics/navigation` is a browser-only
    WASM boundary here; use returned subpaths and `attachToBone` for held weapons.
-4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
-   `npx @threenative/playtest doctor`; missing observations are not zero.
+4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and `npx @threenative/playtest doctor`; missing observations are not zero. For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -55,6 +54,8 @@ tests inventory; T defeats the visible enemy; C/R checkpoints; H/X damage or def
 lead to a boss win or zero-health loss. `StatBlock.ts` and `Inventory.ts` are game-owned; use
 `intersectShape` for range and `intersectRay` for line of sight, not distance scans or navmesh.
 
+On a touch-primary device, local `src/render/touch-controls.ts` adds a left movement stick, attack and Arcane Surge buttons; keyboard controls remain available on desktop.
+
 `src/scenes/Play.ts` wires the loop; `src/entities/` owns gameplay; `src/render/` owns the look;
 `src/ui/` owns React; `state.ts` publishes JSON-safe health, room, and inventory. Keep
 `playtests/survives.playtest.json` as the smoke proof and update the other scenarios with gameplay.
@@ -62,7 +63,7 @@ The state bridge flushes about 100 ms, so per-frame feedback stays in scene-owne
 
 ## Portable authoring contracts
 
-Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable; generated conventions call `GroundSnap` for floor contact, `normaliseToMetres` for authored model scale, and `attachToBone` for held props.
 Register testable entities with `ctx.entities`; `input.vector("move").y` is +up, so forward uses one
 explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await
 `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity.

@@ -2120,14 +2120,17 @@
       "example": "const crate = new RigidBody3D({ context, object, mode: \"dynamic\" });",
       "importPath": "@threenative/physics",
       "kind": "class",
-      "overrides": [],
+      "overrides": [
+        "continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting"
+      ],
       "package": "@threenative/physics",
       "signature": "export class RigidBody3D { … }",
       "situations": [
         "give a crate or prop physical motion",
         "create a body that collides with a character",
         "fire physical cannonballs that collide with ships or scenery",
-        "fire a cannonball projectile with cannon smoke particles"
+        "fire a cannonball projectile with cannon smoke particles",
+        "a bullet passes through a wall"
       ],
       "summary": "Simulate a dynamic or static rigid body.",
       "supersedes": [],

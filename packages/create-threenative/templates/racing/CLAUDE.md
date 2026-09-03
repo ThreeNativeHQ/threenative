@@ -21,6 +21,7 @@ state bridge. This repository owns the car feel, track, race rules, rescue, HUD,
    this kit uses `PathFollow3D` and a measured route instead of a vehicle or navmesh abstraction.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -56,9 +57,14 @@ the last ray-probed road transform; `Ranking.ts` ranks route progress. `RacingCa
 `CharacterBody3D`; there is no vehicle node or racing-line solver. Register entities and keep
 `playtests/survives.playtest.json` as the smoke proof. The one React HUD reads published state.
 
+
+On a touch-primary device, the local `src/render/touch-controls.ts` adds a left steering/throttle
+stick and right boost and brake buttons. Keyboard input remains the desktop fallback.
+
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
+Generated conventions call `normaliseToMetres` for authored vehicle scale; suspension owns floor contact.
 `input.vector("move").y` is +up and means throttle here; forward still uses one explicit `-move.y`
 conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in
 `Scene.load()`, then drive `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without

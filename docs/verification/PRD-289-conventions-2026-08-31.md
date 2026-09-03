@@ -20,8 +20,12 @@ table, reads each template's `AGENTS.md`, and checks the TypeScript AST for the 
 | platformer | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — procedural rig motion has no AnimationClip asset |
 | racing | N/A — vehicle suspension and snap-to-ground own floor contact | `src/conventions.ts:5` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | sailing | N/A — the ship is waterborne and uses buoyancy, not floor grounding | `src/conventions.ts:5` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
-| shooter | `src/conventions.ts:27` | `src/conventions.ts:16` | `src/conventions.ts:26` | N/A — no skinned or animated asset is loaded |
+| shooter | `src/conventions.ts:43` | `src/conventions.ts:32` | `src/conventions.ts:42` | N/A — no skinned or animated asset is loaded |
 | starter | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — the native proof asset is static and has no AnimationClip |
+
+Updated 2026-09-02: the `shooter` kit became first person. Its `GroundSnap` now measures the legs
+the player sees when they look down rather than a third-person body, and `normaliseToMetres` and
+`attachToBone` size and hold the camera-space viewmodel. Same three calls, same file, new lines.
 
 ## Observable call evidence
 
@@ -392,3 +396,72 @@ FAIL, exit 1; TN_VISUAL_SCORE_TEMPLATES_MISMATCH: missing sailing; stale none.
 The eight regenerated PNGs were restored to their committed baselines. No platformer frame change
 was attributed to this post-jump measurement-only fix, and no visual baseline was re-baselined.
 `git diff --check` exited 0 after the record update.
+
+## Recovery verification — 2026-09-02
+
+The recovered commits were cherry-picked onto the current local `main` and the convention
+applicability/source-call checks were rerun:
+
+```text
+pnpm exec tsx scripts/check-template-conventions.ts
+PASS, exit 0; Template convention applicability and source-call checks passed.
+
+pnpm exec vitest run packages/create-threenative/__tests__/template-conventions.spec.ts \
+  scripts/__tests__/check-template-conventions.spec.ts --reporter=dot
+PASS, exit 0; 2 files and 14 tests passed.
+
+TN_TEMPLATE_ONLY=platformer pnpm test:templates
+PASS, exit 0; all 22 platformer scenarios passed, including the independent airborne support-plane
+and body-relative attachment measurements.
+```
+
+The generated scaffold stability hashes were refreshed after PRD-292's convention guidance landed;
+the focused scaffold suite then passed all 49 tests. The recovery did not change the visual
+baseline: the convention measurements are reported independently when a correction is disabled.
+
+## Recovery repository gates — 2026-09-02
+
+The required repository gates were rerun after all four recovery groups were integrated:
+
+| Command | Result |
+| --- | --- |
+| `pnpm sync:agents` and `pnpm sync:agents --check` | PASS; generated mirrors were refreshed, then all 17 `CLAUDE.md` mirrors were in sync. |
+| `pnpm typecheck && pnpm lint && pnpm test` | PASS; typecheck and lint passed (522 warnings only); 340 test files passed, 1 skipped; 3406 tests passed, 2 skipped. |
+| `pnpm budgets` | PASS; all budget and freshness checks passed. The informational LOC triggers reported 51,192 framework lines and 117,105 native-runtime lines. |
+| `pnpm test:playtest` | PASS; movement, camera, movement-axis, zoom-input, and navigation scenarios passed on NVIDIA/Turing WebGPU with no diagnostics. |
+| `PLAYWRIGHT_BROWSERS_PATH=<isolated /home cache> pnpm test:templates` | PASS; 87 scenarios across all 8 templates passed. The first bare invocation waited on an unrelated global Playwright install; the isolated-cache invocation ran the same repository script successfully. |
+| `pnpm check:docs` | PASS; 1277 relative links across 944 Markdown files. |
+
+The full template run included the convention-bearing platformer scenarios and all generated
+`AGENTS.md`/`CLAUDE.md` guidance. No visual baseline was changed; convention measurements remain
+independent when a correction is disabled.
+
+## Repair evidence — boot-error mutation control — 2026-09-02
+
+The generated-source look test now extracts the `[data-threenative-canvas-error="true"]` rule and
+checks its concrete full-screen, centered-layout, wrapping, background, and text-colour
+declarations in every current template. This keeps the visual proof template-owned while making an
+empty or missing rule fail independently of the nonblank-pixel scenario assertion.
+
+The required mutation emptied the starter rule body. The focused test went red:
+
+```text
+pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts --reporter=dot
+FAIL, exit 1; 1 test failed, 11 passed. The failure was
+starter boot-error position: expected undefined to be 'fixed'.
+```
+
+After restoring the generated declaration block, the focused generated-source and scaffold suites
+went green:
+
+```text
+pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts \
+  packages/create-threenative/__tests__/template.spec.ts \
+  packages/create-threenative/__tests__/scaffold.spec.ts --reporter=dot
+PASS, exit 0; 3 test files and 96 tests passed.
+```
+
+This repair does not change the visual score manifest. `pnpm visuals` remains unresolved for this
+PRD because it requires eight template scores and `docs/verification/visuals/scores.json` still has
+seven: `TN_VISUAL_SCORE_TEMPLATES_MISMATCH: missing sailing; stale none`. No human score or visual
+baseline was invented.

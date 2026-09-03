@@ -27,6 +27,7 @@ fn body(id: u32, body_type: u32, x: f32, mass: f32) -> TnPhysicsBodyOptions {
         collision_layer: 1,
         collision_mask: u16::MAX.into(),
         sensor: false,
+        continuous_collision: true,
     }
 }
 

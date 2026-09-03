@@ -3,7 +3,6 @@ import {
   Scene,
   type SceneFrame,
   isMobile,
-  isNative,
   isTouchscreenAvailable,
 } from "@threenative/core";
 import { CollisionShape3D, RigidBody3D } from "@threenative/physics";
@@ -69,7 +68,7 @@ export class Level extends Scene<GameState, IPhysicsContext> {
     setupCamera(camera);
     const loading = createLoadingScreen(ctx);
     ctx.add(camera);
-    const showTouchControls = isNative() && isMobile() && isTouchscreenAvailable();
+    const showTouchControls = isMobile() && isTouchscreenAvailable();
     const touchControls = showTouchControls
       ? ctx.entities.add("touch-controls", new TouchControls(camera))
       : undefined;

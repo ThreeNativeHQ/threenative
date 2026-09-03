@@ -140,6 +140,24 @@ describe("playtest evaluator measures", () => {
     expect(trivial.diagnostic?.code).toBe("TN_PLAYTEST_ASSERTION_TRIVIAL");
     expect(evaluatePathAssertion("resource", { allowTrivial: "held", equals: 3, id: "score" } as never, { after: 3, before: 3 }, {}).assertion.pass).toBe(true);
 
+    const visible = evaluatePathAssertion(
+      "hud",
+      {
+        allowTrivial: "The boot error is intentionally present before the first step.",
+        id: "error",
+        textIncludes: "boot failed",
+        visible: true,
+      } as never,
+      {
+        after: { text: "TN_TEST: boot failed", visible: true },
+        before: { text: "TN_TEST: boot failed", visible: true },
+      },
+      {},
+    );
+    expect(visible.assertion.pass).toBe(true);
+    expect(visible.assertion.details?.expected).toMatchObject({ textIncludes: "boot failed", visible: true });
+    expect(evaluatePathAssertion("hud", { id: "error", visible: true } as never, { after: { text: "boot failed", visible: false } }, {}).assertion.pass).toBe(false);
+
     const alternative = evaluateResourceAnyOfAssertion(
       { anyOf: [{ gte: 10 }, { equals: 3 }], id: "score" } as never,
       { after: 3, before: 1 },
