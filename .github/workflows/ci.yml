@@ -104,16 +104,18 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
-      # Half of every compiler invocation in this job is currently not cached at all, and the
-      # verbose report names why: on run 33714810237 the host build read
+      # Half of every compiler invocation in this job was not a cache candidate at all. The
+      # verbose report named why — run 33714810237, host build:
       #   Uncacheable calls:                   280 / 552 (50.72%)
       #     Could not use precompiled header:  266 / 280 (95.00%)
       # Those 266 are SDL3, which builds its ~391 objects behind `target_precompile_headers`.
-      # ccache refuses to cache a PCH compile under its default sloppiness because a precompiled
-      # header bakes in macro definitions and expansion times it cannot otherwise account for;
-      # `pch_defines,time_macros` is the documented opt-in that lets it try. Whether GCC then
-      # produces hits without `-fpch-preprocess` is the open question, and the next run measures
-      # it — the per-step counters above are there to say so plainly either way.
+      # ccache will not cache a PCH compile under its default sloppiness, because a precompiled
+      # header bakes in macro definitions and expansion times it cannot otherwise account for.
+      # With `pch_defines,time_macros` (run 33715557861, same build):
+      #   Cacheable calls:         538 / 552 (97.46%)
+      #   Uncacheable calls:        14 / 552 ( 2.54%)
+      # The old "32% hit rate" was a fraction of the cacheable half; against every invocation it
+      # was 77/552. This is the other 266 becoming eligible.
       CCACHE_SLOPPINESS: pch_defines,time_macros
       # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
       # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
@@ -164,11 +166,14 @@ jobs:
       # never built them, so `pnpm test` had four permanently failing tests and this workflow had
       # never once gone green. The build is what makes the native half of the suite real here.
       - name: Install Linux desktop build dependencies
-        # `--no-install-recommends` keeps every package named below and drops the recommended
-        # tail, which for the GTK and WebKit development packages is the bulk of the download.
-        # This step measured 63s on run 33710335121, on a job that is now at the critical path.
+        # Not `--no-install-recommends`, tried and reverted. It took this step from 63s to 36s
+        # and then failed `distribution.test.mjs > an installed runtime verifier uses packaged
+        # Linux display support` with `scripts/xvfb.sh: Xvfb did not report a display within 10
+        # seconds` (run 33715557861). Something the X stack needs on this runner arrives as a
+        # recommended package of one of the development packages below, and 27s is not worth
+        # finding out which one by bisection.
         run: >-
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          sudo apt-get update && sudo apt-get install -y
           ccache
           libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
           libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
