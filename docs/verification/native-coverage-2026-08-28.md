@@ -13,17 +13,17 @@ targets could not be built and are named below.
 | `src/cli/` | 1568 | 0 | 0.00% |
 | `src/fs/` | 235 | 88 | 37.45% |
 | `src/http/` | 402 | 175 | 43.53% |
-| `src/js/` | 2609 | 1020 | 39.10% |
+| `src/js/` | 2609 | 1018 | 39.02% |
 | `src/platform/` | 963 | 217 | 22.53% |
 | `src/raytracing/` | 458 | 60 | 13.10% |
 | `src/runtime.cpp` | 2052 | 870 | 42.40% |
 | `src/storage/` | 327 | 283 | 86.54% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 175 | 73.22% |
-| `src/webgpu/` | 7747 | 3251 | 41.96% |
+| `src/webgpu/` | 7747 | 3235 | 41.76% |
 | `src/webtransport/` | 770 | 145 | 18.83% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **20094** | **7949** | **39.56%** |
+| **TOTAL** | **20094** | **7931** | **39.47%** |
 
 Source digest: `sha256:648555973ea364bad44c51e4b5bb2063f49270c7a4ce54761acdb098f78eddf1`
 

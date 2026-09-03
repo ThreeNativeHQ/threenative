@@ -103,34 +103,6 @@ feet corrected to the floor where `GroundSnap` is enabled, and held weapons atta
 `RightHand` in action-rpg and shooter. The score file remains the pre-existing seven-template,
 model-only baseline, so it was not fabricated or edited to conceal the missing `sailing` score.
 
-## Review repair — 2026-09-02
-
-The applicable convention contract now requires every call-cell symbol to appear in its template's
-`AGENTS.md`; reasoned `N/A` cells remain exempt. The red test temporarily removed `GroundSnap` from
-the fixture documentation and the focused suite exited `1` with the expected missing-name finding
-instead of silently returning an empty result. The real gate initially exposed one additional
-applicable omission, shooter `attachToBone`; that source `AGENTS.md` was repaired and its generated
-mirror was refreshed with `pnpm sync:agents`.
-
-```text
-pnpm exec vitest run scripts/__tests__/check-template-conventions.spec.ts \
-packages/create-threenative/__tests__/touch-controls.spec.ts \
-packages/create-threenative/__tests__/playtest.spec.ts \
-packages/playtest/__tests__/sampling.spec.ts \
-packages/playtest/__tests__/runner.spec.ts --reporter=dot
-RED, exit 1; 7 failed and 128 passed. The convention mutation reported that the expected
-applicable GroundSnap name was absent from AGENTS.md.
-
-pnpm exec tsx scripts/check-template-conventions.ts
-PASS, exit 0; Template convention applicability and source-call checks passed.
-
-pnpm sync:agents --check
-PASS, exit 0; 17 CLAUDE.md mirrors are in sync.
-
-same focused Vitest command after the documentation and gate repair
-PASS, exit 0; 5 files and 135 tests passed.
-```
-
 The fresh worktree also required the repository-native setup before the root test could run:
 `pnpm --filter @threenative/physics build`, `pnpm native:build`, and the documented V8/QuickJS
 native test targets all completed successfully. The remaining root-test failures are the
@@ -425,11 +397,71 @@ The eight regenerated PNGs were restored to their committed baselines. No platfo
 was attributed to this post-jump measurement-only fix, and no visual baseline was re-baselined.
 `git diff --check` exited 0 after the record update.
 
-## Integration closeout — 2026-09-01
+## Recovery verification — 2026-09-02
 
-The implementation commits were integrated against the current main tree and this PRD is archived
-in `docs/PRDs/done/`. The convention focused suite passed 2 files and 14 tests; the final affected
-template/scaffold/native-smoke suite passed 3 files and 86 tests. `pnpm sync:agents` passed while
-writing the repaired template mirrors. Shared repository gate outcomes are recorded in the PRD-292
-integration record. The existing source-lane visual and device qualifications remain scoped as
-recorded above.
+The recovered commits were cherry-picked onto the current local `main` and the convention
+applicability/source-call checks were rerun:
+
+```text
+pnpm exec tsx scripts/check-template-conventions.ts
+PASS, exit 0; Template convention applicability and source-call checks passed.
+
+pnpm exec vitest run packages/create-threenative/__tests__/template-conventions.spec.ts \
+  scripts/__tests__/check-template-conventions.spec.ts --reporter=dot
+PASS, exit 0; 2 files and 14 tests passed.
+
+TN_TEMPLATE_ONLY=platformer pnpm test:templates
+PASS, exit 0; all 22 platformer scenarios passed, including the independent airborne support-plane
+and body-relative attachment measurements.
+```
+
+The generated scaffold stability hashes were refreshed after PRD-292's convention guidance landed;
+the focused scaffold suite then passed all 49 tests. The recovery did not change the visual
+baseline: the convention measurements are reported independently when a correction is disabled.
+
+## Recovery repository gates — 2026-09-02
+
+The required repository gates were rerun after all four recovery groups were integrated:
+
+| Command | Result |
+| --- | --- |
+| `pnpm sync:agents` and `pnpm sync:agents --check` | PASS; generated mirrors were refreshed, then all 17 `CLAUDE.md` mirrors were in sync. |
+| `pnpm typecheck && pnpm lint && pnpm test` | PASS; typecheck and lint passed (522 warnings only); 340 test files passed, 1 skipped; 3406 tests passed, 2 skipped. |
+| `pnpm budgets` | PASS; all budget and freshness checks passed. The informational LOC triggers reported 51,192 framework lines and 117,105 native-runtime lines. |
+| `pnpm test:playtest` | PASS; movement, camera, movement-axis, zoom-input, and navigation scenarios passed on NVIDIA/Turing WebGPU with no diagnostics. |
+| `PLAYWRIGHT_BROWSERS_PATH=<isolated /home cache> pnpm test:templates` | PASS; 87 scenarios across all 8 templates passed. The first bare invocation waited on an unrelated global Playwright install; the isolated-cache invocation ran the same repository script successfully. |
+| `pnpm check:docs` | PASS; 1277 relative links across 944 Markdown files. |
+
+The full template run included the convention-bearing platformer scenarios and all generated
+`AGENTS.md`/`CLAUDE.md` guidance. No visual baseline was changed; convention measurements remain
+independent when a correction is disabled.
+
+## Repair evidence — boot-error mutation control — 2026-09-02
+
+The generated-source look test now extracts the `[data-threenative-canvas-error="true"]` rule and
+checks its concrete full-screen, centered-layout, wrapping, background, and text-colour
+declarations in every current template. This keeps the visual proof template-owned while making an
+empty or missing rule fail independently of the nonblank-pixel scenario assertion.
+
+The required mutation emptied the starter rule body. The focused test went red:
+
+```text
+pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts --reporter=dot
+FAIL, exit 1; 1 test failed, 11 passed. The failure was
+starter boot-error position: expected undefined to be 'fixed'.
+```
+
+After restoring the generated declaration block, the focused generated-source and scaffold suites
+went green:
+
+```text
+pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts \
+  packages/create-threenative/__tests__/template.spec.ts \
+  packages/create-threenative/__tests__/scaffold.spec.ts --reporter=dot
+PASS, exit 0; 3 test files and 96 tests passed.
+```
+
+This repair does not change the visual score manifest. `pnpm visuals` remains unresolved for this
+PRD because it requires eight template scores and `docs/verification/visuals/scores.json` still has
+seven: `TN_VISUAL_SCORE_TEMPLATES_MISMATCH: missing sailing; stale none`. No human score or visual
+baseline was invented.

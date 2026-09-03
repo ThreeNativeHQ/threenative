@@ -20,7 +20,7 @@ ordinary user code, and nothing in `@threenative/*` reads or chooses their appea
    use portable `ctx`/Three.js for this cross-target template.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
-For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; set `continuousCollision: false` to opt out, and read `body.continuousCollision` for the effective setting on web and native.
+For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -55,6 +55,10 @@ is a plain class; `src/render/hud.ts` is the one camera-parented, instanced-geom
 on every target. Register it with `ctx.entities`; rewrite its glyphs and colours freely, but do not
 add a second DOM readout. `playtests/survives.playtest.json` is the durable smoke proof.
 
+On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), the local
+`src/render/touch-controls.ts` adds a left movement stick and a right jump button. The scene
+passes its returned input to `Player`; keep the keyboard mapping as the desktop fallback.
+
 ## Portable authoring contracts
 
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
@@ -85,7 +89,3 @@ supposed to be touching.
 Open a capture after visual changes. A scenario with no assertions or missing observations fails.
 
 Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
-
-On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), the local
-`src/render/touch-controls.ts` adds a left movement stick and a right jump button. The scene
-passes its returned input to `Player`; keep the keyboard mapping as the desktop fallback.

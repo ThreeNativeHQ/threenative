@@ -17,9 +17,7 @@ visual decision; `src/game.ts` stays portable and `src/main.ts` is the web-only 
    direct the user to review it, and wait for explicit approval plus an instruction to implement it.
 3. Treat returned constraints as binding. `@threenative/physics/navigation` is a browser-only
    WASM boundary here; use returned subpaths and `attachToBone` for held weapons.
-4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
-   `npx @threenative/playtest doctor`; missing observations are not zero.
-For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; set `continuousCollision: false` to opt out, and read `body.continuousCollision` for the effective setting on web and native.
+4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and `npx @threenative/playtest doctor`; missing observations are not zero. For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
 
 ## When the framework blocks you, write plain Three.js
 
@@ -54,6 +52,8 @@ tests inventory; T defeats the visible enemy; C/R checkpoints; H/X damage or def
 lead to a boss win or zero-health loss. `StatBlock.ts` and `Inventory.ts` are game-owned; use
 `intersectShape` for range and `intersectRay` for line of sight, not distance scans or navmesh.
 
+On a touch-primary device, local `src/render/touch-controls.ts` adds a left movement stick, attack and Arcane Surge buttons; keyboard controls remain available on desktop.
+
 `src/scenes/Play.ts` wires the loop; `src/entities/` owns gameplay; `src/render/` owns the look;
 `src/ui/` owns React; `state.ts` publishes JSON-safe health, room, and inventory. Keep
 `playtests/survives.playtest.json` as the smoke proof and update the other scenarios with gameplay.
@@ -61,8 +61,7 @@ The state bridge flushes about 100 ms, so per-frame feedback stays in scene-owne
 
 ## Portable authoring contracts
 
-Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
-Generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
+Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable; generated conventions call `GroundSnap` for floor contact, `normaliseToMetres` for authored model scale, and `attachToBone` for held props.
 Register testable entities with `ctx.entities`; `input.vector("move").y` is +up, so forward uses one
 explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await
 `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity.
@@ -71,10 +70,14 @@ explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await
 `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's state. Seeded
 randomness is deterministic only when `defineGame({ seed })` is configured.
 
-When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a retargeted clip against its source per bone in degrees — whole quaternions relative to each
-rig's own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is caught where a bone-direction check reads zero. `clipTrackBindings` names
-tracks that bind nothing (the `<bone>.undefined` failure that plays the bind pose instead of the animation), `clipBoneCoverage` names bones the clip does not drive and which
-therefore keep the previous clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is supposed to be touching.
+When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
+retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
+own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is
+caught where a bone-direction check reads zero. `clipTrackBindings` names tracks that bind nothing
+(the `<bone>.undefined` failure that plays the bind pose instead of the animation),
+`clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous
+clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
+supposed to be touching.
 
 ## Look and evidence
 
@@ -91,5 +94,3 @@ named override. Unknown tiers throw and `TN_QUALITY_TIER` reports the chosen sou
 with no assertions or missing observations fails; keep the durable smoke proof and open a capture.
 
 Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
-
-On a touch-primary device, the local `src/render/touch-controls.ts` adds a left movement stick, an attack button and an Arcane Surge button. Keyboard controls remain available on desktop.
