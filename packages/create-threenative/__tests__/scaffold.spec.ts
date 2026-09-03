@@ -94,7 +94,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // requests its normal/metalness/roughness texture nodes lazily, because asking for them is
 // what created the extra render target that made the mobile look a black screen. `sailing`
 // never had those lines, so its tree is unchanged and its hash does not move.
-const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+const CURRENT_BASELINE_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
   // holds the frame budget instead of the game hand-authoring a resolution constant.
@@ -213,17 +213,26 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "33e618c7ff9157460ea7ad3afdfa57ec9fecafcc3f088ae3dff0c9fb43458b0d",
-  defense: "31f7793eae6c700531ebb0d8c913886a5bd0b0746ccbab87f3fe4526f9cca43c",
+  // Recomputed 2026-09-02 from the clean post-rebase scaffold output.
+  "action-rpg": "648694390e5603010c180d3f737a2c741f8208376acf5ab5cc625081fa6e7ecb",
+  // Recomputed 2026-09-02 after the defense survival route's third default tower moved to the
+  // final route segment; three authored towers now cover the full ten-wave proof reliably.
+  // The clean post-rebase scaffold also removes duplicate generated guidance from this tree.
+  defense: "494e407c7a6437faa9ef1eaafb2cee5423a6c21b210af7844894a483ef8d0681",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "780fe6d1030a55d217252a0f77019d1e2e86af043481ecb56eb0800a7d74524b",
-  platformer: "ed353c5ead8e9e0e066d7efb298b09298b6ad4539efa3189b208fe5e012d5b79",
-  racing: "c493902d5e4f722ca5fdd558fe2009e232f8dba28da2e8998edb768fe84c3807",
-  shooter: "4d8b16f04d8ba851965f56b630b8981a1278fd2657522370f76c0362a33d05a6",
+  // Recomputed 2026-09-02 after current main's engine-owned renderer-info reset made the complete
+  // minimal post-processing frame visible to the per-frame triangle metric: the unchanged scene
+  // measured 4,737 triangles (the pre-rebase bundle measured 1,175), so its strict cap is 4,800.
+  // Recomputed 2026-09-02 from the clean post-rebase scaffold output after removing duplicate
+  // touch and continuous-collision guidance.
+  minimal: "a1c53c47f9cec3db597710d32bb6abed2aac67b9ecb5f569d4f10cc9fb18aa79",
+  platformer: "2b14304c4082ec1509cc78f7582c370dcec3ed57972a28f19708c7748f311e1b",
+  racing: "a87ec5bb6285dea2a45a5cd2d1e8619c27e42a6434cb821ecba463484fced5a8",
+  shooter: "0dc95453b0f87f4ba9c7ef90b42fb7887c91c8dd34db601d5b0c3b337063acea",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "3e06ef75e06f26e14f46432c82c5a6afff77e821a36d54d7f7031973fcb99e7a",
+  starter: "e9826339dcaf626b869f16b1c38e3581c043aa135ade98017a168445ff83801b",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -244,7 +253,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "438838a0e4a66979436ee3082e6917ab498269c7c0a4fd050511930aa89c0841",
+  sailing: "4990f6f3373295ddb54e097fbe1331ced9464e30adcf037762fa6eb9d5e44bd4",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -264,6 +273,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // AGENTS.md paragraph that states the convention.
   // Recomputed 2026-08-29 for PRD-249. Every template moved because every scaffold embeds the
   // new FluidField2D capability manifest and generated capability-reference entry.
+  // Recomputed 2026-08-31 for PRD-292: every template's generated AGENTS.md documents the
+  // default continuous-collision convention and its per-body override.
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -520,7 +531,7 @@ describe("create-threenative", () => {
     expect(source.match(/replaceAll\(placeholder, value\)/gu)).toHaveLength(1);
   });
 
-  it("keeps every no-install scaffold tree byte-stable against the PRD parent", async () => {
+  it("keeps every no-install scaffold tree byte-stable against the current recovery baseline", async () => {
     const root = await makeTempDir("threenative-scaffold-stability-");
     try {
       const actual: Record<string, string> = {};
@@ -529,10 +540,10 @@ describe("create-threenative", () => {
           { install: false, target: template, template },
           root,
         );
-        expect(PRD_201_PARENT_SCAFFOLD_HASHES[template]).toBeDefined();
+        expect(CURRENT_BASELINE_SCAFFOLD_HASHES[template]).toBeDefined();
         actual[template] = await scaffoldTreeHash(target);
       }
-      expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
+      expect(actual).toEqual(CURRENT_BASELINE_SCAFFOLD_HASHES);
     } finally {
       await rm(root, { force: true, recursive: true });
     }

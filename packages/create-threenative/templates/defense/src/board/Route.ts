@@ -15,8 +15,8 @@ export const ROUTE_POINTS = [
 export const SAFE_BUILD_SLOTS = [
   new Vector3(-8.3, 0, -3.8),
   new Vector3(-2.3, 0, -3.8),
-  new Vector3(-2.3, 0, 3.8),
   new Vector3(6.2, 0, 3.8),
+  new Vector3(-2.3, 0, 3.8),
 ] as const;
 
 export const ROUTE_TEST_SLOT = new Vector3(-8, 0, -6);

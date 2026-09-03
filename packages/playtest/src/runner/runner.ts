@@ -100,6 +100,11 @@ interface IVisualPageCapture {
   image: Buffer;
 }
 
+interface IVisualPageCapture {
+  elementRegions?: IPlaytestVisualElementRegionObservation[];
+  image: Buffer;
+}
+
 export { preflightDisplay, buildReport } from './runner-support.js';
 export { captureVisualSurface } from './steps.js';
 export { advanceFixedStep, playtestStepDrivesMovement } from './steps.js';

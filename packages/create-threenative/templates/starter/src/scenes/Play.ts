@@ -270,17 +270,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         goal.pennant.wind.set(0, 0.4, 4.5);
         frameCtx.state.set((state) => ({ flagGusts: state.flagGusts + 1 }));
       }
+      const touch = touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
       const move = frameCtx.input.vector("move");
-      if (!refinementStarted && (move.x !== 0 || move.y !== 0)) {
+      if (
+        !refinementStarted &&
+        (move.x !== 0 || move.y !== 0 || (touch?.move.x ?? 0) !== 0 || (touch?.move.y ?? 0) !== 0)
+      ) {
         scenery.rebuild();
         refinementStarted = true;
       }
-      player.update(
-        frameCtx,
-        dt,
-        supportSurfaceY,
-        touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
-      );
+      player.update(frameCtx, dt, supportSurfaceY, touch);
       let respawned = false;
       let lives = previous.lives;
       if (player.mesh.position.y < KILL_PLANE) {

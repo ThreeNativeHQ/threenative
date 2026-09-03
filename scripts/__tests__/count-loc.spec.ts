@@ -99,10 +99,10 @@ describe("count-loc", () => {
     expect(countPlatformerTemplateLoc()).toBeGreaterThan(0);
   });
 
-  it("prices the seven authored touch-control copies against a shared-export estimate", () => {
+  it("prices the eight authored touch-control copies against a shared-export estimate", () => {
     const comparison = countTemplateTouchControlsLoc();
 
-    expect(comparison.copies).toHaveLength(7);
+    expect(comparison.copies).toHaveLength(8);
     expect(comparison.total).toBe(comparison.copies.reduce((sum, copy) => sum + copy.lines, 0));
     expect(comparison.hypotheticalSharedExport).toBe(
       Math.max(...comparison.copies.map((copy) => copy.lines)),

@@ -604,7 +604,9 @@ and no silhouette-floor metric was run or claimed. No new native visual claim is
 
 The previous repair left the implementation uncommitted at `930609e77044619843fe61e9ee5521a0190cd62e`.
 This continuation kept the fix in the generated starter/game layer: `look.playtest.json` now has
-the labeled one-tick `preview-pending` input with no `allowTrivial`, while the ridge reports
+the labeled one-tick idle `preview-pending` wait with no `allowTrivial`, so a fast Worker cannot
+complete before that observation; desktop absence of touch controls is coalesced to zero before
+movement can dispatch the Worker; the ridge reports
 `state` and `generation` at that label; `scenery.ts` constructs the controller with
 `deferRefinement: true`; and `Play.ts` invokes `scenery.rebuild()` once on the first non-zero
 movement vector. Native source remains unchanged. The starter README status remains:

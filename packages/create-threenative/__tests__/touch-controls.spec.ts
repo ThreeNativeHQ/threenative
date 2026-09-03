@@ -118,4 +118,24 @@ describe("template touch controls", () => {
     expect(source).toContain("readonly object");
     expect(source).not.toMatch(/@threenative\/(?:core|ui)/u);
   });
+
+  it("wires sailing touch movement through its scene and ship", async () => {
+    const [scene, ship] = await Promise.all([
+      readFile(
+        path.resolve("packages/create-threenative/templates/sailing/src/scenes/Sailing.ts"),
+        "utf8",
+      ),
+      readFile(
+        path.resolve("packages/create-threenative/templates/sailing/src/entities/Ship.ts"),
+        "utf8",
+      ),
+    ]);
+
+    expect(scene).toContain("const showTouchControls = isMobile() && isTouchscreenAvailable();");
+    expect(scene).toContain('ctx.entities.add("touch-controls", new TouchControls(camera))');
+    expect(scene).toContain("touchControls?.update(frameCtx.input.raw.pointers");
+    expect(ship).toContain('import type { ITouchInput } from "../render/touch-controls.js";');
+    expect(ship).toContain("touch.move");
+    expect(ship).toContain("move.clampLength(0, 1)");
+  });
 });
