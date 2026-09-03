@@ -45,10 +45,28 @@ describe("the code samples are files, not pictures of files", () => {
     expect(installCommand("npm")).toContain("npm install");
   });
 
-  it("should ship the TypeScript sample in the prerendered HTML", async () => {
+  it("should ship every line of the TypeScript sample in the prerendered HTML", async () => {
+    // This is what stops the byte comparison above from being a self-comparison: the panel's
+    // bytes have to reach the artifact a visitor downloads, so editing the file without
+    // rebuilding — or rendering the sample client-only — fails here. The highlighter wraps each
+    // token in its own span, so the assertion runs against the panel's text, not its markup.
     const page = await prerenderedPage("/");
-    expect(page).toContain("defineGame");
-    expect(page).toContain("@threenative/core");
-    expect(snippet("typescript").source).toContain("defineGame");
+    const panel = /<pre[^>]*data-language="typescript"[\s\S]*?<\/pre>/u.exec(page)?.[0];
+    expect(panel, "the prerendered page has no TypeScript code panel").toBeDefined();
+    const text = (panel ?? "")
+      .replaceAll(/<[^>]+>/gu, "")
+      .replaceAll("&quot;", '"')
+      .replaceAll("&#x27;", "'")
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("&amp;", "&");
+    const lines = snippet("typescript")
+      .source.split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    expect(lines.length).toBeGreaterThan(8);
+    for (const line of lines) {
+      expect(text.includes(line), `the panel never ships: ${line}`).toBe(true);
+    }
   });
 });
