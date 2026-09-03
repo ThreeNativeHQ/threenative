@@ -26,14 +26,29 @@ runs:
       id: dist
       uses: actions/cache@v4
       with:
-        path: packages/*/dist
+        # The tarballs travel with the bundles they are made of. `pnpm pack` is a pure function of
+        # `dist` plus the manifests, so it is covered by the same key, and three lanes needed the
+        # archives rather than the bundles — `playwright.config.ts` was rebuilding and repacking
+        # every package itself before a single browser test ran.
+        path: |
+          packages/*/dist
+          artifacts/workspace-packages
         key: workspace-dist-${{ runner.os }}-${{ hashFiles('packages/*/src/**', 'packages/*/package.json', 'packages/*/tsup.config.ts', 'packages/*/scripts/**', 'scripts/workspace-packages.ts', 'pnpm-lock.yaml') }}${{ inputs.key-suffix }}
     - if: steps.dist.outputs.cache-hit == 'true'
       shell: bash
       run: echo "workspace dist restored for these sources; skipping the build"
     - if: steps.dist.outputs.cache-hit != 'true'
       shell: bash
-      run: pnpm tsx scripts/workspace-packages.ts build
+      run: |
+        set -euo pipefail
+        pnpm tsx scripts/workspace-packages.ts build
+        rm -rf artifacts/workspace-packages
+        mkdir -p artifacts/workspace-packages
+        pnpm tsx scripts/workspace-packages.ts --archives > artifacts/workspace-packages/specs
+        while IFS=$'\t' read -r package_name _; do
+          [ -n "$package_name" ] || continue
+          pnpm --filter "$package_name" pack --pack-destination artifacts/workspace-packages
+        done < artifacts/workspace-packages/specs
     # Fail closed rather than hand the caller a partial restore. A cache entry saved from a run
     # that died mid-build would otherwise be indistinguishable from a good one, and every consumer
     # of this action imports from these files.
@@ -55,4 +70,12 @@ runs:
           echo "TN_WORKSPACE_DIST_INCOMPLETE: ${missing[*]}" >&2
           exit 1
         fi
-        echo "workspace dist complete: $(ls -d packages/*/dist | wc -l) bundles"
+        # And the archives, for the lanes that scaffold rather than import.
+        archives="$(ls artifacts/workspace-packages/*.tgz 2>/dev/null | wc -l)"
+        bundles="$(ls -d packages/*/dist | wc -l)"
+        expected="$(pnpm tsx scripts/workspace-packages.ts --archives | grep -c .)"
+        if [ "$archives" -ne "$expected" ]; then
+          echo "TN_WORKSPACE_ARCHIVES_INCOMPLETE: $archives of $expected tarballs" >&2
+          exit 1
+        fi
+        echo "workspace dist complete: $bundles bundles, $archives tarballs"

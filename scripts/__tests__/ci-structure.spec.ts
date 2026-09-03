@@ -742,8 +742,22 @@ describe("CI pipeline structure", () => {
     ]) {
       expect(action, `the workspace-dist key ignores ${input}`).toContain(input);
     }
-    // And a restore that came back partial must fail rather than be imported from.
+    // And a restore that came back partial must fail rather than be imported from — bundles and
+    // tarballs both, since three lanes take the archives rather than the bundles.
     expect(action).toContain("TN_WORKSPACE_DIST_INCOMPLETE");
+    expect(action).toContain("TN_WORKSPACE_ARCHIVES_INCOMPLETE");
+    expect(action).toContain("artifacts/workspace-packages");
+
+    // `playwright.config.ts` scaffolds from packed tarballs and rebuilds every package to get
+    // them unless it is handed a set. Measured at 245s of setup against 40s of testing.
+    const browser = requiredJob(ci, "test-browser");
+    expect(browser, "the browser lane repacks the workspace before it can test").toContain(
+      "THREENATIVE_PACKED_PACKAGES",
+    );
+    const config = await readFile(path.join(repo, "playwright.config.ts"), "utf8");
+    expect(config, "the seam the workflow relies on is gone").toContain(
+      "process.env.THREENATIVE_PACKED_PACKAGES",
+    );
   });
 
   it("every native leg runs on every event", async () => {

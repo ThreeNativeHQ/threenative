@@ -300,7 +300,14 @@ jobs:
       # so they build it themselves — otherwise the run dies on a missing assets/dist/index.js.
       - uses: ./.github/actions/workspace-dist
       - uses: ./.github/actions/playwright-chromium
+      # `playwright.config.ts` scaffolds its starter projects from packed tarballs, and without
+      # this it rebuilds and re-packs every workspace package to get them — before the first of
+      # four browser tests runs. On run 33739951215 that setup was 245s against 40s of actual
+      # testing. `THREENATIVE_PACKED_PACKAGES` is the seam the config already had; this points it
+      # at the set the cached action just restored.
       - run: sh scripts/xvfb.sh pnpm test:browser
+        env:
+          THREENATIVE_PACKED_PACKAGES: ${{ github.workspace }}/artifacts/workspace-packages
       # A pixel gate that fails on a runner nobody can log into is only diagnosable if the frame
       # it rejected comes back with the failure.
       - name: Keep the frame a failed look gate rejected
