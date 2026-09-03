@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="limb" cx="78%" cy="118%" r="85%">
+      <stop offset="0%" stop-color="#ffd6a0" stop-opacity="0.55"/>
+      <stop offset="20%" stop-color="#d97a3c" stop-opacity="0.3"/>
+      <stop offset="45%" stop-color="#282c46" stop-opacity="0.35"/>
+      <stop offset="70%" stop-color="#020407" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#020407"/>
+  <rect width="1200" height="630" fill="url(#limb)"/>
+  <g transform="translate(72 72)" fill="none" stroke="#e0fb50" stroke-width="2.4" stroke-linejoin="round">
+    <path d="M20 2 38 12v20L20 42 2 32V12z"/>
+    <path d="M20 2v20m0 0 18-10M20 22 2 12m18 10v20"/>
+  </g>
+  <text x="128" y="112" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="34" font-weight="600" letter-spacing="-0.5">ThreeNative</text>
+  <text x="72" y="300" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="72" font-weight="700" letter-spacing="-2">Build native 3D apps</text>
+  <text x="72" y="382" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="72" font-weight="700" letter-spacing="-2">with the Three.js API</text>
+  <text x="72" y="452" fill="#c1c3c7" font-family="Inter, system-ui, sans-serif" font-size="26">Web, desktop, Android and iOS from one Three.js codebase.</text>
+  <rect x="72" y="510" width="196" height="8" rx="4" fill="#e0fb50"/>
+</svg>

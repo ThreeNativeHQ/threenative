@@ -1,0 +1,68 @@
+name: site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/site.yml"
+  pull_request:
+    paths:
+      - "site/**"
+      - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/site.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build and prove
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The homepage's code samples compile against the real packages. This step is the gate that
+      # says so: rename an export in packages/core and it fails here.
+      - run: pnpm --filter threenative-site run typecheck
+      - run: pnpm --filter threenative-site run test
+      - run: pnpm --filter threenative-site exec playwright install --with-deps chromium
+      - run: pnpm --filter threenative-site run test:e2e
+      # Pointing assets.directory at a missing directory fails here rather than in production.
+      - run: pnpm --filter threenative-site exec wrangler deploy --dry-run
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site-dist
+          path: site/dist/client
+          retention-days: 7
+
+  deploy:
+    name: deploy to cloudflare
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: site-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm site:build
+      - name: wrangler deploy
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: pnpm site:deploy

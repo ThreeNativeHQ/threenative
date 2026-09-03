@@ -106,6 +106,21 @@ pnpm test:playtest
 
 Native compilation is opt-in. The default gate needs no CMake, NDK, or Xcode.
 
+## Website
+
+The marketing site lives in `site/` as a private workspace app — never a published package. It is
+prerendered to static HTML at build time and hydrated on the client, so every headline, feature and
+code sample is in the source a crawler downloads.
+
+```sh
+pnpm site:dev      # vite dev server
+pnpm site:build    # client bundle, SSR bundle, prerendered HTML, sitemap
+pnpm site:deploy   # wrangler, Cloudflare static assets
+```
+
+Its claims are typed data with evidence pointers, and its code samples are real files compiled
+against the shipped packages, so renaming an export breaks the site build rather than the site.
+
 ## Docs
 
 - [`docs/README.md`](docs/README.md) is the map for PRDs, verification, benchmarks, strategy,

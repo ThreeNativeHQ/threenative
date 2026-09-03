@@ -1,4 +1,4 @@
-packages: ['packages/*', 'examples/*']
+packages: ['packages/*', 'examples/*', 'site']
 
 catalog:
   three: 0.185.1

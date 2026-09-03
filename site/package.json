@@ -1,0 +1,38 @@
+{
+  "name": "threenative-site",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "The ThreeNative marketing site: a private workspace app, never a published package.",
+  "scripts": {
+    "build": "vite build --outDir dist/client && vite build --ssr src/entry-server.tsx --outDir dist/server && tsx scripts/prerender.ts",
+    "deploy": "wrangler deploy",
+    "dev": "vite",
+    "preview": "vite preview",
+    "test": "pnpm run build && vitest run",
+    "test:e2e": "pnpm run build && playwright test --config=playwright.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "zustand": "catalog:"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@tailwindcss/vite": "catalog:",
+    "@types/node": "20.19.43",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@types/three": "0.185.3",
+    "@vitejs/plugin-react": "catalog:",
+    "tailwindcss": "catalog:",
+    "three": "catalog:",
+    "tsx": "4.23.5",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "4.128.0"
+  }
+}

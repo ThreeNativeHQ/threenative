@@ -1,0 +1,12 @@
+{
+  // Static assets only. A Worker script is added the day something has to run per request;
+  // nothing does yet, so there is no `main` entry to review, deploy or keep warm.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "threenative-site",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist/client",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  }
+}

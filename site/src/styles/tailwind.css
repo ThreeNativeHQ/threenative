@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/*
+ * Every value below was sampled from `REFERENCE.png` with a dominant-colour pass over the region
+ * named in the comment, not eyeballed. Text colours are the modal glyph pixel above a luminance
+ * floor, because antialiasing makes a naive average read as background.
+ */
+@theme {
+  --color-tn-bg: #020407;
+  --color-tn-surface: #0d1013;
+  --color-tn-surface-2: #101215;
+  --color-tn-accent: #e0fb50;
+  --color-tn-accent-ink: #05070a;
+  --color-tn-fg: #ffffff;
+  --color-tn-fg-muted: #c1c3c7;
+  --color-tn-fg-subtle: #9a9ca1;
+  --color-tn-border: #202226;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-tn-bg);
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-tn-bg);
+    color: var(--color-tn-fg);
+    -webkit-font-smoothing: antialiased;
+    font-family: var(--font-sans);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-tn-accent);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  @media (prefers-reduced-motion: no-preference) {
+    .tn-rise {
+      animation: tn-rise 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+  }
+
+  @keyframes tn-rise {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
