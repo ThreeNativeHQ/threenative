@@ -472,10 +472,12 @@ function buildGeometryFromRawMesh(
 
   const trianglesByGroup = new Map<number, number[]>();
   for (let face = 0; face < faceMaterialIndices.length; face += 1) {
+    // Corners are wedge numbers: every per-wedge array above was expanded one slot per wedge,
+    // so indexing by the vertex a wedge points at would address the wrong slot.
     const base = face * 3;
-    const a = rawWedge(wedgeIndices, base);
-    const b = rawWedge(wedgeIndices, options.flipWinding ? base + 2 : base + 1);
-    const c = rawWedge(wedgeIndices, options.flipWinding ? base + 1 : base + 2);
+    const a = base;
+    const b = options.flipWinding ? base + 2 : base + 1;
+    const c = options.flipWinding ? base + 1 : base + 2;
     const materialIndex = rawInt(faceMaterialIndices, face, "FaceMaterialIndices");
     const group = materialIndex >= 0 ? materialIndex : 0;
     const groupTriangles = trianglesByGroup.get(group) ?? [];
