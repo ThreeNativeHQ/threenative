@@ -220,6 +220,15 @@ public:
      */
     virtual bool hasCapturedFrame() const = 0;
 
+    /**
+     * Drop whatever frame sits in the capture buffer, so the next request captures fresh.
+     *
+     * A frame captured before the startup gate opened is the loading state, not the world. A
+     * screenshot run that wants the world therefore clears after readiness and captures again
+     * rather than saving whatever the buffer already held.
+     */
+    virtual void clearCapturedFrame() = 0;
+
     virtual void* getWebGPUBindingsState() const = 0;
 
 protected:
