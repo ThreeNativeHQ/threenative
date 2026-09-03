@@ -177,7 +177,14 @@ export class Defense extends Scene<GameState, IPhysicsContext> {
         scanCount += tower.scanCount;
         shots += tower.shots;
       }
-      if (scanWindowFrames < 300) {
+      // The window measures 300 frames of *tower* life, not 300 frames of scene life. Ungated it
+      // opened at scene frame 0 while the loading screen was still up, so shader compilation was
+      // spent out of the scan budget: on 2026-09-03 the tower was placed at frame 157, leaving
+      // 143 frames = 2.38 s, and the 0.18-0.3 s scan interval yields 9.9 scans on the mean —
+      // right on the `>= 10` floor. The same tree placed at frame 127 on another runner and
+      // passed. Counting from the first frame a tower exists makes the measurement independent
+      // of how long the machine took to compile.
+      if (towers.size > 0 && scanWindowFrames < 300) {
         scanWindowFrames += 1;
         if (scanWindowFrames === 300) {
           scanWindowScans = scanCount;
