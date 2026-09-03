@@ -45,8 +45,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build workspace packages consumed through export maps
-        run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/workspace-dist
       - run: pnpm typecheck
 
   lint:
@@ -76,6 +75,10 @@ jobs:
     timeout-minutes: 45
     env:
       TN_SUITE_EXCLUDE_PACKAGES: "@threenative/runtime-native"
+      # The unit run moved to `test-unit` below. What is left here is the part that only makes
+      # sense once: the docs check, the build that proves every workspace and example still
+      # bundles, and the walk of each package's own `test` script.
+      TN_SUITE_PHASES: "docs,build,package-test"
       # The orphan gate waits for Playwright's asynchronous profile cleanup and fails when it never
       # settles. Its 30s default is a quiet-machine number and this job is not one.
       TN_ORPHAN_SETTLE_SECONDS: 120
@@ -87,6 +90,41 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm test
+
+  # The root vitest run was the longest single thing in the run's longest job — 351 files and
+  # ~3,500 tests, measured at 151s of `test`'s 387s. It shards cleanly and it is the only part of
+  # that job that does: the docs check, the build and the package walk each make sense once.
+  #
+  # Every test still runs. `vitest --shard` slices the same file list, and the slices were checked
+  # to add back up: 117 + 117 + 117 = 351 files, union identical to the unsharded suite with no
+  # file in two shards. `scripts/__tests__/ci-structure.spec.ts` holds the matrix to that shape,
+  # and `run-test-suite.sh` refuses a phase selection that would run nothing at all.
+  test-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/3", "2/3", "3/3"]
+    env:
+      TN_SUITE_PHASES: unit
+      TN_SUITE_UNIT_SHARD: ${{ matrix.shard }}
+      # The orphan gate waits for Playwright's asynchronous profile cleanup; its 30s default is a
+      # quiet-machine number and this job drives real browsers.
+      TN_ORPHAN_SETTLE_SECONDS: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The specs import the compiled workspace; `test` builds it in its own `build` phase, and
+      # this job takes the cached result rather than repeating it three times over.
+      - uses: ./.github/actions/workspace-dist
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test
 
@@ -104,6 +142,19 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
+      # Not `CCACHE_SLOPPINESS: pch_defines,time_macros`, tried and reverted. The verbose report
+      # showed half of every compiler invocation was not a cache candidate at all — run
+      # 33714810237, host build:
+      #   Uncacheable calls:                   280 / 552 (50.72%)
+      #     Could not use precompiled header:  266 / 280 (95.00%)
+      # Those 266 are SDL3, which builds its ~391 objects behind `target_precompile_headers`.
+      # The sloppiness setting did make them eligible — 538/552 cacheable, 14 uncacheable — and
+      # produced *no hits at all*: two consecutive runs both read `Hits: 77 / 538`, the same 77
+      # this lane had before, while the first paid 154s -> 211s to store objects the second never
+      # read. GCC needs `-fpch-preprocess` on the compile line for a PCH compile to be reusable
+      # and CMake does not add it, so the setting bought a better-looking report and nothing else.
+      # The next thing to try is `CMAKE_DISABLE_PRECOMPILE_HEADERS=ON` for this build, which makes
+      # SDL3's objects ordinary cacheable compiles rather than eligible-but-unhittable ones.
       # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
       # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
       # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
@@ -119,12 +170,54 @@ jobs:
       # still fails when a directory genuinely outlives the wait, and now names what holds it.
       TN_ORPHAN_SETTLE_SECONDS: 120
     steps:
+      # Full history, only on this job. `restore-source-mtimes.mjs` below dates each native source
+      # by the commit that last touched it, and a shallow clone has no such information — `git log`
+      # reports one commit, every file is dated to HEAD, and the cached build tree is then older
+      # than all of its inputs. That is what run 33751865452 did: 299 of 299 files restamped and 78
+      # objects rebuilt behind a cache that had just been restored.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Restore native third-party dependencies
         uses: actions/cache@v4
         with:
           path: packages/runtime-native/third_party
           key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      # The compiled tree itself, not just the object cache in front of it. ccache has never paid
+      # off on this lane — 195 of 272 cacheable compiles miss on every run, and the half hidden
+      # behind SDL3's precompiled header cannot be cached at all without `-fpch-preprocess` (see
+      # the notes above and the two reverts in this branch's history). Restoring the build
+      # directory sidesteps the question: ninja re-stats every input and rebuilds exactly what
+      # changed, so a stale entry costs a recompile rather than a wrong binary, and an unchanged
+      # tree costs a download. Measured locally at 315 MB for `build/tn-linux`, against ~240s of
+      # compiling on the runner (host 154s + contract targets 53s + QuickJS 33s).
+      #
+      # The key hashes what the build is made of. `restore-keys` matters more than an exact hit
+      # here: a partial match still hands ninja most of its objects and it rebuilds the rest.
+      - name: Restore the compiled native tree
+        uses: actions/cache@v4
+        with:
+          # Cargo's output belongs here too. With the C++ compile eliminated by #78, the host build
+          # step was still ~112s and all of it was Rust: `threenative_native_physics` and the
+          # `ui-overlay` crate with its webkit2gtk bindings. Measured locally, physics alone is a
+          # 19s cold build producing 248 MB, and 0s warm.
+          #
+          # The physics crate's output is `.runtime/physics-target`, not `native/physics/target`:
+          # `build-native-physics.mjs` passes `--target-dir` explicitly because it cross-compiles
+          # to five targets. Caching the directory `cargo build` would have used by default cached
+          # nothing at all, and the ~50s physics build kept running behind a warm cache.
+          #
+          # It needs no timestamp help, unlike ninja: touching every `.rs` source the way a
+          # checkout does and rebuilding takes 0s, because cargo fingerprints content rather than
+          # trusting mtimes alone. So the cache is the whole change here, and the key grows to
+          # cover the crate sources and their lockfiles — a Rust source that moves has to miss.
+          path: |
+            packages/runtime-native/build/tn-linux
+            packages/runtime-native/build/tn-linux-quickjs
+            packages/runtime-native/.runtime/physics-target
+            packages/runtime-native/native/ui-overlay/target
+          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**/*.cpp', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: native-build-${{ runner.os }}-${{ runner.arch }}-
       - name: Restore native compiler cache
         uses: actions/cache@v4
         with:
@@ -153,6 +246,12 @@ jobs:
       # never built them, so `pnpm test` had four permanently failing tests and this workflow had
       # never once gone green. The build is what makes the native half of the suite real here.
       - name: Install Linux desktop build dependencies
+        # Not `--no-install-recommends`, tried and reverted. It took this step from 63s to 36s
+        # and then failed `distribution.test.mjs > an installed runtime verifier uses packaged
+        # Linux display support` with `scripts/xvfb.sh: Xvfb did not report a display within 10
+        # seconds` (run 33715557861). Something the X stack needs on this runner arrives as a
+        # recommended package of one of the development packages below, and 27s is not worth
+        # finding out which one by bisection.
         run: >-
           sudo apt-get update && sudo apt-get install -y
           ccache
@@ -161,11 +260,41 @@ jobs:
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev
           libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+      # `ccache --show-stats` at the end of the job reports one number for three builds, and that
+      # number has been stuck at `Hits: 184 / 574 (32.06%)` on every run measured — identical
+      # before and after each lane got its own restore-key namespace, and with the restore
+      # demonstrably hitting (`Cache restored from key: native-ccache-ci-test-native-…`). One
+      # total cannot tell the two candidate explanations apart:
+      #
+      #   * the restored cache is worthless and all 184 hits are this run recompiling something
+      #     it already compiled — the V8 and QuickJS build directories share sources, so the
+      #     third step would hit what the first step just stored; or
+      #   * the restore works for a stable subset and 390 objects genuinely hash differently
+      #     run over run.
+      #
+      # Reading the counters between the builds separates them: if the host build reports zero
+      # hits and the hits only appear in the QuickJS step, it is the first. This is measurement,
+      # not a fix, and it is cheap enough to keep either way.
+      # `actions/checkout` stamps every file with the time it ran, so the build tree restored above
+      # is always older than its own inputs and ninja rebuilds all of it — which is why the host
+      # build stayed at ~108s with a warm cache. The content is identical to the commit; only the
+      # timestamps are new. This makes them the commit's, which is the same on every checkout, so
+      # an unchanged source really reads as unchanged. A source that did move carries a newer
+      # commit time and is rebuilt, and a file differing from HEAD is left alone entirely — the
+      # two properties that keep this from being a way to ship a stale object.
+      - name: Date the native sources by their last commit, not by the checkout
+        run: node packages/runtime-native/scripts/restore-source-mtimes.mjs
       - name: Zero the compiler cache counters
         shell: bash
-        run: ccache --zero-stats
+        run: |
+          echo "restored cache on disk: $(du -sh "$CCACHE_DIR" 2>/dev/null | cut -f1 || echo 'absent')"
+          ccache --zero-stats
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
+      - name: Compiler cache after the host build
+        if: always()
+        shell: bash
+        run: ccache --show-stats --verbose
       # The target names are discovered from CMakeLists.txt rather than listed here: a
       # hand-maintained list in a workflow file is the drift that leaves a new contract target
       # unbuilt on CI and only failing for whoever pushes next.
@@ -190,6 +319,10 @@ jobs:
                 echo "target $target is not buildable in build/tn-linux"
             done
           fi
+      - name: Compiler cache after the V8 contract executables
+        if: always()
+        shell: bash
+        run: ccache --show-stats --verbose
       # timestamp-query and rg11b10-renderable are cross-engine contracts and the JS engine is
       # a build-time choice, so QuickJS needs its own configured build directory. Without it
       # those tests fail closed on CI naming build/tn-linux-quickjs, exactly as happened to
@@ -202,6 +335,10 @@ jobs:
           cmake -S . -B build/tn-linux-quickjs -DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF
           cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test \
             --target threenative-rg11b10-renderable-test --parallel "$(nproc)"
+      - name: Compiler cache after the QuickJS variant
+        if: always()
+        shell: bash
+        run: ccache --show-stats --verbose
       - name: Report the compiler cache hit rate
         if: always()
         shell: bash
@@ -213,8 +350,7 @@ jobs:
       # what it imports. Run 33702063755 is what skipping it looks like:
       #   Cannot find module '.../packages/playtest/dist/index.js'
       #     imported from '.../packages/runtime-native/tests/production-profile.test.mjs'
-      - name: Build workspace packages the native contract tests import
-        run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/workspace-dist
       # Only the suite that needs what the steps above built. `publint` and
       # `native:physics:parity` ride along inside that script, which is the package's whole gate.
       - run: pnpm --filter @threenative/runtime-native test
@@ -229,14 +365,29 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+          # The store this job needs is not the repository's. It scaffolds a generated project and
+          # installs *its* dependencies, and on run 33753945433 every template leg reported
+          # `resolved 492, reused 192, downloaded 170` — a third of the tree fetched from the
+          # network, ten legs over, because the store cache is keyed on the workspace lockfile
+          # alone and the templates pin their own. Naming the template manifests in the key makes
+          # the saved store the one these jobs actually draw from.
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
       # These lanes used to sit behind `pnpm test`, whose build phase left every package's dist/
       # on disk. Split out, they resolve @threenative/* through export maps that point at dist,
       # so they build it themselves — otherwise the run dies on a missing assets/dist/index.js.
-      - name: Build workspace packages consumed through export maps
-        run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/workspace-dist
       - uses: ./.github/actions/playwright-chromium
+      # `playwright.config.ts` scaffolds its starter projects from packed tarballs, and without
+      # this it rebuilds and re-packs every workspace package to get them — before the first of
+      # four browser tests runs. On run 33739951215 that setup was 245s against 40s of actual
+      # testing. `THREENATIVE_PACKED_PACKAGES` is the seam the config already had; this points it
+      # at the set the cached action just restored.
       - run: sh scripts/xvfb.sh pnpm test:browser
+        env:
+          THREENATIVE_PACKED_PACKAGES: ${{ github.workspace }}/artifacts/workspace-packages
       # A pixel gate that fails on a runner nobody can log into is only diagnosable if the frame
       # it rejected comes back with the failure.
       - name: Keep the frame a failed look gate rejected
@@ -257,9 +408,17 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+          # The store this job needs is not the repository's. It scaffolds a generated project and
+          # installs *its* dependencies, and on run 33753945433 every template leg reported
+          # `resolved 492, reused 192, downloaded 170` — a third of the tree fetched from the
+          # network, ten legs over, because the store cache is keyed on the workspace lockfile
+          # alone and the templates pin their own. Naming the template manifests in the key makes
+          # the saved store the one these jobs actually draw from.
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
-      - name: Build workspace packages consumed through export maps
-        run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/workspace-dist
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:playtest:ci
 
@@ -318,6 +477,15 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+          # The store this job needs is not the repository's. It scaffolds a generated project and
+          # installs *its* dependencies, and on run 33753945433 every template leg reported
+          # `resolved 492, reused 192, downloaded 170` — a third of the tree fetched from the
+          # network, ten legs over, because the store cache is keyed on the workspace lockfile
+          # alone and the templates pin their own. Naming the template manifests in the key makes
+          # the saved store the one these jobs actually draw from.
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
         if: steps.proof.outputs.cache-hit != 'true'
       # Everything this lane needs before the smoke, and nothing template-nonvisual already does.
@@ -397,6 +565,14 @@ jobs:
         if: steps.proof.outputs.cache-hit != 'true'
         env:
           TN_GOLDEN_PATH_ARCHIVES: ${{ github.workspace }}/artifacts/workspace-packages
+          # The `test` layer proves a stranger's `pnpm test` reaches a running scene and comes
+          # back green. It does not have to prove every scenario in the template passes:
+          # `template-nonvisual` runs this identical list — same `non-visual-scenarios.mjs`
+          # classifier, same `threenative-playtest` runner, same flags — for all eight templates,
+          # in a job beside this one. On run 33712230560 the whole sweep took 353s of a 375s step
+          # on the run's critical path and proved nothing the run did not already know. The layer
+          # prints which scenarios it drove and which it left to the other lane.
+          TN_GOLDEN_PATH_SCENARIOS: "1"
       - name: Record the proof for this tree
         if: success() && steps.proof.outputs.cache-hit != 'true'
         run: |
@@ -417,18 +593,30 @@ jobs:
     # non-visually on every PR too, so a template regression is reported by the PR that caused it
     # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
     needs: build
+    # One leg per template was one leg per *unit of naming*, not per unit of work: on run
+    # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
+    # fast as its slowest leg. Timestamping platformer's step splits it as ~74s of scaffold install
+    # and typecheck plus 15 scenarios at ~20s each, so the scenarios are what makes it long and
+    # they shard cleanly. The two heavy templates run in halves; every other template is already
+    # well under the leg it would be sharded against, and splitting them would buy nothing and pay
+    # the 74s setup twice.
+    #
+    # Every scenario still runs. `shard` selects a slice of the same classifier output the whole
+    # lane has always used, and the step fails closed if the slices do not add back up to the list.
     strategy:
       fail-fast: false
       matrix:
-        template:
-          - action-rpg
-          - defense
-          - minimal
-          - platformer
-          - racing
-          - sailing
-          - shooter
-          - starter
+        include:
+          - { template: action-rpg, shard: "1/1" }
+          - { template: defense, shard: "1/1" }
+          - { template: minimal, shard: "1/1" }
+          - { template: platformer, shard: "1/2" }
+          - { template: platformer, shard: "2/2" }
+          - { template: racing, shard: "1/1" }
+          - { template: sailing, shard: "1/1" }
+          - { template: shooter, shard: "1/1" }
+          - { template: starter, shard: "1/2" }
+          - { template: starter, shard: "2/2" }
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -440,6 +628,15 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+          # The store this job needs is not the repository's. It scaffolds a generated project and
+          # installs *its* dependencies, and on run 33753945433 every template leg reported
+          # `resolved 492, reused 192, downloaded 170` — a third of the tree fetched from the
+          # network, ten legs over, because the store cache is keyed on the workspace lockfile
+          # alone and the templates pin their own. Naming the template manifests in the key makes
+          # the saved store the one these jobs actually draw from.
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
       # Packed once by `build`. See the note there.
       - name: Take the packed workspace from build
@@ -456,17 +653,34 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - name: Run the template's GPU-free scenarios
         run: |
+          set -euo pipefail
           target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
           pnpm --dir "$target" install
           pnpm --dir "$target" run typecheck
           scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
           mapfile -t scenarios <<< "$scenario_list"
           test "${#scenarios[@]}" -gt 0
+          # The classifier's order is stable, so a round-robin slice is deterministic and every
+          # scenario belongs to exactly one shard. Round-robin rather than a contiguous block
+          # because the expensive scenarios are not evenly distributed through the list.
+          index="${SHARD%/*}"
+          count="${SHARD#*/}"
+          test "$index" -ge 1 && test "$index" -le "$count"
+          mine=()
+          for position in "${!scenarios[@]}"; do
+            if [ "$(( position % count + 1 ))" -eq "$index" ]; then mine+=("${scenarios[$position]}"); fi
+          done
+          # A shard that selected nothing is a lane reporting green on an empty set, which is the
+          # one thing this must never do.
+          test "${#mine[@]}" -gt 0
+          echo "shard $SHARD of ${{ matrix.template }}: ${#mine[@]} of ${#scenarios[@]} scenarios"
           scenario_args=()
-          for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
+          for scenario in "${mine[@]}"; do scenario_args+=(--scenario "$scenario"); done
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
+        env:
+          SHARD: ${{ matrix.shard }}
 
   # `golden-path` is a required status check in the `main protection` ruleset, and required checks
   # match the reported context by exact string. A matrix job does not report its own name — it
@@ -510,8 +724,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build framework packages consumed through export maps
-        run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/workspace-dist
       - run: pnpm tsx scripts/count-loc.ts --check
       - run: pnpm --filter abyss-vanilla build
       - run: pnpm --filter abyss-framework build
@@ -550,7 +763,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/workspace-dist
       - run: pnpm --filter abyss-framework build
       - name: Enforce entity registry boundaries
         run: pnpm exec tsx scripts/check-core-boundary.ts
@@ -659,6 +872,7 @@ jobs:
           -v "$GITHUB_WORKSPACE:/repo"
           ghcr.io/gitleaks/gitleaks@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
           git --redact --verbose
+          --gitleaks-ignore-path /repo/.gitleaksignore
           --log-opts="$TN_GITLEAKS_RANGE"
           /repo
       - name: Scan the full git history for leaked secrets
@@ -671,6 +885,7 @@ jobs:
           -v "$GITHUB_WORKSPACE:/repo"
           ghcr.io/gitleaks/gitleaks@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb
           git --redact --verbose
+          --gitleaks-ignore-path /repo/.gitleaksignore
           /repo
       - uses: actions/dependency-review-action@v4
         with:

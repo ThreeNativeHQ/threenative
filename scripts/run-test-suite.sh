@@ -95,8 +95,11 @@ if [[ "$start_status" -ne 0 ]]; then
 fi
 suite_started=1
 
+executed_phases=()
+
 run_phase() {
   local phase="$1"
+  executed_phases+=("$phase")
   shift
   local command_text="$*"
   local guard_status=0
@@ -172,7 +175,25 @@ run_phase() {
 # its own job and this one is told to skip it. `scripts/__tests__/ci-structure.spec.ts` asserts the
 # two halves partition the workspace, because a filter that names a package neither job runs is a
 # gate that goes green by running less.
-package_test_command=(pnpm -r --filter '!.' --workspace-concurrency=1)
+# One package at a time was a machine-independent number, and every machine this runs on has more
+# than one core. The packages' own `test` scripts are publint, small vitest runs and the playtest
+# orphan sweep — independent of each other, and measured at 26s serial against 11s at four, stable
+# over three consecutive runs. The ceiling is deliberate: several of these drive real browsers, and
+# oversubscribing a two-core runner is how this repository's heavy specs start failing on timing
+# rather than on behaviour, which is the same reason `vitest.config.ts` caps its worker pool.
+# `TN_SUITE_PACKAGE_CONCURRENCY` overrides it, and 1 restores exactly the old behaviour.
+package_test_concurrency="${TN_SUITE_PACKAGE_CONCURRENCY:-}"
+if [[ -z "$package_test_concurrency" ]]; then
+  detected_cores="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+  if [[ ! "$detected_cores" =~ ^[0-9]+$ ]] || [[ "$detected_cores" -lt 2 ]]; then
+    package_test_concurrency=1
+  elif [[ "$detected_cores" -gt 4 ]]; then
+    package_test_concurrency=3
+  else
+    package_test_concurrency=$(( detected_cores - 1 ))
+  fi
+fi
+package_test_command=(pnpm -r --filter '!.' --workspace-concurrency="$package_test_concurrency")
 if [[ -n "${TN_SUITE_EXCLUDE_PACKAGES:-}" ]]; then
   IFS=',' read -r -a tn_excluded_packages <<< "$TN_SUITE_EXCLUDE_PACKAGES"
   for tn_excluded_package in "${tn_excluded_packages[@]}"; do
@@ -181,6 +202,28 @@ if [[ -n "${TN_SUITE_EXCLUDE_PACKAGES:-}" ]]; then
   done
 fi
 package_test_command+=(--if-present run test)
+
+
+# Which phases this invocation runs, and which slice of the unit suite.
+#
+# Unset, both are the whole thing: `pnpm test` on a developer machine runs all four phases and
+# every test, and this file stays the gate it has always been. CI splits the work across jobs
+# because the unit run is the longest single thing in the repository's longest job, and it shards
+# cleanly — but the split is only ever safe while the pieces add back up, so
+# `scripts/__tests__/ci-structure.spec.ts` asserts the phases and the shards both partition.
+suite_phases="${TN_SUITE_PHASES:-docs,build,package-test,unit}"
+unit_command=(vitest run)
+if [[ -n "${TN_SUITE_UNIT_SHARD:-}" ]]; then
+  if [[ ! "${TN_SUITE_UNIT_SHARD}" =~ ^[1-9][0-9]*/[1-9][0-9]*$ ]]; then
+    printf 'TN_SUITE_UNIT_SHARD must look like 2/3, got %q\n' "${TN_SUITE_UNIT_SHARD}" >&2
+    exit 2
+  fi
+  unit_command+=(--shard "${TN_SUITE_UNIT_SHARD}")
+fi
+
+runs_phase() {
+  [[ ",${suite_phases}," == *",$1,"* ]]
+}
 
 test_status=0
 if [[ "$resume_mode" -eq 1 ]]; then
@@ -192,7 +235,7 @@ if [[ "$resume_mode" -eq 1 ]]; then
       run_phase build pnpm run build || test_status=$?
       ;;
     unit)
-      run_phase unit vitest run || test_status=$?
+      run_phase unit "${unit_command[@]}" || test_status=$?
       ;;
     package-test)
       run_phase package-test "${package_test_command[@]}" || test_status=$?
@@ -203,15 +246,23 @@ if [[ "$resume_mode" -eq 1 ]]; then
       ;;
   esac
 else
-  run_phase docs pnpm run check:docs || test_status=$?
-  if [[ "$test_status" -eq 0 ]]; then
+  if runs_phase docs; then
+    run_phase docs pnpm run check:docs || test_status=$?
+  fi
+  if [[ "$test_status" -eq 0 ]] && runs_phase build; then
     run_phase build pnpm run build || test_status=$?
   fi
-  if [[ "$test_status" -eq 0 ]]; then
+  if [[ "$test_status" -eq 0 ]] && runs_phase package-test; then
     run_phase package-test "${package_test_command[@]}" || test_status=$?
   fi
-  if [[ "$test_status" -eq 0 ]]; then
-    run_phase unit vitest run || test_status=$?
+  if [[ "$test_status" -eq 0 ]] && runs_phase unit; then
+    run_phase unit "${unit_command[@]}" || test_status=$?
+  fi
+  # A selection that ran nothing is a green report on an empty set.
+  if [[ "$test_status" -eq 0 ]] && [[ "${#executed_phases[@]}" -eq 0 ]]; then
+    printf 'TN_SUITE_NO_PHASES: %q selected none of docs, build, package-test, unit\n' \
+      "$suite_phases" >&2
+    test_status=2
   fi
 fi
 

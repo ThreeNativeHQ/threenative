@@ -25,7 +25,15 @@ describe("workspace package lists", () => {
   it("makes CI and browser packing consume the manifest-driven list", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const playwright = await readFile(path.join(repo, "playwright.config.ts"), "utf8");
-    expect(ci).toContain("pnpm tsx scripts/workspace-packages.ts build");
+    // The build moved behind `.github/actions/workspace-dist`, which is where the derived list is
+    // now consumed and where the cache key that stands in for it is written. The point of this
+    // assertion is that CI never enumerates packages by hand, and that holds wherever the single
+    // call lives — so it follows the call rather than pinning the file it used to sit in.
+    const workspaceDist = await readFile(
+      path.join(repo, ".github/actions/workspace-dist/action.yml"),
+      "utf8",
+    );
+    expect(`${ci}\n${workspaceDist}`).toContain("pnpm tsx scripts/workspace-packages.ts build");
     expect(ci).not.toMatch(/pnpm --filter [^\n]+ run build/u);
     expect(ci).not.toContain("pnpm -r build");
     expect(playwright).toContain("localPackageEntries(repoRoot)");

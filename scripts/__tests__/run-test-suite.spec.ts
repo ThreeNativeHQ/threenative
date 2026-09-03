@@ -16,7 +16,9 @@ describe("run-test-suite phase contract", () => {
     // what it calls separately below — searching for the old inline `pnpm -r` returned -1 here and
     // reported it as a phase-ordering failure.
     const packageTest = source.lastIndexOf('run_phase package-test "${package_test_command[@]}"');
-    const unit = source.lastIndexOf("run_phase unit vitest run");
+    // The unit phase runs a composed array now, because CI shards it across jobs and the shard
+    // flag must not be hard-coded here. Same reason the package walk moved; anchor on the call.
+    const unit = source.lastIndexOf('run_phase unit "${unit_command[@]}"');
     expect(register).toBeGreaterThanOrEqual(0);
     expect(register).toBeLessThan(baseline);
     expect([docs, build, packageTest, unit]).toEqual(
@@ -33,12 +35,27 @@ describe("run-test-suite phase contract", () => {
     // `--filter '!.'` keeps the root workspace out of the walk; it arrived on main in #57 and
     // belongs at the head of the composed command, not at either call site.
     expect(source).toContain(
-      "package_test_command=(pnpm -r --filter '!.' --workspace-concurrency=1)",
+      "package_test_command=(pnpm -r --filter '!.' --workspace-concurrency=\"$package_test_concurrency\")",
+    );
+    // Derived from the machine, not pinned: one at a time was a machine-independent number and
+    // every machine this runs on has more than one core. Capped, because several of these package
+    // scripts drive real browsers and oversubscribing a small runner turns behaviour failures into
+    // timing failures — the same reason `vitest.config.ts` caps its worker pool.
+    expect(source).toContain("TN_SUITE_PACKAGE_CONCURRENCY:-");
+    expect(source).toContain("nproc");
+    expect(source, "an unreadable core count must fall back to one, not to nothing").toContain(
+      "package_test_concurrency=1",
     );
     expect(source).toContain("package_test_command+=(--if-present run test)");
     expect(source).toContain('package_test_command+=(--filter "!$tn_excluded_package")');
     // Unset means unfiltered: a developer running `pnpm test` still runs the whole gate.
     expect(source).toContain('if [[ -n "${TN_SUITE_EXCLUDE_PACKAGES:-}" ]]; then');
+    // The unit command is a plain `vitest run` until a shard is asked for, and a malformed shard
+    // is refused rather than silently ignored — an ignored shard would run the whole suite in
+    // every one of the matrix's jobs and look merely slow.
+    expect(source).toContain("unit_command=(vitest run)");
+    expect(source).toContain('unit_command+=(--shard "${TN_SUITE_UNIT_SHARD}")');
+    expect(source).toContain("TN_SUITE_UNIT_SHARD must look like 2/3");
   });
 
   it("keeps resume restricted to a named known phase", async () => {

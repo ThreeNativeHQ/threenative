@@ -1172,6 +1172,25 @@ if (
  *
  * `TN_PLAYTEST_ALLOW_SOFTWARE=1` is the operator saying out loud that this machine has none.
  */
+
+/**
+ * How many of a template's non-visual scenarios the golden path drives itself.
+ *
+ * Unset means all of them, which is what a developer running `pnpm verify:golden-path` wants and
+ * what this lane did before. CI sets it, because `template-nonvisual` already runs the whole list.
+ * A value that is not a positive integer is a typo, not a request to run one scenario, so it
+ * throws rather than quietly narrowing the layer to something nobody asked for.
+ */
+export function scenarioCap(available: number, raw = process.env.TN_GOLDEN_PATH_SCENARIOS): number {
+  if (raw === undefined || raw.trim() === "") return available;
+  if (!/^[1-9][0-9]*$/u.test(raw.trim())) {
+    throw new Error(
+      `TN_GOLDEN_PATH_SCENARIOS_INVALID: '${raw}' is not a positive integer count of scenarios.`,
+    );
+  }
+  return Math.min(Number(raw.trim()), available);
+}
+
 function goldenPathTestStep(target: string): { args: string[]; command: string; cwd: string } {
   if (process.env.TN_PLAYTEST_ALLOW_SOFTWARE !== "1") {
     return { args: ["test"], command: "pnpm", cwd: target };
@@ -1207,11 +1226,29 @@ function goldenPathTestStep(target: string): { args: string[]; command: string; 
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+  // What this layer proves is that a stranger's `pnpm test` reaches a running scene and comes back
+  // green — the golden path. What it does *not* have to prove is that every scenario in the
+  // template passes, because `template-nonvisual` runs this exact list, through this exact
+  // classifier and runner, with these exact flags, for all eight templates, in a job beside this
+  // one. Running the whole sweep here cost 353s of a 375s step on run 33712230560 and proved
+  // nothing the run did not already know.
+  //
+  // `TN_GOLDEN_PATH_SCENARIOS` caps how many of them this layer drives. Unset — every developer
+  // machine — it runs all of them exactly as before. Whatever it runs, it says out loud what it
+  // left to the other lane, because a layer that quietly narrowed itself would be indistinguishable
+  // from one that had stopped working.
+  const cap = scenarioCap(scenarios.length);
+  const driven = scenarios.slice(0, cap);
+  if (driven.length < scenarios.length) {
+    process.stdout.write(
+      `golden-path ${path.basename(target)}: driving ${driven.length} of ${scenarios.length} non-visual scenarios (${driven.join(", ")}); the remaining ${scenarios.length - driven.length} are template-nonvisual's, which runs this same list for every template.\n`,
+    );
+  }
   return {
     args: [
       "exec",
       "threenative-playtest",
-      ...scenarios.flatMap((scenario) => ["--scenario", scenario]),
+      ...driven.flatMap((scenario) => ["--scenario", scenario]),
       "--browser-recipe",
       "webgpu",
       "--headed",

@@ -53,6 +53,24 @@ function kvmProvisioning(source: string): readonly string[] {
     );
 }
 
+/**
+ * Which templates a matrix job actually covers.
+ *
+ * These assertions used to match `- <template>` in the job text, which read the matrix only while
+ * the matrix was a bare list of names. `template-nonvisual` shards its two heavy templates now, so
+ * an entry is `- { template: platformer, shard: "1/2" }` and the old match found nothing while the
+ * coverage it was checking was unchanged. Reading the entries is what the assertion always meant.
+ */
+function matrixTemplates(section: string): readonly string[] {
+  const listed = [...section.matchAll(/^\s+-\s+([a-z][a-z0-9-]*)\s*$/gmu)].map(
+    (match) => match[1] ?? "",
+  );
+  const included = [...section.matchAll(/^\s+-\s*\{[^}]*\btemplate:\s*([a-z][a-z0-9-]*)/gmu)].map(
+    (match) => match[1] ?? "",
+  );
+  return [...new Set([...listed, ...included])].sort();
+}
+
 const expectedTemplates = [
   "action-rpg",
   "defense",
@@ -308,7 +326,7 @@ describe("CI pipeline structure", () => {
     expect(job).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
     expect(job).toContain("non-visual-scenarios.mjs");
     expect(job).toContain("threenative-playtest");
-    for (const template of expectedTemplates) expect(job).toContain(`- ${template}`);
+    expect(matrixTemplates(job)).toEqual([...expectedTemplates].sort());
 
     const templateRoot = path.join(repo, "packages/create-threenative/templates");
     const actualTemplates = (await readdir(templateRoot, { withFileTypes: true }))
@@ -325,6 +343,52 @@ describe("CI pipeline structure", () => {
       expect(result.status, `${template}: ${result.stderr}`).toBe(0);
       expect(result.stdout.trim(), `${template}: classifier returned no scenarios`).not.toBe("");
     }
+  });
+
+  // Sharding a lane is how coverage disappears without anyone noticing: a slice that selects
+  // nothing, or two slices that miss the same scenario, both report green. The step's own
+  // arithmetic is the guard at run time; this is the guard on the matrix that feeds it.
+  it("shards every template across slices that add back up to one whole", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "template-nonvisual");
+
+    const entries = [
+      ...job.matchAll(
+        /^\s+-\s*\{\s*template:\s*([a-z][a-z0-9-]*)\s*,\s*shard:\s*"(\d+)\/(\d+)"/gmu,
+      ),
+    ].map((match) => ({
+      template: match[1] ?? "",
+      index: Number(match[2]),
+      count: Number(match[3]),
+    }));
+    expect(entries.length, "template-nonvisual declares no shards").toBeGreaterThan(0);
+
+    const byTemplate = new Map<string, number[]>();
+    for (const { template, index, count } of entries) {
+      expect(index, `${template} shard index`).toBeGreaterThanOrEqual(1);
+      expect(index, `${template} shard ${index}/${count} is out of range`).toBeLessThanOrEqual(
+        count,
+      );
+      const seen = byTemplate.get(template) ?? [];
+      expect(seen, `${template} declares shard ${index} twice`).not.toContain(index);
+      byTemplate.set(template, [...seen, index]);
+    }
+
+    // Every template names one shard count, and every slice of it exists exactly once — so the
+    // slices are a partition, not a sample.
+    for (const [template, indices] of byTemplate) {
+      const counts = new Set(entries.filter((e) => e.template === template).map((e) => e.count));
+      expect(counts.size, `${template} mixes shard counts`).toBe(1);
+      const [count] = [...counts];
+      expect(
+        indices.sort((left, right) => left - right),
+        `${template} is missing a shard`,
+      ).toEqual(Array.from({ length: count ?? 0 }, (_, offset) => offset + 1));
+    }
+
+    // And the step must refuse a slice that selected nothing rather than report on an empty set.
+    expect(job).toContain('test "${#mine[@]}" -gt 0');
+    expect(job).toContain("non-visual-scenarios.mjs");
   });
 
   it("PR CI reviews dependencies and scans changed commits for leaked secrets", async () => {
@@ -444,10 +508,12 @@ describe("CI pipeline structure", () => {
 
     const namespaces = new Map<string, string>();
     for (const [name, section] of jobs) {
-      const restoreKey = section
-        .match(/^\s+restore-keys:\s*(.+)$/mu)?.[1]
-        ?.trim()
-        .replace(/^["']|["']$/gu, "");
+      // By name, not by position: these jobs restore more than one cache, and `test-native` also
+      // restores the compiled build tree. Picking the first `restore-keys` in the block asserted
+      // against whichever cache happened to be declared first.
+      const restoreKey = [...section.matchAll(/^\s+restore-keys:\s*(.+)$/gmu)]
+        .map((match) => (match[1] ?? "").trim().replace(/^["']|["']$/gu, ""))
+        .find((key) => key.includes("native-ccache"));
       expect(restoreKey, `${name} has no ccache restore-keys prefix`).toBeDefined();
       const previous = namespaces.get(restoreKey ?? "");
       expect(
@@ -482,13 +548,21 @@ describe("CI pipeline structure", () => {
     expect(nonVisual).toContain("non-visual-scenarios.mjs");
     expect(nonVisual).toContain("threenative-playtest");
     // Both templates the golden-path matrix drives must be covered by the sweep that replaces it.
-    for (const template of ["starter", "platformer"]) expect(nonVisual).toContain(`- ${template}`);
+    for (const template of ["starter", "platformer"]) {
+      expect(matrixTemplates(nonVisual)).toContain(template);
+    }
 
+    // Commands, not prose: the job's comments name the classifier and the runner precisely
+    // because it delegates to them, and a raw-text match cannot tell an explanation from a step.
+    const commands = goldenPath
+      .split("\n")
+      .filter((line) => !/^\s*#/u.test(line))
+      .join("\n");
     expect(
-      goldenPath,
+      commands,
       "golden-path-template re-runs the sweep template-nonvisual already owns",
     ).not.toContain("non-visual-scenarios.mjs");
-    expect(goldenPath, "golden-path-template still drives scenarios itself").not.toContain(
+    expect(commands, "golden-path-template still drives scenarios itself").not.toContain(
       "threenative-playtest",
     );
     expect(goldenPath).toContain("pnpm verify:golden-path");
@@ -555,7 +629,7 @@ describe("CI pipeline structure", () => {
     // this job does not run `pnpm test`, so it has to build it itself or the suite dies on
     // ERR_MODULE_NOT_FOUND for `@threenative/playtest` before it executes a binary.
     expect(native, "the native half never builds the workspace its tests import").toContain(
-      "pnpm tsx scripts/workspace-packages.ts build",
+      "uses: ./.github/actions/workspace-dist",
     );
     expect(native, "the native half re-runs the whole suite").not.toMatch(
       /^\s+- run: pnpm test$/mu,
@@ -582,6 +656,217 @@ describe("CI pipeline structure", () => {
       ) as { name?: string; scripts?: Record<string, string> };
       expect(manifest.name, `${name} is not the package at packages/${directory}`).toBe(name);
       expect(manifest.scripts?.test, `${name} has no test script to run`).toBeDefined();
+    }
+  });
+
+  // One hit rate for three builds cannot say which build produced the hits, and ci `test-native`
+  // has been stuck at `Hits: 184 / 574 (32.06%)` on every run measured — unchanged by giving each
+  // lane its own restore namespace, and with the restore demonstrably landing. Either the restored
+  // cache is worthless and the hits are this run recompiling shared sources into a second build
+  // directory, or 390 objects really do hash differently run over run. A counter read between the
+  // builds is what tells those apart, so it is a measurement the job has to keep.
+  it("reads the compiler cache counters between builds, not only at the end", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const native = requiredJob(ci, "test-native");
+
+    const readings = [...native.matchAll(/^\s+- name: Compiler cache after (.+)$/gmu)].map(
+      (match) => (match[1] ?? "").trim(),
+    );
+    expect(readings, "the native job reports one total for three builds").toEqual([
+      "the host build",
+      "the V8 contract executables",
+      "the QuickJS variant",
+    ]);
+    // And the size of what the restore actually put on disk, because a hit rate cannot
+    // distinguish a cold cache from one restored into the wrong directory.
+    expect(native).toContain('du -sh "$CCACHE_DIR"');
+  });
+
+  // ccache has never paid off on this lane: 195 of 272 cacheable compiles miss on every run, and
+  // the other half of the invocations sit behind SDL3's precompiled header where ccache cannot
+  // reach them at all. Caching the compiled tree instead is safe because ninja re-stats every
+  // input — a stale entry costs a recompile, never a wrong binary — but only while the key still
+  // hashes the sources, or a source change would be served a tree built from different code.
+  it("keys the cached native build tree on the sources it was built from", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const native = requiredJob(ci, "test-native");
+
+    const keys = [...native.matchAll(/^\s+key:\s*(.+)$/gmu)].map((match) =>
+      (match[1] ?? "").trim(),
+    );
+    const buildKey = keys.find((key) => key.includes("native-build-"));
+    expect(buildKey, "the native build tree is not cached").toBeDefined();
+    for (const input of [
+      "packages/runtime-native/CMakeLists.txt",
+      "packages/runtime-native/src/**",
+      "packages/runtime-native/include/**",
+    ]) {
+      expect(buildKey, `the build-tree key ignores ${input}`).toContain(input);
+    }
+    // Run-scoped so every run saves, and a prefix so every run restores the newest — a partial
+    // match still hands ninja most of its objects.
+    expect(buildKey).toContain("github.run_id");
+    expect(native).toContain("restore-keys: native-build-");
+    // Both configured build directories, or the QuickJS variant recompiles from nothing.
+    expect(native).toContain("packages/runtime-native/build/tn-linux");
+    expect(native).toContain("packages/runtime-native/build/tn-linux-quickjs");
+    // The Rust crates too: once the C++ compile was cached away, they were the whole remaining
+    // ~112s of the host build step.
+    // The path the build actually writes, not the one cargo would default to:
+    // `build-native-physics.mjs` passes `--target-dir` because it cross-compiles to five targets.
+    expect(native).toContain("packages/runtime-native/.runtime/physics-target");
+    const physicsScript = await readFile(
+      path.join(repo, "packages/runtime-native/scripts/build-native-physics.mjs"),
+      "utf8",
+    );
+    expect(physicsScript, "the physics build no longer writes where the cache looks").toContain(
+      "'.runtime', 'physics-target'",
+    );
+    expect(native).toContain("packages/runtime-native/native/ui-overlay/target");
+    for (const input of [
+      "packages/runtime-native/native/**/src/**",
+      "packages/runtime-native/native/**/Cargo.toml",
+      "packages/runtime-native/native/**/Cargo.lock",
+    ]) {
+      expect(buildKey, `the build-tree key ignores ${input}`).toContain(input);
+    }
+    // A cached build tree is only usable if its inputs are older than it. `actions/checkout`
+    // stamps everything with the time it ran, so without this the restore is dead weight and
+    // ninja rebuilds the tree it just downloaded.
+    expect(native, "the restored tree is older than its own freshly checked-out inputs").toContain(
+      "restore-source-mtimes.mjs",
+    );
+    // And it needs history to do it. A shallow clone dates every file to HEAD, which is newer
+    // than the cached tree, so the cache is worse than useless — run 33751865452 restamped 299 of
+    // 299 files and rebuilt 78 objects behind a cache it had just restored.
+    expect(native, "the mtime restore runs against a shallow clone").toContain("fetch-depth: 0");
+    const script = await readFile(
+      path.join(repo, "packages/runtime-native/scripts/restore-source-mtimes.mjs"),
+      "utf8",
+    );
+    expect(script, "a shallow clone is silently mis-stamped rather than refused").toContain(
+      "TN_MTIME_SHALLOW_CLONE",
+    );
+    const order = native.indexOf("restore-source-mtimes.mjs");
+    expect(order, "sources are dated after the build has already run").toBeLessThan(
+      native.indexOf("native:build"),
+    );
+  });
+
+  // Six jobs need `packages/*/dist` and each compiled it from scratch — measured at 49-65s per
+  // job, six times a run. tsup keeps no incremental state, so the output is what gets cached, and
+  // one shared action owns the key so the six cannot drift apart into six different answers about
+  // what a bundle is built from.
+  it("builds the workspace through one shared action, never inline", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(
+      ci,
+      "a job builds the workspace inline instead of through the shared action",
+    ).not.toContain("pnpm tsx scripts/workspace-packages.ts build");
+    expect(occurrences(ci, /uses: \.\/\.github\/actions\/workspace-dist/gu)).toBeGreaterThanOrEqual(
+      5,
+    );
+
+    const action = await readFile(
+      path.join(repo, ".github/actions/workspace-dist/action.yml"),
+      "utf8",
+    );
+    // The key has to name what the bundles are made of. Miss one and a stale bundle is served to
+    // every consumer, which is the only failure this cache can have.
+    for (const input of [
+      "packages/*/src/**",
+      "packages/*/package.json",
+      "packages/*/tsup.config.ts",
+      "packages/*/scripts/**",
+      "scripts/workspace-packages.ts",
+      "pnpm-lock.yaml",
+    ]) {
+      expect(action, `the workspace-dist key ignores ${input}`).toContain(input);
+    }
+    // And a restore that came back partial must fail rather than be imported from — bundles and
+    // tarballs both, since three lanes take the archives rather than the bundles.
+    expect(action).toContain("TN_WORKSPACE_DIST_INCOMPLETE");
+    expect(action).toContain("TN_WORKSPACE_ARCHIVES_INCOMPLETE");
+    expect(action).toContain("artifacts/workspace-packages");
+
+    // `playwright.config.ts` scaffolds from packed tarballs and rebuilds every package to get
+    // them unless it is handed a set. Measured at 245s of setup against 40s of testing.
+    const browser = requiredJob(ci, "test-browser");
+    expect(browser, "the browser lane repacks the workspace before it can test").toContain(
+      "THREENATIVE_PACKED_PACKAGES",
+    );
+    const config = await readFile(path.join(repo, "playwright.config.ts"), "utf8");
+    expect(config, "the seam the workflow relies on is gone").toContain(
+      "process.env.THREENATIVE_PACKED_PACKAGES",
+    );
+  });
+
+  // Splitting the suite across jobs is how coverage disappears quietly: a phase named in no job,
+  // or a shard slice nobody runs, both report green. So the split is computed rather than trusted.
+  it("runs every suite phase in exactly one job, and every unit shard", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const suite = requiredJob(ci, "test");
+    const unit = requiredJob(ci, "test-unit");
+
+    const phasesOf = (section: string): readonly string[] =>
+      (section.match(/TN_SUITE_PHASES:\s*"?([a-z,-]+)"?/u)?.[1] ?? "")
+        .split(",")
+        .map((phase) => phase.trim())
+        .filter((phase) => phase !== "");
+
+    const declared = [...phasesOf(suite), ...phasesOf(unit)].sort();
+    // The four the script knows. A phase in neither job runs nowhere; a phase in both runs twice.
+    expect(declared, "the jobs do not partition the suite's phases").toEqual([
+      "build",
+      "docs",
+      "package-test",
+      "unit",
+    ]);
+
+    const shards = [...unit.matchAll(/"(\d+)\/(\d+)"/gu)].map((match) => ({
+      index: Number(match[1]),
+      count: Number(match[2]),
+    }));
+    expect(shards.length, "test-unit declares no shards").toBeGreaterThan(0);
+    const counts = new Set(shards.map(({ count }) => count));
+    expect(counts.size, "test-unit mixes shard counts").toBe(1);
+    const [count] = [...counts];
+    expect(
+      shards.map(({ index }) => index).sort((left, right) => left - right),
+      "test-unit is missing a shard",
+    ).toEqual(Array.from({ length: count ?? 0 }, (_, offset) => offset + 1));
+
+    // And the script must refuse a selection that would run nothing rather than report on it.
+    const runner = await readFile(path.join(repo, "scripts/run-test-suite.sh"), "utf8");
+    expect(runner).toContain("TN_SUITE_NO_PHASES");
+    expect(runner).toContain("TN_SUITE_UNIT_SHARD");
+    // Unset is the whole gate, which is what `pnpm test` on a developer machine has to stay.
+    expect(runner).toContain('"${TN_SUITE_PHASES:-docs,build,package-test,unit}"');
+  });
+
+  // Every job that scaffolds a generated project installs *its* dependencies, not the
+  // workspace's. Keyed on the workspace lockfile alone, the store cache does not hold them: on run
+  // 33753945433 every template leg reported `resolved 492, reused 192, downloaded 170`, ten legs
+  // each fetching the same third of the tree from the network.
+  it("keys the package store on the templates for every job that scaffolds one", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    for (const name of [
+      "golden-path-template",
+      "template-nonvisual",
+      "test-browser",
+      "test-playtest",
+    ]) {
+      const job = requiredJob(ci, name);
+      // Only jobs that actually scaffold need this; the assertion is that these ones do.
+      expect(job, `${name} does not scaffold a project`).toMatch(
+        /scaffold-from-tarballs|THREENATIVE_PACKED_PACKAGES|verify:golden-path|test:playtest/u,
+      );
+      expect(job, `${name} keys its store on the workspace lockfile alone`).toContain(
+        "cache-dependency-path",
+      );
+      expect(job).toContain("packages/create-threenative/templates/*/package.json");
+      // The workspace lockfile stays in the key — these jobs install the workspace too.
+      expect(job).toMatch(/cache-dependency-path: \|\n\s+pnpm-lock\.yaml/u);
     }
   });
 
@@ -664,6 +949,31 @@ describe("CI pipeline structure", () => {
     expect(verifier, "adoption does not fail closed on an unclaimed tarball").toContain(
       "TN_GOLDEN_PATH_ARCHIVE_UNKNOWN",
     );
+  });
+
+  // The golden path drives one scenario because `template-nonvisual` drives them all. That is only
+  // true while template-nonvisual actually covers the templates this matrix names — the moment it
+  // stops, capping this layer stops being delegation and starts being a hole.
+  it("only caps its own scenario sweep while template-nonvisual covers the same templates", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const goldenPath = requiredJob(ci, "golden-path-template");
+    const nonVisual = requiredJob(ci, "template-nonvisual");
+
+    const cap = goldenPath.match(/TN_GOLDEN_PATH_SCENARIOS:\s*"(\d+)"/u)?.[1];
+    if (cap === undefined) return; // uncapped is always honest; nothing to check.
+
+    expect(Number(cap)).toBeGreaterThan(0);
+    // The lane it delegates to has to run the same classifier and runner, on every event.
+    expect(nonVisual).toContain("non-visual-scenarios.mjs");
+    expect(nonVisual).toContain("threenative-playtest");
+    expect(nonVisual).not.toContain("github.event_name == 'push'");
+    // And it has to cover every template this matrix drives.
+    const driven = matrixTemplates(goldenPath);
+    expect(driven.length).toBeGreaterThan(0);
+    const covered = matrixTemplates(nonVisual);
+    for (const template of driven) {
+      expect(covered, `template-nonvisual does not cover ${template}`).toContain(template);
+    }
   });
 
   it("the golden-path proof cache cannot record a run that failed", async () => {
