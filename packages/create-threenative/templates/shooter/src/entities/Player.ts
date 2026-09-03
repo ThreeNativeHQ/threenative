@@ -81,9 +81,8 @@ export class Player {
   aiming = false;
   crouching = false;
   sprinting = false;
+  /** Metres walked. The scene does not read it; a scenario can, through `debug()`. */
   distanceMoved = 0;
-  /** This tick's thumb input, set by the scene before `update`. Undefined on desktop. */
-  touch: ITouchInput | undefined;
   /** Fired each time a stride completes, so footsteps keep pace with speed rather than time. */
   onFootstep: ((sprinting: boolean) => void) | undefined;
   #onDamage: (amount: number) => void;
@@ -197,7 +196,6 @@ export class Player {
 
   update(ctx: GameCtx, dt: number, touch?: ITouchInput): void {
     if (this.dead) return;
-    this.touch = touch;
     this.aiming = ctx.input.pressed("aim") || touch?.aimPressed === true;
     this.crouching = ctx.input.pressed("crouch") || touch?.crouchPressed === true;
     this.#crouch = MathUtils.damp(this.#crouch, this.crouching ? 1 : 0, CROUCH_RATE, dt);
@@ -288,6 +286,7 @@ export class Player {
       aiming: this.aiming ? 1 : 0,
       crouching: this.crouching ? 1 : 0,
       dead: this.dead,
+      distanceMoved: this.distanceMoved,
       fov: this.#camera.fov,
       groundClearance: this.#conventions.groundSnap.clearance,
       health: this.health,
