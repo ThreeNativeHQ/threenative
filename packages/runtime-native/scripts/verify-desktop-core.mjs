@@ -73,7 +73,7 @@ export function analyzeColdStartMarkers(log, segments = DESKTOP_COLD_START_SEGME
     if (!seen.has(segment)) failures.push(`TN_COLD_START_MARKER_MISSING:${segment}`);
   }
   if (failures.length === 0) {
-    let previousAt = -Infinity;
+    let previousAt = Number.NEGATIVE_INFINITY;
     let previousName = '(start)';
     for (const segment of segments) {
       const atMs = seen.get(segment);

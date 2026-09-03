@@ -1211,6 +1211,15 @@ void shutdownAsyncPipelineCompiles(BindingsState* state) {
         if (worker.joinable()) worker.join();
     }
     pool.workers.clear();
+    // Jobs the workers never reached still own their descriptor, and an
+    // `OwnedRenderPipelineDescriptor` releases a shader module and a pipeline layout when it dies.
+    // Left in the queue they would die with `BindingsState` — which is freed *after* the device —
+    // and release handles into a destroyed device. That is a SIGSEGV during shutdown, and it is
+    // what this clear exists to prevent: drop them here, while the device is still alive.
+    {
+        std::lock_guard<std::mutex> lock(pool.mutex);
+        pool.queue.clear();
+    }
     // A pipeline that finished after the last drain still holds a backend handle.
     std::lock_guard<std::mutex> lock(pool.completedMutex);
     for (auto& completion : pool.completed) {

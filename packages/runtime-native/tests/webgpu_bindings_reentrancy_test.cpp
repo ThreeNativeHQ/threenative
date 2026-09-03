@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iostream>
 #include <cstdint>
 #include <fstream>
@@ -1897,7 +1898,30 @@ bool exerciseAsyncWebGPUObservation(mystral::Runtime& runtime) {
         return false;
     }
 
-    for (int pass = 0; pass < 8 && report.empty(); pass += 1) {
+    // Microtasks alone can no longer settle these. Since PRD-327 `createRenderPipelineAsync` hands
+    // the compile to a host pool, and the promise is settled by `drainAsyncPipelineCompiles` —
+    // which production calls from `pollEvents()`'s `kIo` segment. Before that change the promise
+    // was already resolved when it was handed over, so eight microtask passes were enough.
+    //
+    // The drain is called directly rather than through `pollEvents()`, which is the narrower and
+    // more honest thing for a bindings test to drive: a full loop turn also acquires and presents
+    // a swapchain image, and doing that here left `Context::~Context` releasing a surface texture
+    // twice —
+    //   Thread 1 received signal SIGSEGV
+    //   #0 dawn::native::NativeTextureRelease(WGPUTextureImpl*)
+    //   #1 mystral::webgpu::Context::~Context()
+    // — a presentation-teardown fault this test has no business exercising. It is the same
+    // function production calls, reached without the rest of the frame.
+    //
+    // Wall-clock bounded rather than pass-counted, because the thing being waited on is a real
+    // pipeline compile: eight passes were enough on an optimised build and not on an instrumented
+    // one, which is how this surfaced — as a coverage-lane failure on a test that passed in
+    // `build/tn-linux`. A bound that depends on how fast the build is is not a bound.
+    auto* bindingsState =
+        static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+    const auto asyncDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (report.empty() && std::chrono::steady_clock::now() < asyncDeadline) {
+        mystral::webgpu::drainAsyncPipelineCompiles(bindingsState);
         engine->processMicrotasks();
         if (!runtime.evalScript("undefined", "webgpu-async-observation-drain.js")) return false;
     }
