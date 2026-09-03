@@ -392,7 +392,14 @@ test("preserves starter state and stays flat across ten real HMR updates", async
       expect(Math.abs(after.playerX - before.playerX)).toBeLessThan(0.25);
     }
     const after = await runtimeSnapshot(page);
-    expect(after.diagnostics.reloads).toBe(10);
+    // `>=`, for the reason the loop above already counts observed reloads instead of assuming one
+    // per save: vite can rebuild twice for a single write, and on 2026-09-03 it did — run
+    // 33775501232 failed here with `Expected: 10, Received: 11` while every edit had reached the
+    // running game and every flatness assertion in the loop had passed. Asserting vite's rebuild
+    // count is asserting something this test was explicitly rewritten not to depend on. What has
+    // to hold is that all ten edits landed, and the loop proves that per iteration with
+    // `toBeGreaterThan(observedReloads)`.
+    expect(after.diagnostics.reloads).toBeGreaterThanOrEqual(10);
     expect(after.navigationEntries).toBe(1);
     const jumpAfter = await jumpObservation(page);
     expect(jumpAfter.flightTicks).toBe(jumpBefore.flightTicks);
