@@ -98,15 +98,20 @@ export function analyzeDesktopLog(log, frames = 300) {
   if (!new RegExp(`Rendered ${frames} frames in \\d+ms`).test(log)) {
     failures.push(`missing exact ${frames}-frame completion`);
   }
-  // One present per frame. The host used to present inside every `queue.submit`, so a frame that
-  // rendered a canvas-layer overlay presented twice and only the first image reached the display —
-  // the overlay was dropped on native while working on web. A pixel check alone cannot see this:
-  // it reads a screenshot, and a screenshot can be right while the display is wrong.
+  // One present per frame, plus the screenshot gate's own. The host used to present inside every
+  // `queue.submit`, so a frame that rendered a canvas-layer overlay presented twice and only the
+  // first image reached the display — the overlay was dropped on native while working on web. A
+  // pixel check alone cannot see this: it reads a screenshot, and a screenshot can be right while
+  // the display is wrong. The capture gate adds named presents beyond the requested frames (the
+  // refresh that guarantees the saved capture postdates readiness); the CLI prints their count
+  // and the total must be exactly frames plus that count, never more.
   const presents = log.match(/^TN_PRESENTS:(\d+)$/mu);
+  const refreshPresents = log.match(/^TN_CAPTURE_REFRESH_PRESENTS:(\d+)$/mu);
   if (!presents) failures.push('missing TN_PRESENTS count');
-  else if (Number(presents[1]) !== frames) {
+  else if (!refreshPresents) failures.push('missing TN_CAPTURE_REFRESH_PRESENTS count');
+  else if (Number(presents[1]) !== frames + Number(refreshPresents[1])) {
     failures.push(
-      `presented ${presents[1]} times for ${frames} frames; expected exactly one present per frame`,
+      `presented ${presents[1]} times for ${frames} frames + ${refreshPresents[1]} capture-refresh presents; expected exactly one present per frame plus the named refreshes`,
     );
   }
   // The same invariant the device gates read, asserted here too so one analyzer covers both lanes.

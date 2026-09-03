@@ -14,7 +14,20 @@ npx @threenative/playtest playtests/<name>.playtest.json --browser-recipe webgpu
 ```
 
 Read visibility, scale, draw cost, frame rate, advancing state, and errors. Missing output means
-unobserved, never zero. For a relative-placement question, publish a scene probe with derived
+unobserved, never zero.
+
+**Read the room before you reach for a screenshot.** `doctor --url` also reports three lines named
+lighting, materials and camera — how many lights the renderer can see, what materials are mounted,
+the background, the fog, and the camera's position and clip planes — and it names the three ways a
+frame dies while every other number looks healthy: lit materials with no visible light, a fog far
+plane in front of the scene it fogs, and a camera far plane that clips it. A black or washed-out
+frame is a question those lines answer and a screenshot cannot.
+
+Bound the same things in a scenario so the check outlives the session:
+`assert.scene` takes `minVisibleLights`, `litMaterialsAreLit`, `fogClearsScene` and
+`cameraClearsScene`; `assert.animation[]` takes `maxFootSlide` and `strideSynced`, which catch a
+character skating across the floor when the clip and the ground disagree. Both fail closed — a
+bridge that reports no scene has not reported a well-lit one. For a relative-placement question, publish a scene probe with derived
 `checks`, drive it with Playwright, sweep candidates in one run, and turn the winning check into a
 playtest assertion.
 
