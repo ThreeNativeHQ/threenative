@@ -104,19 +104,19 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
       CCACHE_MAXSIZE: 900M
       CCACHE_COMPRESS: "1"
-      # Half of every compiler invocation in this job was not a cache candidate at all. The
-      # verbose report named why — run 33714810237, host build:
+      # Not `CCACHE_SLOPPINESS: pch_defines,time_macros`, tried and reverted. The verbose report
+      # showed half of every compiler invocation was not a cache candidate at all — run
+      # 33714810237, host build:
       #   Uncacheable calls:                   280 / 552 (50.72%)
       #     Could not use precompiled header:  266 / 280 (95.00%)
       # Those 266 are SDL3, which builds its ~391 objects behind `target_precompile_headers`.
-      # ccache will not cache a PCH compile under its default sloppiness, because a precompiled
-      # header bakes in macro definitions and expansion times it cannot otherwise account for.
-      # With `pch_defines,time_macros` (run 33715557861, same build):
-      #   Cacheable calls:         538 / 552 (97.46%)
-      #   Uncacheable calls:        14 / 552 ( 2.54%)
-      # The old "32% hit rate" was a fraction of the cacheable half; against every invocation it
-      # was 77/552. This is the other 266 becoming eligible.
-      CCACHE_SLOPPINESS: pch_defines,time_macros
+      # The sloppiness setting did make them eligible — 538/552 cacheable, 14 uncacheable — and
+      # produced *no hits at all*: two consecutive runs both read `Hits: 77 / 538`, the same 77
+      # this lane had before, while the first paid 154s -> 211s to store objects the second never
+      # read. GCC needs `-fpch-preprocess` on the compile line for a PCH compile to be reusable
+      # and CMake does not add it, so the setting bought a better-looking report and nothing else.
+      # The next thing to try is `CMAKE_DISABLE_PRECOMPILE_HEADERS=ON` for this build, which makes
+      # SDL3's objects ordinary cacheable compiles rather than eligible-but-unhittable ones.
       # CMake reads the launcher from these two environment variables (cmake-env-variables(7));
       # it does not read CMAKE_PROJECT_INCLUDE_BEFORE from the environment at all. Setting a file
       # there configured nothing: probed against cmake 4.4.2, the include-before env var leaves
