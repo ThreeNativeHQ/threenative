@@ -172,7 +172,25 @@ run_phase() {
 # its own job and this one is told to skip it. `scripts/__tests__/ci-structure.spec.ts` asserts the
 # two halves partition the workspace, because a filter that names a package neither job runs is a
 # gate that goes green by running less.
-package_test_command=(pnpm -r --filter '!.' --workspace-concurrency=1)
+# One package at a time was a machine-independent number, and every machine this runs on has more
+# than one core. The packages' own `test` scripts are publint, small vitest runs and the playtest
+# orphan sweep — independent of each other, and measured at 26s serial against 11s at four, stable
+# over three consecutive runs. The ceiling is deliberate: several of these drive real browsers, and
+# oversubscribing a two-core runner is how this repository's heavy specs start failing on timing
+# rather than on behaviour, which is the same reason `vitest.config.ts` caps its worker pool.
+# `TN_SUITE_PACKAGE_CONCURRENCY` overrides it, and 1 restores exactly the old behaviour.
+package_test_concurrency="${TN_SUITE_PACKAGE_CONCURRENCY:-}"
+if [[ -z "$package_test_concurrency" ]]; then
+  detected_cores="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+  if [[ ! "$detected_cores" =~ ^[0-9]+$ ]] || [[ "$detected_cores" -lt 2 ]]; then
+    package_test_concurrency=1
+  elif [[ "$detected_cores" -gt 4 ]]; then
+    package_test_concurrency=3
+  else
+    package_test_concurrency=$(( detected_cores - 1 ))
+  fi
+fi
+package_test_command=(pnpm -r --filter '!.' --workspace-concurrency="$package_test_concurrency")
 if [[ -n "${TN_SUITE_EXCLUDE_PACKAGES:-}" ]]; then
   IFS=',' read -r -a tn_excluded_packages <<< "$TN_SUITE_EXCLUDE_PACKAGES"
   for tn_excluded_package in "${tn_excluded_packages[@]}"; do

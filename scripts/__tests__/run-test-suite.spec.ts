@@ -33,7 +33,16 @@ describe("run-test-suite phase contract", () => {
     // `--filter '!.'` keeps the root workspace out of the walk; it arrived on main in #57 and
     // belongs at the head of the composed command, not at either call site.
     expect(source).toContain(
-      "package_test_command=(pnpm -r --filter '!.' --workspace-concurrency=1)",
+      "package_test_command=(pnpm -r --filter '!.' --workspace-concurrency=\"$package_test_concurrency\")",
+    );
+    // Derived from the machine, not pinned: one at a time was a machine-independent number and
+    // every machine this runs on has more than one core. Capped, because several of these package
+    // scripts drive real browsers and oversubscribing a small runner turns behaviour failures into
+    // timing failures — the same reason `vitest.config.ts` caps its worker pool.
+    expect(source).toContain("TN_SUITE_PACKAGE_CONCURRENCY:-");
+    expect(source).toContain("nproc");
+    expect(source, "an unreadable core count must fall back to one, not to nothing").toContain(
+      "package_test_concurrency=1",
     );
     expect(source).toContain("package_test_command+=(--if-present run test)");
     expect(source).toContain('package_test_command+=(--filter "!$tn_excluded_package")');
