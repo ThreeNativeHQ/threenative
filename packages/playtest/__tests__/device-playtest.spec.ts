@@ -86,6 +86,20 @@ class FakeRecordingAndroidDriver extends FakeAndroidDriver {
   }
 }
 
+test("the Android runner samples only after the advertised startup phase is ready", async () => {
+  const moving = movingBridge({ startupPolls: 3 });
+  const result = await runDevice(
+    { diagnostics: deviceDiagnosticsOptOut },
+    new FakeAndroidDriver(moving.bridge),
+    1_000,
+    [{ waitTicks: 10, release: true }],
+  );
+
+  expect(result.pass).toBe(true);
+  expect(moving.readinessPhases).toEqual(["collapsing", "collapsing", "collapsing", "ready"]);
+  expect(moving.sampledBeforeStartup).toBe(0);
+});
+
 test("the existing device-smoke scenario reaches its visibility assertion on Android", async () => {
   const driver = new FakeAndroidDriver(movingBridge({ entity: "multitouch-player" }).bridge);
   const result = await runDeviceScenario("device-smoke.playtest.json", driver);
@@ -691,9 +705,11 @@ const deviceDiagnosticsOptOut = {
   networkErrorsOptOutReason: "The Android transport has no network observer in this scenario.",
 };
 
-function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: string; height?: number; setup?: boolean } = {}): {
+function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: string; height?: number; setup?: boolean; startupPolls?: number } = {}): {
   bridge: IPlaytestBridgeV1;
   sampleRequests: IPlaytestSampleRequest[];
+  sampledBeforeStartup: number;
+  readinessPhases: string[];
   setupRequests: IPlaytestSetupRequest[];
   setHeld(value: boolean): void;
   tick(): number;
@@ -701,6 +717,10 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
   let held = false;
   let tick = 0;
   let x = 0;
+  let startupPollsRemaining = options.startupPolls ?? 0;
+  let startupReady = options.startupPolls === undefined;
+  let sampledBeforeStartup = 0;
+  const readinessPhases: string[] = [];
   const sampleRequests: IPlaytestSampleRequest[] = [];
   const setupRequests: IPlaytestSetupRequest[] = [];
   return {
@@ -718,6 +738,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
           ...(options.setup === true ? ["entity.setup"] : []),
           "runtime.fixedStep",
           "runtime.diagnostics",
+          ...(options.startupPolls === undefined ? [] : ["runtime.startup"]),
         ],
         limits: PLAYTEST_PROTOCOL_LIMITS,
         name: "device-test",
@@ -726,8 +747,23 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
       ...(options.setup === true
         ? { applySetup: async (request: IPlaytestSetupRequest) => { setupRequests.push(request); } }
         : {}),
-      ready: () => ({ ready: true }),
+      ready: () => {
+        const ready = startupPollsRemaining <= 0;
+        if (!ready) startupPollsRemaining -= 1;
+        if (ready) startupReady = true;
+        return {
+          ready: true,
+          ...(options.startupPolls === undefined
+            ? {}
+            : (() => {
+                const phase = ready ? "ready" : "collapsing";
+                readinessPhases.push(phase);
+                return { startup: { phase, progress: ready ? 1 : 0.5 } };
+              })()),
+        };
+      },
       sample: (request) => {
+        if (!startupReady) sampledBeforeStartup += 1;
         sampleRequests.push(request);
         return {
           clock: { mode: "fixed-step", tick },
@@ -741,6 +777,8 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
       },
     },
     sampleRequests,
+    get sampledBeforeStartup() { return sampledBeforeStartup; },
+    readinessPhases,
     setupRequests,
     setHeld: (value) => { held = value; },
     tick: () => tick,

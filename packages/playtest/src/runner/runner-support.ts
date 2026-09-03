@@ -260,6 +260,11 @@ export function buildReport(
         ? {}
         : { renderChain: afterSnapshot?.renderChain ?? beforeSnapshot?.renderChain }),
       resources: resourceObservations(beforeSnapshot, afterSnapshot),
+      // The room as the run left it, falling back to how it started. A scene assertion is about
+      // what the renderer was handed, and the last sample is the one a screenshot would match.
+      ...(afterSnapshot?.scene === undefined && beforeSnapshot?.scene === undefined
+        ? {}
+        : { scene: afterSnapshot?.scene ?? beforeSnapshot?.scene }),
       ...(startup === undefined ? {} : { startup }),
       ...(beforeSnapshot?.gameplay === undefined
         && afterSnapshot?.gameplay === undefined

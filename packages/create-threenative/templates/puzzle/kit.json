@@ -1,0 +1,7 @@
+{
+  "name": "puzzle",
+  "title": "Physics puzzle",
+  "blurb": "A contraption room: drag crates into a ramp, swing a hinged weight, and roll the ball into the goal.",
+  "genre": "physics-puzzle",
+  "kit": true
+}

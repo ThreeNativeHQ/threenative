@@ -57,7 +57,10 @@ it("bundles one blind sample per template and reveals every one", async () => {
 
   // The bundle the critic reads must not name a template anywhere.
   const labels = bundle.samples.map((sample) => sample.label);
-  expect(labels).toEqual(labels.map((_, index) => `sample-0${index + 1}`));
+  // Padded the way `score-blind.ts` pads. Written as `sample-0${index + 1}` this passed for eight
+  // templates and asserted `sample-010` for the tenth — a test that only agreed with the code
+  // while the number of kits stayed single-digit.
+  expect(labels).toEqual(labels.map((_, index) => `sample-${String(index + 1).padStart(2, "0")}`));
   for (const template of TEMPLATE_NAMES) expect(JSON.stringify(bundle)).not.toContain(template);
 });
 

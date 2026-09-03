@@ -3,7 +3,7 @@
  * @situation run a browser scenario against a game
  * @situation inspect bridge diagnostics from a runner
  * @constraint the bridge must answer the handshake or the run fails
- * @example const bridge = await connectPlaytestBridge(page);
+ * @example const bridge = await connectPlaytestBridge(page, scenario);
  */
 export * from "./bridgeClient.js";
 // `WEBGPU_BROWSER_ARGS` lives here. Without it an external consumer cannot reproduce the browser

@@ -243,6 +243,15 @@ export function validateRegistry(registry) {
     ) {
       errors.push(`${label}: temporal.capture must be frame-zero, settled, or next`);
     }
+    if (entry?.windowedSurface !== undefined) {
+      const frames = entry.windowedSurface?.frames;
+      if (!Number.isInteger(frames) || frames < 2) {
+        errors.push(`${label}: windowedSurface.frames must be an integer of at least 2`);
+      }
+      if (!Number.isInteger(entry.nativeFrames) || entry.nativeFrames < frames) {
+        errors.push(`${label}: nativeFrames must cover the windowed surface proof`);
+      }
+    }
   }
   if (!Array.isArray(registry.exclusions) || registry.exclusions.length === 0) {
     errors.push("registry.exclusions must be a non-empty array");
@@ -916,6 +925,55 @@ function validationErrors(output) {
   return output.match(pattern) || [];
 }
 
+/**
+ * The windowed native lane must prove the surface path itself, not only a file written after it.
+ * Each marker is emitted after a surface texture view was acquired and the host presented it;
+ * the count and the native CLI's present total make a missing or swapped window argument visible.
+ */
+export function validateWindowedSurfaceOutput(log, { frames = 2 } = {}) {
+  const errors = [];
+  const surfaceFrames = [];
+  let previousPresent = 0;
+  for (const match of log.matchAll(/TN_SURFACE_FRAME:(\{[^\r\n]*\})/gu)) {
+    let payload;
+    try {
+      payload = JSON.parse(match[1]);
+    } catch {
+      errors.push(`malformed windowed surface frame marker: ${match[1]}`);
+      continue;
+    }
+    surfaceFrames.push(payload);
+    if (payload.view !== true) {
+      errors.push(`windowed surface frame ${surfaceFrames.length} did not acquire a non-null view`);
+    }
+    if (!Number.isInteger(payload.present) || payload.present <= previousPresent) {
+      errors.push(`windowed surface frame ${surfaceFrames.length} did not report a new successful present`);
+    } else {
+      previousPresent = payload.present;
+    }
+  }
+  if (surfaceFrames.length < frames) {
+    errors.push(
+      `missing windowed surface frame marker: observed ${surfaceFrames.length}, expected at least ${frames}`,
+    );
+  }
+  const presentMatch = log.match(/^TN_PRESENTS:(\d+)$/mu);
+  const presents = presentMatch === null ? null : Number(presentMatch[1]);
+  if (presents === null) {
+    errors.push("missing TN_PRESENTS count for the windowed surface proof");
+  } else if (presents < frames) {
+    errors.push(`windowed surface presented ${presents} frames, expected at least ${frames}`);
+  }
+  if (/\bDevice error\b/iu.test(log)) errors.push("windowed surface emitted a device error");
+  if (/sRGB presentation bridge failed/iu.test(log))
+    errors.push("windowed surface presentation bridge failed");
+  return {
+    errors: [...new Set(errors)],
+    frames: surfaceFrames.length,
+    presents: presents ?? 0,
+  };
+}
+
 function nativeTemporalCapturePaths(test, captureRoot) {
   return Object.fromEntries(
     NATIVE_TEMPORAL_LABELS.map((label) => [
@@ -1105,7 +1163,7 @@ async function runDesktop(test, bundlePath, result, runtime, captureRoot, assets
         "--screenshot",
         screenshot,
         "--frames",
-        "300",
+        String(test.nativeFrames ?? 300),
         "--width",
         "1280",
         "--height",
@@ -1133,6 +1191,14 @@ async function runDesktop(test, bundlePath, result, runtime, captureRoot, assets
     };
     const gpuErrors = validationErrors(combined);
     result.gpuValidationErrors.push(...gpuErrors);
+    if (test.windowedSurface !== undefined) {
+      const surface = validateWindowedSurfaceOutput(combined, test.windowedSurface);
+      result.native.windowedSurface = surface;
+      if (surface.errors.length > 0) {
+        result.status = "fail";
+        return;
+      }
+    }
     if (
       !result.native.completed ||
       /TypeError|ReferenceError|SyntaxError/iu.test(combined) ||

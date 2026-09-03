@@ -19,6 +19,8 @@ import type { ICapabilityManifestEntry } from "./build-capability-manifest.js";
 function stage(entry: {
   readonly symbol: string;
   readonly importPath: string;
+  readonly kind?: ICapabilityManifestEntry["kind"];
+  readonly signature?: string;
   readonly summary: string;
   readonly situations: readonly string[];
   readonly constraints: readonly string[];
@@ -27,8 +29,8 @@ function stage(entry: {
     symbol: entry.symbol,
     package: "three",
     importPath: entry.importPath,
-    kind: "class",
-    signature: `class ${entry.symbol}`,
+    kind: entry.kind ?? "class",
+    signature: entry.signature ?? `class ${entry.symbol}`,
     summary: entry.summary,
     situations: entry.situations,
     // Every one of these is already wired; the example is the dial, not the constructor.
@@ -41,8 +43,10 @@ function stage(entry: {
 
 export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
   stage({
-    symbol: "GodraysNode",
+    symbol: "godrays",
     importPath: "three/addons/tsl/display/GodraysNode.js",
+    kind: "function",
+    signature: "godrays(textureNode, light, shadowMap, params)",
     summary:
       "Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` in src/render/postprocessing.ts.",
     situations: [
@@ -60,8 +64,10 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
     ],
   }),
   stage({
-    symbol: "GTAONode",
+    symbol: "ao",
     importPath: "three/addons/tsl/display/GTAONode.js",
+    kind: "function",
+    signature: "ao(scene, camera, resolution, radius, intensity)",
     summary:
       "Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled`.",
     situations: [
@@ -72,8 +78,10 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
     constraints: ["Radius is in metres; a radius sized for a room reads as a smudge on a prop."],
   }),
   stage({
-    symbol: "BloomNode",
+    symbol: "bloom",
     importPath: "three/addons/tsl/display/BloomNode.js",
+    kind: "function",
+    signature: "bloom(node, strength, radius, threshold)",
     summary: "Glow around bright pixels. Already wired as the `bloom` stage.",
     situations: ["make a bright opening or a lamp glow", "bloom, glare, light spill"],
     constraints: [

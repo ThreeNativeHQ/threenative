@@ -1,0 +1,38 @@
+{
+  "name": "swing",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 60,
+  "subject": "pendulum",
+  "steps": [
+    { "kind": "wait", "label": "hang-still", "waitTicks": 60, "release": true },
+    { "kind": "input", "label": "shove", "press": "KeyF", "holdTicks": 4, "release": true },
+    { "kind": "wait", "label": "swing-out", "waitTicks": 40, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "component": "swings",
+        "entity": "pendulum",
+        "gte": 1
+      },
+      {
+        "changed": true,
+        "component": "position",
+        "entity": "pendulum",
+        "path": "2"
+      }
+    ],
+    "movement": {
+      "entity": "pendulum",
+      "minDistance": 0.3
+    }
+  }
+}

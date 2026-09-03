@@ -12,7 +12,7 @@ import {
   parseUAssetStaticMesh,
   readPackageSummary,
 } from "../src/index.js";
-import { Writer } from "./fixture-builder.js";
+import { Writer, legacyPackage } from "./fixture-builder.js";
 
 const fixtureUrl = new URL("../fixtures/SM_cube.uasset", import.meta.url);
 
@@ -173,6 +173,32 @@ describe("parseUAssetStaticMesh", () => {
       expect.unreachable();
     } catch (error) {
       expect((error as UAssetError).code).toBe("CODEC_SIZE_MISMATCH");
+    }
+  });
+
+  /**
+   * A package this parser cannot read must say *what it looked for*, not assert a version range.
+   *
+   * A real UE4.27 office pack (`fileVersionUE4` 522) reached this path: every probe found
+   * nothing, and the error answered with "UE4.26-5.x editor static meshes with serialized
+   * FMeshDescription data" — a claim that covers the very file in front of it. A caller reading
+   * that concludes the file is corrupt. What it needs to know is that all three payload probes
+   * ran and none matched, which is a coverage gap it can report rather than a broken asset.
+   */
+  it("names every payload probe when no static-mesh layout matches", () => {
+    const bytes = legacyPackage(new Uint8Array(64), { fileVersionUE4: 522 });
+
+    try {
+      parseUAssetStaticMesh(bytes);
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(UAssetError);
+      expect((error as UAssetError).code).toBe("UNSUPPORTED_STATIC_MESH_LAYOUT");
+      const details = (error as UAssetError).details as Record<string, unknown>;
+      expect(details.fileVersionUE4).toBe(522);
+      expect(String(details.probed)).toContain("compressed");
+      expect(String(details.probed)).toContain("mesh-description");
+      expect(String(details.probed)).toContain("raw-mesh");
     }
   });
 

@@ -122,7 +122,7 @@ Proves aerodynamic force telemetry and signed control-surface delivery for a fli
 
 ### `visual`
 
-Proves screenshot change, populated coordinate or DOM element-bound regions, and sustained projected entity visibility. **Use when** that is the thing the scenario must prove.
+Proves screenshot change, populated coordinate or DOM element-bound regions, dark-pixel bounds, and sustained projected entity visibility. **Use when** that is the thing the scenario must prove.
 
 - **Supported on:** web · **Requires:** browser.screenshot
 
@@ -618,6 +618,8 @@ Proves animation evidence appeared in the effect log or runtime observation. **U
 | `entered` | boolean | no |
 | `advancedFrames` | number | no |
 | `finished` | boolean | no |
+| `maxFootSlide` | number | no |
+| `strideSynced` | boolean | no |
 | `allowTrivial` | triviality reason | no |
 
 
@@ -632,6 +634,30 @@ Proves animation evidence appeared in the effect log or runtime observation. **U
       "finished": false
     }
   ]
+}
+```
+
+### `scene`
+
+Bounds the room the game is played in — the lights, materials, fog and camera framing the renderer was handed. Fails closed on a bridge that does not report the scene. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web, desktop, bevy · **Requires:** scene.observe
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `cameraClearsScene` | boolean | no |
+| `fogClearsScene` | boolean | no |
+| `litMaterialsAreLit` | boolean | no |
+| `minVisibleLights` | number | no |
+| `allowTrivial` | triviality reason | no |
+
+
+```json
+{
+  "scene": {
+    "litMaterialsAreLit": true,
+    "minVisibleLights": 1
+  }
 }
 ```
 

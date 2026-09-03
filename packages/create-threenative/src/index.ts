@@ -58,17 +58,24 @@ export function templateRoot(): string {
 }
 
 const LOADING_SOURCE_RELATIVE_PATH = path.join("src", "render", "loading.ts");
+const LOADING_APPEARANCE_MARKER = "BEGIN THREENATIVE LOADING APPEARANCE";
 const LOADING_APPEARANCE_BLOCK_PATTERN =
   /\/\* BEGIN THREENATIVE LOADING APPEARANCE \*\/[\s\S]*?\/\* END THREENATIVE LOADING APPEARANCE \*\//gu;
-export const FULL_LOADING_TEMPLATES = [
-  "action-rpg",
-  "defense",
-  "platformer",
-  "racing",
-  "sailing",
-  "shooter",
-  "starter",
-] as const;
+/**
+ * Every kit whose loading screen is stamped from the canonical source, read off disk rather than
+ * listed here. A kit added tomorrow is stamped the day it ships its appearance block, and one that
+ * drops the block leaves the list by deleting bytes rather than by editing this file.
+ */
+export function discoverStampedTemplates(root = templateRoot()): readonly ScaffoldTemplate[] {
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right))
+    .filter((template) => {
+      const file = path.join(root, template, LOADING_SOURCE_RELATIVE_PATH);
+      return existsSync(file) && readFileSync(file, "utf8").includes(LOADING_APPEARANCE_MARKER);
+    });
+}
 
 /** The canonical generated loading implementation ships beside, rather than inside, a kit. */
 export function canonicalLoadingPath(root = templateRoot()): string {
@@ -94,13 +101,48 @@ export function stampLoadingSource(canonical: string, template: string): string 
   return canonical.replace(canonicalBlock, templateBlock);
 }
 
+/**
+ * Render sources every kit copies verbatim and no kit is expected to edit.
+ *
+ * `src/render/` is a floor the game rewrites, and almost all of it is a per-kit look. The
+ * render-chain plumbing is not: it is the same 600 lines in every kit, and keeping seven copies by
+ * hand let one fall a revision behind without anything failing. A file belongs here only when a
+ * kit editing it would be a mistake rather than a choice.
+ */
+export const SHARED_RENDER_SOURCES = [path.join("src", "render", "worldEnvironment.ts")] as const;
+
+export function canonicalRenderSourcePath(relativePath: string, root = templateRoot()): string {
+  const name = path.basename(relativePath);
+  const local = path.resolve(root, "..", "template-assets", name);
+  if (existsSync(local)) return local;
+  return path.resolve(templateRoot(), "..", "template-assets", name);
+}
+
+/** Re-copies every shared render source into each kit that ships it. */
+export async function restampSharedRenderCopies(root = templateRoot()): Promise<readonly string[]> {
+  const stamped: string[] = [];
+  for (const relativePath of SHARED_RENDER_SOURCES) {
+    const canonical = await readFile(canonicalRenderSourcePath(relativePath, root), "utf8");
+    for (const template of readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+      .map((entry) => entry.name)
+      .sort((left, right) => left.localeCompare(right))) {
+      const file = path.join(root, template, relativePath);
+      if (!existsSync(file)) continue;
+      await writeFile(file, canonical);
+      stamped.push(file);
+    }
+  }
+  return stamped;
+}
+
 /** Re-stamps every tracked full kit from the canonical source, preserving each kit's appearance. */
 export async function restampTemplateLoadingCopies(
   root = templateRoot(),
 ): Promise<readonly string[]> {
   const canonical = await readFile(canonicalLoadingPath(root), "utf8");
   const stamped = [] as string[];
-  for (const template of FULL_LOADING_TEMPLATES) {
+  for (const template of discoverStampedTemplates(root)) {
     const file = path.join(root, template, LOADING_SOURCE_RELATIVE_PATH);
     const source = await readFile(file, "utf8");
     await writeFile(file, stampLoadingSource(canonical, source));

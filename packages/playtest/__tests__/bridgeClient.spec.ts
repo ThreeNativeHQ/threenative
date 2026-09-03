@@ -5,6 +5,17 @@ import { test, expect } from "vitest";
 
 import { parseStandalonePlaytestArgs } from "../src/runner/config.js";
 import { initStandalonePlaytest } from "../src/runner/init.js";
+import {
+  connectPlaytestBridgeTransport,
+  advanceTimeoutMs,
+  type IBridgeTransport,
+} from "../src/runner/bridgeClient.js";
+import {
+  PLAYTEST_PROTOCOL_LIMITS,
+  PLAYTEST_PROTOCOL_VERSION,
+  type IPlaytestBridgeDescription,
+} from "../src/protocol.js";
+import type { IPlaytestScenario } from "../src/scenario.js";
 
 test("standalone args support existing-server and managed-server flows", () => {
   const existing = parseStandalonePlaytestArgs(["playtests/move.json", "--url", "http://localhost:4173"], "/project");
@@ -174,4 +185,57 @@ test("init creates only config scenario and adapter examples", async () => {
   const scenario = JSON.parse(await readFile(join(projectPath, "playtests/smoke.playtest.json"), "utf8"));
   expect(scenario.schemaVersion).toBe(1);
   await expect(initStandalonePlaytest(projectPath)).rejects.toThrow(/Refusing to overwrite/);
+});
+
+test("routes bulk advance and ordinary bridge calls through their intended timeouts", async () => {
+  const calls: Array<{ argument?: unknown; method: string; timeoutMs: number }> = [];
+  const description: IPlaytestBridgeDescription = {
+    capabilities: [],
+    limits: PLAYTEST_PROTOCOL_LIMITS,
+    name: "timeout-fixture",
+    protocolVersion: PLAYTEST_PROTOCOL_VERSION,
+  };
+  const transport: IBridgeTransport = {
+    capabilities: [],
+    async call<T>(method: string, argument?: unknown, timeoutMs?: number): Promise<T> {
+      calls.push({
+        ...(argument === undefined ? {} : { argument }),
+        method,
+        timeoutMs: timeoutMs ?? PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
+      });
+      if (method === "describe") return description as T;
+      if (method === "ready") return { ready: true } as T;
+      if (method === "sample") {
+        return { clock: { mode: "fixed-step", tick: 0 } } as T;
+      }
+      return undefined as T;
+    },
+    async close(): Promise<void> {},
+    async waitForBridge(): Promise<boolean> {
+      return true;
+    },
+  };
+  const scenario: IPlaytestScenario = {
+    artifacts: { screenshots: false },
+    name: "timeout wiring",
+    schemaVersion: 1,
+    steps: [{ release: true, waitTicks: 1 }],
+    target: "web",
+    viewport: { height: 180, width: 320 },
+    warmupFrames: 0,
+  };
+
+  const client = await connectPlaytestBridgeTransport(transport, scenario);
+  if (client === undefined) throw new Error("Expected a connected transport.");
+  await client.advance(600);
+  await client.sample({});
+  await client.readiness();
+
+  expect(calls).toEqual([
+    { method: "describe", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },
+    { method: "ready", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },
+    { argument: 600, method: "advance", timeoutMs: advanceTimeoutMs(600) },
+    { argument: {}, method: "sample", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },
+    { method: "ready", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },
+  ]);
 });

@@ -75,7 +75,7 @@ export type {
  * Create a structured playtest diagnostic.
  * @situation report a named runtime diagnostic to a scenario
  * @situation explain why a playtest assertion cannot pass
- * @example playtestDiagnostic("physics", "body missing");
+ * @example playtestDiagnostic("TN_PLAYTEST_CAPABILITY_MISSING", "body missing", "register rapier() before adding bodies");
  */
 export { playtestDiagnostic } from "./diagnostics.js";
 export type { IPlaytestProtocolDiagnostic } from "./diagnostics.js";
@@ -108,11 +108,16 @@ export type {
   IPlaytestObservationSnapshot,
   IPlaytestPerformanceObservation,
   IPlaytestRenderChainObservation,
+  IPlaytestCameraObservation,
+  IPlaytestFogObservation,
+  IPlaytestLightObservation,
   IPlaytestRuntimeDiagnosticsSample,
   IPlaytestSampleRequest,
+  IPlaytestSceneObservation,
   IPlaytestSetupRequest,
   IPlaytestStartupObservation,
   IPlaytestStartupTimeline,
+  IPlaytestStrideObservation,
   IPlaytestWorldObservation,
   IPlaytestWorldRuntimeObservation,
   JsonValue,

@@ -332,7 +332,7 @@ export function boneLengthDeviations( root: Object3D, bind: IBoneLengthSnapshot,
 ```ts
 import { boneLengths, boneLengthDeviations } from "@threenative/core";
 const report = boneLengthDeviations(character, boneLengths(character));
-if (!report.rigid) console.log(report.worst.bone, report.worst.ratio);
+if (!report.rigid && report.worst !== null) console.log(report.worst.bone, report.worst.ratio);
 ```
 
 ### `boneLengths`
@@ -377,7 +377,7 @@ export class CanvasLayer { … }
 - **Use when:** place a HUD layer above the Three.js scene · attach a canvas layer to a camera
 
 ```ts
-const hud = new CanvasLayer({ camera });
+const hud = new CanvasLayer(ctx.viewport);
 ```
 
 ### `clipBoneCoverage`
@@ -479,7 +479,7 @@ export class ComputeDrivenRegistry { … }
 - **Constraints:** add the object through ctx.add so it attaches, dispatches, and releases with its scene
 
 ```ts
-class Cloth extends Mesh implements IComputeDriven { ... }
+const registry = new ComputeDrivenRegistry(); registry.add(cloth, ctx.renderer.raw);
 ```
 
 ### `createAssetLoader`
@@ -526,7 +526,7 @@ export function createReplayDriver( recording: Recording, target: EventTarget, p
 - **Constraints:** use a seeded random source and fixed-step simulation for meaningful replays
 
 ```ts
-const driver = createReplayDriver({ recording });
+const driver = createReplayDriver(recording, ctx.renderer.domElement);
 ```
 
 ### `defineGame`
@@ -541,7 +541,7 @@ export function defineGame<TState extends Record<string, unknown>, TPhysics = un
 - **Constraints:** keep DOM and React mounting in src/main.ts · bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener · scroll: true uses the DOM wheel sign on browser and native: negative deltaY toward the user is positive intent
 
 ```ts
-const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play } });
+const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play }, start: "Play" });
 ```
 
 ### `directionalTransmittance`
@@ -651,7 +651,7 @@ if (isMobile()) showTouchControls();
 export class GPUParticles3D extends Sprite implements IComputeDriven { … }
 ```
 
-- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles
+- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles
 - **Constraints:** geometry, color, and timing remain supplied by the game
 
 ```ts
@@ -713,7 +713,7 @@ const snap = new GroundSnap(character, { enabled: true });
 export class InstancedBatch { … }
 ```
 
-- **Use when:** draw hundreds of repeated props without hundreds of draw calls · place repeated props when the count is not known until the layout has been walked · build a chain, railing, cable, or tie rod out of point-to-point segments
+- **Use when:** draw hundreds of repeated props without hundreds of draw calls · draw thousands of identical instanced blocks or obstacles in one mesh · place repeated props when the count is not known until the layout has been walked · build a chain, railing, cable, or tie rod out of point-to-point segments
 - **Constraints:** geometry and material are required and come from the game; the batch chooses neither · span stretches along +Y, so its geometry must be unit-height and centred on the origin · placing after build() throws, and build() returns undefined when nothing was placed
 - **Overrides:** castShadow and receiveShadow pass through to the built mesh and default to Three.js's own false
 
@@ -840,7 +840,7 @@ export class PathFollow3D { … }
 - **Use when:** move an enemy or prop along a patrol path · sample a racing line from a curve
 
 ```ts
-const follower = new PathFollow3D(curve, { loop: true });
+const follower = new PathFollow3D({ points: patrolPoints, loop: true, speed: 3 });
 ```
 
 ### `PointerEvents3D`
@@ -851,7 +851,7 @@ const follower = new PathFollow3D(curve, { loop: true });
 export class PointerEvents3D implements IPointerEvents3D { … }
 ```
 
-- **Use when:** let the player click on a thing in the world · show a 3D object while a pointer hovers over it · handle touch and mouse taps on a loaded model without naming its child meshes
+- **Use when:** let the player click on a thing in the world · show a 3D object while a pointer hovers over it · handle touch and mouse taps on a loaded model without naming its child meshes · drag a crate or prop with the mouse or a finger
 - **Constraints:** listeners are side-table registrations; Three.js prototypes are never patched · one raycast serves each active pointer and no raycast runs when nothing is registered
 
 ```ts
@@ -1073,7 +1073,7 @@ export function replay< TState extends Record<string, unknown> = Record<string, 
 - **Constraints:** use a seeded random source and fixed-step simulation for meaningful replays
 
 ```ts
-const driver = createReplayDriver({ recording });
+const driver = createReplayDriver(recording, ctx.renderer.domElement);
 ```
 
 ### `resolveAtmosphereLutResolutions`
@@ -1133,7 +1133,7 @@ export class ScenePicker { … }
 - **Supersedes (writing this fails `pnpm budgets`):** new Raycaster(
 
 ```ts
-const picker = new ScenePicker({ camera, scene });
+const picker = new ScenePicker({ camera: ctx.camera, scene: ctx.scene, pointer: () => ctx.input.raw.pointer, viewport: ctx.viewport });
 ```
 
 ### `Scheduler`
@@ -1206,7 +1206,7 @@ const puff = softCircleDataTexture(64, 0.25);
 export function solarPosition(input: ISolarPositionInput, target?: ISolarPosition): ISolarPosition;
 ```
 
-- **Use when:** move a sun across a real day at a game's latitude and longitude
+- **Use when:** move a sun across a real day at a game's latitude and longitude · run a day and night cycle over the game's sky
 - **Constraints:** dates are interpreted as UTC unless utcOffset is supplied; no fixed sun direction is assumed · pass a mutable { azimuth, elevation } target to reuse the result object in a steady frame loop
 
 ```ts
@@ -1578,7 +1578,7 @@ export function View(props: IViewProps): ReactNode { … }
 - **Use when:** group and position native React HUD elements
 
 ```ts
-<View style={{ centerX: 0, top: 24 }}><Text>READY</Text></View>
+<View style={{ centerX: true, top: 24 }}><Text>READY</Text></View>
 ```
 
 ## `@threenative/core/ui-layer`
@@ -1737,7 +1737,7 @@ export class Area3D { … }
 - **Constraints:** add the area to the physics context before stepping the world
 
 ```ts
-const area = new Area3D({ context, shape });
+const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });
 ```
 
 ### `buildStaticColliders`
@@ -1783,7 +1783,7 @@ export class CharacterBody3D { … }
 - **Constraints:** use moveAndSlide inside the physics update
 
 ```ts
-const body = new CharacterBody3D({ context, object });
+const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });
 ```
 
 ### `CollisionShape3D`
@@ -1798,7 +1798,7 @@ export class CollisionShape3D { … }
 - **Constraints:** create shapes through the owning physics context
 
 ```ts
-const shape = new CollisionShape3D({ context, shape: "capsule" });
+const shape = CollisionShape3D.capsule(0.5, 0.35);
 ```
 
 ### `interactionGroups`
@@ -1823,11 +1823,11 @@ const groups = interactionGroups(1, 3);
 export class Joint3D { … }
 ```
 
-- **Use when:** constrain a rigid body to another body · build a hinge or pin mechanism
+- **Use when:** constrain a rigid body to another body · build a hinge or pin mechanism · swing a pendulum, wrecking ball, or hinged door on a joint
 - **Constraints:** both bodies must belong to the same physics context
 
 ```ts
-const joint = new Joint3D({ context, kind: "hinge" });
+const hinge = Joint3D.hinge({ physics: ctx.physics, bodyA: beam, bodyB: bob, anchorA: { x: 0, y: 0, z: 0 }, anchorB: { x: 0, y: 2.4, z: 0 }, axis: { x: 1, y: 0, z: 0 } });
 ```
 
 ### `PhysicsDirectSpaceState3D`
@@ -1873,7 +1873,7 @@ export class RigidBody3D { … }
 - **Overrides:** continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting
 
 ```ts
-const crate = new RigidBody3D({ context, object, mode: "dynamic" });
+const crate = new RigidBody3D({ object, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1), mass: 8 });
 ```
 
 ### `softBodyCollision`
@@ -2150,7 +2150,7 @@ export function playtestDiagnostic( code: PlaytestDiagnosticCode, message: strin
 - **Use when:** report a named runtime diagnostic to a scenario · explain why a playtest assertion cannot pass
 
 ```ts
-playtestDiagnostic("physics", "body missing");
+playtestDiagnostic("TN_PLAYTEST_CAPABILITY_MISSING", "body missing", "register rapier() before adding bodies");
 ```
 
 ### `PlaytestScenarioError`
@@ -2392,7 +2392,7 @@ export function advanceTimeoutMs( ticks: number, perTickMs: number = PLAYTEST_AD
 - **Constraints:** the bridge must answer the handshake or the run fails
 
 ```ts
-const bridge = await connectPlaytestBridge(page);
+const bridge = await connectPlaytestBridge(page, scenario);
 ```
 
 ### `androidMailboxPaths`
@@ -2467,7 +2467,7 @@ export function bridgeWaitTimeoutMs( operationMs: number = PLAYTEST_PROTOCOL_LIM
 - **Constraints:** the bridge must answer the handshake or the run fails
 
 ```ts
-const bridge = await connectPlaytestBridge(page);
+const bridge = await connectPlaytestBridge(page, scenario);
 ```
 
 ### `buildReport`
@@ -2512,7 +2512,7 @@ export async function connectPlaytestBridge( page: Page, scenario: IPlaytestScen
 - **Constraints:** the bridge must answer the handshake or the run fails
 
 ```ts
-const bridge = await connectPlaytestBridge(page);
+const bridge = await connectPlaytestBridge(page, scenario);
 ```
 
 ### `connectPlaytestBridgeTransport`
@@ -2527,7 +2527,7 @@ export async function connectPlaytestBridgeTransport( transport: IBridgeTranspor
 - **Constraints:** the bridge must answer the handshake or the run fails
 
 ```ts
-const bridge = await connectPlaytestBridge(page);
+const bridge = await connectPlaytestBridge(page, scenario);
 ```
 
 ### `DesktopPlaytestDriver`
@@ -2827,7 +2827,7 @@ export class PlaytestBridgeError extends Error { … }
 - **Constraints:** the bridge must answer the handshake or the run fails
 
 ```ts
-const bridge = await connectPlaytestBridge(page);
+const bridge = await connectPlaytestBridge(page, scenario);
 ```
 
 ### `PlaytestCliUsageError`
@@ -2872,7 +2872,7 @@ export class PlaywrightTransport implements IBridgeTransport { … }
 - **Constraints:** the bridge must answer the handshake or the run fails
 
 ```ts
-const bridge = await connectPlaytestBridge(page);
+const bridge = await connectPlaytestBridge(page, scenario);
 ```
 
 ### `preflightDisplay`
@@ -3264,7 +3264,7 @@ export function connectDevicePlaytestBridge( bridge: IPlaytestBridgeV1, endpoint
 - **Constraints:** use the device transport selected by the runner
 
 ```ts
-const connection = await connectDevicePlaytestBridge();
+const connection = connectDevicePlaytestBridge(bridge, endpoint);
 ```
 
 ### `installThreePlaytestBridge`
@@ -3282,6 +3282,21 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
 const bridge = installThreePlaytestBridge(options);
 ```
 
+### `observeSceneResources`
+
+`function` — Observe the room a game is played in — lights, materials, fog, background and camera framing.
+
+```ts
+export function observeSceneResources(scene: Scene, camera: Camera): IPlaytestSceneObservation { … }
+```
+
+- **Use when:** ask why a frame is black or washed out without opening a screenshot · ask what lights, materials and framing a running game actually has
+- **Constraints:** reports counts and names only; it decides nothing about how the game looks · reports counts and names only; nothing here decides how the game looks · a walk that hits {@link SCENE_WALK_OBJECT_CAP} reports `truncated: true`
+
+```ts
+const room = observeSceneResources(scene, camera);
+```
+
 ### `readPlaytestEndpoint`
 
 `function` — Connect a device-hosted game to the playtest bridge.
@@ -3294,7 +3309,7 @@ export function readPlaytestEndpoint(): string | undefined { … }
 - **Constraints:** use the device transport selected by the runner
 
 ```ts
-const connection = await connectDevicePlaytestBridge();
+const connection = connectDevicePlaytestBridge(bridge, endpoint);
 ```
 
 ### `ThreePlaytestPhysicsRecorder`
@@ -3309,7 +3324,7 @@ export class ThreePlaytestPhysicsRecorder { … }
 - **Constraints:** keep recorder limits within the documented caps
 
 ```ts
-const physics = new ThreePlaytestPhysicsRecorder();
+const physics = new ThreePlaytestPhysicsRecorder(worldPhysics);
 ```
 
 ## `@threenative/raw-unreal`
@@ -3680,7 +3695,7 @@ export function DebugOverlay() { … }
 - **Use when:** display runtime and playtest diagnostics in a React HUD · inspect a game without changing its scene
 
 ```ts
-<DebugOverlay game={game} />
+<DebugOverlay />
 ```
 
 ### `GameCanvas`
@@ -3755,7 +3770,7 @@ export function useUiState<TState extends object>(): TState | undefined;
 - **Constraints:** returns undefined until the game publishes its first state
 
 ```ts
-const score = useUiState((state) => state.score);
+const score = useUiState<GameState, number>((state) => state.score);
 ```
 
 ## `src/render/worldEnvironment.ts`
@@ -3777,12 +3792,12 @@ src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
 
 ## `three/addons/tsl/display/BloomNode.js`
 
-### `BloomNode`
+### `bloom`
 
-`class` — Glow around bright pixels. Already wired as the `bloom` stage.
+`function` — Glow around bright pixels. Already wired as the `bloom` stage.
 
 ```ts
-class BloomNode
+bloom(node, strength, radius, threshold)
 ```
 
 - **Use when:** make a bright opening or a lamp glow · bloom, glare, light spill
@@ -3794,29 +3809,29 @@ src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
 
 ## `three/addons/tsl/display/DenoiseNode.js`
 
-### `DenoiseNode`
+### `denoise`
 
-`class` — ThreeNative equivalent for realism-effects DenoiseNode.
+`function` — ThreeNative equivalent for realism-effects denoise.
 
 ```ts
-class DenoiseNode
+function denoise
 ```
 
 - **Use when:** denoise a noisy screen-space pass
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-DenoiseNode(...)
+denoise(...)
 ```
 
 ## `three/addons/tsl/display/GodraysNode.js`
 
-### `GodraysNode`
+### `godrays`
 
-`class` — Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` in src/render/postprocessing.ts.
+`function` — Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` in src/render/postprocessing.ts.
 
 ```ts
-class GodraysNode
+godrays(textureNode, light, shadowMap, params)
 ```
 
 - **Use when:** draw a visible shaft of light through a window or a hole in a roof · god rays, sun shafts, light beams, crepuscular rays · make sunlight visible in dusty or misty air indoors · light a cave or a hall through an opening above · volumetric lighting without adding cone geometry
@@ -3828,12 +3843,12 @@ src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
 
 ## `three/addons/tsl/display/GTAONode.js`
 
-### `GTAONode`
+### `ao`
 
-`class` — Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled`.
+`function` — Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled`.
 
 ```ts
-class GTAONode
+ao(scene, camera, resolution, radius, intensity)
 ```
 
 - **Use when:** darken the contact where an object meets the floor · stop props looking like they float · ambient occlusion, contact shadows, crevice darkening
@@ -3862,121 +3877,121 @@ motionBlur(...)
 
 ## `three/addons/tsl/display/RecurrentDenoiseNode.js`
 
-### `RecurrentDenoiseNode`
+### `recurrentDenoise`
 
-`class` — ThreeNative equivalent for realism-effects RecurrentDenoiseNode.
+`function` — ThreeNative equivalent for realism-effects recurrentDenoise.
 
 ```ts
-class RecurrentDenoiseNode
+function recurrentDenoise
 ```
 
 - **Use when:** denoise a noisy screen-space pass
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-RecurrentDenoiseNode(...)
+recurrentDenoise(...)
 ```
 
 ## `three/addons/tsl/display/SharpenNode.js`
 
-### `SharpenNode`
+### `sharpen`
 
-`class` — ThreeNative equivalent for realism-effects SharpenNode.
+`function` — ThreeNative equivalent for realism-effects sharpen.
 
 ```ts
-class SharpenNode
+function sharpen
 ```
 
 - **Use when:** make the image sharper
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-SharpenNode(...)
+sharpen(...)
 ```
 
 ## `three/addons/tsl/display/SSAAPassNode.js`
 
-### `SSAAPassNode`
+### `ssaaPass`
 
-`class` — ThreeNative equivalent for realism-effects SSAAPassNode.
+`function` — ThreeNative equivalent for realism-effects ssaaPass.
 
 ```ts
-class SSAAPassNode
+function ssaaPass
 ```
 
 - **Use when:** anti-alias still and moving scenes
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-SSAAPassNode(...)
+ssaaPass(...)
 ```
 
 ## `three/addons/tsl/display/SSGINode.js`
 
-### `SSGINode`
+### `ssgi`
 
-`class` — ThreeNative equivalent for realism-effects SSGINode.
+`function` — ThreeNative equivalent for realism-effects ssgi.
 
 ```ts
-class SSGINode
+function ssgi
 ```
 
 - **Use when:** add screen-space global illumination
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-SSGINode(...)
+ssgi(...)
 ```
 
 ## `three/addons/tsl/display/SSRNode.js`
 
-### `SSRNode`
+### `ssr`
 
-`class` — ThreeNative equivalent for realism-effects SSRNode.
+`function` — ThreeNative equivalent for realism-effects ssr.
 
 ```ts
-class SSRNode
+function ssr
 ```
 
 - **Use when:** add screen-space reflections
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-SSRNode(...)
+ssr(...)
 ```
 
 ## `three/addons/tsl/display/TemporalReprojectNode.js`
 
-### `TemporalReprojectNode`
+### `temporalReproject`
 
-`class` — ThreeNative equivalent for realism-effects TemporalReprojectNode.
+`function` — ThreeNative equivalent for realism-effects temporalReproject.
 
 ```ts
-class TemporalReprojectNode
+function temporalReproject
 ```
 
 - **Use when:** reproject a temporal history
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-TemporalReprojectNode(...)
+temporalReproject(...)
 ```
 
 ## `three/addons/tsl/display/TRAANode.js`
 
-### `TRAANode`
+### `traa`
 
-`class` — ThreeNative equivalent for realism-effects TRAANode.
+`function` — ThreeNative equivalent for realism-effects traa.
 
 ```ts
-class TRAANode
+function traa
 ```
 
 - **Use when:** temporally resolve a moving image
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-TRAANode(...)
+traa(...)
 ```
 
 ## `three/tsl`
@@ -4011,19 +4026,19 @@ function mrt
 mrt(...)
 ```
 
-### `normal`
+### `normalView`
 
-`function` — ThreeNative equivalent for realism-effects normal.
+`function` — ThreeNative equivalent for realism-effects normalView.
 
 ```ts
-function normal
+function normalView
 ```
 
 - **Use when:** provide normals to screen-space effects
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-normal(...)
+normalView(...)
 ```
 
 ### `velocity`

@@ -593,7 +593,6 @@ void presentPendingSurface(BindingsState* state) {
         return;
 
     if (pending && state->surface) {
-        state->profiling.presentCount += 1;
         if (state->verboseLogging)
             std::cout << "[WebGPU] Presenting surface" << std::endl;
         const auto presentStart = std::chrono::steady_clock::now();
@@ -611,21 +610,31 @@ void presentPendingSurface(BindingsState* state) {
         state->profiling.presentReportedSinceLastPresent = false;
 #endif
 
-    if (presented) {
-        // The last cold-start segment. Emitted from the present that actually reached the
-        // display, so "first frame" means the player saw something rather than the loop merely ran.
-        if (!state->profiling.firstPresentReported) {
-            state->profiling.firstPresentReported = true;
-            mystral::coldStartMark("first_frame");
-            // Same clock, same instant: the attribution for everything that happened before this
-            // present, reported against the gap the player just sat through. PRD-218.
-            mystral::stallBudget().report(mystral::coldStartNowMs());
+        if (presented) {
+            state->profiling.presentCount += 1;
+            const bool hasSurfaceView = state->presentation.currentTextureView != nullptr;
+            std::cout << "TN_SURFACE_FRAME:{\"view\":" << (hasSurfaceView ? "true" : "false")
+                      << ",\"present\":" << state->profiling.presentCount << "}" << std::endl;
+#if defined(__ANDROID__)
+            __android_log_print(ANDROID_LOG_INFO, "MystralRuntime",
+                                "TN_SURFACE_FRAME:{\"view\":%s,\"present\":%llu}",
+                                hasSurfaceView ? "true" : "false",
+                                static_cast<unsigned long long>(state->profiling.presentCount));
+#endif
+            // The last cold-start segment. Emitted from the present that actually reached the
+            // display, so "first frame" means the player saw something rather than the loop merely ran.
+            if (!state->profiling.firstPresentReported) {
+                state->profiling.firstPresentReported = true;
+                mystral::coldStartMark("first_frame");
+                // Same clock, same instant: the attribution for everything that happened before this
+                // present, reported against the gap the player just sat through. PRD-218.
+                mystral::stallBudget().report(mystral::coldStartNowMs());
+            }
+            // Hitches are what the player feels after launch, and they are invisible to a mean.
+            mystral::frameHitches().record();
+        } else {
+            std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
         }
-        // Hitches are what the player feels after launch, and they are invisible to a mean.
-        mystral::frameHitches().record();
-    } else {
-        std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
-    }
     }
 
     // Reset surface render tracking for the next frame.

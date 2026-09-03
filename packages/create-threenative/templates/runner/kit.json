@@ -1,0 +1,7 @@
+{
+  "name": "runner",
+  "title": "Endless runner",
+  "blurb": "Three lanes, a track that builds itself ahead of you, and obstacles that end the run.",
+  "genre": "endless-runner",
+  "kit": true
+}

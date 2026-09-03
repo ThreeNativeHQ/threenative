@@ -17,7 +17,7 @@ that rule — see `docs/architecture/CHARTER.md`'s "Tracer streaks and sprite pi
 mechanism" and `docs/PRDs/done/PRD-162-tracer-streaks-and-sprite-pixel-data-are-mechanism.md`.
 Clip conformance (`clipPoseError`, `clipTrackBindings`, `clipBoneCoverage`, `boneContact`) is
 admitted the same way — see `CHARTER.md`'s "Pose conformance measurement is mechanism" and
-`docs/PRDs/authoring/PRD-314-a-broken-retarget-is-a-number-not-a-screenshot.md`. It measures and
+`docs/PRDs/done/PRD-314-a-broken-retarget-is-a-number-not-a-screenshot.md`. It measures and
 reports; it moves nothing and decides no appearance.
 
 ### World subpath

@@ -37,7 +37,8 @@
         "clip": "DeathFront",
         "entered": true,
         "advancedFrames": 60,
-        "finished": true
+        "finished": true,
+        "strideSynced": false
       }
     ],
     "states": [
@@ -45,6 +46,10 @@
         "entity": "enemy",
         "equals": "dead-finished"
       }
-    ]
+    ],
+    "scene": {
+      "cameraClearsScene": true,
+      "litMaterialsAreLit": true
+    }
   }
 }

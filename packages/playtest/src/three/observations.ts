@@ -10,6 +10,7 @@ import type {
 import { Box3, Frustum, Matrix4, Vector2, Vector3, type Camera, type Object3D, type Scene } from "three";
 
 import type { ThreePlaytestEntityRegistry } from "./entities.js";
+import { observeSceneResources } from "./scene-observation.js";
 
 export interface IThreeObservationInput {
   camera: Camera;
@@ -58,6 +59,7 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
       ? {}
       : { runtimeDiagnosticsSeries: input.runtimeDiagnosticsSeries().map((sample) => ({ ...sample })) }),
     ...(input.resources === undefined ? {} : { resources: input.resources() }),
+    scene: observeSceneResources(input.scene, input.camera),
   };
 }
 

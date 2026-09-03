@@ -10,7 +10,7 @@ export { GameCanvas } from "./GameCanvas.js";
  * Show framework diagnostics while developing a game.
  * @situation display runtime and playtest diagnostics in a React HUD
  * @situation inspect a game without changing its scene
- * @example <DebugOverlay game={game} />
+ * @example <DebugOverlay />
  */
 export { DebugOverlay } from "./DebugOverlay.js";
 /**
@@ -34,7 +34,7 @@ export { UiLayer } from "./UiLayer.js";
  * @situation bind a HUD to game state on web and native alike
  * @situation show score or health in a UI rendered over the game surface
  * @constraint returns undefined until the game publishes its first state
- * @example const score = useUiState((state) => state.score);
+ * @example const score = useUiState<GameState, number>((state) => state.score);
  */
 export { useUiState } from "./UiLayer.js";
 /**

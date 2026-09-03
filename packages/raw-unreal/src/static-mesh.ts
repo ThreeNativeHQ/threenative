@@ -703,8 +703,15 @@ export function parseUAssetStaticMesh(
       {
         fileVersionUE4: summary.fileVersionUE4,
         editorObjectVersion: summary.editorObjectVersion,
+        // What was looked for, rather than a version range. A real UE4.27 pack reached here and
+        // was told the parser covers "UE4.26–5.x editor static meshes with serialized
+        // FMeshDescription data" — a claim that describes the file in front of it, so the only
+        // conclusion left to the caller was that the asset is corrupt. Naming the three probes
+        // that ran and matched nothing says the true thing: this is a coverage gap in the
+        // payload forms, not a broken package.
+        probed: "compressed-buffer, inline mesh-description, raw-mesh — none matched",
         supported:
-          "UE4.26–5.x editor static meshes with serialized FMeshDescription data (UE5 compressed-buffer payloads need an `oodle` codec), and UE4.18-era packages with inline uncompressed FRawMesh source models",
+          "UE4.26–5.x editor static meshes whose FMeshDescription is serialized inline or in a compressed buffer (UE5 compressed payloads need an `oodle` codec), and UE4.18-era packages with inline uncompressed FRawMesh source models. Editor packages that keep their mesh description in bulk data are not read.",
       },
     );
   }

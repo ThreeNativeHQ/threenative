@@ -321,7 +321,105 @@ export function animationObservationPass(assertion: IPlaytestAnimationAssertion,
   return (assertion.clip === undefined || clip === assertion.clip)
     && (assertion.entered !== true || clip !== undefined)
     && (assertion.finished === undefined || (finished !== undefined && finished === assertion.finished))
-    && (assertion.advancedFrames === undefined || (advancedFrames !== undefined && advancedFrames >= assertion.advancedFrames));
+    && (assertion.advancedFrames === undefined || (advancedFrames !== undefined && advancedFrames >= assertion.advancedFrames))
+    && strideFailure(assertion, observed) === undefined;
+}
+
+export interface IStrideReading {
+  clipGroundSpeed: number;
+  groundSpeed: number;
+  overridden: boolean;
+  rate: number;
+  synced: boolean;
+}
+
+/**
+ * The producer's stride report, or nothing.
+ *
+ * A partially shaped report is nothing: a stride number the producer did not send would otherwise
+ * be read as a measurement, and an unmeasured number is the failure this package exists to stop.
+ */
+export function strideReading(observed: unknown): IStrideReading | undefined {
+  if (!isRecord(observed)) return undefined;
+  const stride = observed.stride;
+  if (!isRecord(stride)) return undefined;
+  const numbers = ["clipGroundSpeed", "groundSpeed", "rate"] as const;
+  if (!numbers.every((key) => typeof stride[key] === "number" && Number.isFinite(stride[key]))) return undefined;
+  if (typeof stride.overridden !== "boolean" || typeof stride.synced !== "boolean") return undefined;
+  return {
+    clipGroundSpeed: stride.clipGroundSpeed as number,
+    groundSpeed: stride.groundSpeed as number,
+    overridden: stride.overridden,
+    rate: stride.rate as number,
+    synced: stride.synced,
+  };
+}
+
+/** Below this the body is standing still, and a slide ratio would divide by noise. */
+const STRIDE_GROUND_SPEED_FLOOR = 1e-3;
+
+/**
+ * The rate the clip is actually playing at.
+ *
+ * `rate` is what the producer *measured*, and it reports that whether or not it applied it —
+ * which is the point of the convention's override being honest. The feet, though, move at the
+ * rate the action is running at: the measured rate when the convention applied it, and the
+ * clip's authored rate when the game declined. Reading `rate` unconditionally made an
+ * overridden run compute zero slide, which is the exact case the bound exists to catch.
+ */
+export function appliedStrideRate(reading: IStrideReading): number {
+  return reading.synced ? reading.rate : 1;
+}
+
+/** Metres of ground the feet carry per second at the rate the clip is actually playing. */
+export function strideFeetSpeed(reading: IStrideReading): number {
+  return reading.clipGroundSpeed * appliedStrideRate(reading);
+}
+
+/** |feet - ground| / ground, or nothing when the body covered no ground to compare against. */
+export function footSlideRatio(reading: IStrideReading): number | undefined {
+  if (Math.abs(reading.groundSpeed) <= STRIDE_GROUND_SPEED_FLOOR) return undefined;
+  return Math.abs(strideFeetSpeed(reading) - reading.groundSpeed) / Math.abs(reading.groundSpeed);
+}
+
+/**
+ * Why a stride bound did not hold, or nothing when it did (or was never asked for).
+ *
+ * Every branch fails closed. The stride convention is on by default, so a producer that reports
+ * no stride has not reported agreement — it has reported nothing, and a bound evaluated against
+ * nothing is the vacuous pass this harness refuses.
+ */
+export function strideFailure(
+  assertion: IPlaytestAnimationAssertion,
+  observed: unknown,
+): { code: string; detail: string } | undefined {
+  if (assertion.maxFootSlide === undefined && assertion.strideSynced === undefined) return undefined;
+  const reading = strideReading(observed);
+  if (reading === undefined)
+    return {
+      code: "TN_PLAYTEST_STRIDE_UNOBSERVED",
+      detail:
+        "the runtime reported no stride for this clip, so neither the feet nor the ground were measured",
+    };
+  if (assertion.strideSynced !== undefined && reading.synced !== assertion.strideSynced)
+    return {
+      code: "TN_PLAYTEST_STRIDE_NOT_SYNCED",
+      detail: `stride sync is ${reading.synced ? "applied" : "not applied"}, expected ${assertion.strideSynced ? "applied" : "not applied"}${reading.overridden ? " (the game set strideSync: false)" : ""}`,
+    };
+  if (assertion.maxFootSlide === undefined) return undefined;
+  const ratio = footSlideRatio(reading);
+  if (ratio === undefined)
+    return {
+      code: "TN_PLAYTEST_STRIDE_UNOBSERVED",
+      detail:
+        "the body covered no ground between samples, so foot slide was not measurable — drive the subject before bounding it",
+    };
+  if (ratio > assertion.maxFootSlide)
+    return {
+      code: "TN_PLAYTEST_FOOT_SLIDE",
+      detail: `feet carry ${strideFeetSpeed(reading).toFixed(3)} m/s against ${reading.groundSpeed.toFixed(3)} m/s of ground — ${(ratio * 100).toFixed(0)}% apart, ceiling ${(assertion.maxFootSlide * 100).toFixed(0)}%`,
+    };
+  return undefined;
 }
 
 export function runtimeGameplaySamples(value: unknown): Array<{ gameplay: Record<string, unknown>; label: string }> {
