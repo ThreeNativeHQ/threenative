@@ -112,6 +112,12 @@ export class NavigationProbe extends Scene<INavigationState, IPhysicsContext> {
       // where nothing can observe it, and `pathLength` becomes a function of how long startup
       // took: 8.82 on a workstation, 8.19 in CI, against a required 8.5. Both sides key off the
       // same signal instead, so the observed window always contains the whole route.
+      //
+      // Which is why the scenario budgets 450 ticks and not 210. On a CI runner served by
+      // SwiftShader the world's shader compilation is the whole cost: the same 228 ticks that
+      // leave 166 of route on a workstation left 22 on run 33788558618, so `pathLength` read
+      // 1.25 against a required 8.5 while nothing about the route had changed. The route needs
+      // 150 ticks after readiness; the budget carries readiness plus that, plus margin.
       if (frameCtx.startup.phase !== "ready") return;
       navigator.update(dt);
       frameCtx.state.set({ distanceToTarget: navigator.mesh.position.distanceTo(TARGET) });
