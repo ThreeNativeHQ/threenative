@@ -570,6 +570,7 @@ describe("starter playtest proof", () => {
         kind?: string;
         label?: string;
         pointerPosition?: { buttons?: number; x: number; y: number };
+        press?: string;
         waitTicks?: number;
       }>;
       target: string;
@@ -585,15 +586,21 @@ describe("starter playtest proof", () => {
     const labeled = new Map(scenario.steps.map((step) => [step.label ?? "", step]));
     expect(labeled.get("aim-down")?.pointerPosition).toMatchObject({ buttons: 2, x: 0.5 });
     expect(labeled.get("look-right")?.pointerPosition).not.toHaveProperty("buttons");
+    // The trigger is pressed alone, after the aim button is released and the aim is held on a
+    // key instead. A chorded press — left while right is down — never reaches the page through
+    // the harness, so a scenario built on one proves nothing about either button.
+    expect(labeled.get("aim-key")?.press).toBe("KeyQ");
     expect(labeled.get("fire-while-aiming")?.pointerPosition).toMatchObject({
-      buttons: 3,
+      buttons: 1,
       x: 0.5,
     });
     expect(labeled.get("release-buttons")?.pointerPosition).toMatchObject({ buttons: 0 });
 
     const resources = scenario.assert?.resources ?? [];
     const yaw = resources.find(({ path }) => path === "yawDegrees");
-    expect(yaw?.atSteps).toContainEqual({ label: "look-right-settle", equals: 92 });
+    // Half of the ninety-two degrees that same pointer travel used to produce: the right button is
+    // held through the look, and aiming down the sights halves the sensitivity.
+    expect(yaw?.atSteps).toContainEqual({ label: "look-right-settle", equals: 46 });
     const shots = resources.find(({ path }) => path === "shotsFired");
     expect(shots?.atSteps).toEqual([{ label: "fire-settle", equals: 1 }]);
     // The heading is zeroed through the template's own restart binding before the measured

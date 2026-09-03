@@ -228,7 +228,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   minimal: "780fe6d1030a55d217252a0f77019d1e2e86af043481ecb56eb0800a7d74524b",
   platformer: "ed353c5ead8e9e0e066d7efb298b09298b6ad4539efa3189b208fe5e012d5b79",
   racing: "c493902d5e4f722ca5fdd558fe2009e232f8dba28da2e8998edb768fe84c3807",
-  shooter: "24b16eecf4dd5bb88c8679d8c397b456d584802f93b4c48782db841a0883ab5a",
+  shooter: "8848d4fe1d915eea62adf8eb3f7b81920b8a282e0762f9e3ea775ab95a10a188",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
   starter: "3e06ef75e06f26e14f46432c82c5a6afff77e821a36d54d7f7031973fcb99e7a",

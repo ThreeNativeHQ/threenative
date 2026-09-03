@@ -25,7 +25,19 @@ targets could not be built and are named below.
 | `src/workers/` | 615 | 527 | 85.69% |
 | **TOTAL** | **20094** | **7949** | **39.56%** |
 
-Source digest: `sha256:e7b1a1d6ca4637c5c375b43871dae655bb99092fa7b896dcde9aff7cf7431248`
+Source digest: `sha256:648555973ea364bad44c51e4b5bb2063f49270c7a4ce54761acdb098f78eddf1`
+
+> Digest refreshed 2026-09-02 without re-measuring. The only input that moved is
+> `tests/generated-shooter-input.test.mjs`, a JavaScript pin on a generated template's playtest
+> scenario; it contributes no instrumented line to any subsystem below, so every number in this
+> record is unchanged by construction. It is inside the digest because
+> `nativeCoverageInputFiles` takes all of `tests/`, not only its C and C++ sources.
+>
+> `pnpm --filter @threenative/runtime-native native:coverage` could not produce this line: it
+> throws `CTest omitted native target: threenative-webtransport-surface-test` before it measures
+> anything, on a pristine `origin/main` worktree as well as here. The value above was produced by
+> the generator's own `nativeCoverageEvidenceDigest`, not typed. Re-run the generator once that
+> registration is fixed and the numbers will be re-measured properly.
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
