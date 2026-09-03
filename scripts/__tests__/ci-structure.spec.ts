@@ -710,6 +710,16 @@ describe("CI pipeline structure", () => {
     // Both configured build directories, or the QuickJS variant recompiles from nothing.
     expect(native).toContain("packages/runtime-native/build/tn-linux");
     expect(native).toContain("packages/runtime-native/build/tn-linux-quickjs");
+    // A cached build tree is only usable if its inputs are older than it. `actions/checkout`
+    // stamps everything with the time it ran, so without this the restore is dead weight and
+    // ninja rebuilds the tree it just downloaded.
+    expect(native, "the restored tree is older than its own freshly checked-out inputs").toContain(
+      "restore-source-mtimes.mjs",
+    );
+    const order = native.indexOf("restore-source-mtimes.mjs");
+    expect(order, "sources are dated after the build has already run").toBeLessThan(
+      native.indexOf("native:build"),
+    );
   });
 
   // Six jobs need `packages/*/dist` and each compiled it from scratch — measured at 49-65s per
