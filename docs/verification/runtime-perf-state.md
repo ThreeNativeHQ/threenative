@@ -1688,6 +1688,88 @@ Building a device APK: `THREENATIVE_RUNTIME_SOURCE=<engine>/packages/runtime-nat
 
 ---
 
+## 5b. Launch under V8 — PRD-328, 2026-09-03
+
+Until this date the launch instrument could not run on the engine that ships. The compile and
+execute markers existed only in `quickjs_engine.cpp`, which has not been the shipped engine on any
+platform since 2026-08-16, and the desktop CLI emitted no launch markers at all. Every quotable
+JavaScript parse-and-compile number was therefore the QuickJS one from 2026-08-11 (230 ms, 8.0 %).
+
+**Phase 0 red, desktop**, `build/tn-linux/mystral` at `6cbb2c7d`, native-smoke, 300 frames — the
+entire launch, one line:
+
+```
+TN_COLD_START:{"segment":"first_frame","atMs":86.243}
+```
+
+and the new marker contract run against that same pre-change binary:
+
+```
+desktop core gate failed:
+TN_COLD_START_MARKER_MISSING:process
+TN_COLD_START_MARKER_MISSING:runtime_created
+TN_COLD_START_MARKER_MISSING:game_eval_begin
+TN_COLD_START_MARKER_MISSING:compile_begin
+TN_COLD_START_MARKER_MISSING:compile_complete
+TN_COLD_START_MARKER_MISSING:execute_begin
+TN_COLD_START_MARKER_MISSING:execute_complete
+```
+
+**Phase 2 green, desktop.** V8 13.1, Dawn, `CMAKE_BUILD_TYPE=Release` (-O2) read from the binary's
+own CMake cache, five launches, `examples/native-smoke`:
+
+```
+node packages/runtime-native/scripts/measure-cold-start.mjs --desktop --launches 5
+```
+
+| segment | median | share |
+| --- | ---: | ---: |
+| host bring-up (`process` → `runtime_created`) | 328 ms | 62.5 % |
+| pre-eval setup | 0 ms | 0.0 % |
+| eval entry (read + transpile) | 12 ms | 2.4 % |
+| **JavaScript parse and compile** | **51 ms** | **9.7 %** |
+| post-compile setup | 0 ms | 0.0 % |
+| bundle top-level execution | 45 ms | 8.6 % |
+| first rendered frame | 88 ms | 16.8 % |
+| **total** | **524 ms** (p95 600, range 503–600) | |
+
+`residualMs` in `TN_STALL_SEGMENTS` fell from 65.5 ms to 64.7 ms on the same scene because the JS
+span now sits *before* the stall budget's window rather than inside its unattributed remainder;
+the 96 ms of compile-plus-execute that used to be invisible is now named.
+
+**Phone: UNVERIFIED at time of writing.** The Pixel 8 (`shiba`, `192.168.1.192:5555`) is attached
+over Wi-Fi ADB and thermally clean (status 0 NONE, 28 °C) but sat at 36 % battery and charging,
+under the 50 %-and-discharging bar `device-preflight.mjs` enforces. No phone number is claimed
+here. The desktop half is what this section reports.
+
+**Engine versions** are pinned by `packages/runtime-native/tests/js-engine-version-skew.test.mjs`;
+the desktop archive is V8 13.1 and the Android prebuilt is V8 11.0, so the two are not the same
+compiler and the desktop share above may not be read as the phone's.
+
+### The code-cache decision — PRD-328 Phase 3
+
+The pre-registered rule, quoted verbatim from the PRD before any number existed:
+
+> If `compile + execute` on the phone is **≥ 300 ms median** or **≥ 10 % of launch**, file
+> `PRD-33X — the bundle is not parsed as source twice` […] Otherwise write the graveyard row.
+
+The rule names **the phone**, and the phone lane did not run. The decision is therefore **deferred,
+not taken**, and the desktop numbers are recorded as what they are: 51 ms compile (9.7 %) and 45 ms
+top-level execution (8.6 %) on a 524 ms launch of a small bundle. Two things must be true before
+anyone reads the desktop share as a verdict:
+
+1. **The bundle is not representative.** `native-smoke` is a smoke scene; Bayview's bundle is
+   roughly 4 MB and parse time scales with bytes. A 51 ms figure on native-smoke predicts nothing
+   about the game whose launch is 14 s.
+2. **The engines differ.** Desktop is V8 13.1, Android is V8 11.0.
+
+What is settled is that the question is now *askable*: the instrument runs on the engine that
+ships, on both lanes, and `pnpm native:verify:desktop` fails when a marker goes missing. Re-run
+`--desktop` against a Bayview-class bundle and `--device` against the phone at ≥ 50 % battery, then
+apply the rule unchanged.
+
+---
+
 ## 6. Older results still worth quoting
 
 - **Engine load test (PRD-117, 2026-08-15), scorer-equivalence-gated:** ThreeNative wins
