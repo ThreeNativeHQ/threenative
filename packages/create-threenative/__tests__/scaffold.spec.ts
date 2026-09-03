@@ -221,19 +221,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "f74d141549e9b8f1d63ec1f4a19355fe0a48011605d66998b94c33d11a18ca84",
-  defense: "cdcd6856dbacac7b335c9602c5812cc7476defa705a37c94dbab8c00b0008f22",
+  "action-rpg": "1158050dd68bff6348c83d66c093a27afaa723985c6775fcd16b817e7c7a4beb",
+  defense: "a640e5e39023b3157668e148e526b52456207a9eaaea75eba4d1b631116078da",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "000cd8d2df7e434f43cb1f270881435b89575fce4e6ba3d86ebed0974a395be1",
-  platformer: "08ec1ae39a67ac0667c4d4acc6bc0224bbd8976e382fa42bbf87d28b5c5f36bb",
-  runner: "cfb82df987d3cba8beda7a65c087be155cd30d84e7f80910263c99074cbf7d4d",
-  puzzle: "5940818ec4400e9f6ba02e6d7c29e0fe0ace150db8a7fd46f9f5a69b1af5f312",
-  racing: "eb80e8e66a06fe5be481ab64516859dcc39604a9f5ddfd0d00d59f636a34fc7a",
-  shooter: "af2fe52467215754ee84f68c37bd0bf6e962f3704cb78cce0fb1f548202c75d2",
+  minimal: "eed513dc84abb37a4165a27eedfefff5753a2aec518310027eb1d6010e399efb",
+  platformer: "e4fd91e6f1dc4d4f949f6f09abbaac4b9b48b6537a2433faf335c5143f446d5f",
+  runner: "95589d1069674a2e91380791296cfe521aa0dbc922e10b56ad427a7b8da075eb",
+  puzzle: "7fe78545c0699758ae829584106961def01bb31b25822cc41a9339c0d31b5c97",
+  racing: "1975f225d066c078674019678c151a4d7073f87d139d986f35a9d0542e4277a8",
+  shooter: "fc661716c33649e6aa538c4682175c6ef4e4fc8ea64903f50855b19d371d7764",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "817b5fd18ff7e296b19fdd1e67c4d7532bba23a647264777accdc73a686939e1",
+  starter: "0d04ac9c62a0622292ecd4e32d1b242e984e067f2f421ac7292d93a52654649a",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -254,7 +254,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "c494f7a75602f93fcecd45645a07e44a6a51e31f77d5d3fe73bf0657864adb8a",
+  sailing: "db82c3d7b41fb9c681aff3f95795a55ba254c9a86dd12697a4620ed48a4e8004",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
