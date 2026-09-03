@@ -111,6 +111,15 @@ struct ScenarioCoverage {
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct FeetOnFloor {
+    grounded: bool,
+    ground_collider: Option<u32>,
+    ground_normal: [f32; 3],
+    position: [f32; 3],
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Observation {
     arm: String,
     rapier_version: String,
@@ -132,6 +141,7 @@ struct Observation {
     average_step_nanoseconds: f64,
     quadratic_buffer_bytes: BufferBytes,
     scenario_coverage: ScenarioCoverage,
+    feet_on_floor: FeetOnFloor,
 }
 
 #[derive(Serialize)]
@@ -153,6 +163,10 @@ struct Comparison {
     teleport_grounded_mismatch: u32,
     average_step_nanoseconds_delta: f64,
     scenario_coverage_mismatches: usize,
+    feet_on_floor_grounded_mismatch: u32,
+    feet_on_floor_ground_collider_mismatch: u32,
+    feet_on_floor_normal_max_axis_delta: f32,
+    feet_on_floor_position_max_axis_delta: f32,
 }
 
 fn fixture_path() -> PathBuf {
@@ -257,6 +271,99 @@ fn drain_events(simulation: *mut Simulation, body_count: usize) -> Vec<String> {
             format!("{left}-{right}-{}", output[offset + 2])
         })
         .collect()
+}
+
+fn feet_on_floor_subject() -> FeetOnFloor {
+    let simulation = tn_physics_create(&TnPhysicsWorldOptions {
+        gravity_x: 0.0,
+        gravity_y: -9.81,
+        gravity_z: 0.0,
+    });
+    assert!(!simulation.is_null());
+    assert!(tn_physics_add_body(
+        simulation,
+        &TnPhysicsBodyOptions {
+            id: 0,
+            body_type: 1,
+            shape_type: 0,
+            position_x: 0.0,
+            position_y: -0.1,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 5.0,
+            shape_y: 0.1,
+            shape_z: 2.0,
+            mass: 0.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: false,
+            continuous_collision: false,
+        }
+    ));
+    assert!(tn_physics_add_body(
+        simulation,
+        &TnPhysicsBodyOptions {
+            id: 1,
+            body_type: 3,
+            shape_type: 2,
+            position_x: 0.0,
+            position_y: 0.5,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 0.2,
+            shape_y: 0.3,
+            shape_z: 0.0,
+            mass: 0.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: false,
+            continuous_collision: false,
+        }
+    ));
+    assert!(tn_physics_configure_character(
+        simulation,
+        &TnPhysicsCharacterOptions {
+            id: 1,
+            offset: 0.01,
+            max_slope_climb_angle: std::f32::consts::FRAC_PI_4,
+            autostep_enabled: false,
+            autostep_max_height: 0.0,
+            autostep_min_width: 0.0,
+            autostep_include_dynamic_bodies: false,
+            snap_to_ground_enabled: false,
+            snap_to_ground: 0.0,
+            one_way_layers: 0,
+            pushes_dynamic_bodies: false,
+        }
+    ));
+
+    let mut y = 0.5;
+    let mut velocity_y = 0.0;
+    for _ in 0..30 {
+        velocity_y += -9.81 / 60.0;
+        y += velocity_y / 60.0;
+        let input = [1.0, 0.0, y, 0.0, 0.0, 0.0, 0.0, 1.0];
+        assert!(tn_physics_step(simulation, 1.0 / 60.0, input.as_ptr(), 1));
+        y = positions(simulation, 2)[&1][1];
+        if character_state(simulation, 1).is_some_and(|state| state.0) && velocity_y < 0.0 {
+            velocity_y = 0.0;
+        }
+    }
+    let state = character_state(simulation, 1).expect("feet-on-floor state must exist");
+    let position = positions(simulation, 2)[&1];
+    tn_physics_destroy(simulation);
+    FeetOnFloor {
+        grounded: state.0,
+        ground_collider: state.1,
+        ground_normal: state.2,
+        position,
+    }
 }
 
 #[test]
@@ -620,6 +727,7 @@ fn run_scenario(scenario: &Scenario, sha: &str, version: &str) -> Observation {
             platform_grounded_observed,
             area_excluded_character: !area_membership.contains(&character.body_id),
         },
+        feet_on_floor: feet_on_floor_subject(),
     };
     tn_physics_destroy(simulation);
     observation
@@ -736,6 +844,20 @@ fn measures_the_shipping_simulation_against_the_web_artifact() {
         .into_iter()
         .filter(|mismatch| *mismatch)
         .count(),
+        feet_on_floor_grounded_mismatch: u32::from(
+            web.feet_on_floor.grounded != rust.feet_on_floor.grounded,
+        ),
+        feet_on_floor_ground_collider_mismatch: u32::from(
+            web.feet_on_floor.ground_collider != rust.feet_on_floor.ground_collider,
+        ),
+        feet_on_floor_normal_max_axis_delta: max_axis_delta(
+            &web.feet_on_floor.ground_normal,
+            &rust.feet_on_floor.ground_normal,
+        ),
+        feet_on_floor_position_max_axis_delta: max_axis_delta(
+            &web.feet_on_floor.position,
+            &rust.feet_on_floor.position,
+        ),
     };
     let rendered = serde_json::to_string_pretty(&comparison).expect("comparison must serialize");
     fs::write(artifact_path("parity-comparison.json"), &rendered)
@@ -762,6 +884,27 @@ fn measures_the_shipping_simulation_against_the_web_artifact() {
         comparison.ground_normal_max_axis_delta <= 0.02,
         "ground normal exceeded the 0.02 per-axis tolerance: {}",
         comparison.ground_normal_max_axis_delta
+    );
+    assert_eq!(
+        (
+            web.feet_on_floor.grounded,
+            web.feet_on_floor.ground_collider,
+        ),
+        (
+            rust.feet_on_floor.grounded,
+            rust.feet_on_floor.ground_collider,
+        ),
+        "character.spec feet-on-floor grounded state must agree exactly"
+    );
+    assert!(
+        comparison.feet_on_floor_normal_max_axis_delta <= 0.02,
+        "feet-on-floor ground normal exceeded the 0.02 per-axis tolerance: {}",
+        comparison.feet_on_floor_normal_max_axis_delta
+    );
+    assert!(
+        comparison.feet_on_floor_position_max_axis_delta <= 0.02,
+        "feet-on-floor position exceeded the 0.02 per-axis tolerance: {}",
+        comparison.feet_on_floor_position_max_axis_delta
     );
     assert_eq!(rust_area, web_area, "area membership must agree exactly");
     assert_eq!(

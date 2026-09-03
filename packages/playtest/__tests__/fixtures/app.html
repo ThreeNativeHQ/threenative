@@ -18,6 +18,7 @@
       const params = new URLSearchParams(location.search);
       const mode = params.get("mode") ?? "good";
       const canvas = document.getElementById("view");
+      let startupPollsRemaining = mode === "startup-delayed" ? 3 : Infinity;
 
       if (mode === "generic-adapter") {
         const genericAdapter = {
@@ -87,6 +88,7 @@
       }
 
       const player = { x: 0, y: 0, z: 0 };
+      let startupReadyReported = false;
       // Setup-channel state: the last applied rotation and whether the placement
       // carried the frozen marker. A real game would read these to steer or hold.
       let appliedRotation = [0, 0, 0, 1];
@@ -94,6 +96,7 @@
       const camera = { x: 0, y: 2, z: -6 };
       let held = false;
       let tick = 0;
+      let sampleCount = 0;
       const physicsDebugSeries = [];
       let networkFailureSent = false;
       const worldBodies = ["player", "ground"];
@@ -238,7 +241,9 @@
             "entity.bounds",
             "entity.observe",
             "entity.setup",
+            "runtime.resources",
             ...(mode === "physics" ? ["runtime.fixedStep", "runtime.physics"] : []),
+            ...(mode === "startup-delayed" || mode === "startup-stuck" ? ["runtime.startup"] : []),
           ],
           limits: {
             maxEntitiesPerSample: 100,
@@ -249,11 +254,26 @@
           name: "fixture",
           protocolVersion: mode === "wrong-protocol" ? 2 : 1,
         }),
-        ready: () =>
-          mode === "not-ready"
-            ? { ready: false, reason: "scene still loading" }
-            : { ready: true },
+        ready: () => {
+          if (mode === "not-ready") return { ready: false, reason: "scene still loading" };
+          const startupReady = startupPollsRemaining <= 0;
+          if (!startupReady && Number.isFinite(startupPollsRemaining)) startupPollsRemaining -= 1;
+          if (startupReady) startupReadyReported = true;
+          return {
+            ready: true,
+            ...(mode === "startup-delayed" || mode === "startup-stuck"
+              ? {
+                  startup: {
+                    phase: startupReady ? "ready" : "collapsing",
+                    progress: startupReady ? 1 : 0.5,
+                    compileSettled: startupReady,
+                  },
+                }
+              : {}),
+          };
+        },
         sample: (request) => {
+          sampleCount += 1;
           if (mode === "network-only" && !networkFailureSent) {
             networkFailureSent = true;
             fetch("http://127.0.0.1:1/missing-asset.js").catch(() => undefined);
@@ -270,6 +290,7 @@
             });
           }
           const diagnostics = runtimeDiagnostics();
+          const contract = bridge.describe();
           return {
           clock: mode === "physics"
             ? { mode: "fixed-step", tick }
@@ -280,8 +301,16 @@
           entities: mode === "silent-drop" ? [] : (request.entities ?? []).map(observe),
           ...(diagnostics.length === 0 ? {} : { diagnostics }),
           ...(mode === "physics" ? { physicsDebugSeries: [...physicsDebugSeries] } : {}),
-          resources: {},
-        }},
+            resources: mode === "startup-delayed" || mode === "startup-stuck"
+              ? { startup: { sampledBeforeReady: !startupReadyReported } }
+              : {
+                  bridgeContract: {
+                    capabilities: [...contract.capabilities],
+                    limits: { ...contract.limits },
+                  },
+                  fixtureRun: { sampleCount },
+                },
+          }},
       };
 
       if (!mode.startsWith("no-bridge")) {

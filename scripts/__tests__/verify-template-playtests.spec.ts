@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
+  TEMPLATE_PLAYTEST_NAMES,
   assertTemplatePlaytestsPassed,
   auditTemplatePlaytests,
   runTemplatePlaytests,
@@ -25,9 +26,21 @@ async function writeScenario(
 }
 
 describe("template playtest matrix", () => {
+  it("selects the six templates outside the existing golden-path boot matrix", () => {
+    expect(TEMPLATE_PLAYTEST_NAMES).toEqual([
+      "action-rpg",
+      "defense",
+      "minimal",
+      "racing",
+      "sailing",
+      "shooter",
+    ]);
+  });
+
   it("reports every template and continues after a failing template", async () => {
     const root = await makeTempDir("threenative-template-matrix-");
     const calls: string[] = [];
+    let alphaRuns = 0;
     try {
       const results = await runTemplatePlaytests(
         ["alpha", "beta"],
@@ -43,7 +56,7 @@ describe("template playtest matrix", () => {
           run: async (_command, _args, cwd) => {
             const template = path.basename(cwd);
             calls.push(`test:${template}`);
-            if (template === "alpha") throw new Error("alpha test failed");
+            if (template === "alpha" && alphaRuns++ === 0) throw new Error("alpha test failed");
           },
         },
       );
@@ -52,7 +65,14 @@ describe("template playtest matrix", () => {
         { error: "alpha test failed", pass: false, template: "alpha" },
         { pass: true, template: "beta" },
       ]);
-      expect(calls).toEqual(["scaffold:alpha", "test:alpha", "scaffold:beta", "test:beta"]);
+      expect(calls).toEqual([
+        "scaffold:alpha",
+        "test:alpha",
+        "test:alpha",
+        "scaffold:beta",
+        "test:beta",
+        "test:beta",
+      ]);
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -128,7 +148,14 @@ describe("template playtest matrix", () => {
           },
         ),
       ).rejects.toThrow("TN_TEMPLATE_PLAYTESTS_FAILED: alpha: TN_TEMPLATE_PLAYTEST_AUDIT_INVALID");
-      expect(calls).toEqual(["scaffold:alpha", "test:alpha", "scaffold:beta", "test:beta"]);
+      expect(calls).toEqual([
+        "scaffold:alpha",
+        "test:alpha",
+        "test:alpha",
+        "scaffold:beta",
+        "test:beta",
+        "test:beta",
+      ]);
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -169,7 +196,14 @@ describe("template playtest matrix", () => {
       ).rejects.toThrow(
         "TN_TEMPLATE_PLAYTESTS_FAILED: alpha: TN_VISUAL_STRUCTURE_FAILED:\nalpha: missing src/render/sky.ts",
       );
-      expect(calls).toEqual(["scaffold:alpha", "test:alpha", "scaffold:beta", "test:beta"]);
+      expect(calls).toEqual([
+        "scaffold:alpha",
+        "test:alpha",
+        "test:alpha",
+        "scaffold:beta",
+        "test:beta",
+        "test:beta",
+      ]);
     } finally {
       await rm(root, { force: true, recursive: true });
     }

@@ -3,6 +3,7 @@ import type { ICtx } from "@threenative/core";
 import { BoxGeometry, Group, Mesh, Vector3 } from "three";
 import { afterEach, describe, expect, it } from "vitest";
 import "../src/index.js";
+import { FixedStepLoop } from "../../core/src/loop.js";
 import { CharacterBody3D } from "../src/CharacterBody3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
@@ -10,9 +11,9 @@ import { type IPhysicsContext, rapier } from "../src/plugin.js";
 
 const plugins: Array<ReturnType<typeof rapier>> = [];
 
-async function setup() {
+async function setup(gravity = { x: 0, y: 0, z: 0 }) {
   await RAPIER.init();
-  const plugin = rapier({ gravity: { x: 0, y: 0, z: 0 } });
+  const plugin = rapier({ gravity });
   const ctx = { physics: undefined } as unknown as ICtx<Record<string, unknown>, IPhysicsContext>;
   await plugin.setup?.(ctx);
   plugins.push(plugin);
@@ -60,6 +61,34 @@ describe("CharacterBody3D", () => {
     }
 
     expect(character.velocity.y).toBeLessThan(0);
+    character.dispose();
+  });
+
+  it("should keep physics fixed-step during a 500ms render stall", async () => {
+    const { ctx, plugin } = await setup({ x: 0, y: -9.81, z: 0 });
+    const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    mesh.position.y = 4;
+    const character = new CharacterBody3D({
+      gravity: -9.81,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      object: mesh,
+    });
+    const physicsSteps: number[] = [];
+    const loop = new FixedStepLoop({
+      onUpdate: (dt) => {
+        physicsSteps.push(dt);
+        character.moveAndSlide(dt);
+        plugin.update?.(ctx, dt);
+      },
+    });
+
+    loop.stepFrame(0);
+    loop.stepFrame(500);
+
+    expect(physicsSteps).toHaveLength(5);
+    expect(physicsSteps.every((dt) => dt === 1 / 60)).toBe(true);
+    expect(mesh.position.y).toBeGreaterThan(3.9);
     character.dispose();
   });
 

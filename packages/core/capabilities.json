@@ -4191,11 +4191,11 @@
       "supersedes": []
     },
     {
-      "symbol": "BloomNode",
+      "symbol": "bloom",
       "package": "three",
       "importPath": "three/addons/tsl/display/BloomNode.js",
-      "kind": "class",
-      "signature": "class BloomNode",
+      "kind": "function",
+      "signature": "bloom(node, strength, radius, threshold)",
       "summary": "Glow around bright pixels. Already wired as the `bloom` stage.",
       "situations": ["make a bright opening or a lamp glow", "bloom, glare, light spill"],
       "example": "src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment",
@@ -4209,23 +4209,23 @@
       "constraints": [
         "Use the running WebGPU renderer and keep appearance choices in template render source."
       ],
-      "example": "DenoiseNode(...)",
+      "example": "denoise(...)",
       "importPath": "three/addons/tsl/display/DenoiseNode.js",
-      "kind": "class",
+      "kind": "function",
       "overrides": [],
       "package": "three",
-      "signature": "class DenoiseNode",
+      "signature": "function denoise",
       "situations": ["denoise a noisy screen-space pass"],
       "supersedes": [],
-      "summary": "ThreeNative equivalent for realism-effects DenoiseNode.",
-      "symbol": "DenoiseNode"
+      "summary": "ThreeNative equivalent for realism-effects denoise.",
+      "symbol": "denoise"
     },
     {
-      "symbol": "GodraysNode",
+      "symbol": "godrays",
       "package": "three",
       "importPath": "three/addons/tsl/display/GodraysNode.js",
-      "kind": "class",
-      "signature": "class GodraysNode",
+      "kind": "function",
+      "signature": "godrays(textureNode, light, shadowMap, params)",
       "summary": "Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` in src/render/postprocessing.ts.",
       "situations": [
         "draw a visible shaft of light through a window or a hole in a roof",
@@ -4245,11 +4245,11 @@
       "supersedes": []
     },
     {
-      "symbol": "GTAONode",
+      "symbol": "ao",
       "package": "three",
       "importPath": "three/addons/tsl/display/GTAONode.js",
-      "kind": "class",
-      "signature": "class GTAONode",
+      "kind": "function",
+      "signature": "ao(scene, camera, resolution, radius, intensity)",
       "summary": "Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled`.",
       "situations": [
         "darken the contact where an object meets the floor",
@@ -4282,106 +4282,106 @@
       "constraints": [
         "Use the running WebGPU renderer and keep appearance choices in template render source."
       ],
-      "example": "RecurrentDenoiseNode(...)",
+      "example": "recurrentDenoise(...)",
       "importPath": "three/addons/tsl/display/RecurrentDenoiseNode.js",
-      "kind": "class",
+      "kind": "function",
       "overrides": [],
       "package": "three",
-      "signature": "class RecurrentDenoiseNode",
+      "signature": "function recurrentDenoise",
       "situations": ["denoise a noisy screen-space pass"],
       "supersedes": [],
-      "summary": "ThreeNative equivalent for realism-effects RecurrentDenoiseNode.",
-      "symbol": "RecurrentDenoiseNode"
+      "summary": "ThreeNative equivalent for realism-effects recurrentDenoise.",
+      "symbol": "recurrentDenoise"
     },
     {
       "constraints": [
         "Use the running WebGPU renderer and keep appearance choices in template render source."
       ],
-      "example": "SharpenNode(...)",
+      "example": "sharpen(...)",
       "importPath": "three/addons/tsl/display/SharpenNode.js",
-      "kind": "class",
+      "kind": "function",
       "overrides": [],
       "package": "three",
-      "signature": "class SharpenNode",
+      "signature": "function sharpen",
       "situations": ["make the image sharper"],
       "supersedes": [],
-      "summary": "ThreeNative equivalent for realism-effects SharpenNode.",
-      "symbol": "SharpenNode"
+      "summary": "ThreeNative equivalent for realism-effects sharpen.",
+      "symbol": "sharpen"
     },
     {
       "constraints": [
         "Use the running WebGPU renderer and keep appearance choices in template render source."
       ],
-      "example": "SSAAPassNode(...)",
+      "example": "ssaaPass(...)",
       "importPath": "three/addons/tsl/display/SSAAPassNode.js",
-      "kind": "class",
+      "kind": "function",
       "overrides": [],
       "package": "three",
-      "signature": "class SSAAPassNode",
+      "signature": "function ssaaPass",
       "situations": ["anti-alias still and moving scenes"],
       "supersedes": [],
-      "summary": "ThreeNative equivalent for realism-effects SSAAPassNode.",
-      "symbol": "SSAAPassNode"
+      "summary": "ThreeNative equivalent for realism-effects ssaaPass.",
+      "symbol": "ssaaPass"
     },
     {
       "constraints": [
         "Use the running WebGPU renderer and keep appearance choices in template render source."
       ],
-      "example": "SSGINode(...)",
+      "example": "ssgi(...)",
       "importPath": "three/addons/tsl/display/SSGINode.js",
-      "kind": "class",
+      "kind": "function",
       "overrides": [],
       "package": "three",
-      "signature": "class SSGINode",
+      "signature": "function ssgi",
       "situations": ["add screen-space global illumination"],
       "supersedes": [],
-      "summary": "ThreeNative equivalent for realism-effects SSGINode.",
-      "symbol": "SSGINode"
+      "summary": "ThreeNative equivalent for realism-effects ssgi.",
+      "symbol": "ssgi"
     },
     {
       "constraints": [
         "Use the running WebGPU renderer and keep appearance choices in template render source."
       ],
-      "example": "SSRNode(...)",
+      "example": "ssr(...)",
       "importPath": "three/addons/tsl/display/SSRNode.js",
-      "kind": "class",
+      "kind": "function",
       "overrides": [],
       "package": "three",
-      "signature": "class SSRNode",
+      "signature": "function ssr",
       "situations": ["add screen-space reflections"],
       "supersedes": [],
-      "summary": "ThreeNative equivalent for realism-effects SSRNode.",
-      "symbol": "SSRNode"
+      "summary": "ThreeNative equivalent for realism-effects ssr.",
+      "symbol": "ssr"
     },
     {
       "constraints": [
         "Use the running WebGPU renderer and keep appearance choices in template render source."
       ],
-      "example": "TemporalReprojectNode(...)",
+      "example": "temporalReproject(...)",
       "importPath": "three/addons/tsl/display/TemporalReprojectNode.js",
-      "kind": "class",
+      "kind": "function",
       "overrides": [],
       "package": "three",
-      "signature": "class TemporalReprojectNode",
+      "signature": "function temporalReproject",
       "situations": ["reproject a temporal history"],
       "supersedes": [],
-      "summary": "ThreeNative equivalent for realism-effects TemporalReprojectNode.",
-      "symbol": "TemporalReprojectNode"
+      "summary": "ThreeNative equivalent for realism-effects temporalReproject.",
+      "symbol": "temporalReproject"
     },
     {
       "constraints": [
         "Use the running WebGPU renderer and keep appearance choices in template render source."
       ],
-      "example": "TRAANode(...)",
+      "example": "traa(...)",
       "importPath": "three/addons/tsl/display/TRAANode.js",
-      "kind": "class",
+      "kind": "function",
       "overrides": [],
       "package": "three",
-      "signature": "class TRAANode",
+      "signature": "function traa",
       "situations": ["temporally resolve a moving image"],
       "supersedes": [],
-      "summary": "ThreeNative equivalent for realism-effects TRAANode.",
-      "symbol": "TRAANode"
+      "summary": "ThreeNative equivalent for realism-effects traa.",
+      "symbol": "traa"
     },
     {
       "constraints": [
@@ -4417,16 +4417,16 @@
       "constraints": [
         "Use the running WebGPU renderer and keep appearance choices in template render source."
       ],
-      "example": "normal(...)",
+      "example": "normalView(...)",
       "importPath": "three/tsl",
       "kind": "function",
       "overrides": [],
       "package": "three",
-      "signature": "function normal",
+      "signature": "function normalView",
       "situations": ["provide normals to screen-space effects"],
       "supersedes": [],
-      "summary": "ThreeNative equivalent for realism-effects normal.",
-      "symbol": "normal"
+      "summary": "ThreeNative equivalent for realism-effects normalView.",
+      "symbol": "normalView"
     },
     {
       "constraints": [

@@ -3777,12 +3777,12 @@ src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
 
 ## `three/addons/tsl/display/BloomNode.js`
 
-### `BloomNode`
+### `bloom`
 
-`class` — Glow around bright pixels. Already wired as the `bloom` stage.
+`function` — Glow around bright pixels. Already wired as the `bloom` stage.
 
 ```ts
-class BloomNode
+bloom(node, strength, radius, threshold)
 ```
 
 - **Use when:** make a bright opening or a lamp glow · bloom, glare, light spill
@@ -3794,29 +3794,29 @@ src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
 
 ## `three/addons/tsl/display/DenoiseNode.js`
 
-### `DenoiseNode`
+### `denoise`
 
-`class` — ThreeNative equivalent for realism-effects DenoiseNode.
+`function` — ThreeNative equivalent for realism-effects denoise.
 
 ```ts
-class DenoiseNode
+function denoise
 ```
 
 - **Use when:** denoise a noisy screen-space pass
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-DenoiseNode(...)
+denoise(...)
 ```
 
 ## `three/addons/tsl/display/GodraysNode.js`
 
-### `GodraysNode`
+### `godrays`
 
-`class` — Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` in src/render/postprocessing.ts.
+`function` — Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` in src/render/postprocessing.ts.
 
 ```ts
-class GodraysNode
+godrays(textureNode, light, shadowMap, params)
 ```
 
 - **Use when:** draw a visible shaft of light through a window or a hole in a roof · god rays, sun shafts, light beams, crepuscular rays · make sunlight visible in dusty or misty air indoors · light a cave or a hall through an opening above · volumetric lighting without adding cone geometry
@@ -3828,12 +3828,12 @@ src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
 
 ## `three/addons/tsl/display/GTAONode.js`
 
-### `GTAONode`
+### `ao`
 
-`class` — Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled`.
+`function` — Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled`.
 
 ```ts
-class GTAONode
+ao(scene, camera, resolution, radius, intensity)
 ```
 
 - **Use when:** darken the contact where an object meets the floor · stop props looking like they float · ambient occlusion, contact shadows, crevice darkening
@@ -3862,121 +3862,121 @@ motionBlur(...)
 
 ## `three/addons/tsl/display/RecurrentDenoiseNode.js`
 
-### `RecurrentDenoiseNode`
+### `recurrentDenoise`
 
-`class` — ThreeNative equivalent for realism-effects RecurrentDenoiseNode.
+`function` — ThreeNative equivalent for realism-effects recurrentDenoise.
 
 ```ts
-class RecurrentDenoiseNode
+function recurrentDenoise
 ```
 
 - **Use when:** denoise a noisy screen-space pass
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-RecurrentDenoiseNode(...)
+recurrentDenoise(...)
 ```
 
 ## `three/addons/tsl/display/SharpenNode.js`
 
-### `SharpenNode`
+### `sharpen`
 
-`class` — ThreeNative equivalent for realism-effects SharpenNode.
+`function` — ThreeNative equivalent for realism-effects sharpen.
 
 ```ts
-class SharpenNode
+function sharpen
 ```
 
 - **Use when:** make the image sharper
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-SharpenNode(...)
+sharpen(...)
 ```
 
 ## `three/addons/tsl/display/SSAAPassNode.js`
 
-### `SSAAPassNode`
+### `ssaaPass`
 
-`class` — ThreeNative equivalent for realism-effects SSAAPassNode.
+`function` — ThreeNative equivalent for realism-effects ssaaPass.
 
 ```ts
-class SSAAPassNode
+function ssaaPass
 ```
 
 - **Use when:** anti-alias still and moving scenes
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-SSAAPassNode(...)
+ssaaPass(...)
 ```
 
 ## `three/addons/tsl/display/SSGINode.js`
 
-### `SSGINode`
+### `ssgi`
 
-`class` — ThreeNative equivalent for realism-effects SSGINode.
+`function` — ThreeNative equivalent for realism-effects ssgi.
 
 ```ts
-class SSGINode
+function ssgi
 ```
 
 - **Use when:** add screen-space global illumination
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-SSGINode(...)
+ssgi(...)
 ```
 
 ## `three/addons/tsl/display/SSRNode.js`
 
-### `SSRNode`
+### `ssr`
 
-`class` — ThreeNative equivalent for realism-effects SSRNode.
+`function` — ThreeNative equivalent for realism-effects ssr.
 
 ```ts
-class SSRNode
+function ssr
 ```
 
 - **Use when:** add screen-space reflections
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-SSRNode(...)
+ssr(...)
 ```
 
 ## `three/addons/tsl/display/TemporalReprojectNode.js`
 
-### `TemporalReprojectNode`
+### `temporalReproject`
 
-`class` — ThreeNative equivalent for realism-effects TemporalReprojectNode.
+`function` — ThreeNative equivalent for realism-effects temporalReproject.
 
 ```ts
-class TemporalReprojectNode
+function temporalReproject
 ```
 
 - **Use when:** reproject a temporal history
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-TemporalReprojectNode(...)
+temporalReproject(...)
 ```
 
 ## `three/addons/tsl/display/TRAANode.js`
 
-### `TRAANode`
+### `traa`
 
-`class` — ThreeNative equivalent for realism-effects TRAANode.
+`function` — ThreeNative equivalent for realism-effects traa.
 
 ```ts
-class TRAANode
+function traa
 ```
 
 - **Use when:** temporally resolve a moving image
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-TRAANode(...)
+traa(...)
 ```
 
 ## `three/tsl`
@@ -4011,19 +4011,19 @@ function mrt
 mrt(...)
 ```
 
-### `normal`
+### `normalView`
 
-`function` — ThreeNative equivalent for realism-effects normal.
+`function` — ThreeNative equivalent for realism-effects normalView.
 
 ```ts
-function normal
+function normalView
 ```
 
 - **Use when:** provide normals to screen-space effects
 - **Constraints:** Use the running WebGPU renderer and keep appearance choices in template render source.
 
 ```ts
-normal(...)
+normalView(...)
 ```
 
 ### `velocity`

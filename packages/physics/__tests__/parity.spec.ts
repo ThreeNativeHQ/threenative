@@ -3,7 +3,14 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as RAPIER from "@dimforge/rapier3d-compat";
+import type { ICtx } from "@threenative/core";
+import { BoxGeometry, Mesh } from "three";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { CharacterBody3D } from "../src/CharacterBody3D.js";
+import { CollisionShape3D } from "../src/CollisionShape3D.js";
+import { RigidBody3D } from "../src/RigidBody3D.js";
+import { type IPhysicsContext, rapier } from "../src/plugin.js";
+import "../src/index.js";
 import { type INativeSimulation, createNativePhysicsSimulation } from "../src/native/host.js";
 import {
   type IPhysicsBodyCreateOptions,
@@ -88,6 +95,12 @@ interface IArmObservation {
     readonly platformGroundedObserved: boolean;
     readonly areaExcludedCharacter: boolean;
   };
+  readonly feetOnFloor: {
+    readonly grounded: boolean;
+    readonly groundCollider: number | null;
+    readonly groundNormal: readonly [number, number, number];
+    readonly position: readonly [number, number, number];
+  };
 }
 
 const fixturePath = fileURLToPath(
@@ -125,6 +138,54 @@ function createSimulation(): IPhysicsRuntimeSimulation {
       z: scenario.gravity[2],
     }),
   });
+}
+
+async function runFeetOnFloorSubject(): Promise<IArmObservation["feetOnFloor"]> {
+  const plugin = rapier({
+    gravity: { x: scenario.gravity[0], y: scenario.gravity[1], z: scenario.gravity[2] },
+  });
+  const ctx = { physics: undefined } as unknown as ICtx<Record<string, unknown>, IPhysicsContext>;
+  await plugin.setup?.(ctx);
+  const physics = ctx.physics;
+  if (physics === undefined)
+    throw new Error("feet-on-floor subject did not create a physics context");
+
+  const floorMesh = new Mesh(new BoxGeometry(10, 0.2, 4));
+  floorMesh.position.set(0, -0.1, 0);
+  const floor = new RigidBody3D({
+    object: floorMesh,
+    physics,
+    shape: CollisionShape3D.box(10, 0.2, 4),
+    type: "fixed",
+  });
+  const characterMesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+  characterMesh.position.set(0, 0.5, 0);
+  const character = new CharacterBody3D({
+    gravity: scenario.gravity[1],
+    maxSlopeClimbAngle: Math.PI / 4,
+    object: characterMesh,
+    offset: 0.01,
+    oneWayLayers: 0,
+    physics,
+    shape: CollisionShape3D.capsule(0.2, 0.3),
+  });
+
+  try {
+    for (let step = 0; step < 30; step += 1) {
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+    return {
+      grounded: character.grounded,
+      groundCollider: character.groundBody?.id ?? null,
+      groundNormal: [character.groundNormal.x, character.groundNormal.y, character.groundNormal.z],
+      position: [characterMesh.position.x, characterMesh.position.y, characterMesh.position.z],
+    };
+  } finally {
+    character.dispose();
+    floor.dispose();
+    plugin.dispose?.(ctx);
+  }
 }
 
 function transforms(
@@ -277,7 +338,7 @@ function drainEvents(simulation: IPhysicsRuntimeSimulation): string[] {
   return events;
 }
 
-function runScenario(): IArmObservation {
+async function runScenario(): Promise<IArmObservation> {
   const simulation = createSimulation();
   for (const body of scenario.bodies) {
     const created = simulation.createBody({
@@ -406,6 +467,7 @@ function runScenario(): IArmObservation {
   const areaMembership = [...(simulation.areaIntersections?.(5) ?? [])].sort(
     (left, right) => left - right,
   );
+  const feetOnFloor = await runFeetOnFloorSubject();
   const result: IArmObservation = {
     arm: "web",
     areaMembership,
@@ -445,6 +507,7 @@ function runScenario(): IArmObservation {
     },
     teleportState,
     validationOutcomes: validationOutcomes(),
+    feetOnFloor,
   };
   // `computedCollision()` leaves a wasm-bindgen borrow alive in Rapier 0.19.3, so freeing the
   // world after reading character state throws. This short-lived measurement process owns the
@@ -454,7 +517,7 @@ function runScenario(): IArmObservation {
 
 beforeAll(async () => {
   await RAPIER.init();
-  observation = runScenario();
+  observation = await runScenario();
   mkdirSync(dirname(webArtifactPath), { recursive: true });
   writeFileSync(webArtifactPath, `${JSON.stringify(observation, null, 2)}\n`);
 });
@@ -466,6 +529,15 @@ describe("physics parity web measurement arm", () => {
     expect(observation.scenarioSha256).toBe(scenarioSha256);
     expect(observation.rapierVersion).toBe(scenario.expectedRapierVersions.web);
     expect(observation.rapierVersion).not.toBe(scenario.expectedRapierVersions.rust);
+  });
+
+  it("should measure feet-on-floor through the public CharacterBody3D lifecycle", () => {
+    expect(observation.feetOnFloor.grounded).toBe(true);
+    expect(observation.feetOnFloor.groundCollider).toBe(0);
+    expect(observation.feetOnFloor.groundNormal[0]).toBeCloseTo(0, 5);
+    expect(observation.feetOnFloor.groundNormal[1]).toBeCloseTo(1, 5);
+    expect(observation.feetOnFloor.groundNormal[2]).toBeCloseTo(0, 2);
+    expect(observation.feetOnFloor.position[1]).toBeGreaterThan(0.5);
   });
 
   it("should report every tolerance row with a finite measurement", () => {

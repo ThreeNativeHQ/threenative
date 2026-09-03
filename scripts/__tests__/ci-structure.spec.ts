@@ -815,6 +815,30 @@ describe("CI pipeline structure", () => {
     );
   });
 
+  // `check-capability-docs` resolves every documented capability through its package export map,
+  // and those maps point at dist. The budgets job installed and ran the gate without compiling
+  // anything, so the gate failed on the build it needed rather than on a capability:
+  //   CAPABILITY_BUILT_IMPORT_MISSING: @threenative/assets#compileAssets could not resolve from
+  //   the package export map: @threenative/assets. targets missing built file
+  //   .../packages/assets/dist/index.js
+  // `needs: build` orders the job behind the build but hands it no artifact, so the ordering
+  // reads like a guarantee it does not make. The job has to get what it resolves, and it takes it
+  // from the shared action like every other consumer rather than compiling its own seventh copy.
+  it("hands the budgets gate the dist it resolves through export maps", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const budgets = requiredJob(ci, "budgets");
+
+    const dist = "uses: ./.github/actions/workspace-dist";
+    expect(budgets, "the budgets job runs a gate that resolves dist without having it").toContain(
+      dist,
+    );
+    // And it has to arrive before the gate reads it, not after.
+    expect(
+      budgets.indexOf(dist),
+      "the budgets job builds after the gate that needs the build",
+    ).toBeLessThan(budgets.indexOf("- run: pnpm budgets"));
+  });
+
   // Splitting the suite across jobs is how coverage disappears quietly: a phase named in no job,
   // or a shard slice nobody runs, both report green. So the split is computed rather than trusted.
   it("runs every suite phase in exactly one job, and every unit shard", async () => {

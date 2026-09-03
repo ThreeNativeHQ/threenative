@@ -81,6 +81,16 @@ const device = {
 };
 
 describe("Android physics parity verifier negative controls", () => {
+  it("fails when native floor contact is perturbed while identity stays unchanged", () => {
+    expect(() =>
+      compareObservations(web, {
+        ...device,
+        groundNormal: [0, 0.8, 0.6],
+        slopeAngle: Math.acos(0.8),
+      }),
+    ).toThrow(/device final flat-floor normal\/slope outcome|ground normal delta/u);
+  });
+
   it("fails when a non-zero resting delta is checked with zero tolerance", () => {
     expect(() =>
       compareObservations(
@@ -178,6 +188,39 @@ describe("Android physics parity verifier negative controls", () => {
       expect(parseArgs(["--control", control]).control).toBe(control);
       expect(artifactPaths(control, "/tmp/parity").rawDevice).toContain(`/${control}/`);
     }
+  });
+});
+
+describe("native physics parity registry wiring", () => {
+  it("binds the feet-on-floor subject to the collected web and Rust command", () => {
+    const registry = JSON.parse(readFileSync(join(runtimeRoot, "conformance/registry.json"), "utf8"));
+    const packageManifest = JSON.parse(
+      readFileSync(join(runtimeRoot, "package.json"), "utf8"),
+    );
+    expect(packageManifest.scripts["native:physics:parity"]).toMatch(
+      /vitest run packages\/physics\/__tests__\/parity\.spec\.ts/u,
+    );
+    expect(packageManifest.scripts["native:physics:parity"]).toMatch(
+      /cargo test --manifest-path native\/physics\/Cargo\.toml --lib --test parity/u,
+    );
+    const proof = registry.generatedPlaytestProofs.find(
+      ({ id }) => id === "native-physics-feet-on-floor",
+    );
+    expect(proof).toMatchObject({
+      proof: "packages/runtime-native/native/physics/tests/parity.rs",
+      runner: expect.stringContaining("native:physics:parity"),
+      scenario: "packages/physics/__tests__/parity.spec.ts",
+      status: "implemented",
+    });
+    const scenario = readFileSync(join(workspaceRoot, proof.scenario), "utf8");
+    expect(scenario).toContain("new CharacterBody3D");
+    expect(scenario).toContain("new RigidBody3D");
+    expect(scenario).toContain("CollisionShape3D.capsule");
+    expect(scenario).toContain("character.moveAndSlide");
+    expect(scenario).toContain("plugin.update");
+    expect(readFileSync(join(workspaceRoot, proof.proof), "utf8")).toContain(
+      "feet_on_floor_subject",
+    );
   });
 });
 

@@ -1,10 +1,15 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createProject, templateRoot } from "../packages/create-threenative/src/index.js";
 import { TEMPLATE_NAMES, inspectAllTemplates, packageLocalFramework } from "./visual-gate.js";
+
+const ALREADY_BOOTED_TEMPLATES = new Set(["platformer", "starter"]);
+export const TEMPLATE_PLAYTEST_NAMES = TEMPLATE_NAMES.filter(
+  (template) => !ALREADY_BOOTED_TEMPLATES.has(template),
+);
 
 async function run(command: string, args: readonly string[], cwd: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -66,11 +71,51 @@ export async function runTemplatePlaytests(
   const results: ITemplatePlaytestResult[] = [];
   for (const template of templates) {
     const target = path.join(root, template);
+    let testError: string | undefined;
+    let smokeError: string | undefined;
     try {
       await create({ install: true, packageSources, target, template });
-      await execute("pnpm", ["test"], target);
-      console.info(`${template}: scaffolded playtests passed.`);
-      results.push({ pass: true, template });
+      try {
+        await execute("pnpm", ["test"], target);
+      } catch (error) {
+        testError = errorDetail(error);
+      }
+
+      const smokeScenario = path.join(target, ".threenative-template-boot.playtest.json");
+      try {
+        await writeFile(smokeScenario, JSON.stringify(templateBootScenario(template)));
+        await execute(
+          "pnpm",
+          [
+            "exec",
+            "threenative-playtest",
+            "--scenario",
+            ".threenative-template-boot.playtest.json",
+            "--browser-recipe",
+            "webgpu",
+            "--headed",
+            "--server-command",
+            "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
+          ],
+          target,
+        );
+      } catch (error) {
+        smokeError = errorDetail(error);
+      } finally {
+        await rm(smokeScenario, { force: true });
+      }
+
+      const errors = [testError, smokeError].filter(
+        (error): error is string => error !== undefined,
+      );
+      if (errors.length === 0) {
+        console.info(`${template}: scaffolded playtests passed.`);
+        results.push({ pass: true, template });
+      } else {
+        const detail = errors.join(" ");
+        console.error(`${template}: scaffolded playtests failed: ${detail}`);
+        results.push({ error: detail, pass: false, template });
+      }
     } catch (error) {
       const detail = errorDetail(error);
       console.error(`${template}: scaffolded playtests failed: ${detail}`);
@@ -78,6 +123,22 @@ export async function runTemplatePlaytests(
     }
   }
   return results;
+}
+
+function templateBootScenario(template: string): IJsonRecord {
+  return {
+    artifacts: { screenshots: "after" },
+    assert: {
+      diagnostics: { noConsoleErrors: true, noNetworkErrors: true, runtimeReady: true },
+      visual: [{ region: { height: 360, minNonblankPixelRatio: 0.0001, width: 640, x: 0, y: 0 } }],
+    },
+    name: `${template}-real-frame-boot`,
+    schemaVersion: 1,
+    steps: [{ kind: "wait", release: true, waitTicks: 60 }],
+    target: "web",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 5,
+  };
 }
 
 export function assertTemplatePlaytestsPassed(results: readonly ITemplatePlaytestResult[]): void {
@@ -214,12 +275,12 @@ async function main(): Promise<void> {
     // minute one. Unset — which is what CI is — every template runs.
     const only = process.env.TN_TEMPLATE_ONLY?.split(",").filter((name) => name !== "");
     if (only !== undefined) {
-      const unknown = only.filter((name) => !TEMPLATE_NAMES.includes(name));
+      const unknown = only.filter((name) => !TEMPLATE_PLAYTEST_NAMES.includes(name));
       if (unknown.length > 0)
         throw new Error(`TN_TEMPLATE_ONLY names no such template: ${unknown.join(", ")}`);
     }
     const packageSources = await packageLocalFramework(root);
-    await verifyTemplatePlaytests(only ?? TEMPLATE_NAMES, root, packageSources);
+    await verifyTemplatePlaytests(only ?? TEMPLATE_PLAYTEST_NAMES, root, packageSources);
   } finally {
     await rm(root, { force: true, recursive: true });
   }

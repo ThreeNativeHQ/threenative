@@ -73,4 +73,111 @@ describe("the frame budget names the surface the game's own loop drew", () => {
       });
     }
   });
+
+  it("carries a positive GPU timestamp into the reported frame window", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    const lines: string[] = [];
+    class Empty extends Scene {
+      static override readonly initialState = {};
+    }
+    const game = defineGame({
+      frameBudget: { report: (line) => lines.push(line), reportEvery: 2 },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          info: { render: { timestamp: 6.25 } },
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: Empty },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      frame(16.7);
+      frame(33.4);
+
+      const marker = lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`));
+      expect(marker).toBeDefined();
+      expect(JSON.parse(marker?.slice(FRAME_BUDGET_MARKER.length + 1) ?? "{}")).toMatchObject({
+        gpuMs: 6.25,
+        frames: 2,
+      });
+    } finally {
+      await game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+    }
+  });
+
+  it("keeps rendering and omits GPU time when timestamp resolution rejects", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    let renders = 0;
+    const lines: string[] = [];
+    class Empty extends Scene {
+      static override readonly initialState = {};
+    }
+    const game = defineGame({
+      frameBudget: { report: (line) => lines.push(line), reportEvery: 2 },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          info: { render: { timestamp: 0 } },
+          render: () => {
+            renders += 1;
+          },
+          resolveTimestampsAsync: () => Promise.reject(new Error("timestamp unavailable")),
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: Empty },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      frame(16.7);
+      frame(33.4);
+      await Promise.resolve();
+
+      const marker = lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`));
+      expect(renders).toBe(2);
+      expect(marker).toBeDefined();
+      expect(JSON.parse(marker?.slice(FRAME_BUDGET_MARKER.length + 1) ?? "{}")).not.toHaveProperty(
+        "gpuMs",
+      );
+    } finally {
+      await game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+    }
+  });
 });

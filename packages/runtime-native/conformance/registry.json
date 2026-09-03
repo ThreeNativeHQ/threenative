@@ -586,6 +586,22 @@
       "required": true
     },
     {
+      "id": "windowed-surface-two-frames",
+      "title": "windowed WebGPU surface presents two non-null views",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/first-proof-game.js",
+      "captureFrames": 2,
+      "nativeFrames": 2,
+      "windowedSurface": { "frames": 2 },
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "61-offscreen-screenshot",
       "title": "offscreen screenshot",
       "category": "rendering",
@@ -1409,6 +1425,17 @@
       "proof": "packages/runtime-native/native/physics/src/lib.rs",
       "owner": "PRD-222",
       "reason": "The native host synthesized collision events by polling every body pair every step (O(n^2) narrow-phase graph lookups; measured 25.7x step-cost growth from 16 to 128 bodies and ~0.2 ms/frame on the PRD-227-P2 device profile). The step now drains Rapier's own collision transitions through an EventHandler, the same event source the web path reads (packages/physics/src/simulation.ts drainCollisionEvents). The Rust tests assert the [leftId, rightId, started, 1] record contract the TypeScript consumer reads (packages/physics/src/plugin.ts), started-once/stopped-once delivery, sensor overlap parity, removal dropping unknown-collider events exactly like the web byCollider filter, and a scaling bound (8x bodies must not multiply per-step cost by more than 20x; measured 4.3x after the fix)."
+    },
+    {
+      "id": "native-physics-feet-on-floor",
+      "title": "native physics character feet-on-floor parity with the real CharacterBody3D subject",
+      "category": "physics",
+      "status": "implemented",
+      "scenario": "packages/physics/__tests__/parity.spec.ts",
+      "runner": "packages/runtime-native package.json native:physics:parity (web measurement plus cargo test --test parity against the Rust Simulation backend)",
+      "proof": "packages/runtime-native/native/physics/tests/parity.rs",
+      "owner": "PRD-326",
+      "reason": "The web arm executes the public CharacterBody3D, CollisionShape3D, RigidBody3D, and Rapier plugin lifecycle in the collected parity artifact; the Rust arm runs the shipping native Simulation with the same floor, capsule, gravity, offset, and 30 fixed steps. The parity test requires exact grounded and ground-collider agreement plus bounded ground-normal and resting-position deltas, so a native floor perturbation cannot leave a green web-only JSON proof."
     }
   ]
 }

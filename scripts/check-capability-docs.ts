@@ -1,6 +1,7 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import * as ts from "typescript";
 import { publicWorkspacePackagesWithExports, workspacePackages } from "./workspace-packages.js";
 
@@ -70,6 +71,16 @@ interface IPackageManifest {
 
 const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
 
+/**
+ * The manifest also contains generated-source guidance for render stages. Those entries are not
+ * package exports: `src/render/*` belongs to the scaffold and `@threenative/template/*` is an
+ * alias created inside a generated project. Package and Three.js imports are the built surface
+ * this gate can resolve from the repository's export maps.
+ */
+function isBuiltImportPath(importPath: string): boolean {
+  return !importPath.startsWith("src/") && !importPath.startsWith("@threenative/template/");
+}
+
 export function validateCapabilityPackageAllowlist(
   allowlist: Readonly<Record<string, string>> = CAPABILITY_PACKAGE_ALLOWLIST,
 ): void {
@@ -105,6 +116,12 @@ interface IManifestEntry {
   readonly situations: readonly string[];
   readonly summary: string;
   readonly symbol: string;
+}
+
+export interface ICapabilityBuiltImportReport {
+  readonly checkedImportPaths: number;
+  readonly checkedSymbols: number;
+  readonly skippedSourceEntries: number;
 }
 
 function moduleSpecifier(capability: ICapabilityExport): string {
@@ -156,6 +173,90 @@ function exportMapEntries(value: unknown): readonly [string, unknown][] {
   const subpaths = Object.keys(record).filter((key) => key.startsWith("."));
   if (subpaths.length === 0) return [[".", value]];
   return subpaths.map((subpath) => [subpath, record[subpath]] as [string, unknown]);
+}
+
+function packageSpecifier(importPath: string): { packageName: string; subpath: string } {
+  const parts = importPath.split("/");
+  const packagePartCount = importPath.startsWith("@") ? 2 : 1;
+  const packageName = parts.slice(0, packagePartCount).join("/");
+  return {
+    packageName,
+    subpath:
+      parts.length === packagePartCount ? "." : `./${parts.slice(packagePartCount).join("/")}`,
+  };
+}
+
+function packageRootCandidates(root: string, packageName: string): readonly string[] {
+  const workspaceCandidates: string[] = [];
+  if (existsSync(path.join(root, "packages"))) {
+    for (const entry of readdirSync(path.join(root, "packages"), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const directory = path.join(root, "packages", entry.name);
+      try {
+        const manifest = JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8")) as {
+          name?: unknown;
+        };
+        if (manifest.name === packageName) workspaceCandidates.push(directory);
+      } catch {
+        // Dependency directories and incomplete fixtures are not workspace packages.
+      }
+      workspaceCandidates.push(path.join(directory, "node_modules", packageName));
+    }
+  }
+  return [...workspaceCandidates, path.join(root, "node_modules", packageName)];
+}
+
+async function locatePackageRoot(root: string, packageName: string): Promise<string | undefined> {
+  for (const candidate of packageRootCandidates(root, packageName)) {
+    if (existsSync(path.join(candidate, "package.json"))) return path.resolve(candidate);
+  }
+  return undefined;
+}
+
+function exportDefinition(exports: unknown, subpath: string): unknown {
+  const entries = exportMapEntries(exports);
+  const exact = entries.find(([key]) => key === subpath);
+  if (exact !== undefined) return exact[1];
+  const pattern = entries.find(
+    ([key]) => key.includes("*") && subpath.startsWith(key.split("*")[0] ?? ""),
+  );
+  if (pattern === undefined) return undefined;
+  const [key, definition] = pattern;
+  const prefix = key.split("*")[0] ?? "";
+  const suffix = key.split("*")[1] ?? "";
+  const match = subpath.slice(prefix.length, subpath.length - suffix.length || undefined);
+  const target = exportTarget(definition);
+  return target?.replaceAll("*", match);
+}
+
+function hasBuiltSymbol(namespace: Record<string, unknown>, symbol: string): boolean {
+  return Object.hasOwn(namespace, symbol);
+}
+
+async function resolveBuiltCapabilityImport(root: string, importPath: string): Promise<string> {
+  const { packageName, subpath } = packageSpecifier(importPath);
+  const packageRoot = await locatePackageRoot(root, packageName);
+  if (packageRoot === undefined) {
+    throw new Error(`package ${packageName} is not installed in the workspace`);
+  }
+  const manifestPath = path.join(packageRoot, "package.json");
+  let manifest: IPackageManifest;
+  try {
+    manifest = JSON.parse(await readFile(manifestPath, "utf8")) as IPackageManifest;
+  } catch (error) {
+    throw new Error(
+      `could not read ${manifestPath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const target = exportTarget(exportDefinition(manifest.exports, subpath));
+  if (target === undefined) {
+    throw new Error(`${packageName}${subpath} is absent from ${manifestPath}`);
+  }
+  const resolved = path.resolve(packageRoot, target);
+  if (!resolved.startsWith(`${packageRoot}${path.sep}`) || !existsSync(resolved)) {
+    throw new Error(`${packageName}${subpath} targets missing built file ${resolved}`);
+  }
+  return resolved;
 }
 
 function sourceEntry(packageRoot: string, target: string): string {
@@ -344,6 +445,93 @@ async function manifestPackageNames(root: string): Promise<ReadonlySet<string>> 
 }
 
 /**
+ * Import every package-backed capability from its published export map. This intentionally uses
+ * the package's built output; rewriting export-map targets to `src` would prove the development
+ * tree while leaving the package an agent installs untested.
+ */
+export async function checkBuiltCapabilityImports(
+  root: string,
+): Promise<ICapabilityBuiltImportReport> {
+  const manifestFile = path.join(root, MANIFEST_RELATIVE_PATH);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(manifestFile, "utf8")) as unknown;
+  } catch (error) {
+    throw new Error(
+      `CAPABILITY_BUILT_IMPORT_MANIFEST_INVALID: ${manifestFile}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed.entries)) {
+    throw new Error(
+      `CAPABILITY_BUILT_IMPORT_MANIFEST_INVALID: ${manifestFile} must contain an entries array.`,
+    );
+  }
+
+  const byImportPath = new Map<string, string[]>();
+  let skippedSourceEntries = 0;
+  for (const [index, rawEntry] of parsed.entries.entries()) {
+    if (
+      !isRecord(rawEntry) ||
+      typeof rawEntry.importPath !== "string" ||
+      typeof rawEntry.symbol !== "string"
+    ) {
+      throw new Error(
+        `CAPABILITY_BUILT_IMPORT_MANIFEST_INVALID: ${manifestFile} entry ${String(index)} needs importPath and symbol strings.`,
+      );
+    }
+    if (!isBuiltImportPath(rawEntry.importPath)) {
+      skippedSourceEntries += 1;
+      continue;
+    }
+    const symbols = byImportPath.get(rawEntry.importPath) ?? [];
+    if (!symbols.includes(rawEntry.symbol)) symbols.push(rawEntry.symbol);
+    byImportPath.set(rawEntry.importPath, symbols);
+  }
+
+  let checkedSymbols = 0;
+  for (const [importPath, symbols] of byImportPath) {
+    const firstSymbol = symbols[0] ?? "<unknown>";
+    let resolved: string;
+    try {
+      resolved = await resolveBuiltCapabilityImport(root, importPath);
+    } catch (error) {
+      throw new Error(
+        `CAPABILITY_BUILT_IMPORT_MISSING: ${importPath}#${firstSymbol} could not resolve from the package export map: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (importPath.startsWith("@threenative/") && !resolved.split(path.sep).includes("dist")) {
+      throw new Error(
+        `CAPABILITY_BUILT_IMPORT_NOT_DIST: ${importPath}#${firstSymbol} resolved to ${resolved}; engine capability imports must resolve from dist.`,
+      );
+    }
+    let namespace: Record<string, unknown>;
+    try {
+      namespace = (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
+    } catch (error) {
+      throw new Error(
+        `CAPABILITY_BUILT_IMPORT_FAILED: ${importPath}#${firstSymbol} could not import ${resolved}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    for (const symbol of symbols) {
+      checkedSymbols += 1;
+      if (hasBuiltSymbol(namespace, symbol)) continue;
+      throw new Error(
+        `CAPABILITY_BUILT_SYMBOL_MISSING: ${importPath}#${symbol} is not an own named export of ${resolved}.`,
+      );
+    }
+  }
+  return {
+    checkedImportPaths: byImportPath.size,
+    checkedSymbols,
+    skippedSourceEntries,
+  };
+}
+
+export function formatCapabilityBuiltImportReport(report: ICapabilityBuiltImportReport): string {
+  return `capability built imports: ${report.checkedSymbols} symbols across ${report.checkedImportPaths} import paths verified from built package output (${report.skippedSourceEntries} generated-source entries skipped)`;
+}
+
+/**
  * Ensure every public workspace package with code exports is either represented in the generated
  * manifest or explicitly omitted with a reason. The manifest is the observable walked set: this
  * catches a stale or reverted package walk as well as a newly added package.
@@ -433,9 +621,14 @@ if (
     console.error("usage: check-capability-docs.ts [--census]");
     process.exitCode = 1;
   } else {
-    Promise.all([checkCapabilityPackageCensus(process.cwd()), checkCapabilityDocs(process.cwd())])
-      .then(([census, report]) => {
+    Promise.all([
+      checkCapabilityPackageCensus(process.cwd()),
+      checkCapabilityDocs(process.cwd()),
+      checkBuiltCapabilityImports(process.cwd()),
+    ])
+      .then(([census, report, builtImports]) => {
         console.log(formatCapabilityPackageCensus(census));
+        console.log(formatCapabilityBuiltImportReport(builtImports));
         const output = formatCapabilityReport(report);
         if (report.gaps.length > 0) {
           console.error(output);

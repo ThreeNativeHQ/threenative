@@ -811,6 +811,14 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # check-capability-docs resolves every documented capability through its package export
+      # map, and those maps point at dist. Without this the gate fails closed on the build it
+      # needs rather than on a capability, naming a missing packages/assets/dist/index.js:
+      #   CAPABILITY_BUILT_IMPORT_MISSING: @threenative/assets#compileAssets could not resolve
+      #   from the package export map
+      # `needs: build` orders this job behind the build but hands it no artifact, so the ordering
+      # reads like a guarantee it does not make. The shared action is what actually supplies dist.
+      - uses: ./.github/actions/workspace-dist
       - run: pnpm budgets
       - run: pnpm quality
       - run: pnpm sync:agents --check
