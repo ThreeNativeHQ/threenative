@@ -4,7 +4,13 @@ prd_contract: v1
 
 # PRD-327 — First-use pipeline compilation leaves the main loop
 
-**Status:** PROPOSED, filed 2026-09-02 against `5879799d`. Planning only.
+**Status:** **PHASES 0–2 DONE, DEVICE ACCEPTANCE UNVERIFIED** — executed 2026-09-03.
+Phase 0 measured the backends and chose the mechanism; Phase 1 made `createRenderPipelineAsync`
+native and off-loop (0.27 ms of a 70 ms compile, ratio 0.0038 against a 0.25 bar, red-green in
+`threenative-async-pipeline-thread-test`); Phase 2 flipped the native `warmUp` default with its own
+red-green. Phases 3 and 4 are open. **Acceptance criterion 3 — three cold launches ≤ 8 s median on
+a physical Pixel 8 — did not run**, so PRD-218's criteria 1 and 2 stay open and no launch-time
+claim is made. Evidence: `docs/verification/runtime-perf-state.md` §5a.
 
 **Complexity:** +2 (6–10 files) + 2 (concurrency: compile threads completing into the JS loop) +
 2 (multi-package: `runtime-native` and `core`) + 1 (external API: wgpu-native / Dawn async

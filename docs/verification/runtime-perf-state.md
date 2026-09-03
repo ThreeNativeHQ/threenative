@@ -1733,6 +1733,58 @@ number without re-running the probe.
 compilers and wgpu-native defers more work to first use. That makes the ratio the comparable
 quantity, never the absolute — do not quote 4.2 ms as "wgpu compiles faster".
 
+### Phase 1: the binding, measured through the path a game takes
+
+`threenative-async-pipeline-thread-test` also drives `device.createRenderPipelineAsync` itself —
+the entry `renderer.compileAsync()` reaches — and asserts the same pre-registered bar on it. The
+async arm runs before the synchronous one so it cannot be timing a warmed driver.
+
+| arm | main thread in the call | synchronous compile of the same shader | ratio |
+| --- | ---: | ---: | ---: |
+| **before** (the sync wrap restored) | 96.55 ms | 84.55 ms | **1.14** |
+| after, run 1 | 0.299 ms | 69.05 ms | 0.0043 |
+| after, run 2 | 0.278 ms | 118.06 ms | 0.0024 |
+| after, run 3 | 0.292 ms | 68.07 ms | 0.0043 |
+
+The red is the previous implementation, restored deliberately: the old
+`install-async-pipelines.js` wrap plus the native handlers not installed. It fails with the bound
+named —
+
+```
+TN_ASYNC_PIPELINE_BINDINGS:{"callMs":96.546875,"syncMs":84.546142578125,"ratio":1.1419}
+Error: createRenderPipelineAsync blocked the main loop: 96.5 ms of a 84.5 ms compile
+```
+
+— which is the whole finding in one line: the asynchronous entry cost *more* main-thread time than
+the synchronous one, because it was the synchronous one with a promise around it.
+
+**230–400× less main-thread time per pipeline compile**, against a bar of 4×. On the desktop
+launch this is not yet visible in the total, because `native-smoke` compiles three pipelines and
+its launch is 524 ms; it is the Bayview-class launch, with 105 compiles and 8,038 ms of them, that
+this exists for — and that number is not claimed here, because the phone lane did not run.
+
+The wait in that test was a fixed 600-frame pump first, and it passed only once a debug `fprintf`
+slowed it down: 600 `pollEvents()` calls take about 60 ms and the compile takes 120–360 ms. It is
+wall-clock bounded now. Recorded because a green that depends on machine speed is the failure this
+repository's method rules exist to prevent, and it very nearly shipped.
+
+### Phase 2: the default
+
+`warmUp` is on by default on native as of this change, and unchanged on web. The marker inverts
+from what PRD-218 recorded:
+
+| | `TN_WARMUP` |
+| --- | --- |
+| PRD-218, Pixel 8, pre-fix | `{"compiled":0,"abandoned":1,"timedOut":true,"elapsedMs":15325}` |
+| now, native default, unit lane | `{"compiled":1,"slices":1,"elapsedMs":1,"abandoned":0,"timedOut":false}` |
+
+**PRD-218's criteria 1 and 2 are NOT ticked.** They are device criteria — three cold launches on
+the physical Pixel 8, tap-to-playable ≤ 8 s median, first-present `pipelineCompile ≤ 500 ms` — and
+the phone did not run: it is attached over Wi-Fi ADB (`192.168.1.192:5555`) and thermally clean
+(status 0 NONE, 28 °C) but sat at 36–38 % battery, under the 50 %-and-discharging bar
+`device-preflight.mjs` enforces. The mechanism is proven on desktop and the default is flipped;
+the launch claim is unmade until that lane runs.
+
 ### A side effect worth keeping
 
 No contract test could be linked in a wgpu build directory at all before this: wgpu-native and SWC

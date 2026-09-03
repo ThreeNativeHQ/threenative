@@ -4,7 +4,11 @@ prd_contract: v1
 
 # PRD-328 — Launch is measured on the engine that ships
 
-**Status:** PROPOSED, filed 2026-09-02 against `5879799d`. Planning only.
+**Status:** **DESKTOP DONE, PHONE UNVERIFIED** — executed 2026-09-03. Phases 0–3 complete on the
+desktop lane; the phone half of Phase 2 and the Phase 3 decision both need a Pixel 8 at ≥ 50 %
+battery, which was not available. Evidence: `docs/verification/runtime-perf-state.md` §5b. This
+PRD stays here rather than moving to `done/` until that lane runs — a blocked criterion is not
+completion.
 
 **Complexity:** +2 (6–10 files) + 1 (touches the three engine files and the desktop CLI) +
 1 (device lane) = **4 → MEDIUM mode**. Checkpoint after every phase.
