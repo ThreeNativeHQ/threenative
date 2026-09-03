@@ -471,6 +471,27 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     return isNative();
   }
 
+  /**
+   * Whether the caller asked for warm-up *by hand*.
+   *
+   * The two questions are different and conflating them removed the loading screen. `startupCompile`
+   * is the compile that runs *inside* the readiness gate, while the opaque loading layer is on
+   * screen and the loop is turning; the pre-start block below runs before `start()` releases the
+   * loop, with nothing presenting. A caller who opts in explicitly has chosen to pay there and the
+   * gate steps aside, which is how this has always worked. The native default may not make that
+   * choice on their behalf: `verify-desktop-loading.mjs` catches it immediately —
+   *
+   *     native loading playtest failed
+   *     resource.GameState.loadingVisible.atSteps   loadingVisible: false, startupReady: true
+   *
+   * — which is a launch that shows the player nothing instead of a loading screen. So the default
+   * decides whether pipelines are warmed; it does not decide whether the loading screen covers
+   * startup.
+   */
+  #warmUpConfiguredExplicitly(): boolean {
+    return this.#config.warmUp !== undefined && this.#config.warmUp !== false;
+  }
+
   /** The warm-up options, once `#warmUpEnabled()` has said there are any. */
   #warmUpOptions(): IWarmUpOptions {
     const configured = this.#config.warmUp;
@@ -1036,7 +1057,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // is on it has already happened behind the loading screen, so running it again here
           // would pay the same cost twice.
           startupReadiness.start(
-            canvasLayer.opaque && !this.#warmUpEnabled() ? startupCompile : undefined,
+            canvasLayer.opaque && !this.#warmUpConfiguredExplicitly() ? startupCompile : undefined,
           );
         }
         // Render-cadence compute is first-use work too: keep it behind an opaque startup layer
@@ -1148,7 +1169,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();
         const computeBlockedByStartup =
-          !worldRendered && canvasLayer.opaque && !this.#warmUpEnabled();
+          !worldRendered && canvasLayer.opaque && !this.#warmUpConfiguredExplicitly();
         if (this.#renderer !== undefined && this.#sceneEntered && !computeBlockedByStartup)
           this.#computeDriven.process(this.#renderer);
       },
