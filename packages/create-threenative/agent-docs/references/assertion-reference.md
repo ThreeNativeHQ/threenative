@@ -122,7 +122,7 @@ Proves aerodynamic force telemetry and signed control-surface delivery for a fli
 
 ### `visual`
 
-Proves screenshot change, populated coordinate or DOM element-bound regions, and sustained projected entity visibility. **Use when** that is the thing the scenario must prove.
+Proves screenshot change, populated coordinate or DOM element-bound regions, dark-pixel bounds, and sustained projected entity visibility. **Use when** that is the thing the scenario must prove.
 
 - **Supported on:** web · **Requires:** browser.screenshot
 
