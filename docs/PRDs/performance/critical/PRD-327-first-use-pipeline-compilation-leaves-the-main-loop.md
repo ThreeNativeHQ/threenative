@@ -4,15 +4,21 @@ prd_contract: v1
 
 # PRD-327 — First-use pipeline compilation leaves the main loop
 
-**Status:** **PHASES 0–2 DONE, DEVICE ACCEPTANCE UNVERIFIED** — executed 2026-09-03.
-Phase 0 measured the backends and chose the mechanism; Phase 1 made `createRenderPipelineAsync`
-native and off-loop (0.27 ms of a 70 ms compile, ratio 0.0038 against a 0.25 bar, red-green in
-`threenative-async-pipeline-thread-test`); **Phase 2 was executed and not adopted**: the framework
-already warms up by default from inside the loading layer's readiness gate, and flipping the
-`warmUp` default removed the loading screen (macOS, Windows) and then double-compiled the scene
-past the desktop physics gate's frame budget. The mechanism, not the default, was the defect. Phases 3 and 4 are open. **Acceptance criterion 3 — three cold launches ≤ 8 s median on
-a physical Pixel 8 — did not run**, so PRD-218's criteria 1 and 2 stay open and no launch-time
-claim is made. Evidence: `docs/verification/runtime-perf-state.md` §5a.
+**Status:** **PHASES 0–2 DONE; PHASE 4 DONE (DESKTOP); DEVICE ACCEPTANCE AND PHASE 3'S PHONE ARM OPEN** —
+executed 2026-09-03. Phase 0 measured the backends and chose the mechanism; Phase 1 made
+`createRenderPipelineAsync` native and off-loop (0.27 ms of a 70 ms compile, ratio 0.0038 against a
+0.25 bar, red-green in `threenative-async-pipeline-thread-test`); **Phase 2 was executed and not
+adopted**: the framework already warms up by default from inside the loading layer's readiness
+gate, and flipping the `warmUp` default removed the loading screen (macOS, Windows) and then
+double-compiled the scene past the desktop physics gate's frame budget. The mechanism, not the
+default, was the defect. **Phase 4 landed 2026-09-03**: a late synchronous compile is a named
+hitch — `TN_FRAME_HITCH` carries `pipelineCompileMs`/`pipelineCompileCalls` (red-green in
+`threenative-stall-budget-hitch-test`, live print proven through `playtest perf` on desktop Dawn)
+— so acceptance criterion 6 is met. **Phase 3's desktop arm is recorded** (second launch 77 % of
+first on three tiny pipelines — noise, not a decision); the 25 % cache rule is the phone's to
+decide. **Acceptance criterion 3 — three cold launches ≤ 8 s median on a physical Pixel 8 — did
+not run**, so PRD-218's criteria 1 and 2 stay open, no launch-time claim is made, and the PRD is
+not finished. Evidence: `docs/verification/runtime-perf-state.md` §5a.
 
 **Complexity:** +2 (6–10 files) + 2 (concurrency: compile threads completing into the JS loop) +
 2 (multi-package: `runtime-native` and `core`) + 1 (external API: wgpu-native / Dawn async

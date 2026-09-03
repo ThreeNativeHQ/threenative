@@ -30,6 +30,7 @@ export const FRAME_BUDGET_MARKER = "TN_FRAME_BUDGET:";
  */
 export const PROJECTION_MARKER = "TN_PROJECTION:";
 export const HOST_GAP_MARKER = "TN_HOST_GAP:";
+export const HITCH_MARKER = "TN_FRAME_HITCH:";
 
 export interface IPerfSummary {
   readonly mean: number;
@@ -71,6 +72,21 @@ export interface IHostGapWindowJson {
   readonly sumP50Ms?: number;
 }
 
+/**
+ * One `TN_FRAME_HITCH` window from the native host: the first 300 presented frames after launch,
+ * reported as a distribution. The `pipelineCompile` fields are PRD-327 Phase 4's late-sync-compile
+ * attribution — absent on lines from hosts older than the field, which must still parse.
+ */
+export interface IHitchWindowJson {
+  readonly window: number;
+  readonly maxMs: number;
+  readonly maxAtFrame: number;
+  readonly p99Ms: number;
+  readonly p50Ms: number;
+  readonly pipelineCompileMs?: number;
+  readonly pipelineCompileCalls?: number;
+}
+
 export type IPerfViolationCode =
   | "TN_PERF_BOUNDS_NOT_ASSESSABLE"
   | "TN_PERF_MAX_FRAME_P95"
@@ -98,6 +114,7 @@ export interface IProjectionWindowJson {
 
 export interface IPerfMarkerParse {
   readonly budgets: readonly IFrameBudgetWindowJson[];
+  readonly hitches: readonly IHitchWindowJson[];
   readonly hostGaps: readonly IHostGapWindowJson[];
   readonly presentMode: string | undefined;
   readonly projections: readonly IProjectionWindowJson[];
@@ -106,6 +123,7 @@ export interface IPerfMarkerParse {
 export interface IPerfReport {
   readonly budgets: readonly IFrameBudgetWindowJson[];
   readonly discardedWindows: readonly number[];
+  readonly hitches: readonly IHitchWindowJson[];
   readonly hostGaps: readonly IHostGapWindowJson[];
   readonly pass: boolean;
   readonly presentMode: string | undefined;
@@ -155,6 +173,8 @@ const PRESENT_MODE_PATTERN = /Present mode: (\S+ \(vsync=(?:true|false)\))/u;
 export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
   const budgets: IFrameBudgetWindowJson[] = [];
   const budgetPayloads = new Set<string>();
+  const hitches: IHitchWindowJson[] = [];
+  const hitchPayloads = new Set<string>();
   const hostGaps: IHostGapWindowJson[] = [];
   const projections: IProjectionWindowJson[] = [];
   const projectionPayloads = new Set<string>();
@@ -171,6 +191,15 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
         budgets.push(budget);
       }
     }
+    const hitch = parseMarkerLine<IHitchWindowJson>(line, HITCH_MARKER);
+    if (hitch !== undefined) {
+      // Same reason the budget lines are de-duplicated: Android mirrors console output twice.
+      const payload = JSON.stringify(hitch);
+      if (!hitchPayloads.has(payload)) {
+        hitchPayloads.add(payload);
+        hitches.push(hitch);
+      }
+    }
     const hostGap = parseMarkerLine<IHostGapWindowJson>(line, HOST_GAP_MARKER);
     if (hostGap !== undefined) hostGaps.push(hostGap);
     const projection = parseMarkerLine<IProjectionWindowJson>(line, PROJECTION_MARKER);
@@ -185,7 +214,7 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
     const mode = PRESENT_MODE_PATTERN.exec(line);
     if (mode?.[1] !== undefined) presentMode = mode[1];
   }
-  return { budgets, hostGaps, presentMode, projections };
+  return { budgets, hitches, hostGaps, presentMode, projections };
 }
 
 function parseMarkerLine<T>(line: string, marker: string): T | undefined {
@@ -233,6 +262,7 @@ export function assessPerfMarkers(parse: IPerfMarkerParse, bounds: IPerfBounds, 
   return {
     budgets: parse.budgets,
     discardedWindows,
+    hitches: parse.hitches,
     hostGaps: parse.hostGaps,
     pass: violations.length === 0 && parse.budgets.length > 0,
     presentMode: parse.presentMode,
@@ -444,6 +474,7 @@ export function formatPerfReport(report: IPerfReport): string {
       lines.push(`  ${name.padEnd(16)}${segment.p50Ms.toFixed(3)}`);
     }
   }
+  lines.push(...formatHitches(report.hitches));
   for (const violation of report.violations) {
     const observed = violation.observed === undefined ? "absent" : round(violation.observed).toString();
     lines.push(`FAIL ${violation.code}: window ${violation.window} observed ${observed} against bound ${violation.bound}`);
@@ -490,6 +521,41 @@ function formatProjection(windows: readonly IProjectionWindowJson[]): string[] {
 
 function summary(summaryValue: IPerfSummary | undefined): string {
   return summaryValue === undefined ? "—" : `${summaryValue.p50.toFixed(1)}/${summaryValue.p95.toFixed(1)}`;
+}
+
+/**
+ * The native host's post-launch hitch windows, with the late sync compile named when one happened.
+ *
+ * A window whose payload carries a nonzero `pipelineCompile` is a material that appeared mid-game
+ * and compiled synchronously inside a frame — the anonymous 200 ms spike this section exists to
+ * name. A host older than the field omits it and is named as such rather than read as a zero,
+ * which is the same rule the gpu column follows.
+ */
+function formatHitches(hitches: readonly IHitchWindowJson[]): string[] {
+  if (hitches.length === 0) return [];
+  const lines = [
+    `hitch windows (post-launch, ${hitches.length}): worst ${Math.max(...hitches.map((h) => h.maxMs)).toFixed(3)} ms`,
+  ];
+  const named = hitches.filter((hitch) => (hitch.pipelineCompileCalls ?? 0) > 0);
+  if (named.length === 0) {
+    // A missing field and a measured zero are different facts: the first means the host predates
+    // the attribution, the second means no late compile happened. Never merge them into one line.
+    const anyField = hitches.some((hitch) => hitch.pipelineCompileCalls !== undefined);
+    lines.push(
+      anyField
+        ? "  late sync compile: none — every window reported pipelineCompileCalls 0"
+        : "  late sync compile: unreported — this host predates the pipelineCompile fields (TN_FRAME_HITCH without them)",
+    );
+    return lines;
+  }
+  for (const hitch of named) {
+    lines.push(
+      `  late sync compile: ${hitch.pipelineCompileMs?.toFixed(3) ?? "unreported"} ms across ` +
+        `${hitch.pipelineCompileCalls} call(s) in the window whose worst frame landed at ` +
+        `frame ${hitch.maxAtFrame}`,
+    );
+  }
+  return lines;
 }
 
 function round(value: number): number {
