@@ -1,6 +1,8 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   BLENDER_SOURCE_EXTENSIONS,
   type BridgeResult,
@@ -31,6 +33,32 @@ export interface IBlenderImportOptions {
 }
 
 const IMPORT_EXTENSIONS: ReadonlySet<string> = new Set(BLENDER_SOURCE_EXTENSIONS);
+
+/**
+ * Where this package's copy of the GPL Blender scripts lives.
+ *
+ * `dist/blender-gpl/` in a published install, written by `scripts/bundle-blender-gpl.mjs`; the
+ * workspace `packages/blender-mcp/gpl/` when running from source. The bridge is inlined into this
+ * package's bundle, so its own `import.meta.url` points here and cannot find them by itself — and
+ * a `dependency` on the server package would make `@threenative/assets` uninstallable until that
+ * package is published.
+ */
+function scriptsDirectory(): string {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    // Built: `dist/index.js` sits beside `dist/blender-gpl/`.
+    path.join(here, "blender-gpl"),
+    // Source: `src/passes/` -> the workspace sibling.
+    path.resolve(here, "..", "..", "..", "blender-mcp", "gpl"),
+  ];
+  const found = candidates.find((candidate) => existsSync(path.join(candidate, "convert.py")));
+  if (found === undefined) {
+    throw new Error(
+      `TN_ASSETS_BLENDER_SCRIPTS_MISSING: no convert.py under ${candidates.join(" or ")}. This package's build copies them; run 'pnpm --filter @threenative/assets build'.`,
+    );
+  }
+  return found;
+}
 
 /** Whether this logical path is a model the converter owns rather than one the runtime loads. */
 export function needsBlenderImport(logicalPath: string): boolean {
@@ -65,6 +93,7 @@ export function blenderImportPass(options: IBlenderImportOptions = {}): IAssetPa
       try {
         await writeFile(source, input);
         const result = await convertModel(source, out, {
+          scriptsDirectory: scriptsDirectory(),
           ...(options.environment === undefined ? {} : { environment: options.environment }),
           ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
         });

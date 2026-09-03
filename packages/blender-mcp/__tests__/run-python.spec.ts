@@ -1,7 +1,7 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { runBlenderScript } from "../src/bridge.js";
 import { resolveBlender } from "../src/detect.js";
 import { handleLine } from "../src/index.js";
@@ -45,7 +45,7 @@ describe("blender_run_python contract", () => {
 
 withBlender("blender_run_python against a real Blender", () => {
   it("should run a recipe through blender_run_python identically", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-run-python-"));
+    const root = await makeTempDir("tn-run-python-");
     try {
       const request = {
         out: path.join(root, "viaRecipe.glb"),
@@ -79,7 +79,7 @@ withBlender("blender_run_python against a real Blender", () => {
   }, 300_000);
 
   it("should report a failing script rather than reporting success", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-run-python-fail-"));
+    const root = await makeTempDir("tn-run-python-fail-");
     try {
       const script = path.join(root, "boom.py");
       await writeFile(
@@ -97,7 +97,7 @@ withBlender("blender_run_python against a real Blender", () => {
   }, 180_000);
 
   it("should refuse to report a conversion it cannot describe", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-run-python-silent-"));
+    const root = await makeTempDir("tn-run-python-silent-");
     try {
       // Exits 0 and prints no result line: the shape a "successful" no-op would take.
       const script = path.join(root, "quiet.py");

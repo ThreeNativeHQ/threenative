@@ -1198,3 +1198,62 @@ describe("threenative doctor edge coverage", () => {
     ).toBeUndefined();
   });
 });
+
+describe("threenative doctor and Blender", () => {
+  it("should warn, not fail, when Blender is absent", () => {
+    const report = diagnoseProject(
+      snapshot({
+        blender: {
+          available: false,
+          detail: "No Blender 4.2 or newer was found.",
+          installCommand: "sudo snap install blender --classic",
+        },
+      }),
+    );
+    const blender = check(report, "blender");
+    expect(blender.status).toBe("warn");
+    expect(blender.fix).toContain("sudo snap install blender --classic");
+    // The point of the whole check: a project with no importable source stays green.
+    expect(blender.detail).toContain("nothing needs it yet");
+    expect(report.pass).toBe(true);
+  });
+
+  it("should report the version when Blender resolves", () => {
+    const report = diagnoseProject(
+      snapshot({
+        blender: {
+          available: true,
+          detail: "Blender 5.2.0 at '/usr/bin/blender'.",
+          installCommand: "sudo snap install blender --classic",
+          version: "5.2.0",
+        },
+      }),
+    );
+    expect(check(report, "blender")).toMatchObject({ status: "ok" });
+    expect(check(report, "blender").detail).toContain("5.2.0");
+  });
+
+  it("should name the sources that need Blender when the project carries them", () => {
+    const base = snapshot({
+      blender: {
+        available: false,
+        detail: "No Blender 4.2 or newer was found.",
+        installCommand: "sudo snap install blender --classic",
+      },
+    });
+    const report = diagnoseProject({
+      ...base,
+      files: new Set([...base.files, "assets/hero.fbx"]),
+    });
+    const blender = check(report, "blender");
+    expect(blender.status).toBe("warn");
+    expect(blender.detail).toContain("assets/hero.fbx");
+    // Still a warning: the hard failure belongs in the build, where the source is actually read.
+    expect(report.pass).toBe(true);
+  });
+
+  it("should omit the check entirely when nothing probed for Blender", () => {
+    const report = diagnoseProject(snapshot({}));
+    expect(report.checks.some(({ name }) => name === "blender")).toBe(false);
+  });
+});

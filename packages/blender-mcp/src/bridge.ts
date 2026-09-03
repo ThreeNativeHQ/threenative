@@ -124,6 +124,9 @@ export interface IBlenderRunOptions {
   readonly environment?: NodeJS.ProcessEnv;
   /** An extra script to run instead of `gpl/convert.py`; the escape hatch's path. */
   readonly script?: string;
+  /** Where `convert.py` lives, for a consumer that ships its own copy of `gpl/` — see
+   * `packages/assets/scripts/bundle-blender-gpl.mjs`. Wins over the env override. */
+  readonly scriptsDirectory?: string;
   readonly timeoutMs?: number;
 }
 
@@ -187,7 +190,8 @@ async function run(
   const status = resolveBlender(environment);
   if (!status.available || status.path === undefined) return unavailable(status);
 
-  const script = options.script ?? path.join(blenderScriptsDirectory(environment), "convert.py");
+  const scripts = options.scriptsDirectory ?? blenderScriptsDirectory(environment);
+  const script = options.script ?? path.join(scripts, "convert.py");
   if (!existsSync(script)) {
     return failure(
       "script-missing",

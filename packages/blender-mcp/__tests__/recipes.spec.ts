@@ -1,7 +1,7 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { resolveBlender } from "../src/detect.js";
 import { RECIPES, findRecipe, recipeNames, recipeSource, runRecipe } from "../src/recipes.js";
 
@@ -67,7 +67,7 @@ describe("recipe registry", () => {
 
 withBlender("shipped recipes against a real Blender", () => {
   it("should decimate to the requested ratio", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-recipe-decimate-"));
+    const root = await makeTempDir("tn-recipe-decimate-");
     try {
       const result = await runRecipe("decimate", {
         out: path.join(root, "out.glb"),
@@ -90,7 +90,7 @@ withBlender("shipped recipes against a real Blender", () => {
   }, 180_000);
 
   it("should refuse a ratio outside (0, 1]", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-recipe-ratio-"));
+    const root = await makeTempDir("tn-recipe-ratio-");
     try {
       const result = await runRecipe("decimate", {
         out: path.join(root, "out.glb"),
@@ -106,7 +106,7 @@ withBlender("shipped recipes against a real Blender", () => {
   }, 180_000);
 
   it("should unwrap a mesh that had no UVs", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-recipe-unwrap-"));
+    const root = await makeTempDir("tn-recipe-unwrap-");
     try {
       const source = path.join(root, "cube.obj");
       await writeFile(source, UNWRAPPED_OBJ);
@@ -128,7 +128,7 @@ withBlender("shipped recipes against a real Blender", () => {
   }, 180_000);
 
   it("should leave an already-unwrapped mesh alone unless asked", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-recipe-unwrap-skip-"));
+    const root = await makeTempDir("tn-recipe-unwrap-skip-");
     try {
       const result = await runRecipe("unwrap", { out: path.join(root, "out.glb"), source: prop });
       expect(result.ok, JSON.stringify(result)).toBe(true);
@@ -142,7 +142,7 @@ withBlender("shipped recipes against a real Blender", () => {
   }, 180_000);
 
   it("should bake an occlusion texture that is not flat", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-recipe-ao-"));
+    const root = await makeTempDir("tn-recipe-ao-");
     try {
       const out = path.join(root, "ao.png");
       const result = await runRecipe("bake_ao", { out, samples: 8, size: 64, source: prop });
@@ -164,7 +164,7 @@ withBlender("shipped recipes against a real Blender", () => {
   }, 300_000);
 
   it("should retarget clips onto the destination armature", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-recipe-retarget-"));
+    const root = await makeTempDir("tn-recipe-retarget-");
     try {
       const result = await runRecipe("retarget", {
         map: { neck: "spine", root: "root", spine: "neck" },
@@ -189,7 +189,7 @@ withBlender("shipped recipes against a real Blender", () => {
   }, 300_000);
 
   it("should refuse a map naming a bone the destination armature does not have", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-recipe-retarget-bad-"));
+    const root = await makeTempDir("tn-recipe-retarget-bad-");
     try {
       const result = await runRecipe("retarget", {
         map: { spine: "mixamorig:Spine" },

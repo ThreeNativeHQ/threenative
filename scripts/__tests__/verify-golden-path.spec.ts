@@ -3,9 +3,11 @@ import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { MCP_SERVERS } from "../../packages/core/mcp/servers.mjs";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   GOLDEN_PATH_STEPS,
+  MCP_SURFACES,
   type TemplateStep,
   adoptPackedWorkspace,
   assertGoldenPathSteps,
@@ -27,6 +29,23 @@ import {
 } from "../verify-golden-path.js";
 
 describe("golden path matrix", () => {
+  // PRD-346's revert check for the golden-path entry assumed a server-count assertion existed. It
+  // did not: deleting the blender row from `MCP_SURFACES` left every test green, so the matrix
+  // could quietly stop probing a server nobody would notice was unprobed. Derived from core's
+  // table, so a fifth server is covered the day it lands.
+  it("probes every server the scaffold actually wires", () => {
+    const probed = new Set<string>(MCP_SURFACES.map((surface) => surface.name));
+    const wired = Object.keys(MCP_SERVERS);
+    expect(wired.length).toBeGreaterThan(3);
+    expect(wired.filter((name) => !probed.has(name))).toEqual([]);
+    for (const surface of MCP_SURFACES) {
+      expect(
+        existsSync(path.resolve("packages/create-threenative", surface.file)),
+        surface.file,
+      ).toBe(true);
+    }
+  });
+
   it("builds corrective commands before the project exists, without reading it", () => {
     // The map is built before `scaffold` runs, so on the first pass the project directory is not
     // there yet. Listing scenarios then threw ENOENT and failed the whole lane while printing an

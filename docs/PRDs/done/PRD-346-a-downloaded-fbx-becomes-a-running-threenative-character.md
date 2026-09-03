@@ -4,7 +4,11 @@ prd_contract: v1
 
 # PRD-346 — A downloaded `.fbx` becomes a running ThreeNative character
 
-**Status: PROPOSED.** No phase executed. No gate run. Nothing in this file is evidence.
+**Status: DONE, 2026-09-03**, with two acceptance criteria explicitly unmet and named as such.
+All five phases executed. Evidence — every gate, every negative control, the corrections this
+file needed, and the list of what was *not* run — is in
+[`docs/verification/PRD-346.md`](../../verification/PRD-346.md). Nothing in *this* file is
+evidence; it is the plan the work was measured against.
 
 **Complexity: 8 → HIGH mode.** More than 10 files (+3), a new package and MCP server from scratch
 (+2), changes across `core`, `assets`, `create-threenative` and `scripts` (+2), and an external

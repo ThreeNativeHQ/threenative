@@ -30,7 +30,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "tsup --config tsup.config.ts && publint",
+    "build": "tsup --config tsup.config.ts && node scripts/bundle-blender-gpl.mjs && publint",
     "typecheck": "tsc --noEmit",
     "test": "pnpm run build && publint --strict"
   },
@@ -38,10 +38,11 @@
     "@types/node": "20.19.43",
     "@types/pngjs": "6.0.5",
     "@types/three": "0.185.3",
+    "ooz-wasm": "2.0.0",
     "publint": "0.3.22",
+    "threenative-blender-mcp": "workspace:*",
     "tsup": "8.5.1",
-    "typescript": "catalog:",
-    "ooz-wasm": "2.0.0"
+    "typescript": "catalog:"
   },
   "dependencies": {
     "@gltf-transform/core": "catalog:",
@@ -55,7 +56,6 @@
     "pngjs": "7.0.0",
     "three": "catalog:",
     "three-mesh-bvh": "catalog:",
-    "threenative-blender-mcp": "workspace:*",
     "xatlasjs": "0.2.0"
   }
 }

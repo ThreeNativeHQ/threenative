@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   BLENDER_SOURCE_EXTENSIONS,
   blenderScriptsDirectory,
@@ -67,7 +67,7 @@ describe("bridge contract", () => {
 
 withBlender("blender_convert against a real Blender", () => {
   it("should report the same counts blender_inspect reported", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-blender-convert-"));
+    const root = await makeTempDir("tn-blender-convert-");
     try {
       const inspected = await inspectModel(character);
       const converted = await convertModel(character, path.join(root, "out.glb"));
@@ -88,7 +88,7 @@ withBlender("blender_convert against a real Blender", () => {
   }, 180_000);
 
   it("should refuse a scene with no meshes instead of writing an empty glb", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-blender-empty-"));
+    const root = await makeTempDir("tn-blender-empty-");
     try {
       const empty = path.join(root, "empty.obj");
       await writeFile(empty, "# no geometry\n");
@@ -103,7 +103,7 @@ withBlender("blender_convert against a real Blender", () => {
   }, 180_000);
 
   it("should answer blender_convert over the JSON-RPC surface an agent speaks", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tn-blender-rpc-"));
+    const root = await makeTempDir("tn-blender-rpc-");
     try {
       const out = path.join(root, "prop.glb");
       const response = await handleLine(
