@@ -104,7 +104,10 @@ export function readFootSlide(
     const { stride } = animation;
     if (stride === undefined) continue;
     if (Math.abs(stride.groundSpeed) <= GROUND_SPEED_FLOOR) continue;
-    const feetSpeed = stride.clipGroundSpeed * stride.rate;
+    // The rate the action is running at, not the rate the player merely measured: an overridden
+    // clip keeps its authored rate, and reading the measured one back reports zero slide for the
+    // exact case the warning exists to catch.
+    const feetSpeed = stride.clipGroundSpeed * (stride.synced ? stride.rate : 1);
     readings.push({
       clip: animation.clip,
       entity,

@@ -4,6 +4,7 @@ import type { Object3D, PerspectiveCamera } from "three";
 import {
   AnimationClip,
   BoxGeometry,
+  Group,
   MathUtils,
   Mesh,
   MeshBasicMaterial,
@@ -24,6 +25,15 @@ const DEATH_CLIP = "DeathFront";
 const DEATH_SECONDS = 1.2;
 const CRATE_SIZE = 0.6;
 const CRATE_DROP_HEIGHT = 3;
+const WALK_CLIP = "Walk";
+/** One second of cycle carrying two metres of ground: the clip's own speed at rate 1. */
+const WALK_SECONDS = 1;
+const WALK_CLIP_METRES = 2;
+/** How fast the patroller's body actually travels, and how far it goes before turning round. */
+const PATROL_SPEED = 1.6;
+const PATROL_HALF_SPAN = 2;
+const PATROL_CENTRE_X = -4;
+const PATROL_Z = -12;
 
 /** A solid the shot ray can stop on: half extents, and where its centre sits. */
 interface ISolid {
@@ -51,6 +61,19 @@ function box(width: number, height: number, depth: number, color: number): Mesh 
 function deathClip(): AnimationClip {
   return new AnimationClip(DEATH_CLIP, DEATH_SECONDS, [
     new VectorKeyframeTrack(".position", [0, DEATH_SECONDS], [0, 0.9, -16, 0, 0.2, -16.4]),
+  ]);
+}
+
+/**
+ * A looping locomotion cycle whose root carries {@link WALK_CLIP_METRES} of ground per second.
+ *
+ * Authored in code for the same reason the death clip is: no third-party rig ships here. It exists
+ * so the *stride* convention — feet meet the floor — has a live caller that actually walks.
+ * `assert.animation[].maxFootSlide` had unit proof and no game behind it until this.
+ */
+function walkClip(): AnimationClip {
+  return new AnimationClip(WALK_CLIP, WALK_SECONDS, [
+    new VectorKeyframeTrack(".position", [0, WALK_SECONDS], [0, 0, 0, WALK_CLIP_METRES, 0, 0]),
   ]);
 }
 
@@ -137,6 +160,23 @@ export class Range extends Scene<IRangeState, IPhysicsContext> {
     };
     ctx.entities.add("enemy", enemy);
 
+    // The rig hangs off a body the game moves, which is the shape stride sync is written for:
+    // the clip writes the model's own root track, so measuring the object the mixer writes would
+    // read the clip's motion back as if it were the body's.
+    const patrolBody = new Group();
+    patrolBody.position.set(PATROL_CENTRE_X, 0.9, PATROL_Z);
+    const patrolRig = box(0.6, 1.8, 0.4, 0x2d8f5f);
+    patrolBody.add(patrolRig);
+    ctx.add(patrolBody);
+    const patrolAnimation = new AnimationPlayer({
+      clips: [walkClip()],
+      root: patrolRig,
+      strideRoot: patrolBody,
+    });
+    patrolAnimation.play(WALK_CLIP);
+    let patrolDirection = 1;
+    ctx.entities.add("patroller", { animation: patrolAnimation, mesh: patrolBody });
+
     // PRD-138: relative pointer look. Pointer lock is the framework's to ask for; the game
     // reads an axis. Nothing here touches `document`, so the native bundle keeps this path.
     let yaw = 0;
@@ -190,6 +230,20 @@ export class Range extends Scene<IRangeState, IPhysicsContext> {
         pitch = MathUtils.clamp(pitch - look.y * LOOK_SENSITIVITY, -PITCH_LIMIT, PITCH_LIMIT);
         camera.rotation.set(pitch, yaw, 0);
       }
+
+      // Move the body first, then advance the clip: stride reads the ground the game just
+      // covered, so a player that updates the mixer before it moves measures the previous frame.
+      patrolBody.position.x += patrolDirection * PATROL_SPEED * dt;
+      if (Math.abs(patrolBody.position.x - PATROL_CENTRE_X) > PATROL_HALF_SPAN) {
+        patrolDirection *= -1;
+        patrolBody.position.x = MathUtils.clamp(
+          patrolBody.position.x,
+          PATROL_CENTRE_X - PATROL_HALF_SPAN,
+          PATROL_CENTRE_X + PATROL_HALF_SPAN,
+        );
+      }
+      patrolBody.rotation.y = patrolDirection > 0 ? Math.PI / 2 : -Math.PI / 2;
+      patrolAnimation.update(dt);
 
       const wasFinished = animation.finished;
       if (dying) animation.update(dt);

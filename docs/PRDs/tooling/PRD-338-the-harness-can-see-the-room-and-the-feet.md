@@ -123,7 +123,8 @@ Every criterion states the mutation that makes it fail, and the failure was obse
 | 2 | The schema accepts the new keys and throws on wrong-typed ones | same | `Unknown key 'maxFootSlide' at assert.animation[0]` |
 | 3 | Stride reaches the bridge with real numbers, and an override reports the rate it declined | same | 2 red — `stride` undefined on the sample |
 | 4 | `doctor` warns on no-light, fog-far-plane and camera-far-plane, and prints the room | `roomWarnings` short-circuited to return `[]` | exactly 5 of 14 red, the other 9 green |
-| 5 | `assert.scene` bounds all four cases, fails once on an unobserved scene, throws on an empty or wrong-typed assertion | the family registered without an evaluator | `RED observed: registered family has no evaluator for 'scene'` — the package's own completeness gate, which also required the family in the all-families contract and its fail-closed diagnostic pin |
+| 5 | `maxFootSlide` measures the feet at the rate the clip is *playing*, not the rate the player only measured | `strideSync: false` on the fps-friction patroller, against `playtests/stride-locomotion.playtest.json` | `TN_PLAYTEST_FOOT_SLIDE`, `footSlide: 0.25` where the same run scored `0` before the fix |
+| 6 | `assert.scene` bounds all four cases, fails once on an unobserved scene, throws on an empty or wrong-typed assertion | the family registered without an evaluator | `RED observed: registered family has no evaluator for 'scene'` — the package's own completeness gate, which also required the family in the all-families contract and its fail-closed diagnostic pin |
 
 Criterion 4's control is the load-bearing one: a new module's absence gives a module-not-found, not
 an assertion red, so the warnings were controlled separately to prove they carry the claim.
@@ -134,10 +135,30 @@ throws on the key), and the "drops a half-shaped stride report" core test passes
 no stride is published at all. They are this package's required wrong-typed guards and they bite
 against a future loosening of `optionalNumber`; they are recorded here so the count is honest.
 
+## The end-to-end proof found a defect the unit tests could not
+
+`maxFootSlide` shipped reading the stride report's `rate` unconditionally. That is the rate the
+player *measured*, and it reports it whether or not it applied it — which is the whole point of
+the override being honest. The feet, though, move at the rate the action is running at: the
+measured rate when the convention applied it, the clip's authored rate when the game declined.
+
+So an overridden run scored **zero slide**, silently satisfying the one bound that exists to catch
+it. Every unit test passed, because they were written against the same wrong reading. The
+locomotion scenario is what caught it: `strideSync: false` on a patroller walking at 1.6 m/s
+against a 2 m/s clip reported `footSlide: 0` and `TN_PLAYTEST_STRIDE_NOT_SYNCED` — the second
+assertion was doing all the work and the first was vacuous.
+
+Fixed by `appliedStrideRate` (`synced ? rate : 1`), and the same reading now drives `doctor`'s
+stride warning. The corrected control reports `footSlide: 0.24999999999999195`.
+
 ## Live evidence
 
 - `doctor --url` against `abyss-framework` on a named hardware adapter (`nvidia turing`) — the
   four lines quoted above.
+- `examples/fps-friction/playtests/stride-locomotion.playtest.json` drives a patroller that walks,
+  and passes: `stride {clipGroundSpeed: 2, groundSpeed: 1.6, rate: 0.8, synced: true}`,
+  `footSlide: 0`, `advancedFrames: 102`, `movement.distance: 0.96`. The convention retimed a 2 m/s
+  clip to a 1.6 m/s body and the feet stopped skating, measured rather than asserted by eye.
 - The same scenario asserts `scene.litMaterialsAreLit` and `scene.cameraClearsScene`, both passing
   with real numbers (`cameraFar: 2000` against a `sceneReach` of `65.19`). A first attempt also
   asserted `minVisibleLights: 1` and **failed, correctly**: `fps-friction` mounts no lights at all
@@ -156,9 +177,6 @@ and two SwiftShader teardown errors. The identical run at `main` fails identical
 
 ## Not done here
 
-- **`maxFootSlide` has no end-to-end proof against a locomoting character.** `AnimationPlayer` has
-  two live callers in this repository and neither walks, so the bound has unit and schema proof
-  only. `strideSynced` has both. Carried to round 14.
 - **Nine dead documentation links will break `check:docs` for everyone once two local commits are
   pushed.** `8d680023` and `ada4c10b` delete `docs/audits/` and `docs/PRDs/alpha-readiness/` without
   repairing the index rows and cross-references that point at them. Both directories are still on

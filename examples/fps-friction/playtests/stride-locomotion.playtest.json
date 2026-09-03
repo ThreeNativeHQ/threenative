@@ -1,0 +1,42 @@
+{
+  "name": "fps-friction-stride-locomotion",
+  "schemaVersion": 1,
+  "subject": "patroller",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "walk",
+      "waitTicks": 90,
+      "release": true
+    }
+  ],
+  "assert": {
+    "animation": [
+      {
+        "entity": "patroller",
+        "clip": "Walk",
+        "advancedFrames": 30,
+        "strideSynced": true,
+        "maxFootSlide": 0.05,
+        "allowTrivial": "The patroller walks from the first tick, so its clip and its stride are both already true at the baseline sample; what this bounds is that they stay true while the body actually covers ground."
+      }
+    ],
+    "movement": {
+      "entity": "patroller",
+      "minDistance": 0.5
+    },
+    "scene": {
+      "cameraClearsScene": true,
+      "litMaterialsAreLit": true
+    }
+  }
+}

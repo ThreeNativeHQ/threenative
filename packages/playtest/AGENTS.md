@@ -171,7 +171,10 @@ the clip carries against what the body covered — and it never crossed the brid
 that set `strideSync: false` had turned the measurement off as far as any proof was concerned.
 It now rides in `gameplay.animation.<entity>.stride`, and `assert.animation[]` bounds it:
 
-- `maxFootSlide` — ceiling on `|feet − ground| / ground`, where feet is `clipGroundSpeed × rate`.
+- `maxFootSlide` — ceiling on `|feet − ground| / ground`. The feet move at the rate the clip is
+  *actually playing*, which is the measured `rate` only when `synced`; an overridden clip keeps
+  its authored rate. Reading `rate` unconditionally scored an overridden run at zero slide —
+  the exact case the bound exists to catch, found by the locomotion scenario, not by a unit test.
 - `strideSynced` — require the convention applied (`true`) or deliberately overridden (`false`).
 
 Both fail closed, and each failure names which kind: `TN_PLAYTEST_STRIDE_UNOBSERVED` when the
