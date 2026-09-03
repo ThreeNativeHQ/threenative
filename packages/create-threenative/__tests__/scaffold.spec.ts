@@ -95,6 +95,11 @@ const BUG_REPORT_SKILL_PATHS = [
 // what created the extra render target that made the mobile look a black screen. `sailing`
 // never had those lines, so its tree is unchanged and its hash does not move.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-09-02: `action-rpg`, `defense` and `shooter` stopped shipping a local
+  // `directSpaceState` shim and now query through the field `@threenative/physics` exposes, and
+  // the `shooter` kit became first person — a viewmodel, legs, a decal pool and a metre table
+  // where a third-person body used to be. The other five trees do not move, which is the check
+  // that this change touched only the three kits it claims to.
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
   // holds the frame budget instead of the game hand-authoring a resolution constant.
@@ -213,14 +218,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "33e618c7ff9157460ea7ad3afdfa57ec9fecafcc3f088ae3dff0c9fb43458b0d",
-  defense: "31f7793eae6c700531ebb0d8c913886a5bd0b0746ccbab87f3fe4526f9cca43c",
+  "action-rpg": "9f24c1b8605b16e7a1ea50876517d49310df620bc141b1a1108de43f6fefd2a8",
+  defense: "7d790498eacd36cc7a40166abce950a6599f20808d749daf2a52b0717eaf5525",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
   minimal: "780fe6d1030a55d217252a0f77019d1e2e86af043481ecb56eb0800a7d74524b",
   platformer: "ed353c5ead8e9e0e066d7efb298b09298b6ad4539efa3189b208fe5e012d5b79",
   racing: "c493902d5e4f722ca5fdd558fe2009e232f8dba28da2e8998edb768fe84c3807",
-  shooter: "4d8b16f04d8ba851965f56b630b8981a1278fd2657522370f76c0362a33d05a6",
+  shooter: "b8343512059bf51bf1c210e0be7a7250b1dc4dce0f5648ab0156dc1c4448f829",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
   starter: "3e06ef75e06f26e14f46432c82c5a6afff77e821a36d54d7f7031973fcb99e7a",
