@@ -1,6 +1,7 @@
 import type { Camera, Object3D, WebGLRenderer } from "three";
 import { type PassNode, RenderPipeline } from "three/webgpu";
 import type { IFrameSurfaceState } from "./frame-budget.js";
+import { AlphaAntialiasing, type IAlphaAntialiasingReport } from "./render/alpha-antialiasing.js";
 import {
   type IRenderChainBudgetWindow,
   type IRenderChainOptions,
@@ -110,6 +111,18 @@ export interface IRendererLike {
    * and a game that cannot warm up without a cast will not warm up.
    */
   compileAsync(scene: Object3D, camera: Camera): Promise<void>;
+  /**
+   * What alpha antialiasing did with the multisampled surface, and why, when it did nothing.
+   *
+   * MSAA resolves triangle edges; a cutout silhouette is carved inside the triangle by an alpha
+   * test and resolves through the coverage mask or not at all. This is where to read whether the
+   * samples this surface pays for reach the game's foliage, fences and hair.
+   *
+   * Optional on the interface for the same reason the render-chain seams are: a stub renderer
+   * implements the drawing contract, not every report. `createRenderer` always provides it, and
+   * the `TN_ALPHA_ANTIALIASING` marker is printed either way, so nothing is only readable here.
+   */
+  alphaAntialiasing?: () => IAlphaAntialiasingReport;
   compute(node: unknown): void;
   /**
    * Copies one GPU storage attribute back to the CPU, asynchronously.
@@ -173,6 +186,13 @@ export interface IRendererPlatformSource {
 }
 
 export interface IRendererOptions {
+  /**
+   * Resolves alpha-tested cutout silhouettes — foliage, fences, hair — through the multisample
+   * coverage mask instead of a binary `discard`. Defaults to true, and does nothing at all on a
+   * single-sampled surface, which it reports rather than pretends. Godot's
+   * `alpha_antialiasing_mode`, in Three.js's `alphaToCoverage`.
+   */
+  alphaAntialiasing?: boolean;
   /** Requests multisample antialiasing from the renderer. Defaults to true. */
   antialias?: boolean;
   canvas?: HTMLCanvasElement;
@@ -189,6 +209,8 @@ export interface IRendererOptions {
    * both runtimes.
    */
   pixelRatio?: number;
+  /** Where convention markers go. Defaults to the console, exactly as the render chain reports. */
+  report?: (line: string) => void;
   source?: IRendererPlatformSource;
   webgpuFactory?: (
     canvas: HTMLCanvasElement,
@@ -212,7 +234,37 @@ type RendererInstance = {
   render: (scene: Object3D, camera: Camera) => void;
   setSize: (width: number, height: number, updateStyle?: boolean) => void;
   dispose?: () => void;
+  /** three's per-draw seam, present on the WebGPU renderer and absent on the WebGL2 fallback. */
+  getRenderObjectFunction?: () => RenderObjectFunction | null;
+  renderObject?: RenderObjectFunction;
+  setRenderObjectFunction?: (renderObjectFunction: RenderObjectFunction) => void;
 };
+
+type RenderObjectFunction = (...args: unknown[]) => void;
+
+/** `samples` is the answer, `antialias` was only the request; three reports 0 for one sample. */
+function resolveSampleCount(raw: RendererInstance): number {
+  return Number.isInteger(raw.samples) && (raw.samples ?? 0) > 0 ? (raw.samples ?? 1) : 1;
+}
+
+/**
+ * Catch a material the first time the renderer draws with it.
+ *
+ * Warm-up compiles through three's own `renderObject`, never this one, so this fires only for
+ * content that arrived after the last warm-up — whose pipeline is being built for the first time
+ * regardless, which is why converting here costs no rebuild. A game that installs its own render
+ * object function replaces this one and opts out; the marker still names what was decided.
+ */
+function installDrawHook(raw: RendererInstance, alphaAntialiasing: AlphaAntialiasing): void {
+  if (typeof raw.setRenderObjectFunction !== "function") return;
+  const previous = raw.getRenderObjectFunction?.() ?? null;
+  const delegate = previous ?? raw.renderObject;
+  if (typeof delegate !== "function") return;
+  raw.setRenderObjectFunction((...args) => {
+    alphaAntialiasing.convertMaterial(args[4]);
+    delegate.apply(raw, args);
+  });
+}
 
 export function readCanvasSize(canvas: HTMLCanvasElement): readonly [number, number] {
   return [
@@ -238,6 +290,7 @@ function wrapRenderer(
   applied: { width: number; height: number },
   state: ISurfaceState,
   reapply: { resize: (() => void) | undefined },
+  alphaAntialiasing: AlphaAntialiasing,
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
   let outputPass: PassNode | undefined;
@@ -275,11 +328,12 @@ function wrapRenderer(
       drawingBufferHeight: applied.height,
       drawingBufferWidth: applied.width,
       resolutionScale: state.resolutionScale,
-      // `samples` is the answer, `antialias` was only the request. Three reports 0 for a single
-      // sample per pixel; a sample count of zero would describe no image at all.
-      sampleCount: Number.isInteger(raw.samples) && (raw.samples ?? 0) > 0 ? (raw.samples ?? 1) : 1,
+      // Three reports 0 for a single sample per pixel; a sample count of zero would describe no
+      // image at all.
+      sampleCount: resolveSampleCount(raw),
       scaleSource: state.scaleSource,
     }),
+    alphaAntialiasing: () => alphaAntialiasing.report(),
     domElement: raw.domElement,
     kind,
     raw,
@@ -290,6 +344,11 @@ function wrapRenderer(
       return info;
     },
     compileAsync: async (scene, camera) => {
+      // Before the compile, never after: three builds a pipeline from `alphaToCoverage` and
+      // rebuilds it when the flag moves, so converting afterwards would throw away the warm-up
+      // this call exists to buy. Ahead of the WebGL guard below for the same reason — the
+      // fallback renderer honours the flag too, and this is the only hook it has.
+      alphaAntialiasing.convertTree(scene);
       // WebGL has no equivalent and needs none — it compiles on first draw either way. Resolving
       // rather than throwing keeps one warm-up call working on every renderer a game may get.
       if (typeof raw.compileAsync !== "function") return;
@@ -490,6 +549,16 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     antialias: options.antialias ?? true,
     trackTimestamp: true,
   } as const;
+  const report = options.report ?? ((line: string) => console.log(line));
+  // Bound to the instance rather than to the request: the whole point is that `antialias: true`
+  // and "this surface has samples to resolve into" are different facts, and only the second one
+  // makes the convention do anything.
+  const arm = (raw: RendererInstance) =>
+    new AlphaAntialiasing({
+      enabled: options.alphaAntialiasing ?? true,
+      report,
+      sampleCount: () => resolveSampleCount(raw),
+    });
   let renderer: IRendererLike | undefined;
 
   if (preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}))) {
@@ -499,17 +568,23 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
         : new (await import("three/webgpu")).WebGPURenderer({ canvas, ...rendererParameters });
       const instance = raw as RendererInstance;
       await instance.init?.();
-      renderer = wrapRenderer(instance, "webgpu", applied, state, reapply);
+      const alphaAntialiasing = arm(instance);
+      installDrawHook(instance, alphaAntialiasing);
+      renderer = wrapRenderer(instance, "webgpu", applied, state, reapply, alphaAntialiasing);
     } catch {
       renderer = undefined;
     }
   }
 
   if (renderer === undefined) {
-    const raw = options.webgl2Factory
-      ? options.webgl2Factory(canvas, rendererParameters)
-      : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters });
-    renderer = wrapRenderer(raw as RendererInstance, "webgl2", applied, state, reapply);
+    const raw = (
+      options.webgl2Factory
+        ? options.webgl2Factory(canvas, rendererParameters)
+        : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters })
+    ) as RendererInstance;
+    const alphaAntialiasing = arm(raw);
+    installDrawHook(raw, alphaAntialiasing);
+    renderer = wrapRenderer(raw, "webgl2", applied, state, reapply, alphaAntialiasing);
   }
 
   const resizing = addResizeHandling(renderer, source, state, applied, pixelRatio);

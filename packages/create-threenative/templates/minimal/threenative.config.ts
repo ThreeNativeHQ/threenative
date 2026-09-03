@@ -31,6 +31,12 @@ const config: IThreeNativeConfig = {
     // the scale it settled on in every `TN_FRAME_BUDGET` window. Replace with a number in (0, 1]
     // to pin it — the loop stops and the reporting does not. CSS, UI and camera framing never move.
     resolutionScale: "auto",
+    // Multisampling resolves triangle edges. A cutout silhouette — foliage, a fence, hair — is
+    // carved inside the triangle by an alpha test, so it resolves through the coverage mask or
+    // not at all, which is what this spends the samples above on. It costs no target and no
+    // extra pass; set it false for a deliberately hard-edged look. `TN_ALPHA_ANTIALIASING`
+    // reports what it did, and says so when a single-sampled surface leaves it nothing to do.
+    alphaAntialiasing: true,
   },
 };
 

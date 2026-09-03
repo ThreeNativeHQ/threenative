@@ -63,6 +63,12 @@ describe("core constraints", () => {
           // ShadowNode; it creates no material, light, colour or filter of its own.
           file !== "render/virtual-shadow.ts" &&
           file !== "render/virtual-shadow-pages.ts" &&
+          // Alpha antialiasing decides how a cutout edge is RESOLVED, never how it looks: it
+          // flips one coverage flag on the game's own material so an alpha-tested silhouette can
+          // land on the samples `antialias` already paid for. It constructs no material, reads no
+          // colour, map, roughness or opacity, and the silhouette itself — the alpha test and the
+          // texture behind it — stays entirely the game's. The assertions below keep that true.
+          file !== "render/alpha-antialiasing.ts" &&
           file !== "index.ts",
       )
       .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))
@@ -102,6 +108,18 @@ describe("core constraints", () => {
       "0xffffff",
       "#ff5f4d",
     ]);
+
+    const alphaAntialiasing = readFileSync(
+      path.join(sourceDirectory, "render/alpha-antialiasing.ts"),
+      "utf8",
+    );
+    expect(alphaAntialiasing).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(alphaAntialiasing).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu,
+    );
+    expect(alphaAntialiasing.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     const particles = readFileSync(path.join(sourceDirectory, "particles.ts"), "utf8");
     expect(particles).not.toMatch(

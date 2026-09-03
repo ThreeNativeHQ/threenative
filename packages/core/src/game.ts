@@ -27,7 +27,11 @@ import { PointerEvents3D } from "./pointer-events.js";
 import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
 import { SceneRenderProjection } from "./renderProjection.js";
-import { resolveRendererAntialias, resolveRendererScaleSetting } from "./renderer-config.js";
+import {
+  resolveRendererAlphaAntialiasing,
+  resolveRendererAntialias,
+  resolveRendererScaleSetting,
+} from "./renderer-config.js";
 import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
 import { ResolutionScaler } from "./resolution-scaler.js";
 import type { ICtx, IStartupTimeline, Scene, SceneConstructor, SceneFrame } from "./scene.js";
@@ -728,6 +732,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       antialias: resolveRendererAntialias(
         this.#config.render,
         this.#config.renderer?.antialias,
+        getPlatform().os,
+      ),
+      alphaAntialiasing: resolveRendererAlphaAntialiasing(
+        this.#config.render,
+        this.#config.renderer?.alphaAntialiasing,
         getPlatform().os,
       ),
       ...resolveRendererScaleSetting(
