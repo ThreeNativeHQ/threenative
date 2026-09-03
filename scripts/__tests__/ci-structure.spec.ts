@@ -727,6 +727,17 @@ describe("CI pipeline structure", () => {
     expect(native, "the restored tree is older than its own freshly checked-out inputs").toContain(
       "restore-source-mtimes.mjs",
     );
+    // And it needs history to do it. A shallow clone dates every file to HEAD, which is newer
+    // than the cached tree, so the cache is worse than useless — run 33751865452 restamped 299 of
+    // 299 files and rebuilt 78 objects behind a cache it had just restored.
+    expect(native, "the mtime restore runs against a shallow clone").toContain("fetch-depth: 0");
+    const script = await readFile(
+      path.join(repo, "packages/runtime-native/scripts/restore-source-mtimes.mjs"),
+      "utf8",
+    );
+    expect(script, "a shallow clone is silently mis-stamped rather than refused").toContain(
+      "TN_MTIME_SHALLOW_CLONE",
+    );
     const order = native.indexOf("restore-source-mtimes.mjs");
     expect(order, "sources are dated after the build has already run").toBeLessThan(
       native.indexOf("native:build"),
