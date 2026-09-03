@@ -12,11 +12,24 @@ export const ROUTE_POINTS = [
   new Vector3(11, 0, 6),
 ] as const;
 
+/**
+ * The four buildable positions, in the order the safe-build key walks them.
+ *
+ * The order is the level design. A player who buys three towers gets the first three, and those
+ * three have to cover the whole route: with `(-2.3, 3.8)` third, the last nine metres — the run
+ * along `z = 6` out to the exit — sat outside every tower's radius, so an attacker that survived
+ * the first twenty-seven metres walked the rest unopposed. Measured over ten waves: nineteen
+ * shots, nineteen kills, twenty attackers, one leak, every run.
+ *
+ * `(6.2, 3.8)` is third instead. It reaches the exit run end to end and still covers the corner
+ * before it, and `(-2.3, 3.8)` becomes the fourth tower a richer player adds for depth rather
+ * than for coverage. Slot zero stays where it is — the overlap-rejection test builds on it.
+ */
 export const SAFE_BUILD_SLOTS = [
   new Vector3(-8.3, 0, -3.8),
   new Vector3(-2.3, 0, -3.8),
-  new Vector3(-2.3, 0, 3.8),
   new Vector3(6.2, 0, 3.8),
+  new Vector3(-2.3, 0, 3.8),
 ] as const;
 
 export const ROUTE_TEST_SLOT = new Vector3(-8, 0, -6);
