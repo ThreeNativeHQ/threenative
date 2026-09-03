@@ -50,6 +50,13 @@ pnpm test:native
 ```
 
 `Ship.ts` uses `RigidBody3D` plus `Buoyancy3D`; apply forces before fixed-step simulation.
+The same field shades the sea as displaces it. `src/render/water-material.ts` feeds
+`WaveField.heightNode()` and `normalNode()` into `waterColourNode`, so crests, troughs and the
+sun's glint all come from the wave sum rather than from a texture. Hand that colour function a
+constant and the surface still moves and the picture stops changing: the sea photographs as one
+flat sheet. Prefer `normalNode()` over differencing the height — the field differentiates its own
+wave sum, and a differenced normal repeats wherever the sampling grid does.
+
 `WaveField.sample(x, z, time)` drives both hull measurements and packed water displacement. Tune
 wave constants in `src/render/palette.ts`, hull points in `src/entities/Ship.ts`, and course order
 in `src/scenes/Sailing.ts`. The single React HUD reads published state; keep
