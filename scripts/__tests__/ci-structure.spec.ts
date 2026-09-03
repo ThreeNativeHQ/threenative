@@ -712,7 +712,16 @@ describe("CI pipeline structure", () => {
     expect(native).toContain("packages/runtime-native/build/tn-linux-quickjs");
     // The Rust crates too: once the C++ compile was cached away, they were the whole remaining
     // ~112s of the host build step.
-    expect(native).toContain("packages/runtime-native/native/physics/target");
+    // The path the build actually writes, not the one cargo would default to:
+    // `build-native-physics.mjs` passes `--target-dir` because it cross-compiles to five targets.
+    expect(native).toContain("packages/runtime-native/.runtime/physics-target");
+    const physicsScript = await readFile(
+      path.join(repo, "packages/runtime-native/scripts/build-native-physics.mjs"),
+      "utf8",
+    );
+    expect(physicsScript, "the physics build no longer writes where the cache looks").toContain(
+      "'.runtime', 'physics-target'",
+    );
     expect(native).toContain("packages/runtime-native/native/ui-overlay/target");
     for (const input of [
       "packages/runtime-native/native/**/src/**",
