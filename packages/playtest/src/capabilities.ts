@@ -26,7 +26,8 @@ export type PlaytestCapability =
   | "runtime.state"
   | "runtime.tags"
   | "runtime.ui"
-  | "runtime.world";
+  | "runtime.world"
+  | "scene.observe";
 
 export interface IPlaytestCapabilityDescriptor {
   description: string;
@@ -63,6 +64,7 @@ export const PLAYTEST_CAPABILITY_REGISTRY: readonly IPlaytestCapabilityDescripto
   capability("runtime.tags", "Samples bounded application-owned entity tags."),
   capability("runtime.ui", "Samples registered JSON-safe UI and HUD state."),
   capability("runtime.world", "Samples bounded runtime world metadata."),
+  capability("scene.observe", "Counts the lights, materials, fog, background and camera framing mounted in the scene."),
 ];
 
 const KNOWN_CAPABILITIES = new Set<string>(PLAYTEST_CAPABILITY_REGISTRY.map(({ name }) => name));

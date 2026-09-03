@@ -190,6 +190,7 @@ test("gameplay providers advertise and return animation and state channels toget
     "entity.bounds",
     "entity.observe",
     "entity.setup",
+    "scene.observe",
     "runtime.animation",
     "runtime.state",
   ]);
