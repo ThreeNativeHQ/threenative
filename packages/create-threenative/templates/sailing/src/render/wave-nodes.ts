@@ -4,8 +4,8 @@ import type { Node } from "three/webgpu";
 /**
  * What the water material needs from whatever is generating the swell.
  *
- * `WaveField` from `@threenative/core` satisfies it, and so does anything else that can answer the
- * same three questions. The normal is on the interface rather than differenced from the height
+ * The framework's `WaveField` satisfies it, and so does anything else that can answer the same
+ * three questions. The normal is on the interface rather than differenced from the height
  * because the field can differentiate its own wave sum exactly, and a differenced normal repeats
  * where the sampling grid does.
  */
