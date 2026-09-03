@@ -82,9 +82,10 @@ test("should fail when a declared test target is not executed", () => {
   // packed frame-stream replay contract; +1 for the canvas 2D dirty-tracking contract; +1 for
   // PRD-228's timestamp-query bindings; +1 for its device-pixel-ratio contract; +1 for PRD-250
   // Phase 2's worker production contract; +2 for the webtransport wire and surface contracts;
-  // +1 for the rg11b10ufloat-renderable bindings contract.
+  // +1 for the rg11b10ufloat-renderable bindings contract; +1 for PRD-327's async pipeline
+  // thread contract.
   // Bump alongside any new add_executable contract target.
-  assert.equal(discovered.length, 31);
+  assert.equal(discovered.length, 32);
   assert.deepEqual(discovered, declaredTargets(cmake));
   assert.doesNotThrow(() => validateExecutionContracts(discovered, executionContracts));
 

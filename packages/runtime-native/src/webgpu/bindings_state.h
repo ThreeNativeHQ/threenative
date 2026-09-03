@@ -3,6 +3,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <deque>
+#include <functional>
+#include <thread>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -344,6 +347,38 @@ struct Canvas2DComposite {
     uint32_t canvas2DTextureHeight = 0;
 };
 
+/**
+ * One finished off-thread pipeline compile, waiting for the game thread to hand it to JavaScript.
+ *
+ * PRD-327. Compiles run on a small host pool because the entry that would let the backend do it —
+ * `wgpuDeviceCreateRenderPipelineAsync` — is `unimplemented!()` on wgpu-native and aborts the
+ * process, and wgpu-native is what Android ships. Only the game thread may enter the JS engine, so
+ * a worker never touches the promise: it pushes one of these and `pollEvents()` settles it in the
+ * same `kIo` segment that already delivers worker messages.
+ */
+struct PipelineCompileCompletion {
+    uint64_t requestId = 0;
+    bool render = true;
+    WGPURenderPipeline renderPipeline = nullptr;
+    WGPUComputePipeline computePipeline = nullptr;
+    std::string error;
+};
+
+/** The compile pool's shared state. Owned by `BindingsState`, drained on the game thread. */
+struct AsyncPipelineCompiles {
+    std::mutex mutex;
+    std::condition_variable wake;
+    std::deque<std::function<void()>> queue;
+    std::vector<std::thread> workers;
+    std::mutex completedMutex;
+    std::vector<PipelineCompileCompletion> completed;
+    uint64_t nextRequestId = 1;
+    bool stopping = false;
+    /** Requests started and not yet settled. `TN_WARMUP` reads the difference. */
+    uint64_t started = 0;
+    uint64_t settled = 0;
+};
+
 struct BindingsState {
     bool verboseLogging = false;
 
@@ -360,6 +395,7 @@ struct BindingsState {
     FrameProfiling profiling;
     ScreenshotCapture screenshot;
     Canvas2DComposite canvas2D;
+    AsyncPipelineCompiles asyncPipelines;
 };
 
 void flushUploadStaging(BindingsState* state);

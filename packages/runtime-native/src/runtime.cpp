@@ -1252,6 +1252,11 @@ public:
         // engine, so completions are delivered in this existing host I/O segment.
         workers::WorkerRegistry::instance().processWorkerMessages(jsEngine_.get());
 
+        // PRD-327: pipeline compiles finish on a host pool and their promises settle here, for the
+        // same reason and in the same segment — the compile ran on another thread, and only this
+        // one may enter the engine.
+        webgpu::drainAsyncPipelineCompiles(bindingsState_);
+
         // Process completed async HTTP requests (invoke their JS callbacks)
         // This must be called after runOnce() to invoke callbacks safely on the main thread
         http::getAsyncHttpClient().processCompletedRequests();

@@ -29,7 +29,7 @@ const RUNTIME_SCRIPT_HASHES = {
   'event-constructors-setup.js': '3e7f592806866915e7d4fecd051bb5268542cefb79324efc8e15c9bc73978a11',
   'image-support-init.js': '1a674470d63a89e607d065c4b19794e28e87b955b292d63dbd2f974e94e1e6ee',
   'onload-trigger.js': '396a17433bcc18d6193b3167404ff51faecc1451b1b9dfaeb6a3473e86c6371a',
-  'install-async-pipelines.js': '9100a90ee38e89f53e8d92ae84156916c5c779d11bbedbf11e8b7c7f6ff44331',
+  'install-async-pipelines.js': '864f5e6787ff00bb54a873e402e4b531d3cd840bf6195d406533ca03fbb12983',
   'image-bitmap-polyfill.js': '30e2cb4a45fc20ee9b983ef4dd404afd63be1889d0b1e12055f01a8716b66cfa',
   'webtransport-polyfill.js': '4b5a07862083c8e905341190cf37c613083517db84139288bbf7cee12fb6d359',
   'webtransport-stub.js': '9b653430e429a8fad538151523a2c4346b0b9c52a201ec5e01314128b788081e',
@@ -619,24 +619,55 @@ test('QuickJS native callback results have independent engine ownership', () => 
     'native callback results must outlive their temporary C++ handles');
 });
 
-test('the device exposes asynchronous pipeline creation', () => {
+test('the device exposes asynchronous pipeline creation, and it leaves the main loop', () => {
   const installer = read('src/runtime-scripts/install-async-pipelines.js');
+  const bindings = readCpp('src/webgpu/bindings');
+  const pipelines = readCpp('src/webgpu/bindings_pipelines');
+  const runtime = read('src/runtime.cpp');
+
   // Without these, WebGPURenderer.compileAsync() throws "not a function" and every pipeline is
   // built lazily on the draw that first needs it, mid-play, instead of behind a loading screen.
+  //
+  // They are native handlers as of PRD-327, not the JavaScript wrap this file used to be. The wrap
+  // was `Promise.resolve(this.createRenderPipeline(descriptor))` — an asynchronous signature over
+  // a synchronous compile, which is permitted and bought nothing: the contract executable measured
+  // it holding the main thread for 96.5 ms of an 84.5 ms compile (ratio 1.14).
   assert.match(
-    installer,
-    /device\.createRenderPipelineAsync\s*=/,
+    bindings,
+    /"GPUDevice", "createRenderPipelineAsync"/,
     'GPUDevice must expose createRenderPipelineAsync',
   );
   assert.match(
-    installer,
-    /device\.createComputePipelineAsync\s*=/,
+    bindings,
+    /"GPUDevice", "createComputePipelineAsync"/,
     'GPUDevice must expose createComputePipelineAsync',
   );
-  // Both must reject rather than throw synchronously: a caller awaits them.
+  // Two implementations of one entry point is the failure mode this replaced; the JavaScript wrap
+  // must be gone rather than shadowed.
+  assert.doesNotMatch(
+    installer,
+    // `=(?!=)` so the file's own `typeof device.createRenderPipelineAsync === "function"` check,
+    // which is the assertion that the native handler is installed, does not read as an assignment.
+    /device\.createRenderPipelineAsync\s*=(?!=)/,
+    'the JavaScript wrap must not reinstall createRenderPipelineAsync over the native handler',
+  );
+  // Still asynchronous in the sense that matters: the compile is enqueued, not run here.
+  assert.match(
+    pipelines,
+    /enqueueCompile\(state,/,
+    'the async handlers must hand the compile to the pool rather than run it inline',
+  );
+  // The completion crosses back on the game thread, in the segment that already does exactly this
+  // for worker messages. Anywhere else is a JS engine entered from a worker.
+  assert.match(
+    runtime,
+    /drainAsyncPipelineCompiles\(bindingsState_\)/,
+    'pipeline completions must be settled from pollEvents()',
+  );
+  // A failure must reject rather than throw synchronously: a caller awaits these.
   assert.match(
     installer,
-    /return Promise\.reject\(error\)/,
+    /deferred\.reject\(new Error\(String\(error\)\)\)/,
     'a failed pipeline build must reject the returned promise',
   );
 });

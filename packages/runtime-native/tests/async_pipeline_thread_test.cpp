@@ -279,6 +279,64 @@ const char* backendName() {
 #endif
 }
 
+
+/**
+ * The Phase 1 arm: the same question asked through the binding a game actually calls.
+ *
+ * Phase 0 asks whether the *backend* can leave the thread. This asks whether
+ * `device.createRenderPipelineAsync` does — which is the thing `renderer.compileAsync()` reaches,
+ * and the thing that used to be `Promise.resolve(this.createRenderPipeline(descriptor))`. The
+ * async arm runs before the synchronous one so it cannot be timing a warmed driver.
+ */
+std::string bindingsSetupScript() {
+    std::string script = "(() => {\n  const device = globalThis.__tnAsyncPipelineDevice;\n";
+    script += "  const descriptorFor = (code) => {\n";
+    script += "    const module = device.createShaderModule({ code });\n";
+    script += "    return {\n";
+    script += "      vertex: { module, entryPoint: 'vs' },\n";
+    script += "      fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] },\n";
+    script += "      primitive: { topology: 'triangle-list' },\n";
+    script += "    };\n  };\n";
+    script += "  const asyncDescriptor = descriptorFor(`" + heavyShader(101u) + "`);\n";
+    script += "  const syncDescriptor = descriptorFor(`" + heavyShader(103u) + "`);\n";
+    script += "  globalThis.__tnAsyncResolved = null;\n";
+    script += "  globalThis.__tnAsyncError = null;\n";
+    script += "  const asyncBegan = performance.now();\n";
+    script += "  const promise = device.createRenderPipelineAsync(asyncDescriptor);\n";
+    script += "  globalThis.__tnAsyncCallMs = performance.now() - asyncBegan;\n";
+    script += "  if (typeof promise?.then !== 'function') throw new Error('createRenderPipelineAsync did not return a promise');\n";
+    script += "  promise.then((pipeline) => { globalThis.__tnAsyncResolved = pipeline; })\n";
+    script += "         .catch((error) => { globalThis.__tnAsyncError = String(error?.message ?? error); });\n";
+    script += "  const syncBegan = performance.now();\n";
+    script += "  device.createRenderPipeline(syncDescriptor);\n";
+    script += "  globalThis.__tnSyncMs = performance.now() - syncBegan;\n";
+    script += "})()";
+    return script;
+}
+
+constexpr const char* kBindingsAssert = R"JS((() => {
+  if (globalThis.__tnAsyncError) throw new Error(globalThis.__tnAsyncError);
+  if (!globalThis.__tnAsyncResolved)
+    throw new Error("createRenderPipelineAsync never resolved; the pollEvents drain is not settling promises");
+  if (typeof globalThis.__tnAsyncResolved.getBindGroupLayout !== "function")
+    throw new Error("the promise resolved with something that is not a pipeline");
+  // A resolved pipeline that cannot answer for its own layout would move the failure into the
+  // game's first draw, which is exactly where it was before this change.
+  if (!globalThis.__tnAsyncResolved.getBindGroupLayout(0))
+    throw new Error("the resolved pipeline has no bind group layout");
+  const ratio = globalThis.__tnAsyncCallMs / globalThis.__tnSyncMs;
+  console.log("TN_ASYNC_PIPELINE_BINDINGS:" + JSON.stringify({
+    callMs: globalThis.__tnAsyncCallMs,
+    syncMs: globalThis.__tnSyncMs,
+    ratio,
+  }));
+  // Acceptance criterion 1. This is the number that used to be 1.0, because the binding was the
+  // synchronous create wrapped in a resolved promise.
+  if (!(ratio < 0.25))
+    throw new Error("createRenderPipelineAsync blocked the main loop: " + globalThis.__tnAsyncCallMs +
+                    " ms of a " + globalThis.__tnSyncMs + " ms compile (ratio " + ratio + ")");
+})())JS";
+
 }  // namespace
 
 int main() {
@@ -348,6 +406,28 @@ int main() {
               << ",\"offThread\":" << (offThread ? "true" : "false")
               << ",\"descriptorSnapshotted\":" << (probe.usable ? "true" : "false")
               << ",\"detail\":\"" << probe.detail << "\"}\n";
+    // Phase 1: the same question through the binding a game calls.
+    if (!runtime->evalScript(bindingsSetupScript().c_str(), "async_pipeline_bindings.js")) {
+        std::cerr << "the async pipeline bindings failed to start a compile\n";
+        return 1;
+    }
+    // Wall clock, not a frame count. A frame count is what a compile races: 600 `pollEvents()`
+    // calls on this host take about 60 ms, and the compile being waited on takes 120-360 ms, so
+    // the first version of this loop failed with "never resolved" and then passed once a debug
+    // `fprintf` slowed it down. That is a test whose result depends on how fast the machine is.
+    //
+    // Five seconds is 14-40x the measured compile and still bounded, and the loop keeps pumping
+    // because the completion is drained in `pollEvents()`'s `kIo` segment and the promise's `then`
+    // runs on the microtask turn after it.
+    const double bindingsDeadlineMs = nowMs() + 5000.0;
+    while (nowMs() < bindingsDeadlineMs) {
+        if (!runtime->pollEvents()) break;
+    }
+    if (!runtime->evalScript(kBindingsAssert, "async_pipeline_bindings_assert.js")) {
+        std::cerr << "the async pipeline bindings contract failed\n";
+        return 1;
+    }
+
     std::cout << "native async pipeline thread contract passed\n";
     return 0;
 }
