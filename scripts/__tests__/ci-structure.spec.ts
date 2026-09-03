@@ -484,11 +484,17 @@ describe("CI pipeline structure", () => {
     // Both templates the golden-path matrix drives must be covered by the sweep that replaces it.
     for (const template of ["starter", "platformer"]) expect(nonVisual).toContain(`- ${template}`);
 
+    // Commands, not prose: the job's comments name the classifier and the runner precisely
+    // because it delegates to them, and a raw-text match cannot tell an explanation from a step.
+    const commands = goldenPath
+      .split("\n")
+      .filter((line) => !/^\s*#/u.test(line))
+      .join("\n");
     expect(
-      goldenPath,
+      commands,
       "golden-path-template re-runs the sweep template-nonvisual already owns",
     ).not.toContain("non-visual-scenarios.mjs");
-    expect(goldenPath, "golden-path-template still drives scenarios itself").not.toContain(
+    expect(commands, "golden-path-template still drives scenarios itself").not.toContain(
       "threenative-playtest",
     );
     expect(goldenPath).toContain("pnpm verify:golden-path");
@@ -664,6 +670,30 @@ describe("CI pipeline structure", () => {
     expect(verifier, "adoption does not fail closed on an unclaimed tarball").toContain(
       "TN_GOLDEN_PATH_ARCHIVE_UNKNOWN",
     );
+  });
+
+  // The golden path drives one scenario because `template-nonvisual` drives them all. That is only
+  // true while template-nonvisual actually covers the templates this matrix names — the moment it
+  // stops, capping this layer stops being delegation and starts being a hole.
+  it("only caps its own scenario sweep while template-nonvisual covers the same templates", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const goldenPath = requiredJob(ci, "golden-path-template");
+    const nonVisual = requiredJob(ci, "template-nonvisual");
+
+    const cap = goldenPath.match(/TN_GOLDEN_PATH_SCENARIOS:\s*"(\d+)"/u)?.[1];
+    if (cap === undefined) return; // uncapped is always honest; nothing to check.
+
+    expect(Number(cap)).toBeGreaterThan(0);
+    // The lane it delegates to has to run the same classifier and runner, on every event.
+    expect(nonVisual).toContain("non-visual-scenarios.mjs");
+    expect(nonVisual).toContain("threenative-playtest");
+    expect(nonVisual).not.toContain("github.event_name == 'push'");
+    // And it has to cover every template this matrix drives.
+    const driven = [...goldenPath.matchAll(/^\s+- ([a-z-]+)$/gmu)].map((match) => match[1] ?? "");
+    expect(driven.length).toBeGreaterThan(0);
+    for (const template of driven) {
+      expect(nonVisual, `template-nonvisual does not cover ${template}`).toContain(`- ${template}`);
+    }
   });
 
   it("the golden-path proof cache cannot record a run that failed", async () => {

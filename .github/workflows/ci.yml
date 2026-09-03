@@ -397,6 +397,14 @@ jobs:
         if: steps.proof.outputs.cache-hit != 'true'
         env:
           TN_GOLDEN_PATH_ARCHIVES: ${{ github.workspace }}/artifacts/workspace-packages
+          # The `test` layer proves a stranger's `pnpm test` reaches a running scene and comes
+          # back green. It does not have to prove every scenario in the template passes:
+          # `template-nonvisual` runs this identical list — same `non-visual-scenarios.mjs`
+          # classifier, same `threenative-playtest` runner, same flags — for all eight templates,
+          # in a job beside this one. On run 33712230560 the whole sweep took 353s of a 375s step
+          # on the run's critical path and proved nothing the run did not already know. The layer
+          # prints which scenarios it drove and which it left to the other lane.
+          TN_GOLDEN_PATH_SCENARIOS: "1"
       - name: Record the proof for this tree
         if: success() && steps.proof.outputs.cache-hit != 'true'
         run: |
