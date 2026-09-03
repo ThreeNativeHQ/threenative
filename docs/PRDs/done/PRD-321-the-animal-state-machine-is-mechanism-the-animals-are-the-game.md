@@ -46,7 +46,7 @@ A framework that ships "graze" as a state name has invented vocabulary, which ru
   the ground-contact and facing patterns, not proposed for extraction here
 - `packages/core/src/animation.ts` — the existing `AnimationPlayer` and `clipTrackBindings`, which
   Wildwood already uses; this PRD extends that neighbourhood rather than opening a new one
-- `docs/PRDs/authoring/PRD-314-a-broken-retarget-is-a-number-not-a-screenshot.md` — adjacent, and
+- `docs/PRDs/done/PRD-314-a-broken-retarget-is-a-number-not-a-screenshot.md` — adjacent, and
   must not be duplicated
 - `packages/create-threenative/capabilities.json` — where any new export must become findable
 
