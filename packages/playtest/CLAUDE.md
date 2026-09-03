@@ -15,9 +15,10 @@ node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
   --browser-recipe webgpu
 ```
 
-Exit `0` passed, `1` assertions failed, `2` never reached assertions, and `75` when the capture
-lock queue timed out — that one prints the holder and queue depth and is explicitly **not** a test
-failure. `--server-command` needs a workspace that has a `dev` script — an example or a scaffolded
+Exit `0` passed, `1` assertions failed, `2` never reached assertions, `69` when a command's
+external decoder is absent so nothing was inspected, and `75` when the capture lock queue timed
+out — the last two are explicitly **not** test failures, and `75` prints the holder and queue
+depth. `--server-command` needs a workspace that has a `dev` script — an example or a scaffolded
 project; there is no root `pnpm dev`. `--browser-recipe webgpu` supplies the current Chromium WebGPU
 flags including `--enable-features=Vulkan`, without which Chromium silently serves WebGPU from
 SwiftShader and reports healthy-looking limits from a CPU rasteriser; `--browser-arg` is the escape
@@ -99,6 +100,72 @@ Desktop spawn under a headless session rides the same Xvfb rule as any pixel run
 `sh scripts/xvfb.sh threenative-playtest perf --executable … --host-arg run --host-arg game.js …`.
 The command never launches a browser — the browser lane already bounds performance through
 `assert.performance` — and it never tunes anything; it is a meter reader.
+
+## `audio` — look at the sound, because nobody listens in CI
+
+`threenative-playtest audio --expect <manifest.json>` decodes every clip a game declares and
+reports band energy, peak, DC, silence and loop-seam continuity, writing one spectrogram PNG per
+clip. No browser, no display, no capture lock: inspecting audio reads files, and taking the capture
+queue for it would block the machine's pixel work for nothing.
+
+It exists because **every check that does not involve listening passes on audio that is wrong**.
+The file exists, it is served 200, it decodes, no page error, it is inside the byte budget — and the
+clip is a hum where a chime should be. That shipped here: a discovery cue with 80% of its energy in
+100-500 Hz and 1% above 2 kHz, on the one sound a player waits to hear. So did fifteen footsteps
+with up to 45% of their energy below 100 Hz, which is a thud, not a boot on stone. Both are
+unmistakable in a band profile and a spectrogram, and invisible in a size, a duration or a green
+`loaded` marker.
+
+**The game declares the expectations, because the inspector cannot know them.** Nothing here knows
+that a forest bed should be broadband and a discovery chime should be bright. The manifest is the
+game saying so:
+
+```json
+{ "version": 1, "clips": [
+  { "path": "public/audio/forest-bed.ogg", "loop": true,
+    "bands": { "sub": { "max": 3 }, "high": { "min": 20 }, "air": { "min": 20 } } },
+  { "path": "public/audio/landmark-found.ogg", "loop": false,
+    "bands": { "low": { "max": 25 }, "high": { "min": 25 } } }
+] }
+```
+
+Bands are `sub` (<100 Hz), `low` (100-500), `mid` (500-2k), `high` (2k-8k) and `air` (>8k),
+contiguous to Nyquist, reported as percentages of summed magnitude from Hann-windowed
+non-overlapping frames over the whole signal. They are comparable to each other and to what a game
+declares, not to another tool's numbers.
+
+Fails closed, on this package's own rule: an unknown key, a band nobody measures, a bound that can
+never hold, a `seamMaxRatio` on a clip whose `loop` is false, a duplicate path, or an empty clip
+list all **throw** rather than skip. `loop` is required rather than defaulted, because it is the one
+fact that decides whether the seam is checked. `--dir <dir>` additionally fails when any audio file
+under it is undeclared — otherwise the gate is only as good as the manifest and a clip added later
+is a clip nothing checks.
+
+**Two measurement rules, both learned by getting them wrong.**
+
+*Decode at the file's own rate.* A seam measured on a resampled decode measures the resampler: its
+FIR window runs off the end of the data at the first and last output sample and is zero-padded, so
+the edge samples are the only wrong ones in the file — exactly where a seam test looks. On one real
+set that inflated the reported step three to sevenfold and reordered which clip looked worst. The
+command never passes `-ar` to ffmpeg.
+
+*Judge the wrap against the steps beside it.* A click is a step that is anomalous **where it
+happens**. A sparse clip is mostly quiet, so a whole-clip percentile flatters its seam; a dense one
+is mostly loud, so the same percentile condemns a join nobody could hear. The reference is the
+99th-percentile sample step within 50 ms either side, and the default ceiling is 1.5x rather than
+1.0x — a flawless wrap that lands on the signal's steepest point *is* the largest step in its
+neighbourhood and measures exactly 1.0.
+
+Exit `0` when every check passed, `1` when one failed, `2` when it could not run (a malformed or
+unreadable manifest), and `69` when ffmpeg is absent. That last code is the point: **"I could not
+check" and "I checked and it is fine" must never be the same answer**, so CI can treat 69 as a skip
+and still treat 1 as a defect.
+
+`--text` prints `✓`/`!`/`✗` lines with a `fix:` on anything that is not ok; default output is JSON.
+The numbers are the gate and the picture is what a person or an agent looks at when the gate fires,
+so every spectrogram written is named in both. Verdicts, parsing and analysis live in
+`runner/audio.ts` and are unit-tested against synthesised signals in `__tests__/audio.spec.ts`;
+`runner/audioRun.ts` only drives ffmpeg.
 
 ## Startup time is an observation
 
