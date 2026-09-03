@@ -2127,8 +2127,8 @@ and 4,000 on Godot. The ratio remains stable across the 16× ladder in both mode
   | L1 @ 16,384 | 107.20 ms | 116.40 ms | +9% |
   | L2 @ 16,384 | 5.80 ms | 8.10 ms | +40% |
 
-  The knee is stable (L1 1,024, L2 16,384), individual values should be treated as ±30%, and the
-  published second run was not taken while the desktop was otherwise idle.
+  The knee is stable (L1 1,024, L2 16,384), individual values should be treated as ±30%. Neither
+  run was otherwise idle; the second run is the published artifact.
 - The original PRD contradicted its 60 Hz/vsync requirement and its instruction to disable vsync.
   Both arms therefore used `--disable-gpu-vsync --disable-frame-rate-limit` for Chromium and
   `VSYNC_DISABLED` for Godot; `display.vsync` was added and the gate rejects disagreement.
@@ -2199,15 +2199,17 @@ browser claim. The historical gate record marked typecheck, lint, and budgets gr
 benchmark setup; this statement is retained as historical evidence, not a current gate result.
 
 ```sh
-pnpm bench:engines --arm tn-web        # artifacts/engine-load-test/tn-web.json
-pnpm bench:engines --arm godot-web
-pnpm bench:engines:report
+pnpm bench:engines --arm tn-web        # writes artifacts/engine-load-test/tn-web.json
+pnpm bench:engines --arm godot-web     # exports release, serves cross-origin-isolated, drives
+pnpm bench:engines:report              # equivalence gate, then the knee table
 ```
 
-Both arms need a display, system Chromium with hardware WebGPU, and `BENCH_BROWSER_BIN` may select
-the binary. `--out <name>` prevents diagnostic runs from overwriting the published ladder. Godot
-needs `godot` on `PATH` with 4.7.1 export templates. Artifacts include the two ladder JSON files,
-floor and L2-extension JSON files, and full stdout logs.
+This is an opt-in benchmark path; nothing in the default repo gate runs Godot. Both arms need a
+display, system Chromium with hardware WebGPU, and `BENCH_BROWSER_BIN` may select the binary.
+`--out <name>` prevents diagnostic runs from overwriting the published ladder; a floor-control run
+silently clobbered the first tn-web ladder before that flag existed. Godot needs `godot` on `PATH`
+with 4.7.1 export templates. Artifacts are `tn-web-ladder.json`, `godot-web-ladder.json`,
+`*-floor.json`, `*-l2ext.json`, and full stdout logs in `artifacts/*.log`.
 
 <a id="prd-117-android-quickjs-era-record-2026-08-14"></a>
 ### PRD-117 Android / QuickJS-era record — 2026-08-14
@@ -2264,10 +2266,13 @@ left 4,095 of 4,096 moving cubes baked static; flat siblings also shared one par
 default `minMeshes: 200` meant examples never exercised the pass. The diagnostic evidence was
 `report.movingParts = 1` for 4,096 animated cubes and a misleading 0.08 ms `collapse.frame()`;
 assert moving parts, not only refresh time. The fixes sample authored transforms and choose the
-nearest actually moving owner; all 22 existing collapse tests passed before and after.
+nearest actually moving owner. The two regression tests are intentionally red when either defect
+fix is removed, and all 22 existing collapse tests passed before and after the fixes.
 
-Two measured optimisations were retained. For uniform scales the shader's normal transform is the
-transform upper 3×3, so aliasing the normal buffer saved 28% (72.19 → 52.29 ms). After baking,
+Two measured optimisations were retained and remain on by default in this historical record. For
+uniform scales the shader's normal transform is the transform upper 3×3, so aliasing the normal
+buffer saved 28% (72.19 → 52.29 ms). Together the two real optimisations removed 22% of the
+framework's share and moved the 4,096 gap from 1.7× to 1.35×. After baking,
 detached leaves already held their world matrix, so reading that local matrix reduced refresh
 15.38 → 9.79 ms and frame 28.68 → 23.07 ms; the post-bake flag was required. Loop partitioning
 added 9.79 → 9.42 ms, 3.8%, at the edge of noise.
@@ -2280,8 +2285,10 @@ The proposed gap-closing approaches remain historical:
 | bulk transform ABI | removes the framework's ~50% share, not the game's | medium |
 | further JavaScript micro-optimisation | tens of percent at best; nearly exhausted | small |
 
-Android packaging downloaded a prebuilt runtime, so an engine swap required NDK cross-compilation;
-V8/JSC version and API constraints made it a large change. `packages/runtime-native/AGENTS.md`
+Android packaging downloaded a prebuilt runtime, so an engine swap required NDK cross-compilation.
+A prebuilt Android arm64 V8 was v11.1000.4 while the desktop backend used V8 13.1; Android JSC
+would require porting the iOS-only Objective-C++ implementation to the JSC C API, not flipping a
+flag. These version and API constraints made the swap a large change. `packages/runtime-native/AGENTS.md`
 records the architecture decision “Android QuickJS+wgpu-native”; reopening it is a charter-level
 decision, not a tweak.
 
@@ -2290,9 +2297,12 @@ decision, not a tweak.
 - Android logcat truncated lines at ~1 KB; `TNJSON` chunks are rejoined.
 - Godot ignored `VSYNC_DISABLED`, producing a flat ~19 ms result over a 16× ladder; the scorer
   refuses that display-pinned shape and the arm reports `TIME_PROCESS`.
-- Desktop and Android bundles are per-target; an `--out` name protects published ladders.
-- The collapse settle loop no longer draws while baking but still yields; removing the yield caused
-  a synchronous spin. The native FIFO/vsync desktop path remains runnable but incomparable.
+- Desktop and Android bundles are per-target; an `--out` name protects published ladders after a
+  diagnostic floor run overwrote the published ladder.
+- A 16,384-mesh desktop run timed out when the settle loop rendered the un-collapsed scene every
+  frame. It now stops drawing while baking but still yields; removing the yield caused a synchronous
+  spin. The native FIFO/vsync desktop path remains runnable but needs an unthrottled present mode
+  before its numbers are comparable.
 
 | platform | ThreeNative | Godot | verdict |
 |---|---|---|---|

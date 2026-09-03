@@ -226,6 +226,21 @@ The focused test's initial red was a missing built workspace entry, resolved by 
 it did not identify a documentation failure. The fresh populated-destination Linchpin review is
 the remaining gate before Phase 2 deletion.
 
+The first populated-destination Linchpin review ran read-only against commit `56cb4165` and exited
+0. It returned `comparison: APPROVE`, `browser detail: REVISE`, and `mobile: REVISE`. The requested
+revisions were applied in the destination: both-run idle status; cross-origin-isolated and opt-in
+benchmark qualifiers; the observed floor-run overwrite and exact artifact names; regression-test
+red conditions; the 22% framework-share and 1.7× → 1.35× measurements; on-by-default status;
+V8/JSC version and API constraints; and the timeout/unthrottled-present evidence. The exact
+fragment/caller check then returned:
+
+```text
+exact fragment/caller check: PASS
+```
+
+A second populated-destination Linchpin review is required against the revised destination before
+Phase 2 deletion.
+
 ### Phase 2: Delete only the three confirmed historical sources
 
 **Files (4):**
