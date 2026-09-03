@@ -69,6 +69,55 @@ exists to prevent. Core now reports this one too, discriminating a real `AudioPa
 
 Playback-rate detune in the C++ mixer would fix both properties at once.
 
+## For the asset-pipeline audio pass: the seam metric that must not throw on good audio
+
+Written here rather than built, because conditioning is the pipeline's job and this is the one part
+of it that is easy to get wrong in a way that blocks builds.
+
+**A bare wrap step is not a threshold-able quantity.** `measureSeam` in the pass as drafted returns
+`|x[0] − x[n−1]|` and nothing else. Absolute steps are not comparable between clips, because what
+makes a join audible is how it compares to the signal *around* it. Measured on wildwood's three
+loops, at their own sample rate:
+
+| clip | wrap step | 99th-pct step within 50 ms of the join | ratio |
+| --- | --- | --- | --- |
+| `forest-bed.ogg` | 0.016142 | 0.041870 | 0.39x |
+| `forest-birds.ogg` | 0.066752 | 0.298793 | **0.22x** |
+| `lake-shore.ogg` | 0.000648 | 0.005415 | 0.12x |
+
+By the bare step `forest-birds` looks four times worse than the bed. By the only measure that
+tracks audibility it is the *better* join of the two. **A seam assertion that throws on the bare
+step fails a clip whose wrap is fine** — and a throwing gate that is wrong is worse than no gate,
+because the fix people reach for is deleting the assertion.
+
+Three things worth copying rather than re-deriving:
+
+1. **Ratio, not magnitude.** `wrap / p99(steps within 50 ms either side of the join)`. A sparse clip
+   is mostly quiet, so a whole-clip percentile flatters its join; a dense one is mostly loud, so the
+   same percentile condemns a join nobody could hear.
+2. **A limit of 1.5x, not 1.0x.** A flawless wrap that lands on the signal's steepest point *is* the
+   largest step in its neighbourhood and scores exactly 1.0 — a pure sine looped over a whole number
+   of cycles measures 1.000000000000223. A 1.0 limit fails a perfect loop on float error.
+3. **Never resample before measuring.** A resampler's FIR window runs off the end of the data at the
+   first and last output sample and is zero-padded, so those two are the only wrong samples in the
+   file and a seam test looks at exactly them. A 22.05 kHz decode of this set inflated the reported
+   step three to sevenfold and reordered which clip looked worst.
+
+All three are implemented and unit-tested in `packages/playtest/src/runner/audio.ts` —
+`measureSeam` and the `seam` case of `checkClip`. Importing them, or matching the metric exactly,
+keeps the build gate and the inspector from ever disagreeing about the same file, which is its own
+class of wasted afternoon.
+
+**One premise correction, offered because a lane about to build a gate should not inherit it.**
+`forest-birds.ogg` was reported as clicking every cycle, and it was not: the cross-fade did take.
+The pre-encode PCM and the decoded `.ogg` agree, and the ratio above is 0.22x. What that clip
+genuinely had was 6.1% of its energy below 100 Hz — rumble a wood does not have — which is a content
+defect, now high-passed at 110 Hz, and a different thing from a seam. The hand pass did have a real
+gap, and it is worth naming precisely: it measured nothing about *content*. It never noticed the
+discovery chime was 80% low-mid, and it never noticed fifteen footsteps carrying up to 45% of their
+energy below 100 Hz. Those are the defects a pipeline pass and `threenative-playtest audio` between
+them should make impossible.
+
 ## 4. Codec coverage is narrow, and already gated — no request, recorded so nobody re-finds it
 
 `decodeAudioFile` sniffs the header and implements exactly two containers: RIFF/WAVE and Ogg
