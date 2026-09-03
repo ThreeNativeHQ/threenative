@@ -188,6 +188,44 @@ test "$(rg -n -F 'verification/runtime-perf-state.md#prd-117-browser-detail-2026
 test "$(rg -n -F '../verification/runtime-perf-state.md#prd-117-android-quickjs-era-record-2026-08-14' docs/architecture/THREEJS-CONSTRAINTS.md | wc -l)" -eq 1
 ```
 
+### Phase 1 execution record
+
+Executed 2026-09-02 on branch `docs/prd-330-final`. The three source files remained present and
+their hashes remained identical to the pre-edit checkpoint. The populated destination contains
+all three explicit IDs, the two README callers, and the architecture caller; the legacy index row
+now points to the consolidated browser-detail anchor rather than a deleted basename.
+
+```text
+$ fragment/caller check  # exit 0
+fragment/caller check: PASS
+$ bash .../linchpin.sh contract docs/PRDs/tech-debt-code-quality/PRD-330-documentation-footprint-reduction.md  # exit 0
+CONFORMING docs/PRDs/tech-debt-code-quality/PRD-330-documentation-footprint-reduction.md
+$ pnpm check:docs  # exit 0
+Checked 1347 relative documentation links across 958 Markdown files.
+$ pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts  # initial exit 1
+Error: Failed to resolve entry for package "@threenative/assets".
+$ pnpm --filter @threenative/assets build  # exit 0
+ESM Build success; DTS Build success; publint: All good!
+$ pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/primary-docs.spec.ts  # exit 0
+Test Files  2 passed (2)
+Tests       18 passed (18)
+$ pnpm sync:agents --check  # exit 0
+agent docs in sync: 17 CLAUDE.md mirrors
+$ git diff --check  # exit 0
+```
+
+Phase 1 changed only these tracked files, plus this PRD evidence record:
+
+```text
+docs/README.md                           2 insertions(+), 2 deletions(-)
+docs/architecture/THREEJS-CONSTRAINTS.md 1 insertion(+), 1 deletion(-)
+docs/verification/runtime-perf-state.md  310 insertions(+), 1 deletion(-)
+```
+
+The focused test's initial red was a missing built workspace entry, resolved by the package build;
+it did not identify a documentation failure. The fresh populated-destination Linchpin review is
+the remaining gate before Phase 2 deletion.
+
 ### Phase 2: Delete only the three confirmed historical sources
 
 **Files (4):**

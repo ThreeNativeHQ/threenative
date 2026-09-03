@@ -2352,7 +2352,7 @@ remain the protocol for what it does not cover (SurfaceFlinger cross-check, devi
 | `native-gameplay-frame-rate-2026-08-11.md` | HUD-draw fold (93 → 11) closure; half-resolution probe incident |
 | `native-cpu-profile-fox-scale-2026-08-11.md`, `native-cpu-webgpu-presentation-hardening-2026-08-11.md` | profile:native-cpu baseline + presentation fail-close hardening |
 | `three-webgpu-per-object-cost-2026-08-15.md` (+ `.html` repro) | L1/L2/L3 rung tables behind §6 |
-| `engine-load-test-summary-2026-08-15.md` | Full gate-PASS tables behind §6 (detail file `engine-load-test-2026-08-14.md` predates and remains) |
+| `engine-load-test-summary-2026-08-15.md` | Full gate-PASS tables behind §6; the historical browser detail is consolidated above at [PRD-117 browser detail](#prd-117-browser-detail-2026-08-14) |
 | `fps-framework-mobile-perf-2026-08-24.md` | Launch timeline tables; loading-stall discovery |
 | `prd-218-launch-stall-and-heat-2026-08-24.md` | Stall-segment attribution; thermal confound ledger |
 | `prd-189-core-frame-allocations-2026-08-22.md` | Negative-control table for the allocation-free contract |
