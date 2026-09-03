@@ -45,8 +45,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build workspace packages consumed through export maps
-        run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/workspace-dist
       - run: pnpm typecheck
 
   lint:
@@ -280,8 +279,7 @@ jobs:
       # what it imports. Run 33702063755 is what skipping it looks like:
       #   Cannot find module '.../packages/playtest/dist/index.js'
       #     imported from '.../packages/runtime-native/tests/production-profile.test.mjs'
-      - name: Build workspace packages the native contract tests import
-        run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/workspace-dist
       # Only the suite that needs what the steps above built. `publint` and
       # `native:physics:parity` ride along inside that script, which is the package's whole gate.
       - run: pnpm --filter @threenative/runtime-native test
@@ -300,8 +298,7 @@ jobs:
       # These lanes used to sit behind `pnpm test`, whose build phase left every package's dist/
       # on disk. Split out, they resolve @threenative/* through export maps that point at dist,
       # so they build it themselves — otherwise the run dies on a missing assets/dist/index.js.
-      - name: Build workspace packages consumed through export maps
-        run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/workspace-dist
       - uses: ./.github/actions/playwright-chromium
       - run: sh scripts/xvfb.sh pnpm test:browser
       # A pixel gate that fails on a runner nobody can log into is only diagnosable if the frame
@@ -325,8 +322,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build workspace packages consumed through export maps
-        run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/workspace-dist
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:playtest:ci
 
@@ -585,8 +581,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build framework packages consumed through export maps
-        run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/workspace-dist
       - run: pnpm tsx scripts/count-loc.ts --check
       - run: pnpm --filter abyss-vanilla build
       - run: pnpm --filter abyss-framework build
@@ -625,7 +620,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm tsx scripts/workspace-packages.ts build
+      - uses: ./.github/actions/workspace-dist
       - run: pnpm --filter abyss-framework build
       - name: Enforce entity registry boundaries
         run: pnpm exec tsx scripts/check-core-boundary.ts

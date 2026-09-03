@@ -563,7 +563,7 @@ describe("CI pipeline structure", () => {
     // this job does not run `pnpm test`, so it has to build it itself or the suite dies on
     // ERR_MODULE_NOT_FOUND for `@threenative/playtest` before it executes a binary.
     expect(native, "the native half never builds the workspace its tests import").toContain(
-      "pnpm tsx scripts/workspace-packages.ts build",
+      "uses: ./.github/actions/workspace-dist",
     );
     expect(native, "the native half re-runs the whole suite").not.toMatch(
       /^\s+- run: pnpm test$/mu,
@@ -644,6 +644,40 @@ describe("CI pipeline structure", () => {
     // Both configured build directories, or the QuickJS variant recompiles from nothing.
     expect(native).toContain("packages/runtime-native/build/tn-linux");
     expect(native).toContain("packages/runtime-native/build/tn-linux-quickjs");
+  });
+
+  // Six jobs need `packages/*/dist` and each compiled it from scratch — measured at 49-65s per
+  // job, six times a run. tsup keeps no incremental state, so the output is what gets cached, and
+  // one shared action owns the key so the six cannot drift apart into six different answers about
+  // what a bundle is built from.
+  it("builds the workspace through one shared action, never inline", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(
+      ci,
+      "a job builds the workspace inline instead of through the shared action",
+    ).not.toContain("pnpm tsx scripts/workspace-packages.ts build");
+    expect(occurrences(ci, /uses: \.\/\.github\/actions\/workspace-dist/gu)).toBeGreaterThanOrEqual(
+      5,
+    );
+
+    const action = await readFile(
+      path.join(repo, ".github/actions/workspace-dist/action.yml"),
+      "utf8",
+    );
+    // The key has to name what the bundles are made of. Miss one and a stale bundle is served to
+    // every consumer, which is the only failure this cache can have.
+    for (const input of [
+      "packages/*/src/**",
+      "packages/*/package.json",
+      "packages/*/tsup.config.ts",
+      "packages/*/scripts/**",
+      "scripts/workspace-packages.ts",
+      "pnpm-lock.yaml",
+    ]) {
+      expect(action, `the workspace-dist key ignores ${input}`).toContain(input);
+    }
+    // And a restore that came back partial must fail rather than be imported from.
+    expect(action).toContain("TN_WORKSPACE_DIST_INCOMPLETE");
   });
 
   it("every native leg runs on every event", async () => {
