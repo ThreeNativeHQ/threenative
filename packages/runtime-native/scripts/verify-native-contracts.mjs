@@ -141,6 +141,12 @@ export const executionContracts = {
   "threenative-async-pipeline-thread-test": {
     invocations: [{ args: [], passLine: "native async pipeline thread contract passed" }],
   },
+  // PRD-327 Phase 4. Needs no display and no GPU: it drives the header-only launch instruments
+  // directly — launch attribution, the post-present per-frame pipelineCompile accumulator, and
+  // the TN_FRAME_HITCH payload that names a late synchronous compile.
+  "threenative-stall-budget-hitch-test": {
+    invocations: [{ args: [], passLine: "native stall budget hitch contract passed" }],
+  },
   "threenative-timestamp-query-test": {
     invocations: [{ args: [], passLine: "native timestamp-query bindings contract passed" }],
   },

@@ -2,7 +2,7 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-31 native contract targets; 2 configured
+32 native contract targets; 2 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
@@ -21,12 +21,12 @@ targets could not be built and are named below.
 | `src/storage/` | 327 | 283 | 86.54% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 175 | 73.22% |
-| `src/webgpu/` | 8046 | 3498 | 43.48% |
+| `src/webgpu/` | 8048 | 3514 | 43.66% |
 | `src/webtransport/` | 770 | 145 | 18.83% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **20445** | **8241** | **40.31%** |
+| **TOTAL** | **20447** | **8257** | **40.38%** |
 
-Source digest: `sha256:e9307cacc248a4658bba9399981e900206927e6d5268bbe7c3788569ca24f52a`
+Source digest: `sha256:5cfc606f9d550a99a5fe64b803def678bf57297a736c77df3f68697c6592cbcd`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -44,7 +44,7 @@ change requires this opt-in command to refresh the record.
 | `src/platform/` | 21.87% |
 | `src/raytracing/` | 13.10% |
 | `src/runtime.cpp` | 38.88% |
-| `src/screenshot_gate.cpp` | 88.00% |
+| `src/screenshot_gate.cpp` | 88.89% |
 | `src/storage/` | 86.54% |
 | `src/utils/` | 0.00% |
 | `src/vfs/` | 73.22% |

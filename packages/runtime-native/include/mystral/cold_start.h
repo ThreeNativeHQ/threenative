@@ -126,8 +126,15 @@ class FrameHitchRecorder {
   public:
     static constexpr int kWindow = 300;
 
-    /** Call once per presented frame. Emits the summary on the frame that closes the window. */
-    void record() {
+    /**
+     * Call once per presented frame. Emits the summary on the frame that closes the window.
+     *
+     * `pipelineCompileMs` / `pipelineCompileCalls` are what the caller drained from
+     * `stallBudget().takePostPresentPipelineCompile()` for this frame (PRD-327 Phase 4): the
+     * window summary carries the window's totals, so a material that appears mid-game and
+     * compiles synchronously is a named hitch, not an anonymous spike.
+     */
+    void record(double pipelineCompileMs = 0.0, unsigned long long pipelineCompileCalls = 0) {
         const double now = coldStartNowMs();
         if (previousMs_ < 0.0) {
             previousMs_ = now;
@@ -137,6 +144,8 @@ class FrameHitchRecorder {
         previousMs_ = now;
         if (count_ >= kWindow) return;
         samples_[count_] = frameMs;
+        windowPipelineCompileMs_ += pipelineCompileMs;
+        windowPipelineCompileCalls_ += pipelineCompileCalls;
         count_ += 1;
         if (count_ == kWindow) report();
     }
@@ -167,18 +176,21 @@ class FrameHitchRecorder {
         const double p99 = sorted[(kWindow * 99) / 100];
         const char* format =
             "TN_FRAME_HITCH:{\"window\":%d,\"maxMs\":%.3f,\"maxAtFrame\":%d,\"p99Ms\":%.3f,"
-            "\"p50Ms\":%.3f}";
+            "\"p50Ms\":%.3f,\"pipelineCompileMs\":%.3f,\"pipelineCompileCalls\":%llu}";
 #ifdef __ANDROID__
         __android_log_print(ANDROID_LOG_INFO, "MystralColdStart", format, kWindow, worst, worstAt,
-                            p99, p50);
+                            p99, p50, windowPipelineCompileMs_, windowPipelineCompileCalls_);
 #else
-        std::printf(format, kWindow, worst, worstAt, p99, p50);
+        std::printf(format, kWindow, worst, worstAt, p99, p50, windowPipelineCompileMs_,
+                    windowPipelineCompileCalls_);
         std::printf("\n");
         std::fflush(stdout);
 #endif
     }
 
     double samples_[kWindow] = {};
+    double windowPipelineCompileMs_ = 0.0;
+    unsigned long long windowPipelineCompileCalls_ = 0;
     double previousMs_ = -1.0;
     int count_ = 0;
 };

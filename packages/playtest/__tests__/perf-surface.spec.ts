@@ -35,6 +35,7 @@ describe("perf reports the surface each window was drawn at", () => {
     const text = formatPerfReport({
       budgets: parsed.budgets,
       discardedWindows: [1],
+      hitches: [],
       hostGaps: parsed.hostGaps,
       pass: true,
       presentMode: undefined,
@@ -51,6 +52,7 @@ describe("perf reports the surface each window was drawn at", () => {
     const text = formatPerfReport({
       budgets: parsed.budgets,
       discardedWindows: [1],
+      hitches: [],
       hostGaps: parsed.hostGaps,
       pass: true,
       presentMode: undefined,
