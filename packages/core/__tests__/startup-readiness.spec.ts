@@ -277,4 +277,76 @@ describe("StartupReadiness holds", () => {
     expect(frameworkReady).toBe(true);
     expect(readiness.ready).toBe(false);
   });
+
+  it("warms again after the holds settle, before readiness resolves", async () => {
+    // The defect this exists for: `hold()` buys a complete picture and leaves every material the
+    // game attached behind the curtain still uncompiled, so the stalls move from the loading
+    // screen into the walk. Measured on a 46,190-instance forest — 8 pipelines warmed, then 28
+    // main-thread tasks over 40 ms in a minute of play, the worst 267 ms.
+    const order: string[] = [];
+    let releaseWarm: () => void = () => undefined;
+    const readiness = new StartupReadiness({
+      afterHolds: () => {
+        order.push("warm-started");
+        return new Promise<void>((resolve) => {
+          releaseWarm = () => {
+            order.push("warm-finished");
+            resolve();
+          };
+        });
+      },
+      stableFrames: 3,
+    });
+    void readiness.whenReady().then(() => order.push("ready"));
+    readiness.hold("detail-tier", Promise.resolve());
+
+    readiness.start();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    for (let index = 0; index < 3; index += 1) readiness.observe(1);
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+
+    // Held work is done, the warm-up has begun, and readiness has NOT resolved.
+    expect(order).toEqual(["warm-started"]);
+    releaseWarm();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    expect(order).toEqual(["warm-started", "warm-finished", "ready"]);
+  });
+
+  it("resolves anyway when the second warm-up throws", async () => {
+    const readiness = new StartupReadiness({
+      afterHolds: () => {
+        throw new Error("no renderer");
+      },
+      stableFrames: 3,
+    });
+    let ready = false;
+    void readiness.whenReady().then(() => {
+      ready = true;
+    });
+    readiness.hold("detail-tier", Promise.resolve());
+    readiness.start();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    for (let index = 0; index < 3; index += 1) readiness.observe(1);
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    // A warm-up that fails costs hitches, never a game that will not start.
+    expect(ready).toBe(true);
+  });
+
+  it("does not warm a second time for a game that never held startup", async () => {
+    let warms = 0;
+    const readiness = new StartupReadiness({
+      afterHolds: () => {
+        warms += 1;
+      },
+      stableFrames: 3,
+    });
+    readiness.start();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    for (let index = 0; index < 3; index += 1) readiness.observe(1);
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    // No holds means the framework's own pass already saw the whole scene; paying for it twice
+    // would slow every game that does not stream, to fix a defect it does not have.
+    expect(readiness.ready).toBe(true);
+    expect(warms).toBe(0);
+  });
 });

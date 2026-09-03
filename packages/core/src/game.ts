@@ -825,7 +825,26 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const projectionReady = new Promise<void>((resolve) => {
       markProjectionSettled = resolve;
     });
-    const startupReadiness = new StartupReadiness();
+    const startupReadiness = new StartupReadiness({
+      /**
+       * The second warm-up: everything a game attached while it held startup.
+       *
+       * The first pass runs at framework readiness, which for a streaming game is before most of
+       * the world exists. Without this, `hold()` buys a complete *picture* and leaves a scene whose
+       * every material still compiles on first sight — which is worse than the pop-in it replaced,
+       * because a compile stall lands while the player is walking rather than while they are
+       * waiting. Measured on a 46,190-instance forest: 8 pipelines warmed, then 28 main-thread
+       * tasks over 40 ms in a minute of play, the worst 267 ms.
+       *
+       * A third of the compile budget, not the whole of it, because this one is spent with the
+       * player already waiting behind a curtain that has been up for seconds. Whatever does not
+       * fit still compiles lazily — the same as before — so the ceiling on the wait is bounded and
+       * the worst case is the behaviour we already had.
+       */
+      afterHolds: async () => {
+        await warmUp("TN_STARTUP_WARMUP_HELD", Math.round(STARTUP_COMPILE_BUDGET_MS / 3), false);
+      },
+    });
     const timeline: { -readonly [K in keyof IStartupTimeline]: IStartupTimeline[K] } = {};
     const now = (): number => globalThis.performance?.now() ?? Date.now();
     // Stamped when the FRAMEWORK is done, which is before `whenReady()` whenever the game has
@@ -850,22 +869,26 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       // and captures the loading state. The native screenshot path waits on this flag.
       (globalThis as Record<string, unknown>)[STARTUP_READY_GLOBAL] = true;
     });
-    const startupCompile: StartupCompile = async (): Promise<void> => {
+    const warmUp = async (
+      marker: string,
+      budgetMs: number,
+      stamp: boolean,
+    ): Promise<void> => {
       if (this.#aborted || this.#renderer === undefined) return;
       let report: IWarmUpReport | undefined;
       let failure: string | undefined;
       try {
         projection.reconcile();
         report = await warmUpScene(renderer, projection.root, camera, {
-          budgetMs: STARTUP_COMPILE_BUDGET_MS,
+          budgetMs,
           computeNodes: this.#computeDriven.warmupNodes,
         });
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
-      timeline.compileSettledMs ??= now();
+      if (stamp) timeline.compileSettledMs ??= now();
       console.log(
-        `TN_STARTUP_WARMUP:${JSON.stringify(
+        `${marker}:${JSON.stringify(
           report === undefined
             ? { failed: failure ?? "unknown" }
             : {
@@ -883,6 +906,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               },
         )}`,
       );
+    };
+    const startupCompile: StartupCompile = async (): Promise<void> => {
+      await warmUp("TN_STARTUP_WARMUP", STARTUP_COMPILE_BUDGET_MS, true);
     };
     const ctx: ICtx<TState, TPhysics> = {
       add: (object) => {

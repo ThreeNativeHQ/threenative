@@ -19,6 +19,21 @@ export interface IStartupReadinessOptions {
   readonly stableWindowMs?: number;
   /** Default ceiling on a single `hold()`, when the caller does not give one. */
   readonly holdBudgetMs?: number;
+  /**
+   * Run after every hold settles and before readiness resolves.
+   *
+   * This is where a second warm-up belongs. The framework's own compile pass runs when the
+   * *framework* is ready, which for a game that streams a second asset tier is before most of the
+   * world exists — so the pass sees the critical scene and nothing else, and every material the
+   * game attaches afterwards compiles the first time the player walks into view of it. Measured on
+   * a forest of 46,190 instances: `TN_STARTUP_WARMUP` reported **8 pipelines**, and the session
+   * then hit 28 main-thread tasks over 40 ms, the worst 267 ms, dominated by TSL graph `build` and
+   * by the main thread idling on GPU pipeline creation.
+   *
+   * Rejections are swallowed: a warm-up that fails must cost hitches, never a game that will not
+   * start.
+   */
+  readonly afterHolds?: () => Promise<void> | void;
 }
 
 /**
@@ -70,6 +85,7 @@ export class StartupReadiness {
   #frameWindowDone = false;
   readonly #holds = new Map<string, IHold>();
   #holdBudgetMs: number;
+  #afterHolds: (() => Promise<void> | void) | undefined;
   #compileTimer: ReturnType<typeof setTimeout> | undefined;
   #windowTimer: ReturnType<typeof setTimeout> | undefined;
   #resolveReady: () => void = () => undefined;
@@ -98,6 +114,7 @@ export class StartupReadiness {
       options.holdBudgetMs ?? STARTUP_HOLD_BUDGET_MS,
       "holdBudgetMs",
     );
+    this.#afterHolds = options.afterHolds;
     this.#readyPromise = new Promise<void>((resolve) => {
       this.#resolveReady = resolve;
     });
@@ -264,8 +281,24 @@ export class StartupReadiness {
   #resolveIfComplete(): void {
     if (this.#ready || !this.#frameWindowDone) return;
     for (const hold of this.#holds.values()) if (!hold.settled) return;
+    // Claim readiness before awaiting, so a hold that settles during `afterHolds` cannot re-enter
+    // and run it twice.
     this.#ready = true;
-    this.#resolveReady();
+    const afterHolds = this.#afterHolds;
+    // No holds means no second tier, which means the framework's own pass already saw the whole
+    // scene. Resolving synchronously there keeps every game that does not stream exactly as it was.
+    if (afterHolds === undefined || this.#holds.size === 0) {
+      this.#resolveReady();
+      return;
+    }
+    void (async () => {
+      try {
+        await afterHolds();
+      } catch {
+        // Swallowed on purpose: a warm-up that fails costs hitches, not a game that never starts.
+      }
+      this.#resolveReady();
+    })();
   }
 }
 
