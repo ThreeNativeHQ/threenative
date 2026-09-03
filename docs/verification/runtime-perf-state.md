@@ -1853,10 +1853,29 @@ node packages/runtime-native/scripts/measure-cold-start.mjs --desktop --launches
 span now sits *before* the stall budget's window rather than inside its unattributed remainder;
 the 96 ms of compile-plus-execute that used to be invisible is now named.
 
-**Phone: UNVERIFIED at time of writing.** The Pixel 8 (`shiba`, `192.168.1.192:5555`) is attached
-over Wi-Fi ADB and thermally clean (status 0 NONE, 28 °C) but sat at 36 % battery and charging,
-under the 50 %-and-discharging bar `device-preflight.mjs` enforces. No phone number is claimed
-here. The desktop half is what this section reports.
+**Phase 0 red, phone — taken.** A cold launch of the installed `com.threenative.bayview` (the
+pre-change V8 APK) on the physical Pixel 8 emits six markers and none of the four the reader needs:
+
+```
+process, asset_begin, asset_complete, runtime_created, game_eval_begin, ui_overlay_attached
+```
+
+Fed to the real reader's own `parseMarkers` + `breakdown`, that is:
+
+```
+TN_COLD_START_MARKER_MISSING:compile_begin
+```
+
+which is the failure the PRD predicted, on hardware. This red needs no thermal or battery
+condition — a marker is either emitted or it is not — so it stands despite the device being on
+charge, and it closes the phone half of Phase 0.
+
+**Phone breakdown: still UNVERIFIED.** The *green* half needs an APK built from this branch, and
+the launch it would be measured against needs a discharging phone at ≥ 50 % battery. Neither was
+available: the phone sat at 36–40 % for most of the session, and the installed Bayview build never
+reaches a first frame at all — it holds on the loading screen with the GPU rail at 1.00 mW, which
+is consistent with PRD-310's 2026-08-31 note that Bayview's engine symlinks were broken. No phone
+launch number is claimed here. The desktop half is what this section reports.
 
 **Engine versions** are pinned by `packages/runtime-native/tests/js-engine-version-skew.test.mjs`;
 the desktop archive is V8 13.1 and the Android prebuilt is V8 11.0, so the two are not the same

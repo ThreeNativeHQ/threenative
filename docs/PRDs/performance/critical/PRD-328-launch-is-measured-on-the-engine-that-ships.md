@@ -5,8 +5,10 @@ prd_contract: v1
 # PRD-328 — Launch is measured on the engine that ships
 
 **Status:** **DESKTOP DONE, PHONE UNVERIFIED** — executed 2026-09-03. Phases 0–3 complete on the
-desktop lane; the phone half of Phase 2 and the Phase 3 decision both need a Pixel 8 at ≥ 50 %
-battery, which was not available. Evidence: `docs/verification/runtime-perf-state.md` §5b. This
+desktop lane, and **Phase 0's phone red is taken on the physical Pixel 8**
+(`TN_COLD_START_MARKER_MISSING:compile_begin` from the real reader against a real logcat). The
+phone half of Phase 2 and the Phase 3 decision still need an APK built from this branch and a
+discharging device at ≥ 50 % battery. Evidence: `docs/verification/runtime-perf-state.md` §5b. This
 PRD stays here rather than moving to `done/` until that lane runs — a blocked criterion is not
 completion.
 
