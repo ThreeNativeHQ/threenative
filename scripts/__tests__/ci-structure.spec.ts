@@ -551,6 +551,12 @@ describe("CI pipeline structure", () => {
     // The native half must build what its suite executes, and run only that suite.
     expect(native).toContain("native:build");
     expect(native).toContain("CCACHE_DIR");
+    // The contract tests import the compiled workspace. `pnpm test` used to build it for them;
+    // this job does not run `pnpm test`, so it has to build it itself or the suite dies on
+    // ERR_MODULE_NOT_FOUND for `@threenative/playtest` before it executes a binary.
+    expect(native, "the native half never builds the workspace its tests import").toContain(
+      "pnpm tsx scripts/workspace-packages.ts build",
+    );
     expect(native, "the native half re-runs the whole suite").not.toMatch(
       /^\s+- run: pnpm test$/mu,
     );

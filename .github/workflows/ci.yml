@@ -206,6 +206,15 @@ jobs:
         if: always()
         shell: bash
         run: ccache --show-stats
+      # The contract tests import the compiled workspace — `production-profile.test.mjs` loads
+      # `@threenative/playtest` to run its generated workload through the validator, and the
+      # conformance dry run bundles rows through the same path. `pnpm test` used to build this for
+      # them inside its own `build` phase; now that this job no longer runs `pnpm test`, it builds
+      # what it imports. Run 33702063755 is what skipping it looks like:
+      #   Cannot find module '.../packages/playtest/dist/index.js'
+      #     imported from '.../packages/runtime-native/tests/production-profile.test.mjs'
+      - name: Build workspace packages the native contract tests import
+        run: pnpm tsx scripts/workspace-packages.ts build
       # Only the suite that needs what the steps above built. `publint` and
       # `native:physics:parity` ride along inside that script, which is the package's whole gate.
       - run: pnpm --filter @threenative/runtime-native test
