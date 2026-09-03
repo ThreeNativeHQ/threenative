@@ -95,20 +95,177 @@ const BUG_REPORT_SKILL_PATHS = [
 // what created the extra render target that made the mobile look a black screen. `sailing`
 // never had those lines, so its tree is unchanged and its hash does not move.
 const CURRENT_BASELINE_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
+  // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
+  // holds the frame budget instead of the game hand-authoring a resolution constant.
+  // Recomputed after Biome reformatted nine template files: the previous values were measured
+  // before that formatting ran and were therefore stale the moment they were committed.
+  // Recomputed again for PRD-237: the shared capability reference now documents PointerEvents3D,
+  // which changes the generated reference bytes embedded in every scaffold.
+  // Recomputed again for the PRD-237 repair: the shared ctx surface now documents ctx.pointer,
+  // which changes the generated instructions embedded in every scaffold.
+  // Recomputed again for the PRD-237 continuation repair: the defense pointer-placement scenario
+  // clears mouse hover and captures the held touch highlight before its release.
+  // Recomputed 2026-08-29: `RunnerConsoleEntry` was renamed to `IRunnerConsoleEntry` in
+  // packages/playtest/src/index.ts without regenerating the capability manifest. A scaffold
+  // generates its capability reference from source, so all seven trees moved while the
+  // committed reference stayed stale; both are fixed in the same commit.
+  // Recomputed 2026-08-29 for PRD-246: `GPUReadback` and `SpectralOcean` entered the public
+  // surface, so the capability manifest and the capability reference generated from it both grew,
+  // and those bytes are copied into every scaffold.
+  // Recomputed 2026-08-29 for PRD-256: every scaffold now forwards its asset config to the dev
+  // watcher and carries the bounded static-lightmap setup, rollback, and platform warning. The
+  // shooter hash also includes its 60-frame input-control warmup from current main.
+  // Recomputed for PRD-251 Phase 1: every scaffold embeds the capability manifest and reference,
+  // which now document the optional Heightfield world subpath.
+  // Recomputed 2026-08-30 for the starter only: eighteen of its playtest scenarios gained the
+  // menu-entry steps they had been missing since the menu screen flow landed, so a scaffolded
+  // project's own `npm test` can reach the play scene at all. Scenario bytes moved and no source
+  // did, so exactly one tree's hash moved.
+  // Recomputed 2026-08-30 for InstancedBatch: the capability manifest and the reference generated
+  // from it both gained an entry, and those bytes are embedded in every scaffold, so all seven
+  // trees move. The racing tree moves for a second reason — its track gathers the ten kerb stones
+  // into one batch instead of drawing each on its own.
+  // Recomputed again the same day for the TSL silent-no-op traps, which every scaffold carries in
+  // `agent-docs/visual-baseline.md`, and for the starter dropping its hand-rolled `makeRandom` in
+  // favour of the identical `createRandom` the framework already exports. That swap is
+  // output-identical — same multiplier, same increment, verified over 35,000 draws — so the ridge
+  // does not move; the bytes around it do.
+  // Recomputed 2026-08-30 for the realism-effects roll. Every template moved because the shared
+  // render-chain API, generated instructions, and optional effect sources are scaffolded bytes.
+  // Recomputed again after the starter's composed sharpen/bloom proof, optional effect parameters,
+  // and its migrated browser fixtures; the shooter hash also moved with its fixture corrections.
+  // Recomputed 2026-08-30 for the distributed Three.js batched-velocity patch, its generated
+  // project pnpm declaration, and the completed-frame render-chain measurement field.
+  // Recomputed for PRD-243: every scaffold embeds the capability manifest and reference, which
+  // now document SoftBody3D and the optional physics collision adapter. The starter also gains
+  // its shipped cloth caller and menu-to-play proof.
+  // Recomputed 2026-08-30 after removing duplicate starter menu-entry blocks introduced by the
+  // realism-effects merge.
+  // Recomputed after retaining the WebGPU instance in Three's distributed patch; the starter
+  // also materialises its SSR input once so the reflection graph presents instead of going blank.
+  // Recomputed 2026-08-30 after documenting the starter's WorldEnvironment render layer in
+  // every scaffold's visual reference and generated instructions.
+  // Recomputed when PRD-243 added the qualified Pixel 8 cost to the copied capability docs; the
+  // starter also carries the physical-device cloth displacement threshold.
+  // Recomputed after capability discovery became mechanic-driven and every scaffold gained the
+  // project-scoped Codex MCP config required to expose the installed engine server.
+  // Recomputed after the authoring tools gained explicit request-versus-mechanic search scope.
+  // Recomputed after MCP server packages became automatic core payloads rather than scaffold pins.
+  // Recomputed 2026-08-30 for the starter only: the branded "THREE NATIVE" start screen and its
+  // mandatory character-name form are deleted, so the tree loses MainMenu.ts, MainMenuUi.tsx and
+  // menu-flow.playtest.json, and every remaining scenario loses its menu-entry steps. One tree
+  // moved because only the starter shipped a menu.
+  // The cloth and two zoom scenarios also move: with the play scene running from tick 0 their
+  // baseline is sampled inside the simulation, so a "gte" that was zero at the menu is now
+  // already satisfied. They assert the transition instead.
+  // Recomputed 2026-08-30 for the template typecheck repair: the starter's render chain and
+  // its three optional effects now name the node types they actually take, and the defense
+  // App names the physics its own game defines. Both moves are type-only — the emitted
+  // JavaScript is unchanged apart from two forwarding helpers — so two trees move and the
+  // pixels do not.
+  // Recomputed when virtual geometry added `ClusteredMesh` and `ClusteredBatch` to the
+  // capability manifest and reference, both of which every scaffold copies.
+  // Recomputed again when virtual geometry started shipping on: every template's instructions
+  // gained the convention and its opt-out, and the capability text lost the per-frame call the
+  // engine now makes itself.
+  // Recomputed 2026-08-30 for the platformer only: `348463f5` pinned the patrol in the damage
+  // scenario and `cf5520c8` guarded the stomp scenarios' frozen placement. Scenario bytes moved
+  // and no other tree did, so exactly one hash moves.
+  // Recomputed 2026-08-30 for PRD-278: all seven trees. The six templates that had a 14-45 line
+  // `postprocessing.ts` now ship `worldEnvironment.ts` and a desktop/mobile preset pair beside
+  // it, every `setupLighting` returns its key light so godrays can refuse a shadowless one by
+  // name, every scene passes `isMobile()` in, and each template's AGENTS.md gained the
+  // `TN_WORLD_ENVIRONMENT` paragraph. The starter moves too: the shared file gained the
+  // `baseColour` seam `minimal`'s aerial perspective needs, bloom radius and threshold as
+  // arguments, and the report that prints even when every stage is off.
+  // Recomputed 2026-08-30, second PRD-278 move: with the runner now waiting for startup readiness
+  // (2042b33d) the per-template performance budgets were being read behind a loading layer — the
+  // action-rpg scenario reported 4 draw calls where the running scene issues 144 — so every genre
+  // template's maxDrawCalls/maxTriangles is re-measured against the real frame, and `minimal`
+  // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
+  // its 33 ms ceiling.
+  // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
+  // Recomputed 2026-08-31 after squashing PRD-289 onto local main 6b91f42f: current main's
+  // scaffold assets and the convention-enabled generated trees are measured together.
+  // Recomputed 2026-08-31 after PRD-251 added the terrain entries to the generated manifest.
+  // Recomputed 2026-08-31 when every template began shipping the MCP config each agent host
+  // reads. Claude Code and Codex already had theirs; Cursor, VS Code, the Gemini CLI, opencode and
+  // Zed each gained a project-scoped file, and the shared asset-MCP instructions now name all
+  // seven instead of `.mcp.json` alone. Five new files and one paragraph move all eight trees.
+  // Recomputed 2026-09-01 for PRD-301: the capability manifest and the reference generated
+  // from it now walk @threenative/assets, so the authoring surface those bytes describe grew
+  // in every scaffold tree.
+  // Recomputed 2026-09-01 for the main-sync merge of the two capability-manifest lineages
+  // (local 8c158a56 and origin #29): values measured from the committed merge tree.
+  // Recomputed 2026-09-01 after every game gained the bundled prd-creator skill, approval gate,
+  // and expanded Fab authentication and Unreal conversion instructions.
+  // Recomputed 2026-09-01 after capability discovery became a critical pre-PRD planning gate in
+  // every generated AGENTS.md/CLAUDE.md pair and both shipped host skill adapters.
+  // Recomputed 2026-09-01 for the main-sync merge carrying #40's lazy MRT texture nodes: values
+  // measured from the committed merge tree, per the clean-checkout rule above.
+  // Recomputed 2026-09-01 when @threenative/ueformat entered the public surface: the capability
+  // manifest and the reference generated from it both gained the UEFormat entries, and those
+  // bytes are embedded in every scaffold.
+  // Recomputed 2026-09-01 when @threenative/raw-unreal entered the public surface: the
+  // capability manifest and the reference generated from it gained the raw .uasset loader
+  // entries (parseUAssetStaticMesh, UAssetLoader, the FRawMesh and FMeshDescription readers),
+  // and those bytes are embedded in every scaffold.
+  // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
+  // source VFX and combat playtests, so only those two scaffold trees move.
+  // Recomputed 2026-09-02 from the clean post-rebase scaffold output.
+  "action-rpg": "38a435f65362dd62095d0cfd6f39afc8c4998e1b1539641d1a4a02493887c23e",
+  // Recomputed 2026-09-02 after the defense survival route's third default tower moved to the
+  // final route segment; three authored towers now cover the full ten-wave proof reliably.
+  // The clean post-rebase scaffold also removes duplicate generated guidance from this tree.
+  defense: "17c362e563d4c34c452fde3f6ca4ea88a67f23fbb76e2c3f47d3a054cbc70b53",
+  // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
+  // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
+  // Recomputed 2026-09-02 after current main's engine-owned renderer-info reset made the complete
+  // minimal post-processing frame visible to the per-frame triangle metric: the unchanged scene
+  // measured 4,737 triangles (the pre-rebase bundle measured 1,175), so its strict cap is 4,800.
+  // Recomputed 2026-09-02 from the clean post-rebase scaffold output after removing duplicate
+  // touch and continuous-collision guidance.
+  minimal: "ecaa3b43441cb56551aea57741ce8327d0c9806616ba34ce8d3ba2529347e1c4",
+  platformer: "1bf58c767d4de8aa958f8ac0f07809b4d34705c52291ef76437df5d1e255a8c1",
+  // Added 2026-09-02 with the puzzle kit: a contraption room built from primitives, with no
+  // downloaded asset and nothing to license.
+  puzzle: "5940818ec4400e9f6ba02e6d7c29e0fe0ace150db8a7fd46f9f5a69b1af5f312",
+  // Added 2026-09-02 with the runner kit: three lanes, a chunk ring that rebuilds rather than
+  // allocates, and a TSL dust trail — no downloaded asset and nothing to license.
+  runner: "cfb82df987d3cba8beda7a65c087be155cd30d84e7f80910263c99074cbf7d4d",
+  racing: "f57b22715a0ed9321bf0fef6fa5913a8871672b7579e3d71bd624dbd42dbc8de",
+  shooter: "df7cabe69ca01952c88dff5095ec7c4a5b60adcfe0be35f6709e68e612d17298",
+  // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
+  // so its labeled look sample can observe the authored preview before the atomic swap.
+  starter: "c5c5e131eaa091740e94cc96934a278194f6d82c89211ca01ec8943aa7f189fe",
+  // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
+  // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
+  // eight parent trees move together.
+  // Recomputed 2026-09-02 for the reconciled main: every tree carries the merged capability
+  // manifest and generated reference, including the VirtualShadowNode surface.
+  // Recomputed 2026-09-02 for PRD-324 phases 1-2: the capability manifest and the generated
+  // reference gain the bone-length and mirrored-clip surfaces, and those bytes ship in every
+  // scaffold.
+  // Recomputed 2026-09-02 for PRD-325: the generated capability manifest and reference gained the
+  // afterPhysics and buildStaticColliders seams, and those bytes are embedded in every scaffold.
+  // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
+  // steady-state allocation-free frame path, and every scaffold carries the updated capability
+  // manifest/reference bytes.
+  // Recomputed 2026-08-30 for PRD-122: every scaffold now carries the shared canonical role
+  // contracts, provider adapters, and AGENT-ROLES.md guide.
+  // Recomputed 2026-08-30 for PRD-236: the sailing starter kit adds a scaffold tree, and its
+  // WaveField/Buoyancy3D public surface updates the generated capability reference in all trees.
+  // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
+  // scenario, routes test:native through it, and closes the generated command fence.
+  // Recomputed after the template contract required every kit to ship a native icon.
+  sailing: "fed2f573c242911813e8eac6518dccdd9bcb63d7edd6f58384311bdaa7f360da",
   // Recomputed 2026-09-02 after merging current main. Three kits move on this branch:
   // `action-rpg`, `defense` and `shooter` stopped shipping a local `directSpaceState` shim and
   // now query through the field `@threenative/physics` exposes, `sailing`'s water material reads
   // the wave field's height and normal instead of a constant, and the `shooter` kit became first
   // person — a viewmodel, legs, a decal pool and a metre table where a third-person body used to
   // be. The remaining trees move only by what main changed under them.
-  "action-rpg": "7c8a2e4d6c3b19dc6db33c4d3e1652a262fe457c8bc6c4509e6b27d211b5266c",
-  defense: "3aa1868caec9dee53696972efd5a8ca8c02faa3405240559e7823083d70e384e",
-  minimal: "a1c53c47f9cec3db597710d32bb6abed2aac67b9ecb5f569d4f10cc9fb18aa79",
-  platformer: "2b14304c4082ec1509cc78f7582c370dcec3ed57972a28f19708c7748f311e1b",
-  racing: "a87ec5bb6285dea2a45a5cd2d1e8619c27e42a6434cb821ecba463484fced5a8",
-  sailing: "5486da4b08ef12ae9df8af912171a6b63f06163de3c82c5cbe1a90c1e38346e4",
-  shooter: "1087435d1f7ca296d65e11b8dd18dc37796a15f14c26b2b9e1c0bc9c87b9140a",
-  starter: "e9826339dcaf626b869f16b1c38e3581c043aa135ade98017a168445ff83801b",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -130,6 +287,20 @@ const CURRENT_BASELINE_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // new FluidField2D capability manifest and generated capability-reference entry.
   // Recomputed 2026-08-31 for PRD-292: every template's generated AGENTS.md documents the
   // default continuous-collision convention and its per-body override.
+  // Recomputed 2026-09-02 for the authoring loop: the capability manifest and generated
+  // reference gained three game-vocabulary situations (Joint3D's `joint`, PointerEvents3D's
+  // `drag`, GPUParticles3D's `trail`), and those bytes ship in every scaffold. `sailing` moves
+  // twice over, because its drifted `src/render/worldEnvironment.ts` was restamped from the
+  // canonical copy.
+  // Recomputed 2026-09-02 for the capability-example gate: seventeen `@example` lines that
+  // did not compile were rewritten against the real types, and the manifest plus the
+  // generated reference ship those bytes in every scaffold.
+  // Recomputed 2026-09-02 for the capability-example gate: seventeen `@example` lines that
+  // did not compile were rewritten against the real types, and the manifest plus the
+  // generated reference ship those bytes in every scaffold.
+  // Recomputed 2026-09-02 for the capability-example gate: seventeen `@example` lines that
+  // did not compile were rewritten against the real types, and the manifest plus the
+  // generated reference ship those bytes in every scaffold.
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -982,6 +1153,34 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  // Being on disk is not the same as shipping. `.gitignore` carries an unanchored `.mcp.json`
+  // rule for the copy an install writes at the repo root, and it swallowed the template copies
+  // too: the file generated fine, `git status` stayed silent, and the template shipped without
+  // it. Four suites then failed on CI with
+  //   Error: Scaffold produced no .mcp.json at '.../puzzle/.mcp.json'
+  // for a file that was present on the author's machine the entire time. Reading the working
+  // tree cannot catch that. Asking git what it tracks can.
+  it("should track every template's agent config, not merely have it on disk", async () => {
+    const { stdout } = await run("git", [
+      "ls-files",
+      "--",
+      "packages/create-threenative/templates/*/.mcp.json",
+    ]);
+    const tracked = new Set(
+      stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line !== ""),
+    );
+    const missing = ALL_TEMPLATES.filter(
+      (template) => !tracked.has(`packages/create-threenative/templates/${template}/.mcp.json`),
+    );
+    expect(
+      missing,
+      "these templates' .mcp.json is untracked; git is ignoring it and the scaffold ships without it",
+    ).toEqual([]);
   });
 
   it("should ship the same MCP config and pins in every template", async () => {

@@ -5,7 +5,7 @@ import "./web.js";
  * @situation detect when an enemy enters a trigger area
  * @situation react to a player entering a zone
  * @constraint add the area to the physics context before stepping the world
- * @example const area = new Area3D({ context, shape });
+ * @example const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });
  */
 export { Area3D } from "./Area3D.js";
 /**
@@ -13,7 +13,7 @@ export { Area3D } from "./Area3D.js";
  * @situation move an enemy or player through a level
  * @situation keep a character from walking through walls
  * @constraint use moveAndSlide inside the physics update
- * @example const body = new CharacterBody3D({ context, object });
+ * @example const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });
  */
 export { CharacterBody3D } from "./CharacterBody3D.js";
 /**
@@ -21,7 +21,7 @@ export { CharacterBody3D } from "./CharacterBody3D.js";
  * @situation add a capsule or box collider to a character
  * @situation configure the shape used by a rigid body
  * @constraint create shapes through the owning physics context
- * @example const shape = new CollisionShape3D({ context, shape: "capsule" });
+ * @example const shape = CollisionShape3D.capsule(0.5, 0.35);
  */
 export { CollisionShape3D } from "./CollisionShape3D.js";
 export type { ICollisionShapeHandle } from "./CollisionShape3D.js";
@@ -45,8 +45,9 @@ export type {
  * Connect two physics bodies with a Godot-style joint.
  * @situation constrain a rigid body to another body
  * @situation build a hinge or pin mechanism
+ * @situation swing a pendulum, wrecking ball, or hinged door on a joint
  * @constraint both bodies must belong to the same physics context
- * @example const joint = new Joint3D({ context, kind: "hinge" });
+ * @example const hinge = Joint3D.hinge({ physics: ctx.physics, bodyA: beam, bodyB: bob, anchorA: { x: 0, y: 0, z: 0 }, anchorB: { x: 0, y: 2.4, z: 0 }, axis: { x: 1, y: 0, z: 0 } });
  */
 export { Joint3D } from "./Joint3D.js";
 export type {
@@ -118,7 +119,7 @@ export { interactionGroups } from "./collision.js";
  * @situation a bullet passes through a wall
  * @constraint register rapier() in the game plugin list before using bodies
  * @override continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting
- * @example const crate = new RigidBody3D({ context, object, mode: "dynamic" });
+ * @example const crate = new RigidBody3D({ object, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1), mass: 8 });
  */
 export { RigidBody3D } from "./RigidBody3D.js";
 export type { IRigidBody3DOptions, RigidBodyType } from "./RigidBody3D.js";

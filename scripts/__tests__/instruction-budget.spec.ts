@@ -164,7 +164,8 @@ describe("instruction budgets", () => {
 
   it("should keep every shipped template within its measured budget", async () => {
     const audits = await auditAllTemplates(process.cwd());
-    expect(audits.map(({ template }) => template)).toHaveLength(8);
+    // A floor, not a pin: a kit that ships tomorrow is audited without editing this number.
+    expect(audits.map(({ template }) => template).length).toBeGreaterThanOrEqual(8);
     for (const audit of audits) {
       expect(
         audit.violations,

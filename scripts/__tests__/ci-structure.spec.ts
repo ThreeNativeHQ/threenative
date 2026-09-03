@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { allTemplates } from "../../test-support/templates.js";
 
 const repo = path.resolve(import.meta.dirname, "../..");
 const workflows = [
@@ -71,16 +72,10 @@ function matrixTemplates(section: string): readonly string[] {
   return [...new Set([...listed, ...included])].sort();
 }
 
-const expectedTemplates = [
-  "action-rpg",
-  "defense",
-  "minimal",
-  "platformer",
-  "racing",
-  "sailing",
-  "shooter",
-  "starter",
-] as const;
+// Read off disk, so the matrix is required to list a kit the day that kit ships rather than the
+// day somebody remembers to extend a list here. The assertion that matters is below: every
+// template on disk must appear in the workflow's matrix.
+const expectedTemplates = allTemplates();
 
 describe("CI pipeline structure", () => {
   it("syncs capability artifacts on relevant commits and rejects stale manifests in CI", async () => {
@@ -329,11 +324,8 @@ describe("CI pipeline structure", () => {
     expect(matrixTemplates(job)).toEqual([...expectedTemplates].sort());
 
     const templateRoot = path.join(repo, "packages/create-threenative/templates");
-    const actualTemplates = (await readdir(templateRoot, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
-    expect(actualTemplates).toEqual([...expectedTemplates].sort());
+    const actualTemplates = [...expectedTemplates].sort();
+    expect(actualTemplates.length, "no template was discovered").toBeGreaterThanOrEqual(8);
     for (const template of actualTemplates) {
       const result = spawnSync(
         process.execPath,

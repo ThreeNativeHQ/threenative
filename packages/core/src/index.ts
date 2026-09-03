@@ -78,7 +78,7 @@ export { AudioBus } from "./audio.js";
  * Manage a camera or screen-facing canvas layer.
  * @situation place a HUD layer above the Three.js scene
  * @situation attach a canvas layer to a camera
- * @example const hud = new CanvasLayer({ camera });
+ * @example const hud = new CanvasLayer(ctx.viewport);
  */
 export { CanvasLayer } from "./canvas-layer.js";
 export type {
@@ -108,7 +108,7 @@ export type { IRandom } from "./random.js";
  * @constraint keep DOM and React mounting in src/main.ts
  * @constraint bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener
  * @constraint scroll: true uses the DOM wheel sign on browser and native: negative deltaY toward the user is positive intent
- * @example const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play } });
+ * @example const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play }, start: "Play" });
  */
 export { defineGame } from "./game.js";
 export {
@@ -144,7 +144,7 @@ export type {
  * @situation run a cloth or fluid simulation with ordered GPU passes
  * @situation keep IComputeDriven kernels warm before the first visible frame
  * @constraint add the object through ctx.add so it attaches, dispatches, and releases with its scene
- * @example class Cloth extends Mesh implements IComputeDriven { ... }
+ * @example const registry = new ComputeDrivenRegistry(); registry.add(cloth, ctx.renderer.raw);
  */
 export { ComputeDrivenRegistry } from "./compute-driven.js";
 export type { IComputeDriven } from "./compute-driven.js";
@@ -172,6 +172,7 @@ export type {
  * `build()` once; the shape, the surface and every transform stay the game's, and the built mesh
  * is returned so instances can still be animated by the index `place` and `span` hand back.
  * @situation draw hundreds of repeated props without hundreds of draw calls
+ * @situation draw thousands of identical instanced blocks or obstacles in one mesh
  * @situation place repeated props when the count is not known until the layout has been walked
  * @situation build a chain, railing, cable, or tie rod out of point-to-point segments
  * @constraint geometry and material are required and come from the game; the batch chooses neither
@@ -447,6 +448,7 @@ export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js"
  * Dispatch a game-owned particle surface and process function through a pooled system.
  * @situation emit sparks, smoke, or other transient effects
  * @situation update many small visual particles
+ * @situation trail dust, exhaust, or spray behind a moving object
  * @situation emit cannon smoke and muzzle flash particles
  * @situation fire a cannonball projectile with cannon smoke particles
  * @constraint geometry, color, and timing remain supplied by the game
@@ -529,7 +531,7 @@ export type { ITracerPool3DOptions, ITracerSpawnOptions } from "./tracers.js";
  * Move an object along a Three.js curve with Godot-style path following.
  * @situation move an enemy or prop along a patrol path
  * @situation sample a racing line from a curve
- * @example const follower = new PathFollow3D(curve, { loop: true });
+ * @example const follower = new PathFollow3D({ points: patrolPoints, loop: true, speed: 3 });
  */
 export { PathFollow3D } from "./path-follow.js";
 /**
@@ -568,6 +570,7 @@ export type {
  * @situation let the player click on a thing in the world
  * @situation show a 3D object while a pointer hovers over it
  * @situation handle touch and mouse taps on a loaded model without naming its child meshes
+ * @situation drag a crate or prop with the mouse or a finger
  * @constraint listeners are side-table registrations; Three.js prototypes are never patched
  * @constraint one raycast serves each active pointer and no raycast runs when nothing is registered
  * @example ctx.pointer.on(tile, "tapped", (event) => place(event.point));
@@ -604,7 +607,7 @@ export type {
  * @situation select an object under the pointer
  * @situation interact with the first collider or mesh hit
  * @supersedes new Raycaster(
- * @example const picker = new ScenePicker({ camera, scene });
+ * @example const picker = new ScenePicker({ camera: ctx.camera, scene: ctx.scene, pointer: () => ctx.input.raw.pointer, viewport: ctx.viewport });
  */
 export { ScenePicker } from "./picking.js";
 export type { IRaycastOptions, IScenePickerOptions } from "./picking.js";
@@ -613,7 +616,7 @@ export type { IRaycastOptions, IScenePickerOptions } from "./picking.js";
  * @situation reproduce a gameplay bug from recorded input
  * @situation run a deterministic replay in a playtest
  * @constraint use a seeded random source and fixed-step simulation for meaningful replays
- * @example const driver = createReplayDriver({ recording });
+ * @example const driver = createReplayDriver(recording, ctx.renderer.domElement);
  */
 export { createReplayDriver, replay } from "./replay.js";
 export type { IReplayOptions, Recording } from "./replay.js";
@@ -784,7 +787,7 @@ export { boneLengths } from "./bone-lengths.js";
  * @constraint this is a diagnostic — it reports numbers and names; it moves nothing and decides no appearance
  * @example import { boneLengths, boneLengthDeviations } from "@threenative/core";
  * const report = boneLengthDeviations(character, boneLengths(character));
- * if (!report.rigid) console.log(report.worst.bone, report.worst.ratio);
+ * if (!report.rigid && report.worst !== null) console.log(report.worst.bone, report.worst.ratio);
  */
 export { boneLengthDeviations } from "./bone-lengths.js";
 export type {

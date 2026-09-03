@@ -8,18 +8,10 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 // @ts-expect-error — same module graph as the shims themselves.
 import { MCP_SERVERS } from "../../core/mcp/servers.mjs";
-import { createProject } from "../src/index.js";
+import { createProject, discoverTemplateNames } from "../src/index.js";
 
-const templates = [
-  "action-rpg",
-  "defense",
-  "minimal",
-  "platformer",
-  "racing",
-  "sailing",
-  "shooter",
-  "starter",
-] as const;
+// Read off disk, so a kit added tomorrow has its MCP wiring gated the day it ships.
+const templates = discoverTemplateNames();
 const engineMcp = "threenative-engine-mcp";
 const enginePackageRoot = path.resolve("packages/engine-mcp");
 const corePackageRoot = path.resolve("packages/core");

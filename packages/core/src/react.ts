@@ -43,7 +43,7 @@ export interface ITextProps {
 /**
  * A rectangle. Paints when its style has a `background`; otherwise it only positions children.
  * @situation group and position native React HUD elements
- * @example <View style={{ centerX: 0, top: 24 }}><Text>READY</Text></View>
+ * @example <View style={{ centerX: true, top: 24 }}><Text>READY</Text></View>
  */
 export function View(props: IViewProps): ReactNode {
   return createElement(VIEW_ELEMENT, { style: props.style }, props.children);
