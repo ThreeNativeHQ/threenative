@@ -293,8 +293,13 @@ jobs:
       # step "Run the scaffold's GPU-free assertions"). What is left here is the verifier, which is
       # this lane's subject, plus the one thing nothing else covers: the starter booting in a
       # browser against its own dev server and moving when a key is pressed.
+      # Both legs, not just the one that scaffolds. `verify:golden-path` runs through
+      # `create-threenative/src/config.ts`, which imports `@threenative/assets` — resolved by pnpm
+      # into `packages/assets/dist`. Gate this on the template and the platformer leg dies on
+      # ERR_MODULE_NOT_FOUND before the verifier reaches its first step, which is what run
+      # 33697267947 did. The scaffold below stays starter-only; the compiled workspace does not.
       - name: Take the packed workspace from build
-        if: matrix.template == 'starter' && steps.proof.outputs.cache-hit != 'true'
+        if: steps.proof.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
         with:
           name: workspace-packages
