@@ -16,7 +16,9 @@ describe("run-test-suite phase contract", () => {
     // what it calls separately below — searching for the old inline `pnpm -r` returned -1 here and
     // reported it as a phase-ordering failure.
     const packageTest = source.lastIndexOf('run_phase package-test "${package_test_command[@]}"');
-    const unit = source.lastIndexOf("run_phase unit vitest run");
+    // The unit phase runs a composed array now, because CI shards it across jobs and the shard
+    // flag must not be hard-coded here. Same reason the package walk moved; anchor on the call.
+    const unit = source.lastIndexOf('run_phase unit "${unit_command[@]}"');
     expect(register).toBeGreaterThanOrEqual(0);
     expect(register).toBeLessThan(baseline);
     expect([docs, build, packageTest, unit]).toEqual(
@@ -48,6 +50,12 @@ describe("run-test-suite phase contract", () => {
     expect(source).toContain('package_test_command+=(--filter "!$tn_excluded_package")');
     // Unset means unfiltered: a developer running `pnpm test` still runs the whole gate.
     expect(source).toContain('if [[ -n "${TN_SUITE_EXCLUDE_PACKAGES:-}" ]]; then');
+    // The unit command is a plain `vitest run` until a shard is asked for, and a malformed shard
+    // is refused rather than silently ignored — an ignored shard would run the whole suite in
+    // every one of the matrix's jobs and look merely slow.
+    expect(source).toContain("unit_command=(vitest run)");
+    expect(source).toContain('unit_command+=(--shard "${TN_SUITE_UNIT_SHARD}")');
+    expect(source).toContain("TN_SUITE_UNIT_SHARD must look like 2/3");
   });
 
   it("keeps resume restricted to a named known phase", async () => {
