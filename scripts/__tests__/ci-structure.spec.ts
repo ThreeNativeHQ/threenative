@@ -114,6 +114,60 @@ describe("CI pipeline structure", () => {
     expect(ci).toContain("needs: build");
   });
 
+  it("hands the emulator action a one-line script, so the arguments survive", async () => {
+    // `android-emulator-runner` runs `script` through the emulator shell a line at a time. A
+    // `\`-continued command therefore loses everything after its first line, and from 2026-09-01
+    // this lane ran `run-conformance.mjs` with no arguments at all: `--target` defaulted to `all`,
+    // so one `--target android` invocation wrote web, desktop, android and ios reports under the
+    // default `artifacts/conformance`, overwrote the web reference the lane had just captured, and
+    // then compared the emulator against the wreckage. The step read as correct in the YAML the
+    // whole time — `>-` folds to one line and `|` does not, and only that character separates a
+    // working lane from a silent one.
+    const source = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const blocks = [...source.matchAll(/^(\s+)script: *(\||>-|>|\|-)\n/gmu)].map((match) => {
+      const indent = match[1]?.length ?? 0;
+      const rest = source.slice((match.index ?? 0) + match[0].length).split("\n");
+      const body: string[] = [];
+      for (const line of rest) {
+        if (line.trim() !== "" && line.length - line.trimStart().length <= indent) break;
+        body.push(line);
+      }
+      return { body: body.join("\n"), style: match[2] ?? "" };
+    });
+    expect(blocks.length, "no emulator script block found to check").toBeGreaterThan(0);
+    for (const { body, style } of blocks) {
+      // `|` keeps every newline, which is exactly what the action cannot take.
+      expect(style, `script uses a literal block: ${body.trim().slice(0, 60)}`).not.toMatch(/^\|/u);
+      expect(body, "script continues with a backslash").not.toMatch(/\\\s*\n/u);
+      expect(body, "script lost its target").toContain("--target android");
+      expect(body, "script lost its output path").toContain("--out ");
+    }
+  });
+
+  it("caches what the Android lane would otherwise re-download every run", async () => {
+    // Measured on run 33675488456: ~6 min re-installing SDK/emulator packages and ~5 min on the
+    // Gradle build plus the Rust cross-compile, in a 35 min job. `third_party` was already cached
+    // and restored in about 4 s; these three simply had no cache step at all.
+    const source = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const android = requiredJob(source, "android-emulator-parity");
+    for (const [what, needle] of [
+      ["the Android SDK packages", "system-images/android-35"],
+      ["the Gradle caches", "~/.gradle/caches"],
+      ["the Rust cross-compile output", ".runtime/physics-target"],
+    ] as const) {
+      expect(android, `the Android lane stopped caching ${what}`).toContain(needle);
+    }
+    // The cargo key has to follow the lockfile that actually drives the build; a `**/Cargo.lock`
+    // glob would also hash third_party's and miss on churn that changes nothing here.
+    expect(android).toContain("packages/runtime-native/native/physics/Cargo.lock");
+  });
+
   it("bounds every runner job with an explicit timeout", async () => {
     for (const relative of workflows) {
       const source = await readFile(path.join(repo, relative), "utf8");
@@ -233,8 +287,12 @@ describe("CI pipeline structure", () => {
       android.indexOf("- name: Verify captured parity ledger"),
     );
 
-    expect(emulator).toContain("set +e");
-    expect(emulator).toMatch(/run-conformance\.mjs \\\n\s+--target android/u);
+    // The tolerance stays; the line break that used to carry it does not. This assertion asked
+    // for `run-conformance.mjs \<newline> --target android` — it pinned the very shape that made
+    // the action drop every argument after the first line. See "hands the emulator action a
+    // one-line script": the whole invocation has to reach the emulator shell as one command.
+    expect(emulator).toMatch(/run-conformance\.mjs --target android\b/u);
+    expect(emulator).not.toMatch(/\\\s*\n/u);
     expect(emulator).toContain("status=$?");
     expect(emulator).toContain('test "$status" -eq 0 -o "$status" -eq 2');
     expect(android).toContain("check-lane-blocks.mjs");
@@ -318,7 +376,7 @@ describe("CI pipeline structure", () => {
       "utf8",
     );
     const jobs = [
-      ["ci test", requiredJob(ci, "test")],
+      ["ci test-native", requiredJob(ci, "test-native")],
       ["native desktop parity", requiredJob(native, "desktop-parity")],
       ["native desktop matrix", requiredJob(native, "desktop")],
       ["native starter linux", requiredJob(native, "starter-linux")],
@@ -359,6 +417,171 @@ describe("CI pipeline structure", () => {
 
       // A cache nobody measures is a cache nobody notices going cold.
       expect(section, `${name} never reports its ccache hit rate`).toContain("ccache --show-stats");
+    }
+  });
+
+  // Three Linux jobs — ci `test`, native `desktop-parity` and native `starter-linux` — each
+  // compiled a different set of targets and all three saved under `native-ccache-Linux-X64-gcc-`.
+  // The key carries `github.run_id`, so every save is a new entry, and `restore-keys` takes the
+  // newest match: each lane therefore restored whichever sibling had finished last and recompiled
+  // its own objects against it. Measured on run 33690597861, ci `test` reported
+  // `Hits: 184 / 574 (32.06%)` on a tree whose native sources had not changed, and the stored
+  // entry sat at 23 MiB run after run instead of growing to hold all three lanes. A restore-key
+  // prefix is a namespace; sharing one between jobs that build different things is a cache that
+  // reports as warm and behaves as cold.
+  it("gives every native compiler cache a restore namespace no other job writes to", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const jobs = [
+      ["ci test-native", requiredJob(ci, "test-native")],
+      ["native desktop parity", requiredJob(native, "desktop-parity")],
+      ["native desktop matrix", requiredJob(native, "desktop")],
+      ["native starter linux", requiredJob(native, "starter-linux")],
+    ] as const;
+
+    const namespaces = new Map<string, string>();
+    for (const [name, section] of jobs) {
+      const restoreKey = section
+        .match(/^\s+restore-keys:\s*(.+)$/mu)?.[1]
+        ?.trim()
+        .replace(/^["']|["']$/gu, "");
+      expect(restoreKey, `${name} has no ccache restore-keys prefix`).toBeDefined();
+      const previous = namespaces.get(restoreKey ?? "");
+      expect(
+        previous,
+        `${name} shares the ccache restore namespace ${restoreKey} with ${previous}`,
+      ).toBeUndefined();
+      namespaces.set(restoreKey ?? "", name);
+
+      // The save key must start with the prefix it restores by, or the lane saves into a
+      // namespace it never reads back and the restore silently falls through to a sibling's.
+      const saveKey = [...section.matchAll(/^\s+key:\s*(.+)$/gmu)]
+        .map((match) => (match[1] ?? "").trim())
+        .find((key) => key.includes("native-ccache"));
+      expect(saveKey, `${name} has no native-ccache save key`).toBeDefined();
+      expect(saveKey, `${name} saves outside the namespace it restores from`).toContain(
+        restoreKey ?? "",
+      );
+    }
+  });
+
+  // `golden-path-template` used to scaffold starter and platformer and run their non-visual
+  // scenarios itself, then run `verify:golden-path`, which packs and scaffolds the same template
+  // all over again. Since 2026-09-01 `template-nonvisual` runs that identical sweep for all eight
+  // templates on every event, so the copy inside the golden-path lane proved nothing new and cost
+  // 350s of the run's critical path (run 33690597861, step "Run the scaffold's GPU-free
+  // assertions"). The verifier is what this lane is for; the sweep belongs to the job that owns it.
+  it("leaves the non-visual scenario sweep to template-nonvisual", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const goldenPath = requiredJob(ci, "golden-path-template");
+    const nonVisual = requiredJob(ci, "template-nonvisual");
+
+    expect(nonVisual).toContain("non-visual-scenarios.mjs");
+    expect(nonVisual).toContain("threenative-playtest");
+    // Both templates the golden-path matrix drives must be covered by the sweep that replaces it.
+    for (const template of ["starter", "platformer"]) expect(nonVisual).toContain(`- ${template}`);
+
+    expect(
+      goldenPath,
+      "golden-path-template re-runs the sweep template-nonvisual already owns",
+    ).not.toContain("non-visual-scenarios.mjs");
+    expect(goldenPath, "golden-path-template still drives scenarios itself").not.toContain(
+      "threenative-playtest",
+    );
+    expect(goldenPath).toContain("pnpm verify:golden-path");
+  });
+
+  // Every matrix leg ran `workspace-packages.ts build` and then `pnpm pack` per package: ten legs
+  // paying ~70s each to produce byte-identical tarballs from the same commit. `build` already
+  // compiles the workspace, so it packs once and the legs download the result.
+  it("packs the workspace tarballs once and shares them with every matrix leg", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const build = requiredJob(ci, "build");
+    expect(build, "build does not publish the packed tarballs").toContain(
+      "actions/upload-artifact",
+    );
+    expect(build).toContain("pnpm tsx scripts/workspace-packages.ts --archives");
+
+    for (const name of ["golden-path-template", "template-nonvisual"]) {
+      const job = requiredJob(ci, name);
+      expect(job, `${name} does not consume the shared tarballs`).toContain(
+        "actions/download-artifact",
+      );
+      expect(job, `${name} still packs the workspace itself`).not.toMatch(
+        /pnpm --filter "\$package_name" pack/u,
+      );
+      // Nothing may re-derive the specs file locally; the artifact is the single source.
+      expect(job, `${name} re-runs the workspace build`).not.toContain(
+        "pnpm tsx scripts/workspace-packages.ts build",
+      );
+    }
+
+    // The first attempt shipped only `packages/create-threenative/dist` and every scaffold died:
+    // the CLI's `dist/index.js` imports `@threenative/assets`, pnpm resolves that through a
+    // workspace symlink into `packages/assets/dist/index.js`, and the leg no longer builds the
+    // workspace. What the legs need is the whole compiled workspace, so the artifact carries it
+    // and this asserts the glob rather than any one package's name.
+    const uploaded = build.slice(build.indexOf("actions/upload-artifact"));
+    expect(uploaded, "the shared artifact does not carry the compiled workspace").toMatch(
+      /^\s+packages\/\*\/dist$/mu,
+    );
+    expect(uploaded).toMatch(/^\s+artifacts\/workspace-packages$/mu);
+    // An empty upload must fail the job rather than hand every downstream leg a silent nothing.
+    expect(uploaded).toContain("if-no-files-found: error");
+  });
+
+  // `test` used to compile the C++ host for 279s before running a single JS test, because one
+  // package's suite drives real contract executables. Splitting that off is only safe if the two
+  // halves still cover every package between them — a `--filter` that names a package neither job
+  // runs is a gate that goes green by running less, which is the failure this repository fails
+  // closed against everywhere else. So this computes the partition rather than trusting it.
+  it("splits the suite in two without dropping a package on the floor", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const js = requiredJob(ci, "test");
+    const native = requiredJob(ci, "test-native");
+
+    // The JS half must not compile anything, or the split bought nothing.
+    expect(js, "the JS half still builds the native host").not.toContain("native:build");
+    expect(js, "the JS half still carries the compiler cache").not.toContain("CCACHE_DIR");
+    expect(js).toContain("- run: pnpm test");
+
+    // The native half must build what its suite executes, and run only that suite.
+    expect(native).toContain("native:build");
+    expect(native).toContain("CCACHE_DIR");
+    // The contract tests import the compiled workspace. `pnpm test` used to build it for them;
+    // this job does not run `pnpm test`, so it has to build it itself or the suite dies on
+    // ERR_MODULE_NOT_FOUND for `@threenative/playtest` before it executes a binary.
+    expect(native, "the native half never builds the workspace its tests import").toContain(
+      "pnpm tsx scripts/workspace-packages.ts build",
+    );
+    expect(native, "the native half re-runs the whole suite").not.toMatch(
+      /^\s+- run: pnpm test$/mu,
+    );
+
+    const excluded = (js.match(/TN_SUITE_EXCLUDE_PACKAGES:\s*"([^"]*)"/u)?.[1] ?? "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter((name) => name !== "");
+    expect(excluded.length, "the JS half excludes nothing, so the split is a duplicate").toBe(1);
+
+    const filtered = [...native.matchAll(/pnpm --filter (\S+) test/gu)].map((match) => match[1]);
+    expect(
+      filtered.sort(),
+      "the packages the JS half skips are not the ones the native half runs",
+    ).toEqual([...excluded].sort());
+
+    // And the excluded name has to be a package that exists and has a suite to run, or the
+    // filter is a typo that quietly excludes nothing and the native job runs nothing.
+    for (const name of excluded) {
+      const directory = name.replace(/^@threenative\//u, "");
+      const manifest = JSON.parse(
+        await readFile(path.join(repo, "packages", directory, "package.json"), "utf8"),
+      ) as { name?: string; scripts?: Record<string, string> };
+      expect(manifest.name, `${name} is not the package at packages/${directory}`).toBe(name);
+      expect(manifest.scripts?.test, `${name} has no test script to run`).toBeDefined();
     }
   });
 
@@ -486,7 +709,7 @@ describe("CI pipeline structure", () => {
 
   it("keeps the native contracts and primary CI documentation honest", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const test = requiredJob(ci, "test");
+    const test = requiredJob(ci, "test-native");
     expect(test).toContain("grep -oE 'add_executable\\(\\s*threenative-[a-z0-9-]+-test'");
     expect(test).toContain("Build the QuickJS engine variant the cross-engine contracts need");
     expect(test).toContain("-DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF");

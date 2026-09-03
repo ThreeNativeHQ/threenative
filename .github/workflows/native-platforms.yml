@@ -80,6 +80,45 @@ jobs:
         with:
           python-version: "3.12"
       - uses: android-actions/setup-android@v4
+      # The three re-downloads this lane paid for on every run. Measured on run 33675488456:
+      # ~6 min of SDK/emulator installation and ~5 min of the Gradle build plus the Rust
+      # cross-compile, against a 35 min job. `third_party` was already cached and hit in ~4 s;
+      # these were simply never added. Keys are content-addressed where a lockfile exists and
+      # pinned to the versions this workflow installs where one does not, so a version bump
+      # misses rather than serving a stale toolchain.
+      - name: Restore the Android SDK packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_SDK_ROOT }}/platforms/android-35
+            ${{ env.ANDROID_SDK_ROOT }}/build-tools/35.0.0
+            ${{ env.ANDROID_SDK_ROOT }}/ndk/27.1.12297006
+            ${{ env.ANDROID_SDK_ROOT }}/system-images/android-35
+            ${{ env.ANDROID_SDK_ROOT }}/emulator
+          key: android-sdk-35-ndk27.1.12297006-${{ runner.os }}
+      - name: Restore the Gradle caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: >-
+            gradle-${{ runner.os }}-${{ hashFiles(
+              'packages/runtime-native/android/**/*.gradle*',
+              'packages/runtime-native/android/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+      - name: Restore the Rust cross-compile caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            packages/runtime-native/.runtime/physics-target
+          key: >-
+            cargo-android-${{ runner.os }}-${{ hashFiles(
+              'packages/runtime-native/native/physics/Cargo.lock') }}
+          restore-keys: cargo-android-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       - name: Build browser reference workspace imports
         run: pnpm tsx scripts/workspace-packages.ts build
@@ -150,15 +189,18 @@ jobs:
             -no-window -no-audio -no-boot-anim -no-snapshot -camera-back none -camera-front none
             -gpu swiftshader_indirect -accel auto
           emulator-boot-timeout: 900
-          script: |
-            set +e
-            node packages/runtime-native/conformance/run-conformance.mjs \
-              --target android --device emulator-5554 \
-              --reference artifacts/conformance/web \
-              --out artifacts/conformance/android
-            status=$?
-            set -e
-            test "$status" -eq 0 -o "$status" -eq 2
+          # One line on purpose. `android-emulator-runner` feeds `script` to the emulator shell a
+          # line at a time, so a `\`-continued command loses everything after the first line: from
+          # 2026-09-01 this ran `run-conformance.mjs` with no arguments at all, which defaults
+          # `--target` to `all`. That is the whole of the "matrix side effect" — the runner wrote
+          # web, desktop, android and ios reports under the default `artifacts/conformance`,
+          # overwriting the web reference this lane had just captured and then comparing the
+          # emulator against the wreckage. Keep the invocation on one line; `sh -c` keeps the
+          # `||` tolerance for exit 2 (rows blocked by this machine) on that same line.
+          script: >-
+            node packages/runtime-native/conformance/run-conformance.mjs --target android
+            --device emulator-5554 --reference artifacts/conformance/web
+            --out artifacts/conformance/android; status=$?; test "$status" -eq 0 -o "$status" -eq 2
       - name: Verify captured parity ledger
         if: always()
         run: |
@@ -245,8 +287,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.cache/ccache
-          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
-          restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-
+          # The lane name is part of the namespace on purpose: this job, native `starter-linux`
+          # and ci `test` compile different target sets, and while all three saved under
+          # `native-ccache-<os>-<arch>-gcc-` each restored whichever sibling finished last and
+          # recompiled its own objects against it. See the note in ci.yml's `test` job.
+          key: native-ccache-desktop-parity-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
+          restore-keys: native-ccache-desktop-parity-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -508,8 +554,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.cache/ccache
-          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
-          restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-gcc-
+          # The lane name is part of the namespace on purpose: this job, native `starter-linux`
+          # and ci `test` compile different target sets, and while all three saved under
+          # `native-ccache-<os>-<arch>-gcc-` each restored whichever sibling finished last and
+          # recompiled its own objects against it. See the note in ci.yml's `test` job.
+          key: native-ccache-starter-linux-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
+          restore-keys: native-ccache-starter-linux-${{ runner.os }}-${{ runner.arch }}-gcc-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:

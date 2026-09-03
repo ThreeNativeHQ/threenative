@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
+import { workflowBlockScalars } from "./runtime-test-utils.js";
 import {
   OVERLAY_ANCHOR,
   OVERLAY_VIEWPORTS,
@@ -238,7 +239,13 @@ test("CI invokes web references and the Android emulator lane on runtime changes
   assert.match(workflow, /android-emulator-parity/u);
   assert.match(workflow, /java-version: "17"/u);
   assert.match(workflow, /--target web/u);
-  assert.match(workflow, /--target android --device emulator-5554/u);
+  // See conformance-runner.test.mjs: the emulator action folds `script` into one string, so the
+  // assertion belongs on the folded command and not on the file's line breaks.
+  const emulatorScript = workflowBlockScalars(workflow, "script").find((script) =>
+    script.includes("run-conformance.mjs"),
+  );
+  assert.ok(emulatorScript, "the emulator lane has no run-conformance script block");
+  assert.match(emulatorScript, /--target android --device emulator-5554/u);
 });
 
 test("the camera-parented overlay row resizes for real and observes the drawing buffer", () => {
