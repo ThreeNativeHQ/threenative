@@ -466,6 +466,25 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "A clip can already be playing at the first sample; an entered assertion must prove a transition or document why the clip is held.",
   },
   {
+    description: "Bounds the room the game is played in — the lights, materials, fog and camera framing the renderer was handed. Fails closed on a bridge that does not report the scene.",
+    example: { scene: { litMaterialsAreLit: true, minVisibleLights: 1 } },
+    fields: [
+      { description: "Fail when the camera's far plane cuts the scene it is pointed at.", name: "cameraClearsScene", type: "boolean" },
+      { description: "Fail when a linear fog reaches full colour in front of the scene it is fogging.", name: "fogClearsScene", type: "boolean" },
+      { description: "Fail when lit materials are mounted and no light in the scene is visible.", name: "litMaterialsAreLit", type: "boolean" },
+      { description: "Floor on how many lights in the scene are visible to the renderer.", name: "minVisibleLights", type: "number" },
+      { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
+    ],
+    cardinality: "object",
+    kind: "scene",
+    observationPath: "scene",
+    requiredCapabilities: ["scene.observe"],
+    resultIdPrefix: "scene.",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+    trivialityRationale: "The room is a property of the scene as built, not of anything the scenario drives; a scene that is already lit is the assertion holding, not a trivial pass.",
+  },
+  {
     description: "Bounds when the application's startup milestones happened: the world entered, first-use compilation settled, readiness reached — in milliseconds since navigation, from the runtime's own startup timeline.",
     example: { startup: { maxEnteredMs: 2500, maxReadyMs: 8000 } },
     fields: [

@@ -70,6 +70,22 @@ Three warnings, each naming a way a frame dies while every other number stays he
 2. **a fog far plane in front of the scene it is fogging** — round 9's loss, as a number.
 3. **a camera far plane inside the scene** — geometry past it is clipped, not drawn small.
 
+### A scenario bounds the room, not just `doctor`
+
+`assert.scene` carries the same three frame-destroying cases into a proof, plus a light floor:
+
+| Field | Fails when |
+| --- | --- |
+| `minVisibleLights` | fewer lights are visible to the renderer than the floor |
+| `litMaterialsAreLit` | lit materials are mounted and no light is visible |
+| `fogClearsScene` | a linear fog goes opaque in front of the scene's furthest corner |
+| `cameraClearsScene` | the camera's far plane cuts the world it is pointed at |
+
+A run with no scene observation fails once as `scene.observed` (`TN_PLAYTEST_SCENE_UNOBSERVED`)
+rather than failing each bound against nothing; an `assert.scene` setting no bound throws at load;
+and an unmeasurable comparison — no world extent, no far plane — fails rather than counting as
+cleared.
+
 ### The stride crosses the bridge, and a scenario bounds it
 
 `gameplay.animation.<entity>.stride` now carries the report, and `assert.animation[]` gains:
@@ -107,6 +123,7 @@ Every criterion states the mutation that makes it fail, and the failure was obse
 | 2 | The schema accepts the new keys and throws on wrong-typed ones | same | `Unknown key 'maxFootSlide' at assert.animation[0]` |
 | 3 | Stride reaches the bridge with real numbers, and an override reports the rate it declined | same | 2 red — `stride` undefined on the sample |
 | 4 | `doctor` warns on no-light, fog-far-plane and camera-far-plane, and prints the room | `roomWarnings` short-circuited to return `[]` | exactly 5 of 14 red, the other 9 green |
+| 5 | `assert.scene` bounds all four cases, fails once on an unobserved scene, throws on an empty or wrong-typed assertion | the family registered without an evaluator | `RED observed: registered family has no evaluator for 'scene'` — the package's own completeness gate, which also required the family in the all-families contract and its fail-closed diagnostic pin |
 
 Criterion 4's control is the load-bearing one: a new module's absence gives a module-not-found, not
 an assertion red, so the warnings were controlled separately to prove they carry the claim.
@@ -121,6 +138,11 @@ against a future loosening of `optionalNumber`; they are recorded here so the co
 
 - `doctor --url` against `abyss-framework` on a named hardware adapter (`nvidia turing`) — the
   four lines quoted above.
+- The same scenario asserts `scene.litMaterialsAreLit` and `scene.cameraClearsScene`, both passing
+  with real numbers (`cameraFar: 2000` against a `sceneReach` of `65.19`). A first attempt also
+  asserted `minVisibleLights: 1` and **failed, correctly**: `fps-friction` mounts no lights at all
+  and its geometry is `MeshBasicMaterial`, so a light floor asserts something that fixture never
+  intended. The bound was dropped rather than the game changed — the instrument was right.
 - `examples/fps-friction/playtests/animation-death.playtest.json` asserts `strideSynced: false`
   and passes on the real runner, carrying
   `stride: {clipGroundSpeed: 0.333, groundSpeed: 0, rate: 0.15, overridden: false, synced: false}`.
