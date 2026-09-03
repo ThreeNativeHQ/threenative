@@ -101,8 +101,14 @@ def export(out):
         track.name = action.name
         track.strips.new(action.name, int(action.frame_range[0]), action)
         item.animation_data.action = None
+    # `export_apply` is not the default, and without it a recipe that works through a
+    # modifier reports the number it measured and writes the geometry it started with:
+    # `decimate` at ratio 0.25 reported trianglesAfter 154 and shipped a 620-triangle GLB,
+    # byte-identical to the unmodified export. Blender's glTF exporter excludes armature
+    # modifiers from this, so a rig still exports as a rig rather than being baked flat.
     bpy.ops.export_scene.gltf(
         filepath=out,
+        export_apply=True,
         export_format="GLB",
         export_animations=True,
         export_nla_strips=True,

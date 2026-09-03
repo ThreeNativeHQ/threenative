@@ -1,5 +1,6 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { type Document, NodeIO } from "@gltf-transform/core";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { resolveBlender } from "../src/detect.js";
@@ -39,6 +40,37 @@ f 3 7 8 4
 f 1 5 7 3
 f 2 4 8 6
 `;
+
+/**
+ * Triangles and UV sets in a produced GLB, read through the reader the runtime uses.
+ *
+ * Phase 4's first gates asserted only the numbers `gpl/recipes/*.py` printed, and that is exactly
+ * how `decimate` passed while writing the wrong file: it reported `trianglesAfter: 154` and shipped
+ * 620 triangles, because Blender's glTF exporter does not apply modifiers unless told. The summary
+ * was honest about what it measured and silent about what it wrote.
+ *
+ * `@gltf-transform/core` directly rather than `@threenative/assets`' `gltf-io`: this package's own
+ * `tsc --noEmit` compiles whatever its specs import, and that module needs `draco3dgltf` types only
+ * the assets package declares. Same library underneath, and nothing here is Draco-compressed.
+ */
+async function readGlb(file: string): Promise<Document> {
+  return new NodeIO().readBinary(await readFile(file));
+}
+
+async function glbFacts(file: string): Promise<{ triangles: number; uvSets: number }> {
+  const root = (await readGlb(file)).getRoot();
+  const primitives = root.listMeshes().flatMap((mesh) => mesh.listPrimitives());
+  return {
+    triangles: primitives.reduce(
+      (total, primitive) => total + (primitive.getIndices()?.getCount() ?? 0) / 3,
+      0,
+    ),
+    uvSets: primitives.reduce(
+      (total, primitive) => total + (primitive.getAttribute("TEXCOORD_0") === null ? 0 : 1),
+      0,
+    ),
+  };
+}
 
 describe("recipe registry", () => {
   it("should ship the source of every recipe it lists", () => {
@@ -84,6 +116,11 @@ withBlender("shipped recipes against a real Blender", () => {
       expect(summary.trianglesBefore).toBeGreaterThan(0);
       expect(summary.trianglesAfter).toBeLessThan(summary.trianglesBefore);
       expect(Math.abs(summary.achievedRatio - 0.4)).toBeLessThanOrEqual(0.02);
+      // The file, not the report. This is the assertion that would have caught the exporter
+      // dropping the modifier, and the one that keeps catching it.
+      const written = await glbFacts(path.join(root, "out.glb"));
+      expect(written.triangles).toBe(summary.trianglesAfter);
+      expect(written.triangles).toBeLessThan(summary.trianglesBefore);
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -122,6 +159,8 @@ withBlender("shipped recipes against a real Blender", () => {
       expect(summary.uvLayersBefore).toBe(0);
       expect(summary.uvLayersAfter).toBe(1);
       expect(summary.unwrapped.length).toBe(1);
+      // And the UVs are in the file a game would load, not only in the report.
+      expect((await glbFacts(path.join(root, "out.glb"))).uvSets).toBeGreaterThan(0);
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -183,6 +222,10 @@ withBlender("shipped recipes against a real Blender", () => {
       expect(summary.destinationBones).toEqual(expect.arrayContaining(["neck", "root", "spine"]));
       // Every track resolved to a destination bone: nothing was silently dropped.
       expect(summary.skippedBones).toEqual([]);
+      // The clips are in the exported file too, not only in the report.
+      const exported = (await readGlb(path.join(root, "out.glb"))).getRoot();
+      expect(exported.listAnimations().length).toBeGreaterThanOrEqual(2);
+      expect(exported.listSkins().length).toBeGreaterThan(0);
     } finally {
       await rm(root, { force: true, recursive: true });
     }
