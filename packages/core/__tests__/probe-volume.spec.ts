@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { Box3, Data3DTexture, Scene, Vector3, WebGPUCoordinateSystem } from "three";
 import type { Node } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
@@ -473,12 +472,13 @@ describe("ProbeVolume", () => {
     expect(new Set(samplerTexturesDuringCapture)).toEqual(new Set(["1x1x1"]));
     expect(subject.sampleIrradiance(samplePosition, sampleNormal).lengthSq()).toBe(0);
     expect(samplerTextureDimensions(sampleNode)).toEqual(["3x3x35"]);
+    expect(raw.setRenderTarget).toHaveBeenCalled();
+    expect(
+      raw.setRenderTarget.mock.calls.some(
+        ([target]) =>
+          (target as { isWebGLRenderTarget?: boolean } | null)?.isWebGLRenderTarget === true,
+      ),
+    ).toBe(false);
     expect(subject.observation).toMatchObject({ samplingIsolated: false, status: "ready" });
-  });
-
-  it("keeps the port on WebGPU render targets and away from the upstream WebGL class", () => {
-    const source = readFileSync(new URL("../src/render/probe-volume.ts", import.meta.url), "utf8");
-    expect(source).not.toMatch(/WebGL\w*RenderTarget/u);
-    expect(source).not.toContain("three/addons/lighting/LightProbeGrid.js");
   });
 });

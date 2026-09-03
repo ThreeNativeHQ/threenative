@@ -216,7 +216,7 @@ jobs:
             packages/runtime-native/build/tn-linux-quickjs
             packages/runtime-native/.runtime/physics-target
             packages/runtime-native/native/ui-overlay/target
-          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**/*.cpp', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}-${{ github.run_id }}
+          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**/*.cpp', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}
           restore-keys: native-build-${{ runner.os }}-${{ runner.arch }}-
       - name: Restore native compiler cache
         uses: actions/cache@v4
@@ -612,7 +612,9 @@ jobs:
           - { template: minimal, shard: "1/1" }
           - { template: platformer, shard: "1/2" }
           - { template: platformer, shard: "2/2" }
+          - { template: puzzle, shard: "1/1" }
           - { template: racing, shard: "1/1" }
+          - { template: runner, shard: "1/1" }
           - { template: sailing, shard: "1/1" }
           - { template: shooter, shard: "1/1" }
           - { template: starter, shard: "1/2" }
@@ -811,6 +813,14 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # check-capability-docs resolves every documented capability through its package export
+      # map, and those maps point at dist. Without this the gate fails closed on the build it
+      # needs rather than on a capability, naming a missing packages/assets/dist/index.js:
+      #   CAPABILITY_BUILT_IMPORT_MISSING: @threenative/assets#compileAssets could not resolve
+      #   from the package export map
+      # `needs: build` orders this job behind the build but hands it no artifact, so the ordering
+      # reads like a guarantee it does not make. The shared action is what actually supplies dist.
+      - uses: ./.github/actions/workspace-dist
       - run: pnpm budgets
       - run: pnpm quality
       - run: pnpm sync:agents --check
@@ -887,6 +897,14 @@ jobs:
           git --redact --verbose
           --gitleaks-ignore-path /repo/.gitleaksignore
           /repo
+      # dependency-review diffs a base ref against a head ref, and only a pull_request /
+      # pull_request_target / merge_group event supplies them. This job stopped being PR-only on
+      # 2026-09-01 (#39) so gitleaks could scan the full history on main, and every step added
+      # then was guarded by event — except this one. Ungated it has errored on every push to main
+      # since, with "Both a base ref and head ref must be provided", which is why main has not
+      # reported a green supply-chain in three days. The secrets scan runs on both events; the
+      # dependency diff cannot.
       - uses: actions/dependency-review-action@v4
+        if: github.event_name == 'pull_request'
         with:
           fail-on-severity: moderate

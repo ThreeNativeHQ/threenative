@@ -32,7 +32,7 @@ export type {
  * @situation assert physics contacts in a plain Three.js game
  * @situation capture bounded body state for a scenario
  * @constraint keep recorder limits within the documented caps
- * @example const physics = new ThreePlaytestPhysicsRecorder();
+ * @example const physics = new ThreePlaytestPhysicsRecorder(worldPhysics);
  */
 export {
   PLAYTEST_PHYSICS_BODY_LIMIT,
@@ -45,7 +45,7 @@ export type { IThreePlaytestPhysics, IThreePlaytestPhysicsBody } from "./physics
  * @situation run the same playtest on an Android or iOS target
  * @situation read the device bridge endpoint
  * @constraint use the device transport selected by the runner
- * @example const connection = await connectDevicePlaytestBridge();
+ * @example const connection = connectDevicePlaytestBridge(bridge, endpoint);
  */
 export { connectDevicePlaytestBridge, readPlaytestEndpoint } from "./device.js";
 export type { IDeviceBridgeInstallation } from "./device.js";

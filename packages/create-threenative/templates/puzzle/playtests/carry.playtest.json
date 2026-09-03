@@ -1,0 +1,71 @@
+{
+  "name": "carry",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "walk-to-crate",
+      "press": "ArrowUp",
+      "holdTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "grab",
+      "press": "KeyE",
+      "holdTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "lift",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "carry-back",
+      "press": "ArrowDown",
+      "holdTicks": 70,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "component": "held",
+        "entity": "crate.0",
+        "equals": true
+      },
+      {
+        "changed": true,
+        "component": "position",
+        "entity": "crate.0",
+        "path": "2"
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 1.5
+    }
+  }
+}

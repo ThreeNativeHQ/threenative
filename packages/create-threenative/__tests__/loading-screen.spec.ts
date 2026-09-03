@@ -13,6 +13,7 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   canonicalLoadingPath,
   createProject,
+  discoverStampedTemplates,
   restampTemplateLoadingCopies,
   stampLoadingSource,
 } from "../src/index.js";
@@ -43,15 +44,9 @@ import {
 } from "../templates/starter/src/render/loading.js";
 
 const templateRoot = path.resolve("packages/create-threenative/templates");
-const stampedTemplates = [
-  "action-rpg",
-  "defense",
-  "platformer",
-  "racing",
-  "sailing",
-  "shooter",
-  "starter",
-];
+// Read off disk, so a kit added tomorrow is covered by this suite the day it ships its
+// appearance block rather than the day somebody remembers to extend a list here.
+const stampedTemplates = discoverStampedTemplates(templateRoot);
 const loadingPath = (template: string): string =>
   path.join(templateRoot, template, "src/render/loading.ts");
 

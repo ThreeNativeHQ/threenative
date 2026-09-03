@@ -70,6 +70,57 @@ function assertRequiredFeatureBuilder(source) {
   );
 }
 
+const REQUIRED_FEATURE_IDENTIFIERS = [
+  "IndirectFirstInstance",
+  "TextureAdapterSpecificFormatFeatures",
+  "TextureCompressionBC",
+  "TextureCompressionETC2",
+  "TextureCompressionASTC",
+  "TimestampQuery",
+  "RG11B10UfloatRenderable",
+  "CoreFeaturesAndLimits",
+];
+
+function featureIdentifiers(text) {
+  return new Set(REQUIRED_FEATURE_IDENTIFIERS.filter((identifier) => text.includes(identifier)));
+}
+
+function removeOccurrence(source, needle, occurrence) {
+  let offset = -1;
+  for (let index = 0; index < occurrence; index += 1) {
+    offset = source.indexOf(needle, offset + 1);
+    assert.ok(offset >= 0, `expected occurrence ${occurrence} of ${needle}`);
+  }
+  return `${source.slice(0, offset)}${source.slice(offset + needle.length)}`;
+}
+
+function assertRequestedAndReportedFeatureSets(source) {
+  const requested = featureIdentifiers(
+    functionBody(source, "static RequiredFeatures buildRequiredFeatures("),
+  );
+  const reported = featureIdentifiers(functionBody(source, "static void reportGrantedFeatures("));
+  assert.deepEqual(
+    reported,
+    requested,
+    "reportGrantedFeatures must expose every feature the builder can request",
+  );
+}
+
+function assertFeatureUnpackAtEveryInitialization(source) {
+  const starts = [...source.matchAll(/const auto requiredFeatures = buildRequiredFeatures\(/gu)]
+    .map(({ index }) => index);
+  assert.equal(starts.length, 3, "headless, windowed, and display-backed paths must build features");
+  for (const start of starts) {
+    const end = source.indexOf("reportGrantedFeatures", start);
+    assert.ok(end > start, "each initialization path must report its granted features");
+    const block = source.slice(start, end);
+    assert.match(block, /hasIndirectFirstInstance_\s*=\s*requiredFeatures\.hasIndirectFirstInstance;/u);
+    assert.match(block, /hasTimestampQuery_\s*=\s*requiredFeatures\.hasTimestampQuery;/u);
+    assert.match(block, /deviceDesc\.requiredFeatureCount\s*=\s*requiredFeatures\.count;/u);
+    assert.match(block, /deviceDesc\.requiredFeatures\s*=\s*requiredFeatures\.count\s*>\s*0/u);
+  }
+}
+
 function assertActualIndirectFeatureSurface(source) {
   const adapter = functionBody(source, "static js::JSValueHandle handleGpuAdapterFeaturesHas(");
   const device = functionBody(source, "static js::JSValueHandle handleGpuDeviceFeaturesHas(");
@@ -682,6 +733,8 @@ test("backend and canvas contexts do not use process-global ownership", () => {
   assert.doesNotMatch(canvas2d, /engine->freezeHandle\(jsCtx\)/u);
   assert.match(context, /RequiredFeatures buildRequiredFeatures\(WGPUAdapter adapter/u);
   assertRequiredFeatureBuilder(context);
+  assertRequestedAndReportedFeatureSets(context);
+  assertFeatureUnpackAtEveryInitialization(context);
   assert.equal(
     context.match(/buildRequiredFeatures\(adapter_/gu)?.length,
     3,
@@ -698,6 +751,29 @@ test("backend and canvas contexts do not use process-global ownership", () => {
     () => assertRequiredFeatureBuilder(withoutBc),
     /TextureCompressionBC/u,
     "the contract must fail when an audited feature is removed",
+  );
+
+  const withoutTextureReporter = context.replace(
+    /\s*\{static_cast<WGPUFeatureName>\(WGPUNativeFeature_TextureAdapterSpecificFormatFeatures\), "texture-adapter-specific-format-features"\},/u,
+    "",
+  );
+  assert.notEqual(withoutTextureReporter, context, "negative control must remove the native feature reporter");
+  assert.throws(
+    () => assertRequestedAndReportedFeatureSets(withoutTextureReporter),
+    /reportGrantedFeatures/u,
+    "the contract must fail when a requested feature is omitted from reporting",
+  );
+
+  const withoutWindowedTimestamp = removeOccurrence(
+    context,
+    "hasTimestampQuery_ = requiredFeatures.hasTimestampQuery;",
+    2,
+  );
+  assert.notEqual(withoutWindowedTimestamp, context, "negative control must remove a timestamp unpack");
+  assert.throws(
+    () => assertFeatureUnpackAtEveryInitialization(withoutWindowedTimestamp),
+    /hasTimestampQuery_|three.*paths/u,
+    "the contract must fail when one initialization path drops timestamp state",
   );
 });
 

@@ -74,6 +74,10 @@ interface IResolvedTrack {
   readonly node: Object3D | null;
 }
 
+interface IPropertyBindingWithTarget extends PropertyBinding {
+  readonly targetObject?: unknown;
+}
+
 function label(object: Object3D): string {
   return object.name || object.type;
 }
@@ -100,22 +104,31 @@ function bindTrack(root: Object3D, path: string): IResolvedTrack {
   setConsoleFunction((type, message) => {
     if (failure === null && type !== "log") failure = message;
   });
+  const propertyBinding = new PropertyBinding(root, path);
   try {
-    new PropertyBinding(root, path).bind();
+    propertyBinding.bind();
   } finally {
     setConsoleFunction(previous);
   }
 
-  const node = PropertyBinding.findNode(root, nodeName) as Object3D | null;
+  const reportedNode = PropertyBinding.findNode(root, nodeName) as Object3D | null;
   const bound = failure === null;
+  const target = (propertyBinding as IPropertyBindingWithTarget).targetObject;
+  const resolvedNode =
+    bound &&
+    target !== null &&
+    typeof target === "object" &&
+    (target as { isObject3D?: unknown }).isObject3D === true
+      ? (target as Object3D)
+      : null;
   return {
     binding: {
       track: path,
-      node: bound || node !== null ? nodeName : null,
+      node: bound || reportedNode !== null ? nodeName : null,
       bound,
       reason: failure,
     },
-    node: bound ? node : null,
+    node: resolvedNode,
   };
 }
 
@@ -259,6 +272,23 @@ function duration(subject: IClipPoseSubject, side: string): number {
   return seconds;
 }
 
+function isSameOrAncestor(ancestor: Object3D, object: Object3D): boolean {
+  let current: Object3D | null = object;
+  while (current !== null) {
+    if (current === ancestor) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
+function assertDisjointRoots(subject: Object3D, reference: Object3D): void {
+  if (isSameOrAncestor(subject, reference) || isSameOrAncestor(reference, subject)) {
+    throw new Error(
+      `clipPoseError: subject and reference roots overlap ('${label(subject)}' and '${label(reference)}'); pass two disjoint roots.`,
+    );
+  }
+}
+
 /**
  * Score how far a clip's pose is from the same pose on a reference rig, in degrees.
  *
@@ -279,6 +309,7 @@ export function clipPoseError(
   if (!Number.isInteger(samples) || samples < 1) {
     throw new Error(`clipPoseError: samples must be a positive integer, received ${samples}.`);
   }
+  assertDisjointRoots(subject.root, reference.root);
   const names = boneNamePairs(subject.root, reference.root, options.bones);
   const subjectSeconds = duration(subject, "measured");
   const referenceSeconds = duration(reference, "reference");

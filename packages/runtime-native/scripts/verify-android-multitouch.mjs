@@ -120,6 +120,13 @@ export async function verifyAndroidMultitouch(options) {
     ...(options.skipBuild ? ['--skip-build'] : []),
     ...(options.skipInstall ? ['--skip-install'] : []),
     '--settle-ms', '0',
+    // The 45 s default assumes phone-class throughput. On a hosted emulator every conformance
+    // row passes (74/0 on all of 2026-09-03's red runs) and only the 300-frame marker misses:
+    // 300 frames measured 26.1 s on a local KVM host and >45 s on the GitHub runner, so the
+    // proof is marginal at 6.7 fps rather than broken. Five minutes asks only ~1 fps of the
+    // emulator — the same raise-past-observed policy as the lane's 900 s boot timeout — and
+    // a real stall still fails well inside the 45-minute job.
+    '--timeout-ms', '300000',
     '--logcat', join(artifactRoot, 'first-proof-logcat.txt'),
     '--report', join(artifactRoot, 'first-proof-report.json'),
     '--screenshot', join(artifactRoot, 'first-proof.png'),

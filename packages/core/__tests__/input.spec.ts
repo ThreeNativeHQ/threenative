@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { InputMap } from "../src/input.js";
+import { InputMap, type InputPlatformSource } from "../src/input.js";
 
 function keyEvent(type: string, code: string): Event {
   const event = new Event(type);
@@ -224,10 +223,24 @@ describe("InputMap", () => {
     input.dispose();
   });
 
-  it("should scan the gamepad source without a per-tick find predicate", () => {
-    const source = readFileSync(new URL("../src/input.ts", import.meta.url), "utf8");
+  it("uses the first connected gamepad after empty browser slots", () => {
+    const target = new EventTarget();
+    const gamepads = [
+      null,
+      { axes: [0, 0, 0, 0.75], buttons: [] },
+    ] as ReturnType<InputPlatformSource>;
+    Object.defineProperty(gamepads, "find", {
+      configurable: true,
+      value: () => {
+        throw new Error("InputMap must scan gamepad slots without the array find method.");
+      },
+    });
+    const input = new InputMap({ zoom: { gamepadAxes: [3] } }, target, target, () => gamepads);
 
-    expect(source).not.toContain(".find(");
+    input.tick();
+
+    expect(input.axis("zoom")).toBeCloseTo(0.75);
+    input.dispose();
   });
 
   it("should report (-1, 0) when KeyA is held", () => {

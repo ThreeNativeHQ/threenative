@@ -61,29 +61,132 @@ export const ENGINE_MCP_TOOL_NAMES = [
 ] as const;
 
 const DEFAULT_MANIFEST_FILE = "capabilities.json";
+/**
+ * Words that carry no mechanic, and so must never carry a match.
+ *
+ * The list began as the two dozen words the manifest's own situations repeat. A request is not
+ * written in that voice: it is a sentence, and a sentence is mostly grammar. `as` and `where` were
+ * scored as content, so *"obstacles repeat **as** thousands of blocks"* ranked
+ * `softwareAdapterName` on *"reject a SwiftShader adapter **as** evidence"*, and *"a runner
+ * **where** chunks stream"* ranked `GTAONode` on *"darken the contact **where** an object meets
+ * the floor"* — two capabilities from a lane that has nothing to do with the game, above the
+ * particle system the request asked for by name.
+ *
+ * Spatial and quantitative words stay out of this list on purpose: `above`, `behind`, `near`,
+ * `up`, `down`, `many` and `first` are mechanics in a game, not grammar.
+ */
 const STOP_WORDS = new Set([
   "a",
   "add",
+  "after",
+  "again",
+  "all",
+  "also",
   "an",
   "and",
+  "any",
+  "are",
   "around",
+  "as",
+  "at",
+  "be",
+  "because",
+  "been",
+  "being",
+  "both",
   "build",
+  "but",
   "by",
+  "can",
   "create",
+  "do",
+  "does",
+  "each",
+  "either",
+  "else",
+  "every",
   "for",
   "from",
   "game",
+  "get",
+  "give",
+  "had",
+  "has",
+  "have",
+  "how",
+  "if",
   "in",
   "into",
+  "is",
   "it",
+  "its",
+  "let",
+  "made",
   "make",
+  "may",
+  "might",
+  "must",
+  "no",
+  "nor",
+  "not",
   "of",
   "on",
-  "that",
-  "the",
+  "once",
+  "one",
+  "only",
+  "or",
+  "other",
+  "our",
+  "own",
+  "put",
+  "rather",
+  "same",
+  "shall",
+  "should",
+  "since",
+  "so",
+  "some",
+  "such",
+  "take",
+  "than",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "though",
+  "thus",
   "to",
+  "too",
   "use",
+  "very",
+  "was",
+  "want",
+  "way",
+  "we",
+  "well",
+  "were",
+  "what",
+  "when",
+  "whenever",
+  "where",
+  "whether",
+  "which",
+  "while",
+  "who",
+  "whose",
+  "why",
+  "will",
   "with",
+  "within",
+  "without",
+  "would",
+  "yet",
+  "you",
+  "your",
 ]);
 const MAX_COMPLETE_REQUEST_RESULTS = 15;
 const MAX_SITUATION_RESULTS = 5;
@@ -182,35 +285,143 @@ export function loadCapabilityManifest(file = defaultManifestPath()): ICapabilit
   }
 }
 
+/** Collapses the doubled consonant an English suffix leaves behind: `dragg` → `drag`. */
+function undouble(stem: string): string {
+  const last = stem.at(-1);
+  return stem.length > 3 && last !== undefined && last === stem.at(-2) && !"aeiou".includes(last)
+    ? stem.slice(0, -1)
+    : stem;
+}
+
+/**
+ * One word, one token, whichever inflection the author reached for.
+ *
+ * The index is written in the vocabulary of the situation — *let the player click on a thing* —
+ * and a request is written in the vocabulary of the game — *drag a crate by clicking on it*.
+ * Without `-ing` and `-ed`, `clicking` and `click` were different tokens, that request scored
+ * zero against every pointer capability, and the agent hand-wrote a `Raycaster` the framework
+ * already ships. Both sides run through the same stemmer, so an over-eager strip costs nothing:
+ * only a collision between two distinct words would, and the suffixes here do not produce one
+ * across this manifest.
+ */
+function stem(token: string): string {
+  const stripped = suffixStripped(token);
+  // Drop a trailing silent `e` last, on every word rather than only on the stripped ones, so that
+  // `hinge` and `hinged` land on one token instead of two. Stripping `-ed` alone leaves `hing`
+  // beside an unstripped `hinge`, which is the same miss the suffixes were added to close.
+  return stripped.length > 3 && stripped.endsWith("e") ? stripped.slice(0, -1) : stripped;
+}
+
+function suffixStripped(token: string): string {
+  if (token.length > 4 && token.endsWith("ies")) return `${token.slice(0, -3)}y`;
+  if (token.length > 4 && token.endsWith("ing")) return undouble(token.slice(0, -3));
+  if (token.length > 4 && token.endsWith("ed")) return undouble(token.slice(0, -2));
+  if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss")) return token.slice(0, -1);
+  return token;
+}
+
 function tokens(value: string): string[] {
   return value
     .toLocaleLowerCase()
     .split(/[^a-z0-9]+/u)
     .filter((token) => token.length > 1 && !STOP_WORDS.has(token))
-    .map((token) => {
-      if (token.length > 4 && token.endsWith("ies")) return `${token.slice(0, -3)}y`;
-      if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss"))
-        return token.slice(0, -1);
-      return token;
-    });
+    .map(stem);
+}
+
+/**
+ * How much a word narrows the search, measured against this manifest rather than assumed.
+ *
+ * `player` and `scene` appear in dozens of situations and separate nothing; `buoyancy`, `hinge`
+ * and `click` appear in one or two and are the whole answer. Counting raw token overlap made a
+ * verbose request score by length: a long request divides its overlap by its own word count, so
+ * every capability landed on the same near-zero score and the ranking fell through to the
+ * alphabet. That is how a physics-puzzle request came back holding `attachToBone`.
+ */
+function tokenWeights(entries: readonly ICapabilityEntry[]): ReadonlyMap<string, number> {
+  const frequency = new Map<string, number>();
+  let situations = 0;
+  for (const entry of entries) {
+    for (const situation of entry.situations) {
+      situations += 1;
+      for (const token of new Set(tokens(situation)))
+        frequency.set(token, (frequency.get(token) ?? 0) + 1);
+    }
+  }
+  const weights = new Map<string, number>();
+  for (const [token, count] of frequency) weights.set(token, Math.log(1 + situations / count));
+  return weights;
+}
+
+/** A word the index has never used narrows nothing here, whatever it means elsewhere. */
+function weightOf(weights: ReadonlyMap<string, number>, token: string): number {
+  return weights.get(token) ?? 0;
+}
+
+/**
+ * A word is distinctive enough to carry a match alone when the index uses it in at most this
+ * share of its situations. `player` reaches 2.5% and separates nothing; `particle` reaches 0.9%
+ * and names one capability. The old rule — a query of four words or more needs two overlapping
+ * tokens — threw away exactly the case this search exists for: one word that names the capability
+ * outright, in a sentence otherwise made of scenery.
+ */
+const DISTINCTIVE_SITUATION_SHARE = 0.02;
+const DISTINCTIVE_FLOOR = Math.log(1 + 1 / DISTINCTIVE_SITUATION_SHARE);
+/** How much each word of agreement beyond the first is worth, as a multiplier on coverage. */
+const AGREEMENT_WEIGHT = 0.4;
+/** How much of a situation a single matched word must account for to answer on its own. */
+const LONE_WORD_COVERAGE = 0.22;
+
+/**
+ * How much of the agreement rests on more than one word.
+ *
+ * The distinctive-word floor is what makes a one-word match possible at all, and it is also how
+ * a homonym wins: `cycle` reaches one situation (a walk cycle) and `health` reaches one (an asset
+ * health report), so each cleared the floor alone and displaced the answer a reader wanted — a
+ * day/night cycle is `solarPosition`, a health bar is the UI state bridge. Neither is a scoring
+ * accident that a threshold can fix, because both single-word matches are genuinely rare words.
+ *
+ * What separates them is corroboration: the right answer usually agrees on *several* words, and
+ * the homonym on exactly one. This multiplies coverage by that agreement, so a two-word match at
+ * modest coverage outranks a one-word match at high coverage, and a one-word match still ranks
+ * above nothing at all.
+ */
+function agreement(situation: readonly string[], query: ReadonlySet<string>): number {
+  const matched = situation.filter((token) => query.has(token)).length;
+  return 1 + AGREEMENT_WEIGHT * Math.max(0, matched - 1);
 }
 
 function situationScore(
   query: readonly string[],
   situations: readonly string[],
+  weights: ReadonlyMap<string, number>,
 ): { readonly matchedSituation: string; readonly score: number } {
   if (query.length === 0) return { matchedSituation: "", score: 0 };
+  const queryTokens = new Set(query);
   const queryText = query.join(" ");
   let best = 0;
   let matchedSituation = "";
   for (const situation of situations) {
     const phrase = tokens(situation);
-    const overlap = new Set(phrase.filter((token) => query.includes(token))).size;
-    const score = overlap / Math.max(query.length, phrase.length);
+    const unique = [...new Set(phrase)];
+    const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
+    const matched = unique
+      .filter((token) => queryTokens.has(token))
+      .reduce((sum, token) => sum + weightOf(weights, token), 0);
     const phraseBonus =
       phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
-    if (overlap < (query.length >= 4 ? 2 : 1) && phraseBonus === 0) continue;
-    const candidate = score + phraseBonus;
+    if (total === 0 || (matched < DISTINCTIVE_FLOOR && phraseBonus === 0)) continue;
+    const coverage = matched / total;
+    const agreed = agreement(unique, queryTokens);
+    // One rare word that does not carry its own situation is a homonym rather than an answer.
+    //
+    // This narrows the problem and does not close it. *"a stealth guard's vision cone"* still
+    // answers with `assertCaptureNotBlank` (**guard** a blank frame) and `GodraysNode` (**cone**
+    // geometry), because every rare word in that request is a homonym and no vision-cone
+    // capability exists to outrank them. Raising this floor far enough to silence those two also
+    // silences real one-word answers the search exists to give — the physics-puzzle request loses
+    // `Joint3D` at 0.3. The real fix for that query is the capability, not the threshold.
+    if (agreed === 1 && coverage < LONE_WORD_COVERAGE && phraseBonus === 0) continue;
+    const candidate = coverage * agreed + phraseBonus;
     if (candidate > best) {
       best = candidate;
       matchedSituation = situation;
@@ -222,9 +433,15 @@ function situationScore(
 function capabilitySearchKey(entry: ICapabilityEntry): string {
   // One export declaration can expose a primary helper plus inspection aliases. The manifest
   // correctly keeps every public symbol for detail lookup, but returning the same declaration
-  // twice wastes a broad authoring search slot. Import path + signature + authored docs identify
-  // equivalent aliases without conflating distinct APIs that happen to share documentation.
-  return `${entry.importPath}\n${entry.signature}\n${entry.summary}\n${entry.situations.join("\n")}`;
+  // twice wastes a broad authoring search slot.
+  //
+  // The signature was part of this key and defeated it: `androidMailboxPaths`,
+  // `DeviceBridgeTransport`, `deviceMailboxPaths`, `DeviceMailboxTransport`,
+  // `deviceTimeoutDiagnostic` and `validateDeviceEndpoint` carry one summary and one pair of
+  // situations between them and differ only in how they are declared. Six of a request's fifteen
+  // slots went to that one answer, and the capabilities the request had named by word were pushed
+  // out below them. Same import path, same summary, same situations is one answer.
+  return `${entry.importPath}\n${entry.summary}\n${entry.situations.join("\n")}`;
 }
 
 export function searchCapabilities(
@@ -237,8 +454,9 @@ export function searchCapabilities(
   const manifest = loadCapabilityManifest(manifestFile);
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
+  const weights = tokenWeights(manifest.entries);
   return manifest.entries
-    .map((entry) => ({ entry, ...situationScore(query, entry.situations) }))
+    .map((entry) => ({ entry, ...situationScore(query, entry.situations, weights) }))
     .filter(({ score }) => score > 0)
     .sort(
       (left, right) =>

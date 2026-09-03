@@ -17,6 +17,10 @@ const allowedProductionCreators = new Map<string, string>([
   ],
   ["packages/playtest/src/runner/ios.ts", "iOS device staging is removed in finally."],
   [
+    "scripts/check-capability-examples.ts",
+    "Each compile round writes its cases to one staging directory removed in finally.",
+  ],
+  [
     "packages/playtest/src/runner/videoAnalysis.ts",
     "Video frames are removed by the analysis finally.",
   ],

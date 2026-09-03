@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { PerspectiveCamera, Scene } from "three";
+import { pass } from "three/tsl";
+import { RenderPipeline } from "three/webgpu";
+import { describe, expect, it, vi } from "vitest";
 import { createRenderer } from "../src/renderer.js";
 
 function testCanvas(): HTMLCanvasElement {
@@ -227,6 +230,83 @@ describe("createRenderer", () => {
       expect(raw.render).toBe(originalRender);
       renderer.dispose();
       expect(disposed).toBe(1);
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("retargets the explicit world pass when the rendered scene changes", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: {} },
+    });
+    const renderPipeline = vi
+      .spyOn(RenderPipeline.prototype, "render")
+      .mockImplementation(() => {});
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        webgpuFactory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      const sceneA = new Scene();
+      const sceneB = new Scene();
+      const cameraA = new PerspectiveCamera();
+      const cameraB = new PerspectiveCamera();
+      const worldPass = pass(sceneA, cameraA);
+      const auxiliaryPass = pass(new Scene(), new PerspectiveCamera());
+      const outputNode = worldPass.add(auxiliaryPass);
+
+      renderer.setOutputNode(outputNode, worldPass);
+      renderer.render(sceneA, cameraA);
+      renderer.render(sceneB, cameraB);
+
+      expect(renderPipeline).toHaveBeenCalledTimes(2);
+      expect(worldPass.scene).toBe(sceneB);
+      expect(worldPass.camera).toBe(cameraB);
+      expect(auxiliaryPass.scene).not.toBe(sceneB);
+      renderer.dispose();
+    } finally {
+      renderPipeline.mockRestore();
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("rejects an output graph with multiple passes when no world pass is named", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: {} },
+    });
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        webgpuFactory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      const outputNode = pass(new Scene(), new PerspectiveCamera()).add(
+        pass(new Scene(), new PerspectiveCamera()),
+      );
+
+      expect(() => renderer.setOutputNode(outputNode)).toThrow("TN_RENDER_OUTPUT_PASS_AMBIGUOUS");
+      renderer.dispose();
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
       else Object.defineProperty(globalThis, "navigator", descriptor);

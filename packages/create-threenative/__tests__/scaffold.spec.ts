@@ -103,6 +103,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // and the stride observation, so the capability manifest and the reference generated from it
 // both moved, and those bytes are embedded in every scaffold. The action-rpg tree moves for a
 // second reason — its AGENTS.md/CLAUDE.md pair now states the stride convention.
+// Recomputed 2026-09-02 after the named-export capability correction, on origin/main's
+// refreshed genre kits.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
@@ -222,17 +224,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "a42a87deae63c522c915efe94e26a3ff79235d976e5655a78a7fd6567adc1fe9",
-  defense: "e640cc5451ff9a488e17f1f0f291f961810ea4b718d99ece674beba1bf80bfc6",
+  "action-rpg": "1158050dd68bff6348c83d66c093a27afaa723985c6775fcd16b817e7c7a4beb",
+  defense: "a640e5e39023b3157668e148e526b52456207a9eaaea75eba4d1b631116078da",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "8b7fd7db9e68d19a56107fa5cd76675619d6f0243e4472a31c228a87c8e06561",
-  platformer: "d7c2b2b054cffd3163172611e5d750393cee772d5dedef4b58644755a4edbba6",
-  racing: "12d80fa090c87e82802ddc6e1b37c7ef7f18f6b2f8fcbaa5ae7a634f01d93327",
-  shooter: "2e8b695f1a07f3fcdf0cdfad6d0ed9c40ef29018346060d76540a5835c088b8c",
+  minimal: "eed513dc84abb37a4165a27eedfefff5753a2aec518310027eb1d6010e399efb",
+  platformer: "e4fd91e6f1dc4d4f949f6f09abbaac4b9b48b6537a2433faf335c5143f446d5f",
+  runner: "95589d1069674a2e91380791296cfe521aa0dbc922e10b56ad427a7b8da075eb",
+  puzzle: "7fe78545c0699758ae829584106961def01bb31b25822cc41a9339c0d31b5c97",
+  racing: "1975f225d066c078674019678c151a4d7073f87d139d986f35a9d0542e4277a8",
+  shooter: "fc661716c33649e6aa538c4682175c6ef4e4fc8ea64903f50855b19d371d7764",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "e93cdb028581664951bc803349b1bc0fea23ba6015f3a24abc07da26a875e1fc",
+  starter: "0d04ac9c62a0622292ecd4e32d1b242e984e067f2f421ac7292d93a52654649a",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -253,7 +257,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "39c17bec8e2e3758976f3db89cf1c2aa4be0e4ee7f64a21f94962e0b964a0e77",
+  sailing: "db82c3d7b41fb9c681aff3f95795a55ba254c9a86dd12697a4620ed48a4e8004",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -1125,6 +1129,34 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  // Being on disk is not the same as shipping. `.gitignore` carries an unanchored `.mcp.json`
+  // rule for the copy an install writes at the repo root, and it swallowed the template copies
+  // too: the file generated fine, `git status` stayed silent, and the template shipped without
+  // it. Four suites then failed on CI with
+  //   Error: Scaffold produced no .mcp.json at '.../puzzle/.mcp.json'
+  // for a file that was present on the author's machine the entire time. Reading the working
+  // tree cannot catch that. Asking git what it tracks can.
+  it("should track every template's agent config, not merely have it on disk", async () => {
+    const { stdout } = await run("git", [
+      "ls-files",
+      "--",
+      "packages/create-threenative/templates/*/.mcp.json",
+    ]);
+    const tracked = new Set(
+      stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line !== ""),
+    );
+    const missing = ALL_TEMPLATES.filter(
+      (template) => !tracked.has(`packages/create-threenative/templates/${template}/.mcp.json`),
+    );
+    expect(
+      missing,
+      "these templates' .mcp.json is untracked; git is ignoring it and the scaffold ships without it",
+    ).toEqual([]);
   });
 
   it("should ship the same MCP config and pins in every template", async () => {

@@ -1,11 +1,16 @@
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createServer } from "node:http";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import { expect, test, vi } from "vitest";
 
-import { loadPlaytestScenario, type IPlaytestObservationSnapshot, type IPlaytestScenario } from "../src/index.js";
+import {
+  loadPlaytestScenario,
+  PLAYTEST_PROTOCOL_LIMITS,
+  type IPlaytestObservationSnapshot,
+  type IPlaytestScenario,
+} from "../src/index.js";
 import type { JsonValue } from "../src/protocol.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
@@ -25,9 +30,10 @@ import {
 } from "../src/runner/runner.js";
 import { sampleVisualElementBounds, screenshotObservations } from "../src/runner/steps.js";
 import { playtestStepHoldTicks, playtestStepWaitTicks } from "../src/scenario.js";
-import type { Page } from "playwright";
+import { chromium, type Page } from "playwright";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../src/index.js";
 import { HOST_PLAYTEST_OBSERVATION_FIELDS } from "../src/runner/observationFields.js";
+import { waitForStartupReady } from "../src/runner/startupReady.js";
 
 const CONFIG: IStandalonePlaytestConfig = {
   artifactDirectory: "artifacts/playtest",
@@ -970,6 +976,167 @@ test("buttonless pointer movement drives anonymous movement through the browser 
     expect(report.observations?.console.map(({ text }) => text)).toContain("pointermove-observed");
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)));
+  }
+}, 60_000);
+
+test("browser runner samples only after the advertised startup phase is ready", async () => {
+  const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(fixtureHtml);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("Startup fixture has no port.");
+  const projectPath = await makeTempDir("playtest-runner-startup-");
+  await writeFile(
+    join(projectPath, "scenario.json"),
+    JSON.stringify({
+      artifacts: { screenshots: false },
+      assert: { movement: { entity: "player", minDistance: 0.2 } },
+      name: "runner-startup",
+      schemaVersion: 1,
+      steps: [{ holdFrames: 10, press: "KeyW", release: true }],
+      subject: "player",
+      target: "web",
+      viewport: { height: 360, width: 640 },
+      warmupFrames: 0,
+    }),
+  );
+
+  try {
+    const report = await runStandalonePlaytest({
+      artifactDirectory: join(projectPath, "artifacts"),
+      headless: true,
+      projectPath,
+      scenarioPath: "scenario.json",
+      timeoutMs: 15_000,
+      trace: false,
+      url: `http://127.0.0.1:${address.port}/?mode=startup-delayed`,
+    });
+
+    expect(report.pass).toBe(true);
+    expect(report.startup).toMatchObject({ phase: "ready", rule: "sustained-frames" });
+    expect(report.observations?.resources.startup).toEqual({
+      before: { sampledBeforeReady: false },
+      after: { sampledBeforeReady: false },
+    });
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => error === undefined ? resolve() : reject(error)),
+    );
+  }
+}, 60_000);
+
+test("served fixture reports the production protocol limits and valid capabilities", async () => {
+  const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(fixtureHtml);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("Contract fixture has no port.");
+  const projectPath = await makeTempDir("playtest-runner-contract-");
+  await writeFile(
+    join(projectPath, "scenario.json"),
+    JSON.stringify({
+      artifacts: { screenshots: false },
+      assert: {
+        resources: [
+          {
+            changed: true,
+            gte: 2,
+            id: "fixtureRun",
+            path: "sampleCount",
+          },
+          {
+            allowTrivial: "The bridge contract is a held protocol invariant verified by this served fixture.",
+            equals: PLAYTEST_PROTOCOL_LIMITS,
+            id: "bridgeContract",
+            path: "limits",
+          },
+          {
+            allowTrivial: "The bridge capabilities are a held protocol invariant verified by this served fixture.",
+            equals: ["camera.observe", "entity.bounds", "entity.observe", "entity.setup", "runtime.resources"],
+            id: "bridgeContract",
+            path: "capabilities",
+          },
+        ],
+      },
+      name: "runner-contract",
+      schemaVersion: 1,
+      steps: [{ release: true, waitFrames: 1 }],
+      target: "web",
+      viewport: { height: 360, width: 640 },
+      warmupFrames: 0,
+    }),
+  );
+
+  try {
+    const report = await runStandalonePlaytest({
+      artifactDirectory: join(projectPath, "artifacts"),
+      headless: true,
+      projectPath,
+      scenarioPath: "scenario.json",
+      timeoutMs: 15_000,
+      trace: false,
+      url: `http://127.0.0.1:${address.port}`,
+    });
+    expect(report.pass).toBe(true);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => error === undefined ? resolve() : reject(error)),
+    );
+  }
+}, 60_000);
+
+test("a served fixture that stays in collapsing startup fails with the named readiness diagnostic", async () => {
+  const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(fixtureHtml);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("Stuck fixture has no port.");
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  const currentScenario = {
+    artifacts: { screenshots: "after" as const },
+    name: "runner-startup-stuck",
+    schemaVersion: 1 as const,
+    steps: [{ release: true, waitFrames: 1 }],
+    target: "web" as const,
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 0,
+  };
+
+  try {
+    const bridge = await openPageAndConnectBridge(
+      page,
+      { ...CONFIG, timeoutMs: 5_000, url: `http://127.0.0.1:${address.port}/?mode=startup-stuck` },
+      currentScenario,
+    );
+    if (bridge === undefined) throw new Error("Expected the stuck fixture bridge.");
+    let clock = 0;
+    await expect(waitForStartupReady({
+      bridge,
+      now: () => {
+        clock += 101;
+        return clock;
+      },
+      pump: async () => {
+        await page.evaluate(() => undefined);
+      },
+      timeoutMs: 100,
+    })).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+  } finally {
+    await page.close();
+    await browser.close();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => error === undefined ? resolve() : reject(error)),
+    );
   }
 }, 60_000);
 

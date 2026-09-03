@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   capabilityPackageSpecs,
+  checkBuiltCapabilityImports,
   checkCapabilityDocs,
   checkCapabilityPackageCensus,
   collectPublicExports,
@@ -62,6 +63,38 @@ async function writeCapabilityManifest(root: string, packages: readonly string[]
   await writeFile(
     path.join(manifestRoot, "capabilities.json"),
     JSON.stringify({ entries: packages.map((packageName) => ({ package: packageName })) }),
+  );
+}
+
+async function writeBuiltImportFixture(root: string): Promise<void> {
+  const packageRoot = path.join(root, "node_modules", "@threenative", "probe");
+  await mkdir(path.join(packageRoot, "dist"), { recursive: true });
+  await mkdir(path.join(packageRoot, "src"), { recursive: true });
+  await writeFile(path.join(root, "package.json"), JSON.stringify({ type: "module" }));
+  await writeFile(
+    path.join(packageRoot, "package.json"),
+    JSON.stringify({
+      exports: {
+        ".": { import: "./dist/index.js" },
+        "./feature": { import: "./dist/feature.js" },
+      },
+      name: "@threenative/probe",
+      type: "module",
+      version: "0.0.0",
+    }),
+  );
+  await writeFile(path.join(packageRoot, "dist/index.js"), "export function probe() {}\n");
+  await writeFile(path.join(packageRoot, "dist/feature.js"), "export function feature() {}\n");
+  await writeFile(path.join(packageRoot, "src/index.js"), "export function probe() {}\n");
+  await mkdir(path.join(root, "packages/create-threenative"), { recursive: true });
+  await writeFile(
+    path.join(root, "packages/create-threenative/capabilities.json"),
+    JSON.stringify({
+      entries: [
+        { importPath: "@threenative/probe", symbol: "probe" },
+        { importPath: "@threenative/probe/feature", symbol: "feature" },
+      ],
+    }),
   );
 }
 
@@ -226,6 +259,62 @@ describe("capability documentation gate", () => {
 
     expect(report.gaps).toEqual([]);
   }, 30_000);
+
+  it("should import every package-backed capability from built exports", async () => {
+    const root = await makeTempDir("threenative-capability-built-");
+    temporaryRoots.push(root);
+    await writeBuiltImportFixture(root);
+
+    await expect(checkBuiltCapabilityImports(root)).resolves.toEqual({
+      checkedImportPaths: 2,
+      checkedSymbols: 2,
+      skippedSourceEntries: 0,
+    });
+  });
+
+  it("should fail with the import path and symbol when an export-map entry disappears", async () => {
+    const root = await makeTempDir("threenative-capability-built-missing-export-");
+    temporaryRoots.push(root);
+    await writeBuiltImportFixture(root);
+    await writeFile(
+      path.join(root, "node_modules/@threenative/probe/package.json"),
+      JSON.stringify({
+        exports: { ".": { import: "./dist/index.js" } },
+        name: "@threenative/probe",
+        type: "module",
+        version: "0.0.0",
+      }),
+    );
+
+    await expect(checkBuiltCapabilityImports(root)).rejects.toThrow(
+      /@threenative\/probe\/feature#feature/u,
+    );
+  });
+
+  it("should fail when dist is absent instead of rewriting the import to src", async () => {
+    const root = await makeTempDir("threenative-capability-built-no-dist-");
+    temporaryRoots.push(root);
+    await writeBuiltImportFixture(root);
+    await rm(path.join(root, "node_modules/@threenative/probe/dist/feature.js"));
+
+    await expect(checkBuiltCapabilityImports(root)).rejects.toThrow(
+      /@threenative\/probe\/feature#feature/u,
+    );
+  });
+
+  it("should reject a matching default function when the manifest names an export", async () => {
+    const root = await makeTempDir("threenative-capability-built-default-only-");
+    temporaryRoots.push(root);
+    await writeBuiltImportFixture(root);
+    await writeFile(
+      path.join(root, "node_modules/@threenative/probe/dist/feature.js"),
+      "export default function feature() {}\n",
+    );
+
+    await expect(checkBuiltCapabilityImports(root)).rejects.toThrow(
+      /@threenative\/probe\/feature#feature/u,
+    );
+  });
 
   it("should fail for a public package with no capability coverage", async () => {
     const root = await makeTempDir("threenative-capability-census-uncovered-");

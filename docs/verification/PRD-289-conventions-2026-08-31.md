@@ -18,7 +18,9 @@ table, reads each template's `AGENTS.md`, and checks the TypeScript AST for the 
 | defense | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | minimal | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | platformer | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — procedural rig motion has no AnimationClip asset |
+| puzzle | `src/conventions.ts:19` | `src/conventions.ts:18` | N/A — the claw carries crates through physics velocity, not a bone attachment | N/A — no skinned or animated asset is loaded |
 | racing | N/A — vehicle suspension and snap-to-ground own floor contact | `src/conventions.ts:5` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
+| runner | `src/conventions.ts:18` | `src/conventions.ts:17` | N/A — the runner carries nothing and has no character hand | N/A — the jump is an authored arc, not an AnimationClip |
 | sailing | N/A — the ship is waterborne and uses buoyancy, not floor grounding | `src/conventions.ts:5` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | shooter | `src/conventions.ts:43` | `src/conventions.ts:32` | `src/conventions.ts:42` | N/A — no skinned or animated asset is loaded |
 | starter | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — the native proof asset is static and has no AnimationClip |
@@ -54,7 +56,7 @@ both passed; the latter printed `Template convention applicability and source-ca
 ## Commands and run record
 
 The generated projects scaffolded and run were `action-rpg`, `defense`, `minimal`, `platformer`,
-`racing`, `sailing`, `shooter`, and `starter`. The repository currently has eight templates; the
+`racing`, `sailing`, `shooter`, and `starter`. The repository currently has ten templates; the
 PRD baseline names seven because `sailing` was added after that baseline.
 
 | Template | Scenarios | Isolated scaffolded playtests |

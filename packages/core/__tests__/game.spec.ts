@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import {
   Group,
   InstancedMesh,
@@ -57,20 +56,13 @@ class EmptyScene extends Scene {
 }
 
 describe("IGame", () => {
-  it("returns no render metrics object on either disabled render path", () => {
-    const source = readFileSync(new URL("../src/game.ts", import.meta.url), "utf8");
-
-    expect(source).toContain("if (!this.#renderMetricsEnabled) return undefined;");
-    expect(source).toContain("return this.#renderMetricsEnabled ? worldMetrics : undefined;");
-    expect(source).not.toContain("if (!this.#renderMetricsEnabled) return {};");
-    expect(source).not.toContain("return this.#renderMetricsEnabled ? worldMetrics : {};");
-  });
-
   it("executes the ordinary no-overlay render path with diagnostics disabled", async () => {
     const canvas = testCanvas();
     let frame: ((time: number) => void) | undefined;
     let worldRenders = 0;
     let sceneRenders = 0;
+    let diagnostics: (() => readonly IRenderPerformanceSample[]) | undefined;
+    let enableDiagnostics: (() => void) | undefined;
     class OrdinaryScene extends Scene {
       static override readonly initialState = {};
 
@@ -79,6 +71,15 @@ describe("IGame", () => {
       }
     }
     const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            diagnostics = runtime?.runtimeDiagnosticsSeries;
+            enableDiagnostics = runtime?.enableRuntimeDiagnostics;
+            return undefined;
+          },
+        },
+      ],
       renderer: {
         canvas,
         preferWebGPU: false,
@@ -111,6 +112,132 @@ describe("IGame", () => {
       expect(ctx.canvasLayer.scene.children).toHaveLength(0);
       expect(worldRenders).toBe(1);
       expect(sceneRenders).toBe(1);
+      expect(diagnostics?.()).toEqual([]);
+      enableDiagnostics?.();
+      frame(32);
+      expect(diagnostics?.()).toHaveLength(1);
+    } finally {
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  // Compute dispatch waits for the first rendered world; gameplay does not. Holding gameplay back
+  // as well was tried and reverted: it read well as one startup policy, and it stopped every
+  // template's playtest dead — chasers never left the spawn, coins were never collected, the
+  // player never rose. Ten golden-path and template lanes are the evidence, so what this asserts
+  // is the split, not the symmetry.
+  it("keeps startup compute behind the first rendered world while gameplay keeps running", async () => {
+    const canvas = testCanvas();
+    const trace: string[] = [];
+    const computePhases: string[] = [];
+    const gameplayPhases: string[] = [];
+    let frame: ((time: number) => void) | undefined;
+    class StartupTraceScene extends Scene {
+      static override readonly initialState = {};
+
+      override update(ctx: ICtx): void {
+        trace.push("gameplayUpdated");
+        gameplayPhases.push(ctx.startup.phase);
+      }
+
+      override enter(ctx: ICtx): void {
+        const driven = new Group() as Group & {
+          readonly released: boolean;
+          readonly warmupNodes: readonly unknown[];
+          attachRenderer: () => void;
+          detach: () => void;
+          process: () => void;
+        };
+        Object.assign(driven, {
+          released: false,
+          warmupNodes: [],
+          attachRenderer: () => undefined,
+          detach: () => undefined,
+          process: () => {
+            trace.push("computeDispatched");
+            computePhases.push(ctx.startup.phase);
+          },
+        });
+        ctx.add(driven);
+        ctx.canvasLayer.scene.name = "overlay";
+        ctx.canvasLayer.scene.add(new Mesh());
+        ctx.canvasLayer.opaque = true;
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          compileAsync: () => Promise.resolve(),
+          domElement: canvas,
+          render: (scene: { name?: string }) => {
+            trace.push(scene.name === "overlay" ? "overlayRendered" : "worldRendered");
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: StartupTraceScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined || game.ctx === undefined)
+        throw new Error("Game did not start its loop.");
+
+      const firstTime = (globalThis.performance?.now() ?? 0) + 16;
+      frame(firstTime);
+      // What the first frame has to prove is that nothing was dispatched and no world was drawn
+      // behind the opaque loader — not the exact contents of the frame. `toEqual([...])` also
+      // pinned whether a fixed-step gameplay update ran inside this frame, and that is a function
+      // of the wall-clock gap between the loop starting and this timestamp, not of the startup
+      // policy. A CI runner produces a longer first frame than a quiet machine, runs one fixed
+      // step before the render, and the assertion failed with
+      // ["gameplayUpdated", "overlayRendered"] while every invariant below still held.
+      // Gameplay's ordering is asserted by index at the end of this test, where it belongs.
+      expect(trace).toContain("overlayRendered");
+      expect(trace).not.toContain("computeDispatched");
+      expect(trace).not.toContain("worldRendered");
+      expect(game.ctx.startup.phase).toBe("collapsing");
+
+      for (let time = firstTime + 16; time <= firstTime + 304; time += 16) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        frame(time);
+        if (game.ctx.startup.phase === "ready") break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      frame(firstTime + 320);
+      await Promise.resolve();
+
+      const firstCompute = trace.indexOf("computeDispatched");
+      const firstGameplay = trace.indexOf("gameplayUpdated");
+      const firstWorld = trace.indexOf("worldRendered");
+      const firstOverlay = trace.indexOf("overlayRendered");
+      expect(game.ctx.startup.phase).toBe("ready");
+      expect(firstGameplay).toBeGreaterThanOrEqual(0);
+      expect(firstCompute).toBeGreaterThanOrEqual(0);
+      expect(firstWorld).toBeGreaterThanOrEqual(0);
+      expect(firstOverlay).toBeGreaterThanOrEqual(0);
+      expect(firstGameplay).toBeLessThan(firstCompute);
+      // Gameplay runs while the loader is still up, so it is seen before readiness arrives.
+      // Requiring "ready" here is what broke the templates.
+      expect(gameplayPhases[0], "gameplay was held back until startup finished").not.toBe("ready");
+      // The gate on compute is the first rendered world, not the readiness phase — a warm-up
+      // dispatch before anything has been drawn is the cost this exists to avoid.
+      expect(firstCompute).toBeGreaterThan(firstWorld);
+      expect(computePhases).not.toHaveLength(0);
+      expect(firstOverlay).toBeLessThan(firstWorld);
     } finally {
       game.stop();
       if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");

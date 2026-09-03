@@ -267,6 +267,9 @@ static void reportGrantedFeatures(WGPUDevice device) {
     };
     static NamedFeature const kFeatures[] = {
         {WGPUFeatureName_TimestampQuery, "timestamp-query"},
+#if defined(MYSTRAL_WEBGPU_WGPU_MODERN) && defined(__ANDROID__)
+        {static_cast<WGPUFeatureName>(WGPUNativeFeature_TextureAdapterSpecificFormatFeatures), "texture-adapter-specific-format-features"},
+#endif
         {WGPUFeatureName_TextureCompressionBC, "texture-compression-bc"},
         {WGPUFeatureName_TextureCompressionETC2, "texture-compression-etc2"},
         {WGPUFeatureName_TextureCompressionASTC, "texture-compression-astc"},

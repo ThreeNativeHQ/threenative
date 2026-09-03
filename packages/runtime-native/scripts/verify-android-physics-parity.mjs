@@ -333,8 +333,12 @@ export function compareObservations(web, device, options = {}) {
   ];
   if (!web.grounded || web.groundCollider !== "floor" || web.groundBody !== "floor")
     failures.push("final exact grounded/floor body outcome was not observed");
+  if (!device.grounded || device.groundCollider !== "floor" || device.groundBody !== "floor")
+    failures.push("device final exact grounded/floor body outcome was not observed");
   if (web.groundNormal[1] < 0.99 || web.slopeAngle >= 0.02)
     failures.push("final flat-floor normal/slope outcome was not observed");
+  if (device.groundNormal[1] < 0.99 || device.slopeAngle >= 0.02)
+    failures.push("device final flat-floor normal/slope outcome was not observed");
   if (!equalSet(web.areaMembership, expectedArea))
     failures.push("final exact area outcome was not [dynamicBox]");
   if (!equalSet(web.collisionEventSet, expectedEvents))

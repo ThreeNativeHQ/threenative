@@ -38,6 +38,9 @@ export function playtest<
   let startSceneEntered: Promise<void> | undefined;
   let contactHistory: IPlaytestContactObservation[] = [];
   return {
+    sceneExit: () => {
+      contactHistory = [];
+    },
     setup: async (ctx, runtime) => {
       const seed = runtime?.seed ?? null;
       const replayRuntime: IPlaytestWorldObservation["runtime"] =
@@ -410,10 +413,8 @@ function drainContacts<TState extends Record<string, unknown>, TPhysics>(
   for (const id of Object.keys(snapshot)) {
     const registered = ctx.entities.get(id) as Record<string, unknown> | undefined;
     if (registered === undefined) continue;
-    for (const value of Object.values(registered)) {
-      if (value !== null && typeof value === "object" && !idsByEntity.has(value))
-        idsByEntity.set(value, id);
-    }
+    for (const value of objectGraphValues(registered))
+      if (!idsByEntity.has(value)) idsByEntity.set(value, id);
   }
   for (const id of Object.keys(snapshot)) {
     for (const source of entitySources(ctx.entities.get(id))) {
@@ -432,14 +433,27 @@ function drainContacts<TState extends Record<string, unknown>, TPhysics>(
   return [...history];
 }
 function entitySources(entity: object | undefined): IContactSource[] {
-  if (entity === undefined) return [];
-  return Object.values(entity).filter(
+  return objectGraphValues(entity).filter(
     (value): value is IContactSource =>
-      typeof value === "object" &&
-      value !== null &&
       "drainContacts" in value &&
       typeof (value as { drainContacts?: unknown }).drainContacts === "function",
   );
+}
+
+/** Walk registered fields far enough to reach the physics adapter without traversing Three's graph. */
+function objectGraphValues(root: object | undefined): object[] {
+  if (root === undefined) return [];
+  const values: object[] = [];
+  const visited = new Set<object>();
+  const visit = (value: unknown, depth: number): void => {
+    if (value === null || typeof value !== "object" || visited.has(value)) return;
+    visited.add(value);
+    values.push(value);
+    if (depth >= 4 || value instanceof Object3D) return;
+    for (const child of Object.values(value)) visit(child, depth + 1);
+  };
+  visit(root, 0);
+  return values;
 }
 
 function tagCounts(snapshot: EntitySnapshot): Record<string, { count: number }> {

@@ -44,6 +44,7 @@ import {
   makeEntry,
   launchAndroidConformanceActivity,
   runCommand,
+  validateWindowedSurfaceOutput,
   temporalCaptureLabel,
   unexpectedBlockedRows,
   expiredExclusions,
@@ -285,6 +286,37 @@ test("browser capture waits for submitted WebGPU work before requesting a compos
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("windowed surface proof requires two non-null views and no device error", () => {
+  const healthy = [
+    'TN_SURFACE_FRAME:{"view":true,"present":1}',
+    'TN_SURFACE_FRAME:{"view":true,"present":2}',
+    "TN_PRESENTS:2",
+  ].join("\n");
+  assert.deepEqual(validateWindowedSurfaceOutput(healthy, { frames: 2 }), {
+    errors: [],
+    frames: 2,
+    presents: 2,
+  });
+
+  const missingView = healthy.replace('"view":true', '"view":false');
+  assert.match(
+    validateWindowedSurfaceOutput(missingView, { frames: 2 }).errors.join("\n"),
+    /non-null view/u,
+  );
+  assert.match(
+    validateWindowedSurfaceOutput(healthy.replace(/TN_SURFACE_FRAME:[^\n]+/gu, ""), { frames: 2 }).errors.join("\n"),
+    /surface frame marker/u,
+  );
+  assert.match(
+    validateWindowedSurfaceOutput(`${healthy}\nDevice error (Validation): surface`, { frames: 2 }).errors.join("\n"),
+    /device error/u,
+  );
+  assert.match(
+    validateWindowedSurfaceOutput(`${healthy}\n[WebGPU] sRGB presentation bridge failed`, { frames: 2 }).errors.join("\n"),
+    /presentation bridge failed/u,
+  );
 });
 
 test("allowFailure survives a spawn error, not just a non-zero exit", () => {
@@ -593,6 +625,11 @@ test("Android conformance dismisses immersive confirmation before its first acti
     // `TN_ANDROID_SYSTEM_DIALOG: Application Not Responding: com.android.launcher3` — the
     // launcher, not the game, going Not Responding on a software-GL runner and taking focus.
     ["shell", "settings", "put", "global", "hide_error_dialogs", "1"],
+    // And dismiss the one already up: `hide_error_dialogs` prevents future dialogs, but the
+    // launcher ANRs during boot, before any of this runs. Run 33726448043 failed all 74 rows on
+    // that stale dialog with the setting already in place.
+    ["shell", "am", "force-stop", "com.android.launcher3"],
+    ["shell", "am", "broadcast", "-a", "android.intent.action.CLOSE_SYSTEM_DIALOGS"],
     [
       "shell",
       "am",

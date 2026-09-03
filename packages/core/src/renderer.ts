@@ -350,12 +350,13 @@ function wrapRenderer(
     setOutputNode: (node, worldPass) => {
       if (kind !== "webgpu")
         throw new Error(`setOutputNode is unavailable on the ${kind} renderer.`);
-      outputPipeline?.dispose();
+      const nextOutputPass = selectOutputPass(node, worldPass);
       const nextPipeline = new RenderPipeline(
         raw as unknown as ConstructorParameters<typeof RenderPipeline>[0],
         node as ConstructorParameters<typeof RenderPipeline>[1],
       );
-      outputPass = selectOutputPass(node, worldPass);
+      outputPipeline?.dispose();
+      outputPass = nextOutputPass;
       outputPipeline = nextPipeline;
     },
     clearOutputNode: () => {
@@ -415,7 +416,11 @@ function findSoleOutputPass(node: unknown): PassNode | undefined {
   node.traverse((candidate) => {
     if (isOutputPassNode(candidate)) passes.add(candidate);
   });
-  return passes.size === 1 ? passes.values().next().value : undefined;
+  if (passes.size > 1)
+    throw new Error(
+      "TN_RENDER_OUTPUT_PASS_AMBIGUOUS: output graph contains multiple pass nodes; pass the explicit world pass to setOutputNode().",
+    );
+  return passes.values().next().value;
 }
 
 function setOutputPipelineRoot(pass: PassNode | undefined, scene: Object3D, camera: Camera): void {

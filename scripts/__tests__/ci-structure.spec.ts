@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { allTemplates } from "../../test-support/templates.js";
 
 const repo = path.resolve(import.meta.dirname, "../..");
 const workflows = [
@@ -71,16 +72,10 @@ function matrixTemplates(section: string): readonly string[] {
   return [...new Set([...listed, ...included])].sort();
 }
 
-const expectedTemplates = [
-  "action-rpg",
-  "defense",
-  "minimal",
-  "platformer",
-  "racing",
-  "sailing",
-  "shooter",
-  "starter",
-] as const;
+// Read off disk, so the matrix is required to list a kit the day that kit ships rather than the
+// day somebody remembers to extend a list here. The assertion that matters is below: every
+// template on disk must appear in the workflow's matrix.
+const expectedTemplates = allTemplates();
 
 describe("CI pipeline structure", () => {
   it("syncs capability artifacts on relevant commits and rejects stale manifests in CI", async () => {
@@ -329,11 +324,8 @@ describe("CI pipeline structure", () => {
     expect(matrixTemplates(job)).toEqual([...expectedTemplates].sort());
 
     const templateRoot = path.join(repo, "packages/create-threenative/templates");
-    const actualTemplates = (await readdir(templateRoot, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
-    expect(actualTemplates).toEqual([...expectedTemplates].sort());
+    const actualTemplates = [...expectedTemplates].sort();
+    expect(actualTemplates.length, "no template was discovered").toBeGreaterThanOrEqual(8);
     for (const template of actualTemplates) {
       const result = spawnSync(
         process.execPath,
@@ -399,6 +391,14 @@ describe("CI pipeline structure", () => {
       "if: github.event_name == 'pull_request' || github.event_name == 'push'",
     );
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
+    // ...but the dependency diff itself stays pull_request-only: it needs a base ref and a head
+    // ref, which a push does not supply, and ungating it made every push-to-main run red.
+    expect(
+      supplyChain,
+      "dependency-review must stay pull_request-only; on push it has no base/head ref",
+    ).toContain(
+      "- uses: actions/dependency-review-action@v4\n        if: github.event_name == 'pull_request'",
+    );
     expect(supplyChain).toContain("fail-on-severity: moderate");
     expect(supplyChain).not.toContain("allow-licenses");
     expect(supplyChain).toContain("fetch-depth: 0");
@@ -703,9 +703,15 @@ describe("CI pipeline structure", () => {
     ]) {
       expect(buildKey, `the build-tree key ignores ${input}`).toContain(input);
     }
-    // Run-scoped so every run saves, and a prefix so every run restores the newest — a partial
-    // match still hands ninja most of its objects.
-    expect(buildKey).toContain("github.run_id");
+    // Deliberately NOT run-scoped, unlike the compiler cache. A ccache directory grows with
+    // every run and wants a fresh entry; a build tree is a pure function of its sources, so a
+    // run-scoped key stores the same 1.1 GiB repeatedly. On 2026-09-03 four entries carried the
+    // identical source hash, `native-build-Linux` held 5.57 GiB of the repository's 10 GiB
+    // budget, and the cache evicted itself and its neighbours — total runner work went up.
+    expect(
+      buildKey,
+      "a run-scoped build-tree key stores the same tree once per run and evicts the budget",
+    ).not.toContain("github.run_id");
     expect(native).toContain("restore-keys: native-build-");
     // Both configured build directories, or the QuickJS variant recompiles from nothing.
     expect(native).toContain("packages/runtime-native/build/tn-linux");
@@ -799,6 +805,30 @@ describe("CI pipeline structure", () => {
     expect(config, "the seam the workflow relies on is gone").toContain(
       "process.env.THREENATIVE_PACKED_PACKAGES",
     );
+  });
+
+  // `check-capability-docs` resolves every documented capability through its package export map,
+  // and those maps point at dist. The budgets job installed and ran the gate without compiling
+  // anything, so the gate failed on the build it needed rather than on a capability:
+  //   CAPABILITY_BUILT_IMPORT_MISSING: @threenative/assets#compileAssets could not resolve from
+  //   the package export map: @threenative/assets. targets missing built file
+  //   .../packages/assets/dist/index.js
+  // `needs: build` orders the job behind the build but hands it no artifact, so the ordering
+  // reads like a guarantee it does not make. The job has to get what it resolves, and it takes it
+  // from the shared action like every other consumer rather than compiling its own seventh copy.
+  it("hands the budgets gate the dist it resolves through export maps", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const budgets = requiredJob(ci, "budgets");
+
+    const dist = "uses: ./.github/actions/workspace-dist";
+    expect(budgets, "the budgets job runs a gate that resolves dist without having it").toContain(
+      dist,
+    );
+    // And it has to arrive before the gate reads it, not after.
+    expect(
+      budgets.indexOf(dist),
+      "the budgets job builds after the gate that needs the build",
+    ).toBeLessThan(budgets.indexOf("- run: pnpm budgets"));
   });
 
   // Splitting the suite across jobs is how coverage disappears quietly: a phase named in no job,

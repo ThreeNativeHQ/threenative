@@ -11,16 +11,6 @@ import { createProject } from "../src/index.js";
 import { createSpringArm } from "../templates/starter/src/render/camera.js";
 
 const templates = ["starter", "minimal"] as const;
-const brandingTemplates = [
-  "action-rpg",
-  "defense",
-  "minimal",
-  "platformer",
-  "racing",
-  "sailing",
-  "shooter",
-  "starter",
-] as const;
 /**
  * Every template that advertises a `typecheck` script, read from the shipped manifests rather
  * than listed here — a template added tomorrow is covered the day it ships, and one that stops
@@ -204,7 +194,9 @@ async function linkScaffoldBuildDependencies(target: string): Promise<void> {
 describe("template contracts", () => {
   it("requires every discovered template to ship a bounded performance scenario", async () => {
     const names = await templateNames();
-    expect(names).toHaveLength(8);
+    // A floor, not a pin: a kit that ships tomorrow must be covered without editing this number,
+    // and a discovery that silently returned nothing must still fail.
+    expect(names.length).toBeGreaterThanOrEqual(8);
 
     const performanceAssertions: string[] = [];
     const emptyPerformanceAssertions: string[] = [];
@@ -224,7 +216,9 @@ describe("template contracts", () => {
         else performanceAssertions.push(relative);
       }
     }
-    expect(performanceAssertions, "non-empty performance assertions").toHaveLength(8);
+    // One per kit, derived rather than pinned: a kit that ships two performance scenarios or none
+    // is the defect this catches, and a kit added tomorrow is covered without a number to edit.
+    expect(performanceAssertions, "non-empty performance assertions").toHaveLength(names.length);
     expect(emptyPerformanceAssertions, "empty performance assertions").toEqual([]);
 
     for (const template of names) {
@@ -269,7 +263,7 @@ describe("template contracts", () => {
   });
 
   it("wires the brand adapter, launch handoff, and generated loading source in every template", async () => {
-    for (const template of brandingTemplates) {
+    for (const template of await templateNames()) {
       const root = path.join(templateRoot, template);
       const [config, index, main, vite] = await Promise.all([
         readFile(path.join(root, "threenative.config.ts"), "utf8"),
@@ -306,7 +300,7 @@ describe("template contracts", () => {
   });
 
   it("ships a generated, restyleable boot-failure surface in every template", async () => {
-    for (const template of brandingTemplates) {
+    for (const template of await templateNames()) {
       const root = path.join(templateRoot, template);
       const [style, main] = await Promise.all([
         readFile(path.join(root, "src/style.css"), "utf8"),
@@ -344,7 +338,7 @@ describe("template contracts", () => {
   });
 
   it("declares a packaged native icon in every template config", async () => {
-    for (const template of brandingTemplates) {
+    for (const template of await templateNames()) {
       const root = path.join(templateRoot, template);
       const config = await readFile(path.join(root, "threenative.config.ts"), "utf8");
       expect(config, template).toMatch(/\bicon:\s*["']public\/icon\.png["']/u);
@@ -706,6 +700,19 @@ describe("template contracts", () => {
       const source = await readFile(file, "utf8").catch(() => undefined);
       if (source === undefined) continue;
       checked.push(file);
+      // Not every kit has a horizon. An interior draws no dome at all, and demanding one there
+      // would have forced `puzzle` to ship a gradient sky that read, above its walls, as a
+      // hard-edged blue triangle — a hole in the room. So the rule is conditional on there being
+      // a dome, and the else branch is not an escape hatch: a `sky.ts` that draws no dome must
+      // still say what the horizon *is*, by setting `scene.background`. A file that does neither
+      // is the defect this test was written for, and still fails.
+      const drawsDome = /BackSide/u.test(source);
+      if (!drawsDome) {
+        expect(source, `${file}: a sky with no dome must still set scene.background`).toMatch(
+          /scene\.background\s*=/u,
+        );
+        continue;
+      }
       // A dome whose colour comes from an atmosphere node builds `MeshBasicNodeMaterial`; the
       // contract is the `fog: false` flag on whichever of the two the template chose, never the
       // class name, so matching only the non-node class would let a fogged node dome through.
@@ -906,7 +913,8 @@ describe("template contracts", () => {
   // mirror drifted, fails here with a diagnostic naming the defect.
   it("should keep every generated instruction pair bounded", async () => {
     const audits = await auditAllTemplates(path.resolve("."));
-    expect(audits).toHaveLength(8);
+    // A floor, not a pin, for the same reason as the performance-scenario contract above.
+    expect(audits.length).toBeGreaterThanOrEqual(8);
     for (const audit of audits) {
       expect(
         audit.violations,

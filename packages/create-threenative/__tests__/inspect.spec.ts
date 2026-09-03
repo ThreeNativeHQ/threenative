@@ -46,8 +46,8 @@ function viewOf(value: ArrayBufferView): Uint8Array {
   return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
 }
 
-function inspectionFixture(): Uint8Array {
-  const positions = new Float32Array([0, 0, 0, 2, 0, 0, 0, 3, 4]);
+function inspectionFixture(scale = 1): Uint8Array {
+  const positions = new Float32Array([0, 0, 0, 2, 0, 0, 0, 3, 4].map((value) => value * scale));
   const normals = new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]);
   const indices = new Uint16Array([0, 1, 2]);
   const joints = new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
@@ -248,6 +248,27 @@ describe("asset inspection", () => {
       center: { x: 1, y: 1.5, z: 2 },
       size: { x: 2, y: 3, z: 4 },
     });
+  });
+
+  /**
+   * A 56-metre building is not centimetres.
+   *
+   * The heuristic called anything longer than ten units centimetres, so importing a real Unreal
+   * level — a 31.9 x 56.3 x 31.9 m office, correct in metres — reported "likely centimetres" and
+   * told an agent to divide it by a hundred. Between a large scene in metres and a prop in
+   * centimetres there is a band where the longest axis genuinely cannot tell them apart, and
+   * saying so is the honest answer; guessing confidently is what did the damage.
+   */
+  it.each([
+    [1, "likely metres", "a 4-unit prop is metres"],
+    [14, "ambiguous", "a 56-unit scene could be either"],
+    [60, "likely centimetres", "a 240-unit asset is centimetres"],
+  ])("labels a %s-scaled asset %s — %s", async (scale, label) => {
+    const file = await temporaryAsset(`units-${scale}.glb`, inspectionFixture(scale));
+
+    const result = await inspectAsset(file);
+
+    expect(result.units.label).toBe(label);
   });
 
   it.each([

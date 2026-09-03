@@ -209,5 +209,3 @@ record shares the ledger directory and prefix, so it was parsed as a ledger, fai
   `main`. Its report reads `pass: 74, fail: 0, blocked: 18` — it exits 1 on blocked conformance
   rows. Sibling lanes already own the Android and parity conformance bookkeeping, so this one is
   recorded with its control rather than touched.
-- **`pnpm round:next` is stale for the second time in the loop's history**, printing `close round
-  12` against a round already closed on disk.
