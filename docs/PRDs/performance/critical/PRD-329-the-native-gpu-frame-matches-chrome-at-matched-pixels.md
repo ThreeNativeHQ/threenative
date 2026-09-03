@@ -4,7 +4,13 @@ prd_contract: v1
 
 # PRD-329 — The native GPU frame matches Chrome's at matched pixels, or the gap is named and owned
 
-**Status:** PROPOSED, filed 2026-09-02 against `5879799d`. Planning only.
+**Status:** OPEN — planned 2026-09-03. Filed 2026-09-02 against `5879799d`; every file anchor
+re-verified against the current tree the same day (three had drifted: the surface report moved to
+`renderer.ts`, the frame-latency comment to `context.cpp:1142`, the Android wgpu-only pin to
+`CMakeLists.txt:242`). Sequenced by
+[`README.md`](README.md) behind PRD-327's device acceptance: Phase 0 needs the phone lane, and
+PRD-327's criterion 3 is the launch claim the phone owes first. Owner: the next lane to finish
+PRD-327's device acceptance.
 
 **Complexity:** +1 (1–5 files) + 2 (a new measurement arm across two runtimes on one phone) +
 1 (external: Chrome for Android) + 1 (device lane) = **5 → MEDIUM mode**. Checkpoint after every
@@ -36,16 +42,17 @@ frame belongs to content.
 
 **Files analyzed:**
 
-- `packages/runtime-native/src/webgpu/bindings_presentation.cpp:550-556, 596-604` — the sRGB
+- `packages/runtime-native/src/webgpu/bindings_presentation.cpp:550-556` — the sRGB
   presentation bridge: when the surface's preferred format is sRGB, the game renders to a linear
   texture and `presentLinearTextureToSrgbSurface` blits a full-resolution quad into the surface
   every frame. Whether Android's preferred format triggers it is not on any record.
-- `packages/runtime-native/src/webgpu/context.cpp:1139` — frame latency comment; `:1202-1229`
-  — acquire and present.
-- `packages/runtime-native/CMakeLists.txt:1466` — Android builds wgpu-native only
+- `packages/runtime-native/src/webgpu/context.cpp:1142-1149` — frame latency comment and
+  `TN_WEBGPU_DESIRED_FRAME_LATENCY`; the acquire-and-present path is further down the same file.
+- `packages/runtime-native/CMakeLists.txt:242` — Android builds wgpu-native only
   (`ANDROID AND MYSTRAL_USE_WGPU`); Dawn is desktop-only in `download-deps.mjs`. Ledger row A1
   (Dawn ↔ wgpu swap) was flat on desktop and is **untried on device**.
-- `packages/core/src/game.ts:800-830` — `renderer.resolutionScale` and the per-window
+- `packages/core/src/renderer.ts:275-276` (published through `game.ts:1091`) —
+  `renderer.resolutionScale` and the per-window
   `surface: {resolutionScale, sampleCount, drawingBufferWidth, drawingBufferHeight}` report,
   emitted on web and native alike; this is what makes a matched-pixel arm possible without
   touching either runtime.
