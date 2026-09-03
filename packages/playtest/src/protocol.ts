@@ -140,10 +140,113 @@ export interface IPlaytestEntityObservation {
   visible?: boolean;
 }
 
+/**
+ * What the feet are doing against what the body is doing, for the clip currently playing.
+ *
+ * The stride convention is on by default and has a named override, so its measurement has to
+ * cross the bridge whether or not it is applied — a game that turned it off otherwise has no way
+ * to see what that cost, and a scenario has no way to catch a character skating across the floor.
+ * Every member is the producer's own measurement; nothing here is derived by the runner.
+ */
+export interface IPlaytestStrideObservation {
+  /** Metres of ground the clip carries per clip-second at rate 1. Zero when it travels none. */
+  clipGroundSpeed: number;
+  /** Metres per second the body actually covered, as the producer smoothed it. */
+  groundSpeed: number;
+  /** True when a rate was measured and deliberately not applied. */
+  overridden: boolean;
+  /** The playback rate those two imply, after the producer's own clamping. */
+  rate: number;
+  /** True when that rate is being applied to the action. */
+  synced: boolean;
+}
+
 export interface IPlaytestAnimationObservation {
   advancedFrames: number;
   clip: string;
   finished?: boolean;
+  /** Present only when the producer measures stride. Absent is unobserved, never zero. */
+  stride?: IPlaytestStrideObservation;
+}
+
+/**
+ * One light in the scene, as the renderer will read it.
+ *
+ * Counted rather than judged: a light's colour and intensity decide how the game looks, and this
+ * harness never owns the look. It reports what is there so a black frame can be told from a lit
+ * one without a human opening the page.
+ */
+export interface IPlaytestLightObservation {
+  /** `#rrggbb`, or `unobserved` when the light carries no readable colour. */
+  color: string;
+  /** Absent when the light reports no finite intensity. Never an unmeasured zero. */
+  intensity?: number;
+  /** The light's constructor name — `DirectionalLight`, `AmbientLight`, and so on. */
+  type: string;
+  visible: boolean;
+}
+
+/**
+ * The scene's distance fade, if it has one. Absent means no fog, never "fog at zero".
+ */
+export interface IPlaytestFogObservation {
+  color: string;
+  /** Present for `FogExp2`. */
+  density?: number;
+  /** Present for linear `Fog`. */
+  far?: number;
+  /** Present for linear `Fog`. */
+  near?: number;
+  type: "exponential" | "linear";
+}
+
+/**
+ * Where the camera is and what it can see, which is the framing an entity transform cannot say.
+ */
+export interface IPlaytestCameraObservation {
+  /** Absent on a bare `Camera`, which carries no clip planes. */
+  far?: number;
+  /** Unit world-space forward vector. */
+  forward: [number, number, number];
+  /** Vertical field of view in degrees. Absent for an orthographic camera. */
+  fov?: number;
+  /** Absent on a bare `Camera`, which carries no clip planes. */
+  near?: number;
+  position: [number, number, number];
+  /** The camera's constructor name. */
+  type: string;
+}
+
+/**
+ * The room the game is being played in — lights, materials, fog, background and camera framing.
+ *
+ * `doctor --url` used to list all of this under "not observed", which meant an agent debugging a
+ * washed-out or black frame had no instrument at all and went to screenshots. Round 9's visual
+ * column was lost to a fog whose far plane sat in front of the sky dome; nothing in the harness
+ * could say so. Counts and names only: every value here is read off the scene, and none of it
+ * decides how anything looks.
+ */
+export interface IPlaytestSceneObservation {
+  /** `none`, `color:#rrggbb`, or the background object's constructor name. */
+  background: string;
+  camera: IPlaytestCameraObservation;
+  fog?: IPlaytestFogObservation;
+  lights: IPlaytestLightObservation[];
+  /**
+   * How many materials of each constructor name are mounted in the scene, counted per distinct
+   * material rather than per mesh.
+   */
+  materials: Record<string, number>;
+  /** Objects the walk visited. */
+  objects: number;
+  /**
+   * True when the walk stopped at its cap, so every count above is a floor rather than a total.
+   * Reported instead of silently truncating, because a partial count read as a total is the
+   * confident-number-with-nothing-behind-it this harness exists to prevent.
+   */
+  truncated: boolean;
+  /** World-space extent of everything the walk visited, or absent when the scene is empty. */
+  worldExtent?: { max: [number, number, number]; min: [number, number, number] };
 }
 
 export interface IPlaytestContactObservation {
@@ -239,6 +342,7 @@ export interface IPlaytestObservationSnapshot {
   renderChain?: IPlaytestRenderChainObservation;
   runtimeDiagnosticsSeries?: IPlaytestRuntimeDiagnosticsSample[];
   resources?: Record<string, JsonValue>;
+  scene?: IPlaytestSceneObservation;
 }
 
 export interface IPlaytestAdvanceResult {

@@ -50,3 +50,10 @@ export type { IThreePlaytestPhysics, IThreePlaytestPhysicsBody } from "./physics
 export { connectDevicePlaytestBridge, readPlaytestEndpoint } from "./device.js";
 export type { IDeviceBridgeInstallation } from "./device.js";
 export type { IThreePlaytestEntity } from "./entities.js";
+/**
+ * Observe the room a game is played in — lights, materials, fog, background and camera framing.
+ * @situation ask why a frame is black or washed out without opening a screenshot
+ * @constraint reports counts and names only; it decides nothing about how the game looks
+ * @example const room = observeSceneResources(scene, camera);
+ */
+export { SCENE_LIGHT_CAP, SCENE_WALK_OBJECT_CAP, observeSceneResources } from "./scene-observation.js";
