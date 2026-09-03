@@ -53,6 +53,16 @@ const BAND_NAMES = Object.keys(AUDIO_BANDS) as readonly AudioBand[];
 const WINDOW = 1_024;
 /** Columns in the written picture. More than this is wider than anything looks at it. */
 const MAX_COLUMNS = 900;
+/**
+ * Columns the picture aims for, which sets the frame hop.
+ *
+ * A half-second footstep holds twenty non-overlapping 1024-sample frames, and a twenty-column
+ * spectrogram is a sliver nobody can read a transient off — which defeats the only reason the
+ * picture exists. So the hop shrinks for a short clip and the frames overlap. Band energy stays
+ * unbiased: summed Hann windows at a hop well under the window length are very nearly constant
+ * across the signal, so every sample still contributes about equally.
+ */
+const TARGET_COLUMNS = 400;
 /** Seconds either side of the join that a wrap step is judged against. */
 const SEAM_WINDOW_SECONDS = 0.05;
 
@@ -370,7 +380,9 @@ export function analyseSamples(
   }
   const count = length * channels.length;
 
-  const frames = Math.floor(length / WINDOW);
+  // Never longer than the window (so a long clip stays non-overlapping and cheap) and never zero.
+  const hop = Math.max(1, Math.min(WINDOW, Math.floor(length / TARGET_COLUMNS)));
+  const frames = Math.max(1, Math.floor((length - WINDOW) / hop) + 1);
   const bins = WINDOW / 2 + 1;
   const spectra: Float64Array[] = [];
   const totals = new Float64Array(bins);
@@ -380,7 +392,7 @@ export function analyseSamples(
   for (let frame = 0; frame < frames; frame += 1) {
     re.fill(0);
     im.fill(0);
-    const start = frame * WINDOW;
+    const start = frame * hop;
     // Mono for the spectrum: a band profile is about content, and two channels of the same wind
     // are one answer. The seam below stays per-channel, where a difference is a real defect.
     for (let index = 0; index < WINDOW; index += 1) {

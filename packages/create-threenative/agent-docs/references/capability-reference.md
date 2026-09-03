@@ -10,6 +10,21 @@ MCP server is available.
 
 ## `@threenative/assets`
 
+### `audioPass`
+
+`function` — Conditions a game's audio and proves the conditioning did not destroy it.
+
+```ts
+export function audioPass(options: IAudioPassOptions = { … }
+```
+
+- **Use when:** make an ambience bed loop without an audible click · halve what a positional sound effect costs a device's memory · stop an audio asset shipping silent on desktop, Android and iOS
+- **Constraints:** a clip declared a loop has its seam measured on the decoded output bytes and fails the build when it exceeds the threshold; the assertion cannot be declared away · which clips loop, which are positional, and what a clip is for are declared per glob and never inferred from a filename · sources must be RIFF/WAVE or Ogg Vorbis, which is exactly what every native target decodes; an MP3 fails the bake
+
+```ts
+const pass = audioPass({ overrides: [{ glob: "audio/*-bed.ogg", loop: true }] });
+```
+
 ### `compileAssets`
 
 `function` — Compiles a project's source assets into content-addressed runtime files and a manifest.
@@ -23,6 +38,21 @@ export async function compileAssets( options: IAssetCompileOptions = { … }
 
 ```ts
 const result = await compileAssets({ source: "assets", output: "public" });
+```
+
+### `formatAudioSizes`
+
+`function` — Formats audio conditioning measurements for a build report.
+
+```ts
+export function formatAudioSizes(rows: readonly IAudioRow[]): readonly string[] { … }
+```
+
+- **Use when:** see what audio conditioning did to a clip's wire and decoded size · read the loop seam and cross-fade a build measured
+- **Constraints:** an empty row list produces no report lines
+
+```ts
+const lines = formatAudioSizes(audioRows);
 ```
 
 ### `formatHealthReport`

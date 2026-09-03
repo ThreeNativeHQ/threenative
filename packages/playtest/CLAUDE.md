@@ -130,9 +130,11 @@ game saying so:
 ```
 
 Bands are `sub` (<100 Hz), `low` (100-500), `mid` (500-2k), `high` (2k-8k) and `air` (>8k),
-contiguous to Nyquist, reported as percentages of summed magnitude from Hann-windowed
-non-overlapping frames over the whole signal. They are comparable to each other and to what a game
-declares, not to another tool's numbers.
+contiguous to Nyquist, reported as percentages of summed magnitude over Hann-windowed frames
+covering the whole signal. They are comparable to each other and to what a game declares, not to
+another tool's numbers. The frame hop shrinks on a short clip so its spectrogram is wide enough to
+read a transient off — a half-second footstep holds twenty non-overlapping frames, and a
+twenty-column picture defeats the only reason the picture exists.
 
 Fails closed, on this package's own rule: an unknown key, a band nobody measures, a bound that can
 never hold, a `seamMaxRatio` on a clip whose `loop` is false, a duplicate path, or an empty clip

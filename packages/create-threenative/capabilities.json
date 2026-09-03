@@ -2,6 +2,27 @@
   "entries": [
     {
       "constraints": [
+        "a clip declared a loop has its seam measured on the decoded output bytes and fails the build when it exceeds the threshold; the assertion cannot be declared away",
+        "which clips loop, which are positional, and what a clip is for are declared per glob and never inferred from a filename",
+        "sources must be RIFF/WAVE or Ogg Vorbis, which is exactly what every native target decodes; an MP3 fails the bake"
+      ],
+      "example": "const pass = audioPass({ overrides: [{ glob: \"audio/*-bed.ogg\", loop: true }] });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function audioPass(options: IAudioPassOptions = { … }",
+      "situations": [
+        "make an ambience bed loop without an audible click",
+        "halve what a positional sound effect costs a device's memory",
+        "stop an audio asset shipping silent on desktop, Android and iOS"
+      ],
+      "summary": "Conditions a game's audio and proves the conditioning did not destroy it.",
+      "supersedes": [],
+      "symbol": "audioPass"
+    },
+    {
+      "constraints": [
         "source and output directories must be disjoint; a pass failure stops the build with the asset path"
       ],
       "example": "const result = await compileAssets({ source: \"assets\", output: \"public\" });",
@@ -18,6 +39,22 @@
       "summary": "Compiles a project's source assets into content-addressed runtime files and a manifest.",
       "supersedes": [],
       "symbol": "compileAssets"
+    },
+    {
+      "constraints": ["an empty row list produces no report lines"],
+      "example": "const lines = formatAudioSizes(audioRows);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function formatAudioSizes(rows: readonly IAudioRow[]): readonly string[] { … }",
+      "situations": [
+        "see what audio conditioning did to a clip's wire and decoded size",
+        "read the loop seam and cross-fade a build measured"
+      ],
+      "summary": "Formats audio conditioning measurements for a build report.",
+      "supersedes": [],
+      "symbol": "formatAudioSizes"
     },
     {
       "constraints": [
