@@ -2,7 +2,8 @@ import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { PLAYTEST_FRAME_BUDGET_PHASES } from "../protocol.js";
 import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./errors.js";
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
-import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestRenderChainAssertion, IPlaytestStartupAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
+import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion,
+  IPlaytestSceneAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestRenderChainAssertion, IPlaytestStartupAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -485,6 +486,32 @@ export function validateSignalAssertion(value: unknown, scenarioPath: string, ob
     ...present("minCount", optionalNonNegativeInteger(record, "minCount", scenarioPath, objectPath)),
     name: requireString(record, "name", scenarioPath, objectPath),
   };
+}
+
+const SCENE_FLAGS = ["cameraClearsScene", "fogClearsScene", "litMaterialsAreLit"] as const;
+
+export function validateSceneAssertion(
+  value: unknown,
+  scenarioPath: string,
+  objectPath: string,
+): IPlaytestSceneAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["allowTrivial", ...SCENE_FLAGS, "minVisibleLights"], scenarioPath, objectPath);
+  const result: IPlaytestSceneAssertion = {
+    ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
+    ...present("cameraClearsScene", optionalBoolean(record, "cameraClearsScene", scenarioPath, objectPath)),
+    ...present("fogClearsScene", optionalBoolean(record, "fogClearsScene", scenarioPath, objectPath)),
+    ...present("litMaterialsAreLit", optionalBoolean(record, "litMaterialsAreLit", scenarioPath, objectPath)),
+    ...present("minVisibleLights", optionalNonNegativeInteger(record, "minVisibleLights", scenarioPath, objectPath)),
+  };
+  // An assertion that bounds nothing is the vacuous pass this package exists to refuse.
+  if (SCENE_FLAGS.every((flag) => result[flag] === undefined) && result.minVisibleLights === undefined) {
+    throw invalidScenario(
+      scenarioPath,
+      `'${objectPath}' must set at least one of ${[...SCENE_FLAGS, "minVisibleLights"].join(", ")}; an empty scene assertion observes nothing.`,
+    );
+  }
+  return result;
 }
 
 export function validateAnimationAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestAnimationAssertion {

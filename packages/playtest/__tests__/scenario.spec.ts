@@ -543,6 +543,7 @@ const FAMILY_SCENARIO_ASSERTS = {
   reachability: { artifact: "artifacts/envelope.json", entities: ["platform.a", "platform.b"] },
   resources: [{ changed: true, gte: 1, id: "GameState", path: "coins" }],
   renderChain: { tier: "high", velocity: { maxRejectionFraction: 0.2 } },
+  scene: { cameraClearsScene: true, fogClearsScene: true, litMaterialsAreLit: true, minVisibleLights: 1 },
   startup: { maxReadyMs: 60_000 },
   settled: [{ entity: "crate", minBodies: 2 }],
   signals: [{ minCount: 1, name: "collected" }],
@@ -577,6 +578,10 @@ const FAMILY_PASS_IDS = [
   "states.player",
   "renderChain.tier",
   "renderChain.velocity.rejectionFraction",
+  "scene.minVisibleLights",
+  "scene.litMaterialsAreLit",
+  "scene.fogClearsScene",
+  "scene.cameraClearsScene",
   "startup.readyMs",
   "diagnostics",
   "movement.distance",
@@ -690,6 +695,15 @@ function familyReportObservations(fulfilled: boolean) {
       },
     },
     resources: { GameState: { after: { coins: 2 }, before: { coins: 0 } } },
+    scene: {
+      background: "color:#101018",
+      camera: { far: 500, forward: [0, 0, -1], fov: 60, near: 0.1, position: [0, 2, 8], type: "PerspectiveCamera" },
+      lights: [{ color: "#ffffff", intensity: 2, type: "DirectionalLight", visible: true }],
+      materials: { MeshStandardMaterial: 4 },
+      objects: 18,
+      truncated: false,
+      worldExtent: { max: [12, 4, 12], min: [-12, 0, -12] },
+    },
     runtimeDiagnostics: { scene: { renderedEntities: [{ id: "player", projectedBounds: { max: [0.5, 0.5], min: [-0.5, -0.5] }, visible: true }] } },
     runtimeObservations: {
       gameplay: {
@@ -773,6 +787,9 @@ test("should preserve every assertion family's result contract", async () => {
     "states.player",
     "renderChain.tier",
     "renderChain.velocity.rejectionFraction",
+    // One result, not four: with no scene observed at all there is nothing to bound, and the
+    // family says so once rather than failing each bound against nothing.
+    "scene.observed",
     "startup.readyMs",
     "diagnostics",
     "movement.distance",
@@ -809,6 +826,7 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_STATE_ASSERTION_FAILED",
     "TN_PLAYTEST_RENDER_CHAIN_UNOBSERVABLE",
     "TN_PLAYTEST_RENDER_CHAIN_UNOBSERVABLE",
+    "TN_PLAYTEST_SCENE_UNOBSERVED",
     "TN_PLAYTEST_STARTUP_UNOBSERVABLE",
     "TN_PLAYTEST_VISIBILITY_FAILED",
     "TN_PLAYTEST_CONTACT_NOT_OBSERVED",

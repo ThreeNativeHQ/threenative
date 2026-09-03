@@ -11,6 +11,7 @@ import { emitDisplayFamilies } from "./evaluators/framebuffer-reachability.js";
 import { emitPerfSignalsWorld } from "./evaluators/perf-signals-world.js";
 import { emitWorldGameplay } from "./evaluators/world-gameplay.js";
 import { emitRenderChain } from "./evaluators/render-chain.js";
+import { emitScene } from "./evaluators/scene.js";
 import { emitStartup } from "./evaluators/startup.js";
 
 export { overlayNodeObservationKey } from "./evaluators/helpers.js";
@@ -29,6 +30,7 @@ export function evaluateRichPlaytestAssertions(input: {
   emitPerfSignalsWorld(ctx);
   emitWorldGameplay(ctx);
   emitRenderChain(ctx);
+  emitScene(ctx);
   emitStartup(ctx);
   emitMovementEvidence(ctx);
   if (

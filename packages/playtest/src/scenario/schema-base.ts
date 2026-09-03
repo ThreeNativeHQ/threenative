@@ -204,6 +204,24 @@ export interface IPlaytestOverlayNodeAssertion {
   visible?: boolean;
 }
 
+/**
+ * Bounds on the room the game is played in — what a screenshot would have shown, as numbers.
+ *
+ * Every member fails closed on an unobserved scene: a bridge that does not report `scene.observe`
+ * has not reported a well-lit one.
+ */
+export interface IPlaytestSceneAssertion {
+  allowTrivial?: string;
+  /** Fail when the camera's far plane cuts the scene it is pointed at. */
+  cameraClearsScene?: boolean;
+  /** Fail when a linear fog reaches full colour in front of the scene it is fogging. */
+  fogClearsScene?: boolean;
+  /** Fail when lit materials are mounted and no light in the scene is visible. */
+  litMaterialsAreLit?: boolean;
+  /** Floor on how many lights the renderer will actually see. */
+  minVisibleLights?: number;
+}
+
 export interface IPlaytestAnimationAssertion {
   advancedFrames?: number;
   allowTrivial?: string;
@@ -400,6 +418,7 @@ export interface IPlaytestScenarioAssertions {
   resources?: IPlaytestResourceAssertion[];
   settled?: IPlaytestSettledAssertion[];
   signals?: IPlaytestSignalAssertion[];
+  scene?: IPlaytestSceneAssertion;
   startup?: IPlaytestStartupAssertion;
   states?: IPlaytestStateAssertion[];
   tags?: IPlaytestTagCountAssertion[];

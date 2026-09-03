@@ -78,7 +78,7 @@ export function summariseRoom(scene: IPlaytestSceneObservation): ISceneRoomSumma
  * Corner distance rather than centre distance: a fog or clip plane cuts the far side of the world
  * first, and that far side is what a player sees as a wall of fog or a hole in the horizon.
  */
-function furthestCornerDistance(summary: ISceneRoomSummary): number | undefined {
+export function furthestSceneCornerDistance(summary: ISceneRoomSummary): number | undefined {
   const extent = summary.worldExtent;
   if (extent === undefined) return undefined;
   const [cx, cy, cz] = summary.camera.position;
@@ -128,7 +128,7 @@ export function roomWarnings(
       `${summary.litMaterials} lit materials and no visible light in the scene — everything wearing one renders black while every other number here stays healthy`,
     );
   }
-  const furthest = furthestCornerDistance(summary);
+  const furthest = furthestSceneCornerDistance(summary);
   const fog = summary.fog;
   if (furthest !== undefined && fog?.type === "linear" && fog.far !== undefined && fog.far < furthest) {
     warnings.push(

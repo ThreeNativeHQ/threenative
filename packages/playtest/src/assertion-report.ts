@@ -7,7 +7,11 @@ import type {
 } from "./scenario.js";
 import type { IPlaytestDeviceMetricsObservation } from "./runner/deviceMetrics.js";
 import type { IPlaytestDiagnosticsPolicy } from "./report.js";
-import type { IPlaytestRenderChainObservation, IPlaytestStartupTimeline } from "./protocol.js";
+import type {
+  IPlaytestRenderChainObservation,
+  IPlaytestSceneObservation,
+  IPlaytestStartupTimeline,
+} from "./protocol.js";
 
 export type Vec3 = [number, number, number];
 
@@ -65,6 +69,8 @@ export interface IPlaytestObservations {
   performanceSeries?: unknown[];
   renderChain?: IPlaytestRenderChainObservation;
   resources: Record<string, { after?: unknown; before?: unknown }>;
+  /** Lights, materials, fog, background, camera framing and world extent, as the bridge found them. */
+  scene?: IPlaytestSceneObservation;
   /** The startup observation the runner waited on, with the rule it resolved under. */
   startup?: {
     compileSettled?: boolean;

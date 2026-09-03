@@ -46,6 +46,10 @@
         "entity": "enemy",
         "equals": "dead-finished"
       }
-    ]
+    ],
+    "scene": {
+      "cameraClearsScene": true,
+      "litMaterialsAreLit": true
+    }
   }
 }
