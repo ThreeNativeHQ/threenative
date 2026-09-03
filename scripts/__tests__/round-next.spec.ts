@@ -475,6 +475,38 @@ describe("round:next", () => {
     expect(nextRoundAction(root, file)).toMatchObject({ command: "close round 1" });
   });
 
+  it("charters the next round once a close record is filed, instead of closing it again", async () => {
+    // `round-12-close-2026-08-22.md` sat beside its ledger for eleven days while `pnpm round:next`
+    // kept printing `close round 12`. The close record is in the same directory under the same
+    // prefix, so it was parsed as a ledger, rejected, and never seen.
+    const root = await fixture();
+    const file = await writeLedger(root, baseLedger({ stop: "blocked" }));
+    expect(nextRoundAction(root, file)).toMatchObject({ command: "stop round 1" });
+
+    await writeFile(
+      path.join(root, "docs/verification/round-1-close-2026-09-03.md"),
+      "# Round 1 closed\n\nEvidence and dispositions are recorded.\n",
+    );
+    expect(nextRoundAction(root, file)).toEqual({
+      command: "charter round 2",
+      reason:
+        "Round 1 was closed in docs/verification/round-1-close-2026-09-03.md; charter the next round.",
+    });
+  });
+
+  it("does not blame a close record for being an unparseable ledger", async () => {
+    // A close record shares the ledger's directory and filename prefix, so it used to be read as
+    // a damaged ledger. With no real ledger beside it the error named the close record as the
+    // reason no round could be found, which sends the reader to repair a file that is fine.
+    const root = await fixture();
+    await writeFile(
+      path.join(root, "docs/verification/round-9-close-2026-09-03.md"),
+      "# Round 9 closed\n\nNot a ledger.\n",
+    );
+    expect(() => nextRoundAction(root)).toThrow(/No round ledger found/u);
+    expect(() => nextRoundAction(root)).not.toThrow(/round-9-close/u);
+  });
+
   it("stops instead of resuming a blocked round", async () => {
     const root = await fixture();
     const file = await writeLedger(root, baseLedger({ stop: "blocked" }));
