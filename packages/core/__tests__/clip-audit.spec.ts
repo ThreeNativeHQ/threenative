@@ -84,6 +84,28 @@ function rig(twistDegrees: number): IRig {
   };
 }
 
+function skinnedRoot(): SkinnedMesh {
+  const mesh = new SkinnedMesh(new BufferGeometry(), new MeshBasicMaterial());
+  mesh.name = "Character";
+  const arm = new Bone();
+  arm.name = "Arm";
+  mesh.add(arm);
+  mesh.bind(new Skeleton([arm]));
+  mesh.updateMatrixWorld(true);
+  return mesh;
+}
+
+function armSkeletonClip(): AnimationClip {
+  const pose = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 4);
+  return new AnimationClip("ArmPose", 1, [
+    new QuaternionKeyframeTrack(
+      ".bones[Arm].quaternion",
+      [0, 1],
+      [0, 0, 0, 1, pose.x, pose.y, pose.z, pose.w],
+    ),
+  ]);
+}
+
 function toBindPose(rigged: IRig): void {
   for (const bone of rigged.bones)
     bone.quaternion.copy(must(rigged.bind.get(bone.name), bone.name));
@@ -254,13 +276,40 @@ describe("clipPoseError", () => {
     ).toThrow(/samples must be a positive integer/);
   });
 
+  it("refuses exact shared roots before comparing different clips", () => {
+    const shared = rig(0);
+    const different = new AnimationClip("Different", 1, [
+      new QuaternionKeyframeTrack("Spine.quaternion", [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]),
+    ]);
+
+    expect(() =>
+      clipPoseError(
+        { root: shared.root, clip: sourceClip() },
+        { root: shared.root, clip: different },
+      ),
+    ).toThrow(/roots overlap/);
+  });
+
+  it("refuses nested roots before sampling", () => {
+    const shared = rig(0);
+    const nested = boneOf(shared, "Spine");
+    const different = new AnimationClip("Nested", 1, [
+      new QuaternionKeyframeTrack("Spine.quaternion", [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]),
+    ]);
+
+    expect(() =>
+      clipPoseError({ root: shared.root, clip: sourceClip() }, { root: nested, clip: different }),
+    ).toThrow(/roots overlap/);
+  });
+
   it("names a bone the mapping asks for and the rig does not have", () => {
     const source = rig(0);
+    const reference = rig(0);
     const clip = sourceClip();
     expect(() =>
       clipPoseError(
         { root: source.root, clip },
-        { root: source.root, clip },
+        { root: reference.root, clip },
         { bones: { Tail: "Tail" } },
       ),
     ).toThrow(/has no bone named 'Tail'/);
@@ -326,6 +375,19 @@ describe("clipTrackBindings", () => {
 });
 
 describe("clipBoneCoverage", () => {
+  it("resolves a named skeleton bone in a .bones track", () => {
+    const root = skinnedRoot();
+    const clip = armSkeletonClip();
+
+    const bindings = clipTrackBindings(root, clip);
+    const coverage = clipBoneCoverage(root, clip);
+
+    expect(bindings.bound).toBe(1);
+    expect(bindings.unbound).toEqual([]);
+    expect(coverage.driven).toEqual(["Arm"]);
+    expect(coverage.undriven).toEqual([]);
+  });
+
   it("names the bones a partial clip leaves to the previous clip", () => {
     const target = rig(0);
 
