@@ -75,6 +75,10 @@ jobs:
     timeout-minutes: 45
     env:
       TN_SUITE_EXCLUDE_PACKAGES: "@threenative/runtime-native"
+      # The unit run moved to `test-unit` below. What is left here is the part that only makes
+      # sense once: the docs check, the build that proves every workspace and example still
+      # bundles, and the walk of each package's own `test` script.
+      TN_SUITE_PHASES: "docs,build,package-test"
       # The orphan gate waits for Playwright's asynchronous profile cleanup and fails when it never
       # settles. Its 30s default is a quiet-machine number and this job is not one.
       TN_ORPHAN_SETTLE_SECONDS: 120
@@ -86,6 +90,41 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm test
+
+  # The root vitest run was the longest single thing in the run's longest job — 351 files and
+  # ~3,500 tests, measured at 151s of `test`'s 387s. It shards cleanly and it is the only part of
+  # that job that does: the docs check, the build and the package walk each make sense once.
+  #
+  # Every test still runs. `vitest --shard` slices the same file list, and the slices were checked
+  # to add back up: 117 + 117 + 117 = 351 files, union identical to the unsharded suite with no
+  # file in two shards. `scripts/__tests__/ci-structure.spec.ts` holds the matrix to that shape,
+  # and `run-test-suite.sh` refuses a phase selection that would run nothing at all.
+  test-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/3", "2/3", "3/3"]
+    env:
+      TN_SUITE_PHASES: unit
+      TN_SUITE_UNIT_SHARD: ${{ matrix.shard }}
+      # The orphan gate waits for Playwright's asynchronous profile cleanup; its 30s default is a
+      # quiet-machine number and this job drives real browsers.
+      TN_ORPHAN_SETTLE_SECONDS: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The specs import the compiled workspace; `test` builds it in its own `build` phase, and
+      # this job takes the cached result rather than repeating it three times over.
+      - uses: ./.github/actions/workspace-dist
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test
 

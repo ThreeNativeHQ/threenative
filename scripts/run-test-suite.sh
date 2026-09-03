@@ -95,8 +95,11 @@ if [[ "$start_status" -ne 0 ]]; then
 fi
 suite_started=1
 
+executed_phases=()
+
 run_phase() {
   local phase="$1"
+  executed_phases+=("$phase")
   shift
   local command_text="$*"
   local guard_status=0
@@ -200,6 +203,28 @@ if [[ -n "${TN_SUITE_EXCLUDE_PACKAGES:-}" ]]; then
 fi
 package_test_command+=(--if-present run test)
 
+
+# Which phases this invocation runs, and which slice of the unit suite.
+#
+# Unset, both are the whole thing: `pnpm test` on a developer machine runs all four phases and
+# every test, and this file stays the gate it has always been. CI splits the work across jobs
+# because the unit run is the longest single thing in the repository's longest job, and it shards
+# cleanly — but the split is only ever safe while the pieces add back up, so
+# `scripts/__tests__/ci-structure.spec.ts` asserts the phases and the shards both partition.
+suite_phases="${TN_SUITE_PHASES:-docs,build,package-test,unit}"
+unit_command=(vitest run)
+if [[ -n "${TN_SUITE_UNIT_SHARD:-}" ]]; then
+  if [[ ! "${TN_SUITE_UNIT_SHARD}" =~ ^[1-9][0-9]*/[1-9][0-9]*$ ]]; then
+    printf 'TN_SUITE_UNIT_SHARD must look like 2/3, got %q\n' "${TN_SUITE_UNIT_SHARD}" >&2
+    exit 2
+  fi
+  unit_command+=(--shard "${TN_SUITE_UNIT_SHARD}")
+fi
+
+runs_phase() {
+  [[ ",${suite_phases}," == *",$1,"* ]]
+}
+
 test_status=0
 if [[ "$resume_mode" -eq 1 ]]; then
   case "$resume_phase" in
@@ -210,7 +235,7 @@ if [[ "$resume_mode" -eq 1 ]]; then
       run_phase build pnpm run build || test_status=$?
       ;;
     unit)
-      run_phase unit vitest run || test_status=$?
+      run_phase unit "${unit_command[@]}" || test_status=$?
       ;;
     package-test)
       run_phase package-test "${package_test_command[@]}" || test_status=$?
@@ -221,15 +246,23 @@ if [[ "$resume_mode" -eq 1 ]]; then
       ;;
   esac
 else
-  run_phase docs pnpm run check:docs || test_status=$?
-  if [[ "$test_status" -eq 0 ]]; then
+  if runs_phase docs; then
+    run_phase docs pnpm run check:docs || test_status=$?
+  fi
+  if [[ "$test_status" -eq 0 ]] && runs_phase build; then
     run_phase build pnpm run build || test_status=$?
   fi
-  if [[ "$test_status" -eq 0 ]]; then
+  if [[ "$test_status" -eq 0 ]] && runs_phase package-test; then
     run_phase package-test "${package_test_command[@]}" || test_status=$?
   fi
-  if [[ "$test_status" -eq 0 ]]; then
-    run_phase unit vitest run || test_status=$?
+  if [[ "$test_status" -eq 0 ]] && runs_phase unit; then
+    run_phase unit "${unit_command[@]}" || test_status=$?
+  fi
+  # A selection that ran nothing is a green report on an empty set.
+  if [[ "$test_status" -eq 0 ]] && [[ "${#executed_phases[@]}" -eq 0 ]]; then
+    printf 'TN_SUITE_NO_PHASES: %q selected none of docs, build, package-test, unit\n' \
+      "$suite_phases" >&2
+    test_status=2
   fi
 fi
 

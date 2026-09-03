@@ -781,6 +781,49 @@ describe("CI pipeline structure", () => {
     );
   });
 
+  // Splitting the suite across jobs is how coverage disappears quietly: a phase named in no job,
+  // or a shard slice nobody runs, both report green. So the split is computed rather than trusted.
+  it("runs every suite phase in exactly one job, and every unit shard", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const suite = requiredJob(ci, "test");
+    const unit = requiredJob(ci, "test-unit");
+
+    const phasesOf = (section: string): readonly string[] =>
+      (section.match(/TN_SUITE_PHASES:\s*"?([a-z,-]+)"?/u)?.[1] ?? "")
+        .split(",")
+        .map((phase) => phase.trim())
+        .filter((phase) => phase !== "");
+
+    const declared = [...phasesOf(suite), ...phasesOf(unit)].sort();
+    // The four the script knows. A phase in neither job runs nowhere; a phase in both runs twice.
+    expect(declared, "the jobs do not partition the suite's phases").toEqual([
+      "build",
+      "docs",
+      "package-test",
+      "unit",
+    ]);
+
+    const shards = [...unit.matchAll(/"(\d+)\/(\d+)"/gu)].map((match) => ({
+      index: Number(match[1]),
+      count: Number(match[2]),
+    }));
+    expect(shards.length, "test-unit declares no shards").toBeGreaterThan(0);
+    const counts = new Set(shards.map(({ count }) => count));
+    expect(counts.size, "test-unit mixes shard counts").toBe(1);
+    const [count] = [...counts];
+    expect(
+      shards.map(({ index }) => index).sort((left, right) => left - right),
+      "test-unit is missing a shard",
+    ).toEqual(Array.from({ length: count ?? 0 }, (_, offset) => offset + 1));
+
+    // And the script must refuse a selection that would run nothing rather than report on it.
+    const runner = await readFile(path.join(repo, "scripts/run-test-suite.sh"), "utf8");
+    expect(runner).toContain("TN_SUITE_NO_PHASES");
+    expect(runner).toContain("TN_SUITE_UNIT_SHARD");
+    // Unset is the whole gate, which is what `pnpm test` on a developer machine has to stay.
+    expect(runner).toContain('"${TN_SUITE_PHASES:-docs,build,package-test,unit}"');
+  });
+
   it("every native leg runs on every event", async () => {
     // Until 2026-09-01 the platform legs ran only on pushes to main, the nightly cron, and PRs
     // carrying the `native` label; a PR read skips where the legs should have reported, and on
