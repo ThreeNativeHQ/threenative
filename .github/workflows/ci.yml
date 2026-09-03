@@ -131,7 +131,14 @@ jobs:
       # still fails when a directory genuinely outlives the wait, and now names what holds it.
       TN_ORPHAN_SETTLE_SECONDS: 120
     steps:
+      # Full history, only on this job. `restore-source-mtimes.mjs` below dates each native source
+      # by the commit that last touched it, and a shallow clone has no such information — `git log`
+      # reports one commit, every file is dated to HEAD, and the cached build tree is then older
+      # than all of its inputs. That is what run 33751865452 did: 299 of 299 files restamped and 78
+      # objects rebuilt behind a cache that had just been restored.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Restore native third-party dependencies
         uses: actions/cache@v4
         with:

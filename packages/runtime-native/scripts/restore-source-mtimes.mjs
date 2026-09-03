@@ -16,7 +16,17 @@ import path from "node:path";
 
 const runtimeRoot = path.resolve(import.meta.dirname, "..");
 const repoRoot = path.resolve(runtimeRoot, "../..");
-const scopes = ["src", "include", "tests", "cmake", "CMakeLists.txt", "CMakePresets.json"];
+// `tools` compiles too — `tools/uinput_touch_device.c` was rebuilding every run because it was
+// not listed here.
+const scopes = [
+  "src",
+  "include",
+  "tests",
+  "tools",
+  "cmake",
+  "CMakeLists.txt",
+  "CMakePresets.json",
+];
 
 /** `git log` walks newest-first, so the first time a path appears is the commit that last set it. */
 function lastCommitTimes() {
@@ -61,6 +71,26 @@ function locallyModified() {
 }
 
 const dirty = locallyModified();
+/**
+ * A shallow clone makes this script actively harmful, so it refuses to run in one.
+ *
+ * `actions/checkout` fetches depth 1 by default. `git log` then reports a single commit, every
+ * file appears in it, and all of them get *that* commit's timestamp — which is newer than the
+ * cached build tree, so ninja rebuilds everything and the cache the timestamps exist to make
+ * usable is worse than useless. The tell is in the output: with real history this restamps a
+ * handful of files, and on run 33751865452 in CI it restamped 299 of 299 and ninja then rebuilt
+ * 78 objects. Fail loudly instead, and name the fix.
+ */
+if (execFileSync("git", ["rev-parse", "--is-shallow-repository"], {
+  cwd: runtimeRoot,
+  encoding: "utf8",
+}).trim() === "true") {
+  throw new Error(
+    "TN_MTIME_SHALLOW_CLONE: this repository is a shallow clone, so `git log` cannot say when a " +
+      "file last changed and every file would be dated to HEAD. Check out with `fetch-depth: 0`.",
+  );
+}
+
 const times = lastCommitTimes();
 if (times.size === 0) {
   throw new Error("TN_MTIME_NO_HISTORY: git log reported no files under the native source scopes.");
