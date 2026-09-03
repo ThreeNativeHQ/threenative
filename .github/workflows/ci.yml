@@ -189,7 +189,7 @@ jobs:
       - name: Compiler cache after the host build
         if: always()
         shell: bash
-        run: ccache --show-stats | sed -n "1,8p"
+        run: ccache --show-stats --verbose
       # The target names are discovered from CMakeLists.txt rather than listed here: a
       # hand-maintained list in a workflow file is the drift that leaves a new contract target
       # unbuilt on CI and only failing for whoever pushes next.
@@ -217,7 +217,7 @@ jobs:
       - name: Compiler cache after the V8 contract executables
         if: always()
         shell: bash
-        run: ccache --show-stats | sed -n "1,8p"
+        run: ccache --show-stats --verbose
       # timestamp-query and rg11b10-renderable are cross-engine contracts and the JS engine is
       # a build-time choice, so QuickJS needs its own configured build directory. Without it
       # those tests fail closed on CI naming build/tn-linux-quickjs, exactly as happened to
@@ -233,7 +233,7 @@ jobs:
       - name: Compiler cache after the QuickJS variant
         if: always()
         shell: bash
-        run: ccache --show-stats | sed -n "1,8p"
+        run: ccache --show-stats --verbose
       - name: Report the compiler cache hit rate
         if: always()
         shell: bash
