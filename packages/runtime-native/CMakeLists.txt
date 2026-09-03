@@ -1261,6 +1261,7 @@ add_custom_target(threenative-runtime-scripts DEPENDS "${TN_RUNTIME_SCRIPT_HEADE
 # Android requires shared library for JNI/SDL loading
 set(MYSTRAL_SOURCES
     src/runtime.cpp
+    src/screenshot_gate.cpp
     src/workers/worker_registry.cpp
     src/workers/worker_thread.cpp
     src/js/engine_factory.cpp
@@ -1983,6 +1984,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-frame-op-stream-replay-test EXCLUDE_FROM_ALL
         tests/frame_op_stream_replay_test.cpp)
     target_link_libraries(threenative-frame-op-stream-replay-test PRIVATE mystral-runtime)
+    # The capture gate is self-contained on purpose: the ordering contract needs no display,
+    # no GPU and no runtime to prove, so the test compiles the gate alone.
+    add_executable(threenative-screenshot-capture-gate-test EXCLUDE_FROM_ALL
+        tests/screenshot_capture_gate_test.cpp
+        src/screenshot_gate.cpp)
+    target_include_directories(threenative-screenshot-capture-gate-test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
     add_executable(threenative-shader-module-metadata-test EXCLUDE_FROM_ALL
         tests/shader_module_metadata_test.cpp)
     target_link_libraries(threenative-shader-module-metadata-test PRIVATE mystral-runtime)
@@ -2127,6 +2135,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     endif()
     tn_register_contract_test(threenative-render-pass-class-table-test)
     tn_register_contract_test(threenative-rt-handle-allocation-test)
+    tn_register_contract_test(threenative-screenshot-capture-gate-test)
     tn_register_contract_test(threenative-shader-module-metadata-test)
     tn_register_contract_test(threenative-shutdown-lifetime-test http)
     file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ctest-shutdown-lifetime")

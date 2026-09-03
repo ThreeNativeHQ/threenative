@@ -13,6 +13,7 @@
 #include "mystral/js/engine.h"
 #include "mystral/cold_start.h"
 #include "mystral/runtime.h"
+#include "mystral/screenshot_gate.h"
 #include "tool_dispatch.h"
 #include "mystral/platform/ui_overlay.h"
 #include "mystral/vfs/embedded_bundle.h"
@@ -1150,28 +1151,34 @@ static int runScreenshotMode(const CLIOptions& opts, mystral::Runtime& runtime) 
     //
     // Bounded by the gate's own worst case plus margin: a game that never becomes ready must still
     // produce a frame and a report rather than hanging the lane.
+    //
+    // Ordering matters as much as presence. The two-flag wait this replaced ended the instant
+    // readiness flipped, and a buffer filled during loading stayed filled — CI run 33789430714
+    // printed TN_STARTUP_CAPTURE_READY:1 one line after its last present and saved a progress bar
+    // at 92%. The gate drops any pre-readiness capture and keeps driving frames until a fresh one
+    // lands, so the frame that gets saved postdates readiness.
     constexpr auto kStartupCaptureBudget = std::chrono::seconds(30);
-    const auto readyDeadline = std::chrono::steady_clock::now() + kStartupCaptureBudget;
-    // Both conditions matter and they are not the same. Readiness says the world is on screen;
-    // a captured frame says there is anything at all to save. A CI run whose 300 frames all elapsed
-    // during asset load had neither, and `saveScreenshot` refused with "No rendered frame available
-    // yet" — no frame count printed, exit 1.
-    bool sawReady = runtime.isStartupReady();
-    bool sawFrame = runtime.hasCapturedFrame();
-    while ((!sawReady || !sawFrame) && std::chrono::steady_clock::now() < readyDeadline) {
-        runtime.requestFrameScreenshot();
-        if (!runtime.pollEvents()) break;
-        sawReady = runtime.isStartupReady();
-        sawFrame = runtime.hasCapturedFrame();
-    }
+    mystral::ScreenshotGateHooks captureHooks;
+    captureHooks.requestFrameScreenshot = [&runtime] { runtime.requestFrameScreenshot(); };
+    captureHooks.pollEvents = [&runtime] { return runtime.pollEvents(); };
+    captureHooks.isStartupReady = [&runtime] { return runtime.isStartupReady(); };
+    captureHooks.hasCapturedFrame = [&runtime] { return runtime.hasCapturedFrame(); };
+    captureHooks.clearCapturedFrame = [&runtime] { runtime.clearCapturedFrame(); };
+    captureHooks.now = [] { return std::chrono::steady_clock::now(); };
+    const mystral::ScreenshotGateResult capture = mystral::awaitStartupCapture(
+        captureHooks, std::chrono::steady_clock::now() + kStartupCaptureBudget);
     if (!opts.quiet) {
-        if (sawReady && sawFrame) {
+        if (capture.ready && capture.captured) {
             std::cout << "TN_STARTUP_CAPTURE_READY:1" << std::endl;
         } else {
             std::cerr << "Warning: startup gate never opened within "
                       << kStartupCaptureBudget.count() << "s; capturing anyway." << std::endl;
             std::cout << "TN_STARTUP_CAPTURE_READY:0" << std::endl;
         }
+        // The gate drives frames of its own — the refresh that guarantees the saved capture
+        // postdates readiness — and each is one present beyond the requested frame count.
+        // Naming them keeps the one-present-per-frame invariant exact instead of loosened.
+        std::cout << "TN_CAPTURE_REFRESH_PRESENTS:" << capture.presents << std::endl;
     }
 
     auto endTime = std::chrono::high_resolution_clock::now();

@@ -1464,6 +1464,11 @@ public:
         return webgpu::isScreenshotReady(bindingsState_);
     }
 
+    void clearCapturedFrame() override {
+        if (!webgpu_) return;
+        webgpu_->clearFrameScreenshotReady();
+    }
+
     void* getWebGPUBindingsState() const override {
         return bindingsState_;
     }
