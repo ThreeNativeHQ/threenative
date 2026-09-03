@@ -27,8 +27,9 @@ injected only to keep this package free of compression dependencies.
 
 **Measured impact.** Across the seven licensed Fab packs on this machine (885 `.uasset` files
 carrying a `StaticMesh` export), 141 meshes — the whole UE 4.26 Office Pack Vol. 1 — failed with
-`UNSUPPORTED_STATIC_MESH_LAYOUT` before this change and decode with the codec supplied. They
-decode to `layout: "mesh-description-ue4"`.
+`UNSUPPORTED_STATIC_MESH_LAYOUT` before this change. All 141 decode with the codec supplied, to
+`layout: "mesh-description-ue4"`. Without it they fail with `MISSING_CODEC`, not with a layout
+complaint, so the diagnosis points at the caller rather than at the asset.
 
 **Known call sites that need updating**
 
@@ -51,12 +52,17 @@ parseUAssetStaticMesh(uassetBytes, {
 });
 ```
 
-Without them the reader throws `MISSING_BULK_DATA_FILE` with `details.file` naming the extension
-it needs, so a caller can fetch it and retry rather than being told the layout is unsupported.
+Without them the package reports `UNSUPPORTED_STATIC_MESH_LAYOUT`, whose `supported:` line names
+`bulkDataFiles` as the thing this store needs. It deliberately does **not** claim the package has
+a sibling file: nothing inside a `.uasset` can range-check a separate-file payload, so a byte run
+that happens to parse as one of those headers is indistinguishable from a real one. One Paragon
+material asset yields eleven such patterns, claiming payloads of up to eight terabytes.
+`resolveBulkDataPayload` still throws `MISSING_BULK_DATA_FILE` when a caller resolves a header it
+knows to be separate-file, which is where that code is meaningful.
 
 **Not urgent.** None of the 5,714 packages surveyed here carries this flag — every one is an
 uncooked editor package with a single `.uasset` and no siblings on disk. The seam exists so the
-failure is actionable, and it is proven only against a synthetic fixture
+capability is reachable, and it is proven only against a synthetic fixture
 (`packages/raw-unreal/__tests__/bulk-data.spec.ts`), not against a real pack.
 
 Claude-Session: https://claude.ai/code/session_01WG7DHsvuEd59DwDxFLjjWh
