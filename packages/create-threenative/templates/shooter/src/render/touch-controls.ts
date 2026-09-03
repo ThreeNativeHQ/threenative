@@ -14,6 +14,8 @@ import { palette } from "./palette.js";
 const MOVE_RADIUS = 72;
 const BUTTON_RADIUS = 58;
 const EDGE = 36;
+/** The three secondary pads: smaller than fire, because they are pressed less often. */
+const SMALL_RADIUS = 34;
 
 export interface ITouchPointer {
   readonly position: Vector2;
@@ -25,10 +27,27 @@ export interface ITouchViewport {
 }
 
 export interface ITouchInput {
+  /** Right thumb: a look delta in stick units, which the player converts to yaw and pitch. */
   readonly aim: Vector2;
+  /** Held, not edge-triggered: down the sights for as long as the thumb is on the pad. */
+  readonly aimPressed: boolean;
+  readonly crouchPressed: boolean;
+  /** Edge-triggered, so resting a thumb on the trigger does not empty the magazine. */
   readonly firePressed: boolean;
   readonly move: Vector2;
+  readonly reloadPressed: boolean;
+  /**
+   * Pushing the movement stick to its rim sprints.
+   *
+   * A fourth button would be a fourth thing to find under a thumb. The stick already carries the
+   * intent — a player who wants to go faster pushes harder — and the same two vetoes that stop a
+   * keyboard sprint (aiming, crouching) apply to it in `Player.update`.
+   */
+  readonly sprintPressed: boolean;
 }
+
+/** How far out the movement stick has to go before it reads as a sprint. */
+const SPRINT_THRESHOLD = 0.92;
 
 function overlayMaterial(color: ColorRepresentation, opacity: number): MeshBasicMaterial {
   return new MeshBasicMaterial({
@@ -48,7 +67,9 @@ function place(mesh: Mesh, point: Vector2): void {
   mesh.position.set(point.x, point.y, 0);
 }
 
-function controlPoint(size: ITouchViewport, name: "aim" | "fire" | "move"): Vector2 {
+type ControlName = "aim" | "ads" | "crouch" | "fire" | "move" | "reload";
+
+function controlPoint(size: ITouchViewport, name: ControlName): Vector2 {
   if (name === "move") return new Vector2(MOVE_RADIUS + EDGE, size.height - MOVE_RADIUS - EDGE);
   if (name === "aim") {
     return new Vector2(
@@ -56,6 +77,20 @@ function controlPoint(size: ITouchViewport, name: "aim" | "fire" | "move"): Vect
       size.height - MOVE_RADIUS - EDGE,
     );
   }
+  if (name === "ads") {
+    return new Vector2(
+      size.width - BUTTON_RADIUS - EDGE,
+      size.height - BUTTON_RADIUS * 3 - EDGE - SMALL_RADIUS,
+    );
+  }
+  if (name === "reload") {
+    return new Vector2(
+      size.width - BUTTON_RADIUS * 2 - EDGE - SMALL_RADIUS,
+      size.height - SMALL_RADIUS - EDGE,
+    );
+  }
+  if (name === "crouch")
+    return new Vector2(MOVE_RADIUS + EDGE, size.height - MOVE_RADIUS * 2 - EDGE - SMALL_RADIUS);
   return new Vector2(size.width - BUTTON_RADIUS - EDGE, size.height - BUTTON_RADIUS - EDGE);
 }
 
@@ -63,17 +98,33 @@ export class TouchControls {
   readonly root = new Group();
   readonly object = this.root;
   #camera: PerspectiveCamera;
-  #input: { aim: Vector2; firePressed: boolean; move: Vector2 } = {
+  #input: {
+    aim: Vector2;
+    aimPressed: boolean;
+    crouchPressed: boolean;
+    firePressed: boolean;
+    move: Vector2;
+    reloadPressed: boolean;
+    sprintPressed: boolean;
+  } = {
     aim: new Vector2(),
+    aimPressed: false,
+    crouchPressed: false,
     firePressed: false,
     move: new Vector2(),
+    reloadPressed: false,
+    sprintPressed: false,
   };
   #wasFire = false;
+  #wasReload = false;
   #moveAnchor = new Vector2();
   #aimAnchor = new Vector2();
   #moveResting = new Vector2();
   #aimResting = new Vector2();
   #fireCenter = new Vector2();
+  #adsCenter = new Vector2();
+  #reloadCenter = new Vector2();
+  #crouchCenter = new Vector2();
   #hasMoveAnchor = false;
   #hasAimAnchor = false;
   #lastWidth = -1;
@@ -83,6 +134,9 @@ export class TouchControls {
   #aimBase: Mesh;
   #aimKnob: Mesh;
   #fire: Mesh;
+  #ads: Mesh;
+  #reload: Mesh;
+  #crouch: Mesh;
   #idleMaterial: MeshBasicMaterial;
   #activeMaterial: MeshBasicMaterial;
 
@@ -95,7 +149,19 @@ export class TouchControls {
     this.#aimBase = ringMesh(MOVE_RADIUS, this.#idleMaterial);
     this.#aimKnob = new Mesh(new CircleGeometry(28, 24), this.#activeMaterial);
     this.#fire = ringMesh(BUTTON_RADIUS, this.#idleMaterial);
-    this.root.add(this.#moveBase, this.#moveKnob, this.#aimBase, this.#aimKnob, this.#fire);
+    this.#ads = ringMesh(SMALL_RADIUS, this.#idleMaterial);
+    this.#reload = ringMesh(SMALL_RADIUS, this.#idleMaterial);
+    this.#crouch = ringMesh(SMALL_RADIUS, this.#idleMaterial);
+    this.root.add(
+      this.#moveBase,
+      this.#moveKnob,
+      this.#aimBase,
+      this.#aimKnob,
+      this.#fire,
+      this.#ads,
+      this.#reload,
+      this.#crouch,
+    );
     this.root.renderOrder = 10_001;
     camera.add(this.root);
   }
@@ -103,6 +169,9 @@ export class TouchControls {
   update(pointers: ReadonlyMap<number, ITouchPointer>, size: ITouchViewport): ITouchInput {
     this.#ensureLayout(size);
     const fire = this.#at(pointers, this.#fireCenter, BUTTON_RADIUS);
+    const ads = this.#at(pointers, this.#adsCenter, SMALL_RADIUS);
+    const reload = this.#at(pointers, this.#reloadCenter, SMALL_RADIUS);
+    const crouch = this.#at(pointers, this.#crouchCenter, SMALL_RADIUS);
     let movement: ITouchPointer | undefined;
     let aiming: ITouchPointer | undefined;
     for (const pointer of pointers.values()) {
@@ -114,7 +183,15 @@ export class TouchControls {
     this.#updateStick(aiming, this.#aimAnchor, "aim");
     this.#input.firePressed = fire && !this.#wasFire;
     this.#wasFire = fire;
+    this.#input.reloadPressed = reload && !this.#wasReload;
+    this.#wasReload = reload;
+    this.#input.aimPressed = ads;
+    this.#input.crouchPressed = crouch;
+    this.#input.sprintPressed = this.#input.move.length() >= SPRINT_THRESHOLD;
     this.#fire.material = fire ? this.#activeMaterial : this.#idleMaterial;
+    this.#ads.material = ads ? this.#activeMaterial : this.#idleMaterial;
+    this.#reload.material = reload ? this.#activeMaterial : this.#idleMaterial;
+    this.#crouch.material = crouch ? this.#activeMaterial : this.#idleMaterial;
     this.#layout(size);
     return this.#input;
   }
@@ -122,8 +199,11 @@ export class TouchControls {
   debug(): Record<string, unknown> {
     return {
       aim: this.#input.aim.toArray(),
+      ads: this.#input.aimPressed ? 1 : 0,
+      crouch: this.#input.crouchPressed ? 1 : 0,
       fire: this.#wasFire,
       move: this.#input.move.toArray(),
+      sprint: this.#input.sprintPressed ? 1 : 0,
     };
   }
 
@@ -143,6 +223,9 @@ export class TouchControls {
     this.#moveResting.copy(controlPoint(size, "move"));
     this.#aimResting.copy(controlPoint(size, "aim"));
     this.#fireCenter.copy(controlPoint(size, "fire"));
+    this.#adsCenter.copy(controlPoint(size, "ads"));
+    this.#reloadCenter.copy(controlPoint(size, "reload"));
+    this.#crouchCenter.copy(controlPoint(size, "crouch"));
   }
 
   #updateStick(pointer: ITouchPointer | undefined, anchor: Vector2, stick: "aim" | "move"): void {
@@ -190,6 +273,9 @@ export class TouchControls {
       ),
     );
     place(this.#fire, this.#fireCenter);
+    place(this.#ads, this.#adsCenter);
+    place(this.#reload, this.#reloadCenter);
+    place(this.#crouch, this.#crouchCenter);
   }
 
   #stickKnobPosition(

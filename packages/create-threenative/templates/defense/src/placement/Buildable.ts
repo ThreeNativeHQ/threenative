@@ -1,6 +1,6 @@
-import { CollisionShape3D } from "@threenative/physics";
+import { CollisionShape3D, type PhysicsDirectSpaceState3D } from "@threenative/physics";
 import type { Vector3 } from "three";
-import { type IPhysicsDirectSpaceState, ROUTE_LAYER, TOWER_LAYER } from "../physics.js";
+import { ROUTE_LAYER, TOWER_LAYER } from "../physics.js";
 
 export type PlacementReason = "clear" | "overlap" | "route";
 
@@ -13,11 +13,11 @@ const BUILD_MASK = ROUTE_LAYER | TOWER_LAYER;
 const BUILD_HEIGHT = 0.6;
 
 export class Buildable {
-  readonly #query: IPhysicsDirectSpaceState;
+  readonly #query: PhysicsDirectSpaceState3D;
   readonly #shape = CollisionShape3D.box(1.55, 1.2, 1.55);
   readonly #placed: Vector3[] = [];
 
-  constructor(query: IPhysicsDirectSpaceState) {
+  constructor(query: PhysicsDirectSpaceState3D) {
     this.#query = query;
   }
 

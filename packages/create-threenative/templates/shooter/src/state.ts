@@ -7,6 +7,10 @@ export type GameState = {
   uiReady: boolean;
   aimedShots: number;
   aiming: number;
+  /** Rounds in the magazine, and in reserve. The HUD reads both; a scenario asserts them. */
+  ammo: number;
+  reserve: number;
+  reloading: number;
   armor: number;
   cameraShakes: number;
   deaths: number;
@@ -25,6 +29,7 @@ export type GameState = {
   pickupFrame: number;
   pickupFrameChanges: number;
   pickups: number;
+  pitchDegrees: number;
   radiusInsideDeaths: number;
   radiusMidAlive: number;
   radiusNearAlive: number;

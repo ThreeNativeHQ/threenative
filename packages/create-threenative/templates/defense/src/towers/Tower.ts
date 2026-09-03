@@ -1,12 +1,11 @@
-import { CollisionShape3D } from "@threenative/physics";
-import type { Group, Vector3 } from "three";
 import {
-  ATTACKER_LAYER,
-  type DefensePhysics,
-  type IPhysicsDirectSpaceState,
-  TOWER_LAYER,
-  createEntityBody,
-} from "../physics.js";
+  CollisionShape3D,
+  type IPhysicsContext,
+  type PhysicsDirectSpaceState3D,
+  RigidBody3D,
+} from "@threenative/physics";
+import type { Group, Vector3 } from "three";
+import { ATTACKER_LAYER, TOWER_LAYER } from "../physics.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { tower as towerMesh } from "../render/shapes.js";
 import { type ITargetable, JitteredScanClock, nearestFirst } from "./targeting.js";
@@ -21,7 +20,7 @@ export class Tower {
   readonly tags = ["tower", "defense"];
   readonly #body;
   readonly #clock: JitteredScanClock;
-  readonly #query: IPhysicsDirectSpaceState;
+  readonly #query: PhysicsDirectSpaceState3D;
   readonly #targets: ReadonlyMap<string, ITargetable>;
   #reload = 0;
   #shots = 0;
@@ -29,9 +28,9 @@ export class Tower {
 
   constructor(options: {
     readonly id: string;
-    readonly physics: DefensePhysics;
+    readonly physics: IPhysicsContext;
     readonly position: Vector3;
-    readonly query: IPhysicsDirectSpaceState;
+    readonly query: PhysicsDirectSpaceState3D;
     readonly random: ConstructorParameters<typeof JitteredScanClock>[0];
     readonly targets: ReadonlyMap<string, ITargetable>;
   }) {
@@ -41,7 +40,7 @@ export class Tower {
     this.#clock = new JitteredScanClock(options.random);
     this.mesh = towerMesh();
     this.mesh.position.copy(options.position).setY(0);
-    this.#body = createEntityBody({
+    this.#body = new RigidBody3D({
       collisionLayer: TOWER_LAYER,
       collisionMask: ATTACKER_LAYER,
       entity: `tower.${this.id}`,

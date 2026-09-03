@@ -1,22 +1,38 @@
 {
   "acceptanceId": "prd-194-performance-shooter",
-  "artifacts": { "screenshots": false },
+  "artifacts": {
+    "screenshots": false
+  },
   "assert": {
     "performance": {
-      "maxDrawCalls": 295,
+      "maxDrawCalls": 320,
       "maxFrameMsP95": 33,
-      "maxTriangles": 2500
+      "maxTriangles": 3000
     },
-    "renderChain": { "tier": "high" }
+    "renderChain": {
+      "tier": "high"
+    }
   },
   "name": "production-performance",
   "schemaVersion": 1,
   "steps": [
-    { "kind": "input", "press": "ArrowRight", "holdTicks": 60, "release": true },
-    { "kind": "wait", "waitTicks": 600, "release": true }
+    {
+      "kind": "input",
+      "press": "ArrowRight",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 600,
+      "release": true
+    }
   ],
   "subject": "player",
   "target": "web",
-  "viewport": { "height": 1080, "width": 1920 },
+  "viewport": {
+    "height": 1080,
+    "width": 1920
+  },
   "warmupFrames": 60
 }

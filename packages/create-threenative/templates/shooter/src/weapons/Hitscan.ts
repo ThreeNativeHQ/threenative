@@ -1,6 +1,5 @@
-import type { IPhysicsContext } from "@threenative/physics";
+import type { IPhysicsContext, IRayHit } from "@threenative/physics";
 import type { Vector3 } from "three";
-import { type IRayHit, directSpaceState } from "../physics.js";
 
 export class Hitscan {
   readonly range: number;
@@ -25,7 +24,7 @@ export class Hitscan {
     if (this.#cooldown > 0) return undefined;
     this.#cooldown = this.cooldown;
     const to = from.clone().add(direction.clone().normalize().multiplyScalar(this.range));
-    return directSpaceState(physics).intersectRay({
+    return physics.directSpaceState.intersectRay({
       collisionMask,
       from,
       to,
@@ -38,6 +37,6 @@ export class Hitscan {
     to: Vector3,
     collisionMask: number,
   ): IRayHit | undefined {
-    return directSpaceState(physics).intersectRay({ collisionMask, from, to });
+    return physics.directSpaceState.intersectRay({ collisionMask, from, to });
   }
 }

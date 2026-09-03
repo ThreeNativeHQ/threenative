@@ -1,14 +1,13 @@
 import { defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
-import { rapier } from "@threenative/physics";
+import { type IPhysicsContext, rapier } from "@threenative/physics";
 import config from "../threenative.config.js";
-import type { DefensePhysics } from "./physics.js";
 import { drainPlaytestEvents as events } from "./playtest-events.js";
 import { Boot } from "./scenes/Boot.js";
 import { Defense } from "./scenes/Defense.js";
 import type { GameState } from "./state.js";
 
-const game = defineGame<GameState, DefensePhysics>({
+const game = defineGame<GameState, IPhysicsContext>({
   input: {
     move: {
       down: ["ArrowDown", "KeyS"],

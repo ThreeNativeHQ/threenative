@@ -16,7 +16,7 @@
     {
       "kind": "input",
       "label": "wall-layer-filter",
-      "press": "KeyC",
+      "press": "KeyV",
       "holdTicks": 1,
       "release": true
     },
@@ -25,8 +25,14 @@
     { "kind": "input", "label": "damage", "press": "KeyH", "holdTicks": 1, "release": true },
     { "kind": "input", "label": "death", "press": "KeyX", "holdTicks": 1, "release": true },
     { "kind": "wait", "label": "respawn", "waitTicks": 35, "release": true },
-    { "kind": "input", "label": "pickup", "press": "KeyA", "holdTicks": 8, "release": true },
-    { "kind": "input", "label": "pickup-return", "press": "KeyD", "holdTicks": 8, "release": true },
+    { "kind": "input", "label": "pickup", "press": "KeyA", "holdTicks": 30, "release": true },
+    {
+      "kind": "input",
+      "label": "pickup-return",
+      "press": "KeyD",
+      "holdTicks": 30,
+      "release": true
+    },
     { "kind": "input", "label": "wave-1-shot", "press": "KeyF", "holdTicks": 1, "release": true },
     { "kind": "wait", "label": "wave-2-ready", "waitTicks": 45, "release": true },
     { "kind": "input", "label": "wave-2-shot", "press": "KeyF", "holdTicks": 1, "release": true },
@@ -46,7 +52,7 @@
       "runtimeReady": true
     },
     "resources": [
-      { "id": "state", "path": "hitDistanceTenths", "equals": 78, "changed": true },
+      { "id": "state", "path": "hitDistanceTenths", "equals": 85, "changed": true },
       { "id": "state", "path": "hitNormalXPercent", "equals": 22, "changed": true },
       { "id": "state", "path": "hitNormalYPercent", "equals": 0, "changed": true },
       { "id": "state", "path": "hitNormalZPercent", "equals": 98, "changed": true },
@@ -83,9 +89,9 @@
     ],
     "visibility": [
       {
-        "allowTrivial": "The shooter scene begins with the player visible and in frame; this held visibility row accompanies the combat assertions.",
-        "entity": "player",
-        "minProjectedPixels": 20
+        "allowTrivial": "The player's own capsule is invisible in first person; the viewmodel is what the player sees of themselves, so this row measures the weapon in frame.",
+        "entity": "viewmodel",
+        "minProjectedPixels": 400
       },
       { "entity": "demo-target", "present": false }
     ]

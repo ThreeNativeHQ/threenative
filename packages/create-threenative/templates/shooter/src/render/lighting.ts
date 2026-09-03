@@ -16,7 +16,9 @@ type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 export function setupLighting(scene: Scene, renderer: ShadowRenderer): DirectionalLight {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
-  scene.add(new HemisphereLight(palette.skyHigh, palette.skyLow, 1.25));
+  // First person puts the player inside the arena rather than above it, so the sky term does
+  // most of the work of making a wall read as a surface instead of a silhouette.
+  scene.add(new HemisphereLight(palette.skyHigh, palette.skyLow, 1.9));
 
   const key = new DirectionalLight(palette.accent, 3.1);
   key.name = "key-light";
@@ -37,7 +39,7 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): Direction
   rim.name = "rim-light";
   rim.position.set(8, 5, -10);
   scene.add(rim);
-  scene.add(new AmbientLight(palette.skyLow, 0.3));
+  scene.add(new AmbientLight(palette.skyLow, 0.55));
 
   return key;
 }

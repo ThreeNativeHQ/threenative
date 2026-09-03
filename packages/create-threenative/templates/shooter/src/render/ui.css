@@ -243,3 +243,88 @@ body {
     align-self: flex-end;
   }
 }
+
+/* The ammo block sits under the meters: the second number a first-person player checks. */
+.shooter-ammo {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin-top: 0.75rem;
+}
+
+.shooter-ammo__count {
+  color: var(--shooter-amber);
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.shooter-ammo__reloading {
+  color: var(--shooter-red);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/*
+ * The reticle. Centred on the window rather than on the canvas element so it stays put when the
+ * page gains a border, and `pointer-events: none` so it never eats a click meant for the game.
+ */
+.shooter-crosshair {
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  opacity: 0.85;
+}
+
+.shooter-crosshair--aiming {
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+}
+
+.shooter-crosshair__bar {
+  position: absolute;
+  filter: drop-shadow(0 0 3px rgb(0 0 0 / 90%));
+}
+
+/*
+ * The gap in the middle is the shot. A solid cross covers exactly the pixels you are trying to
+ * see, so each bar is a gradient with a transparent centre rather than one filled rectangle.
+ */
+.shooter-crosshair__bar--vertical {
+  top: 0;
+  left: 50%;
+  width: 2px;
+  height: 100%;
+  transform: translateX(-50%);
+  background: linear-gradient(
+    to bottom,
+    var(--shooter-cyan) 0 32%,
+    transparent 32% 68%,
+    var(--shooter-cyan) 68% 100%
+  );
+}
+
+.shooter-crosshair__bar--horizontal {
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    to right,
+    var(--shooter-cyan) 0 32%,
+    transparent 32% 68%,
+    var(--shooter-cyan) 68% 100%
+  );
+}

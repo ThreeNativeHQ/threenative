@@ -229,11 +229,19 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
   test("negative control: removing right-button delivery leaves the input state unchanged", async () => {
     expect(projectPath).toBeDefined();
     const scenario = JSON.parse(await readFile(SCENARIO_PATH, "utf8")) as {
-      steps: Array<{ label?: string; pointerPosition?: { buttons?: number; x: number; y: number } }>;
+      steps: Array<{
+        label?: string;
+        pointerPosition?: { buttons?: number; x: number; y: number };
+        press?: string;
+      }>;
     };
-    // The named mutation: strip right-button delivery everywhere the scenario delivers it —
-    // the aim step loses its press and the fire step keeps only the left bit — so aim can never
-    // engage while left-button fire still works. Everything else stays byte-identical.
+    // The named mutation: strip every way this scenario can engage the sights — the right button
+    // on `aim-down` and the `KeyQ` hold on `aim-key` — so aim can never engage while the trigger
+    // still fires. Everything else stays byte-identical.
+    //
+    // Both have to go. The scenario aims twice on purpose: once with the mouse, to prove the
+    // right button, and once with a key, because the trigger is pressed alone. A chorded press
+    // never reaches the page, so left-while-right-held would prove nothing about either.
     type PointerStep = NonNullable<
       Array<{ label?: string; pointerPosition?: { buttons?: number; x: number; y: number } }>
     >[number];
@@ -241,15 +249,16 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
     const aimStep = byLabel.get("aim-down") as PointerStep | undefined;
     const fireStep = byLabel.get("fire-while-aiming") as PointerStep | undefined;
     expect(aimStep?.pointerPosition?.buttons).toBe(2);
-    expect(fireStep?.pointerPosition?.buttons).toBe(3);
+    expect(fireStep?.pointerPosition?.buttons).toBe(1);
     const mutatedSteps: Array<Record<string, unknown>> = scenario.steps.map((step) => {
       if (step.label === "aim-down" && step.pointerPosition !== undefined) {
         const position = { x: step.pointerPosition.x, y: step.pointerPosition.y };
         return { ...step, pointerPosition: position };
       }
-      if (step.label === "fire-while-aiming" && step.pointerPosition !== undefined) {
-        return { ...step, pointerPosition: { ...step.pointerPosition, buttons: 1 } };
-      }
+      // The aim key becomes a key the game binds to nothing. Deleting the press outright would
+      // leave a step with no input at all, which the schema rejects before the run starts — the
+      // control has to change what is delivered, not whether anything is.
+      if (step.label === "aim-key") return { ...step, press: "KeyM" };
       return step;
     });
     const mutatedPath = path.join(projectDirectory(), "input-control-negative.playtest.json");

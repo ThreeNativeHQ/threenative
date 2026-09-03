@@ -179,6 +179,25 @@ its own spawn constants; scenarios override them for determinism, through this o
 The template-teaching copy of this vocabulary ships via the create-threenative shared
 fragment when games adopt it; until then this section is the harness contract.
 
+## A held mouse button is not observable; a keyboard hold is
+
+Keyboard state survives across fixed-step ticks — `press` with `holdTicks` gives the game a real
+hold, which is how a hold-to-fire cadence gets proved. **Mouse buttons do not.** A step that
+presses a pointer button and releases it in the same step leaves the game one *latched edge* and
+never a non-zero `input.raw.pointer.buttons` on any tick, because the browser dispatches the down
+and the up between two advances of the virtual clock. `justPressed` sees it; `pressed` does not.
+
+Two consequences, both measured on the shooter kit:
+
+- A game that fires only on `input.pressed("fire")` fires nothing from the mouse in a scenario
+  while working perfectly for a person. Accept the edge as well as the hold.
+- Chorded buttons — pressing left while right is already held, the ADS-and-fire combination every
+  shooter uses — do not arrive at all. Hold the modifier on a **key** and press the mouse button
+  alone, or the scenario proves nothing about either.
+
+A held pointer button *across* steps does work: `release: false` keeps it down, and
+`input.pressed` reports it on every tick until a later step releases it.
+
 ## Determinism
 
 Scenario steps count fixed-step ticks, not milliseconds — use `holdTicks`, `waitTicks`. The
