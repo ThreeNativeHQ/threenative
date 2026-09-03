@@ -1,5 +1,5 @@
-import { type IBulkSourceModel, selectBulkSourceModel } from "./bulk-source-model.js";
 // quality-allow: landed over the file-length threshold with the FAB extraction lane; split owed to that lane
+import { type IBulkSourceModel, selectBulkSourceModel } from "./bulk-source-model.js";
 import {
   decompressCompressedBuffer,
   findCompressedBufferOffsets,

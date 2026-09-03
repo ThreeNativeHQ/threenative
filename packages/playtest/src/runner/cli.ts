@@ -22,6 +22,7 @@ import { runDesktopPlaytest } from "./desktopRunner.js";
 import { runIosPlaytest } from "./iosRunner.js";
 import { recordToScenario } from "./recording.js";
 import { runStandalonePlaytest, runStandalonePlaytests, type IStandalonePlaytestReport } from "./runner.js";
+import { traceCommand } from "./traceRun.js";
 import { safePart } from "./shared.js";
 
 export interface IRunnerDiagnostic {
@@ -224,6 +225,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     }
     if (argv[0] === "doctor") return await doctorCommand(argv.slice(1));
     if (argv[0] === "perf") return await perfCommand(argv.slice(1));
+    if (argv[0] === "trace") return await traceCommand(argv.slice(1));
     if (argv[0] === "init") {
       const result = await initStandalonePlaytest(process.cwd());
       process.stdout.write(`${JSON.stringify({ ...result, pass: true }, null, 2)}\n`);
