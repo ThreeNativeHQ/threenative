@@ -37,7 +37,8 @@
         "clip": "DeathFront",
         "entered": true,
         "advancedFrames": 60,
-        "finished": true
+        "finished": true,
+        "strideSynced": false
       }
     ],
     "states": [
