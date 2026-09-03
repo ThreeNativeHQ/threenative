@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import { emitMovementEvidence } from "../src/evaluators/movement-evidence.js";
-import { loadPlaytestScenario } from "../src/scenario.js";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
+import { loadPlaytestScenario } from "../src/scenario.js";
 
 /**
  * The stride convention — feet meet the floor — is on by default and has a named override, and
@@ -152,7 +152,7 @@ describe("foot slide is an observation a scenario can bound", () => {
 
 describe("the scenario schema fails closed on the new fields", () => {
   function scenarioFile(assertion: unknown): { file: string; project: string } {
-    const project = mkdtempSync(join(tmpdir(), "threenative-stride-"));
+    const project = makeTempDirSync("threenative-stride-");
     const file = join(project, "stride.playtest.json");
     writeFileSync(
       file,
