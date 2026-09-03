@@ -835,6 +835,32 @@ describe("CI pipeline structure", () => {
     expect(runner).toContain('"${TN_SUITE_PHASES:-docs,build,package-test,unit}"');
   });
 
+  // Every job that scaffolds a generated project installs *its* dependencies, not the
+  // workspace's. Keyed on the workspace lockfile alone, the store cache does not hold them: on run
+  // 33753945433 every template leg reported `resolved 492, reused 192, downloaded 170`, ten legs
+  // each fetching the same third of the tree from the network.
+  it("keys the package store on the templates for every job that scaffolds one", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    for (const name of [
+      "golden-path-template",
+      "template-nonvisual",
+      "test-browser",
+      "test-playtest",
+    ]) {
+      const job = requiredJob(ci, name);
+      // Only jobs that actually scaffold need this; the assertion is that these ones do.
+      expect(job, `${name} does not scaffold a project`).toMatch(
+        /scaffold-from-tarballs|THREENATIVE_PACKED_PACKAGES|verify:golden-path|test:playtest/u,
+      );
+      expect(job, `${name} keys its store on the workspace lockfile alone`).toContain(
+        "cache-dependency-path",
+      );
+      expect(job).toContain("packages/create-threenative/templates/*/package.json");
+      // The workspace lockfile stays in the key — these jobs install the workspace too.
+      expect(job).toMatch(/cache-dependency-path: \|\n\s+pnpm-lock\.yaml/u);
+    }
+  });
+
   it("every native leg runs on every event", async () => {
     // Until 2026-09-01 the platform legs ran only on pushes to main, the nightly cron, and PRs
     // carrying the `native` label; a PR read skips where the legs should have reported, and on

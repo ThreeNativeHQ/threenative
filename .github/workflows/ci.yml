@@ -360,6 +360,15 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+          # The store this job needs is not the repository's. It scaffolds a generated project and
+          # installs *its* dependencies, and on run 33753945433 every template leg reported
+          # `resolved 492, reused 192, downloaded 170` — a third of the tree fetched from the
+          # network, ten legs over, because the store cache is keyed on the workspace lockfile
+          # alone and the templates pin their own. Naming the template manifests in the key makes
+          # the saved store the one these jobs actually draw from.
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
       # These lanes used to sit behind `pnpm test`, whose build phase left every package's dist/
       # on disk. Split out, they resolve @threenative/* through export maps that point at dist,
@@ -394,6 +403,15 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+          # The store this job needs is not the repository's. It scaffolds a generated project and
+          # installs *its* dependencies, and on run 33753945433 every template leg reported
+          # `resolved 492, reused 192, downloaded 170` — a third of the tree fetched from the
+          # network, ten legs over, because the store cache is keyed on the workspace lockfile
+          # alone and the templates pin their own. Naming the template manifests in the key makes
+          # the saved store the one these jobs actually draw from.
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
       - uses: ./.github/actions/playwright-chromium
@@ -454,6 +472,15 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+          # The store this job needs is not the repository's. It scaffolds a generated project and
+          # installs *its* dependencies, and on run 33753945433 every template leg reported
+          # `resolved 492, reused 192, downloaded 170` — a third of the tree fetched from the
+          # network, ten legs over, because the store cache is keyed on the workspace lockfile
+          # alone and the templates pin their own. Naming the template manifests in the key makes
+          # the saved store the one these jobs actually draw from.
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
         if: steps.proof.outputs.cache-hit != 'true'
       # Everything this lane needs before the smoke, and nothing template-nonvisual already does.
@@ -596,6 +623,15 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+          # The store this job needs is not the repository's. It scaffolds a generated project and
+          # installs *its* dependencies, and on run 33753945433 every template leg reported
+          # `resolved 492, reused 192, downloaded 170` — a third of the tree fetched from the
+          # network, ten legs over, because the store cache is keyed on the workspace lockfile
+          # alone and the templates pin their own. Naming the template manifests in the key makes
+          # the saved store the one these jobs actually draw from.
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
       # Packed once by `build`. See the note there.
       - name: Take the packed workspace from build
