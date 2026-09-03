@@ -19,9 +19,20 @@ const PACKAGE_SOURCE_FLAGS = {
   "@threenative/playtest": "--playtest-package",
   "@threenative/runtime-native": "--runtime-native-package",
   "@threenative/ui": "--ui-package",
+  "threenative-blender-mcp": "--blender-mcp-package",
   "threenative-engine-mcp": "--engine-mcp-package",
   "create-threenative": "--cli-package",
 } as const;
+
+/** The unscoped workspace packages, keyed by their flag suffix. Scoped packages derive their flag
+ * from the package name; these three cannot, so the alias and the name live in one table rather
+ * than in a chain of equality checks that a fourth unscoped package would have to be added to in
+ * two places. */
+const UNSCOPED_PACKAGE_FLAG_ALIASES: Readonly<Record<string, string>> = {
+  "blender-mcp": "threenative-blender-mcp",
+  cli: "create-threenative",
+  "engine-mcp": "threenative-engine-mcp",
+};
 
 type PackageSourceName = keyof typeof PACKAGE_SOURCE_FLAGS;
 type PackageSources = Partial<Record<PackageSourceName, string>> & {
@@ -646,7 +657,9 @@ export async function createProject(
 const PACKAGE_SOURCE_FLAG = /^--([a-z0-9-]+)-package$/u;
 const SCOPED_PACKAGE_FLAG_PREFIX = "threenative-";
 
-function packageNameFromFlag(flag: string): string | undefined {
+/** The inverse of `scripts/workspace-packages.ts`'s `workspacePackageSourceFlag`; exported so
+ * the pair is gated rather than trusted. */
+export function packageNameFromFlag(flag: string): string | undefined {
   const match = flag.match(PACKAGE_SOURCE_FLAG);
   if (match === null) return undefined;
   const suffix = match[1];
@@ -659,8 +672,8 @@ function packageNameFromFlag(flag: string): string | undefined {
     return scopedSuffix.length === 0 ? undefined : `@threenative/${scopedSuffix}`;
   }
   if (suffix === "runtime") return undefined;
-  if (suffix === "cli") return "create-threenative";
-  if (suffix === "engine-mcp") return "threenative-engine-mcp";
+  const unscoped = UNSCOPED_PACKAGE_FLAG_ALIASES[suffix];
+  if (unscoped !== undefined) return unscoped;
   return `@threenative/${suffix}`;
 }
 

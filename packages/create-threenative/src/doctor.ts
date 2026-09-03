@@ -111,7 +111,10 @@ interface IMcpServerSpec {
  * `packages/core/package.json`. */
 const CORE_PACKAGE_NAME = "@threenative/core";
 const CORE_PACKAGE_VERSION = "0.3.0";
-const CORE_RESOLVED_SERVERS: ReadonlySet<string> = new Set(["threenative-engine"]);
+const CORE_RESOLVED_SERVERS: ReadonlySet<string> = new Set([
+  "threenative-engine",
+  "threenative-blender",
+]);
 
 export const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = Object.entries(MCP_SERVERS).map(
   ([configName, server]) => {

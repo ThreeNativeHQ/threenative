@@ -11,8 +11,7 @@ import {
   installTarget,
   // @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
 } from "../mcp/install.mjs";
-// @ts-expect-error — same module graph as the shims themselves.
-import { MCP_SERVERS, mergeMcpServers } from "../mcp/servers.mjs";
+import { MCP_PACKAGES, MCP_SERVERS, mergeMcpServers } from "../mcp/servers.mjs";
 
 const packageRoot = path.resolve(fileURLToPath(import.meta.url), "..", "..");
 
@@ -30,10 +29,11 @@ describe("mergeMcpServers", () => {
     const { changed, config } = mergeMcpServers(undefined);
 
     expect(changed).toBe(true);
-    expect(Object.keys(config.mcpServers)).toEqual([
+    expect(Object.keys(config.mcpServers ?? {})).toEqual([
       "threenative-assets",
       "threenative-sculpt",
       "threenative-engine",
+      "threenative-blender",
     ]);
   });
 
@@ -42,8 +42,8 @@ describe("mergeMcpServers", () => {
 
     const { config } = mergeMcpServers({ mcpServers: { mine } });
 
-    expect(config.mcpServers.mine).toEqual(mine);
-    expect(config.mcpServers["threenative-assets"]).toBeDefined();
+    expect(config.mcpServers?.mine).toEqual(mine);
+    expect(config.mcpServers?.["threenative-assets"]).toBeDefined();
   });
 
   it("reports no change once the servers are already declared", () => {
@@ -61,17 +61,56 @@ describe("MCP_SERVERS", () => {
   it("installs every server transitively with core", () => {
     const manifest = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8")) as {
       dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
     };
     expect(manifest.dependencies).toMatchObject({
       "threenative-asset-mcp": "0.7.0",
       "threenative-sculpt-mcp": "0.1.1",
     });
+    // The blender server rides inside core as a built copy, exactly as the engine server does, so
+    // it is a devDependency and never a registry dependency. A published `@threenative/core` that
+    // named an unpublished package could not be installed at all: `pnpm` stops at
+    // ERR_PNPM_FETCH_404 while resolving core, and the scaffolded project never reaches its build.
+    expect(manifest.dependencies?.["threenative-blender-mcp"]).toBeUndefined();
+    expect(manifest.devDependencies?.["threenative-blender-mcp"]).toBe("workspace:*");
+    const blender = JSON.parse(
+      readFileSync(path.resolve("packages/blender-mcp/package.json"), "utf8"),
+    ) as { version: string };
+    // Still pinned: `launch.mjs` spawns `npx <name>@<version>` when the bundle is absent.
+    expect(MCP_PACKAGES.blender?.version).toBe(blender.version);
+  });
+
+  // The four are ordered, not merely present: a host renders the table in declaration order and
+  // the golden-path snapshot probes them by index. A server appended in the wrong place is the
+  // kind of change that passes every set-shaped assertion and moves what a user sees.
+  it("should declare four ThreeNative servers", () => {
+    expect(Object.keys(MCP_SERVERS)).toEqual([
+      "threenative-assets",
+      "threenative-sculpt",
+      "threenative-engine",
+      "threenative-blender",
+    ]);
+  });
+
+  // The npx fallback in `launch.mjs` names the package `MCP_PACKAGES` declares, so a shim whose
+  // package is undeclared spawns `npx undefined@undefined` on a machine that has not installed it.
+  it("declares the package every shim launches", () => {
+    for (const server of Object.values(MCP_SERVERS)) {
+      const entry = server.args[0] ?? "";
+      const key = entry.slice(entry.lastIndexOf("/") + 1).replace(/\.mjs$/u, "");
+      const declared = MCP_PACKAGES[key];
+      // `engine` resolves inside core itself when the bundle exists; every shim still names a
+      // package for the npx path.
+      expect(declared, key).toBeDefined();
+      expect(declared?.name.length, key).toBeGreaterThan(0);
+      expect(declared?.version.length, key).toBeGreaterThan(0);
+    }
   });
 
   // A renamed or moved shim would leave `.mcp.json` pointing at nothing, and the host reports that
   // as a server that failed to start rather than as a packaging mistake.
   it("names a shim this package actually ships", () => {
-    for (const server of Object.values(MCP_SERVERS) as { args: string[] }[]) {
+    for (const server of Object.values(MCP_SERVERS)) {
       const entry = server.args[0] ?? "";
       const shim = entry.replace("./node_modules/@threenative/core/", "");
       expect(shim).not.toBe("");
@@ -205,7 +244,7 @@ describe("ensureHostMcpConfigs", () => {
     );
 
     const gemini = read(".gemini/settings.json") as { mcpServers: Record<string, unknown> };
-    expect(Object.keys(gemini.mcpServers)).toHaveLength(3);
+    expect(Object.keys(gemini.mcpServers)).toHaveLength(Object.keys(MCP_SERVERS).length);
 
     const opencode = read("opencode.json") as {
       mcp: Record<
@@ -264,7 +303,7 @@ describe("ensureHostMcpConfigs", () => {
     ensureHostMcpConfigs(directory);
 
     const codex = readFileSync(path.join(directory, ".codex", "config.toml"), "utf8");
-    for (const [name, server] of Object.entries(MCP_SERVERS) as [string, { args: string[] }][]) {
+    for (const [name, server] of Object.entries(MCP_SERVERS)) {
       expect(codex).toContain(`[mcp_servers.${name}]`);
       expect(codex).toContain(`args = ["${server.args[0]}"]`);
     }

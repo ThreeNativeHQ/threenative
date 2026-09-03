@@ -1,12 +1,12 @@
-// @ts-expect-error — the server table is plain JavaScript so `@threenative/core`'s postinstall can
-// read it before anything is built; there is no declaration file to import.
 import {
-  MCP_PACKAGES as CORE_MCP_PACKAGES,
-  MCP_SERVERS as CORE_MCP_SERVERS,
+  type IMcpPackage,
+  type IMcpServerEntry,
+  MCP_PACKAGES,
+  MCP_SERVERS,
 } from "../../core/mcp/servers.mjs";
 
 /**
- * The scaffolder's typed view of `@threenative/core`'s one server table.
+ * The scaffolder's view of `@threenative/core`'s one server table.
  *
  * The CLI is bundled, so this import is inlined at build time and the published `create-threenative`
  * carries no runtime dependency on core. Every list of "the MCP servers a project has" in this
@@ -14,19 +14,9 @@ import {
  * (`doctor.ts`) each used to retype the same three servers, and a fourth server added to core
  * would have left both of them quietly describing a project that no longer exists.
  */
-export interface IMcpServerEntry {
-  readonly args: readonly string[];
-  readonly command: string;
-  readonly env?: Readonly<Record<string, string>>;
-}
 
-export interface IMcpPackage {
-  readonly name: string;
-  readonly version: string;
-}
-
-export const MCP_SERVERS = CORE_MCP_SERVERS as Readonly<Record<string, IMcpServerEntry>>;
-export const MCP_PACKAGES = CORE_MCP_PACKAGES as Readonly<Record<string, IMcpPackage>>;
+export { MCP_PACKAGES, MCP_SERVERS };
+export type { IMcpPackage, IMcpServerEntry };
 
 /** The shim a server launches, for example `./node_modules/@threenative/core/mcp/assets.mjs`. */
 export function serverEntryPath(server: IMcpServerEntry): string {

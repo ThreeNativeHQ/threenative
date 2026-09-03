@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -24,23 +24,22 @@ import {
   probeDesktopOverlay,
   readProject,
 } from "../src/doctor.js";
+import { MCP_SERVERS } from "../src/mcp-servers.js";
 
+// Built from core's own server table rather than retyped: a hand-written healthy fixture is a
+// fixture that stops being healthy the day a server is added, and the failure reads as a doctor
+// bug rather than as a stale test.
 const MCP_CONFIG = JSON.stringify({
-  mcpServers: {
-    "threenative-assets": {
-      command: "node",
-      args: ["./node_modules/@threenative/core/mcp/assets.mjs"],
-      env: { ASSET_DOWNLOAD_DIR: "./public/assets", AUDIO_DOWNLOAD_DIR: "./public/audio" },
-    },
-    "threenative-sculpt": {
-      command: "node",
-      args: ["./node_modules/@threenative/core/mcp/sculpt.mjs"],
-    },
-    "threenative-engine": {
-      command: "node",
-      args: ["./node_modules/@threenative/core/mcp/engine.mjs"],
-    },
-  },
+  mcpServers: Object.fromEntries(
+    Object.entries(MCP_SERVERS).map(([name, server]) => [
+      name,
+      {
+        command: server.command,
+        args: [...server.args],
+        ...(server.env === undefined ? {} : { env: { ...server.env } }),
+      },
+    ]),
+  ),
 });
 
 const HEALTHY: IProjectSnapshot = {
@@ -121,6 +120,20 @@ beforeEach(() => {
     status: 0,
   });
 });
+
+/** The version a `workspace:` dependency resolves to: the in-repo package's own manifest. */
+async function workspaceVersion(packageName: string): Promise<string> {
+  const root = path.resolve("packages");
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const file = path.join(root, entry.name, "package.json");
+    const raw = await readFile(file, "utf8").catch(() => undefined);
+    if (raw === undefined) continue;
+    const manifest = JSON.parse(raw) as { name?: string; version?: string };
+    if (manifest.name === packageName && manifest.version !== undefined) return manifest.version;
+  }
+  throw new Error(`No workspace package named '${packageName}'.`);
+}
 
 describe("threenative doctor", () => {
   it("names the compositor-less X11 blocker before a build", () => {
@@ -273,14 +286,14 @@ describe("threenative doctor", () => {
     expect(engine?.detail).toMatch(/@threenative\/core.*0\.3\.0|0\.3\.0.*@threenative\/core/u);
   });
 
-  it("reports each of the three MCP servers separately", () => {
+  it("reports each MCP server separately", () => {
     const report = diagnoseProject(
       snapshot({
         readText: (relative) => (relative === ".mcp.json" ? MCP_CONFIG : "export default {}"),
       }),
     );
     const serverChecks = report.checks.filter(({ name }) => name.startsWith("capability search:"));
-    expect(serverChecks).toHaveLength(3);
+    expect(serverChecks).toHaveLength(MCP_SERVER_SPECS.length);
     expect(serverChecks.map(({ detail }) => detail).join(" ")).toMatch(/threenative-assets/);
     expect(serverChecks.map(({ detail }) => detail).join(" ")).toMatch(/threenative-sculpt/);
     expect(serverChecks.map(({ detail }) => detail).join(" ")).toMatch(/threenative-engine/);
@@ -1004,11 +1017,17 @@ describe("threenative doctor edge coverage", () => {
       version: string;
     };
     for (const spec of MCP_SERVER_SPECS) {
-      const installed =
+      const declared =
         spec.packageName === "@threenative/core"
           ? core.version
           : core.dependencies?.[spec.packageName];
-      expect(installed, spec.packageName).toBeDefined();
+      expect(declared, spec.packageName).toBeDefined();
+      // An in-repo server is declared with the workspace protocol, which pnpm rewrites to that
+      // package's real version at publish time. That version is what an installed project gets,
+      // so it is the one doctor must pin.
+      const installed = declared?.startsWith("workspace:")
+        ? await workspaceVersion(spec.packageName)
+        : declared;
       expect(spec.version, spec.packageName).toBe(installed);
     }
   });
@@ -1016,12 +1035,9 @@ describe("threenative doctor edge coverage", () => {
   it("checks resolved MCP package versions, including missing metadata and mismatches", async () => {
     const { makeTempDir } = await import("../../../test-support/temp-dir.js");
     const root = await makeTempDir("tn-doctor-mcp-versions-");
-    const packageNames = [
-      // Must equal MCP_SERVER_SPECS' pin, which must equal what @threenative/core installs.
-      ["threenative-asset-mcp", "0.7.0"],
-      ["threenative-sculpt-mcp", "0.1.1"],
-      ["@threenative/core", "0.3.0"],
-    ] as const;
+    // Derived from the specs doctor actually checks, so a fourth server does not silently leave
+    // this fixture describing a project that resolves one package fewer than doctor probes.
+    const packageNames = MCP_SERVER_SPECS.map((spec) => [spec.packageName, spec.version] as const);
     for (const [name, version] of packageNames) {
       const directory = path.join(root, "node_modules", name);
       await mkdir(directory, { recursive: true });

@@ -62,6 +62,7 @@ docs/benchmark/sweeps/*/assets/generated/
 
 # generated from packages/engine-mcp/dist during the core package build
 packages/core/mcp/engine-server.mjs
+packages/core/mcp/blender-server.mjs
 
 # Sandbox mini-game captures, left at the root for inspection. Not part of the repo.
 screenshot-*.png

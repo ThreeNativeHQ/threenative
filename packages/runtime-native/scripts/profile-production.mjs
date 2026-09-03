@@ -289,6 +289,7 @@ async function packLocalPackage(directory, destination) {
 
 function packageSourceFlag(name) {
   if (name === 'create-threenative') return '--cli-package';
+  if (name === 'threenative-blender-mcp') return '--blender-mcp-package';
   if (name === 'threenative-engine-mcp') return '--engine-mcp-package';
   if (name.startsWith('@threenative/')) {
     const suffix = name.slice('@threenative/'.length);
