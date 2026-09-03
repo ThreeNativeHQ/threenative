@@ -17,6 +17,7 @@ The recipes are in `agent-docs/ctx-cookbook.md` and imports still require
 | `ctx.random.range(-1, 1)` | `Math.random()` | reproducible when `seed` is configured |
 | `ctx.pointer.on(...)` / `ctx.pointer.drag(...)` | hover/press/drag bookkeeping | web/native pointer-id stream |
 | `ctx.raycast()` / `ctx.raycastAll()` | `new Raycaster()` | backend-neutral intersections |
+| `ctx.startup.hold(label, work)` | a loading screen that waits past `whenReady()` | the game's own launch work joins the readiness gate |
 
 `ctx.pointer` dispatches entered, exited, pressed, released, tapped, drag-started, dragged, and
 drag-ended events. Register a mesh/model root; only registered objects are raycast and events bubble
