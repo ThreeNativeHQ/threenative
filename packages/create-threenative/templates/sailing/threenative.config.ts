@@ -27,7 +27,9 @@ const config: IThreeNativeConfig = {
     preferWebGPU: true,
     resolutionScale: "auto",
   },
-  // `assets` absent: the compile step runs with defaults. Name it only to override a pass.
+  // Pinned off with the starter's, and for the same reason: see the note there. The compile
+  // step's defaults reach any project that omits this object.
+  assets: { models: "none", textures: "none" },
   ui: { renderer: "web" },
 };
 

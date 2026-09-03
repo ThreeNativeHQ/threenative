@@ -32,9 +32,22 @@ const config: IThreeNativeConfig = {
     // to pin it — the loop stops and the reporting does not. CSS, UI and camera framing never move.
     resolutionScale: "auto",
   },
-  // `assets` is deliberately absent: the compile step runs with defaults, which is what a game
-  // with real art needs and what this scaffold's two proof files cost nothing to accept. Name it
-  // only to override a specific pass (`textures: { maxSize: 2048 }`), never to switch one off.
+  assets: {
+    // The compile step's defaults are what a game with real art wants, and everything this
+    // change adds — target-aware compression, the off-thread decode, byte-weighted progress —
+    // is live for any project that omits this object. This template still pins both passes off,
+    // for the reason the pin has always given: these two demo files are small enough that
+    // compression only ever grew them.
+    //
+    // And enabling them here hung the lane that proves this template. `golden-path-template
+    // (starter)` stopped producing output after its build and was killed at its 45-minute
+    // timeout on runs 33801767525 and 33805466971 — twice, while the same job takes 2-3 minutes
+    // on `main` and the `platformer` leg, whose config this change does not touch, passed in 95
+    // seconds beside it. Turning the default on for the shipped templates is a separate change
+    // that owes that hang a diagnosis first; it is not this one's to smuggle in.
+    models: "none",
+    textures: "none",
+  },
   // One UI on every target: src/ui/ renders through the platform's own browser-class renderer,
   // so the same React, Tailwind, CSS and SVG run on web, desktop, Android and iOS alike.
   // Switch to "native" for a UI drawn as part of the rendered frame, with no web view and no

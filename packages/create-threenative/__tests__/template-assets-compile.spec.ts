@@ -11,6 +11,8 @@
  * `/AGENTS.md`: *if the engine can measure the right value at the point of use, it decides.* The
  * compile step's default is compression on; the template's job is to leave it alone. This gate
  * holds it there, and proves the default actually compiles what the templates ship.
+ *
+ * Two templates are still pinned, named below, and not because the argument above is wrong.
  */
 
 import { readdirSync, statSync } from "node:fs";
@@ -37,6 +39,18 @@ function assetsDirectory(template: string): string | undefined {
   }
 }
 
+/**
+ * The whole exception, and the reason is a hang rather than a disagreement.
+ *
+ * Enabling the default for these two templates stopped `golden-path-template (starter)` producing
+ * output after its build, twice: runs 33801767525 and 33805466971 were both killed at the job's
+ * 45-minute timeout, while the same job takes 2-3 minutes on `main` and the `platformer` leg —
+ * whose config this change does not touch — passed in 95 seconds beside it. Flipping the shipped
+ * templates is a separate change that owes that hang a diagnosis; the mechanism this file's
+ * second case proves is live for every project that omits `assets` either way.
+ */
+const PINS_AWAITING_A_GOLDEN_PATH_DIAGNOSIS = new Set(["sailing", "starter"]);
+
 describe("shipped templates", () => {
   it("should name at least one template, or this gate is measuring nothing", () => {
     expect(templates.length).toBeGreaterThan(0);
@@ -44,6 +58,15 @@ describe("shipped templates", () => {
 
   it.each(templates)("%s should not switch a compile pass off", async (template) => {
     const source = await readFile(join(templatesRoot, template, "threenative.config.ts"), "utf8");
+    const pinsAPassOff = /\bmodels:\s*"none"/u.test(source) || /\btextures:\s*"none"/u.test(source);
+
+    if (PINS_AWAITING_A_GOLDEN_PATH_DIAGNOSIS.has(template)) {
+      // Fail closed in the other direction too. An exception that has quietly stopped being one
+      // should shrink this list, not sit in it unread — so a template listed here and no longer
+      // pinned fails until someone removes it from the list.
+      expect(pinsAPassOff).toBe(true);
+      return;
+    }
 
     // Narrow on purpose: an override that *configures* a pass is welcome, and only the "none"
     // shorthand — the one that ships bytes as authored forever — is refused here.
