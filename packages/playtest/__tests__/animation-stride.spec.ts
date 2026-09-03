@@ -131,6 +131,35 @@ describe("foot slide is an observation a scenario can bound", () => {
     expect(result.diagnostics[0]?.message).toContain("covered no ground");
   });
 
+  test("measures the feet at the rate the clip is playing, not the rate the player only measured", () => {
+    // The override is the case: `AnimationPlayer` still reports the rate it computed, but it did
+    // not apply it, so the clip is running at its authored rate and the feet are skating. Reading
+    // the measured rate back scored this as zero slide — an overridden convention silently
+    // satisfying the bound that exists to catch it.
+    const overridden = {
+      ...WALKING,
+      stride: { clipGroundSpeed: 2, groundSpeed: 1.6, overridden: true, rate: 0.8, synced: false },
+    };
+    const result = evaluate(
+      { animation: [{ entity: "player", maxFootSlide: 0.05 }] },
+      withAnimation(overridden),
+    );
+    expect(result.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(false);
+    expect(result.diagnostics[0]?.code).toBe("TN_PLAYTEST_FOOT_SLIDE");
+    // Feet carry the full 2 m/s while the body covers 1.6: 25% apart.
+    expect(result.assertions.find(({ id }) => id === "animation.player")?.details?.footSlide).toBeCloseTo(0.25, 6);
+    // The same numbers with the convention applied agree exactly.
+    const applied = evaluate(
+      { animation: [{ entity: "player", maxFootSlide: 0.05 }] },
+      withAnimation({
+        ...WALKING,
+        stride: { clipGroundSpeed: 2, groundSpeed: 1.6, overridden: false, rate: 0.8, synced: true },
+      }),
+    );
+    expect(applied.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(true);
+    expect(applied.assertions.find(({ id }) => id === "animation.player")?.details?.footSlide).toBeCloseTo(0, 6);
+  });
+
   test("strideSynced reports the override rather than treating it as agreement", () => {
     const overridden = {
       ...WALKING,

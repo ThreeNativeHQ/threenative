@@ -358,10 +358,28 @@ export function strideReading(observed: unknown): IStrideReading | undefined {
 /** Below this the body is standing still, and a slide ratio would divide by noise. */
 const STRIDE_GROUND_SPEED_FLOOR = 1e-3;
 
+/**
+ * The rate the clip is actually playing at.
+ *
+ * `rate` is what the producer *measured*, and it reports that whether or not it applied it —
+ * which is the point of the convention's override being honest. The feet, though, move at the
+ * rate the action is running at: the measured rate when the convention applied it, and the
+ * clip's authored rate when the game declined. Reading `rate` unconditionally made an
+ * overridden run compute zero slide, which is the exact case the bound exists to catch.
+ */
+export function appliedStrideRate(reading: IStrideReading): number {
+  return reading.synced ? reading.rate : 1;
+}
+
+/** Metres of ground the feet carry per second at the rate the clip is actually playing. */
+export function strideFeetSpeed(reading: IStrideReading): number {
+  return reading.clipGroundSpeed * appliedStrideRate(reading);
+}
+
 /** |feet - ground| / ground, or nothing when the body covered no ground to compare against. */
 export function footSlideRatio(reading: IStrideReading): number | undefined {
   if (Math.abs(reading.groundSpeed) <= STRIDE_GROUND_SPEED_FLOOR) return undefined;
-  return Math.abs(reading.clipGroundSpeed * reading.rate - reading.groundSpeed) / Math.abs(reading.groundSpeed);
+  return Math.abs(strideFeetSpeed(reading) - reading.groundSpeed) / Math.abs(reading.groundSpeed);
 }
 
 /**
@@ -399,7 +417,7 @@ export function strideFailure(
   if (ratio > assertion.maxFootSlide)
     return {
       code: "TN_PLAYTEST_FOOT_SLIDE",
-      detail: `feet carry ${(reading.clipGroundSpeed * reading.rate).toFixed(3)} m/s against ${reading.groundSpeed.toFixed(3)} m/s of ground — ${(ratio * 100).toFixed(0)}% apart, ceiling ${(assertion.maxFootSlide * 100).toFixed(0)}%`,
+      detail: `feet carry ${strideFeetSpeed(reading).toFixed(3)} m/s against ${reading.groundSpeed.toFixed(3)} m/s of ground — ${(ratio * 100).toFixed(0)}% apart, ceiling ${(assertion.maxFootSlide * 100).toFixed(0)}%`,
     };
   return undefined;
 }
