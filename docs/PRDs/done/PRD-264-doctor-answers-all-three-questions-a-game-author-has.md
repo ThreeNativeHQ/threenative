@@ -10,7 +10,7 @@ Evidence in [doctor-2026-08-29](../../verification/doctor-2026-08-29.md);
 project whose `threenative-engine` server cannot resolve fails naming `threenative-engine-mcp`.
 Was independent of the publish chain.
 
-Seventh lane of [the release batch](../alpha-readiness/README.md). Moves no alpha-bar row, and is in the batch anyway:
+Seventh lane of the release batch (`docs/PRDs/alpha-readiness/`, since removed). Moves no alpha-bar row, and is in the batch anyway:
 `threenative doctor` is the only diagnostic a user with just the library installed can run, and it
 currently under-reports two of the three things they are trying to do.
 

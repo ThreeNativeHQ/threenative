@@ -1646,6 +1646,19 @@ if(MYSTRAL_USE_DAWN AND TARGET dawn::webgpu)
     # Note: Linux Dawn builds require Ubuntu 24.04+ (GCC 13+) for proper libstdc++ ABI
 endif()
 
+# wgpu-native and SWC are both Rust staticlibs, and each carries its own `rust_eh_personality`.
+# The `mystral` executable already names that pairing and already opts out of the error for it; the
+# runtime did not, so anything else linking the runtime in a wgpu build directory failed with
+#   libswc.a(std-...rcgu.o): in function `rust_eh_personality':
+#   multiple definition of `rust_eh_personality';
+#   libwgpu_native.a(std-...rcgu.o): first defined here
+# That is why "contract tests only link in build/tn-linux" was true, and it made wgpu-native — the
+# backend Android ships — the one backend no contract test could be run against. PUBLIC so every
+# consumer inherits it rather than each target restating it.
+if(MYSTRAL_USE_WGPU AND SWC_LIBRARY AND UNIX AND NOT APPLE)
+    target_link_options(mystral-runtime PUBLIC "-Wl,--allow-multiple-definition")
+endif()
+
 # Platform libraries
 if(APPLE)
     target_link_libraries(mystral-runtime PRIVATE
@@ -1884,6 +1897,26 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/device_pixel_ratio_test.cpp)
     target_link_libraries(threenative-device-pixel-ratio-test PRIVATE mystral-runtime)
 
+    add_executable(threenative-async-pipeline-thread-test EXCLUDE_FROM_ALL
+        tests/async_pipeline_thread_test.cpp)
+    target_link_libraries(threenative-async-pipeline-thread-test PRIVATE mystral-runtime)
+    # This test calls the backend's async pipeline entry directly, so it needs the WebGPU header.
+    # `mystral-runtime` links the backend PRIVATE, so its include directories do not propagate.
+    #
+    # It deliberately does NOT name the backend as a link dependency the way the rg11b10 oracle
+    # does. That target puts Dawn ahead of the runtime for a Windows proc-table reason; doing the
+    # same here puts `libwgpu_native.a` ahead of `libswc.a` on Linux, and both are Rust staticlibs
+    # carrying their own `rust_eh_personality`:
+    #   multiple definition of `rust_eh_personality'
+    # The runtime already links the backend, so the entry points arrive without the reordering.
+    if(MYSTRAL_USE_DAWN)
+        target_include_directories(threenative-async-pipeline-thread-test PRIVATE
+            ${DAWN_INCLUDE_DIR})
+    elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
+        target_include_directories(threenative-async-pipeline-thread-test PRIVATE
+            ${WGPU_INCLUDE_DIR})
+    endif()
+
     add_executable(threenative-timestamp-query-test EXCLUDE_FROM_ALL
         tests/timestamp_query_test.cpp)
     target_link_libraries(threenative-timestamp-query-test PRIVATE mystral-runtime)
@@ -2104,6 +2137,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         PROPERTIES LABELS "native-contract")
     tn_register_contract_test(threenative-timer-delivery-test)
     tn_register_contract_test(threenative-timer-engine-first-test)
+    tn_register_contract_test(threenative-async-pipeline-thread-test)
     tn_register_contract_test(threenative-timestamp-query-test)
     if(TN_ENABLE_VIDEO)
         tn_register_contract_test(threenative-video-recorder-state-test)

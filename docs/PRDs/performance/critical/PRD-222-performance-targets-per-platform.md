@@ -11,6 +11,18 @@ that decides it and the evidence that closes it.
 **Complexity:** +3 measurement across five platform lanes, +2 complex performance work,
 +1 device seam = **6 → HIGH mode**, checkpoint after every phase.
 
+**Moved to `performance/critical/` 2026-09-02.** This is the acceptance bar for every row in
+[`README.md`](README.md); it is critical because nothing else decides when a launch or frame
+change is done. What changed since Phase 0: a scaffolded template now holds Tier 1 on an
+unplugged Pixel 8 at full resolution (`runtime-perf-state.md` §1.3.8: 59.99–60.02 fps, three
+captures, SurfaceFlinger 0 dropped), so **Phase 1's gates can be written red-green today** against
+that lane; Tier 2's parity row gets its first matched-pixel number from
+[PRD-329](PRD-329-the-native-gpu-frame-matches-chrome-at-matched-pixels.md); the launch half of
+Tier 3 is executed by
+[PRD-327](PRD-327-first-use-pipeline-compilation-leaves-the-main-loop.md). Phase 2 engine work
+here must not duplicate those PRDs — this PRD owns the gates and the tiers, they own the
+mechanisms. Execute Phase 1 after PRD-327 lands, or earlier if a lane is free.
+
 **Depends on:** `packages/core/src/frame-budget.ts` (`TN_FRAME_BUDGET`, landed by PRD-214 Phase 3),
 `assert.performance` in `packages/playtest` (`minFps`, `maxFrameMsP95`, `maxPhaseMsP95`),
 `observations.deviceMetrics` and `packages/runtime-native/scripts/device-preflight.mjs`.

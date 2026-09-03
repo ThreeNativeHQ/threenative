@@ -15,10 +15,86 @@ const FAILURE_PATTERN = /(?:\bError:|\bRangeError:|validation error|shader parsi
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const workspace = join(root, '..', '..');
 
+/**
+ * The launch segments a desktop run must emit, in the order they must appear.
+ *
+ * The desktop lane has no `asset_begin`/`asset_complete`: those bracket reading the bundle out of
+ * the APK, and a desktop host reads it from the filesystem inside `loadScript`. Everything else is
+ * the same launch, and `measure-cold-start.mjs` reads exactly this list for its `--desktop` lane.
+ */
+export const DESKTOP_COLD_START_SEGMENTS = [
+  'process',
+  'runtime_created',
+  'game_eval_begin',
+  'compile_begin',
+  'compile_complete',
+  'execute_begin',
+  'execute_complete',
+  'first_frame',
+];
+
+/**
+ * Asserts the ordered launch markers, with monotonic timestamps.
+ *
+ * PRD-328: the compile and execute segments existed only in `quickjs_engine.cpp`, which has not
+ * shipped on any platform since 2026-08-16, and the desktop CLI emitted nothing but `first_frame`.
+ * `measure-cold-start.mjs` therefore failed closed on every real configuration and the only
+ * JavaScript-compile number anyone could quote was a QuickJS one from 2026-08-11. This gate is
+ * what stops that hole reopening: delete a mark and the desktop gate names it.
+ *
+ * Order matters as much as presence. A `compile_complete` stamped before its `compile_begin` means
+ * the marks were read from two different evaluations — a bootstrap script's blended with the
+ * game's — and the segment computed from them is not a measurement.
+ */
+export function analyzeColdStartMarkers(log, segments = DESKTOP_COLD_START_SEGMENTS) {
+  const failures = [];
+  const seen = new Map();
+  for (const match of log.matchAll(/TN_COLD_START:(\{[^\r\n}]*\})/gu)) {
+    let payload;
+    try {
+      payload = JSON.parse(match[1]);
+    } catch {
+      failures.push(`malformed TN_COLD_START payload: ${match[1]}`);
+      continue;
+    }
+    if (typeof payload.segment !== 'string' || !Number.isFinite(payload.atMs)) {
+      failures.push(`TN_COLD_START missing segment/atMs: ${match[1]}`);
+      continue;
+    }
+    // The host evaluates its own bootstrap through the same engine members as the game, so the
+    // four eval segments fire more than once. `game_eval_begin` brackets the game's; taking the
+    // first occurrence after it is the same rule `measure-cold-start.mjs` applies.
+    const afterGameEval = seen.has('game_eval_begin');
+    const isEvalSegment = payload.segment.startsWith('compile_') || payload.segment.startsWith('execute_');
+    if (isEvalSegment && !afterGameEval) continue;
+    if (!seen.has(payload.segment)) seen.set(payload.segment, payload.atMs);
+  }
+  for (const segment of segments) {
+    if (!seen.has(segment)) failures.push(`TN_COLD_START_MARKER_MISSING:${segment}`);
+  }
+  if (failures.length === 0) {
+    let previousAt = Number.NEGATIVE_INFINITY;
+    let previousName = '(start)';
+    for (const segment of segments) {
+      const atMs = seen.get(segment);
+      if (atMs < previousAt) {
+        failures.push(
+          `TN_COLD_START_SEGMENT_NEGATIVE:${previousName}->${segment} (${previousAt} -> ${atMs} ms)`,
+        );
+      }
+      previousAt = atMs;
+      previousName = segment;
+    }
+  }
+  return { failures: [...new Set(failures)], markers: seen };
+}
+
 export function analyzeDesktopLog(log, frames = 300) {
   const failures = [];
   if (!log.includes(READY_MARKER)) failures.push(`missing ${READY_MARKER}`);
   if (!log.includes(FIRST_FRAME_MARKER)) failures.push(`missing ${FIRST_FRAME_MARKER}`);
+  // The launch instrument has to run on the engine that ships, and only a gate keeps it running.
+  failures.push(...analyzeColdStartMarkers(log).failures);
   if (!new RegExp(`Rendered ${frames} frames in \\d+ms`).test(log)) {
     failures.push(`missing exact ${frames}-frame completion`);
   }

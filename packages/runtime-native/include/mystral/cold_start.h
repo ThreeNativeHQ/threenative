@@ -17,6 +17,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <thread>
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -31,8 +32,22 @@ inline double coldStartNowMs() {
         .count();
 }
 
+/**
+ * The thread that emitted the first marker, which is the launch thread on every host.
+ *
+ * `process` is the first marker on both entry points (`SDL_main` on Android, `main` on desktop),
+ * so the first call pins the launch thread before any worker exists. Worker threads run their own
+ * engine and evaluate their own bootstrap through the same code path; without this they would
+ * interleave a second launch's worth of compile markers into the one the reader is parsing.
+ */
+inline const std::thread::id& coldStartLaunchThread() {
+    static const std::thread::id launchThread = std::this_thread::get_id();
+    return launchThread;
+}
+
 /** Emits one launch-boundary marker. Cheap enough to leave compiled in on every build. */
 inline void coldStartMark(const char* segment) {
+    coldStartLaunchThread();
     const double atMs = coldStartNowMs();
 #ifdef __ANDROID__
     __android_log_print(ANDROID_LOG_INFO, "MystralColdStart",
@@ -42,6 +57,60 @@ inline void coldStartMark(const char* segment) {
     std::fflush(stdout);
 #endif
 }
+
+/**
+ * Brackets one JavaScript evaluation with the four launch segments the reader needs.
+ *
+ * PRD-328 opens on an instrument that could not run on the engine that ships: the compile and
+ * execute markers existed only in `quickjs_engine.cpp`, which has not been the shipped engine on
+ * any platform since 2026-08-16, so `measure-cold-start.mjs` failed closed with
+ * `TN_COLD_START_MARKER_MISSING:compile_begin` on every real configuration and the desktop CLI
+ * emitted no launch markers at all.
+ *
+ * Every engine reaches its entry bundle through a different member — V8 takes `eval` for an ESM
+ * entry on desktop and `evalScript` for the Android bundle, JavaScriptCore folds both into
+ * `evalWithResult` — and each of those members is also how nested CommonJS requires and worker
+ * bootstrap run. Marking them all unconditionally would emit one set of segments per *module*.
+ * So this counts nesting depth and marks only the outermost evaluation on the launch thread,
+ * which is the bundle. Bootstrap scripts evaluated before the game are outermost too and emit
+ * their own set; `game_eval_begin` is what tells the reader which set is the game's.
+ *
+ * Usage mirrors the shape `quickjs_engine.cpp` already writes by hand:
+ *
+ *     ColdStartEvalScope scope;              // compile_begin
+ *     ... compile ...  scope.compiled();     // compile_complete
+ *     scope.executing();                     // execute_begin
+ *     ... run ...      scope.executed();     // execute_complete
+ *
+ * A failed compile or a thrown top-level simply stops marking, so a launch that did not finish
+ * reports a missing marker rather than a total that never happened.
+ */
+class ColdStartEvalScope {
+  public:
+    ColdStartEvalScope() : outermost_(std::this_thread::get_id() == coldStartLaunchThread() &&
+                                      depth() == 0) {
+        depth() += 1;
+        if (outermost_) coldStartMark("compile_begin");
+    }
+
+    ColdStartEvalScope(const ColdStartEvalScope&) = delete;
+    ColdStartEvalScope& operator=(const ColdStartEvalScope&) = delete;
+
+    ~ColdStartEvalScope() { depth() -= 1; }
+
+    void compiled() { if (outermost_) coldStartMark("compile_complete"); }
+    void executing() { if (outermost_) coldStartMark("execute_begin"); }
+    void executed() { if (outermost_) coldStartMark("execute_complete"); }
+
+  private:
+    /** Per-thread so a worker's own evaluations can never be mistaken for the launch thread's. */
+    static int& depth() {
+        static thread_local int nesting = 0;
+        return nesting;
+    }
+
+    const bool outermost_;
+};
 
 /**
  * Records the first frames after the first present and reports the distribution once.

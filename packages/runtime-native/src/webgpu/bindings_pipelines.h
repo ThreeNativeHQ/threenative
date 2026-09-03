@@ -14,6 +14,12 @@ js::JSValueHandle handleGpuDeviceCreateComputePipeline(BindingsState* state, Bin
 js::JSValueHandle handleGpuDeviceCreateRenderPipeline(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args);
 js::JSValueHandle handleGpuDeviceCreateShaderModule(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args);
 
+// PRD-327. The compile leaves the main loop; these settle it back onto the game thread.
+js::JSValueHandle handleGpuDeviceCreateRenderPipelineAsync(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args);
+js::JSValueHandle handleGpuDeviceCreateComputePipelineAsync(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args);
+void drainAsyncPipelineCompiles(BindingsState* state);
+void shutdownAsyncPipelineCompiles(BindingsState* state);
+
 #endif
 
 }  // namespace mystral::webgpu

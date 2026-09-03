@@ -18,6 +18,12 @@ BindingsState* createBindingsState();
 // aliases are not valid after the first call.
 void destroyBindingsState(BindingsState*& state);
 
+// PRD-327. Pipeline compiles run on a host pool; their promises settle on the game thread, in
+// `pollEvents()`'s `kIo` segment. Declared here rather than in `webgpu/bindings_pipelines.h` so
+// `runtime.cpp` reaches it through the header it already includes.
+void drainAsyncPipelineCompiles(BindingsState* state);
+void shutdownAsyncPipelineCompiles(BindingsState* state);
+
 bool initBindings(
     BindingsState* state,
     js::Engine* engine,

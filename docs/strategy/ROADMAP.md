@@ -1,5 +1,8 @@
 # Roadmap — get ThreeNative to a production-ready beta
 
+> **Open limitations live in [`CURRENT-CHALLENGES.md`](../CURRENT-CHALLENGES.md).** This document
+> is a strategy record; it is not the place to look for what is currently broken or unproven.
+
 **Goal of v1:** a beta a stranger can install, build a game with, and ship — on web first, on device
 where the evidence allows. Everything here is done, partly done, or not done; nothing is aspirational
 prose. **Legend:** ✅ done · ⚠️ partly done · ❌ not done.
@@ -13,7 +16,7 @@ prose. **Legend:** ✅ done · ⚠️ partly done · ❌ not done.
    measured total outright. It stood at **72/100** on 2026-08-30. Two copies of a score is two scores,
    so this file keeps none.
 2. **The alpha bar.** It is **generated, not transcribed** — run `pnpm alpha:bar`, and
-   [`docs/PRDs/alpha-readiness/README.md`](../PRDs/alpha-readiness/README.md) holds the table the last
+   `docs/PRDs/alpha-readiness/README.md` (since removed) holds the table the last
    run wrote. Row A7 exists to fail when someone retypes it here, so this file cites the command and
    the current shape only: **A1 is the single failing row, and A6 is deferred behind it.** Five of
    seven pass.

@@ -2,6 +2,25 @@
   "name": "@threenative/runtime-native",
   "version": "0.3.0",
   "description": "ThreeNative-owned native host for desktop, Android, and iOS",
+  "keywords": [
+    "threenative",
+    "native",
+    "desktop",
+    "android",
+    "ios",
+    "webgpu",
+    "three",
+    "threejs"
+  ],
+  "homepage": "https://github.com/ThreeNativeHQ/threenative#readme",
+  "bugs": {
+    "url": "https://github.com/ThreeNativeHQ/threenative/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "directory": "packages/runtime-native"
+  },
   "license": "MIT",
   "publishConfig": {
     "access": "public"

@@ -131,6 +131,13 @@ export const executionContracts = {
   },
   // PRD-228 Change B. Needs no display: it drives the real bindings through a headless Runtime,
   // times a compute dispatch at both ends and resolves the query set into a mappable buffer.
+  // PRD-327 Phase 0. Needs no display: it drives the raw backend behind a headless Runtime's
+  // device, times a synchronous pipeline compile against the async entry's call, and destroys the
+  // descriptor before polling so a backend that reads it after returning fails here rather than in
+  // a game's first frame.
+  "threenative-async-pipeline-thread-test": {
+    invocations: [{ args: [], passLine: "native async pipeline thread contract passed" }],
+  },
   "threenative-timestamp-query-test": {
     invocations: [{ args: [], passLine: "native timestamp-query bindings contract passed" }],
   },

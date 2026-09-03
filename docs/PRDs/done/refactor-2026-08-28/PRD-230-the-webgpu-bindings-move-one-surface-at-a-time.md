@@ -22,7 +22,7 @@ the file the active perf lane edits weekly) = **7 → HIGH mode.**
 ## The problem, measured
 
 At `7b729e2d`, from
-[the refactor analysis](../../../reports/runtime-native-refactor-analysis-2026-08-28.md):
+the refactor analysis (`docs/audits/`, since removed):
 
 | Metric | Value |
 | --- | ---: |

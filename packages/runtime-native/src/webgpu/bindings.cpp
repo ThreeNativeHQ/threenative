@@ -365,6 +365,9 @@ bool stageWriteInUploadStaging(
 
 void destroyBindingsState(BindingsState*& state) {
     if (!state) return;
+    // Join the compile pool before anything it touches goes away. A worker holds `state` and the
+    // device; letting one run past this point is a use-after-free with a two-thread window.
+    shutdownAsyncPipelineCompiles(state);
     BindingsState* ownedState = state;
     state = nullptr;
     {
@@ -1974,11 +1977,20 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                     // play, where it is a stall the player feels. A Pixel 8 recording measured a
                     // 1,659 ms worst frame with them missing.
                     //
-                    // The implementation is synchronous behind an asynchronous signature, which
-                    // the WebGPU specification permits: the async form promises a pipeline, never
-                    // that the compile happens off-thread. What it buys is *when* the work runs,
-                    // not what it costs — a game that awaits `compileAsync` behind its loading
-                    // screen pays for the pipelines there instead of mid-frame.
+                    // These are the real thing as of PRD-327: the descriptor is read here on the
+                    // game thread and the compile runs on a host pool, so `compileAsync` behind a
+                    // loading screen no longer freezes the loop it is meant to be hiding. It was
+                    // previously the synchronous create wrapped in `Promise.resolve()`, which the
+                    // WebGPU specification permits and which bought nothing — the first world
+                    // frame still paid 8,038 ms across 105 compiles.
+                    if (!installBindingTable(state->engine, state, bindingTable({
+                        {"GPUDevice", "createRenderPipelineAsync", 0, nullptr,
+                        &handleGpuDeviceCreateRenderPipelineAsync
+                    , device},
+                                            {"GPUDevice", "createComputePipelineAsync", 0, nullptr,
+                        &handleGpuDeviceCreateComputePipelineAsync
+                    , device}}))) return state->engine->newUndefined();
+                    // The deferred half — the promise map the host settles from `pollEvents()`.
                     {
                         js::JSValueGuard installer(
                             *state->engine,

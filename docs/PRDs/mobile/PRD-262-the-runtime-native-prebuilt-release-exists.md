@@ -9,7 +9,7 @@ prd_contract: v1
 files 1–2): the release workflow's own `gates` job refuses to build without a green CI push run on
 `main` for the release commit, and CI is red on `main` today.
 
-Third lane of [the release batch](../alpha-readiness/README.md). Blocks [PRD-263](../../strategy/ROADMAP.md).
+Third lane of the release batch (`docs/PRDs/alpha-readiness/`, since removed). Blocks [PRD-263](../../strategy/ROADMAP.md).
 
 **Goal: `@threenative/runtime-native` becomes installable as something that actually runs.**
 Today it is publishable and inert.

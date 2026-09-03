@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import { afterEach, expect, test } from 'vitest';
 import {
+  DESKTOP_COLD_START_SEGMENTS,
   FIRST_FRAME_MARKER,
   READY_MARKER,
+  analyzeColdStartMarkers,
   analyzeDesktopLog,
   analyzePresentTicks,
   analyzeWorkerProof,
@@ -19,13 +21,38 @@ const HEALTHY_TICKS = [60, 120, 180, 240, 300]
   .map((frames) => `TN_PRESENTS_TICK:{"frames":${frames},"presents":${frames}}`)
   .join('\n');
 
+/**
+ * The launch markers a real desktop run emits, with the bootstrap sets that precede the game's.
+ *
+ * The host evaluates its own bootstrap scripts through the same engine members as the game, so the
+ * four eval segments genuinely fire more than once a launch — eleven times before `runtime_created`
+ * on the 2026-09-03 desktop run. This fixture keeps one of those decoys so the analyzer is proven
+ * to bracket on `game_eval_begin` rather than to take whatever it saw first.
+ */
+const COLD_START_MARKERS = [
+  ['process', 0],
+  ['compile_begin', 12.1],
+  ['compile_complete', 12.4],
+  ['execute_begin', 12.5],
+  ['execute_complete', 12.6],
+  ['runtime_created', 348.8],
+  ['game_eval_begin', 348.9],
+  ['compile_begin', 360.4],
+  ['compile_complete', 408.9],
+  ['execute_begin', 408.9],
+  ['execute_complete', 450.4],
+  ['first_frame', 531.5],
+]
+  .map(([segment, atMs]) => `TN_COLD_START:{"segment":"${segment}","atMs":${atMs.toFixed(3)}}`)
+  .join('\n');
+
 const roots = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
 });
 
 test('desktop log requires both markers, exact frame completion, and clean errors', () => {
-  const clean = `${READY_MARKER}\n${FIRST_FRAME_MARKER}\nRendered 300 frames in 9000ms\nTN_PRESENTS:300\n${HEALTHY_TICKS}`;
+  const clean = `${READY_MARKER}\n${FIRST_FRAME_MARKER}\nRendered 300 frames in 9000ms\nTN_PRESENTS:300\n${HEALTHY_TICKS}\n${COLD_START_MARKERS}`;
   expect(analyzeDesktopLog(clean)).toEqual([]);
   expect(analyzeDesktopLog(clean.replace('TN_PRESENTS:300\n', ''))).toContain(
     'missing TN_PRESENTS count',
@@ -42,6 +69,63 @@ test('desktop log requires both markers, exact frame completion, and clean error
   );
   expect(analyzeDesktopLog(`${clean}\nWebGPU validation error`)).toContain(
     'WebGPU validation error',
+  );
+});
+
+// PRD-328. The compile and execute markers existed only in `quickjs_engine.cpp`, which has not
+// shipped on any platform since 2026-08-16, and the desktop CLI emitted none at all — so
+// `measure-cold-start.mjs` failed closed on every real configuration and the only JavaScript
+// parse-and-compile number anyone could quote (230 ms, 8 %) was a QuickJS one from 2026-08-11.
+// This gate is what keeps the instrument running on the engine that actually ships.
+test('cold-start markers fail closed on a missing segment and on time running backwards', () => {
+  expect(analyzeColdStartMarkers(COLD_START_MARKERS).failures).toEqual([]);
+
+  // Ledger row 1's negative control, as a unit: drop one mark and the gate names that mark.
+  for (const segment of DESKTOP_COLD_START_SEGMENTS) {
+    const without = COLD_START_MARKERS.split('\n')
+      .filter((line) => !line.includes(`"segment":"${segment}"`))
+      .join('\n');
+    expect(analyzeColdStartMarkers(without).failures).toContain(
+      `TN_COLD_START_MARKER_MISSING:${segment}`,
+    );
+  }
+
+  // A misspelled segment is a missing one, never a silently accepted extra.
+  expect(
+    analyzeColdStartMarkers(COLD_START_MARKERS.replaceAll('"execute_begin"', '"exectue_begin"'))
+      .failures,
+  ).toContain('TN_COLD_START_MARKER_MISSING:execute_begin');
+
+  // Misspelling only the bootstrap's copy changes nothing, because the bootstrap's copy is not
+  // what the gate reads. This is the same bracketing rule stated as its converse.
+  expect(
+    analyzeColdStartMarkers(COLD_START_MARKERS.replace('"execute_begin"', '"exectue_begin"'))
+      .failures,
+  ).toEqual([]);
+
+  expect(analyzeColdStartMarkers('TN_COLD_START:{"segment":"process"}').failures).toContain(
+    'TN_COLD_START missing segment/atMs: {"segment":"process"}',
+  );
+  expect(analyzeColdStartMarkers('TN_COLD_START:{not json}').failures[0]).toMatch(
+    /^malformed TN_COLD_START payload/u,
+  );
+});
+
+test('cold-start markers read the game eval, not the bootstrap that precedes it', () => {
+  // The whole reason `game_eval_begin` exists. Taking the first `compile_begin` in the log would
+  // measure a 0.3 ms bootstrap script as though it were the game bundle.
+  const { markers } = analyzeColdStartMarkers(COLD_START_MARKERS);
+  expect(markers.get('compile_begin')).toBe(360.4);
+  expect(markers.get('compile_complete') - markers.get('compile_begin')).toBeCloseTo(48.5, 1);
+
+  // Order is part of the contract: a compile that completes before it began means two evaluations
+  // were blended, and the segment computed from them is not a measurement.
+  const reordered = COLD_START_MARKERS.replace(
+    'TN_COLD_START:{"segment":"compile_complete","atMs":408.900}',
+    'TN_COLD_START:{"segment":"compile_complete","atMs":120.000}',
+  );
+  expect(analyzeColdStartMarkers(reordered).failures[0]).toMatch(
+    /^TN_COLD_START_SEGMENT_NEGATIVE:compile_begin->compile_complete/u,
   );
 });
 
@@ -142,7 +226,7 @@ test('overlay assertion reads PNG bytes and names what is missing', () => {
 // and presented each exactly once was reported as a failed desktop core gate because of one line
 // about hardware that was never there.
 test('an absent audio device does not fail a run that rendered correctly', () => {
-  const rendered = `${READY_MARKER}\n${FIRST_FRAME_MARKER}\nRendered 300 frames in 9000ms\nTN_PRESENTS:300\n${HEALTHY_TICKS}`;
+  const rendered = `${READY_MARKER}\n${FIRST_FRAME_MARKER}\nRendered 300 frames in 9000ms\nTN_PRESENTS:300\n${HEALTHY_TICKS}\n${COLD_START_MARKERS}`;
   const silent = `${rendered}\n[Audio] No audio playback device on this machine; continuing in silence.`;
   expect(analyzeDesktopLog(silent)).toEqual([]);
 

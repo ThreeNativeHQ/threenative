@@ -198,7 +198,7 @@ export interface IGameConfig<
   readonly frameBudget?: IFrameBudgetOptions | false;
   readonly initialState?: TState;
   /**
-   * Shader warm-up before the first frame. **Off by default, on the evidence below.**
+   * The **pre-start** shader warm-up. Off by default, and that is not the same as no warm-up.
    *
    * Every distinct pipeline is otherwise built the first time something using it is drawn, inside
    * the first rendered frame of a fully built scene. On a Pixel 8 that frame lasted **12.0 s, of
@@ -206,21 +206,24 @@ export interface IGameConfig<
    * loop presents nothing for the whole span. Warming those pipelines while the loading screen is
    * up is the obvious fix, and it is the one this option exists for.
    *
-   * It remains opt-in for callers that want to pay this cost before `start()` releases the held
-   * loop. On the native host it currently cannot complete: **`renderer.compileAsync()` never
-   * resolves there**. Measured on the same device, both granularities were abandoned by their own
-   * budget having compiled nothing —
-   * `TN_WARMUP:{"compiled":0,"abandoned":1,"timedOut":true,"elapsedMs":15325}` for one
-   * whole-scene call, and 6 of 490 in 15 s for the per-object walk — while the first frame
-   * compiled the identical pipelines synchronously in 8.0 s. Turning this on today buys nothing
-   * and spends the budget waiting, so the default may not be on until the host resolves that
-   * promise; the seam is the async-pipeline shim in `runtime-native`'s WebGPU bindings.
+   * **A game with this unset still warms up.** `startupCompile` runs the same `warmUpScene` from
+   * inside the loading layer's bounded readiness gate, where the opaque layer is on screen and the
+   * loop is turning. This option only moves that work *earlier*, to before `start()` releases the
+   * loop, where nothing is presenting — which is a thing to choose deliberately, not a default.
    *
-   * Set it to `{}` or an options object to enable it — on web, where `compileAsync` does resolve,
-   * it does what it says. The default loading layer has its own bounded post-enter readiness gate,
-   * so setting this option is not required for a loading screen to cover first-use work. Either
-   * way `TN_WARMUP` reports what happened, because turning a convention off must not turn its
-   * measurement off.
+   * **What PRD-327 changed is the mechanism, not this default.** The native host used to answer
+   * `createRenderPipelineAsync` with the synchronous create wrapped in a resolved promise, so
+   * `compileAsync` compiled on the main loop and was abandoned by its own budget having finished
+   * nothing — `TN_WARMUP:{"compiled":0,"abandoned":1,"timedOut":true,"elapsedMs":15325}` — while
+   * the first frame compiled the identical pipelines in 8.0 s anyway. Both entries are native
+   * handlers now, handing the descriptor to a host compile pool and holding the main thread for
+   * 0.27 ms of a 70 ms compile (ratio 0.0038 against a pre-registered bar of 0.25, asserted by
+   * `threenative-async-pipeline-thread-test`). The default path started working without its
+   * default moving.
+   *
+   * Pass `{}` or an options object to opt in, or `false` to opt out of warm-up entirely. Either
+   * way `TN_WARMUP` and `TN_STARTUP_WARMUP` report what happened, because turning a convention off
+   * must not turn its measurement off.
    */
   readonly warmUp?: IWarmUpOptions | false | true;
   readonly inputTarget?: EventTarget;
@@ -447,6 +450,39 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   implements IGame<TState, TPhysics>
 {
   #config: IGameConfig<TState, TPhysics>;
+
+  /**
+   * Whether the caller asked for the pre-start warm-up *by hand*.
+   *
+   * PRD-327 Phase 2 proposed flipping this default on for native. Executing it showed the
+   * prescription was wrong, and the reason is worth keeping: **the framework already warms up by
+   * default, in a better place.** `startupCompile` below calls the same `warmUpScene`, but from
+   * inside the loading layer's readiness gate — opaque layer on screen, loop turning — whereas the
+   * pre-start block runs before `start()` releases the loop, with nothing presenting.
+   *
+   * What was actually broken was the mechanism, not the default: `compileAsync` could not resolve
+   * on native because `createRenderPipelineAsync` was the synchronous create wrapped in a resolved
+   * promise, so the default path compiled nothing and reported
+   * `{"compiled":0,"abandoned":1,"timedOut":true}`. Phase 1 fixed that, and the default path
+   * started working without its default moving.
+   *
+   * Flipping it anyway cost two regressions CI caught and a local run did not: the loading screen
+   * stopped covering startup (`verify-desktop-loading.mjs`: `loadingVisible: false` at every
+   * startup sample, on macOS and Windows), and the scene then compiled twice — once before the
+   * loop and once inside the gate — which pushed `verify-desktop-physics.mjs` past its 180-frame
+   * budget on macOS. Both are gone with the default back where it was.
+   */
+  #warmUpConfiguredExplicitly(): boolean {
+    return this.#config.warmUp !== undefined && this.#config.warmUp !== false;
+  }
+
+  /** The warm-up options for the pre-start block, once an explicit opt-in has asked for it. */
+  #warmUpOptions(): IWarmUpOptions {
+    const configured = this.#config.warmUp;
+    return configured === undefined || configured === true || configured === false
+      ? {}
+      : configured;
+  }
   #ctx: ICtx<TState, TPhysics> | undefined;
   #scene: Scene<TState, TPhysics> | undefined;
   /** The name of the scene currently entered. Carried across a hot update so a reload resumes
@@ -637,10 +673,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     let report: Awaited<ReturnType<typeof warmUpComputeNodes>> | undefined;
     let failure: string | undefined;
     try {
-      const configured = this.#config.warmUp;
-      const options =
-        configured === undefined || configured === false || configured === true ? {} : configured;
-      report = await warmUpComputeNodes(renderer, nodes, options);
+      report = await warmUpComputeNodes(renderer, nodes, this.#warmUpOptions());
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
     }
@@ -1004,11 +1037,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         const mustPresentLoader =
           firstWorldPass && canvasLayer.opaque && loaderHasPixels && !loadingFramePresented;
         if (firstWorldPass) {
+          // `startupCompile` is the fallback that compiles inside the readiness gate. When warm-up
+          // is on it has already happened behind the loading screen, so running it again here
+          // would pay the same cost twice.
           startupReadiness.start(
-            canvasLayer.opaque &&
-              (this.#config.warmUp === undefined || this.#config.warmUp === false)
-              ? startupCompile
-              : undefined,
+            canvasLayer.opaque && !this.#warmUpConfiguredExplicitly() ? startupCompile : undefined,
           );
         }
         // Render-cadence compute is first-use work too: keep it behind an opaque startup layer
@@ -1120,9 +1153,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();
         const computeBlockedByStartup =
-          !worldRendered &&
-          canvasLayer.opaque &&
-          (this.#config.warmUp === undefined || this.#config.warmUp === false);
+          !worldRendered && canvasLayer.opaque && !this.#warmUpConfiguredExplicitly();
         if (this.#renderer !== undefined && this.#sceneEntered && !computeBlockedByStartup)
           this.#computeDriven.process(this.#renderer);
       },
@@ -1242,11 +1273,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // The scene is built and the loop is still held, which is the only window where compiling can
     // cost frames nobody is playing. Warming up here rather than letting the first real frame do
     // it is what keeps a launch from freezing inside one 24-second frame. PRD-218.
-    if (
-      this.#config.warmUp !== undefined &&
-      this.#config.warmUp !== false &&
-      this.#renderer !== undefined
-    ) {
+    if (this.#warmUpConfiguredExplicitly() && this.#renderer !== undefined) {
       // Never fatal, and never able to hang the launch. This block sits between "the scene is
       // built" and "the game may start", so anything it does wrong is something the player
       // experiences as the game not starting -- which is exactly what the first version did: a
@@ -1258,8 +1285,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       let failure: string | undefined;
       try {
         projection.reconcile();
-        const warmUpOptions: IWarmUpOptions =
-          this.#config.warmUp === true ? {} : this.#config.warmUp;
+        const warmUpOptions: IWarmUpOptions = this.#warmUpOptions();
         report = await warmUpScene(this.#renderer, projection.root, camera, {
           ...warmUpOptions,
           computeNodes: [...(warmUpOptions.computeNodes ?? []), ...this.#computeDriven.warmupNodes],
