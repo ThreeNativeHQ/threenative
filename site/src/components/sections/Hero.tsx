@@ -79,6 +79,16 @@ export function Hero() {
             </ButtonLink>
           </div>
           {showInstall ? <InstallPanel /> : null}
+          {/* The panel above is behind a click, so a visitor without JavaScript would never see
+              the one command this page exists to hand over. This is what <noscript> is for. */}
+          <noscript>
+            <pre
+              className="mt-5 max-w-[520px] overflow-x-auto rounded-xl border border-tn-border bg-tn-surface px-5 py-4 font-mono text-[13.5px] leading-[1.7] text-[#c8ced6]"
+              data-testid="install-command-noscript"
+            >
+              {installCommand("pnpm")}
+            </pre>
+          </noscript>
           <div className="mt-8">
             <ChipRow>
               {CHIP_CLAIMS.map((id) => (

@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { claimText } from "../src/content/claims.js";
 import { canonicalUrl } from "../src/lib/seo.js";
+import { installCommand } from "../src/lib/snippets.js";
 import { routes } from "../src/routes.js";
 import { CLIENT_DIR, prerenderedPage } from "./support.js";
 
@@ -22,6 +23,12 @@ describe("the prerendered site", () => {
     const page = await prerenderedPage("/");
     expect(page).toContain(claimText("hero-headline"));
     expect(page).toContain("without WebView overhead");
+  });
+
+  it("should ship the install command to a visitor without JavaScript", async () => {
+    const page = await prerenderedPage("/");
+    expect(page).toContain("<noscript>");
+    expect(page).toContain(installCommand("pnpm").split("\n")[0] ?? "");
   });
 
   it("should give every route a unique title, description and canonical", async () => {
