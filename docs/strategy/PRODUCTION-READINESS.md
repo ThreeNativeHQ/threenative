@@ -1,5 +1,8 @@
 # Production readiness, and the vanilla crossover
 
+> **Open limitations live in [`CURRENT-CHALLENGES.md`](../CURRENT-CHALLENGES.md).** This document
+> is a strategy record; it is not the place to look for what is currently broken or unproven.
+
 **Status: proposal, not commitment.** Written 2026-08-14 from two sources: an executed
 physics-puzzle sweep (rounds 5 and 6, archived and scored) and a strategy review written against a
 separate shooter-template run. Where a claim is measured, the evidence is cited. Where it is not,

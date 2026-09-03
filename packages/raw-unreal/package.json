@@ -3,6 +3,16 @@
   "version": "0.1.0",
   "license": "MIT",
   "description": "Loads raw Unreal editor .uasset static meshes directly into Three.js geometry — UE5 FMeshDescription and UE4.18 FRawMesh layouts, with no interchange conversion.",
+  "keywords": ["threenative", "unreal", "uasset", "static-mesh", "three", "threejs", "loader"],
+  "homepage": "https://github.com/ThreeNativeHQ/threenative#readme",
+  "bugs": {
+    "url": "https://github.com/ThreeNativeHQ/threenative/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "directory": "packages/raw-unreal"
+  },
   "type": "module",
   "files": ["dist", "README.md"],
   "main": "./dist/index.js",

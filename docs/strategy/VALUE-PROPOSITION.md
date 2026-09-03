@@ -1,5 +1,8 @@
 # Value proposition — "would I use this instead of vanilla Three.js?"
 
+> **Open limitations live in [`CURRENT-CHALLENGES.md`](../CURRENT-CHALLENGES.md).** This document
+> is a strategy record; it is not the place to look for what is currently broken or unproven.
+
 *Last measured 2026-08-30.* Axes 1, 4 and 5 were re-run; axes 2 and 3 were re-evidenced without
 moving. Two claims that no longer had a command behind them were replaced rather than softened:
 `scripts/count-loc.ts` stopped printing the ratio this file quoted (it writes

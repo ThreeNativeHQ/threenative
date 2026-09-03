@@ -1,5 +1,8 @@
 # Roadmap — get ThreeNative to a production-ready beta
 
+> **Open limitations live in [`CURRENT-CHALLENGES.md`](../CURRENT-CHALLENGES.md).** This document
+> is a strategy record; it is not the place to look for what is currently broken or unproven.
+
 **Goal of v1:** a beta a stranger can install, build a game with, and ship — on web first, on device
 where the evidence allows. Everything here is done, partly done, or not done; nothing is aspirational
 prose. **Legend:** ✅ done · ⚠️ partly done · ❌ not done.

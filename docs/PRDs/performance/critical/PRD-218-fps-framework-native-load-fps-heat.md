@@ -15,6 +15,17 @@ prd_contract: v1
 | 4. Batching decided by measurement | **met** — declining is arithmetically correct for an `InstancedMesh`-shaped key against 835 unique geometries; the material-keyed `BatchedMesh` lever is filed into PRD-214's lever list. |
 | 5. Guard-rails | **partial** — storage root fixed with a bindings-level red-green needing no device; applicationId documented in both AGENTS chains. The 32 `map: undefined` material warnings are still unattributed. |
 
+**Moved to `performance/critical/` 2026-09-02.** Criterion 2 (launch ≤ 8 s) is still the largest
+user-visible defect the runtime owns and nothing has moved it since 2026-08-24. The mechanism is
+now planned as [PRD-327](PRD-327-first-use-pipeline-compilation-leaves-the-main-loop.md) (real
+async pipeline creation off the main loop, warm-up on by default on native, a measured decision on
+a persisted cache) and the launch instrument's V8 gap as
+[PRD-328](PRD-328-launch-is-measured-on-the-engine-that-ships.md). This PRD stays open as the
+finding and the acceptance number; it moves to `done/` when PRD-327 ticks criteria 1 and 2 here.
+Criterion 3 is met at the mechanism, criterion 4 was handed to PRD-214/PRD-310, and criterion 5's
+open items (the `map: undefined` warnings) are not critical and stay here unowned. The order of
+work is in [`README.md`](README.md).
+
 **The finding that matters most, and that invalidates advice this framework already ships:**
 `renderer.compileAsync()` does not work on the native host. `packages/core/src/renderer.ts`
 documents it as the fix for exactly this stall; measured, it warms nothing and spends its whole

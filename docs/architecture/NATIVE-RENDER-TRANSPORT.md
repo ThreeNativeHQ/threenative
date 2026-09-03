@@ -4,8 +4,12 @@
 break.** Budget and priorities live in
 [NATIVE-PERF-BOTTLENECKS](NATIVE-PERF-BOTTLENECKS.md); this page is the design.
 
-**Status, 2026-08-28.** The op stream ([PRD-227](../PRDs/performance/PRD-227-the-frame-crosses-once.md) Change 1)
-is working-tree code with no verification record. **Nothing here is evidence until gate P1 lands.**
+**Status, 2026-09-02.** The op stream ([PRD-227](../PRDs/performance/PRD-227-the-frame-crosses-once.md) Change 1)
+**landed and passed gate P1**: desktop `bridgeNs` 9.31 → 0.81 ms, `work` 23.19 → 14.32 ms
+([record](../verification/runtime-perf-state.md) §2.2). On the phone the same work moved out of
+the JS meter into an ~8 ms `frameReplay` host segment and the frame rate did not change — the frame
+is GPU-bound. Change 2 (fixed-shape wrappers) was executed and measured worse than baseline
+(ledger §2.1 row 12). What is built below is shipped code; what is not built is gated as stated.
 
 ## What is built
 

@@ -1,13 +1,48 @@
+<div align="center">
+
 # ThreeNative
 
-ThreeNative is an application framework for games whose same vanilla Three.js source runs in
-the browser on WebGPU and on an owned C++ runtime for desktop, Android, and iOS. It uses
-Godot-shaped node names, React and Tailwind for UI, and vanilla `three` underneath on every
-surface.
+**The application framework for Three.js games — one codebase, web and native.**
+
+Write ordinary `three/webgpu`. Ship it to the browser, desktop, Android, and iOS.
+
+[![CI](https://github.com/ThreeNativeHQ/threenative/actions/workflows/ci.yml/badge.svg)](https://github.com/ThreeNativeHQ/threenative/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@threenative/core?label=%40threenative%2Fcore&color=cb3837)](https://www.npmjs.com/package/@threenative/core)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![three.js r185](https://img.shields.io/badge/three.js-r185-000000.svg)](https://threejs.org)
+[![Node >= 20.19](https://img.shields.io/badge/node-%E2%89%A520.19-5fa04e.svg)](https://nodejs.org)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Code of Conduct](https://img.shields.io/badge/code%20of%20conduct-v2.1-ff69b4.svg)](CODE_OF_CONDUCT.md)
+
+[Quickstart](#quickstart) · [Templates](#templates) · [Packages](#packages) · [Docs](#docs) · [Contributing](#contributing)
+
+</div>
+
+---
+
+## Three.js and ThreeNative
+
+ThreeNative does not replace Three.js — it is Three.js, with the game layer and the platform
+layer filled in. `ctx.scene` is a `THREE.Scene`, `ctx.renderer` is a `WebGPURenderer`, and every
+Three.js tutorial from the last decade still applies inside a ThreeNative scene.
+
+| | Plain Three.js | ThreeNative |
+| --- | --- | --- |
+| **Rendering** | `three/webgpu`, TSL, your materials | The same `three/webgpu`, unchanged and unwrapped |
+| **Game loop, fixed timestep, dt clamp** | You write it, in every project | Shipped |
+| **Input** | Per-project key, pointer, pad and touch plumbing | One input map; `ctx.input.vector("move")` on every device |
+| **Physics and navigation** | Pick a library, write the bridge | `RigidBody3D`, `Area3D`, `CharacterBody3D` over Rapier |
+| **HUD and menus** | Hand-rolled DOM, or a second render loop | React 19 + Tailwind bound to game state at ~10 Hz |
+| **Assets** | Manual copies and paths | `assets/` in, hashed output and a manifest out |
+| **Proof it still works** | Screenshots and hope | Playtest scenarios that drive a real build and assert |
+| **Desktop, Android, iOS** | Browser only | An owned C++ runtime running the same source |
+| **The look** | Yours | Yours — visual code is generated into `src/render/`, never hidden in a package |
+
+The framework owns the wiring and never the look. Anything that decides how a frame looks —
+materials, lighting, tonemapping, post, camera framing — is scaffolded into your repo as ordinary
+Three.js you can read, edit, or delete.
 
 ## Quickstart
-
-Run these commands inside the scaffolded project:
 
 ```sh
 pnpm create threenative my-game
@@ -16,15 +51,12 @@ pnpm install
 pnpm dev
 ```
 
-The default `starter` template gives you a complete game loop and React HUD. The seven templates
-are listed in [`create-threenative`](packages/create-threenative/README.md): `starter` is the
-default, `minimal` is the smallest core-and-physics project, `platformer` adds navigation,
-`action-rpg` adds combat and progression, `defense` adds tower placement, `racing` adds laps and
-ranking, and `shooter` adds targets and weapons.
+That is a complete game: a loop, physics, a React HUD, a playtest scenario, and a scene you can
+edit. Requires Node 20.19+ and a WebGPU-capable browser (WebGL2 fallback is automatic).
 
 ## A small game
 
-This is the real portable entry from the minimal template's `src/game.ts`:
+The real portable entry from the `minimal` template's `src/game.ts`:
 
 ```ts
 import { defineGame } from "@threenative/core";
@@ -53,16 +85,40 @@ const game = defineGame<GameState, IPhysicsContext>({
 export default game;
 ```
 
-## What you get
+A scene is a class with three optional methods — `load`, `enter`, `update`. That is the whole
+lifecycle.
 
-- Bootstrap and lifecycle management; the look stays in generated `src/render/` source.
-- Godot-named nodes such as `RigidBody3D`, `CharacterBody3D`, `Area3D`, and `CollisionShape3D`
-  over Rapier; gameplay remains yours to write.
-- React HUD bindings for menus and game state; the framework does not prescribe your visual design.
-- A playtest harness that drives a real browser and asserts what happened; your scenarios define
-  the game's behaviour.
-- An owned native runtime for desktop, Android, and iOS; the framework supplies the host plumbing,
-  not your game's content.
+## Features
+
+- **Godot-shaped conventions.** `RigidBody3D`, `CharacterBody3D`, `Area3D`, `CollisionShape3D` —
+  borrowed vocabulary, so there is nothing new to learn.
+- **Conventions on by default.** Feet meet the floor, a weapon stays in the hand that holds it, an
+  agent walks around a wall, one metre is one metre — each with a named override on the same object.
+- **React HUD bindings.** Game state flows into React through an external store that never
+  re-renders on the game loop.
+- **A real test harness.** Playtest scenarios drive the actual build in a browser or on a device
+  and assert what happened — frames, transforms, state, performance.
+- **An asset pipeline.** Models and textures compile to hashed, manifest-tracked output.
+- **An owned native runtime.** The same TypeScript runs on a C++ host for desktop, Android and iOS.
+- **Built for agents.** A searchable capability manifest ships with the library and is exposed over
+  MCP, so an authoring agent finds what already exists instead of rewriting it.
+
+## Templates
+
+`pnpm create threenative my-game --template <name>`
+
+| Template | What you start with |
+| --- | --- |
+| `starter` *(default)* | A polished default project with a React HUD, physics, and a ready-to-edit scene |
+| `minimal` | The smallest project — core and physics only |
+| `platformer` | Jumping, patrols, pickups, camera follow |
+| `action-rpg` | A three-room dungeon with melee, loot, equipment, and persistence |
+| `defense` | Tower placement, routes, waves, and income |
+| `racing` | Three laps, checklines, rescue sectors, boost pads |
+| `sailing` | Wind, waves, buoyancy, and an ordered course |
+| `shooter` | Hitscan and projectile weapons, hunting targets, timed pickups |
+
+Details in [`create-threenative`](packages/create-threenative/README.md).
 
 ## Packages
 
@@ -70,7 +126,7 @@ export default game;
 | --- | --- |
 | `@threenative/assets` | Build-time asset compile step: `assets/` in, hashed outputs and a manifest out |
 | `@threenative/core` | Bootstrap, scenes, lifecycle, input, and renderer integration |
-| `create-threenative` | Scaffold a readable game project from seven templates |
+| `create-threenative` | Scaffold a readable game project from eight templates |
 | `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
 | `@threenative/runtime-native` | Owned C++ host for desktop, Android, and iOS |
@@ -79,41 +135,55 @@ export default game;
 | `@threenative/ueformat` | UEFormat v10 `.uemodel` parser and Three.js loader for meshes exported from Unreal packages |
 | `threenative-engine-mcp` | Offline MCP capability discovery for authoring agents |
 
-## Status
+## Platform support
 
-This is alpha. Browser WebGPU and desktop native are green; iOS-simulator evidence is produced
-on a hosted `macos-15` runner; the Android emulator is red on the hosted lane. The external
-performance control records a provisional Pixel 8 measurement; physical-phone framework/device
-evidence remains unverified, and no stranger has played a ThreeNative game for five minutes. This
-is not mobile-ready. The external performance control is
-[`runtime-perf-state.md`](docs/verification/runtime-perf-state.md).
+ThreeNative is **alpha**: the API is settling and versions are `0.x`.
 
-## Contributing and development
+| Platform | Renderer | State |
+| --- | --- | --- |
+| Web | WebGPU, WebGL2 fallback | Verified every CI run |
+| Desktop (Linux, macOS, Windows) | Owned native host | Verified — 300 native frames and a non-blank capture |
+| Android | Owned native host | Emulator lane runs; physical-device performance is being measured |
+| iOS | Owned native host | Simulator evidence produced on a hosted macOS runner |
 
-Install the pinned dependencies, then use the default checks:
-
-```sh
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm lint
-pnpm test
-pnpm test:browser
-pnpm test:playtest
-```
-
-**There is no root `pnpm dev`.** To run an example, name it:
-`pnpm --filter abyss-framework dev`.
-
-Native compilation is opt-in. The default gate needs no CMake, NDK, or Xcode.
+Every claim here is backed by a run. The current numbers live in
+[`docs/verification/runtime-perf-state.md`](docs/verification/runtime-perf-state.md), and
+everything the framework does not yet do well — with what is being done about it — is in one
+place: [`docs/CURRENT-CHALLENGES.md`](docs/CURRENT-CHALLENGES.md).
 
 ## Docs
 
-- [`docs/README.md`](docs/README.md) is the map for PRDs, verification, benchmarks, strategy,
-  architecture, product, and spikes.
-- [`create-threenative/README.md`](packages/create-threenative/README.md) documents the templates
-  and scaffold command.
-- [`CHARTER.md`](docs/architecture/CHARTER.md) is the binding document for the framework.
+- [`docs/README.md`](docs/README.md) — the map: PRDs, verification, benchmarks, strategy,
+  architecture, product, spikes.
+- [`docs/architecture/CHARTER.md`](docs/architecture/CHARTER.md) — what the framework is, what it
+  refuses to be, and the rules that decide both. Binding.
+- [`docs/architecture/AGENT-INTERFACE.md`](docs/architecture/AGENT-INTERFACE.md) — the surface an
+  authoring agent reads.
+- [`packages/create-threenative/README.md`](packages/create-threenative/README.md) — templates and
+  the scaffold command.
+
+## Contributing
+
+Contributions are welcome — issues, discussions and pull requests alike.
+
+```sh
+pnpm install --frozen-lockfile
+pnpm typecheck && pnpm lint && pnpm test
+```
+
+Native compilation is opt-in; the default gate needs no CMake, NDK, or Xcode. There is no root
+`pnpm dev` — run an example by name, for example `pnpm --filter abyss-framework dev`.
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request, and
+[`AGENTS.md`](AGENTS.md) for the full working conventions. Everyone taking part is expected to
+follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Community and support
+
+- **Questions and ideas** → [GitHub Discussions](https://github.com/ThreeNativeHQ/threenative/discussions)
+- **Bugs and feature requests** → [Issues](https://github.com/ThreeNativeHQ/threenative/issues)
+- **Security reports** → [`SECURITY.md`](SECURITY.md) (please do not open a public issue)
 
 ## Licence
 
-MIT — [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE). ThreeNative is MIT end to end, including the native runtime.

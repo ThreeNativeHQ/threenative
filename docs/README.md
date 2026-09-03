@@ -2,10 +2,14 @@
 
 This directory holds product constraints, work specifications, architecture notes, measured
 verification, and experiments; [`architecture/CHARTER.md`](architecture/CHARTER.md) is the
-binding document.
+binding document, and [`CURRENT-CHALLENGES.md`](CURRENT-CHALLENGES.md) is the one place open
+limitations are recorded.
 
 ## Start here
 
+- [CURRENT-CHALLENGES](CURRENT-CHALLENGES.md) is the **single record of every known limitation**,
+  what is being done about it, and the evidence behind each. Limitations belong there, not
+  scattered across the docs that describe what the framework does.
 - [ROADMAP](strategy/ROADMAP.md) explains the product path and the claims that still need
   evidence.
 - [CONFLICTS](strategy/CONFLICTS.md) records decisions where strategy and the binding document
@@ -20,6 +24,8 @@ binding document.
 | Folder | Holds | Status of contents |
 |---|---|---|
 | `PRDs/` | Numbered work specs, active proposals, and archived delivery records | Status follows the owning folder; `pnpm budgets` reports counts but does not enforce a PRD-file cap |
+| `bugs/` | One file per root-caused defect | Historical record; the open ones are indexed in `CURRENT-CHALLENGES.md` |
+| `audits/` | Repository-wide sweeps and one-off analyses | Dated; findings are actioned through PRDs |
 | `verification/` | Gate results per PRD, dated, plus round ledgers | Historical record |
 | `benchmark/` | Protocol, sealed prompts, dated results | Binding protocol, VOID result |
 | `strategy/` | Market position, roadmap, money, metrics | **Proposal.** Nothing here is committed |
@@ -75,8 +81,8 @@ recorded in builder sessions, and the defect shapes reviewers keep re-finding.
 
 A round ledger records one self-improvement round's inputs, decisions, evidence, and resulting
 state. `pnpm round:next` resumes from the latest ledger, and `pnpm round:deletions` reports
-persistent unused-export evidence. The [newest ledger is round 10](verification/round-10-2026-08-16.md);
-[rounds 1–9](verification/) are the earlier ledger range.
+persistent unused-export evidence. The [newest ledger is round 12](verification/round-12-close-2026-08-22.md);
+[the earlier rounds](verification/) sit beside it.
 
 ## Benchmark
 
@@ -118,6 +124,8 @@ reproducible with `pnpm pack`, and sweep tests build their own temporary fixture
 - [NATIVE-PERF-BOTTLENECKS](architecture/NATIVE-PERF-BOTTLENECKS.md) — performance hypotheses
 - [NATIVE-RENDER-TRANSPORT](architecture/NATIVE-RENDER-TRANSPORT.md) — proposed render-thread
   layers and why they are not a roadmap
+- [CHARTER-HISTORY](architecture/CHARTER-HISTORY.md) — how the binding document changed, so the
+  Charter itself does not carry its own diff
 
 Write-once/run-anywhere is owned as a gate by
 [PRD-054](PRDs/BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md); it remains
@@ -130,6 +138,15 @@ blocked at acceptance criterion 1.
 - [STORE-POLICY](product/STORE-POLICY.md) — Apple and Google constraints
 - [STRANGER-TEST-PROTOCOL](product/STRANGER-TEST-PROTOCOL.md) — the single definition of the
   five-minute player experiment
+
+## Bugs, audits and reports
+
+Three folders hold dated technical write-ups. They are the detail behind
+[CURRENT-CHALLENGES](CURRENT-CHALLENGES.md), which is the summary and the index:
+
+- [`bugs/`](bugs/) — one file per root-caused defect, with the reproduction and the fix.
+- [`audits/`](audits/) — repository-wide sweeps and one-off analyses: guardrail gaps, hotspots,
+  technical debt, refactor studies.
 
 ## Spikes
 

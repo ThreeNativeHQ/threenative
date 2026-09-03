@@ -3,6 +3,16 @@
   "version": "0.3.0",
   "license": "MIT",
   "description": "React bindings for mounting a ThreeNative game and reading throttled state.",
+  "keywords": ["threenative", "react", "tailwind", "hud", "three", "threejs", "gamedev"],
+  "homepage": "https://github.com/ThreeNativeHQ/threenative#readme",
+  "bugs": {
+    "url": "https://github.com/ThreeNativeHQ/threenative/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "directory": "packages/ui"
+  },
   "type": "module",
   "files": ["dist", "README.md"],
   "main": "./dist/index.js",

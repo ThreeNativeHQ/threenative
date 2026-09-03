@@ -6,7 +6,7 @@ is PARTIAL**: phases 1–4 and 6 landed on 2026-08-28 under commits that never c
 own evidence section reading NOT RUN while `pnpm budgets` already enforced its gates. **Phase 5 —
 converting the source-text assertions — is the one open phase, and the only thing still blocking
 PRD-230.** Filed from
-[the runtime-native refactor analysis](../../../reports/runtime-native-refactor-analysis-2026-08-28.md)
+[the runtime-native refactor analysis](../../../audits/runtime-native-refactor-analysis-2026-08-28.md)
 (measured at `7b729e2d`) and from the first C++ coverage measurement this repository has ever
 taken, [native-coverage-scouting-2026-08-28](../../../verification/native-coverage-scouting-2026-08-28.md).
 
