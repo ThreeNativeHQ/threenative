@@ -3,6 +3,13 @@
 Companion to the `Budget real time for the look` section in this project's `AGENTS.md`. Run
 `pnpm dev`, then get eyes on the game. In rough order of preference:
 
+**First, though, when the complaint is "it looks wrong" rather than "show me":** run
+`npx @threenative/playtest doctor --url http://127.0.0.1:5173 --text`. A capture shows you a black
+or washed-out frame; it cannot tell you *why*. The doctor's lighting, materials and camera
+lines can, and they name the three cases that kill a frame while every other number stays healthy —
+lit materials with no visible light, a fog far plane in front of the scene it fogs, and a camera
+far plane that clips it. Capture after that, to see what the numbers already told you.
+
 1. **Browser automation against the user's real Chrome**, if you have it — Claude in Chrome
    or any equivalent MCP browser tool. This is the best option by a wide margin: it runs on
    a real GPU, so WebGPU works, and you can navigate, press keys, screenshot, and read the

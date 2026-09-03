@@ -900,28 +900,61 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("every native leg runs on every event", async () => {
+  it("runs every native leg on every event, bar the two that crowd the pool", async () => {
     // Until 2026-09-01 the platform legs ran only on pushes to main, the nightly cron, and PRs
     // carrying the `native` label; a PR read skips where the legs should have reported, and on
     // main the lane cancelled itself before finishing anyway (owner call: run everything,
-    // everywhere, and let a red be a red). The only condition any leg may still carry is the
-    // manual `ios_only` dispatch toggle, which runs the iOS lane alone on demand.
+    // everywhere, and let a red be a red).
+    //
+    // Two legs are gated again as of 2026-09-03, and the reason is a measurement the earlier call
+    // did not have. `desktop-parity` costs 3173s and `android-emulator-parity` 1858s: together 84
+    // of the ~130 runner-minutes this workflow spends per pull request, against ~60 for all of
+    // CI, on one shared pool. On run 33782776626 CI took 457s while its longest job was 332s —
+    // the difference is its own 26 jobs queueing against slots these two legs were holding.
+    //
+    // What the earlier call was protecting is intact: both still run on every push to main, every
+    // night, and on any PR labelled `native`, so nothing reaches a release unproven. What changed
+    // is that they no longer sit in front of the checks people actually wait on — and both are
+    // advisory rather than required, both are red on main today, and both report 30-53 minutes
+    // after a PR opens, which is after it has been read.
+    //
+    // Every other leg keeps the old rule. The only other condition any leg may carry is the manual
+    // `ios_only` dispatch toggle.
     const native = await readFile(
       path.join(repo, ".github/workflows/native-platforms.yml"),
       "utf8",
     );
-    const legs = [
-      "android-emulator-parity",
-      "desktop",
-      "ios-simulator",
-      "desktop-parity",
-      "starter-linux",
-    ] as const;
-    for (const name of legs) {
+    const gated = ["android-emulator-parity", "desktop-parity"] as const;
+    const ungated = ["desktop", "ios-simulator", "starter-linux"] as const;
+
+    for (const name of ungated) {
       const job = requiredJob(native, name);
       expect(job, name).not.toContain("github.event_name != 'pull_request'");
       expect(job, name).not.toContain("contains(github.event.pull_request.labels");
     }
+
+    for (const name of gated) {
+      const job = requiredJob(native, name);
+      // A label gate and nothing else. Anything narrower — a path filter, a branch test — is the
+      // silent skip the 2026-09-01 call was made against, and would let a change through unproven
+      // rather than merely later.
+      expect(job, name).toContain("contains(github.event.pull_request.labels.*.name, 'native')");
+      expect(job, name).toContain("github.event_name != 'pull_request'");
+      expect(job, `${name} skips on a path filter rather than a label`).not.toMatch(
+        /paths(-ignore)?:/u,
+      );
+      expect(job, `${name} no longer runs on pushes to main`).not.toContain(
+        "github.ref == 'refs/heads/main'",
+      );
+    }
+
+    // The workflow's own triggers still include the push and the cron, which is what makes the
+    // gate "later" rather than "never".
+    const triggers = triggerSection(native);
+    expect(triggers).toContain("push:");
+    expect(triggers).toContain("branches: [main]");
+    expect(triggers).toContain("schedule:");
+
     const android = requiredJob(native, "android-emulator-parity");
     expect(android).not.toContain("continue-on-error: true");
     // It reports its own red rather than swallowing it, and — since 2026-09-02 — without taking

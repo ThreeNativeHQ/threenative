@@ -34,7 +34,16 @@ import { type RoundLedger, readRoundLedger } from "./round-ledger.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 
-export const BATCH_README = "docs/PRDs/alpha-readiness/README.md";
+/**
+ * Where A7 writes the generated table and reads it back.
+ *
+ * This was `docs/PRDs/alpha-readiness/README.md` until that batch was archived and its README
+ * deleted, at which point A7 reported `unmeasured` on every run — the bar had quietly stopped
+ * proving it was runnable rather than transcribed, which is the one thing A7 exists to prove.
+ * It lives in the evidence record now, because that is what a generated verdict table is, and
+ * because a batch folder is a thing rounds archive while this file has to outlive all of them.
+ */
+export const ALPHA_TABLE_FILE = "docs/verification/alpha-bar.md";
 export const TABLE_BEGIN = "<!-- BEGIN GENERATED: alpha-bar -->";
 export const TABLE_END = "<!-- END GENERATED: alpha-bar -->";
 
@@ -541,7 +550,7 @@ export function renderTable(rows: readonly IAlphaRowResult[]): string {
     // A7 reports on the six above, so it cannot be one of them: rendering its own status would
     // need that status before it has one. It is stated as the invariant the generator makes
     // true, and a hand edit to this line fails the whole-file comparison like any other.
-    `| A7 | The bar is runnable, not transcribed | **green** | \`${BATCH_README}\` — this table is \`pnpm alpha:bar --write\` output; the command re-reads it and goes red if it drifts. |`,
+    `| A7 | The bar is runnable, not transcribed | **green** | \`${ALPHA_TABLE_FILE}\` — this table is \`pnpm alpha:bar --write\` output; the command re-reads it and goes red if it drifts. |`,
     "",
     TABLE_END,
   ].join("\n");
@@ -568,11 +577,11 @@ export function writeGeneratedTableFile(file: string, table: string): void {
 function generatedTableRow(repo: string, rows: readonly IAlphaRowResult[]): IAlphaRowResult {
   const id = "A7";
   const requirement = "The bar is runnable, not transcribed";
-  const evidence = BATCH_README;
-  const file = path.join(repo, BATCH_README);
+  const evidence = ALPHA_TABLE_FILE;
+  const file = path.join(repo, ALPHA_TABLE_FILE);
   if (!fs.existsSync(file))
     return {
-      detail: `${BATCH_README} is missing, so the generated table cannot be compared.`,
+      detail: `${ALPHA_TABLE_FILE} is missing, so the generated table cannot be compared.`,
       evidence,
       id,
       requirement,
@@ -595,14 +604,14 @@ function generatedTableRow(repo: string, rows: readonly IAlphaRowResult[]): IAlp
   }
   return expected === markdown
     ? {
-        detail: `The generated table in ${BATCH_README} is byte-identical to this run.`,
+        detail: `The generated table in ${ALPHA_TABLE_FILE} is byte-identical to this run.`,
         evidence,
         id,
         requirement,
         status: "pass",
       }
     : {
-        detail: `The generated table in ${BATCH_README} does not match this run. Rerun pnpm alpha:bar --write.`,
+        detail: `The generated table in ${ALPHA_TABLE_FILE} does not match this run. Rerun pnpm alpha:bar --write.`,
         evidence,
         id,
         requirement,
@@ -670,7 +679,7 @@ async function main(argv: readonly string[]): Promise<void> {
   }
   let report = await alphaBar();
   if (write) {
-    const file = path.join(REPO, BATCH_README);
+    const file = path.join(REPO, ALPHA_TABLE_FILE);
     const rows = report.rows.filter((row) => row.id !== "A7");
     writeGeneratedTableFile(file, renderTable(rows));
     // Re-measure A7 against what is now on disk rather than assuming the write took. Writing the
