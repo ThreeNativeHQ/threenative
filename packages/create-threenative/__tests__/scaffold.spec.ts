@@ -227,6 +227,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
   minimal: "000cd8d2df7e434f43cb1f270881435b89575fce4e6ba3d86ebed0974a395be1",
   platformer: "08ec1ae39a67ac0667c4d4acc6bc0224bbd8976e382fa42bbf87d28b5c5f36bb",
+  runner: "cfb82df987d3cba8beda7a65c087be155cd30d84e7f80910263c99074cbf7d4d",
+  puzzle: "5940818ec4400e9f6ba02e6d7c29e0fe0ace150db8a7fd46f9f5a69b1af5f312",
   racing: "eb80e8e66a06fe5be481ab64516859dcc39604a9f5ddfd0d00d59f636a34fc7a",
   shooter: "af2fe52467215754ee84f68c37bd0bf6e962f3704cb78cce0fb1f548202c75d2",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
@@ -1124,6 +1126,34 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  // Being on disk is not the same as shipping. `.gitignore` carries an unanchored `.mcp.json`
+  // rule for the copy an install writes at the repo root, and it swallowed the template copies
+  // too: the file generated fine, `git status` stayed silent, and the template shipped without
+  // it. Four suites then failed on CI with
+  //   Error: Scaffold produced no .mcp.json at '.../puzzle/.mcp.json'
+  // for a file that was present on the author's machine the entire time. Reading the working
+  // tree cannot catch that. Asking git what it tracks can.
+  it("should track every template's agent config, not merely have it on disk", async () => {
+    const { stdout } = await run("git", [
+      "ls-files",
+      "--",
+      "packages/create-threenative/templates/*/.mcp.json",
+    ]);
+    const tracked = new Set(
+      stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line !== ""),
+    );
+    const missing = ALL_TEMPLATES.filter(
+      (template) => !tracked.has(`packages/create-threenative/templates/${template}/.mcp.json`),
+    );
+    expect(
+      missing,
+      "these templates' .mcp.json is untracked; git is ignoring it and the scaffold ships without it",
+    ).toEqual([]);
   });
 
   it("should ship the same MCP config and pins in every template", async () => {

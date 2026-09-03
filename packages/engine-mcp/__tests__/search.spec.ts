@@ -158,6 +158,72 @@ describe("threenative-engine-mcp", () => {
     expect(results.length).toBeLessThanOrEqual(5);
   });
 
+  /**
+   * The index is written in the vocabulary of the situation, and a request is written in the
+   * vocabulary of the game. "clicking" and "click", "instanced" and "instance" are the same word
+   * to an author and were different tokens to the matcher, so a request that named the mechanic
+   * outright returned nothing and the agent hand-wrote a Raycaster that was already installed.
+   */
+  it("finds the pointer capabilities from an inflected pointer request", () => {
+    const results = searchCapabilities(
+      "drag a crate with the mouse by clicking on it in the 3D scene",
+      workspaceManifest,
+    );
+
+    expect(results.map((result) => result.symbol)).toEqual(
+      expect.arrayContaining(["PointerEvents3D"]),
+    );
+  });
+
+  it("finds the batching and particle capabilities a runner request names outright", () => {
+    const results = searchCapabilities(
+      "an endless runner where procedurally generated track chunks stream toward the player, obstacles repeat as thousands of identical instanced blocks, dust particles trail behind, and the camera shakes on a near miss",
+      workspaceManifest,
+      "request",
+    );
+
+    expect(results.map((result) => result.symbol)).toEqual(
+      expect.arrayContaining(["CameraShake", "GPUParticles3D", "InstancedBatch"]),
+    );
+  });
+
+  it("finds the joint and pointer capabilities a physics-puzzle request names outright", () => {
+    const results = searchCapabilities(
+      "a physics puzzle room where the player drags crates with the mouse, swings a hinged pendulum weight on a joint to knock a ball loose, and wins when the ball rolls into a goal zone on the floor",
+      workspaceManifest,
+      "request",
+    );
+
+    expect(results.map((result) => result.symbol)).toEqual(
+      expect.arrayContaining(["Area3D", "Joint3D", "RigidBody3D"]),
+    );
+  });
+
+  /**
+   * A rare word is not automatically the right word.
+   *
+   * Weighting a single distinctive token highly is what let `drag a crate … clicking on it` find
+   * `PointerEvents3D` at all. It also let homonyms win outright: `cycle` (a walk cycle),
+   * `health` (an asset health report), `guard` (a blank-frame capture guard) and `cone` (a
+   * godray's cone) each appear in one or two situations, so each cleared the floor alone and
+   * displaced answers the previous ranking got right. Agreement on several words has to beat
+   * agreement on one rare word, or the search is confidently wrong exactly where it used to be
+   * honestly silent.
+   */
+  it.each([
+    ["a day and night cycle", "solarPosition", "AnimationPlayer"],
+    ["a health bar that shows the player's damage", "publishUiState", "formatHealthReport"],
+  ])("ranks %s above its homonym", (query, expected, homonym) => {
+    const symbols = searchCapabilities(query, workspaceManifest, "request").map(
+      (result) => result.symbol,
+    );
+    const wanted = symbols.indexOf(expected);
+    const wrong = symbols.indexOf(homonym);
+
+    expect(wanted, `${expected} missing entirely for '${query}'`).toBeGreaterThanOrEqual(0);
+    if (wrong >= 0) expect(wanted, `${homonym} outranked ${expected}`).toBeLessThan(wrong);
+  });
+
   it("returns one compilable example for the plain-language zoom capability", async () => {
     const results = searchCapabilities(
       "let the player zoom the camera with a wheel, pinch, or gamepad axis",

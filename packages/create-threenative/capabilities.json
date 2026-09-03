@@ -371,7 +371,7 @@
         "a rigid skeleton preserves every parent→child distance under any pose; a named bone is a defect with an address",
         "this is a diagnostic — it reports numbers and names; it moves nothing and decides no appearance"
       ],
-      "example": "import { boneLengths, boneLengthDeviations } from \"@threenative/core\";\nconst report = boneLengthDeviations(character, boneLengths(character));\nif (!report.rigid) console.log(report.worst.bone, report.worst.ratio);",
+      "example": "import { boneLengths, boneLengthDeviations } from \"@threenative/core\";\nconst report = boneLengthDeviations(character, boneLengths(character));\nif (!report.rigid && report.worst !== null) console.log(report.worst.bone, report.worst.ratio);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -425,7 +425,7 @@
     },
     {
       "constraints": [],
-      "example": "const hud = new CanvasLayer({ camera });",
+      "example": "const hud = new CanvasLayer(ctx.viewport);",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],
@@ -546,7 +546,7 @@
       "constraints": [
         "add the object through ctx.add so it attaches, dispatches, and releases with its scene"
       ],
-      "example": "class Cloth extends Mesh implements IComputeDriven { ... }",
+      "example": "const registry = new ComputeDrivenRegistry(); registry.add(cloth, ctx.renderer.raw);",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],
@@ -599,7 +599,7 @@
       "constraints": [
         "use a seeded random source and fixed-step simulation for meaningful replays"
       ],
-      "example": "const driver = createReplayDriver({ recording });",
+      "example": "const driver = createReplayDriver(recording, ctx.renderer.domElement);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -619,7 +619,7 @@
         "bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener",
         "scroll: true uses the DOM wheel sign on browser and native: negative deltaY toward the user is positive intent"
       ],
-      "example": "const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play } });",
+      "example": "const game = defineGame({ input: { zoom: { scroll: true, pinch: true } }, scenes: { Play }, start: \"Play\" });",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -755,6 +755,7 @@
       "situations": [
         "emit sparks, smoke, or other transient effects",
         "update many small visual particles",
+        "trail dust, exhaust, or spray behind a moving object",
         "emit cannon smoke and muzzle flash particles",
         "fire a cannonball projectile with cannon smoke particles"
       ],
@@ -839,6 +840,7 @@
       "signature": "export class InstancedBatch { … }",
       "situations": [
         "draw hundreds of repeated props without hundreds of draw calls",
+        "draw thousands of identical instanced blocks or obstacles in one mesh",
         "place repeated props when the count is not known until the layout has been walked",
         "build a chain, railing, cable, or tie rod out of point-to-point segments"
       ],
@@ -972,7 +974,7 @@
     },
     {
       "constraints": [],
-      "example": "const follower = new PathFollow3D(curve, { loop: true });",
+      "example": "const follower = new PathFollow3D({ points: patrolPoints, loop: true, speed: 3 });",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],
@@ -1000,7 +1002,8 @@
       "situations": [
         "let the player click on a thing in the world",
         "show a 3D object while a pointer hovers over it",
-        "handle touch and mouse taps on a loaded model without naming its child meshes"
+        "handle touch and mouse taps on a loaded model without naming its child meshes",
+        "drag a crate or prop with the mouse or a finger"
       ],
       "summary": "Dispatch portable pointer events from the game surface to registered Three.js objects.",
       "supersedes": [],
@@ -1229,7 +1232,7 @@
       "constraints": [
         "use a seeded random source and fixed-step simulation for meaningful replays"
       ],
-      "example": "const driver = createReplayDriver({ recording });",
+      "example": "const driver = createReplayDriver(recording, ctx.renderer.domElement);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -1291,7 +1294,7 @@
     },
     {
       "constraints": [],
-      "example": "const picker = new ScenePicker({ camera, scene });",
+      "example": "const picker = new ScenePicker({ camera: ctx.camera, scene: ctx.scene, pointer: () => ctx.input.raw.pointer, viewport: ctx.viewport });",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],
@@ -1395,7 +1398,10 @@
       "overrides": [],
       "package": "@threenative/core",
       "signature": "export function solarPosition(input: ISolarPositionInput, target?: ISolarPosition): ISolarPosition;",
-      "situations": ["move a sun across a real day at a game's latitude and longitude"],
+      "situations": [
+        "move a sun across a real day at a game's latitude and longitude",
+        "run a day and night cycle over the game's sky"
+      ],
       "summary": "Calculate solar elevation and azimuth from time, latitude, and longitude.",
       "supersedes": [],
       "symbol": "solarPosition"
@@ -1787,7 +1793,7 @@
     },
     {
       "constraints": [],
-      "example": "<View style={{ centerX: 0, top: 24 }}><Text>READY</Text></View>",
+      "example": "<View style={{ centerX: true, top: 24 }}><Text>READY</Text></View>",
       "importPath": "@threenative/core/react",
       "kind": "function",
       "overrides": [],
@@ -1976,7 +1982,7 @@
     },
     {
       "constraints": ["add the area to the physics context before stepping the world"],
-      "example": "const area = new Area3D({ context, shape });",
+      "example": "const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });",
       "importPath": "@threenative/physics",
       "kind": "class",
       "overrides": [],
@@ -2024,7 +2030,7 @@
     },
     {
       "constraints": ["use moveAndSlide inside the physics update"],
-      "example": "const body = new CharacterBody3D({ context, object });",
+      "example": "const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });",
       "importPath": "@threenative/physics",
       "kind": "class",
       "overrides": [],
@@ -2040,7 +2046,7 @@
     },
     {
       "constraints": ["create shapes through the owning physics context"],
-      "example": "const shape = new CollisionShape3D({ context, shape: \"capsule\" });",
+      "example": "const shape = CollisionShape3D.capsule(0.5, 0.35);",
       "importPath": "@threenative/physics",
       "kind": "class",
       "overrides": [],
@@ -2072,13 +2078,17 @@
     },
     {
       "constraints": ["both bodies must belong to the same physics context"],
-      "example": "const joint = new Joint3D({ context, kind: \"hinge\" });",
+      "example": "const hinge = Joint3D.hinge({ physics: ctx.physics, bodyA: beam, bodyB: bob, anchorA: { x: 0, y: 0, z: 0 }, anchorB: { x: 0, y: 2.4, z: 0 }, axis: { x: 1, y: 0, z: 0 } });",
       "importPath": "@threenative/physics",
       "kind": "class",
       "overrides": [],
       "package": "@threenative/physics",
       "signature": "export class Joint3D { … }",
-      "situations": ["constrain a rigid body to another body", "build a hinge or pin mechanism"],
+      "situations": [
+        "constrain a rigid body to another body",
+        "build a hinge or pin mechanism",
+        "swing a pendulum, wrecking ball, or hinged door on a joint"
+      ],
       "summary": "Connect two physics bodies with a Godot-style joint.",
       "supersedes": [],
       "symbol": "Joint3D"
@@ -2117,7 +2127,7 @@
     },
     {
       "constraints": ["register rapier() in the game plugin list before using bodies"],
-      "example": "const crate = new RigidBody3D({ context, object, mode: \"dynamic\" });",
+      "example": "const crate = new RigidBody3D({ object, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1), mass: 8 });",
       "importPath": "@threenative/physics",
       "kind": "class",
       "overrides": [
@@ -2440,7 +2450,7 @@
     },
     {
       "constraints": [],
-      "example": "playtestDiagnostic(\"physics\", \"body missing\");",
+      "example": "playtestDiagnostic(\"TN_PLAYTEST_CAPABILITY_MISSING\", \"body missing\", \"register rapier() before adding bodies\");",
       "importPath": "@threenative/playtest",
       "kind": "function",
       "overrides": [],
@@ -2694,7 +2704,7 @@
     },
     {
       "constraints": ["the bridge must answer the handshake or the run fails"],
-      "example": "const bridge = await connectPlaytestBridge(page);",
+      "example": "const bridge = await connectPlaytestBridge(page, scenario);",
       "importPath": "@threenative/playtest/runner",
       "kind": "function",
       "overrides": [],
@@ -2774,7 +2784,7 @@
     },
     {
       "constraints": ["the bridge must answer the handshake or the run fails"],
-      "example": "const bridge = await connectPlaytestBridge(page);",
+      "example": "const bridge = await connectPlaytestBridge(page, scenario);",
       "importPath": "@threenative/playtest/runner",
       "kind": "function",
       "overrides": [],
@@ -2822,7 +2832,7 @@
     },
     {
       "constraints": ["the bridge must answer the handshake or the run fails"],
-      "example": "const bridge = await connectPlaytestBridge(page);",
+      "example": "const bridge = await connectPlaytestBridge(page, scenario);",
       "importPath": "@threenative/playtest/runner",
       "kind": "function",
       "overrides": [],
@@ -2838,7 +2848,7 @@
     },
     {
       "constraints": ["the bridge must answer the handshake or the run fails"],
-      "example": "const bridge = await connectPlaytestBridge(page);",
+      "example": "const bridge = await connectPlaytestBridge(page, scenario);",
       "importPath": "@threenative/playtest/runner",
       "kind": "function",
       "overrides": [],
@@ -3155,7 +3165,7 @@
     },
     {
       "constraints": ["the bridge must answer the handshake or the run fails"],
-      "example": "const bridge = await connectPlaytestBridge(page);",
+      "example": "const bridge = await connectPlaytestBridge(page, scenario);",
       "importPath": "@threenative/playtest/runner",
       "kind": "class",
       "overrides": [],
@@ -3203,7 +3213,7 @@
     },
     {
       "constraints": ["the bridge must answer the handshake or the run fails"],
-      "example": "const bridge = await connectPlaytestBridge(page);",
+      "example": "const bridge = await connectPlaytestBridge(page, scenario);",
       "importPath": "@threenative/playtest/runner",
       "kind": "class",
       "overrides": [],
@@ -3616,7 +3626,7 @@
     },
     {
       "constraints": ["use the device transport selected by the runner"],
-      "example": "const connection = await connectDevicePlaytestBridge();",
+      "example": "const connection = connectDevicePlaytestBridge(bridge, endpoint);",
       "importPath": "@threenative/playtest/three",
       "kind": "function",
       "overrides": [],
@@ -3668,7 +3678,7 @@
     },
     {
       "constraints": ["use the device transport selected by the runner"],
-      "example": "const connection = await connectDevicePlaytestBridge();",
+      "example": "const connection = connectDevicePlaytestBridge(bridge, endpoint);",
       "importPath": "@threenative/playtest/three",
       "kind": "function",
       "overrides": [],
@@ -3684,7 +3694,7 @@
     },
     {
       "constraints": ["keep recorder limits within the documented caps"],
-      "example": "const physics = new ThreePlaytestPhysicsRecorder();",
+      "example": "const physics = new ThreePlaytestPhysicsRecorder(worldPhysics);",
       "importPath": "@threenative/playtest/three",
       "kind": "class",
       "overrides": [],
@@ -4094,7 +4104,7 @@
     },
     {
       "constraints": [],
-      "example": "<DebugOverlay game={game} />",
+      "example": "<DebugOverlay />",
       "importPath": "@threenative/ui",
       "kind": "function",
       "overrides": [],
@@ -4174,7 +4184,7 @@
     },
     {
       "constraints": ["returns undefined until the game publishes its first state"],
-      "example": "const score = useUiState((state) => state.score);",
+      "example": "const score = useUiState<GameState, number>((state) => state.score);",
       "importPath": "@threenative/ui",
       "kind": "function",
       "overrides": [],

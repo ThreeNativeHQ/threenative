@@ -14,7 +14,7 @@ export interface IAssetBounds {
 }
 
 export interface IAssetUnits {
-  readonly label: "likely centimetres" | "likely metres";
+  readonly label: "ambiguous" | "likely centimetres" | "likely metres";
   readonly longestAxis: number;
 }
 
@@ -43,7 +43,17 @@ export interface IInspectOptions {
 }
 
 const SUPPORTED_EXTENSIONS = new Set([".glb", ".gltf"]);
-const CENTIMETRE_HEURISTIC_THRESHOLD = 10;
+/**
+ * The longest axis alone cannot separate a large scene in metres from a prop in centimetres.
+ *
+ * One threshold at ten units meant a real Unreal level — a 31.9 x 56.3 x 31.9 m office, correct
+ * in metres — was reported as centimetres, which tells an agent to divide a correct asset by a
+ * hundred. Below the metre bound almost nothing centimetre-authored fits; above the centimetre
+ * bound almost nothing metre-authored does; between them the measurement genuinely does not say,
+ * and `ambiguous` is the true answer rather than a confident wrong one.
+ */
+const METRE_UPPER_BOUND = 10;
+const CENTIMETRE_LOWER_BOUND = 100;
 const RESOURCE_MIME_TYPES: Readonly<Record<string, string>> = {
   ".avif": "image/avif",
   ".gif": "image/gif",
@@ -316,13 +326,16 @@ function inspectScene(
     path: path.resolve(file),
     textures: resourceCounts.textures ?? resources.textures,
     units: {
-      label:
-        largest !== undefined && largest.value > CENTIMETRE_HEURISTIC_THRESHOLD
-          ? "likely centimetres"
-          : "likely metres",
+      label: unitsLabel(largest?.value ?? 0),
       longestAxis: largest?.value ?? 0,
     },
   };
+}
+
+function unitsLabel(longestAxis: number): IAssetUnits["label"] {
+  if (longestAxis <= METRE_UPPER_BOUND) return "likely metres";
+  if (longestAxis >= CENTIMETRE_LOWER_BOUND) return "likely centimetres";
+  return "ambiguous";
 }
 
 function inspectionFailure(file: string, error: unknown): Error {

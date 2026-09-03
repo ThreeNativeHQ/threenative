@@ -52,6 +52,12 @@ docs/benchmark/sweeps/*/assets/generated/
 
 # written by installing @threenative/core (workspace link writes it at the repo root too)
 .mcp.json
+# ...except the template copies, which are shipped source. The pattern above is unanchored, so it
+# swallowed the config of every template added after it: the file generated fine, `git status` said
+# nothing, and the scaffold shipped without it. That surfaced as four scaffold suites failing on
+#   Error: Scaffold produced no .mcp.json at '.../puzzle/.mcp.json'
+# for templates whose config was present on the author's disk the whole time.
+!packages/create-threenative/templates/*/.mcp.json
 /.codex/
 
 # generated from packages/engine-mcp/dist during the core package build

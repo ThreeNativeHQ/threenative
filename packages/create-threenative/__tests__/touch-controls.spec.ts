@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Vector2 } from "three";
 import { describe, expect, it } from "vitest";
+import { templatesShipping } from "../../../test-support/templates.js";
 import {
   stickDeflection,
   touchControlPoint,
@@ -95,15 +96,9 @@ describe("platformer thumbstick", () => {
   });
 });
 
-const TOUCH_TEMPLATES = [
-  "action-rpg",
-  "minimal",
-  "platformer",
-  "racing",
-  "sailing",
-  "shooter",
-  "starter",
-] as const;
+// Read off disk: every template that ships touch controls is gated here. `defense` places towers
+// with a pointer and ships none, so it leaves this list by shipping no file rather than by name.
+const TOUCH_TEMPLATES = templatesShipping("src/render/touch-controls.ts");
 
 describe("template touch controls", () => {
   it.each(TOUCH_TEMPLATES)("keeps %s controls in its own render source", async (template) => {

@@ -1,17 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { templatesShipping } from "../../../test-support/templates.js";
 
-const DURABLE_PLAYTEST_TEMPLATES = [
-  "starter",
-  "minimal",
-  "platformer",
-  "action-rpg",
-  "defense",
-  "racing",
-  "sailing",
-  "shooter",
-] as const;
+// Read off disk: every template that ships the durable scenario is gated here, so a kit added
+// tomorrow is covered the day it ships one rather than the day somebody extends a list.
+const DURABLE_PLAYTEST_TEMPLATES = templatesShipping("playtests/survives.playtest.json");
 
 describe("starter playtest proof", () => {
   it.each(DURABLE_PLAYTEST_TEMPLATES)(

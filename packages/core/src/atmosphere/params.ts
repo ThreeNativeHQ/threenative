@@ -279,6 +279,7 @@ function calculateSolarPosition(
 
 /** Calculate solar elevation and azimuth from time, latitude, and longitude.
  * @situation move a sun across a real day at a game's latitude and longitude
+ * @situation run a day and night cycle over the game's sky
  * @constraint dates are interpreted as UTC unless utcOffset is supplied; no fixed sun direction is assumed
  * @constraint pass a mutable { azimuth, elevation } target to reuse the result object in a steady frame loop
  * @example const sun = solarPosition({ date, latitude: 49.28, longitude: -123.12, utcOffset: -8 });
