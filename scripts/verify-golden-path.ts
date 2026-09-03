@@ -701,6 +701,65 @@ export async function packWorkspace(staging: string, build = true): Promise<Pack
   return sources;
 }
 
+/** The tarball `pnpm pack` writes for a package name, e.g. `@threenative/core` -> `threenative-core-`. */
+export function packedArchivePrefix(packageName: string): string {
+  return packageName.startsWith("@")
+    ? `${packageName.slice(1).replace("/", "-")}-`
+    : `${packageName}-`;
+}
+
+/**
+ * Take the workspace tarballs someone else already packed, instead of packing them again.
+ *
+ * CI's `build` job compiles the workspace and packs every package, publishes the set as an
+ * artifact, and the golden-path job downloads it before this script runs. Packing again here costs
+ * the workspace `tsc` a second time plus ten `pnpm pack` runs — measured at 425s for the whole
+ * `verify:golden-path` step on run 33710335121, against a 472s job on a 570s critical path.
+ *
+ * What the pack step proves is not lost by adopting: `build` runs the identical
+ * `workspace-packages.ts` walk and `pnpm pack`, fails the run when it produces no files, and the
+ * mutation control below still packs a deliberately-broken copy here and asserts its tarball
+ * differs from the adopted one. What would be lost is *silence* — so this fails closed twice
+ * over: every workspace package must resolve to exactly one archive, and an archive naming a
+ * package the workspace no longer has is drift rather than a spare file.
+ */
+export async function adoptPackedWorkspace(archives: string): Promise<PackageSources> {
+  let entries: string[];
+  try {
+    entries = (await readdir(archives)).filter((file) => file.endsWith(".tgz"));
+  } catch {
+    throw new Error(
+      `TN_GOLDEN_PATH_ARCHIVES_UNREADABLE: '${archives}' is not a readable directory of packed tarballs.`,
+    );
+  }
+  const packages = await workspacePackages();
+  const sources: Record<string, string> = {};
+  const claimed = new Set<string>();
+  for (const workspacePackage of packages) {
+    const prefix = packedArchivePrefix(workspacePackage.manifest.name);
+    const matches = entries.filter((file) => file.startsWith(prefix)).sort();
+    const tarball = matches.at(-1);
+    if (tarball === undefined) {
+      throw new Error(
+        `TN_GOLDEN_PATH_ARCHIVE_MISSING: no '${prefix}*.tgz' in '${archives}' for ${workspacePackage.manifest.name}.`,
+      );
+    }
+    for (const match of matches) claimed.add(match);
+    const resolved = path.join(archives, tarball);
+    sources[workspacePackage.manifest.name] = resolved;
+    process.stdout.write(
+      `golden-path adopted ${workspacePackage.manifest.name}: tarball '${resolved}' sha256:${await sha256(resolved)}\n`,
+    );
+  }
+  const unclaimed = entries.filter((file) => !claimed.has(file)).sort();
+  if (unclaimed.length > 0) {
+    throw new Error(
+      `TN_GOLDEN_PATH_ARCHIVE_UNKNOWN: '${archives}' holds ${unclaimed.join(", ")}, which no workspace package claims.`,
+    );
+  }
+  return sources;
+}
+
 function declaredDependencies(manifest: IPackageManifest): Set<string> {
   return new Set([
     ...Object.keys(manifest.dependencies ?? {}),
@@ -1061,9 +1120,15 @@ export async function verifyGoldenPath(templatesRoot = templateRoot()): Promise<
     const staging = path.join(root, "packages");
     const executed: GoldenPathStep[] = [];
     let sources: PackageSources | undefined;
+    // `TN_GOLDEN_PATH_ARCHIVES` names a directory of tarballs another job already packed from this
+    // commit. Unset — which is every developer machine — this packs them here exactly as before.
+    const archives = process.env.TN_GOLDEN_PATH_ARCHIVES?.trim();
     await runRecordedGlobalStep("pack", executed, async () => {
       await mkdir(staging, { recursive: true });
-      sources = await packWorkspace(staging);
+      sources =
+        archives === undefined || archives === ""
+          ? await packWorkspace(staging)
+          : await adoptPackedWorkspace(archives);
     });
     if (sources === undefined) {
       throw new Error("TN_GOLDEN_PATH_PACK_EMPTY: no package sources.");
