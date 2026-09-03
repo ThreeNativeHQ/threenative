@@ -597,7 +597,7 @@ jobs:
     # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
     # fast as its slowest leg. Timestamping platformer's step splits it as ~74s of scaffold install
     # and typecheck plus 15 scenarios at ~20s each, so the scenarios are what makes it long and
-    # they shard cleanly. The two heavy templates run in halves; every other template is already
+    # they shard cleanly. The two heavy templates run in thirds; every other template is already
     # well under the leg it would be sharded against, and splitting them would buy nothing and pay
     # the 74s setup twice.
     #
@@ -610,15 +610,17 @@ jobs:
           - { template: action-rpg, shard: "1/1" }
           - { template: defense, shard: "1/1" }
           - { template: minimal, shard: "1/1" }
-          - { template: platformer, shard: "1/2" }
-          - { template: platformer, shard: "2/2" }
+          - { template: platformer, shard: "1/3" }
+          - { template: platformer, shard: "2/3" }
+          - { template: platformer, shard: "3/3" }
           - { template: puzzle, shard: "1/1" }
           - { template: racing, shard: "1/1" }
           - { template: runner, shard: "1/1" }
           - { template: sailing, shard: "1/1" }
           - { template: shooter, shard: "1/1" }
-          - { template: starter, shard: "1/2" }
-          - { template: starter, shard: "2/2" }
+          - { template: starter, shard: "1/3" }
+          - { template: starter, shard: "2/3" }
+          - { template: starter, shard: "3/3" }
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
