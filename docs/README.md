@@ -17,8 +17,8 @@ limitations are recorded.
 - [Latest round ledger](verification/round-10-2026-08-16.md) gives the current self-improvement
   state. The [Studio hosting series](PRDs/studio-hosting/README.md) describes the proposed
   container, session broker, and production path — for the private Studio repository, not this one.
-- [Engine-load summary](verification/runtime-perf-state.md) is the current
-  external performance comparison; [per-object cost](verification/runtime-perf-state.md)
+- [Engine-load comparison](verification/runtime-perf-state.md#prd-117-browser-comparison-2026-08-14)
+  is the current external performance comparison; [per-object cost](verification/runtime-perf-state.md#prd-117-browser-detail-2026-08-14)
   records the Three.js submission-cost finding.
 
 | Folder | Holds | Status of contents |

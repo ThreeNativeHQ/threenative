@@ -1706,6 +1706,290 @@ Building a device APK: `THREENATIVE_RUNTIME_SOURCE=<engine>/packages/runtime-nat
 - **Mobile perf probe (2026-08-24):** loading screen 15–20 s to playable on device, dominated by
   that one stall; wrong-package control incident is why every arm now verifies package id.
 
+<a id="prd-117-browser-comparison-2026-08-14"></a>
+### PRD-117 browser comparison — 2026-08-14
+
+Product-to-product: each arm is what its engine actually ships to a browser surface. The arms use
+different rendering backends by construction — ThreeNative WebGPU and Godot 4.7.1 WebGL2 — so no
+line below is a graphics-API claim.
+
+The knee is the largest object count at or below 20 ms p95. The run used 1280×720, 60 Hz, vsync
+off, three repeats per rung, and 480 samples per repeat after 120 discarded warm-up frames.
+
+| mode | knee — ThreeNative | knee — Godot 4.7.1 |
+|---|---:|---:|
+| L1 | 1,024 | 4,096 |
+| L2 | 16,384 | 4,096 |
+
+| mode | N | ThreeNative p95 ms | Godot p95 ms | ratio |
+|---|---:|---:|---:|---:|
+| L1 | 256 | 2.60 | 1.84 | 1.41× |
+| L1 | 1,024 | 9.30 | 5.94 | 1.57× |
+| L1 | 4,096 | 34.10 | 19.29 | 1.77× |
+| L1 | 16,384 | 116.40 | 63.69 | 1.83× |
+| L2 | 256 | 2.30 | 1.03 | 2.22× |
+| L2 | 1,024 | 2.70 | 2.72 | 0.99× |
+| L2 | 4,096 | 2.00 | 7.14 | 0.28× |
+| L2 | 16,384 | 8.10 | 27.36 | 0.30× |
+
+#### Arm `tn-web`
+
+- engine: ThreeNative workspace
+- build: release Vite dev build, `three/webgpu` render path; the `defineGame` loop was not measured
+- driver: `three/webgpu` `WebGPURenderer`
+- adapter: `nvidia / turing`
+- device: desktop Chromium on Linux, 1280×720 @ 60 Hz, vsync off
+
+| mode | N | p50 ms | p95 ms | draws | triangles | visible | repeats × samples |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| L1 | 256 | 1.50 | 2.60 | 164 | 1,947 | 163 | 3 × 480 |
+| L1 | 1,024 | 5.20 | 9.30 | 629 | 7,527 | 628 | 3 × 480 |
+| L1 | 4,096 | 21.90 | 34.10 | 2,469 | 29,607 | 2,468 | 3 × 480 |
+| L1 | 16,384 | 96.40 | 116.40 | 9,809 | 117,687 | 9,808 | 3 × 480 |
+| L2 | 256 | 1.20 | 2.30 | 3 | 3,075 | 256 | 3 × 480 |
+| L2 | 1,024 | 1.30 | 2.70 | 3 | 12,291 | 1,024 | 3 × 480 |
+| L2 | 4,096 | 1.20 | 2.00 | 3 | 49,155 | 4,096 | 3 × 480 |
+| L2 | 16,384 | 5.20 | 8.10 | 3 | 196,611 | 16,384 | 3 × 480 |
+
+Knees at ≤20 ms p95: L1 1,024 and L2 16,384.
+
+#### Arm `godot-web`
+
+- engine: Godot 4.7.1-stable (official)
+- build: release Godot export; rendering method read from the engine at runtime
+- driver: `gl_compatibility / opengl3`
+- adapter: WebKit WebGL / OpenGL ES 3.0 (WebGL 2.0, OpenGL ES 3.0 Chromium)
+- device: Web GenericDevice, 1280×720 @ 60 Hz, vsync off
+
+| mode | N | p50 ms | p95 ms | draws | triangles | visible | repeats × samples |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| L1 | 256 | 1.29 | 1.84 | 171 | 2,042 | 171 | 3 × 480 |
+| L1 | 1,024 | 3.66 | 5.94 | 658 | 7,886 | 658 | 3 × 480 |
+| L1 | 4,096 | 13.37 | 19.29 | 2,582 | 30,974 | 2,582 | 3 × 480 |
+| L1 | 16,384 | 54.20 | 63.69 | 10,246 | 122,942 | 10,246 | 3 × 480 |
+| L2 | 256 | 0.70 | 1.03 | 2 | 3,074 | 2 | 3 × 480 |
+| L2 | 1,024 | 1.70 | 2.72 | 2 | 12,290 | 2 | 3 × 480 |
+| L2 | 4,096 | 5.08 | 7.14 | 2 | 49,154 | 2 | 3 × 480 |
+| L2 | 16,384 | 19.49 | 27.36 | 2 | 196,610 | 2 | 3 × 480 |
+
+Knees at ≤20 ms p95: L1 4,096 and L2 4,096.
+
+<a id="prd-117-browser-detail-2026-08-14"></a>
+### PRD-117 browser detail — 2026-08-14
+
+This is the detailed execution record for the browser half of PRD-117. Two of four arms ran on one
+machine on this date; both Android arms did not. Raw run reports were under the engine-load-test
+artifact directory. The product-to-product comparison above is intentionally not a graphics-API
+comparison: ThreeNative uses WebGPU and Godot's 4.7.1 web export uses WebGL2.
+
+#### Result and scope
+
+The knee definition and experimental controls are the ones recorded above: largest object count at
+or below 20 ms p95, 1280×720, three repeats, 480 samples per repeat, 120 warm-up frames. The L1/L2
+p50/p95 table, arm metadata, counts, and ratios are consolidated in the browser-comparison record.
+L3 is the L1 source file unchanged with `SceneCollapse` enabled, not a third authoring mode; Godot
+has no equivalent and its same-source answer is L1. L3 holds 16,384 where Godot L1 holds 4,096.
+
+An extended L2-only ladder found the ThreeNative knee beyond the original ladder:
+
+| N | ThreeNative L2 p95 | Godot L2 p95 | ratio |
+|---:|---:|---:|---:|
+| 16,384 | 7.00 ms | 22.12 ms | 0.32× |
+| 65,536 | 25.50 ms | 73.86 ms | 0.35× |
+| 262,144 | 129.30 ms | 332.48 ms | 0.39× |
+
+The publishable browser statement is: on this desktop browser, a per-cube node sustains about 1,000
+cubes on ThreeNative and 4,000 on Godot at 50 fps; batching sustains about 16,000 on ThreeNative
+and 4,000 on Godot. The ratio remains stable across the 16× ladder in both modes.
+
+#### Findings and controls
+
+- At 16,384, ThreeNative issued fewer draws than Godot (9,809 vs 10,246) but cost 1.8× the frame
+  time, about 11.9 µs vs 6.2 µs per visible draw. This is vanilla `three/webgpu` bookkeeping and
+  V8, not a `packages/` defect; the per-draw attribution is an inference, not a profile. L2 shows
+  the GPU and batched path are healthy, while `SceneCollapse` is an unmeasured opportunity.
+- The measured arm drives `three/webgpu` directly and excludes `defineGame`, the framework loop,
+  scene system, and plugins. Every ThreeNative number is therefore a floor for a game.
+- `WEBGPU_BROWSER_ARGS` begins with `--ozone-platform=x11`; with that flag the adapter is
+  `google / swiftshader` (software) in bundled and system Chromium, while without it the adapter is
+  `nvidia / turing`. Earlier evidence made under those flags may describe SwiftShader, not the GPU;
+  whether screenshot gates using those flags are affected was left unanswered.
+- Three.js resets `renderer.info` on its own rAF. The first benchmark read zero draws and zero
+  triangles, which would have disabled the draw-call half of the equivalence gate while reporting
+  pass. Setting `info.autoReset = false` and reading before yielding fixed it.
+- The first equivalence gate kept only the last repeat, hiding a divergent `positionHash`. Grouping
+  all repeats and requiring one hash within and across arms fixed the hole; the hand-edited refusal
+  proof and regression test remain part of the record.
+- Repeating the tn-web ladder about 15 minutes later produced the same knees but this variance:
+
+  | rung | run 1 p95 | run 2 p95 | drift |
+  |---|---:|---:|---:|
+  | L1 @ 1,024 | 6.40 ms | 9.30 ms | +45% |
+  | L1 @ 4,096 | 26.20 ms | 34.10 ms | +30% |
+  | L1 @ 16,384 | 107.20 ms | 116.40 ms | +9% |
+  | L2 @ 16,384 | 5.80 ms | 8.10 ms | +40% |
+
+  The knee is stable (L1 1,024, L2 16,384), individual values should be treated as ±30%, and the
+  published second run was not taken while the desktop was otherwise idle.
+- The original PRD contradicted its 60 Hz/vsync requirement and its instruction to disable vsync.
+  Both arms therefore disabled vsync; `display.vsync` was added and the gate rejects disagreement.
+- Godot's desktop Vulkan arm auto-batches an L1 rung (2 draws for 2,340 visible at 4,096), while
+  its web arm reports 2,582 draws for 2,582 visible. The fair comparison is Godot L1 against
+  ThreeNative L3, not ThreeNative L1.
+- L3 and L2 had identical draw and triangle counts at every rung. L3 was 12× faster than L1 at
+  4,096 and 11× at 16,384, crossed 20 ms at 65,536 (29.5 ms), and held 10.0 ms at 16,384 on the
+  extended run. It cost 8.5 ms versus L2's 5.6 ms because of per-frame transform refresh. The pass
+  is a capability, not a default: the load test constructs it, while a `defineGame` game does not
+  yet receive it.
+- `visibleObjects` is engine-specific; the gate compares draws and triangles instead.
+
+#### Why the comparison is fair
+
+The same integer LCG is written in TypeScript and GDScript, and each arm hashes the first eight
+positions after millimetre quantisation:
+
+| rung | ThreeNative | Godot |
+|---|---|---|
+| N = 256 | `94e73aef` | `94e73aef` |
+| N = 1,024 | `78812d31` | `78812d31` |
+| N = 4,096 | `e9a32f01` | `e9a32f01` |
+| N = 16,384 | `3acfd9c3` | `3acfd9c3` |
+
+The camera is a pure function of frame index, so frame 317 frames the same cubes on the slow and
+fast arm. Runtime backend/build reporting was:
+
+| arm | driver | adapter | build |
+|---|---|---|---|
+| `tn-web` | `three/webgpu WebGPURenderer` | `nvidia / turing` | release |
+| `godot-web` | `gl_compatibility / opengl3` | WebKit WebGL / OpenGL ES 3.0 | release |
+
+Both exports ran release; PRD-066 measured the release-export trap as 5.5× on the same phone and
+source. Chromium masks the Godot WebGL renderer string, so its software status is evidence rather
+than proof.
+
+The N=0 floor was 1.50/2.50 ms for tn-web L1/L2 and 0.91/0.71 ms for Godot L1/L2. Every 4× ladder
+step raised p95 in both modes and arms, showing the ladder reached the renderer rather than only
+measuring the driver loop. Four intentionally edited reports refused with exit 1:
+
+```text
+positionHash repeats disagree: tn-web=94e73aef,deadbeef godot-web=94e73aef
+display.refreshHz: tn-web=120 godot-web=60
+build.type: tn-web=debug godot-web=release
+L1@4096 drawCalls: tn-web=1 godot-web=2582
+```
+
+The unedited pair exited 0 and published; fourteen scorer tests cover empty series, missing driver,
+and repeat-divergence cases.
+
+#### Unmeasured and reproduction status
+
+Android was unmeasured: the ThreeNative arm needed the Android runtime built and the Godot arm
+needed a release APK export plus on-device transport. The attached Pixel 8 and installed NDK did
+not change that. iOS was not attempted because there was no Apple hardware. Desktop native was
+conditional and not run. The `defineGame` loop and `SceneCollapse` default were excluded from the
+browser claim. The historical gate record marked typecheck, lint, and budgets green for its then
+benchmark setup; this statement is retained as historical evidence, not a current gate result.
+
+```sh
+pnpm bench:engines --arm tn-web        # artifacts/engine-load-test/tn-web.json
+pnpm bench:engines --arm godot-web
+pnpm bench:engines:report
+```
+
+Both arms need a display, system Chromium with hardware WebGPU, and `BENCH_BROWSER_BIN` may select
+the binary. `--out <name>` prevents diagnostic runs from overwriting the published ladder. Godot
+needs `godot` on `PATH` with 4.7.1 export templates. Artifacts include the two ladder JSON files,
+floor and L2-extension JSON files, and full stdout logs.
+
+<a id="prd-117-android-quickjs-era-record-2026-08-14"></a>
+### PRD-117 Android / QuickJS-era record — 2026-08-14
+
+This historical Android record covers a Pixel 8 (`37251FDJH0037Z`, shiba), Android 17, Mali-G715.
+ThreeNative used its C++ runtime with QuickJS; Godot 4.7.1 used an Android export on OpenGL ES 3.2.
+Both signed APKs were release builds installed from this repository. Battery was 21–22% on USB
+power, below the PRD's ≥50% requirement, so every figure is provisional; same-session comparison
+is meaningful but absolute device evidence is not publishable, and the Android criterion remains
+unsatisfied.
+
+#### Superseded V8 result and desktop rerun
+
+The QuickJS result was superseded on 2026-08-15 by V8:
+
+| Pixel 8, 16,384 cubes | frame p50 | measured JS/frame |
+|---|---:|---:|
+| ThreeNative QuickJS | 119.19 ms | 115.64 ms |
+| **ThreeNative V8** | **8.20 ms** | **5.25 ms** |
+| Godot 4.7.1 | 39.27 ms | — |
+
+That is a 22× reduction in script time. The V8 rung series was 8.34 / 8.35 / 8.37 / 8.20 ms across
+the 4× load range. At 120 Hz, 8.33 ms is the frame interval, so the honest result is ≤8.33 ms
+work inside one 120 Hz frame, not a free-running measurement. The arms used different refresh rates;
+the scorer would reject that pairing, but at a 60 Hz counterfactual ThreeNative would be 16.67 ms
+against Godot's 39.27 ms.
+
+The same-display desktop rerun corrected an invalid earlier comparison (Godot had used the real
+display while ThreeNative used xvfb):
+
+| N / mode | ThreeNative | Godot | ratio |
+|---|---:|---:|---:|
+| 4,096 batched | 23.79 ms | 32.24 ms | 0.74× |
+| 4,096 naive+collapse vs naive | 31.23 ms | 29.72 ms | 1.05× |
+| 16,384 naive+collapse vs naive | 35.86 ms | 49.03 ms | 0.73× |
+| 16,384 batched | 31.98 ms | 39.60 ms | 0.81× |
+
+Both were dominated by a ~25 ms virtual-display floor, which understates engine differences; the
+ThreeNative JS time at 16,384 was 6.30 ms.
+
+#### QuickJS result, defects, and measured optimisations
+
+At 16,384, Godot was 39.27 ms and ThreeNative was 119.19 ms; ThreeNative was 3× slower. At 4,096
+the gap was ~1.35× (22.49 ms versus a Godot frame pinned at a ≤16.67 ms vsync floor). The ThreeNative
+frame split was 57.99 ms framework collapse refresh, 57.65 ms benchmark animation, and ~3.5 ms
+renderer/GPU; Godot's equivalent was roughly 2.4 µs per object versus ~7 µs in QuickJS. The direct
+attribution measurements were 101.62 ms `step` of a 106.32 ms frame, ~0.3 µs per instance on web,
+~6 µs on the phone, and ~2.4 µs for Godot. The idle 16,384-cube scene rendered in 8.25 ms at three
+draws, proving the GPU was idle. Android selected QuickJS in `CMakeLists.txt`; desktop selected V8
+and iOS JSC. Micro-optimisation could not close the language gap.
+
+The two defects both produced a frozen scene at full speed. Sampling `object.matrix` before render
+left 4,095 of 4,096 moving cubes baked static; flat siblings also shared one parent owner. The
+default `minMeshes: 200` meant examples never exercised the pass. The diagnostic evidence was
+`report.movingParts = 1` for 4,096 animated cubes and a misleading 0.08 ms `collapse.frame()`;
+assert moving parts, not only refresh time. The fixes sample authored transforms and choose the
+nearest actually moving owner; all 22 existing collapse tests passed before and after.
+
+Two measured optimisations were retained: aliasing the normal buffer saved 28% (72.19 → 52.29 ms);
+detached-leaf matrix reads reduced refresh 15.38 → 9.79 ms and frame 28.68 → 23.07 ms, with the
+post-bake flag required. Loop partitioning added 9.79 → 9.42 ms, 3.8%, at the edge of noise.
+
+The proposed gap-closing approaches remain historical: V8/JSC on Android, a bulk transform ABI,
+or further JavaScript micro-optimisation. Android packaging downloaded a prebuilt runtime, so an
+engine swap required NDK cross-compilation; V8/JSC version and API constraints made it a large
+change. `packages/runtime-native/AGENTS.md` records the architecture decision “Android QuickJS+wgpu-native”;
+reopening it is a charter-level decision, not a tweak.
+
+#### Instrument fixes and standing
+
+- Android logcat truncated lines at ~1 KB; `TNJSON` chunks are rejoined.
+- Godot ignored `VSYNC_DISABLED`, producing a flat ~19 ms result over a 16× ladder; the scorer
+  refuses that display-pinned shape and the arm reports `TIME_PROCESS`.
+- Desktop and Android bundles are per-target; an `--out` name protects published ladders.
+- The collapse settle loop no longer draws while baking but still yields; removing the yield caused
+  a synchronous spin. The native FIFO/vsync desktop path remains runnable but incomparable.
+
+| platform | ThreeNative | Godot | verdict |
+|---|---|---|---|
+| Web | knee 16,384 (L2/L3) | knee 4,096 | ThreeNative 4× |
+| Desktop native | display-pinned, not comparable | 5.67 ms @4,096 | unmeasurable as run |
+| Mobile @4,096 | 22.49 ms | ≤16.67 ms, vsync-floored | Godot ~1.35× |
+| Mobile @16,384 | 119.19 ms | 39.27 ms | Godot 3× |
+| iOS | no Apple hardware | — | out of reach |
+
+Earlier figures comparing a frozen scene were withdrawn, including the “31× faster on mobile” claim.
+The repaired web ladder used a moving-parts guard and passed at every rung. On the same mode, count,
+three draws, and 196,611 triangles, web/V8 was 11.45 ms p95 and Android/QuickJS was 119.19 ms: the
+final result is 10.4× on identical source.
+
 ---
 
 ## 7. Harness status
