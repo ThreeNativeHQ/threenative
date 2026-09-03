@@ -62,7 +62,28 @@ jobs:
     # platform legs behind pushes to main and a `native` label, and the lane then spent its runs
     # being cancelled by the next push instead of reporting anything. A leg that is skipped on the
     # branch where the work happens is a leg nobody is watching.
-    if: inputs.ios_only != true
+    # Runs on every event except an unlabelled pull request — the only two legs that are gated,
+    # and the numbers behind it rather than a preference:
+    #
+    #   desktop-parity            3173s   android-emulator-parity   1858s
+    #
+    # 84 of the ~130 runner-minutes this workflow spends per pull request, against ~60 for all of
+    # CI, on the same pool. That pool is what CI's wall clock is made of: on run 33782776626 the
+    # run took 457s while its longest job was 332s, and CI's own 26 jobs were queueing against
+    # ~10 slots that these legs were also holding.
+    #
+    # What that buys on a pull request is less than it looks. Both legs are advisory rather than
+    # required, both are red on main today, and both report 30-53 minutes after a pull request
+    # opens — long after CI is green and the pull request has been read. Evidence that arrives
+    # after the decision is not gating the decision.
+    #
+    # They still run on every push to main, every night, and on any pull request labelled
+    # `native`, so nothing reaches a release without them reporting. Deleting this one `if` puts
+    # them back on every pull request.
+    if: >-
+      inputs.ios_only != true &&
+      (github.event_name != 'pull_request' ||
+       contains(github.event.pull_request.labels.*.name, 'native'))
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -254,7 +275,28 @@ jobs:
 
   desktop-parity:
     name: Desktop web/native parity
-    if: inputs.ios_only != true
+    # Runs on every event except an unlabelled pull request — the only two legs that are gated,
+    # and the numbers behind it rather than a preference:
+    #
+    #   desktop-parity            3173s   android-emulator-parity   1858s
+    #
+    # 84 of the ~130 runner-minutes this workflow spends per pull request, against ~60 for all of
+    # CI, on the same pool. That pool is what CI's wall clock is made of: on run 33782776626 the
+    # run took 457s while its longest job was 332s, and CI's own 26 jobs were queueing against
+    # ~10 slots that these legs were also holding.
+    #
+    # What that buys on a pull request is less than it looks. Both legs are advisory rather than
+    # required, both are red on main today, and both report 30-53 minutes after a pull request
+    # opens — long after CI is green and the pull request has been read. Evidence that arrives
+    # after the decision is not gating the decision.
+    #
+    # They still run on every push to main, every night, and on any pull request labelled
+    # `native`, so nothing reaches a release without them reporting. Deleting this one `if` puts
+    # them back on every pull request.
+    if: >-
+      inputs.ios_only != true &&
+      (github.event_name != 'pull_request' ||
+       contains(github.event.pull_request.labels.*.name, 'native'))
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
