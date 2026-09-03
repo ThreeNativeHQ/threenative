@@ -46,14 +46,15 @@ flowchart TD
 ## What is not built
 
 - **Change 2 — fixed-shape wrappers** (`ObjectTemplate` + internal fields, predicted −8.9 ms on
-  device). Not started, and where the cross-engine risk concentrates: the recorder is
-  engine-agnostic JavaScript, but `ObjectTemplate` is a V8 API, so the QuickJS and JSC lanes must be
-  **exercised, not compile-checked**. Change 1 and Change 2 are predicted to be worth ~nothing
-  apart, which is why PRD-227 refuses to ship half.
-- **A native render thread.** JS recording frame N+1 while a native thread submits frame N. The
-  whole frame is on the JavaScript thread and the GPU is idle, so there is nothing on the critical
-  path to move off it yet. The thread model is an owed **correctness** gate (`Worker` is a
-  main-thread polyfill) — build it because it is owed, not because it is fast.
+  device). **Executed, measured worse than baseline, reverted** (ledger §2.1 row 12): the
+  megamorphic inline caches belong to three's node-material graph, not to our wrappers, and Chrome
+  pays them too. Not a lever; do not re-propose without a new IC profile.
+- **A native render thread.** JS recording frame N+1 while a native thread replays and presents
+  frame N. The three run in series on the game thread today (`frameReplay` ≈ 8 ms and a GPU-tail
+  `present` wait on the phone), so there is now work that could overlap — but overlapping cannot
+  beat an 18–19 ms GPU frame, which is why the direction document gates it behind PRD-329's
+  verdict and PRD-308's per-pass numbers. `Worker` is no longer the reason to build it: since
+  PRD-250 it is a real native thread (web + Linux desktop verified; mobile `UNVERIFIED`).
 - **AOT compilation** (`shermes`). The one idea that would stop iOS's no-JIT rule being the binding
   constraint. Unmeasured; a feasibility spike.
 

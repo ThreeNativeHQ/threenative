@@ -101,9 +101,9 @@ Sorted by impact against effort. **🟢 a day or two · 🟡 days to a week · �
 
 | # | Task | | Impact | Depends on |
 | --- | --- | --- | --- | --- |
-| 10 | **Render thread over the frame buffer we already build** | 🔴 | Up to **9.3 ms of a ~28 ms phone frame**, and **owed anyway** — `Worker` currently runs worker code on the main thread, which is a correctness bug that only shows on native | **re-plan after PRD-307 refuted the former #4 precondition** |
+| 10 | **Render thread over the frame buffer we already build** | 🔴 | Up to **9.3 ms of a ~28 ms phone frame**. (The "owed anyway" argument is gone: `Worker` has been a real native thread since PRD-250, web + Linux desktop verified, mobile `UNVERIFIED`.) | **re-plan after PRD-307 refuted the former #4 precondition**; also after PRD-329's matched-pixel verdict (`docs/PRDs/performance/critical/`) |
 | 11 | **LOD baking + LOD switching** | 🔴 | Drawing the town: **9–11 ms**, the biggest GPU cost we cannot yet explain | #5 |
-| 12 | **Job system; make `Worker` a real worker** | 🔴 | Correctness first, speed second | #10 |
+| 12 | **Job system** (the `Worker` half is done — PRD-250, 2026-08-29) | 🔴 | Correctness first, speed second; today only file I/O and image decode use the libuv pool | #10 |
 | 13 | **Push fixes upstream to three.js** — per-object submission cost, indirect/multi-draw, render bundles | 🔴, no schedule | The **11.3 µs vs Godot's 5.3 µs** per-object gap is three.js's code. Fixed there it speeds up web *and* native, forever, for everyone. We have the best measurement rig of any three.js user — that is the contribution | nothing |
 
 ### Two sequencing rules
