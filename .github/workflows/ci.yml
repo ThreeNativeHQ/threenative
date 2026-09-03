@@ -202,6 +202,11 @@ jobs:
           # `ui-overlay` crate with its webkit2gtk bindings. Measured locally, physics alone is a
           # 19s cold build producing 248 MB, and 0s warm.
           #
+          # The physics crate's output is `.runtime/physics-target`, not `native/physics/target`:
+          # `build-native-physics.mjs` passes `--target-dir` explicitly because it cross-compiles
+          # to five targets. Caching the directory `cargo build` would have used by default cached
+          # nothing at all, and the ~50s physics build kept running behind a warm cache.
+          #
           # It needs no timestamp help, unlike ninja: touching every `.rs` source the way a
           # checkout does and rebuilding takes 0s, because cargo fingerprints content rather than
           # trusting mtimes alone. So the cache is the whole change here, and the key grows to
@@ -209,7 +214,7 @@ jobs:
           path: |
             packages/runtime-native/build/tn-linux
             packages/runtime-native/build/tn-linux-quickjs
-            packages/runtime-native/native/physics/target
+            packages/runtime-native/.runtime/physics-target
             packages/runtime-native/native/ui-overlay/target
           key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**/*.cpp', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}-${{ github.run_id }}
           restore-keys: native-build-${{ runner.os }}-${{ runner.arch }}-
