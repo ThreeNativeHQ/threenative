@@ -636,6 +636,36 @@ describe("CI pipeline structure", () => {
     expect(goldenPath).toContain("pnpm verify:golden-path");
   });
 
+  // `build` packs the workspace once and publishes it; the golden-path job downloads that set.
+  // Without pointing the verifier at it, `verify:golden-path` packs the whole workspace a second
+  // time inside the job that sets the run's critical path — the workspace `tsc` plus ten
+  // `pnpm pack` runs, on top of a `build` that just did exactly that.
+  it("hands the golden-path verifier the tarballs build already packed", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "golden-path-template");
+
+    const archives = job.match(/TN_GOLDEN_PATH_ARCHIVES:\s*(.+)/u)?.[1]?.trim();
+    expect(archives, "the verifier packs its own workspace instead of adopting build's").toBe(
+      "${{ github.workspace }}/artifacts/workspace-packages",
+    );
+    // It must name the directory the download actually restores, or the verifier fails closed on
+    // an unreadable path and the saving becomes a red run.
+    expect(job).toContain("actions/download-artifact");
+    const scaffold = requiredJob(ci, "template-nonvisual");
+    expect(scaffold).toContain("${{ github.workspace }}/artifacts/workspace-packages");
+
+    // And the script has to honour it. Unset is the developer path and must still pack.
+    const verifier = await readFile(path.join(repo, "scripts/verify-golden-path.ts"), "utf8");
+    expect(verifier).toContain("TN_GOLDEN_PATH_ARCHIVES");
+    expect(verifier).toContain("adoptPackedWorkspace");
+    expect(verifier, "adoption does not fail closed on an incomplete set").toContain(
+      "TN_GOLDEN_PATH_ARCHIVE_MISSING",
+    );
+    expect(verifier, "adoption does not fail closed on an unclaimed tarball").toContain(
+      "TN_GOLDEN_PATH_ARCHIVE_UNKNOWN",
+    );
+  });
+
   it("the golden-path proof cache cannot record a run that failed", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const job = requiredJob(ci, "golden-path-template");

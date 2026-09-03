@@ -388,8 +388,15 @@ jobs:
           }
           await browser.close();
           NODE
+      # `build` already compiled this workspace and packed every tarball from this commit, and the
+      # step above downloaded them. Without this the verifier packs the whole set a second time —
+      # the workspace `tsc` plus ten `pnpm pack` runs — inside the job that sets the run's critical
+      # path. Measured on run 33710335121: `verify:golden-path` 425s of a 472s job, behind `build`
+      # at 98s. Unset on a developer machine, so `pnpm verify:golden-path` still packs its own.
       - run: pnpm verify:golden-path
         if: steps.proof.outputs.cache-hit != 'true'
+        env:
+          TN_GOLDEN_PATH_ARCHIVES: ${{ github.workspace }}/artifacts/workspace-packages
       - name: Record the proof for this tree
         if: success() && steps.proof.outputs.cache-hit != 'true'
         run: |

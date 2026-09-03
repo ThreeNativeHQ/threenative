@@ -7,6 +7,7 @@ import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   GOLDEN_PATH_STEPS,
   type TemplateStep,
+  adoptPackedWorkspace,
   assertGoldenPathSteps,
   assertMcpToolSurface,
   assertTemplateDependencies,
@@ -14,11 +15,13 @@ import {
   formatCorrectiveCommand,
   goldenPathCorrectiveCommands,
   packWorkspace,
+  packedArchivePrefix,
   probeMcpServer,
   runCommand,
   runGoldenPathTemplate,
   scaffold,
   verifyPackedMutationControl,
+  workspacePackages,
   writeScaffoldScript,
 } from "../verify-golden-path.js";
 
@@ -185,6 +188,77 @@ describe("golden path matrix", () => {
       else process.env.PATH = originalPath;
       await rm(root, { force: true, recursive: true });
     }
+  });
+
+  // CI's `build` job packs the workspace once and publishes the tarballs; the golden-path job
+  // downloads them before this script runs. Adopting that set instead of packing a second time is
+  // the whole saving, so what matters is that it cannot adopt an incomplete or drifted one.
+  describe("adopting tarballs another job packed", () => {
+    async function stageArchives(names: readonly string[]): Promise<string> {
+      const directory = await makeTempDir("golden-path-archives-");
+      for (const name of names) await writeFile(path.join(directory, name), name);
+      return directory;
+    }
+
+    it("resolves every workspace package to the tarball packed for it", async () => {
+      const packages = await workspacePackages();
+      expect(packages.length).toBeGreaterThan(0);
+      const directory = await stageArchives(
+        packages.map((entry) => `${packedArchivePrefix(entry.manifest.name)}9.9.9.tgz`),
+      );
+
+      const sources = await adoptPackedWorkspace(directory);
+
+      expect(Object.keys(sources).sort()).toEqual(
+        packages.map((entry) => entry.manifest.name).sort(),
+      );
+      for (const [name, tarball] of Object.entries(sources)) {
+        expect(path.dirname(tarball), name).toBe(directory);
+        expect(path.basename(tarball), name).toMatch(/\.tgz$/u);
+      }
+    });
+
+    // The failure this guards against is the quiet one: a package added to the workspace, a
+    // publisher that did not pack it, and a golden path that scaffolds without it and passes.
+    it("fails closed when a workspace package has no tarball", async () => {
+      const packages = await workspacePackages();
+      const omitted = packages.at(-1);
+      expect(omitted).toBeDefined();
+      const directory = await stageArchives(
+        packages
+          .slice(0, -1)
+          .map((entry) => `${packedArchivePrefix(entry.manifest.name)}9.9.9.tgz`),
+      );
+
+      await expect(adoptPackedWorkspace(directory)).rejects.toThrow(
+        /TN_GOLDEN_PATH_ARCHIVE_MISSING: .*for /u,
+      );
+    });
+
+    // And the other direction: a tarball nobody claims means the publisher and the workspace
+    // disagree about what exists, which is drift, not a spare file.
+    it("fails closed on a tarball no workspace package claims", async () => {
+      const packages = await workspacePackages();
+      const directory = await stageArchives([
+        ...packages.map((entry) => `${packedArchivePrefix(entry.manifest.name)}9.9.9.tgz`),
+        "threenative-retired-1.0.0.tgz",
+      ]);
+
+      await expect(adoptPackedWorkspace(directory)).rejects.toThrow(
+        /TN_GOLDEN_PATH_ARCHIVE_UNKNOWN: .*threenative-retired-1\.0\.0\.tgz/u,
+      );
+    });
+
+    it("fails closed when the directory does not exist", async () => {
+      await expect(
+        adoptPackedWorkspace(path.join(os.tmpdir(), "golden-path-archives-absent")),
+      ).rejects.toThrow(/TN_GOLDEN_PATH_ARCHIVES_UNREADABLE/u);
+    });
+
+    it("names the tarball pnpm pack writes for scoped and unscoped packages", () => {
+      expect(packedArchivePrefix("@threenative/core")).toBe("threenative-core-");
+      expect(packedArchivePrefix("create-threenative")).toBe("create-threenative-");
+    });
   });
 
   it("fails closed when a template omits vite", () => {
