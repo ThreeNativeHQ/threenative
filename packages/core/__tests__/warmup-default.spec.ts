@@ -75,31 +75,34 @@ afterEach(() => {
   platform.native = false;
 });
 
-describe("the warmUp default", () => {
-  it("warms up on native when nothing is configured", async () => {
-    // The whole point of PRD-327. Until the host's `createRenderPipelineAsync` stopped being the
-    // synchronous create wrapped in a resolved promise, turning this on bought nothing and spent
-    // the budget waiting — `TN_WARMUP:{"compiled":0,"abandoned":1,"timedOut":true}` — while the
-    // first frame compiled the same 105 pipelines in 8.0 s anyway.
+describe("the warmUp option", () => {
+  it("does not run the pre-start warm-up when nothing is configured, on either platform", async () => {
+    // The default is off and that is not the same as no warm-up: `startupCompile` runs the same
+    // `warmUpScene` from inside the loading layer's readiness gate, where the opaque layer is on
+    // screen and the loop is turning. This option only moves the work earlier, to before `start()`
+    // releases the loop and while nothing is presenting.
+    //
+    // PRD-327 Phase 2 proposed flipping this on for native. Doing so removed the loading screen
+    // (`verify-desktop-loading.mjs`: `loadingVisible: false` at every startup sample) and made the
+    // scene compile twice, which pushed the desktop physics gate past its 180-frame budget. The
+    // mechanism was what needed fixing, not the default.
     platform.native = true;
-    expect(await bootAndCountCompiles()).toBeGreaterThan(0);
-  });
-
-  it("does not warm up on web when nothing is configured", async () => {
-    // `compileAsync` has always resolved on web, and the default loading layer's own bounded
-    // readiness gate already covers first-use work there. Flipping this would spend a budget to
-    // buy something a game already has.
+    expect(await bootAndCountCompiles()).toBe(0);
     platform.native = false;
     expect(await bootAndCountCompiles()).toBe(0);
   });
 
-  it("honours an explicit opt-out on native", async () => {
+  it("runs the pre-start warm-up on an explicit opt-in, on either platform", async () => {
     platform.native = true;
-    expect(await bootAndCountCompiles(false)).toBe(0);
-  });
-
-  it("honours an explicit opt-in on web", async () => {
+    expect(await bootAndCountCompiles({ yieldFrame: () => Promise.resolve() })).toBeGreaterThan(0);
     platform.native = false;
     expect(await bootAndCountCompiles({ yieldFrame: () => Promise.resolve() })).toBeGreaterThan(0);
+  });
+
+  it("opts out of warm-up entirely on false", async () => {
+    platform.native = true;
+    expect(await bootAndCountCompiles(false)).toBe(0);
+    platform.native = false;
+    expect(await bootAndCountCompiles(false)).toBe(0);
   });
 });
