@@ -585,6 +585,29 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  // One hit rate for three builds cannot say which build produced the hits, and ci `test-native`
+  // has been stuck at `Hits: 184 / 574 (32.06%)` on every run measured — unchanged by giving each
+  // lane its own restore namespace, and with the restore demonstrably landing. Either the restored
+  // cache is worthless and the hits are this run recompiling shared sources into a second build
+  // directory, or 390 objects really do hash differently run over run. A counter read between the
+  // builds is what tells those apart, so it is a measurement the job has to keep.
+  it("reads the compiler cache counters between builds, not only at the end", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const native = requiredJob(ci, "test-native");
+
+    const readings = [...native.matchAll(/^\s+- name: Compiler cache after (.+)$/gmu)].map(
+      (match) => (match[1] ?? "").trim(),
+    );
+    expect(readings, "the native job reports one total for three builds").toEqual([
+      "the host build",
+      "the V8 contract executables",
+      "the QuickJS variant",
+    ]);
+    // And the size of what the restore actually put on disk, because a hit rate cannot
+    // distinguish a cold cache from one restored into the wrong directory.
+    expect(native).toContain('du -sh "$CCACHE_DIR"');
+  });
+
   it("every native leg runs on every event", async () => {
     // Until 2026-09-01 the platform legs ran only on pushes to main, the nightly cron, and PRs
     // carrying the `native` label; a PR read skips where the legs should have reported, and on

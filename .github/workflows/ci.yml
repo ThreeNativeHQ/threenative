@@ -153,19 +153,43 @@ jobs:
       # never built them, so `pnpm test` had four permanently failing tests and this workflow had
       # never once gone green. The build is what makes the native half of the suite real here.
       - name: Install Linux desktop build dependencies
+        # `--no-install-recommends` keeps every package named below and drops the recommended
+        # tail, which for the GTK and WebKit development packages is the bulk of the download.
+        # This step measured 63s on run 33710335121, on a job that is now at the critical path.
         run: >-
-          sudo apt-get update && sudo apt-get install -y
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends
           ccache
           libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
           libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev
           libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+      # `ccache --show-stats` at the end of the job reports one number for three builds, and that
+      # number has been stuck at `Hits: 184 / 574 (32.06%)` on every run measured — identical
+      # before and after each lane got its own restore-key namespace, and with the restore
+      # demonstrably hitting (`Cache restored from key: native-ccache-ci-test-native-…`). One
+      # total cannot tell the two candidate explanations apart:
+      #
+      #   * the restored cache is worthless and all 184 hits are this run recompiling something
+      #     it already compiled — the V8 and QuickJS build directories share sources, so the
+      #     third step would hit what the first step just stored; or
+      #   * the restore works for a stable subset and 390 objects genuinely hash differently
+      #     run over run.
+      #
+      # Reading the counters between the builds separates them: if the host build reports zero
+      # hits and the hits only appear in the QuickJS step, it is the first. This is measurement,
+      # not a fix, and it is cheap enough to keep either way.
       - name: Zero the compiler cache counters
         shell: bash
-        run: ccache --zero-stats
+        run: |
+          echo "restored cache on disk: $(du -sh "$CCACHE_DIR" 2>/dev/null | cut -f1 || echo 'absent')"
+          ccache --zero-stats
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
+      - name: Compiler cache after the host build
+        if: always()
+        shell: bash
+        run: ccache --show-stats | sed -n "1,8p"
       # The target names are discovered from CMakeLists.txt rather than listed here: a
       # hand-maintained list in a workflow file is the drift that leaves a new contract target
       # unbuilt on CI and only failing for whoever pushes next.
@@ -190,6 +214,10 @@ jobs:
                 echo "target $target is not buildable in build/tn-linux"
             done
           fi
+      - name: Compiler cache after the V8 contract executables
+        if: always()
+        shell: bash
+        run: ccache --show-stats | sed -n "1,8p"
       # timestamp-query and rg11b10-renderable are cross-engine contracts and the JS engine is
       # a build-time choice, so QuickJS needs its own configured build directory. Without it
       # those tests fail closed on CI naming build/tn-linux-quickjs, exactly as happened to
@@ -202,6 +230,10 @@ jobs:
           cmake -S . -B build/tn-linux-quickjs -DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF
           cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test \
             --target threenative-rg11b10-renderable-test --parallel "$(nproc)"
+      - name: Compiler cache after the QuickJS variant
+        if: always()
+        shell: bash
+        run: ccache --show-stats | sed -n "1,8p"
       - name: Report the compiler cache hit rate
         if: always()
         shell: bash
