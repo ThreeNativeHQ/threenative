@@ -245,6 +245,21 @@ export class Viewmodel {
     this.group.quaternion.premultiply(correction);
   }
 
+  /**
+   * Called by the entity registry when the scene exits.
+   *
+   * The cone and its light are children of the viewmodel group, which `Player.dispose` removes —
+   * but removing an object does not free the geometry and material behind it, and a kit whose
+   * restart key is on the keyboard gets restarted a lot.
+   */
+  dispose(): void {
+    this.#flash.geometry.dispose();
+    (this.#flash.material as MeshBasicMaterial).dispose();
+    this.#flash.removeFromParent();
+    this.#light.dispose();
+    this.#light.removeFromParent();
+  }
+
   debug(): Record<string, unknown> {
     return {
       ammo: this.ammo,
