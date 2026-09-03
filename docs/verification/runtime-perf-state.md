@@ -1817,6 +1817,52 @@ names the pairing instead of the engine, and `threenative-timestamp-query-test` 
 This is what made wgpu-native — the backend Android ships — the one backend no contract test could
 be run against.
 
+### Phase 3, desktop Dawn arm — second cold launch, 2026-09-03
+
+Three sequential fresh-process launches of `native-smoke` on `build/tn-linux/mystral` (Dawn,
+`xvfb.sh`, `--frames 300` each), same machine, same bundle, same session:
+
+| launch | gapMs | `pipelineCompile` | calls |
+| ---: | ---: | ---: | ---: |
+| 1 | 140.3 | 14.349 | 3 |
+| 2 | 117.7 | 11.059 | 3 |
+| 3 | 123.5 | 11.339 | 3 |
+
+Second ÷ first = **77 %** — above the pre-registered 25 % bar, but this arm decides nothing: three
+tiny pipelines (14 ms of compile) sit at the noise floor, and the machine's driver shader cache
+was already warm from earlier sessions, so launch 1 here is not a true first-ever compile. The
+pre-registered rule is written for the phone, where 105 pipelines and 8,038 ms make the ratio
+meaningful. **The cache decision waits for the phone arm**; the desktop record is supporting
+evidence only, and no pipeline-cache work is filed off this table.
+
+### Phase 4 — a late synchronous compile is a named hitch, 2026-09-03
+
+`TN_FRAME_HITCH` now carries `pipelineCompileMs` / `pipelineCompileCalls` per 300-frame window.
+The launch budget keeps a per-frame `pipelineCompile` accumulator after the first present
+(`stall_budget.h`), the hitch reporter drains it on every present (`bindings_presentation.cpp`),
+and `threenative-playtest perf` parses `TN_FRAME_HITCH` — which no code read before this, only
+hands — and names the late compile when one happened. A missing field and a measured zero print
+differently ("unreported — this host predates the fields" vs "none — every window reported
+pipelineCompileCalls 0").
+
+Red-green (`threenative-stall-budget-hitch-test`, new): against the unmodified headers the test
+does not compile — `PostPresentCompile` does not name a type, `record()` takes no payload. Against
+the mutation "post-present routing disabled" (the pre-PRD behaviour), the payload reads
+`pipelineCompileMs:0.000` despite forced compiles, 4 assertions red; restored, green. Live
+end-to-end, desktop Dawn, one 360-frame launch (`--frames 300` closes only 299 samples — the
+first record primes the clock, so the window needs 301 presents; recorded because it silently
+produced no line the first time):
+
+```
+TN_FRAME_HITCH:{"window":300,"maxMs":43.310,"maxAtFrame":232,"p99Ms":40.284,"p50Ms":30.787,"pipelineCompileMs":0.000,"pipelineCompileCalls":0}
+hitch windows (post-launch, 1): worst 43.310 ms
+  late sync compile: none — every window reported pipelineCompileCalls 0
+```
+
+`maxMs 43.3` is Xvfb present throttling (method rule 2), not a verdict. The nonzero path is
+proven by the shape test; no in-repo fixture produces a late material swap, so a device arm with
+one is still owed to this PRD's negative control as written.
+
 ---
 
 ## 5b. Launch under V8 — PRD-328, 2026-09-03

@@ -289,9 +289,19 @@ describe("formatPerfReport", () => {
     );
     const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 1 }, "log"));
     expect(text).toContain(
-      "late sync compile: none reported — either none happened, or this host predates the " +
-        "pipelineCompile fields (TN_FRAME_HITCH without them)",
+      "late sync compile: unreported — this host predates the pipelineCompile fields (TN_FRAME_HITCH without them)",
     );
+  });
+
+  it("reports a measured zero as a zero when a new host names the field with no late compile", () => {
+    const zeroHitchLine =
+      "TN_FRAME_HITCH:{\"window\":300,\"maxMs\":9.9,\"maxAtFrame\":7,\"p99Ms\":9.1,\"p50Ms\":7.8," +
+      "\"pipelineCompileMs\":0.000,\"pipelineCompileCalls\":0}";
+    const parsed = parsePerformanceMarkers(
+      `${budgetLine(1, 30, 40, 20)}\n${zeroHitchLine}\n${budgetLine(2, 53, 20, 10)}\n`,
+    );
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 1 }, "log"));
+    expect(text).toContain("late sync compile: none — every window reported pipelineCompileCalls 0");
   });
 
   it("prints no hitch section for a stream without hitch lines", () => {
