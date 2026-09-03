@@ -108,6 +108,21 @@ export interface IStartupStatus {
   /** Resolves after first-use work, the sustained frame window, and every game `hold()`. */
   whenReady(): Promise<void>;
   /**
+   * Resolves after first-use work and the sustained frame window, and **before** any `hold()`.
+   *
+   * This is what a game should sequence its own launch work off. `whenReady()` cannot be used for
+   * that once the game holds startup: the hold makes readiness wait for the game's work, so work
+   * *started* from `whenReady()` waits for a gate that is waiting for it. The cycle is only broken
+   * by the hold's budget expiring, which looks exactly like a very slow asset load — measured as a
+   * valley revealing its critical tier after a 45 s stall with `trees=1`.
+   *
+   * Use this when the reason to wait is the framework's launch cost — not competing with first-use
+   * compilation, not stealing frames from the stable-frame window — which is the usual reason.
+   *
+   * @situation start the game's own asset streaming after the framework's launch work, without deadlocking the readiness gate
+   */
+  whenFrameworkReady(): Promise<void>;
+  /**
    * Add the game's own launch work to the readiness gate, so every framework-owned observation of
    * startup describes the moment the player actually reached the world.
    *

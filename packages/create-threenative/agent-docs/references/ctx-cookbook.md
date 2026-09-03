@@ -93,3 +93,28 @@ Three things to know:
 - **Do the loading, then hold, then enter.** Registering the hold is not what starts the work;
   pass a promise that is already running. And register it in `load()`: a hold added from `enter()`
   races the framework's gate on a warm cache.
+
+### The one trap: never start held work from `whenReady()`
+
+A hold makes readiness wait for your work. So work *started* from `whenReady()` is waiting for a
+gate that is waiting for it:
+
+```ts
+// DEADLOCK. Only the hold's budget breaks it, and it presents as a very slow load.
+void ctx.startup.whenReady().then(() => this.#loadDetailTier(ctx));
+```
+
+Measured, when exactly this was written: the valley sat on its loading screen for the full 45 s
+budget and then revealed the critical tier, `TN_VALLEY_REVEAL trees=1`. Nothing errored. It reads
+like a slow network, not like a cycle.
+
+There is a real reason to want that shape — the framework's first-use compilation is competing for
+the main thread, and streaming into it makes both slower. So wait on the framework's own gate
+instead, which resolves before the holds:
+
+```ts
+void ctx.startup.whenFrameworkReady().then(() => this.#loadDetailTier(ctx));
+```
+
+`timeline.frameworkReadyMs` is when that fires; `timeline.readyMs` is when the player got the
+world.

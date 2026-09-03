@@ -962,6 +962,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           return { ...timeline };
         },
         whenReady: () => projectionReady,
+        whenFrameworkReady: () => startupReadiness.whenFrameworkReady(),
       },
       renderer: this.#renderer,
       viewport,

@@ -231,4 +231,50 @@ describe("StartupReadiness holds", () => {
     expect(readiness.ready).toBe(true);
     expect(readiness.holdReport).toEqual([]);
   });
+
+  it("resolves framework readiness before the holds, so a game can sequence work off it", async () => {
+    // The deadlock this exists to prevent, in miniature. A game that starts its held work from
+    // `whenReady()` is waiting for a gate that is waiting for it; only the hold budget breaks the
+    // cycle, and it presents as a very slow asset load rather than as a hang.
+    const readiness = new StartupReadiness({ stableFrames: 3 });
+    const order: string[] = [];
+    let landDetail: () => void = () => undefined;
+    readiness.hold(
+      "detail-tier",
+      new Promise<void>((resolve) => {
+        landDetail = resolve;
+      }),
+    );
+    void readiness.whenFrameworkReady().then(() => {
+      order.push("framework");
+      // This is the shape a game wants: begin the tier once the framework is done competing for
+      // the main thread, and let the gate wait for it.
+      landDetail();
+    });
+    void readiness.whenReady().then(() => order.push("world"));
+
+    readiness.start();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    for (let index = 0; index < 3; index += 1) readiness.observe(1);
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+
+    expect(order).toEqual(["framework", "world"]);
+    expect(readiness.ready).toBe(true);
+    expect(readiness.holdReport).toEqual([{ expired: false, label: "detail-tier" }]);
+  });
+
+  it("resolves framework readiness even while a hold is still outstanding", async () => {
+    const readiness = new StartupReadiness({ stableFrames: 3 });
+    let frameworkReady = false;
+    readiness.hold("detail-tier", new Promise<void>(() => undefined));
+    void readiness.whenFrameworkReady().then(() => {
+      frameworkReady = true;
+    });
+    readiness.start();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    for (let index = 0; index < 3; index += 1) readiness.observe(1);
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    expect(frameworkReady).toBe(true);
+    expect(readiness.ready).toBe(false);
+  });
 });
