@@ -30,6 +30,7 @@
         "threenative-shutdown-lifetime-test",
         "threenative-timer-delivery-test",
         "threenative-timer-engine-first-test",
+        "threenative-async-pipeline-thread-test",
         "threenative-timestamp-query-test",
         "threenative-webgpu-bindings-reentrancy-test",
         "threenative-webtransport-surface-test",
@@ -67,6 +68,7 @@
         "threenative-shutdown-lifetime-test",
         "threenative-timer-delivery-test",
         "threenative-timer-engine-first-test",
+        "threenative-async-pipeline-thread-test",
         "threenative-timestamp-query-test",
         "threenative-webgpu-bindings-reentrancy-test",
         "threenative-webtransport-surface-test",
@@ -101,7 +103,8 @@
       "preset": "tn-linux",
       "cacheVariables": { "MYSTRAL_USE_QUICKJS": "ON", "MYSTRAL_USE_V8": "OFF" },
       "owner": "cross-engine contract proof — the QuickJS arm of tests/timestamp-query.test.mjs, tests/rg11b10-renderable.test.mjs and the js engine contract; built on demand",
-      "runs": ["threenative-js-engine-contract-test", "threenative-rg11b10-renderable-test", "threenative-timestamp-query-test"]
+      "runs": ["threenative-js-engine-contract-test", "threenative-rg11b10-renderable-test", "threenative-async-pipeline-thread-test",
+        "threenative-timestamp-query-test"]
     },
     {
       "directory": "tn-linux-contracts-physics",

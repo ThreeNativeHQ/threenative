@@ -1688,6 +1688,70 @@ Building a device APK: `THREENATIVE_RUNTIME_SOURCE=<engine>/packages/runtime-nat
 
 ---
 
+## 5a. The async pipeline entry, per backend — PRD-327 Phase 0, 2026-09-03
+
+The mechanism question PRD-327 refused to assume: does `wgpuDeviceCreateRenderPipelineAsync`
+actually leave the calling thread? Measured by `tests/async_pipeline_thread_test.cpp`
+(`threenative-async-pipeline-thread-test`), which times a synchronous compile of a deliberately
+heavy shader against the async entry's own call, on a differently-salted shader so the second arm
+cannot be timing a cache hit, and destroys the descriptor the instant the call returns.
+
+| backend | `syncMs` | async entry usable | main thread inside the call | callback at | verdict |
+| --- | ---: | --- | ---: | ---: | --- |
+| Dawn (desktop) | 73.4 ms | **yes** | **0.33 ms** (0.45 %) | 244 ms | leaves the thread; snapshots the descriptor |
+| wgpu-native (Android, iOS) | 4.2 ms | **no** | — | — | **`unimplemented!()`; aborts the process** |
+
+An earlier Dawn run on a colder shader cache read `syncMs 363.79`, `callMs 0.115` — 0.03 %. Both
+runs clear the pre-registered `Tcall < 0.25 × Tsync` bar by more than two orders of magnitude.
+
+**wgpu-native v25.0.2.2 does not implement it at all.** It does not return an error; it panics
+non-unwinding and takes the process with it:
+
+```
+thread '<unnamed>' panicked at src/unimplemented.rs:81:5:
+not implemented
+  19: wgpuDeviceCreateRenderPipelineAsync
+thread caused non-unwinding panic. aborting.
+```
+
+which is why the probe runs in a forked child — otherwise the contract test cannot report the very
+thing it exists to find out, and "this backend cannot" would be a fact hardcoded from the day
+someone first tried it rather than a measurement taken on every run.
+
+### The mechanism decision
+
+**Branch (b) — a host compile thread pool calling the synchronous entry — for both backends.**
+
+Branch (a) is available on Dawn and measured excellent there, and it is still the wrong choice:
+the platform with the defect is Android, whose backend has no async entry to call, so the pool has
+to exist regardless. Shipping (a) on desktop as well would mean two mechanisms, two completion
+paths and two sets of lifetime rules for one feature, on the platform whose launch is already
+524 ms. Dawn's async entry is recorded here as measured-and-available so a later change has the
+number without re-running the probe.
+
+`syncMs` differs 17× between the backends on the same shader because Tint and naga are different
+compilers and wgpu-native defers more work to first use. That makes the ratio the comparable
+quantity, never the absolute — do not quote 4.2 ms as "wgpu compiles faster".
+
+### A side effect worth keeping
+
+No contract test could be linked in a wgpu build directory at all before this: wgpu-native and SWC
+are both Rust staticlibs and each carries its own `rust_eh_personality`, so every target linking
+`mystral-runtime` there died at
+
+```
+libswc.a(std-...rcgu.o): in function `rust_eh_personality':
+multiple definition of `rust_eh_personality'; libwgpu_native.a(std-...rcgu.o): first defined here
+```
+
+The `mystral` executable had already named that exact pairing and opted out of the error; the
+runtime had not, and gated its own opt-out on V8, which a wgpu preset does not use. The gate now
+names the pairing instead of the engine, and `threenative-timestamp-query-test` links there too.
+This is what made wgpu-native — the backend Android ships — the one backend no contract test could
+be run against.
+
+---
+
 ## 5b. Launch under V8 — PRD-328, 2026-09-03
 
 Until this date the launch instrument could not run on the engine that ships. The compile and
