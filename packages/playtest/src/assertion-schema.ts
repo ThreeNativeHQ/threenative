@@ -350,6 +350,25 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "It reads aggregate render samples such as frame time and draw calls; an initial value cannot stand in for the measured series.",
   },
   {
+    description: "PRD-222 Tier 2: proves the fps ratio of a parity pair — the same scene on the same device, once in the browser and once native. Lives in the second run and names the first run's saved report; refuses a pair whose halves ran on different devices, a thermally confounded half, or a missing series on either side.",
+    example: { parity: { minFpsRatio: 0.85, referenceReport: "reports/native.json", referenceSide: "native" } },
+    fields: [
+      { description: "Floor on nativeFps ÷ webFps. Tier 2's Floor is 0.85, Target 0.95.", name: "minFpsRatio", type: "positive number" },
+      { description: "Optional floor on the inverted render-phase p95 ratio; fails closed when either side lacks the phase split.", name: "minRenderParity", type: "positive number" },
+      { description: "Path to the other half's saved run report JSON, resolved against the project.", name: "referenceReport", type: "non-empty string" },
+      { description: "Which side of the pair the reference is; the directed ratio needs it.", name: "referenceSide", type: "'browser' or 'native'" },
+      { description: "Hydrated from the reference report at load; never written by hand.", name: "reference", type: "object" },
+    ],
+    cardinality: "object",
+    kind: "parity",
+    observationPath: "performanceSeries",
+    requiredCapabilities: ["runtime.performance"],
+    resultIdPrefix: "parity.",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+    trivialityRationale: "It compares two measured run series; no initial in-scene value can satisfy a cross-run ratio.",
+  },
+  {
     description: "Proves projected entity visibility in the viewport.",
     example: { visibility: [{ entity: "player", minProjectedPixels: 1200, maxOffscreenRatio: 0.05 }] },
     fields: [

@@ -412,6 +412,7 @@ export interface IPlaytestScenarioAssertions {
   movement?: IPlaytestMovementAssertion;
   occluded?: IPlaytestOccludedAssertion[];
   overlayNodes?: IPlaytestOverlayNodeAssertion[];
+  parity?: IPlaytestParityAssertion;
   performance?: IPlaytestPerformanceAssertion;
   renderChain?: IPlaytestRenderChainAssertion;
   reachability?: IPlaytestReachabilityAssertion;
@@ -434,6 +435,41 @@ export interface IPlaytestParityConfig {
   movementDistance?: { maxDelta: number };
   resources?: string[];
   targets?: PlaytestTarget[];
+}
+
+/** What the parity reference's saved run report yielded, extracted at scenario load. */
+export interface IPlaytestParityReference {
+  /** Frames per second of the reference run: 1000 ÷ the median frame time of its series. */
+  fps: number;
+  /** Render-phase p95 of the reference run, when its series carries the phase split. */
+  renderP95?: number;
+  /** The device the reference run executed on, when it measured one. */
+  serial?: string;
+  /** The reference run's own thermal verdict, when it measured one. */
+  thermallyConfounded?: boolean;
+}
+
+/**
+ * PRD-222 Tier 2: the same scene on the same device, twice — once in the platform's browser,
+ * once on the native host. The assertion lives in the second run of the pair and names the
+ * first run's saved report.
+ *
+ * It proves what the artifacts can prove: the same device (both halves' `deviceMetrics.serial`),
+ * a thermally comparable pair, and the directed fps ratio. Which scene the reference ran is the
+ * pair protocol the operator owns — the report format carries no scene identity — so this
+ * assertion never claims it did.
+ */
+export interface IPlaytestParityAssertion {
+  /** Floor on nativeFps ÷ webFps. Tier 2's Floor is 0.85; Target 0.95. */
+  minFpsRatio: number;
+  /** Optional floor on the inverted render-phase p95 ratio; fails closed when either side's series lacks the split. */
+  minRenderParity?: number;
+  /** Path to the other half's saved run report JSON, resolved against the project. */
+  referenceReport: string;
+  /** Which side of the pair the reference report is; the directed ratio needs it. */
+  referenceSide: "browser" | "native";
+  /** Hydrated from the reference report at scenario load; never set by hand. */
+  reference?: IPlaytestParityReference;
 }
 
 export interface IPlaytestArtifactRequest {

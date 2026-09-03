@@ -8,6 +8,7 @@ import { emitDeviceMetrics } from "./evaluators/device-metrics.js";
 import { emitEvidenceFamilies } from "./evaluators/evidence-families.js";
 import { emitMovementEvidence } from "./evaluators/movement-evidence.js";
 import { emitDisplayFamilies } from "./evaluators/framebuffer-reachability.js";
+import { emitParity } from "./evaluators/parity-evidence.js";
 import { emitPerfSignalsWorld } from "./evaluators/perf-signals-world.js";
 import { emitWorldGameplay } from "./evaluators/world-gameplay.js";
 import { emitRenderChain } from "./evaluators/render-chain.js";
@@ -27,6 +28,7 @@ export function evaluateRichPlaytestAssertions(input: {
   emitDeviceMetrics(ctx);
   emitDisplayFamilies(ctx);
   emitEvidenceFamilies(ctx);
+  emitParity(ctx);
   emitPerfSignalsWorld(ctx);
   emitWorldGameplay(ctx);
   emitRenderChain(ctx);
