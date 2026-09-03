@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { emitMovementEvidence } from "../src/evaluators/movement-evidence.js";
+import { buildReport } from "../src/runner/runner-support.js";
 const baseReport = {
   diagnostics: [],
   distance: 0,
@@ -58,6 +59,74 @@ function move(entity: string, resolved: [number, number, number], direction?: [n
 }
 
 describe("movement evidence", () => {
+  test("measures a named entity from its first observed step when warmup missed it", () => {
+    const before = snapshot("player", [0, 0, 0]);
+    const after = snapshot("player", [0, 0, -2]);
+    const report = buildReport(
+      reportConfig(),
+      {
+        ...baseScenario,
+        assert: { movement: { entity: "player", minDistance: 1 } },
+        viewport: { height: 180, width: 320 },
+        warmupFrames: 1,
+      } as never,
+      undefined,
+      undefined,
+      [],
+      [],
+      undefined,
+      {},
+      true,
+      undefined,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      [{ before, after, inputDriven: true }],
+    );
+
+    expect(report.before?.position).toEqual([0, 0, 0]);
+    expect(report.after?.position).toEqual([0, 0, -2]);
+    expect(report.distance).toBe(2);
+    expect((report.assertionResults ?? []).find(({ id }) => id === "movement.distance")).toMatchObject({
+      details: { observed: true },
+      pass: true,
+    });
+  });
+
+  test("fails a named entity that was observed only once instead of inventing zero movement", () => {
+    const report = buildReport(
+      reportConfig(),
+      {
+        ...baseScenario,
+        assert: { movement: { entity: "player", minDistance: 1 } },
+        viewport: { height: 180, width: 320 },
+        warmupFrames: 1,
+      } as never,
+      undefined,
+      undefined,
+      [],
+      [],
+      undefined,
+      {},
+      true,
+      undefined,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      [{ before: snapshot("player", [0, 0, 0]), after: snapshot("ghost", [0, 0, 0]), inputDriven: false }],
+    );
+
+    expect(report.before).toBeUndefined();
+    expect(report.after).toBeUndefined();
+    expect(report.distance).toBe(0);
+    expect((report.assertionResults ?? []).find(({ id }) => id === "movement.distance")).toMatchObject({
+      details: { observed: false },
+      pass: false,
+    });
+  });
+
   test("evaluates velocity, minimum distance, maximum distance, and path length", () => {
     const result = evaluate(
       { movement: { maxDistance: 3, minDistance: 1, minVelocity: 0.5, pathLength: 2 } },
@@ -284,4 +353,23 @@ describe("movement evidence", () => {
 
 function effectLog(entries: unknown[]): { entries: unknown[] } {
   return { entries };
+}
+
+function snapshot(entity: string, position: [number, number, number]) {
+  return {
+    clock: { mode: "fixed-step" as const, tick: 1 },
+    entities: [{ id: entity, transform: { position } }],
+  };
+}
+
+function reportConfig() {
+  return {
+    artifactDirectory: "artifacts/test",
+    headless: true,
+    projectPath: ".",
+    scenarioPath: "movement.playtest.json",
+    timeoutMs: 1_000,
+    trace: false,
+    url: "http://127.0.0.1:5173",
+  };
 }

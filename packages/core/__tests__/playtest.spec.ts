@@ -2,6 +2,8 @@ import {
   type IPlaytestBridgeV1,
   type IPlaytestSampleRequest,
   PLAYTEST_BRIDGE_GLOBAL,
+  PLAYTEST_PROTOCOL_LIMITS,
+  unknownPlaytestCapabilities,
 } from "@threenative/playtest";
 import {
   AnimationClip,
@@ -73,7 +75,7 @@ describe("playtest plugin", () => {
     const provider: IGamePluginHooks = {
       setup: (_ctx, runtime) =>
         runtime?.observations.contribute({
-          capabilities: ["runtime.example", "runtime.example"],
+          capabilities: ["runtime.components", "runtime.components"],
           sample: (request) => {
             receivedLabel = request.label;
             return { exampleSeries: [{ value: 3 }] };
@@ -90,7 +92,8 @@ describe("playtest plugin", () => {
 
     await game.start();
     try {
-      expect((await bridge().describe()).capabilities).toEqual([
+      const description = await bridge().describe();
+      expect(description.capabilities).toEqual([
         "camera.observe",
         "entity.bounds",
         "entity.observe",
@@ -106,8 +109,9 @@ describe("playtest plugin", () => {
         "runtime.tags",
         "runtime.audio",
         "runtime.world",
-        "runtime.example",
+        "runtime.components",
       ]);
+      expect(unknownPlaytestCapabilities(description.capabilities)).toEqual([]);
       const request = { label: "after-step" } as IPlaytestSampleRequest & { label: string };
       expect(await bridge().sample(request)).toMatchObject({
         exampleSeries: [{ value: 3 }],
@@ -361,8 +365,8 @@ describe("playtest plugin", () => {
         const coin = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         ctx.add(fox);
         ctx.add(coin);
-        ctx.entities.add("fox", { body, mesh: fox });
-        ctx.entities.add("coin.3", { area, mesh: coin, tags: ["coin"] });
+        ctx.entities.add("fox", { mesh: fox, physics: { rigidBody: body } });
+        ctx.entities.add("coin.3", { mesh: coin, physics: { area }, tags: ["coin"] });
       }
     }
     const game = defineGame({
@@ -388,6 +392,54 @@ describe("playtest plugin", () => {
       const gameplay = (await bridge().sample({})).gameplay;
       expect(gameplay?.contacts).toEqual([{ entity: "fox", kind: "trigger", with: "coin.3" }]);
       expect(gameplay?.tags).toEqual({ coin: { count: 1 } });
+    } finally {
+      game.stop();
+    }
+  });
+
+  it("clears contact history on goto and bounds one oversized contact drain", async () => {
+    const canvas = testCanvas();
+    const body = {};
+    let navigate: ((name: string) => Promise<void>) | undefined;
+    class FirstScene extends Scene {
+      override enter(ctx: ICtx): void {
+        const first = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+        const area = {
+          drainContacts: () =>
+            Array.from({ length: PLAYTEST_PROTOCOL_LIMITS.maxEventsPerDrain + 25 }, (_, index) => ({
+              body,
+              entity: `coin.${index}`,
+              started: true,
+            })),
+        };
+        ctx.add(first);
+        ctx.entities.add("first", { mesh: first, physics: { area, rigidBody: body } });
+        navigate = ctx.goto;
+      }
+    }
+    class SecondScene extends Scene {
+      override enter(ctx: ICtx): void {
+        const second = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+        ctx.add(second);
+        ctx.entities.add("second", { mesh: second });
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest()],
+      renderer: stubRenderer(canvas),
+      scenes: { first: FirstScene, second: SecondScene },
+      start: "first",
+    });
+
+    await game.start();
+    try {
+      const before = await bridge().sample({});
+      expect(before.gameplay?.contacts).toHaveLength(PLAYTEST_PROTOCOL_LIMITS.maxEventsPerDrain);
+      expect(before.gameplay?.contacts?.[0]?.with).toBe("coin.25");
+      if (navigate === undefined) throw new Error("First scene did not expose ctx.goto.");
+      await navigate("second");
+      expect((await bridge().sample({})).gameplay?.contacts).toEqual([]);
     } finally {
       game.stop();
     }
@@ -439,7 +491,9 @@ describe("playtest plugin", () => {
       override enter(ctx: ICtx): void {
         const first = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         ctx.add(first);
-        ctx.entities.add("first", { mesh: first });
+        const body = {};
+        const area = { drainContacts: () => [{ body, entity: "old-contact", started: true }] };
+        ctx.entities.add("first", { mesh: first, physics: { area, rigidBody: body } });
         navigate = ctx.goto;
       }
     }
@@ -473,9 +527,13 @@ describe("playtest plugin", () => {
     await game.start();
     try {
       if (navigate === undefined) throw new Error("First scene did not expose ctx.goto.");
+      expect((await bridge().sample({})).gameplay?.contacts).toEqual([
+        { entity: "first", kind: "trigger", with: "old-contact" },
+      ]);
       await navigate("second");
       const snapshot = await bridge().sample({});
       expect(snapshot.entities?.map(({ id }) => id)).toEqual(["camera.main", "second"]);
+      expect(snapshot.gameplay?.contacts).toEqual([]);
     } finally {
       game.stop();
     }

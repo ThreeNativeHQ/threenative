@@ -101,14 +101,16 @@ const CURRENT_BASELINE_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // the wave field's height and normal instead of a constant, and the `shooter` kit became first
   // person — a viewmodel, legs, a decal pool and a metre table where a third-person body used to
   // be. The remaining trees move only by what main changed under them.
-  "action-rpg": "7c8a2e4d6c3b19dc6db33c4d3e1652a262fe457c8bc6c4509e6b27d211b5266c",
-  defense: "3aa1868caec9dee53696972efd5a8ca8c02faa3405240559e7823083d70e384e",
-  minimal: "a1c53c47f9cec3db597710d32bb6abed2aac67b9ecb5f569d4f10cc9fb18aa79",
-  platformer: "2b14304c4082ec1509cc78f7582c370dcec3ed57972a28f19708c7748f311e1b",
-  racing: "a87ec5bb6285dea2a45a5cd2d1e8619c27e42a6434cb821ecba463484fced5a8",
-  sailing: "5486da4b08ef12ae9df8af912171a6b63f06163de3c82c5cbe1a90c1e38346e4",
-  shooter: "1087435d1f7ca296d65e11b8dd18dc37796a15f14c26b2b9e1c0bc9c87b9140a",
-  starter: "e9826339dcaf626b869f16b1c38e3581c043aa135ade98017a168445ff83801b",
+  // Recomputed 2026-09-02 after the named-export capability correction, on origin/main's
+  // refreshed genre kits.
+  "action-rpg": "ea9cc074e68c587de67fcf9d0e90e928261fd9b96ccbb88c098d62aa115363d6",
+  defense: "92e6ac31cd0305da2fab74172d0ffc5bbf9b8adc8739ea684bfadb6af86cb1a0",
+  minimal: "7e61f56eae5e038e9afdad3bd02663c0dcfa22496681a68ee0d88cf483a87211",
+  platformer: "5c52d0f11c9cdeaeaa171198dcaab7f591adfe2c341187ee7e52705ea4d8dc9e",
+  racing: "eda8bfc45cad55324a449bcb0e6c0dc3e5d6a7ca0ae5b252e61b47090e803d3f",
+  sailing: "0750a5049bf9fa3a658eccbcf29d3119bccb92cca22833aa6a83832da93532ed",
+  shooter: "5a3b6e178b103887e128e554e2de81afbc8567d7352a7b4fd90e20fd045f2bfa",
+  starter: "7c7c9eac5ba8274f10eb1f5ce4e048844279370996e46b34cf4c563262073556",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

@@ -44,6 +44,7 @@ import {
   makeEntry,
   launchAndroidConformanceActivity,
   runCommand,
+  validateWindowedSurfaceOutput,
   temporalCaptureLabel,
   unexpectedBlockedRows,
   expiredExclusions,
@@ -285,6 +286,37 @@ test("browser capture waits for submitted WebGPU work before requesting a compos
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("windowed surface proof requires two non-null views and no device error", () => {
+  const healthy = [
+    'TN_SURFACE_FRAME:{"view":true,"present":1}',
+    'TN_SURFACE_FRAME:{"view":true,"present":2}',
+    "TN_PRESENTS:2",
+  ].join("\n");
+  assert.deepEqual(validateWindowedSurfaceOutput(healthy, { frames: 2 }), {
+    errors: [],
+    frames: 2,
+    presents: 2,
+  });
+
+  const missingView = healthy.replace('"view":true', '"view":false');
+  assert.match(
+    validateWindowedSurfaceOutput(missingView, { frames: 2 }).errors.join("\n"),
+    /non-null view/u,
+  );
+  assert.match(
+    validateWindowedSurfaceOutput(healthy.replace(/TN_SURFACE_FRAME:[^\n]+/gu, ""), { frames: 2 }).errors.join("\n"),
+    /surface frame marker/u,
+  );
+  assert.match(
+    validateWindowedSurfaceOutput(`${healthy}\nDevice error (Validation): surface`, { frames: 2 }).errors.join("\n"),
+    /device error/u,
+  );
+  assert.match(
+    validateWindowedSurfaceOutput(`${healthy}\n[WebGPU] sRGB presentation bridge failed`, { frames: 2 }).errors.join("\n"),
+    /presentation bridge failed/u,
+  );
 });
 
 test("allowFailure survives a spawn error, not just a non-zero exit", () => {

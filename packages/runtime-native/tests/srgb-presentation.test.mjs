@@ -36,8 +36,24 @@ function assertPresentationBridge(definitions) {
   );
 }
 
+function assertSuccessfulPresentAccounting(definitions) {
+  const present = definitions.present;
+  const result = present.indexOf("const bool presented =");
+  const success = present.indexOf("if (presented)");
+  const count = present.indexOf("state->profiling.presentCount += 1;");
+  const marker = present.indexOf("TN_SURFACE_FRAME:");
+  assert.ok(result >= 0, "surface presentation must record the bridge result");
+  assert.ok(success > result, "successful-present accounting must follow the bridge result");
+  assert.ok(count > success, "presentCount must increase only after a successful present");
+  assert.ok(marker > success, "TN_SURFACE_FRAME must describe a successful present");
+}
+
 test("sRGB-only native surfaces present Three.js encoded output through a linear canvas", () => {
-  assert.doesNotThrow(() => assertPresentationBridge(presentationDefinitions()));
+  assert.doesNotThrow(() => {
+    const definitions = presentationDefinitions();
+    assertPresentationBridge(definitions);
+    assertSuccessfulPresentAccounting(definitions);
+  });
 });
 
 test("presentation contract rejects removal of the inverse transfer", () => {
