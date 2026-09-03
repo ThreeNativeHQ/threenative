@@ -76,7 +76,9 @@ export function createKuwaharaStage(options: IKuwaharaStageOptions = {}): IKuwah
       );
       scratches.push(tensor);
       const tensorSample = tensor.texture.sample(tsl.screenUV);
-      const orientation = tsl.atan(tensorSample.y.mul(2), tensorSample.x.sub(tensorSample.z));
+      const orientation = tsl
+        .atan(tensorSample.y.mul(2), tensorSample.x.sub(tensorSample.z))
+        .mul(0.5);
       const axis = tsl.vec2(tsl.cos(orientation), tsl.sin(orientation));
       const sector = (sectorIndex: number): ISectorStats => {
         let mean: Node<"vec3"> = tsl.vec3(0);

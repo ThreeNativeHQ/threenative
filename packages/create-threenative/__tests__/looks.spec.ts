@@ -7,6 +7,7 @@ import {
   tensorOrientation,
   transformKernelOffset,
 } from "../templates/starter/src/render/kuwahara.js";
+import { qualityPreset } from "../templates/starter/src/render/quality.js";
 import { createRockRidge, sampleGraniteField } from "../templates/starter/src/render/rockRidge.js";
 import {
   createWatercolorStage,
@@ -101,6 +102,22 @@ describe("starter visual floor", () => {
     const grouped = quantizeLuminance(original, 8);
     expect(grouped.r / original.r).toBeCloseTo(grouped.g / original.g, 9);
     expect(grouped.g / original.g).toBeCloseTo(grouped.b / original.b, 9);
+  });
+
+  it("should use the half-angle in the runtime tensor graph", async () => {
+    const kuwahara = await readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8");
+    expect(kuwahara).toMatch(
+      /const orientation = tsl\s*\.\s*atan\(\s*tensorSample\.y\.mul\(2\),\s*tensorSample\.x\.sub\(tensorSample\.z\)\s*\)\s*\.\s*mul\(0\.5\);/u,
+    );
+  });
+
+  it("should use fewer watercolor luminance bands on medium than high", () => {
+    const highPreset = qualityPreset("high");
+    const mediumPreset = qualityPreset("medium");
+    const highLevels = highPreset.watercolorLevels ?? 8;
+    expect(highLevels).toBe(8);
+    expect(mediumPreset.watercolorLevels).toBe(6);
+    expect(mediumPreset.watercolorLevels).toBeLessThan(highLevels);
   });
 
   it("should fail closed on missing paint input even for zero-strength no-ops", () => {

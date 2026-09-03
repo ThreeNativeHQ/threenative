@@ -143,6 +143,7 @@ const medium: IWorldEnvironmentOptions = {
   // Authored watercolour grade/paper: unmeasured until admission; fewer luminance bands keep the
   // same value-grouped direction at this tier.
   watercolorEnabled: true,
+  watercolorLevels: 6,
   renderChainTier: "medium",
   tonemapMode: "aces",
 };
