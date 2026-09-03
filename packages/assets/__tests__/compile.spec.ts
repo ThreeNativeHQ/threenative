@@ -103,6 +103,94 @@ describe("compileAssets", () => {
     );
   });
 
+  it("should report the bytes an assets.textures override ships uncompressed", async () => {
+    // `/AGENTS.md`: turning a convention off must not turn its measurement off. One shipped game
+    // carried 2,003 MB of manifest output with zero .ktx2 in it because this value was copied out
+    // of a template and never revisited, and the build said nothing for weeks.
+    const root = await makeTempDir("threenative-compile-skipped-textures-");
+    await mkdir(path.join(root, "assets"));
+    const source = rgbaPng({
+      blue: (x, y) => (x * 31 + y * 17) % 256,
+      green: (x, y) => (x * 7 + y * 29) % 256,
+      height: 64,
+      red: (x, y) => (x * 13 + y * 11) % 256,
+      width: 64,
+    });
+    await writeFile(path.join(root, "assets", "rock.png"), source);
+    await writeFile(path.join(root, "assets", "wall.png"), source);
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line: unknown) => lines.push(String(line)));
+
+    const result = await compileAssets({
+      config: { textures: "none" } satisfies IAssetSourceConfig,
+      cwd: root,
+      transcoder: TRANSCODER,
+    });
+
+    expect(result.skippedCompression).toEqual([
+      { bytes: source.length * 2, files: 2, kind: "texture", reason: "config" },
+    ]);
+    expect(
+      lines.some((line) => line.startsWith("TN_ASSETS_COMPRESSION_SKIPPED texture: 2 file(s)")),
+    ).toBe(true);
+  });
+
+  it("should drop compression for a platform that cannot decode it, and say which", async () => {
+    // Android and iOS run the native host without WebAssembly, so a `.ktx2` in the bundle is a
+    // black screen. Before this the author had to pin `textures: "none"` in the config to satisfy
+    // that one target, and the pin then followed their web build — a scaffolded game shipped
+    // 2,003 MB of uncompressed output for it. The build names the target; the engine decides.
+    const root = await makeTempDir("threenative-compile-platform-");
+    await mkdir(path.join(root, "assets"));
+    const source = rgbaPng({
+      blue: (x, y) => (x * 31 + y * 17) % 256,
+      green: (x, y) => (x * 7 + y * 29) % 256,
+      height: 64,
+      red: (x, y) => (x * 13 + y * 11) % 256,
+      width: 64,
+    });
+    await writeFile(path.join(root, "assets", "rock.png"), source);
+
+    const mobile = await compileAssets({ cwd: root, platform: "android", transcoder: TRANSCODER });
+    const mobileManifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string }> };
+
+    expect(mobileManifest.entries["rock.png"]?.output).toMatch(/\.png$/u);
+    expect(mobile.skippedCompression).toEqual([
+      { bytes: 0, files: 0, kind: "model", reason: "platform" },
+      { bytes: source.length, files: 1, kind: "texture", reason: "platform" },
+    ]);
+
+    // The same config, the target that can decode it: compression ships.
+    await rm(path.join(root, "public"), { force: true, recursive: true });
+    await compileAssets({ cwd: root, platform: "web", transcoder: TRANSCODER });
+    const webManifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string }> };
+
+    expect(webManifest.entries["rock.png"]?.output).toMatch(/\.ktx2$/u);
+  });
+
+  it("should report nothing when the texture pass is running", async () => {
+    const root = await makeTempDir("threenative-compile-skipped-none-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({
+        blue: (x, y) => (x * 31 + y * 17) % 256,
+        green: (x, y) => (x * 7 + y * 29) % 256,
+        height: 64,
+        red: (x, y) => (x * 13 + y * 11) % 256,
+        width: 64,
+      }),
+    );
+
+    const result = await compileAssets({ cwd: root, transcoder: TRANSCODER });
+
+    expect(result.skippedCompression).toEqual([]);
+  });
+
   it("should throw when a pass throws", async () => {
     const root = await makeTempDir("threenative-compile-pass-");
     await mkdir(path.join(root, "assets"));
@@ -255,7 +343,13 @@ describe("compileAssets", () => {
 
     const result = await compileAssets({ cwd: root });
 
-    expect(result).toEqual({ concurrencyUsed: 1, passCosts: [], skipped: 0, written: 0 });
+    expect(result).toEqual({
+      concurrencyUsed: 1,
+      passCosts: [],
+      skipped: 0,
+      skippedCompression: [],
+      written: 0,
+    });
     await expect(stat(path.join(root, "public"))).rejects.toThrow();
   });
 
@@ -317,7 +411,13 @@ describe("compileAssets", () => {
 
     const result = await compileAssets({ cwd: root });
 
-    expect(result).toEqual({ concurrencyUsed: 1, passCosts: [], skipped: 0, written: 0 });
+    expect(result).toEqual({
+      concurrencyUsed: 1,
+      passCosts: [],
+      skipped: 0,
+      skippedCompression: [],
+      written: 0,
+    });
     await expect(stat(path.join(root, "public", "assets.manifest.json"))).rejects.toThrow();
   });
 

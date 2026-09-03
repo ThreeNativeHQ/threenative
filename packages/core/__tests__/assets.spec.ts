@@ -29,6 +29,14 @@ function testCanvas(): HTMLCanvasElement {
   return canvas as HTMLCanvasElement;
 }
 
+/** A game with no compiled output: the manifest probe 404s and every path is served verbatim. */
+function noManifestFetch(): (url: string) => Promise<Response> {
+  return async (url: string) =>
+    url.endsWith("assets.manifest.json")
+      ? new Response("gone", { status: 404 })
+      : new Response(new Uint8Array([137, 80, 78, 71]), { status: 200 });
+}
+
 describe("IAssetLoader", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -120,6 +128,106 @@ describe("IAssetLoader", () => {
     expect(createBitmap).toHaveBeenCalledOnce();
     expect(texture.image).toBe(bitmap);
     expect(texture.version).toBe(1);
+  });
+
+  it("should decode a texture's pixels before resolving it in a browser", async () => {
+    // A browser has `Image`, so before this the loader took `TextureLoader` and resolved on the
+    // <img>'s onload — with the pixels still undecoded and the cost due later, on the main thread,
+    // during play. `createImageBitmap` is the same choice three's own GLTFLoader already makes.
+    const bitmap = { height: 2048, width: 2048 } as ImageBitmap;
+    const createBitmap = vi.fn(async () => bitmap);
+    vi.stubGlobal("Image", class {});
+    vi.stubGlobal("createImageBitmap", createBitmap);
+    vi.stubGlobal("fetch", noManifestFetch());
+
+    const texture = await createAssetLoader().texture("rock.png");
+
+    expect(createBitmap).toHaveBeenCalledOnce();
+    expect(texture.image).toBe(bitmap);
+  });
+
+  it("should keep a WebGL2 texture in the orientation TextureLoader produced", async () => {
+    // WebGL cannot flip an ImageBitmap and ignores `flipY` outright, so the browser has to decode
+    // it flipped. Getting this wrong turns every standalone texture upside down, silently.
+    const createBitmap = vi.fn(
+      async (_blob: Blob, _options?: ImageBitmapOptions) =>
+        ({ height: 4, width: 4 }) as ImageBitmap,
+    );
+    vi.stubGlobal("Image", class {});
+    vi.stubGlobal("createImageBitmap", createBitmap);
+    vi.stubGlobal("fetch", noManifestFetch());
+
+    const texture = await createAssetLoader({
+      renderer: { isWebGPURenderer: false },
+    }).texture("rock.png");
+
+    expect(createBitmap.mock.calls[0]?.[1]).toEqual({ imageOrientation: "flipY" });
+    expect(texture.flipY).toBe(false);
+  });
+
+  it("should let a WebGPU renderer flip the texture at upload", async () => {
+    // WebGPU's copyExternalImageToTexture takes flipY natively, so the bitmap arrives unflipped
+    // and `flipY` stays true — which is also what the native host has always done.
+    const createBitmap = vi.fn(
+      async (_blob: Blob, _options?: ImageBitmapOptions) =>
+        ({ height: 4, width: 4 }) as ImageBitmap,
+    );
+    vi.stubGlobal("Image", class {});
+    vi.stubGlobal("createImageBitmap", createBitmap);
+    vi.stubGlobal("fetch", noManifestFetch());
+
+    const texture = await createAssetLoader({
+      renderer: { isWebGPURenderer: true },
+    }).texture("rock.png");
+
+    expect(createBitmap.mock.calls[0]?.[1]).toBeUndefined();
+    expect(texture.flipY).toBe(true);
+  });
+
+  it("should weight progress by the bytes the manifest records", async () => {
+    // One small asset out of two files is half the files and a hundredth of the download. A bar
+    // reading the file count tells the player they are halfway through a 101 MB fetch.
+    const manifest = {
+      entries: {
+        "huge.glb": { bytes: 100_000_000, kind: "model", output: "huge.aaaa.glb" },
+        "tiny.png": { bytes: 1_000_000, kind: "texture", output: "tiny.bbbb.png" },
+      },
+      version: 1,
+    };
+    let releaseHuge = (): void => undefined;
+    const assets = createAssetLoader({
+      manifest: "m.json",
+      model: async () =>
+        new Promise<Group>((resolve) => {
+          releaseHuge = () => resolve(new Group());
+        }),
+      texture: async () => new Texture(),
+    });
+    vi.stubGlobal("fetch", async () => Response.json(manifest));
+
+    await assets.texture("tiny.png");
+    const pending = assets.model<Group>("huge.glb");
+    await vi.waitUntil(() => assets.progress.requestedBytes === 101_000_000);
+
+    expect(assets.progress.settled / assets.progress.requested).toBe(0.5);
+    expect(assets.progress.settledBytes / assets.progress.requestedBytes).toBeCloseTo(0.0099, 4);
+
+    releaseHuge();
+    await pending;
+    await vi.waitUntil(() => assets.progress.settledBytes === 101_000_000);
+  });
+
+  it("should leave the byte ledger at zero when no manifest names a size", async () => {
+    // A project that never ran the compile step keeps the file ratio; there is nothing else to
+    // know before the bytes arrive, and a fabricated denominator would be worse than a count.
+    const assets = createAssetLoader({ texture: async () => new Texture() });
+    vi.stubGlobal("fetch", async () => new Response("gone", { status: 404 }));
+
+    await assets.texture("rock.png");
+
+    expect(assets.progress.settled).toBe(1);
+    expect(assets.progress.requestedBytes).toBe(0);
+    expect(assets.progress.settledBytes).toBe(0);
   });
 
   it("should enter the scene only after load resolves", async () => {
@@ -232,15 +340,36 @@ describe("IAssetLoader through the asset manifest", () => {
           ? Promise.reject(new Error("no such texture"))
           : new Promise<Texture>((resolve) => setTimeout(() => resolve(new Texture()), 0)),
     });
-    expect(assets.progress).toEqual({ requested: 0, settled: 0 });
+    expect(assets.progress).toEqual({
+      requested: 0,
+      requestedBytes: 0,
+      settled: 0,
+      settledBytes: 0,
+    });
     const first = assets.texture("a.png");
     void assets.texture("a.png"); // cached: one request, not two
-    expect(assets.progress).toEqual({ requested: 1, settled: 0 });
+    // No manifest here, so no size is knowable and the byte ledger stays at zero throughout.
+    expect(assets.progress).toEqual({
+      requested: 1,
+      requestedBytes: 0,
+      settled: 0,
+      settledBytes: 0,
+    });
     await first;
-    expect(assets.progress).toEqual({ requested: 1, settled: 1 });
+    expect(assets.progress).toEqual({
+      requested: 1,
+      requestedBytes: 0,
+      settled: 1,
+      settledBytes: 0,
+    });
     await expect(assets.texture("nope.png")).rejects.toThrow(/no such texture/u);
     // A rejected load settles too: a bar that waits for a texture that failed never finishes.
-    expect(assets.progress).toEqual({ requested: 2, settled: 2 });
+    expect(assets.progress).toEqual({
+      requested: 2,
+      requestedBytes: 0,
+      settled: 2,
+      settledBytes: 0,
+    });
   });
 
   it("should load the raw path when no manifest is served", async () => {

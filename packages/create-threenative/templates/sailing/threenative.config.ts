@@ -27,7 +27,7 @@ const config: IThreeNativeConfig = {
     preferWebGPU: true,
     resolutionScale: "auto",
   },
-  assets: { models: "none", textures: "none" },
+  // `assets` absent: the compile step runs with defaults. Name it only to override a pass.
   ui: { renderer: "web" },
 };
 

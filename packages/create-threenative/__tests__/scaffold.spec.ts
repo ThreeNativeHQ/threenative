@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { compileAssets } from "@threenative/assets";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
@@ -103,6 +104,12 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed 2026-09-02 after the named-export capability correction, on origin/main's
 // refreshed genre kits.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-09-03 for PRD-339, starter and sailing only: both dropped
+  // `assets: { models: "none", textures: "none" }`. The compile step now takes the build's
+  // `--target` and drops the passes a platform cannot decode, so the config no longer has to pin
+  // one constant for four targets — which is how a scaffolded game shipped 2 GB of uncompressed
+  // web output to satisfy an Android constraint. No other template named the key, and no other
+  // tree moved.
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
   // holds the frame budget instead of the game hand-authoring a resolution constant.
@@ -233,7 +240,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "fc661716c33649e6aa538c4682175c6ef4e4fc8ea64903f50855b19d371d7764",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "0d04ac9c62a0622292ecd4e32d1b242e984e067f2f421ac7292d93a52654649a",
+  starter: "d4067c84d07eed509326e89ce722fd20b393e760d34fd0c5da39822b2db6499d",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -254,7 +261,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "db82c3d7b41fb9c681aff3f95795a55ba254c9a86dd12697a4620ed48a4e8004",
+  sailing: "927c983af1d3692f21d8bf2e90af35df2951d810fce1a585993e7365380baaf4",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -678,17 +685,42 @@ describe("create-threenative", () => {
 
   it("keeps the starter's shipped assets mobile-shippable", async () => {
     // Mobile has no WebAssembly, so neither Basis-decoded textures nor Meshopt-decoded geometry
-    // can ship there. The starter's demo assets are tiny enough that compression only ever grew
-    // them (150 -> 542 bytes on the 16x16 proof texture), so the template pins both to "none" —
-    // the exact red this prevents, hit on 2026-08-27: `build:android` on a machine with the
-    // Basis encoder refused TN_NATIVE_KTX2_UNSUPPORTED on a starter scaffold that had built
-    // clean the week before, purely because the encoder got installed in between.
-    const config = await readFile(
-      path.join(TEMPLATE_ROOT, "starter", "threenative.config.ts"),
-      "utf8",
-    );
-    expect(config).toMatch(/models:\s*"none"/u);
-    expect(config).toMatch(/textures:\s*"none"/u);
+    // can ship there — the red hit on 2026-08-27: `build:android` on a machine with the Basis
+    // encoder refused TN_NATIVE_KTX2_UNSUPPORTED on a starter scaffold that had built clean the
+    // week before, purely because the encoder got installed in between.
+    //
+    // The template used to pin `models`/`textures` to `"none"` to prevent it, which held for
+    // android and followed the same game onto web: one shipped 2,003 MB of manifest output with
+    // no compressed texture in it. The build names its `--target` and the compile step now drops
+    // the passes that target cannot decode, so this asserts what a mobile bake *produces* rather
+    // than what the config file says — and the web bake of the same config stays compressed.
+    const root = await makeTempDir("threenative-scaffold-mobile-");
+    try {
+      await mkdir(path.join(root, "assets"), { recursive: true });
+      await cp(path.join(TEMPLATE_ROOT, "starter", "assets"), path.join(root, "assets"), {
+        recursive: true,
+      });
+
+      await compileAssets({ cwd: root, platform: "android" });
+      const android = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      ) as { entries: Record<string, { extensions?: string[]; output: string }> };
+      const mobileOutputs = Object.values(android.entries);
+      expect(mobileOutputs.length).toBeGreaterThan(0);
+      for (const entry of mobileOutputs) {
+        expect(entry.output).not.toMatch(/\.ktx2$/u);
+        expect(entry.extensions ?? []).not.toContain("EXT_meshopt_compression");
+      }
+
+      await rm(path.join(root, "public"), { force: true, recursive: true });
+      await compileAssets({ cwd: root, platform: "web" });
+      const web = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      ) as { entries: Record<string, { output: string }> };
+      expect(Object.values(web.entries).some((entry) => entry.output.endsWith(".ktx2"))).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("should generate the starter tree without catalog protocols", async () => {

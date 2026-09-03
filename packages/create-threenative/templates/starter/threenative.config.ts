@@ -32,13 +32,9 @@ const config: IThreeNativeConfig = {
     // to pin it — the loop stops and the reporting does not. CSS, UI and camera framing never move.
     resolutionScale: "auto",
   },
-  assets: {
-    // Mobile has no WebAssembly, so neither Basis-decoded textures nor Meshopt-decoded geometry
-    // can ship there — and these demo assets are tiny enough that compression only ever grew
-    // them. Ship exactly what is committed.
-    models: "none",
-    textures: "none",
-  },
+  // `assets` is deliberately absent: the compile step runs with defaults, which is what a game
+  // with real art needs and what this scaffold's two proof files cost nothing to accept. Name it
+  // only to override a specific pass (`textures: { maxSize: 2048 }`), never to switch one off.
   // One UI on every target: src/ui/ renders through the platform's own browser-class renderer,
   // so the same React, Tailwind, CSS and SVG run on web, desktop, Android and iOS alike.
   // Switch to "native" for a UI drawn as part of the rendered frame, with no web view and no
