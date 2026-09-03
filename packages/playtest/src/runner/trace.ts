@@ -244,10 +244,14 @@ function foldProfileChunk(profiles: Map<number, IThreadProfile>, event: ITraceEv
   }
 }
 
+// NUL separates the two halves because a JS function name can hold every other character, so no
+// name can forge the boundary `summarise` splits back on. It stays written as an escape and never
+// as the byte itself: a raw NUL in shipped source truncates a native bundle at the C-string
+// boundary, and it also hides the whole file from grep, which treats it as binary.
 function callFrameKey(frame: { functionName?: string; lineNumber?: number; url?: string } | undefined): string {
   const name = frame?.functionName === undefined || frame.functionName.length === 0 ? "(anonymous)" : frame.functionName;
   const file = (frame?.url ?? "").split("/").at(-1) ?? "";
-  return `${name} ${file}:${(frame?.lineNumber ?? -1) + 1}`;
+  return `${name}\u0000${file}:${(frame?.lineNumber ?? -1) + 1}`;
 }
 
 interface ISummariseInput {
@@ -290,7 +294,7 @@ function summarise(input: ISummariseInput): ITraceSummary {
     .sort((left, right) => right[1] - left[1] || (left[0] < right[0] ? -1 : 1))
     .slice(0, input.options.topFunctions)
     .map(([key, selfUs]) => {
-      const [name = "(anonymous)", site = ""] = key.split(" ");
+      const [name = "(anonymous)", site = ""] = key.split("\u0000");
       return { name, percent: totalUs === 0 ? 0 : (selfUs / totalUs) * 100, selfMs: selfUs / MICROSECONDS_PER_MS, site };
     });
   const mainBusyUs = input.frameThread === undefined ? undefined : input.busyByThread.get(input.frameThread);
