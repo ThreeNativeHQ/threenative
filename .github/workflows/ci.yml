@@ -488,18 +488,30 @@ jobs:
     # non-visually on every PR too, so a template regression is reported by the PR that caused it
     # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
     needs: build
+    # One leg per template was one leg per *unit of naming*, not per unit of work: on run
+    # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
+    # fast as its slowest leg. Timestamping platformer's step splits it as ~74s of scaffold install
+    # and typecheck plus 15 scenarios at ~20s each, so the scenarios are what makes it long and
+    # they shard cleanly. The two heavy templates run in halves; every other template is already
+    # well under the leg it would be sharded against, and splitting them would buy nothing and pay
+    # the 74s setup twice.
+    #
+    # Every scenario still runs. `shard` selects a slice of the same classifier output the whole
+    # lane has always used, and the step fails closed if the slices do not add back up to the list.
     strategy:
       fail-fast: false
       matrix:
-        template:
-          - action-rpg
-          - defense
-          - minimal
-          - platformer
-          - racing
-          - sailing
-          - shooter
-          - starter
+        include:
+          - { template: action-rpg, shard: "1/1" }
+          - { template: defense, shard: "1/1" }
+          - { template: minimal, shard: "1/1" }
+          - { template: platformer, shard: "1/2" }
+          - { template: platformer, shard: "2/2" }
+          - { template: racing, shard: "1/1" }
+          - { template: sailing, shard: "1/1" }
+          - { template: shooter, shard: "1/1" }
+          - { template: starter, shard: "1/2" }
+          - { template: starter, shard: "2/2" }
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -527,17 +539,34 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - name: Run the template's GPU-free scenarios
         run: |
+          set -euo pipefail
           target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
           pnpm --dir "$target" install
           pnpm --dir "$target" run typecheck
           scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
           mapfile -t scenarios <<< "$scenario_list"
           test "${#scenarios[@]}" -gt 0
+          # The classifier's order is stable, so a round-robin slice is deterministic and every
+          # scenario belongs to exactly one shard. Round-robin rather than a contiguous block
+          # because the expensive scenarios are not evenly distributed through the list.
+          index="${SHARD%/*}"
+          count="${SHARD#*/}"
+          test "$index" -ge 1 && test "$index" -le "$count"
+          mine=()
+          for position in "${!scenarios[@]}"; do
+            if [ "$(( position % count + 1 ))" -eq "$index" ]; then mine+=("${scenarios[$position]}"); fi
+          done
+          # A shard that selected nothing is a lane reporting green on an empty set, which is the
+          # one thing this must never do.
+          test "${#mine[@]}" -gt 0
+          echo "shard $SHARD of ${{ matrix.template }}: ${#mine[@]} of ${#scenarios[@]} scenarios"
           scenario_args=()
-          for scenario in "${scenarios[@]}"; do scenario_args+=(--scenario "$scenario"); done
+          for scenario in "${mine[@]}"; do scenario_args+=(--scenario "$scenario"); done
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
+        env:
+          SHARD: ${{ matrix.shard }}
 
   # `golden-path` is a required status check in the `main protection` ruleset, and required checks
   # match the reported context by exact string. A matrix job does not report its own name — it
