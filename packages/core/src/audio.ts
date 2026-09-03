@@ -55,6 +55,19 @@ export interface IAudioRuntimeSnapshot {
   readonly voices: number;
   /** Retired voices held for reuse. Bounded by peak concurrency, never by session length. */
   readonly pooled: number;
+  /**
+   * Voices stopped mid-cue by `pause` and holding their position. Nonzero here while a game
+   * claims to be running is a menu that muted the world and forgot to give it back.
+   */
+  readonly paused: number;
+  /**
+   * Cue-shaping options this runtime accepted and could not honour, sorted and de-duplicated.
+   *
+   * The native host binds neither a biquad filter nor a schedulable `detune`, so `lowpassHz` and
+   * `detune` are silently dropped there. A mix tuned on the web and shipped to a phone is flat in
+   * a way nothing else reports, and a build can be failed on this.
+   */
+  readonly unsupported: readonly string[];
 }
 
 const buses = new Set<AudioBus>();
@@ -62,6 +75,13 @@ const buses = new Set<AudioBus>();
 const DEFAULT_MAX_VOICES = 48;
 /** Above 20 kHz a low-pass is inaudible, so this doubles as "no filter". */
 const OPEN_LOWPASS_HZ = 20_000;
+/**
+ * Ramp back in over this on `resume`, and settle a `setVolume` with no fade over it.
+ *
+ * A buffer restarted mid-waveform steps the signal, and a step is a click. 15 ms is under a
+ * frame and inaudible as a fade, which is the shortest thing that is not a click.
+ */
+const CLICKLESS_SECONDS = 0.015;
 
 /**
  * Every voice this bus has ever played, one-shot or looping, positional or flat.
@@ -84,6 +104,16 @@ type PooledVoice = {
   filter: BiquadFilterNode | undefined;
   /** Looping voices are exempt from stealing and never self-retire. */
   looping: boolean;
+  /** Sounded seconds so far, carried across pauses so a cut-off resumes with its tail intact. */
+  elapsed: number;
+  /** Stopped by `pause` and holding its position; `resume` is the only thing that starts it. */
+  held: boolean;
+  /** The cue's target gain, restated on resume because a scheduled cut-off may have run it down. */
+  volume: number;
+  /** The cue's `cutoffSeconds`, re-armed for the remainder after a pause. */
+  cutoff: number | undefined;
+  /** The cue's `detune`. A resume builds a fresh source node, which carries none of it over. */
+  detune: number;
   /**
    * Which free list this voice goes back to. Recorded at construction rather than sniffed:
    * three's `PositionalAudio` carries no `isPositionalAudio` marker, so a duck-typed check
@@ -107,6 +137,10 @@ export class AudioBus {
   #maxVoices: number;
   #unlocked = false;
   #disposed = false;
+  #paused = false;
+  #volume = 1;
+  /** Names of cue options this runtime dropped. Reported once each, never per cue. */
+  #unsupported = new Set<string>();
 
   constructor(options: IAudioBusOptions) {
     const maxVoices = options.maxVoices ?? DEFAULT_MAX_VOICES;
@@ -143,6 +177,101 @@ export class AudioBus {
     return this.#freeFlat.length + this.#freePositional.length;
   }
 
+  /** Voices holding their position across a `pause`. */
+  get pausedVoices(): number {
+    let held = 0;
+    for (const entry of this.#live) if (entry.held) held += 1;
+    return held;
+  }
+
+  /** True between `pause` and `resume`. */
+  get paused(): boolean {
+    return this.#paused;
+  }
+
+  /** The master volume last asked for — the target, not a point some ramp is passing through. */
+  get volume(): number {
+    return this.#volume;
+  }
+
+  /** @see IAudioRuntimeSnapshot.unsupported */
+  get unsupported(): readonly string[] {
+    return [...this.#unsupported].sort();
+  }
+
+  /**
+   * The whole bus's level, which is what a volume slider and a duck both move.
+   *
+   * One bus per category — ambience, effects, music — makes this the mixer: ducking the wood
+   * under a discovery cue is `ambience.setVolume(0.35, 0.4)` and `setVolume(1, 0.8)` after. It
+   * rides the listener's gain, so it costs nothing per voice and applies to cues already sounding.
+   *
+   * A bus constructed with a shared `listener` shares that listener's master with every other bus
+   * on it; give each category its own bus (the default) to mix them apart.
+   *
+   * @param volume Linear gain, 0 or greater.
+   * @param fade Seconds to reach it. Defaults to a 15 ms settle, which is a level change rather
+   * than a fade — the shortest move that does not click.
+   */
+  setVolume(volume: number, fade = 0): void {
+    if (!Number.isFinite(volume) || volume < 0)
+      throw new RangeError("volume must be finite and non-negative.");
+    if (!Number.isFinite(fade) || fade < 0)
+      throw new RangeError("fade must be finite and non-negative.");
+    this.#volume = volume;
+    const gain = this.listener.gain.gain;
+    const now = this.listener.context.currentTime;
+    gain.cancelScheduledValues?.(now);
+    if (fade > 0) {
+      gain.setValueAtTime(gain.value, now);
+      gain.linearRampToValueAtTime(volume, now + fade);
+    } else {
+      // Not `setValueAtTime`: an instant jump on a sounding bus is the same click a hard cut is.
+      gain.setTargetAtTime(volume, now, CLICKLESS_SECONDS);
+    }
+  }
+
+  /**
+   * Stop every sounding voice where it stands and hold its position.
+   *
+   * The difference from `stop` is what happens next: a paused bed resumes mid-bar, a stopped one
+   * starts over. Cues asked for while paused stay queued and sound on `resume`, so a menu opened
+   * during a burst does not fire the backlog at the player when they close it.
+   *
+   * The audio context keeps running — suspending it would silence every other bus sharing it.
+   */
+  pause(): void {
+    if (this.#disposed || this.#paused) return;
+    this.#paused = true;
+    const now = this.listener.context.currentTime;
+    for (const entry of this.#live) {
+      const voice = entry.voice;
+      if (!voice.isPlaying) continue;
+      entry.elapsed += Math.max(now - entry.startedAt, 0);
+      // three's `pause` detaches `onended` before it stops the node, so the reclaim hook this
+      // bus installed does not fire and the voice stays live and accounted for.
+      voice.pause();
+      entry.held = true;
+    }
+  }
+
+  /** Sound the held voices again from where they stopped, then release anything queued. */
+  resume(): void {
+    if (this.#disposed || !this.#paused) return;
+    this.#paused = false;
+    for (const entry of [...this.#live]) {
+      if (!entry.held) continue;
+      entry.held = false;
+      // A one-shot whose cut-off ran out while the game sat in a menu has nothing left to sound.
+      if (entry.cutoff !== undefined && !entry.looping && entry.cutoff - entry.elapsed <= 0) {
+        this.#reclaim(entry);
+        continue;
+      }
+      this.#sound(entry, CLICKLESS_SECONDS);
+    }
+    this.#flushQueue();
+  }
+
   setCamera(camera: Object3D): void {
     this.#camera = camera;
     camera.add(this.listener);
@@ -157,8 +286,7 @@ export class AudioBus {
     const context = this.listener.context as AudioContext & { resume?: () => Promise<void> };
     if (context.resume !== undefined) await context.resume();
     this.#unlocked = true;
-    const queued = this.#queue.splice(0);
-    for (const { start } of queued) start();
+    this.#flushQueue();
   }
 
   /**
@@ -249,16 +377,38 @@ export class AudioBus {
 
   #queueOrStart(entry: PooledVoice, options: IAudioPlayOptions): void {
     const start = () => this.#start(entry, options);
-    if (this.#unlocked) start();
+    if (this.#unlocked && !this.#paused) start();
     else this.#queue.push({ start, voice: entry.voice });
+  }
+
+  #flushQueue(): void {
+    if (!this.#unlocked || this.#paused) return;
+    const queued = this.#queue.splice(0);
+    for (const { start } of queued) start();
   }
 
   #start(entry: PooledVoice, options: IAudioPlayOptions): void {
     if (this.#disposed) return;
-    const voice = entry.voice;
-    const volume = options.volume ?? 1;
-    const fade = options.fade;
+    // Everything a resume has to restate lives on the entry, because `pause` throws the source
+    // node away and `play` builds a new one carrying none of it.
+    entry.elapsed = 0;
+    entry.held = false;
+    entry.volume = options.volume ?? 1;
+    entry.cutoff = options.cutoffSeconds;
+    entry.detune = options.detune ?? 0;
     this.#applyFilter(entry, options.lowpassHz ?? OPEN_LOWPASS_HZ);
+    this.#voices.add(entry.voice);
+    this.#live.push(entry);
+    this.#sound(entry, options.fade);
+    this.#enforceCeiling();
+  }
+
+  /**
+   * Sound this entry's voice, first time or after a pause, and reapply everything a fresh source
+   * node does not inherit: gain, detune, the remaining cut-off, and the reclaim hook.
+   */
+  #sound(entry: PooledVoice, fade: number | undefined): void {
+    const voice = entry.voice;
     voice.play();
     const now = this.listener.context.currentTime;
     entry.startedAt = now;
@@ -268,28 +418,19 @@ export class AudioBus {
     gain.cancelScheduledValues?.(now);
     if (fade !== undefined && fade > 0) {
       gain.setValueAtTime(0, now);
-      gain.linearRampToValueAtTime(volume, now + fade);
+      gain.linearRampToValueAtTime(entry.volume, now + fade);
     } else {
-      gain.setValueAtTime(volume, now);
+      gain.setValueAtTime(entry.volume, now);
     }
     const source = voice.source as
       | (AudioNode & { onended?: (() => void) | null; detune?: AudioParam })
       | null;
-    const detune = options.detune ?? 0;
-    if (detune !== 0 && source?.detune !== undefined) {
-      // `setDetune` ramps over ~30 ms. On a percussive attack that is an audible pitch sweep,
-      // and de-phasing the attack is the entire point, so it has to land before the first sample.
-      source.detune.cancelScheduledValues?.(now);
-      source.detune.setValueAtTime(detune, now);
-    }
-    const cutoff = options.cutoffSeconds;
-    if (cutoff !== undefined && cutoff > 0 && !entry.looping) {
+    if (entry.detune !== 0) this.#applyDetune(source, entry.detune, now);
+    if (entry.cutoff !== undefined && entry.cutoff > 0 && !entry.looping) {
       // Exponential, not linear: a linear cut across a decaying tail clicks, and `setTargetAtTime`
-      // follows the shape the tail already has.
-      gain.setTargetAtTime?.(0, now + cutoff, 0.045);
+      // follows the shape the tail already has. After a pause only the remainder is left to run.
+      gain.setTargetAtTime?.(0, now + Math.max(entry.cutoff - entry.elapsed, 0), 0.045);
     }
-    this.#voices.add(voice);
-    this.#live.push(entry);
     if (source !== null && "onended" in source) {
       const onended = source.onended;
       source.onended = () => {
@@ -297,7 +438,32 @@ export class AudioBus {
         this.#reclaim(entry);
       };
     }
-    this.#enforceCeiling();
+  }
+
+  #applyDetune(
+    source: (AudioNode & { detune?: AudioParam }) | null,
+    detune: number,
+    now: number,
+  ): void {
+    const param = source?.detune;
+    // The native host binds `detune` as an inert stand-in — it carries the three scheduling names
+    // and drops every write — while a real `AudioParam` also cancels. That is the whole
+    // difference visible from here, and a silently flat cue is worse than a named one.
+    if (param === undefined || typeof param.cancelScheduledValues !== "function") {
+      this.#dropped("detune");
+      return;
+    }
+    // `setDetune` ramps over ~30 ms. On a percussive attack that is an audible pitch sweep,
+    // and de-phasing the attack is the entire point, so it has to land before the first sample.
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(detune, now);
+  }
+
+  /** Name a cue option this runtime cannot honour. Once per option, not once per cue. */
+  #dropped(option: string): void {
+    if (this.#unsupported.has(option)) return;
+    this.#unsupported.add(option);
+    console.warn(`AudioBus: this runtime cannot honour "${option}"; the cue sounds without it.`);
   }
 
   /** Oldest one-shot first, so a burst of new cues never silences itself waiting for old ones. */
@@ -333,6 +499,10 @@ export class AudioBus {
     voice.removeFromParent();
     voice.setLoop(false);
     entry.looping = false;
+    entry.held = false;
+    entry.elapsed = 0;
+    entry.cutoff = undefined;
+    entry.detune = 0;
     if (this.#disposed) return;
     const free = entry.positional ? this.#freePositional : this.#freeFlat;
     if (!free.includes(entry)) free.push(entry);
@@ -350,6 +520,11 @@ export class AudioBus {
       filter: undefined,
       looping,
       positional: false,
+      elapsed: 0,
+      held: false,
+      volume: 1,
+      cutoff: undefined,
+      detune: 0,
     };
   }
 
@@ -365,6 +540,11 @@ export class AudioBus {
       filter: undefined,
       looping,
       positional: true,
+      elapsed: 0,
+      held: false,
+      volume: 1,
+      cutoff: undefined,
+      detune: 0,
     };
   }
 
@@ -383,7 +563,10 @@ export class AudioBus {
       createBiquadFilter?: () => BiquadFilterNode;
     };
     if (entry.filter === undefined) {
-      if (context.createBiquadFilter === undefined) return;
+      if (context.createBiquadFilter === undefined) {
+        this.#dropped("lowpassHz");
+        return;
+      }
       const filter = context.createBiquadFilter();
       filter.type = "lowpass";
       entry.filter = filter;
@@ -397,12 +580,16 @@ export function audioRuntimeSnapshot(): IAudioRuntimeSnapshot {
   let queued = 0;
   let voices = 0;
   let pooled = 0;
+  let paused = 0;
+  const unsupported = new Set<string>();
   for (const bus of buses) {
     queued += bus.queued;
     voices += bus.voices;
     pooled += bus.pooled;
+    paused += bus.pausedVoices;
+    for (const option of bus.unsupported) unsupported.add(option);
   }
-  return { pooled, queued, voices };
+  return { paused, pooled, queued, unsupported: [...unsupported].sort(), voices };
 }
 
 /** Every numeric contract on a cue, checked before a voice is claimed rather than after. */

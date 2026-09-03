@@ -3359,6 +3359,21 @@ export function createThreeObject( decoded: IDecodedUAssetStaticMesh, options: I
 const mesh = createThreeObject(decoded, { materialFactory: (d) => d.sections.map(() => barkMaterial) });
 ```
 
+### `decompressBulkData`
+
+`function` — Reads the `FByteBulkData` headers an editor package serializes into its export data, and resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl` file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.
+
+```ts
+export function decompressBulkData( container: Uint8Array, codecs: { … }
+```
+
+- **Use when:** read a UE4 editor static mesh whose source model lives in bulk data rather than inline · decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
+- **Constraints:** zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing · a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+
+```ts
+const payload = resolveBulkDataPayload(bytes, header, { zlib });
+```
+
 ### `decompressCompressedBuffer`
 
 `function` — Parses one UE5 `FCompressedBuffer` and decompresses it block-by-block with the codecs the caller injected — uncompressed payloads are handled natively.
@@ -3372,6 +3387,21 @@ export function decompressCompressedBuffer( buffer: ICompressedBuffer, codecs: I
 
 ```ts
 const payload = decompressCompressedBuffer(parseCompressedBuffer(bytes, offset), { oodle });
+```
+
+### `findBulkDataHeaders`
+
+`function` — Reads the `FByteBulkData` headers an editor package serializes into its export data, and resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl` file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.
+
+```ts
+export function findBulkDataHeaders( bytes: Uint8Array, layout: IPackageLayout, files: IUAssetBulkDataFiles = { … }
+```
+
+- **Use when:** read a UE4 editor static mesh whose source model lives in bulk data rather than inline · decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
+- **Constraints:** zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing · a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+
+```ts
+const payload = resolveBulkDataPayload(bytes, header, { zlib });
 ```
 
 ### `findCompressedBufferOffsets`
@@ -3434,6 +3464,36 @@ export function looksLikeMeshDescription(bytes: Uint8Array, offset = 0): boolean
 const description = parseMeshDescription(payload, offset);
 ```
 
+### `looksLikeMeshDescriptionUe4`
+
+`function` — Parses the UE4.2x serialization of `FMeshDescription` — fixed-order element containers, and a triangle container that trails the attribute sets rather than sitting with its siblings.
+
+```ts
+export function looksLikeMeshDescriptionUe4(bytes: Uint8Array, offset = 0): boolean { … }
+```
+
+- **Use when:** decode the MeshDescription a UE 4.23-4.27 editor package keeps in bulk data
+- **Constraints:** the walk must consume the payload exactly; a short walk throws rather than returning the geometry it managed to read
+
+```ts
+const description = parseMeshDescriptionUe4(payload);
+```
+
+### `parseBulkDataHeader`
+
+`function` — Reads the `FByteBulkData` headers an editor package serializes into its export data, and resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl` file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.
+
+```ts
+export function parseBulkDataHeader( bytes: Uint8Array, offset: number, layout: IPackageLayout, ): IBulkDataHeader { … }
+```
+
+- **Use when:** read a UE4 editor static mesh whose source model lives in bulk data rather than inline · decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
+- **Constraints:** zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing · a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+
+```ts
+const payload = resolveBulkDataPayload(bytes, header, { zlib });
+```
+
 ### `parseCompressedBuffer`
 
 `function` — Parses one UE5 `FCompressedBuffer` and decompresses it block-by-block with the codecs the caller injected — uncompressed payloads are handled natively.
@@ -3462,6 +3522,21 @@ export function parseMeshDescription(input: Uint8Array, offset = 0): IMeshDescri
 
 ```ts
 const description = parseMeshDescription(payload, offset);
+```
+
+### `parseMeshDescriptionUe4`
+
+`function` — Parses the UE4.2x serialization of `FMeshDescription` — fixed-order element containers, and a triangle container that trails the attribute sets rather than sitting with its siblings.
+
+```ts
+export function parseMeshDescriptionUe4(input: Uint8Array, offset = 0): IUe4MeshDescription { … }
+```
+
+- **Use when:** decode the MeshDescription a UE 4.23-4.27 editor package keeps in bulk data
+- **Constraints:** the walk must consume the payload exactly; a short walk throws rather than returning the geometry it managed to read
+
+```ts
+const description = parseMeshDescriptionUe4(payload);
 ```
 
 ### `parseRawMesh`
@@ -3494,6 +3569,21 @@ export function parseUAssetStaticMesh( input: ArrayBuffer | ArrayBufferView, opt
 const decoded = parseUAssetStaticMesh(await file.arrayBuffer(), { oodle });
 ```
 
+### `readPackageLayout`
+
+`function` — Walks the whole `FPackageFileSummary` for the offsets bulk data is addressed against — `TotalHeaderSize` and `BulkDataStartOffset` — and returns `undefined` when the walk cannot be trusted.
+
+```ts
+export function readPackageLayout(bytes: Uint8Array): IPackageLayout | undefined { … }
+```
+
+- **Use when:** find where a .uasset's export data and bulk-data region begin
+- **Constraints:** returns undefined rather than guessing when the summary does not end on its own name table, or when the package uses a LegacyFileVersion this walk does not model
+
+```ts
+const layout = readPackageLayout(bytes); if (layout) readBulk(layout.bulkDataStartOffset);
+```
+
 ### `readPackageSummary`
 
 `function` — Reads the fixed prefix of `FPackageFileSummary` — the legacy tag, engine versions, and the custom-version list — without walking the name map, export map, or dependency graph.
@@ -3507,6 +3597,21 @@ export function readPackageSummary(bytes: Uint8Array): IPackageSummary { … }
 
 ```ts
 const summary = readPackageSummary(bytes);
+```
+
+### `resolveBulkDataPayload`
+
+`function` — Reads the `FByteBulkData` headers an editor package serializes into its export data, and resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl` file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.
+
+```ts
+export function resolveBulkDataPayload( bytes: Uint8Array, header: IBulkDataHeader, options: { … }
+```
+
+- **Use when:** read a UE4 editor static mesh whose source model lives in bulk data rather than inline · decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
+- **Constraints:** zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing · a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+
+```ts
+const payload = resolveBulkDataPayload(bytes, header, { zlib });
 ```
 
 ### `UAssetError`

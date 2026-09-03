@@ -7,10 +7,18 @@ interface IFakeAudioParam {
   linearRampToValueAtTime(value: number): void;
   setTargetAtTime(value: number): void;
   setValueAtTime(value: number): void;
+  cancelScheduledValues?(when: number): void;
 }
 
-function parameter(value = 1): IFakeAudioParam {
-  return {
+/**
+ * The scheduling surface the native host actually binds.
+ *
+ * `cancelScheduledValues` is deliberately absent: `audio_bindings.cpp` binds exactly
+ * `setValueAtTime`, `linearRampToValueAtTime` and `setTargetAtTime`, so a fake that carries the
+ * whole browser `AudioParam` would prove the bus works on a runtime nobody ships.
+ */
+function parameter(value = 1, scheduling = false): IFakeAudioParam {
+  const param: IFakeAudioParam = {
     value,
     linearRampToValueAtTime(next) {
       this.value = next;
@@ -22,26 +30,43 @@ function parameter(value = 1): IFakeAudioParam {
       this.value = next;
     },
   };
+  // A browser `AudioParam` cancels; the native passive param — what `detune` is over there — does
+  // not, and silently drops every write. That difference is the whole point of the probe.
+  if (scheduling) param.cancelScheduledValues = () => undefined;
+  return param;
 }
 
-function audioContext(): globalThis.AudioContext {
+/** Every `start()` a fake source saw, so a resume can be shown to pick up where it paused. */
+interface IFakeSource {
+  onended: (() => void) | null;
+  startArgs: number[][];
+}
+
+/**
+ * @param browser Give the context the parts only a browser has — a biquad filter factory and
+ * cancellable params. The default is the native host's narrower surface.
+ */
+function audioContext(browser = false): globalThis.AudioContext {
   const context = {
     createBufferSource: () => ({
       connect: () => undefined,
-      detune: parameter(0),
+      detune: parameter(0, browser),
       disconnect: () => undefined,
       loop: false,
       loopEnd: 0,
       loopStart: 0,
       onended: null as (() => void) | null,
-      playbackRate: parameter(1),
-      start: () => undefined,
+      playbackRate: parameter(1, browser),
+      startArgs: [] as number[][],
+      start(...args: number[]) {
+        this.startArgs.push(args);
+      },
       stop: () => undefined,
     }),
     createGain: () => ({
       connect: () => undefined,
       disconnect: () => undefined,
-      gain: parameter(),
+      gain: parameter(1, browser),
     }),
     createPanner: () => ({
       connect: () => undefined,
@@ -55,9 +80,28 @@ function audioContext(): globalThis.AudioContext {
     currentTime: 0,
     destination: {},
     resume: async () => undefined,
+    ...(browser
+      ? {
+          createBiquadFilter: () => ({
+            connect: () => undefined,
+            disconnect: () => undefined,
+            frequency: parameter(20_000, true),
+            type: "lowpass" as const,
+          }),
+        }
+      : {}),
   } as unknown as globalThis.AudioContext;
   AudioContext.setContext(context);
   return context;
+}
+
+/** Move the fake clock, the way a paused game's context keeps running. */
+function advance(context: globalThis.AudioContext, seconds: number): void {
+  (context as unknown as { currentTime: number }).currentTime += seconds;
+}
+
+function masterGain(bus: AudioBus): IFakeAudioParam {
+  return bus.listener.gain.gain as unknown as IFakeAudioParam;
 }
 
 const buffer = { duration: 1 } as AudioBuffer;
@@ -373,6 +417,134 @@ describe("AudioBus", () => {
       expect(plain).toBe(tuned);
       expect(plain.getRefDistance()).toBe(1);
       expect(plain.getRolloffFactor()).toBe(1);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should carry a master volume a mixer can duck and restore", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      expect(bus.volume).toBe(1);
+      bus.setVolume(0.25);
+      expect(bus.volume).toBe(0.25);
+      expect(masterGain(bus).value).toBeCloseTo(0.25, 6);
+      bus.setVolume(1, 0.4);
+      // The reported volume is the target, not whatever point a ramp is passing through: a slider
+      // that reads back mid-fade jumps under the player's finger.
+      expect(bus.volume).toBe(1);
+      expect(masterGain(bus).value).toBeCloseTo(1, 6);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should fail closed on an invalid master volume", () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    try {
+      expect(() => bus.setVolume(-0.1)).toThrow(/volume/);
+      expect(() => bus.setVolume(Number.NaN)).toThrow(/volume/);
+      expect(() => bus.setVolume(0.5, -1)).toThrow(/fade/);
+      expect(bus.volume).toBe(1);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should pause a looping bed and resume it where it stopped", async () => {
+    const context = audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      const bed = bus.music({ duration: 10 } as AudioBuffer, { volume: 0.8 });
+      expect(bed.isPlaying).toBe(true);
+      advance(context, 3);
+
+      bus.pause();
+      expect(bed.isPlaying).toBe(false);
+      expect(audioRuntimeSnapshot().paused).toBe(1);
+      // A pause that drops the voice is a stop wearing a different name.
+      expect(bus.voices).toBe(1);
+
+      bus.resume();
+      expect(bed.isPlaying).toBe(true);
+      expect(audioRuntimeSnapshot().paused).toBe(0);
+      const source = bed.source as unknown as IFakeSource;
+      const offsets = source.startArgs.map((args) => args[1]);
+      expect(offsets.at(-1)).toBeCloseTo(3, 6);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should hold a cue queued while paused and sound it on resume", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+
+    try {
+      bus.pause();
+      bus.play(buffer);
+      await bus.unlock();
+      // Unlocking a paused bus is the pause menu's first click: it must not fire the backlog.
+      expect(bus.queued).toBe(1);
+      expect(bus.voices).toBe(0);
+
+      bus.resume();
+      expect(bus.queued).toBe(0);
+      expect(bus.voices).toBe(1);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should drop a paused voice rather than resume it on stop", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      bus.music({ duration: 10 } as AudioBuffer);
+      bus.pause();
+      bus.stop();
+      expect(audioRuntimeSnapshot().paused).toBe(0);
+      expect(bus.voices).toBe(0);
+      bus.resume();
+      expect(bus.voices).toBe(0);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should name the cue shaping this runtime cannot honour", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      bus.play(buffer, { detune: 40, lowpassHz: 900 });
+      // Both are accepted and both do nothing on the native host. Reporting is the difference
+      // between a mix that is quietly flat everywhere and one a build can be failed on.
+      expect(bus.unsupported).toEqual(["detune", "lowpassHz"]);
+      expect(audioRuntimeSnapshot().unsupported).toEqual(["detune", "lowpassHz"]);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should report nothing unsupported on a runtime that honours the shaping", async () => {
+    audioContext(true);
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      bus.play(buffer, { detune: 40, lowpassHz: 900 });
+      expect(bus.unsupported).toEqual([]);
+      expect(audioRuntimeSnapshot().unsupported).toEqual([]);
     } finally {
       bus.dispose();
     }
