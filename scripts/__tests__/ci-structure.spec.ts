@@ -444,10 +444,12 @@ describe("CI pipeline structure", () => {
 
     const namespaces = new Map<string, string>();
     for (const [name, section] of jobs) {
-      const restoreKey = section
-        .match(/^\s+restore-keys:\s*(.+)$/mu)?.[1]
-        ?.trim()
-        .replace(/^["']|["']$/gu, "");
+      // By name, not by position: these jobs restore more than one cache, and `test-native` also
+      // restores the compiled build tree. Picking the first `restore-keys` in the block asserted
+      // against whichever cache happened to be declared first.
+      const restoreKey = [...section.matchAll(/^\s+restore-keys:\s*(.+)$/gmu)]
+        .map((match) => (match[1] ?? "").trim().replace(/^["']|["']$/gu, ""))
+        .find((key) => key.includes("native-ccache"));
       expect(restoreKey, `${name} has no ccache restore-keys prefix`).toBeDefined();
       const previous = namespaces.get(restoreKey ?? "");
       expect(
@@ -612,6 +614,36 @@ describe("CI pipeline structure", () => {
     // And the size of what the restore actually put on disk, because a hit rate cannot
     // distinguish a cold cache from one restored into the wrong directory.
     expect(native).toContain('du -sh "$CCACHE_DIR"');
+  });
+
+  // ccache has never paid off on this lane: 195 of 272 cacheable compiles miss on every run, and
+  // the other half of the invocations sit behind SDL3's precompiled header where ccache cannot
+  // reach them at all. Caching the compiled tree instead is safe because ninja re-stats every
+  // input — a stale entry costs a recompile, never a wrong binary — but only while the key still
+  // hashes the sources, or a source change would be served a tree built from different code.
+  it("keys the cached native build tree on the sources it was built from", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const native = requiredJob(ci, "test-native");
+
+    const keys = [...native.matchAll(/^\s+key:\s*(.+)$/gmu)].map((match) =>
+      (match[1] ?? "").trim(),
+    );
+    const buildKey = keys.find((key) => key.includes("native-build-"));
+    expect(buildKey, "the native build tree is not cached").toBeDefined();
+    for (const input of [
+      "packages/runtime-native/CMakeLists.txt",
+      "packages/runtime-native/src/**",
+      "packages/runtime-native/include/**",
+    ]) {
+      expect(buildKey, `the build-tree key ignores ${input}`).toContain(input);
+    }
+    // Run-scoped so every run saves, and a prefix so every run restores the newest — a partial
+    // match still hands ninja most of its objects.
+    expect(buildKey).toContain("github.run_id");
+    expect(native).toContain("restore-keys: native-build-");
+    // Both configured build directories, or the QuickJS variant recompiles from nothing.
+    expect(native).toContain("packages/runtime-native/build/tn-linux");
+    expect(native).toContain("packages/runtime-native/build/tn-linux-quickjs");
   });
 
   it("every native leg runs on every event", async () => {

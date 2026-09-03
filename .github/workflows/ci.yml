@@ -138,6 +138,25 @@ jobs:
         with:
           path: packages/runtime-native/third_party
           key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      # The compiled tree itself, not just the object cache in front of it. ccache has never paid
+      # off on this lane — 195 of 272 cacheable compiles miss on every run, and the half hidden
+      # behind SDL3's precompiled header cannot be cached at all without `-fpch-preprocess` (see
+      # the notes above and the two reverts in this branch's history). Restoring the build
+      # directory sidesteps the question: ninja re-stats every input and rebuilds exactly what
+      # changed, so a stale entry costs a recompile rather than a wrong binary, and an unchanged
+      # tree costs a download. Measured locally at 315 MB for `build/tn-linux`, against ~240s of
+      # compiling on the runner (host 154s + contract targets 53s + QuickJS 33s).
+      #
+      # The key hashes what the build is made of. `restore-keys` matters more than an exact hit
+      # here: a partial match still hands ninja most of its objects and it rebuilds the rest.
+      - name: Restore the compiled native tree
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/runtime-native/build/tn-linux
+            packages/runtime-native/build/tn-linux-quickjs
+          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**/*.cpp') }}-${{ github.run_id }}
+          restore-keys: native-build-${{ runner.os }}-${{ runner.arch }}-
       - name: Restore native compiler cache
         uses: actions/cache@v4
         with:
