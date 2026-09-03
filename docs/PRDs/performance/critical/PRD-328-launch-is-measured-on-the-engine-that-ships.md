@@ -4,11 +4,15 @@ prd_contract: v1
 
 # PRD-328 — Launch is measured on the engine that ships
 
-**Status:** **DESKTOP DONE, PHONE UNVERIFIED** — executed 2026-09-03. Phases 0–3 complete on the
-desktop lane, and **Phase 0's phone red is taken on the physical Pixel 8**
-(`TN_COLD_START_MARKER_MISSING:compile_begin` from the real reader against a real logcat). The
-phone half of Phase 2 and the Phase 3 decision still need an APK built from this branch and a
-discharging device at ≥ 50 % battery. Evidence: `docs/verification/runtime-perf-state.md` §5b. This
+**Status:** **DESKTOP DONE, PHONE UNVERIFIED** — executed 2026-09-03. **Phases 0–3 complete on both lanes.**
+The phone red is taken (`TN_COLD_START_MARKER_MISSING:compile_begin` from the real reader against a
+real logcat), an APK built from this branch was installed on the physical Pixel 8, and the launch
+breakdown was measured there over one cold and five process-cold launches. Phase 3's pre-registered
+rule tripped on its 10 % limb, so
+[PRD-335](../PRD-335-the-bundle-is-not-parsed-as-source-twice.md) is filed — ranked below the
+runtime-creation term the same measurement exposed (1,635 ms, 69.1 % of a cold launch). The device
+was on AC, so the run is labelled provisional and makes no fps claim. Evidence:
+`docs/verification/runtime-perf-state.md` §5b. Evidence: `docs/verification/runtime-perf-state.md` §5b. This
 PRD stays here rather than moving to `done/` until that lane runs — a blocked criterion is not
 completion.
 

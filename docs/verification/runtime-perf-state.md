@@ -1870,7 +1870,59 @@ which is the failure the PRD predicted, on hardware. This red needs no thermal o
 condition — a marker is either emitted or it is not — so it stands despite the device being on
 charge, and it closes the phone half of Phase 0.
 
-**Phone breakdown: still UNVERIFIED.** The *green* half needs an APK built from this branch, and
+### The phone, measured — 2026-09-03
+
+An APK built from this branch (`com.threenative.game`, `examples/native-smoke`, V8, wgpu-native),
+installed on the physical Pixel 8 (`shiba`, `192.168.1.192:5555`). The instrument now runs there:
+all ten markers present, the four eval segments among them.
+
+First launch, genuinely cold (page cache cold), total **2,365.5 ms**:
+
+| segment | ms | share |
+| --- | ---: | ---: |
+| host bring-up | 2.8 | 0.1 % |
+| bundle read from APK | 47.6 | 2.0 % |
+| runtime creation | 1,635.4 | **69.1 %** |
+| eval entry | 9.8 | 0.4 % |
+| JavaScript parse and compile | 108.7 | 4.6 % |
+| bundle top-level execution | 208.7 | 8.8 % |
+| first rendered frame | 352.0 | 14.9 % |
+
+Five further process-cold launches (page cache warm), which is what a relaunch costs:
+
+| launch | total | compile | execute | first frame |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 519 | 52.0 | 180.2 | 206 |
+| 2 | 508 | 57.8 | 192.6 | 190 |
+| 3 | 520 | 61.4 | 182.9 | 202 |
+| 4 | 493 | 51.3 | 159.3 | 217 |
+| 5 | 529 | 54.1 | 200.4 | 190 |
+| **median** | **519** | **54.1** | **182.9** | **202** |
+
+**Runtime creation is the launch**, not JavaScript: 1,635 ms of a 2,365 ms cold launch, against
+109 ms of compile. That is the largest single term anyone has attributed on this device, and it is
+new information — it was inside the unlabelled span before this PRD.
+
+**Conditions, stated rather than implied:** the device was on AC (`status: 2`) at 81 % with the
+screen held awake, so this is a launch-time measurement taken outside the discharging preflight
+`device-preflight.mjs` enforces for frame-rate work. Launch time is far less charger-sensitive than
+sustained fps, but the run is labelled `provisional` for that reason and no fps claim is made from
+it. Thermal was clean throughout (status 0, ~31 °C).
+
+**Two traps this lane hit, both worth keeping.** The first launch attempt failed with
+
+```
+ERROR_SURFACE_LOST_KHR → No surface formats available → Failed to create Mystral runtime!
+```
+
+because the phone was *dozing*: `adb shell am start` on a sleeping Pixel gets a SurfaceView that is
+immediately lost, and the failure names the surface rather than the screen. `adb shell input
+keyevent KEYCODE_WAKEUP` then `svc power stayon true` is the fix. Second, the previously installed
+`com.threenative.bayview` never reaches a first frame at all and holds on its loading screen with
+the GPU rail at 1.00 mW — consistent with PRD-310's note that its engine symlinks broke on
+2026-08-31, and the reason the acceptance game for PRD-327's launch criterion could not be used.
+
+**Bayview's launch: still UNVERIFIED.** The *green* half needs an APK built from this branch, and
 the launch it would be measured against needs a discharging phone at ≥ 50 % battery. Neither was
 available: the phone sat at 36–40 % for most of the session, and the installed Bayview build never
 reaches a first frame at all — it holds on the loading screen with the GPU rail at 1.00 mW, which
@@ -1888,20 +1940,34 @@ The pre-registered rule, quoted verbatim from the PRD before any number existed:
 > If `compile + execute` on the phone is **≥ 300 ms median** or **≥ 10 % of launch**, file
 > `PRD-33X — the bundle is not parsed as source twice` […] Otherwise write the graveyard row.
 
-The rule names **the phone**, and the phone lane did not run. The decision is therefore **deferred,
-not taken**, and the desktop numbers are recorded as what they are: 51 ms compile (9.7 %) and 45 ms
-top-level execution (8.6 %) on a 524 ms launch of a small bundle. Two things must be true before
-anyone reads the desktop share as a verdict:
+The rule names the phone, and **the phone lane ran**. Applying it to the medians above, unchanged:
 
-1. **The bundle is not representative.** `native-smoke` is a smoke scene; Bayview's bundle is
-   roughly 4 MB and parse time scales with bytes. A 51 ms figure on native-smoke predicts nothing
-   about the game whose launch is 14 s.
+| limb of the rule | measured | trips? |
+| --- | --- | --- |
+| `compile + execute` ≥ **300 ms** median | 54.1 + 182.9 = **237.0 ms** | no |
+| `compile + execute` ≥ **10 %** of launch | 237.0 / 519 = **45.7 %** | **yes** |
+
+and on the genuinely cold first launch, 108.7 + 208.7 = **317.4 ms**, which trips the first limb
+too. Either reading gives the same answer.
+
+**Verdict: FILE the code cache.** The rule is an OR and one limb trips on every launch measured, so
+`PRD-335 — the bundle is not parsed as source twice` is filed with the mechanism the rule
+pre-registered: `ScriptCompiler::CreateCodeCache` after the first compile, written to the app's
+storage root; `kConsumeCodeCache` on later launches; the cache rejected on a V8 version, flags-hash
+or bundle-hash mismatch; failing closed to source.
+
+**And the honest caveat, which the rule does not capture.** A code cache saves *parse and compile*,
+which is 54 ms of a 519 ms launch — 10.4 %. It does not save top-level execution, which is 183 ms
+and the larger half of the term the rule adds together. The far bigger number is **runtime
+creation at 1,635 ms, 69.1 % of a cold launch**, which no code cache touches. PRD-335 is filed
+because a pre-registered rule may not be moved after the numbers arrive; it is filed *ranked below*
+the runtime-creation question, and it says so.
+
+Two things still bound how far these numbers carry:
+
+1. **The bundle is not Bayview.** `native-smoke` is a smoke scene; Bayview's bundle is roughly 4 MB
+   and parse time scales with bytes. Its launch is the 14 s one, and it could not be measured here.
 2. **The engines differ.** Desktop is V8 13.1, Android is V8 11.0.
-
-What is settled is that the question is now *askable*: the instrument runs on the engine that
-ships, on both lanes, and `pnpm native:verify:desktop` fails when a marker goes missing. Re-run
-`--desktop` against a Bayview-class bundle and `--device` against the phone at ≥ 50 % battery, then
-apply the rule unchanged.
 
 ---
 
