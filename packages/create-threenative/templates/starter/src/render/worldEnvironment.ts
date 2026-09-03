@@ -44,6 +44,9 @@ import {
   vec2,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
+import { createKuwaharaStage } from "./kuwahara.js";
+import { createOutlineStage } from "./outline.js";
+import { createWatercolorStage } from "./watercolor.js";
 
 /** Godot's `Environment.tonemap_mode`, with the modes Three.js actually ships. */
 export type TonemapMode = "aces" | "agx" | "neutral";
@@ -163,6 +166,26 @@ export interface IWorldEnvironmentOptions {
   readonly bloomRadius?: number;
   /** Luminance a pixel must exceed before it blooms at all. */
   readonly bloomThreshold?: number;
+  /** Game-authored outline and painterly stages. These stay in generated source. */
+  readonly outlineEnabled?: boolean;
+  readonly outlineInkColor?: number;
+  readonly outlineStrength?: number;
+  readonly outlineThreshold?: number;
+  readonly outlineSoftness?: number;
+  readonly outlineDepthWeight?: number;
+  readonly kuwaharaEnabled?: boolean;
+  readonly kuwaharaRadius?: number;
+  readonly kuwaharaResolutionScale?: number;
+  readonly kuwaharaAnisotropy?: number;
+  readonly kuwaharaStrength?: number;
+  readonly watercolorEnabled?: boolean;
+  readonly watercolorLevels?: number;
+  readonly watercolorPaperStrength?: number;
+  readonly watercolorShadowStrength?: number;
+  readonly watercolorShadowTint?: number;
+  readonly watercolorStrength?: number;
+  /** Quality tier passed to the measured chain; the quality module owns this value. */
+  readonly renderChainTier?: ChainTier;
   readonly tonemapMode?: TonemapMode;
   /**
    * Scene-referred exposure: multiplied into the scene pass **before** the tone curve, so
@@ -198,12 +221,17 @@ export interface IWorldEnvironmentTarget {
  * compiler checks the composition instead of taking a cast's word for it.
  */
 type ChainNode = Node<"vec4">;
+type ChainTier = "high" | "medium" | "low" | "off";
 type ChainContext = {
-  readonly tier: "high" | "medium" | "low" | "off";
+  readonly tier: ChainTier;
 };
 type ChainStage = {
-  readonly name: "ambientOcclusion" | "ssgi" | "godRays" | "ssr" | "sharpen" | "bloom" | "vignette";
+  readonly name: string;
+  readonly before?: string;
+  readonly after?: string;
   readonly available?: (context: ChainContext) => boolean | string;
+  readonly dispose?: () => void;
+  readonly minimumTier?: ChainTier;
   /** The chain plumbing is stage-agnostic, so it names the node it carries `unknown`. */
   readonly build: (input: unknown, context: ChainContext) => unknown;
 };
@@ -248,6 +276,7 @@ export type OutputRenderer = {
   setOutputNode?: (node: unknown) => void;
   createRenderChain?: (options: {
     input?: unknown;
+    worldPass?: unknown;
     request?: { stages?: readonly string[]; tier?: ChainContext["tier"] };
     stages?: readonly ChainStage[];
   }) => {
@@ -281,6 +310,12 @@ export class WorldEnvironment {
         `Unknown tonemapMode '${String(tonemapMode)}'. Use one of: ${Object.keys(TONEMAP).join(", ")}.`,
       );
     }
+    const renderChainTier = options.renderChainTier ?? "high";
+    if (!isChainTier(renderChainTier)) {
+      throw new Error(
+        `Unknown render chain tier '${String(renderChainTier)}'. Use high, medium, low, or off.`,
+      );
+    }
     this.#options = {
       ssgiEnabled: options.ssgiEnabled ?? false,
       ssgiQuality: quality,
@@ -308,6 +343,24 @@ export class WorldEnvironment {
       bloomStrength: options.bloomStrength ?? 0.7,
       bloomRadius: options.bloomRadius ?? 0.5,
       bloomThreshold: options.bloomThreshold ?? 0.2,
+      outlineEnabled: options.outlineEnabled ?? false,
+      outlineInkColor: options.outlineInkColor ?? 0x142331,
+      outlineStrength: options.outlineStrength ?? 0.8,
+      outlineThreshold: options.outlineThreshold ?? 0.12,
+      outlineSoftness: options.outlineSoftness ?? 0.16,
+      outlineDepthWeight: options.outlineDepthWeight ?? 0.65,
+      kuwaharaEnabled: options.kuwaharaEnabled ?? false,
+      kuwaharaRadius: options.kuwaharaRadius ?? 5,
+      kuwaharaResolutionScale: options.kuwaharaResolutionScale ?? 0.5,
+      kuwaharaAnisotropy: options.kuwaharaAnisotropy ?? 0.72,
+      kuwaharaStrength: options.kuwaharaStrength ?? 0.82,
+      watercolorEnabled: options.watercolorEnabled ?? false,
+      watercolorLevels: options.watercolorLevels ?? 8,
+      watercolorPaperStrength: options.watercolorPaperStrength ?? 0.2,
+      watercolorShadowStrength: options.watercolorShadowStrength ?? 0.16,
+      watercolorShadowTint: options.watercolorShadowTint ?? 0x6d5a52,
+      watercolorStrength: options.watercolorStrength ?? 0.72,
+      renderChainTier,
       tonemapMode,
       exposure: options.exposure ?? 1,
     };
@@ -330,7 +383,7 @@ export class WorldEnvironment {
     const raw = renderer.raw as { toneMapping?: number; toneMappingExposure?: number };
     raw.toneMapping = TONEMAP[options.tonemapMode];
 
-    const requested = (
+    const requested: string[] = (
       ["ssgi", "ambientOcclusion", "godRays", "ssr", "sharpen", "bloom", "vignette"] as const
     ).filter(
       (name) =>
@@ -342,6 +395,9 @@ export class WorldEnvironment {
         (name === "bloom" && options.bloomEnabled) ||
         (name === "vignette" && options.vignetteAmount > 0),
     );
+    if (options.outlineEnabled) requested.push("outline");
+    if (options.kuwaharaEnabled) requested.push("kuwahara");
+    if (options.watercolorEnabled) requested.push("watercolor");
 
     // With no stage running there is no node graph to install — the renderer's own
     // tone-mapping path renders the frame, and the exposure scalar is live there (measured:
@@ -540,6 +596,35 @@ export class WorldEnvironment {
       }),
     ];
 
+    // Supply the complete authored graph whenever one paint stage is requested. The request still
+    // controls which stages run, while the dormant definitions keep `watercolor after kuwahara`
+    // and `kuwahara after outline` valid when a caller enables one stage independently.
+    if (options.outlineEnabled || options.kuwaharaEnabled || options.watercolorEnabled) {
+      stages.push(
+        createOutlineStage({
+          depthNode: depth(),
+          depthWeight: options.outlineDepthWeight,
+          inkColor: options.outlineInkColor,
+          softness: options.outlineSoftness,
+          strength: options.outlineStrength,
+          threshold: options.outlineThreshold,
+        }),
+        createKuwaharaStage({
+          anisotropy: options.kuwaharaAnisotropy,
+          radius: options.kuwaharaRadius,
+          resolutionScale: options.kuwaharaResolutionScale,
+          strength: options.kuwaharaStrength,
+        }),
+        createWatercolorStage({
+          levels: options.watercolorLevels,
+          paperStrength: options.watercolorPaperStrength,
+          shadowStrength: options.watercolorShadowStrength,
+          shadowTint: options.watercolorShadowTint,
+          strength: options.watercolorStrength,
+        }),
+      );
+    }
+
     // A composed base colour with every stage off still has to reach the frame. The chain
     // installs nothing for an empty stage list, so this is the one path that goes direct.
     if (requested.length === 0) {
@@ -557,8 +642,9 @@ export class WorldEnvironment {
     if (renderer.createRenderChain === undefined) throw new Error("RenderChain is unavailable.");
     const chain = renderer.createRenderChain({
       input: exposed,
-      request: { stages: requested, tier: "high" },
+      request: { stages: requested, tier: options.renderChainTier },
       stages,
+      worldPass: scenePass,
     });
     this.#reportApplied(chain.applied.stages, chain.applied.dropped);
     return { dropped: chain.applied.dropped, stages: chain.applied.stages };
@@ -578,7 +664,7 @@ export class WorldEnvironment {
     dropped: readonly { name: string; reason: string }[],
   ): void {
     const options = this.#options;
-    const off: Record<ChainStage["name"], string> = {
+    const off: Record<string, string> = {
       ambientOcclusion: "gtaoEnabled is false",
       bloom: "bloomEnabled is false",
       godRays: "godraysEnabled is false",
@@ -586,12 +672,17 @@ export class WorldEnvironment {
       ssgi: "ssgiEnabled is false",
       ssr: "ssrEnabled is false",
       vignette: "vignetteAmount is 0",
+      kuwahara: "kuwaharaEnabled is false",
+      outline: "outlineEnabled is false",
+      watercolor: "watercolorEnabled is false",
     };
-    const stages = (Object.keys(off) as ChainStage["name"][]).sort().map((name) => {
-      if (applied.includes(name)) return { applied: true, name };
-      const refused = dropped.find((entry) => entry.name === name);
-      return { applied: false, name, reason: refused?.reason ?? off[name] };
-    });
+    const stages = Object.keys(off)
+      .sort()
+      .map((name) => {
+        if (applied.includes(name)) return { applied: true, name };
+        const refused = dropped.find((entry) => entry.name === name);
+        return { applied: false, name, reason: refused?.reason ?? off[name] };
+      });
     console.info(
       `TN_WORLD_ENVIRONMENT:${JSON.stringify({
         denoise: options.denoiseEnabled,
@@ -603,4 +694,8 @@ export class WorldEnvironment {
       })}`,
     );
   }
+}
+
+function isChainTier(value: unknown): value is ChainTier {
+  return value === "high" || value === "medium" || value === "low" || value === "off";
 }

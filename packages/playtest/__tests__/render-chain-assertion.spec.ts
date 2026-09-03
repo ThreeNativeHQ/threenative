@@ -58,6 +58,58 @@ describe("renderChain playtest assertion", () => {
     expect(result.diagnostics).toEqual([]);
   });
 
+  it("passes authored stage inclusion and order", async () => {
+    const scenario = await loadPlaytestScenarioFromValue({
+      assert: {
+        renderChain: {
+          stages: {
+            includes: ["outline", "kuwahara", "watercolor"],
+            order: ["outline", "kuwahara", "watercolor"],
+          },
+        },
+      },
+      name: "render-chain-stages",
+      schemaVersion: 1,
+      steps: [{ release: true, waitFrames: 1 }],
+      target: "web",
+      viewport: { height: 720, width: 1280 },
+      warmupFrames: 0,
+    });
+    const result = evaluateRichPlaytestAssertions({
+      report: report(chainObservation({ stages: ["bloom", "outline", "kuwahara", "watercolor"] })),
+      scenario,
+    });
+
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({ id: "renderChain.stages.includes", pass: true }),
+    );
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({ id: "renderChain.stages.order", pass: true }),
+    );
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("fails authored stage assertions closed when the stage is missing", async () => {
+    const scenario = await loadPlaytestScenarioFromValue({
+      assert: { renderChain: { stages: { includes: ["outline"] } } },
+      name: "render-chain-stages",
+      schemaVersion: 1,
+      steps: [{ release: true, waitFrames: 1 }],
+      target: "web",
+      viewport: { height: 720, width: 1280 },
+      warmupFrames: 0,
+    });
+    const result = evaluateRichPlaytestAssertions({
+      report: report(chainObservation({ stages: ["bloom"] })),
+      scenario,
+    });
+
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({ id: "renderChain.stages.includes", pass: false }),
+    );
+    expect(result.diagnostics[0]?.code).toBe("TN_PLAYTEST_RENDER_CHAIN_STAGES_FAILED");
+  });
+
   it("fails closed when the marker is absent or the tier is lower", async () => {
     const scenario = await loadPlaytestScenarioFromValue({
       assert: { renderChain: { tier: "high" } },

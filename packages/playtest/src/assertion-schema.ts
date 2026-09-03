@@ -502,10 +502,11 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "The timeline is stamped by the runtime as milestones happen; a missing milestone fails the ceiling rather than passing it.",
   },
   {
-    description: "Proves the render chain reports the requested quality tier and, when asserted, a bounded temporal-history rejection fraction.",
-    example: { renderChain: { tier: "high", velocity: { maxRejectionFraction: 0.2 } } },
+    description: "Proves the render chain reports its quality tier, authored stage ids/order, and, when asserted, a bounded temporal-history rejection fraction.",
+    example: { renderChain: { tier: "high", stages: { includes: ["outline", "kuwahara", "watercolor"], order: ["outline", "kuwahara", "watercolor"] } } },
     fields: [
       { description: "Exact render-chain quality tier required after the chain applies.", name: "tier", type: "string" },
+      { description: "Stage ids to include, exclude, or find as an ordered subsequence in the applied chain.", name: "stages", type: "object" },
       { description: "Temporal history rejection ceiling as a fraction from 0 to 1.", name: "velocity", type: "object" },
     ],
     cardinality: "object",

@@ -313,6 +313,25 @@ export function validateRenderChainAssertion(
   if (tier !== undefined && tier !== "high" && tier !== "medium" && tier !== "low" && tier !== "off") {
     throw invalidScenario(scenarioPath, `'${objectPath}.tier' must be high, medium, low, or off, received ${describeValue(tier)}.`);
   }
+  const stagesValue = record.stages === undefined
+    ? undefined
+    : requireRecord(record.stages, scenarioPath, `${objectPath}.stages`);
+  const stages = stagesValue === undefined
+    ? undefined
+    : {
+        ...(stagesValue.includes === undefined
+          ? {}
+          : { includes: renderChainStageIds(stagesValue, "includes", scenarioPath, `${objectPath}.stages`) }),
+        ...(stagesValue.excludes === undefined
+          ? {}
+          : { excludes: renderChainStageIds(stagesValue, "excludes", scenarioPath, `${objectPath}.stages`) }),
+        ...(stagesValue.order === undefined
+          ? {}
+          : { order: renderChainStageIds(stagesValue, "order", scenarioPath, `${objectPath}.stages`) }),
+      };
+  if (stages !== undefined && Object.keys(stages).length === 0) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.stages' must assert includes, excludes, or order.`);
+  }
   const velocityValue = record.velocity;
   const velocity = velocityValue === undefined
     ? undefined
@@ -324,13 +343,36 @@ export function validateRenderChainAssertion(
     }
     return {
       ...(tier === undefined ? {} : { tier }),
+      ...(stages === undefined ? {} : { stages }),
       velocity: { maxRejectionFraction },
     };
   }
-  if (tier === undefined) {
-    throw invalidScenario(scenarioPath, `'${objectPath}' must assert tier or velocity.maxRejectionFraction; an empty render-chain assertion observes nothing.`);
+  if (tier === undefined && stages === undefined) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must assert tier, stages, or velocity.maxRejectionFraction; an empty render-chain assertion observes nothing.`);
   }
-  return { tier };
+  return { ...(tier === undefined ? {} : { tier }), ...(stages === undefined ? {} : { stages }) };
+}
+
+function renderChainStageIds(
+  record: Record<string, unknown>,
+  key: string,
+  scenarioPath: string,
+  objectPath: string,
+): string[] {
+  const values = requireArray(record, key, scenarioPath, objectPath);
+  if (values.length === 0) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must contain at least one stage id.`);
+  }
+  const ids = values.map((value, index) => {
+    if (typeof value !== "string" || value.trim() === "") {
+      throw invalidScenario(scenarioPath, `'${objectPath}.${key}[${String(index)}]' must be a non-empty stage id.`);
+    }
+    return value;
+  });
+  if (new Set(ids).size !== ids.length) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.${key}' must not repeat a stage id.`);
+  }
+  return ids;
 }
 
 const STARTUP_CEILINGS = ["maxEnteredMs", "maxCompileSettledMs", "maxReadyMs"] as const;
@@ -823,6 +865,14 @@ export function validateNestedAssertionKeys(
       ["maxRejectionFraction"],
       scenarioPath,
       `assert.${kind}${suffix}.velocity`,
+    );
+  }
+  if (kind === "renderChain" && isRecord(value.stages)) {
+    rejectUnknownKeys(
+      value.stages,
+      ["excludes", "includes", "order"],
+      scenarioPath,
+      `assert.${kind}${suffix}.stages`,
     );
   }
 }

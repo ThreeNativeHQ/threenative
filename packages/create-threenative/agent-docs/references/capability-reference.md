@@ -923,14 +923,14 @@ const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void 
 
 ### `readRenderChainObservation`
 
-`function` — Compose game-provided render nodes in a measured, fail-closed chain.
+`function` — Compose game-provided render nodes in a measured, fail-closed chain. Authored stages use an opaque id and anchor before or after a built-in or another supplied stage; the engine does not need to know the effect's visual vocabulary.
 
 ```ts
 export function readRenderChainObservation( renderer: unknown, ): IRenderChainMarker["applied"] | undefined { … }
 ```
 
-- **Use when:** compose screen-space effects in a canonical order · report which render tier and velocity route actually ran
-- **Constraints:** stage factories own colour, strength, and all other appearance choices
+- **Use when:** compose screen-space effects in a canonical order · insert a game-authored post stage into the measured render chain · report which render tier and velocity route actually ran
+- **Constraints:** stage factories own colour, strength, and all other appearance choices · authored stages declare exactly one before or after anchor
 
 ```ts
 const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: ["bloom"], tier: "auto" } });
@@ -938,14 +938,14 @@ const chain = new RenderChain(renderer, { input: colour, stages, request: { stag
 
 ### `readRenderChainReport`
 
-`function` — Compose game-provided render nodes in a measured, fail-closed chain.
+`function` — Compose game-provided render nodes in a measured, fail-closed chain. Authored stages use an opaque id and anchor before or after a built-in or another supplied stage; the engine does not need to know the effect's visual vocabulary.
 
 ```ts
 export function readRenderChainReport(renderer: unknown): IRenderChainMarker | undefined { … }
 ```
 
-- **Use when:** compose screen-space effects in a canonical order · report which render tier and velocity route actually ran · expose the render tier and dropped-stage reasons to a playtest · inspect whether a temporal pass received velocity
-- **Constraints:** stage factories own colour, strength, and all other appearance choices · an absent value means no chain was installed and must fail a chain assertion
+- **Use when:** compose screen-space effects in a canonical order · insert a game-authored post stage into the measured render chain · report which render tier and velocity route actually ran · expose the render tier and dropped-stage reasons to a playtest · inspect whether a temporal pass received velocity
+- **Constraints:** stage factories own colour, strength, and all other appearance choices · authored stages declare exactly one before or after anchor · an absent value means no chain was installed and must fail a chain assertion
 
 ```ts
 const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: ["bloom"], tier: "auto" } });
@@ -1048,14 +1048,14 @@ if (reconcileMirroredClips(gltf.scene, gltf.animations)) console.info("clips wer
 
 ### `RenderChain`
 
-`class` — Compose game-provided render nodes in a measured, fail-closed chain.
+`class` — Compose game-provided render nodes in a measured, fail-closed chain. Authored stages use an opaque id and anchor before or after a built-in or another supplied stage; the engine does not need to know the effect's visual vocabulary.
 
 ```ts
 export class RenderChain { … }
 ```
 
-- **Use when:** compose screen-space effects in a canonical order · report which render tier and velocity route actually ran
-- **Constraints:** stage factories own colour, strength, and all other appearance choices
+- **Use when:** compose screen-space effects in a canonical order · insert a game-authored post stage into the measured render chain · report which render tier and velocity route actually ran
+- **Constraints:** stage factories own colour, strength, and all other appearance choices · authored stages declare exactly one before or after anchor
 
 ```ts
 const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: ["bloom"], tier: "auto" } });

@@ -95,6 +95,18 @@ const high: IWorldEnvironmentOptions = {
   sharpenEnabled: true,
   // **0 is maximum sharpening and 2 is none** — it is a radius, not a gain.
   sharpenStrength: 0.28,
+  // Authored ink outline: unmeasured in the admission ablation; its cost is eight physical-pixel
+  // taps and it is kept ahead of the bounded paint stages.
+  outlineEnabled: true,
+  // Authored Kuwahara: unmeasured until the fixed-camera admission capture; radius 5 is the
+  // desktop ceiling and the half-resolution scratch bounds its pixel cost.
+  kuwaharaEnabled: true,
+  kuwaharaRadius: 5,
+  kuwaharaResolutionScale: 0.5,
+  // Authored watercolour grade/paper: unmeasured until admission; it samples one half-float
+  // paint result and never allocates a second scene render.
+  watercolorEnabled: true,
+  renderChainTier: "high",
   tonemapMode: "aces",
 };
 
@@ -121,6 +133,17 @@ const medium: IWorldEnvironmentOptions = {
   sharpenEnabled: true,
   // **0 is maximum sharpening and 2 is none** — it is a radius, not a gain.
   sharpenStrength: 0.28,
+  // Authored ink outline: unmeasured in the admission ablation; medium keeps its physical-pixel
+  // Sobel taps while the paint radius below is reduced.
+  outlineEnabled: true,
+  // Authored Kuwahara: unmeasured until admission; radius 3 is the medium-tier ceiling.
+  kuwaharaEnabled: true,
+  kuwaharaRadius: 3,
+  kuwaharaResolutionScale: 0.5,
+  // Authored watercolour grade/paper: unmeasured until admission; fewer luminance bands keep the
+  // same value-grouped direction at this tier.
+  watercolorEnabled: true,
+  renderChainTier: "medium",
   tonemapMode: "aces",
 };
 
@@ -142,6 +165,12 @@ const low: IWorldEnvironmentOptions = {
   sharpenEnabled: true,
   // **0 is maximum sharpening and 2 is none** — it is a radius, not a gain.
   sharpenStrength: 0.28,
+  // The low tier omits authored paint by name: no outline, scratch target, or paper graph is
+  // built on the phone path.
+  outlineEnabled: false,
+  kuwaharaEnabled: false,
+  watercolorEnabled: false,
+  renderChainTier: "low",
   tonemapMode: "aces",
 };
 

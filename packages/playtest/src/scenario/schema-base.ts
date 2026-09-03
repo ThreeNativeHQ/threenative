@@ -286,6 +286,12 @@ export interface IPlaytestPerformanceAssertion {
 
 export interface IPlaytestRenderChainAssertion {
   tier?: "high" | "medium" | "low" | "off";
+  stages?: {
+    includes?: string[];
+    excludes?: string[];
+    /** Ordered subsequence of applied stage ids, not necessarily the complete chain. */
+    order?: string[];
+  };
   velocity?: {
     maxRejectionFraction: number;
   };

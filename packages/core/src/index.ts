@@ -286,10 +286,14 @@ export type {
 export { afterPhysics } from "./loop.js";
 export type { AfterPhysicsCallback } from "./loop.js";
 /**
- * Compose game-provided render nodes in a measured, fail-closed chain.
+ * Compose game-provided render nodes in a measured, fail-closed chain. Authored stages use an
+ * opaque id and anchor before or after a built-in or another supplied stage; the engine does not
+ * need to know the effect's visual vocabulary.
  * @situation compose screen-space effects in a canonical order
+ * @situation insert a game-authored post stage into the measured render chain
  * @situation report which render tier and velocity route actually ran
  * @constraint stage factories own colour, strength, and all other appearance choices
+ * @constraint authored stages declare exactly one before or after anchor
  * @example const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: ["bloom"], tier: "auto" } });
  */
 export {
@@ -314,6 +318,7 @@ export type {
   IRenderChainVelocityReport,
   IRenderChainVelocityRequest,
   RenderChainSource,
+  RenderChainStageId,
   RenderChainStageName,
   RenderChainTier,
   RenderChainTierRequest,

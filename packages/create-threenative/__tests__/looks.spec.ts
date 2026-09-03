@@ -2,7 +2,16 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { buildImplicitSurface } from "../templates/starter/src/render/implicitSurface.js";
+import {
+  createKuwaharaStage,
+  tensorOrientation,
+  transformKernelOffset,
+} from "../templates/starter/src/render/kuwahara.js";
 import { createRockRidge, sampleGraniteField } from "../templates/starter/src/render/rockRidge.js";
+import {
+  createWatercolorStage,
+  quantizeLuminance,
+} from "../templates/starter/src/render/watercolor.js";
 
 const starter = path.resolve("packages/create-threenative/templates/starter");
 const minimal = path.resolve("packages/create-threenative/templates/minimal");
@@ -41,6 +50,66 @@ describe("starter visual floor", () => {
     expect(`${post}\n${environment}`).toContain("createRenderChain");
     expect(`${post}\n${environment}`).toContain("bloom");
     expect(play).toContain("setupPost");
+  });
+
+  it("should collect the starter's authored outline caller", async () => {
+    const environment = await readFile(
+      path.join(starter, "src/render/worldEnvironment.ts"),
+      "utf8",
+    );
+    expect(environment).toContain("createOutlineStage");
+    expect(environment).toContain('requested.push("outline")');
+    expect(environment).toContain("createRenderChain");
+  });
+
+  it("should keep painterly stages in generated source with a measured tier policy", async () => {
+    const [environment, quality, outline, kuwahara, watercolor] = await Promise.all([
+      readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/quality.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/outline.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/watercolor.ts"), "utf8"),
+    ]);
+    const generated = [outline, kuwahara, watercolor].join("\n");
+    expect(generated).not.toContain("@threenative/");
+    expect(generated).not.toMatch(/ShaderMaterial|gl_FragColor|postprocessing/iu);
+    expect(environment).toContain("createKuwaharaStage");
+    expect(environment).toContain("createWatercolorStage");
+    expect(generated.indexOf('name: "outline"')).toBeGreaterThanOrEqual(0);
+    expect(generated.indexOf('name: "kuwahara"')).toBeGreaterThanOrEqual(0);
+    expect(generated.indexOf('name: "watercolor"')).toBeGreaterThanOrEqual(0);
+    expect(generated.indexOf('after: "outline"')).toBeGreaterThanOrEqual(0);
+    expect(generated.indexOf('after: "kuwahara"')).toBeGreaterThanOrEqual(0);
+    expect(quality).toContain("outlineEnabled: true");
+    expect(quality).toContain("kuwaharaRadius: 5");
+    expect(quality).toContain("kuwaharaResolutionScale: 0.5");
+    expect(quality).toContain("outlineEnabled: false");
+    expect(quality).toContain("kuwaharaEnabled: false");
+    expect(quality).toContain("watercolorEnabled: false");
+    expect(kuwahara).toContain("HalfFloatType");
+    expect(kuwahara).toContain("renderTarget.dispose");
+    expect(watercolor).not.toMatch(/ACES|toneMapping/iu);
+  });
+
+  it("should preserve tensor direction and hue while transforming paint", () => {
+    const diagonal = tensorOrientation(1, 1, 1);
+    expect(Math.abs(Math.sin(diagonal) - Math.cos(diagonal))).toBeLessThan(1e-9);
+    const rotated = transformKernelOffset({ x: 1, y: 0 }, Math.PI / 2, 0.75);
+    expect(rotated.x).toBeCloseTo(0, 9);
+    expect(rotated.y).toBeCloseTo(1.75, 9);
+    const original = { b: 0.2, g: 0.4, r: 0.8 };
+    const grouped = quantizeLuminance(original, 8);
+    expect(grouped.r / original.r).toBeCloseTo(grouped.g / original.g, 9);
+    expect(grouped.g / original.g).toBeCloseTo(grouped.b / original.b, 9);
+  });
+
+  it("should fail closed on missing paint input even for zero-strength no-ops", () => {
+    expect(() => createKuwaharaStage({ strength: 0 }).build(undefined)).toThrow(
+      /kuwahara input is missing/u,
+    );
+    expect(() => createWatercolorStage({ strength: 0 }).build(undefined)).toThrow(
+      /watercolor input is missing/u,
+    );
   });
 
   it("should remove debug materials and wire live shadows", async () => {

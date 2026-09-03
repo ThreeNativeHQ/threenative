@@ -28,6 +28,38 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
     }
   }
 
+  const stageAssertion = assertion.stages;
+  if (stageAssertion !== undefined) {
+    const observedStages = observed?.stages;
+    if (stageAssertion.includes !== undefined) {
+      emitStageCheck(
+        ctx,
+        observedStages,
+        "includes",
+        stageAssertion.includes,
+        observedStages !== undefined && stageAssertion.includes.every((stage) => observedStages.includes(stage)),
+      );
+    }
+    if (stageAssertion.excludes !== undefined) {
+      emitStageCheck(
+        ctx,
+        observedStages,
+        "excludes",
+        stageAssertion.excludes,
+        observedStages !== undefined && stageAssertion.excludes.every((stage) => !observedStages.includes(stage)),
+      );
+    }
+    if (stageAssertion.order !== undefined) {
+      emitStageCheck(
+        ctx,
+        observedStages,
+        "order",
+        stageAssertion.order,
+        observedStages !== undefined && isOrderedSubsequence(stageAssertion.order, observedStages),
+      );
+    }
+  }
+
   if (assertion.velocity !== undefined) {
     const rejectionFraction = observed?.velocity.rejectionFraction;
     const measurementFrame = observed?.velocity.measurementFrame;
@@ -67,5 +99,41 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
 }
 
 export function renderChainAssertionIsMeaningful(assertion: IPlaytestRenderChainAssertion): boolean {
-  return assertion.tier !== undefined || assertion.velocity !== undefined;
+  return assertion.tier !== undefined || assertion.stages !== undefined || assertion.velocity !== undefined;
+}
+
+function emitStageCheck(
+  ctx: IEvaluationContext,
+  observed: string[] | undefined,
+  kind: "includes" | "excludes" | "order",
+  expected: string[],
+  pass: boolean,
+): void {
+  ctx.assertions.push({
+    details: { expected, observed },
+    id: `renderChain.stages.${kind}`,
+    pass,
+  });
+  if (pass) return;
+  ctx.diagnostics.push({
+    code: observed === undefined
+      ? "TN_PLAYTEST_RENDER_CHAIN_UNOBSERVABLE"
+      : "TN_PLAYTEST_RENDER_CHAIN_STAGES_FAILED",
+    message: observed === undefined
+      ? "Render-chain stages were not observed because the TN_RENDER_CHAIN marker was absent."
+      : `Render-chain stage ${kind} assertion did not match the observed stage order.`,
+    observedRuntimePath: "observations.json/renderChain/stages",
+    severity: "error",
+    suggestion: "Keep each authored stage in the renderer chain and publish its id on TN_RENDER_CHAIN.",
+  });
+}
+
+function isOrderedSubsequence(expected: string[], observed: string[]): boolean {
+  let cursor = 0;
+  for (const stage of expected) {
+    const found = observed.indexOf(stage, cursor);
+    if (found < 0) return false;
+    cursor = found + 1;
+  }
+  return true;
 }
