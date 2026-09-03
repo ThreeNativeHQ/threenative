@@ -328,6 +328,31 @@ describe("real-pack conformance, UE4.26 bulk data (skipped without the licensed 
       expect(decoded.uvs.every(Number.isFinite)).toBe(true);
       expect(decoded.normals?.length).toBe(2_268 * 3);
       expect(decoded.indices.length).toBe(756 * 3);
+
+      // A bar counter, in centimetres, converted to three.js Y-up: 87.5 wide, 400 long, 87.5
+      // tall. Counts alone would pass on a payload read at the wrong offset; these would not.
+      for (const axis of [0, 1, 2] as const) {
+        expect(decoded.bounds.min[axis]).toBeCloseTo(0, 1);
+      }
+      expect(decoded.bounds.max[0]).toBeCloseTo(87.5, 1);
+      expect(decoded.bounds.max[1]).toBeCloseTo(400, 1);
+      expect(decoded.bounds.max[2]).toBeCloseTo(87.5, 1);
+
+      // Corners read from the file's own triangle container, so no triangle collapses.
+      let degenerate = 0;
+      for (let base = 0; base < decoded.indices.length; base += 3) {
+        const at = (slot: number, axis: number) =>
+          decoded.positions[(decoded.indices[base + slot] ?? 0) * 3 + axis] ?? Number.NaN;
+        const u = [0, 1, 2].map((axis) => at(1, axis) - at(0, axis));
+        const w = [0, 1, 2].map((axis) => at(2, axis) - at(0, axis));
+        const cross = Math.hypot(
+          (u[1] ?? 0) * (w[2] ?? 0) - (u[2] ?? 0) * (w[1] ?? 0),
+          (u[2] ?? 0) * (w[0] ?? 0) - (u[0] ?? 0) * (w[2] ?? 0),
+          (u[0] ?? 0) * (w[1] ?? 0) - (u[1] ?? 0) * (w[0] ?? 0),
+        );
+        if (!(cross > 1e-9)) degenerate += 1;
+      }
+      expect(degenerate).toBe(0);
     },
   );
 });
