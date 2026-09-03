@@ -125,7 +125,7 @@ follows those, not a calendar.
 - Every entry states **where it stands** and **the plan**, and links to the run or record that backs
   it. An entry with no evidence link is incomplete.
 - Deep technical write-ups stay in their own dated files under [`verification/`](verification/),
-  [`bugs/`](bugs/) and [`audits/`](audits/). This file is the index and the summary, not a
+  [`bugs/`](bugs/). This file is the index and the summary, not a
   replacement for them.
 - When an item is fixed, delete the row and let the release notes carry it. This file tracks the
   present, not the past.

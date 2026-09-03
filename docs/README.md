@@ -25,7 +25,6 @@ limitations are recorded.
 |---|---|---|
 | `PRDs/` | Numbered work specs, active proposals, and archived delivery records | Status follows the owning folder; `pnpm budgets` reports counts but does not enforce a PRD-file cap |
 | `bugs/` | One file per root-caused defect | Historical record; the open ones are indexed in `CURRENT-CHALLENGES.md` |
-| `audits/` | Repository-wide sweeps and one-off analyses | Dated; findings are actioned through PRDs |
 | `verification/` | Gate results per PRD, dated, plus round ledgers | Historical record |
 | `benchmark/` | Protocol, sealed prompts, dated results | Binding protocol, VOID result |
 | `strategy/` | Market position, roadmap, money, metrics | **Proposal.** Nothing here is committed |
@@ -145,8 +144,6 @@ Three folders hold dated technical write-ups. They are the detail behind
 [CURRENT-CHALLENGES](CURRENT-CHALLENGES.md), which is the summary and the index:
 
 - [`bugs/`](bugs/) — one file per root-caused defect, with the reproduction and the fix.
-- [`audits/`](audits/) — repository-wide sweeps and one-off analyses: guardrail gaps, hotspots,
-  technical debt, refactor studies.
 
 ## Spikes
 

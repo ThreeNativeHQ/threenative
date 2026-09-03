@@ -16,7 +16,7 @@ prose. **Legend:** ✅ done · ⚠️ partly done · ❌ not done.
    measured total outright. It stood at **72/100** on 2026-08-30. Two copies of a score is two scores,
    so this file keeps none.
 2. **The alpha bar.** It is **generated, not transcribed** — run `pnpm alpha:bar`, and
-   [`docs/PRDs/alpha-readiness/README.md`](../PRDs/alpha-readiness/README.md) holds the table the last
+   `docs/PRDs/alpha-readiness/README.md` (since removed) holds the table the last
    run wrote. Row A7 exists to fail when someone retypes it here, so this file cites the command and
    the current shape only: **A1 is the single failing row, and A6 is deferred behind it.** Five of
    seven pass.
