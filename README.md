@@ -151,6 +151,21 @@ Every claim here is backed by a run. The current numbers live in
 everything the framework does not yet do well — with what is being done about it — is in one
 place: [`docs/CURRENT-CHALLENGES.md`](docs/CURRENT-CHALLENGES.md).
 
+## Website
+
+The marketing site lives in `site/` as a private workspace app — never a published package. It is
+prerendered to static HTML at build time and hydrated on the client, so every headline, feature and
+code sample is in the source a crawler downloads.
+
+```sh
+pnpm site:dev      # vite dev server
+pnpm site:build    # client bundle, SSR bundle, prerendered HTML, sitemap
+pnpm site:deploy   # wrangler, Cloudflare static assets
+```
+
+Its claims are typed data with evidence pointers, and its code samples are real files compiled
+against the shipped packages, so renaming an export breaks the site build rather than the site.
+
 ## Docs
 
 - [`docs/README.md`](docs/README.md) — the map: PRDs, verification, benchmarks, strategy,

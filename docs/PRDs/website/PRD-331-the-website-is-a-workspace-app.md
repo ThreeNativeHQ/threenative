@@ -4,7 +4,13 @@ prd_contract: v1
 
 # PRD-331 — The website is a workspace app, not a package, and every claim on it is checkable
 
-**Status: NOT STARTED, filed 2026-09-02.**
+**Status: PARTIAL, filed 2026-09-02, built 2026-09-03.** Every phase is implemented, gated and
+proved locally. It stays out of `done/` because three consumer criteria are unmet and none of them
+is code: **it has never been deployed**, so Lighthouse has never run, and the domain, Cloudflare
+zone and API token are still the owner's to supply. The day those exist, the remaining work is
+running the workflow that is already written.
+
+Evidence: [`docs/verification/prd-331-site-2026-09-03.md`](../../verification/prd-331-site-2026-09-03.md).
 
 **Complexity: 9 → HIGH mode.** New system from scratch (+2), 10+ files (+3), multi-workspace
 changes — `pnpm-workspace.yaml`, root scripts, CI (+2), external integration — Cloudflare
@@ -79,24 +85,34 @@ flowchart LR
 | `--color-tn-bg` | `#020407` | nav bar, hero, all bands |
 | `--color-tn-surface` | `#0d1013` | code panel body |
 | `--color-tn-surface-2` | `#101215` | code panel chrome / tab strip |
-| `--color-tn-accent` | `#dffa51` | "Get Started" and "Install via CLI" fills |
+| `--color-tn-accent` | `#e0fb50` | "Get Started" and "Install via CLI" fills |
 | `--color-tn-fg` | `#ffffff` | headline |
-| `--color-tn-fg-muted` | `#a6adb4` | hero subhead, feature copy — **confirm by eyedropper in Phase 1** |
-| `--color-tn-border` | `#1a1e22` | card and divider strokes — **confirm by eyedropper in Phase 1** |
+| `--color-tn-fg-muted` | `#c1c3c7` | hero subhead, feature copy — **measured, Phase 1** |
+| `--color-tn-fg-subtle` | `#9a9ca1` | logo band and section labels — **measured, Phase 1** |
+| `--color-tn-border` | `#202226` | card and divider strokes — **measured, Phase 1** |
 
-The two marked rows are the only unmeasured values in this PRD; Phase 1 replaces them with sampled
-ones and the table is updated in the same commit.
+**Measured in Phase 1 and corrected here.** Every row above is now a sample, not a guess. Three
+values moved from the planned table: the accent is `#e0fb50`, not `#dffa51` (dominant colour of the
+button interior); the muted foreground is `#c1c3c7`, not `#a6adb4`; the border is `#202226`, not
+`#1a1e22`. Text colours are the *modal glyph pixel above a luminance floor* — a naive average over a
+text region reads as background, because most of the region is background. A fourth token,
+`--color-tn-fg-subtle` (`#9a9ca1`), was added: the reference uses two distinct greys and one token
+could not carry both.
 
 **Key decisions**
 
-- [ ] React 19 + `react-dom` from the workspace `catalog:` — same versions `packages/ui` peers on.
-- [ ] Tailwind v4 (`catalog:` has `tailwindcss 4.3.3`); `@tailwindcss/vite` is added to the catalog.
-- [ ] Zustand pinned in the catalog like every other shared dep (`scripts/check-version-pins.ts`
-      is part of `pnpm budgets` and will fail an unpinned range).
-- [ ] Error handling: the prerender script fails closed — a route that throws, or renders empty,
+- [x] React 19 + `react-dom` from the workspace `catalog:` — same versions `packages/ui` peers on.
+- [x] Tailwind v4 from the catalog. **No catalog edit was needed**: `pnpm-workspace.yaml` already
+      carried `tailwindcss 4.3.3`, `@tailwindcss/vite 4.3.3`, `@vitejs/plugin-react 6.0.5` and
+      `zustand 5.0.14`. The planned Phase 1 catalog change was a no-op and was not made.
+- [x] Zustand from the same catalog block. Two deps the catalog does not carry are pinned exactly
+      in `site/package.json`: `wrangler 4.128.0`, `@types/three 0.185.3` and `@playwright/test
+      1.62.1` — `scripts/check-version-pins.ts` only inspects templates, so exact pins here are a
+      convention rather than a gate.
+- [x] Error handling: the prerender script fails closed — a route that throws, or renders empty,
       aborts the build. A site that deploys a blank page is the failure this repository has already
       shipped once in a different lane.
-- [ ] Reused: nothing from `packages/` is imported at runtime. The site links to the same docs
+- [x] Reused: nothing from `packages/` is imported at runtime. The site links to the same docs
       the README does; the code snippets are typechecked *against* `@threenative/core` but the
       built site ships them as text.
 
@@ -180,17 +196,18 @@ so the header matches the reference without shipping five empty pages. Filling t
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `site/` workspace member | `pnpm-workspace.yaml:1` packages list | nothing | n/a | removing the entry makes `pnpm --filter threenative-site build` fail with "no projects matched" |
-| 2 | `pnpm site:dev` / `site:build` / `site:deploy` | root `package.json` scripts block | nothing | n/a | `scripts/__tests__/primary-docs.spec.ts` goes red if the README names a site command the manifest does not ship |
-| 3 | `site/src/routes.ts` route table | `site/src/app.tsx` (render), `site/scripts/prerender.ts` (build), `SiteHeader.tsx` (nav), `prerender.ts` sitemap | nothing | n/a | deleting a route drops its `dist/client/<path>/index.html`; `routes.spec.ts` red |
-| 4 | `site/src/store/ui.ts` | `MobileNav.tsx`, `CodeTabs.tsx`, `CopyButton.tsx` | nothing | n/a | store returning a frozen initial state leaves the mobile drawer shut; Playwright red |
-| 5 | `site/src/content/claims.ts` | `Hero.tsx`, `FeatureRow.tsx` render claim text; `claims.spec.ts` gates it | README marketing prose (stays, now cross-checked) | n/a — README is the incumbent and remains | pointing a claim at a non-existent capability id fails `pnpm test` |
-| 6 | `site/src/content/snippets/*` | `CodeShowcase.tsx` via `lib/snippets.ts`; `tsc` via `site/tsconfig.json` | hand-typed code in JSX (never written) | n/a | breaking a snippet's API call fails `pnpm --filter threenative-site typecheck` |
-| 7 | `site/scripts/prerender.ts` | `site/package.json` `build` script | nothing | n/a | making it emit an empty body aborts the build (fail-closed) |
-| 8 | `site/wrangler.jsonc` + deploy job | `.github/workflows/site.yml` | nothing | n/a | pointing `assets.directory` at a missing dir fails `wrangler deploy --dry-run` |
+| 1 | `site/` workspace member | `pnpm-workspace.yaml:1` packages list | nothing | n/a | **observed red**: removing the entry makes `pnpm --filter threenative-site build` exit with "No projects matched the filters" |
+| 2 | `pnpm site:dev` / `site:build` / `site:deploy` | `package.json:48-50` | nothing | n/a | `scripts/__tests__/primary-docs.spec.ts` scans the README; naming a command the manifest does not ship fails it |
+| 3 | `site/src/routes.ts` route table | `site/src/app.tsx:73` (render), `site/src/entry-server.tsx:15` + `site/scripts/prerender.ts:67` (build and sitemap), `site/src/content/nav.ts:1` (nav resolution) | nothing | n/a | **observed red**: pointing a nav entry at `/pricing` fails `nav.spec.ts` with `expected [ '/pricing' ] to deeply equal []` |
+| 4 | `site/src/store/ui.ts` | `MobileNav.tsx:20`, `SiteHeader.tsx:38`, `NavDropdown.tsx:3`, `CodeTabs.tsx:8`, `CopyButton.tsx:13`, `Hero.tsx:15`, `CodeShowcase.tsx:14`, `app.tsx:52` | nothing | n/a | **observed red**: freezing `toggleMobileNav` to `false` fails the Playwright drawer test |
+| 5 | `site/src/content/claims.ts` | `Hero.tsx:62/65/85`, `FeatureRow.tsx:23`, `ShowcaseCard.tsx:28` | README marketing prose (stays, now cross-checked) | n/a — README is the incumbent and remains | **observed red**: `capability: "does-not-exist"` fails `claims.spec.ts`; a hardcoded fifth feature sentence fails the sentence-shape assertion |
+| 6 | `site/src/content/snippets/*` | `site/src/lib/snippets.ts:1-3` → `CodeShowcase.tsx:15`, `CodeTabs.tsx:9`, `Hero.tsx:16`; `tsc` via `site/tsconfig.json:16` | hand-typed code in JSX (never written) | n/a | **observed red**: renaming `defineGame` in `packages/core/src/index.ts` fails the site typecheck with `TS2305`; stubbing `snippets.ts` with a literal fails two specs |
+| 7 | `site/scripts/prerender.ts` | `site/package.json` `build` script | nothing | n/a | **observed red**: emitting `<div id="root"></div>` fails five specs across three files; raising the body floor aborts the build with `TN_SITE_PRERENDER_EMPTY` |
+| 8 | `site/wrangler.jsonc` + deploy job | `.github/workflows/site.yml:42,64` | nothing | n/a | **observed red**: pointing `assets.directory` at a missing dir fails `wrangler deploy --dry-run` |
 
-Every cell above is `TBD`-free at plan time only because the callers are named; **each row's
-`file:line` is replaced with the real line during implementation.**
+Every row's `file:line` is the real line, and every negative control in the last column was run and
+observed failing. The runs are pasted in
+[`docs/verification/prd-331-site-2026-09-03.md`](../../verification/prd-331-site-2026-09-03.md).
 
 ### Reachability
 
@@ -252,21 +269,22 @@ sequenceDiagram
 - `site/wrangler.jsonc` — NEW: `assets.directory = "./dist/client"`
 
 **Implementation:**
-- [ ] Eyedropper `--color-tn-fg-muted` and `--color-tn-border` from `REFERENCE.png` and replace
+- [x] Eyedropper `--color-tn-fg-muted` and `--color-tn-border` from `REFERENCE.png` and replace
       the two marked rows in this PRD in the same commit.
-- [ ] Root `package.json` gains `site:dev`, `site:build`, `site:deploy`.
-- [ ] Render only the hero headline on `#020407` with the real type scale, to prove the token
+- [x] Root `package.json` gains `site:dev`, `site:build`, `site:deploy`.
+- [x] Render only the hero headline on `#020407` with the real type scale, to prove the token
       pipeline end to end.
-- [ ] Confirm `pnpm budgets` still passes with a new non-`@threenative/*` workspace member; if
-      `scripts/workspace-packages.ts` or `scripts/check-budgets.ts` needs `site` registered,
-      register it here. *(Known hazard: package lists in this repo are enumerated in five or more
-      places and drift when hand-maintained.)*
+- [x] `pnpm budgets` passes untouched: **no script needed registering.** `workspacePackages()`
+      resolves its root to `<repo>/packages` and never sees `site/`, and `check-budgets.ts` counts
+      `packages/` and `examples/` by name. The gate still reports 10 framework packages and 16
+      example workspaces — the same numbers as before. The hazard did not bite because the site was
+      placed outside every list rather than added to all of them.
 
 **Wiring:**
-- [ ] Caller edited: `pnpm-workspace.yaml` includes `site`
-- [ ] Registration: root `package.json` scripts
-- [ ] Old path: n/a
-- [ ] Ledger rows filled: #1, #2
+- [x] Caller edited: `pnpm-workspace.yaml` includes `site`
+- [x] Registration: root `package.json` scripts
+- [x] Old path: n/a
+- [x] Ledger rows filled: #1, #2
 
 **Tests required:**
 | Test file | Test name | Assertion | Negative control (must be observed red) |
@@ -298,11 +316,11 @@ the README names it.
 - `site/src/app.tsx` — **EDIT**: mounts the header above the route body
 
 **Implementation:**
-- [ ] Header matches the reference: cube mark + `ThreeNative` wordmark left; `Product`,
+- [x] Header matches the reference: cube mark + `ThreeNative` wordmark left; `Product`,
       `Solutions`, `Docs`, `Community`, `Pricing` centre, chevrons on the three that have menus;
       search affordance, `Sign in`, accent `Get Started` right.
-- [ ] Desktop nav, mobile drawer and footer all read `nav.ts` — one model, three renderers.
-- [ ] Keyboard: dropdowns open on `Enter`/`Space`, close on `Escape`, focus is trapped in the
+- [x] Desktop nav, mobile drawer and footer all read `nav.ts` — one model, three renderers.
+- [x] Keyboard: dropdowns open on `Enter`/`Space`, close on `Escape`, focus is trapped in the
       drawer, and every interactive element is reachable by `Tab`.
 
 **Wiring:** caller `app.tsx` renders `<SiteHeader/>`; drawer state comes from the Zustand store.
@@ -334,14 +352,16 @@ opens, traps focus, and closes on `Escape`.
 - `site/src/app.tsx` — **EDIT**: renders `<Hero/>`
 
 **Implementation:**
-- [ ] Copy is verbatim from the reference: "Build native 3D apps with the Three.js API"; the
+- [x] Copy is verbatim from the reference: "Build native 3D apps with the Three.js API"; the
       subhead; `>_ Install via CLI` (accent) and `Explore Features` (outline); the three chips.
-- [ ] `Install via CLI` reveals the real command from `content/snippets/hero-cli.sh` with a
+- [x] `Install via CLI` reveals the real command from `content/snippets/hero-cli.sh` with a
       package-manager switcher and a copy button that writes to the clipboard and shows a toast.
-- [ ] `HeroArt` uses a responsive `<picture>` with AVIF/WebP, an explicit `width`/`height` to
+- [x] `HeroArt` uses a responsive `<picture>` with AVIF/WebP, an explicit `width`/`height` to
       hold layout, and no animation under `prefers-reduced-motion`.
-- [ ] The hero image is a licensed asset placed in `site/public/`; **its provenance is recorded in
-      `site/public/og/CREDITS.md`.** The comp art in `REFERENCE.png` is a mock, not a licence.
+- [x] **No licensed asset was found or bought, so none ships.** The hero art is original SVG
+      authored here — a planet limb, an atmospheric rim and a deterministic star lattice — with no
+      raster asset and no animation. Provenance, and what is deliberately absent, are recorded in
+      `site/public/og/CREDITS.md`.
 
 **Wiring:** `app.tsx` renders `<Hero/>`; copy/toast state in the store. Ledger row #4.
 
@@ -371,14 +391,14 @@ art bleed match. LCP under 2.5s on a throttled Fast 3G profile.
 - `site/src/app.tsx` — **EDIT**
 
 **Implementation:**
-- [ ] The four cards from the reference: Native performance, Three.js API, Open & extensible,
+- [x] The four cards from the reference: Native performance, Three.js API, Open & extensible,
       Ship everywhere — with the reference's copy and hairline dividers.
-- [ ] **`claims.ts` is the point of this phase.** Each claim is
+- [x] **`claims.ts` is the point of this phase.** Each claim is
       `{ id, text, evidence: { kind: "capability", id } | { kind: "doc", path } }`. The spec
       resolves `capability` ids against `packages/create-threenative/capabilities.json` and `doc`
       paths against files on disk, and fails on any unresolved pointer, on a claim rendered in a
       component that is absent from `claims.ts`, and on a claim in `claims.ts` that nothing renders.
-- [ ] The logo wall in v1 renders only organisations that have **given written permission**;
+- [x] The logo wall in v1 renders only organisations that have **given written permission**;
       until any have, it renders nothing and the section is omitted. `logos.ts` starts empty and
       `LogoWall.tsx` returns `null` for an empty list. Inventing customer logos on a real site is
       not a placeholder, it is a false statement about real companies.
@@ -412,20 +432,32 @@ Ledger row #5.
   `packages/*/src` mirror root `tsconfig.json`
 - `site/src/app.tsx` — **EDIT**
 
-**Proof subject:** the TypeScript snippet is **the exact ten lines in `REFERENCE.png`** —
-`new App({ antialias: true })`, `app.width`/`app.height`, `app.setAnimationLoop`,
-`app.renderer.render(scene, camera)` — against the real `@threenative/core`. That is the
-production subject: it is the code a stranger will paste first. If those symbols do not exist with
-those shapes, the site is corrected to the API, **never the reverse**, and the discrepancy is
-recorded in this PRD.
+**Proof subject — and the discrepancy this PRD said to record.** The reference's ten lines
+(`new App({ antialias: true })`, `app.width`/`app.height`, `app.setAnimationLoop`,
+`app.renderer.render(scene, camera)`) **do not exist in `@threenative/core`.** There is no `App`
+export; the portable entry is `defineGame`, and the loop, the renderer and the viewport are the
+framework's rather than the game's. `grep -n "export class App" packages/core/src/*.ts` returns
+nothing, and `packages/create-threenative/capabilities.json` has no `App` symbol.
+
+Per this PRD's own rule the site was corrected to the API and never the reverse. The shipped
+TypeScript sample is `site/src/content/snippets/hero-typescript.ts` — fourteen lines of real
+`defineGame` + `Scene` code, compiled by `pnpm --filter threenative-site typecheck` against
+`packages/core/src/index.ts` through the path alias. Renaming `defineGame` in core fails that
+compile with `TS2305`, which was run and observed.
+
+The React tab is the same story: `GameCanvas` takes no `children`, so the sample composes
+`<GameCanvas game={game} />` beside `<UiLayer>` rather than nesting them, and it marks its button
+`data-tn-interactive` as `UiLayer`'s own constraint requires. Both corrections came from the
+compiler, not from reading the docs.
 
 **Implementation:**
-- [ ] Panel chrome matches the reference: tab strip `TypeScript | React | CLI` with an accent
+- [x] Panel chrome matches the reference: tab strip `TypeScript | React | CLI` with an accent
       underline on the active tab, copy button top-right, line numbers, `Browse API ->` footer.
-- [ ] `ShowcaseCard`: still frame, play affordance, "Built for modern 3D teams", `Watch
-      Showcase ->`. **The play button links to a real recording or the card is omitted** — a play
-      button over a still that plays nothing is a lie in a screenshot's clothing.
-- [ ] Active tab lives in the Zustand store so a deep link `?tab=react` can select it.
+- [x] `ShowcaseCard` ships **without a play button and without a still**, because there is no
+      recording: the rule applied as written. It keeps "Built for modern 3D teams", the claim body,
+      the drawn art panel, and a real link to `docs/architecture/NATIVE-RUNTIME.md` in place of
+      `Watch Showcase ->`.
+- [x] Active tab lives in the Zustand store so a deep link `?tab=react` can select it.
 
 **Wiring:** `app.tsx` renders `<CodeShowcase/>`; snippets reach it through `lib/snippets.ts`.
 Ledger rows #4, #6.
@@ -456,16 +488,20 @@ whole point: the homepage breaks the build when the API moves.
 - `README.md` — **EDIT**: names the site and the `pnpm site:*` commands
 
 **Implementation:**
-- [ ] `_headers`: `Content-Security-Policy`, `Strict-Transport-Security`,
+- [x] `_headers`: `Content-Security-Policy`, `Strict-Transport-Security`,
       `X-Content-Type-Options: nosniff`, `Referrer-Policy`, long-lived immutable caching for
       hashed assets and `no-cache` for HTML.
-- [ ] Deploy uses a scoped Cloudflare API token in repository secrets; PRs get a preview
-      deployment, `main` gets production. The token is never echoed.
-- [ ] `pnpm test` already fans out to workspace `test` scripts
-      (`scripts/run-test-suite.sh` runs `pnpm -r --if-present run test`), so `site`'s vitest specs
-      join the root suite automatically once `site/package.json` declares `test`. Confirm by
-      counting the suite's files before and after.
-- [ ] README wording must satisfy `scripts/__tests__/primary-docs.spec.ts` — it may only name
+- [ ] **Partially done.** `main` gets production through `.github/workflows/site.yml`'s `deploy`
+      job, gated on a `site-production` environment and reading `CLOUDFLARE_API_TOKEN` /
+      `CLOUDFLARE_ACCOUNT_ID` from secrets, never echoed. **PRs do not get a preview deployment** —
+      a PR uploads `site/dist/client` as a build artifact instead, because preview deployments need
+      the account credentials on fork PRs. Neither job has ever executed; there is no zone yet.
+- [x] Confirmed: `scripts/run-test-suite.sh`'s `package-test` phase runs `pnpm -r --if-present run
+      test`, and that run's own log carries `threenative-site@0.0.0 test` → `Test Files 4 passed
+      (4)`. Root `vitest run` does *not* collect them — `vitest.config.ts` includes only
+      `scripts/**` and `packages/**/__tests__/**` — so the workspace fan-out is the only path, which
+      is why `site`'s `test` script builds before it asserts.
+- [x] README wording must satisfy `scripts/__tests__/primary-docs.spec.ts` — it may only name
       commands that exist.
 
 **Wiring:** ledger rows #2, #7, #8.
@@ -529,31 +565,46 @@ pnpm --filter threenative-site exec wrangler deploy --dry-run
 
 Consumer-scoped, all of them:
 
-- [ ] A visitor with **JavaScript disabled** sees the headline, subhead, CTAs, feature band and
-      code sample as text — verified by `curl` on the deployed URL.
-- [ ] A visitor at 390px can open the nav, reach every destination, and copy the install command.
-- [ ] The command copied from the hero, pasted into an empty directory, scaffolds a running
-      project — run end to end once, on this machine, and pasted.
-- [ ] The homepage code sample compiles against the published `@threenative/core`; renaming that
-      API breaks the site build.
-- [ ] Every claim rendered on the page resolves to a capability id or a verification document;
-      inventing one fails `pnpm test`.
-- [ ] No logo, testimonial, customer name or play button appears that does not correspond to a
-      real, permitted, existing thing.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` are green with `site/` in the workspace, and
-      `pnpm budgets` is unchanged.
-- [ ] Lighthouse ≥ 95 on all four categories for `/` on the deployed preview.
-- [ ] Deployed by `wrangler` from CI, and the deployed HTML is byte-identical to the local build.
+- [x] A visitor with **JavaScript disabled** sees the headline, subhead, CTAs, feature band and
+      code sample as text — extracted from `site/dist/client/index.html` and pasted in the
+      verification record. The install command needed a `<noscript>` block to reach that visitor;
+      the first pass of this check is what found it.
+- [x] A visitor at 390px can open the nav, reach every destination, and copy the install command —
+      Playwright, 390×844, drawer opens and closes on Escape.
+- [x] The command copied from the hero, pasted into an empty directory, scaffolds a running
+      project — `pnpm create threenative my-game`, `pnpm install`, `pnpm dev` → `VITE ready in
+      491 ms`, `GET / -> 200`. A rendered frame is *not* claimed here; that is the golden-path
+      lane's.
+- [x] The homepage code sample compiles against `@threenative/core`; renaming `defineGame` breaks
+      the site build with `TS2305`, observed.
+- [x] Every claim rendered on the page resolves to a capability id or a verification document;
+      inventing one fails `pnpm test`, observed.
+- [x] No logo, testimonial, customer name or play button appears that does not correspond to a
+      real, permitted, existing thing — `logos.ts` is empty, the play button is absent, and the
+      four substitutions are listed in the verification record.
+- [x] `pnpm typecheck`, `pnpm lint` and `pnpm budgets` are green with `site/` in the workspace, and
+      `pnpm budgets` still reports 10 framework packages and 16 example workspaces — the site is
+      counted as neither.
+- [ ] **`pnpm test` end to end is red for two reasons that predate this branch**: `check:docs`
+      reports nine links broken by `8d680023`, and six `runtime-native` bindings tests report their
+      CMake targets are not built in this worktree. Both reproduce on a clean `main`. The suite's
+      other phases were run individually and are green, including the site's own 20 specs inside
+      the workspace fan-out and the root `vitest run`'s 3457.
+- [ ] **Lighthouse ≥ 95 not run** — there is no deployed URL. The domain, Cloudflare zone and API
+      token are open questions below.
+- [ ] **Not deployed.** The workflow is written and its build job is provable locally
+      (`wrangler deploy --dry-run` exit 0); the deploy job has never executed.
 
 **Integration gates:**
 
-- [ ] Integration Ledger has zero `TBD` cells
-- [ ] Every new exported symbol has a non-test consumer (census pasted)
-- [ ] Revert check passed (the `App` rename above)
-- [ ] Every gate has a negative control that was observed failing
-- [ ] Proved on the real subject: the actual `REFERENCE.png` snippet against the real package
-
----
+- [x] Integration Ledger has zero `TBD` cells — every `file:line` is real and was grepped
+- [x] Every new exported symbol has a non-test consumer (the ledger's third column is that census)
+- [x] Revert check passed — `defineGame` renamed in `packages/core/src/index.ts`, site typecheck red
+- [x] Every gate has a negative control that was observed failing — nine of them, pasted in the
+      verification record. One control the plan asked for ("edit one snippet byte → red") is
+      recorded there as **not meaningful** for this design and replaced by two that are.
+- [x] Proved on the real subject — with the correction that the reference's snippet is not the real
+      subject, because that API does not exist. See Phase 5.
 
 ## Explicitly out of scope
 
@@ -562,12 +613,22 @@ authentication behind `Sign in`; analytics; a blog; i18n; a Worker script. Each 
 The nav renders those entries as the reference shows them, marked in `routes.ts` as external or
 pending, and **no entry links to a page that does not exist**.
 
-## Open questions for the owner
+## Open questions for the owner — and what was assumed meanwhile
 
-1. **Domain** — `threenative.dev`? Is the Cloudflare zone already registered?
-2. **`Sign in` / `Get Started`** — the reference shows both. Studio is a separate private product;
-   does `Sign in` link to Studio, or is it hidden until Studio has a public entry point?
-3. **Hero art** — commission, licence, or render one in ThreeNative itself? The last option is the
-   strongest proof and the slowest.
-4. **Logo wall and showcase video** — the reference shows eight logos and a play button. Both stay
-   omitted under Phase 4/5 rules until real ones exist. Confirm that is acceptable for launch.
+Each was answered with the least reversible assumption, and each answer is one line of code to
+change.
+
+1. **Domain.** Assumed `threenative.dev`. It appears once, as `SITE_ORIGIN` in
+   `site/src/lib/seo.ts`, feeding canonicals, OG URLs, `robots.txt` and `sitemap.xml`. The
+   Cloudflare zone is not registered as far as this branch can tell; nothing has been deployed.
+2. **`Sign in`.** Replaced with a `GitHub` link, on the reading that Studio is a separate private
+   product with no public entry point, and that a sign-in that signs nobody in is the same failure
+   as a play button over nothing. One entry in `site/src/content/nav.ts` restores it.
+3. **Hero art.** Original SVG for now. Rendering it in ThreeNative itself is still the strongest
+   proof and the slowest; the seam is `HeroArt.tsx` and nothing else imports it.
+4. **Logo wall and showcase video.** Both omitted under the Phase 4 and Phase 5 rules. `logos.ts`
+   is an empty typed array and `LogoWall` returns `null`; adding one permitted entry turns the
+   section back on.
+
+A fifth, unplanned: **the search box.** Search is out of scope, so the magnifier is a real link to
+GitHub code search for this repository rather than an input that does nothing.
