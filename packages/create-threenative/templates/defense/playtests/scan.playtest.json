@@ -7,7 +7,7 @@
   "subject": "tower.0",
   "steps": [
     { "kind": "input", "label": "build", "press": "KeyB", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "scan-window", "waitTicks": 300, "release": true }
+    { "kind": "wait", "label": "scan-window", "waitTicks": 330, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
