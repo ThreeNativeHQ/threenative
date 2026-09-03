@@ -593,6 +593,11 @@ test("Android conformance dismisses immersive confirmation before its first acti
     // `TN_ANDROID_SYSTEM_DIALOG: Application Not Responding: com.android.launcher3` — the
     // launcher, not the game, going Not Responding on a software-GL runner and taking focus.
     ["shell", "settings", "put", "global", "hide_error_dialogs", "1"],
+    // And dismiss the one already up: `hide_error_dialogs` prevents future dialogs, but the
+    // launcher ANRs during boot, before any of this runs. Run 33726448043 failed all 74 rows on
+    // that stale dialog with the setting already in place.
+    ["shell", "am", "force-stop", "com.android.launcher3"],
+    ["shell", "am", "broadcast", "-a", "android.intent.action.CLOSE_SYSTEM_DIALOGS"],
     [
       "shell",
       "am",
