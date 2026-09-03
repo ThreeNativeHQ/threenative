@@ -710,6 +710,17 @@ describe("CI pipeline structure", () => {
     // Both configured build directories, or the QuickJS variant recompiles from nothing.
     expect(native).toContain("packages/runtime-native/build/tn-linux");
     expect(native).toContain("packages/runtime-native/build/tn-linux-quickjs");
+    // The Rust crates too: once the C++ compile was cached away, they were the whole remaining
+    // ~112s of the host build step.
+    expect(native).toContain("packages/runtime-native/native/physics/target");
+    expect(native).toContain("packages/runtime-native/native/ui-overlay/target");
+    for (const input of [
+      "packages/runtime-native/native/**/src/**",
+      "packages/runtime-native/native/**/Cargo.toml",
+      "packages/runtime-native/native/**/Cargo.lock",
+    ]) {
+      expect(buildKey, `the build-tree key ignores ${input}`).toContain(input);
+    }
     // A cached build tree is only usable if its inputs are older than it. `actions/checkout`
     // stamps everything with the time it ran, so without this the restore is dead weight and
     // ninja rebuilds the tree it just downloaded.

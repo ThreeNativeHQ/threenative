@@ -151,10 +151,21 @@ jobs:
       - name: Restore the compiled native tree
         uses: actions/cache@v4
         with:
+          # Cargo's output belongs here too. With the C++ compile eliminated by #78, the host build
+          # step was still ~112s and all of it was Rust: `threenative_native_physics` and the
+          # `ui-overlay` crate with its webkit2gtk bindings. Measured locally, physics alone is a
+          # 19s cold build producing 248 MB, and 0s warm.
+          #
+          # It needs no timestamp help, unlike ninja: touching every `.rs` source the way a
+          # checkout does and rebuilding takes 0s, because cargo fingerprints content rather than
+          # trusting mtimes alone. So the cache is the whole change here, and the key grows to
+          # cover the crate sources and their lockfiles — a Rust source that moves has to miss.
           path: |
             packages/runtime-native/build/tn-linux
             packages/runtime-native/build/tn-linux-quickjs
-          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**/*.cpp') }}-${{ github.run_id }}
+            packages/runtime-native/native/physics/target
+            packages/runtime-native/native/ui-overlay/target
+          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**/*.cpp', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}-${{ github.run_id }}
           restore-keys: native-build-${{ runner.os }}-${{ runner.arch }}-
       - name: Restore native compiler cache
         uses: actions/cache@v4
