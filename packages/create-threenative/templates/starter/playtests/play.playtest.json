@@ -35,7 +35,8 @@
     "performance": {
       "maxDrawCalls": 160,
       "maxFrameMsP95": 33,
-      "maxTriangles": 9800
+      "maxTriangles": 9800,
+      "minFps": 30
     },
     "resources": [
       {

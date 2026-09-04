@@ -5,7 +5,8 @@
     "performance": {
       "maxDrawCalls": 200,
       "maxFrameMsP95": 33,
-      "maxTriangles": 7700
+      "maxTriangles": 7700,
+      "minFps": 30
     },
     "renderChain": { "tier": "high" }
   },
