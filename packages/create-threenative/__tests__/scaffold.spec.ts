@@ -246,7 +246,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "507f9e3971a0719e9f1275989f8ae0b79a5892dfa66815eb7abc3fa1f70ec74b",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "f71d0b0bf99abb43ecc0ba85094f3b2e1872e4d975a9526c9d743f7be0183f1d",
+  starter: "591c8c39515a8bfa83f47a3d7cb5af98c73839bb19947bc9aaf68b7f610f8b84",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -267,7 +267,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "fd6d9ab637b4e2fec1e93c2bc3811b75fbbaa0a4fb699b51cde09bbfaafc9f0b",
+  sailing: "4dd02d6a674ef491fd42529b550d0adbcf86e59cc90883616c0206f39c6e5224",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
