@@ -190,19 +190,53 @@ The word **committed** is in two of those three test names. A sweep archive is n
 it is *half* build output. The measurements are the benchmark record and the suite asserts they
 are in git.
 
-Narrowed to the half that is genuinely regenerable — `src/`, `starter-baseline/`,
-`framework-types/`, `public/` and the scaffold's root config files:
+**The first narrowing was still wrong, and the same review caught it.** Ignoring those four
+directories everywhere still failed two suites on a clean tree, because `sweep-delta.spec.ts` and
+`sweep-ledger.spec.ts` do not read the recorded measurement — they **recompute** it with
+`measureSandbox` and diff it against the committed record. That is the regression ratchet working
+as designed, and the arm source is its *input*: `measure-sandbox.ts:306` needs the archive's
+`src/`, `:216` its frozen `starter-baseline/src/`, `:102` the `framework-types/` declarations.
+
+Final shape — the three measurable directories are kept for the **13 archives a
+`docs/verification/sweep-*.md` ledger names**, and ignored for the other 94:
 
 | | Untracked | Kept tracked |
 |---|---|---|
-| Files | 3,954 | 1,338 |
-| `.ts` files | **2,963 — all of them** | 0 |
+| Files | 3,498 | 1,794 |
+| `.ts` files | 2,589 | 374 (the 13 measured archives) |
 | Measurements | none | `sweep.json` ×107, `proof.json` ×100, `proof-artifacts/` ×379, `playtests/`, `captures/`, `screenshots/`, `brief.md`, `reference.png` |
 
-The whole AC4 win survives the narrowing: every one of the 2,963 `.ts` files is inside those four
-directories, verified by grepping the tracked list for a `.ts` outside them — zero hits. All 13
-sweep ledgers have their `proof.json` tracked, checked by resolving each ledger's `Archive:` field
-against `git ls-files`.
+Tracked `.ts` under `docs/` lands at **376, down from 2,965 — an 87% cut** rather than the 99.9%
+the broken version showed. Making the specs compare a recorded manifest instead of re-measuring
+would reclaim the rest and weaken the ratchet, which is a worse trade for 374 files.
+
+### The instrument was wrong, twice, and that is the lesson
+
+Both bad narrowings were checked with `git ls-files` — "the artifacts the specs read are tracked,
+therefore CI will pass." **That proves nothing.** All 13 ledgers had their `proof.json` tracked in
+the version that still failed two suites, because the dependency was on a directory `git ls-files`
+was never asked about.
+
+The instrument that answers the question is a clean-tree run:
+
+```
+$ git archive HEAD -o head.tar && tar -x -C <tmp> -f head.tar
+$ ln -s <repo>/node_modules <tmp>/node_modules   # and each package's
+$ cd <tmp> && npx vitest run \
+    scripts/__tests__/sweep-delta.spec.ts \
+    scripts/__tests__/sweep-ledger.spec.ts \
+    packages/playtest/__tests__/capture.spec.ts
+
+ ✓ scripts/__tests__/sweep-delta.spec.ts (7 tests)
+ ✓ packages/playtest/__tests__/capture.spec.ts (7 tests)
+ ✓ scripts/__tests__/sweep-ledger.spec.ts (7 tests)
+ Test Files  3 passed (3)   Tests  21 passed (21)
+```
+
+The **full** suite was then run in that clean tree: 371 files pass, 8 fail. Those 8 also fail in a
+clean tree built from `origin/main` — they need a real checkout (`.git`, `git ls-files`, built
+output) rather than an archive — so they are the harness, not this change. Running that control
+before attributing them is the difference between a finding and a false alarm.
 
 Every reader resolves this tree through the filesystem, never through git:
 `sweep-archive.ts:219`, `make-sandbox.ts:309-314`, `sweep-capture`, `sweep-judge`, `sweep-pair`.
@@ -228,12 +262,13 @@ update was required in either.
 
 | | Before | After |
 |---|---:|---:|
-| Tracked `.ts` files under `docs/` | **2,965** | **2** |
-| Tracked files, whole repository | **9,070** | **4,971** |
-| Files crossed by `git grep -l renderer -- 'docs/**'` | **1,199** | **322** |
+| Tracked `.ts` files under `docs/` | **2,965** | **376** |
+| Tracked files, whole repository | **9,070** | **5,427** |
+| Files crossed by `git grep -l renderer -- 'docs/**'` | **1,199** | **419** |
 
-A repo-wide grep under `docs/` now crosses 73% fewer files, and the 2,963 generated arm sources
-every agent's search used to walk are gone from the index.
+A repo-wide grep under `docs/` crosses 65% fewer files, and 2,589 of the 2,963 generated arm
+sources are gone from the index. The 374 that stay are the measurable input of the regression
+ratchet, and they buy a suite that still recomputes what it claims.
 
 ---
 
@@ -332,7 +367,7 @@ the first place. So Phase 5 lands its **general** deliverable instead:
 | Tracked files, `docs/benchmark` | 5,362 | **55** |
 | Tracked bytes, `docs/verification` | 77.7 MB | **65.9 MB** |
 | Tracked files, `docs/verification` | 801 | **661** |
-| Tracked `.ts` under `docs/` | 2,965 | **2** |
+| Tracked `.ts` under `docs/` | 2,965 | **376** |
 | Tracked files, whole repository | 9,070 | **3,623** |
 | Uncited artifacts | 1,023 | **18** |
 
@@ -358,8 +393,9 @@ number here would have meant deleted visual baselines and six documents with bro
       crossed the cap and failed the gate, naming the tree.
 - [x] **AC3 — the self-improvement loop is unharmed.** `round:next`, `round:deletions`,
       `alpha:bar` byte-identical before and after.
-- [x] **AC4 — an agent's repo-wide grep no longer crosses generated sweep sources.** 1,199 → 322
-      files; tracked `.ts` under `docs/` 2,965 → 2.
+- [x] **AC4 — an agent's repo-wide grep no longer crosses generated sweep sources.** 1,199 → 419
+      files; tracked `.ts` under `docs/` 2,965 → 376. Not the 99.9% two earlier drafts claimed —
+      each was measured with the wrong instrument and each was red on a clean tree.
 - [x] **AC5 — every cited result still resolves.** `pnpm check:docs` green: 1,379 relative links
       across 914 Markdown files, zero broken. This is the criterion that caught defect 2, and the
       one that let the doc-links exemption be reverted once Phase 4 was narrowed.
@@ -388,7 +424,7 @@ number here would have meant deleted visual baselines and six documents with bro
 An adversarial code review of the committed diff found two more, both verified by running the code
 rather than reading it. Both are fixed here.
 
-### Defect 5 — the sweep archive's own measurement components were `uncited`
+### Defect 5 — the sweep archive's measurements were `uncited`
 
 `SCRIPT_WALKED_ROOTS` covered `docs/verification/visuals` and three others and **missed the tree
 Phase 4 had just re-tracked**. Reproduced on the fixed Phase 4:
@@ -408,14 +444,25 @@ their directories is opened as a root by a real script — `sweep-capture.ts:52`
 (`captures/index.json`), and `sweep-evidence.ts:84-94`, which is the authoritative classifier and
 names every component by top-level directory.
 
-The entries could not be expressed by either existing matching mode: the root is
-`docs/benchmark/sweeps`, but the archive name is a wildcard and the component sits *below* it, so a
-plain root would have claimed the arm sources too and a basename pattern only reaches files
-directly inside the root. `archiveComponent` is the third mode — `<root>/<any archive>/<component>/…`.
+A first fix listed one entry per measurement directory, and the review showed **two of those
+readers were fiction**: nothing opens `screenshots/` or `assets/textures` — `sweep-evidence.ts:92`
+only *classifies a name*. Inventing a reader to justify an entry is the same failure as inventing
+a justification for a swallow.
 
-After the fix: **uncited 300 → 23, and 282 → 5 under the sweep tree.** The five that remain are
-per-arm capture tooling one agent wrote mid-sweep (`tools/capture.mjs`, `dbg.mjs`,
-`drop-capture.mjs`, `SETUP.md`) — genuinely not measurements, and correctly uncited.
+The real reader is stronger than all five. `collectEvidenceFiles` (`sweep-evidence.ts:399`)
+recursively walks an archive root and inventories every regular file; `writeEvidenceManifest`
+SHA-256s each, and `verifyEvidenceManifest:530` fails on both `evidence file missing from archive`
+and `Unlisted evidence file in archive`. **An archive is a hash-sealed unit whose inventory is the
+directory**, so one entry rooted at `docs/benchmark/sweeps` is both correct and honest, and the
+five hand-written entries were deleted along with the `archiveComponent` matching mode they needed.
+
+Two caveats recorded beside it rather than glossed: the seal protects nothing *today* —
+`git ls-files 'docs/benchmark/sweeps/*/evidence-manifest.json'` returns 0 across all 107 archives,
+every one "legacy" — and the entry does blanket the tree, which the other entries avoid. It is
+defensible because everything still tracked under that root really is read: the measurements by
+the inventory walk, and the 374 arm-source files by `measureSandbox` when the ratchet recomputes.
+
+After the fix: **uncited 300 → 23.**
 
 ### Defect 6 — the fail-closed justification was false, and a probe proved it
 
@@ -446,16 +493,16 @@ and the comment now says which is which.
 ### Reds for the review fixes
 
 ```
-× should claim a measurement component inside every sweep archive, and nothing else
-  (archiveComponent matching disabled)            Tests  1 failed | 9 passed (10)
+× should treat a sweep archive as cited, because it is inventoried as a whole
+  (the sweep root entry removed)                  Tests  1 failed | 9 passed (10)
 
 × should throw when an evidence write-up cannot be read, rather than losing its links
   (throw reverted to continue)                    Tests  1 failed | 9 passed (10)
 ```
 
-Each mutation fails exactly its own test. The sweep-component spec carries its negative control in
-the same case: a force-added arm source under the same archive must stay `uncited`, so the entry
-cannot be satisfied by claiming the whole tree.
+Each mutation fails exactly its own test. The sweep spec carries its negative control in the same
+case: a file directly under `docs/benchmark/` that nothing names must stay `uncited`, so the entry
+seals sweep archives without eating the policy for the tree they sit in.
 
 ## Known limitations
 
@@ -464,9 +511,15 @@ cannot be satisfied by claiming the whole tree.
   point would close this and is not done here.
 - **The citation scanner has no opinion on `.gitignore`.** Defect 4 was not a scanner bug at all —
   it was untracking a tree by hand on the assumption it was build output. Nothing checks that a
-  path leaving git is not read by a test; CI caught it, three suites late. The four `SCRIPT_WALKED_ROOTS`
-  entries describe what *scripts* read; nothing describes what *specs* read by literal path, and
-  `capture.spec.ts:48` hard-codes one.
+  path leaving git is still read by a test, and it took three attempts and two independent
+  reviewers to get the boundary right. `SCRIPT_WALKED_ROOTS` describes what *scripts* read;
+  nothing describes what *specs* read, whether by literal path (`capture.spec.ts:48`) or by
+  recomputation (`measureSandbox`). **A gate that runs the suite against `git archive HEAD` would
+  have caught every one of these in one step, and is the single highest-value thing left undone
+  here.**
+- The sweep-archive entry blankets its tree on the strength of a manifest seal that **no archive
+  carries yet**. If `evidence-manifest.json` never ships, that entry is protecting the tree for a
+  reason that never became true, and should be revisited rather than inherited.
 - `SCRIPT_WALKED_ROOTS` is a hand-maintained list. Nothing detects a *new* script that opens an
   evidence tree as a root, so adding one without adding its entry re-opens defects 1 and 3. The
   walkers were enumerated by hand here; a gate that keeps the list honest is **not** written, and

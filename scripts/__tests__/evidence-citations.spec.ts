@@ -106,18 +106,19 @@ describe("classifyEvidence", () => {
     );
   });
 
-  it("should claim a measurement component inside every sweep archive, and nothing else", async () => {
+  it("should treat a sweep archive as cited, because it is inventoried as a whole", async () => {
     // A review probe found 282 artifacts (72.3 MB) under `docs/benchmark/sweeps` classified
     // `uncited` — captures, playtests, screenshots — the `docs/verification/visuals` bug one tree
-    // over. `sweep-evidence.ts:84-94` names these components; each is opened as a root by a real
-    // script and never named file-by-file. The archive name is a wildcard, which is why neither a
-    // plain root nor a basename pattern expresses it.
+    // over. `collectEvidenceFiles` (`sweep-evidence.ts:399`) recursively walks an archive and
+    // inventories every file, and `verifyEvidenceManifest` fails on both a missing and an
+    // unlisted one, so the archive is sealed as a unit rather than file by file.
     const root = await fixture();
     const archive = "docs/benchmark/sweeps/platformer-2026-08-06";
     await mkdir(path.join(root, archive, "captures"), { recursive: true });
-    await mkdir(path.join(root, archive, "src"), { recursive: true });
     await writeFile(path.join(root, archive, "captures/frame-0.png"), "pixels");
-    await writeFile(path.join(root, archive, "src/main.ts"), "// generated arm source");
+    await writeFile(path.join(root, archive, "proof.json"), "{}");
+    await mkdir(path.join(root, "docs/benchmark"), { recursive: true });
+    await writeFile(path.join(root, "docs/benchmark/orphan-note.md"), "nothing names this");
     await writeFile(path.join(root, "docs/PRDs/done/PRD-001.md"), "no citations remain");
     await track(root);
 
@@ -125,9 +126,11 @@ describe("classifyEvidence", () => {
     expect(scan.find((a) => a.path === `${archive}/captures/frame-0.png`)?.classification).toBe(
       "cited-by-script",
     );
-    // The negative control: an arm source is not a measurement. It is normally untracked, but if
-    // one is force-added the entry must not shelter it — otherwise the rule claims the whole tree.
-    expect(scan.find((a) => a.path === `${archive}/src/main.ts`)?.classification).toBe("uncited");
+    // The negative control: the entry seals sweep archives, not the whole benchmark tree. A file
+    // beside `sweeps/` that nothing names must stay uncited, or the rule has eaten the policy.
+    expect(scan.find((a) => a.path === "docs/benchmark/orphan-note.md")?.classification).toBe(
+      "uncited",
+    );
   });
 
   it("should throw when an evidence write-up cannot be read, rather than losing its links", async () => {

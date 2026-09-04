@@ -25,22 +25,73 @@ hosting/.data/
 # game sources — crossed by every repo-wide grep an agent runs, the same hazard the root
 # `AGENTS.md` names for `.worktrees/` at five times the file count.
 #
-# **The measurement artifacts stay tracked**, and this is not a preference: `sweep-ledger.spec.ts`
-# fails with "live ledger requires committed proof.json", `sweep-delta.spec.ts` matches "the
-# committed delta record" against archived measurements, and `capture.spec.ts` reads a real
-# archived frame at `platformer-2026-08-06/proof-artifacts/0/after.png`. A first attempt ignored
-# the whole tree; it passed locally, where the files are on disk, and failed three suites in CI,
-# where they are not. `sweep.json`, `proof.json`, `proof-artifacts/`, `playtests/`, `captures/`,
-# `screenshots/`, `brief.md` and `reference.png` are the record and are carried.
+# **What stays is decided by what the suite reads, and the only instrument that answers that is a
+# clean-tree run.** Two earlier attempts were wrong because they were checked on a machine that
+# still had the files on disk. Ignoring the whole tree failed three suites in CI. Ignoring these
+# four directories everywhere still failed two, because `sweep-delta.spec.ts` and
+# `sweep-ledger.spec.ts` do not read the recorded measurement — they **recompute** it with
+# `measureSandbox` and diff it against the committed record, which is the regression ratchet
+# working as designed. `measure-sandbox.ts:306` needs the archive's `src/`, `:216` its frozen
+# `starter-baseline/src/`, and `:102` the `framework-types/` declarations. `git ls-files` showing
+# a tracked `proof.json` proves nothing about any of that.
 #
-# What leaves is the regenerable arm source each run writes: `src/`, `starter-baseline/`,
-# `framework-types/`, `public/` and the scaffold's root config files. Those hold all 2,963 `.ts`
-# and none of the measurements. The whole archive stays on disk either way, and every sweep
-# command still works — `sweep-archive.ts`, `sweep-capture.ts`, `sweep-judge.ts`, `sweep-pair.ts`
-# and `make-sandbox.ts` all resolve this tree through the filesystem, never through git.
-docs/benchmark/sweeps/*/src/
-docs/benchmark/sweeps/*/starter-baseline/
-docs/benchmark/sweeps/*/framework-types/
+# So the three measurable directories are **kept for the 13 archives a `docs/verification/sweep-*.md`
+# ledger names** — 456 files, 374 `.ts`, 2.6 MB — and ignored for the other 94. Tracked `.ts` under
+# `docs/` lands near 376 rather than 2,965: an 87% cut that keeps the ratchet honest. Making the
+# specs compare a recorded manifest instead of re-measuring would reclaim the rest and weaken the
+# ratchet, which is a worse trade.
+#
+# The verification is `git archive <sha> | tar -x` into an empty directory, symlink `node_modules`,
+# and run `sweep-delta`, `sweep-ledger` and `capture` there. Nothing else counts.
+#
+# Every archive keeps its measurements either way: `sweep.json`, `proof.json`, `proof-artifacts/`,
+# `playtests/`, `captures/`, `screenshots/`, `brief.md`, `reference.png`. The whole archive stays on
+# disk, and every sweep command still resolves this tree through the filesystem, never through git.
+#
+# `**` rather than a bare directory, because git cannot re-include a path whose parent directory is
+# excluded — the negations below would silently do nothing against `.../src/`.
+docs/benchmark/sweeps/*/src/**
+docs/benchmark/sweeps/*/starter-baseline/**
+docs/benchmark/sweeps/*/framework-types/**
+!docs/benchmark/sweeps/endless-runner-2026-08-05/src/**
+!docs/benchmark/sweeps/endless-runner-2026-08-05/starter-baseline/**
+!docs/benchmark/sweeps/endless-runner-2026-08-05/framework-types/**
+!docs/benchmark/sweeps/endless-runner-2026-08-08-11/src/**
+!docs/benchmark/sweeps/endless-runner-2026-08-08-11/starter-baseline/**
+!docs/benchmark/sweeps/endless-runner-2026-08-08-11/framework-types/**
+!docs/benchmark/sweeps/endless-runner-2026-08-08-6/src/**
+!docs/benchmark/sweeps/endless-runner-2026-08-08-6/starter-baseline/**
+!docs/benchmark/sweeps/endless-runner-2026-08-08-6/framework-types/**
+!docs/benchmark/sweeps/exploration-2026-08-05/src/**
+!docs/benchmark/sweeps/exploration-2026-08-05/starter-baseline/**
+!docs/benchmark/sweeps/exploration-2026-08-05/framework-types/**
+!docs/benchmark/sweeps/fps-2026-08-17/src/**
+!docs/benchmark/sweeps/fps-2026-08-17/starter-baseline/**
+!docs/benchmark/sweeps/fps-2026-08-17/framework-types/**
+!docs/benchmark/sweeps/fps-2026-08-18/src/**
+!docs/benchmark/sweeps/fps-2026-08-18/starter-baseline/**
+!docs/benchmark/sweeps/fps-2026-08-18/framework-types/**
+!docs/benchmark/sweeps/platformer-2026-08-05/src/**
+!docs/benchmark/sweeps/platformer-2026-08-05/starter-baseline/**
+!docs/benchmark/sweeps/platformer-2026-08-05/framework-types/**
+!docs/benchmark/sweeps/platformer-2026-08-05-2/src/**
+!docs/benchmark/sweeps/platformer-2026-08-05-2/starter-baseline/**
+!docs/benchmark/sweeps/platformer-2026-08-05-2/framework-types/**
+!docs/benchmark/sweeps/platformer-2026-08-06/src/**
+!docs/benchmark/sweeps/platformer-2026-08-06/starter-baseline/**
+!docs/benchmark/sweeps/platformer-2026-08-06/framework-types/**
+!docs/benchmark/sweeps/platformer-2026-08-16/src/**
+!docs/benchmark/sweeps/platformer-2026-08-16/starter-baseline/**
+!docs/benchmark/sweeps/platformer-2026-08-16/framework-types/**
+!docs/benchmark/sweeps/platformer-2026-08-16-2/src/**
+!docs/benchmark/sweeps/platformer-2026-08-16-2/starter-baseline/**
+!docs/benchmark/sweeps/platformer-2026-08-16-2/framework-types/**
+!docs/benchmark/sweeps/topdown-action-2026-08-05/src/**
+!docs/benchmark/sweeps/topdown-action-2026-08-05/starter-baseline/**
+!docs/benchmark/sweeps/topdown-action-2026-08-05/framework-types/**
+!docs/benchmark/sweeps/topdown-action-2026-08-05-3/src/**
+!docs/benchmark/sweeps/topdown-action-2026-08-05-3/starter-baseline/**
+!docs/benchmark/sweeps/topdown-action-2026-08-05-3/framework-types/**
 docs/benchmark/sweeps/*/public/
 docs/benchmark/sweeps/*/vite.config.ts
 docs/benchmark/sweeps/*/tailwind.config.ts

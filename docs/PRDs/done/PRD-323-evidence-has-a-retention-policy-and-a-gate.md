@@ -31,14 +31,18 @@ were then enumerated rather than discovered, finding two more (`round-ledger.ts`
 scanner fixed, and the deletion re-run — putting 97 artifacts and 25.4 MB back that a by-name scan
 had condemned.
 
-**A fourth defect was not in the scanner at all**, and CI caught it three suites late: Phase 4
-first untracked the whole sweep tree on the assumption it was build output. It is half build
-output. `sweep-ledger.spec.ts` fails with *"live ledger requires committed proof.json"*,
+**A fourth defect was not in the scanner at all**, and it took three attempts to get right: Phase 4
+untracked the sweep tree on the assumption it was build output. It is half build output.
+`sweep-ledger.spec.ts` fails with *"live ledger requires committed proof.json"*,
 `sweep-delta.spec.ts` matches *"the committed delta record"*, and `capture.spec.ts` reads a real
-archived frame by literal path — all green locally, where the files are on disk, and red in CI,
-where they are not. Narrowed to the arm sources (`src/`, `starter-baseline/`, `framework-types/`,
-`public/`, root configs), which hold **all 2,963 `.ts` and no measurements**. A doc-links exemption
-written while the whole tree was untracked was then reverted rather than shipped.
+archived frame by literal path. **The instrument was the problem**: both wrong versions were
+checked with `git ls-files` — "the artifacts are tracked, so CI will pass" — which proves nothing,
+because two of those specs do not read the recorded measurement, they *recompute* it with
+`measureSandbox` from the archive's `src/`, `starter-baseline/src/` and `framework-types/`. The
+settled shape keeps those three directories for the **13 archives a `sweep-*.md` ledger names** and
+drops them for the other 94, verified by running the suite inside `git archive HEAD` rather than in
+a worktree that still had the files on disk. A doc-links exemption written while the whole tree was
+untracked was reverted rather than shipped.
 
 **Two more came from an adversarial review that ran probes rather than reading**, and both are
 fixed. `SCRIPT_WALKED_ROOTS` missed the sweep tree Phase 4 had just re-tracked, leaving 282

@@ -59,13 +59,6 @@ export interface IWalkedRoot {
   readonly basenamePrefix?: string;
   /** As `basenamePrefix`, for the extension the reader filters on. */
   readonly basenameSuffix?: string;
-  /**
-   * When present, `root` holds one directory per run and the reader opens this component inside
-   * each: `docs/benchmark/sweeps/<archive>/captures/…`. The archive name is a wildcard, so
-   * neither a plain root (which would claim the whole tree, arm sources included) nor a basename
-   * pattern (which only reaches files directly inside the root) expresses it.
-   */
-  readonly archiveComponent?: string;
 }
 
 export const SCRIPT_WALKED_ROOTS: readonly IWalkedRoot[] = [
@@ -92,38 +85,30 @@ export const SCRIPT_WALKED_ROOTS: readonly IWalkedRoot[] = [
     reader: "scripts/round-ledger.ts",
     root: "docs/verification",
   },
-  // A sweep archive's measurement components. `sweep-evidence.ts:84-94` is the authoritative
-  // classifier and names them by top-level directory; each is opened as a root by a real script
-  // and never named file-by-file, so a by-name scan called 282 of them (72.3 MB) uncited — the
-  // `docs/verification/visuals` bug repeated one tree over, and these are the artifacts Phase 4's
-  // `.gitignore` deliberately keeps in git. The arm sources beside them are untracked, so they
-  // never reach the scanner and are not claimed here.
-  {
-    archiveComponent: "captures",
-    reader: "scripts/sweep-capture.ts",
-    root: "docs/benchmark/sweeps",
-  },
-  { archiveComponent: "captures", reader: "scripts/round-next.ts", root: "docs/benchmark/sweeps" },
-  {
-    archiveComponent: "playtests",
-    reader: "scripts/sweep-archive.ts",
-    root: "docs/benchmark/sweeps",
-  },
-  {
-    archiveComponent: "proof-artifacts",
-    reader: "scripts/sweep-proof.ts",
-    root: "docs/benchmark/sweeps",
-  },
-  {
-    archiveComponent: "screenshots",
-    reader: "scripts/sweep-evidence.ts",
-    root: "docs/benchmark/sweeps",
-  },
-  {
-    archiveComponent: "assets",
-    reader: "scripts/sweep-evidence.ts",
-    root: "docs/benchmark/sweeps",
-  },
+  // A sweep archive is inventoried as a whole, so the whole archive is what is cited.
+  //
+  // A first attempt listed one entry per measurement directory — captures, playtests,
+  // proof-artifacts — and a review showed two of them were fiction: nothing opens `screenshots/`
+  // or `assets/textures`, `sweep-evidence.ts:92` only *classifies a name*. Meanwhile the real
+  // reader is stronger than any of them. `collectEvidenceFiles` (`sweep-evidence.ts:399`)
+  // recursively walks an archive root and inventories every regular file; `writeEvidenceManifest`
+  // SHA-256s each one and `verifyEvidenceManifest:530` fails two ways — `evidence file missing
+  // from archive` for a deletion, `Unlisted evidence file in archive` for an addition. An archive
+  // is a hash-sealed unit whose inventory *is* the directory, so the file-level reader for every
+  // subpath is that walk. `sweep-archive.ts:5` imports both.
+  //
+  // Two honest caveats, recorded rather than glossed:
+  //   1. **The seal protects nothing today.** `git ls-files 'docs/benchmark/sweeps/*/
+  //      evidence-manifest.json'` returns 0 across all 107 archives; every one is "legacy" and
+  //      `classifyStoreChild` leaves it untouched. The entry is justified by the contract the
+  //      tooling enforces going forward, not by a manifest that exists now.
+  //   2. **This blankets the tree**, which the other entries deliberately avoid. It is defensible
+  //      here because the untracked half never reaches the scanner, and the arm sources that *are*
+  //      tracked — the 13 archives a `sweep-*.md` ledger names — are read by `measure-sandbox.ts`
+  //      (`:306` src, `:216` starter-baseline/src, `:102` framework-types) when
+  //      `sweep-delta.spec.ts` and `sweep-ledger.spec.ts` recompute the measurement. So everything
+  //      tracked under this root really is read by something.
+  { reader: "scripts/sweep-evidence.ts", root: "docs/benchmark/sweeps" },
   // alpha-bar.ts:470 globs `PARITY_LEDGER_PATTERN` — `tier-1-<date>*.md` and `parity-<date>*.md` —
   // and grades the alpha bar's parity rows out of them. Its round-ledger glob at :366 is already
   // covered by the `round-` entry above.
@@ -158,11 +143,6 @@ export const SCRIPT_WALKED_ROOTS: readonly IWalkedRoot[] = [
 function matchesRoot(artifact: string, entry: IWalkedRoot): boolean {
   if (!artifact.startsWith(`${entry.root}/`)) return false;
   const rest = artifact.slice(entry.root.length + 1);
-  if (entry.archiveComponent !== undefined) {
-    // <root>/<archive>/<component>/… — the archive name is a wildcard, the component is not.
-    const segments = rest.split("/");
-    return segments.length > 2 && segments[1] === entry.archiveComponent;
-  }
   if (entry.basenamePrefix === undefined && entry.basenameSuffix === undefined) return true;
   // A prefix/suffix entry claims only the reader's own glob, and only directly inside the root.
   if (rest.includes("/")) return false;

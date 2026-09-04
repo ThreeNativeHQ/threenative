@@ -17,12 +17,13 @@ export const EVIDENCE_BUDGETS = {
   // 2026-09-04, after Phase 3 deleted the uncited artifacts: 65.9 MB over 664 tracked files.
   // Was 80 MB / 800 files at the 2026-09-02 growth-stop setting.
   "docs/verification": { bytes: 72 * 1024 * 1024, files: 700 },
-  // 2026-09-04, after Phase 3 and Phase 4: 179.5 MB over 1,393 tracked files, down from
+  // 2026-09-04, after Phase 3 and Phase 4: 180.9 MB over 1,849 tracked files, down from
   // 203.3 MB over 5,362. Phase 4 untracked the generated arm sources under
-  // docs/benchmark/sweeps and kept every measurement artifact, so the file count fell by
-  // three quarters while the bytes barely moved — the sweep record is mostly PNG frames a
-  // blind judge scored, and those are the benchmark, not its build output.
-  "docs/benchmark": { bytes: 200 * 1024 * 1024, files: 1500 },
+  // docs/benchmark/sweeps but kept every measurement artifact, and kept the source of the 13
+  // archives a `sweep-*.md` ledger names because two specs recompute their measurement from it.
+  // So the file count fell by two thirds while the bytes barely moved — the sweep record is
+  // mostly PNG frames a blind judge scored, and those are the benchmark, not its build output.
+  "docs/benchmark": { bytes: 200 * 1024 * 1024, files: 1950 },
 } as const;
 
 /**
