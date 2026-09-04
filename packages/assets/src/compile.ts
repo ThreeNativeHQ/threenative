@@ -32,13 +32,19 @@ import type {
 import { createSharedImageStore } from "./passes/shared-images.js";
 import { texturePass } from "./passes/texture.js";
 import type { ITextureOverride, ITexturePassOptions } from "./passes/texture.js";
-import { formatModelSizes, formatPassCosts, formatTextureSizes } from "./report.js";
+import {
+  formatModelSizes,
+  formatPassCosts,
+  formatSkippedCompression,
+  formatTextureSizes,
+} from "./report.js";
 import type {
   IEmbeddedTextureRow,
   IModelSizeRow,
   IPassCostAssetRow,
   IPassCostRow,
   ISimplifyRow,
+  ISkippedCompressionRow,
   ITextureSizeRow,
   PassCostStatus,
 } from "./report.js";
@@ -176,6 +182,22 @@ export interface IAssetCompileOptions {
    * project setting, and a game config never carries it.
    */
   readonly processingOrder?: "reversed" | "sorted";
+  /**
+   * The platform this bake is for, which decides whether compression can ship at all.
+   *
+   * Android and iOS run the native host without WebAssembly, so they carry no Basis transcoder
+   * and no Meshopt decoder: a `.ktx2` texture or a meshopt-compressed mesh in a mobile bundle is
+   * a black screen, and `threenative build` refuses one with `TN_NATIVE_KTX2_UNSUPPORTED`. Web
+   * and desktop decode both.
+   *
+   * Absent means web — a direct `compileAssets` call, or a project that compiles once and serves
+   * the result. `threenative build` always names its `--target`, so the passes that a platform
+   * cannot decode drop for that build and stay on for every other one. This is the whole reason
+   * `assets.textures: "none"` used to be pinned in the scaffolded config: the author was asked to
+   * choose one constant for four targets, and every game that wanted Android shipped its web
+   * build uncompressed too. The build knows its target; it decides.
+   */
+  readonly platform?: "android" | "desktop" | "ios" | "web";
   readonly source?: string;
   /** Overrides resolution of three's Basis transcoder for the copy into the output root. */
   readonly transcoder?: IBasisTranscoder;
@@ -191,6 +213,11 @@ export interface IAssetCompileResult {
   readonly concurrencyUsed: number;
   /** One cost row per pass, driver-measured; empty when no bake ran. */
   readonly passCosts: readonly IPassCostRow[];
+  /**
+   * What each `assets.*: "none"` shipped uncompressed, per kind; empty when nothing opted out.
+   * Turning a convention off does not turn its measurement off.
+   */
+  readonly skippedCompression: readonly ISkippedCompressionRow[];
   readonly receipt?: IBakeReceipt;
   readonly report?: IAssetHealthReport;
   readonly skipped: number;
@@ -248,6 +275,10 @@ interface IAssetManifest {
 }
 
 interface ICompileLayout {
+  /** True when the built-in pass registry is in play — a caller that supplied its own opted out of nothing. */
+  readonly builtinRegistry: boolean;
+  /** False on a platform with no WebAssembly, where compressed output cannot be decoded at all. */
+  readonly decodesCompression: boolean;
   /** `assets.concurrency` from the game config, when it declared one. */
   readonly concurrency: number | undefined;
   readonly outputRoot: string;
@@ -256,6 +287,8 @@ interface ICompileLayout {
   readonly passes: readonly IAssetPass[];
   readonly sourceRoot: string;
   readonly targets: IAssetTargets;
+  /** True when the built-in model pass is part of `passes`. */
+  readonly modelsActive: boolean;
   /** True when the built-in KTX2 pass is part of `passes` (drives the transcoder copy). */
   readonly texturesActive: boolean;
 }
@@ -763,8 +796,13 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       `TN_ASSETS_OVERLAP: source '${sourceRoot}' and output '${outputRoot}' must be disjoint directories.`,
     );
   }
-  const textures = parseTexturesConfig(config.textures);
-  const models = parseModelsConfig(config.models);
+  // Android and iOS have no WebAssembly and therefore no Basis transcoder and no Meshopt
+  // decoder, so the two compressing passes cannot ship there whatever the config says. The
+  // build names its target and the engine drops them for that bake only; every other target
+  // keeps its compression. See `IAssetCompileOptions.platform`.
+  const decodesCompression = options.platform !== "android" && options.platform !== "ios";
+  const textures = decodesCompression ? parseTexturesConfig(config.textures) : undefined;
+  const models = decodesCompression ? parseModelsConfig(config.models) : undefined;
   const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
     ?.lightmap;
   // The built-in registry runs only when the caller did not replace it wholesale; each
@@ -804,7 +842,12 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     }
   }
   return {
+    builtinRegistry: options.passes === undefined,
     concurrency: config.concurrency as number | undefined,
+    // A platform that cannot decode compression did not opt out of it, so it is not reported as
+    // an override the author should reconsider — the engine made that call, for this bake only.
+    decodesCompression,
+    modelsActive: models !== undefined && options.passes === undefined,
     outputRoot,
     passSpecs,
     passes: [...builtinPasses, ...(options.passes ?? [])],
@@ -1307,7 +1350,7 @@ export async function compileAssets(
     // No bake ran, so no receipt describes this output root. A stale one from a previous build
     // would have the delete-test remove files nothing produces any more.
     await rm(receiptPath, { force: true });
-    return { concurrencyUsed: 1, passCosts: [], skipped: 0, written: 0 };
+    return { concurrencyUsed: 1, passCosts: [], skipped: 0, skippedCompression: [], written: 0 };
   }
   const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
   const previous = await readExistingManifest(manifestPath);
@@ -1348,8 +1391,15 @@ export async function compileAssets(
     await rm(receiptPath, { force: true });
     const report = await runHealthReport([], layout.targets);
     return options.health === true
-      ? { concurrencyUsed: 1, passCosts: [], report, skipped: 0, written: 0 }
-      : { concurrencyUsed: 1, passCosts: [], skipped: 0, written: 0 };
+      ? {
+          concurrencyUsed: 1,
+          passCosts: [],
+          report,
+          skipped: 0,
+          skippedCompression: [],
+          written: 0,
+        }
+      : { concurrencyUsed: 1, passCosts: [], skipped: 0, skippedCompression: [], written: 0 };
   }
 
   /** Everything one entry contributes to the receipt, the health report and the size report. */
@@ -1591,7 +1641,9 @@ export async function compileAssets(
   for (const line of formatHealthReport(report)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
+  const skippedCompression = skippedCompressionRows(entries, layout);
   for (const line of formatPassCosts(passCosts)) console.log(line);
+  for (const line of formatSkippedCompression(skippedCompression)) console.log(line);
   if (report.failed) {
     const failedAssets = report.findings
       .filter((finding) => finding.grade === "fail")
@@ -1610,6 +1662,37 @@ export async function compileAssets(
   const receipt = await writeReceipt(layout.outputRoot, receiptOutputs);
   const concurrencyUsed = pool === undefined ? 1 : Math.min(concurrency, logicals.length);
   return options.health === true
-    ? { concurrencyUsed, passCosts, receipt, report, skipped, written }
-    : { concurrencyUsed, passCosts, receipt, skipped, written };
+    ? { concurrencyUsed, passCosts, receipt, report, skipped, skippedCompression, written }
+    : { concurrencyUsed, passCosts, receipt, skipped, skippedCompression, written };
+}
+
+/**
+ * Sums what each disabled built-in pass is shipping as authored.
+ *
+ * Reads the sizes already recorded on every manifest entry, so a build that opted out pays one
+ * addition per asset and no I/O at all — the measurement must not become a reason to skip it.
+ * A caller that replaced the pass registry wholesale (`options.passes`) has not opted out of
+ * anything and reports nothing.
+ */
+function skippedCompressionRows(
+  entries: Readonly<Record<string, IAssetManifestEntry>>,
+  layout: ICompileLayout,
+): readonly ISkippedCompressionRow[] {
+  const rows: ISkippedCompressionRow[] = [];
+  const reason = layout.decodesCompression ? "config" : "platform";
+  for (const [kind, active] of [
+    ["model", layout.modelsActive],
+    ["texture", layout.texturesActive],
+  ] as const) {
+    if (active || !layout.builtinRegistry) continue;
+    let bytes = 0;
+    let files = 0;
+    for (const entry of Object.values(entries)) {
+      if (entry.kind !== kind) continue;
+      bytes += entry.bytes;
+      files += 1;
+    }
+    rows.push({ bytes, files, kind, reason });
+  }
+  return rows;
 }

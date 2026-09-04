@@ -284,7 +284,7 @@ function uiBuildDriver(cwd: string, page: string, output: string): string {
 
 export async function buildWeb(cwd: string, viteArgs: readonly string[] = []): Promise<void> {
   const config = await loadConfig(cwd);
-  await compileAssets({ config: config.assets, cwd });
+  await compileAssets({ config: config.assets, cwd, platform: "web" });
   await run(executable(cwd, "vite"), ["build", ...viteArgs], cwd);
 }
 
@@ -428,7 +428,11 @@ function installedRuntime(runtimeRoot: string): string {
 async function buildNative(target: NativeBuildTarget, cwd: string): Promise<void> {
   const config = await loadConfig(cwd);
   assertNativeUiRendererCompatible(target, config.ui.renderer);
-  await compileAssets({ config: config.assets, cwd });
+  // The target decides whether compression can ship: android and iOS carry no WebAssembly, so
+  // the compile step drops the passes they cannot decode instead of asking the author to pin a
+  // constant that would then follow their web build too. `assertNativeAssetsCompatible` stays
+  // below as the fail-closed backstop.
+  await compileAssets({ config: config.assets, cwd, platform: target });
   await assertNativeAssetsCompatible(cwd, target, config);
   const entry = await nativeEntry(cwd, config);
   const orientation = config.display.orientation;
