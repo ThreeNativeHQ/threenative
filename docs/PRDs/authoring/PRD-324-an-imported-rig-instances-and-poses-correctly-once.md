@@ -18,21 +18,41 @@ briefly declined on 2026-09-04 for want of a second consumer and that decline wa
 review found the consumers and it is retracted. The census, by workspace (each its own
 `package.json` in the `../sandbox` repository):
 
-| Game | Skeleton-safe clone | Bind-pose normalisation | Clip playback |
-|---|---|---|---|
-| `wildwood` | `Animal.ts:8` | `Animal.ts:167` | `AnimationPlayer` |
-| `threenative-hq` | `office/Worker.ts:4`, `office/Visitor.ts:6` | `Worker.ts:71`, `Visitor.ts:76` | `Worker.ts:88`, with `strideRoot` |
-| `fps-framework` | `entities/Enemy.ts:1072` | `Enemy.ts:747`, `:962`, `:972`, `Rifle.ts:96` | `AnimationPlayer` |
+| Game | Skeleton-safe clone | Bind-pose normalisation | Instances many | Clip playback |
+|---|---|---|---|---|
+| `wildwood` | `Animal.ts:8,129` | `Animal.ts:167` | yes | `AnimationPlayer`, `strideRoot` at `:178-182` |
+| `threenative-hq` | `Worker.ts:4,68`, `Visitor.ts:6` | `Worker.ts:71`, `Visitor.ts:76` | `Worker` + `Visitor` | `Worker.ts:88`, with `strideRoot` |
+| `fps-framework` | `Enemy.ts:1072` | `Enemy.ts:747`, `:962`, `Rifle.ts:96` | `Play.ts:421-424` loop | `AnimationPlayer` |
 
-Not counted: `prd259-bayview-current-20260830` is a dated snapshot of `fps-framework` — same
-`"name"` in `package.json` — and `ue-static-import` calls `normaliseToMetres` without a skinned
-clone, so it is not this surface's consumer.
+`threenative-hq` is the full match and hand-wrote its own fail-closed clip audit — ledger row 3 —
+independently at `Office.ts:143-147`. `fps-framework` is a full consumer of the clone-and-measure
+half; `Enemy.ts:1072` says so outright.
+
+Not counted: `prd259-bayview-current-20260830` is a dated snapshot of `fps-framework` with an
+identical `"name"` in `package.json`; `fps-vanilla` is the deliberately-unframeworked control arm;
+and `ue-static-import` has one prop and no skinned clone, so it is not this surface's consumer —
+though it *is* a live second consumer of **Phase 2's shipped work**, calling
+`reconcileMirroredClips` at `UnrealSkeletalProp.ts:124`, which is independent evidence that
+shipping Phase 2 without the abstraction was right.
+
+**Two games wrote near-identical comments about the same `strideRoot` hazard** — Wildwood's
+`Animal.ts:178-179` and `threenative-hq`'s `Worker.ts:40-44` both explain that measuring the object
+the mixer writes reads the clip's own root motion back. Three games hitting the same traps, two
+documenting the same fix in their own words, is the strongest evidence here that these are
+mechanism rather than taste.
 
 **Why the decline was wrong, recorded because the mistake is reusable.** The search was re-run
 rather than inherited from PRD-321 — but with PRD-321's *scope*, the ten templates and sixteen
 examples, and the sandbox repository was never searched. Re-running a search inside an inherited
 boundary inherits the conclusion. The rule that should have caught it is this repository's own:
 attempt the blocked reason before believing it, and a scope is part of the reason.
+
+**This PRD contains both scopes, and they contradict.** Ledger row 6 says the second consumer
+should be *"a template or example"* — exactly where the failed search looked — while AC2 says *"two
+non-test callers in different projects"* and this PRD treats Wildwood, a sandbox game, as caller
+#1. AC2 is the binding criterion, so row 6 is the clause that is wrong. **Reconciling row 6 to AC2
+is the first task for whoever re-opens Phases 3–7**, before the next executor inherits the same
+boundary.
 
 **What Phases 3–7 still need**, unchanged: the surface itself, the migration of at least two of the
 three consumers with their private copies deleted, a manifest entry, and native proof. The kill

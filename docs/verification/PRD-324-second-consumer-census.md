@@ -11,27 +11,53 @@ opposite conclusion from a search whose scope was wrong.
 
 ## The census
 
-Every workspace under `../sandbox` with its own `package.json` and a `src/`, grepped for the three
-pieces `SkeletalMesh3D` was specified to own:
+Every workspace under `../sandbox` with its own `package.json` and a `src/`. Pieces are PRD-324's
+own, from ledger rows 1–3 and 5. *Instances* means N objects built from one loaded rig.
 
-| Game | Skeleton-safe clone | Bind-pose normalisation | Clip playback | Counts? |
+| Piece | `wildwood` | `threenative-hq` | `fps-framework` | `ue-static-import` |
 |---|---|---|---|---|
-| `wildwood` | `src/entities/animals/Animal.ts:8` | `Animal.ts:167` | `AnimationPlayer` ×2 | **Yes** |
-| `threenative-hq` | `src/office/Worker.ts:4`, `office/Visitor.ts:6` | `Worker.ts:71`, `Visitor.ts:76` | `Worker.ts:88`, with `strideRoot` | **Yes** |
-| `fps-framework` | `src/entities/Enemy.ts:1072` | `Enemy.ts:747`, `:962`, `:972`, `Rifle.ts:96` | `AnimationPlayer` ×2 | **Yes** |
-| `prd259-bayview-current-20260830` | `Enemy.ts` | `Enemy.ts:747` … | — | No — a dated snapshot of `fps-framework`, identical `"name"` in `package.json` |
-| `ue-static-import` | none | 1 call | 1 | No — normalises a static model, no skinned clone |
+| Imports a rigged glTF | `Animal.ts:118` | `Office.ts:101-102` | `Enemy.ts` | `UnrealSkeletalProp.ts:82` |
+| Skeleton-safe clone | `Animal.ts:8,129` | `Worker.ts:4,68` | `Enemy.ts:1072` | **no** — single instance |
+| Instances many from one load | yes | `Worker` + `Visitor` | `Play.ts:421-424` loop | no |
+| `normaliseToMetres` on the rig | `Animal.ts:167` | `Worker.ts:71` | `Enemy.ts:747`, `:962` | static model only |
+| Skinned-bounds correction | `Animal.ts:158-167` | no | `Enemy.ts:1072-1204` | `:65` `frustumCulled=false` |
+| `strideRoot` two-object structure | `Animal.ts:178-182` | `Worker.ts:88` | via `AnimationPlayer` | `:75-77` |
+| Fail-closed clip audit | `Animal.ts:314` | `Office.ts:143-147` | — | — |
+| Bone-length invariance | `Animal.ts:172` | no | no | no |
+| Mirror reconciliation | core, Phase 2 | no | no | `UnrealSkeletalProp.ts:124` |
 
-**Three independent games**, in three separate workspaces, each hand-writing the same
-clone → normalise → animate dance. PRD-324's AC2 asks for *two* non-test callers in different
-projects.
+**Three consumers of the proposed surface**, in three separate workspaces. AC2 asks for two.
 
-`threenative-hq` is the cleanest match. Its `Office.ts:101-102` loads two rigged GLBs through
-`ctx.assets.model` and its own comment at `:96-98` describes merging two libraries onto one
-65-joint skeleton — *"checked here rather than assumed"* — which is exactly the kind of thing a
-framework surface should be checking for the game.
+- **`threenative-hq` is the full match.** Every core piece, and it hand-wrote its own fail-closed
+  clip audit — ledger row 3 — independently, with a comment naming the failure it prevents: *"A
+  missing clip renders as a mannequin frozen in its bind pose, which looks exactly like a worker
+  that is simply idle."*
+- **`fps-framework` is a full consumer of the clone-and-measure half.** `Enemy.ts:1072` says it
+  outright, and `Play.ts:421-424` clones per soldier because *"the class mutates scale and pose."*
+- **`ue-static-import` is not a consumer of this surface** — one prop, no skinned clone, no rig
+  normalisation. It is counted nowhere above as a third caller. It *is* a live second consumer of
+  **Phase 2's shipped work**: `reconcileMirroredClips` at `UnrealSkeletalProp.ts:124`. That is
+  worth its own line, because it is independent evidence that shipping Phase 2 without the
+  abstraction was the right call.
 
----
+Excluded: `prd259-bayview-current-20260830` is a dated snapshot of `fps-framework` — identical
+`"name"` in `package.json` — so it is one consumer, not two. `fps-vanilla` is the
+deliberately-unframeworked control arm.
+
+### The convergence is a trap, not a preference
+
+Two games independently wrote near-identical comments about the same `strideRoot` hazard:
+
+> `wildwood/Animal.ts:178-179` — *"`strideRoot` is the group the AI actually moves: the mixer
+> writes the clone, so measuring the clone would read the clip's own motion back as if the body
+> had walked."*
+>
+> `threenative-hq/Worker.ts:40-44` — *"if the thing being moved is also the thing the mixer writes,
+> the measurement reads the clip's own root motion back and the legs run at a speed nothing on
+> screen is travelling at."*
+
+Three games hitting the same four three.js traps, two of them documenting the same fix in their own
+words, is the strongest argument in this PRD that the pieces are mechanism rather than taste.
 
 ## Why the decline was wrong
 
@@ -52,6 +78,18 @@ that could not see the dependency.
 A second, smaller error compounded it: the earlier record's scoping note said a second
 *wildwood-internal* caller would not satisfy AC2, which is true, and then treated the whole sandbox
 as if it were Wildwood. It holds roughly thirty games.
+
+### The PRD itself contains both scopes, and that is worth knowing
+
+The narrow scope was not invented. **Ledger row 6 (`:208`) says the second consumer should be "a
+template or example"** — exactly where the failed search looked. **AC2 (`:269`) says "two non-test
+callers in different projects"**, and the PRD treats Wildwood, a sandbox game, as caller #1
+throughout, so "different projects" plainly reaches the sandbox.
+
+This does not excuse the miss: AC2 is the binding acceptance criterion, the two clauses contradict,
+and the right move was to reconcile them rather than follow the narrower one silently. But a reader
+deserves to know the contradiction is in the document, because the next executor inherits it.
+**Reconciling row 6 to AC2 is filed work for whoever re-opens Phases 3–7.**
 
 ---
 
