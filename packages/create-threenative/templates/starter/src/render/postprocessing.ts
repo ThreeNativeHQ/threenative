@@ -11,6 +11,7 @@
 // `setupPost(renderer, scene, camera, { tier: "low" })`. Overriding does not silence the report:
 // `TN_QUALITY_TIER` names the tier that ran either way.
 import type { Camera, DirectionalLight, Scene } from "three";
+import { painterlyStageNames, painterlyStages } from "./painterly.js";
 import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.js";
 import type { OutputRenderer } from "./worldEnvironment.js";
 import { WorldEnvironment } from "./worldEnvironment.js";
@@ -29,6 +30,14 @@ export function setupPost(
   const tier = resolveQualityTier({ mobile: environment.mobile, tier: environment.tier });
   const source = environment.tier === undefined ? "platform" : "override";
   console.info(`TN_QUALITY_TIER ${tier} mobile=${environment.mobile === true} source=${source}`);
-  const world = new WorldEnvironment(qualityPreset(tier));
+  const settings = qualityPreset(tier);
+  // The kit's own stages go through the seam rather than into the shared plumbing: the names up
+  // front, because the chain decides whether to build a pass at all before one exists, and the
+  // graph as a factory, because an outline needs the pass's depth texture.
+  const world = new WorldEnvironment({
+    ...settings,
+    authoredStageNames: painterlyStageNames(settings),
+    authoredStages: painterlyStages(settings),
+  });
   world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
 }

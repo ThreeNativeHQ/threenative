@@ -604,7 +604,11 @@ function normalizeRequestedStages(
   for (const name of stages) {
     const id = requireStageId(name, "requested render-chain stage");
     if (requested.has(id)) throw new Error(`duplicate requested render-chain stage '${id}'`);
-    if (!definitions.has(id)) {
+    // A built-in needs no supplied definition, the same allowance the anchor check above makes.
+    // Requesting one the tier or the provider then drops is ordinary — `traa` at `tier: "off"`
+    // is a dropped stage with a reason, not an unknown name — and refusing it here turned that
+    // into a throw on the shipped path.
+    if (!isBuiltInStageId(id) && !definitions.has(id)) {
       throw new Error(`unknown render-chain stage '${id}': no supplied definition`);
     }
     requested.add(id);

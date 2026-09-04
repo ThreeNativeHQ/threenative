@@ -47,18 +47,23 @@ describe("starter visual floor", () => {
   });
 
   it("should collect the starter's authored outline caller", async () => {
-    const environment = await readFile(
-      path.join(starter, "src/render/worldEnvironment.ts"),
-      "utf8",
-    );
-    expect(environment).toContain("createOutlineStage");
-    expect(environment).toContain('requested.push("outline")');
+    const [environment, painterly] = await Promise.all([
+      readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/painterly.ts"), "utf8"),
+    ]);
+    expect(painterly).toContain("createOutlineStage");
+    expect(painterly).toContain('names.push("outline")');
     expect(environment).toContain("createRenderChain");
+    // The other half of the same rule, and the one that actually bites: `worldEnvironment.ts` is
+    // the plumbing every kit copies verbatim, so this kit's aesthetic must not be inside it.
+    // `shared-render-sources.spec.ts` fails when it is, and this says why in one place.
+    expect(environment).not.toContain("createOutlineStage");
   });
 
   it("should keep painterly stages in generated source with a measured tier policy", async () => {
-    const [environment, quality, outline, kuwahara, watercolor] = await Promise.all([
+    const [environment, painterly, quality, outline, kuwahara, watercolor] = await Promise.all([
       readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/painterly.ts"), "utf8"),
       readFile(path.join(starter, "src/render/quality.ts"), "utf8"),
       readFile(path.join(starter, "src/render/outline.ts"), "utf8"),
       readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8"),
@@ -67,8 +72,10 @@ describe("starter visual floor", () => {
     const generated = [outline, kuwahara, watercolor].join("\n");
     expect(generated).not.toContain("@threenative/");
     expect(generated).not.toMatch(/ShaderMaterial|gl_FragColor|postprocessing/iu);
-    expect(environment).toContain("createKuwaharaStage");
-    expect(environment).toContain("createWatercolorStage");
+    expect(painterly).toContain("createKuwaharaStage");
+    expect(painterly).toContain("createWatercolorStage");
+    expect(environment).not.toContain("createKuwaharaStage");
+    expect(environment).not.toContain("createWatercolorStage");
     expect(generated.indexOf('name: "outline"')).toBeGreaterThanOrEqual(0);
     expect(generated.indexOf('name: "kuwahara"')).toBeGreaterThanOrEqual(0);
     expect(generated.indexOf('name: "watercolor"')).toBeGreaterThanOrEqual(0);

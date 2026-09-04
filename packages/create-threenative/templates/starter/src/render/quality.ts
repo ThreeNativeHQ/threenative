@@ -19,7 +19,15 @@
 // probe on `scene.environment`, measured at **~6.3 ms of an 18-19 ms Pixel 8 frame**. It is set
 // in `sky.ts`, not in this file.
 //
+import type { IPainterlyOptions } from "./painterly.js";
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+
+/**
+ * A preset is the framework's chain options plus this kit's own painterly knobs. The two are
+ * separate types because they belong to different layers: `worldEnvironment.ts` is shared with
+ * every other kit and must not know what a watercolour is.
+ */
+type QualitySettings = IWorldEnvironmentOptions & IPainterlyOptions;
 
 /**
  * The three names this game's look comes in.
@@ -69,7 +77,7 @@ export function resolveQualityTier(
  * The whole chain measured 12.5 ms of a 14.7 ms GPU frame in the reference ablation, and SSGI
  * with its denoiser is ~9.2 ms of that.
  */
-const high: IWorldEnvironmentOptions = {
+const high: QualitySettings = {
   // Strength, radius and threshold are a look decision already tuned to this scene's palette.
   // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
   // to be.
@@ -115,7 +123,7 @@ const high: IWorldEnvironmentOptions = {
  * back most of the frame: **14.7 ms -> 5.5 ms of GPU** in the reference ablation. Reflections,
  * bloom and the sharpener stay, so it is recognisably the same look.
  */
-const medium: IWorldEnvironmentOptions = {
+const medium: QualitySettings = {
   // Strength, radius and threshold are a look decision already tuned to this scene's palette.
   // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
   // to be.
@@ -153,7 +161,7 @@ const medium: IWorldEnvironmentOptions = {
  * because it shipped on — nothing upstream of it blurs at this tier, so it is doing very little,
  * and its cost here is unmeasured.
  */
-const low: IWorldEnvironmentOptions = {
+const low: QualitySettings = {
   // Strength, radius and threshold are a look decision already tuned to this scene's palette.
   // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
   // to be.
@@ -175,10 +183,10 @@ const low: IWorldEnvironmentOptions = {
   tonemapMode: "aces",
 };
 
-const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
+const QUALITY_PRESETS: Record<QualityTier, QualitySettings> = { high, low, medium };
 
 /** The stages and strengths a tier turns on. Throws on a name that is not a tier. */
-export function qualityPreset(tier: string): IWorldEnvironmentOptions {
+export function qualityPreset(tier: string): QualitySettings {
   const preset = QUALITY_PRESETS[tier as QualityTier];
   if (preset === undefined) {
     throw new Error(
