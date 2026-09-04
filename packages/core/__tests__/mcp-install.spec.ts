@@ -1,6 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import {
@@ -120,22 +121,62 @@ describe("MCP_SERVERS", () => {
    * records. `engine-server.mjs` stays gitignored on purpose: its package *is* published, so the
    * npx fallback is a real fallback there.
    */
-  it("ships a blender server bundle that matches the current build output", () => {
+  /**
+   * Both bundles must be **tracked**, not merely generated.
+   *
+   * `launch.mjs` falls back to `npx <pkg>@<version>` when a server package is not installed, so a
+   * core tarball missing a bundle turns a local, offline server start into a registry fetch. For
+   * `threenative-blender-mcp`, which has never been published, that is `npm error code E404` and a
+   * dead server in every scaffolded project. For `threenative-engine-mcp`, which is published, it
+   * is worse in a subtler way: it works, over the network, inside a 30-second probe budget —
+   *
+   *   TN_GOLDEN_PATH_FAILED: template 'starter' at layer 'mcp'.
+   *   threenative-engine initialize timed out after 30000ms.
+   *
+   * which is a required check failing on runner luck. Neither file lives under `dist/`, so CI's
+   * build cache cannot restore it and core's bundling step is not guaranteed to run at all; only
+   * `git` guarantees a checkout has them.
+   */
+  it("tracks both bundled MCP servers, so a checkout carries them", () => {
+    const tracked = execFileSync("git", ["ls-files", "packages/core/mcp"], {
+      cwd: path.resolve("."),
+      encoding: "utf8",
+    })
+      .split("\n")
+      .filter((line) => line.length > 0);
+    for (const bundle of ["mcp/blender-server.mjs", "mcp/engine-server.mjs"]) {
+      expect(
+        tracked,
+        `packages/core/${bundle} is untracked; a checkout that skips core's build ships without it and the shim falls back to npx`,
+      ).toContain(`packages/core/${bundle}`);
+    }
+  });
+
+  it("ships a blender server bundle that serves the recorded tool surface", async () => {
     const bundled = path.join(packageRoot, "mcp", "blender-server.mjs");
     expect(
       existsSync(bundled),
-      `${bundled} is missing; run pnpm --filter @threenative/core build`,
+      `${bundled} is missing; run pnpm --filter @threenative/core build and commit it`,
     ).toBe(true);
-    const built = path.resolve("packages/blender-mcp/dist/index.js");
-    if (!existsSync(built)) {
-      // Nothing to compare against in a checkout that has not built the server package.
-      expect(readFileSync(bundled, "utf8").length).toBeGreaterThan(0);
-      return;
-    }
+
+    // What the committed bundle *serves*, not what bytes it is. A byte comparison against
+    // `packages/blender-mcp/dist/index.js` was the first shape of this gate and it is the wrong
+    // one: CI restores `packages/*/dist` from cache, so the build output it would compare against
+    // is not guaranteed to come from this commit, and the gate reds on a correct file.
+    const served = (await import(pathToFileURL(bundled).href)) as {
+      TOOL_DEFINITIONS?: { name: string }[];
+      runServer?: unknown;
+    };
+    expect(typeof served.runServer, "the bundle exports no runServer for the shim to call").toBe(
+      "function",
+    );
+    const surface = JSON.parse(
+      readFileSync(path.resolve("packages/create-threenative/blender-mcp-tools.json"), "utf8"),
+    ) as { tools: string[] };
     expect(
-      readFileSync(bundled, "utf8"),
+      (served.TOOL_DEFINITIONS ?? []).map((tool) => tool.name).sort(),
       "mcp/blender-server.mjs is stale; run pnpm --filter @threenative/core build and commit it",
-    ).toBe(readFileSync(built, "utf8"));
+    ).toEqual([...surface.tools].sort());
   });
 
   // A renamed or moved shim would leave `.mcp.json` pointing at nothing, and the host reports that
