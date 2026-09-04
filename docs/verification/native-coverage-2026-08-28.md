@@ -26,7 +26,7 @@ targets could not be built and are named below.
 | `src/workers/` | 615 | 527 | 85.69% |
 | **TOTAL** | **20447** | **8257** | **40.38%** |
 
-Source digest: `sha256:5cfc606f9d550a99a5fe64b803def678bf57297a736c77df3f68697c6592cbcd`
+Source digest: `sha256:a21f935e235ab013314b119564f318f877d1b2bc347e8ee07c163324ae72b352`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -75,8 +75,8 @@ change requires this opt-in command to refresh the record.
 
 ## Blocked targets
 
-- `threenative-physics-actuation-bindings-test`: TN_ENABLE_NATIVE_PHYSICS=OFF: native physics bindings are not linked
-- `threenative-video-recorder-state-test`: TN_ENABLE_VIDEO=OFF: the video recorder target is not configured
+- `threenative-physics-actuation-bindings-test`: TN_ENABLE_NATIVE_PHYSICS=OFF
+- `threenative-video-recorder-state-test`: TN_ENABLE_VIDEO=OFF
 <!-- native-coverage-generated:end -->
 
 ## Floor changes
