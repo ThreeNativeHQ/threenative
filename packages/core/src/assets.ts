@@ -745,7 +745,15 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // animal backwards, silently. See `reconcileMirroredClips`.
         const clips = modelClips(value);
         if (root !== undefined && clips.length > 0 && reconcileMirroredClips(root, clips)) {
-          console.info(`TN_ASSETS_MIRRORED_CLIPS_REPAIRED ${path}`);
+          // A warning, not an info line: every file this fires on is a defect in whatever wrote
+          // it, and a repair that reads as routine is a repair nobody ever removes the cause of.
+          // The Unreal importer's own reader of ActorX PSA keys once produced exactly this on
+          // every skeletal mesh it converted, unnoticed for as long as the line said `info`.
+          const cause =
+            "its clips are mirrored against its own bind pose, and the loader un-mirrored them " +
+            "so the game plays forwards. The file is wrong, not the game: re-import it with a " +
+            "current converter and this stops.";
+          console.warn(`TN_ASSETS_MIRRORED_CLIPS_REPAIRED ${path} — ${cause}`);
         }
         await attachCompiledLightmaps(path, value);
         return value;
