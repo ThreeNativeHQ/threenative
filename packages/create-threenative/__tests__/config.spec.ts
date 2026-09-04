@@ -524,6 +524,7 @@ describe("threenative.config.ts", () => {
       concurrencyUsed: 1,
       passCosts: [],
       skipped: 0,
+      skippedCompression: [],
       written: 0,
     });
   });
@@ -540,6 +541,7 @@ describe("threenative.config.ts", () => {
       concurrencyUsed: 1,
       passCosts: [],
       skipped: 0,
+      skippedCompression: [],
       written: 0,
     });
   });
@@ -562,6 +564,7 @@ describe("threenative.config.ts", () => {
       concurrencyUsed: 1,
       passCosts: [],
       skipped: 0,
+      skippedCompression: [],
       written: 0,
     });
   });

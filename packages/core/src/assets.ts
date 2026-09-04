@@ -85,8 +85,19 @@ export interface IAssetLoader {
    * How many loads this loader has been asked for and how many have settled (resolved or
    * rejected). A loading view reads the ratio; the runtime folds it into `ctx.startup.progress`
    * while the start scene loads, so the bar moves with the bytes instead of jumping 0 to 1.
+   *
+   * `requestedBytes` and `settledBytes` are the same ledger weighed by the `bytes` the compile
+   * step already records for every manifest entry, and they are what a loading bar should read.
+   * A file count treats a 710 MB model and a 4 KB icon alike: one real game's bar reached 92%
+   * on eleven small assets and then stood still for the entire download of the twelfth. Both
+   * stay 0 for a game with no manifest, where no size is knowable before the bytes arrive.
    */
-  readonly progress: { readonly requested: number; readonly settled: number };
+  readonly progress: {
+    readonly requested: number;
+    readonly requestedBytes: number;
+    readonly settled: number;
+    readonly settledBytes: number;
+  };
   clear(): void;
 }
 
@@ -278,6 +289,42 @@ async function fetchModelBytes(url: string): Promise<ArrayBuffer> {
   }
   if (!response.ok) throw new Error(`Failed to load model '${url}': ${response.status}.`);
   return response.arrayBuffer();
+}
+
+/**
+ * Loads a texture with its pixels already decoded, off the main thread.
+ *
+ * `TextureLoader` hands the bytes to an `<img>`, whose `onload` fires before the pixels exist:
+ * `await ctx.assets.texture()` therefore resolves early and the decode lands later, on the main
+ * thread, at the first GPU upload — after the loading screen has lifted, in the middle of play.
+ * Measured over 16 real game textures (38 MB, 126 MB decoded), the decode is 397 ms through
+ * `<img>` and 153 ms through `createImageBitmap`. three's own `GLTFLoader` already prefers
+ * `ImageBitmapLoader` for a model's embedded textures, so before this the same file decoded
+ * off-thread inside a model and on the main thread when a game loaded it directly.
+ *
+ * **Orientation is the trap.** `TextureLoader` leaves `flipY` true and the backend flips at
+ * upload, which is the orientation every existing game is authored against. WebGPU can flip an
+ * `ImageBitmap` at copy time and does, so that branch keeps `flipY` and asks for the natural
+ * orientation — which is also what the native host has always done. WebGL2 cannot flip an
+ * `ImageBitmap` at all and silently ignores `flipY`, so that branch asks the browser to decode
+ * it flipped instead. Both land on the pixels `TextureLoader` would have produced; getting this
+ * wrong turns every standalone texture upside down with no error anywhere.
+ */
+async function loadBitmapTexture(url: string, renderer: unknown): Promise<Texture> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to load texture '${url}': ${response.status}.`);
+  const blob = new Blob([await response.arrayBuffer()]);
+  // No renderer means the native host or a bare-node load, both of which flip at upload.
+  const flipsAtUpload =
+    renderer === undefined ||
+    (renderer as { isWebGPURenderer?: boolean }).isWebGPURenderer === true;
+  const bitmap = await (flipsAtUpload
+    ? createImageBitmap(blob)
+    : createImageBitmap(blob, { imageOrientation: "flipY" }));
+  const texture = new Texture(bitmap);
+  texture.flipY = flipsAtUpload;
+  texture.needsUpdate = true;
+  return texture;
 }
 
 function resourcePathOf(url: string): string {
@@ -630,12 +677,39 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   };
 
   let requested = 0;
+  let requestedBytes = 0;
   let settled = 0;
+  let settledBytes = 0;
+
+  /**
+   * The compiled size of a logical path, or 0 when it is not knowable — no manifest, an external
+   * url, or an entry the compile step wrote without a size. Zero is the honest answer and keeps
+   * both byte counters at zero, which is the signal a reader uses to fall back to the file ratio.
+   */
+  const bytesOf = async (path: string): Promise<number> => {
+    if (isExternalAssetPath(path)) return 0;
+    const manifest = await manifestOnce();
+    const entry = manifest?.entries[path];
+    const bytes = isRecord(entry) ? entry.bytes : undefined;
+    return typeof bytes === "number" && Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
+  };
+
   const cached = <T>(kind: string, path: string, load: (url: string) => Promise<T>): Promise<T> => {
     const key = `${kind}:${path}`;
     const existing = cache.get(key);
     if (existing !== undefined) return existing.promise as Promise<T>;
     requested += 1;
+    // The size is only knowable once the manifest lands, so this load's weight joins the
+    // denominator a tick later than its count. Recorded here rather than inside the load chain
+    // so a load that fails still contributes the same weight to both sides of the ratio.
+    let weight = 0;
+    const weighed = bytesOf(path).then(
+      (bytes) => {
+        weight = bytes;
+        requestedBytes += bytes;
+      },
+      () => undefined,
+    );
     const entry: IAssetEntry = {
       disposed: false,
       kind: kind as AssetKind,
@@ -654,14 +728,13 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     entry.promise.catch(() => {
       if (cache.get(key) === entry) cache.delete(key);
     });
-    entry.promise.then(
-      () => {
-        settled += 1;
-      },
-      () => {
-        settled += 1;
-      },
-    );
+    const note = (): void => {
+      settled += 1;
+      void weighed.then(() => {
+        settledBytes += weight;
+      });
+    };
+    entry.promise.then(note, note);
     cache.set(key, entry);
     return entry.promise as Promise<T>;
   };
@@ -751,7 +824,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         return value;
       }),
     get progress() {
-      return { requested, settled };
+      return { requested, requestedBytes, settled, settledBytes };
     },
     resolve: (path) => resolveCandidates(path),
     release: (kind, path) => {
@@ -770,11 +843,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         if (/\.ktx2$/iu.test(url)) {
           return loadCompiledKtx2(url);
         }
-        if (typeof Image === "undefined" && typeof createImageBitmap === "function") {
-          const response = await fetch(url);
-          if (!response.ok) throw new Error(`Failed to load texture '${url}': ${response.status}.`);
-          const bitmap = await createImageBitmap(new Blob([await response.arrayBuffer()]));
-          return Object.assign(new Texture(bitmap), { needsUpdate: true });
+        if (typeof createImageBitmap === "function") {
+          return loadBitmapTexture(url, options.renderer);
         }
         const { TextureLoader: Loader } = await import("three");
         return loadWith(new Loader() as TextureLoader, url);
