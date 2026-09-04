@@ -207,6 +207,7 @@ export function buildReport(
     : subtract(afterPosition, beforePosition);
   const distance = movementDelta === undefined ? 0 : length(movementDelta);
   const performanceSeries = scenario.assert?.performance === undefined
+      && scenario.assert?.parity === undefined
     ? undefined
     : afterSnapshot?.runtimeDiagnosticsSeries ?? beforeSnapshot?.runtimeDiagnosticsSeries;
   const diagnostics: IPlaytestDiagnostic[] = [];

@@ -11,7 +11,13 @@ interface HotDiagnostics {
   entities: number;
   sceneObjects: number;
   canvases: number;
-  audio: { pooled: number; queued: number; voices: number };
+  audio: {
+    paused: number;
+    pooled: number;
+    queued: number;
+    unsupported: readonly string[];
+    voices: number;
+  };
   physics: number | null;
 }
 
@@ -387,7 +393,13 @@ test("preserves starter state and stays flat across ten real HMR updates", async
       expect(after.diagnostics.sceneObjects).toBe(before.diagnostics.sceneObjects);
       expect(after.diagnostics.entities).toBe(before.diagnostics.entities);
       expect(after.diagnostics.physics).toBe(before.diagnostics.physics);
-      expect(after.diagnostics.audio).toEqual({ pooled: 0, queued: 0, voices: 0 });
+      expect(after.diagnostics.audio).toEqual({
+        paused: 0,
+        pooled: 0,
+        queued: 0,
+        unsupported: [],
+        voices: 0,
+      });
       expect(after.score).toBeGreaterThanOrEqual(before.score);
       expect(Math.abs(after.playerX - before.playerX)).toBeLessThan(0.25);
     }

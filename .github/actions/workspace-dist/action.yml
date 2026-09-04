@@ -101,10 +101,24 @@ runs:
           echo "TN_WORKSPACE_ARCHIVES_INCOMPLETE: no @threenative/core tarball" >&2
           exit 1
         fi
+        # Listed to a file, and nothing is piped into `grep -q`. `grep -q` exits at its first
+        # match and closes the pipe under it; whatever is still writing takes SIGPIPE, and
+        # `set -o pipefail` makes that dead producer the step's status. `tar` printed
+        # `tar: stdout: write error` and the job failed with the archive perfectly valid — it
+        # took out typecheck, build, test-native and all three test-unit legs of one run while
+        # the same check passed on the commit before, because whether it fires depends on how
+        # far through the listing the match falls. Same shape as the `xvfb-run` trap this
+        # repository already refuses, where a cleanup's status replaces the real one.
+        #
+        # Piping a variable instead of `tar` does not fix it: `printf` is then the producer that
+        # dies. The pipe has to go.
+        core_listing="$(mktemp)"
+        tar -tzf "$core_archive" > "$core_listing"
         for required in package/mcp/engine-server.mjs package/mcp/engine.mjs package/capabilities.json; do
-          if ! tar -tzf "$core_archive" | grep -qx "$required"; then
+          if ! grep -qxF "$required" "$core_listing"; then
             echo "TN_WORKSPACE_ARCHIVE_MISSING: $core_archive has no $required" >&2
             exit 1
           fi
         done
+        rm -f "$core_listing"
         echo "workspace dist complete: $bundles bundles, $archives tarballs, core archive carries its MCP server"

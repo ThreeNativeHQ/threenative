@@ -476,6 +476,31 @@ Proves a live render sample exists and optionally bounds frame time, an fps floo
 }
 ```
 
+### `parity`
+
+PRD-222 Tier 2: proves the fps ratio of a parity pair — the same scene on the same device, once in the browser and once native. Lives in the second run and names the first run's saved report; refuses a pair whose halves ran on different devices, a thermally confounded half, or a missing series on either side. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web, desktop, bevy · **Requires:** runtime.performance
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `minFpsRatio` | positive number | no |
+| `minRenderParity` | positive number | no |
+| `referenceReport` | non-empty string | no |
+| `referenceSide` | 'browser' or 'native' | no |
+| `reference` | object | no |
+
+
+```json
+{
+  "parity": {
+    "minFpsRatio": 0.85,
+    "referenceReport": "reports/native.json",
+    "referenceSide": "native"
+  }
+}
+```
+
 ### `visibility`
 
 Proves projected entity visibility in the viewport. **Use when** that is the thing the scenario must prove.
