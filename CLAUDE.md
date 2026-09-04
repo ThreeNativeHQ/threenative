@@ -23,6 +23,10 @@ asks, each with a named override on the same object and honest reporting when ov
 convention off must not turn its measurement off, and a convention missing from the templates'
 `AGENTS.md` does not exist.
 
+**Auto by default, override always available** — if the engine can measure the right value at the
+point of use it decides, and the named override stays for the game that wants it; a knob whose
+default is a constant the author is told to revisit later is a bug, not an option.
+
 ## How you work
 
 1. **Ask what exists before you write a system.** The capability manifest
