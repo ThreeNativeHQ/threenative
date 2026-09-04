@@ -51,7 +51,7 @@ pnpm test
 node tools/look.mjs
 ```
 
-The game boots straight into `Play`: a ledge, pickup, crate, chasm, and flag produce `won` or
+The game boots straight into `Play`: a coastal island, pickup, crate, chasm, and flag produce `won` or
 `lost`; `R` and the React restart intent rebuild from `initialState`. Keep the packaged
 `assets/native-proof.glb` load and its console marker for the desktop asset gate. `Play.ts` owns
 gameplay, `src/render/` owns the look, `src/ui/Hud.tsx`/`Menu.tsx` own UI, and `state.ts` publishes

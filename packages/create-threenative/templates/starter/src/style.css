@@ -17,13 +17,13 @@
  * Tailwind's defaults. Nothing in @threenative/* reads this.
  */
 @theme {
-  --color-ink: #04080d;
-  --color-panel: #0d1c26;
-  --color-line: #14313f;
-  --color-lume: #6fe8ff;
-  --color-warn: #ffd27a;
-  --color-text: #a8ccd8;
-  --color-dim: #4e7686;
+  --color-ink: #17384a;
+  --color-panel: #24566a;
+  --color-line: #55929a;
+  --color-lume: #c2f2d6;
+  --color-warn: #ffdda1;
+  --color-text: #eff6dc;
+  --color-dim: #b1d2c7;
 
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }

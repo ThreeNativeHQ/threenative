@@ -45,7 +45,7 @@ export function createSpringArm(
   // Lead the route rather than centring the character. The level runs left to right, so
   // aiming ahead of the player puts the gap and the flag in frame from the first tick
   // instead of leaving half the picture empty behind them.
-  const lookAhead = options.lookAhead ?? new Vec3(2.1, 0.9, -0.4);
+  const lookAhead = options.lookAhead ?? new Vec3(1.8, 0.35, -1.15);
   const damping = options.damping ?? 0.18;
   const startingDistance = offset.length();
   const offsetDirection =

@@ -1,9 +1,14 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 
 import { acquireHotReloadProjectLock } from "../../test-support/hot-reload-lock.js";
 import { packageSourcesMatch } from "../../test-support/hot-reload-project.js";
+import {
+  contactShadowCoverage,
+  findLargestColorObject,
+} from "../../test-support/starter-look-image.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   assertAdapterInfo,
@@ -14,6 +19,33 @@ import {
 const repo = path.resolve(import.meta.dirname, "../..");
 
 describe("root Playwright lane contracts", () => {
+  it("isolates the connected warm crate from coastal colour distractors", () => {
+    const image = new PNG({ height: 80, width: 120 });
+    paint(image, { bottom: 34, left: 44, right: 65, top: 20 }, [190, 90, 40]);
+    paint(image, { bottom: 43, left: 48, right: 62, top: 39 }, [180, 82, 38]);
+    paint(image, { bottom: 20, left: 100, right: 115, top: 10 }, [220, 120, 50]);
+
+    expect(
+      findLargestColorObject(
+        image,
+        { bottom: 70, left: 0, right: 120, top: 0 },
+        (red, green, blue) => red > 130 && red > green * 1.2 && red > blue * 1.35,
+      ),
+    ).toEqual({ bounds: { bottom: 42, left: 44, right: 64, top: 20 }, count: 350 });
+  });
+
+  it("measures contact shadows relative to the surrounding floor", () => {
+    const image = new PNG({ height: 80, width: 120 });
+    paint(image, { bottom: 80, left: 0, right: 120, top: 0 }, [170, 170, 170]);
+    paint(image, { bottom: 58, left: 40, right: 62, top: 48 }, [70, 70, 70]);
+    const bounds = { bottom: 47, left: 42, right: 60, top: 20 };
+
+    expect(contactShadowCoverage(image, bounds)).toBeGreaterThan(0.02);
+
+    paint(image, { bottom: 80, left: 0, right: 120, top: 0 }, [45, 45, 45]);
+    expect(contactShadowCoverage(image, bounds)).toBe(0);
+  });
+
   it("runs adapter provenance setup in both browser and benchmark configs", async () => {
     const [browser, benchmark] = await Promise.all([
       readFile(path.join(repo, "playwright.config.ts"), "utf8"),
@@ -146,6 +178,22 @@ describe("root Playwright lane contracts", () => {
     expect(calls).toEqual(["click", "canvas", "context"]);
   });
 });
+
+function paint(
+  image: PNG,
+  area: { bottom: number; left: number; right: number; top: number },
+  [red, green, blue]: [number, number, number],
+): void {
+  for (let y = area.top; y < area.bottom; y += 1) {
+    for (let x = area.left; x < area.right; x += 1) {
+      const index = (y * image.width + x) * 4;
+      image.data[index] = red;
+      image.data[index + 1] = green;
+      image.data[index + 2] = blue;
+      image.data[index + 3] = 255;
+    }
+  }
+}
 
 describe("hot-reload project lock recovery", () => {
   it("recovers a lock whose recorded owner is dead and old", async () => {

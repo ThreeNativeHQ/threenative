@@ -348,13 +348,13 @@ export class RenderChain {
     let node = this.#input;
 
     for (const name of this.#requested) {
+      if (this.#tier === "off") {
+        dropped.push({ name, reason: "tier:off" });
+        continue;
+      }
       const definition = this.#stageDefinitions.get(name);
       if (definition === undefined) {
         dropped.push({ name, reason: "provider:missing" });
-        continue;
-      }
-      if (this.#tier === "off") {
-        dropped.push({ name, reason: "tier:off" });
         continue;
       }
       if (this.#renderer.kind !== "webgpu") {
@@ -613,11 +613,12 @@ function normalizeRequestedStages(
     }
     requested.add(id);
   }
-  return resolveStageOrder(definitions).filter((name) => requested.has(name));
+  return resolveStageOrder(definitions, requested).filter((name) => requested.has(name));
 }
 
 function resolveStageOrder(
   definitions: ReadonlyMap<RenderChainStageId, IRenderChainStage>,
+  additionalIds: Iterable<RenderChainStageId> = [],
 ): readonly RenderChainStageId[] {
   const ranks = new Map<RenderChainStageId, number>();
   const visiting: RenderChainStageId[] = [];
@@ -648,7 +649,7 @@ function resolveStageOrder(
     return resolved;
   };
 
-  const ordered = [...definitions.keys()].map((id, index) => ({
+  const ordered = [...new Set([...definitions.keys(), ...additionalIds])].map((id, index) => ({
     id,
     index,
     rank: rank(id),

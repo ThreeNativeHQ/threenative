@@ -10,6 +10,10 @@ import { WEBGPU_BROWSER_ARGS } from "./packages/playtest/src/runner/browser.js";
 import { localPackageEntries, workspacePackages } from "./scripts/workspace-packages.js";
 import { acquireHotReloadProjectLock } from "./test-support/hot-reload-lock.js";
 import { packageSourcesMatch } from "./test-support/hot-reload-project.js";
+import {
+  contactShadowCoverage,
+  findLargestColorObject,
+} from "./test-support/starter-look-image.js";
 import { makeTempDir } from "./test-support/temp-dir.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
@@ -260,10 +264,11 @@ async function assertStarterScreenshot(file: string): Promise<void> {
   }
   const stage = { bottom: 660, left: 220, right: 1060, top: 160 };
   const pixels = stagePixels(image, stage);
-  const warm = findColorBounds(
+  const warm = findLargestColorObject(
     image,
     stage,
-    (red, green, blue) => red > 130 && red > blue * 1.35 && green > blue * 1.15,
+    (red, green, blue) =>
+      red > 130 && red > green * 1.2 && red > blue * 1.35 && green > blue * 1.15,
   );
   const cool = countPixels(
     image,
@@ -394,49 +399,6 @@ function countPixels(
     }
   }
   return count;
-}
-
-function findColorBounds(
-  image: PNG,
-  stage: { bottom: number; left: number; right: number; top: number },
-  matches: (r: number, g: number, b: number) => boolean,
-) {
-  let count = 0;
-  let left = image.width;
-  let top = image.height;
-  let right = 0;
-  let bottom = 0;
-  for (let y = stage.top; y < stage.bottom; y += 1) {
-    for (let x = stage.left; x < stage.right; x += 1) {
-      const [red, green, blue] = readPixel(image, x, y);
-      if (!matches(red, green, blue)) continue;
-      count += 1;
-      left = Math.min(left, x);
-      top = Math.min(top, y);
-      right = Math.max(right, x);
-      bottom = Math.max(bottom, y);
-    }
-  }
-  return { bounds: count === 0 ? undefined : { bottom, left, right, top }, count };
-}
-
-function contactShadowCoverage(
-  image: PNG,
-  bounds: { bottom: number; left: number; right: number; top: number },
-): number {
-  let dark = 0;
-  let floor = 0;
-  for (let y = bounds.bottom + 1; y <= Math.min(image.height - 1, bounds.bottom + 36); y += 1) {
-    for (
-      let x = Math.max(0, bounds.left - 220);
-      x <= Math.min(image.width - 1, bounds.right + 20);
-      x += 1
-    ) {
-      if (pixelLuminance(...readPixel(image, x, y)) < 0.1) dark += 1;
-      floor += 1;
-    }
-  }
-  return dark / Math.max(1, floor);
 }
 
 function readPixel(image: PNG, x: number, y: number): [number, number, number] {

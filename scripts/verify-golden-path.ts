@@ -29,10 +29,11 @@ const MCP_REQUEST_TIMEOUT_MS = 30_000;
 const SCULPT_RESOURCE_UNSAFE_BLOCK =
   /```(?:glsl|wgsl|(?:java|type)script|[jt]s)\b[\s\S]*?(?:ShaderMaterial|onBeforeCompile|diffuseColor|gl_FragColor|new\s+Mesh(?:Standard|Physical|Phong|Basic|Lambert|Toon)Material)/u;
 
-const MCP_SURFACES = [
+export const MCP_SURFACES = [
   { name: "threenative-assets", file: "asset-mcp-tools.json" },
   { name: "threenative-sculpt", file: "sculpt-mcp-tools.json" },
   { name: "threenative-engine", file: "engine-mcp-tools.json" },
+  { name: "threenative-blender", file: "blender-mcp-tools.json" },
 ] as const;
 
 const AUTHORING_CAPABILITIES = [

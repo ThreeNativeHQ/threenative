@@ -142,6 +142,14 @@ describe("starter visual floor", () => {
     expect(mediumPreset.watercolorLevels).toBeLessThan(highLevels);
   });
 
+  it("should preserve most source contrast through the shipped Kuwahara mix", () => {
+    for (const tier of ["high", "medium"] as const) {
+      const strength = qualityPreset(tier).kuwaharaStrength;
+      expect(strength, tier).toBeDefined();
+      expect(1 - (strength ?? 1), tier).toBeGreaterThanOrEqual(0.6);
+    }
+  });
+
   it("should fail closed on missing paint input even for zero-strength no-ops", () => {
     expect(() => createKuwaharaStage({ strength: 0 }).build(undefined)).toThrow(
       /kuwahara input is missing/u,

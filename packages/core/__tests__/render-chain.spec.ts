@@ -185,6 +185,15 @@ describe("RenderChain", () => {
     expect(setOutputNode).not.toHaveBeenCalled();
   });
 
+  it("reports a requested built-in whose provider is missing", () => {
+    const chain = new RenderChain(renderer("webgpu"), {
+      request: { stages: ["traa"], tier: "off" },
+    });
+
+    expect(chain.applied.requested).toEqual(["traa"]);
+    expect(chain.applied.dropped).toEqual([{ name: "traa", reason: "tier:off" }]);
+  });
+
   it("disposes active authored stages exactly once across rebuilds", () => {
     const dispose = vi.fn();
     const current = renderer("webgpu");

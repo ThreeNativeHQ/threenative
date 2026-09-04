@@ -144,7 +144,7 @@
           "width": 1280,
           "height": 720,
           "minNonblankPixelRatio": 0.95,
-          "minDarkPixelRatio": 0.2,
+          "minDarkPixelRatio": 0.04,
           "maxLuminance": 0.25
         }
       },
@@ -155,7 +155,7 @@
           "width": 1280,
           "height": 360,
           "minNonblankPixelRatio": 0.95,
-          "minDarkPixelRatio": 0.2,
+          "minDarkPixelRatio": 0.08,
           "maxLuminance": 0.25
         }
       },

@@ -107,6 +107,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed 2026-09-02 after the named-export capability correction, on origin/main's
 // refreshed genre kits.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-09-03 after merging PRD-346's MCP host configs into the authored painterly
+  // starter. Every scaffold gains the Blender server wiring; starter also gains its bounded mix.
   // Recomputed 2026-09-03 for PRD-339, starter and sailing only: both dropped
   // `assets: { models: "none", textures: "none" }`. The compile step now takes the build's
   // `--target` and drops the passes a platform cannot decode, so the config no longer has to pin
@@ -231,19 +233,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "4c314beeb7d122d0af748695833b83a3f08dfd4dc3ea64fbfc763f99f61e1d81",
-  defense: "578ae785c1f16d3dd1a6235fb5a04cb480a01d0cf14ade2d80c3d00d8890dec3",
+  "action-rpg": "8e5d5f4b7fc6c68e4cf494063c98797413673b78f580b18b12f7f23d3f82aa9b",
+  defense: "e7a6c0a47d69ef8685ae14ae2c63019e9b342fe9d7b92788816401e46fbc8770",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "a19f400b0069454f3159ce44b21368af742c24de52b44dad284e70ba18dc8606",
-  platformer: "4cbca8efbb31acef09998df0307752a3bfcf9ce30485fa4ba6a4a73f2a6f318e",
-  runner: "04753badc06631dd62e692295e9a94d4463588ddae222b3144450519675a90e3",
-  puzzle: "38fd5bd01c589f514053d61453f9750a826fa6531705b6248b32636bef90c71f",
-  racing: "45c69f3679ac7b361c2dd85b9fe94a5a5e245e2af12a3f92c8e24e3c6643584b",
-  shooter: "3d41f429381ad2937abae2b565e591fb2a67ad70451d7c83200db7d7282de393",
+  minimal: "7299dc4e72123d7042d7f44123973e362420dee548644a8660d77e255b63ca3b",
+  platformer: "89697080d44c97bec93196faec82e6f387f49861530d1527539d5705572c151a",
+  runner: "27f71050b986d7077bff56b423de7737d6a467e98696c32141aa9b06705bce45",
+  puzzle: "1d09aa2bcb20b96612d0f4afef4581e38a82eac22b78d7432c33f8049c543f5f",
+  racing: "1f8822ecc84ae21b469bca88226a56b3aaa54c307e656e82d561107cb741396d",
+  shooter: "0986c178ae2f7531fc48cf1b56f2f10a78340d6aeabdd3e40e588f4e054ba42c",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "b533948ea5730a5d5a8c79dd26f6fcf61c65b21511e8d7dcd75d30e37e8ab79b",
+  starter: "00b6d215c5357390fcccc7f4b40a677b6d65d7792688c73802a2a7e68694a6e6",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -264,7 +266,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "75fa10f27e71d6303631fd90610c23d7c1a58720a23a0791d83683c7a3dbd5dd",
+  sailing: "5f189384877739005739af51572c4f05c99c1c1deab3909c7d51602d318aac46",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -284,6 +286,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // AGENTS.md paragraph that states the convention.
   // Recomputed 2026-08-29 for PRD-249. Every template moved because every scaffold embeds the
   // new FluidField2D capability manifest and generated capability-reference entry.
+  // Recomputed 2026-09-03 for PRD-346: `MCP_SERVERS` gained a fourth entry,
+  // `threenative-blender`, which `pnpm sync:mcp` writes into all seven host configs of every
+  // template, and the shared `finding-assets.md` reference gained the downloaded-.fbx loop.
+  // All ten trees moved; no template source did.
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -370,9 +376,6 @@ const STARTER_PATHS = [
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/worldEnvironment.ts",
-  "src/render/outline.ts",
-  "src/render/kuwahara.ts",
-  "src/render/watercolor.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/shapes.ts",
@@ -380,6 +383,8 @@ const STARTER_PATHS = [
   "src/render/easing.ts",
   "src/render/sky.ts",
   "src/render/scenery.ts",
+  "src/render/coast.ts",
+  "src/render/water.ts",
   "src/render/pennant.ts",
   "src/render/loading.ts",
   "src/entities/Crate.ts",
@@ -1349,6 +1354,10 @@ describe("create-threenative", () => {
             command: "node",
             args: [`${CORE_SHIM}/engine.mjs`],
           },
+          "threenative-blender": {
+            command: "node",
+            args: [`${CORE_SHIM}/blender.mjs`],
+          },
         },
       });
       await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
@@ -1380,6 +1389,10 @@ describe("create-threenative", () => {
           "threenative-engine": {
             command: "node",
             args: [`${CORE_SHIM}/engine.mjs`],
+          },
+          "threenative-blender": {
+            command: "node",
+            args: [`${CORE_SHIM}/blender.mjs`],
           },
         },
       });
