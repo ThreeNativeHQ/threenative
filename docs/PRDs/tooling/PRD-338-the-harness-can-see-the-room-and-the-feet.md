@@ -175,12 +175,37 @@ The same scenario's `diagnostics` assertion fails on this machine for `TN_PLAYTE
 and two SwiftShader teardown errors. The identical run at `main` fails identically with
 `animation.enemy` passing there too, so it is pre-existing and is not repaired here.
 
+### The authoring layer is told, not just the harness
+
+A capability a scaffolded project's agent cannot find does not exist. Three surfaces shipped into
+every scaffold now carry these commands:
+
+- `agent-files/.*/skills/threenative-playtest/SKILL.md` — what `doctor --url`'s `lighting`,
+  `materials` and `camera` lines report, the three frame-killing cases it names, and the
+  `assert.scene` / `maxFootSlide` / `strideSynced` fields that bound the same things in a scenario.
+- `agent-docs/references/debug-surface.md` — `sample()` returns `scene`, and the page's own
+  "what does not exist" section no longer says scene inspection reports only counts and extents.
+- `agent-docs/references/capture-the-frame.md` — when the complaint is *"it looks wrong"* rather
+  than *"show me"*, read the room first: a capture shows a black frame and cannot say why.
+
+`agent-docs/references/assertion-reference.md` is generated from the registry and gained both
+kinds automatically.
+
+### Two loop instruments repaired
+
+`pnpm alpha:bar` reported A7 — the row whose job is to prove the bar is runnable rather than
+transcribed — as `unmeasured` on every run, because it wrote its table into a batch README that had
+been archived and deleted. Repointed to `docs/verification/alpha-bar.md`, with the tests reading
+the constant instead of the seven hardcoded copies of the old path.
+
+`pnpm round:next` printed `close round 12` for eleven days after round 12 was closed: the close
+record shares the ledger directory and prefix, so it was parsed as a ledger, failed, and discarded.
+`roundCloseFile` reads it now, and a closed round's next action is `charter round N+1`.
+
 ## Not done here
 
-- **Nine dead documentation links will break `check:docs` for everyone once two local commits are
-  pushed.** `8d680023` and `ada4c10b` delete `docs/audits/` and `docs/PRDs/alpha-readiness/` without
-  repairing the index rows and cross-references that point at them. Both directories are still on
-  `origin/main`, so the links are valid there today and a repair on this branch would be wrong.
-  `scripts/alpha-bar.ts` also names the deleted `alpha-readiness/README.md` as its batch README.
-- **`pnpm round:next` is stale for the second time in the loop's history**, printing `close round
-  12` against a round already closed on disk.
+- **The `Android emulator visual parity` advisory lane is red for reasons no diff here can reach.**
+  It failed, passed unchanged, then failed again on a documentation-only commit, and it fails on
+  `main`. Its report reads `pass: 74, fail: 0, blocked: 18` — it exits 1 on blocked conformance
+  rows. Sibling lanes already own the Android and parity conformance bookkeeping, so this one is
+  recorded with its control rather than touched.

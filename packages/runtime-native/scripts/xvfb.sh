@@ -38,9 +38,14 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# 10s was enough until a loaded two-core CI runner missed it: run 33789430714's installed-verifier
+# case reported "Xvfb did not report a display within 10 seconds" while Xvfb was still alive and
+# starting. The loop already exits the moment Xvfb dies, so a higher ceiling costs a healthy run
+# nothing and only buys a slow one time. Tenths of a second.
+display_wait_tenths=300
 display=""
 waited=0
-while [ "$waited" -lt 100 ]; do
+while [ "$waited" -lt "$display_wait_tenths" ]; do
   display="$(tr -d '[:space:]' <"$display_file")"
   [ -n "$display" ] && break
   if ! kill -0 "$xvfb_pid" 2>/dev/null; then
@@ -52,7 +57,7 @@ while [ "$waited" -lt 100 ]; do
 done
 
 if [ -z "$display" ]; then
-  echo "scripts/xvfb.sh: Xvfb did not report a display within 10 seconds" >&2
+  echo "scripts/xvfb.sh: Xvfb did not report a display within $((display_wait_tenths / 10)) seconds" >&2
   exit 2
 fi
 

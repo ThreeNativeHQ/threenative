@@ -30,7 +30,11 @@
 // Cost: one `steady_clock::now()` pair per instrumented call and an add into a fixed array. The
 // calls it wraps are microseconds at their cheapest and seconds at their worst, so the
 // measurement cannot become the stall it measures. Accumulation stops at the first present —
-// after that the counters are frozen and the scopes are two clock reads and a branch.
+// after that the counters are frozen and the scopes are two clock reads and a branch — with one
+// deliberate exception (PRD-327 Phase 4): a *synchronous* pipeline compile on the main loop after
+// the first present is the late-game hitch this instrument exists to name, so `PipelineCompile`
+// keeps accumulating into a per-frame side accumulator that the hitch reporter drains on every
+// present and reports inside `TN_FRAME_HITCH`. Every other segment stays frozen.
 
 #include <array>
 #include <chrono>
@@ -79,11 +83,42 @@ inline constexpr std::array<const char*, kStallSegmentCount> kStallSegmentNames 
  */
 class StallBudget {
   public:
-    /** Adds `elapsedMs` to one segment. Ignored once the launch has been reported. */
+    /** What one present's drain of the late-compile accumulator measured. */
+    struct PostPresentCompile {
+        double ms = 0.0;
+        unsigned long long calls = 0;
+    };
+
+    /**
+     * Adds `elapsedMs` to one segment.
+     *
+     * Once the launch has been reported the named totals freeze; only `PipelineCompile` keeps
+     * counting, into the per-frame accumulator `takePostPresentPipelineCompile()` drains — the
+     * late-game synchronous compile `TN_FRAME_HITCH` reports (PRD-327 Phase 4).
+     */
     void add(StallSegment segment, double elapsedMs) {
-        if (reported_) return;
+        if (reported_) {
+            if (segment == StallSegment::PipelineCompile) {
+                postPresentPipelineCompileMs_ += elapsedMs;
+                postPresentPipelineCompileCalls_ += 1;
+            }
+            return;
+        }
         totals_[static_cast<int>(segment)] += elapsedMs;
         calls_[static_cast<int>(segment)] += 1;
+    }
+
+    /**
+     * Returns the pipeline-compile time and call count accrued since the previous call, and
+     * resets them — one drain per present, from the hitch reporter's call site.
+     */
+    PostPresentCompile takePostPresentPipelineCompile() {
+        PostPresentCompile taken;
+        taken.ms = postPresentPipelineCompileMs_;
+        taken.calls = postPresentPipelineCompileCalls_;
+        postPresentPipelineCompileMs_ = 0.0;
+        postPresentPipelineCompileCalls_ = 0;
+        return taken;
     }
 
     /** True once `report` has run, so the scopes can stop paying for a frozen budget. */
@@ -172,6 +207,8 @@ class StallBudget {
     unsigned long long calls_[kStallSegmentCount] = {};
     double beforeFrame_[kStallSegmentCount] = {};
     unsigned long long beforeFrameCalls_[kStallSegmentCount] = {};
+    double postPresentPipelineCompileMs_ = 0.0;
+    unsigned long long postPresentPipelineCompileCalls_ = 0;
     double firstFrameBeganMs_ = -1.0;
     bool reported_ = false;
 };
@@ -191,7 +228,8 @@ inline StallBudget& stallBudget() {
 class StallScope {
   public:
     explicit StallScope(StallSegment segment)
-        : segment_(segment), active_(!stallBudget().reported()) {
+        : segment_(segment),
+          active_(!stallBudget().reported() || segment == StallSegment::PipelineCompile) {
         if (active_) startMs_ = coldStartNowMs();
     }
 
