@@ -69,6 +69,41 @@ exists to prevent. Core now reports this one too, discriminating a real `AudioPa
 
 Playback-rate detune in the C++ mixer would fix both properties at once.
 
+## 5. There is no way to stop one voice — a per-entity loop cannot be ended
+
+`AudioBus.stop()` stops everything on the bus. There is nothing that ends a single voice, and the
+returned handle cannot be used for it either: three's `Audio.stop()` sets `source.onended = null`
+before stopping, so the bus's reclaim hook never fires. The voice stays in `#live` for the life of
+the bus — never returned to the pool, still counted in `voices`, still parented into the scene
+graph. That is the leak the pool was built to prevent, reachable through the public API.
+
+It bites the moment a game gives a loop to an entity, which is the obvious use of `playAt`:
+
+```ts
+// An animal starts grazing. There is no call that ends this when it stops.
+const chewing = bus.playAt(buffer, animal.object, { loop: true });
+```
+
+Wildwood wanted exactly this for six grazing animals and could not have it. The workaround it
+ships is intermittent one-shots — a bite every two seconds or so instead of a held loop, which
+suits chewing and does not suit a river, a fire, a beehive or a machine.
+
+**Request:** `AudioBus.release(voice)` (or `stop(voice?)`), which retires that one voice through
+`#retire` so it leaves the scene graph and returns to the free list. Roughly:
+
+```ts
+release(voice: ThreeAudio<AudioNode>): void {
+  const entry = this.#live.find((candidate) => candidate.voice === voice);
+  if (entry !== undefined) this.#reclaim(entry);
+}
+```
+
+It is portable — nothing here touches a browser-only API — and it wants a spec proving the released
+voice leaves `voices`, returns to `pooled`, and leaves the scene graph, plus one proving a voice
+released twice is not double-counted. I did not add it because the tarball rebuild is the
+coordinator's and the game had a workaround; it is a small, contained addition to a file this lane
+owns.
+
 ## For the asset-pipeline audio pass: the seam metric that must not throw on good audio
 
 Written here rather than built, because conditioning is the pipeline's job and this is the one part
