@@ -2,9 +2,16 @@
 prd_contract: v1
 ---
 
-# PRD-324 — an imported rig instances and poses correctly, once
+# PRD-354 — an imported rig instances and poses correctly, once
 
-**Status: PARTIAL, 2026-09-04. Phases 0–2 DONE and shipped; Phases 3–7 OPEN.** Consumer census:
+**Renumbered from PRD-324 on 2026-09-04.** The number collided with
+[`PRD-324 — the capability manifest cannot forget an export`](../agent-leverage/PRD-324-the-capability-manifest-cannot-forget-an-export.md),
+filed a day earlier on 2026-09-01. This PRD is the later claimant, so it moved. Evidence files and
+commit messages written before the rename still say "PRD-324" and mean this document —
+`docs/verification/PRD-324-phase1-phase2.md`, `PRD-324-second-consumer-census.md` and
+`PRD-324-phase3-second-consumer-check.md` keep their filenames rather than churn the record.
+
+**Status: PARTIAL, 2026-09-04 (filed as PRD-324). Phases 0–2 DONE and shipped; Phases 3–7 OPEN.** Consumer census:
 [`docs/verification/PRD-324-second-consumer-census.md`](../../verification/PRD-324-second-consumer-census.md).
 
 **The defect that opened this PRD is fixed.** Phases 0–2 landed 2026-09-02 and stand: the pose
