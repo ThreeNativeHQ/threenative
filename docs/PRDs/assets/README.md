@@ -78,3 +78,93 @@ From `sandbox/wildwood` at `d535f51`, 2026-09-04. Full record:
 |---|---|
 | a browser rendering a cooked GLB end to end — never yet done | 349 Phase 4 (`quarry`), and it must be a real render, not a structural assertion |
 | whether wildwood can build for Android *at all* today | 350 Phase 1, one command |
+
+---
+
+## Traps that have already cost someone a day
+
+Verified live against `main` on 2026-09-04. Each names the file that still enforces it, so a stale
+entry is falsifiable rather than folklore.
+
+### Bites PRD-349 first, because turning the cook on changes who gets passes
+
+- **An empty pass chain hangs `threenative build`.** `packages/assets/src/worker-pool.ts:85` spins
+  up a `Worker` unconditionally, and `compile.ts` has **no** `passes.length === 0` guard — grep it
+  and see. A template resolving to zero passes (today: `assets: "none"`) starts a pool that never
+  drains. 349 changes which templates get a non-empty chain, so it owns this either way: add the
+  guard, or make sure no template can land on the empty path.
+- **Every compressed source texture must be width- and height-divisible by 4.** BC7, BC1, ETC2 and
+  ASTC all use 4×4 blocks. Documented as a `@constraint` at `packages/assets/src/index.ts:88` and
+  `passes/texture.ts:78`. The failure is nasty: the pipeline reports **0 fail**, and WebGPU rejects
+  the texture at *draw* time. Use a `codec: "none"` override for an intentionally unaligned one.
+- **Validate the config seam producer→consumer, not each side.** `assets.models.virtual` was once
+  accepted by one layer and rejected by the next, and both layers' tests passed. A round trip
+  through the real config path is the only test that catches it.
+
+### Bites PRD-349 Phase 4 — the browser render that has never been done
+
+- **Headless Chromium cannot capture WebGPU.** You get a white screenshot and a correct DOM, which
+  reads as a pass to anything checking structure. Capture *headed*. This is exactly why the README
+  says Phase 4 must be a real render, not a structural assertion.
+- **Prefer a numeric probe to a capture.** `playtest doctor` and an assertion beat a screenshot; a
+  capture is the last resort, not the first.
+- **`vite` needs `--host 127.0.0.1`** on this machine, and a WebGPU run that cannot name its
+  adapter may be SwiftShader — use `--browser-recipe webgpu` and check `adapter.info`.
+
+### Bites PRD-352
+
+- **`asset_import_unreal` runs from a prebuilt `sandbox/.mcp-tools/`.** Committing an importer fix
+  does not change what agents actually invoke. Rebuild that, or you will test the old binary.
+- **A scaffolded game cannot resolve the Unreal packages.** `capabilities.json` advertises
+  `raw-unreal`/`ueformat` symbols, and the starter template's `package.json` names neither —
+  verified, 0 references. Anything 352 tells a game to import has to arrive through the scaffold.
+- **The ground-truth corpus is a separate repo** with `umodel` and the fab packs cached locally, so
+  coordinate and vertex claims are measurable rather than argued. Bump `IMPORTER_VERSION` when the
+  reader changes.
+
+### Bites any of them, because they all write evidence
+
+- **`docs/verification/` now has a retention policy with a gate** (PRD-323, landed 2026-09-04).
+  Evidence is kept by *citation*, not age; there are byte, file-count and **1,000-line-per-file**
+  caps in `scripts/check-evidence-budget.ts`; and deleting tracked evidence needs the owner's
+  checkpoint. Write the record, keep it under the line cap, and it looks after itself.
+- **The retention index restales on every doc edit.** `docs/benchmark/SCREENSHOT-RETENTION.md` is
+  generated, and `pnpm budgets` fails when it drifts — which means **pre-push fails**. Run
+  `npx tsx scripts/generate-retention-index.ts` as the last step before committing, every time.
+  This will bite you more often than anything else on this page.
+- **`pnpm budgets` needs a built workspace.** `CAPABILITY_BUILT_IMPORT_MISSING` means "no `dist`",
+  not a bad capability. Run `pnpm build` first.
+- **`pnpm test` aborts in `packages/runtime-native`** before the ~4,000 root tests run, whenever the
+  native contract binaries are unbuilt — normal in a fresh worktree. That is fail-closed behaviour,
+  not your regression. Run `npx vitest run` directly to get the root number.
+- **`git ls-files` does not tell you what a spec reads.** If you untrack or move anything, verify
+  with `git archive HEAD | tar -x` into an empty directory and run the suite *there* — a spec can
+  depend on a directory it never names. PRD-323 got this wrong twice, each time costing a CI round
+  trip, because everything passed locally where the files were still on disk. Run the same check
+  against `origin/main` as a control: 8 files fail in any archive-built tree and are the harness,
+  not you.
+- **Commit messages go in a file.** Backticks in `git commit -m` are command substitution and will
+  silently eat every symbol name. Use `-F`.
+
+### Bites you the first time you rebase
+
+**Rebasing across the PRD-323 Phase 4 commit deletes `docs/benchmark/sweeps/` arm sources from your
+working tree**, and `.gitignore` then hides their absence from `git status`. Git removes files it
+was tracking when moving between commits either side of the untracking. Recover with:
+
+```sh
+git restore --source=origin/main --worktree docs/benchmark/sweeps
+```
+
+Related: that tree is now **half tracked**. Measurement artifacts (`proof.json`, `sweep.json`,
+`proof-artifacts/`, `captures/`) are the benchmark record and stay in git; generated arm sources are
+untracked *except* for the 13 archives a `docs/verification/sweep-*.md` ledger names, because
+`sweep-delta.spec.ts` and `sweep-ledger.spec.ts` recompute their measurements from that source.
+`scripts/__tests__/sweep-source-negations.spec.ts` keeps the two lists in step — if it goes red, it
+tells you which archive and what to add.
+
+### One number on this page is dated on purpose
+
+The measured evidence above is from `sandbox/wildwood` at `d535f51`, a **separate repository** at
+`../sandbox`, not a subdirectory. Wildwood has moved since. If you re-measure and get different
+bytes, the commit is why — that is drift in the subject, not an error in the record.
