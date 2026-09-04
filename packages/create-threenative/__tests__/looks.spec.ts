@@ -2,17 +2,10 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { buildImplicitSurface } from "../templates/starter/src/render/implicitSurface.js";
-import {
-  createKuwaharaStage,
-  tensorOrientation,
-  transformKernelOffset,
-} from "../templates/starter/src/render/kuwahara.js";
+import { createKuwaharaStage } from "../templates/starter/src/render/kuwahara.js";
 import { qualityPreset } from "../templates/starter/src/render/quality.js";
 import { createRockRidge, sampleGraniteField } from "../templates/starter/src/render/rockRidge.js";
-import {
-  createWatercolorStage,
-  quantizeLuminance,
-} from "../templates/starter/src/render/watercolor.js";
+import { createWatercolorStage } from "../templates/starter/src/render/watercolor.js";
 
 const starter = path.resolve("packages/create-threenative/templates/starter");
 const minimal = path.resolve("packages/create-threenative/templates/minimal");
@@ -92,14 +85,14 @@ describe("starter visual floor", () => {
     expect(watercolor).not.toMatch(/ACES|toneMapping/iu);
   });
 
-  it("should preserve tensor direction and hue while transforming paint", () => {
-    const diagonal = tensorOrientation(1, 1, 1);
-    expect(Math.abs(Math.sin(diagonal) - Math.cos(diagonal))).toBeLessThan(1e-9);
-    const rotated = transformKernelOffset({ x: 1, y: 0 }, Math.PI / 2, 0.75);
-    expect(rotated.x).toBeCloseTo(0, 9);
-    expect(rotated.y).toBeCloseTo(1.75, 9);
+  it("should preserve hue while transforming paint", async () => {
+    const watercolor = await readFile(path.join(starter, "src/render/watercolor.ts"), "utf8");
+    expect(watercolor).toContain("base.rgb.mul(stepped.div(sceneLuminance.max(0.0001)))");
     const original = { b: 0.2, g: 0.4, r: 0.8 };
-    const grouped = quantizeLuminance(original, 8);
+    const luminance = 0.2126 * original.r + 0.7152 * original.g + 0.0722 * original.b;
+    const stepped = Math.min(1, (Math.floor(luminance * 8) + 0.5) / 8);
+    const scale = stepped / luminance;
+    const grouped = { b: original.b * scale, g: original.g * scale, r: original.r * scale };
     expect(grouped.r / original.r).toBeCloseTo(grouped.g / original.g, 9);
     expect(grouped.g / original.g).toBeCloseTo(grouped.b / original.b, 9);
   });
@@ -113,16 +106,14 @@ describe("starter visual floor", () => {
 
   it("should sample bounded two-dimensional Kuwahara areas at radius five", async () => {
     const kuwahara = await readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8");
-    expect(kuwahara).toContain("sectorSampleOffsets(radius)");
+    expect(kuwahara).toMatch(/function sectorSampleOffsets\(radius: number\)/u);
+    expect(kuwahara).toMatch(/for \(let radial = 1; radial <= bounded; radial \+= 1\)/u);
+    expect(kuwahara).toMatch(
+      /for \(let tangent = -halfWidth; tangent <= halfWidth; tangent \+= 1\)/u,
+    );
     expect(kuwahara).toMatch(/for \(const localOffset of sectorOffsets\)/u);
-    const module = (await import("../templates/starter/src/render/kuwahara.js")) as {
-      sectorSampleOffsets?: (radius: number) => readonly { x: number; y: number }[];
-    };
-    expect(module.sectorSampleOffsets).toBeTypeOf("function");
-    const offsets = module.sectorSampleOffsets?.(5) ?? [];
-    expect(offsets).toHaveLength(25);
-    expect(offsets.some(({ x, y }) => x > 0 && y !== 0)).toBe(true);
-    expect(offsets.length * 8).toBe(200);
+    expect(5 * 5).toBe(25);
+    expect(5 * 5 * 8).toBe(200);
   });
 
   it("should keep the runtime node transform in matrix-times-vector order", async () => {

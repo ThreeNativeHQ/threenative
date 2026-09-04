@@ -85,10 +85,7 @@ After changing bounds, field, or resolution, run three fixed seeds and require t
 `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`;
 override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
 the source. The bridge flushes about 100 ms; keep state human-readable and frame feedback in Three.js.
-The starter's painterly look is ordinary generated source: `outline.ts`, `kuwahara.ts`, and
-`watercolor.ts` are reached by `worldEnvironment.ts`, while `quality.ts` owns their tier, radius,
-resolution, and strength. Change or delete those files to change the look; `TN_RENDER_CHAIN` names
-`outline`, `kuwahara`, and `watercolor` independently, and a missing stage observation is a failure.
+The starter's painterly look is generated source (`outline.ts`, `kuwahara.ts`, `watercolor.ts`) reached by `worldEnvironment.ts`; `quality.ts` owns tier, radius, resolution, and strength; `TN_RENDER_CHAIN` names each independently, and a missing stage observation is a failure.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. A scenario
 with no assertions or missing observations fails; open a real capture after visual changes.
 

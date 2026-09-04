@@ -3,12 +3,6 @@
 import { color, convertToTexture, float, hash, luminance, mix, screenUV, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
 
-export interface IRgb {
-  readonly b: number;
-  readonly g: number;
-  readonly r: number;
-}
-
 export interface IWatercolorStageOptions {
   readonly levels?: number;
   readonly paperStrength?: number;
@@ -23,15 +17,6 @@ export interface IWatercolorStage {
   readonly dispose: () => void;
   readonly minimumTier: "medium";
   readonly name: "watercolor";
-}
-
-/** Quantises one luminance value while scaling RGB together, so hue is unchanged. */
-export function quantizeLuminance(rgb: IRgb, levels: number): IRgb {
-  const luminanceValue = 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
-  if (luminanceValue <= 0) return { b: 0, g: 0, r: 0 };
-  const stepped = Math.min(1, (Math.floor(luminanceValue * levels) + 0.5) / levels);
-  const scale = stepped / luminanceValue;
-  return { b: rgb.b * scale, g: rgb.g * scale, r: rgb.r * scale };
 }
 
 /** Luminance grouping plus deterministic procedural paper tooth. */

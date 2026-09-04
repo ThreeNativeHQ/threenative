@@ -16,26 +16,7 @@ export interface IKuwaharaStage {
   readonly minimumTier: "medium";
   readonly name: "kuwahara";
 }
-export function tensorOrientation(xx: number, xy: number, yy: number): number {
-  return 0.5 * Math.atan2(2 * xy, xx - yy);
-}
-export function transformKernelOffset(
-  offset: KernelOffset,
-  orientation: number,
-  anisotropy: number,
-): KernelOffset {
-  const major = 1 + anisotropy;
-  const minor = 1 - anisotropy;
-  const scaledX = offset.x * major;
-  const scaledY = offset.y * minor;
-  const axisX = Math.cos(orientation);
-  const axisY = Math.sin(orientation);
-  return {
-    x: axisX * scaledX - axisY * scaledY,
-    y: axisY * scaledX + axisX * scaledY,
-  };
-}
-export function sectorSampleOffsets(radius: number): readonly KernelOffset[] {
+function sectorSampleOffsets(radius: number): readonly KernelOffset[] {
   const bounded = boundedRadius(radius);
   const halfWidth = Math.floor(bounded / 2);
   const offsets: KernelOffset[] = [];

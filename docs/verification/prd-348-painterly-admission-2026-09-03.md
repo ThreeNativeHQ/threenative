@@ -85,8 +85,8 @@ generated stages matched:
 
 ```text
 outline.ts    b7dea8cee21a0225ca7bcb82bb0b0c35ec5a77178b510d861c4e9d3c593882fa
-kuwahara.ts   1f139a5f891cc0696812c7dddd18de0c92673fb08031b844b4dcf3e915c0dfc6
-watercolor.ts 433f68b411fc33ecdd866eb6ee5e417d6b83631ff7a5bf5571f6db5cfa010cb7
+kuwahara.ts   de75de8beed98afcd522a280a28a59b6d0d5f621b2fa95a93e036ab2a39cbcfd
+watercolor.ts cc642c21e98e2b0f3fc505ac00b54d05638863a1fb4fa42129b3de30c41fc39b
 ```
 
 ## Negative controls
