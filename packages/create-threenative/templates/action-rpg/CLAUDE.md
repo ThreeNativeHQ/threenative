@@ -72,9 +72,9 @@ explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await
 `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's state. Seeded
 randomness is deterministic only when `defineGame({ seed })` is configured.
 
-`AnimationPlayer` re-times a looping clip to the ground the body covers so feet do not skate;
-`strideSync: false` opts out and `assert.animation[].maxFootSlide` bounds it either way. Measure a
-wrong-looking animation before rewriting it. `clipPoseError` scores a retarget against its source
+`AnimationPlayer` re-times a looping clip to the ground the body covers so feet do not skate —
+in-place clips too, off a planted foot; a speed past what the clip carries is **clamped at 3x**, so
+set it near `player.stride.clipGroundSpeed`. `strideSync: false` opts out, `maxFootSlide` bounds it. `clipPoseError` scores a retarget against its source
 per bone in degrees — whole quaternions relative to each rig's bind pose, so bind conventions
 cancel and an axis-rolled limb is caught where a bone-direction check reads zero.
 `clipTrackBindings` names tracks that bind nothing (`<bone>.undefined`, which plays the bind

@@ -11,16 +11,21 @@ export const version = "0.3.0";
 /**
  * Play a skinned or sprite animation from game code.
  *
- * A travelling clip's playback rate is matched to the ground the body actually covers, so feet
+ * A locomotion clip's playback rate is matched to the ground the body actually covers, so feet
  * do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and
  * `player.stride` reports the measurement either way. Name the body a game moves as
- * `strideRoot` when the rig is a child of it.
+ * `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and
+ * Unreal export, every Mixamo "in place" clip, every stock animal pack — are matched too: their
+ * stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so.
  * @situation play an animation on a character
  * @situation switch a character between idle and attack clips
  * @situation stop a walking character's feet from sliding or spinning
  * @situation match a walk or run cycle to how fast a character is moving
+ * @situation match an in-place walk cycle with no root motion to the body's speed
+ * @situation find out what speed an animation clip was authored for
  * @constraint name the body a game moves as strideRoot when the animated rig is a child of it
  * @constraint a one-shot clip always plays at its authored rate; the matched rate re-times loops only
+ * @constraint the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so
  * @override strideSync controls whether the matched rate is applied while stride is still measured
  * @example const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });
  */
