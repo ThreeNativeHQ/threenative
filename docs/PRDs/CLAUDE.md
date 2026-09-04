@@ -31,11 +31,31 @@ not. A gate result that lives only in a commit message does not exist. The self-
 resumes from `docs/verification/round-*.md` — `pnpm round:next` computes the single next action and
 `pnpm round:deletions` reports exports unreached across consecutive rounds.
 
-**Exception — runtime/core performance records consolidate into
-`docs/verification/runtime-perf-state.md`** (owner decision, 2026-08-27): a new performance
-finding updates that file in place instead of opening another `perf`-report file, which keeps the
-frame ledger, the lever graveyard and the method rules in one place. Everything else stays one
-file per run.
+## Retention — evidence has a lifecycle, and `pnpm budgets` enforces it
+
+Evidence goes **live → cited → deleted**. What keeps a file is a *citation*, not its age: a round
+ledger, a done PRD, an open PRD, or a script that names it — or one that opens its directory as a
+root, which no by-name scan can see, so those roots are listed in `scripts/evidence-citations.ts`.
+`docs/benchmark/SCREENSHOT-RETENTION.md` is generated from that scan; never hand-edit it.
+
+Three caps in `scripts/check-evidence-budget.ts` fail closed, and raising one needs its own commit
+saying why: tracked bytes and file counts per tree, and **1,000 lines per evidence file**. Past the
+line cap a file consolidates in place, keeping every result a ledger or a done PRD cites. Two files
+are exempt with their reasons recorded beside them — a pinned third-party source snapshot a live
+PRD's borrow map addresses, and the consolidation target below.
+
+Deleting tracked evidence needs the owner's checkpoint, and `pnpm round:next`, `pnpm
+round:deletions` and `pnpm alpha:bar` must print byte-identical output either side of it.
+
+**The one consolidation exception — runtime/core performance records go into
+`docs/verification/runtime-perf-state.md`** (owner decision, 2026-08-27), now one case of the rule
+above: a new performance finding updates that file in place instead of opening another
+`perf`-report file, which keeps the frame ledger, the lever graveyard and the method rules in one
+place. Everything else stays one file per run.
+
+Under `docs/benchmark/sweeps/` the generated arm sources are untracked build output; the
+measurements beside them — `proof.json`, `proof-artifacts/`, captures — are the benchmark record
+and stay in git. Three test suites read them by path.
 
 A red-green acceptance criterion states its mutation: which line, reverted, makes the test fail —
 and pastes that failure. Five repair rounds in one batch were spent on reds produced by the wrong

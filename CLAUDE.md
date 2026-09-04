@@ -201,4 +201,7 @@ go — an uncommitted edit here does get overwritten.
 
 `.worktrees/` holds other agents' lanes — never search it, never read its AGENTS.md. A repo-wide
 grep or a "closest AGENTS.md" walk that lands there is reading a dead lane from another day, not
-this repository.
+this repository. `docs/benchmark/sweeps/*/` had the same hazard: 2,963 generated arm `.ts` sources
+every grep used to cross. Those are now untracked — the measurements beside them (`proof.json`,
+`proof-artifacts/`, captures) stay tracked, because they are the benchmark record and three test
+suites read them.
