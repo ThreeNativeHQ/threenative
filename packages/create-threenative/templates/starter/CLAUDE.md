@@ -51,7 +51,7 @@ pnpm test
 node tools/look.mjs
 ```
 
-The game boots straight into `Play`: a ledge, pickup, crate, chasm, and flag produce `won` or
+The game boots straight into `Play`: a coastal island, pickup, crate, chasm, and flag produce `won` or
 `lost`; `R` and the React restart intent rebuild from `initialState`. Keep the packaged
 `assets/native-proof.glb` load and its console marker for the desktop asset gate. `Play.ts` owns
 gameplay, `src/render/` owns the look, `src/ui/Hud.tsx`/`Menu.tsx` own UI, and `state.ts` publishes
@@ -85,6 +85,7 @@ After changing bounds, field, or resolution, run three fixed seeds and require t
 `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`;
 override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
 the source. The bridge flushes about 100 ms; keep state human-readable and frame feedback in Three.js.
+The starter's painterly look is generated source (`outline.ts`, `kuwahara.ts`, `watercolor.ts`) reached by `worldEnvironment.ts`; `quality.ts` owns tier, radius, resolution, and strength; `TN_RENDER_CHAIN` names each independently, and a missing stage observation is a failure.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. A scenario
 with no assertions or missing observations fails; open a real capture after visual changes.
 

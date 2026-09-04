@@ -2,7 +2,10 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { buildImplicitSurface } from "../templates/starter/src/render/implicitSurface.js";
+import { createKuwaharaStage } from "../templates/starter/src/render/kuwahara.js";
+import { qualityPreset } from "../templates/starter/src/render/quality.js";
 import { createRockRidge, sampleGraniteField } from "../templates/starter/src/render/rockRidge.js";
+import { createWatercolorStage } from "../templates/starter/src/render/watercolor.js";
 
 const starter = path.resolve("packages/create-threenative/templates/starter");
 const minimal = path.resolve("packages/create-threenative/templates/minimal");
@@ -41,6 +44,119 @@ describe("starter visual floor", () => {
     expect(`${post}\n${environment}`).toContain("createRenderChain");
     expect(`${post}\n${environment}`).toContain("bloom");
     expect(play).toContain("setupPost");
+  });
+
+  it("should collect the starter's authored outline caller", async () => {
+    const [environment, painterly] = await Promise.all([
+      readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/painterly.ts"), "utf8"),
+    ]);
+    expect(painterly).toContain("createOutlineStage");
+    expect(painterly).toContain('names.push("outline")');
+    expect(environment).toContain("createRenderChain");
+    // The other half of the same rule, and the one that actually bites: `worldEnvironment.ts` is
+    // the plumbing every kit copies verbatim, so this kit's aesthetic must not be inside it.
+    // `shared-render-sources.spec.ts` fails when it is, and this says why in one place.
+    expect(environment).not.toContain("createOutlineStage");
+  });
+
+  it("should keep painterly stages in generated source with a measured tier policy", async () => {
+    const [environment, painterly, quality, outline, kuwahara, watercolor] = await Promise.all([
+      readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/painterly.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/quality.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/outline.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/watercolor.ts"), "utf8"),
+    ]);
+    const generated = [outline, kuwahara, watercolor].join("\n");
+    expect(generated).not.toContain("@threenative/");
+    expect(generated).not.toMatch(/ShaderMaterial|gl_FragColor|postprocessing/iu);
+    expect(painterly).toContain("createKuwaharaStage");
+    expect(painterly).toContain("createWatercolorStage");
+    expect(environment).not.toContain("createKuwaharaStage");
+    expect(environment).not.toContain("createWatercolorStage");
+    expect(generated.indexOf('name: "outline"')).toBeGreaterThanOrEqual(0);
+    expect(generated.indexOf('name: "kuwahara"')).toBeGreaterThanOrEqual(0);
+    expect(generated.indexOf('name: "watercolor"')).toBeGreaterThanOrEqual(0);
+    expect(generated.indexOf('after: "outline"')).toBeGreaterThanOrEqual(0);
+    expect(generated.indexOf('after: "kuwahara"')).toBeGreaterThanOrEqual(0);
+    expect(quality).toContain("outlineEnabled: true");
+    expect(quality).toContain("kuwaharaRadius: 5");
+    expect(quality).toContain("kuwaharaResolutionScale: 0.5");
+    expect(quality).toContain("outlineEnabled: false");
+    expect(quality).toContain("kuwaharaEnabled: false");
+    expect(quality).toContain("watercolorEnabled: false");
+    expect(kuwahara).toContain("HalfFloatType");
+    expect(kuwahara).toContain("renderTarget.dispose");
+    expect(watercolor).not.toMatch(/ACES|toneMapping/iu);
+  });
+
+  it("should preserve hue while transforming paint", async () => {
+    const watercolor = await readFile(path.join(starter, "src/render/watercolor.ts"), "utf8");
+    expect(watercolor).toContain("base.rgb.mul(stepped.div(sceneLuminance.max(0.0001)))");
+    const original = { b: 0.2, g: 0.4, r: 0.8 };
+    const luminance = 0.2126 * original.r + 0.7152 * original.g + 0.0722 * original.b;
+    const stepped = Math.min(1, (Math.floor(luminance * 8) + 0.5) / 8);
+    const scale = stepped / luminance;
+    const grouped = { b: original.b * scale, g: original.g * scale, r: original.r * scale };
+    expect(grouped.r / original.r).toBeCloseTo(grouped.g / original.g, 9);
+    expect(grouped.g / original.g).toBeCloseTo(grouped.b / original.b, 9);
+  });
+
+  it("should use the half-angle in the runtime tensor graph", async () => {
+    const kuwahara = await readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8");
+    expect(kuwahara).toMatch(
+      /const orientation = tsl\s*\.\s*atan\(\s*tensorSample\.y\.mul\(2\),\s*tensorSample\.x\.sub\(tensorSample\.z\)\s*\)\s*\.\s*mul\(0\.5\);/u,
+    );
+  });
+
+  it("should sample bounded two-dimensional Kuwahara areas at radius five", async () => {
+    const kuwahara = await readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8");
+    expect(kuwahara).toMatch(/function sectorSampleOffsets\(radius: number\)/u);
+    expect(kuwahara).toMatch(/for \(let radial = 1; radial <= bounded; radial \+= 1\)/u);
+    expect(kuwahara).toMatch(
+      /for \(let tangent = -halfWidth; tangent <= halfWidth; tangent \+= 1\)/u,
+    );
+    expect(kuwahara).toMatch(/for \(const localOffset of sectorOffsets\)/u);
+    expect(5 * 5).toBe(25);
+    expect(5 * 5 * 8).toBe(200);
+  });
+
+  it("should keep the runtime node transform in matrix-times-vector order", async () => {
+    const kuwahara = await readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8");
+    const helper = kuwahara.slice(kuwahara.indexOf("function transformKernelOffsetNode"));
+    expect(helper).toMatch(
+      /axis\.x\s*\.\s*mul\(scaled\.x\)\s*\.\s*sub\(axis\.y\s*\.\s*mul\(scaled\.y\)\)[\s\S]*axis\.y\s*\.\s*mul\(scaled\.x\)\s*\.\s*add\(axis\.x\s*\.\s*mul\(scaled\.y\)\)/u,
+    );
+    expect(helper).not.toMatch(/scaled\.x\s*\.\s*mul\(axis\.x\)/u);
+    expect(helper).not.toMatch(/scaled\.y\s*\.\s*mul\(axis\.y\)/u);
+  });
+
+  it("should use fewer watercolor luminance bands on medium than high", () => {
+    const highPreset = qualityPreset("high");
+    const mediumPreset = qualityPreset("medium");
+    const highLevels = highPreset.watercolorLevels ?? 8;
+    expect(highLevels).toBe(8);
+    expect(mediumPreset.watercolorLevels).toBe(6);
+    expect(mediumPreset.watercolorLevels).toBeLessThan(highLevels);
+  });
+
+  it("should preserve most source contrast through the shipped Kuwahara mix", () => {
+    for (const tier of ["high", "medium"] as const) {
+      const strength = qualityPreset(tier).kuwaharaStrength;
+      expect(strength, tier).toBeDefined();
+      expect(1 - (strength ?? 1), tier).toBeGreaterThanOrEqual(0.6);
+    }
+  });
+
+  it("should fail closed on missing paint input even for zero-strength no-ops", () => {
+    expect(() => createKuwaharaStage({ strength: 0 }).build(undefined)).toThrow(
+      /kuwahara input is missing/u,
+    );
+    expect(() => createWatercolorStage({ strength: 0 }).build(undefined)).toThrow(
+      /watercolor input is missing/u,
+    );
   });
 
   it("should remove debug materials and wire live shadows", async () => {

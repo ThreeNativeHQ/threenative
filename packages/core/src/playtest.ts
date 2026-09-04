@@ -71,6 +71,9 @@ export function playtest<
             ? undefined
             : {
                 ...observation,
+                contributions: observation.contributions.map((contribution) => ({
+                  ...contribution,
+                })),
                 dropped: observation.dropped.map((stage) => ({ ...stage })),
                 requested: [...observation.requested],
                 stages: [...observation.stages],

@@ -80,6 +80,136 @@ describe("RenderChain", () => {
     expect(current.installed).toHaveLength(1);
   });
 
+  it("accepts an authored outline stage anchored after bloom", () => {
+    const order: string[] = [];
+    const current = renderer("webgpu");
+    const chain = new RenderChain(current, {
+      stages: [
+        { ...stage("bloom", order), name: "bloom" },
+        {
+          ...stage("outline", order),
+          after: "bloom",
+          name: "outline",
+        },
+        stage("ssgi", order),
+      ],
+      request: { stages: ["outline", "bloom", "ssgi"], tier: "high" },
+    });
+
+    expect(order).toEqual(["ssgi", "bloom", "outline"]);
+    expect(chain.applied.stages).toEqual(["ssgi", "bloom", "outline"]);
+  });
+
+  it("preserves supplied order for authored siblings on one anchor", () => {
+    const order: string[] = [];
+    const chain = new RenderChain(renderer("webgpu"), {
+      stages: [
+        stage("bloom", order),
+        { ...stage("paint", order), after: "bloom" },
+        { ...stage("ink", order), after: "bloom" },
+      ],
+      request: { stages: ["ink", "paint", "bloom"], tier: "high" },
+    });
+
+    expect(order).toEqual(["bloom", "paint", "ink"]);
+    expect(chain.applied.stages).toEqual(["bloom", "paint", "ink"]);
+  });
+
+  it("reports whether each applied stage changed the graph output", () => {
+    const chain = new RenderChain(renderer("webgpu"), {
+      input: { name: "scene" },
+      stages: [
+        { ...stage("bloom", []), build: (input) => input },
+        { ...stage("outline", []), after: "bloom" },
+      ],
+      request: { stages: ["outline", "bloom"], tier: "high" },
+    });
+
+    expect(chain.applied.contributions).toEqual([
+      { graphOutputChanged: false, name: "bloom" },
+      { graphOutputChanged: true, name: "outline" },
+    ]);
+  });
+
+  it("rejects malformed authored graphs before installing an output", () => {
+    const cases: Array<{ message: RegExp; stages: IRenderChainStage[] }> = [
+      {
+        message: /non-blank/u,
+        stages: [{ ...stage("  ", []), name: "  " }],
+      },
+      {
+        message: /duplicate/u,
+        stages: [stage("bloom", []), stage("bloom", [])],
+      },
+      {
+        message: /anchor.*missing/u,
+        stages: [{ ...stage("outline", []), after: "not-supplied" }],
+      },
+      {
+        message: /exactly one/u,
+        stages: [{ ...stage("outline", []), after: "bloom", before: "ssgi" }],
+      },
+      {
+        message: /cycle.*ink.*paint.*ink/u,
+        stages: [
+          { ...stage("ink", []), after: "paint" },
+          { ...stage("paint", []), after: "ink" },
+        ],
+      },
+    ];
+
+    for (const { message, stages } of cases) {
+      const current = renderer("webgpu");
+      const setOutputNode = vi.spyOn(current, "setOutputNode");
+      expect(
+        () =>
+          new RenderChain(current, {
+            stages,
+            request: { stages: stages.map(({ name }) => name), tier: "high" },
+          }),
+      ).toThrow(message);
+      expect(setOutputNode).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects a requested stage without a supplied definition", () => {
+    const current = renderer("webgpu");
+    const setOutputNode = vi.spyOn(current, "setOutputNode");
+
+    expect(
+      () =>
+        new RenderChain(current, {
+          request: { stages: ["outline"], tier: "high" },
+        }),
+    ).toThrow(/no supplied definition/u);
+    expect(setOutputNode).not.toHaveBeenCalled();
+  });
+
+  it("reports a requested built-in whose provider is missing", () => {
+    const chain = new RenderChain(renderer("webgpu"), {
+      request: { stages: ["traa"], tier: "off" },
+    });
+
+    expect(chain.applied.requested).toEqual(["traa"]);
+    expect(chain.applied.dropped).toEqual([{ name: "traa", reason: "tier:off" }]);
+  });
+
+  it("disposes active authored stages exactly once across rebuilds", () => {
+    const dispose = vi.fn();
+    const current = renderer("webgpu");
+    const chain = new RenderChain(current, {
+      stages: [{ ...stage("outline", []), after: "bloom", dispose }, stage("bloom", [])],
+      request: { stages: ["outline", "bloom"], tier: "high" },
+    });
+
+    expect(dispose).not.toHaveBeenCalled();
+    chain.apply();
+    expect(dispose).toHaveBeenCalledTimes(1);
+    chain.dispose();
+    chain.dispose();
+    expect(dispose).toHaveBeenCalledTimes(2);
+  });
+
   it("places probe-volume irradiance before screen-space GI", () => {
     const order: string[] = [];
     const current = renderer("webgpu");
@@ -104,7 +234,8 @@ describe("RenderChain", () => {
 
     new RenderChain(current, {
       input,
-      request: { stages: ["bloom"], tier: "high", velocity: { pass: worldPass } },
+      worldPass,
+      request: { stages: ["bloom"], tier: "high" },
       stages: [stage("bloom", [])],
     });
 

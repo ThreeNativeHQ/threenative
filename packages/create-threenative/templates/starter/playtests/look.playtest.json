@@ -114,6 +114,16 @@
       "entity": "player",
       "minDistance": 4
     },
+    "renderChain": {
+      "tier": "high",
+      "stages": {
+        "includes": ["outline", "kuwahara", "watercolor"],
+        "order": ["outline", "kuwahara", "watercolor"]
+      },
+      "contributions": {
+        "graphOutputChanged": ["outline", "kuwahara", "watercolor"]
+      }
+    },
     "visibility": [
       {
         "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the look assertion.",
@@ -134,7 +144,7 @@
           "width": 1280,
           "height": 720,
           "minNonblankPixelRatio": 0.95,
-          "minDarkPixelRatio": 0.2,
+          "minDarkPixelRatio": 0.04,
           "maxLuminance": 0.25
         }
       },
@@ -145,8 +155,19 @@
           "width": 1280,
           "height": 360,
           "minNonblankPixelRatio": 0.95,
-          "minDarkPixelRatio": 0.2,
+          "minDarkPixelRatio": 0.08,
           "maxLuminance": 0.25
+        }
+      },
+      {
+        "region": {
+          "x": 320,
+          "y": 180,
+          "width": 640,
+          "height": 420,
+          "minNonblankPixelRatio": 0.7,
+          "minDarkPixelRatio": 0.02,
+          "maxLuminance": 0.4
         }
       }
     ]

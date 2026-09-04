@@ -13,6 +13,11 @@ import {
   packageSourcesMatch,
   selectHotReloadServerProject,
 } from "./test-support/hot-reload-project.js";
+import {
+  contactShadowCoverage,
+  dominantColorCoverage,
+  findLargestColorObject,
+} from "./test-support/starter-look-image.js";
 import { makeTempDir } from "./test-support/temp-dir.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
@@ -263,10 +268,11 @@ async function assertStarterScreenshot(file: string): Promise<void> {
   }
   const stage = { bottom: 660, left: 220, right: 1060, top: 160 };
   const pixels = stagePixels(image, stage);
-  const warm = findColorBounds(
+  const warm = findLargestColorObject(
     image,
     stage,
-    (red, green, blue) => red > 130 && red > blue * 1.35 && green > blue * 1.15,
+    (red, green, blue) =>
+      red > 130 && red > green * 1.2 && red > blue * 1.35 && green > blue * 1.15,
   );
   const cool = countPixels(
     image,
@@ -281,15 +287,14 @@ async function assertStarterScreenshot(file: string): Promise<void> {
   // in a temp directory that is gone by the time anyone reads it. Every throw below carries what
   // the stage actually contained.
   // A stage that is one flat colour is a canvas that never painted, not a look regression. On
-  // GitHub's runners Chromium serves WebGPU from SwiftShader and `page.screenshot` composites the
-  // DOM without the WebGPU canvas: the HUD, the score and the control legend all arrive, and the
-  // 3D view is blank white. Checked against the frame that failed run 33296384093 — adapter
-  // `swiftshader/google`, stage 98.1% rgb(224,224,224), luminance 0.9869, zero warm and zero cool
-  // pixels. No threshold can tell that apart from a broken look, so the gate reports it as
-  // unexecuted, with the adapter and the measurements named, and never as a pass.
+  // GitHub's runners serve WebGPU from SwiftShader and can composite the DOM without the WebGPU
+  // canvas: the HUD and loading bar arrive over one flat background while the 3D view is absent.
+  // Captured examples include run 33296384093 at 98.1% one light bucket and run 33841815831 at
+  // 98.2% one dark bucket, so colour or luminance alone is not the signal. A painted hardware frame
+  // is much more diverse; the recovered coastal reference's largest bucket covers 66.2%.
   const adapter = await readCaptureAdapter(file);
-  const uniformStage = countColorBuckets(pixels) <= 4;
-  if (uniformStage && warm.count === 0 && cool === 0) {
+  const unpaintedStage = dominantColorCoverage(image, stage) >= 0.98;
+  if (unpaintedStage) {
     const software = /swiftshader|llvmpipe|lavapipe|softpipe/iu.test(
       `${adapter?.architecture ?? ""} ${adapter?.vendor ?? ""}`,
     );
@@ -299,7 +304,7 @@ async function assertStarterScreenshot(file: string): Promise<void> {
       );
     }
     console.info(
-      `TN_STARTER_LOOK_UNEXECUTED: adapter ${adapter?.vendor}/${adapter?.architecture} did not composite the WebGPU canvas into the screenshot (luminance ${luminance.toFixed(4)}, warm 0, cool 0, top colours ${describeDominantColors(pixels)}). The look gate did not execute on this machine; it is proven on a hardware adapter, not here.`,
+      `TN_STARTER_LOOK_UNEXECUTED: adapter ${adapter?.vendor}/${adapter?.architecture} did not composite the WebGPU canvas into the screenshot (luminance ${luminance.toFixed(4)}, dominant colour ${(dominantColorCoverage(image, stage) * 100).toFixed(1)}%, top colours ${describeDominantColors(pixels)}). The look gate did not execute on this machine; it is proven on a hardware adapter, not here.`,
     );
     return;
   }
@@ -350,13 +355,6 @@ async function readCaptureAdapter(
   }
 }
 
-/** How many 32-level colour buckets the stage covers. A painted 3D scene covers many. */
-function countColorBuckets(pixels: readonly [number, number, number][]): number {
-  const buckets = new Set<string>();
-  for (const [red, green, blue] of pixels) buckets.add(`${red >> 5},${green >> 5},${blue >> 5}`);
-  return buckets.size;
-}
-
 function describeDominantColors(pixels: readonly [number, number, number][]): string {
   const buckets = new Map<string, number>();
   for (const [red, green, blue] of pixels) {
@@ -397,49 +395,6 @@ function countPixels(
     }
   }
   return count;
-}
-
-function findColorBounds(
-  image: PNG,
-  stage: { bottom: number; left: number; right: number; top: number },
-  matches: (r: number, g: number, b: number) => boolean,
-) {
-  let count = 0;
-  let left = image.width;
-  let top = image.height;
-  let right = 0;
-  let bottom = 0;
-  for (let y = stage.top; y < stage.bottom; y += 1) {
-    for (let x = stage.left; x < stage.right; x += 1) {
-      const [red, green, blue] = readPixel(image, x, y);
-      if (!matches(red, green, blue)) continue;
-      count += 1;
-      left = Math.min(left, x);
-      top = Math.min(top, y);
-      right = Math.max(right, x);
-      bottom = Math.max(bottom, y);
-    }
-  }
-  return { bounds: count === 0 ? undefined : { bottom, left, right, top }, count };
-}
-
-function contactShadowCoverage(
-  image: PNG,
-  bounds: { bottom: number; left: number; right: number; top: number },
-): number {
-  let dark = 0;
-  let floor = 0;
-  for (let y = bounds.bottom + 1; y <= Math.min(image.height - 1, bounds.bottom + 36); y += 1) {
-    for (
-      let x = Math.max(0, bounds.left - 220);
-      x <= Math.min(image.width - 1, bounds.right + 20);
-      x += 1
-    ) {
-      if (pixelLuminance(...readPixel(image, x, y)) < 0.1) dark += 1;
-      floor += 1;
-    }
-  }
-  return dark / Math.max(1, floor);
 }
 
 function readPixel(image: PNG, x: number, y: number): [number, number, number] {

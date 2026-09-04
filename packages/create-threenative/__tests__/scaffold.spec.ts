@@ -106,18 +106,11 @@ const BUG_REPORT_SKILL_PATHS = [
 // second reason — its AGENTS.md/CLAUDE.md pair now states the stride convention.
 // Recomputed 2026-09-02 after the named-export capability correction, on origin/main's
 // refreshed genre kits.
-// Recomputed 2026-09-03: every template's AGENTS.md/CLAUDE.md pair now names the two loading
-// conventions (`loadAll`, `addInSlices`) on the last line of its portable authoring contracts, and
-// the generated capability reference embedded in every scaffold gained their two entries, so all
-// ten trees move. The action-rpg tree moves for a second reason already in HEAD: the in-place
-// stride wording landed in 4fd802a0 without re-pinning these, so this recompute clears that red
-// too. Computed from the committed tree, with no uncommitted edits under packages/create-threenative.
-// Recomputed 2026-09-03 for the second reconciliation with main: this branch's loading-convention
-// wording and the remote lane's PRD-222 Phase 1 work (all ten scenarios gain `minFps: 30`, the
-// generated assertion reference documents `assert.parity`) both land, so neither side's pinned
-// values described the merged tree - all ten measured values differ from both. Computed from the
-// merged tree after `pnpm build`, with no uncommitted edits under packages/create-threenative.
+// Recomputed 2026-09-04 after merging PR #99: every scaffold gains the loading, trace, audio,
+// streaming, and alpha-antialiasing surfaces; starter also retains its authored coastal look.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-09-03 after merging PRD-346's MCP host configs into the authored painterly
+  // starter. Every scaffold gains the Blender server wiring; starter also gains its bounded mix.
   // Recomputed 2026-09-03 for PRD-339, starter and sailing only: both dropped
   // `assets: { models: "none", textures: "none" }`. The compile step now takes the build's
   // `--target` and drops the passes a platform cannot decode, so the config no longer has to pin
@@ -151,16 +144,6 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // menu-entry steps they had been missing since the menu screen flow landed, so a scaffolded
   // project's own `npm test` can reach the play scene at all. Scenario bytes moved and no source
   // did, so exactly one tree's hash moved.
-  // Recomputed 2026-09-03: SSGI gathers at half resolution — `ssgiResolutionScale`, defaulted
-  // to 0.5 in the canonical `worldEnvironment.ts` and every kit's `quality.ts` — plus the new
-  // `agent-docs/trace-a-slow-frame.md` and its link from every template AGENTS.md. Full-res
-  // SSGI cost 14.4 ms of a 39.7 ms frame and drove the resolution scaler to 0.44; half res
-  // holds 60 fps at 0.72 with the look inside noise, so it is the better default to ship.
-  // Recomputed 2026-09-03 again: `ctx.startup.whenFrameworkReady()` joined it, and the cookbook
-  // gained the deadlock trap that comes with holding startup.
-  // Recomputed 2026-09-03: `ctx.startup.hold()` entered the public surface, so the shared ctx
-  // surface table documents it and the ctx cookbook carries its recipe. Both are copied into every
-  // scaffold, so all ten trees moved and no template source did.
   // Recomputed 2026-08-30 for InstancedBatch: the capability manifest and the reference generated
   // from it both gained an entry, and those bytes are embedded in every scaffold, so all seven
   // trees move. The racing tree moves for a second reason — its track gathers the ten kerb stones
@@ -252,19 +235,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "66dee4e60d85539780e6bca663ce0656ee442c6d3f6407550993d5012b0b9073",
-  defense: "e0a8ca217a6e9b3abddcac11b6275de4cf9fae8b2d191499aa3ca16929bd0ddd",
+  "action-rpg": "b3c4fd61dc4714f6a6dbaafe7daf3dc12ddadf0377d173dc2048f617df4afe72",
+  defense: "e285c968de52d3f36734523b5260ab280c9940251b0e90f5c3316cdd71fb51d3",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "f6898c901a5ead33b37be24bd98beec427e624856f6bd554c1b7fdb53ddfd9f8",
-  platformer: "e21afc3b1ed1488caccbc0b8821417e8df29950663efa772d370d9b5b10ed206",
-  runner: "bbf68dbb2cb3191093859e461dfe4e2c1d916cc974617205057c8c68cacf124f",
-  puzzle: "04dc8e815c28efbdfb50321f5ae441b7b801fd60b85d6f59553f95911ed740e4",
-  racing: "ba6e47865aa2e6c256c5b7fd4883495ce5acc0044dc06745220289edab5963b0",
-  shooter: "e97d4b6ed0ae7e5b13a08b758d7966859b927d6a43b9512ad3c4661d4806ba68",
+  minimal: "ee8d7996110d44de232d93c4bdb5be949ccc556f3ce9b394c54f5747c8d327cf",
+  platformer: "dcb555c326b867ba3a6fd862529392915c36a0d504b23bfc91f4cdb66035573d",
+  runner: "e0560580da5bfaec7b74bc9323f11b7631015ae04fa9616fcb882d350be70728",
+  puzzle: "f58bbfbed74e5fcecaf48fb9195344939f5f56b6a66e30a6094150a2fcabcd05",
+  racing: "68bca0a1d558329dd9ddb35138f99d99362a6a750383d29cafdd7cfa083d098a",
+  shooter: "a003b65bb7a6a86513f33712ceb0e82091a7c17c1a82fb9acf7f03c8e9c65931",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "4b282582b92cf40a9ae5ec835ce11bddf20f520c34e51e5f307aece7f53ddbb2",
+  starter: "558f1877ae0cdaea58af65e3229621ca6438602786d300cce6de21f1d1c8a8fc",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -285,7 +268,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "7ee9d7f28ae640c67a4f973ddbee3b0959fc79814d641b9fc890b0eec8b2933f",
+  sailing: "bdafb6fa5fa172279393b898a9ad448480b2d442b45ea67cf96a99b423e81817",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -402,6 +385,8 @@ const STARTER_PATHS = [
   "src/render/easing.ts",
   "src/render/sky.ts",
   "src/render/scenery.ts",
+  "src/render/coast.ts",
+  "src/render/water.ts",
   "src/render/pennant.ts",
   "src/render/loading.ts",
   "src/entities/Crate.ts",

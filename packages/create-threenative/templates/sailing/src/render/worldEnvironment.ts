@@ -191,6 +191,30 @@ export interface IWorldEnvironmentOptions {
   readonly bloomRadius?: number;
   /** Luminance a pixel must exceed before it blooms at all. */
   readonly bloomThreshold?: number;
+  /**
+   * Which of this kit's authored stages to run.
+   *
+   * Separate from the graph below, and not for tidiness: the chain has to know whether anything
+   * was requested at all before the scene pass exists — with nothing requested it sets an
+   * exposure and returns, and no pass is ever built. So the request is a static decision the kit
+   * makes from its own config, and only the graph needs the pass.
+   */
+  readonly authoredStageNames?: readonly string[];
+  /**
+   * This kit's own stages, composed after the built-ins.
+   *
+   * A factory because an authored stage needs the two things only this file can produce: the
+   * scene pass's depth texture node, which does not exist until the pass is built, and the
+   * resolved tier. It returns the complete graph — including stages left dormant this frame — so
+   * that an anchor like `watercolor after kuwahara` keeps naming a stage that exists.
+   *
+   * Naming specific stages here instead — an `outlineEnabled`, a `kuwaharaRadius` — is what put
+   * one kit's look inside the plumbing every kit copies verbatim, which
+   * `shared-render-sources.spec.ts` exists to refuse.
+   */
+  readonly authoredStages?: (context: IWorldEnvironmentStageContext) => readonly ChainStage[];
+  /** Quality tier passed to the measured chain; the quality module owns this value. */
+  readonly renderChainTier?: ChainTier;
   readonly tonemapMode?: TonemapMode;
   /**
    * Scene-referred exposure: multiplied into the scene pass **before** the tone curve, so
@@ -226,12 +250,33 @@ export interface IWorldEnvironmentTarget {
  * compiler checks the composition instead of taking a cast's word for it.
  */
 type ChainNode = Node<"vec4">;
+/**
+ * The scene pass's depth texture, as the pass itself types it.
+ *
+ * Named through `pass()` rather than written out because the addon's return type is the only
+ * honest spelling of it, and a hand-written alias here would drift the first time three changes it.
+ */
+export type DepthTextureNode = ReturnType<ReturnType<typeof pass>["getTextureNode"]>;
+type ChainTier = "high" | "medium" | "low" | "off";
 type ChainContext = {
-  readonly tier: "high" | "medium" | "low" | "off";
+  readonly tier: ChainTier;
 };
-type ChainStage = {
-  readonly name: "ambientOcclusion" | "ssgi" | "godRays" | "ssr" | "sharpen" | "bloom" | "vignette";
+/**
+ * What a kit's `authoredStages` factory is handed. The depth node is the scene pass's, so a
+ * stage that reads depth gets the same texture the built-in stages read rather than its own.
+ */
+export interface IWorldEnvironmentStageContext {
+  readonly depthNode: DepthTextureNode;
+  readonly tier: ChainTier;
+}
+
+export type ChainStage = {
+  readonly name: string;
+  readonly before?: string;
+  readonly after?: string;
   readonly available?: (context: ChainContext) => boolean | string;
+  readonly dispose?: () => void;
+  readonly minimumTier?: ChainTier;
   /** The chain plumbing is stage-agnostic, so it names the node it carries `unknown`. */
   readonly build: (input: unknown, context: ChainContext) => unknown;
 };
@@ -276,6 +321,7 @@ export type OutputRenderer = {
   setOutputNode?: (node: unknown) => void;
   createRenderChain?: (options: {
     input?: unknown;
+    worldPass?: unknown;
     request?: { stages?: readonly string[]; tier?: ChainContext["tier"] };
     stages?: readonly ChainStage[];
   }) => {
@@ -309,7 +355,17 @@ export class WorldEnvironment {
         `Unknown tonemapMode '${String(tonemapMode)}'. Use one of: ${Object.keys(TONEMAP).join(", ")}.`,
       );
     }
+    const renderChainTier = options.renderChainTier ?? "high";
+    if (!isChainTier(renderChainTier)) {
+      throw new Error(
+        `Unknown render chain tier '${String(renderChainTier)}'. Use high, medium, low, or off.`,
+      );
+    }
     this.#options = {
+      // A kit with no stages of its own is the common case, so both default to empty rather
+      // than to a branch every call site has to remember.
+      authoredStageNames: options.authoredStageNames ?? [],
+      authoredStages: options.authoredStages ?? (() => []),
       ssgiEnabled: options.ssgiEnabled ?? false,
       ssgiQuality: quality,
       ssgiIntensity: options.ssgiIntensity ?? 1,
@@ -337,6 +393,7 @@ export class WorldEnvironment {
       bloomStrength: options.bloomStrength ?? 0.7,
       bloomRadius: options.bloomRadius ?? 0.5,
       bloomThreshold: options.bloomThreshold ?? 0.2,
+      renderChainTier,
       tonemapMode,
       exposure: options.exposure ?? 1,
     };
@@ -359,7 +416,7 @@ export class WorldEnvironment {
     const raw = renderer.raw as { toneMapping?: number; toneMappingExposure?: number };
     raw.toneMapping = TONEMAP[options.tonemapMode];
 
-    const requested = (
+    const requested: string[] = (
       ["ssgi", "ambientOcclusion", "godRays", "ssr", "sharpen", "bloom", "vignette"] as const
     ).filter(
       (name) =>
@@ -371,6 +428,7 @@ export class WorldEnvironment {
         (name === "bloom" && options.bloomEnabled) ||
         (name === "vignette" && options.vignetteAmount > 0),
     );
+    requested.push(...options.authoredStageNames);
 
     // With no stage running there is no node graph to install — the renderer's own
     // tone-mapping path renders the frame, and the exposure scalar is live there (measured:
@@ -590,6 +648,11 @@ export class WorldEnvironment {
       }),
     ];
 
+    // The kit's own stages, composed after the built-ins. The factory is called with the two
+    // things only this file can produce — the scene pass's depth texture and the resolved tier —
+    // and returns the complete authored graph plus the subset to run.
+    stages.push(...options.authoredStages({ depthNode: depth(), tier: options.renderChainTier }));
+
     // A composed base colour with every stage off still has to reach the frame. The chain
     // installs nothing for an empty stage list, so this is the one path that goes direct.
     if (requested.length === 0) {
@@ -607,8 +670,9 @@ export class WorldEnvironment {
     if (renderer.createRenderChain === undefined) throw new Error("RenderChain is unavailable.");
     const chain = renderer.createRenderChain({
       input: exposed,
-      request: { stages: requested, tier: "high" },
+      request: { stages: requested, tier: options.renderChainTier },
       stages,
+      worldPass: scenePass,
     });
     this.#reportApplied(chain.applied.stages, chain.applied.dropped);
     return { dropped: chain.applied.dropped, stages: chain.applied.stages };
@@ -628,7 +692,7 @@ export class WorldEnvironment {
     dropped: readonly { name: string; reason: string }[],
   ): void {
     const options = this.#options;
-    const off: Record<ChainStage["name"], string> = {
+    const off: Record<string, string> = {
       ambientOcclusion: "gtaoEnabled is false",
       bloom: "bloomEnabled is false",
       godRays: "godraysEnabled is false",
@@ -636,12 +700,17 @@ export class WorldEnvironment {
       ssgi: "ssgiEnabled is false",
       ssr: "ssrEnabled is false",
       vignette: "vignetteAmount is 0",
+      kuwahara: "kuwaharaEnabled is false",
+      outline: "outlineEnabled is false",
+      watercolor: "watercolorEnabled is false",
     };
-    const stages = (Object.keys(off) as ChainStage["name"][]).sort().map((name) => {
-      if (applied.includes(name)) return { applied: true, name };
-      const refused = dropped.find((entry) => entry.name === name);
-      return { applied: false, name, reason: refused?.reason ?? off[name] };
-    });
+    const stages = Object.keys(off)
+      .sort()
+      .map((name) => {
+        if (applied.includes(name)) return { applied: true, name };
+        const refused = dropped.find((entry) => entry.name === name);
+        return { applied: false, name, reason: refused?.reason ?? off[name] };
+      });
     console.info(
       `TN_WORLD_ENVIRONMENT:${JSON.stringify({
         denoise: options.denoiseEnabled,
@@ -653,4 +722,8 @@ export class WorldEnvironment {
       })}`,
     );
   }
+}
+
+function isChainTier(value: unknown): value is ChainTier {
+  return value === "high" || value === "medium" || value === "low" || value === "off";
 }

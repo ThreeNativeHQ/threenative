@@ -477,7 +477,7 @@ describe("scenario schema boundaries", () => {
     expect(() => validateVisualAssertion({ frameDiff: { baselineImage: "/base.png" } }, "invalid.json", "assert.visual[0]")).toThrow(/baselineImage/u);
     expect(() => validateRenderChainAssertion({ tier: "ultra" }, "invalid.json", "assert.renderChain")).toThrow(/tier/u);
     expect(() => validateRenderChainAssertion({ velocity: { maxRejectionFraction: 2 } }, "invalid.json", "assert.renderChain")).toThrow(/between 0 and 1/u);
-    expect(() => validateRenderChainAssertion({}, "invalid.json", "assert.renderChain")).toThrow(/tier or velocity/u);
+    expect(() => validateRenderChainAssertion({}, "invalid.json", "assert.renderChain")).toThrow(/tier, stages, contributions, or velocity/u);
     expect(() => validateResourcePathAssertion({ anyOf: "not-an-array", id: "state" }, "invalid.json", "assert.resources[0]")).toThrow(/array/u);
     expect(validateResourcePathAssertion({ atSteps: [{ label: "start" }], id: "state" }, "valid.json", "assert.resources[0]")).toMatchObject({ atSteps: [{ label: "start" }] });
     expect(() => validateViewport({ width: 1 }, "invalid.json")).toThrow(/height/u);

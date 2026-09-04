@@ -28,6 +28,70 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
     }
   }
 
+  const stageAssertion = assertion.stages;
+  if (stageAssertion !== undefined) {
+    const observedStages = observed?.stages;
+    if (stageAssertion.includes !== undefined) {
+      emitStageCheck(
+        ctx,
+        observedStages,
+        "includes",
+        stageAssertion.includes,
+        observedStages !== undefined && stageAssertion.includes.every((stage) => observedStages.includes(stage)),
+      );
+    }
+    if (stageAssertion.excludes !== undefined) {
+      emitStageCheck(
+        ctx,
+        observedStages,
+        "excludes",
+        stageAssertion.excludes,
+        observedStages !== undefined && stageAssertion.excludes.every((stage) => !observedStages.includes(stage)),
+      );
+    }
+    if (stageAssertion.order !== undefined) {
+      emitStageCheck(
+        ctx,
+        observedStages,
+        "order",
+        stageAssertion.order,
+        observedStages !== undefined && isOrderedSubsequence(stageAssertion.order, observedStages),
+      );
+    }
+  }
+
+  const contributionAssertion = assertion.contributions;
+  if (contributionAssertion !== undefined) {
+    const observedContributions = observed?.contributions;
+    const pass = Array.isArray(observedContributions)
+      && contributionAssertion.graphOutputChanged.every((name) =>
+        observedContributions.some((entry) => entry.name === name && entry.graphOutputChanged === true),
+      );
+    ctx.assertions.push({
+      details: {
+        expected: contributionAssertion.graphOutputChanged,
+        observed: observedContributions,
+      },
+      id: "renderChain.contributions.graphOutputChanged",
+      pass,
+    });
+    if (!pass) {
+      ctx.diagnostics.push({
+        code: observed === undefined || observedContributions === undefined
+          ? "TN_PLAYTEST_RENDER_CHAIN_UNOBSERVABLE"
+          : "TN_PLAYTEST_RENDER_CHAIN_CONTRIBUTIONS_FAILED",
+        message: observed === undefined
+          ? "Render-chain contributions were not observed because the TN_RENDER_CHAIN marker was absent."
+          : observedContributions === undefined
+            ? "Render-chain stage contributions were not observed on the TN_RENDER_CHAIN marker."
+            : "One or more authored stages did not report a changed graph output.",
+        observedRuntimePath: "observations.json/renderChain/contributions",
+        severity: "error",
+        suggestion: "Publish one graphOutputChanged marker per applied stage; this is graph evidence, not pixel attribution.",
+      });
+    }
+  }
+
   if (assertion.velocity !== undefined) {
     const rejectionFraction = observed?.velocity.rejectionFraction;
     const measurementFrame = observed?.velocity.measurementFrame;
@@ -67,5 +131,44 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
 }
 
 export function renderChainAssertionIsMeaningful(assertion: IPlaytestRenderChainAssertion): boolean {
-  return assertion.tier !== undefined || assertion.velocity !== undefined;
+  return assertion.tier !== undefined
+    || assertion.stages !== undefined
+    || assertion.contributions !== undefined
+    || assertion.velocity !== undefined;
+}
+
+function emitStageCheck(
+  ctx: IEvaluationContext,
+  observed: string[] | undefined,
+  kind: "includes" | "excludes" | "order",
+  expected: string[],
+  pass: boolean,
+): void {
+  ctx.assertions.push({
+    details: { expected, observed },
+    id: `renderChain.stages.${kind}`,
+    pass,
+  });
+  if (pass) return;
+  ctx.diagnostics.push({
+    code: observed === undefined
+      ? "TN_PLAYTEST_RENDER_CHAIN_UNOBSERVABLE"
+      : "TN_PLAYTEST_RENDER_CHAIN_STAGES_FAILED",
+    message: observed === undefined
+      ? "Render-chain stages were not observed because the TN_RENDER_CHAIN marker was absent."
+      : `Render-chain stage ${kind} assertion did not match the observed stage order.`,
+    observedRuntimePath: "observations.json/renderChain/stages",
+    severity: "error",
+    suggestion: "Keep each authored stage in the renderer chain and publish its id on TN_RENDER_CHAIN.",
+  });
+}
+
+function isOrderedSubsequence(expected: string[], observed: string[]): boolean {
+  let cursor = 0;
+  for (const stage of expected) {
+    const found = observed.indexOf(stage, cursor);
+    if (found < 0) return false;
+    cursor = found + 1;
+  }
+  return true;
 }

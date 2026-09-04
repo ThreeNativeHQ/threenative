@@ -29,6 +29,8 @@ export const RENDER_CHAIN_STAGE_ORDER = [
 ] as const;
 
 export type RenderChainStageName = (typeof RENDER_CHAIN_STAGE_ORDER)[number];
+/** Built-in stage names plus an opaque id owned by the game that supplied the stage. */
+export type RenderChainStageId = RenderChainStageName | (string & {});
 export type RenderChainTier = "high" | "medium" | "low" | "off";
 export type RenderChainTierRequest = RenderChainTier | "auto";
 export type RenderChainSource = "pinned" | "auto";
@@ -106,8 +108,8 @@ export interface IRenderChainVelocityRequest {
 }
 
 export interface IRenderChainRequest {
-  /** Stages are sorted into {@link RENDER_CHAIN_STAGE_ORDER}; an empty list is a no-op. */
-  stages?: readonly string[];
+  /** Built-ins use canonical order; authored stages use their supplied anchor order. */
+  stages?: readonly RenderChainStageId[];
   /** A fixed tier pins quality; `auto` enables the measured frame-budget ladder. */
   tier?: RenderChainTierRequest;
   velocity?: IRenderChainVelocityRequest;
@@ -122,7 +124,11 @@ export interface IRenderChainStageContext {
 }
 
 export interface IRenderChainStage {
-  readonly name: RenderChainStageName;
+  readonly name: RenderChainStageId;
+  /** Place an authored stage immediately before this built-in or supplied stage. */
+  readonly before?: RenderChainStageId;
+  /** Place an authored stage immediately after this built-in or supplied stage. */
+  readonly after?: RenderChainStageId;
   readonly build: (input: unknown, context: IRenderChainStageContext) => unknown;
   /** Stages below this tier are named as dropped instead of silently changing the graph. */
   readonly minimumTier?: RenderChainTier;
@@ -132,10 +138,12 @@ export interface IRenderChainStage {
   readonly readVelocityResult?: (node: unknown) => IRenderChainVelocityResult | undefined;
   /** Defaults from the canonical stage name for the temporal stages. */
   readonly requiresVelocity?: boolean;
+  /** Release resources allocated while building this stage's graph. */
+  readonly dispose?: () => void;
 }
 
 export interface IRenderChainDroppedStage {
-  readonly name: RenderChainStageName;
+  readonly name: RenderChainStageId;
   readonly reason: string;
 }
 
@@ -148,10 +156,14 @@ export interface IRenderChainVelocityReport {
 }
 
 export interface IRenderChainApplied {
+  readonly contributions: readonly {
+    readonly graphOutputChanged: boolean;
+    readonly name: RenderChainStageId;
+  }[];
   readonly dropped: readonly IRenderChainDroppedStage[];
-  readonly requested: readonly RenderChainStageName[];
+  readonly requested: readonly RenderChainStageId[];
   readonly source: RenderChainSource;
-  readonly stages: readonly RenderChainStageName[];
+  readonly stages: readonly RenderChainStageId[];
   readonly tier: RenderChainTier;
   readonly velocity: IRenderChainVelocityReport;
 }
@@ -170,6 +182,8 @@ export interface IRenderChainBudgetWindow {
 export interface IRenderChainOptions {
   readonly renderer: IRenderChainRenderer;
   readonly input?: unknown;
+  /** Explicit scene pass for output retargeting; avoids traversing a composed graph to find it. */
+  readonly worldPass?: unknown;
   readonly report?: (line: string) => void;
   readonly request?: IRenderChainRequest;
   readonly stages?: readonly IRenderChainStage[];
@@ -238,14 +252,16 @@ export function readRenderChainObservation(
 export class RenderChain {
   readonly #renderer: IRenderChainRenderer;
   readonly #input: unknown;
+  readonly #worldPass: unknown;
   readonly #report: (line: string) => void;
-  readonly #stageDefinitions: ReadonlyMap<RenderChainStageName, IRenderChainStage>;
-  readonly #requested: readonly RenderChainStageName[];
+  readonly #stageDefinitions: ReadonlyMap<RenderChainStageId, IRenderChainStage>;
+  readonly #requested: readonly RenderChainStageId[];
   readonly #requestVelocity: IRenderChainVelocityRequest;
   readonly #automatic: boolean;
   readonly #targetFps: number;
   readonly #dwellWindows: number;
   readonly #scene: IRenderChainOptions["scene"];
+  #activeStageDefinitions: IRenderChainStage[] = [];
   #tier: RenderChainTier;
   #source: RenderChainSource;
   #overBudgetWindows = 0;
@@ -270,9 +286,13 @@ export class RenderChain {
       : rendererOrOptions;
     this.#renderer = options.renderer;
     this.#input = options.input;
+    this.#worldPass = options.worldPass;
     this.#report = options.report ?? ((line) => console.log(line));
     this.#stageDefinitions = createStageDefinitions(options.stages ?? []);
-    this.#requested = normalizeRequestedStages(options.request?.stages ?? []);
+    this.#requested = normalizeRequestedStages(
+      options.request?.stages ?? [],
+      this.#stageDefinitions,
+    );
     this.#requestVelocity = options.request?.velocity ?? {};
     this.#automatic = (options.request?.tier ?? "high") === "auto";
     this.#tier = this.#automatic ? "high" : validateTier(options.request?.tier ?? "high");
@@ -295,6 +315,7 @@ export class RenderChain {
   /** Rebuild and install the current tier. */
   apply(): IRenderChainApplied {
     if (this.#disposed) throw new Error("RenderChain.apply called after dispose().");
+    this.#disposeActiveStages();
     this.#restoreOwnedVelocityOutput();
     this.#velocityResultNode = undefined;
     this.#velocityResultReader = undefined;
@@ -307,8 +328,8 @@ export class RenderChain {
       return this.#applied;
     }
 
-    const requiredVelocity = this.#requested.some(
-      (name) => this.#stageDefinitions.get(name)?.requiresVelocity ?? VELOCITY_STAGES.has(name),
+    const requiredVelocity = this.#requested.some((name) =>
+      requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
     const velocity = resolveVelocity(
       this.#renderer,
@@ -321,17 +342,19 @@ export class RenderChain {
     this.#lastMeasurementFrame = undefined;
     this.#reportedMeasurement = false;
     const dropped: IRenderChainDroppedStage[] = [];
-    const stages: RenderChainStageName[] = [];
+    const contributions: Array<IRenderChainApplied["contributions"][number]> = [];
+    const stages: RenderChainStageId[] = [];
+    const builtStageDefinitions: IRenderChainStage[] = [];
     let node = this.#input;
 
     for (const name of this.#requested) {
+      if (this.#tier === "off") {
+        dropped.push({ name, reason: "tier:off" });
+        continue;
+      }
       const definition = this.#stageDefinitions.get(name);
       if (definition === undefined) {
         dropped.push({ name, reason: "provider:missing" });
-        continue;
-      }
-      if (this.#tier === "off") {
-        dropped.push({ name, reason: "tier:off" });
         continue;
       }
       if (this.#renderer.kind !== "webgpu") {
@@ -345,7 +368,7 @@ export class RenderChain {
         dropped.push({ name, reason: `tier:${this.#tier}` });
         continue;
       }
-      const requiresVelocity = definition.requiresVelocity ?? VELOCITY_STAGES.has(name);
+      const requiresVelocity = requiresVelocityFor(definition, name);
       if (requiresVelocity && !velocity.provisioned) {
         dropped.push({ name, reason: "velocity:missing" });
         continue;
@@ -374,38 +397,44 @@ export class RenderChain {
         const buildContext = stageContext(this.#tier, velocity, velocityNode);
         const next = definition.build(node, buildContext);
         if (next === undefined || next === null) throw new Error("stage returned no node");
+        contributions.push({ graphOutputChanged: next !== node, name });
         node = next;
         stages.push(name);
+        builtStageDefinitions.push(definition);
         if (requiresVelocity && definition.readVelocityResult !== undefined) {
           this.#velocityResultNode = next;
           this.#velocityResultReader = definition.readVelocityResult;
         }
       } catch (error) {
+        definition.dispose?.();
         dropped.push({ name, reason: `build:${errorMessage(error)}` });
       }
     }
 
-    const hasActiveVelocityStage = stages.some(
-      (name) => this.#stageDefinitions.get(name)?.requiresVelocity ?? VELOCITY_STAGES.has(name),
+    const hasActiveVelocityStage = stages.some((name) =>
+      requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
     if (velocityNode !== undefined && hasActiveVelocityStage)
       node = withVelocityContext(node, velocityNode);
 
     if (stages.length > 0) {
       try {
-        this.#renderer.setOutputNode(node, this.#requestVelocity.pass);
+        this.#renderer.setOutputNode(node, this.#worldPass ?? this.#requestVelocity.pass);
       } catch (error) {
         const reason = `install:${errorMessage(error)}`;
         dropped.push(...stages.map((name) => ({ name, reason })));
         stages.length = 0;
+        contributions.length = 0;
+        for (const definition of builtStageDefinitions) definition.dispose?.();
+        builtStageDefinitions.length = 0;
         this.#renderer.clearOutputNode?.();
       }
     } else {
       this.#renderer.clearOutputNode?.();
     }
 
-    const activeVelocity = stages.some(
-      (name) => this.#stageDefinitions.get(name)?.requiresVelocity ?? VELOCITY_STAGES.has(name),
+    const activeVelocity = stages.some((name) =>
+      requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
     if (!activeVelocity) {
       this.#restoreOwnedVelocityOutput();
@@ -417,6 +446,7 @@ export class RenderChain {
       : { provisioned: false, required: velocity.required, source: null };
 
     this.#applied = {
+      contributions,
       dropped,
       requested: this.#requested,
       source: this.#source,
@@ -424,10 +454,9 @@ export class RenderChain {
       tier: this.#tier,
       velocity: appliedVelocity,
     };
+    this.#activeStageDefinitions = builtStageDefinitions;
     this.#renderer.setRenderChainVelocityEnabled?.(
-      stages.some(
-        (name) => this.#stageDefinitions.get(name)?.requiresVelocity ?? VELOCITY_STAGES.has(name),
-      ),
+      stages.some((name) => requiresVelocityFor(this.#stageDefinitions.get(name), name)),
     );
     this.#publish(true);
     return this.#applied;
@@ -436,8 +465,8 @@ export class RenderChain {
   /** Samples the active temporal stage's completed velocity result after rendering. */
   observeFrame(): IRenderChainApplied {
     if (this.#disposed) throw new Error("RenderChain.observeFrame called after dispose().");
-    const requiresMeasurement = this.#applied.stages.some(
-      (name) => this.#stageDefinitions.get(name)?.requiresVelocity ?? VELOCITY_STAGES.has(name),
+    const requiresMeasurement = this.#applied.stages.some((name) =>
+      requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
     if (!requiresMeasurement) return this.#applied;
 
@@ -484,6 +513,7 @@ export class RenderChain {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#disposeActiveStages();
     this.#restoreOwnedVelocityOutput();
     this.#renderer.setRenderChainVelocityEnabled?.(false);
     this.#renderer.clearOutputNode?.();
@@ -523,34 +553,127 @@ export class RenderChain {
     this.#ownedVelocityPass = undefined;
     this.#ownedVelocityMrt = undefined;
   }
+
+  #disposeActiveStages(): void {
+    for (const definition of this.#activeStageDefinitions) definition.dispose?.();
+    this.#activeStageDefinitions = [];
+  }
 }
 
 function createStageDefinitions(
   stages: readonly IRenderChainStage[],
-): ReadonlyMap<RenderChainStageName, IRenderChainStage> {
-  const definitions = new Map<RenderChainStageName, IRenderChainStage>();
+): ReadonlyMap<RenderChainStageId, IRenderChainStage> {
+  const definitions = new Map<RenderChainStageId, IRenderChainStage>();
   for (const stage of stages) {
-    if (!(RENDER_CHAIN_STAGE_ORDER as readonly string[]).includes(stage.name)) {
-      throw new Error(`unknown render-chain stage '${String(stage.name)}'`);
-    }
-    if (definitions.has(stage.name))
-      throw new Error(`duplicate render-chain stage '${stage.name}'`);
+    const name = requireStageId(stage.name, "render-chain stage");
+    if (definitions.has(name)) throw new Error(`duplicate render-chain stage '${stage.name}'`);
     if (typeof stage.build !== "function")
-      throw new Error(`render-chain stage '${stage.name}' needs a build function`);
-    definitions.set(stage.name, stage);
+      throw new Error(`render-chain stage '${name}' needs a build function`);
+    const hasBefore = stage.before !== undefined;
+    const hasAfter = stage.after !== undefined;
+    if (isBuiltInStageId(name)) {
+      if (hasBefore || hasAfter) {
+        throw new Error(
+          `built-in render-chain stage '${name}' cannot declare before or after; its canonical order is fixed`,
+        );
+      }
+    } else if (hasBefore === hasAfter) {
+      throw new Error(
+        `authored render-chain stage '${name}' must declare exactly one of before or after`,
+      );
+    }
+    if (hasBefore) requireStageId(stage.before, `render-chain stage '${name}' before anchor`);
+    if (hasAfter) requireStageId(stage.after, `render-chain stage '${name}' after anchor`);
+    definitions.set(name, stage);
   }
+  for (const [name, stage] of definitions) {
+    const anchor = stage.before ?? stage.after;
+    if (anchor !== undefined && !isBuiltInStageId(anchor) && !definitions.has(anchor)) {
+      throw new Error(`render-chain stage '${name}' anchor '${anchor}' is missing`);
+    }
+  }
+  resolveStageOrder(definitions);
   return definitions;
 }
 
-function normalizeRequestedStages(stages: readonly string[]): readonly RenderChainStageName[] {
-  const requested = new Set<RenderChainStageName>();
+function normalizeRequestedStages(
+  stages: readonly RenderChainStageId[],
+  definitions: ReadonlyMap<RenderChainStageId, IRenderChainStage>,
+): readonly RenderChainStageId[] {
+  const requested = new Set<RenderChainStageId>();
   for (const name of stages) {
-    if (!(RENDER_CHAIN_STAGE_ORDER as readonly string[]).includes(name)) {
-      throw new Error(`unknown render-chain stage '${String(name)}'`);
+    const id = requireStageId(name, "requested render-chain stage");
+    if (requested.has(id)) throw new Error(`duplicate requested render-chain stage '${id}'`);
+    // A built-in needs no supplied definition, the same allowance the anchor check above makes.
+    // Requesting one the tier or the provider then drops is ordinary — `traa` at `tier: "off"`
+    // is a dropped stage with a reason, not an unknown name — and refusing it here turned that
+    // into a throw on the shipped path.
+    if (!isBuiltInStageId(id) && !definitions.has(id)) {
+      throw new Error(`unknown render-chain stage '${id}': no supplied definition`);
     }
-    requested.add(name as RenderChainStageName);
+    requested.add(id);
   }
-  return RENDER_CHAIN_STAGE_ORDER.filter((name) => requested.has(name));
+  return resolveStageOrder(definitions, requested).filter((name) => requested.has(name));
+}
+
+function resolveStageOrder(
+  definitions: ReadonlyMap<RenderChainStageId, IRenderChainStage>,
+  additionalIds: Iterable<RenderChainStageId> = [],
+): readonly RenderChainStageId[] {
+  const ranks = new Map<RenderChainStageId, number>();
+  const visiting: RenderChainStageId[] = [];
+  const step = 1 / (definitions.size + 1);
+  const rank = (id: RenderChainStageId): number => {
+    const builtInIndex = RENDER_CHAIN_STAGE_ORDER.indexOf(id as RenderChainStageName);
+    if (builtInIndex >= 0) return builtInIndex;
+    const known = ranks.get(id);
+    if (known !== undefined) return known;
+    const cycleStart = visiting.indexOf(id);
+    if (cycleStart >= 0) {
+      const cycle = [...visiting.slice(cycleStart), id].join(" -> ");
+      throw new Error(`render-chain stage anchor cycle: ${cycle}`);
+    }
+    const definition = definitions.get(id);
+    if (definition === undefined) {
+      throw new Error(`render-chain stage '${id}' has no supplied definition`);
+    }
+    const anchor = definition.before ?? definition.after;
+    if (anchor === undefined) {
+      throw new Error(`authored render-chain stage '${id}' has no anchor`);
+    }
+    visiting.push(id);
+    const anchorRank = rank(anchor);
+    visiting.pop();
+    const resolved = anchorRank + (definition.before === undefined ? step : -step);
+    ranks.set(id, resolved);
+    return resolved;
+  };
+
+  const ordered = [...new Set([...definitions.keys(), ...additionalIds])].map((id, index) => ({
+    id,
+    index,
+    rank: rank(id),
+  }));
+  ordered.sort((left, right) => left.rank - right.rank || left.index - right.index);
+  return ordered.map(({ id }) => id);
+}
+
+function requireStageId(value: unknown, label: string): RenderChainStageId {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${label} id must be a non-blank string; received ${String(value)}`);
+  }
+  return value as RenderChainStageId;
+}
+
+function isBuiltInStageId(value: RenderChainStageId): value is RenderChainStageName {
+  return (RENDER_CHAIN_STAGE_ORDER as readonly string[]).includes(value);
+}
+
+function requiresVelocityFor(
+  definition: IRenderChainStage | undefined,
+  id: RenderChainStageId,
+): boolean {
+  return definition?.requiresVelocity ?? (isBuiltInStageId(id) && VELOCITY_STAGES.has(id));
 }
 
 function validateTier(value: unknown): RenderChainTier {
@@ -685,12 +808,13 @@ function validateCompatibilityMeasurement(
 }
 
 function emptyApplied(
-  requested: readonly RenderChainStageName[],
+  requested: readonly RenderChainStageId[],
   tier: RenderChainTier,
   source: RenderChainSource,
   required: boolean,
 ): IRenderChainApplied {
   return {
+    contributions: [],
     dropped: [],
     requested,
     source,

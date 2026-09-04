@@ -19,7 +19,15 @@
 // probe on `scene.environment`, measured at **~6.3 ms of an 18-19 ms Pixel 8 frame**. It is set
 // in `sky.ts`, not in this file.
 //
+import type { IPainterlyOptions } from "./painterly.js";
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+
+/**
+ * A preset is the framework's chain options plus this kit's own painterly knobs. The two are
+ * separate types because they belong to different layers: `worldEnvironment.ts` is shared with
+ * every other kit and must not know what a watercolour is.
+ */
+type QualitySettings = IWorldEnvironmentOptions & IPainterlyOptions;
 
 /**
  * The three names this game's look comes in.
@@ -64,96 +72,109 @@ export function resolveQualityTier(
 }
 
 /**
- * What a desktop gets: this template's shipped desktop look, unchanged.
- *
- * The whole chain measured 12.5 ms of a 14.7 ms GPU frame in the reference ablation, and SSGI
- * with its denoiser is ~9.2 ms of that.
+ * What a desktop gets: a clean coastal look with restrained painterly treatment. The expensive
+ * screen-space gathers are deliberately off here: on a small water scene they muddy the grass and
+ * turn the water glint into a halo instead of adding useful depth.
  */
-const high: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
+const high: QualitySettings = {
+  // Bloom cost: unmeasured for this authored scene; the low strength keeps water glints alive
+  // without washing the scene in orange.
   bloomEnabled: true,
-  bloomStrength: 0.7,
-  exposure: 1.15,
-  // The two full-resolution denoise passes over the AO and GI terms: ~1.9 ms. Only worth running
-  // when SSGI is on — its noise is what they clean up.
-  denoiseEnabled: true,
-  // SSGI, the screen-space indirect-light gather: ~7.3 ms alone, ~9.2 ms with the two denoise
-  // passes it feeds. The largest stage in the chain by a factor of two, of a 14.7 ms frame.
-  // Dropping this pair is what `medium` is.
-  ssgiEnabled: true,
-  ssgiQuality: "medium",
-  // Half the frame in each axis, so a quarter of the pixels. Full-res SSGI cost 14.4 ms
-  // of a 39.7 ms frame on an RTX 2080; this is the same gather over a quarter of the work,
-  // and it measured *sharper* because the scaler spends what it hands back on resolution.
-  // `worldEnvironment.ts` explains why it takes a wrapper instead of a property.
-  ssgiResolutionScale: 0.5,
-  // Screen-space reflections: ~4.1 ms.
-  ssrEnabled: true,
-  // A reflection carries almost no high-frequency detail, so half resolution costs a quarter of
-  // the rays and is very hard to see in the result.
-  ssrResolutionScale: 0.5,
-  // RCAS sharpen: unmeasured — never ablated on its own here. It puts back the micro-detail the
-  // denoiser and the half-resolution reflection take out, so it earns its cost only on a tier
-  // that runs one of them.
-  sharpenEnabled: true,
-  // **0 is maximum sharpening and 2 is none** — it is a radius, not a gain.
-  sharpenStrength: 0.28,
+  bloomRadius: 0.34,
+  bloomStrength: 0.26,
+  bloomThreshold: 0.64,
+  denoiseEnabled: false,
+  exposure: 1.04,
+  ssgiEnabled: false,
+  ssrEnabled: false,
+  sharpenEnabled: false,
+  // Outline cost: unmeasured; it is intentionally a soft blue-green edge, not a black
+  // comic-book stroke.
+  outlineEnabled: true,
+  outlineDepthWeight: 0.32,
+  outlineInkColor: 0x173c4a,
+  outlineSoftness: 0.08,
+  outlineStrength: 0.3,
+  outlineThreshold: 0.2,
+  // Kuwahara cost: unmeasured; the half-resolution scratch and restrained strength preserve
+  // readable grass silhouettes.
+  kuwaharaEnabled: true,
+  kuwaharaRadius: 5,
+  kuwaharaResolutionScale: 0.5,
+  kuwaharaStrength: 0.2,
+  // Watercolour cost: unmeasured; the low mix keeps the paper grouping from flattening the coast.
+  watercolorEnabled: true,
+  watercolorPaperStrength: 0.05,
+  watercolorShadowStrength: 0.04,
+  watercolorShadowTint: 0x7d6b62,
+  watercolorStrength: 0.26,
+  renderChainTier: "high",
   tonemapMode: "aces",
 };
 
 /**
- * `high` minus the gather and its denoiser — the single change in this chain measured to give
- * back most of the frame: **14.7 ms -> 5.5 ms of GPU** in the reference ablation. Reflections,
- * bloom and the sharpener stay, so it is recognisably the same look.
+ * Medium keeps the same readable coast, with a smaller paint radius and a little less colour
+ * grouping for machines that need a cheaper frame.
  */
-const medium: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
+const medium: QualitySettings = {
+  // Bloom cost: unmeasured for this authored scene; keep only a small highlight lift.
   bloomEnabled: true,
-  bloomStrength: 0.7,
-  exposure: 1.15,
-  // Screen-space reflections: ~4.1 ms.
-  ssrEnabled: true,
-  // A reflection carries almost no high-frequency detail, so half resolution costs a quarter of
-  // the rays and is very hard to see in the result.
-  ssrResolutionScale: 0.5,
-  // RCAS sharpen: unmeasured — never ablated on its own here. It puts back the micro-detail the
-  // denoiser and the half-resolution reflection take out, so it earns its cost only on a tier
-  // that runs one of them.
-  sharpenEnabled: true,
-  // **0 is maximum sharpening and 2 is none** — it is a radius, not a gain.
-  sharpenStrength: 0.28,
+  bloomRadius: 0.3,
+  bloomStrength: 0.22,
+  bloomThreshold: 0.68,
+  denoiseEnabled: false,
+  exposure: 1.03,
+  ssgiEnabled: false,
+  ssrEnabled: false,
+  sharpenEnabled: false,
+  // Outline cost: unmeasured; keep its edge narrow on the cheaper tier.
+  outlineEnabled: true,
+  outlineDepthWeight: 0.28,
+  outlineInkColor: 0x173c4a,
+  outlineSoftness: 0.08,
+  outlineStrength: 0.26,
+  outlineThreshold: 0.22,
+  // Kuwahara cost: unmeasured; radius three keeps the water and grass readable.
+  kuwaharaEnabled: true,
+  kuwaharaRadius: 3,
+  kuwaharaResolutionScale: 0.5,
+  kuwaharaStrength: 0.16,
+  // Watercolour cost: unmeasured; fewer bands and a low mix preserve the coast's value steps.
+  watercolorEnabled: true,
+  watercolorLevels: 6,
+  watercolorPaperStrength: 0.04,
+  watercolorShadowStrength: 0.03,
+  watercolorShadowTint: 0x7d6b62,
+  watercolorStrength: 0.22,
+  renderChainTier: "medium",
   tonemapMode: "aces",
 };
 
 /**
- * What a phone gets: this template's shipped mobile look, unchanged. The sharpener stays on
- * because it shipped on — nothing upstream of it blurs at this tier, so it is doing very little,
- * and its cost here is unmeasured.
+ * What a phone gets: the cleanest version of the coastal look. Authored paint is omitted to keep
+ * the water mesh and touch controls responsive.
  */
-const low: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
+const low: QualitySettings = {
+  // Bloom cost: unmeasured for this authored scene; this is the phone-safe highlight lift.
   bloomEnabled: true,
-  bloomStrength: 0.7,
-  exposure: 1.15,
-  // RCAS sharpen: unmeasured — never ablated on its own here. It puts back the micro-detail the
-  // denoiser and the half-resolution reflection take out, so it earns its cost only on a tier
-  // that runs one of them.
-  sharpenEnabled: true,
-  // **0 is maximum sharpening and 2 is none** — it is a radius, not a gain.
-  sharpenStrength: 0.28,
+  bloomRadius: 0.28,
+  bloomStrength: 0.18,
+  bloomThreshold: 0.72,
+  exposure: 1.02,
+  sharpenEnabled: false,
+  // The low tier omits authored paint by name: no outline, scratch target, or paper graph is
+  // built on the phone path.
+  outlineEnabled: false,
+  kuwaharaEnabled: false,
+  watercolorEnabled: false,
+  renderChainTier: "low",
   tonemapMode: "aces",
 };
 
-const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
+const QUALITY_PRESETS: Record<QualityTier, QualitySettings> = { high, low, medium };
 
 /** The stages and strengths a tier turns on. Throws on a name that is not a tier. */
-export function qualityPreset(tier: string): IWorldEnvironmentOptions {
+export function qualityPreset(tier: string): QualitySettings {
   const preset = QUALITY_PRESETS[tier as QualityTier];
   if (preset === undefined) {
     throw new Error(
