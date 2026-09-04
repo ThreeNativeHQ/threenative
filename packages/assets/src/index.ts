@@ -51,6 +51,7 @@ export type {
  * @example const pass = modelPass({ simplify: { ratio: 0.5 } });
  */
 export { modelPass } from "./passes/model.js";
+export type { AudioBand } from "./passes/audio-dsp.js";
 export type {
   AudioConditioning,
   AudioNormalisation,

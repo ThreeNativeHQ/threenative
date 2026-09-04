@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  bandEnergyFraction,
   crossFadeLoop,
   downmixToMono,
+  measureBands,
   measureDcOffset,
   measurePeak,
   measureSeam,
@@ -161,25 +161,43 @@ describe("the downmix", () => {
   });
 });
 
-describe("the band energy measurement", () => {
+describe("the band measurement", () => {
   it("should put a tone's energy in the band that contains it", () => {
-    const chime = tone(RATE, 2000, 0.6);
+    const bands = measureBands([tone(RATE, 3000, 0.6)], RATE);
 
-    expect(bandEnergyFraction([chime], RATE, [1000, 8000])).toBeGreaterThan(0.95);
-    expect(bandEnergyFraction([chime], RATE, [100, 500])).toBeLessThan(0.01);
+    expect(bands.high).toBeGreaterThan(90);
+    expect(bands.low).toBeLessThan(1);
   });
 
   it("should read a hum as a hum, which is the check the chime failed", () => {
-    // The real clip measured 92.4% of its energy in 100-500 Hz and nothing above 1 kHz.
-    const hum = tone(RATE, 200, 0.6);
+    const bands = measureBands([tone(RATE, 200, 0.6)], RATE);
 
-    expect(bandEnergyFraction([hum], RATE, [100, 500])).toBeGreaterThan(0.9);
-    expect(bandEnergyFraction([hum], RATE, [1000, 8000])).toBeLessThan(0.01);
+    expect(bands.low).toBeGreaterThan(80);
+    expect(bands.high).toBeLessThan(1);
   });
 
-  it("should report no energy for a clip shorter than one analysis window", () => {
-    // Fails closed rather than extrapolating a spectrum from a fragment: the pass turns this
-    // into a declared-band failure, which is the honest outcome for a clip too short to measure.
-    expect(bandEnergyFraction([tone(512, 2000)], RATE, [1000, 8000])).toBe(0);
+  it("should read sub-bass as sub-bass, which is the check fifteen footsteps failed", () => {
+    // A 60 Hz thud under a click. The real footsteps carried up to 45% of their energy here,
+    // below 100 Hz, where a wood has nothing and a phone's speaker has no headroom to spare.
+    const thud = new Float32Array(RATE);
+    const click = tone(RATE, 3000, 0.15);
+    for (let index = 0; index < thud.length; index += 1) {
+      thud[index] = 0.8 * Math.sin((2 * Math.PI * 60 * index) / RATE) + (click[index] as number);
+    }
+
+    expect(measureBands([thud], RATE).sub).toBeGreaterThan(40);
+  });
+
+  it("should sum to 100 percent across the five bands, so a share is a share", () => {
+    const bands = measureBands([tone(RATE, 1200, 0.5)], RATE);
+    const total = bands.sub + bands.low + bands.mid + bands.high + bands.air;
+
+    expect(total).toBeCloseTo(100, 6);
+  });
+
+  it("should report zeroes for a clip with no samples rather than dividing by nothing", () => {
+    const bands = measureBands([new Float32Array(0)], RATE);
+
+    expect(bands.sub + bands.low + bands.mid + bands.high + bands.air).toBe(0);
   });
 });

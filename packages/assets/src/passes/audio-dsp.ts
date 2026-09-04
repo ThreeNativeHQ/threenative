@@ -64,19 +64,11 @@ export function measureSeam(
   if (first === undefined || first.length < 4) return { nearP99: 0, ratio: 0, wrap: 0 };
   const length = first.length;
   const near = Math.max(2, Math.min(Math.floor(SEAM_WINDOW_SECONDS * sampleRate), length >> 1));
-  const steps: number[] = [];
   let wrap = 0;
   for (const channel of channels) {
     wrap = Math.max(wrap, Math.abs((channel[0] ?? 0) - (channel[length - 1] ?? 0)));
-    for (let index = 1; index < near; index += 1) {
-      steps.push(Math.abs((channel[index] ?? 0) - (channel[index - 1] ?? 0)));
-    }
-    for (let index = length - near + 1; index < length; index += 1) {
-      steps.push(Math.abs((channel[index] ?? 0) - (channel[index - 1] ?? 0)));
-    }
   }
-  steps.sort((left, right) => left - right);
-  const nearP99 = steps[Math.min(steps.length - 1, Math.floor(steps.length * 0.99))] ?? 0;
+  const nearP99 = percentileOfNearSteps(channels, near, 0.99);
   return {
     nearP99,
     // A perfectly flat neighbourhood has no ordinary step to compare against, and a wrap in the
@@ -85,6 +77,30 @@ export function measureSeam(
     ratio: nearP99 <= 0 ? (wrap <= 0 ? 0 : Number.POSITIVE_INFINITY) : wrap / nearP99,
     wrap,
   };
+}
+
+/**
+ * A percentile of the adjacent steps within `near` frames of each end, pooled across channels.
+ *
+ * Both ends, because the join has two sides and a listener hears the wrap against both.
+ */
+function percentileOfNearSteps(
+  channels: readonly Float32Array[],
+  near: number,
+  fraction: number,
+): number {
+  const length = channels[0]?.length ?? 0;
+  const steps: number[] = [];
+  for (const channel of channels) {
+    for (let index = 1; index < near; index += 1) {
+      steps.push(Math.abs((channel[index] ?? 0) - (channel[index - 1] ?? 0)));
+    }
+    for (let index = length - near + 1; index < length; index += 1) {
+      steps.push(Math.abs((channel[index] ?? 0) - (channel[index - 1] ?? 0)));
+    }
+  }
+  steps.sort((left, right) => left - right);
+  return steps[Math.min(steps.length - 1, Math.floor(steps.length * fraction))] ?? 0;
 }
 
 /** Copies with the per-channel mean removed. */
@@ -210,43 +226,109 @@ export function spliceForQuietestSeam(
   return best;
 }
 
-const WINDOW = 4096;
+/**
+ * The five bands a clip's content is judged in, contiguous and gapless up to Nyquist.
+ *
+ * Borrowed verbatim from `packages/playtest/src/runner/audio.ts`, names and edges both, so a game
+ * declares one band in one vocabulary and means the same thing to the build gate and to the audio
+ * inspector. Chosen for what they separate in practice: below 100 Hz a wood has nothing, 100-500 Hz
+ * is where a "warm" generation collapses into a hum, 500 Hz-2 kHz is body, 2-8 kHz is leaf rustle
+ * and birdsong and the brightness of a struck bell, and above 8 kHz is air.
+ */
+export const AUDIO_BANDS = {
+  sub: [0, 100],
+  low: [100, 500],
+  mid: [500, 2_000],
+  high: [2_000, 8_000],
+  air: [8_000, Number.POSITIVE_INFINITY],
+} as const satisfies Record<string, readonly [number, number]>;
+
+export type AudioBand = keyof typeof AUDIO_BANDS;
+
+const BAND_NAMES = Object.keys(AUDIO_BANDS) as readonly AudioBand[];
+/** Window, column target and hop, all as the inspector fixes them. */
+const WINDOW = 1_024;
+const TARGET_COLUMNS = 400;
 
 /**
- * The share of the clip's energy that falls inside a band, in [0, 1].
+ * How much of a clip's energy sits in each band, as percentages summing to 100.
  *
- * Hann-windowed power spectra summed over 50%-overlapped windows. The band is the game's to
- * declare — the pass never decides what a clip should sound like, it only measures whether the
- * bytes match what the game said the clip was for. The chime that came back as a hum measured
- * 92.4% of its energy in 100-500 Hz and nothing at all above 1 kHz.
+ * **Deliberately the inspector's arithmetic, to the bin.** Summed magnitude rather than power, a
+ * mono mix, Hann windows, the same window size and the same hop rule — because this number is what
+ * a throwing gate compares a declared bound against, and a clip reading 15.1% here and 14.9% in the
+ * inspector against a 15% bound is two tools disagreeing about one file. Power weighting would have
+ * done exactly that: it exaggerates peaks relative to magnitude, so the two would have diverged
+ * most on the peaky material the check exists for. `audio-seam-parity.spec.ts` pins them together.
+ *
+ * This is the measurement that matters most in practice. The hand-written conditioning script this
+ * pass replaces got every join right and never looked at content at all: it shipped a chime that
+ * was 83% low-mid where a bell should be, and fifteen footsteps carrying up to 45% of their energy
+ * below 100 Hz. A seam check alone would have caught neither.
  */
-export function bandEnergyFraction(
+export function measureBands(
   channels: readonly Float32Array[],
   sampleRate: number,
-  band: readonly [number, number],
-): number {
-  const frames = channels[0]?.length ?? 0;
-  if (frames < WINDOW) return 0;
-  const mono = downmixToMono(channels)[0] as Float32Array;
+): Record<AudioBand, number> {
+  const length = channels[0]?.length ?? 0;
+  if (length === 0) return zeroBands();
+  return bandPercentages(summedMagnitudeSpectrum(channels, length), sampleRate);
+}
+
+/** Summed magnitude per bin over Hann-windowed frames of the mono mix. */
+function summedMagnitudeSpectrum(channels: readonly Float32Array[], length: number): Float64Array {
+  const bins = WINDOW / 2 + 1;
+  const totals = new Float64Array(bins);
+  // Never longer than the window, so a long clip stays non-overlapping and cheap, and never zero.
+  const hop = Math.max(1, Math.min(WINDOW, Math.floor(length / TARGET_COLUMNS)));
+  const frames = Math.max(1, Math.floor((length - WINDOW) / hop) + 1);
+  const hann = new Float64Array(WINDOW);
+  for (let index = 0; index < WINDOW; index += 1) {
+    hann[index] = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (WINDOW - 1));
+  }
   const real = new Float64Array(WINDOW);
   const imaginary = new Float64Array(WINDOW);
-  let inside = 0;
-  let total = 0;
-  for (let start = 0; start + WINDOW <= frames; start += WINDOW / 2) {
+  for (let frame = 0; frame < frames; frame += 1) {
+    real.fill(0);
+    imaginary.fill(0);
+    const start = frame * hop;
+    // Mono for the spectrum: a band profile is about content, and two channels of the same wind
+    // are one answer. The seam stays per-channel, where a difference is a real defect.
     for (let index = 0; index < WINDOW; index += 1) {
-      const hann = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (WINDOW - 1));
-      real[index] = (mono[start + index] as number) * hann;
-      imaginary[index] = 0;
+      let mixed = 0;
+      for (const channel of channels) mixed += channel[start + index] ?? 0;
+      real[index] = (mixed / channels.length) * (hann[index] ?? 0);
     }
     transform(real, imaginary);
-    for (let bin = 1; bin < WINDOW / 2; bin += 1) {
-      const hertz = (bin * sampleRate) / WINDOW;
-      const power = (real[bin] as number) ** 2 + (imaginary[bin] as number) ** 2;
-      total += power;
-      if (hertz >= band[0] && hertz < band[1]) inside += power;
+    for (let bin = 0; bin < bins; bin += 1) {
+      totals[bin] = (totals[bin] ?? 0) + Math.hypot(real[bin] ?? 0, imaginary[bin] ?? 0);
     }
   }
-  return total === 0 ? 0 : inside / total;
+  return totals;
+}
+
+function zeroBands(): Record<AudioBand, number> {
+  const bands = {} as Record<AudioBand, number>;
+  for (const name of BAND_NAMES) bands[name] = 0;
+  return bands;
+}
+
+function bandPercentages(totals: Float64Array, sampleRate: number): Record<AudioBand, number> {
+  const nyquist = sampleRate / 2;
+  const bins = totals.length;
+  let sum = 0;
+  for (const value of totals) sum += value;
+  const scale = sum <= 0 ? 0 : 100 / sum;
+  const bands = {} as Record<AudioBand, number>;
+  for (const name of BAND_NAMES) {
+    const [low, high] = AUDIO_BANDS[name];
+    let band = 0;
+    for (let bin = 0; bin < bins; bin += 1) {
+      const hertz = (bin / (bins - 1)) * nyquist;
+      if (hertz >= low && hertz < high) band += totals[bin] ?? 0;
+    }
+    bands[name] = band * scale;
+  }
+  return bands;
 }
 
 /** In-place radix-2 FFT; `real.length` is a power of two by construction above. */

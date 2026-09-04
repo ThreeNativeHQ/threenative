@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { analyseSamples } from "../../playtest/src/runner/audio.js";
-import { measureSeam } from "../src/passes/audio-dsp.js";
+import { AUDIO_BANDS as INSPECTOR_BANDS, analyseSamples } from "../../playtest/src/runner/audio.js";
+import { AUDIO_BANDS, measureBands, measureSeam } from "../src/passes/audio-dsp.js";
 import { bandLimitedNoise, noise } from "./audio-fixtures.js";
 
 /**
@@ -21,6 +21,12 @@ import { bandLimitedNoise, noise } from "./audio-fixtures.js";
  * condemns dense clips while excusing quiet ones. On wildwood's three real loops the bare step
  * ranks `forest-birds` worse than the bed while the ratio ranks it better, so a magnitude gate
  * would have failed the clip with the cleaner join.
+ *
+ * The band profile is pinned here for the same reason and it is the more dangerous of the two,
+ * because the arithmetic is easy to get *nearly* right: the first draft of the pass summed power
+ * where the inspector sums magnitude, which agrees on a pure tone and diverges most on the peaky
+ * material a content check exists for. A clip reading 15.1% in the gate and 14.9% in the inspector,
+ * against a 15% bound, is two tools disagreeing about one file.
  */
 
 const RATE = 44_100;
@@ -76,6 +82,28 @@ describe("the seam metric the pass and the inspector share", () => {
       expect(mine.ratio).toBeCloseTo(theirs?.ratio ?? -1, 8);
     });
   }
+
+  for (const [name, frames, sample, channelCount] of CLIPS) {
+    it(`should agree on all five band percentages for ${name}`, () => {
+      const { doubles, floats } = bothViews(frames, sample, channelCount);
+
+      const mine = measureBands(floats, RATE);
+      const theirs = analyseSamples(doubles, RATE).bands;
+
+      for (const band of Object.keys(AUDIO_BANDS) as (keyof typeof AUDIO_BANDS)[]) {
+        expect(mine[band]).toBeCloseTo(theirs[band], 8);
+      }
+    });
+  }
+
+  it("should use the same band names and edges the inspector does", () => {
+    // Borrowed vocabulary, not invented: a game declares `band: "sub"` once and means the same
+    // thing to both tools. A silently different edge would make one of them wrong about a file.
+    expect(Object.keys(AUDIO_BANDS)).toEqual(Object.keys(INSPECTOR_BANDS));
+    for (const [name, range] of Object.entries(AUDIO_BANDS)) {
+      expect(range).toEqual(INSPECTOR_BANDS[name as keyof typeof INSPECTOR_BANDS]);
+    }
+  });
 
   it("should score a whole-cycle sine loop at about 1.0, which is why the bound is not 1.0", () => {
     // The finding the bound's default rests on: a flawless join whose wrap lands on the signal's

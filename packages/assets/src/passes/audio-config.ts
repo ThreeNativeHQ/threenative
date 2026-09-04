@@ -13,15 +13,31 @@
  * exists to stop.
  */
 
+import type { AudioBand } from "./audio-dsp.js";
+import { AUDIO_BANDS } from "./audio-dsp.js";
+
 export type AudioConditioning = "none";
 /** `"ceiling"` only ever attenuates; `"peak"` also lifts a quiet clip to the ceiling. */
 export type AudioNormalisation = "ceiling" | "peak";
 
+/**
+ * What a clip is *for*, stated as a bound on where its energy sits.
+ *
+ * Both directions matter, and the two real defects this pass was built for are one of each. A chime
+ * that came back a hum needed a floor — it had 83% of its energy in `low` and nothing in `high`,
+ * where a struck bell lives. Fifteen footsteps needed a ceiling — they carried up to 45% of their
+ * energy in `sub`, below 100 Hz, which a wood has nothing in and which costs a phone's speaker its
+ * whole headroom for a sound nobody can hear.
+ *
+ * Percentages on the same 0-100 scale as the audio inspector's, and named bands from its
+ * vocabulary, so a game declares one number in one language for both tools.
+ */
 export interface IAudioSpectrumExpectation {
-  /** `[low, high)` in Hz. */
-  readonly bandHz: readonly [number, number];
-  /** Least share of the clip's energy that must fall inside the band, above 0 and at most 1. */
-  readonly minFraction: number;
+  readonly band: AudioBand;
+  /** Most of the clip's energy that may sit in the band. */
+  readonly maxPercent?: number;
+  /** Least of the clip's energy that must sit in the band. */
+  readonly minPercent?: number;
 }
 
 export interface IAudioLoopOptions {
@@ -106,7 +122,8 @@ const CONFIG_KEYS: readonly string[] = [
   "seamMaxRatio",
 ];
 const LOOP_KEYS: readonly string[] = ["crossFadeMs", "spliceToleranceMs"];
-const SPECTRUM_KEYS: readonly string[] = ["bandHz", "minFraction"];
+const SPECTRUM_KEYS: readonly string[] = ["band", "maxPercent", "minPercent"];
+const BAND_NAMES = Object.keys(AUDIO_BANDS);
 
 function invalid(label: string, requirement: string): never {
   throw new Error(`TN_ASSETS_CONFIG_INVALID: ${label} must ${requirement}.`);
@@ -196,23 +213,41 @@ function parseLoop(raw: unknown, label: string): boolean | IAudioLoopOptions {
   };
 }
 
+function percent(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 100) {
+    invalid(label, "be a percentage between 0 and 100");
+  }
+  return value as number;
+}
+
 function parseSpectrum(raw: unknown, label: string): IAudioSpectrumExpectation {
   if (!isRecord(raw)) invalid(label, "be an object");
   const spectrum = raw as Record<string, unknown>;
   rejectUnknownKeys(spectrum, SPECTRUM_KEYS, label);
-  const band = spectrum.bandHz;
-  if (!Array.isArray(band) || band.length !== 2) {
-    invalid(`${label}.bandHz`, "be a two-number [low, high) band in Hz");
+  if (typeof spectrum.band !== "string" || !BAND_NAMES.includes(spectrum.band)) {
+    invalid(`${label}.band`, `be one of ${BAND_NAMES.join(", ")}`);
   }
-  const [low, high] = band as [unknown, unknown];
-  if (typeof low !== "number" || typeof high !== "number" || !(low >= 0) || !(high > low)) {
-    invalid(`${label}.bandHz`, "be a two-number band in Hz with 0 <= low < high");
+  const maxPercent =
+    spectrum.maxPercent === undefined
+      ? undefined
+      : percent(spectrum.maxPercent, `${label}.maxPercent`);
+  const minPercent =
+    spectrum.minPercent === undefined
+      ? undefined
+      : percent(spectrum.minPercent, `${label}.minPercent`);
+  // A declaration that bounds nothing is the v1 harness failure in miniature: a check that runs,
+  // reports, and can never fail. Fail closed on it rather than accepting an empty assertion.
+  if (maxPercent === undefined && minPercent === undefined) {
+    invalid(`${label}`, "declare minPercent, maxPercent, or both; neither bounds anything");
   }
-  const fraction = spectrum.minFraction;
-  if (typeof fraction !== "number" || !(fraction > 0) || fraction > 1) {
-    invalid(`${label}.minFraction`, "be a number greater than 0 and at most 1");
+  if (maxPercent !== undefined && minPercent !== undefined && minPercent > maxPercent) {
+    invalid(`${label}`, "declare a minPercent at or below its maxPercent");
   }
-  return { bandHz: [low, high], minFraction: fraction };
+  return {
+    band: spectrum.band as AudioBand,
+    ...(maxPercent === undefined ? {} : { maxPercent }),
+    ...(minPercent === undefined ? {} : { minPercent }),
+  };
 }
 
 function parseOverride(raw: unknown, index: number): IAudioOverride {

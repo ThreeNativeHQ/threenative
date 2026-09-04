@@ -111,6 +111,18 @@ export function formatPassCosts(rows: readonly IPassCostRow[]): readonly string[
  * hand-written script conditioned; nothing measured them.
  */
 export interface IAudioRow {
+  /**
+   * Where the clip's energy sits, as percentages across the five named bands summing to 100.
+   *
+   * Measured on every clip whether or not the game declared a bound, because this is the thing the
+   * hand-written script that preceded this pass never looked at, and it is where both of the real
+   * defects were.
+   */
+  readonly bandAir: number;
+  readonly bandHigh: number;
+  readonly bandLow: number;
+  readonly bandMid: number;
+  readonly bandSub: number;
   readonly bytesAfter: number;
   readonly bytesBefore: number;
   readonly channelsAfter: number;
@@ -154,9 +166,11 @@ export interface IAudioRow {
   readonly seamWrapBefore: number;
   /** Present only for a declared loop, which is the only clip whose seam is asserted. */
   readonly seamMaxRatio?: number;
-  readonly spectrumBandHz?: readonly [number, number];
-  readonly spectrumFraction?: number;
-  readonly spectrumMinFraction?: number;
+  /** The band the game declared a bound on, and the bound; absent when it declared none. */
+  readonly spectrumBand?: string;
+  readonly spectrumMaxPercent?: number;
+  readonly spectrumMinPercent?: number;
+  readonly spectrumPercent?: number;
 }
 
 /**
@@ -227,11 +241,26 @@ function loopLine(row: IAudioRow): readonly string[] {
   ];
 }
 
+/**
+ * Where the energy is, on every clip, and the declared bound where there is one.
+ *
+ * Printed unconditionally: a footstep built half out of sub-bass is invisible in a byte count, a
+ * duration and a peak, and it was invisible for exactly that reason.
+ */
 function spectrumLine(row: IAudioRow): readonly string[] {
-  if (row.spectrumBandHz === undefined) return [];
+  const profile =
+    `  audio ${row.logicalPath} bands: sub ${row.bandSub.toFixed(1)}%, low ${row.bandLow.toFixed(1)}%, ` +
+    `mid ${row.bandMid.toFixed(1)}%, high ${row.bandHigh.toFixed(1)}%, air ${row.bandAir.toFixed(1)}%`;
+  if (row.spectrumBand === undefined) return [profile];
+  const bounds = [
+    row.spectrumMinPercent === undefined ? "" : `at least ${row.spectrumMinPercent}%`,
+    row.spectrumMaxPercent === undefined ? "" : `at most ${row.spectrumMaxPercent}%`,
+  ]
+    .filter((part) => part.length > 0)
+    .join(" and ");
   return [
-    `  audio ${row.logicalPath} spectrum: ${((row.spectrumFraction ?? 0) * 100).toFixed(1)}% of its energy in ` +
-      `${row.spectrumBandHz[0]}-${row.spectrumBandHz[1]} Hz, declared to need ${((row.spectrumMinFraction ?? 0) * 100).toFixed(1)}%`,
+    profile,
+    `  audio ${row.logicalPath} declared '${row.spectrumBand}': ${(row.spectrumPercent ?? 0).toFixed(1)}%, needs ${bounds}`,
   ];
 }
 

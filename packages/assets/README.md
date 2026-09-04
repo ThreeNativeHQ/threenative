@@ -157,8 +157,8 @@ assets: {
     overrides: [
       { glob: "audio/*-bed.ogg", loop: true },
       { glob: "audio/music/*.ogg", loop: { crossFadeMs: 0 } },
-      { glob: "audio/step-*.ogg", positional: true },
-      { glob: "audio/landmark.ogg", spectrum: { bandHz: [1000, 8000], minFraction: 0.4 } },
+      { glob: "audio/step-*.ogg", positional: true, spectrum: { band: "sub", maxPercent: 15 } },
+      { glob: "audio/landmark.ogg", spectrum: { band: "high", minPercent: 40 } },
     ],
   },
 }
@@ -170,7 +170,8 @@ assets: {
 | `loop: { crossFadeMs: 0 }` | Keeps the clip's own length — a bar-accurate musical loop — and still asserts the seam. |
 | `loop: { spliceToleranceMs }` | How far the splice may move to find a quiet join. Default 25 ms. |
 | `positional: true` | Mono downmix, which halves the decoded cost as well as the wire cost. |
-| `spectrum: { bandHz, minFraction }` | Fails the build when the clip's energy is not where the game says it should be. |
+| `spectrum: { band, minPercent }` | Fails the build when too little of the clip's energy is in the band it is for. |
+| `spectrum: { band, maxPercent }` | Fails the build when too much of it is somewhere it should not be. |
 | `normalise: "peak"` | Lifts a quiet clip to the ceiling. Off by default: see below. |
 | `peakDb` | The ceiling, in dBFS. Default `-1`. |
 | `conditioning: "none"` | Ships the bytes as committed. Measurement, and a declared loop's assertion, still run. |
@@ -182,6 +183,18 @@ silent on every native target. The pass therefore reads only those two container
 bake, naming the file and the re-encode command, rather than letting a build reach a player and
 play nothing. Both codecs are in-process WASM — as with the KTX2 pass, users install nothing extra
 and there is no `ffmpeg` in the install story.
+
+**Content is the check that matters most.** The hand pass this replaces got every join right and
+never looked at what was *in* the clips: it shipped a chime that was 83% low-mid where a struck bell
+should be, and fifteen footsteps carrying up to 45% of their energy below 100 Hz — a band a wood has
+nothing in, and which spends a phone speaker's whole headroom on something nobody can hear. A seam
+check alone would have caught neither, which is why both a floor and a ceiling are declarable.
+
+Bands are named, not measured in Hz, and the names and edges are the audio inspector's own — `sub`
+(0-100 Hz), `low` (100-500), `mid` (500-2k), `high` (2k-8k), `air` (8k-Nyquist) — so a game declares
+one band in one vocabulary and means the same thing to the build gate and to
+`packages/playtest`'s inspector. Percentages are on the same 0-100 scale for the same reason. Every
+clip's full five-band profile is measured and reported whether or not a bound was declared.
 
 **The seam is judged as a ratio, not a magnitude.** A click is a step that is anomalous *where it
 happens*: the same 0.02 jump is inaudible under a dense bed and an obvious tick in near-silence, so
@@ -205,6 +218,6 @@ channel count, under the ceiling and carrying no DC is shipped byte-identical, b
 it would cost a generation of lossy Vorbis to deliver the same audio.
 
 Measured over one game's nineteen generated clips: the three declared beds cross-fade to seam
-ratios of `0.10x`, `0.03x` and `0.10x`; the other sixteen pass through byte-identical; and the
-declared-band check fails the build on the one clip that came back as a hum, at 0.0% of its energy
-in the 1000-8000 Hz its game declared it needed.
+ratios of `0.10x`, `0.03x` and `0.10x`, and the other sixteen pass through byte-identical. The
+declared-band checks fail the build on both of that game's real defects — the chime that came back
+a hum, and the footsteps built out of sub-bass — neither of which any seam check would have seen.

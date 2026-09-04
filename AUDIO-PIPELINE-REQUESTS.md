@@ -17,11 +17,13 @@ The shortest version that would do the job, for each template's `AGENTS.md`:
 > Audio is conditioned at build time and every clip is measured, but the checks that matter are
 > declared, not guessed. In `threenative.config.ts`, under `assets.audio.overrides`, declare
 > `loop: true` for anything that repeats forever (the pass cross-fades it and then fails the build
-> if the join still clicks), `positional: true` for anything that plays from a place in the world
-> (mono downmix, which halves the decoded cost), and
-> `spectrum: { bandHz, minFraction }` for a clip whose character is the point — a chime that comes
-> back as a hum is a generation failure the pipeline can catch only if the game says what the clip
-> is for.
+> if the join is still a click against the steps beside it), `positional: true` for anything that
+> plays from a place in the world (mono downmix, which halves the decoded cost), and a `spectrum`
+> bound for any clip whose character is the point. The bands are named — `sub` (0-100 Hz), `low`
+> (100-500), `mid` (500-2k), `high` (2k-8k), `air` (8k-Nyquist) — and both directions are
+> declarable: `{ band: "high", minPercent: 40 }` for a chime that must not come back a hum, and
+> `{ band: "sub", maxPercent: 15 }` for a footstep that must not be built out of sub-bass. Those
+> two are real defects that shipped, and no seam check would have caught either.
 
 The full surface is the table in `packages/assets/README.md`.
 
@@ -37,12 +39,17 @@ typecheck-fail in its own project while the bake accepts it. This is the seam th
 (`assets.models.virtual`, validated by one layer and rejected by the next), so it is worth checking
 which of the two shapes the templates use.
 
-## 3. Nothing needed in `packages/playtest`
+## 3. Nothing needed in `packages/playtest`, but do not move its metrics without running this spec
 
-Recorded because it was a live question. The audio inspector's seam metric is now the pass's seam
-metric, reimplemented in `packages/assets/src/passes/audio-dsp.ts` rather than imported —
-`@threenative/assets` must not drag the harness into a published tarball — and
+Recorded because it was a live question. Both of the inspector's content metrics are now the pass's
+metrics too, reimplemented in `packages/assets/src/passes/audio-dsp.ts` rather than imported —
+`@threenative/assets` must not drag the harness into a published tarball. That covers the loop seam
+(wrap step against the 99th-percentile step within 50 ms of the join, limit 1.5x) *and* the five
+named bands, including their edges and the fact that they sum magnitude rather than power.
+
 `packages/assets/__tests__/audio-seam-parity.spec.ts` runs both implementations over the same PCM
-and fails if the window, the percentile or the definition of the wrap drift apart. No change to
-`packages/playtest` is required; the parity spec is what keeps the copy honest, and it will fail
-loudly if that file's metric moves.
+across five clip shapes and asserts agreement to eight and ten decimal places, plus that the band
+names and edges are identical objects' worth of values. So no change is needed there — but a change
+to `AUDIO_BANDS`, to `SEAM_WINDOW_SECONDS`, to `WINDOW`/`TARGET_COLUMNS`, or to magnitude-versus-power
+in `analyseSamples` will fail this spec, and that is deliberate: a game declares one bound in one
+vocabulary and both tools have to mean the same thing by it.

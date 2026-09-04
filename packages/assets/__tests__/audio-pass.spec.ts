@@ -157,6 +157,19 @@ describe("the audio pass seam assertion", () => {
     expect(audio.seamRatio as number).toBeGreaterThan(1.5);
   });
 
+  it("should carry the bound it judged against into the manifest, not just into the throw", async () => {
+    // Guarding a green-for-the-wrong-reason: the manifest narrowing silently dropped
+    // `seamMaxRatio` for a while, which made the assertion above pass on an absent field rather
+    // than on an undeclared one. Asserting the present case is what gives the absent case meaning.
+    const bed = wavClip({ frames: RATE * 2, sample: bandLimitedNoise(67) });
+
+    const compiled = await compileAudio("threenative-audio-bound-recorded-", "bed.wav", bed, {
+      audio: { overrides: [{ glob: "bed.wav", loop: true, seamMaxRatio: 2 }] },
+    });
+
+    expect((compiled.entry.audio as Record<string, unknown>).seamMaxRatio).toBe(2);
+  });
+
   it("should refuse a seam bound loose enough to be no assertion at all", async () => {
     const bed = wavClip({ frames: RATE, sample: noise(3) });
 
@@ -294,32 +307,102 @@ describe("the audio pass container policy", () => {
 });
 
 describe("the audio pass declared-intent checks", () => {
-  it("should fail a clip whose energy is outside the band the game declared it for", async () => {
-    // The chime that came back a hum: 200 Hz and nothing above it, declared as wanting energy
-    // above 1 kHz. The pass does not guess what a chime is — the game says, and the pass measures.
+  it("should fail a chime that came back a hum, against the floor the game declared", async () => {
+    // The real defect: 200 Hz and nothing above it, declared as needing energy where a struck bell
+    // lives. The pass does not guess what a chime is — the game says, and the pass measures.
     const hum = wavClip({ frames: RATE, sample: sine(200, RATE) });
 
     await expect(
-      compileAudio("threenative-audio-spectrum-fail-", "chime.wav", hum, {
-        audio: {
-          overrides: [{ glob: "chime.wav", spectrum: { bandHz: [1000, 8000], minFraction: 0.4 } }],
-        },
+      compileAudio("threenative-audio-spectrum-floor-", "chime.wav", hum, {
+        audio: { overrides: [{ glob: "chime.wav", spectrum: { band: "high", minPercent: 40 } }] },
       }),
-    ).rejects.toThrow(/TN_ASSETS_AUDIO_SPECTRUM/u);
+    ).rejects.toThrow(/under the 40% this clip was declared to need/u);
   });
 
-  it("should pass a clip that sits inside its declared band and report the fraction measured", async () => {
-    const chime = wavClip({ frames: RATE, sample: sine(2000, RATE) });
+  it("should fail a footstep built out of sub-bass, against the ceiling the game declared", async () => {
+    // The other real defect, and the one a floor cannot express: fifteen footsteps carried up to
+    // 45% of their energy below 100 Hz. A wood has nothing down there and a phone's speaker has no
+    // headroom to spend on it.
+    const thud = wavClip({
+      frames: RATE,
+      sample: (frame) =>
+        0.8 * Math.sin((2 * Math.PI * 60 * frame) / RATE) +
+        0.15 * Math.sin((2 * Math.PI * 3000 * frame) / RATE),
+    });
+
+    await expect(
+      compileAudio("threenative-audio-spectrum-ceiling-", "step.wav", thud, {
+        audio: { overrides: [{ glob: "step.wav", spectrum: { band: "sub", maxPercent: 15 } }] },
+      }),
+    ).rejects.toThrow(/over the 15% this clip was declared to allow/u);
+  });
+
+  it("should name the whole band profile when it fails, not only the bound that broke", async () => {
+    const hum = wavClip({ frames: RATE, sample: sine(200, RATE) });
+
+    await expect(
+      compileAudio("threenative-audio-spectrum-profile-", "chime.wav", hum, {
+        audio: { overrides: [{ glob: "chime.wav", spectrum: { band: "high", minPercent: 40 } }] },
+      }),
+    ).rejects.toThrow(
+      /sub \d+\.\d+%, low \d+\.\d+%, mid \d+\.\d+%, high \d+\.\d+%, air \d+\.\d+%/u,
+    );
+  });
+
+  it("should pass a clip that sits inside its declared band and report what it measured", async () => {
+    const chime = wavClip({ frames: RATE, sample: sine(3000, RATE) });
 
     const compiled = await compileAudio("threenative-audio-spectrum-pass-", "chime.wav", chime, {
-      audio: {
-        overrides: [{ glob: "chime.wav", spectrum: { bandHz: [1000, 8000], minFraction: 0.4 } }],
-      },
+      audio: { overrides: [{ glob: "chime.wav", spectrum: { band: "high", minPercent: 40 } }] },
     });
 
     const audio = compiled.entry.audio as Record<string, unknown>;
-    expect(audio.spectrumFraction as number).toBeGreaterThan(0.4);
-    expect(audio.spectrumMinFraction).toBe(0.4);
+    expect(audio.spectrumPercent as number).toBeGreaterThan(40);
+    expect(audio.spectrumMinPercent).toBe(40);
+    expect(audio.spectrumBand).toBe("high");
+    expect(audio.spectrumMaxPercent).toBeUndefined();
+  });
+
+  it("should record a declared ceiling in the manifest too", async () => {
+    const chime = wavClip({ frames: RATE, sample: sine(3000, RATE) });
+
+    const compiled = await compileAudio("threenative-audio-spectrum-ceil-ok-", "chime.wav", chime, {
+      audio: { overrides: [{ glob: "chime.wav", spectrum: { band: "sub", maxPercent: 15 } }] },
+    });
+
+    const audio = compiled.entry.audio as Record<string, unknown>;
+    expect(audio.spectrumMaxPercent).toBe(15);
+    expect(audio.spectrumMinPercent).toBeUndefined();
+    expect(audio.spectrumPercent as number).toBeLessThan(15);
+  });
+
+  it("should measure and report the band profile of every clip, declared or not", async () => {
+    // The number nobody looked at. It costs nothing and it is where both defects were.
+    const chime = wavClip({ frames: RATE, sample: sine(3000, RATE) });
+
+    const compiled = await compileAudio("threenative-audio-bands-", "chime.wav", chime);
+
+    const audio = compiled.entry.audio as Record<string, unknown>;
+    expect(audio.spectrumBand).toBeUndefined();
+    expect(audio.bandHigh as number).toBeGreaterThan(80);
+    const total =
+      (audio.bandSub as number) +
+      (audio.bandLow as number) +
+      (audio.bandMid as number) +
+      (audio.bandHigh as number) +
+      (audio.bandAir as number);
+    expect(total).toBeCloseTo(100, 4);
+  });
+
+  it("should refuse a spectrum declaration that bounds nothing", async () => {
+    // A check that runs, reports and can never fail is the v1 harness failure in miniature.
+    const chime = wavClip({ frames: RATE, sample: sine(3000, RATE) });
+
+    await expect(
+      compileAudio("threenative-audio-spectrum-empty-", "chime.wav", chime, {
+        audio: { overrides: [{ glob: "chime.wav", spectrum: { band: "high" } as never }] },
+      }),
+    ).rejects.toThrow(/TN_ASSETS_CONFIG_INVALID/u);
   });
 });
 

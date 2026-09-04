@@ -398,6 +398,11 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
 function audioRow(value: unknown): IAudioRow | undefined {
   if (!isRecord(value)) return undefined;
   const numbers = [
+    "bandAir",
+    "bandHigh",
+    "bandLow",
+    "bandMid",
+    "bandSub",
     "bytesAfter",
     "bytesBefore",
     "channelsAfter",
@@ -422,21 +427,22 @@ function audioRow(value: unknown): IAudioRow | undefined {
   if (flags.some((key) => typeof value[key] !== "boolean")) return undefined;
   if (typeof value.container !== "string" || typeof value.logicalPath !== "string")
     return undefined;
+  // Present only when the game declared the thing they describe, so they are copied when they
+  // are numbers and dropped when they are not — never defaulted, because a bound nobody declared
+  // must not appear in the manifest as though someone had.
   const optional = [
     "crossFadeMs",
     "crossFadeMsRequested",
-    "seamThreshold",
-    "spectrumFraction",
-    "spectrumMinFraction",
+    "seamMaxRatio",
+    "spectrumMaxPercent",
+    "spectrumMinPercent",
+    "spectrumPercent",
   ] as const;
-  const band = value.spectrumBandHz;
   return {
     ...(Object.fromEntries(
       optional.flatMap((key) => (typeof value[key] === "number" ? [[key, value[key]]] : [])),
     ) as Record<string, number>),
-    ...(Array.isArray(band) && band.length === 2 && band.every((edge) => typeof edge === "number")
-      ? { spectrumBandHz: [band[0] as number, band[1] as number] as const }
-      : {}),
+    ...(typeof value.spectrumBand === "string" ? { spectrumBand: value.spectrumBand } : {}),
     ...(Object.fromEntries(numbers.map((key) => [key, value[key] as number])) as Record<
       (typeof numbers)[number],
       number

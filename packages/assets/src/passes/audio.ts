@@ -10,11 +10,13 @@ import {
   type IAudioPassOptions,
   type IAudioSpectrumExpectation,
 } from "./audio-config.js";
+import { AUDIO_BANDS } from "./audio-dsp.js";
 import {
+  type AudioBand,
   type ISeamMeasurement,
-  bandEnergyFraction,
   crossFadeLoop,
   downmixToMono,
+  measureBands,
   measureDcOffset,
   measurePeak,
   measureSeam,
@@ -134,11 +136,10 @@ async function condition(
   assertNoDrift(logicalPath, source, after, produced.crossFadeFrames);
   const seam = measureSeam(after.channels, after.sampleRate);
   assertSeam(logicalPath, declared, seam, produced.crossFadeFrames, after.sampleRate);
-  const spectrumFraction =
-    declared.spectrum === undefined
-      ? undefined
-      : bandEnergyFraction(after.channels, after.sampleRate, declared.spectrum.bandHz);
-  assertSpectrum(logicalPath, declared.spectrum, spectrumFraction);
+  // Measured on every clip, declared or not: the band profile is the thing the hand-written script
+  // never looked at, and a number in the receipt costs nothing.
+  const bands = measureBands(after.channels, after.sampleRate);
+  assertSpectrum(logicalPath, declared.spectrum, bands);
 
   const row: IAudioRow = {
     bytesAfter: produced.bytes.length,
@@ -176,12 +177,22 @@ async function condition(
     seamWrap: seam.wrap,
     seamWrapBefore: before.seam.wrap,
     ...(declared.loop ? { seamMaxRatio: declared.seamMaxRatio } : {}),
+    bandAir: bands.air,
+    bandHigh: bands.high,
+    bandLow: bands.low,
+    bandMid: bands.mid,
+    bandSub: bands.sub,
     ...(declared.spectrum === undefined
       ? {}
       : {
-          spectrumBandHz: declared.spectrum.bandHz,
-          spectrumFraction: spectrumFraction ?? 0,
-          spectrumMinFraction: declared.spectrum.minFraction,
+          spectrumBand: declared.spectrum.band,
+          spectrumPercent: bands[declared.spectrum.band],
+          ...(declared.spectrum.maxPercent === undefined
+            ? {}
+            : { spectrumMaxPercent: declared.spectrum.maxPercent }),
+          ...(declared.spectrum.minPercent === undefined
+            ? {}
+            : { spectrumMinPercent: declared.spectrum.minPercent }),
         }),
   };
   // The extension follows the bytes, not the intent: a clip the game declared unconditioned keeps
@@ -340,14 +351,32 @@ function assertSeam(
   );
 }
 
+/**
+ * The check the defect that shipped would have needed.
+ *
+ * The joins were fine; the content was not. A hand pass conditioned nineteen clips and never
+ * measured what was in them, so a chime that came back as a hum and fifteen footsteps built almost
+ * half out of sub-bass both passed. Only the game can say what a clip is for, so only the game
+ * declares the bound — and once it has, this is not skippable.
+ */
 function assertSpectrum(
   logicalPath: string,
   expectation: IAudioSpectrumExpectation | undefined,
-  measured: number | undefined,
+  bands: Record<AudioBand, number>,
 ): void {
-  if (expectation === undefined || measured === undefined) return;
-  if (measured >= expectation.minFraction) return;
-  throw new Error(
-    `TN_ASSETS_AUDIO_SPECTRUM: '${logicalPath}' puts ${(measured * 100).toFixed(1)}% of its energy in ${String(expectation.bandHz[0])}-${String(expectation.bandHz[1])} Hz, against the ${(expectation.minFraction * 100).toFixed(1)}% this clip was declared to need. The bytes are not what the game says this clip is for.`,
-  );
+  if (expectation === undefined) return;
+  const measured = bands[expectation.band];
+  const range = AUDIO_BANDS[expectation.band];
+  const where = `${String(range[0])}-${range[1] === Number.POSITIVE_INFINITY ? "Nyquist" : String(range[1])} Hz`;
+  const shape = `Measured across the five bands: sub ${bands.sub.toFixed(1)}%, low ${bands.low.toFixed(1)}%, mid ${bands.mid.toFixed(1)}%, high ${bands.high.toFixed(1)}%, air ${bands.air.toFixed(1)}%.`;
+  if (expectation.minPercent !== undefined && measured < expectation.minPercent) {
+    throw new Error(
+      `TN_ASSETS_AUDIO_SPECTRUM: '${logicalPath}' puts ${measured.toFixed(1)}% of its energy in '${expectation.band}' (${where}), under the ${String(expectation.minPercent)}% this clip was declared to need. The bytes are not what the game says this clip is for. ${shape}`,
+    );
+  }
+  if (expectation.maxPercent !== undefined && measured > expectation.maxPercent) {
+    throw new Error(
+      `TN_ASSETS_AUDIO_SPECTRUM: '${logicalPath}' puts ${measured.toFixed(1)}% of its energy in '${expectation.band}' (${where}), over the ${String(expectation.maxPercent)}% this clip was declared to allow. ${shape}`,
+    );
+  }
 }
