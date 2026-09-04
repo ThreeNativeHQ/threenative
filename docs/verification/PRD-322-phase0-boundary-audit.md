@@ -3,9 +3,13 @@
 **Date:** 2026-09-04. **Engine HEAD:** `d9711120`. **Wildwood HEAD:** `d535f51` (separate
 repository at `../sandbox/wildwood`).
 
-**Outcome: DECLINED.** No product code was written. The decline fires on PRD-322's own condition
-— *"`isWeb` plus five lines per game already covers it"* — and on rule 1(b), which vetoes the one
-line that is genuinely a platform-to-tier decision.
+**Outcome: DECLINED.** No product code was written. **The decline rests on rule 1(b)** — which
+vetoes the one line that is genuinely a platform-to-tier decision — and, equivalently, on §6's
+first condition: an appearance parameter cannot be kept out of core, and without it there is no
+platform half left for rule 1(a) to reach.
+
+**§6's second condition — the line-count one — does not fire, and an earlier version of this record
+wrongly claimed it did.** See §6.
 
 Per `docs/PRDs/batch-2026-09-01/README.md`: *"If either PRD's Phase 0 finds it cannot hold that
 line, it closes as DECLINED with no product code. That outcome is a success for this batch, not a
@@ -201,16 +205,29 @@ PRD-322 §6:
 > parameter following it into core, **or** if `isWeb` plus five lines per game already covers it
 > and `count-loc.ts` says so.
 
-Both fire.
+**Condition 1 fires. Condition 2 does not**, and this record previously said "Both fire", which was
+wrong on its own numbers.
 
 1. **An appearance parameter follows it.** The only line with platform-to-tier semantics is the
    `mobile → "low" | "high"` mapping, and that is a look decision (§5). Core cannot take the
    platform half without it, because without it there is no platform half — only argument
    validation.
-2. **`isWeb` plus a few lines per game already covers it.** It is `isMobile()` — the same export,
-   the same class of seam, already shipped at `platform.ts:204` — called once per game at the boot
-   path, plus one mapping line. Phase 0's own words: *"a seam that is one `isWeb` call already has
-   its export."*
+2. **`isWeb` plus five lines per game already covers it — this condition does NOT fire.** Both of
+   its conjuncts fail, on this record's own numbers:
+   - The movable remainder is **15 lines per game** (§5, §6), not five. Fifteen is three times the
+     stated threshold, and "five" was a threshold, not a figure of speech.
+   - `count-loc.ts` **was not run**: §6 states it has no mode for scoring a proposed export. Its
+     hand-count substitute lands at **net −46 lines in favour of extraction**, so the line count
+     argues *for* the export — the opposite of what this condition requires.
+
+   The seam-already-exists observation is still true and still the most useful thing in this audit
+   — `isMobile()` is one call at each game's boot path, and Phase 0's own words are *"a seam that
+   is one `isWeb` call already has its export"*. But **that is an argument about rule 1(a) having
+   nothing to reach, not a satisfied line-count condition**, and stating it as the latter put the
+   line count ahead of the veto that actually decides this.
+
+**One condition is sufficient.** Rule 1(b) is a veto over rule 1(a): once the mapping line stays in
+the game, there is no platform half for core to own at any size.
 
 ---
 
@@ -224,10 +241,15 @@ Stated rather than claimed, per `docs/PRDs/AGENTS.md`.
   session ran no device and no desktop build. Status: `UNVERIFIED` for real-target execution.
   It does not change the decline — the code under audit has no native branch to execute — but it
   is not evidence that `isMobile()` is correct on a phone.
-- **The eleven-way duplication is left standing.** It is real and it is byte-identical, but what
-  is duplicated is a narrower over names each game declares, not a seam. If it is to be removed,
-  the argument is scaffold-generation drift, not rule 1(a) — a different PRD with a different
-  justification.
+- **The eleven-way duplication is left standing here, and is now filed.** It is real and it is
+  byte-identical, but what is duplicated is a narrower over names each game declares, not a seam,
+  so removing it is a scaffold-drift argument rather than a rule-1(a) one. Filed as
+  [PRD-353](../PRDs/tech-debt-code-quality/PRD-353-eleven-copies-of-a-fail-closed-throw-drift-silently.md)
+  — a review pointed out that what is duplicated eleven times includes a **fail-closed throw**, in
+  a repository whose invariant is "fail closed everywhere", and that `scripts/template-quality.ts`
+  checks the tier *names* and the prose but never compares the implementations or asserts the
+  throw exists. A template that silently returned `"high"` on an unknown tier would pass every
+  gate here. PRD-353 proposes a drift gate, not an abstraction.
 
 ---
 
@@ -239,5 +261,5 @@ Stated rather than claimed, per `docs/PRDs/AGENTS.md`.
 | 2 — Platform tier resolution with an override order | Not built — `getPlatform`/`isMobile` already is it |
 | 3 — Wildwood loses its resolver | Not done — its resolver holds a look decision |
 | 4 — Every template does the same | Not done |
-| 5 — Tier observable to the playtest reporter | Already shipped: `TN_QUALITY_TIER <tier> mobile=<bool> source=platform\|override` at each template's `src/render/postprocessing.ts:31` |
+| 5 — Tier observable to the playtest reporter | Already shipped: `TN_QUALITY_TIER <tier> mobile=<bool> source=platform\|override` at each template's `src/render/postprocessing.ts:32`, `minimal` at `:39` |
 | 6 — Capability manifest entry | Not needed; `isMobile` and `isWeb` are already in `capabilities.json` |
