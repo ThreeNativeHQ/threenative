@@ -231,19 +231,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "65b38e488dff6859341d8826db418e0f725fe077dbc7c2e05b68cfa901029785",
-  defense: "46ce1abd42ea137249b241ccdeab5bb5953ad0b95407104098effcbc0644e285",
+  "action-rpg": "8e4b700e01268484eeaaca3ae656b587255a699f240b88a1d01e42df323d2c64",
+  defense: "f3518707648b6fb5c347cacfce763fbfdb96c71b13f1f21cb55e174a565034b7",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "a7017dc19cb2ec2066b66b57e063e0d00d47b71e089a1f0dd7e1c10355b42fdf",
-  platformer: "d6da52e2c16089b6d3ca59ca13b33a4d3fdb4914b658e14322ad0f4143b17f9f",
-  runner: "101386482f861171efe7ab95a7857067674809327b913d6ad40cff5cde69a587",
-  puzzle: "b0a07ed9b2c6f72eaac3f76f7fc6d4edbdac33b2adaf877869e71b22de340dc3",
-  racing: "0c4e7e5fbcb97f45083378493bc86fb94325f39e4b2bbc4855b2f9186b03132e",
-  shooter: "4d4f6357d3d891f994c36515acd343a6eee299c09789fcbec7c9a76a17e51e5c",
+  minimal: "d3ffb2a64289e1c44e3b3174d7ada7f240e6e7bc540cef2ba3cc3d39dc0cce7c",
+  platformer: "5a829ade629fc35c47e7a737d0dd5d7ee7d37fdfddfceb9b653fd6da8e367bde",
+  runner: "37fe29552660f143918053590c4340be92d2b98652d9bc9633d10ef5dd10ea8a",
+  puzzle: "c76f32eb416825b99a4ea34ea33c404c7f61812faf4925b968f187e44b6c2aae",
+  racing: "7cbca2548e40b59e84e4385e5360ab97753537cdb41a600b0d0453067b112f3f",
+  shooter: "9b3fb5c83c44b83579678270eaf33f5b3bf63013a9de84aa672e4ae4720f3de7",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "f71d0b0bf99abb43ecc0ba85094f3b2e1872e4d975a9526c9d743f7be0183f1d",
+  starter: "a6ba35832dab5b06b1da2fa27a01a9069ddd30985a5d4bae7c86f7fdce0336b2",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -264,7 +264,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "fd6d9ab637b4e2fec1e93c2bc3811b75fbbaa0a4fb699b51cde09bbfaafc9f0b",
+  sailing: "fcd78d19a375e00d1bdbe3f5652db9172b34ccfe39088afcb2269f7cbaecb952",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -284,6 +284,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // AGENTS.md paragraph that states the convention.
   // Recomputed 2026-08-29 for PRD-249. Every template moved because every scaffold embeds the
   // new FluidField2D capability manifest and generated capability-reference entry.
+  // Recomputed 2026-09-03 for PRD-346: `MCP_SERVERS` gained a fourth entry,
+  // `threenative-blender`, which `pnpm sync:mcp` writes into all seven host configs of every
+  // template, and the shared `finding-assets.md` reference gained the downloaded-.fbx loop.
+  // All ten trees moved; no template source did.
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -1346,6 +1350,10 @@ describe("create-threenative", () => {
             command: "node",
             args: [`${CORE_SHIM}/engine.mjs`],
           },
+          "threenative-blender": {
+            command: "node",
+            args: [`${CORE_SHIM}/blender.mjs`],
+          },
         },
       });
       await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
@@ -1377,6 +1385,10 @@ describe("create-threenative", () => {
           "threenative-engine": {
             command: "node",
             args: [`${CORE_SHIM}/engine.mjs`],
+          },
+          "threenative-blender": {
+            command: "node",
+            args: [`${CORE_SHIM}/blender.mjs`],
           },
         },
       });
