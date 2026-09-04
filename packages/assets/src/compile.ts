@@ -17,7 +17,11 @@ import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
 import { applyPasses } from "./pass-chain.js";
 import type { IAppliedPasses, IPassTiming } from "./pass-chain.js";
-import { blenderImportPass, needsBlenderImport } from "./passes/blender-import.js";
+import {
+  BLENDER_IMPORT_PASS,
+  blenderImportPass,
+  needsBlenderImport,
+} from "./passes/blender-import.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import { modelPass } from "./passes/model.js";
@@ -1370,13 +1374,42 @@ export async function compileAssets(
   }
   const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
   const previous = await readExistingManifest(manifestPath);
-  const passNames = layout.passes.map((pass) => pass.name);
-  const passCacheKeys = layout.passes.map((pass) => pass.cacheKey ?? null);
+
+  const logicals = await walkSources(layout.sourceRoot);
+  // The determinism gate's seam: reversed processing order reverses which input's work completes
+  // first, so the gate can prove the emitted bytes do not depend on it.
+  if (options.processingOrder === "reversed") logicals.reverse();
+
+  /**
+   * The Blender importer joins the chain only when this source tree actually holds something it
+   * owns, which is why the walk happens before the pass list is fixed.
+   *
+   * It was unconditional first, and that hung `threenative build` for every project shipping
+   * `assets: { models: "none", textures: "none" }` — every template that targets mobile. With both
+   * set to "none" the built-in chain is *empty*, and an empty `passSpecs` is what tells the driver
+   * not to create a worker pool at all (`layout.passSpecs.length > 0 && concurrency > 1`). One
+   * unconditional no-op pass flipped that to a pool for a chain that can never do anything, and
+   * `threenative build --target web` finished its work and then never exited — 45 minutes to a
+   * job timeout in CI, reproduced locally at exit code 124.
+   *
+   * A game with no importable source now pays one extension test per input and nothing else,
+   * which is also what its manifest should say: `passes` lists the chain that ran.
+   */
+  const importsModels = logicals.some((logical) => needsBlenderImport(logical));
+  const activePasses = importsModels
+    ? layout.passes
+    : layout.passes.filter((pass) => pass.name !== BLENDER_IMPORT_PASS);
+  const activePassSpecs = importsModels
+    ? layout.passSpecs
+    : layout.passSpecs.filter((spec) => spec.kind !== "blender-import");
+
+  const passNames = activePasses.map((pass) => pass.name);
+  const passCacheKeys = activePasses.map((pass) => pass.cacheKey ?? null);
   const passConfiguration = JSON.stringify({
     ...(passCacheKeys.some((key) => key !== null) ? { passCacheKeys } : {}),
     pipelineVersion: PIPELINE_VERSION,
     passes: passNames,
-    options: layout.passes.map((pass) => pass.configuration ?? null),
+    options: activePasses.map((pass) => pass.configuration ?? null),
   });
   const entries: Record<string, IAssetManifestEntry> = {};
   const receiptOutputs: IBakeReceiptOutput[] = [];
@@ -1393,11 +1426,6 @@ export async function compileAssets(
   let skipped = 0;
   let textureCount = 0;
   let compressedModelCount = 0;
-
-  const logicals = await walkSources(layout.sourceRoot);
-  // The determinism gate's seam: reversed processing order reverses which input's work completes
-  // first, so the gate can prove the emitted bytes do not depend on it.
-  if (options.processingOrder === "reversed") logicals.reverse();
 
   // An empty (or dotfile-only) source must never publish an empty manifest: the runtime treats
   // a served manifest as authoritative and would reject every load against it. A source that
@@ -1483,8 +1511,8 @@ export async function compileAssets(
   // serialisable mirror and runs sequential.
   const concurrency = resolveConcurrency(options.concurrency ?? layout.concurrency);
   const pool =
-    layout.passSpecs.length > 0 && concurrency > 1
-      ? createPassPool(concurrency, layout.passSpecs, layout.outputRoot)
+    activePassSpecs.length > 0 && concurrency > 1
+      ? createPassPool(concurrency, activePassSpecs, layout.outputRoot)
       : undefined;
 
   const processOne = async (logical: string): Promise<void> => {
@@ -1517,7 +1545,7 @@ export async function compileAssets(
     }
     const applied =
       pool === undefined
-        ? await applyPasses(layout.passes, input, logical)
+        ? await applyPasses(activePasses, input, logical)
         : await pool.run(logical, input);
     recordRanTimings(costInputs, logical, applied.timings);
     const auxiliaryOutputs = resolveAuxiliaryOutputs(logical, applied.auxiliaryOutputs);

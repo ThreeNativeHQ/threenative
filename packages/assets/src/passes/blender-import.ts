@@ -32,6 +32,9 @@ export interface IBlenderImportOptions {
   readonly timeoutMs?: number;
 }
 
+/** The pass's name, shared with the driver so the chain filter cannot drift from the pass. */
+export const BLENDER_IMPORT_PASS = "blender-import";
+
 const IMPORT_EXTENSIONS: ReadonlySet<string> = new Set(BLENDER_SOURCE_EXTENSIONS);
 
 /**
@@ -81,7 +84,7 @@ function messageFor(logicalPath: string, result: BridgeResult): string {
 export function blenderImportPass(options: IBlenderImportOptions = {}): IAssetPass {
   return {
     configuration: { extensions: [...BLENDER_SOURCE_EXTENSIONS].sort() },
-    name: "blender-import",
+    name: BLENDER_IMPORT_PASS,
     async apply(input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> {
       if (!needsBlenderImport(logicalPath)) return input;
       // Blender reads paths, not buffers, and the compile hands passes bytes. The staging

@@ -183,6 +183,11 @@ withBlender("compileAssets with a blender source", () => {
       expect(entry, `manifest has no entry for ${CHARACTER}`).toBeDefined();
       expect(entry?.kind).toBe("model");
       expect(entry?.importedFrom).toBe("fbx");
+      // The chain lists the importer only because this tree holds something it owns. A project
+      // with no importable source must not even construct it: an unconditional no-op pass made
+      // `passSpecs` non-empty for an `assets: "none"` project, which spun up a worker pool for a
+      // chain that can do nothing and left `threenative build` hanging after its work was done.
+      expect(entry?.passes).toContain("blender-import");
       const output = entry?.output as string;
       expect(output.endsWith(".glb"), output).toBe(true);
 
