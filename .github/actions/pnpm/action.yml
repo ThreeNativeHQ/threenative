@@ -63,21 +63,42 @@ runs:
         if [ "$RUNNER_OS" = "Windows" ]; then executable="$bin_directory/pnpm.exe"; fi
         mkdir -p "$bin_directory"
 
-        # macOS runners ship no coreutils, so `sha256sum` is Linux and Git Bash only there.
-        if command -v sha256sum >/dev/null 2>&1; then
-          check_digest() { echo "$1  $2" | sha256sum --check --status; }
-        else
-          check_digest() { echo "$1  $2" | shasum --algorithm 256 --check --status; }
-        fi
+        # Compute the digest and compare it here, rather than handing the comparison to a checker
+        # and reading its exit code. The macOS runner image has a `sha256sum` that is not GNU
+        # coreutils and has no `--check` at all: on run 33831657853 it printed
+        # `usage: sha256sum [-bctwz] [files ...]`, exited non-zero, and this action reported a
+        # digest mismatch on a binary whose bytes were correct. A tool that could not run and a
+        # binary that is wrong are different failures and must not share a message.
+        #
+        # Three tools, because no one of them is on all three runner images, and the digest is
+        # picked out by shape — `abc… file`, `SHA256 (file) = abc…` and `SHA256(file)= abc…` are
+        # all in use — rather than by column.
+        digest_of() {
+          local output=""
+          output=$(shasum --algorithm 256 "$1" 2>/dev/null) \
+            || output=$(sha256sum "$1" 2>/dev/null) \
+            || output=$(openssl dgst -sha256 "$1" 2>/dev/null) \
+            || output=""
+          printf '%s\n' "$output" | grep -oE '[0-9a-f]{64}' | head -n 1
+        }
 
         if [ ! -x "$executable" ]; then
           curl --fail --location --silent --show-error \
             --retry 5 --retry-all-errors --retry-delay 2 \
             --connect-timeout 20 --max-time 300 \
             --output "$executable.part" "$release_base/v$version/$asset"
-          if ! check_digest "$digest" "$executable.part"; then
-            echo "$asset did not match its recorded digest $digest"
+          # `|| true` because the pipeline's `grep` exits non-zero when no tool produced a digest,
+          # and under `set -e` that killed the script before it could say so — a silent exit 1
+          # where the whole point is to name what went wrong.
+          computed=$(digest_of "$executable.part" || true)
+          if [ -z "$computed" ]; then
             rm -f "$executable.part"
+            echo "could not compute a sha-256 digest on $RUNNER_OS: no usable shasum, sha256sum or openssl"
+            exit 1
+          fi
+          if [ "$computed" != "$digest" ]; then
+            rm -f "$executable.part"
+            echo "$asset has digest $computed, not the recorded $digest"
             exit 1
           fi
           chmod +x "$executable.part"

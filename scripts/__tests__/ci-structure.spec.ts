@@ -447,8 +447,20 @@ describe("CI pipeline structure", () => {
     const action = await readFile(path.join(repo, ".github/actions/pnpm/action.yml"), "utf8");
     const digests = await readFile(path.join(repo, ".github/actions/pnpm/checksums.txt"), "utf8");
     // Fail closed twice over: an asset with no recorded digest, and a digest that does not match.
-    expect(action).toContain("sha256sum --check");
     expect(action).toContain("no recorded digest");
+    // The digest is computed here and compared as a string, not handed to `sha256sum --check`:
+    // the macOS image ships a `sha256sum` that is not coreutils and has no `--check`, so on run
+    // 33831657853 that checker printed a usage line and reported a mismatch on a binary whose
+    // bytes were correct. Every tool the action probes must survive an edit, and both failure
+    // paths must still name what went wrong and stop the job.
+    expect(action).toContain("digest_of");
+    expect(action).toContain("shasum --algorithm 256");
+    expect(action).toContain("sha256sum");
+    expect(action).toContain("openssl dgst -sha256");
+    expect(action, "a digest the action cannot compute must fail the job").toContain(
+      "could not compute a sha-256 digest",
+    );
+    expect(action, "a wrong binary must still fail the job").toContain("not the recorded");
 
     const recorded = new Map(
       digests
