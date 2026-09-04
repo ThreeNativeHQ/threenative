@@ -47,7 +47,7 @@ flowchart LR
 | [PRD-320](../done/PRD-320-the-fab-import-replays-without-a-fab-account.md) (archived 2026-09-02) | asset pipeline | — | ~3h |
 | [PRD-321](../done/PRD-321-the-animal-state-machine-is-mechanism-the-animals-are-the-game.md) (DECLINED) | Wildwood extraction | — | — |
 | [PRD-322](../done/PRD-322-quality-tier-resolution-is-a-platform-seam.md) (DECLINED 2026-09-04) | Wildwood extraction | — | ~2h |
-| [PRD-323](PRD-323-evidence-has-a-retention-policy-and-a-gate.md) | doc and evidence bloat | — | ~5h |
+| [PRD-323](../done/PRD-323-evidence-has-a-retention-policy-and-a-gate.md) (archived 2026-09-04) | doc and evidence bloat | — | ~5h |
 
 ## The third theme: the evidence record outgrew its readers
 

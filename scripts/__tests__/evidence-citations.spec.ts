@@ -67,6 +67,105 @@ describe("classifyEvidence", () => {
     );
   });
 
+  it("should classify a tree a script opens as a directory root as cited by that reader", async () => {
+    // PRD-323 Phase 3. `scripts/visual-gate.ts` opens `docs/verification/visuals` as a root and
+    // resolves what is inside at run time, so no source ever names those files. A by-name scan
+    // called all 40 of them uncited, and deleting them would have destroyed every visual
+    // baseline `pnpm visuals` compares against while the gate stayed green.
+    const root = await fixture();
+    await mkdir(path.join(root, "docs/verification/visuals"), { recursive: true });
+    await writeFile(path.join(root, "docs/verification/visuals/starter.png"), "pixels");
+    // Nothing names the file — the reader globs the directory.
+    await writeFile(path.join(root, "docs/PRDs/done/PRD-001.md"), "no citations remain");
+    await track(root);
+
+    const { scan } = await classifyEvidence(root);
+    const baseline = scan.find((a) => a.path === "docs/verification/visuals/starter.png");
+    expect(baseline?.classification).toBe("cited-by-script");
+    expect(baseline?.citedBy).toContain("scripts/visual-gate.ts");
+  });
+
+  it("should claim only the reader's own glob when a walked root names a basename pattern", async () => {
+    // `sweep-delta.ts` globs `docs/verification/sweep-*.md` and matches each one's `Archive:`
+    // field. Deleting one made `sweep-delta.spec.ts` throw "missing verification ledger for the
+    // archive" — so the ledger is cited. But the root is `docs/verification` itself, so an entry
+    // without the pattern would exempt the entire tree and gut the policy.
+    const root = await fixture();
+    await writeFile(path.join(root, "docs/verification/sweep-platformer-2026-08-05-r2.md"), "x");
+    await writeFile(path.join(root, "docs/verification/some-other-run.md"), "x");
+    await writeFile(path.join(root, "docs/PRDs/done/PRD-001.md"), "no citations remain");
+    await track(root);
+
+    const { scan } = await classifyEvidence(root);
+    expect(
+      scan.find((a) => a.path === "docs/verification/sweep-platformer-2026-08-05-r2.md")
+        ?.classification,
+    ).toBe("cited-by-script");
+    expect(scan.find((a) => a.path === "docs/verification/some-other-run.md")?.classification).toBe(
+      "uncited",
+    );
+  });
+
+  it("should leave an artifact outside every walked root uncited", async () => {
+    // The negative control for the rule above: the root rescues what is inside it and nothing
+    // else, so a sibling that no source names still classifies uncited and stays deletable.
+    const root = await fixture();
+    await mkdir(path.join(root, "docs/verification/visuals"), { recursive: true });
+    await writeFile(path.join(root, "docs/verification/visuals/starter.png"), "pixels");
+    await writeFile(path.join(root, "docs/verification/stray.png"), "pixels");
+    await writeFile(path.join(root, "docs/PRDs/done/PRD-001.md"), "no citations remain");
+    await track(root);
+
+    const { scan } = await classifyEvidence(root);
+    expect(
+      scan.find((a) => a.path === "docs/verification/visuals/starter.png")?.classification,
+    ).toBe("cited-by-script");
+    expect(scan.find((a) => a.path === "docs/verification/stray.png")?.classification).toBe(
+      "uncited",
+    );
+  });
+
+  it("should classify an artifact a sibling evidence write-up links to as cited", async () => {
+    // PRD-323 Phase 3. An evidence file is not a citation source for its own tree — its prose
+    // mentioning another run is not a reason to keep that run's bytes. A Markdown *link* is
+    // different: `check-doc-links` enforces it, so deleting the target breaks a live document.
+    // The first deletion pass broke 42 links across six write-ups for exactly this reason,
+    // because a report's attachments are named only by a relative link from the report.
+    const root = await fixture();
+    await mkdir(path.join(root, "docs/verification/prd-999-run"), { recursive: true });
+    await writeFile(path.join(root, "docs/verification/prd-999-run/brief.txt"), "the brief");
+    await writeFile(
+      path.join(root, "docs/verification/prd-999.md"),
+      "the report: [brief](prd-999-run/brief.txt)",
+    );
+    await writeFile(path.join(root, "docs/PRDs/done/PRD-001.md"), "no citations remain");
+    await track(root);
+
+    const { scan } = await classifyEvidence(root);
+    const attachment = scan.find((a) => a.path === "docs/verification/prd-999-run/brief.txt");
+    expect(attachment?.classification).not.toBe("uncited");
+    expect(attachment?.citedBy).toContain("docs/verification/prd-999.md");
+  });
+
+  it("should leave an artifact only mentioned in evidence prose uncited", async () => {
+    // The negative control: prose is not a link. Loosening the rule to any mention would make
+    // every write-up that names another run keep that run's bytes forever, which is the state
+    // PRD-323 exists to end.
+    const root = await fixture();
+    await writeFile(path.join(root, "docs/verification/orphan.png"), "pixels");
+    await writeFile(
+      path.join(root, "docs/verification/prd-999.md"),
+      "we also looked at orphan.png during this run",
+    );
+    await writeFile(path.join(root, "docs/PRDs/done/PRD-001.md"), "no citations remain");
+    await track(root);
+
+    const { scan } = await classifyEvidence(root);
+    expect(scan.find((a) => a.path === "docs/verification/orphan.png")?.classification).toBe(
+      "uncited",
+    );
+  });
+
   it("should throw when a citation source is unreadable rather than defaulting", async () => {
     const root = await fixture();
     await writeFile(path.join(root, "scripts/gate.ts"), "const evidence = 'run-1.md';");
