@@ -47,29 +47,59 @@ const COLD_START_MARKERS = [
   .join('\n');
 
 const roots = [];
+/**
+ * One clean 300-frame desktop run: 300 presented frames plus the capture gate's single refresh
+ * present, which is what guarantees the saved screenshot postdates startup readiness.
+ */
+const CAPTURE_REFRESH = 'TN_CAPTURE_REFRESH_PRESENTS:1';
+const CLEAN_DESKTOP_LOG = `${READY_MARKER}\n${FIRST_FRAME_MARKER}\nRendered 300 frames in 9000ms\nTN_PRESENTS:301\n${CAPTURE_REFRESH}\n${HEALTHY_TICKS}\n${COLD_START_MARKERS}`;
+
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
 });
 
 test('desktop log requires both markers, exact frame completion, and clean errors', () => {
-  const clean = `${READY_MARKER}\n${FIRST_FRAME_MARKER}\nRendered 300 frames in 9000ms\nTN_PRESENTS:300\n${HEALTHY_TICKS}\n${COLD_START_MARKERS}`;
-  expect(analyzeDesktopLog(clean)).toEqual([]);
-  expect(analyzeDesktopLog(clean.replace('TN_PRESENTS:300\n', ''))).toContain(
+  expect(analyzeDesktopLog(CLEAN_DESKTOP_LOG)).toEqual([]);
+  expect(analyzeDesktopLog(CLEAN_DESKTOP_LOG.replace('TN_PRESENTS:301\n', ''))).toContain(
     'missing TN_PRESENTS count',
   );
   // The defect itself: the overlay pass presenting a swapchain image of its own.
-  expect(analyzeDesktopLog(clean.replace('TN_PRESENTS:300', 'TN_PRESENTS:600'))).toContain(
-    'presented 600 times for 300 frames; expected exactly one present per frame',
+  expect(
+    analyzeDesktopLog(CLEAN_DESKTOP_LOG.replace('TN_PRESENTS:301', 'TN_PRESENTS:600')),
+  ).toContain(
+    'presented 600 times for 300 frames + 1 capture-refresh presents; expected exactly one present per frame plus the named refreshes',
   );
-  expect(analyzeDesktopLog(clean.replace(FIRST_FRAME_MARKER, 'FIRST_FRAME'))).toContain(
+  expect(analyzeDesktopLog(CLEAN_DESKTOP_LOG.replace(FIRST_FRAME_MARKER, 'FIRST_FRAME'))).toContain(
     `missing ${FIRST_FRAME_MARKER}`,
   );
-  expect(analyzeDesktopLog(clean.replace('300 frames', '299 frames'))).toContain(
+  expect(analyzeDesktopLog(CLEAN_DESKTOP_LOG.replace('300 frames', '299 frames'))).toContain(
     'missing exact 300-frame completion',
   );
-  expect(analyzeDesktopLog(`${clean}\nWebGPU validation error`)).toContain(
+  expect(analyzeDesktopLog(`${CLEAN_DESKTOP_LOG}\nWebGPU validation error`)).toContain(
     'WebGPU validation error',
   );
+});
+
+// The capture gate drives frames of its own to guarantee the saved screenshot postdates startup
+// readiness, and each is one present beyond the requested count. Naming them keeps the
+// one-present-per-frame invariant exact; an unnamed count would have to loosen it to `>=` and stop
+// seeing the overlay defect the invariant exists for. So the count is required, and it is not a
+// licence to present freely: the total must be frames plus exactly the number claimed.
+test('capture-refresh presents are counted, not waved through', () => {
+  expect(analyzeDesktopLog(CLEAN_DESKTOP_LOG.replace(`${CAPTURE_REFRESH}\n`, ''))).toContain(
+    'missing TN_CAPTURE_REFRESH_PRESENTS count',
+  );
+  expect(
+    analyzeDesktopLog(CLEAN_DESKTOP_LOG.replace(CAPTURE_REFRESH, 'TN_CAPTURE_REFRESH_PRESENTS:50')),
+  ).toContain(
+    'presented 301 times for 300 frames + 50 capture-refresh presents; expected exactly one present per frame plus the named refreshes',
+  );
+  // A gate that needed no refresh at all is the healthy GPU case, and it still has to add up.
+  const noRefresh = CLEAN_DESKTOP_LOG.replace('TN_PRESENTS:301', 'TN_PRESENTS:300').replace(
+    CAPTURE_REFRESH,
+    'TN_CAPTURE_REFRESH_PRESENTS:0',
+  );
+  expect(analyzeDesktopLog(noRefresh)).toEqual([]);
 });
 
 // PRD-328. The compile and execute markers existed only in `quickjs_engine.cpp`, which has not
@@ -226,7 +256,7 @@ test('overlay assertion reads PNG bytes and names what is missing', () => {
 // and presented each exactly once was reported as a failed desktop core gate because of one line
 // about hardware that was never there.
 test('an absent audio device does not fail a run that rendered correctly', () => {
-  const rendered = `${READY_MARKER}\n${FIRST_FRAME_MARKER}\nRendered 300 frames in 9000ms\nTN_PRESENTS:300\n${HEALTHY_TICKS}\n${COLD_START_MARKERS}`;
+  const rendered = CLEAN_DESKTOP_LOG;
   const silent = `${rendered}\n[Audio] No audio playback device on this machine; continuing in silence.`;
   expect(analyzeDesktopLog(silent)).toEqual([]);
 

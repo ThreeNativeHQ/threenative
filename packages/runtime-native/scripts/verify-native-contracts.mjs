@@ -104,6 +104,9 @@ export const executionContracts = {
   "threenative-rt-handle-allocation-test": {
     invocations: [{ args: [], passLine: "raytracing handle allocation contract passed" }],
   },
+  "threenative-screenshot-capture-gate-test": {
+    invocations: [{ args: [], passLine: "native screenshot capture gate contract passed" }],
+  },
   "threenative-shader-module-metadata-test": {
     invocations: [
       {

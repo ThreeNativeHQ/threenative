@@ -935,7 +935,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           if (projectionSettled) return 1;
           if (startupReadiness.compileSettled) return 0.9;
           if (timeline.enteredMs !== undefined) return 0.8;
-          const { requested, settled } = assets.progress;
+          const { requested, requestedBytes, settled, settledBytes } = assets.progress;
+          // Bytes when the manifest knows them, files when it does not. A file count spends the
+          // same travel on a 4 KB icon as on a 710 MB model, which is how a bar reaches 92% and
+          // then stands still for the rest of the download.
+          if (requestedBytes > 0) return 0.7 * Math.min(1, settledBytes / requestedBytes);
           return requested === 0 ? 0 : 0.7 * Math.min(1, settled / requested);
         },
         get timeline() {
