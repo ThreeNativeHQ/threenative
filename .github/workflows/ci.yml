@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -53,7 +53,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -84,7 +84,7 @@ jobs:
       TN_ORPHAN_SETTLE_SECONDS: 120
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -116,7 +116,7 @@ jobs:
       TN_ORPHAN_SETTLE_SECONDS: 120
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -234,7 +234,7 @@ jobs:
           # reports warm and behaves cold.
           key: native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
           restore-keys: native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -360,7 +360,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -403,7 +403,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -470,7 +470,7 @@ jobs:
         run: |
           echo "golden-path ${{ matrix.template }}: reusing the proof recorded for this tree"
           cat .golden-path-proof/commit
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
         if: steps.proof.outputs.cache-hit != 'true'
       - uses: actions/setup-node@v7
         if: steps.proof.outputs.cache-hit != 'true'
@@ -627,7 +627,7 @@ jobs:
       TN_PLAYTEST_ALLOW_SOFTWARE: "1"
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -722,7 +722,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -761,7 +761,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -809,7 +809,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
