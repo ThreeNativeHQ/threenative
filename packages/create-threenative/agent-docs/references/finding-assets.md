@@ -165,6 +165,36 @@ What the import will and will not do:
 `glb`/`fbx`/`obj`/`unity` file with no account at all. Use it when the listing already ships a
 format you can load, and the importer only when it does not.
 
+## From a downloaded `.fbx` to a running character
+
+An `.fbx`, `.blend`, `.obj` or `.dae` is not a file the runtime can load. Put it in your assets
+directory anyway and the build converts it:
+
+1. Download it — `fab_download_free_asset`, `asset_import_unreal`, `asset_download_bundle_entry`,
+   or by hand.
+2. Write it into `assets/`, beside your `.glb` files. Nothing else to configure.
+3. Build. `compileAssets` classifies it as a model, converts it to GLB through Blender, then
+   optimizes it exactly like an authored GLB — skeleton, animation clips, materials and embedded
+   textures survive.
+4. Load it the ordinary way: `ctx.assets.model("hero")`.
+
+**Blender must be installed**, and the framework never installs it for you. With no Blender the
+build fails and names the install command for your platform — it does not copy the unusable file
+through and report success. Ask the user before installing anything; it is roughly 350 MB.
+
+The `threenative-blender` MCP server answers the rest:
+
+- `blender_status` — can this machine convert at all? Never fails; with no Blender it returns
+  `available: false` and the install command. Call it first.
+- `blender_inspect` — what is in this file? Mesh, triangle, vertex and bone counts, material
+  names, clip names, image names. Use it before committing a download.
+- `blender_convert` — write a GLB somewhere other than the build's output. Zero meshes out is a
+  failure, never an empty GLB.
+- `blender_recipes` — the shipped bpy recipes (`decimate`, `unwrap`, `bake_ao`, `retarget`) and
+  their **full source text**. Read one and adapt it; do not write bpy cold.
+- `blender_run_python` — run a bpy script of your own. It is not a sandbox and does not claim to
+  be; it gives you a resolved Blender and the same fail-closed handling, not extra privilege.
+
 ## The narrower tools
 
 The directory spells out the conditions on each. The Fab tools are covered above; the server

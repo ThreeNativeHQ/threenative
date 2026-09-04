@@ -567,6 +567,24 @@ importers:
       publint:
         specifier: 0.3.22
         version: 0.3.22
+      threenative-blender-mcp:
+        specifier: workspace:*
+        version: link:../blender-mcp
+      tsup:
+        specifier: 8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
+  packages/blender-mcp:
+    devDependencies:
+      '@gltf-transform/core':
+        specifier: 'catalog:'
+        version: 4.4.2
+      publint:
+        specifier: 0.3.22
+        version: 0.3.22
       tsup:
         specifier: 8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)
@@ -613,6 +631,9 @@ importers:
       react-reconciler:
         specifier: 0.33.0
         version: 0.33.0(react@19.2.0)
+      threenative-blender-mcp:
+        specifier: workspace:*
+        version: link:../blender-mcp
       threenative-engine-mcp:
         specifier: workspace:*
         version: link:../engine-mcp
@@ -671,6 +692,9 @@ importers:
       publint:
         specifier: 0.3.22
         version: 0.3.22
+      threenative-blender-mcp:
+        specifier: workspace:*
+        version: link:../blender-mcp
       tsup:
         specifier: 8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)

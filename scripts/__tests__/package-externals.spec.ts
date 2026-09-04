@@ -127,6 +127,23 @@ function packagesUnderTest(): readonly IPackageUnderTest[] {
   });
 }
 
+/**
+ * Deliberately inlined rather than declared, with the reason.
+ *
+ * `threenative-blender-mcp` is an in-repo package that has never been published. A `dependencies`
+ * entry naming it makes its consumer **uninstallable** — `pnpm` stops with ERR_PNPM_FETCH_404 while
+ * resolving the consumer, and every scaffold dies before its first build — which is a worse failure
+ * than a private inlined copy. Both consumers gate the inlining separately: `package-dist.spec.ts`
+ * asserts `@threenative/assets`' bundle carries no bare specifier and that the GPL scripts travel
+ * with it in `dist/blender-gpl/`, and `mcp-install.spec.ts` asserts core carries the built server.
+ *
+ * Delete these rows the day `threenative-blender-mcp` is published, and declare it normally.
+ */
+const INLINED_BY_DESIGN: Readonly<Record<string, readonly string[]>> = {
+  "@threenative/assets": ["threenative-blender-mcp"],
+  "create-threenative": ["threenative-blender-mcp"],
+};
+
 describe("published packages keep their runtime dependencies external", () => {
   // tsup externalises exactly what the manifest declares in `dependencies` and
   // `peerDependencies`; anything else it inlines into `dist`. A package that imports a module it
@@ -141,10 +158,25 @@ describe("published packages keep their runtime dependencies external", () => {
     const undeclared = packages.flatMap(({ declared, imports, name }) =>
       imports
         .map(packageRootOf)
-        .filter((root) => !declared.has(root))
+        .filter((root) => !declared.has(root) && !(INLINED_BY_DESIGN[name] ?? []).includes(root))
         .map((root) => `${name} imports '${root}' without declaring it`),
     );
     expect([...new Set(undeclared)].sort()).toEqual([]);
+  });
+
+  // The allowance above must stay narrow and must stay true. A package that stops importing what it
+  // was excused for leaves a row nobody notices, and the next undeclared import walks through it.
+  it("keeps the inlined-by-design allowance matched to what is actually imported", () => {
+    const packages = packagesUnderTest();
+    for (const [name, modules] of Object.entries(INLINED_BY_DESIGN)) {
+      const entry = packages.find((candidate) => candidate.name === name);
+      expect(entry, `${name} is not a package under test`).toBeDefined();
+      const imported = new Set((entry?.imports ?? []).map(packageRootOf));
+      for (const module of modules) {
+        expect(imported.has(module), `${name} no longer imports ${module}`).toBe(true);
+        expect(entry?.declared.has(module), `${name} now declares ${module}`).toBe(false);
+      }
+    }
   });
 
   // The packaged reproduction. A bundler that inlined a runtime leaves no trace of it in the
