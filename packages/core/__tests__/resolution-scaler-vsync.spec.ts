@@ -66,10 +66,15 @@ describe("ResolutionScaler on a vsync-capped panel", () => {
    * a slow one. A compositor, a GC, an input burst and an audio callback all produce it, and none
    * of them gets cheaper when the drawing buffer shrinks.
    */
-  const jitter = (dropped: number): IFrameBudgetWindow => {
-    const spacing = Math.round(300 / dropped);
-    return windowOf((frame) => (frame > 0 && frame % spacing === 0 ? 2 * PERIOD : PERIOD));
-  };
+  const jitter = (dropped: number): IFrameBudgetWindow =>
+    // Exactly `dropped` doubled presents, all of them inside the closed window. Both obvious
+    // spellings are wrong in ways that quietly weaken the case: `frame % round(300 / dropped)`
+    // delivers six when the case is about seven, and a floor-change test puts one of them on the
+    // frame after the window closes. The argument here turns on single presents, so the
+    // construction has to be exact.
+    windowOf((frame) =>
+      frame > 0 && ((frame - 1) * dropped) % 300 < dropped ? 2 * PERIOD : PERIOD,
+    );
 
   it("reproduces the window: the mean is under target while the median and the tail are not", () => {
     const window = jitter(12);
@@ -104,18 +109,65 @@ describe("ResolutionScaler on a vsync-capped panel", () => {
     expect(scaler.scaleSource).toBe("auto");
   });
 
-  it("still falls when the frames themselves are over budget, vsync or not", () => {
-    // Unlocked, and steadily 3% past the budget: the median is over, so the deficit is real work.
-    const steady = new ResolutionScaler({ targetFps: 60 });
-    steady.observe(perfect());
-    expect(steady.observe(windowOf(() => 17.24))).toBe(0.85);
+  it("gives the pixels back from the state wildwood's own record documents", () => {
+    // `sandbox/wildwood/src/render/quality.ts` records, from the owner's real 60 Hz display:
+    // `ssgi off` held 60.0 fps standing AND walking with the engine parked at scale 0.61. A game
+    // holding its target at 61% of its pixels has headroom it is not being given back, and that
+    // number sat in the repository being read as the frame's honest cost.
+    //
+    // Stopping the descent is not enough here: a controller that merely declines to fall stays at
+    // 0.61 for the rest of the session, and the player's picture is soft either way. The window
+    // that says nothing about pixel cost has to be deferred, not counted against the climb.
+    const jittery = [5, 11, 3, 9, 14, 2, 12, 7, 0, 10, 4, 13, 1, 8, 6];
+    const scaler = new ResolutionScaler({ start: 0.61, targetFps: 60 });
+    for (let index = 0; index < 60; index += 1) {
+      const dropped = jittery[index % jittery.length] as number;
+      scaler.observe(dropped === 0 ? perfect() : jitter(dropped));
+    }
+    expect(scaler.scale).toBe(1.0);
+    expect(scaler.scaleSource).toBe("auto");
+  });
 
-    // Vsync-capped and genuinely missing: a quarter of the presents doubled puts the tail over,
-    // which is the signal the device arm chose the mean for in the first place.
-    const missing = new ResolutionScaler({ targetFps: 60 });
-    missing.observe(perfect());
-    expect(missing.observe(jitter(75))).toBeDefined();
-    expect(missing.scale).toBeLessThan(1.0);
+  /**
+   * The scope check: this controller runs in every scaffolded game, so a fix that makes it
+   * reluctant in the vsync case and deaf in the genuine case has traded one bug for a worse one.
+   * Every regime a game can actually be slow in, and every one of them must still cost a rung.
+   */
+  it.each([
+    ["unlocked, steadily 3% past the budget", () => windowOf(() => 17.24)],
+    ["unlocked at 50 fps", () => windowOf(() => 20)],
+    ["unlocked at 40 fps", () => windowOf(() => 25)],
+    ["unlocked at 30 fps", () => windowOf(() => 33.3)],
+    ["unlocked at 20 fps", () => windowOf(() => 50)],
+    ["GPU-bound at 10 fps", () => windowOf(() => 100)],
+    ["vsync-capped, a quarter of presents doubled", () => jitter(75)],
+    ["vsync-capped, a tenth of presents doubled", () => jitter(30)],
+    ["vsync-capped and held at half rate", () => windowOf(() => 33.34)],
+  ])("still falls on a game that is genuinely over budget: %s", (_label, make) => {
+    const scaler = new ResolutionScaler({ targetFps: 60 });
+    scaler.observe(perfect());
+    expect(scaler.observe(make())).toBeDefined();
+    expect(scaler.scale).toBeLessThan(1.0);
+  });
+
+  it("moves the vsync-regime trigger from the mean's 2.3% to the tail's 5%, and no further", () => {
+    // The whole of the trade, stated as the boundary rather than as a claim. Below it the frames
+    // all met the panel's period and pixels cannot buy back a dropped present; above it a real
+    // share of presents is missing and the controller acts exactly as it always did.
+    const holds = (dropped: number): boolean => {
+      const scaler = new ResolutionScaler({ targetFps: 60 });
+      scaler.observe(perfect());
+      return scaler.observe(jitter(dropped)) === undefined;
+    };
+    // The old controller stepped down at 7; every one of these was a rung, and there are 12 windows
+    // in a minute of play.
+    for (const dropped of [7, 10, 12, 14]) {
+      expect(jitter(dropped).fps).toBeLessThan(60 * RESOLUTION_SCALER.targetFpsFraction);
+      expect(holds(dropped), `${String(dropped)}/300 dropped presents`).toBe(true);
+    }
+    // And it is a boundary, not an off switch: one more doubled present moves p95 to two panel
+    // periods, and the step is taken.
+    expect(holds(15)).toBe(false);
   });
 
   it("lets a game recover once the hitches that deferred its windows stop mattering", () => {

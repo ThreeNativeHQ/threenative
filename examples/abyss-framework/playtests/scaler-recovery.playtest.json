@@ -10,7 +10,7 @@
       {
         "component": "stallsInjected",
         "entity": "scaler",
-        "gte": 6,
+        "gte": 5,
         "changed": true
       },
       {
@@ -32,7 +32,7 @@
         "equals": "auto"
       },
       {
-        "allowTrivial": "A held invariant. The probe never asks for more than two rungs, so a run that reports it ran out of rungs measured something other than what this scenario drives.",
+        "allowTrivial": "A held invariant. The probe never asks for more than a few rungs, so a run that reports it ran out of rungs measured something other than what this scenario drives.",
         "component": "atFloor",
         "entity": "scaler",
         "equals": false
@@ -48,12 +48,36 @@
   "name": "resolution-scale-recovers-after-the-cost-goes-away",
   "schemaVersion": 1,
   "steps": [
-    { "kind": "wait", "label": "burn", "waitFrames": 400 },
-    { "kind": "wait", "label": "interrupted-a", "waitFrames": 600 },
-    { "kind": "wait", "label": "interrupted-b", "waitFrames": 600 },
-    { "kind": "wait", "label": "settle-a", "waitFrames": 600 },
-    { "kind": "wait", "label": "settle-b", "waitFrames": 600 },
-    { "kind": "wait", "label": "settle-c", "waitFrames": 400 }
+    {
+      "kind": "wait",
+      "label": "burn",
+      "waitFrames": 4000
+    },
+    {
+      "kind": "wait",
+      "label": "interrupted-a",
+      "waitFrames": 6000
+    },
+    {
+      "kind": "wait",
+      "label": "interrupted-b",
+      "waitFrames": 6000
+    },
+    {
+      "kind": "wait",
+      "label": "settle-a",
+      "waitFrames": 6000
+    },
+    {
+      "kind": "wait",
+      "label": "settle-b",
+      "waitFrames": 6000
+    },
+    {
+      "kind": "wait",
+      "label": "settle-c",
+      "waitFrames": 4000
+    }
   ],
   "target": "web",
   "viewport": {

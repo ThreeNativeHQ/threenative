@@ -220,7 +220,6 @@ export class ResolutionScaler {
     // otherwise perfect 60 fps, which is a forest streaming its next hillside.
     if (this.#stalled(window)) return undefined;
     if (window.fps < this.targetFps) {
-      this.#cleanWindows = 0;
       // **Only the mean is under target: hold.** `fps` is `1000 / mean`, and on the one panel
       // arrangement every game actually ships into — `display.maxFps` equal to the refresh rate,
       // vsync on — the mean is the only statistic with any room to move. fps is bounded *above*
@@ -230,7 +229,17 @@ export class ResolutionScaler {
       // and fewer pixels do not bring a dropped present back: the step won nothing, the next
       // window spent another rung, and the picture walked to 5% of its pixels in 140 seconds.
       // This is `stallP99Multiple`'s lesson at 2x rather than at 10x.
+      //
+      // Deferred rather than merely not acted on, and the difference is the whole repair. Such a
+      // window says nothing about the pixel cost **in either direction**, which is exactly what
+      // the stall guard above says about its own case — so it is neither grounds to fall nor a
+      // reason to throw away the clean run a climb needs. Counting it against the climb stops the
+      // descent and never gives the pixels back: replayed against the state `sandbox/wildwood`'s
+      // own record documents — parked at 0.61 while holding 60.0 fps — that reading held 0.61 for
+      // five minutes. The picture stops getting worse and never gets sharp again, which is half a
+      // fix and the wrong half.
       if (!this.#overBudget(window)) return undefined;
+      this.#cleanWindows = 0;
       if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
         this.#atFloor = true;
         return undefined;

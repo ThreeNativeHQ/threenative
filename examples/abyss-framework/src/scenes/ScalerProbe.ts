@@ -41,18 +41,26 @@ import {
  * as any game would, and it reads the scale off the window the engine already reports.
  *
  * **Unfinished, and deliberately wired into no gate — `playtests/scaler-recovery.playtest.json`
- * is named by nothing.** The scene, the entry and the scenario are correct as far as they were
- * taken and the run completes, but the harness does not hand the engine anywhere near one frame
- * per `waitFrames`: 500 wait-frames with the burn off closed **zero** 60-frame windows, and a
- * 3,200-wait-frame run closed four. Until that mapping is understood the scenario cannot reach the
- * ~40 windows a climb needs, and a scenario that cannot reach its own precondition is not a gate —
- * it is a flake waiting to be believed. Measured 2026-09-03; `windows` is asserted with a floor
- * precisely so this fails closed rather than passing on an empty run.
+ * is named by nothing.** The scene, the entry and the scenario are right; the harness cannot yet
+ * drive them, and the reason is specific and worth writing down.
  *
- * Two things the next person should check first: whether the playtest bridge's `runtime.fixedStep`
- * stepping is driving the loop instead of the page's own rAF, and whether the captured console tail
- * (7 entries in one observed report) is hiding markers that did fire. The `windows` counter here
- * comes from `onWindow` directly and is authoritative; the console marker count is not.
+ * **A playtest advances the simulation clock. The scaler is driven by the presentation clock.**
+ * `FixedStepLoop.advance(ticks)` — what a scenario's `waitTicks` reaches through the bridge — calls
+ * `onUpdate` and `onAfterPhysics` and nothing else. It never calls `onRender` and never opens a
+ * frame on the `FrameBudget`, so it produces **zero** presented frames and zero closed windows,
+ * however many ticks are asked for: 24,000 of them closed five windows, all of which came from the
+ * page's own rAF running alongside. `waitFrames` at least chains real rAF, but 3,200 of those
+ * yielded 240 engine frames and 500 with the burn off closed none at all.
+ *
+ * A climb needs roughly forty windows. Until a scenario can ask for *presented frames* — an
+ * `advance` that runs whole frames through `stepFrame` rather than fixed steps — this cannot reach
+ * its own precondition, and a scenario that cannot reach its precondition is not a gate but a flake
+ * waiting to be believed. Measured 2026-09-03. `windows` carries a floor precisely so this fails
+ * closed rather than passing on an empty run.
+ *
+ * One trap for whoever finishes it: the captured console tail held 7 entries in one observed
+ * report, so counting `TN_FRAME_BUDGET` markers in a report understates the windows badly. The
+ * `windows` counter here comes from `frameBudget.onWindow` directly and is the authoritative one.
  */
 
 /** Frames per reported window, set on the game's own frame budget. Short so the run is seconds. */
@@ -120,6 +128,16 @@ export function observeScalerWindow(window: IFrameBudgetWindow): void {
   scalerProbeMeasure.scaleSource = surface.scaleSource;
 }
 
+/** Which of the three phases a given closed-window count is in. Windows, never seconds: the
+ * controller reads windows, so a probe that drove itself off a timer would be measuring the
+ * machine's speed rather than the controller's behaviour. */
+function phaseAtWindow(window: number): string {
+  if (window < BURN_WINDOWS) return "burn";
+  if (window < BURN_WINDOWS + INTERRUPTED_WINDOWS) return "interrupted";
+  if (window < BURN_WINDOWS + INTERRUPTED_WINDOWS + SETTLE_WINDOWS) return "settle";
+  return "done";
+}
+
 /** Occupies the thread for `ms`, which is the only way to cost a frame something a renderer cannot skip. */
 function block(ms: number): void {
   const until = performance.now() + ms;
@@ -159,14 +177,7 @@ export class ScalerProbe extends Scene<ScalerState> {
 
     return (frameCtx) => {
       const window = scalerProbeMeasure.windows;
-      const phase =
-        window < BURN_WINDOWS
-          ? "burn"
-          : window < BURN_WINDOWS + INTERRUPTED_WINDOWS
-            ? "interrupted"
-            : window < BURN_WINDOWS + INTERRUPTED_WINDOWS + SETTLE_WINDOWS
-              ? "settle"
-              : "done";
+      const phase = phaseAtWindow(window);
       if (phase !== frameCtx.state.getState().phase) frameCtx.state.set({ phase });
 
       if (phase === "burn") {
