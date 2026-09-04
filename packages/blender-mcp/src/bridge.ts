@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -94,6 +96,16 @@ function failure(cause: BridgeCause, detail: string, stderr?: string): IBridgeFa
     ok: false,
     ...(stderr === undefined ? {} : { stderr }),
   };
+}
+
+/** Where the run's private temp directory is created: the caller's `TMPDIR` when it named one,
+ * so a sandbox that redirects temp keeps its redirection, and the platform's otherwise. */
+function temporaryRoot(environment: NodeJS.ProcessEnv): string {
+  const named = environment.TMPDIR ?? environment.TEMP ?? environment.TMP;
+  if (named !== undefined && named.trim().length > 0 && existsSync(named.trim())) {
+    return path.resolve(named.trim());
+  }
+  return os.tmpdir();
 }
 
 function unavailable(status: IBlenderStatus): IBridgeFailure {
@@ -199,13 +211,23 @@ async function run(
     );
   }
 
-  const outcome = await runBlender(
-    status.path,
-    script,
-    request,
-    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    environment,
-  );
+  // Blender scatters scratch files through its temp directory — packed images, a quit.blend, a
+  // render cache — and a build that runs it per asset would leave one set behind per asset. It
+  // gets a private directory that goes away with the process, so nothing accumulates in the
+  // caller's `TMPDIR` whether the run succeeded, failed or timed out.
+  const temporary = await mkdtemp(path.join(temporaryRoot(environment), "tn-blender-"));
+  let outcome: ISpawnOutcome;
+  try {
+    outcome = await runBlender(
+      status.path,
+      script,
+      request,
+      options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      { ...environment, TEMP: temporary, TMP: temporary, TMPDIR: temporary },
+    );
+  } finally {
+    await rm(temporary, { force: true, recursive: true });
+  }
   if (outcome.timedOut) {
     return failure(
       "timeout",
