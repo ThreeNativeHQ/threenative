@@ -1,0 +1,64 @@
+{
+  "assert": {
+    "components": [
+      {
+        "component": "windows",
+        "entity": "scaler",
+        "gte": 42,
+        "changed": true
+      },
+      {
+        "component": "stallsInjected",
+        "entity": "scaler",
+        "gte": 6,
+        "changed": true
+      },
+      {
+        "changed": true,
+        "component": "scaleMin",
+        "entity": "scaler",
+        "lte": 0.85
+      },
+      {
+        "allowTrivial": "The scale begins and ends at the ceiling, which is the point: scaleMin is what proves it left, and this is what proves it came back. Asserting a transition here would assert the bug.",
+        "component": "scaleNow",
+        "entity": "scaler",
+        "equals": 1
+      },
+      {
+        "allowTrivial": "A held invariant. auto-pinned would mean the oscillation guard fired and pinned the lower rung for the rest of the session, which is a different unrecoverable path and must not be how this run reached its answer.",
+        "component": "scaleSource",
+        "entity": "scaler",
+        "equals": "auto"
+      },
+      {
+        "allowTrivial": "A held invariant. The probe never asks for more than two rungs, so a run that reports it ran out of rungs measured something other than what this scenario drives.",
+        "component": "atFloor",
+        "entity": "scaler",
+        "equals": false
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    }
+  },
+  "name": "resolution-scale-recovers-after-the-cost-goes-away",
+  "schemaVersion": 1,
+  "steps": [
+    { "kind": "wait", "label": "burn", "waitFrames": 400 },
+    { "kind": "wait", "label": "interrupted-a", "waitFrames": 600 },
+    { "kind": "wait", "label": "interrupted-b", "waitFrames": 600 },
+    { "kind": "wait", "label": "settle-a", "waitFrames": 600 },
+    { "kind": "wait", "label": "settle-b", "waitFrames": 600 },
+    { "kind": "wait", "label": "settle-c", "waitFrames": 400 }
+  ],
+  "target": "web",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "warmupFrames": 10
+}
