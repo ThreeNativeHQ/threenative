@@ -89,7 +89,7 @@ caught where a bone-direction check reads zero. `clipTrackBindings` names tracks
 (the `<bone>.undefined` failure that plays the bind pose instead of the animation),
 `clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous
 clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
-supposed to be touching.
+supposed to be touching. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches 256 per presented frame so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement.
 
 ## Budget real time for the look
 

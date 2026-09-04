@@ -1,0 +1,92 @@
+{
+  "assert": {
+    "components": [
+      {
+        "component": "attached",
+        "entity": "streaming",
+        "equals": 640
+      },
+      {
+        "component": "attachSlices",
+        "entity": "streaming",
+        "equals": 3
+      },
+      {
+        "component": "attachSliceSize",
+        "entity": "streaming",
+        "equals": 256
+      },
+      {
+        "allowTrivial": "A run nothing interrupted must never report a stop, at any observation.",
+        "component": "attachStopped",
+        "entity": "streaming",
+        "equals": false
+      },
+      {
+        "changed": true,
+        "component": "hostRanDuringAttach",
+        "entity": "streaming",
+        "equals": true
+      },
+      {
+        "changed": true,
+        "component": "streamingDone",
+        "entity": "streaming",
+        "equals": true
+      },
+      {
+        "allowTrivial": "loadAll settles inside Scene.load, so the ordering is already correct at the first observation; asserting it later would only prove nothing overwrote it.",
+        "component": "loadOrderCorrect",
+        "entity": "streaming",
+        "equals": true
+      },
+      {
+        "allowTrivial": "The lane count is settled before the first frame; the assertion is that six loads really were in flight together, which is only observable after the fact.",
+        "component": "loadPeakInFlight",
+        "entity": "streaming",
+        "equals": 6
+      },
+      {
+        "allowTrivial": "Every load settles inside Scene.load, before the first observation.",
+        "component": "loadedCount",
+        "entity": "streaming",
+        "equals": 12
+      },
+      {
+        "allowTrivial": "The elapsed load is measured inside Scene.load and cannot change afterwards; the ceiling is what makes it load-bearing.",
+        "component": "loadMs",
+        "entity": "streaming",
+        "gte": 1,
+        "lte": 400
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    }
+  },
+  "name": "streaming-sliced-attach-and-parallel-load",
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "holdTicks": 1,
+      "label": "begin-attach",
+      "press": ["Enter"],
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "attach-detail",
+      "release": true,
+      "waitFrames": 90
+    }
+  ],
+  "target": "web",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  },
+  "warmupFrames": 10
+}

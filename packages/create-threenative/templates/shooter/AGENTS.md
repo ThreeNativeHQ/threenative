@@ -80,7 +80,7 @@ source, and the bridge flushes about 100 ms — keep lives/wave in state, feedba
 When an animation looks wrong, measure it before rewriting it: `clipPoseError` scores a retargeted
 clip per bone in degrees relative to each rig's own bind pose, `clipTrackBindings` names tracks that
 bind nothing (the `<bone>.undefined` failure that plays the bind pose), `clipBoneCoverage` names
-bones the clip does not drive, and `boneContact` reports whether a bone reaches its prop.
+bones the clip does not drive, and `boneContact` reports whether a bone reaches its prop. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches 256 per presented frame so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement.
 
 ## Budget real time for the look
 

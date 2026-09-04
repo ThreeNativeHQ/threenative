@@ -77,7 +77,7 @@ per bone in degrees — whole quaternions relative to each rig's bind pose, so b
 cancel and an axis-rolled limb is caught where a bone-direction check reads zero.
 `clipTrackBindings` names tracks that bind nothing (`<bone>.undefined`, which plays the bind
 pose), `clipBoneCoverage` names bones the clip does not drive, which keep the previous clip's
-pose, and `boneContact` reports in metres whether a bone reaches its prop.
+pose, and `boneContact` reports in metres whether a bone reaches its prop. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches 256 per presented frame so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement.
 
 ## Look and evidence
 

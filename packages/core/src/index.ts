@@ -398,6 +398,36 @@ export {
 } from "./render/virtual-shadow.js";
 export { readVirtualShadowMarker } from "./render/virtual-shadow.js";
 export type { IVirtualShadowOptions, IVirtualShadowStats } from "./render/virtual-shadow.js";
+/**
+ * Attach hundreds of built objects to the scene in slices, presenting a frame between each.
+ * @situation add hundreds of built objects to the scene without one multi-second frame
+ * @situation stream a detail tier in behind a loading curtain without the page looking hung
+ * @constraint the objects, and where each one goes, stay the game's; this decides only when each joins the graph
+ * @constraint input order is the attach order and cannot be changed
+ * @constraint a false `while` stops the run and is reported as `stopped`, never thrown
+ * @override sliceSize defaults to 256; `marker: false` silences the TN_ADD_SLICES line, not the report
+ * @example const report = await addInSlices(objects, (object) => ctx.add(object), {
+ *   onProgress: ({ added, total }) => setProgress(added / total),
+ *   while: () => generation.live,
+ * });
+ */
+export { addInSlices } from "./streaming.js";
+export type {
+  IAddInSlicesOptions,
+  IAddInSlicesProgress,
+  IAddInSlicesReport,
+} from "./streaming.js";
+/**
+ * Load a list with bounded concurrency, returning results in the input's order.
+ * @situation load many models or textures in parallel instead of one at a time
+ * @situation keep a loading screen moving while a list of assets downloads
+ * @constraint results are written to each item's own index and never appended, so a positional lookup finds the same asset on every load
+ * @constraint the first rejection rejects the call and no lane starts a load it had not begun
+ * @override concurrency defaults to 6; `marker: false` silences the TN_LOAD_ALL line, not onProgress
+ * @example const species = await loadAll(names, (name) => ctx.assets.model(`flora/${name}.glb`));
+ */
+export { loadAll } from "./streaming.js";
+export type { ILoadAllOptions, ILoadAllProgress } from "./streaming.js";
 export { warmUpScene } from "./warmup.js";
 export type {
   IWarmUpOptions,
