@@ -28,6 +28,14 @@
         "./node_modules/@threenative/core/mcp/engine.mjs"
       ],
       "enabled": true
+    },
+    "threenative-blender": {
+      "type": "local",
+      "command": [
+        "node",
+        "./node_modules/@threenative/core/mcp/blender.mjs"
+      ],
+      "enabled": true
     }
   }
 }

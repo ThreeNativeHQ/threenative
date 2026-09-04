@@ -68,15 +68,22 @@ async function hydrateParityReference(projectPath: string, scenario: IPlaytestSc
       `Parity reference '${assertion.referenceReport}' carries no observations.performanceSeries; a run report without a measured series is not a parity half.`,
     );
   }
-  const frameTimes = (parsed.observations.performanceSeries as unknown[])
-    .filter((sample): sample is { frameMs: number } =>
-      isRecord(sample) && typeof sample.frameMs === "number" && Number.isFinite(sample.frameMs) && sample.frameMs > 0)
-    .map((sample) => sample.frameMs);
-  if (frameTimes.length === 0) {
+  const performanceSeries = parsed.observations.performanceSeries as unknown[];
+  if (performanceSeries.length === 0) {
     throw invalidScenario(
       scenarioPath,
       `Parity reference '${assertion.referenceReport}' has no valid frame-time samples; a parity half must have measured the render loop.`,
     );
+  }
+  const frameTimes: number[] = [];
+  for (const sample of performanceSeries) {
+    if (!isRecord(sample) || typeof sample.frameMs !== "number" || !Number.isFinite(sample.frameMs) || sample.frameMs <= 0) {
+      throw invalidScenario(
+        scenarioPath,
+        `Parity reference '${assertion.referenceReport}' contains a malformed frame-time sample; every sample must carry a finite positive frameMs.`,
+      );
+    }
+    frameTimes.push(sample.frameMs);
   }
   const sorted = [...frameTimes].sort((left, right) => left - right);
   const medianFrameMs = sorted[Math.floor(sorted.length / 2)];
@@ -87,9 +94,13 @@ async function hydrateParityReference(projectPath: string, scenario: IPlaytestSc
     );
   }
   const fps = 1_000 / medianFrameMs;
-  const renderTimes = (parsed.observations.performanceSeries as Array<{ phases?: { render?: unknown } }>)
-    .map((sample) => sample.phases?.render)
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+  const renderTimes = performanceSeries
+    .map((sample) => (sample as { phases?: { render?: unknown } }).phases?.render);
+  const completeRenderTimes = renderTimes.every(
+    (value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0,
+  )
+    ? renderTimes
+    : undefined;
   const deviceMetrics = isRecord(parsed.observations.deviceMetrics) ? parsed.observations.deviceMetrics : undefined;
   const verdict = isRecord(deviceMetrics?.verdict) ? deviceMetrics.verdict : undefined;
   return {
@@ -100,9 +111,13 @@ async function hydrateParityReference(projectPath: string, scenario: IPlaytestSc
         ...assertion,
         reference: {
           fps,
-          ...(renderTimes.length === frameTimes.length
-            ? { renderP95: [...renderTimes].sort((left, right) => left - right)[Math.ceil(renderTimes.length * 0.95) - 1] }
-            : {}),
+          ...(completeRenderTimes === undefined
+            ? {}
+            : {
+                renderP95: [...completeRenderTimes].sort((left, right) => left - right)[
+                  Math.ceil(completeRenderTimes.length * 0.95) - 1
+                ],
+              }),
           ...(typeof deviceMetrics?.serial === "string" ? { serial: deviceMetrics.serial } : {}),
           ...(typeof verdict?.thermallyConfounded === "boolean" ? { thermallyConfounded: verdict.thermallyConfounded } : {}),
         },

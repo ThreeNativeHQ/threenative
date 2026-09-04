@@ -24,6 +24,13 @@
       "args": [
         "./node_modules/@threenative/core/mcp/engine.mjs"
       ]
+    },
+    "threenative-blender": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "./node_modules/@threenative/core/mcp/blender.mjs"
+      ]
     }
   }
 }

@@ -107,6 +107,7 @@ jobs:
       #   @threenative/ueformat
       #   @threenative/ui
       #   create-threenative
+      #   threenative-blender-mcp
       #   threenative-engine-mcp
       # END GENERATED WORKSPACE PUBLISH SET
       - name: Run the single guarded release path

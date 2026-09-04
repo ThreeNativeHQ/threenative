@@ -33,10 +33,7 @@ export function emitParity(ctx: IEvaluationContext): void {
   }
 
   const series = input.report.observations?.performanceSeries ?? [];
-  const frameTimes = series
-    .map((sample) => (sample as { frameMs?: unknown }).frameMs)
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
-  if (frameTimes.length === 0) {
+  if (series.length === 0) {
     assertions.push({ details: { sampleCount: series.length }, id: "parity.observed", pass: false });
     diagnostics.push({
       code: "TN_PLAYTEST_PARITY_SERIES_MISSING",
@@ -45,6 +42,20 @@ export function emitParity(ctx: IEvaluationContext): void {
       severity: "error",
       ...(sourcePath === undefined ? {} : { sourcePath }),
       suggestion: "Run against a target that measures the render loop and keep the performance bridge provider installed.",
+    });
+    return;
+  }
+  const frameTimes = series.map((sample) => (sample as { frameMs?: unknown }).frameMs);
+  if (!frameTimes.every((value): value is number =>
+    typeof value === "number" && Number.isFinite(value) && value > 0)) {
+    assertions.push({ details: { sampleCount: series.length }, id: "parity.observed", pass: false });
+    diagnostics.push({
+      code: "TN_PLAYTEST_PARITY_SERIES_MALFORMED",
+      message: `Scenario '${input.scenario.name}' asserts parity but this run produced a malformed frame-time sample.`,
+      observedRuntimePath: "observations.json/performanceSeries",
+      severity: "error",
+      ...(sourcePath === undefined ? {} : { sourcePath }),
+      suggestion: "Fix the performance bridge provider so every sample carries a finite positive frameMs.",
     });
     return;
   }
@@ -102,7 +113,24 @@ export function emitParity(ctx: IEvaluationContext): void {
   }
 
   const thisConfounded = input.report.observations?.deviceMetrics?.verdict.thermallyConfounded;
-  if (reference.thermallyConfounded === true || thisConfounded === true) {
+  if (reference.thermallyConfounded === undefined || thisConfounded === undefined) {
+    assertions.push({
+      details: {
+        referenceVerdictObserved: reference.thermallyConfounded !== undefined,
+        thisRunVerdictObserved: thisConfounded !== undefined,
+      },
+      id: "parity.thermalComparability",
+      pass: false,
+    });
+    diagnostics.push({
+      code: "TN_PLAYTEST_PARITY_THERMAL_UNPROVABLE",
+      message: "Parity cannot prove thermal comparability because at least one half carries no thermal verdict.",
+      observedRuntimePath: "observations.json/deviceMetrics",
+      severity: "error",
+      ...(sourcePath === undefined ? {} : { sourcePath }),
+      suggestion: "Run both halves through the Android device metrics recorder, then rerun the comparison.",
+    });
+  } else if (reference.thermallyConfounded || thisConfounded) {
     assertions.push({ details: { referenceThermallyConfounded: reference.thermallyConfounded === true, thisRunThermallyConfounded: thisConfounded === true }, id: "parity.thermalComparability", pass: false });
     diagnostics.push({
       code: "TN_PLAYTEST_PARITY_THERMALLY_CONFOUNDED",
@@ -112,15 +140,32 @@ export function emitParity(ctx: IEvaluationContext): void {
       ...(sourcePath === undefined ? {} : { sourcePath }),
       suggestion: "Let the device cool to thermal status 0 and rerun both halves; the measured ratios stay in the reports.",
     });
+  } else {
+    assertions.push({
+      details: { referenceThermallyConfounded: false, thisRunThermallyConfounded: false },
+      id: "parity.thermalComparability",
+      pass: true,
+    });
   }
 
   const minRenderParity = assertion.minRenderParity;
   if (minRenderParity !== undefined) {
     const renderTimes = series
-      .map((sample) => (sample as { phases?: { render?: unknown } }).phases?.render)
-      .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
-    if (reference.renderP95 === undefined || renderTimes.length !== frameTimes.length) {
-      assertions.push({ details: { referenceRenderP95: reference.renderP95 ?? null, thisRunSamplesWithRender: renderTimes.length }, id: "parity.renderParity", pass: false });
+      .map((sample) => (sample as { phases?: { render?: unknown } }).phases?.render);
+    const completeRenderTimes = renderTimes.every(
+      (value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0,
+    )
+      ? renderTimes
+      : undefined;
+    if (reference.renderP95 === undefined || completeRenderTimes === undefined) {
+      assertions.push({
+        details: {
+          referenceRenderP95: reference.renderP95 ?? null,
+          thisRunSamplesWithRender: completeRenderTimes?.length ?? 0,
+        },
+        id: "parity.renderParity",
+        pass: false,
+      });
       diagnostics.push({
         code: "TN_PLAYTEST_PARITY_RENDER_UNMEASURED",
         message: "A render-parity floor was requested but at least one half's series carries no render-phase split.",
@@ -133,7 +178,7 @@ export function emitParity(ctx: IEvaluationContext): void {
     }
     // Inverted render parity, per the Tier 2 table: lower render p95 is better, so the native
     // half's time in the numerator would reward slowness. Divide the browser's by the native's.
-    const thisRenderP95Value = [...renderTimes].sort((left, right) => left - right)[Math.ceil(renderTimes.length * 0.95) - 1] as number;
+    const thisRenderP95Value = [...completeRenderTimes].sort((left, right) => left - right)[Math.ceil(completeRenderTimes.length * 0.95) - 1] as number;
     const renderRatio = assertion.referenceSide === "native" ? thisRenderP95Value / reference.renderP95 : reference.renderP95 / thisRenderP95Value;    assertions.push({
       details: { referenceRenderP95: reference.renderP95, renderRatio, thisRunRenderP95: thisRenderP95Value, unit: "ratio" },
       id: "parity.renderParity",

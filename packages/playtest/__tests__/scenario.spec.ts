@@ -567,6 +567,7 @@ const FAMILY_PASS_IDS = [
   "visual.0.region",
   "parity.fpsRatio",
   "parity.sameDevice",
+  "parity.thermalComparability",
   "performance.samples",
   "performance.maxFrameMsP95",
   "performance.maxDrawCalls",

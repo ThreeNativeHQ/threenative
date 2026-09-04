@@ -17,6 +17,11 @@ import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
 import { applyPasses } from "./pass-chain.js";
 import type { IAppliedPasses, IPassTiming } from "./pass-chain.js";
+import {
+  BLENDER_IMPORT_PASS,
+  blenderImportPass,
+  needsBlenderImport,
+} from "./passes/blender-import.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import { modelPass } from "./passes/model.js";
@@ -257,6 +262,9 @@ interface IAssetManifestEntry {
   /** Extensions the compiled output declares (model pass), sorted. */
   readonly extensions?: readonly string[];
   readonly format?: string;
+  /** The source extension a GLB was converted from (`fbx`, `blend`, `obj`, `dae`), so a report can
+   * say a model was converted rather than authored. Absent for a model the game shipped as glTF. */
+  readonly importedFrom?: string;
   readonly kind: AssetKind;
   readonly lightmapAtlas?: Readonly<Record<string, unknown>>;
   readonly lightmaps?: readonly Readonly<Record<string, unknown>>[];
@@ -326,8 +334,15 @@ const BASISU_EXTENSION = "KHR_texture_basisu";
 const PIPELINE_VERSION = 8;
 
 const KIND_BY_EXTENSION: Readonly<Record<string, AssetKind>> = {
+  // Converted to GLB by `blenderImportPass` before `modelPass` sees them. Until PRD-346 these four
+  // classified as "other", were copied through untouched, and the build reported success on a file
+  // no runtime can load.
+  blend: "model",
+  dae: "model",
+  fbx: "model",
   glb: "model",
   gltf: "model",
+  obj: "model",
   jpeg: "texture",
   jpg: "texture",
   mp3: "audio",
@@ -820,6 +835,10 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       builtinPasses.push(lightmapPass(lightmap));
       passSpecs.push({ kind: "lightmap", options: lightmap });
     }
+    // Ahead of `modelPass`: it converts the source into the GLB that pass then optimizes. A game
+    // with no importable source pays one extension test per input.
+    builtinPasses.push(blenderImportPass());
+    passSpecs.push({ kind: "blender-import" });
     if (models !== undefined) {
       builtinPasses.push(
         modelPass({
@@ -935,6 +954,7 @@ function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): b
   return (
     existing.output === entry.output &&
     existing.kind === entry.kind &&
+    existing.importedFrom === entry.importedFrom &&
     JSON.stringify(existing.lightmapAtlas) === JSON.stringify(entry.lightmapAtlas) &&
     JSON.stringify(existing.lightmaps) === JSON.stringify(entry.lightmaps) &&
     JSON.stringify(existing.embeddedTextures) === JSON.stringify(entry.embeddedTextures) &&
@@ -1354,22 +1374,57 @@ export async function compileAssets(
   }
   const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
   const previous = await readExistingManifest(manifestPath);
-  const passNames = layout.passes.map((pass) => pass.name);
-  const passCacheKeys = layout.passes.map((pass) => pass.cacheKey ?? null);
+
+  // Read before the first write *and before the source walk*, so the undeclared-output guard can
+  // tell this run's files from the project's own static ones. Taking it after the walk shrinks the
+  // margin by however long the walk took, and `TN_ASSETS_UNDECLARED_OUTPUT` then misses a stray
+  // file whose mtime the filesystem truncated below it — which is exactly how
+  // `bake-receipt.spec.ts` went red on a loaded CI shard while passing locally. It never reaches
+  // the receipt: that stays deterministic.
+  const runStart = Date.now();
+
+  const logicals = await walkSources(layout.sourceRoot);
+  // The determinism gate's seam: reversed processing order reverses which input's work completes
+  // first, so the gate can prove the emitted bytes do not depend on it.
+  if (options.processingOrder === "reversed") logicals.reverse();
+
+  /**
+   * The Blender importer joins the chain only when this source tree actually holds something it
+   * owns, which is why the walk happens before the pass list is fixed.
+   *
+   * It was unconditional first, and that hung `threenative build` for every project shipping
+   * `assets: { models: "none", textures: "none" }` — every template that targets mobile. With both
+   * set to "none" the built-in chain is *empty*, and an empty `passSpecs` is what tells the driver
+   * not to create a worker pool at all (`layout.passSpecs.length > 0 && concurrency > 1`). One
+   * unconditional no-op pass flipped that to a pool for a chain that can never do anything, and
+   * `threenative build --target web` finished its work and then never exited — 45 minutes to a
+   * job timeout in CI, reproduced locally at exit code 124.
+   *
+   * A game with no importable source now pays one extension test per input and nothing else,
+   * which is also what its manifest should say: `passes` lists the chain that ran.
+   */
+  const importsModels = logicals.some((logical) => needsBlenderImport(logical));
+  const activePasses = importsModels
+    ? layout.passes
+    : layout.passes.filter((pass) => pass.name !== BLENDER_IMPORT_PASS);
+  const activePassSpecs = importsModels
+    ? layout.passSpecs
+    : layout.passSpecs.filter((spec) => spec.kind !== "blender-import");
+
+  const passNames = activePasses.map((pass) => pass.name);
+  const passCacheKeys = activePasses.map((pass) => pass.cacheKey ?? null);
   const passConfiguration = JSON.stringify({
     ...(passCacheKeys.some((key) => key !== null) ? { passCacheKeys } : {}),
     pipelineVersion: PIPELINE_VERSION,
     passes: passNames,
-    options: layout.passes.map((pass) => pass.configuration ?? null),
+    options: activePasses.map((pass) => pass.configuration ?? null),
   });
   const entries: Record<string, IAssetManifestEntry> = {};
   const receiptOutputs: IBakeReceiptOutput[] = [];
   const costInputs = new Map<string, IPassCostRecord>();
   for (const name of passNames)
     costInputs.set(name, { cachedInputs: 0, ranInputs: 0, timings: [] });
-  // Read before the first write, so the undeclared-output guard can tell this run's files from
-  // the project's own static ones. It never reaches the receipt: that stays deterministic.
-  const runStart = Date.now();
+
   const healthInputs: IAssetHealthInput[] = [];
   const textureRows: ITextureSizeRow[] = [];
   const modelRows: IModelSizeRow[] = [];
@@ -1377,11 +1432,6 @@ export async function compileAssets(
   let skipped = 0;
   let textureCount = 0;
   let compressedModelCount = 0;
-
-  const logicals = await walkSources(layout.sourceRoot);
-  // The determinism gate's seam: reversed processing order reverses which input's work completes
-  // first, so the gate can prove the emitted bytes do not depend on it.
-  if (options.processingOrder === "reversed") logicals.reverse();
 
   // An empty (or dotfile-only) source must never publish an empty manifest: the runtime treats
   // a served manifest as authoritative and would reject every load against it. A source that
@@ -1402,10 +1452,15 @@ export async function compileAssets(
       : { concurrencyUsed: 1, passCosts: [], skipped: 0, skippedCompression: [], written: 0 };
   }
 
-  /** Everything one entry contributes to the receipt, the health report and the size report. */
+  /** Everything one entry contributes to the receipt, the health report and the size report.
+   *
+   * `measured` is what the health report reads. For everything the runtime can already load it is
+   * the source, deliberately — see the comment at the `healthInputs.push` below. For a `.fbx`,
+   * `.blend`, `.obj` or `.dae` it is the converted GLB, because the source is not a document this
+   * reader knows: measuring it raised TN_ASSETS_MODEL_UNREADABLE and failed the whole compile. */
   const bookkeep = (
     logical: string,
-    input: Buffer,
+    measured: Buffer,
     entry: IAssetManifestEntry,
     auxiliary: readonly {
       readonly bytes: number;
@@ -1428,8 +1483,9 @@ export async function compileAssets(
     // kinds. Texture dimensions, alpha and power-of-two are authoring properties a KTX2
     // output hides; model triangles and materials are the counts targets are declared
     // against, and the pass's self-verification guarantees they survive compilation within
-    // tolerance. Byte savings are reported per kind below instead.
-    healthInputs.push({ data: input, logicalPath: logical });
+    // tolerance. Byte savings are reported per kind below instead. A Blender-imported source is
+    // the exception the caller resolves: its earliest readable form is the converted GLB.
+    healthInputs.push({ data: measured, logicalPath: logical });
     if (entry.bytesBefore === undefined) return;
     if (entry.triangles !== undefined) {
       modelRows.push({
@@ -1461,8 +1517,8 @@ export async function compileAssets(
   // serialisable mirror and runs sequential.
   const concurrency = resolveConcurrency(options.concurrency ?? layout.concurrency);
   const pool =
-    layout.passSpecs.length > 0 && concurrency > 1
-      ? createPassPool(concurrency, layout.passSpecs, layout.outputRoot)
+    activePassSpecs.length > 0 && concurrency > 1
+      ? createPassPool(concurrency, activePassSpecs, layout.outputRoot)
       : undefined;
 
   const processOne = async (logical: string): Promise<void> => {
@@ -1483,14 +1539,19 @@ export async function compileAssets(
         : await reusableEntry(layout.outputRoot, logical, digest.slice(0, 8), previousEntry);
     if (previousEntry !== undefined && reusable !== undefined) {
       entries[logical] = previousEntry;
-      bookkeep(logical, input, previousEntry, reusable, undefined);
+      // A cache hit never ran the converter, so the GLB the report must measure is the one already
+      // on disk under this entry's output name.
+      const measured = needsBlenderImport(logical)
+        ? await readFile(path.join(layout.outputRoot, previousEntry.output))
+        : input;
+      bookkeep(logical, measured, previousEntry, reusable, undefined);
       recordCachedInputs(costInputs, passNames);
       skipped += 1;
       return;
     }
     const applied =
       pool === undefined
-        ? await applyPasses(layout.passes, input, logical)
+        ? await applyPasses(activePasses, input, logical)
         : await pool.run(logical, input);
     recordRanTimings(costInputs, logical, applied.timings);
     const auxiliaryOutputs = resolveAuxiliaryOutputs(logical, applied.auxiliaryOutputs);
@@ -1512,6 +1573,10 @@ export async function compileAssets(
               ? (applied.entry.extensions as string[])
               : undefined,
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
+            importedFrom:
+              typeof applied.entry.importedFrom === "string"
+                ? applied.entry.importedFrom
+                : undefined,
             lightmapAtlas: isRecord(applied.entry.lightmapAtlas)
               ? applied.entry.lightmapAtlas
               : undefined,
@@ -1546,7 +1611,7 @@ export async function compileAssets(
         : undefined;
     bookkeep(
       logical,
-      input,
+      needsBlenderImport(logical) ? applied.buffer : input,
       entry,
       auxiliaryOutputs.map((output) => ({
         bytes: output.buffer.length,

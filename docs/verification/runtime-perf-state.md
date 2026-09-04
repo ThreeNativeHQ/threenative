@@ -1835,6 +1835,47 @@ pre-registered rule is written for the phone, where 105 pipelines and 8,038 ms m
 meaningful. **The cache decision waits for the phone arm**; the desktop record is supporting
 evidence only, and no pipeline-cache work is filed off this table.
 
+### Phase 2's device acceptance ran and failed — the warm-up does not survive the Android path, 2026-09-03
+
+The phone lane ran six instrumented launches (battery 62 % → 37 %, discharging, thermal status 3,
+battery 31.8–42.6 °C across the session, APK `b8a5c698…` then rebuilds, `com.threenative.bayview`
+verified by `aapt` and by `strings` the packaged `.so` for `pipelineCompileMs`). Three facts, each
+pinned by a named instrument:
+
+**1. The pre-PRD stall reproduces unchanged without warm-up.** New runtime (Phase 1+4), game
+config untouched, cold launch: `TN_STALL_SEGMENTS gapMs 12412, pipelineCompile 8300 ms / 103 sync
+calls, attributedShare 0.724`, first frame `TN_COLD_START first_frame atMs 14776`. The Phase 1
+mechanism changes nothing for a game that never calls `compileAsync` — expected, but now measured.
+
+**2. `warmUp: true` regresses the launch to ~35 s.** With the opt-in, the whole-scene
+`compileAsync` walks 835 renderables **synchronously on the main thread for ~33 s** (a
+three-side debug probe: `walk-begin` at 16:13:40.305, first per-item log at 16:14:13 — no pump,
+no timer, no pipeline enqueue in between; a 2 s `setInterval` probe delivered nothing until
+29,994 ms). The per-item `await yieldToMain()` then fell back to `requestAnimationFrame`, **not**
+the installed `scheduler.yield` — a host-side yield counter read 1 against 892 items — and rAF
+cannot resolve while the launch loop is held. `TN_WARMUP` reported `{"compiled":0,"abandoned":1,
+"timedOut":true}` on every arm (15.3 s and 30 s budgets), the first frame still paid the 8.2 s
+sync compile, and the game's launch went 14.4 s → ~35 s. The opt-in was reverted in the game
+(sandbox commit) and the engine instrumentation removed.
+
+**3. The async bindings themselves work — after the loop releases.** The instrumented pool logged
+`enqueued → pool job finished → draining` for every completion, all post-release. The native half
+of Phase 1 is sound; what fails is the path a game takes to reach it: three's `compileAsync` is
+asynchronous in name on this backend — its prologue walk does the node and pipeline work
+synchronously, and its yield falls back to a frame that does not exist pre-start.
+
+**Phase 3's pre-registered 25 % rule — executed, cache rejected.** Every launch's
+`pipelineCompile` sat at 8.2–8.3 s across the session: launches 2..6 never dropped below 25 % of
+the first. The driver cache is doing nothing for these pipelines, so per the rule filed in the
+PRD, the persisted-cache work is filed — but the cache is now the *smaller* problem: the
+synchronous walk must leave the main thread first, or a cache would only speed up a stall that
+still runs on the main loop. Both belong to the follow-up PRD.
+
+**PRD-327's criterion 3 is not met** (14.4 s against ≤ 8 s median) **and the PRD does not close.**
+What the device session bought: the launch defect is no longer "warm-up compiles nothing" — it is
+"three's whole-scene compile walk is synchronous on the main thread and its yield path is
+frame-coupled", which no amount of warm-up default flips can hide.
+
 ### Phase 4 — a late synchronous compile is a named hitch, 2026-09-03
 
 `TN_FRAME_HITCH` now carries `pipelineCompileMs` / `pipelineCompileCalls` per 300-frame window.

@@ -173,6 +173,19 @@ describe("assert.parity reference hydration", () => {
     );
     await expect(loadPlaytestScenario(dir, "s.playtest.json")).rejects.toThrow(/no valid frame-time samples/u);
   });
+
+  it("fails the load instead of dropping a malformed reference sample", async () => {
+    const dir = await makeTempDir("parity-malformed-series");
+    await writeFile(
+      join(dir, "native.json"),
+      JSON.stringify({ observations: { performanceSeries: [...series(60, 2), { frameMs: "fast" }] } }),
+    );
+    await writeFile(
+      join(dir, "s.playtest.json"),
+      JSON.stringify(scenarioWith({ minFpsRatio: 0.85, referenceReport: "native.json", referenceSide: "native" })),
+    );
+    await expect(loadPlaytestScenario(dir, "s.playtest.json")).rejects.toThrow(/malformed frame-time sample/u);
+  });
 });
 
 describe("assert.parity evaluation", () => {
@@ -241,6 +254,25 @@ describe("assert.parity evaluation", () => {
     (report.observations as { performanceSeries?: unknown }).performanceSeries = [];
     const { diagnostics } = evaluateRichPlaytestAssertions({ report, scenario });
     expect(diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_PARITY_SERIES_MISSING");
+  });
+
+  it("fails closed instead of dropping a malformed current-run sample", () => {
+    const scenario = hydratedScenario({ ...assertion });
+    const report = reportWith({ fps: 60, serial: "pixel-8" });
+    report.observations?.performanceSeries?.push({ frameMs: Number.NaN } as never);
+    const { diagnostics } = evaluateRichPlaytestAssertions({ report, scenario });
+    expect(diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_PARITY_SERIES_MALFORMED");
+  });
+
+  it("fails closed when either thermal verdict is absent", () => {
+    const scenario = hydratedScenario({
+      ...assertion,
+      reference: { fps: 60, renderP95: 10, serial: "pixel-8" },
+    });
+    const report = reportWith({ fps: 60, serial: "pixel-8" });
+    const { assertions, diagnostics } = evaluateRichPlaytestAssertions({ report, scenario });
+    expect(assertions.find(({ id }) => id === "parity.thermalComparability")?.pass).toBe(false);
+    expect(diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_PARITY_THERMAL_UNPROVABLE");
   });
 
   it("binds the optional render-parity floor and fails closed on a missing phase split", () => {
