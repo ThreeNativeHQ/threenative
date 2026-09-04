@@ -2,20 +2,10 @@
 export const palette = {
   skyHigh: 0x8fd5cf,
   skyLow: 0x28556a,
-  floor: 0xe6c58d,
+  floor: 0x67c878,
   player: 0xfff0b0,
   crate: 0xd86f55,
-  accent: 0xf6a05d,
-  flower: 0xf47c88,
-  grass: 0x67c878,
-  grassDark: 0x257254,
-  rock: 0x55717b,
-  sand: 0xe6c58d,
-  shoreline: 0xffdda1,
-  waterDeep: 0x1c687c,
-  waterFoam: 0xc2f2d6,
-  waterLight: 0x8adfc9,
-  waterMid: 0x2a8490,
+  accent: 0xe6c58d,
 } as const;
 
 export const COAST_WAVES = [

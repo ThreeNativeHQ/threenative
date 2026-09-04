@@ -7,6 +7,7 @@ import { acquireHotReloadProjectLock } from "../../test-support/hot-reload-lock.
 import { packageSourcesMatch } from "../../test-support/hot-reload-project.js";
 import {
   contactShadowCoverage,
+  dominantColorCoverage,
   findLargestColorObject,
 } from "../../test-support/starter-look-image.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -44,6 +45,14 @@ describe("root Playwright lane contracts", () => {
 
     paint(image, { bottom: 80, left: 0, right: 120, top: 0 }, [45, 45, 45]);
     expect(contactShadowCoverage(image, bounds)).toBe(0);
+  });
+
+  it("identifies a canvas that stayed on one background colour behind HUD pixels", () => {
+    const image = new PNG({ height: 100, width: 100 });
+    paint(image, { bottom: 100, left: 0, right: 100, top: 0 }, [12, 82, 110]);
+    paint(image, { bottom: 52, left: 20, right: 80, top: 50 }, [230, 190, 130]);
+
+    expect(dominantColorCoverage(image, { bottom: 100, left: 0, right: 100, top: 0 })).toBe(0.988);
   });
 
   it("runs adapter provenance setup in both browser and benchmark configs", async () => {

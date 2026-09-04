@@ -12,6 +12,7 @@ import { acquireHotReloadProjectLock } from "./test-support/hot-reload-lock.js";
 import { packageSourcesMatch } from "./test-support/hot-reload-project.js";
 import {
   contactShadowCoverage,
+  dominantColorCoverage,
   findLargestColorObject,
 } from "./test-support/starter-look-image.js";
 import { makeTempDir } from "./test-support/temp-dir.js";
@@ -283,15 +284,14 @@ async function assertStarterScreenshot(file: string): Promise<void> {
   // in a temp directory that is gone by the time anyone reads it. Every throw below carries what
   // the stage actually contained.
   // A stage that is one flat colour is a canvas that never painted, not a look regression. On
-  // GitHub's runners Chromium serves WebGPU from SwiftShader and `page.screenshot` composites the
-  // DOM without the WebGPU canvas: the HUD, the score and the control legend all arrive, and the
-  // 3D view is blank white. Checked against the frame that failed run 33296384093 — adapter
-  // `swiftshader/google`, stage 98.1% rgb(224,224,224), luminance 0.9869, zero warm and zero cool
-  // pixels. No threshold can tell that apart from a broken look, so the gate reports it as
-  // unexecuted, with the adapter and the measurements named, and never as a pass.
+  // GitHub's runners serve WebGPU from SwiftShader and can composite the DOM without the WebGPU
+  // canvas: the HUD and loading bar arrive over one flat background while the 3D view is absent.
+  // Captured examples include run 33296384093 at 98.1% one light bucket and run 33841815831 at
+  // 98.2% one dark bucket, so colour or luminance alone is not the signal. A painted hardware frame
+  // is much more diverse; the recovered coastal reference's largest bucket covers 66.2%.
   const adapter = await readCaptureAdapter(file);
-  const uniformStage = countColorBuckets(pixels) <= 4;
-  if (uniformStage && warm.count === 0 && cool === 0) {
+  const unpaintedStage = dominantColorCoverage(image, stage) >= 0.98;
+  if (unpaintedStage) {
     const software = /swiftshader|llvmpipe|lavapipe|softpipe/iu.test(
       `${adapter?.architecture ?? ""} ${adapter?.vendor ?? ""}`,
     );
@@ -301,7 +301,7 @@ async function assertStarterScreenshot(file: string): Promise<void> {
       );
     }
     console.info(
-      `TN_STARTER_LOOK_UNEXECUTED: adapter ${adapter?.vendor}/${adapter?.architecture} did not composite the WebGPU canvas into the screenshot (luminance ${luminance.toFixed(4)}, warm 0, cool 0, top colours ${describeDominantColors(pixels)}). The look gate did not execute on this machine; it is proven on a hardware adapter, not here.`,
+      `TN_STARTER_LOOK_UNEXECUTED: adapter ${adapter?.vendor}/${adapter?.architecture} did not composite the WebGPU canvas into the screenshot (luminance ${luminance.toFixed(4)}, dominant colour ${(dominantColorCoverage(image, stage) * 100).toFixed(1)}%, top colours ${describeDominantColors(pixels)}). The look gate did not execute on this machine; it is proven on a hardware adapter, not here.`,
     );
     return;
   }
@@ -350,13 +350,6 @@ async function readCaptureAdapter(
   } catch {
     return undefined;
   }
-}
-
-/** How many 32-level colour buckets the stage covers. A painted 3D scene covers many. */
-function countColorBuckets(pixels: readonly [number, number, number][]): number {
-  const buckets = new Set<string>();
-  for (const [red, green, blue] of pixels) buckets.add(`${red >> 5},${green >> 5},${blue >> 5}`);
-  return buckets.size;
 }
 
 function describeDominantColors(pixels: readonly [number, number, number][]): string {

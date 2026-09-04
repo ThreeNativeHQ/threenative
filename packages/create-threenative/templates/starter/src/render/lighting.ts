@@ -50,7 +50,7 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): Direction
   key.shadow.normalBias = 0.03;
   scene.add(key);
 
-  const rim = new DirectionalLight(palette.waterLight, 0.9);
+  const rim = new DirectionalLight(palette.skyHigh, 0.9);
   rim.position.set(-5, 3, -6);
   scene.add(rim);
 

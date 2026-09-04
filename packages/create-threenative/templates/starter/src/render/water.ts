@@ -28,14 +28,11 @@ export function createWaterMaterial(source: IWaveDisplacementSource): MeshBasicN
   const normal = source.normalNode();
   const facing = normal.dot(SUN).clamp(0, 1);
   const troughToCrest = smoothstep(-0.26, 0.26, height);
-  const body = mix(
-    color(palette.waterDeep),
-    color(palette.waterMid),
-    troughToCrest.mul(0.16).add(0.42),
-  );
+  const waterMid = mix(color(palette.skyLow), color(palette.skyHigh), 0.35);
+  const body = mix(color(palette.skyLow), waterMid, troughToCrest.mul(0.16).add(0.42));
   const litBody = body.mul(mix(float(0.92), float(1), facing));
-  const glint = color(palette.waterLight).mul(facing.pow(48).mul(0.07));
-  const crestFoam = color(palette.waterFoam).mul(smoothstep(0.16, 0.26, height).mul(0.025));
+  const glint = color(palette.skyHigh).mul(facing.pow(48).mul(0.07));
+  const crestFoam = color(palette.player).mul(smoothstep(0.16, 0.26, height).mul(0.025));
   water.colorNode = litBody.add(glint).add(crestFoam);
   return water;
 }

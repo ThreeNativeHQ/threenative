@@ -5,6 +5,20 @@ export type PixelBounds = { bottom: number; left: number; right: number; top: nu
 type ColorComponent = { bounds: PixelBounds; count: number };
 type ColorObject = { bounds?: PixelBounds; count: number };
 
+export function dominantColorCoverage(image: PNG, stage: PixelBounds): number {
+  const buckets = new Map<string, number>();
+  let pixels = 0;
+  for (let y = stage.top; y < stage.bottom; y += 1) {
+    for (let x = stage.left; x < stage.right; x += 1) {
+      const [red, green, blue] = readPixel(image, x, y);
+      const key = `${red >> 5},${green >> 5},${blue >> 5}`;
+      buckets.set(key, (buckets.get(key) ?? 0) + 1);
+      pixels += 1;
+    }
+  }
+  return Math.max(0, ...buckets.values()) / Math.max(1, pixels);
+}
+
 export function findLargestColorObject(
   image: PNG,
   stage: PixelBounds,

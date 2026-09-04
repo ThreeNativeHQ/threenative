@@ -13,21 +13,21 @@ export function createMaterials() {
     // the same ground and the gap between them stays legible as a gap.
     goal: new MeshStandardMaterial({ color: palette.accent, roughness: 0.45, metalness: 0.04 }),
     // The columns under the ledge: lit, matte, near-black, so the drop has a below.
-    rock: new MeshStandardMaterial({ color: palette.rock, roughness: 0.98, metalness: 0 }),
+    rock: new MeshStandardMaterial({ color: palette.skyLow, roughness: 0.98, metalness: 0 }),
     // The ridge on the horizon is unlit on purpose. A standard material there takes the
     // warm key like everything else and the backdrop stops being a backdrop; a flat colour
     // between the two sky stops stays a silhouette from every light angle, and the scene's
     // fog still fades it with distance.
     ridge: new MeshBasicMaterial({ color: new Color(palette.skyLow).multiplyScalar(0.72) }),
-    flower: new MeshStandardMaterial({ color: palette.flower, roughness: 0.6, metalness: 0 }),
-    grass: new MeshStandardMaterial({ color: palette.grass, roughness: 0.95, metalness: 0 }),
+    flower: new MeshStandardMaterial({ color: palette.crate, roughness: 0.6, metalness: 0 }),
+    grass: new MeshStandardMaterial({ color: palette.floor, roughness: 0.95, metalness: 0 }),
     grassDark: new MeshStandardMaterial({
-      color: palette.grassDark,
+      color: new Color(palette.floor).multiplyScalar(0.58),
       roughness: 0.98,
       metalness: 0,
     }),
-    sand: new MeshStandardMaterial({ color: palette.sand, roughness: 0.96, metalness: 0 }),
-    shoreline: new MeshStandardMaterial({ color: palette.shoreline, roughness: 0.9, metalness: 0 }),
+    sand: new MeshStandardMaterial({ color: palette.accent, roughness: 0.96, metalness: 0 }),
+    shoreline: new MeshStandardMaterial({ color: palette.player, roughness: 0.9, metalness: 0 }),
   };
 }
 
