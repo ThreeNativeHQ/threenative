@@ -10,6 +10,21 @@ MCP server is available.
 
 ## `@threenative/assets`
 
+### `audioPass`
+
+`function` — Conditions a game's audio and proves the conditioning did not destroy it.
+
+```ts
+export function audioPass(options: IAudioPassOptions = { … }
+```
+
+- **Use when:** make an ambience bed loop without an audible click · halve what a positional sound effect costs a device's memory · stop an audio asset shipping silent on desktop, Android and iOS
+- **Constraints:** a clip declared a loop has its seam measured on the decoded output bytes and fails the build when it exceeds the threshold; the assertion cannot be declared away · which clips loop, which are positional, and what a clip is for are declared per glob and never inferred from a filename · sources must be RIFF/WAVE or Ogg Vorbis, which is exactly what every native target decodes; an MP3 fails the bake
+
+```ts
+const pass = audioPass({ overrides: [{ glob: "audio/*-bed.ogg", loop: true }] });
+```
+
 ### `compileAssets`
 
 `function` — Compiles a project's source assets into content-addressed runtime files and a manifest.
@@ -23,6 +38,21 @@ export async function compileAssets( options: IAssetCompileOptions = { … }
 
 ```ts
 const result = await compileAssets({ source: "assets", output: "public" });
+```
+
+### `formatAudioSizes`
+
+`function` — Formats audio conditioning measurements for a build report.
+
+```ts
+export function formatAudioSizes(rows: readonly IAudioRow[]): readonly string[] { … }
+```
+
+- **Use when:** see what audio conditioning did to a clip's wire and decoded size · read the loop seam and cross-fade a build measured
+- **Constraints:** an empty row list produces no report lines
+
+```ts
+const lines = formatAudioSizes(audioRows);
 ```
 
 ### `formatHealthReport`
@@ -192,6 +222,25 @@ const watcher = watchAssets({ cwd: process.cwd() });
 
 ## `@threenative/core`
 
+### `addInSlices`
+
+`function` — Attach hundreds of built objects to the scene in slices, presenting a frame between each.
+
+```ts
+export async function addInSlices<T>( objects: Iterable<T>, add: (object: T, index: number) => void, options: IAddInSlicesOptions = { … }
+```
+
+- **Use when:** add hundreds of built objects to the scene without one multi-second frame · stream a detail tier in behind a loading curtain without the page looking hung
+- **Constraints:** the objects, and where each one goes, stay the game's; this decides only when each joins the graph · input order is the attach order and cannot be changed · a false `while` stops the run and is reported as `stopped`, never thrown
+- **Overrides:** sliceSize defaults to 256; `marker: false` silences the TN_ADD_SLICES line, not the report
+
+```ts
+const report = await addInSlices(objects, (object) => ctx.add(object), {
+  onProgress: ({ added, total }) => setProgress(added / total),
+  while: () => generation.live,
+});
+```
+
 ### `afterPhysics`
 
 `function` — Register work that reads a body or camera after physics has moved it and before this frame draws. The engine owns the phase ordering; a callback cannot be misplaced by plugin-array order.
@@ -209,14 +258,14 @@ afterPhysics(ctx, (dt) => camera.position.copy(player.mesh.position));
 
 ### `AnimationPlayer`
 
-`class` — Play a skinned or sprite animation from game code. A travelling clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it.
+`class` — Play a skinned or sprite animation from game code. A locomotion clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and Unreal export, every Mixamo "in place" clip, every stock animal pack — are matched too: their stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so.
 
 ```ts
 export class AnimationPlayer { … }
 ```
 
-- **Use when:** play an animation on a character · switch a character between idle and attack clips · stop a walking character's feet from sliding or spinning · match a walk or run cycle to how fast a character is moving
-- **Constraints:** name the body a game moves as strideRoot when the animated rig is a child of it · a one-shot clip always plays at its authored rate; the matched rate re-times loops only
+- **Use when:** play an animation on a character · switch a character between idle and attack clips · stop a walking character's feet from sliding or spinning · match a walk or run cycle to how fast a character is moving · match an in-place walk cycle with no root motion to the body's speed · find out what speed an animation clip was authored for
+- **Constraints:** name the body a game moves as strideRoot when the animated rig is a child of it · a one-shot clip always plays at its authored rate; the matched rate re-times loops only · the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so
 - **Overrides:** strideSync controls whether the matched rate is applied while stride is still measured
 
 ```ts
@@ -781,6 +830,22 @@ export function isWeb(): boolean { … }
 
 ```ts
 if (isMobile()) showTouchControls();
+```
+
+### `loadAll`
+
+`function` — Load a list with bounded concurrency, returning results in the input's order.
+
+```ts
+export async function loadAll<TIn, TOut>( items: readonly TIn[], load: (item: TIn, index: number) => Promise<TOut>, options: ILoadAllOptions = { … }
+```
+
+- **Use when:** load many models or textures in parallel instead of one at a time · keep a loading screen moving while a list of assets downloads
+- **Constraints:** results are written to each item's own index and never appended, so a positional lookup finds the same asset on every load · the first rejection rejects the call and no lane starts a load it had not begun
+- **Overrides:** concurrency defaults to 6; `marker: false` silences the TN_LOAD_ALL line, not onProgress
+
+```ts
+const species = await loadAll(names, (name) => ctx.assets.model(`flora/${name}.glb`));
 ```
 
 ### `measureThreePose`
@@ -3359,6 +3424,21 @@ export function createThreeObject( decoded: IDecodedUAssetStaticMesh, options: I
 const mesh = createThreeObject(decoded, { materialFactory: (d) => d.sections.map(() => barkMaterial) });
 ```
 
+### `decompressBulkData`
+
+`function` — Reads the `FByteBulkData` headers an editor package serializes into its export data, and resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl` file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.
+
+```ts
+export function decompressBulkData( container: Uint8Array, codecs: { … }
+```
+
+- **Use when:** read a UE4 editor static mesh whose source model lives in bulk data rather than inline · decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
+- **Constraints:** zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing · a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+
+```ts
+const payload = resolveBulkDataPayload(bytes, header, { zlib });
+```
+
 ### `decompressCompressedBuffer`
 
 `function` — Parses one UE5 `FCompressedBuffer` and decompresses it block-by-block with the codecs the caller injected — uncompressed payloads are handled natively.
@@ -3372,6 +3452,21 @@ export function decompressCompressedBuffer( buffer: ICompressedBuffer, codecs: I
 
 ```ts
 const payload = decompressCompressedBuffer(parseCompressedBuffer(bytes, offset), { oodle });
+```
+
+### `findBulkDataHeaders`
+
+`function` — Reads the `FByteBulkData` headers an editor package serializes into its export data, and resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl` file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.
+
+```ts
+export function findBulkDataHeaders( bytes: Uint8Array, layout: IPackageLayout, files: IUAssetBulkDataFiles = { … }
+```
+
+- **Use when:** read a UE4 editor static mesh whose source model lives in bulk data rather than inline · decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
+- **Constraints:** zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing · a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+
+```ts
+const payload = resolveBulkDataPayload(bytes, header, { zlib });
 ```
 
 ### `findCompressedBufferOffsets`
@@ -3434,6 +3529,36 @@ export function looksLikeMeshDescription(bytes: Uint8Array, offset = 0): boolean
 const description = parseMeshDescription(payload, offset);
 ```
 
+### `looksLikeMeshDescriptionUe4`
+
+`function` — Parses the UE4.2x serialization of `FMeshDescription` — fixed-order element containers, and a triangle container that trails the attribute sets rather than sitting with its siblings.
+
+```ts
+export function looksLikeMeshDescriptionUe4(bytes: Uint8Array, offset = 0): boolean { … }
+```
+
+- **Use when:** decode the MeshDescription a UE 4.23-4.27 editor package keeps in bulk data
+- **Constraints:** the walk must consume the payload exactly; a short walk throws rather than returning the geometry it managed to read
+
+```ts
+const description = parseMeshDescriptionUe4(payload);
+```
+
+### `parseBulkDataHeader`
+
+`function` — Reads the `FByteBulkData` headers an editor package serializes into its export data, and resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl` file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.
+
+```ts
+export function parseBulkDataHeader( bytes: Uint8Array, offset: number, layout: IPackageLayout, ): IBulkDataHeader { … }
+```
+
+- **Use when:** read a UE4 editor static mesh whose source model lives in bulk data rather than inline · decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
+- **Constraints:** zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing · a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+
+```ts
+const payload = resolveBulkDataPayload(bytes, header, { zlib });
+```
+
 ### `parseCompressedBuffer`
 
 `function` — Parses one UE5 `FCompressedBuffer` and decompresses it block-by-block with the codecs the caller injected — uncompressed payloads are handled natively.
@@ -3462,6 +3587,21 @@ export function parseMeshDescription(input: Uint8Array, offset = 0): IMeshDescri
 
 ```ts
 const description = parseMeshDescription(payload, offset);
+```
+
+### `parseMeshDescriptionUe4`
+
+`function` — Parses the UE4.2x serialization of `FMeshDescription` — fixed-order element containers, and a triangle container that trails the attribute sets rather than sitting with its siblings.
+
+```ts
+export function parseMeshDescriptionUe4(input: Uint8Array, offset = 0): IUe4MeshDescription { … }
+```
+
+- **Use when:** decode the MeshDescription a UE 4.23-4.27 editor package keeps in bulk data
+- **Constraints:** the walk must consume the payload exactly; a short walk throws rather than returning the geometry it managed to read
+
+```ts
+const description = parseMeshDescriptionUe4(payload);
 ```
 
 ### `parseRawMesh`
@@ -3494,6 +3634,21 @@ export function parseUAssetStaticMesh( input: ArrayBuffer | ArrayBufferView, opt
 const decoded = parseUAssetStaticMesh(await file.arrayBuffer(), { oodle });
 ```
 
+### `readPackageLayout`
+
+`function` — Walks the whole `FPackageFileSummary` for the offsets bulk data is addressed against — `TotalHeaderSize` and `BulkDataStartOffset` — and returns `undefined` when the walk cannot be trusted.
+
+```ts
+export function readPackageLayout(bytes: Uint8Array): IPackageLayout | undefined { … }
+```
+
+- **Use when:** find where a .uasset's export data and bulk-data region begin
+- **Constraints:** returns undefined rather than guessing when the summary does not end on its own name table, or when the package uses a LegacyFileVersion this walk does not model
+
+```ts
+const layout = readPackageLayout(bytes); if (layout) readBulk(layout.bulkDataStartOffset);
+```
+
 ### `readPackageSummary`
 
 `function` — Reads the fixed prefix of `FPackageFileSummary` — the legacy tag, engine versions, and the custom-version list — without walking the name map, export map, or dependency graph.
@@ -3507,6 +3662,21 @@ export function readPackageSummary(bytes: Uint8Array): IPackageSummary { … }
 
 ```ts
 const summary = readPackageSummary(bytes);
+```
+
+### `resolveBulkDataPayload`
+
+`function` — Reads the `FByteBulkData` headers an editor package serializes into its export data, and resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl` file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.
+
+```ts
+export function resolveBulkDataPayload( bytes: Uint8Array, header: IBulkDataHeader, options: { … }
+```
+
+- **Use when:** read a UE4 editor static mesh whose source model lives in bulk data rather than inline · decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
+- **Constraints:** zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing · a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+
+```ts
+const payload = resolveBulkDataPayload(bytes, header, { zlib });
 ```
 
 ### `UAssetError`

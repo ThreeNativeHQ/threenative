@@ -13,6 +13,10 @@
         void import("/src/loading-leak-main.ts");
       } else if (new URLSearchParams(globalThis.location.search).has("navigation")) {
         void import("/src/navigation-main.tsx");
+      } else if (new URLSearchParams(globalThis.location.search).has("scaler")) {
+        void import("/src/scaler-main.ts");
+      } else if (new URLSearchParams(globalThis.location.search).has("streaming")) {
+        void import("/src/streaming-main.ts");
       } else if (new URLSearchParams(globalThis.location.search).has("terrain")) {
         void import("/src/terrain-main.tsx");
       } else {

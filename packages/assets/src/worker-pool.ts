@@ -83,6 +83,7 @@ export function createPassPool(
 
   const launch = (): Worker => {
     const worker = new Worker(workerUrl);
+    workers.push(worker);
     worker.on("message", (reply: IWorkerReply) => {
       const waiter = pending.get(reply.id);
       if (waiter !== undefined) {
@@ -99,6 +100,8 @@ export function createPassPool(
     worker.on("exit", () => {
       const index = idle.indexOf(worker);
       if (index >= 0) idle.splice(index, 1);
+      const workerIndex = workers.indexOf(worker);
+      if (workerIndex >= 0) workers.splice(workerIndex, 1);
     });
     worker.postMessage(bootstrap);
     idle.push(worker);

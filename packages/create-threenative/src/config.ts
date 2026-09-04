@@ -46,9 +46,11 @@ export interface IResolvedThreeNativeConfig {
     readonly preferWebGPU: boolean;
     readonly resolutionScale?: number | "auto";
     readonly antialias?: boolean;
+    readonly alphaAntialiasing?: boolean;
     readonly android?: {
       readonly resolutionScale?: number | "auto";
       readonly antialias?: boolean;
+      readonly alphaAntialiasing?: boolean;
     };
   };
   readonly ui: {
@@ -885,9 +887,15 @@ function validateUi(raw: unknown): IResolvedThreeNativeConfig["ui"] {
 
 function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] {
   const renderer = assertRecord(raw, "renderer");
-  assertKeys(renderer, "renderer", ["preferWebGPU", "resolutionScale", "antialias", "android"]);
+  assertKeys(renderer, "renderer", [
+    "preferWebGPU",
+    "resolutionScale",
+    "antialias",
+    "alphaAntialiasing",
+    "android",
+  ]);
   const android = assertRecord(renderer.android, "renderer.android");
-  assertKeys(android, "renderer.android", ["resolutionScale", "antialias"]);
+  assertKeys(android, "renderer.android", ["resolutionScale", "antialias", "alphaAntialiasing"]);
   const resolutionScale = renderer.resolutionScale;
   const androidResolutionScale = android.resolutionScale;
   // The same rule the engine enforces at `resolveRendererScaleSetting`, stated here so a game
@@ -907,11 +915,22 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
   }
   const antialias = booleanOrUndefined(renderer.antialias, "renderer.antialias");
   const androidAntialias = booleanOrUndefined(android.antialias, "renderer.android.antialias");
+  const alphaAntialiasing = booleanOrUndefined(
+    renderer.alphaAntialiasing,
+    "renderer.alphaAntialiasing",
+  );
+  const androidAlphaAntialiasing = booleanOrUndefined(
+    android.alphaAntialiasing,
+    "renderer.android.alphaAntialiasing",
+  );
   const androidOverrides = {
     ...(androidResolutionScale === undefined
       ? {}
       : { resolutionScale: androidResolutionScale as number | "auto" }),
     ...(androidAntialias === undefined ? {} : { antialias: androidAntialias }),
+    ...(androidAlphaAntialiasing === undefined
+      ? {}
+      : { alphaAntialiasing: androidAlphaAntialiasing }),
   };
   return {
     preferWebGPU: booleanValue(
@@ -921,6 +940,7 @@ function validateRenderer(raw: unknown): IResolvedThreeNativeConfig["renderer"] 
       "renderer.preferWebGPU",
     ),
     ...(antialias === undefined ? {} : { antialias }),
+    ...(alphaAntialiasing === undefined ? {} : { alphaAntialiasing }),
     ...(resolutionScale === undefined
       ? {}
       : { resolutionScale: resolutionScale as number | "auto" }),

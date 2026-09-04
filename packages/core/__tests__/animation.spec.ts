@@ -344,3 +344,114 @@ describe("AnimationPlayer stride sync", () => {
     expect(player.stride.synced).toBe(true);
   });
 });
+
+/**
+ * Stride sync against the clips games actually ship: in-place locomotion.
+ *
+ * Every clip above carries the rig along a root track, which is the minority authoring
+ * convention. The majority — every ActorX/Unreal export, every Mixamo "in place" clip, every
+ * stock animal pack — animates the body on the spot and leaves travel entirely to game code.
+ *
+ * Measured in `sandbox/wildwood` on 2026-09-03 against the PROTOFACTOR animal pack: the true root
+ * bone of `ANIM_DeerStag_Walk` carries 0.00000 units of translation, but the clip writes local
+ * translation tracks on `STAG_-R-Thigh` and `STAG_-Tail`. `#groundSpeedOf` took the longest
+ * horizontal displacement of ANY `.position` track, so a swinging thigh was read as the body's
+ * root motion at 0.1287 u/clip-second. Against a 1.3 m/s walk that asks for rate 10.10, clamped
+ * to the 3.0 ceiling — so the stag's legs cycled at 3.0x for the whole game while its own stride
+ * justifies 1.03x. The owner reported it as "legs ultra fast, but he's moving slowly".
+ */
+describe("AnimationPlayer stride sync on in-place clips", () => {
+  /** A body the game moves, with the animated rig parented under it. */
+  const character = (options: { clips: AnimationClip[]; scale?: number }) => {
+    const body = new Object3D();
+    const rig = new Object3D();
+    const foot = new Object3D();
+    foot.name = "Foot";
+    rig.add(foot);
+    body.add(rig);
+    if (options.scale !== undefined) body.scale.setScalar(options.scale);
+    const player = new AnimationPlayer({ clips: options.clips, root: rig, strideRoot: body });
+    return { body, player };
+  };
+
+  /**
+   * The shape of a real in-place clip: the root never translates, and a limb carries a local
+   * translation track that swings back and forth without ever going anywhere.
+   */
+  const swingingLimb = () =>
+    new AnimationClip("walk", 2, [
+      new VectorKeyframeTrack("Foot.position", [0, 1, 2], [0, 0, 0.3, 0, 0, -0.3, 0, 0, 0.3]),
+    ]);
+
+  it("does not read a swinging limb as the body's root motion", () => {
+    const { body, player } = character({ clips: [swingingLimb()] });
+    player.play("walk");
+    player.update(1 / 60);
+    body.position.z += 1 * (1 / 60);
+    player.update(1 / 60);
+    // The limb goes nowhere: 0.6 units of swing per 2 seconds is not 0.3 m/s of ground.
+    expect(player.stride.clipGroundSpeed).toBe(0);
+    expect(player.stride.rate).toBe(1);
+    expect(player.stride.synced).toBe(false);
+  });
+
+  it("says out loud that a clip carries no stride to match, so an override can be seen", () => {
+    const { player } = character({ clips: [swingingLimb()] });
+    player.play("walk");
+    player.update(1 / 60);
+    // `synced: false, overridden: false` is what an idle reports too. A game whose walk cycle is
+    // not being matched has to be able to tell the two apart.
+    expect(player.stride.inPlace).toBe(true);
+  });
+
+  /**
+   * A clip's translation values are in the rig's own units; the ground the body covers is in
+   * world metres. `normaliseToMetres` — the framework's own convention for sizing an import —
+   * guarantees the two differ, so the comparison has to cross that scale.
+   */
+  it("measures a clip's ground speed in the world's metres, not the rig's units", () => {
+    const clip = new AnimationClip("walk", 2, [
+      new VectorKeyframeTrack(".position", [0, 2], [0, 0, 0, 0, 0, 2]),
+    ]);
+    const { body, player } = character({ clips: [clip], scale: 0.5 });
+    player.play("walk");
+    player.update(1 / 60);
+    // One unit per clip-second on a rig rendered at half scale is half a metre per clip-second.
+    expect(player.stride.clipGroundSpeed).toBeCloseTo(0.5, 3);
+    body.position.z += 0.5 * (1 / 60);
+    player.update(1 / 60);
+    expect(player.stride.rate).toBeCloseTo(1, 1);
+  });
+
+  /**
+   * The convention doing its job on the clips games ship.
+   *
+   * A planted foot sweeps backward relative to the body at exactly the body's ground speed, so
+   * the stance phase of an in-place cycle states the speed the clip was authored for even though
+   * nothing in it translates. Stance is where the contact bone is at the bottom of its own arc.
+   */
+  const plantedWalk = () =>
+    new AnimationClip("walk", 1, [
+      new VectorKeyframeTrack(
+        "Foot.position",
+        [0, 0.6, 0.8, 1],
+        [0, 0, 0.25, 0, 0, -0.35, 0, 0.25, 0, 0, 0, 0.25],
+      ),
+    ]);
+
+  it("matches an in-place walk cycle from the ground its planted foot sweeps", () => {
+    const { body, player } = character({ clips: [plantedWalk()] });
+    player.play("walk");
+    player.update(1 / 60);
+    // 0.6 units of backward sweep over the 0.6 s the foot is down: a 1 m/s walk cycle.
+    expect(player.stride.clipGroundSpeed).toBeCloseTo(1, 1);
+    expect(player.stride.inPlace).toBe(true);
+    // The body is walked at twice that, so the cycle has to run at twice the rate.
+    for (let frame = 0; frame < 4; frame += 1) {
+      body.position.z += 2 * (1 / 60);
+      player.update(1 / 60);
+    }
+    expect(player.stride.rate).toBeCloseTo(2, 1);
+    expect(player.stride.synced).toBe(true);
+  });
+});

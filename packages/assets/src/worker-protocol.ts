@@ -1,3 +1,4 @@
+import type { IAudioPassOptions } from "./passes/audio-config.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import type { IModelPassOptions } from "./passes/model.js";
 import type { ITexturePassOptions } from "./passes/texture.js";
@@ -11,6 +12,7 @@ import type { ITexturePassOptions } from "./passes/texture.js";
  * result says so (`concurrencyUsed`).
  */
 export type PassSpec =
+  | { readonly kind: "audio"; readonly options: IAudioPassOptions }
   /** No options: the pass is decided entirely by the input's extension. */
   | { readonly kind: "blender-import" }
   | { readonly kind: "lightmap"; readonly options: ILightmapPassOptions }

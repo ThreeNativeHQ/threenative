@@ -34,9 +34,23 @@ runs:
           packages/*/dist
           artifacts/workspace-packages
         key: workspace-dist-${{ runner.os }}-${{ hashFiles('packages/*/src/**', 'packages/*/package.json', 'packages/*/tsup.config.ts', 'packages/*/scripts/**', 'scripts/workspace-packages.ts', 'pnpm-lock.yaml') }}${{ inputs.key-suffix }}
+    # A cache hit restores `packages/*/dist` and the tarballs, and that used to be the whole story.
+    # It is not: core's build also copies `packages/engine-mcp/dist/index.js` to
+    # `packages/core/mcp/engine-server.mjs`, a generated file that lives outside `dist` and is
+    # therefore in no cache path. On a hit it did not exist, and the `build` job re-packs
+    # unconditionally afterwards (it must — the key deliberately omits templates, so a
+    # template-only edit hits and still needs a fresh tarball). The re-pack then overwrote the
+    # good cached core tarball with one missing its capability server, ten scaffolds installed it,
+    # and `engine.mjs` fell through to an `npx` registry fetch that answered nothing for 30 s.
+    #
+    # The bundle's own source is restored by this cache, so a hit can just redo the copy. That is
+    # cheaper than widening the cache and it keeps the invariant local to the thing that breaks it.
     - if: steps.dist.outputs.cache-hit == 'true'
       shell: bash
-      run: echo "workspace dist restored for these sources; skipping the build"
+      run: |
+        set -euo pipefail
+        echo "workspace dist restored for these sources; skipping the build"
+        node packages/core/scripts/bundle-engine-mcp.mjs
     - if: steps.dist.outputs.cache-hit != 'true'
       shell: bash
       run: |
@@ -78,4 +92,33 @@ runs:
           echo "TN_WORKSPACE_ARCHIVES_INCOMPLETE: $archives of $expected tarballs" >&2
           exit 1
         fi
-        echo "workspace dist complete: $bundles bundles, $archives tarballs"
+        # Counting tarballs proved nothing about what is inside one. The count was right — 10 of
+        # 10 — on the run whose core tarball had no capability server in it, because the file that
+        # went missing lives outside `dist` and outside the count. A package's tarball is what ten
+        # downstream jobs actually install, so at least one of them gets looked into.
+        core_archive="$(ls artifacts/workspace-packages/threenative-core-*.tgz 2>/dev/null | head -1)"
+        if [ -z "$core_archive" ]; then
+          echo "TN_WORKSPACE_ARCHIVES_INCOMPLETE: no @threenative/core tarball" >&2
+          exit 1
+        fi
+        # Listed to a file, and nothing is piped into `grep -q`. `grep -q` exits at its first
+        # match and closes the pipe under it; whatever is still writing takes SIGPIPE, and
+        # `set -o pipefail` makes that dead producer the step's status. `tar` printed
+        # `tar: stdout: write error` and the job failed with the archive perfectly valid — it
+        # took out typecheck, build, test-native and all three test-unit legs of one run while
+        # the same check passed on the commit before, because whether it fires depends on how
+        # far through the listing the match falls. Same shape as the `xvfb-run` trap this
+        # repository already refuses, where a cleanup's status replaces the real one.
+        #
+        # Piping a variable instead of `tar` does not fix it: `printf` is then the producer that
+        # dies. The pipe has to go.
+        core_listing="$(mktemp)"
+        tar -tzf "$core_archive" > "$core_listing"
+        for required in package/mcp/engine-server.mjs package/mcp/engine.mjs package/capabilities.json; do
+          if ! grep -qxF "$required" "$core_listing"; then
+            echo "TN_WORKSPACE_ARCHIVE_MISSING: $core_archive has no $required" >&2
+            exit 1
+          fi
+        done
+        rm -f "$core_listing"
+        echo "workspace dist complete: $bundles bundles, $archives tarballs, core archive carries its MCP server"

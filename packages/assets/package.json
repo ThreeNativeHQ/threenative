@@ -48,6 +48,7 @@
     "@gltf-transform/core": "catalog:",
     "@gltf-transform/extensions": "catalog:",
     "@gltf-transform/functions": "catalog:",
+    "@wasm-audio-decoders/ogg-vorbis": "0.1.20",
     "draco3dgltf": "^1.5.7",
     "jpeg-js": "0.4.4",
     "ktx-parse": "^1.1.0",
@@ -56,6 +57,7 @@
     "pngjs": "7.0.0",
     "three": "catalog:",
     "three-mesh-bvh": "catalog:",
+    "wasm-media-encoders": "0.7.0",
     "xatlasjs": "0.2.0"
   }
 }

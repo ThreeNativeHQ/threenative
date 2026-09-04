@@ -84,6 +84,11 @@ const high: IWorldEnvironmentOptions = {
   // Dropping this pair is what `medium` is.
   ssgiEnabled: true,
   ssgiQuality: "medium",
+  // Half the frame in each axis, so a quarter of the pixels. Full-res SSGI cost 14.4 ms
+  // of a 39.7 ms frame on an RTX 2080; this is the same gather over a quarter of the work,
+  // and it measured *sharper* because the scaler spends what it hands back on resolution.
+  // `worldEnvironment.ts` explains why it takes a wrapper instead of a property.
+  ssgiResolutionScale: 0.5,
   // Screen-space reflections: ~4.1 ms.
   ssrEnabled: true,
   // A reflection carries almost no high-frequency detail, so half resolution costs a quarter of

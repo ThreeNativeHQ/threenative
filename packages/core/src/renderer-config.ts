@@ -70,3 +70,20 @@ export function resolveRendererAntialias(
   }
   return config?.antialias ?? fallback;
 }
+
+/**
+ * The same seam for alpha antialiasing, which spends the samples `antialias` buys rather than
+ * buying any of its own. Resolved separately because a platform can want one without the other:
+ * a phone that dropped to a single-sampled surface has no coverage mask to hand a cutout, and a
+ * game after a hard-edged look wants the samples on its geometry and not on its foliage.
+ */
+export function resolveRendererAlphaAntialiasing(
+  config: RendererConfig | undefined,
+  fallback: boolean | undefined,
+  os: PlatformOS,
+): boolean | undefined {
+  if (os === "android" && config?.android?.alphaAntialiasing !== undefined) {
+    return config.android.alphaAntialiasing;
+  }
+  return config?.alphaAntialiasing ?? fallback;
+}

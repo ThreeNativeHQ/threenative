@@ -49,6 +49,15 @@ export interface IStrideReport {
   readonly synced: boolean;
   /** True when a rate was measured and deliberately not applied. */
   readonly overridden: boolean;
+  /**
+   * True when the clip carries no root motion and its stride was read off the feet instead.
+   *
+   * `synced: false, overridden: false` is what an idle reports, so without this a game whose walk
+   * cycle is silently going unmatched cannot tell itself apart from one with nothing to match. An
+   * in-place clip that also yields no foot plant reports `inPlace: true` with a zero
+   * `clipGroundSpeed`, which names the asset as the thing to fix.
+   */
+  readonly inPlace: boolean;
 }
 
 /**
@@ -64,6 +73,139 @@ const STRIDE_RATE_MAX = 3;
 const STRIDE_SPEED_FLOOR = 1e-4;
 /** A clip carrying less ground than this per second is not locomotion. */
 const CLIP_GROUND_FLOOR = 1e-3;
+/** Poses taken across one cycle when reading an in-place clip's stride off its feet. */
+const PLANT_SAMPLES = 64;
+/** A contact bone is one that reaches this near the lowest point the rig visits. */
+const CONTACT_BAND = 0.15;
+/** Of a contact bone's own vertical arc, the bottom slice counts as planted. */
+const PLANT_BAND = 0.3;
+
+/** What one clip's own locomotion measured out at, cached per clip name. */
+interface IClipStride {
+  /** Metres of ground the clip carries per clip-second at rate 1. */
+  readonly groundSpeed: number;
+  /** True when no root track travelled and the number came from the feet — or from nothing. */
+  readonly inPlace: boolean;
+}
+
+/**
+ * The ground a clip's root track carries, per clip-second, in the track's own units.
+ *
+ * **Net** displacement, not distance walked. Summing every step's magnitude is what made a
+ * swinging thigh outscore a still root: a limb that ends the cycle where it began has covered no
+ * ground however far it waved, while a travelling root ends the cycle somewhere else — that is
+ * what root motion *is*. Measured in `sandbox/wildwood`: `ANIM_DeerStag_Walk` scored 0.1287 under
+ * the old sum (from `STAG_-R-Thigh`) and scores 0 under this one, which is the truth.
+ */
+function clipRootMotionSpeed(clip: AnimationClip): number {
+  let best = 0;
+  for (const track of clip.tracks) {
+    if (!track.name.endsWith(".position")) continue;
+    const values = (track as VectorKeyframeTrack).values;
+    if (values.length < 6) continue;
+    const dx = (values[values.length - 3] ?? 0) - (values[0] ?? 0);
+    const dz = (values[values.length - 1] ?? 0) - (values[2] ?? 0);
+    best = Math.max(best, Math.hypot(dx, dz) / clip.duration);
+  }
+  return best;
+}
+
+/**
+ * The ground an in-place clip was authored for, read off the feet, in world metres per clip-second.
+ *
+ * A planted foot sweeps backward relative to the body at exactly the speed the body is meant to be
+ * travelling — that is what "planted" means — so the stance phase of a cycle states the clip's
+ * speed even though nothing in it translates. Contact bones are found by where they go rather than
+ * by what they are called: whatever reaches the bottom of the rig's arc is a foot, in any rig and
+ * any language. The median over stance frames rejects the toe-off and heel-strike ends of the
+ * sweep, and the median over feet rejects a limb that never plants.
+ *
+ * The rig is driven and then restored to the transforms it arrived with, once per clip.
+ */
+function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
+  const objects: Object3D[] = [];
+  root.traverse((object) => objects.push(object));
+  const restore = objects.map((object) => ({
+    object,
+    position: object.position.clone(),
+    quaternion: object.quaternion.clone(),
+    scale: object.scale.clone(),
+  }));
+
+  const mixer = new AnimationMixer(root);
+  const action = mixer.clipAction(clip);
+  action.play();
+  const paths = objects.map(() => [] as { x: number; y: number; z: number }[]);
+  const step = clip.duration / PLANT_SAMPLES;
+  try {
+    for (let frame = 0; frame <= PLANT_SAMPLES; frame += 1) {
+      mixer.setTime(frame * step);
+      root.updateMatrixWorld(true);
+      for (let index = 0; index < objects.length; index += 1) {
+        (objects[index] as Object3D).getWorldPosition(scratchWorld);
+        (paths[index] as { x: number; y: number; z: number }[]).push({
+          x: scratchWorld.x,
+          y: scratchWorld.y,
+          z: scratchWorld.z,
+        });
+      }
+    }
+  } finally {
+    action.stop();
+    mixer.uncacheClip(clip);
+    for (const entry of restore) {
+      entry.object.position.copy(entry.position);
+      entry.object.quaternion.copy(entry.quaternion);
+      entry.object.scale.copy(entry.scale);
+    }
+    root.updateMatrixWorld(true);
+  }
+
+  const rootPath = paths[0];
+  if (rootPath === undefined) return 0;
+  let lowest = Number.POSITIVE_INFINITY;
+  let highest = Number.NEGATIVE_INFINITY;
+  for (const path of paths)
+    for (const point of path) {
+      lowest = Math.min(lowest, point.y);
+      highest = Math.max(highest, point.y);
+    }
+  const height = highest - lowest;
+  if (!(height > 0)) return 0;
+
+  const speeds: number[] = [];
+  for (const path of paths) {
+    let low = Number.POSITIVE_INFINITY;
+    let high = Number.NEGATIVE_INFINITY;
+    for (const point of path) {
+      low = Math.min(low, point.y);
+      high = Math.max(high, point.y);
+    }
+    // A contact bone visits the floor and lifts off it again. One that never descends is not a
+    // foot, and one that never rises is a stationary prop rather than a cycling limb.
+    if (low > lowest + height * CONTACT_BAND) continue;
+    const arc = high - low;
+    if (!(arc > height * CLIP_GROUND_FLOOR)) continue;
+    const planted = low + arc * PLANT_BAND;
+    const rates: number[] = [];
+    for (let frame = 1; frame < path.length; frame += 1) {
+      const previous = path[frame - 1] as { x: number; y: number; z: number };
+      const current = path[frame] as { x: number; y: number; z: number };
+      if (current.y > planted || previous.y > planted) continue;
+      const anchor = rootPath[frame] as { x: number; y: number; z: number };
+      const before = rootPath[frame - 1] as { x: number; y: number; z: number };
+      const dx = current.x - anchor.x - (previous.x - before.x);
+      const dz = current.z - anchor.z - (previous.z - before.z);
+      rates.push(Math.hypot(dx, dz) / step);
+    }
+    if (rates.length < 4) continue;
+    rates.sort((first, second) => first - second);
+    speeds.push(rates[Math.floor(rates.length / 2)] as number);
+  }
+  if (speeds.length === 0) return 0;
+  speeds.sort((first, second) => first - second);
+  return speeds[Math.floor(speeds.length / 2)] as number;
+}
 
 export interface IAnimationPlayOptions {
   readonly fade?: number;
@@ -87,7 +229,7 @@ export class AnimationPlayer {
   #fadeElapsed = 0;
   #fadeDuration = 0;
   #clips = new Map<string, AnimationClip>();
-  #clipGroundSpeed = new Map<string, number>();
+  #clipGroundSpeed = new Map<string, IClipStride>();
   #strideSync: boolean;
   #strideRoot: Object3D;
   #lastRootPosition = new Vector3();
@@ -95,6 +237,7 @@ export class AnimationPlayer {
   #stride: IStrideReport = {
     clipGroundSpeed: 0,
     groundSpeed: 0,
+    inPlace: false,
     overridden: false,
     rate: 1,
     synced: false,
@@ -149,10 +292,11 @@ export class AnimationPlayer {
     if (name === undefined) return this.#stride;
     // Derived on read so a clip's own ground speed is answerable the moment it is played, before
     // any frame has advanced. It is a property of the asset, and cached.
-    const clipGroundSpeed = this.#groundSpeedOf(name);
-    return clipGroundSpeed === this.#stride.clipGroundSpeed
+    const measured = this.#measureOf(name);
+    return measured.groundSpeed === this.#stride.clipGroundSpeed &&
+      measured.inPlace === this.#stride.inPlace
       ? this.#stride
-      : { ...this.#stride, clipGroundSpeed };
+      : { ...this.#stride, clipGroundSpeed: measured.groundSpeed, inPlace: measured.inPlace };
   }
 
   /** The clip behind a name, for a game that wants the action or the raw `AnimationClip`. */
@@ -163,36 +307,48 @@ export class AnimationPlayer {
   }
 
   /**
-   * How much ground a clip carries per clip-second, measured from its own root track.
+   * How much ground a clip carries per clip-second, in the world's metres.
    *
    * Horizontal only: a jump's vertical arc is not stride. Measured once per clip and cached,
    * because it is a property of the asset and cannot change between frames.
    *
-   * The track is found by name rather than by index — a rig's root translation is authored on
-   * whichever node the exporter called the root, and the position tracks of fingers and props sit
-   * in the same list. The longest horizontal displacement wins, which is the root by construction:
-   * every other node's translation is relative to a parent that is already carrying it.
+   * Root motion first, feet second. Most game locomotion is authored **in place** — every ActorX
+   * and Unreal export, every Mixamo "in place" clip, every stock animal pack — and a convention
+   * that only works on the travelling minority is a convention that does not work.
    */
-  #groundSpeedOf(name: string): number {
+  #measureOf(name: string): IClipStride {
     const cached = this.#clipGroundSpeed.get(name);
     if (cached !== undefined) return cached;
     const clip = this.#clips.get(name);
-    let best = 0;
+    let measured: IClipStride = { groundSpeed: 0, inPlace: true };
     if (clip !== undefined && clip.duration > 0) {
-      for (const track of clip.tracks) {
-        if (!track.name.endsWith(".position")) continue;
-        const values = (track as VectorKeyframeTrack).values;
-        let travelled = 0;
-        for (let index = 3; index + 2 < values.length; index += 3) {
-          const dx = (values[index] ?? 0) - (values[index - 3] ?? 0);
-          const dz = (values[index + 2] ?? 0) - (values[index - 1] ?? 0);
-          travelled += Math.hypot(dx, dz);
-        }
-        best = Math.max(best, travelled / clip.duration);
-      }
+      const rootMotion = clipRootMotionSpeed(clip);
+      measured =
+        rootMotion >= CLIP_GROUND_FLOOR
+          ? { groundSpeed: rootMotion * this.#trackScale(), inPlace: false }
+          : { groundSpeed: footPlantSpeed(this.mixer.getRoot() as Object3D, clip), inPlace: true };
     }
-    this.#clipGroundSpeed.set(name, best);
-    return best;
+    this.#clipGroundSpeed.set(name, measured);
+    return measured;
+  }
+
+  #groundSpeedOf(name: string): number {
+    return this.#measureOf(name).groundSpeed;
+  }
+
+  /**
+   * What one unit of a root track is worth in world metres.
+   *
+   * A clip's translation values are in the animated node's **parent** space, while the ground the
+   * body covers is measured in world metres. `normaliseToMetres` — the framework's own convention
+   * for sizing an import — all but guarantees the two differ, and a half-scale rig compared
+   * without this reads its own stride at twice the speed. The foot-plant path below needs no such
+   * conversion: it reads world positions, which already carry every ancestor's scale.
+   */
+  #trackScale(): number {
+    const root = this.mixer.getRoot() as Object3D;
+    (root.parent ?? root).getWorldScale(scratchScale);
+    return (Math.abs(scratchScale.x) + Math.abs(scratchScale.z)) / 2;
   }
 
   /**
@@ -214,7 +370,8 @@ export class AnimationPlayer {
     this.#lastRootPosition.copy(scratchWorld);
     this.#hasLastRootPosition = true;
     if (name === undefined || action === undefined || dt <= 0) return;
-    const clipGroundSpeed = this.#groundSpeedOf(name);
+    const measured = this.#measureOf(name);
+    const clipGroundSpeed = measured.groundSpeed;
     const groundSpeed = moved / dt;
     if (clipGroundSpeed < CLIP_GROUND_FLOOR) {
       // Not locomotion. An idle, a reload or a death is authored at the rate it is authored at,
@@ -223,6 +380,7 @@ export class AnimationPlayer {
       this.#stride = {
         clipGroundSpeed,
         groundSpeed,
+        inPlace: measured.inPlace,
         overridden: false,
         rate: 1,
         synced: false,
@@ -241,6 +399,7 @@ export class AnimationPlayer {
     this.#stride = {
       clipGroundSpeed,
       groundSpeed,
+      inPlace: measured.inPlace,
       overridden: !this.#strideSync,
       rate,
       synced: applies,
@@ -370,6 +529,7 @@ export class AnimationPlayer {
     this.#stride = {
       clipGroundSpeed: 0,
       groundSpeed: 0,
+      inPlace: false,
       overridden: false,
       rate: 1,
       synced: false,
@@ -384,3 +544,4 @@ export class AnimationPlayer {
 
 /** Reused so a per-frame stride read costs no allocation. See PRD-189. */
 const scratchWorld = new Vector3();
+const scratchScale = new Vector3();

@@ -11,7 +11,7 @@ prd_contract: v1
 
 **Owner:** unassigned
 
-**Source:** [PRD-328](critical/PRD-328-launch-is-measured-on-the-engine-that-ships.md)
+**Source:** [PRD-328](../done/PRD-328-launch-is-measured-on-the-engine-that-ships.md)
 Phase 3, and the measured launch table in `docs/verification/runtime-perf-state.md` §5b.
 
 **Outcome:** a V8 code cache is written after the first compile and consumed on later launches, or

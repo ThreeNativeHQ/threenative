@@ -17,6 +17,7 @@ import {
 import {
   discoverNativeTestTargets,
   executionContracts,
+  targetsMissingBlockedRegistration,
   validateExecutionContracts,
 } from "./verify-native-contracts.mjs";
 import { nativeCoverageEvidenceDigest } from "./native-coverage-evidence.mjs";
@@ -73,6 +74,43 @@ export function requireCoverageProfile(path, fileExists = existsSync) {
 
 export function coverageConfigurationBlocker(target) {
   return configurationBlockers.get(target);
+}
+
+/**
+ * The reason this configure gives for a target it registered but will not run, or undefined when
+ * the target is a live test. `tn_register_blocked_test` registers a DISABLED entry labelled
+ * `blocked` whose command echoes why, so an optional dependency that was not found is answered by
+ * the configure that ran rather than by a list of target names kept in this file - which cannot be
+ * right on both a machine that has quiche and one that does not.
+ */
+export function blockedRegistrationReason(inventory, target) {
+  const entry = inventory.find(({ name }) => name === target);
+  if (entry === undefined) return undefined;
+  const properties = entry.properties ?? [];
+  const disabled = properties.some(({ name, value }) => name === "DISABLED" && value === true);
+  const labelled = properties.some(
+    ({ name, value }) => name === "LABELS" && (value ?? []).includes("blocked"),
+  );
+  if (!(disabled && labelled)) return undefined;
+  const echoed = (entry.command ?? []).find((argument) => argument.startsWith("BLOCKED: "));
+  return echoed === undefined ? "blocked by this configure" : echoed.slice("BLOCKED: ".length);
+}
+
+/**
+ * The WebGPU backend this configure selected, or undefined when it found none. A tree without
+ * `third_party/` configures perfectly happily - cmake prints "Dawn library or headers not found"
+ * among a hundred other lines and carries on - and the host then fails to compile, because the
+ * full `BindingsState` and the `WGPUPresentMode_*` constants only exist behind
+ * `MYSTRAL_WEBGPU_DAWN` / `MYSTRAL_WEBGPU_WGPU`. Read from the compile line the configure wrote,
+ * so it is that configure's answer rather than a guess about the machine.
+ */
+export function configuredWebgpuBackend(compileCommands) {
+  const defines = compileCommands.flatMap(({ command, arguments: argv }) =>
+    typeof command === "string" ? command.split(/\s+/u) : (argv ?? []),
+  );
+  if (defines.includes("-DMYSTRAL_WEBGPU_DAWN")) return "dawn";
+  if (defines.includes("-DMYSTRAL_WEBGPU_WGPU")) return "wgpu";
+  return undefined;
 }
 
 export function summarizeNativeCoverage({
@@ -544,13 +582,14 @@ function registrationsForTarget(registrations, target) {
   return registrations.filter((name) => name === target || name.startsWith(`${target}-`)).sort();
 }
 
-function runCoverageTargets({ buildDirectory, cmake, ctest, registrations, targets }) {
+function runCoverageTargets({ buildDirectory, cmake, ctest, inventory, registrations, targets }) {
   const blockedTargets = [];
   const executedTargets = [];
   const executionFailures = [];
   const expectedProfilePrefixes = [];
   for (const target of targets) {
-    const configurationBlocker = coverageConfigurationBlocker(target);
+    const configurationBlocker =
+      blockedRegistrationReason(inventory, target) ?? coverageConfigurationBlocker(target);
     if (configurationBlocker !== undefined) {
       blockedTargets.push({ reason: configurationBlocker, target });
       continue;
@@ -644,7 +683,23 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
   const cmakeSource = readFileSync(join(runtimeRoot, "CMakeLists.txt"), "utf8");
   const targets = discoverNativeTestTargets(cmakeSource);
   validateExecutionContracts(targets, executionContracts);
-  const registrations = ctestRegistrations(buildDirectory, ctest);
+  const compileCommandsPath = join(buildDirectory, "compile_commands.json");
+  if (!existsSync(compileCommandsPath)) {
+    throw new Error(`the coverage configure wrote no compile inventory: ${compileCommandsPath}`);
+  }
+  if (configuredWebgpuBackend(JSON.parse(readFileSync(compileCommandsPath, "utf8"))) === undefined) {
+    throw new Error(
+      "the coverage configure selected no WebGPU backend, so the native host cannot compile. third_party/ is missing or incomplete - run pnpm native:build (or node packages/runtime-native/scripts/download-deps.mjs) and re-run.",
+    );
+  }
+  const hollow = targetsMissingBlockedRegistration(cmakeSource);
+  if (hollow.length > 0) {
+    throw new Error(
+      `native test target(s) written under a condition that registers nothing when it does not hold: ${hollow.join(", ")}. Give each one a tn_register_blocked_test in the else branch, or a platforms list on its execution contract.`,
+    );
+  }
+  const inventory = ctestInventory(buildDirectory, ctest);
+  const registrations = inventory.map(({ name }) => name);
   for (const target of targets) {
     if (!registrations.includes(target)) throw new Error(`CTest omitted native target: ${target}`);
   }
@@ -658,6 +713,7 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
       buildDirectory,
       cmake,
       ctest,
+      inventory,
       registrations,
       targets,
     });

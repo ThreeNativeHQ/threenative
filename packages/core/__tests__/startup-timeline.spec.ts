@@ -89,4 +89,86 @@ describe("startup timeline", () => {
       });
     }
   });
+
+  it("should report the player's wait, not the framework's, when the game holds startup", async () => {
+    const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
+    Object.defineProperties(canvas, {
+      clientHeight: { configurable: true, value: 90 },
+      clientWidth: { configurable: true, value: 160 },
+      parentElement: { configurable: true, value: null },
+    });
+    let capturedCtx: ICtx | undefined;
+    let landDetail: () => void = () => undefined;
+    class Streaming extends Scene {
+      static override readonly initialState = {};
+      override load(ctx: ICtx): void {
+        // What a game with a second asset tier does: register the tier, then enter on the first.
+        ctx.startup.hold(
+          "detail-tier",
+          new Promise<void>((resolve) => {
+            landDetail = resolve;
+          }),
+        );
+      }
+      override enter(ctx: ICtx): undefined {
+        capturedCtx = ctx;
+        return undefined;
+      }
+    }
+    let frame: ((time: number) => void) | undefined;
+    const game = defineGame({
+      renderer: {
+        canvas: canvas as never,
+        preferWebGPU: false,
+        webgl2Factory: () =>
+          ({ domElement: canvas, render: () => undefined, setSize: () => undefined }) as never,
+      },
+      scenes: { streaming: Streaming },
+      start: "streaming",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      for (
+        let index = 1;
+        index <= 12 && capturedCtx?.startup.timeline.frameworkReadyMs === undefined;
+        index += 1
+      ) {
+        frame(index * 16.7);
+        await Promise.resolve();
+      }
+      // The framework is done and the world is not. This is the state that used to be
+      // unrepresentable: `readyMs` was stamped here, and a playtest asserting `maxReadyMs`
+      // measured a moment the player never reached.
+      const held = capturedCtx?.startup.timeline;
+      expect(held?.frameworkReadyMs).toBeTypeOf("number");
+      expect(held?.readyMs).toBeUndefined();
+      expect(capturedCtx?.startup.phase).toBe("collapsing");
+      // The bar keeps moving across the held window rather than sitting full.
+      expect(capturedCtx?.startup.progress).toBeGreaterThanOrEqual(0.9);
+      expect(capturedCtx?.startup.progress).toBeLessThan(1);
+
+      landDetail();
+      await capturedCtx?.startup.whenReady();
+      const ready = capturedCtx?.startup.timeline;
+      expect(ready?.readyMs).toBeTypeOf("number");
+      expect(ready?.readyMs ?? 0).toBeGreaterThanOrEqual(ready?.frameworkReadyMs ?? -1);
+      expect(capturedCtx?.startup.progress).toBe(1);
+      expect(capturedCtx?.startup.phase).toBe("ready");
+    } finally {
+      await game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+    }
+  });
 });
