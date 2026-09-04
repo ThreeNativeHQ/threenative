@@ -1,0 +1,12 @@
+[
+  {
+    "source": "browser-console",
+    "text": "[vite] connecting...",
+    "type": "debug"
+  },
+  {
+    "source": "browser-console",
+    "text": "[vite] connected.",
+    "type": "debug"
+  }
+]

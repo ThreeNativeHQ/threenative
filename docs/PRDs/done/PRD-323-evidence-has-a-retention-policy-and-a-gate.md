@@ -31,10 +31,20 @@ were then enumerated rather than discovered, finding two more (`round-ledger.ts`
 scanner fixed, and the deletion re-run — putting 97 artifacts and 25.4 MB back that a by-name scan
 had condemned.
 
-A third finding is recorded rather than fixed: **classification is single-pass**, so deleting an
+**A fourth defect was not in the scanner at all**, and CI caught it three suites late: Phase 4
+first untracked the whole sweep tree on the assumption it was build output. It is half build
+output. `sweep-ledger.spec.ts` fails with *"live ledger requires committed proof.json"*,
+`sweep-delta.spec.ts` matches *"the committed delta record"*, and `capture.spec.ts` reads a real
+archived frame by literal path — all green locally, where the files are on disk, and red in CI,
+where they are not. Narrowed to the arm sources (`src/`, `starter-baseline/`, `framework-types/`,
+`public/`, root configs), which hold **all 2,963 `.ts` and no measurements**. A doc-links exemption
+written while the whole tree was untracked was then reverted rather than shipped.
+
+A fifth finding is recorded rather than fixed: **classification is single-pass**, so deleting an
 uncited citer orphans what it cited. Eighteen artifacts are uncited now that were cited before,
-and they were kept rather than swept up in the same pass. A gate that keeps `SCRIPT_WALKED_ROOTS`
-honest against new walkers is also not written, and is the obvious next work here.
+and they were kept rather than swept up in the same pass. Two gates are also missing and are the
+obvious next work: one keeping `SCRIPT_WALKED_ROOTS` honest against new walkers, and one that
+notices when a path leaving git is read by a spec.
 
 Phase 5 did **not** consolidate `PRD-251-phase0.md`. Its own gate forbids it — the file is 3,922
 lines of third-party source pinned from `imsarah/threejs-world@398320e9`, and PRD-251's live borrow

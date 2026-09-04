@@ -1,0 +1,23 @@
+{
+  "name": "arena-play",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 12,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "move-right", "press": "ArrowRight", "holdTicks": 45, "release": true },
+    { "kind": "input", "label": "fire-sweep", "pointerPosition": { "x": 0.7, "y": 0.5 }, "press": "Space", "holdTicks": 70, "release": true },
+    { "kind": "wait", "waitTicks": 25 }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "noRuntimeDiagnostics": true, "runtimeReady": true },
+    "movement": { "entity": "player", "minDistance": 2 },
+    "resources": [
+      { "id": "GameState", "path": "score", "gte": 3, "changed": true },
+      { "id": "GameState", "path": "playerX", "changed": true }
+    ],
+    "states": [{ "entity": "mission", "equals": "won" }],
+    "visibility": [{ "entity": "player", "minProjectedPixels": 400, "maxOffscreenRatio": 0.05 }]
+  }
+}

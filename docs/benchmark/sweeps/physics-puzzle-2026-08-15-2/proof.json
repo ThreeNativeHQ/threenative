@@ -1,0 +1,200 @@
+{
+  "arm": "framework",
+  "genre": "physics-puzzle",
+  "passed": 0,
+  "proofHash": "d8e90936be7bec4046af766b108fdd7b1dcb92aad3d1e87e4c72b2de40d592f3",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "details": {
+            "after": "done",
+            "before": "idle",
+            "expected": {
+              "equals": "done",
+              "changed": true
+            },
+            "id": "state",
+            "path": "replayPhase",
+            "trivial": false
+          },
+          "id": "resource.state.replayPhase",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": "mismatch",
+            "before": "unknown",
+            "expected": {
+              "equals": "match",
+              "changed": true
+            },
+            "id": "state",
+            "path": "replayMatch",
+            "trivial": false
+          },
+          "id": "resource.state.replayMatch",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": 6132,
+            "expectedRuntime": null,
+            "observed": 90210,
+            "observedRuntime": {
+              "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+              "core": "0.1.0",
+              "randomState": 90210,
+              "rapier": "0.19.3",
+              "step": 0.016666666666666666
+            }
+          },
+          "id": "world.seed",
+          "pass": false
+        },
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'replayMatch'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_WORLD_ASSERTION_FAILED",
+          "message": "Runtime world seed 90210 did not equal 6132.",
+          "observedRuntimePath": "observations.json/runtimeObservations/gameplay/world/seed",
+          "severity": "error",
+          "suggestion": "Expose the configured world seed and deterministic runtime fingerprint through the runtime bridge and rerun the scenario."
+        }
+      ],
+      "name": "physics-puzzle-deterministic-replay-proof",
+      "verdict": "fail"
+    },
+    {
+      "assertions": [
+        {
+          "details": {
+            "after": 32,
+            "before": 22,
+            "expected": {
+              "gte": 30,
+              "changed": true
+            },
+            "id": "state",
+            "path": "settled",
+            "trivial": false
+          },
+          "id": "resource.state.settled",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": 8,
+            "before": 0,
+            "expected": {
+              "gte": 1,
+              "changed": true
+            },
+            "id": "state",
+            "path": "contacts",
+            "trivial": false
+          },
+          "id": "resource.state.contacts",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": 2,
+            "before": 0,
+            "expected": {
+              "gte": 1,
+              "changed": true
+            },
+            "id": "state",
+            "path": "phaseThroughs",
+            "trivial": false
+          },
+          "id": "resource.state.phaseThroughs",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": 45.44496526716235,
+            "before": 6.921560492377505e-7,
+            "expected": {
+              "gte": 1.5,
+              "changed": true
+            },
+            "id": "state",
+            "path": "distance",
+            "trivial": false
+          },
+          "id": "resource.state.distance",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": true,
+            "before": false,
+            "expected": {
+              "equals": true,
+              "changed": true
+            },
+            "id": "state",
+            "path": "goalReached",
+            "trivial": false
+          },
+          "id": "resource.state.goalReached",
+          "pass": true
+        },
+        {
+          "details": {
+            "expected": 6132,
+            "expectedRuntime": null,
+            "observed": 90210,
+            "observedRuntime": {
+              "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+              "core": "0.1.0",
+              "randomState": 90210,
+              "rapier": "0.19.3",
+              "step": 0.016666666666666666
+            }
+          },
+          "id": "world.seed",
+          "pass": false
+        },
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_WORLD_ASSERTION_FAILED",
+          "message": "Runtime world seed 90210 did not equal 6132.",
+          "observedRuntimePath": "observations.json/runtimeObservations/gameplay/world/seed",
+          "severity": "error",
+          "suggestion": "Expose the configured world seed and deterministic runtime fingerprint through the runtime bridge and rerun the scenario."
+        }
+      ],
+      "name": "physics-puzzle-observable-behaviour-proof",
+      "verdict": "fail"
+    }
+  ],
+  "total": 2
+}

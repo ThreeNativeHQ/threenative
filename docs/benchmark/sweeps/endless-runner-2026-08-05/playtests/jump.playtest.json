@@ -1,0 +1,21 @@
+{
+  "name": "endless-runner-jump",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "jump-barrier", "press": "Space", "holdFrames": 1, "release": true },
+    { "kind": "wait", "label": "clear-barrier", "waitFrames": 85, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "movement": { "entity": "player", "minAxisDelta": { "axis": "-z", "min": 8 } },
+    "resources": [
+      { "id": "GameState", "path": "jumps", "gte": 1, "changed": true },
+      { "id": "GameState", "path": "peakRise", "gte": 0.5, "changed": true }
+    ],
+    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+  }
+}

@@ -1,0 +1,291 @@
+{
+  "arm": "vanilla",
+  "genre": "physics-puzzle",
+  "passed": 0,
+  "proofHash": "33c3acb029096205e3e04cc22afdd736575998b8a41ab3208888071ede654ab8",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "details": {
+            "after": "complete",
+            "before": "idle",
+            "expected": {
+              "equals": "done",
+              "changed": true
+            },
+            "id": "state",
+            "path": "replayPhase",
+            "trivial": false
+          },
+          "id": "resource.state.replayPhase",
+          "pass": false
+        },
+        {
+          "details": {
+            "after": true,
+            "before": false,
+            "expected": {
+              "equals": "match",
+              "changed": true
+            },
+            "id": "state",
+            "path": "replayMatch",
+            "trivial": false
+          },
+          "id": "resource.state.replayMatch",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": 6132,
+            "expectedRuntime": null,
+            "observed": 6132,
+            "observedRuntime": {
+              "agent": "threenative-r8-vanilla",
+              "core": "three",
+              "randomState": 1425195863,
+              "rapier": "0.20.0",
+              "step": 0.016666666666666666
+            }
+          },
+          "id": "world.seed",
+          "pass": true
+        },
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "policy": {
+              "noConsoleErrors": true,
+              "noNetworkErrors": true,
+              "noRuntimeDiagnostics": true,
+              "runtimeReady": true
+            },
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'replayPhase'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'state' path 'replayMatch'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        }
+      ],
+      "name": "physics-puzzle-deterministic-replay-proof",
+      "verdict": "fail"
+    },
+    {
+      "assertions": [
+        {
+          "details": {
+            "expected": 6132,
+            "expectedRuntime": null,
+            "observed": 6132,
+            "observedRuntime": {
+              "agent": "threenative-r8-vanilla",
+              "core": "three",
+              "randomState": 1425195863,
+              "rapier": "0.20.0",
+              "step": 0.016666666666666666
+            }
+          },
+          "id": "world.seed",
+          "pass": true
+        },
+        {
+          "details": {
+            "candidates": [
+              {
+                "entity": "mission",
+                "state": "won"
+              },
+              {
+                "entity": "player",
+                "state": "idle"
+              }
+            ],
+            "entity": "mission",
+            "expected": "won",
+            "observed": "won",
+            "terminal": {
+              "contactObserved": true,
+              "historyComplete": true,
+              "preExisting": true,
+              "step": "goal-contact"
+            }
+          },
+          "id": "states.mission",
+          "pass": false
+        },
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "policy": {
+              "noConsoleErrors": true,
+              "noNetworkErrors": true,
+              "noRuntimeDiagnostics": true,
+              "runtimeReady": true
+            },
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        },
+        {
+          "details": {
+            "distance": 2.4684945857986027,
+            "entity": "crate.27",
+            "minimum": 1.5
+          },
+          "id": "movement.distance",
+          "pass": true
+        },
+        {
+          "details": {
+            "atStep": "push-to-goal",
+            "candidates": [
+              "crate:crate:contact",
+              "player:crate:contact",
+              "player:crate.27:contact",
+              "player:crate.28:contact"
+            ],
+            "count": 30,
+            "entity": "anonymous",
+            "kind": "contact",
+            "minCount": 1
+          },
+          "id": "contact.anonymous",
+          "pass": true
+        },
+        {
+          "details": {
+            "atStep": "cross-pass-through",
+            "candidates": [
+              "player:ghost:trigger",
+              "player:ghost.3:trigger",
+              "player:ghost.4:trigger",
+              "player:goal:trigger",
+              "goal:player:trigger"
+            ],
+            "count": 6,
+            "entity": "anonymous",
+            "kind": "trigger",
+            "minCount": 1
+          },
+          "id": "contact.anonymous",
+          "pass": true
+        },
+        {
+          "details": {
+            "atStep": "goal-contact",
+            "candidates": [
+              "player:ghost:trigger",
+              "player:ghost.3:trigger",
+              "player:ghost.4:trigger",
+              "player:goal:trigger",
+              "goal:player:trigger"
+            ],
+            "count": 6,
+            "entity": "anonymous",
+            "kind": "trigger",
+            "minCount": 1
+          },
+          "id": "contact.anonymous",
+          "pass": true
+        },
+        {
+          "details": {
+            "atStep": "settled",
+            "bodies": 40,
+            "candidates": [
+              "crate.0",
+              "crate.1",
+              "crate.2",
+              "crate.3",
+              "crate.4",
+              "crate.5",
+              "crate.6",
+              "crate.7",
+              "crate.8",
+              "crate.9",
+              "crate.10",
+              "crate.11",
+              "crate.12",
+              "crate.13",
+              "crate.14",
+              "crate.15",
+              "crate.16",
+              "crate.17",
+              "crate.18",
+              "crate.19",
+              "crate.20",
+              "crate.21",
+              "crate.22",
+              "crate.23",
+              "crate.24",
+              "crate.25",
+              "crate.26",
+              "crate.27",
+              "crate.28",
+              "crate.29",
+              "crate.30",
+              "crate.31",
+              "crate.32",
+              "crate.33",
+              "crate.34",
+              "crate.35",
+              "crate.36",
+              "crate.37",
+              "crate.38",
+              "crate.39"
+            ],
+            "compareToStep": "drop",
+            "entity": "crate.",
+            "minimum": 30,
+            "omittedBodies": 0,
+            "poseDistance": {
+              "mean": 0,
+              "sharedBodies": 40
+            },
+            "sleeping": 40
+          },
+          "id": "settled.crate.",
+          "pass": false
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_STATE_ORDERING_FAILED",
+          "message": "Terminal state 'won' was not observed after retained contact evidence at 'goal-contact'.",
+          "severity": "error",
+          "suggestion": "Ensure the entity has a StateMachine component and inspect runtimeObservations.gameplay.states in the playtest artifact."
+        },
+        {
+          "artifactPath": "observations.json",
+          "code": "TN_PLAYTEST_RAGDOLL_POSE_NOT_DISTINCT",
+          "message": "Expected mean settled-pose distance for 'crate.' to reach 0.05m from step 'drop'; observed 0m across 40 bodies.",
+          "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
+          "path": "/tmp/threenative-proof-NXSCxc/physics-puzzle.playtest.json/assert/settled/crate.",
+          "severity": "error",
+          "sourcePath": "/tmp/threenative-proof-NXSCxc/physics-puzzle.playtest.json",
+          "suggestion": "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake."
+        }
+      ],
+      "name": "physics-puzzle-observable-behaviour-proof",
+      "verdict": "fail"
+    }
+  ],
+  "total": 2
+}

@@ -26,10 +26,11 @@ cap."*
 
 ---
 
-## Three scanner defects found by trying to use it
+## Four defects found by trying to use it
 
 The citation scan was built in Phase 1 and never used to delete anything. Deleting with it exposed
-three ways a by-name scan condemns a live artifact. **All three were fixed in the scanner rather
+three ways a by-name scan condemns a live artifact — and Phase 4 exposed a fourth, in the
+assumption that an evidence tree is either documentation or build output. It was both. **All three were fixed in the scanner rather
 than worked around in the delete list**, because a hand-maintained exception list is the thing this
 repository has repeatedly learned drifts.
 
@@ -161,22 +162,54 @@ fails if an entry over-claims the tree it sits in.
 
 ---
 
-## Phase 4 — `docs/benchmark/sweeps` leaves the grep path
+## Phase 4 — the generated arm sources leave the grep path; the measurements stay
 
-Run before Phase 3, because 771 of the uncited artifacts were inside this tree and deleting them
-individually would have double-counted work the untracking does wholesale.
+### Defect 4 — untracking the whole tree, caught only by CI
 
-`git rm -r --cached docs/benchmark/sweeps` — **5,292 files untracked, 199 MB, still on disk.**
+The first attempt ran `git rm -r --cached docs/benchmark/sweeps`: 5,292 files, 199 MB. Every
+local gate passed, because the archives were still on this machine's disk. **CI failed three
+suites**, because they were not on its:
 
-Every reader resolves this tree through the filesystem, never through git, so nothing broke:
+```
+FAIL scripts/__tests__/sweep-ledger.spec.ts > should validate both recorded sweeps and match their archived measurements
+Error: sweep-endless-runner-2026-08-05.md: live ledger requires committed proof.json:
+       ENOENT ... docs/benchmark/sweeps/endless-runner-2026-08-05/proof.json
+FAIL scripts/__tests__/sweep-delta.spec.ts > matches the committed delta record to recomputed archives
+FAIL packages/playtest/__tests__/capture.spec.ts > a real archived frame remains accepted by the package guard
+```
+
+The word **committed** is in two of those three test names. A sweep archive is not build output;
+it is *half* build output. The measurements are the benchmark record and the suite asserts they
+are in git.
+
+Narrowed to the half that is genuinely regenerable — `src/`, `starter-baseline/`,
+`framework-types/`, `public/` and the scaffold's root config files:
+
+| | Untracked | Kept tracked |
+|---|---|---|
+| Files | 3,954 | 1,338 |
+| `.ts` files | **2,963 — all of them** | 0 |
+| Measurements | none | `sweep.json` ×107, `proof.json` ×100, `proof-artifacts/` ×379, `playtests/`, `captures/`, `screenshots/`, `brief.md`, `reference.png` |
+
+The whole AC4 win survives the narrowing: every one of the 2,963 `.ts` files is inside those four
+directories, verified by grepping the tracked list for a `.ts` outside them — zero hits. All 13
+sweep ledgers have their `proof.json` tracked, checked by resolving each ledger's `Archive:` field
+against `git ls-files`.
+
+Every reader resolves this tree through the filesystem, never through git:
 `sweep-archive.ts:219`, `make-sandbox.ts:309-314`, `sweep-capture`, `sweep-judge`, `sweep-pair`.
-`check-doc-links.ts:265` had already been filtering the tree out by hand, which is its own
-evidence that it was noise.
+`check-doc-links.ts:265` had already been filtering the tree out as a link *source*.
 
-`.gitignore` replaces four piecemeal subpath ignores with one whole-tree rule, keeping the reasons
-the old entries recorded (third-party pack terms on `*/vendor/` and `*/assets/`, ~8 MB gzipped
-transcripts carrying absolute machine paths). Root `AGENTS.md` gains the rule beside the existing
-`.worktrees/` one.
+`.gitignore` keeps the four pre-existing subpath rules with the reasons they recorded (third-party
+pack terms on `*/vendor/` and `*/assets/`, ~8 MB gzipped transcripts carrying absolute machine
+paths) and adds the arm-source rules beside them. Root `AGENTS.md` gains the rule beside the
+existing `.worktrees/` one, and says which half stays.
+
+**A doc-links exemption was written and then removed.** While the whole tree was untracked, three
+Markdown links pointed into it and `pnpm check:docs` went red, so `check-doc-links.ts` gained a
+skip for link *targets* under the tree. Narrowing Phase 4 re-tracked those exact artifacts, the
+links resolve for everyone again, and the exemption was reverted rather than shipped — an
+unjustified exemption in a gate is the thing this PRD spent three defects arguing against.
 
 **Ledger row 4 needed less than it claimed.** `scripts/arm-census.ts` does not reference the sweep
 tree at all — `grep -n "sweep" scripts/arm-census.ts` returns nothing — and
@@ -188,10 +221,10 @@ update was required in either.
 | | Before | After |
 |---|---:|---:|
 | Tracked `.ts` files under `docs/` | **2,965** | **2** |
-| Tracked files, whole repository | **9,070** | **3,623** |
-| Files crossed by `git grep -l renderer -- 'docs/**'` | **1,199** | **251** |
+| Tracked files, whole repository | **9,070** | **4,971** |
+| Files crossed by `git grep -l renderer -- 'docs/**'` | **1,199** | **322** |
 
-A repo-wide grep under `docs/` now crosses 79% fewer files, and the 2,963 generated arm sources
+A repo-wide grep under `docs/` now crosses 73% fewer files, and the 2,963 generated arm sources
 every agent's search used to walk are gone from the index.
 
 ---
@@ -206,16 +239,16 @@ generated. **No path was built from a shell variable and no `rm` ran against a g
 
 ```
 $ npx tsx scripts/check-evidence-budget.ts ; echo "exit=$?"
-evidence docs/verification: 661 tracked file(s), 65.9 MB
-evidence docs/benchmark: 55 tracked file(s), 17.5 MB
+evidence docs/verification: 664 tracked file(s), 65.9 MB
+evidence docs/benchmark: 1393 tracked file(s), 179.5 MB
 evidence budget: ok
 exit=0
 
 $ pnpm check:docs
-Checked 1376 relative documentation links across 911 Markdown files.
+Checked 1379 relative documentation links across 914 Markdown files.
 ```
 
-Zero broken links after the re-run — the check that caught defect 2 is the check that clears it.
+Zero broken links — the check that caught defect 2 is the check that clears it.
 
 ### AC3 — the self-improvement loop is unharmed
 
@@ -317,10 +350,11 @@ number here would have meant deleted visual baselines and six documents with bro
       crossed the cap and failed the gate, naming the tree.
 - [x] **AC3 — the self-improvement loop is unharmed.** `round:next`, `round:deletions`,
       `alpha:bar` byte-identical before and after.
-- [x] **AC4 — an agent's repo-wide grep no longer crosses generated sweep sources.** 1,199 → 251
+- [x] **AC4 — an agent's repo-wide grep no longer crosses generated sweep sources.** 1,199 → 322
       files; tracked `.ts` under `docs/` 2,965 → 2.
-- [x] **AC5 — every cited result still resolves.** `pnpm check:docs` green: 1,376 relative links
-      across 911 Markdown files, zero broken. This is the criterion that caught defect 2.
+- [x] **AC5 — every cited result still resolves.** `pnpm check:docs` green: 1,379 relative links
+      across 914 Markdown files, zero broken. This is the criterion that caught defect 2, and the
+      one that let the doc-links exemption be reverted once Phase 4 was narrowed.
 - [x] **AC6 — classification fails closed.** Unchanged from Phase 1 and still covered:
       `should throw when a citation source is unreadable rather than defaulting`. The new link
       pass defers to that check rather than throwing a competing message for the same file.
@@ -328,7 +362,10 @@ number here would have meant deleted visual baselines and six documents with bro
       observed in Phase 2.
 - [x] **AC8 — the rule is written where filing decisions are made.** `docs/PRDs/AGENTS.md`, mirror
       regenerated.
-- [x] **AC9 — the numbers moved.** Table above, with the `du -sh docs` shortfall stated as such.
+- [x] **AC9 — the numbers moved.** Table above. Three figures came in below an earlier draft's
+      claim and are reported as shortfalls rather than reframed: `du -sh docs` −21%, tracked bytes
+      −13% (not the −70% a wrong whole-tree untracking would have given), and a deletion count
+      deliberately reduced by the scanner fixes.
 - [x] **AC10 — the history decision is recorded.** Declined 2026-09-02 on 194.01 MiB measured;
       unchanged, and Phase 4's untracking does not alter it.
 - [x] **AC11 — no `rm` in a generated path.** `git rm --pathspec-from-file` against an explicit
@@ -343,6 +380,11 @@ number here would have meant deleted visual baselines and six documents with bro
 - Classification is **single-pass**; a deletion can orphan artifacts that were cited when the scan
   ran. Eighteen such artifacts exist now and the index names them. Running the scan to a fixed
   point would close this and is not done here.
+- **The citation scanner has no opinion on `.gitignore`.** Defect 4 was not a scanner bug at all —
+  it was untracking a tree by hand on the assumption it was build output. Nothing checks that a
+  path leaving git is not read by a test; CI caught it, three suites late. The four `SCRIPT_WALKED_ROOTS`
+  entries describe what *scripts* read; nothing describes what *specs* read by literal path, and
+  `capture.spec.ts:48` hard-codes one.
 - `SCRIPT_WALKED_ROOTS` is a hand-maintained list. Nothing detects a *new* script that opens an
   evidence tree as a root, so adding one without adding its entry re-opens defects 1 and 3. The
   walkers were enumerated by hand here; a gate that keeps the list honest is **not** written, and

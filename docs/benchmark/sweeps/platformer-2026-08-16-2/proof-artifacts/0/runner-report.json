@@ -1,0 +1,306 @@
+{
+  "diagnostics": [
+    {
+      "code": "TN_PLAYTEST_CONSOLE_ERROR",
+      "message": "1 browser console error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
+    },
+    {
+      "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
+      "message": "3 runtime diagnostic error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
+    }
+  ],
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true,
+    "runtimeReady": true
+  },
+  "distance": 0,
+  "entity": "",
+  "expectMoved": false,
+  "frames": 18,
+  "observations": {
+    "componentSeries": [
+      {
+        "label": "jump",
+        "snapshots": {},
+        "tick": 80
+      },
+      {
+        "label": "jump-arc",
+        "snapshots": {},
+        "tick": 94
+      }
+    ],
+    "console": [
+      {
+        "source": "browser-console",
+        "text": "[vite] connecting...",
+        "type": "debug"
+      },
+      {
+        "source": "browser-console",
+        "text": "[vite] connected.",
+        "type": "debug"
+      },
+      {
+        "source": "browser-console",
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "type": "error"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "resources": {
+      "state": {
+        "before": {
+          "jumps": 0,
+          "peakRise": 0,
+          "playerX": -6,
+          "playerY": 0,
+          "playerZ": 0,
+          "coins": 0,
+          "coinsTotal": 14,
+          "goalReached": false,
+          "respawns": 0,
+          "elapsed": 0.7500000000000007,
+          "lives": 3
+        },
+        "after": {
+          "jumps": 1,
+          "peakRise": 2.3916666666666657,
+          "playerX": -6,
+          "playerY": 2.3916666666666657,
+          "playerZ": 0,
+          "coins": 0,
+          "coinsTotal": 14,
+          "goalReached": false,
+          "respawns": 0,
+          "elapsed": 1.566666666666666,
+          "lives": 3
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "jump",
+        "snapshots": {
+          "state": {
+            "jumps": 1,
+            "peakRise": 1.1511111111111108,
+            "playerX": -6,
+            "playerY": 1.1511111111111108,
+            "playerZ": 0,
+            "coins": 0,
+            "coinsTotal": 14,
+            "goalReached": false,
+            "respawns": 0,
+            "elapsed": 1.3333333333333335,
+            "lives": 3
+          }
+        },
+        "tick": 80
+      },
+      {
+        "label": "jump-arc",
+        "snapshots": {
+          "state": {
+            "jumps": 1,
+            "peakRise": 2.3916666666666657,
+            "playerX": -6,
+            "playerY": 2.3916666666666657,
+            "playerZ": 0,
+            "coins": 0,
+            "coinsTotal": 14,
+            "goalReached": false,
+            "respawns": 0,
+            "elapsed": 1.566666666666666,
+            "lives": 3
+          }
+        },
+        "tick": 94
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [
+        {
+          "id": "fps",
+          "label": "FPS",
+          "value": 30
+        },
+        {
+          "id": "coins",
+          "label": "Coins",
+          "value": 0
+        },
+        {
+          "id": "backend",
+          "label": "Backend",
+          "value": "webgpu"
+        }
+      ],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeObservations": {
+      "gameplay": {
+        "animation": {
+          "player": {
+            "clip": "run",
+            "advancedFrames": 1
+          }
+        },
+        "states": {
+          "player": "run",
+          "mission": "playing"
+        }
+      },
+      "gameplaySeries": [
+        {
+          "gameplay": {
+            "animation": {
+              "player": {
+                "clip": "run",
+                "advancedFrames": 1
+              }
+            },
+            "states": {
+              "player": "run",
+              "mission": "playing"
+            }
+          },
+          "label": "jump",
+          "tick": 80
+        },
+        {
+          "gameplay": {
+            "animation": {
+              "player": {
+                "clip": "run",
+                "advancedFrames": 1
+              }
+            },
+            "states": {
+              "player": "run",
+              "mission": "playing"
+            }
+          },
+          "label": "jump-arc",
+          "tick": 94
+        }
+      ]
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "jump",
+        "signals": [],
+        "tick": 80
+      },
+      {
+        "label": "jump-arc",
+        "signals": [],
+        "tick": 94
+      }
+    ],
+    "visual": {
+      "changedPixelRatio": 0.5024403211805556,
+      "comparisonSource": "before-after"
+    }
+  },
+  "artifactDirectory": "/home/joao/projects/threejs-webgpu/docs/benchmark/sweeps/platformer-2026-08-16-2/proof-artifacts/0",
+  "capture": {
+    "adapter": {
+      "architecture": "turing",
+      "vendor": "nvidia",
+      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "16384",
+      "limit.maxStorageBufferBindingSize": "2147483644"
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan"
+    ],
+    "captureMethod": "page.screenshot",
+    "rendererKind": "webgpu",
+    "target": "web",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  "assertionResults": [
+    {
+      "id": "visual.0.frameDiff",
+      "pass": true,
+      "details": {
+        "after": true,
+        "changedPixelRatio": 0.5024403211805556,
+        "comparisonSource": "before-after",
+        "expected": {
+          "equals": true
+        },
+        "minChangedPixelRatio": 0.001
+      }
+    },
+    {
+      "details": {
+        "after": 1,
+        "before": 0,
+        "expected": {
+          "gte": 1,
+          "changed": true
+        },
+        "id": "state",
+        "path": "jumps",
+        "trivial": false
+      },
+      "id": "resource.state.jumps",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 2.3916666666666657,
+        "before": 0,
+        "expected": {
+          "gte": 0.5,
+          "changed": true
+        },
+        "id": "state",
+        "path": "peakRise",
+        "trivial": false
+      },
+      "id": "resource.state.peakRise",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 1,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 3
+      },
+      "id": "diagnostics",
+      "pass": false
+    }
+  ],
+  "pass": false,
+  "runtime": "web",
+  "scenario": "platformer-jump-proof",
+  "target": "web",
+  "url": "http://127.0.0.1:5190"
+}

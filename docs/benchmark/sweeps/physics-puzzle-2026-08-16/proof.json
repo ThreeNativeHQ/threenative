@@ -1,0 +1,434 @@
+{
+  "arm": "framework",
+  "genre": "physics-puzzle",
+  "passed": 0,
+  "proofHash": "e5be692b999fdad36baf5d795195de3423dd82d7bc577eb7fd36f3c241f13a95",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "details": {
+            "after": "done",
+            "before": "idle",
+            "expected": {
+              "changed": true
+            },
+            "id": "state",
+            "path": "replayPhase",
+            "trivial": false
+          },
+          "id": "resource.state.replayPhase",
+          "pass": true
+        },
+        {
+          "details": {
+            "alternatives": [
+              {
+                "after": "mismatch",
+                "before": "unknown",
+                "expected": {
+                  "equals": true
+                },
+                "id": "state",
+                "path": "replayMatch",
+                "trivial": false
+              },
+              {
+                "after": "mismatch",
+                "before": "unknown",
+                "expected": {
+                  "equals": "match"
+                },
+                "id": "state",
+                "path": "replayMatch",
+                "trivial": false
+              }
+            ],
+            "id": "state",
+            "observed": {
+              "before": {
+                "bodyCount": 33,
+                "settled": 6,
+                "pushed": 0,
+                "contacts": 0,
+                "phaseThroughs": 0,
+                "goalReached": false,
+                "goalBy": "",
+                "playerX": -5.400000095367432,
+                "playerZ": -0.3000001907348633,
+                "distance": 6.325514044623599e-7,
+                "seed": 90210,
+                "replayPhase": "idle",
+                "replayHashA": "",
+                "replayHashB": "",
+                "replayMatch": "unknown",
+                "score": 0,
+                "hovered": ""
+              },
+              "after": {
+                "bodyCount": 33,
+                "settled": 32,
+                "pushed": 1,
+                "contacts": 1,
+                "phaseThroughs": 0,
+                "goalReached": true,
+                "goalBy": "crate",
+                "playerX": -5.400000095367432,
+                "playerZ": -0.3000001311302185,
+                "distance": 6.921560492377505e-7,
+                "seed": 90210,
+                "replayPhase": "done",
+                "replayHashA": "850bc0e0",
+                "replayHashB": "662b1cbe",
+                "replayMatch": "mismatch",
+                "score": 3,
+                "hovered": ""
+              }
+            }
+          },
+          "id": "resource.state.anyOf",
+          "pass": false
+        },
+        {
+          "details": {
+            "expected": 6132,
+            "expectedRuntime": null,
+            "observed": 90210,
+            "observedRuntime": {
+              "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+              "core": "0.1.0",
+              "randomState": 90210,
+              "rapier": "0.19.3",
+              "step": 0.016666666666666666
+            }
+          },
+          "id": "world.seed",
+          "pass": false
+        },
+        {
+          "details": {
+            "consoleErrors": 39,
+            "networkErrors": 0,
+            "policy": {
+              "noConsoleErrors": true,
+              "noNetworkErrors": true,
+              "noRuntimeDiagnostics": true,
+              "runtimeReady": true
+            },
+            "runtimeDiagnostics": 39
+          },
+          "id": "diagnostics",
+          "pass": false
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ANY_OF_ASSERTION_FAILED",
+          "message": "No alternative path assertion for resource 'state' passed.",
+          "observedRuntimePath": "observations.json/resources/state",
+          "severity": "error",
+          "suggestion": "Check the shared action input and the resource paths exposed by the runtime bridge."
+        },
+        {
+          "code": "TN_PLAYTEST_WORLD_ASSERTION_FAILED",
+          "message": "Runtime world seed 90210 did not equal 6132.",
+          "observedRuntimePath": "observations.json/runtimeObservations/gameplay/world/seed",
+          "severity": "error",
+          "suggestion": "Expose the configured world seed and deterministic runtime fingerprint through the runtime bridge and rerun the scenario."
+        },
+        {
+          "code": "TN_PLAYTEST_CONSOLE_ERROR",
+          "message": "39 browser console error(s) were captured during playtest.",
+          "severity": "error",
+          "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
+        },
+        {
+          "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
+          "message": "39 runtime diagnostic error(s) were captured during playtest.",
+          "severity": "error",
+          "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
+        }
+      ],
+      "name": "physics-puzzle-deterministic-replay-proof",
+      "verdict": "fail"
+    },
+    {
+      "assertions": [
+        {
+          "details": {
+            "expected": 6132,
+            "expectedRuntime": null,
+            "observed": 90210,
+            "observedRuntime": {
+              "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+              "core": "0.1.0",
+              "randomState": 90210,
+              "rapier": "0.19.3",
+              "step": 0.016666666666666666
+            }
+          },
+          "id": "world.seed",
+          "pass": false
+        },
+        {
+          "details": {
+            "candidates": [],
+            "entity": "anonymous",
+            "expected": "won",
+            "observed": null,
+            "terminal": {
+              "contactObserved": false,
+              "historyComplete": true,
+              "preExisting": false,
+              "step": "goal-contact"
+            }
+          },
+          "id": "states.0",
+          "pass": false
+        },
+        {
+          "details": {
+            "consoleErrors": 38,
+            "networkErrors": 0,
+            "policy": {
+              "noConsoleErrors": true,
+              "noNetworkErrors": true,
+              "noRuntimeDiagnostics": true,
+              "runtimeReady": true
+            },
+            "runtimeDiagnostics": 38
+          },
+          "id": "diagnostics",
+          "pass": false
+        },
+        {
+          "details": {
+            "distance": 0,
+            "entity": "",
+            "minimum": 1.5
+          },
+          "id": "movement.distance",
+          "pass": false
+        },
+        {
+          "details": {
+            "atStep": "push-to-goal",
+            "candidates": [
+              "physics.body.0:physics.body.34",
+              "physics.body.0:physics.body.28",
+              "physics.body.0:physics.body.36",
+              "physics.body.0:physics.body.30",
+              "physics.body.0:physics.body.32",
+              "physics.body.0:physics.body.12",
+              "physics.body.0:physics.body.13",
+              "physics.body.0:physics.body.7",
+              "physics.body.0:physics.body.10",
+              "physics.body.0:physics.body.5",
+              "physics.body.0:physics.body.6",
+              "physics.body.0:physics.body.8",
+              "physics.body.0:physics.body.9",
+              "physics.body.0:physics.body.11",
+              "physics.body.0:ghost",
+              "physics.body.5:physics.body.14",
+              "physics.body.6:physics.body.14",
+              "physics.body.6:physics.body.15",
+              "physics.body.9:physics.body.14",
+              "physics.body.7:physics.body.15",
+              "physics.body.11:physics.body.16",
+              "physics.body.11:physics.body.18",
+              "physics.body.10:physics.body.17",
+              "physics.body.8:physics.body.16",
+              "physics.body.9:physics.body.16",
+              "physics.body.9:physics.body.17",
+              "physics.body.12:physics.body.16",
+              "physics.body.16:physics.body.22",
+              "physics.body.18:physics.body.22",
+              "physics.body.14:physics.body.20",
+              "physics.body.16:physics.body.20",
+              "physics.body.8:physics.body.14",
+              "physics.body.0:physics.body.33",
+              "physics.body.0:physics.body.29",
+              "physics.body.0:physics.body.31",
+              "physics.body.0:physics.body.35",
+              "physics.body.9:physics.body.15",
+              "physics.body.10:physics.body.15",
+              "physics.body.14:physics.body.21",
+              "physics.body.15:physics.body.21",
+              "physics.body.13:physics.body.17",
+              "physics.body.13:physics.body.19",
+              "physics.body.12:physics.body.17",
+              "physics.body.12:physics.body.19",
+              "physics.body.17:physics.body.21",
+              "physics.body.17:physics.body.23",
+              "physics.body.16:physics.body.21",
+              "physics.body.19:physics.body.23",
+              "physics.body.12:physics.body.18",
+              "physics.body.0:physics.body.27",
+              "physics.body.21:physics.body.25",
+              "physics.body.23:physics.body.25",
+              "physics.body.16:physics.body.23",
+              "physics.body.0:physics.body.24",
+              "physics.body.0:physics.body.26",
+              "physics.body.6:physics.body.9",
+              "physics.body.21:physics.body.23",
+              "physics.body.9:physics.body.12",
+              "physics.body.5:physics.body.6"
+            ],
+            "count": 59,
+            "entity": "anonymous",
+            "kind": "contact",
+            "minCount": 1
+          },
+          "id": "contact.0",
+          "pass": true
+        },
+        {
+          "details": {
+            "atStep": "cross-pass-through",
+            "candidates": [],
+            "count": 0,
+            "entity": "anonymous",
+            "kind": "trigger",
+            "minCount": 1
+          },
+          "id": "contact.1",
+          "pass": false
+        },
+        {
+          "details": {
+            "atStep": "goal-contact",
+            "candidates": [],
+            "count": 0,
+            "entity": "anonymous",
+            "kind": "trigger",
+            "minCount": 1
+          },
+          "id": "contact.2",
+          "pass": false
+        },
+        {
+          "details": {
+            "atStep": "settled",
+            "bodies": 37,
+            "candidates": [
+              "physics.body.0",
+              "physics.body.1",
+              "physics.body.2",
+              "physics.body.3",
+              "physics.body.4",
+              "physics.body.5",
+              "physics.body.6",
+              "physics.body.7",
+              "physics.body.8",
+              "physics.body.9",
+              "physics.body.10",
+              "physics.body.11",
+              "physics.body.12",
+              "physics.body.13",
+              "physics.body.14",
+              "physics.body.15",
+              "physics.body.16",
+              "physics.body.17",
+              "physics.body.18",
+              "physics.body.19",
+              "physics.body.20",
+              "physics.body.21",
+              "physics.body.22",
+              "physics.body.23",
+              "physics.body.24",
+              "physics.body.25",
+              "physics.body.26",
+              "physics.body.27",
+              "physics.body.28",
+              "physics.body.29",
+              "physics.body.30",
+              "physics.body.31",
+              "physics.body.32",
+              "physics.body.33",
+              "physics.body.34",
+              "physics.body.35",
+              "physics.body.36"
+            ],
+            "compareToStep": "drop",
+            "entity": "physics.body.",
+            "minimum": 30,
+            "omittedBodies": 0,
+            "poseDistance": {
+              "mean": 0.4035011983312594,
+              "sharedBodies": 37
+            },
+            "sleeping": 0
+          },
+          "id": "settled.0",
+          "pass": false
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_WORLD_ASSERTION_FAILED",
+          "message": "Runtime world seed 90210 did not equal 6132.",
+          "observedRuntimePath": "observations.json/runtimeObservations/gameplay/world/seed",
+          "severity": "error",
+          "suggestion": "Expose the configured world seed and deterministic runtime fingerprint through the runtime bridge and rerun the scenario."
+        },
+        {
+          "code": "TN_PLAYTEST_STATE_ASSERTION_FAILED",
+          "message": "Entity 'anonymous' state was unavailable did not equal 'won'.",
+          "severity": "error",
+          "suggestion": "Ensure the entity has a StateMachine component and inspect runtimeObservations.gameplay.states in the playtest artifact."
+        },
+        {
+          "code": "TN_PLAYTEST_CONSOLE_ERROR",
+          "message": "38 browser console error(s) were captured during playtest.",
+          "severity": "error",
+          "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
+        },
+        {
+          "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
+          "message": "38 runtime diagnostic error(s) were captured during playtest.",
+          "severity": "error",
+          "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
+        },
+        {
+          "code": "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED",
+          "message": "Entity '' moved 0.000000, below required 1.5.",
+          "severity": "error",
+          "suggestion": "Check input bindings, collision response, and whether the scenario holds input long enough."
+        },
+        {
+          "artifactPath": "observations.json",
+          "code": "TN_PLAYTEST_CONTACT_CANDIDATES_UNAVAILABLE",
+          "message": "No observed contact candidate was retained for the anonymous contact assertion.",
+          "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=contact,entity=anonymous] | effect-log.json/entries[kind=service|event,entity=anonymous]",
+          "path": "/tmp/threenative-proof-k8Rqzc/physics-puzzle.playtest.json/assert/contacts/anonymous",
+          "severity": "error",
+          "sourcePath": "/tmp/threenative-proof-k8Rqzc/physics-puzzle.playtest.json",
+          "suggestion": "Check collider/trigger metadata, contact filters, and whether the scenario reaches the target. Inspect observations.json physics-debug contacts and effect-log.json."
+        },
+        {
+          "artifactPath": "observations.json",
+          "code": "TN_PLAYTEST_CONTACT_CANDIDATES_UNAVAILABLE",
+          "message": "No observed contact candidate was retained for the anonymous contact assertion.",
+          "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=contact,entity=anonymous] | effect-log.json/entries[kind=service|event,entity=anonymous]",
+          "path": "/tmp/threenative-proof-k8Rqzc/physics-puzzle.playtest.json/assert/contacts/anonymous",
+          "severity": "error",
+          "sourcePath": "/tmp/threenative-proof-k8Rqzc/physics-puzzle.playtest.json",
+          "suggestion": "Check collider/trigger metadata, contact filters, and whether the scenario reaches the target. Inspect observations.json physics-debug contacts and effect-log.json."
+        },
+        {
+          "artifactPath": "observations.json",
+          "code": "TN_PLAYTEST_PHYSICS_NOT_SETTLED",
+          "message": "Expected at least 30 physics bodies matching 'physics.body.' to be asleep; observed 0 of 37.",
+          "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
+          "path": "/tmp/threenative-proof-k8Rqzc/physics-puzzle.playtest.json/assert/settled/physics.body.",
+          "severity": "error",
+          "sourcePath": "/tmp/threenative-proof-k8Rqzc/physics-puzzle.playtest.json",
+          "suggestion": "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake."
+        }
+      ],
+      "name": "physics-puzzle-observable-behaviour-proof",
+      "verdict": "fail"
+    }
+  ],
+  "total": 2
+}

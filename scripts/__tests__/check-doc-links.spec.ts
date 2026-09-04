@@ -96,34 +96,6 @@ describe("check-doc-links", () => {
     expect(() => assertDocLinks(root, ["README.md"])).toThrow("README.md -> not-here.md");
   });
 
-  it("does not require a link into the untracked sweep archive to resolve", () => {
-    // PRD-323 Phase 4 untracked `docs/benchmark/sweeps/`, so whether a link into it resolves
-    // depends on whether the reader happens to have run that sweep. Checking it would pass on the
-    // author's machine and fail on every clone and in CI — a worse failure than not checking.
-    // `docs/README.md` and `docs/verification/round-4-2026-08-10.md` both link into the tree.
-    const root = fixture({
-      "docs/README.md":
-        "Genre sweeps live under [`benchmark/sweeps/`](benchmark/sweeps/) and each archive retains its proof.\n",
-    });
-
-    const result = checkDocLinks(root, ["docs/README.md"]);
-    expect(result.missing).toEqual([]);
-    // Skipped, not counted: the link is not evidence of anything either way.
-    expect(result.linksChecked).toBe(0);
-  });
-
-  it("still fails on a broken link into any other benchmark tree", () => {
-    // The negative control: only the untracked tree is exempt. Widening the skip to
-    // `docs/benchmark` would stop checking the retention index and the protocol.
-    const root = fixture({
-      "docs/README.md": "See [the protocol](benchmark/PROTOCOL.md).\n",
-    });
-
-    expect(() => assertDocLinks(root, ["docs/README.md"])).toThrow(
-      "docs/README.md -> benchmark/PROTOCOL.md",
-    );
-  });
-
   it("leaves an unclosed backtick run alone instead of swallowing the rest of the file", () => {
     const root = fixture({
       "README.md": "An unclosed ` backtick, then [missing](not-here.md)\n",

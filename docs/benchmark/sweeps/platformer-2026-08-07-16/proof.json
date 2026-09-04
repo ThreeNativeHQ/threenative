@@ -1,0 +1,43 @@
+{
+  "arm": "framework",
+  "genre": "platformer",
+  "passed": 0,
+  "proofHash": "1a950bd0763a4c07f0d201739b5f133d977874f2585aee7c777bdc3a3413e4b7",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "id": "sweep-proof.output",
+          "pass": false
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_SWEEP_PROOF_INVALID_OUTPUT",
+          "message": "runner output must contain non-empty assertionResults: {\n  \"artifactDirectory\": \"/home/joao/projects/threejs-webgpu/docs/benchmark/sweeps/platformer-2026-08-07-16/proof-artifacts/0\",\n  \"debugColliders\": false,\n  \"diagnostics\": [\n    {\n      \"code\": \"TN_PLAYTEST_BRIDGE_MISSING\",\n      \"fix\": {\n        \"instruction\": \"Install an adapter before application startup and register the asserted entities.\"\n      },\n      \"message\": \"Scenario requires semantic capabilities but '__THREENATIVE_PLAYTEST_BRIDGE__' is not installed.\",\n      \"severity\": \"error\",\n      \"suggestion\": \"Install an adapter before application startup and register the asserted entities.\"\n    }\n  ],\n  \"distance\": 0,\n  \"entity\": \"player\",\n  \"expectMoved\": false,\n  \"frames\": 0,\n  \"input\": \"\",\n  \"movementThreshold\": 0,\n  \"pass\": false,\n  \"runtime\": \"web\",\n  \"scenario\": \"platformer-jump-proof\",\n  \"target\": \"web\",\n  \"url\": \"http://127.0.0.1:5190\"\n}",
+          "severity": "error"
+        }
+      ],
+      "name": "platformer-jump-proof",
+      "verdict": "fail"
+    },
+    {
+      "assertions": [
+        {
+          "id": "sweep-proof.output",
+          "pass": false
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_SWEEP_PROOF_INVALID_OUTPUT",
+          "message": "runner output must contain non-empty assertionResults: {\n  \"artifactDirectory\": \"/home/joao/projects/threejs-webgpu/docs/benchmark/sweeps/platformer-2026-08-07-16/proof-artifacts/1\",\n  \"debugColliders\": false,\n  \"diagnostics\": [\n    {\n      \"code\": \"TN_PLAYTEST_BRIDGE_MISSING\",\n      \"fix\": {\n        \"instruction\": \"Install an adapter before application startup and register the asserted entities.\"\n      },\n      \"message\": \"Scenario requires semantic capabilities but '__THREENATIVE_PLAYTEST_BRIDGE__' is not installed.\",\n      \"severity\": \"error\",\n      \"suggestion\": \"Install an adapter before application startup and register the asserted entities.\"\n    }\n  ],\n  \"distance\": 0,\n  \"entity\": \"player\",\n  \"expectMoved\": false,\n  \"frames\": 0,\n  \"input\": \"\",\n  \"movementThreshold\": 0,\n  \"pass\": false,\n  \"runtime\": \"web\",\n  \"scenario\": \"platformer-run-proof\",\n  \"target\": \"web\",\n  \"url\": \"http://127.0.0.1:5191\"\n}",
+          "severity": "error"
+        }
+      ],
+      "name": "platformer-run-proof",
+      "verdict": "fail"
+    }
+  ],
+  "total": 2
+}

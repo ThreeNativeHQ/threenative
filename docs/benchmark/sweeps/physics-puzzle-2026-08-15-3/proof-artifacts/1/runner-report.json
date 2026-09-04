@@ -1,0 +1,452 @@
+{
+  "diagnostics": [
+    {
+      "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+      "message": "Resource assertion failed for 'state' path 'settled'.",
+      "severity": "error",
+      "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+    },
+    {
+      "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+      "message": "Resource assertion failed for 'state' path 'contacts'.",
+      "severity": "error",
+      "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+    },
+    {
+      "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+      "message": "Resource assertion failed for 'state' path 'phaseThroughs'.",
+      "severity": "error",
+      "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+    },
+    {
+      "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+      "message": "Resource assertion failed for 'state' path 'distance'.",
+      "severity": "error",
+      "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+    },
+    {
+      "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+      "message": "Resource assertion failed for 'state' path 'goalReached'.",
+      "severity": "error",
+      "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+    },
+    {
+      "code": "TN_PLAYTEST_CONSOLE_ERROR",
+      "message": "1 browser console error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
+    },
+    {
+      "code": "TN_PLAYTEST_RUNTIME_DIAGNOSTIC",
+      "message": "1 runtime diagnostic error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Inspect runtime-trace.json and repair the authored source that owns the diagnostic path."
+    }
+  ],
+  "distance": 0,
+  "entity": "",
+  "expectMoved": false,
+  "frames": 1152,
+  "observations": {
+    "componentSeries": [
+      {
+        "label": "drop",
+        "snapshots": {},
+        "tick": 8
+      },
+      {
+        "label": "settled",
+        "snapshots": {},
+        "tick": 98
+      },
+      {
+        "label": "push-to-goal",
+        "snapshots": {},
+        "tick": 459
+      },
+      {
+        "label": "cross-pass-through",
+        "snapshots": {},
+        "tick": 580
+      },
+      {
+        "label": "line-up-with-goal",
+        "snapshots": {},
+        "tick": 701
+      },
+      {
+        "label": "cross-ghost",
+        "snapshots": {},
+        "tick": 832
+      },
+      {
+        "label": "move-back-north",
+        "snapshots": {},
+        "tick": 963
+      },
+      {
+        "label": "move-to-goal-lane",
+        "snapshots": {},
+        "tick": 1004
+      },
+      {
+        "label": "descend-to-goal",
+        "snapshots": {},
+        "tick": 1135
+      },
+      {
+        "label": "goal-contact",
+        "snapshots": {},
+        "tick": 1159
+      }
+    ],
+    "console": [
+      {
+        "text": "[vite] connecting...",
+        "type": "debug"
+      },
+      {
+        "text": "[vite] connected.",
+        "type": "debug"
+      },
+      {
+        "text": "using deprecated parameters for the initialization function; pass a single object instead",
+        "type": "warning"
+      },
+      {
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "type": "error"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "resources": {
+      "state": {
+        "before": {
+          "cratesAtRest": 0,
+          "mission": "playing",
+          "playerX": -5,
+          "replayMatches": false,
+          "score": 0
+        },
+        "after": {
+          "cratesAtRest": 30,
+          "mission": "playing",
+          "playerX": -3.4827589988708496,
+          "replayMatches": false,
+          "score": 1
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "drop",
+        "snapshots": {
+          "state": {
+            "cratesAtRest": 30,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          }
+        },
+        "tick": 8
+      },
+      {
+        "label": "settled",
+        "snapshots": {
+          "state": {
+            "cratesAtRest": 30,
+            "mission": "playing",
+            "playerX": -5,
+            "replayMatches": false,
+            "score": 0
+          }
+        },
+        "tick": 98
+      },
+      {
+        "label": "push-to-goal",
+        "snapshots": {
+          "state": {
+            "cratesAtRest": 30,
+            "mission": "playing",
+            "playerX": -3.472675085067749,
+            "replayMatches": false,
+            "score": 1
+          }
+        },
+        "tick": 459
+      },
+      {
+        "label": "cross-pass-through",
+        "snapshots": {
+          "state": {
+            "cratesAtRest": 30,
+            "mission": "playing",
+            "playerX": -3.476304292678833,
+            "replayMatches": false,
+            "score": 1
+          }
+        },
+        "tick": 580
+      },
+      {
+        "label": "line-up-with-goal",
+        "snapshots": {
+          "state": {
+            "cratesAtRest": 30,
+            "mission": "playing",
+            "playerX": -3.479064464569092,
+            "replayMatches": false,
+            "score": 1
+          }
+        },
+        "tick": 701
+      },
+      {
+        "label": "cross-ghost",
+        "snapshots": {
+          "state": {
+            "cratesAtRest": 30,
+            "mission": "playing",
+            "playerX": -3.4813387393951416,
+            "replayMatches": false,
+            "score": 1
+          }
+        },
+        "tick": 832
+      },
+      {
+        "label": "move-back-north",
+        "snapshots": {
+          "state": {
+            "cratesAtRest": 30,
+            "mission": "playing",
+            "playerX": -3.4826924800872803,
+            "replayMatches": false,
+            "score": 1
+          }
+        },
+        "tick": 963
+      },
+      {
+        "label": "move-to-goal-lane",
+        "snapshots": {
+          "state": {
+            "cratesAtRest": 30,
+            "mission": "playing",
+            "playerX": -3.4803991317749023,
+            "replayMatches": false,
+            "score": 1
+          }
+        },
+        "tick": 1004
+      },
+      {
+        "label": "descend-to-goal",
+        "snapshots": {
+          "state": {
+            "cratesAtRest": 30,
+            "mission": "playing",
+            "playerX": -3.482706069946289,
+            "replayMatches": false,
+            "score": 1
+          }
+        },
+        "tick": 1135
+      },
+      {
+        "label": "goal-contact",
+        "snapshots": {
+          "state": {
+            "cratesAtRest": 30,
+            "mission": "playing",
+            "playerX": -3.4827589988708496,
+            "replayMatches": false,
+            "score": 1
+          }
+        },
+        "tick": 1159
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [
+        {
+          "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+          "type": "error"
+        }
+      ],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeObservations": {
+      "gameplay": {
+        "animation": {},
+        "contacts": [
+          {
+            "entity": "player",
+            "kind": "contact",
+            "with": "solid-body"
+          }
+        ],
+        "states": {
+          "mission": "playing"
+        },
+        "world": {
+          "seed": 6132
+        }
+      }
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "drop",
+        "signals": [],
+        "tick": 8
+      },
+      {
+        "label": "settled",
+        "signals": [],
+        "tick": 98
+      },
+      {
+        "label": "push-to-goal",
+        "signals": [],
+        "tick": 459
+      },
+      {
+        "label": "cross-pass-through",
+        "signals": [],
+        "tick": 580
+      },
+      {
+        "label": "line-up-with-goal",
+        "signals": [],
+        "tick": 701
+      },
+      {
+        "label": "cross-ghost",
+        "signals": [],
+        "tick": 832
+      },
+      {
+        "label": "move-back-north",
+        "signals": [],
+        "tick": 963
+      },
+      {
+        "label": "move-to-goal-lane",
+        "signals": [],
+        "tick": 1004
+      },
+      {
+        "label": "descend-to-goal",
+        "signals": [],
+        "tick": 1135
+      },
+      {
+        "label": "goal-contact",
+        "signals": [],
+        "tick": 1159
+      }
+    ],
+    "visual": {
+      "changedPixelRatio": 0.15618489583333334,
+      "comparisonSource": "before-after"
+    }
+  },
+  "artifactDirectory": "/home/joao/projects/threejs-webgpu/.worktrees/prd-114-paired-round-on-the-repaired-instrument-r2/docs/benchmark/sweeps/physics-puzzle-2026-08-15-3/proof-artifacts/1",
+  "assertionResults": [
+    {
+      "details": {
+        "expected": {
+          "gte": 30,
+          "changed": true
+        },
+        "id": "state",
+        "path": "settled",
+        "trivial": false
+      },
+      "id": "resource.state.settled",
+      "pass": false
+    },
+    {
+      "details": {
+        "expected": {
+          "gte": 1,
+          "changed": true
+        },
+        "id": "state",
+        "path": "contacts",
+        "trivial": false
+      },
+      "id": "resource.state.contacts",
+      "pass": false
+    },
+    {
+      "details": {
+        "expected": {
+          "gte": 1,
+          "changed": true
+        },
+        "id": "state",
+        "path": "phaseThroughs",
+        "trivial": false
+      },
+      "id": "resource.state.phaseThroughs",
+      "pass": false
+    },
+    {
+      "details": {
+        "expected": {
+          "gte": 1.5,
+          "changed": true
+        },
+        "id": "state",
+        "path": "distance",
+        "trivial": false
+      },
+      "id": "resource.state.distance",
+      "pass": false
+    },
+    {
+      "details": {
+        "expected": {
+          "equals": true,
+          "changed": true
+        },
+        "id": "state",
+        "path": "goalReached",
+        "trivial": false
+      },
+      "id": "resource.state.goalReached",
+      "pass": false
+    },
+    {
+      "details": {
+        "expected": 6132,
+        "expectedRuntime": null,
+        "observed": 6132,
+        "observedRuntime": null
+      },
+      "id": "world.seed",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 1,
+        "networkErrors": 0,
+        "runtimeDiagnostics": 1
+      },
+      "id": "diagnostics",
+      "pass": false
+    }
+  ],
+  "pass": false,
+  "runtime": "web",
+  "scenario": "physics-puzzle-observable-behaviour-proof",
+  "target": "web",
+  "url": "http://127.0.0.1:5191"
+}

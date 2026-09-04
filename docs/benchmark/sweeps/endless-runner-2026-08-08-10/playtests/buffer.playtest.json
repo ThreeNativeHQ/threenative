@@ -1,0 +1,29 @@
+{
+  "name": "starter-jump-buffer",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "first-jump", "press": "Space", "holdTicks": 2, "release": true },
+    { "kind": "wait", "label": "near-landing", "waitTicks": 55, "release": true },
+    {
+      "kind": "input",
+      "label": "buffered-jump",
+      "press": "Space",
+      "holdTicks": 2,
+      "release": true
+    },
+    { "kind": "wait", "label": "buffered-arc", "waitTicks": 20, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "GameState", "path": "jumps", "equals": 2, "changed": true },
+      { "id": "GameState", "path": "coyoteJumps", "equals": 0, "allowTrivial": true },
+      { "id": "GameState", "path": "peakRise", "gte": 0.5, "changed": true }
+    ],
+    "visibility": [{ "entity": "player", "minProjectedPixels": 20 }]
+  }
+}

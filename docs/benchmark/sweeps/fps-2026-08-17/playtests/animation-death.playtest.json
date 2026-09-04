@@ -1,0 +1,81 @@
+{
+  "name": "animation-death",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "enemy",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "center-pointer",
+      "pointerPosition": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "lock-look",
+      "pointerPosition": {
+        "buttons": 1,
+        "x": 0.5,
+        "y": 0.5
+      },
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "aim-left",
+      "pointerPosition": {
+        "x": 0.418,
+        "y": 0.5
+      },
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "kill",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "corpse-after-4s",
+      "waitTicks": 240,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "animation": [
+      {
+        "entity": "enemy",
+        "clip": "DeathFront",
+        "entered": true,
+        "advancedFrames": 200,
+        "finished": true
+      }
+    ],
+    "states": [
+      {
+        "entity": "enemy",
+        "equals": "dead-finished"
+      }
+    ]
+  },
+  "artifacts": {
+    "screenshots": false
+  }
+}

@@ -51,7 +51,9 @@ above: a new performance finding updates that file in place instead of opening a
 `perf`-report file, which keeps the frame ledger, the lever graveyard and the method rules in one
 place. Everything else stays one file per run.
 
-`docs/benchmark/sweeps/` is untracked build output — regenerable arm sources, on disk, not in git.
+Under `docs/benchmark/sweeps/` the generated arm sources are untracked build output; the
+measurements beside them — `proof.json`, `proof-artifacts/`, captures — are the benchmark record
+and stay in git. Three test suites read them by path.
 
 A red-green acceptance criterion states its mutation: which line, reverted, makes the test fail —
 and pastes that failure. Five repair rounds in one batch were spent on reds produced by the wrong

@@ -1,0 +1,745 @@
+{
+  "diagnostics": [
+    {
+      "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+      "message": "Resource assertion failed for 'state' path 'replayMatch'.",
+      "severity": "error",
+      "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+    },
+    {
+      "code": "TN_PLAYTEST_WORLD_ASSERTION_FAILED",
+      "message": "Runtime world seed 90210 did not equal 6132.",
+      "observedRuntimePath": "observations.json/runtimeObservations/gameplay/world/seed",
+      "severity": "error",
+      "suggestion": "Expose the configured world seed and deterministic runtime fingerprint through the runtime bridge and rerun the scenario."
+    }
+  ],
+  "distance": 0,
+  "entity": "",
+  "expectMoved": false,
+  "frames": 1801,
+  "observations": {
+    "components": {
+      "ghost": {
+        "isObject3D": {
+          "before": true,
+          "after": true
+        },
+        "uuid": {
+          "before": "375b121a-5970-41cf-bfce-25d9d475f8a6",
+          "after": "3efe961f-6471-47a4-bdf5-f59c46aa360a"
+        },
+        "name": {
+          "before": "",
+          "after": ""
+        },
+        "type": {
+          "before": "Mesh",
+          "after": "Mesh"
+        },
+        "up": {
+          "before": [
+            0,
+            1,
+            0
+          ],
+          "after": [
+            0,
+            1,
+            0
+          ]
+        },
+        "position": {
+          "before": [
+            2.6000006198883057,
+            0.49872374534606934,
+            2.6000003814697266
+          ],
+          "after": [
+            2.600001096725464,
+            0.49872374534606934,
+            2.6000003814697266
+          ]
+        },
+        "rotation": {
+          "before": [
+            5.034831222754398e-8,
+            6.146566471506223e-9,
+            -1.3489091776200464e-8,
+            "XYZ"
+          ],
+          "after": [
+            2.0795228604605975e-8,
+            -4.256228037265619e-9,
+            -2.1411576467554855e-8,
+            "XYZ"
+          ]
+        },
+        "quaternion": {
+          "before": [
+            2.5174156093044076e-8,
+            3.0732834055413605e-9,
+            -6.744545810732916e-9,
+            1
+          ],
+          "after": [
+            1.0397614325086124e-8,
+            -2.128113907318152e-9,
+            -1.0705788255904736e-8,
+            1
+          ]
+        },
+        "scale": {
+          "before": [
+            1,
+            1,
+            1
+          ],
+          "after": [
+            1,
+            1,
+            1
+          ]
+        },
+        "matrix": {
+          "before": [
+            0.9999999999999999,
+            -1.34890914667312e-8,
+            -6.146567150659219e-9,
+            0,
+            1.3489091776200464e-8,
+            0.9999999999999987,
+            5.034831214463235e-8,
+            0,
+            6.146566471506223e-9,
+            -5.0348312227543955e-8,
+            0.9999999999999987,
+            0,
+            2.6000006198883057,
+            0.49872374534606934,
+            2.6000003814697266,
+            1
+          ],
+          "after": [
+            0.9999999999999998,
+            -2.1411576556064087e-8,
+            4.256227592006989e-9,
+            0,
+            2.1411576467554855e-8,
+            0.9999999999999996,
+            2.079522869573852e-8,
+            0,
+            -4.256228037265619e-9,
+            -2.0795228604605975e-8,
+            0.9999999999999998,
+            0,
+            2.600001096725464,
+            0.49872374534606934,
+            2.6000003814697266,
+            1
+          ]
+        },
+        "matrixWorld": {
+          "before": [
+            0.9999999999999999,
+            -1.34890914667312e-8,
+            -6.146567150659219e-9,
+            0,
+            1.3489091776200464e-8,
+            0.9999999999999987,
+            5.034831214463235e-8,
+            0,
+            6.146566471506223e-9,
+            -5.0348312227543955e-8,
+            0.9999999999999987,
+            0,
+            2.6000006198883057,
+            0.49872374534606934,
+            2.6000003814697266,
+            1
+          ],
+          "after": [
+            0.9999999999999998,
+            -2.1411576556064087e-8,
+            4.256227592006989e-9,
+            0,
+            2.1411576467554855e-8,
+            0.9999999999999996,
+            2.079522869573852e-8,
+            0,
+            -4.256228037265619e-9,
+            -2.0795228604605975e-8,
+            0.9999999999999998,
+            0,
+            2.600001096725464,
+            0.49872374534606934,
+            2.6000003814697266,
+            1
+          ]
+        },
+        "matrixAutoUpdate": {
+          "before": true,
+          "after": true
+        },
+        "matrixWorldAutoUpdate": {
+          "before": true,
+          "after": true
+        },
+        "matrixWorldNeedsUpdate": {
+          "before": false,
+          "after": false
+        },
+        "visible": {
+          "before": true,
+          "after": true
+        },
+        "castShadow": {
+          "before": false,
+          "after": false
+        },
+        "receiveShadow": {
+          "before": false,
+          "after": false
+        },
+        "frustumCulled": {
+          "before": true,
+          "after": true
+        },
+        "renderOrder": {
+          "before": 5,
+          "after": 5
+        },
+        "static": {
+          "before": false,
+          "after": false
+        },
+        "isMesh": {
+          "before": true,
+          "after": true
+        },
+        "count": {
+          "before": 1,
+          "after": 1
+        }
+      }
+    },
+    "componentSeries": [
+      {
+        "label": "start-replay",
+        "snapshots": {
+          "ghost": {
+            "isObject3D": true,
+            "uuid": "7c045c93-768c-4602-b007-c62d6b3acb6e",
+            "name": "",
+            "type": "Mesh",
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "position": [
+              2.5999999046325684,
+              0.5482969284057617,
+              2.5999999046325684
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              "XYZ"
+            ],
+            "quaternion": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "matrix": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              2.5999999046325684,
+              0.5482969284057617,
+              2.5999999046325684,
+              1
+            ],
+            "matrixWorld": [
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              2.5999999046325684,
+              0.5482969284057617,
+              2.5999999046325684,
+              1
+            ],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 5,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          }
+        },
+        "tick": 73
+      },
+      {
+        "label": "replay-complete",
+        "snapshots": {
+          "ghost": {
+            "isObject3D": true,
+            "uuid": "3efe961f-6471-47a4-bdf5-f59c46aa360a",
+            "name": "",
+            "type": "Mesh",
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "position": [
+              2.600001096725464,
+              0.49872374534606934,
+              2.6000003814697266
+            ],
+            "rotation": [
+              2.0795228604605975e-8,
+              -4.256228037265619e-9,
+              -2.1411576467554855e-8,
+              "XYZ"
+            ],
+            "quaternion": [
+              1.0397614325086124e-8,
+              -2.128113907318152e-9,
+              -1.0705788255904736e-8,
+              1
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "matrix": [
+              0.9999999999999998,
+              -2.1411576556064087e-8,
+              4.256227592006989e-9,
+              0,
+              2.1411576467554855e-8,
+              0.9999999999999996,
+              2.079522869573852e-8,
+              0,
+              -4.256228037265619e-9,
+              -2.0795228604605975e-8,
+              0.9999999999999998,
+              0,
+              2.600001096725464,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixWorld": [
+              0.9999999999999998,
+              -2.1411576556064087e-8,
+              4.256227592006989e-9,
+              0,
+              2.1411576467554855e-8,
+              0.9999999999999996,
+              2.079522869573852e-8,
+              0,
+              -4.256228037265619e-9,
+              -2.0795228604605975e-8,
+              0.9999999999999998,
+              0,
+              2.600001096725464,
+              0.49872374534606934,
+              2.6000003814697266,
+              1
+            ],
+            "matrixAutoUpdate": true,
+            "matrixWorldAutoUpdate": true,
+            "matrixWorldNeedsUpdate": false,
+            "visible": true,
+            "castShadow": false,
+            "receiveShadow": false,
+            "frustumCulled": true,
+            "renderOrder": 5,
+            "static": false,
+            "isMesh": true,
+            "count": 1
+          }
+        },
+        "tick": 1873
+      }
+    ],
+    "console": [
+      {
+        "text": "[vite] connecting...",
+        "type": "debug"
+      },
+      {
+        "text": "[vite] connected.",
+        "type": "debug"
+      },
+      {
+        "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+        "type": "info"
+      },
+      {
+        "text": "TN_ROOM_READY:bodies=33,worldBodies=39,seed=90210,scripted=false",
+        "type": "info"
+      },
+      {
+        "text": "TN_SCENE_COLLAPSE:{\"schemaVersion\":1,\"status\":\"deferred\",\"reasonCode\":\"belowMeshFloorStillWatching\",\"collapsed\":false,\"reason\":\"fewer than 200 meshes so far; still watching\",\"sourceMeshes\":134,\"mergedMeshes\":0,\"movingParts\":0,\"diagnostics\":{\"sourceRenderables\":135,\"resultDrawCandidates\":0,\"sourceMaterialIdentities\":19,\"resultMaterialIdentities\":0,\"groups\":{\"staticWorld\":0,\"movingOwners\":0,\"cameraOverlays\":0},\"skipped\":{\"belowMeshFloor\":134,\"cameraOverlay\":0,\"layers\":0,\"renderOrder\":1,\"renderHook\":0,\"transparency\":0,\"sprite\":0,\"points\":0,\"missingPosition\":0,\"missingGeometry\":0,\"missingMaterial\":0},\"timings\":{\"bakeMs\":0,\"observeMs\":0,\"mergeMs\":0,\"copyMs\":0,\"transformMs\":0,\"colorMs\":0,\"sampleMs\":0,\"transformRefresh\":{\"count\":0,\"lastMs\":0,\"maxMs\":0,\"meanMs\":0}}}}",
+        "type": "info"
+      },
+      {
+        "text": "TN_ROOM_READY:bodies=33,worldBodies=39,seed=90210,scripted=true",
+        "type": "info"
+      },
+      {
+        "text": "TN_REPLAY_SETTLED:1790b47f,ticks=240",
+        "type": "info"
+      },
+      {
+        "text": "TN_GOAL_REACHED:player",
+        "type": "info"
+      },
+      {
+        "text": "TN_REPLAY_RUN_A:aa954cf1",
+        "type": "info"
+      },
+      {
+        "text": "TN_ROOM_READY:bodies=33,worldBodies=39,seed=90210,scripted=true",
+        "type": "info"
+      },
+      {
+        "text": "TN_REPLAY_SETTLED:7ee89266,ticks=242",
+        "type": "info"
+      },
+      {
+        "text": "TN_GOAL_REACHED:player",
+        "type": "info"
+      },
+      {
+        "text": "TN_REPLAY_RUN_B:30e9d2d8",
+        "type": "info"
+      },
+      {
+        "text": "TN_DETERMINISM_MATCH:false",
+        "type": "info"
+      },
+      {
+        "text": "TN_ROOM_READY:bodies=33,worldBodies=39,seed=90210,scripted=false",
+        "type": "info"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "resources": {
+      "GameState": {
+        "before": {
+          "bodyCount": 33,
+          "settled": 27,
+          "pushed": 0,
+          "contacts": 0,
+          "phaseThroughs": 0,
+          "goalReached": false,
+          "goalBy": "",
+          "playerX": -5.400000095367432,
+          "playerZ": -0.3000001311302185,
+          "distance": 6.921560492377505e-7,
+          "seed": 90210,
+          "replayPhase": "idle",
+          "replayHashA": "",
+          "replayHashB": "",
+          "replayMatch": "unknown",
+          "score": 0,
+          "hovered": ""
+        },
+        "after": {
+          "bodyCount": 33,
+          "settled": 32,
+          "pushed": 1,
+          "contacts": 1,
+          "phaseThroughs": 0,
+          "goalReached": false,
+          "goalBy": "",
+          "playerX": -5.400305271148682,
+          "playerZ": -0.3006742298603058,
+          "distance": 0.0007539048033351715,
+          "seed": 90210,
+          "replayPhase": "done",
+          "replayHashA": "aa954cf1",
+          "replayHashB": "30e9d2d8",
+          "replayMatch": "mismatch",
+          "score": 2,
+          "hovered": ""
+        }
+      },
+      "state": {
+        "before": {
+          "bodyCount": 33,
+          "settled": 27,
+          "pushed": 0,
+          "contacts": 0,
+          "phaseThroughs": 0,
+          "goalReached": false,
+          "goalBy": "",
+          "playerX": -5.400000095367432,
+          "playerZ": -0.3000001311302185,
+          "distance": 6.921560492377505e-7,
+          "seed": 90210,
+          "replayPhase": "idle",
+          "replayHashA": "",
+          "replayHashB": "",
+          "replayMatch": "unknown",
+          "score": 0,
+          "hovered": ""
+        },
+        "after": {
+          "bodyCount": 33,
+          "settled": 32,
+          "pushed": 1,
+          "contacts": 1,
+          "phaseThroughs": 0,
+          "goalReached": false,
+          "goalBy": "",
+          "playerX": -5.400305271148682,
+          "playerZ": -0.3006742298603058,
+          "distance": 0.0007539048033351715,
+          "seed": 90210,
+          "replayPhase": "done",
+          "replayHashA": "aa954cf1",
+          "replayHashB": "30e9d2d8",
+          "replayMatch": "mismatch",
+          "score": 2,
+          "hovered": ""
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "start-replay",
+        "snapshots": {
+          "GameState": {
+            "bodyCount": 33,
+            "settled": 0,
+            "pushed": 0,
+            "contacts": 0,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": -5.400000095367432,
+            "playerZ": -0.3000001311302185,
+            "distance": 0,
+            "seed": 90210,
+            "replayPhase": "run-a",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          },
+          "state": {
+            "bodyCount": 33,
+            "settled": 0,
+            "pushed": 0,
+            "contacts": 0,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": -5.400000095367432,
+            "playerZ": -0.3000001311302185,
+            "distance": 0,
+            "seed": 90210,
+            "replayPhase": "run-a",
+            "replayHashA": "",
+            "replayHashB": "",
+            "replayMatch": "unknown",
+            "score": 0,
+            "hovered": ""
+          }
+        },
+        "tick": 73
+      },
+      {
+        "label": "replay-complete",
+        "snapshots": {
+          "GameState": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 1,
+            "contacts": 1,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": -5.400305271148682,
+            "playerZ": -0.3006742298603058,
+            "distance": 0.0007539048033351715,
+            "seed": 90210,
+            "replayPhase": "done",
+            "replayHashA": "aa954cf1",
+            "replayHashB": "30e9d2d8",
+            "replayMatch": "mismatch",
+            "score": 2,
+            "hovered": ""
+          },
+          "state": {
+            "bodyCount": 33,
+            "settled": 32,
+            "pushed": 1,
+            "contacts": 1,
+            "phaseThroughs": 0,
+            "goalReached": false,
+            "goalBy": "",
+            "playerX": -5.400305271148682,
+            "playerZ": -0.3006742298603058,
+            "distance": 0.0007539048033351715,
+            "seed": 90210,
+            "replayPhase": "done",
+            "replayHashA": "aa954cf1",
+            "replayHashB": "30e9d2d8",
+            "replayMatch": "mismatch",
+            "score": 2,
+            "hovered": ""
+          }
+        },
+        "tick": 1873
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeObservations": {
+      "gameplay": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "audio": {
+          "queued": 0,
+          "voices": 0
+        },
+        "world": {
+          "seed": 90210,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "core": "0.1.0",
+            "randomState": 90210,
+            "rapier": "0.19.3",
+            "step": 0.016666666666666666
+          }
+        }
+      }
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "start-replay",
+        "signals": [],
+        "tick": 73
+      },
+      {
+        "label": "replay-complete",
+        "signals": [],
+        "tick": 1873
+      }
+    ],
+    "visual": {
+      "changedPixelRatio": 0.06554253472222223,
+      "comparisonSource": "before-after"
+    }
+  },
+  "artifactDirectory": "/home/joao/projects/threejs-webgpu/.worktrees/prd-114-paired-round-on-the-repaired-instrument-r2/docs/benchmark/sweeps/physics-puzzle-2026-08-15-2/proof-artifacts/0",
+  "assertionResults": [
+    {
+      "details": {
+        "after": "done",
+        "before": "idle",
+        "expected": {
+          "equals": "done",
+          "changed": true
+        },
+        "id": "state",
+        "path": "replayPhase",
+        "trivial": false
+      },
+      "id": "resource.state.replayPhase",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": "mismatch",
+        "before": "unknown",
+        "expected": {
+          "equals": "match",
+          "changed": true
+        },
+        "id": "state",
+        "path": "replayMatch",
+        "trivial": false
+      },
+      "id": "resource.state.replayMatch",
+      "pass": false
+    },
+    {
+      "details": {
+        "expected": 6132,
+        "expectedRuntime": null,
+        "observed": 90210,
+        "observedRuntime": {
+          "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+          "core": "0.1.0",
+          "randomState": 90210,
+          "rapier": "0.19.3",
+          "step": 0.016666666666666666
+        }
+      },
+      "id": "world.seed",
+      "pass": false
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "pass": false,
+  "runtime": "web",
+  "scenario": "physics-puzzle-deterministic-replay-proof",
+  "target": "web",
+  "url": "http://127.0.0.1:5190"
+}

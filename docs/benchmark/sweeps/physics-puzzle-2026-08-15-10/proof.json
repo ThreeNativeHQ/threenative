@@ -1,0 +1,400 @@
+{
+  "arm": "vanilla",
+  "genre": "physics-puzzle",
+  "passed": 1,
+  "proofHash": "e5be692b999fdad36baf5d795195de3423dd82d7bc577eb7fd36f3c241f13a95",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "details": {
+            "after": "complete",
+            "before": "idle",
+            "expected": {
+              "changed": true
+            },
+            "id": "state",
+            "path": "replayPhase",
+            "trivial": false
+          },
+          "id": "resource.state.replayPhase",
+          "pass": true
+        },
+        {
+          "details": {
+            "alternatives": [
+              {
+                "after": true,
+                "before": false,
+                "expected": {
+                  "equals": true
+                },
+                "id": "state",
+                "path": "replayMatch",
+                "trivial": false
+              },
+              {
+                "after": true,
+                "before": false,
+                "expected": {
+                  "equals": "match"
+                },
+                "id": "state",
+                "path": "replayMatch",
+                "trivial": false
+              }
+            ],
+            "id": "state",
+            "observed": {
+              "before": {
+                "awakeCrates": 0,
+                "crateCollisions": 51,
+                "crateCount": 40,
+                "crateGoalHits": 0,
+                "ghostCount": 5,
+                "ghostPasses": 0,
+                "mission": "playing",
+                "playerGoalHits": 0,
+                "playerState": "idle",
+                "playerX": -5.2,
+                "playerY": 0.76,
+                "playerZ": 1.2,
+                "pushEvents": 0,
+                "replayHashA": null,
+                "replayHashB": null,
+                "replayMatch": false,
+                "replayPhase": "idle",
+                "replayTicks": 0,
+                "seed": 6132,
+                "settledCrates": 40,
+                "tick": 90,
+                "won": false,
+                "state": {
+                  "awakeCrates": 0,
+                  "crateCollisions": 51,
+                  "crateCount": 40,
+                  "crateGoalHits": 0,
+                  "ghostCount": 5,
+                  "ghostPasses": 0,
+                  "mission": "playing",
+                  "playerGoalHits": 0,
+                  "playerState": "idle",
+                  "playerX": -5.2,
+                  "playerY": 0.76,
+                  "playerZ": 1.2,
+                  "pushEvents": 0,
+                  "replayHashA": null,
+                  "replayHashB": null,
+                  "replayMatch": false,
+                  "replayPhase": "idle",
+                  "replayTicks": 0,
+                  "seed": 6132,
+                  "settledCrates": 40,
+                  "tick": 90,
+                  "won": false
+                }
+              },
+              "after": {
+                "awakeCrates": 0,
+                "crateCollisions": 51,
+                "crateCount": 40,
+                "crateGoalHits": 0,
+                "ghostCount": 5,
+                "ghostPasses": 0,
+                "mission": "playing",
+                "playerGoalHits": 0,
+                "playerState": "idle",
+                "playerX": -5.2,
+                "playerY": 0.76,
+                "playerZ": 1.2,
+                "pushEvents": 0,
+                "replayHashA": 4044984899,
+                "replayHashB": 4044984899,
+                "replayMatch": true,
+                "replayPhase": "complete",
+                "replayTicks": 180,
+                "seed": 6132,
+                "settledCrates": 40,
+                "tick": 2872,
+                "won": false,
+                "state": {
+                  "awakeCrates": 0,
+                  "crateCollisions": 51,
+                  "crateCount": 40,
+                  "crateGoalHits": 0,
+                  "ghostCount": 5,
+                  "ghostPasses": 0,
+                  "mission": "playing",
+                  "playerGoalHits": 0,
+                  "playerState": "idle",
+                  "playerX": -5.2,
+                  "playerY": 0.76,
+                  "playerZ": 1.2,
+                  "pushEvents": 0,
+                  "replayHashA": 4044984899,
+                  "replayHashB": 4044984899,
+                  "replayMatch": true,
+                  "replayPhase": "complete",
+                  "replayTicks": 180,
+                  "seed": 6132,
+                  "settledCrates": 40,
+                  "tick": 2872,
+                  "won": false
+                }
+              }
+            }
+          },
+          "id": "resource.state.anyOf",
+          "pass": true
+        },
+        {
+          "details": {
+            "expected": 6132,
+            "expectedRuntime": null,
+            "observed": 6132,
+            "observedRuntime": {
+              "agent": "threenative-r8-vanilla",
+              "core": "three",
+              "randomState": 1425195863,
+              "rapier": "0.20.0",
+              "step": 0.016666666666666666
+            }
+          },
+          "id": "world.seed",
+          "pass": true
+        },
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "policy": {
+              "noConsoleErrors": true,
+              "noNetworkErrors": true,
+              "noRuntimeDiagnostics": true,
+              "runtimeReady": true
+            },
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        }
+      ],
+      "diagnostics": [],
+      "name": "physics-puzzle-deterministic-replay-proof",
+      "verdict": "pass"
+    },
+    {
+      "assertions": [
+        {
+          "details": {
+            "expected": 6132,
+            "expectedRuntime": null,
+            "observed": 6132,
+            "observedRuntime": {
+              "agent": "threenative-r8-vanilla",
+              "core": "three",
+              "randomState": 1425195863,
+              "rapier": "0.20.0",
+              "step": 0.016666666666666666
+            }
+          },
+          "id": "world.seed",
+          "pass": true
+        },
+        {
+          "details": {
+            "candidates": [
+              {
+                "entity": "mission",
+                "state": "playing"
+              },
+              {
+                "entity": "player",
+                "state": "idle"
+              }
+            ],
+            "entity": "anonymous",
+            "expected": "won",
+            "observed": null,
+            "terminal": {
+              "contactObserved": false,
+              "historyComplete": true,
+              "preExisting": false,
+              "step": "goal-contact"
+            }
+          },
+          "id": "states.0",
+          "pass": false
+        },
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "policy": {
+              "noConsoleErrors": true,
+              "noNetworkErrors": true,
+              "noRuntimeDiagnostics": true,
+              "runtimeReady": true
+            },
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        },
+        {
+          "details": {
+            "distance": 0,
+            "entity": "",
+            "minimum": 1.5
+          },
+          "id": "movement.distance",
+          "pass": false
+        },
+        {
+          "details": {
+            "atStep": "push-to-goal",
+            "candidates": [
+              "crate:crate:contact"
+            ],
+            "count": 24,
+            "entity": "anonymous",
+            "kind": "contact",
+            "minCount": 1
+          },
+          "id": "contact.0",
+          "pass": true
+        },
+        {
+          "details": {
+            "atStep": "cross-pass-through",
+            "candidates": [],
+            "count": 0,
+            "entity": "anonymous",
+            "kind": "trigger",
+            "minCount": 1
+          },
+          "id": "contact.1",
+          "pass": false
+        },
+        {
+          "details": {
+            "atStep": "goal-contact",
+            "candidates": [],
+            "count": 0,
+            "entity": "anonymous",
+            "kind": "trigger",
+            "minCount": 1
+          },
+          "id": "contact.2",
+          "pass": false
+        },
+        {
+          "details": {
+            "atStep": "settled",
+            "bodies": 40,
+            "candidates": [
+              "crate.0",
+              "crate.1",
+              "crate.2",
+              "crate.3",
+              "crate.4",
+              "crate.5",
+              "crate.6",
+              "crate.7",
+              "crate.8",
+              "crate.9",
+              "crate.10",
+              "crate.11",
+              "crate.12",
+              "crate.13",
+              "crate.14",
+              "crate.15",
+              "crate.16",
+              "crate.17",
+              "crate.18",
+              "crate.19",
+              "crate.20",
+              "crate.21",
+              "crate.22",
+              "crate.23",
+              "crate.24",
+              "crate.25",
+              "crate.26",
+              "crate.27",
+              "crate.28",
+              "crate.29",
+              "crate.30",
+              "crate.31",
+              "crate.32",
+              "crate.33",
+              "crate.34",
+              "crate.35",
+              "crate.36",
+              "crate.37",
+              "crate.38",
+              "crate.39"
+            ],
+            "compareToStep": "drop",
+            "entity": "crate.",
+            "minimum": 30,
+            "omittedBodies": 0,
+            "poseDistance": {
+              "mean": 0,
+              "sharedBodies": 40
+            },
+            "sleeping": 40
+          },
+          "id": "settled.0",
+          "pass": false
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_STATE_ASSERTION_FAILED",
+          "message": "Entity 'anonymous' state was unavailable did not equal 'won'.",
+          "severity": "error",
+          "suggestion": "Ensure the entity has a StateMachine component and inspect runtimeObservations.gameplay.states in the playtest artifact."
+        },
+        {
+          "code": "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED",
+          "message": "Entity '' moved 0.000000, below required 1.5.",
+          "severity": "error",
+          "suggestion": "Check input bindings, collision response, and whether the scenario holds input long enough."
+        },
+        {
+          "artifactPath": "observations.json",
+          "code": "TN_PLAYTEST_CONTACT_CANDIDATES_UNAVAILABLE",
+          "message": "No observed contact candidate was retained for the anonymous contact assertion.",
+          "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=contact,entity=anonymous] | effect-log.json/entries[kind=service|event,entity=anonymous]",
+          "path": "/tmp/threenative-proof-hw2SSD/physics-puzzle.playtest.json/assert/contacts/anonymous",
+          "severity": "error",
+          "sourcePath": "/tmp/threenative-proof-hw2SSD/physics-puzzle.playtest.json",
+          "suggestion": "Check collider/trigger metadata, contact filters, and whether the scenario reaches the target. Inspect observations.json physics-debug contacts and effect-log.json."
+        },
+        {
+          "artifactPath": "observations.json",
+          "code": "TN_PLAYTEST_CONTACT_CANDIDATES_UNAVAILABLE",
+          "message": "No observed contact candidate was retained for the anonymous contact assertion.",
+          "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=contact,entity=anonymous] | effect-log.json/entries[kind=service|event,entity=anonymous]",
+          "path": "/tmp/threenative-proof-hw2SSD/physics-puzzle.playtest.json/assert/contacts/anonymous",
+          "severity": "error",
+          "sourcePath": "/tmp/threenative-proof-hw2SSD/physics-puzzle.playtest.json",
+          "suggestion": "Check collider/trigger metadata, contact filters, and whether the scenario reaches the target. Inspect observations.json physics-debug contacts and effect-log.json."
+        },
+        {
+          "artifactPath": "observations.json",
+          "code": "TN_PLAYTEST_RAGDOLL_POSE_NOT_DISTINCT",
+          "message": "Expected mean settled-pose distance for 'crate.' to reach 0.05m from step 'drop'; observed 0m across 40 bodies.",
+          "observedRuntimePath": "observations.json/physicsDebugSeries/artifact/primitives[category=sleep]",
+          "path": "/tmp/threenative-proof-hw2SSD/physics-puzzle.playtest.json/assert/settled/crate.",
+          "severity": "error",
+          "sourcePath": "/tmp/threenative-proof-hw2SSD/physics-puzzle.playtest.json",
+          "suggestion": "Allow a longer settle window or fix damping, contacts, joints, and persistent forces that keep the bodies awake."
+        }
+      ],
+      "name": "physics-puzzle-observable-behaviour-proof",
+      "verdict": "fail"
+    }
+  ],
+  "total": 2
+}

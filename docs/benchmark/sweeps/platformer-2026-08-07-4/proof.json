@@ -1,0 +1,190 @@
+{
+  "arm": "framework",
+  "genre": "platformer",
+  "passed": 1,
+  "proofHash": "1a950bd0763a4c07f0d201739b5f133d977874f2585aee7c777bdc3a3413e4b7",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        },
+        {
+          "details": {
+            "axis": "+y",
+            "min": 0.5,
+            "rawDelta": 1.6801376342773438,
+            "signedDelta": 1.6801376342773438
+          },
+          "id": "movement.axisDelta",
+          "pass": true
+        },
+        {
+          "details": {
+            "entity": "player",
+            "minProjectedPixels": 20,
+            "offscreenRatio": 0,
+            "projectedPixels": 15831.58492041697
+          },
+          "id": "visibility.player",
+          "pass": true
+        },
+        {
+          "details": {
+            "camera": "camera.main",
+            "separation": 10.77874310879327,
+            "target": "player",
+            "visible": true
+          },
+          "id": "camera",
+          "pass": true
+        }
+      ],
+      "diagnostics": [],
+      "name": "platformer-jump-proof",
+      "verdict": "pass"
+    },
+    {
+      "assertions": [
+        {
+          "details": {
+            "after": 0,
+            "before": 0,
+            "expected": {
+              "gte": 1,
+              "changed": true
+            },
+            "id": "state",
+            "path": "coins",
+            "trivial": false
+          },
+          "id": "resource.state.coins",
+          "pass": false
+        },
+        {
+          "details": {
+            "after": false,
+            "before": false,
+            "expected": {
+              "equals": true,
+              "changed": true
+            },
+            "id": "state",
+            "path": "goalReached",
+            "trivial": false
+          },
+          "id": "resource.state.goalReached",
+          "pass": false
+        },
+        {
+          "details": {
+            "after": 3,
+            "before": 0,
+            "expected": {
+              "gte": 1,
+              "changed": true
+            },
+            "id": "state",
+            "path": "respawns",
+            "trivial": false
+          },
+          "id": "resource.state.respawns",
+          "pass": true
+        },
+        {
+          "details": {
+            "expected": {
+              "changed": true
+            },
+            "id": "coins",
+            "trivial": false
+          },
+          "id": "hud.coins",
+          "pass": false
+        },
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        },
+        {
+          "details": {
+            "distance": 1.2199951320122175,
+            "minimum": 5
+          },
+          "id": "movement.distance",
+          "pass": false
+        },
+        {
+          "details": {
+            "entity": "player",
+            "minProjectedPixels": 20,
+            "offscreenRatio": 0,
+            "projectedPixels": 17068.89781311945
+          },
+          "id": "visibility.player",
+          "pass": true
+        },
+        {
+          "details": {
+            "camera": "camera.main",
+            "separation": 10.598999393066535,
+            "target": "player",
+            "visible": true
+          },
+          "id": "camera",
+          "pass": true
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_STATE_STAGNATED",
+          "message": "Resource 'state' path 'coins' did not change after the scenario moved the subject 1.220 units.",
+          "artifactPath": "effect-log.json",
+          "observedRuntimePath": "effect-log.json/entries[kind=resource,resource=state]",
+          "path": "/tmp/threenative-proof-HHvLuP/platformer-run.playtest.json/assert/resources/state/coins",
+          "resourceId": "state",
+          "severity": "error",
+          "sourcePath": "/tmp/threenative-proof-HHvLuP/platformer-run.playtest.json",
+          "suggestion": "The scenario movement path executed but the asserted resource never changed. Capture effect-log.json, then check pickup/contact predicates, route coordinates, resource write declarations, and stale duplicate systems before rerunning."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_STATE_STAGNATED",
+          "message": "Resource 'state' path 'goalReached' did not change after the scenario moved the subject 1.220 units.",
+          "artifactPath": "effect-log.json",
+          "observedRuntimePath": "effect-log.json/entries[kind=resource,resource=state]",
+          "path": "/tmp/threenative-proof-HHvLuP/platformer-run.playtest.json/assert/resources/state/goalReached",
+          "resourceId": "state",
+          "severity": "error",
+          "sourcePath": "/tmp/threenative-proof-HHvLuP/platformer-run.playtest.json",
+          "suggestion": "The scenario movement path executed but the asserted resource never changed. Capture effect-log.json, then check pickup/contact predicates, route coordinates, resource write declarations, and stale duplicate systems before rerunning."
+        },
+        {
+          "code": "TN_PLAYTEST_HUD_ASSERTION_FAILED",
+          "message": "HUD assertion failed for 'coins'.",
+          "severity": "error",
+          "suggestion": "Check UI binding IDs and whether the backing resource changes during the scenario."
+        },
+        {
+          "code": "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED",
+          "message": "Entity 'player' moved 1.219995, below required 5.",
+          "severity": "error",
+          "suggestion": "Check input bindings, collision response, and whether the scenario holds input long enough."
+        }
+      ],
+      "name": "platformer-run-proof",
+      "verdict": "fail"
+    }
+  ],
+  "total": 2
+}

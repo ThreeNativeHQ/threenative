@@ -1,0 +1,166 @@
+{
+  "arm": "framework",
+  "genre": "platformer",
+  "passed": 1,
+  "proofHash": "1a950bd0763a4c07f0d201739b5f133d977874f2585aee7c777bdc3a3413e4b7",
+  "scenarios": [
+    {
+      "assertions": [
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        },
+        {
+          "details": {
+            "axis": "+y",
+            "min": 0.5,
+            "rawDelta": 1.694179892539978,
+            "signedDelta": 1.694179892539978
+          },
+          "id": "movement.axisDelta",
+          "pass": true
+        },
+        {
+          "details": {
+            "entity": "player",
+            "minProjectedPixels": 20,
+            "offscreenRatio": 0,
+            "projectedPixels": 11531.122611671823
+          },
+          "id": "visibility.player",
+          "pass": true
+        },
+        {
+          "details": {
+            "camera": "camera.main",
+            "separation": 11.441112187644775,
+            "target": "player",
+            "visible": true
+          },
+          "id": "camera",
+          "pass": true
+        }
+      ],
+      "diagnostics": [],
+      "name": "platformer-jump-proof",
+      "verdict": "pass"
+    },
+    {
+      "assertions": [
+        {
+          "details": {
+            "after": 6,
+            "before": 1,
+            "expected": {
+              "gte": 1,
+              "changed": true
+            },
+            "id": "state",
+            "path": "coins",
+            "trivial": true
+          },
+          "id": "resource.state.coins",
+          "pass": false
+        },
+        {
+          "details": {
+            "after": true,
+            "before": false,
+            "expected": {
+              "equals": true,
+              "changed": true
+            },
+            "id": "state",
+            "path": "goalReached",
+            "trivial": false
+          },
+          "id": "resource.state.goalReached",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": 1,
+            "before": 0,
+            "expected": {
+              "gte": 1,
+              "changed": true
+            },
+            "id": "state",
+            "path": "respawns",
+            "trivial": false
+          },
+          "id": "resource.state.respawns",
+          "pass": true
+        },
+        {
+          "details": {
+            "after": "6",
+            "before": "1",
+            "expected": {
+              "changed": true
+            },
+            "id": "coins",
+            "trivial": false
+          },
+          "id": "hud.coins",
+          "pass": true
+        },
+        {
+          "details": {
+            "consoleErrors": 0,
+            "networkErrors": 0,
+            "runtimeDiagnostics": 0
+          },
+          "id": "diagnostics",
+          "pass": true
+        },
+        {
+          "details": {
+            "distance": 20.543966066189824,
+            "minimum": 5
+          },
+          "id": "movement.distance",
+          "pass": true
+        },
+        {
+          "details": {
+            "entity": "player",
+            "minProjectedPixels": 20,
+            "offscreenRatio": 0,
+            "projectedPixels": 10152.105073593106
+          },
+          "id": "visibility.player",
+          "pass": true
+        },
+        {
+          "details": {
+            "camera": "camera.main",
+            "separation": 8.8613385685254,
+            "target": "player",
+            "visible": true
+          },
+          "id": "camera",
+          "pass": true
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_ASSERTION_TRIVIAL",
+          "message": "Assertion 'resource.state' at path 'coins' was already satisfied before the scenario ran (value 1).",
+          "path": "coins",
+          "severity": "error",
+          "sourcePath": "/tmp/threenative-proof-mOFZoW/platformer-run.playtest.json",
+          "suggestion": "Drive the asserted value from a failing initial state, assert changed:true, or set allowTrivial:true with a documented held-invariant reason."
+        }
+      ],
+      "name": "platformer-run-proof",
+      "verdict": "fail"
+    }
+  ],
+  "total": 2
+}

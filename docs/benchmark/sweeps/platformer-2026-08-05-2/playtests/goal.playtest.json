@@ -1,0 +1,17 @@
+{
+  "name": "platformer-goal",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "press": "ArrowRight", "holdTicks": 140, "release": true },
+    { "kind": "wait", "waitTicks": 20, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [{ "id": "GameState", "path": "goalReached", "equals": true, "changed": true }],
+    "tags": [{ "tag": "goal", "count": 1 }]
+  }
+}

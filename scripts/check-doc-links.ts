@@ -1,13 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-
-/**
- * The one evidence tree git does not carry (PRD-323 Phase 4). It is skipped both as a link source
- * and as a link target: the archives exist only on the machine that ran the sweep.
- */
-const UNTRACKED_TREE = "docs/benchmark/sweeps";
 
 export type DocLinkIssue = {
   file: string;
@@ -268,9 +262,9 @@ export function listTrackedMarkdownFiles(root: string): string[] {
   const files = output
     .split("\0")
     .filter((file) => file.length > 0)
-    .filter((file) => !file.startsWith(`${UNTRACKED_TREE}/`));
+    .filter((file) => !file.startsWith("docs/benchmark/sweeps/"));
   if (files.length === 0) {
-    throw new Error(`No tracked Markdown files found outside ${UNTRACKED_TREE}/`);
+    throw new Error("No tracked Markdown files found outside docs/benchmark/sweeps/");
   }
   return files;
 }
@@ -300,15 +294,6 @@ export function checkDocLinks(
     for (const rawTarget of targets) {
       const target = relativeTarget(rawTarget, file);
       if (!target) {
-        continue;
-      }
-
-      // `docs/benchmark/sweeps/` is untracked build output (PRD-323 Phase 4): the archives sit on
-      // the machine that ran the sweep and git does not carry them, so whether a link into the
-      // tree resolves depends on who is looking. Checking it would pass on the author's machine
-      // and fail on every clone and in CI, which is a worse failure than not checking — the
-      // listing above already skips the tree as a link *source* for the same reason.
-      if (relative(root, resolve(dirname(absoluteFile), target)).startsWith(UNTRACKED_TREE)) {
         continue;
       }
 

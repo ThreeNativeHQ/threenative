@@ -1,0 +1,26 @@
+{
+  "arm": "vanilla",
+  "genre": "physics-puzzle",
+  "passed": 0,
+  "proofHash": "c241ea5e4120afd4a50325a5b9ee0606e81e1b9d8539896f2b6e9f6b8f85da0d",
+  "scenarios": [
+    {
+      "assertions": [],
+      "diagnostics": [
+        {
+          "capability": "runtime.physics",
+          "code": "TN_PLAYTEST_CAPABILITY_MISSING",
+          "fix": {
+            "instruction": "Register a provider for 'runtime.physics' or remove the assertion that requires it."
+          },
+          "message": "Scenario requires missing capability 'runtime.physics'.",
+          "severity": "error",
+          "suggestion": "Register a provider for 'runtime.physics' or remove the assertion that requires it."
+        }
+      ],
+      "name": "physics-puzzle-contact-settle-replay-proof",
+      "verdict": "fail"
+    }
+  ],
+  "total": 1
+}

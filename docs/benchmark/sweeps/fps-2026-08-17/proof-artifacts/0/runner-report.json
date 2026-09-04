@@ -1,0 +1,692 @@
+{
+  "diagnostics": [],
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true,
+    "runtimeReady": true
+  },
+  "distance": 0,
+  "entity": "",
+  "expectMoved": false,
+  "frames": 154,
+  "observations": {
+    "components": {
+      "player": {
+        "health": {
+          "before": 100,
+          "after": 100
+        },
+        "position": {
+          "before": [
+            0.19996461272239685,
+            0.830867350101471,
+            13.400017738342285
+          ],
+          "after": [
+            0.19996576011180878,
+            0.8398316502571106,
+            13.400015830993652
+          ]
+        },
+        "yaw": {
+          "before": 0,
+          "after": 0
+        }
+      },
+      "rifle": {
+        "ammo": {
+          "before": 30,
+          "after": 30
+        },
+        "reserve": {
+          "before": 90,
+          "after": 89
+        },
+        "shots": {
+          "before": 0,
+          "after": 1
+        },
+        "reloads": {
+          "before": 0,
+          "after": 1
+        },
+        "reloading": {
+          "before": false,
+          "after": false
+        }
+      },
+      "enemy": {
+        "health": {
+          "before": 36,
+          "after": 36
+        },
+        "phase": {
+          "before": "patrol",
+          "after": "engage"
+        },
+        "position": {
+          "before": [
+            -5.8237522426798884,
+            0,
+            -10.161876121339928
+          ],
+          "after": [
+            -5.1531819672310455,
+            0,
+            -7.055816480740553
+          ]
+        },
+        "deadFor": {
+          "before": 0,
+          "after": 0
+        }
+      }
+    },
+    "componentSeries": [
+      {
+        "label": "fire-burst",
+        "snapshots": {
+          "player": {
+            "health": 100,
+            "position": [
+              0.19996584951877594,
+              0.8378685116767883,
+              13.400016784667969
+            ],
+            "yaw": 0
+          },
+          "rifle": {
+            "ammo": 29,
+            "reserve": 90,
+            "shots": 1,
+            "reloads": 0,
+            "reloading": false
+          },
+          "enemy": {
+            "health": 36,
+            "phase": "engage",
+            "position": [
+              -7.415771938818804,
+              0,
+              -10.891719761182546
+            ],
+            "deadFor": 0
+          }
+        },
+        "tick": 107
+      },
+      {
+        "label": "settle",
+        "snapshots": {
+          "player": {
+            "health": 100,
+            "position": [
+              0.1999656856060028,
+              0.838468611240387,
+              13.400016784667969
+            ],
+            "yaw": 0
+          },
+          "rifle": {
+            "ammo": 29,
+            "reserve": 90,
+            "shots": 1,
+            "reloads": 0,
+            "reloading": false
+          },
+          "enemy": {
+            "health": 36,
+            "phase": "engage",
+            "position": [
+              -7.308076449504802,
+              0,
+              -10.54820603280853
+            ],
+            "deadFor": 0
+          }
+        },
+        "tick": 113
+      },
+      {
+        "label": "reload",
+        "snapshots": {
+          "player": {
+            "health": 100,
+            "position": [
+              0.19996699690818787,
+              0.8389686942100525,
+              13.400016784667969
+            ],
+            "yaw": 0
+          },
+          "rifle": {
+            "ammo": 29,
+            "reserve": 90,
+            "shots": 1,
+            "reloads": 0,
+            "reloading": true
+          },
+          "enemy": {
+            "health": 36,
+            "phase": "engage",
+            "position": [
+              -7.2183302051808775,
+              0,
+              -10.261944593509153
+            ],
+            "deadFor": 0
+          }
+        },
+        "tick": 118
+      },
+      {
+        "label": "reload-completes",
+        "snapshots": {
+          "player": {
+            "health": 100,
+            "position": [
+              0.19996576011180878,
+              0.8398316502571106,
+              13.400015830993652
+            ],
+            "yaw": 0
+          },
+          "rifle": {
+            "ammo": 30,
+            "reserve": 89,
+            "shots": 1,
+            "reloads": 1,
+            "reloading": false
+          },
+          "enemy": {
+            "health": 36,
+            "phase": "engage",
+            "position": [
+              -5.1531819672310455,
+              0,
+              -7.055816480740553
+            ],
+            "deadFor": 0
+          }
+        },
+        "tick": 238
+      }
+    ],
+    "console": [
+      {
+        "source": "browser-console",
+        "text": "[vite] connecting...",
+        "type": "debug"
+      },
+      {
+        "source": "browser-console",
+        "text": "[vite] connected.",
+        "type": "debug"
+      },
+      {
+        "source": "browser-console",
+        "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_FPS_ASSETS_LOADED:enemy(9 clips),viewmodel,sky,3 textures",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_SCENE_COLLAPSE:{\"schemaVersion\":1,\"status\":\"deferred\",\"reasonCode\":\"belowMeshFloorStillWatching\",\"collapsed\":false,\"reason\":\"fewer than 200 meshes so far; still watching\",\"sourceMeshes\":83,\"mergedMeshes\":0,\"movingParts\":0,\"diagnostics\":{\"sourceRenderables\":98,\"resultDrawCandidates\":0,\"sourceMaterialIdentities\":23,\"resultMaterialIdentities\":0,\"groups\":{\"staticWorld\":0,\"movingOwners\":0,\"cameraOverlays\":0},\"skipped\":{\"belowMeshFloor\":83,\"cameraOverlay\":6,\"layers\":0,\"renderOrder\":0,\"renderHook\":0,\"transparency\":9,\"sprite\":0,\"points\":0,\"missingPosition\":0,\"missingGeometry\":0,\"missingMaterial\":0},\"timings\":{\"bakeMs\":0,\"observeMs\":0,\"mergeMs\":0,\"copyMs\":0,\"transformMs\":0,\"colorMs\":0,\"sampleMs\":0,\"transformRefresh\":{\"count\":0,\"lastMs\":0,\"maxMs\":0,\"meanMs\":0}}}}",
+        "type": "info"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "resources": {
+      "GameState": {
+        "before": {
+          "ammo": 30,
+          "distanceMoved": 0.000040929077264103766,
+          "health": 100,
+          "hitFlash": 0,
+          "phase": "playing",
+          "reloads": 0,
+          "reserve": 90,
+          "score": 0,
+          "shots": 0,
+          "targetsHit": 0,
+          "timeRemaining": 59.38333333333333
+        },
+        "after": {
+          "ammo": 30,
+          "distanceMoved": 0.00006155527570885854,
+          "health": 100,
+          "hitFlash": 0,
+          "phase": "playing",
+          "reloads": 1,
+          "reserve": 89,
+          "score": 100,
+          "shots": 1,
+          "targetsHit": 1,
+          "timeRemaining": 56.033333333333346
+        }
+      },
+      "state": {
+        "before": {
+          "ammo": 30,
+          "distanceMoved": 0.000040929077264103766,
+          "health": 100,
+          "hitFlash": 0,
+          "phase": "playing",
+          "reloads": 0,
+          "reserve": 90,
+          "score": 0,
+          "shots": 0,
+          "targetsHit": 0,
+          "timeRemaining": 59.38333333333333
+        },
+        "after": {
+          "ammo": 30,
+          "distanceMoved": 0.00006155527570885854,
+          "health": 100,
+          "hitFlash": 0,
+          "phase": "playing",
+          "reloads": 1,
+          "reserve": 89,
+          "score": 100,
+          "shots": 1,
+          "targetsHit": 1,
+          "timeRemaining": 56.033333333333346
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "fire-burst",
+        "snapshots": {
+          "GameState": {
+            "ammo": 29,
+            "distanceMoved": 0.000056515691872868415,
+            "health": 100,
+            "hitFlash": 0,
+            "phase": "playing",
+            "reloads": 0,
+            "reserve": 90,
+            "score": 100,
+            "shots": 1,
+            "targetsHit": 1,
+            "timeRemaining": 58.21666666666667
+          },
+          "state": {
+            "ammo": 29,
+            "distanceMoved": 0.000056515691872868415,
+            "health": 100,
+            "hitFlash": 0,
+            "phase": "playing",
+            "reloads": 0,
+            "reserve": 90,
+            "score": 100,
+            "shots": 1,
+            "targetsHit": 1,
+            "timeRemaining": 58.21666666666667
+          }
+        },
+        "tick": 107
+      },
+      {
+        "label": "settle",
+        "snapshots": {
+          "GameState": {
+            "ammo": 29,
+            "distanceMoved": 0.000057350156899723884,
+            "health": 100,
+            "hitFlash": 0,
+            "phase": "playing",
+            "reloads": 0,
+            "reserve": 90,
+            "score": 100,
+            "shots": 1,
+            "targetsHit": 1,
+            "timeRemaining": 58.11666666666667
+          },
+          "state": {
+            "ammo": 29,
+            "distanceMoved": 0.000057350156899723884,
+            "health": 100,
+            "hitFlash": 0,
+            "phase": "playing",
+            "reloads": 0,
+            "reserve": 90,
+            "score": 100,
+            "shots": 1,
+            "targetsHit": 1,
+            "timeRemaining": 58.11666666666667
+          }
+        },
+        "tick": 113
+      },
+      {
+        "label": "reload",
+        "snapshots": {
+          "GameState": {
+            "ammo": 29,
+            "distanceMoved": 0.000058288930054936286,
+            "health": 100,
+            "hitFlash": 0,
+            "phase": "playing",
+            "reloads": 0,
+            "reserve": 90,
+            "score": 100,
+            "shots": 1,
+            "targetsHit": 1,
+            "timeRemaining": 58.03333333333334
+          },
+          "state": {
+            "ammo": 29,
+            "distanceMoved": 0.000058288930054936286,
+            "health": 100,
+            "hitFlash": 0,
+            "phase": "playing",
+            "reloads": 0,
+            "reserve": 90,
+            "score": 100,
+            "shots": 1,
+            "targetsHit": 1,
+            "timeRemaining": 58.03333333333334
+          }
+        },
+        "tick": 118
+      },
+      {
+        "label": "reload-completes",
+        "snapshots": {
+          "GameState": {
+            "ammo": 30,
+            "distanceMoved": 0.00006155527570885854,
+            "health": 100,
+            "hitFlash": 0,
+            "phase": "playing",
+            "reloads": 1,
+            "reserve": 89,
+            "score": 100,
+            "shots": 1,
+            "targetsHit": 1,
+            "timeRemaining": 56.033333333333346
+          },
+          "state": {
+            "ammo": 30,
+            "distanceMoved": 0.00006155527570885854,
+            "health": 100,
+            "hitFlash": 0,
+            "phase": "playing",
+            "reloads": 1,
+            "reserve": 89,
+            "score": 100,
+            "shots": 1,
+            "targetsHit": 1,
+            "timeRemaining": 56.033333333333346
+          }
+        },
+        "tick": 238
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeObservations": {
+      "gameplay": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "audio": {
+          "queued": 0,
+          "voices": 0
+        },
+        "world": {
+          "seed": 90210,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "core": "0.1.0",
+            "randomState": 90210,
+            "rapier": "0.19.3",
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplaySeries": [
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "audio": {
+              "queued": 0,
+              "voices": 0
+            },
+            "world": {
+              "seed": 90210,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.1.0",
+                "randomState": 90210,
+                "rapier": "0.19.3",
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "fire-burst",
+          "tick": 107
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "audio": {
+              "queued": 0,
+              "voices": 0
+            },
+            "world": {
+              "seed": 90210,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.1.0",
+                "randomState": 90210,
+                "rapier": "0.19.3",
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "settle",
+          "tick": 113
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "audio": {
+              "queued": 0,
+              "voices": 0
+            },
+            "world": {
+              "seed": 90210,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.1.0",
+                "randomState": 90210,
+                "rapier": "0.19.3",
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "reload",
+          "tick": 118
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "audio": {
+              "queued": 0,
+              "voices": 0
+            },
+            "world": {
+              "seed": 90210,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.1.0",
+                "randomState": 90210,
+                "rapier": "0.19.3",
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "reload-completes",
+          "tick": 238
+        }
+      ]
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "fire-burst",
+        "signals": [],
+        "tick": 107
+      },
+      {
+        "label": "settle",
+        "signals": [],
+        "tick": 113
+      },
+      {
+        "label": "reload",
+        "signals": [],
+        "tick": 118
+      },
+      {
+        "label": "reload-completes",
+        "signals": [],
+        "tick": 238
+      }
+    ],
+    "visual": {
+      "changedPixelRatio": 0.06701405843098958,
+      "comparisonSource": "before-after"
+    }
+  },
+  "artifactDirectory": "/home/joao/projects/threenative/sandbox/fps-framework/proof-artifacts/0",
+  "capture": {
+    "adapter": {
+      "architecture": "turing",
+      "vendor": "nvidia",
+      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "16384",
+      "limit.maxStorageBufferBindingSize": "2147483644"
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan"
+    ],
+    "captureMethod": "page.screenshot",
+    "rendererKind": "webgpu",
+    "target": "web",
+    "viewport": {
+      "height": 1024,
+      "width": 1536
+    }
+  },
+  "assertionResults": [
+    {
+      "id": "visual.0.frameDiff",
+      "pass": true,
+      "details": {
+        "after": true,
+        "changedPixelRatio": 0.06701405843098958,
+        "comparisonSource": "before-after",
+        "expected": {
+          "equals": true
+        },
+        "minChangedPixelRatio": 0.001
+      }
+    },
+    {
+      "details": {
+        "after": 1,
+        "before": 0,
+        "expected": {
+          "gte": 1,
+          "changed": true
+        },
+        "id": "state",
+        "path": "shots",
+        "trivial": false
+      },
+      "id": "resource.state.shots",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 1,
+        "before": 0,
+        "expected": {
+          "gte": 1,
+          "changed": true
+        },
+        "id": "state",
+        "path": "reloads",
+        "trivial": false
+      },
+      "id": "resource.state.reloads",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 89,
+        "before": 90,
+        "expected": {
+          "changed": true
+        },
+        "id": "state",
+        "path": "reserve",
+        "trivial": false
+      },
+      "id": "resource.state.reserve",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "runtime": "web",
+  "scenario": "fps-fire-and-reload-proof",
+  "target": "web",
+  "url": "http://127.0.0.1:5190"
+}

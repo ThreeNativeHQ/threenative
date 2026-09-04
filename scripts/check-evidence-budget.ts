@@ -14,12 +14,15 @@ import path from "node:path";
  */
 
 export const EVIDENCE_BUDGETS = {
-  // 2026-09-04, after Phase 3 deleted 147 uncited artifacts: 65.9 MB over 654 tracked files.
+  // 2026-09-04, after Phase 3 deleted the uncited artifacts: 65.9 MB over 664 tracked files.
   // Was 80 MB / 800 files at the 2026-09-02 growth-stop setting.
   "docs/verification": { bytes: 72 * 1024 * 1024, files: 700 },
-  // 2026-09-04, after Phase 4 untracked docs/benchmark/sweeps and Phase 3 deleted 15 uncited
-  // artifacts: 17.5 MB over 55 tracked files. Was 300 MB / 5,400 files.
-  "docs/benchmark": { bytes: 25 * 1024 * 1024, files: 80 },
+  // 2026-09-04, after Phase 3 and Phase 4: 179.5 MB over 1,393 tracked files, down from
+  // 203.3 MB over 5,362. Phase 4 untracked the generated arm sources under
+  // docs/benchmark/sweeps and kept every measurement artifact, so the file count fell by
+  // three quarters while the bytes barely moved — the sweep record is mostly PNG frames a
+  // blind judge scored, and those are the benchmark, not its build output.
+  "docs/benchmark": { bytes: 200 * 1024 * 1024, files: 1500 },
 } as const;
 
 /**

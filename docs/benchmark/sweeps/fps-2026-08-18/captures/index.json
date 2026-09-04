@@ -1,0 +1,49 @@
+{
+  "recipe": "webgpu-xvfb-headed",
+  "captures": [
+    {
+      "distinctColors": 23655,
+      "brightPixelRatio": 0.9510122934977213,
+      "height": 1024,
+      "luminanceStdDev": 0.20507045220020953,
+      "width": 1536,
+      "bytes": 1115460,
+      "capture": "fps-fire-and-reload-proof-after.png",
+      "scenario": "fps-fire-and-reload-proof",
+      "source": "proof-artifacts/0/after.png"
+    },
+    {
+      "distinctColors": 27147,
+      "brightPixelRatio": 0.9506556193033854,
+      "height": 1024,
+      "luminanceStdDev": 0.21095065200734783,
+      "width": 1536,
+      "bytes": 1139129,
+      "capture": "fps-fire-and-reload-proof-before.png",
+      "scenario": "fps-fire-and-reload-proof",
+      "source": "proof-artifacts/0/before.png"
+    },
+    {
+      "distinctColors": 26988,
+      "brightPixelRatio": 0.9515272776285807,
+      "height": 1024,
+      "luminanceStdDev": 0.2048110598141055,
+      "width": 1536,
+      "bytes": 1158434,
+      "capture": "fps-move-and-hit-proof-after.png",
+      "scenario": "fps-move-and-hit-proof",
+      "source": "proof-artifacts/1/after.png"
+    },
+    {
+      "distinctColors": 27126,
+      "brightPixelRatio": 0.9506632486979166,
+      "height": 1024,
+      "luminanceStdDev": 0.21097318242550236,
+      "width": 1536,
+      "bytes": 1138232,
+      "capture": "fps-move-and-hit-proof-before.png",
+      "scenario": "fps-move-and-hit-proof",
+      "source": "proof-artifacts/1/before.png"
+    }
+  ]
+}
