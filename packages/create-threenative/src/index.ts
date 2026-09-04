@@ -5,6 +5,7 @@ import { cp, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promise
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
+import { MCP_SERVERS, serverEntryPath } from "./mcp-servers.js";
 
 export { createEngineFreshnessPlugin, hashEngineDist } from "./engine-freshness.js";
 export { createWebBrandPlugin, renderWebManifest } from "./web-brand.js";
@@ -18,9 +19,20 @@ const PACKAGE_SOURCE_FLAGS = {
   "@threenative/playtest": "--playtest-package",
   "@threenative/runtime-native": "--runtime-native-package",
   "@threenative/ui": "--ui-package",
+  "threenative-blender-mcp": "--blender-mcp-package",
   "threenative-engine-mcp": "--engine-mcp-package",
   "create-threenative": "--cli-package",
 } as const;
+
+/** The unscoped workspace packages, keyed by their flag suffix. Scoped packages derive their flag
+ * from the package name; these three cannot, so the alias and the name live in one table rather
+ * than in a chain of equality checks that a fourth unscoped package would have to be added to in
+ * two places. */
+const UNSCOPED_PACKAGE_FLAG_ALIASES: Readonly<Record<string, string>> = {
+  "blender-mcp": "threenative-blender-mcp",
+  cli: "create-threenative",
+  "engine-mcp": "threenative-engine-mcp",
+};
 
 type PackageSourceName = keyof typeof PACKAGE_SOURCE_FLAGS;
 type PackageSources = Partial<Record<PackageSourceName, string>> & {
@@ -497,11 +509,13 @@ const NODE_MODULES_PREFIX = "./node_modules/";
 // project always has as a direct dependency. Pointing straight at `threenative-asset-mcp` only
 // works where the package manager hoists, so a project that installed the library without
 // scaffolding — or one on pnpm whose lockfile nests differently — silently lost its asset tools.
-const REQUIRED_MCP_SERVERS = {
-  "threenative-assets": `${NODE_MODULES_PREFIX}@threenative/core/mcp/assets.mjs`,
-  "threenative-sculpt": `${NODE_MODULES_PREFIX}@threenative/core/mcp/sculpt.mjs`,
-  "threenative-engine": `${NODE_MODULES_PREFIX}@threenative/core/mcp/engine.mjs`,
-} as const;
+//
+// Derived from core's table rather than retyped beside it: a server added there must appear in a
+// scaffolded project, and a hand-kept copy here would have let the scaffold pass while shipping
+// a project that is missing it.
+const REQUIRED_MCP_SERVERS: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(MCP_SERVERS).map(([name, server]) => [name, serverEntryPath(server)]),
+);
 
 function mcpPackageName(entry: string): string {
   const segments = entry.slice(NODE_MODULES_PREFIX.length).split("/");
@@ -643,7 +657,9 @@ export async function createProject(
 const PACKAGE_SOURCE_FLAG = /^--([a-z0-9-]+)-package$/u;
 const SCOPED_PACKAGE_FLAG_PREFIX = "threenative-";
 
-function packageNameFromFlag(flag: string): string | undefined {
+/** The inverse of `scripts/workspace-packages.ts`'s `workspacePackageSourceFlag`; exported so
+ * the pair is gated rather than trusted. */
+export function packageNameFromFlag(flag: string): string | undefined {
   const match = flag.match(PACKAGE_SOURCE_FLAG);
   if (match === null) return undefined;
   const suffix = match[1];
@@ -656,8 +672,8 @@ function packageNameFromFlag(flag: string): string | undefined {
     return scopedSuffix.length === 0 ? undefined : `@threenative/${scopedSuffix}`;
   }
   if (suffix === "runtime") return undefined;
-  if (suffix === "cli") return "create-threenative";
-  if (suffix === "engine-mcp") return "threenative-engine-mcp";
+  const unscoped = UNSCOPED_PACKAGE_FLAG_ALIASES[suffix];
+  if (unscoped !== undefined) return unscoped;
   return `@threenative/${suffix}`;
 }
 

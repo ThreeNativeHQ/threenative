@@ -538,9 +538,13 @@ function formatHitches(hitches: readonly IHitchWindowJson[]): string[] {
   ];
   const named = hitches.filter((hitch) => (hitch.pipelineCompileCalls ?? 0) > 0);
   if (named.length === 0) {
+    // A missing field and a measured zero are different facts: the first means the host predates
+    // the attribution, the second means no late compile happened. Never merge them into one line.
+    const anyField = hitches.some((hitch) => hitch.pipelineCompileCalls !== undefined);
     lines.push(
-      "  late sync compile: none reported — either none happened, or this host predates the " +
-        "pipelineCompile fields (TN_FRAME_HITCH without them)",
+      anyField
+        ? "  late sync compile: none — every window reported pipelineCompileCalls 0"
+        : "  late sync compile: unreported — this host predates the pipelineCompile fields (TN_FRAME_HITCH without them)",
     );
     return lines;
   }

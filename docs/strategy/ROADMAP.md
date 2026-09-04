@@ -159,5 +159,12 @@ Studio or Cloud tier before a stranger has played a ThreeNative game for five mi
 project's decisive test, defined in
 [`STRANGER-TEST-PROTOCOL.md`](../product/STRANGER-TEST-PROTOCOL.md).
 
+**Where the Blender line falls.** ThreeNative drives Blender as a separate process. It never
+reimplements modelling, sculpting, shading, rigging or rendering, ships no geometry-authoring UI in
+`packages/`, and adds no `bpy` feature. When Blender is absent the framework says so and does
+less; it never substitutes. `threenative-blender-mcp` is that boundary in code: it resolves a
+binary the user installed, spawns it headlessly, and contains no Blender —
+[PRD-346](../PRDs/done/PRD-346-a-downloaded-fbx-becomes-a-running-threenative-character.md).
+
 Closed with evidence and not reopened in a feature: an IR, a scene format, an editor, a preset or
 genre system, a code-first ECS, a bespoke CLI vocabulary. Each can absorb the entire company.

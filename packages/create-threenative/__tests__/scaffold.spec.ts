@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { compileAssets } from "@threenative/assets";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
@@ -94,6 +95,9 @@ const BUG_REPORT_SKILL_PATHS = [
 // requests its normal/metalness/roughness texture nodes lazily, because asking for them is
 // what created the extra render target that made the mobile look a black screen. `sailing`
 // never had those lines, so its tree is unchanged and its hash does not move.
+// Recomputed 2026-09-03 for PRD-338's authoring-layer pass: the shipped playtest skill, the
+// debug-surface page and capture-the-frame all teach `doctor --url`'s room lines and the new
+// scene/stride assertions, and all three are copied into every scaffold.
 // Recomputed 2026-09-02 for PRD-338, then again the same day when the `scene` assertion family
 // landed: the generated assertion reference is embedded in every scaffold and gained a kind.
 // Recomputed 2026-09-02 for PRD-338: the playtest bridge gained the `scene.observe` capability
@@ -109,6 +113,12 @@ const BUG_REPORT_SKILL_PATHS = [
 // stride wording landed in 4fd802a0 without re-pinning these, so this recompute clears that red
 // too. Computed from the committed tree, with no uncommitted edits under packages/create-threenative.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-09-03 for PRD-339, starter and sailing only: both dropped
+  // `assets: { models: "none", textures: "none" }`. The compile step now takes the build's
+  // `--target` and drops the passes a platform cannot decode, so the config no longer has to pin
+  // one constant for four targets — which is how a scaffolded game shipped 2 GB of uncompressed
+  // web output to satisfy an Android constraint. No other template named the key, and no other
+  // tree moved.
   // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
   // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
   // holds the frame budget instead of the game hand-authoring a resolution constant.
@@ -237,19 +247,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "4d958110ab4177a449d2931242f84488f5bd033ff27742fce8b9141b8fa6c156",
-  defense: "d52a6107f94ed30ffc8df3fbe9bde6e77dab7a1f0279eaf92457ea13bd2456a8",
+  "action-rpg": "d36f37da325257975137114ec29b31a3fe918cfc6f471bd53ef6564183922909",
+  defense: "d8de5044c40bfc10780a1633caa0ad7f6b0a6635a734a1836045026fac604441",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "2b30beec5815d3f7c1e4b89f297f1361dfd46c32d548e014388c45b071fcc62f",
-  platformer: "06921ac591cd89bae41949e38e8a1a794452bfdbaef95a592d412bb54dde4e4a",
-  runner: "205dd9ef989397a212729e329eed0c219d12c03b2b4566dd701323b7f5926c07",
-  puzzle: "52e305a39685b2c14eddb51aa96b5de70367bf7ef18c75313d23ea17e8760bd5",
-  racing: "43e813336efe77eaad74ec69d0916c014681718c76785d5ef7ebd177d9b936e7",
-  shooter: "d7fe30ed6ba9622197bf68efe37e07814c651fef89c18656ba2829bf6e6e92ed",
+  minimal: "37320e054ee41e2b047a76b234e3e89b4c2bbf3db028b31d6cb5e00e7e9101ab",
+  platformer: "73b06da03f1073038adcfd68c4d169e6f7c7cc20b7c3611019d2cc8a06459009",
+  runner: "9e62cba251a1d151be4fcd30505eea4320ffc7a343c6a53dd5b89894403c83aa",
+  puzzle: "8bc0f84fabc31d7abd90a086fb45e7348769d48b13a03079a668ee2e32a356cc",
+  racing: "cd87a0dc02ba4d38702598cf955c4999e14669bc80acbcb3efe20a2b04d4b70c",
+  shooter: "559295fe019f384a37c0a72426b94a21c78018897bb5a503b4fb324b440706fb",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "4944c7cb96a38bc38b857c1fb4c7d4c936d78a2d0dd85fbd4aa39795e65b63bd",
+  starter: "16f24429db87236cac26cf11c7ea17456238503a6eb6d85087f11b7c3d480ed7",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -270,7 +280,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "348f2474070d7e1a171769b36f68c390b645fad3354ad8e870be97e09b7d9062",
+  sailing: "8aa03615e1a4525ea189fb3e5dd584e4fbcfb646f19279c30380483485e6cf0d",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -290,6 +300,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // AGENTS.md paragraph that states the convention.
   // Recomputed 2026-08-29 for PRD-249. Every template moved because every scaffold embeds the
   // new FluidField2D capability manifest and generated capability-reference entry.
+  // Recomputed 2026-09-03 for PRD-346: `MCP_SERVERS` gained a fourth entry,
+  // `threenative-blender`, which `pnpm sync:mcp` writes into all seven host configs of every
+  // template, and the shared `finding-assets.md` reference gained the downloaded-.fbx loop.
+  // All ten trees moved; no template source did.
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -695,17 +709,42 @@ describe("create-threenative", () => {
 
   it("keeps the starter's shipped assets mobile-shippable", async () => {
     // Mobile has no WebAssembly, so neither Basis-decoded textures nor Meshopt-decoded geometry
-    // can ship there. The starter's demo assets are tiny enough that compression only ever grew
-    // them (150 -> 542 bytes on the 16x16 proof texture), so the template pins both to "none" —
-    // the exact red this prevents, hit on 2026-08-27: `build:android` on a machine with the
-    // Basis encoder refused TN_NATIVE_KTX2_UNSUPPORTED on a starter scaffold that had built
-    // clean the week before, purely because the encoder got installed in between.
-    const config = await readFile(
-      path.join(TEMPLATE_ROOT, "starter", "threenative.config.ts"),
-      "utf8",
-    );
-    expect(config).toMatch(/models:\s*"none"/u);
-    expect(config).toMatch(/textures:\s*"none"/u);
+    // can ship there — the red hit on 2026-08-27: `build:android` on a machine with the Basis
+    // encoder refused TN_NATIVE_KTX2_UNSUPPORTED on a starter scaffold that had built clean the
+    // week before, purely because the encoder got installed in between.
+    //
+    // The template used to pin `models`/`textures` to `"none"` to prevent it, which held for
+    // android and followed the same game onto web: one shipped 2,003 MB of manifest output with
+    // no compressed texture in it. The build names its `--target` and the compile step now drops
+    // the passes that target cannot decode, so this asserts what a mobile bake *produces* rather
+    // than what the config file says — and the web bake of the same config stays compressed.
+    const root = await makeTempDir("threenative-scaffold-mobile-");
+    try {
+      await mkdir(path.join(root, "assets"), { recursive: true });
+      await cp(path.join(TEMPLATE_ROOT, "starter", "assets"), path.join(root, "assets"), {
+        recursive: true,
+      });
+
+      await compileAssets({ cwd: root, platform: "android" });
+      const android = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      ) as { entries: Record<string, { extensions?: string[]; output: string }> };
+      const mobileOutputs = Object.values(android.entries);
+      expect(mobileOutputs.length).toBeGreaterThan(0);
+      for (const entry of mobileOutputs) {
+        expect(entry.output).not.toMatch(/\.ktx2$/u);
+        expect(entry.extensions ?? []).not.toContain("EXT_meshopt_compression");
+      }
+
+      await rm(path.join(root, "public"), { force: true, recursive: true });
+      await compileAssets({ cwd: root, platform: "web" });
+      const web = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      ) as { entries: Record<string, { output: string }> };
+      expect(Object.values(web.entries).some((entry) => entry.output.endsWith(".ktx2"))).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("should generate the starter tree without catalog protocols", async () => {
@@ -1328,6 +1367,10 @@ describe("create-threenative", () => {
             command: "node",
             args: [`${CORE_SHIM}/engine.mjs`],
           },
+          "threenative-blender": {
+            command: "node",
+            args: [`${CORE_SHIM}/blender.mjs`],
+          },
         },
       });
       await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
@@ -1359,6 +1402,10 @@ describe("create-threenative", () => {
           "threenative-engine": {
             command: "node",
             args: [`${CORE_SHIM}/engine.mjs`],
+          },
+          "threenative-blender": {
+            command: "node",
+            args: [`${CORE_SHIM}/blender.mjs`],
           },
         },
       });

@@ -1,0 +1,31 @@
+{
+  "comment": "The blender MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.1.0, packed from this workspace and installed from that tarball into a clean directory — never read from src/. `recommended` is the ordered loop the shipped agent docs describe. Regenerate with `pnpm tsx scripts/capture-blender-mcp-tools.ts`.",
+  "version": "0.1.0",
+  "serverInfo": {
+    "name": "threenative-blender-mcp",
+    "version": "0.1.0"
+  },
+  "recommended": [
+    "blender_status",
+    "blender_inspect",
+    "blender_convert",
+    "blender_recipes",
+    "blender_run_python"
+  ],
+  "tools": [
+    "blender_convert",
+    "blender_inspect",
+    "blender_recipes",
+    "blender_run_python",
+    "blender_status"
+  ],
+  "statusShape": [
+    "available",
+    "detail",
+    "install",
+    "installCommand",
+    "minimumVersion",
+    "path",
+    "version"
+  ]
+}

@@ -383,6 +383,111 @@ describe("CI pipeline structure", () => {
     expect(job).toContain("non-visual-scenarios.mjs");
   });
 
+  // A shard count above the template's scenario count is a leg that can only ever select nothing.
+  // The step fails closed when that happens, but it fails closed *in CI*, after the matrix has
+  // already paid for the runner. The classifier is right here, so the matrix can be wrong on a
+  // developer machine instead.
+  it("never declares more shards for a template than it has non-visual scenarios", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "template-nonvisual");
+    const entries = [
+      ...job.matchAll(
+        /^\s+-\s*\{\s*template:\s*([a-z][a-z0-9-]*)\s*,\s*shard:\s*"(\d+)\/(\d+)"/gmu,
+      ),
+    ].map((match) => ({ template: match[1] ?? "", count: Number(match[3]) }));
+    expect(entries.length, "template-nonvisual declares no shards").toBeGreaterThan(0);
+
+    const templateRoot = path.join(repo, "packages/create-threenative/templates");
+    for (const [template, count] of new Map(entries.map((e) => [e.template, e.count]))) {
+      const result = spawnSync(
+        process.execPath,
+        [path.join(repo, "scripts/non-visual-scenarios.mjs"), path.join(templateRoot, template)],
+        { encoding: "utf8" },
+      );
+      expect(result.status, `${template}: ${result.stderr}`).toBe(0);
+      const scenarios = result.stdout.trim().split("\n").filter(Boolean);
+      expect(
+        count,
+        `${template} declares ${count} shards for ${scenarios.length} scenarios`,
+      ).toBeLessThanOrEqual(scenarios.length);
+    }
+  });
+
+  // `pnpm/action-setup` bootstraps pnpm by running `npm ci` against registry.npmjs.org and then
+  // self-updating to the pinned version. Every job in this repository does that — 56 times per
+  // run — so a slow registry is a slow run for a reason that has nothing to do with the change
+  // under test. On 2026-09-03 it stopped being theoretical: the step's own log reads
+  // `added 1 package in 7m`, single steps reached 430s, and across the four runs after 23:00Z the
+  // bootstrap was 26% of all CI work and 57% of it in run 33819039003. The local action fetches
+  // the self-contained pnpm binary from the same GitHub release host the runner already pulls
+  // actions and Node from, and checks it against a recorded digest, so npm is not in the path of
+  // any job and an unexpected binary fails the job rather than running.
+  it("bootstraps pnpm from a pinned release digest rather than through npm", async () => {
+    const prTriggered = [".github/workflows/ci.yml", ".github/workflows/native-platforms.yml"];
+    for (const workflow of prTriggered) {
+      const source = await readFile(path.join(repo, workflow), "utf8");
+      expect(triggerSection(source), `${workflow} does not run on pull requests`).toContain(
+        "pull_request:",
+      );
+      expect(source, `${workflow} still bootstraps pnpm through npm`).not.toContain(
+        "pnpm/action-setup",
+      );
+      for (const [name, section] of jobSections(source)) {
+        if (!section.includes("actions/setup-node")) continue;
+        const local = section.indexOf("uses: ./.github/actions/pnpm");
+        expect(local, `${workflow} job ${name} does not install pnpm locally`).toBeGreaterThan(-1);
+        // `cache: pnpm` shells out to `pnpm store path`, so pnpm has to be on PATH already.
+        expect(
+          local,
+          `${workflow} job ${name} installs pnpm after setup-node reads its store`,
+        ).toBeLessThan(section.indexOf("actions/setup-node"));
+      }
+    }
+
+    const action = await readFile(path.join(repo, ".github/actions/pnpm/action.yml"), "utf8");
+    const digests = await readFile(path.join(repo, ".github/actions/pnpm/checksums.txt"), "utf8");
+    // Fail closed twice over: an asset with no recorded digest, and a digest that does not match.
+    expect(action).toContain("no recorded digest");
+    // The digest is computed here and compared as a string, not handed to `sha256sum --check`:
+    // the macOS image ships a `sha256sum` that is not coreutils and has no `--check`, so on run
+    // 33831657853 that checker printed a usage line and reported a mismatch on a binary whose
+    // bytes were correct. Every tool the action probes must survive an edit, and both failure
+    // paths must still name what went wrong and stop the job.
+    expect(action).toContain("digest_of");
+    expect(action).toContain("shasum --algorithm 256");
+    expect(action).toContain("sha256sum");
+    expect(action).toContain("openssl dgst -sha256");
+    expect(action, "a digest the action cannot compute must fail the job").toContain(
+      "could not compute a sha-256 digest",
+    );
+    expect(action, "a wrong binary must still fail the job").toContain("not the recorded");
+
+    const recorded = new Map(
+      digests
+        .split("\n")
+        .map((line) => line.trim().split(/\s+/u))
+        .filter((parts) => parts.length === 2)
+        .map(([digest, asset]) => [asset ?? "", digest ?? ""]),
+    );
+    const assets = [...action.matchAll(/asset=(pnpm-[a-z0-9-]+(?:\.exe)?)/gu)].map((m) => m[1]);
+    expect(assets.length, "the action selects no release asset").toBeGreaterThanOrEqual(3);
+    for (const asset of assets) {
+      expect(recorded.has(asset ?? ""), `${asset} has no recorded digest`).toBe(true);
+      expect((recorded.get(asset ?? "") ?? "").length, `${asset} digest is not a sha256`).toBe(64);
+    }
+
+    // One pinned version: the digests are only meaningful for the release they were taken from.
+    const manifest = JSON.parse(await readFile(path.join(repo, "package.json"), "utf8")) as {
+      packageManager?: string;
+    };
+    const version = (manifest.packageManager ?? "").replace(/^pnpm@/u, "");
+    expect(version, "the workspace pins no pnpm version").toMatch(/^\d+\.\d+\.\d+$/u);
+    expect(digests, `checksums.txt does not name pnpm ${version}`).toContain(version);
+    expect(action, `the action does not read the workspace's pinned pnpm`).toContain(
+      "packageManager",
+    );
+  });
+
   it("PR CI reviews dependencies and scans changed commits for leaked secrets", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const supplyChain = requiredJob(ci, "supply-chain");
@@ -900,28 +1005,61 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("every native leg runs on every event", async () => {
+  it("runs every native leg on every event, bar the two that crowd the pool", async () => {
     // Until 2026-09-01 the platform legs ran only on pushes to main, the nightly cron, and PRs
     // carrying the `native` label; a PR read skips where the legs should have reported, and on
     // main the lane cancelled itself before finishing anyway (owner call: run everything,
-    // everywhere, and let a red be a red). The only condition any leg may still carry is the
-    // manual `ios_only` dispatch toggle, which runs the iOS lane alone on demand.
+    // everywhere, and let a red be a red).
+    //
+    // Two legs are gated again as of 2026-09-03, and the reason is a measurement the earlier call
+    // did not have. `desktop-parity` costs 3173s and `android-emulator-parity` 1858s: together 84
+    // of the ~130 runner-minutes this workflow spends per pull request, against ~60 for all of
+    // CI, on one shared pool. On run 33782776626 CI took 457s while its longest job was 332s —
+    // the difference is its own 26 jobs queueing against slots these two legs were holding.
+    //
+    // What the earlier call was protecting is intact: both still run on every push to main, every
+    // night, and on any PR labelled `native`, so nothing reaches a release unproven. What changed
+    // is that they no longer sit in front of the checks people actually wait on — and both are
+    // advisory rather than required, both are red on main today, and both report 30-53 minutes
+    // after a PR opens, which is after it has been read.
+    //
+    // Every other leg keeps the old rule. The only other condition any leg may carry is the manual
+    // `ios_only` dispatch toggle.
     const native = await readFile(
       path.join(repo, ".github/workflows/native-platforms.yml"),
       "utf8",
     );
-    const legs = [
-      "android-emulator-parity",
-      "desktop",
-      "ios-simulator",
-      "desktop-parity",
-      "starter-linux",
-    ] as const;
-    for (const name of legs) {
+    const gated = ["android-emulator-parity", "desktop-parity"] as const;
+    const ungated = ["desktop", "ios-simulator", "starter-linux"] as const;
+
+    for (const name of ungated) {
       const job = requiredJob(native, name);
       expect(job, name).not.toContain("github.event_name != 'pull_request'");
       expect(job, name).not.toContain("contains(github.event.pull_request.labels");
     }
+
+    for (const name of gated) {
+      const job = requiredJob(native, name);
+      // A label gate and nothing else. Anything narrower — a path filter, a branch test — is the
+      // silent skip the 2026-09-01 call was made against, and would let a change through unproven
+      // rather than merely later.
+      expect(job, name).toContain("contains(github.event.pull_request.labels.*.name, 'native')");
+      expect(job, name).toContain("github.event_name != 'pull_request'");
+      expect(job, `${name} skips on a path filter rather than a label`).not.toMatch(
+        /paths(-ignore)?:/u,
+      );
+      expect(job, `${name} no longer runs on pushes to main`).not.toContain(
+        "github.ref == 'refs/heads/main'",
+      );
+    }
+
+    // The workflow's own triggers still include the push and the cron, which is what makes the
+    // gate "later" rather than "never".
+    const triggers = triggerSection(native);
+    expect(triggers).toContain("push:");
+    expect(triggers).toContain("branches: [main]");
+    expect(triggers).toContain("schedule:");
+
     const android = requiredJob(native, "android-emulator-parity");
     expect(android).not.toContain("continue-on-error: true");
     // It reports its own red rather than swallowing it, and — since 2026-09-02 — without taking

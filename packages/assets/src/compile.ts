@@ -20,6 +20,11 @@ import type { IAppliedPasses, IPassTiming } from "./pass-chain.js";
 import { parseAudioConfig } from "./passes/audio-config.js";
 import type { IAudioOverride, IAudioPassOptions } from "./passes/audio-config.js";
 import { audioPass } from "./passes/audio.js";
+import {
+  BLENDER_IMPORT_PASS,
+  blenderImportPass,
+  needsBlenderImport,
+} from "./passes/blender-import.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import { modelPass } from "./passes/model.js";
@@ -39,6 +44,7 @@ import {
   formatAudioSizes,
   formatModelSizes,
   formatPassCosts,
+  formatSkippedCompression,
   formatTextureSizes,
 } from "./report.js";
 import type {
@@ -48,6 +54,7 @@ import type {
   IPassCostAssetRow,
   IPassCostRow,
   ISimplifyRow,
+  ISkippedCompressionRow,
   ITextureSizeRow,
   PassCostStatus,
 } from "./report.js";
@@ -199,6 +206,22 @@ export interface IAssetCompileOptions {
    * project setting, and a game config never carries it.
    */
   readonly processingOrder?: "reversed" | "sorted";
+  /**
+   * The platform this bake is for, which decides whether compression can ship at all.
+   *
+   * Android and iOS run the native host without WebAssembly, so they carry no Basis transcoder
+   * and no Meshopt decoder: a `.ktx2` texture or a meshopt-compressed mesh in a mobile bundle is
+   * a black screen, and `threenative build` refuses one with `TN_NATIVE_KTX2_UNSUPPORTED`. Web
+   * and desktop decode both.
+   *
+   * Absent means web — a direct `compileAssets` call, or a project that compiles once and serves
+   * the result. `threenative build` always names its `--target`, so the passes that a platform
+   * cannot decode drop for that build and stay on for every other one. This is the whole reason
+   * `assets.textures: "none"` used to be pinned in the scaffolded config: the author was asked to
+   * choose one constant for four targets, and every game that wanted Android shipped its web
+   * build uncompressed too. The build knows its target; it decides.
+   */
+  readonly platform?: "android" | "desktop" | "ios" | "web";
   readonly source?: string;
   /** Overrides resolution of three's Basis transcoder for the copy into the output root. */
   readonly transcoder?: IBasisTranscoder;
@@ -214,6 +237,11 @@ export interface IAssetCompileResult {
   readonly concurrencyUsed: number;
   /** One cost row per pass, driver-measured; empty when no bake ran. */
   readonly passCosts: readonly IPassCostRow[];
+  /**
+   * What each `assets.*: "none"` shipped uncompressed, per kind; empty when nothing opted out.
+   * Turning a convention off does not turn its measurement off.
+   */
+  readonly skippedCompression: readonly ISkippedCompressionRow[];
   readonly receipt?: IBakeReceipt;
   readonly report?: IAssetHealthReport;
   readonly skipped: number;
@@ -255,6 +283,9 @@ interface IAssetManifestEntry {
   /** Extensions the compiled output declares (model pass), sorted. */
   readonly extensions?: readonly string[];
   readonly format?: string;
+  /** The source extension a GLB was converted from (`fbx`, `blend`, `obj`, `dae`), so a report can
+   * say a model was converted rather than authored. Absent for a model the game shipped as glTF. */
+  readonly importedFrom?: string;
   readonly kind: AssetKind;
   readonly lightmapAtlas?: Readonly<Record<string, unknown>>;
   readonly lightmaps?: readonly Readonly<Record<string, unknown>>[];
@@ -273,6 +304,10 @@ interface IAssetManifest {
 }
 
 interface ICompileLayout {
+  /** True when the built-in pass registry is in play — a caller that supplied its own opted out of nothing. */
+  readonly builtinRegistry: boolean;
+  /** False on a platform with no WebAssembly, where compressed output cannot be decoded at all. */
+  readonly decodesCompression: boolean;
   /** `assets.concurrency` from the game config, when it declared one. */
   readonly concurrency: number | undefined;
   readonly outputRoot: string;
@@ -281,6 +316,8 @@ interface ICompileLayout {
   readonly passes: readonly IAssetPass[];
   readonly sourceRoot: string;
   readonly targets: IAssetTargets;
+  /** True when the built-in model pass is part of `passes`. */
+  readonly modelsActive: boolean;
   /** True when the built-in KTX2 pass is part of `passes` (drives the transcoder copy). */
   readonly texturesActive: boolean;
 }
@@ -320,8 +357,15 @@ const BASISU_EXTENSION = "KHR_texture_basisu";
 const PIPELINE_VERSION = 9;
 
 const KIND_BY_EXTENSION: Readonly<Record<string, AssetKind>> = {
+  // Converted to GLB by `blenderImportPass` before `modelPass` sees them. Until PRD-346 these four
+  // classified as "other", were copied through untouched, and the build reported success on a file
+  // no runtime can load.
+  blend: "model",
+  dae: "model",
+  fbx: "model",
   glb: "model",
   gltf: "model",
+  obj: "model",
   jpeg: "texture",
   jpg: "texture",
   mp3: "audio",
@@ -858,9 +902,14 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       `TN_ASSETS_OVERLAP: source '${sourceRoot}' and output '${outputRoot}' must be disjoint directories.`,
     );
   }
+  // Android and iOS have no WebAssembly and therefore no Basis transcoder and no Meshopt
+  // decoder, so the two compressing passes cannot ship there whatever the config says. The
+  // build names its target and the engine drops them for that bake only; every other target
+  // keeps its compression. See `IAssetCompileOptions.platform`.
+  const decodesCompression = options.platform !== "android" && options.platform !== "ios";
   const audio = parseAudioConfig(config.audio);
-  const textures = parseTexturesConfig(config.textures);
-  const models = parseModelsConfig(config.models);
+  const textures = decodesCompression ? parseTexturesConfig(config.textures) : undefined;
+  const models = decodesCompression ? parseModelsConfig(config.models) : undefined;
   const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
     ?.lightmap;
   // The built-in registry runs only when the caller did not replace it wholesale; each
@@ -882,6 +931,10 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       builtinPasses.push(lightmapPass(lightmap));
       passSpecs.push({ kind: "lightmap", options: lightmap });
     }
+    // Ahead of `modelPass`: it converts the source into the GLB that pass then optimizes. A game
+    // with no importable source pays one extension test per input.
+    builtinPasses.push(blenderImportPass());
+    passSpecs.push({ kind: "blender-import" });
     if (models !== undefined) {
       builtinPasses.push(
         modelPass({
@@ -904,7 +957,12 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     }
   }
   return {
+    builtinRegistry: options.passes === undefined,
     concurrency: config.concurrency as number | undefined,
+    // A platform that cannot decode compression did not opt out of it, so it is not reported as
+    // an override the author should reconsider — the engine made that call, for this bake only.
+    decodesCompression,
+    modelsActive: models !== undefined && options.passes === undefined,
     outputRoot,
     passSpecs,
     passes: [...builtinPasses, ...(options.passes ?? [])],
@@ -993,6 +1051,7 @@ function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): b
     existing.output === entry.output &&
     existing.kind === entry.kind &&
     JSON.stringify(existing.audio) === JSON.stringify(entry.audio) &&
+    existing.importedFrom === entry.importedFrom &&
     JSON.stringify(existing.lightmapAtlas) === JSON.stringify(entry.lightmapAtlas) &&
     JSON.stringify(existing.lightmaps) === JSON.stringify(entry.lightmaps) &&
     JSON.stringify(existing.embeddedTextures) === JSON.stringify(entry.embeddedTextures) &&
@@ -1408,26 +1467,61 @@ export async function compileAssets(
     // No bake ran, so no receipt describes this output root. A stale one from a previous build
     // would have the delete-test remove files nothing produces any more.
     await rm(receiptPath, { force: true });
-    return { concurrencyUsed: 1, passCosts: [], skipped: 0, written: 0 };
+    return { concurrencyUsed: 1, passCosts: [], skipped: 0, skippedCompression: [], written: 0 };
   }
   const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
   const previous = await readExistingManifest(manifestPath);
-  const passNames = layout.passes.map((pass) => pass.name);
-  const passCacheKeys = layout.passes.map((pass) => pass.cacheKey ?? null);
+
+  // Read before the first write *and before the source walk*, so the undeclared-output guard can
+  // tell this run's files from the project's own static ones. Taking it after the walk shrinks the
+  // margin by however long the walk took, and `TN_ASSETS_UNDECLARED_OUTPUT` then misses a stray
+  // file whose mtime the filesystem truncated below it — which is exactly how
+  // `bake-receipt.spec.ts` went red on a loaded CI shard while passing locally. It never reaches
+  // the receipt: that stays deterministic.
+  const runStart = Date.now();
+
+  const logicals = await walkSources(layout.sourceRoot);
+  // The determinism gate's seam: reversed processing order reverses which input's work completes
+  // first, so the gate can prove the emitted bytes do not depend on it.
+  if (options.processingOrder === "reversed") logicals.reverse();
+
+  /**
+   * The Blender importer joins the chain only when this source tree actually holds something it
+   * owns, which is why the walk happens before the pass list is fixed.
+   *
+   * It was unconditional first, and that hung `threenative build` for every project shipping
+   * `assets: { models: "none", textures: "none" }` — every template that targets mobile. With both
+   * set to "none" the built-in chain is *empty*, and an empty `passSpecs` is what tells the driver
+   * not to create a worker pool at all (`layout.passSpecs.length > 0 && concurrency > 1`). One
+   * unconditional no-op pass flipped that to a pool for a chain that can never do anything, and
+   * `threenative build --target web` finished its work and then never exited — 45 minutes to a
+   * job timeout in CI, reproduced locally at exit code 124.
+   *
+   * A game with no importable source now pays one extension test per input and nothing else,
+   * which is also what its manifest should say: `passes` lists the chain that ran.
+   */
+  const importsModels = logicals.some((logical) => needsBlenderImport(logical));
+  const activePasses = importsModels
+    ? layout.passes
+    : layout.passes.filter((pass) => pass.name !== BLENDER_IMPORT_PASS);
+  const activePassSpecs = importsModels
+    ? layout.passSpecs
+    : layout.passSpecs.filter((spec) => spec.kind !== "blender-import");
+
+  const passNames = activePasses.map((pass) => pass.name);
+  const passCacheKeys = activePasses.map((pass) => pass.cacheKey ?? null);
   const passConfiguration = JSON.stringify({
     ...(passCacheKeys.some((key) => key !== null) ? { passCacheKeys } : {}),
     pipelineVersion: PIPELINE_VERSION,
     passes: passNames,
-    options: layout.passes.map((pass) => pass.configuration ?? null),
+    options: activePasses.map((pass) => pass.configuration ?? null),
   });
   const entries: Record<string, IAssetManifestEntry> = {};
   const receiptOutputs: IBakeReceiptOutput[] = [];
   const costInputs = new Map<string, IPassCostRecord>();
   for (const name of passNames)
     costInputs.set(name, { cachedInputs: 0, ranInputs: 0, timings: [] });
-  // Read before the first write, so the undeclared-output guard can tell this run's files from
-  // the project's own static ones. It never reaches the receipt: that stays deterministic.
-  const runStart = Date.now();
+
   const healthInputs: IAssetHealthInput[] = [];
   const audioRows: IAudioRow[] = [];
   const textureRows: ITextureSizeRow[] = [];
@@ -1437,11 +1531,6 @@ export async function compileAssets(
   let textureCount = 0;
   let compressedModelCount = 0;
 
-  const logicals = await walkSources(layout.sourceRoot);
-  // The determinism gate's seam: reversed processing order reverses which input's work completes
-  // first, so the gate can prove the emitted bytes do not depend on it.
-  if (options.processingOrder === "reversed") logicals.reverse();
-
   // An empty (or dotfile-only) source must never publish an empty manifest: the runtime treats
   // a served manifest as authoritative and would reject every load against it. A source that
   // held inputs last build drops its stale manifest here, restoring the no-manifest fallback.
@@ -1450,14 +1539,26 @@ export async function compileAssets(
     await rm(receiptPath, { force: true });
     const report = await runHealthReport([], layout.targets);
     return options.health === true
-      ? { concurrencyUsed: 1, passCosts: [], report, skipped: 0, written: 0 }
-      : { concurrencyUsed: 1, passCosts: [], skipped: 0, written: 0 };
+      ? {
+          concurrencyUsed: 1,
+          passCosts: [],
+          report,
+          skipped: 0,
+          skippedCompression: [],
+          written: 0,
+        }
+      : { concurrencyUsed: 1, passCosts: [], skipped: 0, skippedCompression: [], written: 0 };
   }
 
-  /** Everything one entry contributes to the receipt, the health report and the size report. */
+  /** Everything one entry contributes to the receipt, the health report and the size report.
+   *
+   * `measured` is what the health report reads. For everything the runtime can already load it is
+   * the source, deliberately — see the comment at the `healthInputs.push` below. For a `.fbx`,
+   * `.blend`, `.obj` or `.dae` it is the converted GLB, because the source is not a document this
+   * reader knows: measuring it raised TN_ASSETS_MODEL_UNREADABLE and failed the whole compile. */
   const bookkeep = (
     logical: string,
-    input: Buffer,
+    measured: Buffer,
     entry: IAssetManifestEntry,
     auxiliary: readonly {
       readonly bytes: number;
@@ -1480,8 +1581,9 @@ export async function compileAssets(
     // kinds. Texture dimensions, alpha and power-of-two are authoring properties a KTX2
     // output hides; model triangles and materials are the counts targets are declared
     // against, and the pass's self-verification guarantees they survive compilation within
-    // tolerance. Byte savings are reported per kind below instead.
-    healthInputs.push({ data: input, logicalPath: logical });
+    // tolerance. Byte savings are reported per kind below instead. A Blender-imported source is
+    // the exception the caller resolves: its earliest readable form is the converted GLB.
+    healthInputs.push({ data: measured, logicalPath: logical });
     if (entry.audio !== undefined) {
       // Routed before the texture branch: an audio entry carries `bytesBefore` and no triangle
       // count, which is exactly the shape the texture fallback below claims for itself.
@@ -1519,8 +1621,8 @@ export async function compileAssets(
   // serialisable mirror and runs sequential.
   const concurrency = resolveConcurrency(options.concurrency ?? layout.concurrency);
   const pool =
-    layout.passSpecs.length > 0 && concurrency > 1
-      ? createPassPool(concurrency, layout.passSpecs, layout.outputRoot)
+    activePassSpecs.length > 0 && concurrency > 1
+      ? createPassPool(concurrency, activePassSpecs, layout.outputRoot)
       : undefined;
 
   const processOne = async (logical: string): Promise<void> => {
@@ -1541,14 +1643,19 @@ export async function compileAssets(
         : await reusableEntry(layout.outputRoot, logical, digest.slice(0, 8), previousEntry);
     if (previousEntry !== undefined && reusable !== undefined) {
       entries[logical] = previousEntry;
-      bookkeep(logical, input, previousEntry, reusable, undefined);
+      // A cache hit never ran the converter, so the GLB the report must measure is the one already
+      // on disk under this entry's output name.
+      const measured = needsBlenderImport(logical)
+        ? await readFile(path.join(layout.outputRoot, previousEntry.output))
+        : input;
+      bookkeep(logical, measured, previousEntry, reusable, undefined);
       recordCachedInputs(costInputs, passNames);
       skipped += 1;
       return;
     }
     const applied =
       pool === undefined
-        ? await applyPasses(layout.passes, input, logical)
+        ? await applyPasses(activePasses, input, logical)
         : await pool.run(logical, input);
     recordRanTimings(costInputs, logical, applied.timings);
     const auxiliaryOutputs = resolveAuxiliaryOutputs(logical, applied.auxiliaryOutputs);
@@ -1571,6 +1678,10 @@ export async function compileAssets(
               ? (applied.entry.extensions as string[])
               : undefined,
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
+            importedFrom:
+              typeof applied.entry.importedFrom === "string"
+                ? applied.entry.importedFrom
+                : undefined,
             lightmapAtlas: isRecord(applied.entry.lightmapAtlas)
               ? applied.entry.lightmapAtlas
               : undefined,
@@ -1605,7 +1716,7 @@ export async function compileAssets(
         : undefined;
     bookkeep(
       logical,
-      input,
+      needsBlenderImport(logical) ? applied.buffer : input,
       entry,
       auxiliaryOutputs.map((output) => ({
         bytes: output.buffer.length,
@@ -1701,7 +1812,9 @@ export async function compileAssets(
   for (const line of formatAudioSizes(audioRows)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
+  const skippedCompression = skippedCompressionRows(entries, layout);
   for (const line of formatPassCosts(passCosts)) console.log(line);
+  for (const line of formatSkippedCompression(skippedCompression)) console.log(line);
   if (report.failed) {
     const failedAssets = report.findings
       .filter((finding) => finding.grade === "fail")
@@ -1720,6 +1833,37 @@ export async function compileAssets(
   const receipt = await writeReceipt(layout.outputRoot, receiptOutputs);
   const concurrencyUsed = pool === undefined ? 1 : Math.min(concurrency, logicals.length);
   return options.health === true
-    ? { concurrencyUsed, passCosts, receipt, report, skipped, written }
-    : { concurrencyUsed, passCosts, receipt, skipped, written };
+    ? { concurrencyUsed, passCosts, receipt, report, skipped, skippedCompression, written }
+    : { concurrencyUsed, passCosts, receipt, skipped, skippedCompression, written };
+}
+
+/**
+ * Sums what each disabled built-in pass is shipping as authored.
+ *
+ * Reads the sizes already recorded on every manifest entry, so a build that opted out pays one
+ * addition per asset and no I/O at all — the measurement must not become a reason to skip it.
+ * A caller that replaced the pass registry wholesale (`options.passes`) has not opted out of
+ * anything and reports nothing.
+ */
+function skippedCompressionRows(
+  entries: Readonly<Record<string, IAssetManifestEntry>>,
+  layout: ICompileLayout,
+): readonly ISkippedCompressionRow[] {
+  const rows: ISkippedCompressionRow[] = [];
+  const reason = layout.decodesCompression ? "config" : "platform";
+  for (const [kind, active] of [
+    ["model", layout.modelsActive],
+    ["texture", layout.texturesActive],
+  ] as const) {
+    if (active || !layout.builtinRegistry) continue;
+    let bytes = 0;
+    let files = 0;
+    for (const entry of Object.values(entries)) {
+      if (entry.kind !== kind) continue;
+      bytes += entry.bytes;
+      files += 1;
+    }
+    rows.push({ bytes, files, kind, reason });
+  }
+  return rows;
 }

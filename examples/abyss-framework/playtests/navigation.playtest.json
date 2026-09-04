@@ -30,7 +30,7 @@
     {
       "kind": "wait",
       "label": "route-around-blocker",
-      "waitTicks": 210
+      "waitTicks": 450
     },
     {
       "kind": "wait",

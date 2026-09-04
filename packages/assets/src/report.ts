@@ -368,6 +368,43 @@ export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly strin
 
 function deltaLabel(before: number, after: number): string {
   if (before <= 0) return `(${after} bytes)`;
-  const percent = ((1 - after / before) * 100).toFixed(1);
-  return `(-${percent}%)`;
+  // A pass may legitimately grow a file — a KTX2 container with a mip chain is larger than a
+  // 150-byte PNG — and the old `(-${percent}%)` rendered that as `(--261.3%)`. Now that the
+  // compile step runs by default on every scaffolded project, growth rows are ordinary output.
+  const shrinkage = (1 - after / before) * 100;
+  return `(${shrinkage < 0 ? "+" : "-"}${Math.abs(shrinkage).toFixed(1)}%)`;
+}
+
+/** What an uncompressed pass cost this build, per kind, and which decision caused it. */
+export interface ISkippedCompressionRow {
+  readonly bytes: number;
+  readonly files: number;
+  readonly kind: "model" | "texture";
+  /** `"config"` — the game set `"none"`. `"platform"` — this target cannot decode compression. */
+  readonly reason: "config" | "platform";
+}
+
+/**
+ * Reports what an opted-out pass is shipping uncompressed.
+ *
+ * `/AGENTS.md`: *turning a convention off must not turn its measurement off*. `assets.textures:
+ * "none"` is a named override and a legitimate one — the starter template's proof asset is 150
+ * bytes and KTX2 would grow it. But that value is copied into every scaffolded game and never
+ * revisited: one shipped 2,003 MB of manifest output holding 53 PNG, 35 JPG and zero `.ktx2`, and
+ * the build never said a word about it. This is the word. It is informational, never fatal, and
+ * costs one sum over sizes the manifest already recorded.
+ */
+export function formatSkippedCompression(
+  rows: readonly ISkippedCompressionRow[],
+): readonly string[] {
+  return rows
+    .filter((row) => row.files > 0)
+    .map(
+      (row) =>
+        `TN_ASSETS_COMPRESSION_SKIPPED ${row.kind}: ${String(row.files)} file(s), ${(row.bytes / 1e6).toFixed(1)} MB shipped as authored ${
+          row.reason === "config"
+            ? `because assets.${row.kind}s is "none"`
+            : "because this target has no WebAssembly and could not decode it"
+        }.`,
+    );
 }

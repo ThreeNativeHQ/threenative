@@ -4,15 +4,25 @@ prd_contract: v1
 
 # PRD-327 — First-use pipeline compilation leaves the main loop
 
-**Status:** **PHASES 0–2 DONE, DEVICE ACCEPTANCE UNVERIFIED** — executed 2026-09-03.
-Phase 0 measured the backends and chose the mechanism; Phase 1 made `createRenderPipelineAsync`
-native and off-loop (0.27 ms of a 70 ms compile, ratio 0.0038 against a 0.25 bar, red-green in
-`threenative-async-pipeline-thread-test`); **Phase 2 was executed and not adopted**: the framework
-already warms up by default from inside the loading layer's readiness gate, and flipping the
-`warmUp` default removed the loading screen (macOS, Windows) and then double-compiled the scene
-past the desktop physics gate's frame budget. The mechanism, not the default, was the defect. Phases 3 and 4 are open. **Acceptance criterion 3 — three cold launches ≤ 8 s median on
-a physical Pixel 8 — did not run**, so PRD-218's criteria 1 and 2 stay open and no launch-time
-claim is made. Evidence: `docs/verification/runtime-perf-state.md` §5a.
+**Status:** **PHASES 0–2 DONE; PHASE 4 DONE (DESKTOP); DEVICE ACCEPTANCE EXECUTED AND FAILED — CRITERION 3 UNMET** —
+executed 2026-09-03. Phase 0 measured the backends and chose the mechanism; Phase 1 made
+`createRenderPipelineAsync` native and off-loop (0.27 ms of a 70 ms compile, ratio 0.0038 against a
+0.25 bar, red-green in `threenative-async-pipeline-thread-test`); **Phase 2 was executed and not
+adopted** (the framework already warms up by default from inside the loading layer's readiness
+gate — flipping the default broke two desktop gates, and the mechanism, not the default, was the
+defect). **Phase 4 landed 2026-09-03**: a late synchronous compile is a named hitch —
+`TN_FRAME_HITCH` carries `pipelineCompileMs`/`pipelineCompileCalls` (red-green in
+`threenative-stall-budget-hitch-test`, live print proven through `playtest perf` on desktop Dawn)
+— acceptance criterion 6 is met. **Phase 3 executed on both arms**: desktop second launch 77 % of
+the first (noise, three tiny pipelines); phone launches 2–6 never dropped below ~100 % of the
+first's 8.2–8.3 s `pipelineCompile` — the 25 % cache rule rejected "driver does it for free" and
+[PRD-339](PRD-339-the-compile-walk-leaves-the-main-thread.md) is filed. **Criterion 3 failed on
+the device**: three cold launches, physical Pixel 8, `com.threenative.bayview`, first frame
+14.4–14.8 s against ≤ 8 s median — the warm-up mechanism deadlocks on the Android path (three's
+whole-scene compile walk is synchronous for ~33 s and its yield falls back to frame-coupled rAF;
+`warmUp: true` regressed the launch to ~35 s and was reverted in the game). The findings and the
+pasted reds are in `runtime-perf-state.md` §5a; the fix is PRD-339's, not a default flip. The PRD
+stays open on criterion 3, and PRD-218's criteria 1 and 2 stay open with it.
 
 **Complexity:** +2 (6–10 files) + 2 (concurrency: compile threads completing into the JS loop) +
 2 (multi-package: `runtime-native` and `core`) + 1 (external API: wgpu-native / Dawn async

@@ -7,6 +7,7 @@ import {
   type RoundArm,
   latestRoundFile,
   readRoundLedger,
+  roundCloseFile,
 } from "./round-ledger.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
@@ -158,6 +159,15 @@ function openPrd(repo: string, prd: string): boolean {
 
 export function nextRoundAction(repo = REPO, ledgerFile = latestRoundFile(repo)): RoundNextAction {
   const ledger = readRoundLedger(ledgerFile);
+  // A closed round has nothing left to do, whatever its gates and dispositions say. This is
+  // checked first for that reason: the alternative is what happened to round 12, where the
+  // terminal `close round N` kept firing on a round already closed on disk.
+  const closed = roundCloseFile(repo, ledger.round);
+  if (closed !== undefined)
+    return candidate(
+      `charter round ${ledger.round + 1}`,
+      `Round ${ledger.round} was closed in ${path.relative(repo, closed)}; charter the next round.`,
+    );
   if (!NO_STOP_CONDITION.has(ledger.stopCondition))
     return candidate(
       `stop round ${ledger.round}`,

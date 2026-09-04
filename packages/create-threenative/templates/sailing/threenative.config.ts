@@ -33,6 +33,8 @@ const config: IThreeNativeConfig = {
     // reports what it did, and says so when a single-sampled surface leaves it nothing to do.
     alphaAntialiasing: true,
   },
+  // Pinned off with the starter's, and for the same reason: see the note there. The compile
+  // step's defaults reach any project that omits this object.
   assets: { models: "none", textures: "none" },
   ui: { renderer: "web" },
 };

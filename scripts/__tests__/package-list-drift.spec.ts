@@ -1,10 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { packageNameFromFlag } from "../../packages/create-threenative/src/index.js";
 import {
   publicWorkspacePackages,
   publishSetComment,
   workspaceBuildOrder,
+  workspacePackageSourceFlag,
   workspacePackages,
 } from "../workspace-packages.js";
 
@@ -71,7 +73,7 @@ describe("workspace package lists", () => {
       const referenced = new Set(
         sources
           .join("\n")
-          .match(/@threenative\/[a-z0-9-]+|create-threenative|threenative-engine-mcp/gu) ?? [],
+          .match(/@threenative\/[a-z0-9-]+|create-threenative|threenative-[a-z0-9-]+-mcp/gu) ?? [],
       );
       for (const dependency of referenced) {
         if (dependency === item.name || !names.has(dependency)) continue;
@@ -81,6 +83,30 @@ describe("workspace package lists", () => {
       }
     }
     expect(inversions).toEqual([]);
+  });
+
+  // Four places used to spell the same alias by hand: the CLI's flag map, the CLI's inverse, this
+  // script's derivation, and CI's tarball action. A lane that added a package to three of them
+  // failed in the fourth with TN_WORKSPACE_PACKAGE_FLAG_UNSUPPORTED, from a spec that had nothing
+  // to do with packaging. The two code sides now round-trip, so they cannot disagree again.
+  it("round-trips every workspace package through the scaffold source flag", () => {
+    for (const { name } of workspacePackages(path.join(repo, "packages"))) {
+      const flag = workspacePackageSourceFlag(name);
+      expect(packageNameFromFlag(flag), `${name} -> ${flag}`).toBe(name);
+    }
+  });
+
+  // CI derives the same flags in bash. A case statement that does not cover a workspace package
+  // exits 1 with "unsupported workspace package" in a job that packs every tarball.
+  it("teaches CI's tarball action every unscoped workspace package", async () => {
+    const action = await readFile(
+      path.join(repo, ".github/actions/scaffold-from-tarballs/action.yml"),
+      "utf8",
+    );
+    for (const { name } of workspacePackages(path.join(repo, "packages"))) {
+      if (name.startsWith("@threenative/")) continue;
+      expect(action, name).toContain(`${name}) package_flag="${workspacePackageSourceFlag(name)}"`);
+    }
   });
 
   it("keeps the publishable set non-empty and unique", () => {
