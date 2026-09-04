@@ -139,3 +139,72 @@ fail closed on KTX2 because those native hosts do not yet carry a decoder.
 | Web gameplay | Packed-tarball sandbox required `material.lightMap` before reaching the goal could win. |
 | Negative control | Setting `material.lightMap = null` made `staticLightReady` and the win assertion fail. |
 | Native status | Linux desktop rendered the packed GLB/KTX2 with a clean playtest; Android/iOS still fail closed because their hosts have no KTX2 decoder. |
+
+## Audio conditioning
+
+`AssetKind` classified `.ogg`, `.wav` and `.mp3` as audio from the beginning and nothing acted on
+it, so audio was classified and then shipped through untouched. This pass does the conditioning a
+game should never hand-roll, and — like the model pass — measures its own output rather than
+trusting that the chain behaved.
+
+Which clips loop, which are positional, and what a clip is *for* are facts only the game knows, so
+every one of them is declared. There is no filename convention: a pass that decided `chime.ogg`
+must be a chime would be confidently wrong on the first asset named against it.
+
+```ts
+assets: {
+  audio: {
+    overrides: [
+      { glob: "audio/*-bed.ogg", loop: true },
+      { glob: "audio/music/*.ogg", loop: { crossFadeMs: 0 } },
+      { glob: "audio/step-*.ogg", positional: true },
+      { glob: "audio/landmark.ogg", spectrum: { bandHz: [1000, 8000], minFraction: 0.4 } },
+    ],
+  },
+}
+```
+
+| Declaration | What it turns on |
+| --- | --- |
+| `loop: true` | Equal-power tail-onto-head cross-fade, then the seam assertion below. |
+| `loop: { crossFadeMs: 0 }` | Keeps the clip's own length — a bar-accurate musical loop — and still asserts the seam. |
+| `loop: { spliceToleranceMs }` | How far the splice may move to find a quiet join. Default 25 ms. |
+| `positional: true` | Mono downmix, which halves the decoded cost as well as the wire cost. |
+| `spectrum: { bandHz, minFraction }` | Fails the build when the clip's energy is not where the game says it should be. |
+| `normalise: "peak"` | Lifts a quiet clip to the ceiling. Off by default: see below. |
+| `peakDb` | The ceiling, in dBFS. Default `-1`. |
+| `conditioning: "none"` | Ships the bytes as committed. Measurement, and a declared loop's assertion, still run. |
+| `assets.audio: "none"` | Drops the pass, exactly as `textures: "none"` drops the KTX2 pass. |
+
+**Ogg Vorbis is forced, not preferred.** `packages/runtime-native`'s `decodeAudioFile` implements
+exactly RIFF/WAVE and Ogg Vorbis, compiled into desktop, Android and iOS alike, so an MP3 asset is
+silent on every native target. The pass therefore reads only those two containers and fails the
+bake, naming the file and the re-encode command, rather than letting a build reach a player and
+play nothing. Both codecs are in-process WASM — as with the KTX2 pass, users install nothing extra
+and there is no `ffmpeg` in the install story.
+
+**The seam is judged as a ratio, not a magnitude.** A click is a step that is anomalous *where it
+happens*: the same 0.02 jump is inaudible under a dense bed and an obvious tick in near-silence, so
+an absolute bound condemns loud clips and excuses quiet ones. What the pass measures is the wrap
+step against the 99th-percentile ordinary step within 50 ms of the join, and the default limit is
+`1.5x` — not `1.0x`, because a flawless wrap that lands on the signal's steepest point legitimately
+*is* the largest step in its neighbourhood, and a looped pure sine scores `1.000000000000223` there
+on float error alone. This is the same measurement `packages/playtest`'s audio inspector makes, so
+the build gate and the inspector cannot disagree about one file; `audio-seam-parity.spec.ts` pins
+them together.
+
+It is measured on the **decoded output bytes**, because a cross-fade that is exact in the
+intermediate PCM and undone by the encoder is still a click in the player's ears.
+
+**The peak is a ceiling, not a target.** Normalising every clip up to one level would make a
+footstep as loud as a chime and force the game to undo the pipeline in its volume settings — that
+is deciding how the game sounds, and it belongs to the game.
+
+**A pass with nothing to do says so.** A source that is already Ogg Vorbis, already the right
+channel count, under the ceiling and carrying no DC is shipped byte-identical, because re-encoding
+it would cost a generation of lossy Vorbis to deliver the same audio.
+
+Measured over one game's nineteen generated clips: the three declared beds cross-fade to seam
+ratios of `0.10x`, `0.03x` and `0.10x`; the other sixteen pass through byte-identical; and the
+declared-band check fails the build on the one clip that came back as a hum, at 0.0% of its energy
+in the 1000-8000 Hz its game declared it needed.

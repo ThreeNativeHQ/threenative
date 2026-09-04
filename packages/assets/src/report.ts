@@ -102,6 +102,139 @@ export function formatPassCosts(rows: readonly IPassCostRow[]): readonly string[
   });
 }
 
+/**
+ * What the audio pass measured and did to one clip.
+ *
+ * Every field is reported whether or not it was asserted on: an undeclared clip carries no
+ * `seamMaxRatio` and still carries its measured seam, because turning a convention off must not
+ * turn its measurement off. Every one of these numbers was measurable all along on the clips a
+ * hand-written script conditioned; nothing measured them.
+ */
+export interface IAudioRow {
+  readonly bytesAfter: number;
+  readonly bytesBefore: number;
+  readonly channelsAfter: number;
+  readonly channelsBefore: number;
+  /** False when the game declared these bytes shipped as committed. */
+  readonly conditioned: boolean;
+  readonly container: string;
+  /**
+   * Whether the audio was re-encoded, or the source bytes shipped untouched because nothing here
+   * moved the PCM. A needless re-encode costs a generation of lossy Vorbis to deliver the same
+   * audio, so a pass that does nothing says so instead of quietly charging for it.
+   */
+  readonly reencoded: boolean;
+  /** The fade applied, against the length the game asked for; absent unless the clip loops. */
+  readonly crossFadeMs?: number;
+  readonly crossFadeMsRequested?: number;
+  readonly dcOffsetAfter: number;
+  readonly dcOffsetBefore: number;
+  /** What the clip costs a device's memory once decoded — the larger of the two costs. */
+  readonly decodedBytesAfter: number;
+  readonly decodedBytesBefore: number;
+  readonly durationSeconds: number;
+  readonly frames: number;
+  readonly logicalPath: string;
+  readonly loop: boolean;
+  readonly peakAfter: number;
+  readonly peakBefore: number;
+  readonly sampleRate: number;
+  /** The largest ordinary adjacent step within 50 ms of the join. */
+  readonly seamNearP99: number;
+  /**
+   * `seamWrap / seamNearP99`, measured on the decoded output bytes — the ones that ship.
+   *
+   * The ratio rather than the magnitude, because a click is a step that is anomalous *where it
+   * happens*: an absolute bound condemns dense clips and excuses quiet ones.
+   */
+  readonly seamRatio: number;
+  readonly seamRatioBefore: number;
+  /** The bare step across the join. Reported because it is informative, not because it is judged. */
+  readonly seamWrap: number;
+  readonly seamWrapBefore: number;
+  /** Present only for a declared loop, which is the only clip whose seam is asserted. */
+  readonly seamMaxRatio?: number;
+  readonly spectrumBandHz?: readonly [number, number];
+  readonly spectrumFraction?: number;
+  readonly spectrumMinFraction?: number;
+}
+
+/**
+ * One line per conditioned clip plus a total, on the wire and decoded.
+ *
+ * The decoded total is the one worth printing loudest: a 21-second stereo ambience bed is 220 KB
+ * to download and 7.5 MB of resident memory, and it is the second number that decides whether a
+ * phone keeps the app alive.
+ */
+export function formatAudioSizes(rows: readonly IAudioRow[]): readonly string[] {
+  if (rows.length === 0) return [];
+  const lines = rows.flatMap((row) => {
+    const channels = `${row.channelsBefore}ch -> ${row.channelsAfter}ch`;
+    const shipped = !row.conditioned
+      ? " (shipped as committed)"
+      : row.reencoded
+        ? ""
+        : " (already conditioned, so not re-encoded)";
+    const first =
+      `audio ${row.logicalPath} (${row.container})${shipped}: ${row.bytesBefore} -> ${row.bytesAfter} bytes ` +
+      `${deltaLabel(row.bytesBefore, row.bytesAfter)}, decoded ${row.decodedBytesBefore} -> ${row.decodedBytesAfter} bytes ` +
+      `${deltaLabel(row.decodedBytesBefore, row.decodedBytesAfter)}, ${channels}, ${row.durationSeconds.toFixed(3)} s at ${row.sampleRate} Hz`;
+    const levels =
+      `  audio ${row.logicalPath} levels: peak ${row.peakBefore.toFixed(4)} -> ${row.peakAfter.toFixed(4)}, ` +
+      `DC ${row.dcOffsetBefore.toFixed(5)} -> ${row.dcOffsetAfter.toFixed(5)}`;
+    return [first, levels, ...loopLine(row), ...spectrumLine(row)];
+  });
+  const before = rows.reduce((total, row) => total + row.bytesBefore, 0);
+  const after = rows.reduce((total, row) => total + row.bytesAfter, 0);
+  const decodedBefore = rows.reduce((total, row) => total + row.decodedBytesBefore, 0);
+  const decodedAfter = rows.reduce((total, row) => total + row.decodedBytesAfter, 0);
+  lines.push(
+    `audio total: ${before} -> ${after} bytes ${deltaLabel(before, after)}, ` +
+      `decoded ${decodedBefore} -> ${decodedAfter} bytes ${deltaLabel(decodedBefore, decodedAfter)}`,
+  );
+  return lines;
+}
+
+/**
+ * The seam, and the fade it took to get there.
+ *
+ * An unlooped clip's seam is printed too, without a verdict: the number is the whole point, and
+ * a clip nobody declared a loop is not failed for having one.
+ */
+function loopLine(row: IAudioRow): readonly string[] {
+  if (!row.loop) {
+    // A one-shot's first and last samples never meet, so this number is not a measurement of
+    // anything a listener hears; it is printed only so a clip nobody declared is not a blank.
+    return [
+      `  audio ${row.logicalPath} wrap: ${row.seamWrap.toFixed(4)} (not declared a loop, so not judged)`,
+    ];
+  }
+  const requested = row.crossFadeMsRequested ?? 0;
+  const applied = row.crossFadeMs ?? 0;
+  // A splice that moved is said out loud, the way the model pass names the ratio it reached
+  // against the one that was asked for.
+  const moved =
+    applied === 0
+      ? ", no cross-fade — the clip keeps its own length"
+      : Math.abs(applied - requested) < 0.5
+        ? ""
+        : ` (requested ${requested.toFixed(0)} ms; the splice moved to find a quiet seam)`;
+  return [
+    `  audio ${row.logicalPath} loop: wrap ${row.seamWrapBefore.toFixed(4)} -> ${row.seamWrap.toFixed(4)}, ` +
+      `${row.seamRatioBefore.toFixed(2)}x -> ${row.seamRatio.toFixed(2)}x of the largest ordinary step beside it ` +
+      `(${row.seamNearP99.toFixed(4)}), against a ${String(row.seamMaxRatio ?? 0)}x limit, ` +
+      `cross-fade ${applied.toFixed(0)} ms${moved}`,
+  ];
+}
+
+function spectrumLine(row: IAudioRow): readonly string[] {
+  if (row.spectrumBandHz === undefined) return [];
+  return [
+    `  audio ${row.logicalPath} spectrum: ${((row.spectrumFraction ?? 0) * 100).toFixed(1)}% of its energy in ` +
+      `${row.spectrumBandHz[0]}-${row.spectrumBandHz[1]} Hz, declared to need ${((row.spectrumMinFraction ?? 0) * 100).toFixed(1)}%`,
+  ];
+}
+
 /** One compiled model plus a total, before against after the optimization pass. */
 export interface IModelSizeRow {
   readonly after: number;

@@ -17,6 +17,9 @@ import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
 import { applyPasses } from "./pass-chain.js";
 import type { IAppliedPasses, IPassTiming } from "./pass-chain.js";
+import { parseAudioConfig } from "./passes/audio-config.js";
+import type { IAudioOverride, IAudioPassOptions } from "./passes/audio-config.js";
+import { audioPass } from "./passes/audio.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import { modelPass } from "./passes/model.js";
@@ -32,8 +35,14 @@ import type {
 import { createSharedImageStore } from "./passes/shared-images.js";
 import { texturePass } from "./passes/texture.js";
 import type { ITextureOverride, ITexturePassOptions } from "./passes/texture.js";
-import { formatModelSizes, formatPassCosts, formatTextureSizes } from "./report.js";
+import {
+  formatAudioSizes,
+  formatModelSizes,
+  formatPassCosts,
+  formatTextureSizes,
+} from "./report.js";
 import type {
+  IAudioRow,
   IEmbeddedTextureRow,
   IModelSizeRow,
   IPassCostAssetRow,
@@ -103,6 +112,12 @@ export interface IAssetPass {
 
 export interface IAssetSourceConfig {
   /**
+   * Audio conditioning: an object of options, or the string `"none"` to ship every clip exactly
+   * as committed. Absent means conditioning runs with defaults. See `passes/audio-config.ts` for
+   * how a game declares which clips loop, which are positional, and what a clip is for.
+   */
+  readonly audio?: IAudioConfig | "none";
+  /**
    * The bound on how many workers a bake may use. A direct `concurrency` option overrides it;
    * absent means the driver's default (`min(4, cores - 1)`). CI boxes and laptops differ, and
    * a 6.8 GB pack does not get to decide the machine's fate.
@@ -148,6 +163,14 @@ export interface IModelsConfig {
    * or more and leaves everything below it byte-identical.
    */
   readonly virtual?: IModelVirtualOptions | "none";
+}
+
+export interface IAudioConfig {
+  readonly normalise?: "ceiling" | "peak";
+  readonly overrides?: readonly IAudioOverride[];
+  readonly peakDb?: number;
+  readonly quality?: number;
+  readonly seamThreshold?: number;
 }
 
 export interface ITexturesConfig {
@@ -220,6 +243,8 @@ export interface IBakeReceipt {
 }
 
 interface IAssetManifestEntry {
+  /** What the audio pass measured and did to one clip. */
+  readonly audio?: IAudioRow;
   readonly bytes: number;
   readonly bytesAfter?: number;
   readonly bytesBefore?: number;
@@ -289,8 +314,10 @@ const BASISU_EXTENSION = "KHR_texture_basisu";
  * v7: the images embedded in a model are transcoded to KTX2 and capped in resolution.
  * v8: every compile writes `bake.receipt.json` beside the manifest, so the run has one additional
  * output and a cached `public/` from v7 has no receipt to delete.
+ * v9: audio is conditioned and encoded to Ogg Vorbis instead of passing through byte-identical,
+ * so every audio output from v8 has the wrong extension and the wrong bytes.
  */
-const PIPELINE_VERSION = 8;
+const PIPELINE_VERSION = 9;
 
 const KIND_BY_EXTENSION: Readonly<Record<string, AssetKind>> = {
   glb: "model",
@@ -359,6 +386,67 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
     gpuBytesBefore: value.gpuBytesBefore as number,
     resized: value.resized as number,
   };
+}
+
+/**
+ * Narrows the audio pass's summary to the manifest shape by reading every field it declares.
+ *
+ * Same reason as `simplifyRow` above: a cast would let a pass that changed its own summary write
+ * nonsense into the manifest and the report both read from. Anything missing a required field is
+ * dropped whole rather than half-recorded.
+ */
+function audioRow(value: unknown): IAudioRow | undefined {
+  if (!isRecord(value)) return undefined;
+  const numbers = [
+    "bytesAfter",
+    "bytesBefore",
+    "channelsAfter",
+    "channelsBefore",
+    "dcOffsetAfter",
+    "dcOffsetBefore",
+    "decodedBytesAfter",
+    "decodedBytesBefore",
+    "durationSeconds",
+    "frames",
+    "peakAfter",
+    "peakBefore",
+    "sampleRate",
+    "seamNearP99",
+    "seamRatio",
+    "seamRatioBefore",
+    "seamWrap",
+    "seamWrapBefore",
+  ] as const;
+  if (numbers.some((key) => typeof value[key] !== "number")) return undefined;
+  const flags = ["conditioned", "loop", "reencoded"] as const;
+  if (flags.some((key) => typeof value[key] !== "boolean")) return undefined;
+  if (typeof value.container !== "string" || typeof value.logicalPath !== "string")
+    return undefined;
+  const optional = [
+    "crossFadeMs",
+    "crossFadeMsRequested",
+    "seamThreshold",
+    "spectrumFraction",
+    "spectrumMinFraction",
+  ] as const;
+  const band = value.spectrumBandHz;
+  return {
+    ...(Object.fromEntries(
+      optional.flatMap((key) => (typeof value[key] === "number" ? [[key, value[key]]] : [])),
+    ) as Record<string, number>),
+    ...(Array.isArray(band) && band.length === 2 && band.every((edge) => typeof edge === "number")
+      ? { spectrumBandHz: [band[0] as number, band[1] as number] as const }
+      : {}),
+    ...(Object.fromEntries(numbers.map((key) => [key, value[key] as number])) as Record<
+      (typeof numbers)[number],
+      number
+    >),
+    conditioned: value.conditioned,
+    container: value.container,
+    logicalPath: value.logicalPath,
+    loop: value.loop,
+    reencoded: value.reencoded,
+  } as IAudioRow;
 }
 
 function nonEmptyString(value: unknown, label: string): string {
@@ -740,6 +828,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   }
   for (const key of Object.keys(config)) {
     if (
+      key !== "audio" &&
       key !== "concurrency" &&
       key !== "source" &&
       key !== "output" &&
@@ -763,6 +852,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       `TN_ASSETS_OVERLAP: source '${sourceRoot}' and output '${outputRoot}' must be disjoint directories.`,
     );
   }
+  const audio = parseAudioConfig(config.audio);
   const textures = parseTexturesConfig(config.textures);
   const models = parseModelsConfig(config.models);
   const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
@@ -774,6 +864,10 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   const builtinPasses: IAssetPass[] = [];
   const passSpecs: PassSpec[] = [];
   if (options.passes === undefined) {
+    if (audio !== undefined) {
+      builtinPasses.push(audioPass(audio));
+      passSpecs.push({ kind: "audio", options: audio });
+    }
     if (textures !== undefined) {
       builtinPasses.push(texturePass(textures));
       passSpecs.push({ kind: "texture", options: textures });
@@ -892,6 +986,7 @@ function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): b
   return (
     existing.output === entry.output &&
     existing.kind === entry.kind &&
+    JSON.stringify(existing.audio) === JSON.stringify(entry.audio) &&
     JSON.stringify(existing.lightmapAtlas) === JSON.stringify(entry.lightmapAtlas) &&
     JSON.stringify(existing.lightmaps) === JSON.stringify(entry.lightmaps) &&
     JSON.stringify(existing.embeddedTextures) === JSON.stringify(entry.embeddedTextures) &&
@@ -1328,6 +1423,7 @@ export async function compileAssets(
   // the project's own static ones. It never reaches the receipt: that stays deterministic.
   const runStart = Date.now();
   const healthInputs: IAssetHealthInput[] = [];
+  const audioRows: IAudioRow[] = [];
   const textureRows: ITextureSizeRow[] = [];
   const modelRows: IModelSizeRow[] = [];
   let written = 0;
@@ -1380,6 +1476,12 @@ export async function compileAssets(
     // against, and the pass's self-verification guarantees they survive compilation within
     // tolerance. Byte savings are reported per kind below instead.
     healthInputs.push({ data: input, logicalPath: logical });
+    if (entry.audio !== undefined) {
+      // Routed before the texture branch: an audio entry carries `bytesBefore` and no triangle
+      // count, which is exactly the shape the texture fallback below claims for itself.
+      audioRows.push(entry.audio);
+      return;
+    }
     if (entry.bytesBefore === undefined) return;
     if (entry.triangles !== undefined) {
       modelRows.push({
@@ -1456,6 +1558,7 @@ export async function compileAssets(
         : {
             bytesAfter: applied.buffer.length,
             bytesBefore: input.length,
+            audio: audioRow(applied.entry.audio),
             embeddedTextures: embeddedTextureRow(applied.entry.embeddedTextures),
             simplify: simplifyRow(applied.entry.simplify),
             extensions: Array.isArray(applied.entry.extensions)
@@ -1589,6 +1692,7 @@ export async function compileAssets(
   const passCosts = buildPassCostRows(costInputs);
   const report = await runHealthReport(healthInputs, layout.targets);
   for (const line of formatHealthReport(report)) console.log(line);
+  for (const line of formatAudioSizes(audioRows)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
   for (const line of formatPassCosts(passCosts)) console.log(line);
