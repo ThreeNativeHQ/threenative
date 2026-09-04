@@ -174,6 +174,67 @@ describe("AudioBus", () => {
     bus.dispose();
   });
 
+  it("gives a voice back to the pool when one voice is stopped", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      const first = bus.play(buffer, { loop: true });
+      const second = bus.play(buffer, { loop: true });
+      expect(bus.pooled).toBe(0);
+
+      // The missing primitive. `stop()` silenced every voice or none, and there was no way to
+      // end one entity's loop.
+      expect(bus.stopVoice(first)).toBe(true);
+      expect(bus.pooled).toBe(1);
+      // The other voice is untouched — this is a per-voice stop, not a bus stop.
+      expect(second.isPlaying).toBe(true);
+
+      // Stopping it again is reported, not thrown: a caller stopping a sound that already
+      // ended has made no mistake.
+      expect(bus.stopVoice(first)).toBe(false);
+
+      // And the pool actually hands it back rather than merely counting it.
+      const third = bus.play(buffer);
+      expect(third).toBe(first);
+
+      // Which is the documented aliasing hazard, stated here as a fact rather than a warning:
+      // once recycled, the old handle addresses somebody else's sound, so `stopVoice` on it is
+      // true again — and it would stop the *new* cue. Read `isPlaying` before touching a voice
+      // you kept.
+      expect(bus.stopVoice(first)).toBe(true);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("recovers a voice the caller stopped behind the bus's back", async () => {
+    audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      const leaked = bus.play(buffer, { loop: true });
+      expect(bus.pooled).toBe(0);
+
+      // The natural thing to do with the handle `play` returns — and the leak. three's
+      // `Audio.stop()` sets `onended` to null before stopping the node, so the reclaim hook this
+      // bus installed never fires: without a sweep the entry stays live for the life of the bus,
+      // off the pool, uncounted against `maxVoices`, and still parented into the scene.
+      leaked.stop();
+      expect(leaked.isPlaying).toBe(false);
+
+      // Claiming is where the sweep runs, because it is free there. The recovered voice is the
+      // one that was dropped, which is what proves it came back to the pool rather than the bus
+      // simply building a new one.
+      const recovered = bus.play(buffer);
+      expect(recovered).toBe(leaked);
+    } finally {
+      bus.dispose();
+    }
+  });
+
   it("keeps a rejected cue from consuming a pooled voice", async () => {
     audioContext();
     const bus = new AudioBus({ camera: new PerspectiveCamera() });

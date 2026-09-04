@@ -348,6 +348,28 @@ export class AudioBus {
     return this.play(buffer, { ...options, loop: options.loop ?? true });
   }
 
+  /**
+   * Stop one voice and give it back to the pool.
+   *
+   * The missing primitive: `stop()` silenced every voice or none, and stopping the handle
+   * directly does not work — three's `Audio.stop()` detaches `onended` before stopping the node,
+   * so the bus's reclaim hook never fires and the voice leaks out of the pool while staying in
+   * the scene. A game that wants one entity's loop to end needs exactly this, and `playAt` with
+   * `loop` is the obvious way to reach for it.
+   *
+   * Returns false for a voice this bus is not sounding — a stale handle from a voice already
+   * recycled, or one belonging to another bus. Reported rather than thrown: a caller stopping a
+   * sound that already ended has made no mistake.
+   */
+  stopVoice(voice: ThreeAudio<AudioNode>): boolean {
+    if (this.#disposed) return false;
+    const entry = this.#live.find((candidate) => candidate.voice === voice);
+    if (entry === undefined) return false;
+    this.#queue = this.#queue.filter((pending) => pending.voice !== voice);
+    this.#reclaim(entry);
+    return true;
+  }
+
   stop(): void {
     for (const { voice } of this.#queue) voice.removeFromParent();
     this.#queue = [];
@@ -508,7 +530,31 @@ export class AudioBus {
     if (!free.includes(entry)) free.push(entry);
   }
 
+  /**
+   * Recover voices a caller stopped behind the bus's back.
+   *
+   * The pool's reclaim hook rides on `source.onended`, and **three's `Audio.stop()` sets
+   * `onended` to null before it stops the node** — so a caller doing the natural thing with the
+   * handle `play`/`playAt` returned leaves the entry in `#live` for the life of the bus: off the
+   * pool, uncounted against `maxVoices`, and still parented into whatever scene graph `playAt`
+   * welded it to. That is precisely the leak the pool exists to prevent, reachable through the
+   * public API, and `stopVoice` is the correct route rather than the only one anybody will find.
+   *
+   * So the sweep runs where it is free — at claim time, when the bus needs a voice anyway. A
+   * voice that is not playing and is not held has nothing left to sound. `held` is the exception
+   * that matters: a paused voice is legitimately stopped at the node level and must survive.
+   */
+  #sweepFinished(): void {
+    for (const entry of [...this.#live]) {
+      if (entry.held || entry.voice.isPlaying) continue;
+      // A queued voice has not started yet, so "not playing" is not "finished".
+      if (this.#queue.some((pending) => pending.voice === entry.voice)) continue;
+      this.#reclaim(entry);
+    }
+  }
+
   #claimFlat(looping: boolean): PooledVoice {
+    this.#sweepFinished();
     const reused = this.#freeFlat.pop();
     if (reused !== undefined) {
       reused.looping = looping;
@@ -529,6 +575,7 @@ export class AudioBus {
   }
 
   #claimPositional(looping: boolean): PooledVoice {
+    this.#sweepFinished();
     const reused = this.#freePositional.pop();
     if (reused !== undefined) {
       reused.looping = looping;
