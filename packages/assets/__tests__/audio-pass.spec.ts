@@ -62,12 +62,46 @@ describe("the audio pass seam assertion", () => {
     ).rejects.toThrow(/TN_ASSETS_AUDIO_SEAM/u);
   });
 
-  it("should say the cross-fade ran and the seam survived it, so the material is the problem", async () => {
+  it("should say the fade ran, and that a pinned splice is why it could not help", async () => {
+    // The remedy has to name the situation the build is actually in. Here the game pinned the
+    // splice, so the honest fix is to let the pass choose the join — not to move the bar.
     await expect(
       compileAudio("threenative-audio-seam-applied-", "bed.wav", clickingAtTheSplice(), {
         audio: { overrides: [{ glob: "bed.wav", loop: fixedSplice }] },
       }),
-    ).rejects.toThrow(/cross-fade of \d+ ms was applied and the seam survived it/u);
+    ).rejects.toThrow(
+      /cross-fade of \d+ ms ran and the wrap survived it, and loop\.spliceToleranceMs is 0/u,
+    );
+  });
+
+  it("should never offer raising the bound as the way out of a seam failure", async () => {
+    // A throwing gate people learn to tune around is worse than no gate: it teaches the habit and
+    // then gets deleted. Every branch of the remedy says so in as many words.
+    for (const override of [
+      { glob: "bed.wav", loop: fixedSplice },
+      { glob: "bed.wav", loop: { crossFadeMs: 0 } },
+      { glob: "bed.wav", loop: true as const, conditioning: "none" as const },
+    ]) {
+      await expect(
+        compileAudio("threenative-audio-seam-no-tuning-", "bed.wav", clickingAtTheSplice(), {
+          audio: { overrides: [override] },
+        }),
+      ).rejects.toThrow(/tunes the gate rather than the audio/u);
+    }
+  });
+
+  it("should say the search already had room when it did, so the clip is the fix", async () => {
+    // The other branch: the pass was free to move the splice, looked, and found nothing. Then the
+    // configuration is not the problem and the message must not imply it is.
+    const white = wavClip({ frames: RATE, sample: (frame) => (frame % 2 === 0 ? 0.95 : -0.95) });
+
+    await expect(
+      compileAudio("threenative-audio-seam-searched-", "bed.wav", white, {
+        audio: {
+          overrides: [{ glob: "bed.wav", loop: { crossFadeMs: 0 }, seamMaxRatio: 1.5 }],
+        },
+      }),
+    ).rejects.toThrow(/the fix is in the clip/u);
   });
 
   it("should name the wrap, its neighbourhood and the limit, so no number is folklore", async () => {

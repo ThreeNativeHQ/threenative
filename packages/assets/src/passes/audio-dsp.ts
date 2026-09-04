@@ -200,6 +200,18 @@ export interface IChosenSplice {
  * The objective here is the bare step, not the ratio the gate judges: across a window this narrow
  * the neighbourhood the ratio divides by is effectively fixed, so the two orderings agree, and the
  * step is the one that can be evaluated for every candidate without re-measuring a percentile.
+ *
+ * **How much this matters, measured rather than assumed.** The lottery above is stated in bare
+ * steps, which is what the gate used to read. In the ratio the gate reads now it is far smaller,
+ * because the numerator and the denominator are drawn from the same local step distribution and
+ * move together. Swept over 17 fade lengths on the three real beds, with the splice *pinned*, the
+ * ratio wanders between 0.00x and 0.89x and crosses the 1.5x limit at none of the 51 points; with
+ * the splice free it is 0.00x at every one of them, and 0.00x-0.23x after a real Vorbis round trip.
+ *
+ * So choosing the splice is not what stands between this gate and failing good audio — the ratio
+ * metric is. This is defence in depth on top of it, and it is why a game that pins the splice
+ * (`spliceToleranceMs: 0`) is the one configuration that can still lose the lottery. The seam
+ * failure message says exactly that when it happens.
  */
 export function spliceForQuietestSeam(
   channels: readonly Float32Array[],

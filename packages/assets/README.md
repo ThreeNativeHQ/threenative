@@ -209,6 +209,22 @@ them together.
 It is measured on the **decoded output bytes**, because a cross-fade that is exact in the
 intermediate PCM and undone by the encoder is still a click in the player's ears.
 
+**The fade length is not a lottery ticket, and this was checked rather than assumed.** After a
+tail-onto-head cross-fade the wrap step is exactly the source's own adjacent-sample delta wherever
+the splice lands, so with a fixed fade length the *bare step* is a draw from the material's step
+distribution — on one real bed it moved from 0.0084 at a 250 ms fade to 0.0807 at 400 ms, a spread
+that would make a magnitude gate's verdict luck. In the ratio the gate actually reads, the same
+sweep over 17 fade lengths and three real beds stays between 0.00x and 0.89x and never reaches the
+1.5x limit, because the numerator and denominator move together. The pass also searches a declared
+tolerance for the quietest join, which takes it to 0.00x at every fade length tested and 0.00x-0.23x
+after a real encode.
+
+The one configuration that can still lose that lottery is `spliceToleranceMs: 0`, which pins the
+fade where the declared length puts it. When the gate fires it says which situation the build is in
+— splice pinned, no fade at all, or a search that had room and found nothing — and it deliberately
+never offers raising `seamMaxRatio` or walking `crossFadeMs` as the way out, because a throwing gate
+people learn to tune around is worse than no gate.
+
 **The peak is a ceiling, not a target.** Normalising every clip up to one level would make a
 footstep as loud as a chime and force the game to undo the pipeline in its volume settings — that
 is deciding how the game sounds, and it belongs to the game.

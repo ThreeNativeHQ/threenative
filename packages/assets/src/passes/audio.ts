@@ -326,13 +326,12 @@ function assertNoDrift(
  * A clip declared a forever-loop that clicks at every wrap is the defect this pass was built for,
  * and it shipped once already because the conditioning was a hand pass that reported nothing. So
  * there is no `seam: "none"`: `conditioning: "none"` still lands here, and `crossFadeMs: 0` — the
- * bar-accurate loop that cannot be shortened by a fade — still lands here. The threshold can be
- * moved, because some material genuinely needs a different number, but only inside a bound that
- * keeps it an assertion (`MAX_SEAM_THRESHOLD`), and the value used is reported either way.
+ * bar-accurate loop that cannot be shortened by a fade — still lands here. The bound can be moved,
+ * because some material genuinely needs a different number, but only inside a range that keeps it
+ * an assertion (`MIN_SEAM_MAX_RATIO`/`MAX_SEAM_MAX_RATIO`), and the value used is always reported.
  *
  * Measured on the decoded output bytes, never on the intermediate PCM: a cross-fade that is exact
- * in the PCM and undone by the encoder is still a click in the player's ears. Over real material
- * the PCM lands near 1e-6 and the shipped bytes near 0.002, and the gap is the codec.
+ * in the PCM and undone by the encoder is still a click in the player's ears.
  */
 function assertSeam(
   logicalPath: string,
@@ -342,13 +341,34 @@ function assertSeam(
   sampleRate: number,
 ): void {
   if (!declared.loop || seam.ratio <= declared.seamMaxRatio) return;
-  const applied =
-    crossFadeFrames === 0
-      ? "no cross-fade was applied, because the clip was declared to keep its own length"
-      : `an equal-power cross-fade of ${((crossFadeFrames / sampleRate) * 1000).toFixed(0)} ms was applied and the seam survived it`;
   throw new Error(
-    `TN_ASSETS_AUDIO_SEAM: '${logicalPath}' loops with a wrap step of ${seam.wrap.toFixed(4)} against a neighbourhood whose largest ordinary step is ${seam.nearP99.toFixed(4)} — ${seam.ratio.toFixed(2)}x, which exceeds the ${String(declared.seamMaxRatio)}x this loop may ship with, and is an audible click on every cycle of something that repeats forever. ${applied}. Either the material has no quiet splice near the declared cross-fade (widen loop.spliceToleranceMs or change loop.crossFadeMs), or the clip was never made to loop and should be declared loop: false.`,
+    `TN_ASSETS_AUDIO_SEAM: '${logicalPath}' loops with a wrap step of ${seam.wrap.toFixed(4)} against a neighbourhood whose largest ordinary step is ${seam.nearP99.toFixed(4)} — ${seam.ratio.toFixed(2)}x, which exceeds the ${String(declared.seamMaxRatio)}x this loop may ship with, and is an audible click on every cycle of something that repeats forever. ${seamRemedy(declared, crossFadeFrames, sampleRate)}`,
   );
+}
+
+/**
+ * What to actually do about it, which depends on whether the pass was allowed to pick the join.
+ *
+ * Deliberately never suggests raising `seamMaxRatio` or walking `crossFadeMs` until the build goes
+ * green. Both would make this message disappear without making the clip loop any better, and a
+ * throwing gate people learn to tune around is worse than no gate — it teaches the habit and then
+ * gets deleted. Letting the splice move is a different kind of change: it does not move the bar, it
+ * lets the pass find a join that genuinely measures clean.
+ */
+function seamRemedy(declared: IResolved, crossFadeFrames: number, sampleRate: number): string {
+  const dontTune =
+    "Raising seamMaxRatio, or walking crossFadeMs until this passes, tunes the gate rather than the audio.";
+  if (crossFadeFrames === 0) {
+    const why = declared.conditioned
+      ? "no cross-fade ran, because this loop was declared to keep its own length"
+      : "no conditioning ran, because this clip was declared to ship as committed";
+    return `Here ${why}, so the join is exactly as the material was authored: the fix is in the clip. Trim it to a zero crossing, or let the pass cross-fade it by declaring a loop.crossFadeMs. ${dontTune}`;
+  }
+  const applied = `An equal-power cross-fade of ${((crossFadeFrames / sampleRate) * 1000).toFixed(0)} ms ran and the wrap survived it`;
+  if (declared.spliceToleranceMs <= 0) {
+    return `${applied}, and loop.spliceToleranceMs is 0, so the fade had to land exactly where the declared length put it — which is a lottery, and this clip lost it. Give the pass room to choose the join (loop.spliceToleranceMs: 25 is the default) and it will look for one that measures clean. ${dontTune}`;
+  }
+  return `${applied}, and the pass already searched +/-${String(declared.spliceToleranceMs)} ms for a quieter join without finding one. That means the material has no clean loop point near here, so the fix is the clip rather than the configuration: re-author the loop, or declare loop: false if it was never meant to repeat. ${dontTune}`;
 }
 
 /**
