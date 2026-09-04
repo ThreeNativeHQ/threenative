@@ -244,7 +244,10 @@ describe("template contracts", () => {
         "maxDrawCalls",
         "maxFrameMsP95",
         "maxTriangles",
+        // PRD-222 Phase 1: the Tier 3 fps floor ships beside the ceilings.
+        "minFps",
       ]);
+      expect(performance.minFps, template).toBe(30);
       expect(performance.maxFrameMsP95, template).toBe(33);
       expect(typeof performance.maxDrawCalls, template).toBe("number");
       expect(typeof performance.maxTriangles, template).toBe("number");

@@ -5,7 +5,8 @@
     "performance": {
       "maxDrawCalls": 120,
       "maxFrameMsP95": 33,
-      "maxTriangles": 90000
+      "maxTriangles": 90000,
+      "minFps": 30
     }
   },
   "name": "production-performance",

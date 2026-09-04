@@ -1351,6 +1351,31 @@ test("runner carries performance samples in their separate report channel", () =
   expect(result.pass).toBe(true);
 });
 
+test("runner carries performance samples for parity-only scenarios", () => {
+  const currentScenario = scenario({
+    parity: {
+      minFpsRatio: 0.85,
+      reference: { fps: 60, serial: "pixel-8", thermallyConfounded: false },
+      referenceReport: "reports/native.json",
+      referenceSide: "native",
+    },
+  });
+  const snapshot: IPlaytestObservationSnapshot = {
+    clock: { mode: "render-frame", timeMs: 32 },
+    runtimeDiagnosticsSeries: [
+      { frameMs: 16, drawCalls: 2, triangles: 12 },
+      { frameMs: 18, drawCalls: 3, triangles: 20 },
+    ],
+  };
+
+  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], []);
+
+  expect(result.observations?.performanceSeries).toEqual(snapshot.runtimeDiagnosticsSeries);
+  expect(result.assertionResults).toContainEqual(
+    expect.objectContaining({ id: "parity.fpsRatio", pass: true }),
+  );
+});
+
 test("runner keeps performance samples out of visual throughout-frame observations", () => {
   const currentScenario = scenario({
     performance: { maxFrameMsP95: 20 },
