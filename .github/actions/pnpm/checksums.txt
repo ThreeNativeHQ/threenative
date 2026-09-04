@@ -1,0 +1,17 @@
+# The pnpm release binaries `.github/actions/pnpm` installs, from
+# https://github.com/pnpm/pnpm/releases/tag/v10.25.0. Each is self-contained: it bundles its own
+# Node.js, so nothing here needs a package manager to install a package manager.
+#
+# On a pnpm bump, change `packageManager` in package.json, then regenerate every line:
+#
+#   v=10.25.0
+#   for a in pnpm-linux-x64 pnpm-linux-arm64 pnpm-macos-x64 pnpm-macos-arm64 pnpm-win-x64.exe; do
+#     curl -fsSL "https://github.com/pnpm/pnpm/releases/download/v$v/$a" | sha256sum | sed "s|-|$a|"
+#   done
+#
+# version 10.25.0
+856b2d764a362d667f8b3fe28632c7ff1870557e5b92a9ed4ba1fdca35924a1d  pnpm-linux-x64
+2bbbc1be51ca359e8ce36d5ea04cb6150d3ff91c869946e8a17120d8b4510a4d  pnpm-linux-arm64
+458adb599dff0e6b98ba1cd5c38b81d415ed132250b9c29d5532563b2a0f0c32  pnpm-macos-x64
+81533f4a222939681eaac5a5cb4673416a434c16eeeaa9441e699363173063c4  pnpm-macos-arm64
+f028fe36e71ddeb034d113800221ea27934bb84717bace0388069f896c55474f  pnpm-win-x64.exe

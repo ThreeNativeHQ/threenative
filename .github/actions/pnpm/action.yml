@@ -1,0 +1,108 @@
+name: Install pnpm
+description: >-
+  Put the workspace's pinned pnpm on PATH from its GitHub release, checked against a recorded
+  digest. Replaces pnpm/action-setup, which bootstraps pnpm by running `npm ci` against
+  registry.npmjs.org and then self-updating to the pinned version — two registry round trips
+  before any job in this repository does its own work, 56 times per CI run. On 2026-09-03 that
+  cost stopped being theoretical: the step's own log reads `added 1 package in 7m`, single steps
+  reached 430s, and across the four runs after 23:00Z the bootstrap was 26% of all CI work and
+  57% of it in run 33819039003. A release binary comes from the same host the runner already
+  pulls its actions and its Node from, and it is self-contained, so nothing installs a package
+  manager to install a package manager.
+
+outputs:
+  version:
+    description: The pnpm version installed, read from the workspace's packageManager field.
+    value: ${{ steps.install.outputs.version }}
+  bin-directory:
+    description: Directory holding the pnpm executable, in this runner's native path spelling.
+    value: ${{ steps.install.outputs.bin-directory }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install the pinned pnpm from its release
+      id: install
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Overridable so a runner behind a mirror can point at one; unset everywhere today.
+        release_base="${TN_PNPM_RELEASE_BASE:-https://github.com/pnpm/pnpm/releases/download}"
+
+        manifest="$GITHUB_WORKSPACE/package.json"
+        test -f "$manifest" || { echo "no package.json at $manifest"; exit 1; }
+        version=$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"pnpm@\([0-9][^"]*\)".*/\1/p' "$manifest" | head -n 1)
+        test -n "$version" || { echo "package.json pins no pnpm in packageManager"; exit 1; }
+
+        case "$RUNNER_OS/$RUNNER_ARCH" in
+          Linux/X64) asset=pnpm-linux-x64 ;;
+          Linux/ARM64) asset=pnpm-linux-arm64 ;;
+          macOS/X64) asset=pnpm-macos-x64 ;;
+          macOS/ARM64) asset=pnpm-macos-arm64 ;;
+          Windows/X64) asset=pnpm-win-x64.exe ;;
+          *) echo "no pnpm release asset for $RUNNER_OS/$RUNNER_ARCH"; exit 1 ;;
+        esac
+
+        digests="$GITHUB_ACTION_PATH/checksums.txt"
+        recorded=$(sed -n 's/^# version \(.*\)$/\1/p' "$digests" | head -n 1)
+        test "$recorded" = "$version" || {
+          echo "checksums.txt records pnpm $recorded but the workspace pins $version"
+          exit 1
+        }
+        digest=$(awk -v want="$asset" '$2 == want { print $1 }' "$digests" | head -n 1)
+        test -n "$digest" || { echo "$asset has no recorded digest in checksums.txt"; exit 1; }
+
+        # PNPM_HOME is where pnpm keeps its content-addressed store, and `actions/setup-node`'s
+        # `cache: pnpm` asks pnpm for that path to decide what to save. Keeping it out of the
+        # version directory keeps the store — and every cache entry keyed on it — in one place
+        # across a pnpm bump.
+        home="$HOME/.tn-pnpm"
+        bin_directory="$home/$version"
+        executable="$bin_directory/pnpm"
+        if [ "$RUNNER_OS" = "Windows" ]; then executable="$bin_directory/pnpm.exe"; fi
+        mkdir -p "$bin_directory"
+
+        # macOS runners ship no coreutils, so `sha256sum` is Linux and Git Bash only there.
+        if command -v sha256sum >/dev/null 2>&1; then
+          check_digest() { echo "$1  $2" | sha256sum --check --status; }
+        else
+          check_digest() { echo "$1  $2" | shasum --algorithm 256 --check --status; }
+        fi
+
+        if [ ! -x "$executable" ]; then
+          curl --fail --location --silent --show-error \
+            --retry 5 --retry-all-errors --retry-delay 2 \
+            --connect-timeout 20 --max-time 300 \
+            --output "$executable.part" "$release_base/v$version/$asset"
+          if ! check_digest "$digest" "$executable.part"; then
+            echo "$asset did not match its recorded digest $digest"
+            rm -f "$executable.part"
+            exit 1
+          fi
+          chmod +x "$executable.part"
+          mv "$executable.part" "$executable"
+        fi
+
+        # `cygpath` because GITHUB_PATH and GITHUB_ENV are read by PowerShell and cmd steps too,
+        # and a POSIX path from Git Bash means nothing to either.
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          path_entry=$(cygpath -w "$bin_directory")
+          home_entry=$(cygpath -w "$home")
+        else
+          path_entry="$bin_directory"
+          home_entry="$home"
+        fi
+
+        echo "$path_entry" >> "$GITHUB_PATH"
+        echo "PNPM_HOME=$home_entry" >> "$GITHUB_ENV"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "bin-directory=$path_entry" >> "$GITHUB_OUTPUT"
+
+        # Fail here rather than in whichever job first calls pnpm for real.
+        installed=$("$executable" --version)
+        test "$installed" = "$version" || {
+          echo "$asset reports pnpm $installed, not the pinned $version"
+          exit 1
+        }
+        echo "pnpm $installed from $asset"
