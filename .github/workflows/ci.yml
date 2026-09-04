@@ -597,9 +597,10 @@ jobs:
     # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
     # fast as its slowest leg. Timestamping platformer's step splits it as ~74s of scaffold install
     # and typecheck plus 15 scenarios at ~20s each, so the scenarios are what makes it long and
-    # they shard cleanly. The two heavy templates run in thirds; every other template is already
-    # well under the leg it would be sharded against, and splitting them would buy nothing and pay
-    # the 74s setup twice.
+    # they shard cleanly. Platformer and starter run in thirds. Puzzle was measured at 399s of
+    # scenario work on run 33843502361 (carry 134s, swing 255s), so it runs in two halves as well;
+    # every other template is already well under the leg it would be sharded against, and splitting
+    # them would buy nothing and pay the 74s setup twice.
     #
     # Every scenario still runs. `shard` selects a slice of the same classifier output the whole
     # lane has always used, and the step fails closed if the slices do not add back up to the list.
@@ -613,7 +614,8 @@ jobs:
           - { template: platformer, shard: "1/3" }
           - { template: platformer, shard: "2/3" }
           - { template: platformer, shard: "3/3" }
-          - { template: puzzle, shard: "1/1" }
+          - { template: puzzle, shard: "1/2" }
+          - { template: puzzle, shard: "2/2" }
           - { template: racing, shard: "1/1" }
           - { template: runner, shard: "1/1" }
           - { template: sailing, shard: "1/1" }
