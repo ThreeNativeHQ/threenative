@@ -88,7 +88,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -335,7 +335,7 @@ jobs:
           # recompiled its own objects against it. See the note in ci.yml's `test` job.
           key: native-ccache-desktop-parity-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
           restore-keys: native-ccache-desktop-parity-${{ runner.os }}-${{ runner.arch }}-gcc-
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -483,7 +483,7 @@ jobs:
           path: ${{ github.workspace }}/.cache/ccache
           key: native-ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
           restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -602,7 +602,7 @@ jobs:
           # recompiled its own objects against it. See the note in ci.yml's `test` job.
           key: native-ccache-starter-linux-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
           restore-keys: native-ccache-starter-linux-${{ runner.os }}-${{ runner.arch }}-gcc-
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -678,7 +678,7 @@ jobs:
     # every PR and every push, with no label to remember and no lane to opt into.
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: 20

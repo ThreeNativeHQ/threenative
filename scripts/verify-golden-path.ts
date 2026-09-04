@@ -25,7 +25,12 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 const PACKAGE_FILE = "package.json";
 const REQUIRED_DEPENDENCIES = ["vite", "create-threenative"] as const;
 const MCP_PROTOCOL_VERSION = "2025-06-18";
-const MCP_REQUEST_TIMEOUT_MS = 30_000;
+// A cold MCP server start has to answer `initialize`, and on a loaded runner that start can
+// outlive 30s through no fault of the server: four golden-path template legs across runs
+// 33829801266, 33830264158 and 33831658062 timed `initialize` out at 30s at layer 'mcp' while
+// the same legs passed on quieter runs. 60s, plus the one re-send in probeMcpServer, keeps a
+// slow start from failing the lane without letting a server that will never answer fail slowly.
+const MCP_REQUEST_TIMEOUT_MS = 60_000;
 const SCULPT_RESOURCE_UNSAFE_BLOCK =
   /```(?:glsl|wgsl|(?:java|type)script|[jt]s)\b[\s\S]*?(?:ShaderMaterial|onBeforeCompile|diffuseColor|gl_FragColor|new\s+Mesh(?:Standard|Physical|Phong|Basic|Lambert|Toon)Material)/u;
 
@@ -510,8 +515,24 @@ export async function probeMcpServer(
     });
   };
 
+  // One re-send, for `initialize` only: the timeout above fires while a cold server is still
+  // starting, and the request that proves the server works is the one that pays for it. The
+  // timed-out id is already deleted from `pending`, so a late first response resolves nothing
+  // and cannot double-complete; a server that cannot answer twice will not answer at all.
+  const requestWithOneRetry = async (
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<unknown> => {
+    try {
+      return await request(method, params);
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("timed out")) throw error;
+      return await request(method, params);
+    }
+  };
+
   try {
-    await request("initialize", {
+    await requestWithOneRetry("initialize", {
       protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: {},
       clientInfo: { name: "threenative-golden-path", version: "0" },

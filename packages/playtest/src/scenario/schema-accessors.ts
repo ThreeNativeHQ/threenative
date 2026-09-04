@@ -3,7 +3,7 @@ import { PLAYTEST_FRAME_BUDGET_PHASES } from "../protocol.js";
 import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./errors.js";
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion,
-  IPlaytestSceneAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestRenderChainAssertion, IPlaytestStartupAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
+  IPlaytestSceneAssertion, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestStartupAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -300,6 +300,60 @@ export function validatePerformanceAssertion(value: unknown, scenarioPath: strin
     ...present("maxPhaseMsP95", validatePhaseBudget(record.maxPhaseMsP95, scenarioPath, `${objectPath}.maxPhaseMsP95`)),
     ...present("maxTriangles", optionalNonNegativeNumber(record, "maxTriangles", scenarioPath, objectPath)),
     ...present("minFps", optionalNonNegativeNumber(record, "minFps", scenarioPath, objectPath)),
+  };
+}
+
+export function validateParityAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestParityAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["minFpsRatio", "minRenderParity", "reference", "referenceReport", "referenceSide"], scenarioPath, objectPath);
+  const minFpsRatio = optionalNumber(record, "minFpsRatio", scenarioPath, objectPath);
+  if (minFpsRatio === undefined || minFpsRatio <= 0) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.minFpsRatio' must be a positive number (Tier 2's Floor is 0.85).`);
+  }
+  const minRenderParity = optionalNumber(record, "minRenderParity", scenarioPath, objectPath);
+  if (minRenderParity !== undefined && minRenderParity <= 0) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.minRenderParity' must be a positive number when present.`);
+  }
+  const referenceReport = record.referenceReport;
+  if (typeof referenceReport !== "string" || referenceReport.trim() === "") {
+    throw invalidScenario(scenarioPath, `'${objectPath}.referenceReport' must name the other half's saved run report.`);
+  }
+  const referenceSide = record.referenceSide;
+  if (referenceSide !== "browser" && referenceSide !== "native") {
+    throw invalidScenario(scenarioPath, `'${objectPath}.referenceSide' must be 'browser' or 'native' — the directed native ÷ web ratio needs to know which side the reference is.`);
+  }
+  const reference = record.reference === undefined ? undefined : requireRecord(record.reference, scenarioPath, `${objectPath}.reference`);
+  const referenceFps = reference === undefined ? undefined : optionalNumber(reference, "fps", scenarioPath, `${objectPath}.reference`);
+  if (referenceFps !== undefined && referenceFps <= 0) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.reference.fps' must be a positive number.`);
+  }
+  const referenceRenderP95 = reference === undefined ? undefined : optionalNumber(reference, "renderP95", scenarioPath, `${objectPath}.reference`);
+  if (referenceRenderP95 !== undefined && referenceRenderP95 <= 0) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.reference.renderP95' must be a positive number.`);
+  }
+  const referenceSerial = reference?.serial;
+  if (referenceSerial !== undefined && typeof referenceSerial !== "string") {
+    throw invalidScenario(scenarioPath, `'${objectPath}.reference.serial' must be a string when present.`);
+  }
+  const referenceThermal = reference?.thermallyConfounded;
+  if (referenceThermal !== undefined && typeof referenceThermal !== "boolean") {
+    throw invalidScenario(scenarioPath, `'${objectPath}.reference.thermallyConfounded' must be a boolean when present.`);
+  }
+  return {
+    minFpsRatio,
+    ...(minRenderParity === undefined ? {} : { minRenderParity }),
+    referenceReport,
+    referenceSide,
+    ...(reference === undefined || referenceFps === undefined
+      ? {}
+      : {
+          reference: {
+            fps: referenceFps,
+            ...(referenceRenderP95 === undefined ? {} : { renderP95: referenceRenderP95 }),
+            ...(typeof referenceSerial === "string" ? { serial: referenceSerial } : {}),
+            ...(typeof referenceThermal === "boolean" ? { thermallyConfounded: referenceThermal } : {}),
+          },
+        }),
   };
 }
 

@@ -5,7 +5,8 @@ prd_contract: v1
 # PRD-222 — every platform has a frame-rate target, and a gate that fails when it is missed
 
 **Status:** PARTIAL — Phase 0 measured 2026-08-25; native/browser parity is 0.319 on the physical
-Pixel 8, so Phase 1 gates and Phase 2 engine work are next. This PRD is written
+Pixel 8. **Phase 1 landed 2026-09-03** (`assert.parity` + shipped `minFps` floors, red observed —
+`docs/verification/prd-222-phase1-2026-09-03.md`); Phase 2 engine work is next. This PRD is written
 to be executed by an agent looping until the bar is met, so every target below names the command
 that decides it and the evidence that closes it.
 **Complexity:** +3 measurement across five platform lanes, +2 complex performance work,
@@ -320,11 +321,21 @@ The result splits the work and must be stated plainly:
 
 #### Phase 1 — the gates exist and are observed red
 
-- [ ] `assert.parity` (ledger row 2), red-first: two runs from different devices refuse by name.
-- [ ] Tier 1 and Tier 3 floors land in the shipped scenarios; each observed red once by moving the
-      floor above the measured value, and the failure pasted.
-- [ ] No lane is allowed to skip. A platform with no observer fails
-      `TN_PLAYTEST_UNSUPPORTED_ON_TARGET` naming the working target.
+- [x] `assert.parity` (ledger row 2), red-first: two runs from different devices refuse by name.
+      Landed 2026-09-03 (`assert.parity` + `evaluators/parity-evidence.ts`); the red-first proof
+      is the spec run against the unmodified schema, and the different-device refusal is
+      `TN_PLAYTEST_PARITY_DEVICE_MISMATCH` with the ratio still reported. Device identity rides
+      `deviceMetrics.serial`; the scene identity of the pair is the operator's protocol, named as
+      such rather than claimed. Evidence: `docs/verification/prd-222-phase1-2026-09-03.md`.
+- [x] Tier 1 and Tier 3 floors land in the shipped scenarios; each observed red once by moving the
+      floor above the measured value, and the failure pasted. All ten templates carry `minFps: 30`
+      beside their ceilings; the red was observed on the platformer template (floor 2000 vs
+      measured 1000 → exit 1, pasted in the record). **Lane caveat recorded there**: the browser
+      lane runs uncapped (~1000 fps under SwiftShader/Xvfb), so the shipped floor is a safety net
+      there and the device lane owns every presented-fps claim.
+- [x] No lane is allowed to skip. A platform with no observer fails
+      `TN_PLAYTEST_UNSUPPORTED_ON_TARGET` naming the working target — pre-existing mechanism,
+      which `assert.parity` rides via the registry's `supportedOn`.
 
 #### Phase 2 — take the lanes to Floor
 

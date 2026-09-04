@@ -252,6 +252,8 @@ describe("platformer checkpoints", () => {
       maxDrawCalls: 200,
       maxFrameMsP95: 33,
       maxTriangles: 7700,
+      // PRD-222 Phase 1: the Tier 3 Floor lives in the shipped scenario, beside the ceilings.
+      minFps: 30,
     });
     expect(scenario.steps.map((step) => step.kind)).toEqual(["input", "wait"]);
     expect(scenario.steps).not.toContainEqual(expect.objectContaining({ kind: "performance" }));
