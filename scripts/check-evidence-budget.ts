@@ -119,7 +119,10 @@ export async function checkEvidenceBudget(
           `evidence budget: cannot read evidence file '${file}' — ${error instanceof Error ? error.message : String(error)}`,
         );
       }
-      const lines = text.split("\n").length;
+      // A file ending in a newline splits to one extra empty element, so the naive count was one
+      // too high: the 1,000-line cap enforced 999 and the message told an author to trim a file
+      // whose length it was misreporting. Found by review; the spec had baked the wrong number in.
+      const lines = text.length === 0 ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
       if (lines > lineCap) {
         findings.push(
           `evidence file '${file}' is ${String(lines)} lines, over the ${String(lineCap)}-line cap — consolidate it in place, keeping every result a round ledger or a done PRD cites`,

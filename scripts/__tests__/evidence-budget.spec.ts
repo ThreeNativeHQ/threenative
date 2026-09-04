@@ -72,8 +72,10 @@ describe("checkEvidenceBudget", () => {
         20,
       );
       expect(report.ok).toBe(false);
+      // 40 lines, reported as 40. The trailing newline is a line terminator, not a line: an
+      // earlier version counted 41 here and the cap therefore enforced 999 rather than 1,000.
       expect(report.findings.join("\n")).toMatch(
-        /long-run\.md' is 41 lines, over the 20-line cap/u,
+        /long-run\.md' is 40 lines, over the 20-line cap/u,
       );
       expect(report.findings.join("\n")).toMatch(/consolidate it in place/u);
     } finally {
