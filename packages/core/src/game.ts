@@ -27,7 +27,11 @@ import { PointerEvents3D } from "./pointer-events.js";
 import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
 import { SceneRenderProjection } from "./renderProjection.js";
-import { resolveRendererAntialias, resolveRendererScaleSetting } from "./renderer-config.js";
+import {
+  resolveRendererAlphaAntialiasing,
+  resolveRendererAntialias,
+  resolveRendererScaleSetting,
+} from "./renderer-config.js";
 import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
 import { ResolutionScaler } from "./resolution-scaler.js";
 import type { ICtx, IStartupTimeline, Scene, SceneConstructor, SceneFrame } from "./scene.js";
@@ -730,6 +734,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         this.#config.renderer?.antialias,
         getPlatform().os,
       ),
+      alphaAntialiasing: resolveRendererAlphaAntialiasing(
+        this.#config.render,
+        this.#config.renderer?.alphaAntialiasing,
+        getPlatform().os,
+      ),
       ...resolveRendererScaleSetting(
         this.#config.render,
         this.#config.renderer?.resolutionScale,
@@ -825,13 +834,41 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const projectionReady = new Promise<void>((resolve) => {
       markProjectionSettled = resolve;
     });
-    const startupReadiness = new StartupReadiness();
+    const startupReadiness = new StartupReadiness({
+      /**
+       * The second warm-up: everything a game attached while it held startup.
+       *
+       * The first pass runs at framework readiness, which for a streaming game is before most of
+       * the world exists. Without this, `hold()` buys a complete *picture* and leaves a scene whose
+       * every material still compiles on first sight — which is worse than the pop-in it replaced,
+       * because a compile stall lands while the player is walking rather than while they are
+       * waiting. Measured on a 46,190-instance forest: 8 pipelines warmed, then 28 main-thread
+       * tasks over 40 ms in a minute of play, the worst 267 ms.
+       *
+       * A third of the compile budget, not the whole of it, because this one is spent with the
+       * player already waiting behind a curtain that has been up for seconds. Whatever does not
+       * fit still compiles lazily — the same as before — so the ceiling on the wait is bounded and
+       * the worst case is the behaviour we already had.
+       */
+      afterHolds: async () => {
+        await warmUp("TN_STARTUP_WARMUP_HELD", Math.round(STARTUP_COMPILE_BUDGET_MS / 3), false);
+      },
+    });
     const timeline: { -readonly [K in keyof IStartupTimeline]: IStartupTimeline[K] } = {};
     const now = (): number => globalThis.performance?.now() ?? Date.now();
+    // Stamped when the FRAMEWORK is done, which is before `whenReady()` whenever the game has
+    // registered a `startup.hold()`. Two stamps, because one number cannot be both "what the
+    // framework cost" and "what the player waited for", and collapsing them is how a valley that
+    // took 8.8 s to appear reported 1.5 s.
+    void startupReadiness.whenFrameworkReady().then(() => {
+      timeline.compileSettledMs ??= now();
+      timeline.frameworkReadyMs ??= now();
+    });
     void startupReadiness.whenReady().then(() => {
       // A renderer without first-use compilation settles without running the compile closure
       // below, so the settle stamp is guaranteed here at the latest.
       timeline.compileSettledMs ??= now();
+      timeline.frameworkReadyMs ??= now();
       timeline.readyMs ??= now();
       projectionSettled = true;
       markProjectionSettled();
@@ -841,22 +878,22 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       // and captures the loading state. The native screenshot path waits on this flag.
       (globalThis as Record<string, unknown>)[STARTUP_READY_GLOBAL] = true;
     });
-    const startupCompile: StartupCompile = async (): Promise<void> => {
+    const warmUp = async (marker: string, budgetMs: number, stamp: boolean): Promise<void> => {
       if (this.#aborted || this.#renderer === undefined) return;
       let report: IWarmUpReport | undefined;
       let failure: string | undefined;
       try {
         projection.reconcile();
         report = await warmUpScene(renderer, projection.root, camera, {
-          budgetMs: STARTUP_COMPILE_BUDGET_MS,
+          budgetMs,
           computeNodes: this.#computeDriven.warmupNodes,
         });
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
-      timeline.compileSettledMs ??= now();
+      if (stamp) timeline.compileSettledMs ??= now();
       console.log(
-        `TN_STARTUP_WARMUP:${JSON.stringify(
+        `${marker}:${JSON.stringify(
           report === undefined
             ? { failed: failure ?? "unknown" }
             : {
@@ -874,6 +911,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               },
         )}`,
       );
+    };
+    const startupCompile: StartupCompile = async (): Promise<void> => {
+      await warmUp("TN_STARTUP_WARMUP", STARTUP_COMPILE_BUDGET_MS, true);
     };
     const ctx: ICtx<TState, TPhysics> = {
       add: (object) => {
@@ -933,6 +973,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // loads, entering the world is 80%, compile settling 90%, and only readiness is 1.
         get progress() {
           if (projectionSettled) return 1;
+          // A registered hold owns the last tenth. Without this the bar sat at 0.9 for the whole
+          // of the game's own tier and then jumped, which is the reading a player calls frozen.
+          if (startupReadiness.frameworkReady) {
+            const held = startupReadiness.holdReport.length;
+            if (held === 0) return 0.9;
+            const settled = held - startupReadiness.pendingHolds.length;
+            return 0.9 + 0.1 * (settled / held);
+          }
           if (startupReadiness.compileSettled) return 0.9;
           if (timeline.enteredMs !== undefined) return 0.8;
           const { requested, requestedBytes, settled, settledBytes } = assets.progress;
@@ -942,10 +990,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           if (requestedBytes > 0) return 0.7 * Math.min(1, settledBytes / requestedBytes);
           return requested === 0 ? 0 : 0.7 * Math.min(1, settled / requested);
         },
+        hold: (label, work, budgetMs) => {
+          startupReadiness.hold(label, work, budgetMs);
+        },
         get timeline() {
           return { ...timeline };
         },
         whenReady: () => projectionReady,
+        whenFrameworkReady: () => startupReadiness.whenFrameworkReady(),
       },
       renderer: this.#renderer,
       viewport,
@@ -1002,6 +1054,22 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               if (this.#config.frameBudget !== false)
                 this.#config.frameBudget?.onWindow?.(reported);
               if (scaler === undefined) return;
+              // **Not while the world is still arriving.** The scaler judges the game by closed
+              // frame-budget windows, and the windows that close during a launch are not the game:
+              // they are asset decode, scene construction and first-use compilation. Measured on
+              // sandbox/wildwood, a 46,190-instance forest, the first two windows reported 18.8
+              // and 27.3 fps against a 60 fps budget — a deficit large enough that `#rungsToDrop`
+              // crossed three rungs at once and the buffer went from 1600x900 to 976x549 before
+              // the player had control. It then settled at 0.72, which is 52% of the pixels, and
+              // re-probed 0.85 every thirty seconds, missed, and fell back — so the picture went
+              // soft a few seconds in and never fully recovered. The owner's report was "after a
+              // while everything becomes blurry, and keeps getting worse".
+              //
+              // Readiness is the right gate rather than a frame count or a timer: it is the moment
+              // the framework already defines as "the world is safe to show", it now includes
+              // anything the game held startup for, and a host that never reaches it still gets
+              // there on the bounded fallbacks inside `StartupReadiness`.
+              if (!startupReadiness.ready) return;
               const stepped = scaler.observe(reported);
               if (stepped !== undefined) renderer.setResolutionScale(stepped, scaler.scaleSource);
             },

@@ -189,6 +189,14 @@ export interface IThreeNativeConfig {
     /** Portable multisampling. Sampling and resolution are one pixel budget, not two. */
     readonly antialias?: boolean;
     /**
+     * Portable alpha antialiasing: resolve alpha-tested cutout silhouettes — foliage, fences,
+     * hair — through the multisample coverage mask rather than a binary `discard`. On by default,
+     * costing no target and no pass; it buys the cutouts the samples `antialias` already pays
+     * for. Set false for a deliberately hard-edged look. It does nothing on a single-sampled
+     * surface, and says so in `TN_ALPHA_ANTIALIASING` rather than reporting itself applied.
+     */
+    readonly alphaAntialiasing?: boolean;
+    /**
      * Android-only rendering overrides selected by the engine.
      *
      * `antialias` belongs here beside `resolutionScale` because they spend the same budget: a
@@ -199,6 +207,12 @@ export interface IThreeNativeConfig {
     readonly android?: {
       readonly resolutionScale?: number | "auto";
       readonly antialias?: boolean;
+      /**
+       * `alphaAntialiasing` belongs here for the reason `antialias` does, one step on: a phone
+       * that bought sampling back must be able to spend it on cutouts, and one that gave sampling
+       * up has nothing to spend.
+       */
+      readonly alphaAntialiasing?: boolean;
     };
   };
   readonly ui?: {

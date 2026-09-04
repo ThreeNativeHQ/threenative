@@ -56,9 +56,23 @@ async function run(
     await game.start();
     if (frame === undefined) throw new Error("Game did not start its loop.");
     let time = 0;
+    // Reach readiness before measuring anything. The scaler deliberately ignores windows that
+    // close before the world is up — the ones that close during a launch are asset decode, scene
+    // construction and first-use compilation, not the game — and this harness used to drive
+    // straight past that and assert on windows the scaler now refuses. Its assertions were
+    // therefore passing *because* of the defect: on a real 46,190-instance forest the first two
+    // windows reported 18.8 and 27.3 fps and the buffer fell three rungs before the player had
+    // control. So the ramp is in-budget frames, awaited so the readiness promise chain can settle.
+    for (let index = 0; index < 10; index += 1) {
+      time += 8;
+      frame(time);
+      await Promise.resolve();
+    }
+    await game.ctx?.startup.whenReady();
     for (let index = 0; index < windows; index += 1) {
       time += presentedP95;
       frame(time);
+      await Promise.resolve();
     }
     const surface = game.ctx?.renderer.surface();
     return {
@@ -172,12 +186,115 @@ describe('resolutionScale: "auto"', () => {
       if (frame === undefined) throw new Error("Game did not start its loop.");
       const camera = game.ctx?.camera as { aspect?: number } | undefined;
       const aspectBefore = camera?.aspect;
-      for (let index = 1; index <= 6; index += 1) frame(index * 40);
+      // Same readiness ramp as `run()` above, and for the same reason: the scaler ignores windows
+      // that close before the world is up, so a loop that never reaches readiness measures a
+      // scaler that was never allowed to act.
+      let time = 0;
+      for (let index = 0; index < 10; index += 1) {
+        time += 8;
+        frame(time);
+        await Promise.resolve();
+      }
+      await game.ctx?.startup.whenReady();
+      for (let index = 0; index < 6; index += 1) {
+        time += 40;
+        frame(time);
+        await Promise.resolve();
+      }
       expect(sized.length).toBeGreaterThan(1);
       // Every resize leaves the CSS/UI surface alone; only the drawing buffer moves.
       expect(sized.every(([, , updateStyle]) => updateStyle === false)).toBe(true);
       expect(sized.at(-1)?.[0]).toBeLessThan(2400);
       expect(camera?.aspect).toBe(aspectBefore);
+    } finally {
+      await game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+    }
+  });
+
+  it("does not sell resolution for frames measured before the world was up", async () => {
+    // The blur bug, as a gate. The owner's report was "after a while everything becomes blurry,
+    // and keeps getting worse", and the mechanism was measured on a 46,190-instance forest: the
+    // first frame-budget windows close during asset decode, scene construction and first-use
+    // compilation, they reported 18.8 and 27.3 fps against a 60 fps budget, `#rungsToDrop` crossed
+    // three rungs on a deficit that large, and the drawing buffer went 1600x900 -> 976x549 before
+    // the player had control. It then settled at 0.72 — 52% of the pixels — re-probed 0.85 every
+    // thirty seconds, missed, and fell back, so the picture never fully recovered.
+    //
+    // Those windows are not the game. This asserts the scaler never acts on them.
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    let releaseTier: () => void = () => undefined;
+    class Streaming extends Scene {
+      static override readonly initialState = {};
+      override load(ctx: Parameters<Scene["load"]>[0]): void {
+        ctx.startup.hold(
+          "detail-tier",
+          new Promise<void>((resolve) => {
+            releaseTier = resolve;
+          }),
+        );
+      }
+    }
+    const game = defineGame({
+      display: { maxFps: 60 },
+      frameBudget: { report: () => {}, reportEvery: 1 },
+      render: { resolutionScale: "auto" },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: Streaming },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      // Frames far over a 60 fps budget — 100 ms apart, which is the shape of a launch window.
+      // Twenty of them is many more rungs than the scaler needs to reach its floor.
+      //
+      // The scene holds startup, which is what keeps this window pre-readiness. That is not a
+      // contrivance: it is exactly what a game with a second asset tier does, and it is why the
+      // real forest spent twenty seconds before readiness with its slowest windows inside that
+      // span. Note also that readiness cannot be held off simply by driving slow frames here —
+      // `observe()` measures the frame callback's own duration, not the interval between frames,
+      // and this fake callback is nearly free.
+      let time = 0;
+      for (let index = 0; index < 20; index += 1) {
+        time += 100;
+        frame(time);
+        await Promise.resolve();
+      }
+      const duringLoad = game.ctx?.renderer.surface();
+      expect(duringLoad?.resolutionScale).toBe(1);
+      expect(duringLoad?.atFloor).toBe(false);
+
+      // And the control: the same over-budget windows *after* readiness must still scale, or this
+      // test would pass just as well against a scaler that had been switched off entirely.
+      releaseTier();
+      await game.ctx?.startup.whenReady();
+      for (let index = 0; index < 6; index += 1) {
+        time += 100;
+        frame(time);
+        await Promise.resolve();
+      }
+      expect(game.ctx?.renderer.surface().resolutionScale).toBeLessThan(1);
     } finally {
       await game.stop();
       Object.defineProperty(globalThis, "requestAnimationFrame", {

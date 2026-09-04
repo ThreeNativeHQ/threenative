@@ -3,7 +3,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { acquireHotReloadProjectLock } from "../../test-support/hot-reload-lock.js";
-import { packageSourcesMatch } from "../../test-support/hot-reload-project.js";
+import {
+  packageSourcesMatch,
+  selectHotReloadServerProject,
+} from "../../test-support/hot-reload-project.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   assertAdapterInfo,
@@ -44,6 +47,12 @@ describe("root Playwright lane contracts", () => {
     ).toBe(false);
     expect(packageSourcesMatch(localSources, { "@threenative/core": `file:${sourcePath}` })).toBe(
       true,
+    );
+  });
+
+  it("keeps the server on the project exported by the config that launched it", () => {
+    expect(selectHotReloadServerProject("/tmp/original/starter", "/tmp/retry/starter")).toBe(
+      "/tmp/original/starter",
     );
   });
 

@@ -1,21 +1,24 @@
 // quality-allow: landed over the file-length threshold with the FAB extraction lane; split owed to that lane
+import { type IBulkSourceModel, selectBulkSourceModel } from "./bulk-source-model.js";
 import {
   decompressCompressedBuffer,
   findCompressedBufferOffsets,
   parseCompressedBuffer,
 } from "./compressed-buffer.js";
 import { UAssetError, assertUAsset } from "./errors.js";
+import { type IGeometryBuild, assembleGeometry, computeBounds, convertVector } from "./geometry.js";
 import {
   type IAttributeEntry,
   type IMeshDescription,
   findMeshDescriptionOffsets,
   parseMeshDescription,
 } from "./mesh-description.js";
-import { readPackageSummary } from "./package-summary.js";
-import { type IRawMesh, findRawMeshBlobs, parseRawMesh } from "./raw-mesh.js";
+import { readPackageLayout, readPackageSummary } from "./package-summary.js";
+import { buildGeometryFromRawMesh } from "./raw-mesh-geometry.js";
+import { findRawMeshBlobs, parseRawMesh } from "./raw-mesh.js";
 import type {
   IDecodedUAssetStaticMesh,
-  IUAssetBounds,
+  IUAssetBulkDataInfo,
   IUAssetMetadata,
   IUAssetParseOptions,
   IUAssetSection,
@@ -44,45 +47,6 @@ function scanMetadata(bytes: Uint8Array): { engineVersion: string; objectPath: s
   const objectPath =
     gamePaths.find((path) => /\/StaticMeshes\//.test(path)) ?? gamePaths[0] ?? "unknown";
   return { engineVersion: branch, objectPath };
-}
-
-function convertVector(
-  x: number,
-  y: number,
-  z: number,
-  convertCoordinates: boolean,
-): [number, number, number] {
-  return convertCoordinates ? [x, z, -y] : [x, y, z];
-}
-
-function computeBounds(positions: Float32Array): IUAssetBounds {
-  const min: [number, number, number] = [
-    Number.POSITIVE_INFINITY,
-    Number.POSITIVE_INFINITY,
-    Number.POSITIVE_INFINITY,
-  ];
-  const max: [number, number, number] = [
-    Number.NEGATIVE_INFINITY,
-    Number.NEGATIVE_INFINITY,
-    Number.NEGATIVE_INFINITY,
-  ];
-  for (let index = 0; index + 2 < positions.length; index += 3) {
-    for (let component = 0; component < 3; component += 1) {
-      const value = positions[index + component];
-      if (value === undefined) {
-        throw new UAssetError(
-          "INVALID_MESH_REFERENCE",
-          "Position data ended before its declared count",
-          {
-            index,
-          },
-        );
-      }
-      min[component] = Math.min(min[component] ?? value, value);
-      max[component] = Math.max(max[component] ?? value, value);
-    }
-  }
-  return { min, max };
 }
 
 function attribute(
@@ -148,47 +112,6 @@ function componentAt(
     );
   }
   return value;
-}
-
-function rawFloat(values: Float32Array, index: number, what: string): number {
-  const value = values[index];
-  if (typeof value !== "number") {
-    throw new UAssetError("INVALID_RAW_MESH", `${what} ended before its declared element count`, {
-      index,
-    });
-  }
-  return value;
-}
-
-function rawWedge(values: Uint32Array, index: number): number {
-  const value = values[index];
-  if (typeof value !== "number") {
-    throw new UAssetError(
-      "INVALID_RAW_MESH",
-      "FRawMesh wedge table ended before its declared count",
-      { index },
-    );
-  }
-  return value;
-}
-
-function rawInt(values: Int32Array, index: number, what: string): number {
-  const value = values[index];
-  if (typeof value !== "number") {
-    throw new UAssetError("INVALID_RAW_MESH", `${what} ended before its declared element count`, {
-      index,
-    });
-  }
-  return value;
-}
-
-interface IGeometryBuild {
-  positions: Float32Array;
-  normals: Float32Array | undefined;
-  uvs: Float32Array;
-  indices: Uint16Array | Uint32Array;
-  sections: IUAssetSection[];
-  sourceStats: IUAssetSourceStats;
 }
 
 /** Groups triangle corner indices by their polygon-group / section id, in section order. */
@@ -421,104 +344,6 @@ function buildGeometryFromMeshDescription(
   );
 }
 
-function buildGeometryFromRawMesh(
-  mesh: IRawMesh,
-  options: Required<Pick<IUAssetParseOptions, "convertCoordinates" | "flipWinding" | "flipV">>,
-): IGeometryBuild {
-  const {
-    vertexCount,
-    vertexPositions,
-    wedgeIndices,
-    wedgeNormals,
-    wedgeUvs,
-    faceMaterialIndices,
-  } = mesh;
-  const wedgeCount = wedgeIndices.length;
-  const uvSet = wedgeUvs[0];
-  assertUAsset(uvSet !== undefined, "INVALID_RAW_MESH", "FRawMesh has no texture coordinates");
-
-  const positions = new Float32Array(wedgeCount * 3);
-  const normals = wedgeNormals ? new Float32Array(wedgeCount * 3) : undefined;
-  const uvs = new Float32Array(wedgeCount * 2);
-
-  for (let wedge = 0; wedge < wedgeCount; wedge += 1) {
-    const vertexId = rawWedge(wedgeIndices, wedge);
-    const [x, y, z] = convertVector(
-      rawFloat(vertexPositions, vertexId * 3, "VertexPositions"),
-      rawFloat(vertexPositions, vertexId * 3 + 1, "VertexPositions"),
-      rawFloat(vertexPositions, vertexId * 3 + 2, "VertexPositions"),
-      options.convertCoordinates,
-    );
-    positions[wedge * 3] = x;
-    positions[wedge * 3 + 1] = y;
-    positions[wedge * 3 + 2] = z;
-
-    if (normals && wedgeNormals) {
-      const [nx, ny, nz] = convertVector(
-        rawFloat(wedgeNormals, wedge * 3, "WedgeTangentZ"),
-        rawFloat(wedgeNormals, wedge * 3 + 1, "WedgeTangentZ"),
-        rawFloat(wedgeNormals, wedge * 3 + 2, "WedgeTangentZ"),
-        options.convertCoordinates,
-      );
-      normals[wedge * 3] = nx;
-      normals[wedge * 3 + 1] = ny;
-      normals[wedge * 3 + 2] = nz;
-    }
-
-    uvs[wedge * 2] = rawFloat(uvSet, wedge * 2, "WedgeTexCoords");
-    const v = rawFloat(uvSet, wedge * 2 + 1, "WedgeTexCoords");
-    uvs[wedge * 2 + 1] = options.flipV ? 1 - v : v;
-  }
-
-  const trianglesByGroup = new Map<number, number[]>();
-  for (let face = 0; face < faceMaterialIndices.length; face += 1) {
-    const base = face * 3;
-    const a = rawWedge(wedgeIndices, base);
-    const b = rawWedge(wedgeIndices, options.flipWinding ? base + 2 : base + 1);
-    const c = rawWedge(wedgeIndices, options.flipWinding ? base + 1 : base + 2);
-    const materialIndex = rawInt(faceMaterialIndices, face, "FaceMaterialIndices");
-    const group = materialIndex >= 0 ? materialIndex : 0;
-    const groupTriangles = trianglesByGroup.get(group) ?? [];
-    groupTriangles.push(a, b, c);
-    trianglesByGroup.set(group, groupTriangles);
-  }
-
-  return assembleGeometry(positions, normals, uvs, trianglesByGroup, (group) => String(group), {
-    vertices: vertexCount,
-    vertexInstances: wedgeCount,
-    triangles: faceMaterialIndices.length,
-  });
-}
-
-function assembleGeometry(
-  positions: Float32Array,
-  normals: Float32Array | undefined,
-  uvs: Float32Array,
-  trianglesByGroup: Map<number, number[]>,
-  materialNameFor: (group: number) => string,
-  sourceStats: IUAssetSourceStats,
-): IGeometryBuild {
-  const indexCount = [...trianglesByGroup.values()].reduce((sum, group) => sum + group.length, 0);
-  const indices =
-    positions.length / 3 > 65_535 ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
-
-  const sections: IUAssetSection[] = [];
-  let cursor = 0;
-  for (const [group, groupIndices] of trianglesByGroup) {
-    indices.set(groupIndices, cursor);
-    sections.push({
-      materialIndex: sections.length,
-      sectionIndex: group,
-      materialName: materialNameFor(group),
-      start: cursor,
-      count: groupIndices.length,
-    });
-    cursor += groupIndices.length;
-  }
-
-  return { positions, normals, uvs, indices, sections, sourceStats };
-}
-
 function tryMeshDescriptionPayload(
   payload: Uint8Array,
   options: Required<Pick<IUAssetParseOptions, "convertCoordinates" | "flipWinding" | "flipV">>,
@@ -548,9 +373,14 @@ function tryMeshDescriptionPayload(
 /** One successfully decoded source-model payload, before the result object is assembled. */
 interface IPayloadSelection {
   layout: UAssetMeshLayout;
-  payload: { frame: "package" | "decompressed"; offset: number; byteLength: number };
+  payload: {
+    frame: "package" | "decompressed" | "bulk-data";
+    offset: number;
+    byteLength: number;
+  };
   build: IGeometryBuild;
   compressedBuffer?: ReturnType<typeof parseCompressedBuffer>;
+  bulkData?: IUAssetBulkDataInfo;
 }
 
 /** Probes one `FCompressedBuffer` candidate for a MeshDescription payload; a codec error is
@@ -623,6 +453,32 @@ function selectRawMesh(
   };
 }
 
+/** The bulk-data path: an editor package that keeps its source model in `FByteBulkData` needs
+ * the whole summary walked before any offset in it means anything, so a package whose summary
+ * cannot be walked simply skips this probe rather than reading at a guessed anchor. */
+function selectBulkData(
+  bytes: Uint8Array,
+  parseOptions: IUAssetParseOptions,
+  options: Required<Pick<IUAssetParseOptions, "convertCoordinates" | "flipWinding" | "flipV">>,
+): { selection?: IPayloadSelection; blockingError?: UAssetError } {
+  const layout = readPackageLayout(bytes);
+  if (layout === undefined) return {};
+  const found = selectBulkSourceModel(bytes, layout, parseOptions, options);
+  if (found.selection === undefined) {
+    return found.blockingError === undefined ? {} : { blockingError: found.blockingError };
+  }
+  return { selection: toPayloadSelection(found.selection) };
+}
+
+function toPayloadSelection(model: IBulkSourceModel): IPayloadSelection {
+  return {
+    layout: model.layout,
+    payload: { frame: "bulk-data", offset: 0, byteLength: model.payloadByteLength },
+    build: model.build,
+    bulkData: model.bulkData,
+  };
+}
+
 /** Assembles the provenance block from the summary and the selected payload. */
 function buildUnrealInfo(
   summary: ReturnType<typeof readPackageSummary>,
@@ -653,6 +509,7 @@ function buildUnrealInfo(
             blockCount: compressedInfo.blockCount,
           },
         }),
+    ...(selected.bulkData === undefined ? {} : { bulkData: selected.bulkData }),
   };
 }
 
@@ -693,9 +550,17 @@ export function parseUAssetStaticMesh(
       };
     }
   }
+  let bulk: ReturnType<typeof selectBulkData> = {};
+  if (selected === undefined) {
+    bulk = selectBulkData(bytes, options, resolved);
+    selected = bulk.selection;
+  }
   selected ??= selectRawMesh(bytes, resolved);
 
   if (selected === undefined) {
+    // A payload the caller can still reach — its codec or its sibling file is simply missing —
+    // is reported as that, never as an unsupported layout: one is fixable, the other is not.
+    if (bulk.blockingError) throw bulk.blockingError;
     if (compressed.missingCodecError) throw compressed.missingCodecError;
     throw new UAssetError(
       "UNSUPPORTED_STATIC_MESH_LAYOUT",
@@ -709,9 +574,9 @@ export function parseUAssetStaticMesh(
         // conclusion left to the caller was that the asset is corrupt. Naming the three probes
         // that ran and matched nothing says the true thing: this is a coverage gap in the
         // payload forms, not a broken package.
-        probed: "compressed-buffer, inline mesh-description, raw-mesh — none matched",
+        probed: "compressed-buffer, inline mesh-description, bulk-data, raw-mesh — none matched",
         supported:
-          "UE4.26–5.x editor static meshes whose FMeshDescription is serialized inline or in a compressed buffer (UE5 compressed payloads need an `oodle` codec), and UE4.18-era packages with inline uncompressed FRawMesh source models. Editor packages that keep their mesh description in bulk data are not read.",
+          "UE4.26–5.x editor static meshes whose FMeshDescription is serialized inline or in a compressed buffer (UE5 compressed payloads need an `oodle` codec); UE4.2x editor packages whose FMeshDescription or FRawMesh source model is kept in FByteBulkData, inline, at the end of the package, or in a sibling .ubulk/.uptnl file whose bytes the caller supplies through `bulkDataFiles` (zlib-compressed payloads need a `zlib` codec); and UE4.18-era packages with inline uncompressed FRawMesh source models. IoStore containers, PAK archives, cooked render buffers, Nanite clusters and skeletal meshes are not read.",
       },
     );
   }

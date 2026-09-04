@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveRendererAntialias, resolveRendererScaleSetting } from "../src/renderer-config.js";
+import {
+  resolveRendererAlphaAntialiasing,
+  resolveRendererAntialias,
+  resolveRendererScaleSetting,
+} from "../src/renderer-config.js";
 
 describe("resolveRendererAntialias", () => {
   it("selects the Android sampling override inside the engine", () => {
@@ -23,6 +27,25 @@ describe("resolveRendererAntialias", () => {
     const config = { android: { antialias: true, resolutionScale: 0.44 } };
     expect(resolveRendererScaleSetting(config, undefined, "android").resolutionScale).toBe(0.44);
     expect(resolveRendererAntialias(config, undefined, "android")).toBe(true);
+  });
+});
+
+describe("resolveRendererAlphaAntialiasing", () => {
+  // Alpha antialiasing spends the samples `antialias` buys; it never buys its own. So it resolves
+  // on the same seam, with its own Android override, or a phone that bought sampling back could
+  // not spend it on the foliage that is the whole reason mobile sampling is worth buying.
+  it("selects the Android override inside the engine, and the portable value elsewhere", () => {
+    const config = {
+      alphaAntialiasing: true,
+      android: { alphaAntialiasing: false, antialias: true },
+    };
+    expect(resolveRendererAlphaAntialiasing(config, undefined, "android")).toBe(false);
+    expect(resolveRendererAlphaAntialiasing(config, undefined, "ios")).toBe(true);
+  });
+
+  it("falls back to the direct renderer option, then leaves the default to the renderer", () => {
+    expect(resolveRendererAlphaAntialiasing(undefined, false, "android")).toBe(false);
+    expect(resolveRendererAlphaAntialiasing(undefined, undefined, "linux")).toBeUndefined();
   });
 });
 

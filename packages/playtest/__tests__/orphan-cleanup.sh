@@ -7,6 +7,14 @@ cd "$repository_root"
 
 owned_temp_root=0
 suite_temp_root="${TN_SUITE_TMPDIR:-}"
+# The suite markers measure the namespace the whole suite shares, and are the only modes that may
+# read it. The browser run below measures what that one run created, so it takes a private
+# namespace even inside the suite: `pnpm -r` runs package tests three at a time under the shared
+# `TMPDIR`, and a sibling creating or removing a single directory moved this count and failed the
+# run for a leak nobody had. It read `before 2, after 1` — a decrease, which no leak can produce.
+if [[ -z "${1:-}" ]]; then
+  suite_temp_root=""
+fi
 if [[ -z "$suite_temp_root" || ! -d "$suite_temp_root" ]]; then
   suite_temp_root="$(mktemp -d /tmp/threenative-orphan-suite.XXXXXX)"
   owned_temp_root=1
@@ -22,6 +30,33 @@ trap cleanup_temp_root EXIT
 
 count_temp_directories() {
   find "$suite_temp_root" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | wc -l
+}
+
+# Which processes on this machine belong to this run. Several agent lanes work in this repository
+# at once and each can be driving its own browser, so every token here is anchored to something
+# only this run owns: its port, its temporary namespace, its checkout. A bare
+# `playwright_chromiumdev_profile-` and a bare `packages/playtest/dist/runner/cli.js` matched a
+# neighbour's live browser and a neighbour's runner, and reported both as this run's leak — a red
+# on a clean tree that no diff could clear. Playwright puts its profile under `TMPDIR`, which this
+# script exports as the suite namespace, so a browser this run genuinely orphans still matches.
+list_orphan_processes() {
+  ps -eo pid=,args= | awk \
+    -v baseline="$baseline_pids" \
+    -v port_token="port $test_port" \
+    -v profile_token="$suite_temp_root/playwright_chromiumdev_profile-" \
+    -v runner_token="$repository_root/packages/playtest/dist/runner/cli.js" '
+  BEGIN {
+    count = split(baseline, pids, /[[:space:]]+/)
+    for (idx = 1; idx <= count; idx += 1) if (pids[idx] != "") existing[pids[idx]] = 1
+  }
+  {
+    if ($0 ~ /awk/) next
+    pid = $1
+    $1 = ""
+    sub(/^[[:space:]]+/, "", $0)
+    owned = index($0, port_token) || index($0, profile_token) || index($0, runner_token)
+    if (owned && !existing[pid]) print pid " " $0
+  }'
 }
 
 case "${1:-}" in
@@ -44,11 +79,26 @@ case "${1:-}" in
     fi
     before_temp_directories="$(sed -n '2p' "$2")"
     after_temp_directories="$(count_temp_directories)"
-    if [[ "$after_temp_directories" != "$before_temp_directories" ]]; then
-      echo "temporary directory count changed in suite namespace '$suite_temp_root': before $before_temp_directories, after $after_temp_directories" >&2
+    # Only growth is a leak. A directory that existed at the baseline and is gone by the end was
+    # cleaned up by whoever owned it, which is the outcome this gate wants.
+    if [[ "$after_temp_directories" -gt "$before_temp_directories" ]]; then
+      echo "temporary directory count grew in suite namespace '$suite_temp_root': before $before_temp_directories, after $after_temp_directories" >&2
       exit 1
     fi
-    echo "suite temporary directory count unchanged in '$suite_temp_root': $before_temp_directories"
+    echo "suite temporary directory count did not grow in '$suite_temp_root': before $before_temp_directories, after $after_temp_directories"
+    exit 0
+    ;;
+  --list-orphans)
+    # A test seam, and the only way the ownership rule is provable in milliseconds. The rule
+    # decides which processes on a shared machine belong to this run, and a rule that can only be
+    # exercised by a full browser launch is a rule nothing checks against a decoy.
+    if [[ "$#" -ne 3 ]]; then
+      echo "usage: $0 --list-orphans BASELINE_PID_FILE PORT" >&2
+      exit 2
+    fi
+    baseline_pids="$(<"$2")"
+    test_port="$3"
+    list_orphan_processes
     exit 0
     ;;
   "")
@@ -110,22 +160,6 @@ fi
 # orphaned is still there when the deadline passes.
 readonly settle_deadline_seconds="${TN_ORPHAN_SETTLE_SECONDS:-30}"
 
-list_orphan_processes() {
-  ps -eo pid=,args= | awk -v baseline="$baseline_pids" -v port_token="port $test_port" '
-  BEGIN {
-    count = split(baseline, pids, /[[:space:]]+/)
-    for (idx = 1; idx <= count; idx += 1) if (pids[idx] != "") existing[pids[idx]] = 1
-  }
-  {
-    if ($0 ~ /awk/) next
-    pid = $1
-    $1 = ""
-    sub(/^[[:space:]]+/, "", $0)
-    owned = index($0, port_token) || index($0, "playwright_chromiumdev_profile-") || index($0, "packages/playtest/dist/runner/cli.js")
-    if (owned && !existing[pid]) print pid " " $0
-  }'
-}
-
 orphans=""
 after_temp_directories="$before_temp_directories"
 settle_started="$SECONDS"
@@ -133,7 +167,7 @@ while true; do
   sleep 1
   orphans="$(list_orphan_processes)"
   after_temp_directories="$(count_temp_directories)"
-  if [[ -z "$orphans" && "$after_temp_directories" -eq "$before_temp_directories" ]]; then
+  if [[ -z "$orphans" && "$after_temp_directories" -le "$before_temp_directories" ]]; then
     break
   fi
   if (( SECONDS - settle_started >= settle_deadline_seconds )); then
@@ -147,8 +181,8 @@ if [[ -n "$orphans" ]]; then
   exit 1
 fi
 
-if [[ "$after_temp_directories" -ne "$before_temp_directories" ]]; then
-  echo "temporary directory count changed in suite namespace '$suite_temp_root' and did not settle within ${settle_deadline_seconds}s: before $before_temp_directories, after $after_temp_directories" >&2
+if [[ "$after_temp_directories" -gt "$before_temp_directories" ]]; then
+  echo "temporary directory count grew in suite namespace '$suite_temp_root' and did not settle within ${settle_deadline_seconds}s: before $before_temp_directories, after $after_temp_directories" >&2
   find "$suite_temp_root" -mindepth 1 -maxdepth 1 -type d -print >&2 2>/dev/null || true
   # A directory that outlives the deadline is either genuinely orphaned or still owned by a
   # process this gate's own filter did not match — a browser zygote carries none of the tokens

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { realpathSync, existsSync, readFileSync, statSync, accessSync, constants } from 'fs';
-import path from 'path';
+import path2 from 'path';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import { execFileSync, execFile } from 'child_process';
-import { platform, homedir } from 'os';
+import { mkdtemp, rm } from 'fs/promises';
+import os, { platform, homedir } from 'os';
 
 var BLENDER_VERSION_FLOOR = Object.freeze({ major: 4, minor: 2 });
 var BLENDER_INSTALL_GUIDANCE = Object.freeze({
@@ -35,13 +36,13 @@ function binaryNames(platformName) {
 function pathCandidates(environment, platformName) {
   const raw = environment.PATH ?? environment.Path ?? "";
   if (raw.trim().length === 0) return [];
-  return raw.split(path.delimiter).filter((directory) => directory.trim().length > 0).flatMap((directory) => binaryNames(platformName).map((name) => path.join(directory, name)));
+  return raw.split(path2.delimiter).filter((directory) => directory.trim().length > 0).flatMap((directory) => binaryNames(platformName).map((name) => path2.join(directory, name)));
 }
 function conventionalCandidates(platformName, home) {
   if (platformName === "darwin") {
     return [
       "/Applications/Blender.app/Contents/MacOS/Blender",
-      path.join(home, "Applications/Blender.app/Contents/MacOS/Blender")
+      path2.join(home, "Applications/Blender.app/Contents/MacOS/Blender")
     ];
   }
   if (platformName === "win32") {
@@ -51,7 +52,7 @@ function conventionalCandidates(platformName, home) {
     ];
     return roots.flatMap(
       (root) => ["5.2", "5.1", "5.0", "4.5", "4.2"].map(
-        (release) => path.join(root, "Blender Foundation", `Blender ${release}`, "blender.exe")
+        (release) => path2.join(root, "Blender Foundation", `Blender ${release}`, "blender.exe")
       )
     );
   }
@@ -60,7 +61,7 @@ function conventionalCandidates(platformName, home) {
     "/usr/local/bin/blender",
     "/snap/bin/blender",
     "/var/lib/flatpak/exports/bin/org.blender.Blender",
-    path.join(home, ".local/bin/blender")
+    path2.join(home, ".local/bin/blender")
   ];
 }
 function parseBlenderVersion(output) {
@@ -93,7 +94,7 @@ function resolveBlender(environment = process.env, options = {}) {
   const install = BLENDER_INSTALL_GUIDANCE;
   const override = environment.THREENATIVE_BLENDER_PATH;
   if (override !== void 0 && override.trim().length > 0) {
-    const candidate = path.resolve(override.trim());
+    const candidate = path2.resolve(override.trim());
     if (!executableFile(candidate)) {
       return {
         available: false,
@@ -167,8 +168,8 @@ var RESULT_PREFIX = "TN_BLENDER_RESULT ";
 var DEFAULT_TIMEOUT_MS = 3e5;
 function blenderScriptsDirectory(environment = process.env) {
   const override = environment.THREENATIVE_BLENDER_SCRIPTS;
-  if (override !== void 0 && override.trim().length > 0) return path.resolve(override.trim());
-  return path.resolve(fileURLToPath(import.meta.url), "..", "..", "gpl");
+  if (override !== void 0 && override.trim().length > 0) return path2.resolve(override.trim());
+  return path2.resolve(fileURLToPath(import.meta.url), "..", "..", "gpl");
 }
 function failure(cause, detail, stderr) {
   return {
@@ -179,6 +180,13 @@ function failure(cause, detail, stderr) {
     ok: false,
     ...stderr === void 0 ? {} : { stderr }
   };
+}
+function temporaryRoot(environment) {
+  const named = environment.TMPDIR ?? environment.TEMP ?? environment.TMP;
+  if (named !== void 0 && named.trim().length > 0 && existsSync(named.trim())) {
+    return path2.resolve(named.trim());
+  }
+  return os.tmpdir();
 }
 function unavailable(status) {
   const cause = status.cause === "blender-too-old" ? "blender-too-old" : status.cause === "blender-unreadable" ? "blender-unreadable" : "blender-missing";
@@ -226,27 +234,33 @@ function assertSourcePath(source) {
   if (typeof source !== "string" || source.trim().length === 0) {
     throw new Error("TN_BLENDER_BRIDGE: 'source' must be a non-empty path.");
   }
-  return path.resolve(source);
+  return path2.resolve(source);
 }
 async function run(request, options) {
   const environment = options.environment ?? process.env;
   const status = resolveBlender(environment);
   if (!status.available || status.path === void 0) return unavailable(status);
   const scripts = options.scriptsDirectory ?? blenderScriptsDirectory(environment);
-  const script = options.script ?? path.join(scripts, "convert.py");
+  const script = options.script ?? path2.join(scripts, "convert.py");
   if (!existsSync(script)) {
     return failure(
       "script-missing",
       `The Blender script '${script}' is not on disk. Set THREENATIVE_BLENDER_SCRIPTS to the package's gpl/ directory.`
     );
   }
-  const outcome = await runBlender(
-    status.path,
-    script,
-    request,
-    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    environment
-  );
+  const temporary = await mkdtemp(path2.join(temporaryRoot(environment), "tn-blender-"));
+  let outcome;
+  try {
+    outcome = await runBlender(
+      status.path,
+      script,
+      request,
+      options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      { ...environment, TEMP: temporary, TMP: temporary, TMPDIR: temporary }
+    );
+  } finally {
+    await rm(temporary, { force: true, recursive: true });
+  }
   if (outcome.timedOut) {
     return failure(
       "timeout",
@@ -294,7 +308,7 @@ async function convertModel(source, out, options = {}) {
     throw new Error("TN_BLENDER_BRIDGE: 'out' must be a non-empty path.");
   }
   return run(
-    { mode: "convert", out: path.resolve(out), source: assertSourcePath(source) },
+    { mode: "convert", out: path2.resolve(out), source: assertSourcePath(source) },
     options
   );
 }
@@ -302,7 +316,7 @@ async function runBlenderScript(script, request, options = {}) {
   if (typeof script !== "string" || script.trim().length === 0) {
     throw new Error("TN_BLENDER_BRIDGE: 'script' must be a non-empty path.");
   }
-  return run(request, { ...options, script: path.resolve(script) });
+  return run(request, { ...options, script: path2.resolve(script) });
 }
 var PATH_PARAMETERS = [
   { description: "Path to the model to read.", name: "source", required: true },
@@ -381,7 +395,7 @@ function findRecipe(name) {
   return recipe;
 }
 function recipePath(recipe, environment = process.env) {
-  return path.join(blenderScriptsDirectory(environment), "recipes", recipe.script);
+  return path2.join(blenderScriptsDirectory(environment), "recipes", recipe.script);
 }
 function recipeSource(recipe, environment = process.env) {
   const file = recipePath(recipe, environment);
@@ -611,7 +625,7 @@ function runServer() {
   });
 }
 var entryPath = process.argv[1];
-if (entryPath !== void 0 && realpathSync(path.resolve(entryPath)) === realpathSync(fileURLToPath(import.meta.url))) {
+if (entryPath !== void 0 && realpathSync(path2.resolve(entryPath)) === realpathSync(fileURLToPath(import.meta.url))) {
   runServer();
 }
 

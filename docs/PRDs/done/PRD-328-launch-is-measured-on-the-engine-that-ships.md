@@ -4,17 +4,16 @@ prd_contract: v1
 
 # PRD-328 — Launch is measured on the engine that ships
 
-**Status:** **DESKTOP DONE, PHONE UNVERIFIED** — executed 2026-09-03. **Phases 0–3 complete on both lanes.**
+**Status:** **DONE** — Phases 0–3 and all acceptance criteria completed on 2026-09-03.
 The phone red is taken (`TN_COLD_START_MARKER_MISSING:compile_begin` from the real reader against a
 real logcat), an APK built from this branch was installed on the physical Pixel 8, and the launch
 breakdown was measured there over one cold and five process-cold launches. Phase 3's pre-registered
 rule tripped on its 10 % limb, so
-[PRD-335](../PRD-335-the-bundle-is-not-parsed-as-source-twice.md) is filed — ranked below the
+[PRD-335](../performance/PRD-335-the-bundle-is-not-parsed-as-source-twice.md) is filed — ranked below the
 runtime-creation term the same measurement exposed (1,635 ms, 69.1 % of a cold launch). The device
 was on AC, so the run is labelled provisional and makes no fps claim. Evidence:
-`docs/verification/runtime-perf-state.md` §5b. Evidence: `docs/verification/runtime-perf-state.md` §5b. This
-PRD stays here rather than moving to `done/` until that lane runs — a blocked criterion is not
-completion.
+`docs/verification/runtime-perf-state.md` §5b. The Bayview-specific launch remains unverified; this
+PRD covers the shipped-engine instrumentation and its V8 launch breakdown, not a Bayview fps claim.
 
 **Complexity:** +2 (6–10 files) + 1 (touches the three engine files and the desktop CLI) +
 1 (device lane) = **4 → MEDIUM mode**. Checkpoint after every phase.

@@ -80,7 +80,7 @@ source, and the bridge flushes about 100 ms — keep lives/wave in state, feedba
 When an animation looks wrong, measure it before rewriting it: `clipPoseError` scores a retargeted
 clip per bone in degrees relative to each rig's own bind pose, `clipTrackBindings` names tracks that
 bind nothing (the `<bone>.undefined` failure that plays the bind pose), `clipBoneCoverage` names
-bones the clip does not drive, and `boneContact` reports whether a bone reaches its prop.
+bones the clip does not drive, and `boneContact` reports whether a bone reaches its prop. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches 256 per presented frame so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement.
 
 ## Budget real time for the look
 
@@ -90,7 +90,7 @@ timing and capacity. Gameplay creates `GPUParticles3D` or an `IComputeDriven` ob
 with `ctx.add`, and calls `restart()` from the real fire or hit path; never move appearance into
 core or replace the event with a demo-only caller.
 
-Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
+Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/trace-a-slow-frame.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
 
 On a touch-primary device, `src/render/touch-controls.ts` adds a movement stick, a look stick, and
 fire, aim, reload and crouch pads; the stick pushed to its rim sprints. Keyboard is the fallback.

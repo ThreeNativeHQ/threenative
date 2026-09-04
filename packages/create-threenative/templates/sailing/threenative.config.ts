@@ -26,6 +26,12 @@ const config: IThreeNativeConfig = {
   renderer: {
     preferWebGPU: true,
     resolutionScale: "auto",
+    // Multisampling resolves triangle edges. A cutout silhouette — foliage, a fence, hair — is
+    // carved inside the triangle by an alpha test, so it resolves through the coverage mask or
+    // not at all, which is what this spends the samples above on. It costs no target and no
+    // extra pass; set it false for a deliberately hard-edged look. `TN_ALPHA_ANTIALIASING`
+    // reports what it did, and says so when a single-sampled surface leaves it nothing to do.
+    alphaAntialiasing: true,
   },
   // Pinned off with the starter's, and for the same reason: see the note there. The compile
   // step's defaults reach any project that omits this object.

@@ -125,3 +125,228 @@ describe("StartupReadiness", () => {
     }
   });
 });
+
+describe("StartupReadiness holds", () => {
+  /** Drive the framework's own gate to done, so only the holds are left. */
+  const frameworkReady = async (readiness: StartupReadiness): Promise<void> => {
+    readiness.start();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    for (let index = 0; index < 3; index += 1) readiness.observe(1);
+    for (let index = 0; index < 4; index += 1) await Promise.resolve();
+  };
+
+  it("keeps startup unresolved until the game's own work settles", async () => {
+    const readiness = new StartupReadiness({ stableFrames: 3 });
+    let ready = false;
+    void readiness.whenReady().then(() => {
+      ready = true;
+    });
+    let landDetail: () => void = () => undefined;
+    readiness.hold(
+      "detail-tier",
+      new Promise<void>((resolve) => {
+        landDetail = resolve;
+      }),
+    );
+
+    await frameworkReady(readiness);
+    // This is the whole defect: the framework is done, and the world is not.
+    expect(readiness.frameworkReady).toBe(true);
+    expect(readiness.ready).toBe(false);
+    expect(ready).toBe(false);
+    expect(readiness.pendingHolds).toEqual(["detail-tier"]);
+
+    landDetail();
+    for (let index = 0; index < 4; index += 1) await Promise.resolve();
+    expect(readiness.ready).toBe(true);
+    expect(ready).toBe(true);
+    expect(readiness.pendingHolds).toEqual([]);
+    expect(readiness.holdReport).toEqual([{ expired: false, label: "detail-tier" }]);
+  });
+
+  it("resolves on a rejected hold rather than trapping the player behind it", async () => {
+    const readiness = new StartupReadiness({ stableFrames: 3 });
+    readiness.hold("detail-tier", Promise.reject(new Error("a texture 404'd")));
+    await frameworkReady(readiness);
+    for (let index = 0; index < 4; index += 1) await Promise.resolve();
+    expect(readiness.ready).toBe(true);
+    // Rejection is settlement, not expiry: the work finished, it just failed.
+    expect(readiness.holdReport).toEqual([{ expired: false, label: "detail-tier" }]);
+  });
+
+  it("expires a hold that never settles, and says so", async () => {
+    vi.useFakeTimers();
+    try {
+      const readiness = new StartupReadiness({ holdBudgetMs: 5_000, stableFrames: 3 });
+      readiness.hold("never", new Promise<void>(() => undefined));
+      readiness.start();
+      await vi.advanceTimersByTimeAsync(1);
+      for (let index = 0; index < 3; index += 1) readiness.observe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(readiness.ready).toBe(false);
+      await vi.advanceTimersByTimeAsync(5_001);
+      expect(readiness.ready).toBe(true);
+      expect(readiness.holdReport).toEqual([{ expired: true, label: "never" }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits for every hold, not just the last one registered", async () => {
+    const readiness = new StartupReadiness({ stableFrames: 3 });
+    let landSky: () => void = () => undefined;
+    readiness.hold("detail-tier", Promise.resolve());
+    readiness.hold(
+      "sky",
+      new Promise<void>((resolve) => {
+        landSky = resolve;
+      }),
+    );
+    await frameworkReady(readiness);
+    expect(readiness.ready).toBe(false);
+    expect(readiness.pendingHolds).toEqual(["sky"]);
+    landSky();
+    for (let index = 0; index < 4; index += 1) await Promise.resolve();
+    expect(readiness.ready).toBe(true);
+  });
+
+  it("refuses a duplicate label and a hold that arrives after startup resolved", async () => {
+    const readiness = new StartupReadiness({ stableFrames: 3 });
+    readiness.hold("detail-tier", Promise.resolve());
+    expect(() => readiness.hold("detail-tier", Promise.resolve())).toThrow(
+      /TN_STARTUP_HOLD_DUPLICATE/,
+    );
+    expect(() => readiness.hold("  ", Promise.resolve())).toThrow(/TN_STARTUP_HOLD_LABEL_INVALID/);
+    await frameworkReady(readiness);
+    for (let index = 0; index < 4; index += 1) await Promise.resolve();
+    expect(readiness.ready).toBe(true);
+    // Silently accepting this is what makes `timeline.readyMs` describe a moment nobody had.
+    expect(() => readiness.hold("late", Promise.resolve())).toThrow(/TN_STARTUP_HOLD_TOO_LATE/);
+  });
+
+  it("changes nothing for a game that registers no hold", async () => {
+    const readiness = new StartupReadiness({ stableFrames: 3 });
+    await frameworkReady(readiness);
+    expect(readiness.frameworkReady).toBe(true);
+    expect(readiness.ready).toBe(true);
+    expect(readiness.holdReport).toEqual([]);
+  });
+
+  it("resolves framework readiness before the holds, so a game can sequence work off it", async () => {
+    // The deadlock this exists to prevent, in miniature. A game that starts its held work from
+    // `whenReady()` is waiting for a gate that is waiting for it; only the hold budget breaks the
+    // cycle, and it presents as a very slow asset load rather than as a hang.
+    const readiness = new StartupReadiness({ stableFrames: 3 });
+    const order: string[] = [];
+    let landDetail: () => void = () => undefined;
+    readiness.hold(
+      "detail-tier",
+      new Promise<void>((resolve) => {
+        landDetail = resolve;
+      }),
+    );
+    void readiness.whenFrameworkReady().then(() => {
+      order.push("framework");
+      // This is the shape a game wants: begin the tier once the framework is done competing for
+      // the main thread, and let the gate wait for it.
+      landDetail();
+    });
+    void readiness.whenReady().then(() => order.push("world"));
+
+    readiness.start();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    for (let index = 0; index < 3; index += 1) readiness.observe(1);
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+
+    expect(order).toEqual(["framework", "world"]);
+    expect(readiness.ready).toBe(true);
+    expect(readiness.holdReport).toEqual([{ expired: false, label: "detail-tier" }]);
+  });
+
+  it("resolves framework readiness even while a hold is still outstanding", async () => {
+    const readiness = new StartupReadiness({ stableFrames: 3 });
+    let frameworkReady = false;
+    readiness.hold("detail-tier", new Promise<void>(() => undefined));
+    void readiness.whenFrameworkReady().then(() => {
+      frameworkReady = true;
+    });
+    readiness.start();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    for (let index = 0; index < 3; index += 1) readiness.observe(1);
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    expect(frameworkReady).toBe(true);
+    expect(readiness.ready).toBe(false);
+  });
+
+  it("warms again after the holds settle, before readiness resolves", async () => {
+    // The defect this exists for: `hold()` buys a complete picture and leaves every material the
+    // game attached behind the curtain still uncompiled, so the stalls move from the loading
+    // screen into the walk. Measured on a 46,190-instance forest — 8 pipelines warmed, then 28
+    // main-thread tasks over 40 ms in a minute of play, the worst 267 ms.
+    const order: string[] = [];
+    let releaseWarm: () => void = () => undefined;
+    const readiness = new StartupReadiness({
+      afterHolds: () => {
+        order.push("warm-started");
+        return new Promise<void>((resolve) => {
+          releaseWarm = () => {
+            order.push("warm-finished");
+            resolve();
+          };
+        });
+      },
+      stableFrames: 3,
+    });
+    void readiness.whenReady().then(() => order.push("ready"));
+    readiness.hold("detail-tier", Promise.resolve());
+
+    readiness.start();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    for (let index = 0; index < 3; index += 1) readiness.observe(1);
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+
+    // Held work is done, the warm-up has begun, and readiness has NOT resolved.
+    expect(order).toEqual(["warm-started"]);
+    releaseWarm();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    expect(order).toEqual(["warm-started", "warm-finished", "ready"]);
+  });
+
+  it("resolves anyway when the second warm-up throws", async () => {
+    const readiness = new StartupReadiness({
+      afterHolds: () => {
+        throw new Error("no renderer");
+      },
+      stableFrames: 3,
+    });
+    let ready = false;
+    void readiness.whenReady().then(() => {
+      ready = true;
+    });
+    readiness.hold("detail-tier", Promise.resolve());
+    readiness.start();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    for (let index = 0; index < 3; index += 1) readiness.observe(1);
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    // A warm-up that fails costs hitches, never a game that will not start.
+    expect(ready).toBe(true);
+  });
+
+  it("does not warm a second time for a game that never held startup", async () => {
+    let warms = 0;
+    const readiness = new StartupReadiness({
+      afterHolds: () => {
+        warms += 1;
+      },
+      stableFrames: 3,
+    });
+    readiness.start();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    for (let index = 0; index < 3; index += 1) readiness.observe(1);
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    // No holds means the framework's own pass already saw the whole scene; paying for it twice
+    // would slow every game that does not stream, to fix a defect it does not have.
+    expect(readiness.ready).toBe(true);
+    expect(warms).toBe(0);
+  });
+});
