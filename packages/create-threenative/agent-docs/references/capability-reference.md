@@ -222,6 +222,25 @@ const watcher = watchAssets({ cwd: process.cwd() });
 
 ## `@threenative/core`
 
+### `addInSlices`
+
+`function` — Attach hundreds of built objects to the scene in slices, presenting a frame between each.
+
+```ts
+export async function addInSlices<T>( objects: Iterable<T>, add: (object: T, index: number) => void, options: IAddInSlicesOptions = { … }
+```
+
+- **Use when:** add hundreds of built objects to the scene without one multi-second frame · stream a detail tier in behind a loading curtain without the page looking hung
+- **Constraints:** the objects, and where each one goes, stay the game's; this decides only when each joins the graph · input order is the attach order and cannot be changed · a false `while` stops the run and is reported as `stopped`, never thrown
+- **Overrides:** sliceSize defaults to 256; `marker: false` silences the TN_ADD_SLICES line, not the report
+
+```ts
+const report = await addInSlices(objects, (object) => ctx.add(object), {
+  onProgress: ({ added, total }) => setProgress(added / total),
+  while: () => generation.live,
+});
+```
+
 ### `afterPhysics`
 
 `function` — Register work that reads a body or camera after physics has moved it and before this frame draws. The engine owns the phase ordering; a callback cannot be misplaced by plugin-array order.
@@ -239,14 +258,14 @@ afterPhysics(ctx, (dt) => camera.position.copy(player.mesh.position));
 
 ### `AnimationPlayer`
 
-`class` — Play a skinned or sprite animation from game code. A travelling clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it.
+`class` — Play a skinned or sprite animation from game code. A locomotion clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and Unreal export, every Mixamo "in place" clip, every stock animal pack — are matched too: their stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so.
 
 ```ts
 export class AnimationPlayer { … }
 ```
 
-- **Use when:** play an animation on a character · switch a character between idle and attack clips · stop a walking character's feet from sliding or spinning · match a walk or run cycle to how fast a character is moving
-- **Constraints:** name the body a game moves as strideRoot when the animated rig is a child of it · a one-shot clip always plays at its authored rate; the matched rate re-times loops only
+- **Use when:** play an animation on a character · switch a character between idle and attack clips · stop a walking character's feet from sliding or spinning · match a walk or run cycle to how fast a character is moving · match an in-place walk cycle with no root motion to the body's speed · find out what speed an animation clip was authored for
+- **Constraints:** name the body a game moves as strideRoot when the animated rig is a child of it · a one-shot clip always plays at its authored rate; the matched rate re-times loops only · the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so
 - **Overrides:** strideSync controls whether the matched rate is applied while stride is still measured
 
 ```ts
@@ -811,6 +830,22 @@ export function isWeb(): boolean { … }
 
 ```ts
 if (isMobile()) showTouchControls();
+```
+
+### `loadAll`
+
+`function` — Load a list with bounded concurrency, returning results in the input's order.
+
+```ts
+export async function loadAll<TIn, TOut>( items: readonly TIn[], load: (item: TIn, index: number) => Promise<TOut>, options: ILoadAllOptions = { … }
+```
+
+- **Use when:** load many models or textures in parallel instead of one at a time · keep a loading screen moving while a list of assets downloads
+- **Constraints:** results are written to each item's own index and never appended, so a positional lookup finds the same asset on every load · the first rejection rejects the call and no lane starts a load it had not begun
+- **Overrides:** concurrency defaults to 6; `marker: false` silences the TN_LOAD_ALL line, not onProgress
+
+```ts
+const species = await loadAll(names, (name) => ctx.assets.model(`flora/${name}.glb`));
 ```
 
 ### `measureThreePose`
