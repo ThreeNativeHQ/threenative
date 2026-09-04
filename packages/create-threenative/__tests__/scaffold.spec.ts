@@ -106,6 +106,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // second reason — its AGENTS.md/CLAUDE.md pair now states the stride convention.
 // Recomputed 2026-09-02 after the named-export capability correction, on origin/main's
 // refreshed genre kits.
+// Recomputed 2026-09-03 for the starter's coastal diorama: authored water, island vegetation,
+// framing, lighting, palette and post settings replace the previous dark test slab look.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-03 for PRD-339, starter and sailing only: both dropped
   // `assets: { models: "none", textures: "none" }`. The compile step now takes the build's
@@ -243,7 +245,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "3d41f429381ad2937abae2b565e591fb2a67ad70451d7c83200db7d7282de393",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "b533948ea5730a5d5a8c79dd26f6fcf61c65b21511e8d7dcd75d30e37e8ab79b",
+  // Recomputed 2026-09-03 for the starter coastal diorama and its game-owned water look.
+  starter: "eccbaaf57123f93272006fef77fe9fdd5aff70213cfef5a10f87decc71fb4df6",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -380,6 +383,8 @@ const STARTER_PATHS = [
   "src/render/easing.ts",
   "src/render/sky.ts",
   "src/render/scenery.ts",
+  "src/render/coast.ts",
+  "src/render/water.ts",
   "src/render/pennant.ts",
   "src/render/loading.ts",
   "src/entities/Crate.ts",

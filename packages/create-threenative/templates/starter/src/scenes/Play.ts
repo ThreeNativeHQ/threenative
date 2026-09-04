@@ -3,6 +3,7 @@ import {
   type ICtx,
   Scene,
   type SceneFrame,
+  WaveField,
   createRandom,
   isMobile,
   isTouchscreenAvailable,
@@ -13,10 +14,12 @@ import { Crate } from "../entities/Crate.js";
 import { Goal, ISLAND } from "../entities/Goal.js";
 import { Player } from "../entities/Player.js";
 import { createSpringArm } from "../render/camera.js";
+import { createCoastalScene } from "../render/coast.js";
 import { pickupRiseEase } from "../render/easing.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials, createPennantMaterial } from "../render/materials.js";
+import { COAST_DOMAIN_WARP, COAST_WAVES } from "../render/palette.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createScenery } from "../render/scenery.js";
 import { ball, block, roundedBox, spike, tube } from "../render/shapes.js";
@@ -137,6 +140,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
+    const waves = new WaveField({ waves: COAST_WAVES, domainWarp: COAST_DOMAIN_WARP });
+    ctx.add(createCoastalScene(materials, waves, createRandom(31_415_926)));
     const showTouchControls = isMobile() && isTouchscreenAvailable();
     const touchControls = showTouchControls
       ? ctx.entities.add("touch-controls", new TouchControls(ctx.camera as PerspectiveCamera))
@@ -157,8 +162,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const levelX = ctx.random.range(-1, 1);
     const seededLevelX = ctx.random.state === randomStateBeforeLevel ? 2 : levelX;
     const pickupX = 1.2 + createRandom(Math.round((levelX + 1) * 1000))() * 0.8;
-    const floorMesh = new Mesh(roundedBox(10, 0.2, 4, 0.08), materials.floor);
+    const floorMesh = new Mesh(roundedBox(10, 0.2, 4.2, 0.1), materials.floor);
     floorMesh.position.y = -0.1;
+    // The collision slab remains the authoritative support surface, while the coastal renderer
+    // supplies the oval beach and grass top. Showing both makes a rectangular floating raft under
+    // the island, which is a visual artefact rather than a useful part of the scene.
+    floorMesh.visible = false;
     floorMesh.receiveShadow = true;
     ctx.add(floorMesh);
     new RigidBody3D({
@@ -252,9 +261,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // at tick 6 on a workstation and tick 47 in CI, and only the slow sample missed the change.
     ctx.state.set({ levelX: seededLevelX });
     const frameState: Partial<GameState> = {};
+    let elapsed = 0;
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: starter frame coordinates existing gameplay state transitions.
     return (frameCtx, dt) => {
       loading.update();
+      elapsed += dt;
+      waves.setTime(elapsed);
       // Restart resets the store before clearing entities and scheduled callbacks.
       if (frameCtx.input.justPressed("restart")) {
         frameCtx.state.set(Play.initialState);

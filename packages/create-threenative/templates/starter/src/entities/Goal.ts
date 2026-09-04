@@ -11,9 +11,11 @@ import type { GameState } from "../state.js";
  *
  * The island top sits below the ledge on purpose. A same-height landing has to be jumped
  * within a couple of frames of the edge; dropping 0.4 m widens that window to about half
- * a second, which is what makes coyote time feel generous instead of decorative.
+ * a second, which is what makes coyote time feel generous instead of decorative. Its visual
+ * slab is shallow because the waterline sits just below the top, so the far island reads as
+ * a sandbar rather than a submerged rectangular block.
  */
-export const ISLAND = { depth: 2.6, height: 0.4, top: -0.4, width: 3, x: 7.9, z: 0 } as const;
+export const ISLAND = { depth: 2.6, height: 0.1, top: -0.4, width: 3, x: 7.9, z: 0 } as const;
 const POLE = { height: 2.4, radius: 0.05, x: 8.4, z: -0.5 } as const;
 const PENNANT_SCALE = 0.55;
 

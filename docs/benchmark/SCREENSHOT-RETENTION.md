@@ -14,9 +14,9 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
 | `docs/benchmark` | 5361 | 213142943 | 790 |
-| `docs/verification` | 796 | 80959930 | 232 |
+| `docs/verification` | 798 | 81336749 | 234 |
 
-**1022 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
+**1024 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories
 
@@ -87,4 +87,4 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/capability-discovery-after-run-4.jsonl` | 704557 |
 | `docs/verification/capability-discovery-after-run-5-sonnet.jsonl` | 320374 |
 | `docs/verification/capability-discovery-after-valid-run-1.jsonl` | 621439 |
-| …and 182 more | |
+| …and 184 more | |
