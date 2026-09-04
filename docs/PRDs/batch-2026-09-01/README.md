@@ -46,7 +46,7 @@ flowchart LR
 | [PRD-319](../done/PRD-319-the-asset-compile-runs-independent-work-concurrently.md) (archived 2026-09-02) | asset pipeline | 318 | ~4h |
 | [PRD-320](../done/PRD-320-the-fab-import-replays-without-a-fab-account.md) (archived 2026-09-02) | asset pipeline | — | ~3h |
 | [PRD-321](../done/PRD-321-the-animal-state-machine-is-mechanism-the-animals-are-the-game.md) (DECLINED) | Wildwood extraction | — | — |
-| [PRD-322](PRD-322-quality-tier-resolution-is-a-platform-seam.md) | Wildwood extraction | — | ~2h |
+| [PRD-322](../done/PRD-322-quality-tier-resolution-is-a-platform-seam.md) (DECLINED 2026-09-04) | Wildwood extraction | — | ~2h |
 | [PRD-323](PRD-323-evidence-has-a-retention-policy-and-a-gate.md) | doc and evidence bloat | — | ~5h |
 
 ## The third theme: the evidence record outgrew its readers
@@ -75,3 +75,12 @@ retention rules rather than adding to the pile they exist to bound.
 If either PRD's Phase 0 finds it cannot hold that line, it closes as DECLINED with no product code.
 That outcome is a success for this batch, not a failure — it is the kill switch working before the
 code lands, rather than `scripts/count-loc.ts` scoring it out afterwards.
+
+**Both of them did.** PRD-321 declined in Phase 0 for want of a second consumer. PRD-322 declined
+on 2026-09-04 because the seam it proposed to build already ships: `getPlatform`/`isWeb`/`isMobile`
+in `packages/core/src/platform.ts` handles web and native, and all ten templates plus Wildwood
+already call it at the boot path. What is left in `resolveQualityTier` reads no platform source at
+all, and its one platform-to-tier line — `mobile === true ? "low" : "high"` — is a look decision the
+(b) veto keeps in the game. Audit:
+[`docs/verification/PRD-322-phase0-boundary-audit.md`](../../verification/PRD-322-phase0-boundary-audit.md).
+Two kill-switch saves out of two extraction PRDs is the result this section was written to allow.

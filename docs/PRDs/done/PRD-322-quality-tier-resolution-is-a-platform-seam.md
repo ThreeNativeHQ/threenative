@@ -4,7 +4,31 @@ prd_contract: v1
 
 # PRD-322 — which tier a machine gets is a platform seam; what a tier means stays the game's
 
-**Status: PROPOSED, 2026-09-01.** Mined from `sandbox/wildwood/src/render/quality.ts` at `92a343b`.
+**Status: DECLINED in Phase 0, 2026-09-04.** No product code was written, which is this PRD's
+stated success condition for a Phase 0 that cannot hold the rule-1(b) line. Full audit:
+[`docs/verification/PRD-322-phase0-boundary-audit.md`](../../verification/PRD-322-phase0-boundary-audit.md).
+
+Both §6 decline conditions fire, and the PRD's premise turned out to be stale. `resolveQualityTier`
+reads **no platform source at all** — no `navigator`, no `window`, no `__THREENATIVE_NATIVE__`, no
+URL parameter — in any of the eleven byte-identical copies (ten templates plus Wildwood at
+`d535f51`). It takes a `mobile: boolean` its caller supplies. The seam this PRD proposed to build
+already ships as `getPlatform`/`isWeb`/`isMobile` in `packages/core/src/platform.ts:191-204`,
+handles web and native, and is already called at the boot path by all ten templates and by Wildwood
+(`Valley.ts:555`) — whose one browser global is already guarded by core's `isWeb()`. The claim that
+every game "gets the native branch wrong" is disproven: no game has a native branch, because core
+owns it.
+
+What remains is a 15-line string narrower over three names the game itself declares, plus one line
+— `request.mobile === true ? "low" : "high"` — that maps a platform fact to a tier. That line is a
+**look** decision ("a phone gets this game's cheap look"), so rule 1(b) vetoes it into core, and
+without it there is no platform half for rule 1(a) to reach. Ledger row 5 was already shipped:
+`TN_QUALITY_TIER` is printed at each template's `src/render/postprocessing.ts:31`.
+
+Left standing and explicitly not fixed here: the eleven-way duplication is real, but its
+justification would be scaffold-generation drift, not a platform seam. That is a different PRD.
+
+**Original status: PROPOSED, 2026-09-01.** Mined from `sandbox/wildwood/src/render/quality.ts` at
+`92a343b`.
 
 **Complexity:** +2 proposes a core export, +2 sits directly on the rule-3 boundary, +1 crosses
 core and every template, +1 needs device and desktop proof = **6 → HIGH mode.**
