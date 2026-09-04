@@ -156,6 +156,10 @@ export interface IRenderChainVelocityReport {
 }
 
 export interface IRenderChainApplied {
+  readonly contributions: readonly {
+    readonly graphOutputChanged: boolean;
+    readonly name: RenderChainStageId;
+  }[];
   readonly dropped: readonly IRenderChainDroppedStage[];
   readonly requested: readonly RenderChainStageId[];
   readonly source: RenderChainSource;
@@ -338,6 +342,7 @@ export class RenderChain {
     this.#lastMeasurementFrame = undefined;
     this.#reportedMeasurement = false;
     const dropped: IRenderChainDroppedStage[] = [];
+    const contributions: Array<IRenderChainApplied["contributions"][number]> = [];
     const stages: RenderChainStageId[] = [];
     const builtStageDefinitions: IRenderChainStage[] = [];
     let node = this.#input;
@@ -392,6 +397,7 @@ export class RenderChain {
         const buildContext = stageContext(this.#tier, velocity, velocityNode);
         const next = definition.build(node, buildContext);
         if (next === undefined || next === null) throw new Error("stage returned no node");
+        contributions.push({ graphOutputChanged: next !== node, name });
         node = next;
         stages.push(name);
         builtStageDefinitions.push(definition);
@@ -418,6 +424,7 @@ export class RenderChain {
         const reason = `install:${errorMessage(error)}`;
         dropped.push(...stages.map((name) => ({ name, reason })));
         stages.length = 0;
+        contributions.length = 0;
         for (const definition of builtStageDefinitions) definition.dispose?.();
         builtStageDefinitions.length = 0;
         this.#renderer.clearOutputNode?.();
@@ -439,6 +446,7 @@ export class RenderChain {
       : { provisioned: false, required: velocity.required, source: null };
 
     this.#applied = {
+      contributions,
       dropped,
       requested: this.#requested,
       source: this.#source,
@@ -801,6 +809,7 @@ function emptyApplied(
   required: boolean,
 ): IRenderChainApplied {
   return {
+    contributions: [],
     dropped: [],
     requested,
     source,

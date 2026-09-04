@@ -3,9 +3,9 @@
 Source: `docs/PRDs/stylized-components/PRD-347-game-authored-post-stages-enter-the-measured-chain.md`.
 The source PRD is outside this lane and was read but not edited.
 
-Status: web implementation and clean-install starter smoke test pass. Packed Linux desktop and
-native target evidence are `UNVERIFIED` because the published `@threenative/runtime-native@0.3.0`
-prebuilt manifest returns HTTP 404 in this environment.
+Status: web implementation, clean-install starter smoke test, and the scaffolded browser template
+matrix pass. Packed Linux desktop and native target evidence are `UNVERIFIED` because the published
+`@threenative/runtime-native@0.3.0` prebuilt manifest returns HTTP 404 in this environment.
 
 ## Phase 0 red
 
@@ -51,35 +51,24 @@ retargeting from traversing the already-composed TSL graph and does not change t
 These commands were run after implementation:
 
 ```sh
-pnpm exec vitest run packages/core/__tests__/render-chain.spec.ts
+pnpm exec vitest run packages/core/__tests__/render-chain.spec.ts packages/create-threenative/__tests__/looks.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts packages/playtest/__tests__/render-chain-assertion.spec.ts packages/playtest/__tests__/schema-boundaries.spec.ts
 ```
 
-PASS, 20 tests.
-
-```sh
-pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts -t "authored|painterly|tensor"
-```
-
-PASS, 4 tests.
-
-```sh
-pnpm exec vitest run packages/playtest/__tests__/render-chain-assertion.spec.ts
-pnpm exec vitest run packages/playtest/__tests__/schema-boundaries.spec.ts
-```
-
-PASS, 5 and 15 tests respectively. The render-chain assertion now checks stage inclusion,
-exclusion, and ordered-subsequence observations and fails closed when `TN_RENDER_CHAIN` is absent.
+PASS, 5 files and 123 tests. The render-chain assertion now checks stage inclusion, exclusion,
+ordered-subsequence observations, and graph-output contribution markers; it fails closed when
+`TN_RENDER_CHAIN` or its contributions are absent. Workspace `pnpm typecheck`, `pnpm lint`, and
+`pnpm budgets` also passed; lint reported 553 existing warnings.
 
 ## Clean-install web evidence
 
 The disposable scaffold was created outside the repository:
 
 ```sh
-pnpm sandbox --genre exploration --name prd-347-outline-paint-final --template starter --out /tmp/threenative-stylized-components-sandbox-paint-final
+pnpm sandbox --genre exploration --name prd-347-outline-final2 --template starter --out /tmp/threenative-stylized-components-sandbox-final2
 ```
 
 Result: sandbox ready at
-`/tmp/threenative-stylized-components-sandbox-paint-final/prd-347-outline-paint-final`.
+`/tmp/threenative-stylized-components-sandbox-final2/prd-347-outline-final2`.
 
 From that scaffold:
 
@@ -97,6 +86,11 @@ was:
 {
   "requested": ["ssgi", "ssr", "sharpen", "bloom", "outline", "kuwahara", "watercolor"],
   "stages": ["ssgi", "ssr", "sharpen", "bloom", "outline", "kuwahara", "watercolor"],
+  "contributions": [
+    { "name": "outline", "graphOutputChanged": true },
+    { "name": "kuwahara", "graphOutputChanged": true },
+    { "name": "watercolor", "graphOutputChanged": true }
+  ],
   "dropped": [],
   "tier": "high",
   "source": "pinned"
@@ -104,12 +98,12 @@ was:
 ```
 
 The edge-region visual assertion passed: subject nonblank ratio `1`, subject dark-pixel ratio
-`0.9870647321428572`, and before/after changed-pixel ratio `0.3631499565972222`. The captured image hashes
+`0.9894097222222222`, and before/after changed-pixel ratio `0.3593988715277778`. The captured image hashes
 were:
 
 ```text
-before.png  d4c03d785dc588264f346d2d4996e808122fe3a2dc6e54a0c8dc45633b25e4b2
-after.png   9158fa33103ab886d598249961eb153439098e22938d81c0ebe5c46b2591a778
+before.png  5687cd85145adb453d37eed96113415f432a228105655cf01ce45e61cd040ef0
+after.png   f0d78c5d8d3cdd94ce69cbb85880398d347bc46f14ac91405322773036436010
 ```
 
 The browser emitted Three.js timestamp-query pool warnings because the current runner does not
@@ -120,7 +114,7 @@ The scaffold source hashes matched the repository template exactly:
 
 ```text
 outline.ts    b7dea8cee21a0225ca7bcb82bb0b0c35ec5a77178b510d861c4e9d3c593882fa
-kuwahara.ts   219e46dddd6fb020294cd2b79450852f7d47548d8333a5ef94967df0317f3f6f
+kuwahara.ts   1f139a5f891cc0696812c7dddd18de0c92673fb08031b844b4dcf3e915c0dfc6
 watercolor.ts 433f68b411fc33ecdd866eb6ee5e417d6b83631ff7a5bf5571f6db5cfa010cb7
 ```
 
@@ -132,7 +126,11 @@ Observed unit red controls are retained in `packages/core/__tests__/render-chain
 - malformed graph: blank id, duplicate id, missing anchor, both anchors, and `ink → paint → ink`
   cycle all throw;
 - each malformed construction leaves `setOutputNode` untouched;
-- removing the `outline` observation makes the render-chain playtest assertion fail closed.
+- removing the `outline` observation makes the render-chain playtest assertion fail closed;
+- returning the input node from a named stage produces `graphOutputChanged: false` and fails the
+  contribution assertion;
+- the starter test rejects a one-spoke Kuwahara regression by requiring 25 two-dimensional offsets
+  per sector, or 200 colour samples across eight sectors at radius five.
 
 The cycle guard was also temporarily removed with `apply_patch`; the malformed-graph test then
 failed with `Maximum call stack size exceeded` instead of the required named cycle. Restoring the
@@ -163,7 +161,7 @@ changed, and no native frame is claimed.
 
 `pnpm test` built and passed the JavaScript workspace tests but exited `1` on six prebuilt
 `packages/runtime-native` contract executables that are absent from `build/tn-linux` and
-`build/tn-linux-quickjs`. `pnpm test:templates` exited `1` in existing action-rpg, defense,
-racing, sailing, and shooter template lanes; the new starter look scenario passed independently.
+`build/tn-linux-quickjs`. The final counts were 96 test files, 692 passing tests, and 39 skipped;
+the post-repair `pnpm test:templates` matrix exited `0` across all scaffolded browser templates.
 `pnpm budgets` exited `0`; its completed checks reported the evidence budget as `ok` and
 framework/native LOC as review triggers only. `pnpm tsx scripts/count-loc.ts` exited `0`.

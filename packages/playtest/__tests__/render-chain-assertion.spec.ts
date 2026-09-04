@@ -62,6 +62,7 @@ describe("renderChain playtest assertion", () => {
     const scenario = await loadPlaytestScenarioFromValue({
       assert: {
         renderChain: {
+          contributions: { graphOutputChanged: ["outline", "kuwahara", "watercolor"] },
           stages: {
             includes: ["outline", "kuwahara", "watercolor"],
             order: ["outline", "kuwahara", "watercolor"],
@@ -76,7 +77,14 @@ describe("renderChain playtest assertion", () => {
       warmupFrames: 0,
     });
     const result = evaluateRichPlaytestAssertions({
-      report: report(chainObservation({ stages: ["bloom", "outline", "kuwahara", "watercolor"] })),
+      report: report(chainObservation({
+        contributions: [
+          { graphOutputChanged: true, name: "outline" },
+          { graphOutputChanged: true, name: "kuwahara" },
+          { graphOutputChanged: true, name: "watercolor" },
+        ],
+        stages: ["bloom", "outline", "kuwahara", "watercolor"],
+      })),
       scenario,
     });
 
@@ -86,7 +94,42 @@ describe("renderChain playtest assertion", () => {
     expect(result.assertions).toContainEqual(
       expect.objectContaining({ id: "renderChain.stages.order", pass: true }),
     );
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({ id: "renderChain.contributions.graphOutputChanged", pass: true }),
+    );
     expect(result.diagnostics).toEqual([]);
+  });
+
+  it("fails authored contribution checks when a stage leaves the graph unchanged", async () => {
+    const scenario = await loadPlaytestScenarioFromValue({
+      assert: {
+        renderChain: {
+          contributions: { graphOutputChanged: ["outline"] },
+        },
+      },
+      name: "render-chain-contributions",
+      schemaVersion: 1,
+      steps: [{ release: true, waitFrames: 1 }],
+      target: "web",
+      viewport: { height: 720, width: 1280 },
+      warmupFrames: 0,
+    });
+    const result = evaluateRichPlaytestAssertions({
+      report: report(
+        chainObservation({
+          contributions: [{ graphOutputChanged: false, name: "outline" }],
+        }),
+      ),
+      scenario,
+    });
+
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({
+        id: "renderChain.contributions.graphOutputChanged",
+        pass: false,
+      }),
+    );
+    expect(result.diagnostics[0]?.code).toBe("TN_PLAYTEST_RENDER_CHAIN_CONTRIBUTIONS_FAILED");
   });
 
   it("fails authored stage assertions closed when the stage is missing", async () => {

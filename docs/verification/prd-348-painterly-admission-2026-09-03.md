@@ -39,7 +39,9 @@ THREE.WebGPUTimestampQueryPool [compute]: Maximum number of queries exceeded ...
 
 Those warnings are evidence that the current path cannot supply the required per-pass timings;
 they are not zero-cost measurements. The captured starter look still passed with `frames: 741`,
-`compileSettled: true`, and changed-pixel ratio `0.3631499565972222`.
+`compileSettled: true`, and changed-pixel ratio `0.3593988715277778`. Its subject region was fully
+nonblank with dark-pixel ratio `0.9894097222222222`, and the render-chain observation marked
+`outline`, `kuwahara`, and `watercolor` as graph-changing.
 
 ## Generated implementation
 
@@ -47,7 +49,8 @@ The painterly chain is ordinary generated `src/render/` source:
 
 - `outline.ts` performs physical-pixel Sobel colour/depth edge detection;
 - `kuwahara.ts` writes a half-float structure-tensor scratch, samples the original scene source in
-  eight anisotropic sectors, and writes a second half-float paint scratch;
+  eight two-dimensional anisotropic sectors (25 offsets per sector, 200 colour samples at radius
+  five), and writes a second half-float paint scratch;
 - `watercolor.ts` applies scalar luminance grouping and deterministic procedural paper, without a
   private tone curve;
 - `quality.ts` selects radius 5 / half-resolution for high, radius 3 / half-resolution for medium,
@@ -56,19 +59,20 @@ The painterly chain is ordinary generated `src/render/` source:
 
 The Kuwahara stage validates finite bounded controls, uses `HalfFloatType`, releases both scratch
 targets idempotently, and returns the input exactly when strength is zero. Every sector samples
-the unfiltered `source`; no prior filtered result is fed back into the next sector. The generated
-watercolour stage quantises one luminance scalar and scales RGB together, preserving hue. The
-existing final ACES/AgX/Neutral transform remains outside the stage.
+the unfiltered `source`; no prior filtered result is fed back into the next sector. Its runtime node
+transform is tested as rotation × anisotropic scale × vector. The generated watercolour stage
+quantises one luminance scalar and scales RGB together, preserving hue. The existing final
+ACES/AgX/Neutral transform remains outside the stage.
 
 ## Focused proof
 
 ```sh
-pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts -t "painterly|tensor"
+pnpm exec vitest run packages/create-threenative/__tests__/looks.spec.ts
 ```
 
-PASS, 4 tests. The tests cover generated-source ownership, no raw GLSL or framework dependency,
-half-float/disposal markers, principal-axis direction, anisotropic matrix order, and hue-preserving
-luminance grouping.
+PASS, 27 tests. The tests cover generated-source ownership, no raw GLSL or framework dependency,
+half-float/disposal markers, principal-axis direction, the direct runtime-node anisotropic matrix
+order, bounded two-dimensional sampling, and hue-preserving luminance grouping.
 
 ```sh
 pnpm --filter @threenative/core build
@@ -81,7 +85,7 @@ generated stages matched:
 
 ```text
 outline.ts    b7dea8cee21a0225ca7bcb82bb0b0c35ec5a77178b510d861c4e9d3c593882fa
-kuwahara.ts   219e46dddd6fb020294cd2b79450852f7d47548d8333a5ef94967df0317f3f6f
+kuwahara.ts   1f139a5f891cc0696812c7dddd18de0c92673fb08031b844b4dcf3e915c0dfc6
 watercolor.ts 433f68b411fc33ecdd866eb6ee5e417d6b83631ff7a5bf5571f6db5cfa010cb7
 ```
 
@@ -100,7 +104,9 @@ mutation controls:
   exceeded` instead of a named cycle;
 - the chain test throws when `outline` has no supplied definition, malformed authored graphs
   leave `setOutputNode` untouched, and the playtest evaluator fails when `outline` is missing
-  from `TN_RENDER_CHAIN`.
+  from `TN_RENDER_CHAIN` or when its `graphOutputChanged` contribution marker is false;
+- reducing Kuwahara to one spoke per sector is rejected because radius five must expose 25
+  two-dimensional offsets per sector, or 200 colour samples across eight sectors.
 
 The following mutation captures were not run as separate red runs and remain unverified: a black
 paper source, zero-strength edge-region A/B, and a DPR-2 radius-9 frame-budget run. No claim is made

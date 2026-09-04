@@ -234,9 +234,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   puzzle: "1557dad7bbbfab77bcf9b1f9129426eeaaef25257efa614a53435a4173f77d74",
   racing: "f2a230f0c93bf9de2a728d258ac68655dc13acfdba93c5cfe43730c04f760fda",
   shooter: "d9a30790911a128c9097be8875c34f9ff624f3e6638ab0f0be5f4aae9294f23f",
-  // Recomputed 2026-09-03 after the authored painterly render repair: the starter's generated
-  // render source and quality policy are part of the scaffold tree.
-  starter: "4f4e93e04232680a29b274835b1f0b84f0b5c31f0c088eacb3932560b4bf41bf",
+  // Recomputed 2026-09-03 after the authored painterly area-sampling and contribution-marker
+  // repair: the starter's generated render source and look scenario are part of the scaffold tree.
+  starter: "9860db2ac87572388d2cf30b4d1f5515ecde6bbed2ebf2868eaa441743c70e62",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.

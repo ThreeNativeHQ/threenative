@@ -285,6 +285,9 @@ export interface IPlaytestPerformanceAssertion {
 }
 
 export interface IPlaytestRenderChainAssertion {
+  contributions?: {
+    graphOutputChanged: string[];
+  };
   tier?: "high" | "medium" | "low" | "off";
   stages?: {
     includes?: string[];

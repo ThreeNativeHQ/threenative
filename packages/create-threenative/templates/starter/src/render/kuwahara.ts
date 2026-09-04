@@ -2,10 +2,7 @@
 import { HalfFloatType } from "three";
 import * as tsl from "three/tsl";
 import type { Node } from "three/webgpu";
-export interface IKernelOffset {
-  readonly x: number;
-  readonly y: number;
-}
+export type KernelOffset = { readonly x: number; readonly y: number };
 export interface IKuwaharaStageOptions {
   readonly anisotropy?: number;
   readonly radius?: number;
@@ -19,16 +16,14 @@ export interface IKuwaharaStage {
   readonly minimumTier: "medium";
   readonly name: "kuwahara";
 }
-/** The signless principal axis of a 2×2 structure tensor. */
 export function tensorOrientation(xx: number, xy: number, yy: number): number {
   return 0.5 * Math.atan2(2 * xy, xx - yy);
 }
-/** Applies rotation × anisotropic scale to a column vector, in that order. */
 export function transformKernelOffset(
-  offset: IKernelOffset,
+  offset: KernelOffset,
   orientation: number,
   anisotropy: number,
-): IKernelOffset {
+): KernelOffset {
   const major = 1 + anisotropy;
   const minor = 1 - anisotropy;
   const scaledX = offset.x * major;
@@ -39,6 +34,15 @@ export function transformKernelOffset(
     x: axisX * scaledX - axisY * scaledY,
     y: axisY * scaledX + axisX * scaledY,
   };
+}
+export function sectorSampleOffsets(radius: number): readonly KernelOffset[] {
+  const bounded = boundedRadius(radius);
+  const halfWidth = Math.floor(bounded / 2);
+  const offsets: KernelOffset[] = [];
+  for (let radial = 1; radial <= bounded; radial += 1)
+    for (let tangent = -halfWidth; tangent <= halfWidth; tangent += 1)
+      offsets.push({ x: radial, y: tangent });
+  return offsets;
 }
 export function createKuwaharaStage(options: IKuwaharaStageOptions = {}): IKuwaharaStage {
   const anisotropy = finiteRange(options.anisotropy ?? 0.72, 0, 1, false, "kuwahara anisotropy");
@@ -80,23 +84,27 @@ export function createKuwaharaStage(options: IKuwaharaStageOptions = {}): IKuwah
         .atan(tensorSample.y.mul(2), tensorSample.x.sub(tensorSample.z))
         .mul(0.5);
       const axis = tsl.vec2(tsl.cos(orientation), tsl.sin(orientation));
-      const sector = (sectorIndex: number): ISectorStats => {
+      const sectorOffsets = sectorSampleOffsets(radius);
+      const sector = (sectorIndex: number) => {
         let mean: Node<"vec3"> = tsl.vec3(0);
         let secondMoment: Node<"vec3"> = tsl.vec3(0);
         const angle = (sectorIndex / 8) * Math.PI * 2;
-        for (let radial = 1; radial <= radius; radial += 1) {
+        const sectorAxis = tsl.vec2(
+          axis.x.mul(Math.cos(angle)).sub(axis.y.mul(Math.sin(angle))),
+          axis.y.mul(Math.cos(angle)).add(axis.x.mul(Math.sin(angle))),
+        );
+        for (const localOffset of sectorOffsets) {
           const offset = transformKernelOffsetNode(
-            tsl.vec2(Math.cos(angle), Math.sin(angle)).mul(radial),
-            axis,
+            tsl.vec2(localOffset.x, localOffset.y),
+            sectorAxis,
             anisotropy,
           );
           const colour = source.sample(sampleUv(offset.x, offset.y)).rgb;
           mean = mean.add(colour);
           secondMoment = secondMoment.add(colour.mul(colour));
         }
-        const count = radius;
-        const average = mean.div(count);
-        const variance = secondMoment.div(count).sub(average.mul(average)).max(0);
+        const average = mean.div(sectorOffsets.length);
+        const variance = secondMoment.div(sectorOffsets.length).sub(average.mul(average)).max(0);
         return { mean: average, score: tsl.luminance(variance) };
       };
       let best = sector(0);
@@ -119,12 +127,8 @@ export function createKuwaharaStage(options: IKuwaharaStageOptions = {}): IKuwah
   };
 }
 interface IScratchTexture {
-  readonly texture: Node<"vec4"> & { sample(uv: Node<"vec2">): Node<"vec4"> };
+  readonly texture: ITextureNode;
   dispose: () => void;
-}
-interface ISectorStats {
-  readonly mean: Node<"vec3">;
-  readonly score: Node<"float">;
 }
 interface ITextureNode extends Node<"vec4"> {
   sample(uv: Node<"vec2">): Node<"vec4">;
@@ -163,7 +167,6 @@ function transformKernelOffsetNode(
   axis: Node<"vec2">,
   anisotropy: number,
 ): Node<"vec2"> {
-  // This is R × S × v. Reversing it to v × S × R makes strokes screen-aligned.
   const scaled = tsl.vec2(offset.x.mul(1 + anisotropy), offset.y.mul(1 - anisotropy));
   return tsl.vec2(
     axis.x.mul(scaled.x).sub(axis.y.mul(scaled.y)),
@@ -187,13 +190,9 @@ function finiteRange(
 ): number {
   const lower = exclusiveMinimum ? value <= minimum : value < minimum;
   if (!Number.isFinite(value) || lower || value > maximum)
-    throw new Error(
-      `${name} must be finite and in ${exclusiveMinimum ? "(0" : "[0"}..${String(maximum)}]`,
-    );
+    throw new Error(`${name} must be finite and in range`);
   return value;
 }
 function isNode(value: unknown): value is Node {
-  return (
-    typeof value === "object" && value !== null && (value as { isNode?: boolean }).isNode === true
-  );
+  return !!value && typeof value === "object" && (value as { isNode?: boolean }).isNode === true;
 }

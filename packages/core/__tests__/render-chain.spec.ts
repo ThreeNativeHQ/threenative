@@ -115,6 +115,22 @@ describe("RenderChain", () => {
     expect(chain.applied.stages).toEqual(["bloom", "paint", "ink"]);
   });
 
+  it("reports whether each applied stage changed the graph output", () => {
+    const chain = new RenderChain(renderer("webgpu"), {
+      input: { name: "scene" },
+      stages: [
+        { ...stage("bloom", []), build: (input) => input },
+        { ...stage("outline", []), after: "bloom" },
+      ],
+      request: { stages: ["outline", "bloom"], tier: "high" },
+    });
+
+    expect(chain.applied.contributions).toEqual([
+      { graphOutputChanged: false, name: "bloom" },
+      { graphOutputChanged: true, name: "outline" },
+    ]);
+  });
+
   it("rejects malformed authored graphs before installing an output", () => {
     const cases: Array<{ message: RegExp; stages: IRenderChainStage[] }> = [
       {

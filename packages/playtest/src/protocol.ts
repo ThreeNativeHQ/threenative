@@ -265,6 +265,7 @@ export interface IPlaytestPerformanceObservation {
 }
 
 export interface IPlaytestRenderChainObservation {
+  contributions?: Array<{ graphOutputChanged: boolean; name: string }>;
   dropped: Array<{ name: string; reason: string }>;
   requested: string[];
   source: "pinned" | "auto";

@@ -119,6 +119,9 @@
       "stages": {
         "includes": ["outline", "kuwahara", "watercolor"],
         "order": ["outline", "kuwahara", "watercolor"]
+      },
+      "contributions": {
+        "graphOutputChanged": ["outline", "kuwahara", "watercolor"]
       }
     },
     "visibility": [

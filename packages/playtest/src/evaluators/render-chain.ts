@@ -60,6 +60,38 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
     }
   }
 
+  const contributionAssertion = assertion.contributions;
+  if (contributionAssertion !== undefined) {
+    const observedContributions = observed?.contributions;
+    const pass = Array.isArray(observedContributions)
+      && contributionAssertion.graphOutputChanged.every((name) =>
+        observedContributions.some((entry) => entry.name === name && entry.graphOutputChanged === true),
+      );
+    ctx.assertions.push({
+      details: {
+        expected: contributionAssertion.graphOutputChanged,
+        observed: observedContributions,
+      },
+      id: "renderChain.contributions.graphOutputChanged",
+      pass,
+    });
+    if (!pass) {
+      ctx.diagnostics.push({
+        code: observed === undefined || observedContributions === undefined
+          ? "TN_PLAYTEST_RENDER_CHAIN_UNOBSERVABLE"
+          : "TN_PLAYTEST_RENDER_CHAIN_CONTRIBUTIONS_FAILED",
+        message: observed === undefined
+          ? "Render-chain contributions were not observed because the TN_RENDER_CHAIN marker was absent."
+          : observedContributions === undefined
+            ? "Render-chain stage contributions were not observed on the TN_RENDER_CHAIN marker."
+            : "One or more authored stages did not report a changed graph output.",
+        observedRuntimePath: "observations.json/renderChain/contributions",
+        severity: "error",
+        suggestion: "Publish one graphOutputChanged marker per applied stage; this is graph evidence, not pixel attribution.",
+      });
+    }
+  }
+
   if (assertion.velocity !== undefined) {
     const rejectionFraction = observed?.velocity.rejectionFraction;
     const measurementFrame = observed?.velocity.measurementFrame;
@@ -99,7 +131,10 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
 }
 
 export function renderChainAssertionIsMeaningful(assertion: IPlaytestRenderChainAssertion): boolean {
-  return assertion.tier !== undefined || assertion.stages !== undefined || assertion.velocity !== undefined;
+  return assertion.tier !== undefined
+    || assertion.stages !== undefined
+    || assertion.contributions !== undefined
+    || assertion.velocity !== undefined;
 }
 
 function emitStageCheck(

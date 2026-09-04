@@ -111,6 +111,30 @@ describe("starter visual floor", () => {
     );
   });
 
+  it("should sample bounded two-dimensional Kuwahara areas at radius five", async () => {
+    const kuwahara = await readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8");
+    expect(kuwahara).toContain("sectorSampleOffsets(radius)");
+    expect(kuwahara).toMatch(/for \(const localOffset of sectorOffsets\)/u);
+    const module = (await import("../templates/starter/src/render/kuwahara.js")) as {
+      sectorSampleOffsets?: (radius: number) => readonly { x: number; y: number }[];
+    };
+    expect(module.sectorSampleOffsets).toBeTypeOf("function");
+    const offsets = module.sectorSampleOffsets?.(5) ?? [];
+    expect(offsets).toHaveLength(25);
+    expect(offsets.some(({ x, y }) => x > 0 && y !== 0)).toBe(true);
+    expect(offsets.length * 8).toBe(200);
+  });
+
+  it("should keep the runtime node transform in matrix-times-vector order", async () => {
+    const kuwahara = await readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8");
+    const helper = kuwahara.slice(kuwahara.indexOf("function transformKernelOffsetNode"));
+    expect(helper).toMatch(
+      /axis\.x\s*\.\s*mul\(scaled\.x\)\s*\.\s*sub\(axis\.y\s*\.\s*mul\(scaled\.y\)\)[\s\S]*axis\.y\s*\.\s*mul\(scaled\.x\)\s*\.\s*add\(axis\.x\s*\.\s*mul\(scaled\.y\)\)/u,
+    );
+    expect(helper).not.toMatch(/scaled\.x\s*\.\s*mul\(axis\.x\)/u);
+    expect(helper).not.toMatch(/scaled\.y\s*\.\s*mul\(axis\.y\)/u);
+  });
+
   it("should use fewer watercolor luminance bands on medium than high", () => {
     const highPreset = qualityPreset("high");
     const mediumPreset = qualityPreset("medium");

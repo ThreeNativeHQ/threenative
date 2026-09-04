@@ -332,6 +332,19 @@ export function validateRenderChainAssertion(
   if (stages !== undefined && Object.keys(stages).length === 0) {
     throw invalidScenario(scenarioPath, `'${objectPath}.stages' must assert includes, excludes, or order.`);
   }
+  const contributionsValue = record.contributions === undefined
+    ? undefined
+    : requireRecord(record.contributions, scenarioPath, `${objectPath}.contributions`);
+  const contributions = contributionsValue === undefined
+    ? undefined
+    : {
+        graphOutputChanged: renderChainStageIds(
+          contributionsValue,
+          "graphOutputChanged",
+          scenarioPath,
+          `${objectPath}.contributions`,
+        ),
+      };
   const velocityValue = record.velocity;
   const velocity = velocityValue === undefined
     ? undefined
@@ -344,13 +357,18 @@ export function validateRenderChainAssertion(
     return {
       ...(tier === undefined ? {} : { tier }),
       ...(stages === undefined ? {} : { stages }),
+      ...(contributions === undefined ? {} : { contributions }),
       velocity: { maxRejectionFraction },
     };
   }
-  if (tier === undefined && stages === undefined) {
-    throw invalidScenario(scenarioPath, `'${objectPath}' must assert tier, stages, or velocity.maxRejectionFraction; an empty render-chain assertion observes nothing.`);
+  if (tier === undefined && stages === undefined && contributions === undefined) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must assert tier, stages, contributions, or velocity.maxRejectionFraction; an empty render-chain assertion observes nothing.`);
   }
-  return { ...(tier === undefined ? {} : { tier }), ...(stages === undefined ? {} : { stages }) };
+  return {
+    ...(tier === undefined ? {} : { tier }),
+    ...(stages === undefined ? {} : { stages }),
+    ...(contributions === undefined ? {} : { contributions }),
+  };
 }
 
 function renderChainStageIds(
@@ -865,6 +883,14 @@ export function validateNestedAssertionKeys(
       ["maxRejectionFraction"],
       scenarioPath,
       `assert.${kind}${suffix}.velocity`,
+    );
+  }
+  if (kind === "renderChain" && isRecord(value.contributions)) {
+    rejectUnknownKeys(
+      value.contributions,
+      ["graphOutputChanged"],
+      scenarioPath,
+      `assert.${kind}${suffix}.contributions`,
     );
   }
   if (kind === "renderChain" && isRecord(value.stages)) {
