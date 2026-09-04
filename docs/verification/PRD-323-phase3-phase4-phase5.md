@@ -26,7 +26,15 @@ cap."*
 
 ---
 
-## Four defects found by trying to use it
+## Six defects found by trying to use it, two of them by review
+
+The count kept going up, and that is the finding. Every one is the same mistake in a different
+place: **a citation scan sees the sources that *name* a file, and a script that opens a directory
+names nothing.** Three were found by using the scanner, a fourth by CI, and two more by an
+adversarial review that ran probes rather than reading — including one where a comment in this
+very commit asserted something demonstrably false.
+
+## The first four, found by trying to use it
 
 The citation scan was built in Phase 1 and never used to delete anything. Deleting with it exposed
 three ways a by-name scan condemns a live artifact — and Phase 4 exposed a fourth, in the
@@ -374,6 +382,80 @@ number here would have meant deleted visual baselines and six documents with bro
       `pnpm budgets` exit 0, `pnpm sync:agents --check` exit 0, `pnpm check:docs` 1,376 links
       across 911 files, root suite **379 files / 3,990 tests passed, 0 failed**. Full output in
       the commit body.
+
+## Defects 5 and 6 — found by review, with executed probes
+
+An adversarial code review of the committed diff found two more, both verified by running the code
+rather than reading it. Both are fixed here.
+
+### Defect 5 — the sweep archive's own measurement components were `uncited`
+
+`SCRIPT_WALKED_ROOTS` covered `docs/verification/visuals` and three others and **missed the tree
+Phase 4 had just re-tracked**. Reproduced on the fixed Phase 4:
+
+```
+uncited total: 300
+uncited under docs/benchmark/sweeps: 282   72.3 MB
+  164 captures
+   70 playtests
+   37 screenshots
+    6 assets
+```
+
+Those are exactly the artifacts Phase 4's `.gitignore` deliberately keeps in git, and every one of
+their directories is opened as a root by a real script — `sweep-capture.ts:52` (`captures`),
+`sweep-proof.ts` (`proof-artifacts`), `sweep-archive.ts:226` (`playtests`), `round-next.ts:26`
+(`captures/index.json`), and `sweep-evidence.ts:84-94`, which is the authoritative classifier and
+names every component by top-level directory.
+
+The entries could not be expressed by either existing matching mode: the root is
+`docs/benchmark/sweeps`, but the archive name is a wildcard and the component sits *below* it, so a
+plain root would have claimed the arm sources too and a basename pattern only reaches files
+directly inside the root. `archiveComponent` is the third mode — `<root>/<any archive>/<component>/…`.
+
+After the fix: **uncited 300 → 23, and 282 → 5 under the sweep tree.** The five that remain are
+per-arm capture tooling one agent wrote mid-sweep (`tools/capture.mjs`, `dbg.mjs`,
+`drop-capture.mjs`, `SETUP.md`) — genuinely not measurements, and correctly uncited.
+
+### Defect 6 — the fail-closed justification was false, and a probe proved it
+
+Both `linkCitations` and the budget gate's line cap swallowed a `readFile` error with `continue`,
+each carrying a comment claiming the other walk would catch the file. **Neither does.** `stat`
+follows symlinks and needs only directory-traverse permission; `readFile` needs read permission on
+the file. The review's probe, with a tracked evidence write-up at `chmod 000`:
+
+```
+PROBE readFile does fail: EACCES: permission denied, open '.../prd-999.md'
+PROBE classifyEvidence:   NO THROW
+PROBE attachment:         uncited   citedBy: []
+PROBE budget ok:          true  []
+```
+
+That is the exact silent-deletion outcome the gate exists to prevent, produced by a comment
+asserting it could not happen. Both `continue`s are now `throw`s, and the comments say what the
+probe found instead of what was assumed. `citationSources` already threw — but it *excludes*
+evidence `.md` unless the path matches `round-\d+`, so ordinary write-ups took only the swallowing
+path.
+
+**A third review finding, also correct and also fixed:** the `alpha-bar.ts` exclusion rationale
+claimed all three of its walks were content-shaped. Two are path shapes — its `round-*` glob at
+`alpha-bar.ts:366` and `PARITY_LEDGER_PATTERN` at `:470` (`tier-1-*`, `parity-*`). Both now have
+entries; only `readEvidenceBlocks`, which reads every `.md` and acts on content, stays excluded,
+and the comment now says which is which.
+
+### Reds for the review fixes
+
+```
+× should claim a measurement component inside every sweep archive, and nothing else
+  (archiveComponent matching disabled)            Tests  1 failed | 9 passed (10)
+
+× should throw when an evidence write-up cannot be read, rather than losing its links
+  (throw reverted to continue)                    Tests  1 failed | 9 passed (10)
+```
+
+Each mutation fails exactly its own test. The sweep-component spec carries its negative control in
+the same case: a force-added arm source under the same archive must stay `uncited`, so the entry
+cannot be satisfied by claiming the whole tree.
 
 ## Known limitations
 

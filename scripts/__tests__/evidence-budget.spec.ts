@@ -103,6 +103,38 @@ describe("checkEvidenceBudget", () => {
     }
   });
 
+  it("should throw when an evidence file cannot be read, rather than reporting ok", async () => {
+    // The byte walk uses `stat`, which needs only directory-traverse permission and follows
+    // symlinks; the line cap needs `readFile`. A review probe put a tracked evidence file at
+    // chmod 000 and an earlier version of this gate returned `ok: true` — it cannot know the
+    // length of a file it cannot read, so it must fail rather than pass.
+    const root = await makeTempDir("evidence-budget-unreadable-");
+    const file = path.join(root, "docs/verification/run.md");
+    try {
+      await mkdir(path.join(root, "docs/verification"), { recursive: true });
+      await writeFile(file, "evidence\n");
+      spawnSync("git", ["init"], { cwd: root });
+      spawnSync("git", ["add", "-A"], { cwd: root });
+      const { chmod, readFile } = await import("node:fs/promises");
+      await chmod(file, 0o000);
+      let readable = true;
+      try {
+        await readFile(file, "utf8");
+      } catch {
+        readable = false;
+      }
+      // Running as a user that can read anything makes the probe vacuous rather than false.
+      if (!readable) {
+        await expect(
+          checkEvidenceBudget(root, { "docs/verification": { bytes: 1024 * 1024, files: 100 } }),
+        ).rejects.toThrow(/cannot read evidence file/u);
+      }
+      await chmod(file, 0o644);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("should pass the real tree under the shipped caps", async () => {
     // The shipped caps are growth stops set at the 2026-09-02 measurement with headroom; this
     // is the assertion that runs in pnpm budgets. A cap raise needs its own commit saying why.

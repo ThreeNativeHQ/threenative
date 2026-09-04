@@ -59,6 +59,13 @@ export interface IWalkedRoot {
   readonly basenamePrefix?: string;
   /** As `basenamePrefix`, for the extension the reader filters on. */
   readonly basenameSuffix?: string;
+  /**
+   * When present, `root` holds one directory per run and the reader opens this component inside
+   * each: `docs/benchmark/sweeps/<archive>/captures/…`. The archive name is a wildcard, so
+   * neither a plain root (which would claim the whole tree, arm sources included) nor a basename
+   * pattern (which only reaches files directly inside the root) expresses it.
+   */
+  readonly archiveComponent?: string;
 }
 
 export const SCRIPT_WALKED_ROOTS: readonly IWalkedRoot[] = [
@@ -85,23 +92,79 @@ export const SCRIPT_WALKED_ROOTS: readonly IWalkedRoot[] = [
     reader: "scripts/round-ledger.ts",
     root: "docs/verification",
   },
+  // A sweep archive's measurement components. `sweep-evidence.ts:84-94` is the authoritative
+  // classifier and names them by top-level directory; each is opened as a root by a real script
+  // and never named file-by-file, so a by-name scan called 282 of them (72.3 MB) uncited — the
+  // `docs/verification/visuals` bug repeated one tree over, and these are the artifacts Phase 4's
+  // `.gitignore` deliberately keeps in git. The arm sources beside them are untracked, so they
+  // never reach the scanner and are not claimed here.
+  {
+    archiveComponent: "captures",
+    reader: "scripts/sweep-capture.ts",
+    root: "docs/benchmark/sweeps",
+  },
+  { archiveComponent: "captures", reader: "scripts/round-next.ts", root: "docs/benchmark/sweeps" },
+  {
+    archiveComponent: "playtests",
+    reader: "scripts/sweep-archive.ts",
+    root: "docs/benchmark/sweeps",
+  },
+  {
+    archiveComponent: "proof-artifacts",
+    reader: "scripts/sweep-proof.ts",
+    root: "docs/benchmark/sweeps",
+  },
+  {
+    archiveComponent: "screenshots",
+    reader: "scripts/sweep-evidence.ts",
+    root: "docs/benchmark/sweeps",
+  },
+  {
+    archiveComponent: "assets",
+    reader: "scripts/sweep-evidence.ts",
+    root: "docs/benchmark/sweeps",
+  },
+  // alpha-bar.ts:470 globs `PARITY_LEDGER_PATTERN` — `tier-1-<date>*.md` and `parity-<date>*.md` —
+  // and grades the alpha bar's parity rows out of them. Its round-ledger glob at :366 is already
+  // covered by the `round-` entry above.
+  {
+    basenamePrefix: "tier-1-",
+    basenameSuffix: ".md",
+    reader: "scripts/alpha-bar.ts",
+    root: "docs/verification",
+  },
+  {
+    basenamePrefix: "parity-",
+    basenameSuffix: ".md",
+    reader: "scripts/alpha-bar.ts",
+    root: "docs/verification",
+  },
 ];
 
 /**
- * `scripts/alpha-bar.ts` is a fourth walker and is deliberately **not** in that list.
+ * `scripts/alpha-bar.ts` walks `docs/verification` three ways, and only two of them are listed
+ * above — an earlier version of this comment claimed all three were content-shaped, which a review
+ * disproved. Its `round-*` glob (`alpha-bar.ts:366`) and its `PARITY_LEDGER_PATTERN` glob
+ * (`:470` — `tier-1-*`, `parity-*`) are path shapes and have entries.
  *
- * `readEvidenceBlocks` opens `docs/verification` and reads every `.md` in it, but only acts on the
- * ones carrying an `alpha-bar` block — so the dependency is on content, not on a path shape, and
- * an entry here would exempt every Markdown file in the tree from retention and gut the policy.
- * What guards it instead is PRD-323's AC3: `pnpm alpha:bar` must print byte-identical output
- * either side of any deletion, which catches a removed block directly rather than by proxy.
+ * The third is not: `readEvidenceBlocks` opens the directory and reads **every** `.md` in it,
+ * acting only on the ones carrying an `alpha-bar` block. That dependency is on content, so no path
+ * pattern expresses it and an entry would exempt every Markdown file in the tree from retention,
+ * gutting the policy. What guards it instead is PRD-323's AC3: `pnpm alpha:bar` must print
+ * byte-identical output either side of any deletion, which catches a removed block directly rather
+ * than by proxy.
  */
 
 function matchesRoot(artifact: string, entry: IWalkedRoot): boolean {
   if (!artifact.startsWith(`${entry.root}/`)) return false;
+  const rest = artifact.slice(entry.root.length + 1);
+  if (entry.archiveComponent !== undefined) {
+    // <root>/<archive>/<component>/… — the archive name is a wildcard, the component is not.
+    const segments = rest.split("/");
+    return segments.length > 2 && segments[1] === entry.archiveComponent;
+  }
   if (entry.basenamePrefix === undefined && entry.basenameSuffix === undefined) return true;
   // A prefix/suffix entry claims only the reader's own glob, and only directly inside the root.
-  const rest = artifact.slice(entry.root.length + 1);
   if (rest.includes("/")) return false;
   if (entry.basenamePrefix !== undefined && !rest.startsWith(entry.basenamePrefix)) return false;
   if (entry.basenameSuffix !== undefined && !rest.endsWith(entry.basenameSuffix)) return false;
@@ -166,12 +229,17 @@ async function linkCitations(root: string): Promise<ReadonlyMap<string, Set<stri
       let text: string;
       try {
         text = await readFile(path.join(root, file), "utf8");
-      } catch {
-        // Still fail-closed, just not here: an artifact git lists but cannot be read is caught by
-        // the stat walk in `classifyEvidence`, which owns the "cannot be classified" error. This
-        // pass only adds citations, so throwing a second, different message for the same file
-        // would replace that contract rather than strengthen it.
-        continue;
+      } catch (error) {
+        // Fail closed. An earlier version skipped here, on the reasoning that the stat walk in
+        // `classifyEvidence` would catch the same file — **which is false**, and a review probe
+        // proved it: `stat` follows symlinks and needs only directory-traverse permission, while
+        // `readFile` needs read permission on the file. With the file chmod 000 the scan returned
+        // no error at all and its attachments classified `uncited`, which is precisely the
+        // silent-deletion outcome this gate exists to prevent. A write-up we cannot read is a
+        // write-up whose citations we do not know.
+        throw new Error(
+          `evidence citations: artifact '${file}' cannot be classified — its links are unreadable: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       for (const target of linkedArtifacts(file, text)) {
         // A document linking itself is not a citation of itself.

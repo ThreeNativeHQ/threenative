@@ -108,10 +108,15 @@ export async function checkEvidenceBudget(
       let text: string;
       try {
         text = await readFile(path.join(root, file), "utf8");
-      } catch {
-        // A tracked-but-unreadable evidence file is unclassifiable; the trees' byte walk above
-        // already fails on it, so skip rather than double-report.
-        continue;
+      } catch (error) {
+        // Fail closed. An earlier version skipped here, claiming the byte walk above "already
+        // fails on it" — it does not. That walk uses `stat`, which needs only directory-traverse
+        // permission and follows symlinks; `readFile` needs read permission on the file itself. A
+        // review probe put a tracked evidence file at chmod 000 and this gate returned ok. An
+        // evidence file the gate cannot read is a file whose length it does not know.
+        throw new Error(
+          `evidence budget: cannot read evidence file '${file}' — ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       const lines = text.split("\n").length;
       if (lines > lineCap) {

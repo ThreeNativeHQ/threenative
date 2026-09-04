@@ -40,7 +40,17 @@ where they are not. Narrowed to the arm sources (`src/`, `starter-baseline/`, `f
 `public/`, root configs), which hold **all 2,963 `.ts` and no measurements**. A doc-links exemption
 written while the whole tree was untracked was then reverted rather than shipped.
 
-A fifth finding is recorded rather than fixed: **classification is single-pass**, so deleting an
+**Two more came from an adversarial review that ran probes rather than reading**, and both are
+fixed. `SCRIPT_WALKED_ROOTS` missed the sweep tree Phase 4 had just re-tracked, leaving 282
+measurement artifacts (72.3 MB of captures, playtests and screenshots) classified `uncited` —
+uncited fell 300 → 23 once a third matching mode (`archiveComponent`, for `<archive>/<component>/`)
+was added. And the fail-closed justification on two `continue`s was **false**: a probe with a
+tracked write-up at `chmod 000` showed `classifyEvidence` returning no error and the budget gate
+returning ok, because `stat` succeeds where `readFile` fails. Both are now `throw`s. The
+`alpha-bar.ts` exclusion rationale was also wrong for two of its three walks, which are path
+shapes and now have entries.
+
+A seventh finding is recorded rather than fixed: **classification is single-pass**, so deleting an
 uncited citer orphans what it cited. Eighteen artifacts are uncited now that were cited before,
 and they were kept rather than swept up in the same pass. Two gates are also missing and are the
 obvious next work: one keeping `SCRIPT_WALKED_ROOTS` honest against new walkers, and one that

@@ -13,10 +13,10 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
-| `docs/benchmark` | 1392 | 188189001 | 282 |
-| `docs/verification` | 664 | 69133755 | 18 |
+| `docs/benchmark` | 1392 | 188189001 | 5 |
+| `docs/verification` | 664 | 69138028 | 18 |
 
-**300 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
+**23 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories
 

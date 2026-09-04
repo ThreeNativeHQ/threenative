@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -104,6 +104,58 @@ describe("classifyEvidence", () => {
     expect(scan.find((a) => a.path === "docs/verification/some-other-run.md")?.classification).toBe(
       "uncited",
     );
+  });
+
+  it("should claim a measurement component inside every sweep archive, and nothing else", async () => {
+    // A review probe found 282 artifacts (72.3 MB) under `docs/benchmark/sweeps` classified
+    // `uncited` — captures, playtests, screenshots — the `docs/verification/visuals` bug one tree
+    // over. `sweep-evidence.ts:84-94` names these components; each is opened as a root by a real
+    // script and never named file-by-file. The archive name is a wildcard, which is why neither a
+    // plain root nor a basename pattern expresses it.
+    const root = await fixture();
+    const archive = "docs/benchmark/sweeps/platformer-2026-08-06";
+    await mkdir(path.join(root, archive, "captures"), { recursive: true });
+    await mkdir(path.join(root, archive, "src"), { recursive: true });
+    await writeFile(path.join(root, archive, "captures/frame-0.png"), "pixels");
+    await writeFile(path.join(root, archive, "src/main.ts"), "// generated arm source");
+    await writeFile(path.join(root, "docs/PRDs/done/PRD-001.md"), "no citations remain");
+    await track(root);
+
+    const { scan } = await classifyEvidence(root);
+    expect(scan.find((a) => a.path === `${archive}/captures/frame-0.png`)?.classification).toBe(
+      "cited-by-script",
+    );
+    // The negative control: an arm source is not a measurement. It is normally untracked, but if
+    // one is force-added the entry must not shelter it — otherwise the rule claims the whole tree.
+    expect(scan.find((a) => a.path === `${archive}/src/main.ts`)?.classification).toBe("uncited");
+  });
+
+  it("should throw when an evidence write-up cannot be read, rather than losing its links", async () => {
+    // A review probe disproved the original justification for skipping here: `stat` follows
+    // symlinks and needs only directory-traverse permission, so `classifyEvidence`'s byte walk
+    // succeeds on a file `readFile` cannot open. The scan returned no error and the write-up's
+    // attachment classified `uncited` — a live artifact marked deletable.
+    const root = await fixture();
+    await mkdir(path.join(root, "docs/verification/prd-999-run"), { recursive: true });
+    await writeFile(path.join(root, "docs/verification/prd-999-run/brief.txt"), "the brief");
+    const report = path.join(root, "docs/verification/prd-999.md");
+    await writeFile(report, "the report: [brief](prd-999-run/brief.txt)");
+    await track(root);
+    await chmod(report, 0o000);
+    try {
+      // Running as a user that can read anything (root, or a permissive filesystem) makes the
+      // probe vacuous rather than failing; skip instead of asserting something untrue.
+      let readable = true;
+      try {
+        await readFile(report, "utf8");
+      } catch {
+        readable = false;
+      }
+      if (readable) return;
+      await expect(classifyEvidence(root)).rejects.toThrow(/cannot be classified/u);
+    } finally {
+      await chmod(report, 0o644);
+    }
   });
 
   it("should leave an artifact outside every walked root uncited", async () => {
