@@ -15,6 +15,7 @@ import {
   type ISharedImageStore,
   createSharedImageStore,
   readSharedGlb,
+  sharedImageKey,
   sharedImageUri,
   unpackGlb,
 } from "../src/passes/shared-images.js";
@@ -148,6 +149,25 @@ async function applyShared(
 }
 
 describe("shared model images", () => {
+  it("should atomically accept concurrent writes for the same shared image", async () => {
+    const root = await makeTempDir("threenative-shared-images-concurrent-");
+    const store = createSharedImageStore(root);
+    const image = {
+      buffer: Buffer.from("shared image"),
+      codec: "uastc",
+      mimeType: "image/ktx2",
+    };
+    const key = sharedImageKey(image.buffer, { test: true });
+
+    await expect(
+      Promise.all(Array.from({ length: 8 }, () => store.put(key, image))),
+    ).resolves.toEqual(Array.from({ length: 8 }));
+    await expect(createSharedImageStore(root).get(key)).resolves.toEqual(image);
+    await expect(readdir(path.join(root, "shared", "images"))).resolves.toEqual([
+      `${key}.uastc.ktx2`,
+    ]);
+  });
+
   it("should declare one repeated source key when model dedup is disabled", async () => {
     const result = await applyShared(
       createSharedImageStore(),

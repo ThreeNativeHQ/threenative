@@ -58,7 +58,7 @@ function kvmProvisioning(source: string): readonly string[] {
  * Which templates a matrix job actually covers.
  *
  * These assertions used to match `- <template>` in the job text, which read the matrix only while
- * the matrix was a bare list of names. `template-nonvisual` shards its two heavy templates now, so
+ * the matrix was a bare list of names. `template-nonvisual` shards its measured heavy templates now, so
  * an entry is `- { template: platformer, shard: "1/2" }` and the old match found nothing while the
  * coverage it was checking was unchanged. Reading the entries is what the assertion always meant.
  */
@@ -381,6 +381,19 @@ describe("CI pipeline structure", () => {
     // And the step must refuse a slice that selected nothing rather than report on an empty set.
     expect(job).toContain('test "${#mine[@]}" -gt 0');
     expect(job).toContain("non-visual-scenarios.mjs");
+  });
+
+  it("keeps the measured puzzle lane split into two shards", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "template-nonvisual");
+    const puzzleShards = [
+      ...job.matchAll(/^\s+-\s*\{\s*template:\s*puzzle\s*,\s*shard:\s*"(\d+)\/(\d+)"/gmu),
+    ].map((match) => ({ index: Number(match[1]), count: Number(match[2]) }));
+
+    expect(puzzleShards, "puzzle's measured scenario lane must stay split").toEqual([
+      { index: 1, count: 2 },
+      { index: 2, count: 2 },
+    ]);
   });
 
   // A shard count above the template's scenario count is a leg that can only ever select nothing.
