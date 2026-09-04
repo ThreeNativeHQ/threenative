@@ -1375,6 +1375,14 @@ export async function compileAssets(
   const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
   const previous = await readExistingManifest(manifestPath);
 
+  // Read before the first write *and before the source walk*, so the undeclared-output guard can
+  // tell this run's files from the project's own static ones. Taking it after the walk shrinks the
+  // margin by however long the walk took, and `TN_ASSETS_UNDECLARED_OUTPUT` then misses a stray
+  // file whose mtime the filesystem truncated below it — which is exactly how
+  // `bake-receipt.spec.ts` went red on a loaded CI shard while passing locally. It never reaches
+  // the receipt: that stays deterministic.
+  const runStart = Date.now();
+
   const logicals = await walkSources(layout.sourceRoot);
   // The determinism gate's seam: reversed processing order reverses which input's work completes
   // first, so the gate can prove the emitted bytes do not depend on it.
@@ -1416,9 +1424,7 @@ export async function compileAssets(
   const costInputs = new Map<string, IPassCostRecord>();
   for (const name of passNames)
     costInputs.set(name, { cachedInputs: 0, ranInputs: 0, timings: [] });
-  // Read before the first write, so the undeclared-output guard can tell this run's files from
-  // the project's own static ones. It never reaches the receipt: that stays deterministic.
-  const runStart = Date.now();
+
   const healthInputs: IAssetHealthInput[] = [];
   const textureRows: ITextureSizeRow[] = [];
   const modelRows: IModelSizeRow[] = [];
