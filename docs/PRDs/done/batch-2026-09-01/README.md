@@ -10,6 +10,7 @@ see *The rule that governs the two extraction PRDs* below.
 | Shipped | PRD-318, PRD-319, PRD-320, PRD-323 |
 | Declined by the kill switch, no product code | PRD-321, PRD-322, and PRD-324's Phases 3–7 |
 | Shipped anyway, because a bug fix is not an abstraction | PRD-324's Phases 0–2 — the Wildwood pose defect, fixed in the engine loader |
+| Left open, and moved out of this batch | PRD-324's Phases 3–7 — declined on 2026-09-04, **retracted the same day**: three games already hand-write the surface |
 
 Filed 2026-09-01. Every gate in this batch is provable on this machine with no device and no human
 in the loop, which is why it is the overnight batch.
@@ -60,7 +61,7 @@ flowchart LR
 | [PRD-321](../PRD-321-the-animal-state-machine-is-mechanism-the-animals-are-the-game.md) (DECLINED) | Wildwood extraction | — | — |
 | [PRD-322](../PRD-322-quality-tier-resolution-is-a-platform-seam.md) (DECLINED 2026-09-04) | Wildwood extraction | — | ~2h |
 | [PRD-323](../PRD-323-evidence-has-a-retention-policy-and-a-gate.md) (archived 2026-09-04) | doc and evidence bloat | — | ~5h |
-| [PRD-324](../PRD-324-an-imported-rig-instances-and-poses-correctly-once.md) (filed 2026-09-02; Phases 0–2 DONE, 3–7 DECLINED 2026-09-04) | Wildwood extraction | — | — |
+| [PRD-324](../../authoring/PRD-324-an-imported-rig-instances-and-poses-correctly-once.md) (filed 2026-09-02; Phases 0–2 DONE, 3–7 **open** — moved to `authoring/` beside its owning round) | Wildwood extraction | — | — |
 
 ## The third theme: the evidence record outgrew its readers
 
@@ -103,12 +104,20 @@ code lands, rather than `scripts/count-loc.ts` scoring it out afterwards.
   parameter — and its one platform-to-tier line, `mobile === true ? "low" : "high"`, is a look
   decision the (b) veto keeps in the game. Audit:
   [`docs/verification/PRD-322-phase0-boundary-audit.md`](../../../verification/PRD-322-phase0-boundary-audit.md).
-- **PRD-324's Phases 3–7** declined 2026-09-04 on the same test that killed PRD-321, re-run rather
-  than inherited: across ten templates and sixteen examples, nothing imports a rigged glTF.
-  [`docs/verification/PRD-324-phase3-second-consumer-check.md`](../../../verification/PRD-324-phase3-second-consumer-check.md).
+- **PRD-324's Phases 3–7** were declined 2026-09-04 on the same test that killed PRD-321 — and the
+  decline was **retracted the same day**. It re-ran PRD-321's search with PRD-321's *scope*, ten
+  templates and sixteen examples, and never searched the sandbox repository. Three games there
+  already hand-write the surface: `wildwood`, `threenative-hq`, `fps-framework`. Phases 3–7 are
+  open work and the PRD has moved to `authoring/`, beside PRD-315.
+  [`docs/verification/PRD-324-second-consumer-census.md`](../../../verification/PRD-324-second-consumer-census.md).
 
-Three kill-switch saves is the result this section was written to allow. **The distinction that
-earned its keep is PRD-324's:** its Phases 0–2 shipped anyway, because the pose defect was a *bug
-in the engine loader* and the bone-length check is an *instrument* — neither needs two consumers to
-justify itself. The kill switch is aimed at abstractions, not at fixes. A batch that had declined
-PRD-324 wholesale would have left Wildwood's animals folded in half.
+So **two kill-switch saves, not three** — which is still the result this section was written to
+allow, and the near-miss is the more useful lesson. Re-running a search inside an inherited
+boundary inherits the conclusion; checking a finding means checking its scope, not just its
+commands.
+
+**The distinction that earned its keep is PRD-324's:** its Phases 0–2 shipped regardless, because
+the pose defect was a *bug in the engine loader* and the bone-length check is an *instrument* —
+neither needs two consumers to justify itself. The kill switch is aimed at abstractions, not at
+fixes. A batch that had declined PRD-324 wholesale would have left Wildwood's animals folded in
+half.

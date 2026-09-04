@@ -4,27 +4,41 @@ prd_contract: v1
 
 # PRD-324 — an imported rig instances and poses correctly, once
 
-**Status: CLOSED, 2026-09-04 — Phases 0–2 DONE and shipped; Phases 3–7 DECLINED.** Second-consumer
-check: [`docs/verification/PRD-324-phase3-second-consumer-check.md`](../../verification/PRD-324-phase3-second-consumer-check.md).
+**Status: PARTIAL, 2026-09-04. Phases 0–2 DONE and shipped; Phases 3–7 OPEN.** Consumer census:
+[`docs/verification/PRD-324-second-consumer-census.md`](../../verification/PRD-324-second-consumer-census.md).
 
 **The defect that opened this PRD is fixed.** Phases 0–2 landed 2026-09-02 and stand: the pose
 defect was found and fixed in the engine loader (`reconcileMirroredClips`, clips z-mirrored against
 their own bind), with the instrument (`boneLengths`/`boneLengthDeviations`,
 `packages/core/src/bone-lengths.ts`) and the framed harness view. Evidence:
-`docs/verification/PRD-324-phase1-phase2.md`. AC0 and AC1 are met. That half needed no second
-consumer, because a bug fix and an instrument are not an abstraction.
+`docs/verification/PRD-324-phase1-phase2.md`. AC0 and AC1 are met.
 
-**Phases 3–7 — `SkeletalMesh3D`, the Wildwood migration, the manifest and native — close as
-DECLINED on AC2.** The search was re-run today rather than inherited from PRD-321: across ten
-shipped templates and sixteen example workspaces, the only hits are
-`examples/prd140-picking` (a `SkinnedMesh` built by hand so raycasting has `skinIndex` to read),
-`examples/prd314-clip-audit` (a synthetic `Bone`/`Skeleton` fixture) and
-`examples/fps-friction` (an `AnimationPlayer` over a hand-authored clip on a proxy). **Nothing
-imports a rigged glTF.** `sandbox/wildwood` is still the only consumer, and this PRD says three
-times over — Phase 0, AC2 and ledger row 6 — that one consumer fails it.
+**AC2 is satisfiable — three independent games already hand-write this surface.** Phases 3–7 were
+briefly declined on 2026-09-04 for want of a second consumer and that decline was **wrong**; a
+review found the consumers and it is retracted. The census, by workspace (each its own
+`package.json` in the `../sandbox` repository):
 
-If a second game needs the pieces, re-file with that consumer named; §5's surface sketch and
-Phases 0–2's evidence are still good starting material.
+| Game | Skeleton-safe clone | Bind-pose normalisation | Clip playback |
+|---|---|---|---|
+| `wildwood` | `Animal.ts:8` | `Animal.ts:167` | `AnimationPlayer` |
+| `threenative-hq` | `office/Worker.ts:4`, `office/Visitor.ts:6` | `Worker.ts:71`, `Visitor.ts:76` | `Worker.ts:88`, with `strideRoot` |
+| `fps-framework` | `entities/Enemy.ts:1072` | `Enemy.ts:747`, `:962`, `:972`, `Rifle.ts:96` | `AnimationPlayer` |
+
+Not counted: `prd259-bayview-current-20260830` is a dated snapshot of `fps-framework` — same
+`"name"` in `package.json` — and `ue-static-import` calls `normaliseToMetres` without a skinned
+clone, so it is not this surface's consumer.
+
+**Why the decline was wrong, recorded because the mistake is reusable.** The search was re-run
+rather than inherited from PRD-321 — but with PRD-321's *scope*, the ten templates and sixteen
+examples, and the sandbox repository was never searched. Re-running a search inside an inherited
+boundary inherits the conclusion. The rule that should have caught it is this repository's own:
+attempt the blocked reason before believing it, and a scope is part of the reason.
+
+**What Phases 3–7 still need**, unchanged: the surface itself, the migration of at least two of the
+three consumers with their private copies deleted, a manifest entry, and native proof. The kill
+switch still applies — `count-loc.ts` must score smaller at both call sites, and a
+lowest-common-denominator wrapper that fits an animal, an office worker and a soldier only by
+deciding nothing is still a decline.
 
 **Original status: PARTIAL, 2026-09-02.** Driven by a live, unsolved rendering defect in
 `sandbox/wildwood` at `d64fc78`. Sibling of PRD-321; see §7 for the split.

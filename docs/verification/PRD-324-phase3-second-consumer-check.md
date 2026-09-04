@@ -2,8 +2,19 @@
 
 **Date:** 2026-09-04. **Engine HEAD:** `55fbd74b`. **Wildwood HEAD:** `d535f51`.
 
-**Outcome: Phases 0–2 stand as DONE and shipped. Phases 3–7 close as DECLINED**, on AC2 and on
-Phase 0's decline check. No product code was written for them.
+> **SUPERSEDED AND RETRACTED, 2026-09-04 — this record's conclusion is wrong.** It declined
+> Phases 3–7 for want of a second consumer. Three exist: `wildwood`, `threenative-hq` and
+> `fps-framework`, each its own workspace in `../sandbox`, each hand-writing the same
+> clone → normalise → animate dance. The error is in §"The search": it re-ran PRD-321's search
+> **with PRD-321's scope** — templates and examples — and never searched the sandbox repository,
+> while elsewhere correctly noting that the sandbox is separate and that Wildwood lives there.
+> Re-running a search inside an inherited boundary inherits the conclusion. Kept rather than
+> deleted, because the reasoning is sound and only the scope was wrong, which is the more useful
+> thing to be able to read back. Replacement:
+> [`PRD-324-second-consumer-census.md`](PRD-324-second-consumer-census.md).
+
+**Outcome (as recorded, and wrong): Phases 0–2 stand as DONE and shipped. Phases 3–7 close as
+DECLINED**, on AC2 and on Phase 0's decline check. No product code was written for them.
 
 ---
 
