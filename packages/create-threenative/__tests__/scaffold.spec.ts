@@ -140,25 +140,6 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // menu-entry steps they had been missing since the menu screen flow landed, so a scaffolded
   // project's own `npm test` can reach the play scene at all. Scenario bytes moved and no source
   // did, so exactly one tree's hash moved.
-  // Recomputed 2026-09-03: SSGI gathers at half resolution — `ssgiResolutionScale`, defaulted
-  // to 0.5 in the canonical `worldEnvironment.ts` and every kit's `quality.ts` — plus the new
-  // `agent-docs/trace-a-slow-frame.md` and its link from every template AGENTS.md. Full-res
-  // SSGI cost 14.4 ms of a 39.7 ms frame and drove the resolution scaler to 0.44; half res
-  // holds 60 fps at 0.72 with the look inside noise, so it is the better default to ship.
-  // Recomputed 2026-09-03 again: `ctx.startup.whenFrameworkReady()` joined it, and the cookbook
-  // gained the deadlock trap that comes with holding startup.
-  // Recomputed 2026-09-03: `ctx.startup.hold()` entered the public surface, so the shared ctx
-  // surface table documents it and the ctx cookbook carries its recipe. Both are copied into every
-  // scaffold, so all ten trees moved and no template source did.
-  // Recomputed 2026-09-03 on the merge with origin: both sides of it moved bytes that every
-  // scaffold embeds, so neither side's recorded set described the merged tree. This branch added
-  // `ssgiResolutionScale` to the canonical `worldEnvironment.ts` that all ten kits copy; origin
-  // moved the agent docs and playtest skill that are generated into every scaffold. Ten trees, no
-  // template source of its own.
-  // Recomputed 2026-09-03 for the origin/main merge: both sides had recomputed all ten, so
-  // neither side's values describe the merged tree. Measured from the merge result, per the
-  // clean-checkout rule above, after `capabilities:sync` confirmed the generated manifest and
-  // reference were already consistent with the merged sources.
   // Recomputed 2026-08-30 for InstancedBatch: the capability manifest and the reference generated
   // from it both gained an entry, and those bytes are embedded in every scaffold, so all seven
   // trees move. The racing tree moves for a second reason — its track gathers the ten kerb stones
@@ -250,21 +231,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "9ef327359c1398f113ee787bbf41eb1ee4b4e8d65033e22fd884733952952b7d",
-  defense: "cf5c4f0b0ac3495f4fd2dc74889d5e5fc5395622de62a3eda8d9e05d863611a7",
+  "action-rpg": "836e90b7daa93afdf7a44024497ff325c320f09724f4847a2f95f99658d82555",
+  defense: "a7093f0222541374ae228d60406c17ad3d325325959568280ded08aa4872ec38",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "02a62c575f6d946d2acc9d3f3167aa22e92a0cc875e424145e5dd4c7aa10f59b",
-  platformer: "87b78e494404bcb7d38b357105731853548d2d6b03105e29c68ea55657805c77",
-  runner: "7a847edd405f8b371f347308a79915a3ce06acc7530bfd6c2a50b89c2e68fc2d",
-  puzzle: "beecf74224316c2a5e7b9a24c378bded94b66ac35987bae8915115a24f6595d7",
-  racing: "a42c2bc289118bef7717b5240179824c2e24390536903103f61231171efaf623",
-  shooter: "08ed7f0ba7b49ab898cbcdba03d58e55e2bd2d9cfa130f84582e33600a92b112",
+  minimal: "2e89b5714b5171852d3697717423459d73affcf527daee5e80799101663177c1",
+  platformer: "32a4b3f3c12310a426493743fc781627c080908df30a9f701b1b1c3514379bc2",
+  runner: "e38ed5bfb64bb8082fed645082dfb63c24999d8e8e2be0ce9f3e505af3c892f7",
+  puzzle: "ac6d41e0c4f3fb45ad4c9e18461890f438547c5767edaf4669bb1bd7af5ebc66",
+  racing: "aebeeb4d60925368b0490e8c20afd25ab8655eb6c8a49e5b13439e963e112c6e",
+  shooter: "97f8a842601677457e8d281f6933e90346b67e928106458abb34c40de245e29c",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  // Recomputed 2026-09-03 for the merge of main: PRD-339 gives the starter and sailing
-  // configs a compression target, and only those two template sources moved.
-  starter: "8acfe62fe1ed6ebea75a29c0c172522d57b9f17c15f672bde40cf2e608ba6fd3",
+  // Recomputed 2026-09-03 for the startup-cost and Blender-MCP lineages merged together.
+  starter: "0f4eb470de9892d0632ab33a3c12c6ded3ea95839143b0db41b0e2f011921314",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -285,7 +265,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "671d28fe689cdb0a5c45ec3cbce5080db86f93d3ad5a3d0885bdf5e6abee00e2",
+  sailing: "539e8ee4d5a157d8b0f2131e8d315ba3055e82fc6f51236bb7e2fbb01d909721",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -305,6 +285,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // AGENTS.md paragraph that states the convention.
   // Recomputed 2026-08-29 for PRD-249. Every template moved because every scaffold embeds the
   // new FluidField2D capability manifest and generated capability-reference entry.
+  // Recomputed 2026-09-03 for PRD-346: `MCP_SERVERS` gained a fourth entry,
+  // `threenative-blender`, which `pnpm sync:mcp` writes into all seven host configs of every
+  // template, and the shared `finding-assets.md` reference gained the downloaded-.fbx loop.
+  // All ten trees moved; no template source did.
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -1368,6 +1352,10 @@ describe("create-threenative", () => {
             command: "node",
             args: [`${CORE_SHIM}/engine.mjs`],
           },
+          "threenative-blender": {
+            command: "node",
+            args: [`${CORE_SHIM}/blender.mjs`],
+          },
         },
       });
       await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
@@ -1399,6 +1387,10 @@ describe("create-threenative", () => {
           "threenative-engine": {
             command: "node",
             args: [`${CORE_SHIM}/engine.mjs`],
+          },
+          "threenative-blender": {
+            command: "node",
+            args: [`${CORE_SHIM}/blender.mjs`],
           },
         },
       });

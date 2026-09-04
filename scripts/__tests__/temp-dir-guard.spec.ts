@@ -63,6 +63,14 @@ const allowedProductionCreators = new Map<string, string>([
     "scripts/exposure-ab.ts",
     "The production exposure A/B gate removes its bundle root in finally.",
   ],
+  [
+    "packages/assets/src/passes/blender-import.ts",
+    "Blender reads paths, not buffers; the per-input staging directory is removed in finally.",
+  ],
+  [
+    "scripts/capture-blender-mcp-tools.ts",
+    "The tool-snapshot gate packs and installs into scratch roots removed in finally.",
+  ],
 ]);
 
 async function sourceFiles(directory: string): Promise<string[]> {

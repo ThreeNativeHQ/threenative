@@ -16,7 +16,18 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+// Bundled into the CLI at build time, exactly like the MCP server table: `detect.ts` uses only
+// node builtins, so inlining it adds no runtime dependency to the published `create-threenative`.
+import { installCommandFor, resolveBlender } from "threenative-blender-mcp/bridge";
+
 import { loadConfig } from "./config.js";
+import {
+  type IMcpPackage,
+  MCP_PACKAGES,
+  MCP_SERVERS,
+  serverEntryPath,
+  serverPackageKey,
+} from "./mcp-servers.js";
 
 /**
  * `threenative doctor` — check a generated project against the assumptions the build and the
@@ -59,11 +70,21 @@ export interface IProjectSnapshot {
   readonly desktopOverlay?: IDesktopOverlayProbe;
   /** Optional seams used by the diagnostic checks and by deterministic unit fixtures. */
   readonly androidToolchain?: IAndroidToolchainProbe;
+  /** Blender discovery, injected so the check is testable on a machine either way. */
+  readonly blender?: IBlenderProbe;
   readonly directoryWritable?: (relative: string) => boolean | undefined;
   readonly mcpServerHealth?: ReadonlyMap<string, IMcpServerHealth>;
   readonly playtestRunnerPath?: string;
   readonly resolvePackageDirectory?: (name: string) => string | undefined;
   readonly runPlaytestDoctor?: () => string;
+}
+
+/** What `resolveBlender` answers, narrowed to what doctor reports. */
+export interface IBlenderProbe {
+  readonly available: boolean;
+  readonly detail: string;
+  readonly installCommand: string;
+  readonly version?: string;
 }
 
 export interface IMcpServerHealth {
@@ -97,32 +118,40 @@ interface IMcpServerSpec {
   readonly version: string;
 }
 
-export const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = [
-  {
-    configName: "threenative-assets",
-    expectedArgs: "./node_modules/@threenative/core/mcp/assets.mjs",
-    packageName: "threenative-asset-mcp",
-    // Kept equal to what `@threenative/core` actually installs — its package.json dependency and
-    // `mcp/servers.mjs` both say 0.7.0, and doctor.spec asserts all three agree. A doctor that
-    // reports a version the install does not use tells a game author their MCP surface is
-    // something it is not.
-    version: "0.7.0",
+/** The engine server resolves to `@threenative/core` itself, not to the package `MCP_PACKAGES`
+ * names: core bundles engine discovery and only falls back to `threenative-engine-mcp` over npx in
+ * a development checkout whose bundle has not been built. Doctor probes what the project actually
+ * resolves, so it must name core — and core's own version, which `doctor.spec.ts` holds equal to
+ * `packages/core/package.json`. */
+const CORE_PACKAGE_NAME = "@threenative/core";
+const CORE_PACKAGE_VERSION = "0.3.0";
+const CORE_RESOLVED_SERVERS: ReadonlySet<string> = new Set([
+  "threenative-engine",
+  "threenative-blender",
+]);
+
+export const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = Object.entries(MCP_SERVERS).map(
+  ([configName, server]) => {
+    const resolvesToCore = CORE_RESOLVED_SERVERS.has(configName);
+    const key = serverPackageKey(server);
+    const declared = MCP_PACKAGES[key];
+    if (!resolvesToCore && declared === undefined) {
+      throw new Error(
+        `TN_DOCTOR_MCP_TABLE: MCP server '${configName}' launches '${key}.mjs', which MCP_PACKAGES does not declare.`,
+      );
+    }
+    return {
+      configName,
+      expectedArgs: serverEntryPath(server),
+      packageName: resolvesToCore ? CORE_PACKAGE_NAME : (declared as IMcpPackage).name,
+      version: resolvesToCore ? CORE_PACKAGE_VERSION : (declared as IMcpPackage).version,
+    };
   },
-  {
-    configName: "threenative-sculpt",
-    expectedArgs: "./node_modules/@threenative/core/mcp/sculpt.mjs",
-    packageName: "threenative-sculpt-mcp",
-    version: "0.1.1",
-  },
-  {
-    configName: "threenative-engine",
-    expectedArgs: "./node_modules/@threenative/core/mcp/engine.mjs",
-    packageName: "@threenative/core",
-    version: "0.3.0",
-  },
-];
+);
 
 const ASSET_DOWNLOAD_DIRECTORIES = ["public/assets", "public/audio"] as const;
+/** The model sources `blenderImportPass` owns; kept equal to `BLENDER_SOURCE_EXTENSIONS`. */
+const BLENDER_SOURCE_SUFFIXES = [".fbx", ".blend", ".obj", ".dae"] as const;
 
 type CompositorProbe = (environment: NodeJS.ProcessEnv) => boolean | undefined;
 
@@ -1193,6 +1222,42 @@ function desktopOverlayCheck(probe: IDesktopOverlayProbe): IDoctorCheck {
   };
 }
 
+/**
+ * Blender, for the four model formats the asset pipeline converts.
+ *
+ * **`warn`, never `fail`.** A game with no `.fbx`, `.blend`, `.obj` or `.dae` in it needs no
+ * Blender and must stay green — a doctor that failed on a 350 MB dependency the project does not
+ * use would be a doctor people stop running. A game that *does* carry one of those sources gets a
+ * hard failure where it belongs: in the build, from `blenderImportPass`, naming the same command.
+ */
+function blenderCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
+  const probe = snapshot.blender;
+  if (probe === undefined) return undefined;
+  const sources = [...snapshot.files].filter((file) =>
+    BLENDER_SOURCE_SUFFIXES.some((suffix) => file.toLowerCase().endsWith(suffix)),
+  );
+  if (probe.available) {
+    return {
+      detail:
+        probe.version === undefined
+          ? probe.detail
+          : `Blender ${probe.version} converts .fbx, .blend, .obj and .dae on this machine`,
+      name: "blender",
+      status: "ok",
+    };
+  }
+  const carried =
+    sources.length === 0
+      ? "no .fbx, .blend, .obj or .dae in this project, so nothing needs it yet"
+      : `${sources.length} source(s) in this project need it: ${sources.slice(0, 3).join(", ")}`;
+  return {
+    detail: `${probe.detail} — ${carried}`,
+    fix: `Install Blender when you want to convert those formats: ${probe.installCommand}`,
+    name: "blender",
+    status: "warn",
+  };
+}
+
 export function diagnoseProject(snapshot: IProjectSnapshot): IDoctorReport {
   if (record(snapshot.packageJson) === undefined) {
     return {
@@ -1208,6 +1273,7 @@ export function diagnoseProject(snapshot: IProjectSnapshot): IDoctorReport {
     };
   }
   const hasPlaytests = [...snapshot.files].some((file) => file.endsWith(".playtest.json"));
+  const blender = blenderCheck(snapshot);
   const nativeRuntime = nativeRuntimeCheck(snapshot);
   const apkSize = apkSizeCheck(snapshot);
   const playtest = playtestCheck(snapshot);
@@ -1240,6 +1306,7 @@ export function diagnoseProject(snapshot: IProjectSnapshot): IDoctorReport {
           status: "warn",
         },
     ...capabilitySearchChecks(snapshot),
+    ...(blender === undefined ? [] : [blender]),
   ];
   return { checks, pass: checks.every(({ status }) => status !== "fail") };
 }
@@ -1338,6 +1405,15 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
       }
     },
     androidToolchain: probeAndroidToolchain(),
+    blender: (() => {
+      const status = resolveBlender();
+      return {
+        available: status.available,
+        detail: status.detail,
+        installCommand: installCommandFor(),
+        ...(status.version === undefined ? {} : { version: status.version }),
+      };
+    })(),
     ...(usesDesktopOverlay(config) ? { desktopOverlay: probeDesktopOverlay() } : {}),
     ...(playtestRunnerPath === undefined
       ? {}

@@ -13,6 +13,8 @@ import type { ITexturePassOptions } from "./passes/texture.js";
  */
 export type PassSpec =
   | { readonly kind: "audio"; readonly options: IAudioPassOptions }
+  /** No options: the pass is decided entirely by the input's extension. */
+  | { readonly kind: "blender-import" }
   | { readonly kind: "lightmap"; readonly options: ILightmapPassOptions }
   | {
       readonly kind: "model";

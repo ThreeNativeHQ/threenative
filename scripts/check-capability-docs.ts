@@ -56,6 +56,8 @@ export const CAPABILITY_PACKAGE_ALLOWLIST: Readonly<Record<string, string>> = {
     "Native C++ host and platform packaging; it has no TypeScript game-authoring surface.",
   "create-threenative":
     "Scaffold CLI implementation; game authors consume the generated project, not its helpers.",
+  "threenative-blender-mcp":
+    "MCP transport and Blender process boundary; a game imports no symbol from it, only its tools.",
   "threenative-engine-mcp":
     "MCP transport implementation; the generated capability manifest is the authoring surface.",
 };

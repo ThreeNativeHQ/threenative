@@ -6,3 +6,10 @@ export function packageSourcesMatch(
     ([name, source]) => installedSources[name] === `file:${source}`,
   );
 }
+
+export function selectHotReloadServerProject(
+  environmentTarget: string | undefined,
+  sharedTarget: string | undefined,
+): string | undefined {
+  return environmentTarget ?? sharedTarget;
+}

@@ -61,34 +61,53 @@ function wanted(template: string): ReadonlyMap<string, string | undefined> {
   }
 }
 
-const check = process.argv.includes("--check");
-const behind: string[] = [];
-
-for (const template of templates()) {
-  const directory = path.join(templateRoot, template);
-  const expected = wanted(template);
-  for (const host of hosts) {
-    const current = read(directory, host.file);
-    const target = expected.get(host.file);
-    if (target === undefined) {
-      throw new Error(`TN_MCP_SYNC: the writer produced no ${host.file} for ${host.label}.`);
+/** Which template host configs differ from what the writer would produce. The `--check` gate and
+ * the vitest spec both read this one answer: a spec that re-derived the expectation itself would
+ * be a second generator, green against its own copy of the rule rather than against the shipped
+ * one. */
+export function staleHostConfigs(): readonly string[] {
+  const behind: string[] = [];
+  for (const template of templates()) {
+    const directory = path.join(templateRoot, template);
+    const expected = wanted(template);
+    for (const host of hosts) {
+      const current = read(directory, host.file);
+      const target = expected.get(host.file);
+      if (target === undefined) {
+        throw new Error(`TN_MCP_SYNC: the writer produced no ${host.file} for ${host.label}.`);
+      }
+      if (current === target) continue;
+      behind.push(`${template}/${host.file}`);
     }
-    if (current === target) continue;
-    behind.push(`${template}/${host.file}`);
   }
-  if (!check) ensureHostMcpConfigs(directory);
+  return behind;
 }
 
-if (behind.length === 0) {
-  process.stdout.write(
-    `MCP host configs current: ${templates().length} templates × ${hosts.length} hosts\n`,
-  );
-  process.exit(0);
+function main(): void {
+  const check = process.argv.includes("--check");
+  const behind = staleHostConfigs();
+  if (!check) {
+    for (const template of templates()) ensureHostMcpConfigs(path.join(templateRoot, template));
+  }
+  if (behind.length === 0) {
+    process.stdout.write(
+      `MCP host configs current: ${templates().length} templates × ${hosts.length} hosts\n`,
+    );
+    return;
+  }
+  if (check) {
+    process.stderr.write(
+      `TN_MCP_SYNC_STALE: run \`pnpm sync:mcp\` — stale host configs:\n${behind.map((line) => `  ${line}`).join("\n")}\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  process.stdout.write(`rewrote:\n${behind.map((line) => `  ${line}`).join("\n")}\n`);
 }
-if (check) {
-  process.stderr.write(
-    `TN_MCP_SYNC_STALE: run \`pnpm sync:mcp\` — stale host configs:\n${behind.map((line) => `  ${line}`).join("\n")}\n`,
-  );
-  process.exit(1);
+
+if (
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)
+) {
+  main();
 }
-process.stdout.write(`rewrote:\n${behind.map((line) => `  ${line}`).join("\n")}\n`);
