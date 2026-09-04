@@ -2,6 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { MCP_SERVERS } from "../../packages/core/mcp/servers.mjs";
 import { threenativeCommands } from "../../packages/create-threenative/src/commands.js";
 import { cliHelp as scaffoldCliHelp } from "../../packages/create-threenative/src/index.js";
 
@@ -152,6 +153,18 @@ function scaffoldSubcommands(help: string): Set<string> {
 }
 
 describe("primary documentation agrees with the shipped surfaces", () => {
+  // The same gap: leaving AGENT-INTERFACE at three servers passed every check, so the one document
+  // that describes the agent surface could describe a surface that no longer exists.
+  it("should name every MCP server the scaffold wires in the agent interface", async () => {
+    const document = await readFile(
+      path.resolve(repoRoot, "docs/architecture/AGENT-INTERFACE.md"),
+      "utf8",
+    );
+    const wired = Object.keys(MCP_SERVERS);
+    expect(wired.length).toBeGreaterThan(3);
+    for (const name of wired) expect(document, name).toContain(`\`${name}\``);
+  });
+
   it("should name only packages that a shipped manifest declares", async () => {
     const allowed = new Set([
       ...(await shippedPackages()).keys(),

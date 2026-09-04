@@ -2,6 +2,7 @@ import { parentPort } from "node:worker_threads";
 
 import type { IAssetPass } from "./compile.js";
 import { applyPasses } from "./pass-chain.js";
+import { blenderImportPass } from "./passes/blender-import.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import { modelPass } from "./passes/model.js";
 import { createSharedImageStore } from "./passes/shared-images.js";
@@ -24,6 +25,8 @@ let passes: readonly IAssetPass[] | undefined;
 function buildInstances(specs: readonly PassSpec[], root: string): readonly IAssetPass[] {
   return specs.map((spec) => {
     switch (spec.kind) {
+      case "blender-import":
+        return blenderImportPass();
       case "lightmap":
         return lightmapPass(spec.options);
       case "model":

@@ -134,6 +134,7 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/ui` | React bindings for HUD and game state |
 | `@threenative/ueformat` | UEFormat v10 `.uemodel` parser and Three.js loader for meshes exported from Unreal packages |
 | `threenative-engine-mcp` | Offline MCP capability discovery for authoring agents |
+| `threenative-blender-mcp` | Drives an installed Blender headlessly so a downloaded `.fbx` becomes a loadable GLB — ships no Blender |
 
 ## Platform support
 

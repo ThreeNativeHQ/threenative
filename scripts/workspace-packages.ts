@@ -8,15 +8,19 @@ const REPO = path.resolve(import.meta.dirname, "..");
 const REPO_ROOT = REPO;
 const PACKAGE_NAME_PATTERN = /^@threenative\/[a-z0-9-]+$/u;
 const PACKAGE_NAME_TOKEN_PATTERN =
-  /@threenative\/[a-z0-9-]+|create-threenative|threenative-engine-mcp/u;
+  /@threenative\/[a-z0-9-]+|create-threenative|threenative-[a-z0-9-]+-mcp/u;
 const PACKAGE_NAME_GLOBAL_PATTERN =
-  /@threenative\/[a-z0-9-]+|create-threenative|threenative-engine-mcp/gu;
+  /@threenative\/[a-z0-9-]+|create-threenative|threenative-[a-z0-9-]+-mcp/gu;
 const WORKFLOW_PACKAGE_COMMAND_PATTERN =
-  /\bpnpm[ \t]+[^\n;&|]*?--filter[ \t]+["']?(@threenative\/[a-z0-9-]+|create-threenative|threenative-engine-mcp)["']?(?=[ \t\r\n]|$)/gu;
+  /\bpnpm[ \t]+[^\n;&|]*?--filter[ \t]+["']?(@threenative\/[a-z0-9-]+|create-threenative|threenative-[a-z0-9-]+-mcp)["']?(?=[ \t\r\n]|$)/gu;
 const WORKFLOW_SHELL_CONTINUATION_PATTERN = /\\\r?\n[ \t]*/gu;
 const WORKFLOW_YAML_FOLDED_SCALAR_HEADER_PATTERN =
   /^([ \t]*)(?:-[ \t]+)?run:[ \t]*>(?:[1-9][+-]?|[+-][1-9]?)?(?:[ \t]+#.*)?[ \t]*$/u;
-const OTHER_WORKSPACE_NAMES = new Set(["create-threenative", "threenative-engine-mcp"]);
+const OTHER_WORKSPACE_NAMES = new Set([
+  "create-threenative",
+  "threenative-blender-mcp",
+  "threenative-engine-mcp",
+]);
 const IMPLEMENTATION_EXTENSIONS = new Set([".cjs", ".js", ".mjs", ".ts", ".tsx"]);
 const WORKFLOW_EXTENSIONS = new Set([".yaml", ".yml"]);
 const SKIPPED_DIRECTORY_NAMES = new Set([
@@ -202,17 +206,25 @@ export function workspacePackageArchives(
   );
 }
 
-/** Derive the scaffold source flag from the package's actual workspace name. */
+/**
+ * Derive the scaffold source flag from the package's actual workspace name.
+ *
+ * A rule rather than a list: this used to name `threenative-engine-mcp` by hand, and the next
+ * unscoped workspace package threw `TN_WORKSPACE_PACKAGE_FLAG_UNSUPPORTED` from a lane that had
+ * already added the flag on the CLI side. `package-list-drift.spec.ts` round-trips every workspace
+ * package through `packageNameFromFlag`, so the two sides cannot disagree again.
+ */
 export function workspacePackageSourceFlag(name: string): string {
   if (name === "create-threenative") return "--cli-package";
-  if (name === "threenative-engine-mcp") return "--engine-mcp-package";
-  if (!name.startsWith("@threenative/")) {
-    throw new Error(
-      `TN_WORKSPACE_PACKAGE_FLAG_UNSUPPORTED: cannot pass ${name} to create-threenative.`,
-    );
+  if (name.startsWith("@threenative/")) {
+    return `--threenative-${name.slice("@threenative/".length)}-package`;
   }
-  const suffix = name.slice("@threenative/".length);
-  return `--threenative-${suffix}-package`;
+  if (name.startsWith("threenative-")) {
+    return `--${name.slice("threenative-".length)}-package`;
+  }
+  throw new Error(
+    `TN_WORKSPACE_PACKAGE_FLAG_UNSUPPORTED: cannot pass ${name} to create-threenative.`,
+  );
 }
 
 function buildWorkspacePackages(repo: string): void {
