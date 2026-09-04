@@ -2,6 +2,27 @@
   "entries": [
     {
       "constraints": [
+        "a clip declared a loop has its seam measured on the decoded output bytes and fails the build when it exceeds the threshold; the assertion cannot be declared away",
+        "which clips loop, which are positional, and what a clip is for are declared per glob and never inferred from a filename",
+        "sources must be RIFF/WAVE or Ogg Vorbis, which is exactly what every native target decodes; an MP3 fails the bake"
+      ],
+      "example": "const pass = audioPass({ overrides: [{ glob: \"audio/*-bed.ogg\", loop: true }] });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function audioPass(options: IAudioPassOptions = { … }",
+      "situations": [
+        "make an ambience bed loop without an audible click",
+        "halve what a positional sound effect costs a device's memory",
+        "stop an audio asset shipping silent on desktop, Android and iOS"
+      ],
+      "summary": "Conditions a game's audio and proves the conditioning did not destroy it.",
+      "supersedes": [],
+      "symbol": "audioPass"
+    },
+    {
+      "constraints": [
         "source and output directories must be disjoint; a pass failure stops the build with the asset path"
       ],
       "example": "const result = await compileAssets({ source: \"assets\", output: \"public\" });",
@@ -18,6 +39,22 @@
       "summary": "Compiles a project's source assets into content-addressed runtime files and a manifest.",
       "supersedes": [],
       "symbol": "compileAssets"
+    },
+    {
+      "constraints": ["an empty row list produces no report lines"],
+      "example": "const lines = formatAudioSizes(audioRows);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function formatAudioSizes(rows: readonly IAudioRow[]): readonly string[] { … }",
+      "situations": [
+        "see what audio conditioning did to a clip's wire and decoded size",
+        "read the loop seam and cross-fade a build measured"
+      ],
+      "summary": "Formats audio conditioning measurements for a build report.",
+      "supersedes": [],
+      "symbol": "formatAudioSizes"
     },
     {
       "constraints": [
@@ -214,6 +251,28 @@
       "symbol": "watchAssets"
     },
     {
+      "constraints": [
+        "the objects, and where each one goes, stay the game's; this decides only when each joins the graph",
+        "input order is the attach order and cannot be changed",
+        "a false `while` stops the run and is reported as `stopped`, never thrown"
+      ],
+      "example": "const report = await addInSlices(objects, (object) => ctx.add(object), {\n  onProgress: ({ added, total }) => setProgress(added / total),\n  while: () => generation.live,\n});",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "sliceSize defaults to 256; `marker: false` silences the TN_ADD_SLICES line, not the report"
+      ],
+      "package": "@threenative/core",
+      "signature": "export async function addInSlices<T>( objects: Iterable<T>, add: (object: T, index: number) => void, options: IAddInSlicesOptions = { … }",
+      "situations": [
+        "add hundreds of built objects to the scene without one multi-second frame",
+        "stream a detail tier in behind a loading curtain without the page looking hung"
+      ],
+      "summary": "Attach hundreds of built objects to the scene in slices, presenting a frame between each.",
+      "supersedes": [],
+      "symbol": "addInSlices"
+    },
+    {
       "constraints": ["register from a scene context; callbacks are cleared when that scene exits"],
       "example": "afterPhysics(ctx, (dt) => camera.position.copy(player.mesh.position));",
       "importPath": "@threenative/core",
@@ -232,7 +291,8 @@
     {
       "constraints": [
         "name the body a game moves as strideRoot when the animated rig is a child of it",
-        "a one-shot clip always plays at its authored rate; the matched rate re-times loops only"
+        "a one-shot clip always plays at its authored rate; the matched rate re-times loops only",
+        "the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so"
       ],
       "example": "const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });",
       "importPath": "@threenative/core",
@@ -246,9 +306,11 @@
         "play an animation on a character",
         "switch a character between idle and attack clips",
         "stop a walking character's feet from sliding or spinning",
-        "match a walk or run cycle to how fast a character is moving"
+        "match a walk or run cycle to how fast a character is moving",
+        "match an in-place walk cycle with no root motion to the body's speed",
+        "find out what speed an animation clip was authored for"
       ],
-      "summary": "Play a skinned or sprite animation from game code. A travelling clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it.",
+      "summary": "Play a skinned or sprite animation from game code. A locomotion clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and Unreal export, every Mixamo \"in place\" clip, every stock animal pack — are matched too: their stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so.",
       "supersedes": [],
       "symbol": "AnimationPlayer"
     },
@@ -927,6 +989,27 @@
       "summary": "Read the host platform without reaching for browser globals.",
       "supersedes": [],
       "symbol": "isWeb"
+    },
+    {
+      "constraints": [
+        "results are written to each item's own index and never appended, so a positional lookup finds the same asset on every load",
+        "the first rejection rejects the call and no lane starts a load it had not begun"
+      ],
+      "example": "const species = await loadAll(names, (name) => ctx.assets.model(`flora/${name}.glb`));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "concurrency defaults to 6; `marker: false` silences the TN_LOAD_ALL line, not onProgress"
+      ],
+      "package": "@threenative/core",
+      "signature": "export async function loadAll<TIn, TOut>( items: readonly TIn[], load: (item: TIn, index: number) => Promise<TOut>, options: ILoadAllOptions = { … }",
+      "situations": [
+        "load many models or textures in parallel instead of one at a time",
+        "keep a loading screen moving while a list of assets downloads"
+      ],
+      "summary": "Load a list with bounded concurrency, returning results in the input's order.",
+      "supersedes": [],
+      "symbol": "loadAll"
     },
     {
       "constraints": ["precise per-vertex measurement is opt-in and not for frame loops"],
@@ -3756,6 +3839,25 @@
     },
     {
       "constraints": [
+        "zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing",
+        "a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry"
+      ],
+      "example": "const payload = resolveBulkDataPayload(bytes, header, { zlib });",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function decompressBulkData( container: Uint8Array, codecs: { … }",
+      "situations": [
+        "read a UE4 editor static mesh whose source model lives in bulk data rather than inline",
+        "decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in"
+      ],
+      "summary": "Reads the `FByteBulkData` headers an editor package serializes into its export data, and resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl` file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.",
+      "supersedes": [],
+      "symbol": "decompressBulkData"
+    },
+    {
+      "constraints": [
         "Oodle and LZ4 payloads require an injected codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing"
       ],
       "example": "const payload = decompressCompressedBuffer(parseCompressedBuffer(bytes, offset), { oodle });",
@@ -3768,6 +3870,25 @@
       "summary": "Parses one UE5 `FCompressedBuffer` and decompresses it block-by-block with the codecs the caller injected — uncompressed payloads are handled natively.",
       "supersedes": [],
       "symbol": "decompressCompressedBuffer"
+    },
+    {
+      "constraints": [
+        "zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing",
+        "a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry"
+      ],
+      "example": "const payload = resolveBulkDataPayload(bytes, header, { zlib });",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function findBulkDataHeaders( bytes: Uint8Array, layout: IPackageLayout, files: IUAssetBulkDataFiles = { … }",
+      "situations": [
+        "read a UE4 editor static mesh whose source model lives in bulk data rather than inline",
+        "decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in"
+      ],
+      "summary": "Reads the `FByteBulkData` headers an editor package serializes into its export data, and resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl` file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.",
+      "supersedes": [],
+      "symbol": "findBulkDataHeaders"
     },
     {
       "constraints": [
@@ -3837,6 +3958,40 @@
     },
     {
       "constraints": [
+        "the walk must consume the payload exactly; a short walk throws rather than returning the geometry it managed to read"
+      ],
+      "example": "const description = parseMeshDescriptionUe4(payload);",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function looksLikeMeshDescriptionUe4(bytes: Uint8Array, offset = 0): boolean { … }",
+      "situations": ["decode the MeshDescription a UE 4.23-4.27 editor package keeps in bulk data"],
+      "summary": "Parses the UE4.2x serialization of `FMeshDescription` — fixed-order element containers, and a triangle container that trails the attribute sets rather than sitting with its siblings.",
+      "supersedes": [],
+      "symbol": "looksLikeMeshDescriptionUe4"
+    },
+    {
+      "constraints": [
+        "zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing",
+        "a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry"
+      ],
+      "example": "const payload = resolveBulkDataPayload(bytes, header, { zlib });",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function parseBulkDataHeader( bytes: Uint8Array, offset: number, layout: IPackageLayout, ): IBulkDataHeader { … }",
+      "situations": [
+        "read a UE4 editor static mesh whose source model lives in bulk data rather than inline",
+        "decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in"
+      ],
+      "summary": "Reads the `FByteBulkData` headers an editor package serializes into its export data, and resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl` file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.",
+      "supersedes": [],
+      "symbol": "parseBulkDataHeader"
+    },
+    {
+      "constraints": [
         "Oodle and LZ4 payloads require an injected codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing"
       ],
       "example": "const payload = decompressCompressedBuffer(parseCompressedBuffer(bytes, offset), { oodle });",
@@ -3866,6 +4021,21 @@
       "summary": "Parses a serialized `FMeshDescription` — element containers, allocation bit arrays, and attribute sets — into validated typed arrays, exactly consuming its byte range.",
       "supersedes": [],
       "symbol": "parseMeshDescription"
+    },
+    {
+      "constraints": [
+        "the walk must consume the payload exactly; a short walk throws rather than returning the geometry it managed to read"
+      ],
+      "example": "const description = parseMeshDescriptionUe4(payload);",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function parseMeshDescriptionUe4(input: Uint8Array, offset = 0): IUe4MeshDescription { … }",
+      "situations": ["decode the MeshDescription a UE 4.23-4.27 editor package keeps in bulk data"],
+      "summary": "Parses the UE4.2x serialization of `FMeshDescription` — fixed-order element containers, and a triangle container that trails the attribute sets rather than sitting with its siblings.",
+      "supersedes": [],
+      "symbol": "parseMeshDescriptionUe4"
     },
     {
       "constraints": [
@@ -3905,6 +4075,21 @@
     },
     {
       "constraints": [
+        "returns undefined rather than guessing when the summary does not end on its own name table, or when the package uses a LegacyFileVersion this walk does not model"
+      ],
+      "example": "const layout = readPackageLayout(bytes); if (layout) readBulk(layout.bulkDataStartOffset);",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function readPackageLayout(bytes: Uint8Array): IPackageLayout | undefined { … }",
+      "situations": ["find where a .uasset's export data and bulk-data region begin"],
+      "summary": "Walks the whole `FPackageFileSummary` for the offsets bulk data is addressed against — `TotalHeaderSize` and `BulkDataStartOffset` — and returns `undefined` when the walk cannot be trusted.",
+      "supersedes": [],
+      "symbol": "readPackageLayout"
+    },
+    {
+      "constraints": [
         "only the summary prefix is read; locating payload data is the payload readers' self-validating signature scans"
       ],
       "example": "const summary = readPackageSummary(bytes);",
@@ -3920,6 +4105,25 @@
       "summary": "Reads the fixed prefix of `FPackageFileSummary` — the legacy tag, engine versions, and the custom-version list — without walking the name map, export map, or dependency graph.",
       "supersedes": [],
       "symbol": "readPackageSummary"
+    },
+    {
+      "constraints": [
+        "zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing",
+        "a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry"
+      ],
+      "example": "const payload = resolveBulkDataPayload(bytes, header, { zlib });",
+      "importPath": "@threenative/raw-unreal",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/raw-unreal",
+      "signature": "export function resolveBulkDataPayload( bytes: Uint8Array, header: IBulkDataHeader, options: { … }",
+      "situations": [
+        "read a UE4 editor static mesh whose source model lives in bulk data rather than inline",
+        "decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in"
+      ],
+      "summary": "Reads the `FByteBulkData` headers an editor package serializes into its export data, and resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl` file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.",
+      "supersedes": [],
+      "symbol": "resolveBulkDataPayload"
     },
     {
       "constraints": [

@@ -20,7 +20,7 @@ user-visible defect the runtime owns and nothing has moved it since 2026-08-24. 
 now planned as [PRD-327](PRD-327-first-use-pipeline-compilation-leaves-the-main-loop.md) (real
 async pipeline creation off the main loop, warm-up on by default on native, a measured decision on
 a persisted cache) and the launch instrument's V8 gap as
-[PRD-328](PRD-328-launch-is-measured-on-the-engine-that-ships.md). This PRD stays open as the
+[PRD-328](../../done/PRD-328-launch-is-measured-on-the-engine-that-ships.md). This PRD stays open as the
 finding and the acceptance number; it moves to `done/` when PRD-327 ticks criteria 1 and 2 here.
 Criterion 3 is met at the mechanism, criterion 4 was handed to PRD-214/PRD-310, and criterion 5's
 open items (the `map: undefined` warnings) are not critical and stay here unowned. The order of

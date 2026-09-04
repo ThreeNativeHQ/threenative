@@ -144,6 +144,34 @@ export interface IWorldEnvironmentOptions {
   /** Fraction of display resolution the occlusion is traced at. */
   readonly gtaoResolutionScale?: number;
   /**
+   * The fraction of the frame SSGI actually gathers at. Half by default.
+   *
+   * `GTAONode` and `SSRNode` both carry a `resolutionScale` of their own; **`SSGINode` does not**,
+   * and its `setSize` passes width and height straight into its render target with no factor. So
+   * screen-space GI — a low-frequency effect every production renderer gathers at half or quarter
+   * res — was the only stage in this chain running at full resolution, and it cost accordingly.
+   *
+   * Measured on a 46,190-instance forest at 1600x900 on an RTX 2080, with the resolution scaler
+   * left on auto so the engine's own verdict is part of the result:
+   *
+   *                    fps still/walk   scale it settled on   interior median   dead shadow
+   *   full res             38.0 / 47.2      0.44  704x396          0.0299          19.19%
+   *   off                  60.0 / 60.0      0.61  976x549          0.0987           4.54%
+   *   half res             59.8 / 60.0      0.72 1152x648          0.0301          18.58%
+   *
+   * Half res is better than both: it holds the budget like switching SSGI off, keeps the look
+   * within noise of full res, and produces the *sharpest* frame of the three — because the budget
+   * it hands back is spent by the scaler on pixels rather than on a gather nobody can see at full
+   * rate. Full-res SSGI was not buying quality, it was trading it.
+   *
+   * Fixed without touching three: `setSize` is public and the pass drives the node through it with
+   * the full frame size, so the instance is wrapped to hand it a smaller one. The node's own maths
+   * reads the `_resolution` uniform that `setSize` writes, so it stays self-consistent, and the
+   * result is sampled by UV rather than by texel — which is what makes the upsample free and is
+   * exactly the mechanism `GTAONode` uses internally.
+   */
+  readonly ssgiResolutionScale?: number;
+  /**
    * Contrast-adaptive sharpening (RCAS) over the finished frame.
    *
    * Everything upstream of it blurs: the GI gather is denoised, the reflection is traced at
@@ -357,6 +385,7 @@ export class WorldEnvironment {
       gtaoScale: options.gtaoScale ?? 1,
       gtaoSamples: options.gtaoSamples ?? 16,
       gtaoResolutionScale: options.gtaoResolutionScale ?? 1,
+      ssgiResolutionScale: options.ssgiResolutionScale ?? 0.5,
       sharpenEnabled: options.sharpenEnabled ?? false,
       sharpenStrength: options.sharpenStrength ?? 0.2,
       vignetteAmount: options.vignetteAmount ?? 0,
@@ -459,6 +488,27 @@ export class WorldEnvironment {
           gi.sliceCount.value = tier.sliceCount;
           gi.stepCount.value = tier.stepCount;
           gi.radius.value = options.ssgiRadius;
+          // Gather at a fraction of the frame. See `ssgiResolutionScale` above for why this is a
+          // wrapper rather than a property: the node has no scale of its own, and `setSize` is the
+          // public seam the pass drives it through. `setSize` is present on the node and absent
+          // from its type declarations, so the seam is named here rather than cast away at the call
+          // site — if a future three release declares it, or gives the node a `resolutionScale`,
+          // this narrows to nothing and the wrapper can go. Guarded at one texel so a zero or a
+          // negative cannot ask for an empty target: a 0x0 gather returns black and reads as SSGI
+          // simply not working.
+          const ssgiScale = options.ssgiResolutionScale;
+          const sizedGi = gi as unknown as {
+            setSize?: (width: number, height: number) => void;
+          };
+          const fullGiSize = sizedGi.setSize?.bind(gi);
+          if (ssgiScale > 0 && ssgiScale < 1 && fullGiSize !== undefined) {
+            sizedGi.setSize = (width: number, height: number): void => {
+              fullGiSize(
+                Math.max(1, Math.round(width * ssgiScale)),
+                Math.max(1, Math.round(height * ssgiScale)),
+              );
+            };
+          }
 
           // SSGI writes two targets: AO in a single-channel `RedFormat` texture, and the GI
           // term in an RGB one. Multiplying the beauty pass by the whole AO vec4 therefore

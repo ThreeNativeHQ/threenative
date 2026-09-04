@@ -268,7 +268,8 @@ function withComputeReport(report: IWarmUpReport, compute: IComputeWarmUpReport)
  * the animation-frame callbacks and presents. Nothing is registered, nothing is waited on, and
  * the loop's frame sequence is the one the loop authored.
  */
-const yieldToHost = (): Promise<void> =>
+/** @internal Shared with `streaming.ts`, whose slices and lanes want the same yield. */
+export const yieldToHost = (): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, 0);
   });

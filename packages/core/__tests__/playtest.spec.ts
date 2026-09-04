@@ -321,7 +321,7 @@ describe("playtest plugin", () => {
             },
           },
         },
-        audio: { pooled: 0, queued: 0, voices: 0 },
+        audio: { paused: 0, pooled: 0, queued: 0, unsupported: [], voices: 0 },
         contacts: [],
         states: {},
         tags: {},

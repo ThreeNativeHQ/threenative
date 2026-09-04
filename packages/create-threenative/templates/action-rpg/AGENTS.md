@@ -70,14 +70,14 @@ explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await
 `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's state. Seeded
 randomness is deterministic only when `defineGame({ seed })` is configured.
 
-`AnimationPlayer` re-times a looping clip to the ground the body covers so feet do not skate;
-`strideSync: false` opts out and `assert.animation[].maxFootSlide` bounds it either way. Measure a
-wrong-looking animation before rewriting it. `clipPoseError` scores a retarget against its source
+`AnimationPlayer` re-times a looping clip to the ground the body covers so feet do not skate —
+in-place clips too, off a planted foot; a speed past what the clip carries is **clamped at 3x**, so
+set it near `player.stride.clipGroundSpeed`. `strideSync: false` opts out, `maxFootSlide` bounds it. `clipPoseError` scores a retarget against its source
 per bone in degrees — whole quaternions relative to each rig's bind pose, so bind conventions
 cancel and an axis-rolled limb is caught where a bone-direction check reads zero.
 `clipTrackBindings` names tracks that bind nothing (`<bone>.undefined`, which plays the bind
 pose), `clipBoneCoverage` names bones the clip does not drive, which keep the previous clip's
-pose, and `boneContact` reports in metres whether a bone reaches its prop.
+pose, and `boneContact` reports in metres whether a bone reaches its prop. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches 256 per presented frame so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement.
 
 ## Look and evidence
 
@@ -93,4 +93,4 @@ Edit game-owned `src/render/` directly. `src/render/quality.ts` defines `low`, `
 named override. Unknown tiers throw and `TN_QUALITY_TIER` reports the chosen source. A scenario
 with no assertions or missing observations fails; keep the durable smoke proof and open a capture.
 
-Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
+Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/trace-a-slow-frame.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.

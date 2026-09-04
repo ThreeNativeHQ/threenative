@@ -1,5 +1,6 @@
 export type {
   AssetKind,
+  IAudioConfig,
   IAssetCompileOptions,
   IAssetCompileResult,
   IAssetPass,
@@ -50,6 +51,26 @@ export type {
  * @example const pass = modelPass({ simplify: { ratio: 0.5 } });
  */
 export { modelPass } from "./passes/model.js";
+export type { AudioBand } from "./passes/audio-dsp.js";
+export type {
+  AudioConditioning,
+  AudioNormalisation,
+  IAudioLoopOptions,
+  IAudioOverride,
+  IAudioPassOptions,
+  IAudioSpectrumExpectation,
+} from "./passes/audio-config.js";
+/**
+ * Conditions a game's audio and proves the conditioning did not destroy it.
+ * @situation make an ambience bed loop without an audible click
+ * @situation halve what a positional sound effect costs a device's memory
+ * @situation stop an audio asset shipping silent on desktop, Android and iOS
+ * @constraint a clip declared a loop has its seam measured on the decoded output bytes and fails the build when it exceeds the threshold; the assertion cannot be declared away
+ * @constraint which clips loop, which are positional, and what a clip is for are declared per glob and never inferred from a filename
+ * @constraint sources must be RIFF/WAVE or Ogg Vorbis, which is exactly what every native target decodes; an MP3 fails the bake
+ * @example const pass = audioPass({ overrides: [{ glob: "audio/*-bed.ogg", loop: true }] });
+ */
+export { audioPass } from "./passes/audio.js";
 export type { ILightmapPassOptions } from "./passes/lightmap.js";
 /**
  * Generates lightmap UVs and bakes a static GLB's lightmap atlas.
@@ -69,6 +90,7 @@ export type { ITextureOverride, ITexturePassOptions, TextureCodec } from "./pass
  */
 export { texturePass } from "./passes/texture.js";
 export type {
+  IAudioRow,
   IEmbeddedTextureRow,
   IModelSizeRow,
   IPassCostAssetRow,
@@ -77,6 +99,15 @@ export type {
   ITextureSizeRow,
   PassCostStatus,
 } from "./report.js";
+/**
+ * Formats audio conditioning measurements for a build report.
+ * @situation see what audio conditioning did to a clip's wire and decoded size
+ * @situation read the loop seam and cross-fade a build measured
+ * @constraint an empty row list produces no report lines
+ * @example const lines = formatAudioSizes(audioRows);
+ */
+export { formatAudioSizes } from "./report.js";
+
 /**
  * Formats model byte, geometry, and embedded-texture measurements for a build report.
  * @situation inspect how model optimization changed file and GPU sizes

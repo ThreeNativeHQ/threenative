@@ -57,6 +57,44 @@ async function expectActionableFailure(
 }
 
 describe("threenative.config.ts", () => {
+  // The seam this closes, caught the moment `renderer.alphaAntialiasing` was added: the engine's
+  // `IThreeNativeConfig` and this package's validator are two independent key lists, so a key can
+  // typecheck in a template and be rejected at build with TN_CONFIG_UNKNOWN_KEY. Reading the
+  // shipped templates rather than a fixture means the next key is caught the same way.
+  it("accepts every renderer key the shipped templates actually set", async () => {
+    const templates = path.resolve("packages/create-threenative/templates");
+    const names = await readdir(templates);
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      const source = await readFile(path.join(templates, name, "threenative.config.ts"), "utf8");
+      const block = /renderer:\s*\{(?<body>[^}]*)\}/su.exec(source)?.groups?.body ?? "";
+      const keys = [...block.matchAll(/^\s{4}(?<key>[A-Za-z]\w*):/gmu)].map(
+        (match) => match.groups?.key ?? "",
+      );
+      expect(keys, `${name} renderer block`).not.toHaveLength(0);
+      const root = await project();
+      await config(
+        root,
+        `export default { renderer: { ${keys.map((key) => `${key}: undefined`).join(", ")} } };`,
+      );
+      await expect(
+        loadConfig(root),
+        `${name} renderer keys ${keys.join(",")}`,
+      ).resolves.toBeTruthy();
+    }
+  });
+
+  it("carries alpha antialiasing through to the resolved config, Android override included", async () => {
+    const root = await project();
+    await config(
+      root,
+      "export default { renderer: { alphaAntialiasing: false, android: { alphaAntialiasing: true } } };",
+    );
+    await expect(loadConfig(root)).resolves.toMatchObject({
+      renderer: { alphaAntialiasing: false, android: { alphaAntialiasing: true } },
+    });
+  });
+
   it("re-exports the core-owned texture config type", async () => {
     const createSource = await readFile(
       path.resolve("packages/create-threenative/src/config.ts"),

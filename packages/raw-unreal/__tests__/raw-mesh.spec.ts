@@ -160,12 +160,35 @@ describe("parseUAssetStaticMesh over the FRawMesh layout", () => {
     // Default options: (x, z, −y) conversion and flipped winding. Wedges expand one output
     // vertex each: w0→v0 (0,0,0)→(0,0,0); w1→v1 (1,0,0)→(1,0,−0); w2→v2 (0,1,0)→(0,0,−1).
     expect(values(decoded.positions, 0, 9)).toEqual([0, 0, 0, 1, 0, 0, 0, 0, -1]);
-    // Default winding flips corners 1 and 2 of each face: (0,1,2),(0,3,1) → (0,2,1),(0,1,3).
-    expect([...decoded.indices.slice(0, 6)]).toEqual([0, 2, 1, 0, 1, 3]);
+    // Corners are wedge numbers, so face 0 is wedges (0,1,2) and face 1 is wedges (3,4,5).
+    // Default winding flips corners 1 and 2 of each: (0,2,1) and (3,5,4).
+    expect([...decoded.indices.slice(0, 6)]).toEqual([0, 2, 1, 3, 5, 4]);
     // w4→v3 is Unreal (0,0,1) → three (0,1,0).
     expect(values(decoded.positions, 12, 3)).toEqual([0, 1, 0]);
     expect(decoded.normals?.length).toBe(18);
     expect(decoded.uvs.length).toBe(12);
+  });
+
+  /**
+   * Every per-wedge array — positions, normals, UVs — is expanded one slot per wedge, so a
+   * triangle's corners are wedge numbers. Feeding it `WedgeIndices` instead indexes a per-wedge
+   * array with a *vertex* id: in range, silently wrong, and collapsing every face whose wedges
+   * repeat a vertex. Face 1 here reuses v0 and v1, which is exactly the shape that collapses.
+   */
+  it("indexes triangles by wedge, not by the vertex a wedge points at", () => {
+    const bytes = legacyPackage(rawMeshBlob(DIAMOND));
+    const decoded = parseUAssetStaticMesh(bytes, {
+      convertCoordinates: false,
+      flipWinding: false,
+    });
+
+    expect([...decoded.indices]).toEqual([0, 1, 2, 3, 4, 5]);
+    // Face 1's wedges are w3→v0, w4→v3, w5→v1: a real triangle, not two copies of v0.
+    for (let base = 0; base < decoded.indices.length; base += 3) {
+      const corners = [0, 1, 2].map((corner) => decoded.indices[base + corner] ?? -1);
+      const points = corners.map((index) => values(decoded.positions, index * 3, 3));
+      expect(new Set(points.map((point) => point.join(","))).size).toBe(3);
+    }
   });
 
   it("passes convertCoordinates: false and flipWinding: false straight through", () => {
@@ -225,5 +248,23 @@ describe("real-pack conformance (skipped without the licensed pack)", () => {
     // Uint16 indices: 39,099 instances fit below the 65,535 threshold.
     expect(decoded.indices).toBeInstanceOf(Uint16Array);
     expect(decoded.indices.length).toBe(13_033 * 3);
+
+    // Real geometry, not a collapsed one: indexing per-wedge positions by vertex id used to
+    // flatten 3,144 of these 13,033 triangles to zero area, which no count assertion sees.
+    let degenerate = 0;
+    for (let base = 0; base < decoded.indices.length; base += 3) {
+      const corner = (slot: number) => (decoded.indices[base + slot] ?? 0) * 3;
+      const [a, b, c] = [corner(0), corner(1), corner(2)];
+      const at = (index: number) => decoded.positions[index] ?? Number.NaN;
+      const u = [at(b) - at(a), at(b + 1) - at(a + 1), at(b + 2) - at(a + 2)] as const;
+      const w = [at(c) - at(a), at(c + 1) - at(a + 1), at(c + 2) - at(a + 2)] as const;
+      const cross = Math.hypot(
+        u[1] * w[2] - u[2] * w[1],
+        u[2] * w[0] - u[0] * w[2],
+        u[0] * w[1] - u[1] * w[0],
+      );
+      if (!(cross > 1e-9)) degenerate += 1;
+    }
+    expect(degenerate).toBe(0);
   });
 });

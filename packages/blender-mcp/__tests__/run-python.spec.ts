@@ -1,4 +1,4 @@
-import { rm, writeFile } from "node:fs/promises";
+import { chmod, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -25,6 +25,40 @@ const withBlender = blender.available ? describe : describe.skip;
 const character = path.resolve("packages/assets/__tests__/fixtures/blender/character.fbx");
 
 describe("blender_run_python contract", () => {
+  it("removes temporary files created by the Blender subprocess", async () => {
+    const root = await makeTempDir("tn-blender-bridge-cleanup-");
+    try {
+      const binary = path.join(root, "fake-blender");
+      const script = path.join(root, "noop.py");
+      await writeFile(
+        binary,
+        '#!/bin/sh\nif [ "$1" = "--version" ]; then printf "Blender 5.2.0\\n"; exit 0; fi\n: > "$TMPDIR/blender-scratch"\nprintf \'%s\\n\' \'TN_BLENDER_RESULT {"blender":"fake","bones":0,"clips":[],"images":[],"materials":[],"meshes":1,"mode":"inspect","source":"fake","triangles":1,"vertices":3}\'\n',
+      );
+      await chmod(binary, 0o755);
+      await writeFile(script, "# fake Blender ignores this script\n");
+
+      const result = await runBlenderScript(
+        script,
+        {},
+        {
+          environment: {
+            ...process.env,
+            PATH: "",
+            TEMP: root,
+            TMP: root,
+            TMPDIR: root,
+            THREENATIVE_BLENDER_PATH: binary,
+          },
+        },
+      );
+
+      expect(result.ok).toBe(true);
+      expect((await readdir(root)).filter((entry) => entry === "blender-scratch")).toEqual([]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("should throw on a missing script rather than running nothing quietly", async () => {
     await expect(runBlenderScript("", {})).rejects.toThrow(/'script' must be a non-empty path/u);
   });

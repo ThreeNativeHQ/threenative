@@ -138,6 +138,12 @@ export interface IScalerWindow {
 export class ResolutionScaler {
   /** fps at or above this is meeting the target. */
   readonly targetFps: number;
+  /**
+   * A presented interval above this is a frame that cost more than the target allows: the same
+   * bar `targetFps` is, read as a period instead of a rate. Nothing new is chosen here — it is
+   * `targetFpsFraction` again, applied to the statistic a mean cannot speak for.
+   */
+  readonly budgetMs: number;
   /** presented p95 above this is dropping frames, whatever the mean says. */
   readonly tailMs: number;
   #index: number;
@@ -161,6 +167,7 @@ export class ResolutionScaler {
         `ResolutionScaler targetFps must be a finite number greater than zero, received ${String(targetFps)}.`,
       );
     this.targetFps = targetFps * RESOLUTION_SCALER.targetFpsFraction;
+    this.budgetMs = 1000 / this.targetFps;
     this.tailMs = (1000 / targetFps) * RESOLUTION_SCALER.upTailFraction;
     const index = start === undefined ? 0 : RESOLUTION_SCALER.rungs.indexOf(start as never);
     if (index < 0)
@@ -206,12 +213,32 @@ export class ResolutionScaler {
     }
     // A stalled window is not a measurement of the frame rate, in either direction: acting on the
     // mean would cut resolution the game did not need, and counting it clean would climb on a
-    // window that was mostly spent stopped. Defer, and read the next one.
-    if (this.#stalled(window)) {
-      this.#cleanWindows = 0;
-      return undefined;
-    }
+    // window that was mostly spent stopped. Deferring means neither — the clean run it interrupts
+    // is left standing rather than thrown away. Resetting it made the up-path unreachable for any
+    // game that hitches more often than once every `cooldownWindows + upWindows` windows: one
+    // 400 ms frame every third window pinned a scaler at 0.44 through seventeen minutes of
+    // otherwise perfect 60 fps, which is a forest streaming its next hillside.
+    if (this.#stalled(window)) return undefined;
     if (window.fps < this.targetFps) {
+      // **Only the mean is under target: hold.** `fps` is `1000 / mean`, and on the one panel
+      // arrangement every game actually ships into — `display.maxFps` equal to the refresh rate,
+      // vsync on — the mean is the only statistic with any room to move. fps is bounded *above*
+      // by the target there, so the whole test lives in the 2% under it, and each present the
+      // compositor drops spends a third of a percent. Seven doubled intervals out of 300 crossed
+      // the bar on `sandbox/wildwood` while the median and the tail both sat on the panel period,
+      // and fewer pixels do not bring a dropped present back: the step won nothing, the next
+      // window spent another rung, and the picture walked to 5% of its pixels in 140 seconds.
+      // This is `stallP99Multiple`'s lesson at 2x rather than at 10x.
+      //
+      // Deferred rather than merely not acted on, and the difference is the whole repair. Such a
+      // window says nothing about the pixel cost **in either direction**, which is exactly what
+      // the stall guard above says about its own case — so it is neither grounds to fall nor a
+      // reason to throw away the clean run a climb needs. Counting it against the climb stops the
+      // descent and never gives the pixels back: replayed against the state `sandbox/wildwood`'s
+      // own record documents — parked at 0.61 while holding 60.0 fps — that reading held 0.61 for
+      // five minutes. The picture stops getting worse and never gets sharp again, which is half a
+      // fix and the wrong half.
+      if (!this.#overBudget(window)) return undefined;
       this.#cleanWindows = 0;
       if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
         this.#atFloor = true;
@@ -229,6 +256,29 @@ export class ResolutionScaler {
     this.#cleanWindows = 0;
     if (this.#index === 0) return undefined;
     return this.#step(-1);
+  }
+
+  /**
+   * True when something other than the mean says this window's frames were over budget — which is
+   * what makes a deficit a *pixel* deficit, the only kind fewer pixels can close.
+   *
+   * Two independent witnesses, each already carrying its own pre-registered bar, and either is
+   * enough:
+   *
+   *  - **the median present is over the target's period.** An unlocked renderer holding a steady
+   *    17.24 ms against a 16.67 ms budget shows up here and nowhere else: its tail is as tight as
+   *    its middle, and it is simply doing too much work every frame.
+   *  - **the tail is past `tailMs`.** Under FIFO an interval is a whole number of panel periods,
+   *    so a game that misses a real share of its vsyncs moves p95 to two periods in one jump —
+   *    the 45 fps window the device arm chose the mean signal for. There is nothing in between to
+   *    fall through: `upTailFraction` sits in the empty gap between one period and two.
+   *
+   * When neither speaks, the deficit is a handful of doubled intervals in an otherwise on-budget
+   * window: jitter from the compositor, a GC, an input burst, an audio callback. None of that is
+   * bought back with pixels, and spending a rung on it is how the picture walks to the floor.
+   */
+  #overBudget(window: IScalerWindow): boolean {
+    return window.presented.p50 > this.budgetMs || window.presented.p95 > this.tailMs;
   }
 
   /**

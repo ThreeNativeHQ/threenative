@@ -1963,6 +1963,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             tests/webtransport_surface_test.cpp)
         target_link_libraries(threenative-webtransport-surface-test PRIVATE mystral-runtime)
         tn_register_contract_test(threenative-webtransport-surface-test)
+    else()
+        # Both targets are written down whether or not this machine downloaded quiche, and the
+        # coverage lane discovers them by reading this file. Registering the reason keeps a
+        # configure without quiche accounted for instead of silently short of two targets, the
+        # same contract `tn_register_blocked_test` already carries for the video recorder.
+        tn_register_blocked_test(threenative-webtransport-wire-test "quiche not found")
+        tn_register_blocked_test(threenative-webtransport-surface-test "quiche not found")
     endif()
 
     add_executable(threenative-webgpu-bindings-reentrancy-test EXCLUDE_FROM_ALL

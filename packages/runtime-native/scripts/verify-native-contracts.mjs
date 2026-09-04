@@ -179,13 +179,72 @@ export const executionContracts = {
   },
 };
 
+/**
+ * Every `threenative-*-test` target `add_executable` writes, paired with the `if()` conditions it
+ * is nested inside, outermost first. Discovery reads CMakeLists.txt as text and cannot evaluate a
+ * condition, so a caller that has to tell "this target is in every configure" from "this target
+ * appears only when its dependency was found" reads the conditions instead of guessing from a flat
+ * list of names.
+ */
+export function discoverNativeTestTargetConditions(cmakeSource) {
+  const conditions = new Map();
+  const enclosing = [];
+  for (const rawLine of cmakeSource.split("\n")) {
+    const line = rawLine.replace(/#.*$/u, "");
+    if (/^\s*if\s*\(/iu.test(line)) enclosing.push(line.trim());
+    else if (/^\s*endif\s*\(/iu.test(line)) enclosing.pop();
+    const declared = /add_executable\(\s*(threenative-[a-z0-9-]+-test)\b/u.exec(line);
+    if (declared !== null) conditions.set(declared[1], [...enclosing]);
+  }
+  if (enclosing.length !== 0) {
+    throw new Error(`CMakeLists.txt left ${enclosing.length} if() block(s) unclosed`);
+  }
+  return conditions;
+}
+
 export function discoverNativeTestTargets(cmakeSource) {
-  const targets = [
-    ...cmakeSource.matchAll(/add_executable\(\s*(threenative-[a-z0-9-]+-test)\b/gu),
-  ].map((match) => match[1]);
-  const discovered = [...new Set(targets)].sort();
+  const discovered = [...discoverNativeTestTargetConditions(cmakeSource).keys()].sort();
   if (discovered.length === 0) throw new Error("discovered zero native contract test targets");
   return discovered;
+}
+
+/**
+ * The targets that carry a condition beyond the ones every test target shares, mapped to those
+ * extra conditions. Every native test target sits inside the same desktop platform guard, which
+ * says nothing about any one of them; a target with something further - `if(TN_ENABLE_VIDEO)`,
+ * `if(TARGET quiche::quiche)` - is configured only when that dependency is present, and a configure
+ * without it omits the target for a good reason. The shared guard is whatever all of them have in
+ * common rather than a string written down here, so moving the tests under a different guard does
+ * not silently turn every target optional.
+ */
+export function optionallyConfiguredNativeTestTargets(cmakeSource) {
+  const conditions = discoverNativeTestTargetConditions(cmakeSource);
+  const stacks = [...conditions.values()];
+  const shared = stacks.reduce(
+    (common, stack) => common.filter((condition) => stack.includes(condition)),
+    stacks[0] ?? [],
+  );
+  return new Map(
+    [...conditions]
+      .map(([target, stack]) => [target, stack.filter((condition) => !shared.includes(condition))])
+      .filter(([, extra]) => extra.length > 0),
+  );
+}
+
+/**
+ * Conditional targets that neither mechanism accounts for. A target written under an extra
+ * condition is absent from some configures, and exactly one of two things has to say so: a
+ * platform guard is declared by its contract's `platforms` list, and a dependency guard registers
+ * a blocked placeholder with `tn_register_blocked_test`, which tells CTest the target exists and
+ * why it is not running. A target that does neither leaves the coverage lane unable to tell "this
+ * dependency is absent" from "this registration is broken", so it fails on the honest case.
+ * Returns the targets that leave that hole; an empty list is the passing state.
+ */
+export function targetsMissingBlockedRegistration(cmakeSource, contracts = executionContracts) {
+  return [...optionallyConfiguredNativeTestTargets(cmakeSource).keys()]
+    .filter((target) => contracts[target]?.platforms === undefined)
+    .filter((target) => !cmakeSource.includes(`tn_register_blocked_test(${target}`))
+    .sort();
 }
 
 /** Does this contract exist on the platform the lane is running on? */

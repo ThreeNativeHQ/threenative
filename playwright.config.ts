@@ -9,7 +9,10 @@ import { createProject } from "./packages/create-threenative/src/index.js";
 import { WEBGPU_BROWSER_ARGS } from "./packages/playtest/src/runner/browser.js";
 import { localPackageEntries, workspacePackages } from "./scripts/workspace-packages.js";
 import { acquireHotReloadProjectLock } from "./test-support/hot-reload-lock.js";
-import { packageSourcesMatch } from "./test-support/hot-reload-project.js";
+import {
+  packageSourcesMatch,
+  selectHotReloadServerProject,
+} from "./test-support/hot-reload-project.js";
 import {
   contactShadowCoverage,
   dominantColorCoverage,
@@ -98,12 +101,12 @@ async function prepareHotReloadProject(): Promise<string> {
 
 async function runHotReloadServer(): Promise<void> {
   const deadline = Date.now() + 120_000;
-  let target = await readSharedHotReloadProject();
+  const environmentTarget = process.env.THREENATIVE_HOT_RELOAD_PROJECT;
+  let target = selectHotReloadServerProject(environmentTarget, await readSharedHotReloadProject());
   while (target === undefined && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
-    target = await readSharedHotReloadProject();
+    target = selectHotReloadServerProject(environmentTarget, await readSharedHotReloadProject());
   }
-  target ??= process.env.THREENATIVE_HOT_RELOAD_PROJECT;
   if (target === undefined) throw new Error("THREENATIVE_HOT_RELOAD_PROJECT was not exported.");
   const server = startStarterServer(target, hotReloadPort);
   const output: string[] = [];

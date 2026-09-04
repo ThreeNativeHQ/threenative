@@ -106,6 +106,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // second reason — its AGENTS.md/CLAUDE.md pair now states the stride convention.
 // Recomputed 2026-09-02 after the named-export capability correction, on origin/main's
 // refreshed genre kits.
+// Recomputed 2026-09-04 after merging PR #99: every scaffold gains the loading, trace, audio,
+// streaming, and alpha-antialiasing surfaces; starter also retains its authored coastal look.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-03 after merging PRD-346's MCP host configs into the authored painterly
   // starter. Every scaffold gains the Blender server wiring; starter also gains its bounded mix.
@@ -233,19 +235,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "cd3abfab42efb5bd10a317ad35edf54fb78094d920fcdc3c79facf0ef97fbb8a",
-  defense: "d28ba0f04d8db7cf899ddd34d300984ad93b0d69d10be5806a1c047094845682",
+  "action-rpg": "b3c4fd61dc4714f6a6dbaafe7daf3dc12ddadf0377d173dc2048f617df4afe72",
+  defense: "e285c968de52d3f36734523b5260ab280c9940251b0e90f5c3316cdd71fb51d3",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "101eae86fe4c652c7312b05599c5fd19e10046bfb33a1dfdaef6bc286f04244a",
-  platformer: "6d9104979a631f54cd922746f11f98755e9a4ab2e59ac4be8b1b205a95185ac1",
-  runner: "ba6729aac4c81a988791a8c20117356eca48bf5fd3e728c0b470f7662f2882a2",
-  puzzle: "0ccd9f61eedc7360a2fa097302bb8c7300185ae8c6e471f182d56dfc428aab55",
-  racing: "eb893ba0c469550dbb11c4b9943d628c96b1b9d0355a0110c77f4fd59dbe530f",
-  shooter: "1b02a0d9953985f700d32754e9d73e4fb976be3649d98d30089f4223ac153e81",
+  minimal: "ee8d7996110d44de232d93c4bdb5be949ccc556f3ce9b394c54f5747c8d327cf",
+  platformer: "dcb555c326b867ba3a6fd862529392915c36a0d504b23bfc91f4cdb66035573d",
+  runner: "e0560580da5bfaec7b74bc9323f11b7631015ae04fa9616fcb882d350be70728",
+  puzzle: "f58bbfbed74e5fcecaf48fb9195344939f5f56b6a66e30a6094150a2fcabcd05",
+  racing: "68bca0a1d558329dd9ddb35138f99d99362a6a750383d29cafdd7cfa083d098a",
+  shooter: "a003b65bb7a6a86513f33712ceb0e82091a7c17c1a82fb9acf7f03c8e9c65931",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "e2fa84801440b5854fceef9031173b6aecff268d304efe5b28614177f4f3edd6",
+  starter: "558f1877ae0cdaea58af65e3229621ca6438602786d300cce6de21f1d1c8a8fc",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -266,7 +268,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "ece2db7ec7dd68ae5f756d9893f706cab0a473e8e4471a8fbcc7c7e2abe8c272",
+  sailing: "bdafb6fa5fa172279393b898a9ad448480b2d442b45ea67cf96a99b423e81817",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -590,6 +592,7 @@ describe("create-threenative", () => {
         "menu-screens.md",
         "mobile-memory-budget.md",
         "sculpt-from-a-reference.md",
+        "trace-a-slow-frame.md",
         "visual-baseline.md",
         "webview-ui.md",
       ]);

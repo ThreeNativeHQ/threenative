@@ -72,3 +72,8 @@ screenshot-*.png
 
 # The site's Playwright output. The prerendered artifact under site/dist is already ignored.
 site/test-results/
+
+# Python bytecode caches. `packages/blender-mcp/gpl/recipes` is executed by Blender, which
+# writes a `__pycache__` beside the recipes on every run; one .pyc was committed by accident.
+__pycache__/
+*.pyc

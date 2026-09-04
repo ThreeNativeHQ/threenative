@@ -19,6 +19,45 @@ export { parseUAssetStaticMesh } from "./static-mesh.js";
  */
 export { readPackageSummary, PACKAGE_FILE_TAG } from "./package-summary.js";
 /**
+ * Walks the whole `FPackageFileSummary` for the offsets bulk data is addressed against —
+ * `TotalHeaderSize` and `BulkDataStartOffset` — and returns `undefined` when the walk cannot be
+ * trusted.
+ * @situation find where a .uasset's export data and bulk-data region begin
+ * @constraint returns undefined rather than guessing when the summary does not end on its own name table, or when the package uses a LegacyFileVersion this walk does not model
+ * @example const layout = readPackageLayout(bytes); if (layout) readBulk(layout.bulkDataStartOffset);
+ */
+export { readPackageLayout, type IPackageLayout } from "./package-summary.js";
+/**
+ * Reads the `FByteBulkData` headers an editor package serializes into its export data, and
+ * resolves each payload — inline, at the end of the package, or in a sibling `.ubulk`/`.uptnl`
+ * file whose bytes the caller supplies — decompressing `FArchive::SerializeCompressed` blocks.
+ * @situation read a UE4 editor static mesh whose source model lives in bulk data rather than inline
+ * @situation decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
+ * @constraint zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing
+ * @constraint a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+ * @example const payload = resolveBulkDataPayload(bytes, header, { zlib });
+ */
+export {
+  BULK_DATA_FLAG,
+  decompressBulkData,
+  findBulkDataHeaders,
+  parseBulkDataHeader,
+  resolveBulkDataPayload,
+  type IBulkDataHeader,
+} from "./bulk-data.js";
+/**
+ * Parses the UE4.2x serialization of `FMeshDescription` — fixed-order element containers, and a
+ * triangle container that trails the attribute sets rather than sitting with its siblings.
+ * @situation decode the MeshDescription a UE 4.23-4.27 editor package keeps in bulk data
+ * @constraint the walk must consume the payload exactly; a short walk throws rather than returning the geometry it managed to read
+ * @example const description = parseMeshDescriptionUe4(payload);
+ */
+export {
+  looksLikeMeshDescriptionUe4,
+  parseMeshDescriptionUe4,
+  type IUe4MeshDescription,
+} from "./mesh-description-ue4.js";
+/**
  * Parses one UE5 `FCompressedBuffer` and decompresses it block-by-block with the codecs the
  * caller injected — uncompressed payloads are handled natively.
  * @situation decompress the package-trailer payload that carries a UE5 MeshDescription
@@ -81,6 +120,11 @@ export { createThreeObject } from "./three-adapter.js";
 export { UAssetLoader, type IUAssetLoaderOptions } from "./loader.js";
 export type {
   IDecodedUAssetStaticMesh,
+  IUAssetBulkDataFiles,
+  IUAssetBulkDataInfo,
+  UAssetBulkDataFile,
+  UAssetBulkDataStorage,
+  ZlibCodec,
   IUAssetBounds,
   IUAssetCompressedBufferInfo,
   IUAssetMetadata,

@@ -19,5 +19,13 @@ if (existsSync(localServer)) {
   const { runServer } = await import("./engine-server.mjs");
   runServer(env.THREENATIVE_CAPABILITIES_MANIFEST);
 } else {
+  // Say so. This branch fetches a package over the network, and when the network is slow, absent
+  // or the version unpublished it produces no output at all — the host simply waits. A CI run
+  // spent 30 s here twice and reported `threenative-engine initialize timed out after 30000ms`
+  // with empty stderr, which named neither the fallback nor the reason for it. The bundled server
+  // is missing here for a reason worth reporting even when the fetch then succeeds.
+  process.stderr.write(
+    `TN_MCP_ENGINE_FALLBACK: no bundled capability server at ${localServer}; fetching ${MCP_PACKAGES.engine.name}@${MCP_PACKAGES.engine.version} over the network instead. A packaged @threenative/core should always carry the bundle.\n`,
+  );
   await launchMcpServer({ ...MCP_PACKAGES.engine, env });
 }

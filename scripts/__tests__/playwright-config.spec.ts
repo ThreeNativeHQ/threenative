@@ -4,7 +4,10 @@ import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 
 import { acquireHotReloadProjectLock } from "../../test-support/hot-reload-lock.js";
-import { packageSourcesMatch } from "../../test-support/hot-reload-project.js";
+import {
+  packageSourcesMatch,
+  selectHotReloadServerProject,
+} from "../../test-support/hot-reload-project.js";
 import {
   contactShadowCoverage,
   dominantColorCoverage,
@@ -85,6 +88,12 @@ describe("root Playwright lane contracts", () => {
     ).toBe(false);
     expect(packageSourcesMatch(localSources, { "@threenative/core": `file:${sourcePath}` })).toBe(
       true,
+    );
+  });
+
+  it("keeps the server on the project exported by the config that launched it", () => {
+    expect(selectHotReloadServerProject("/tmp/original/starter", "/tmp/retry/starter")).toBe(
+      "/tmp/original/starter",
     );
   });
 
