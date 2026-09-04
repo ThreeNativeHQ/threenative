@@ -68,6 +68,10 @@ const allowedProductionCreators = new Map<string, string>([
     "Blender reads paths, not buffers; the per-input staging directory is removed in finally.",
   ],
   [
+    "packages/blender-mcp/src/bridge.ts",
+    "The Blender subprocess gets a private TMPDIR so its scratch files cannot outlive it; the directory is removed in finally.",
+  ],
+  [
     "scripts/capture-blender-mcp-tools.ts",
     "The tool-snapshot gate packs and installs into scratch roots removed in finally.",
   ],
