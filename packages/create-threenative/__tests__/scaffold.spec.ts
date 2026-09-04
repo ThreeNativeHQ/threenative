@@ -143,6 +143,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-03: `ctx.startup.hold()` entered the public surface, so the shared ctx
   // surface table documents it and the ctx cookbook carries its recipe. Both are copied into every
   // scaffold, so all ten trees moved and no template source did.
+  // Recomputed 2026-09-03 on the merge with origin: both sides of it moved bytes that every
+  // scaffold embeds, so neither side's recorded set described the merged tree. This branch added
+  // `ssgiResolutionScale` to the canonical `worldEnvironment.ts` that all ten kits copy; origin
+  // moved the agent docs and playtest skill that are generated into every scaffold. Ten trees, no
+  // template source of its own.
   // Recomputed 2026-09-03 for the origin/main merge: both sides had recomputed all ten, so
   // neither side's values describe the merged tree. Measured from the merge result, per the
   // clean-checkout rule above, after `capabilities:sync` confirmed the generated manifest and
@@ -238,19 +243,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "2d6f91e12dbc5b84b166814338c7aa494863cb0accb8f65ca692d124048c414b",
-  defense: "6ada5f72caa930051faf81c2f8480ad808278b662be6710cc15054189b12559a",
+  "action-rpg": "9ef327359c1398f113ee787bbf41eb1ee4b4e8d65033e22fd884733952952b7d",
+  defense: "cf5c4f0b0ac3495f4fd2dc74889d5e5fc5395622de62a3eda8d9e05d863611a7",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "efba60fc56d5be68ac4d7e2ef9ee44462da33d2b0329cb8181fb2f69f651c1be",
-  platformer: "bd5473bc0750e4a8893e880bb15802e480ef772f9a31c4f2d3dee43fdae0850d",
-  runner: "5dc6c774140883f8dcd91fd41d34717f4ea14d80f4885f3f6d1459ab092bd59b",
-  puzzle: "5a9720a63fc76e82169c8b86dcc81e2f958a9b1c41bf761ba6bb86f3e3a6e8f2",
-  racing: "601389cb584a2ffaa8c8dbcfb3a7dae5af92016fecd6d5a0f6652326f9b7a883",
-  shooter: "3b7f6e91651f728901bfc3e4ca11dca7ad49aa4c1ff137597ff835c37aeb1b4a",
+  minimal: "02a62c575f6d946d2acc9d3f3167aa22e92a0cc875e424145e5dd4c7aa10f59b",
+  platformer: "87b78e494404bcb7d38b357105731853548d2d6b03105e29c68ea55657805c77",
+  runner: "7a847edd405f8b371f347308a79915a3ce06acc7530bfd6c2a50b89c2e68fc2d",
+  puzzle: "beecf74224316c2a5e7b9a24c378bded94b66ac35987bae8915115a24f6595d7",
+  racing: "a42c2bc289118bef7717b5240179824c2e24390536903103f61231171efaf623",
+  shooter: "08ed7f0ba7b49ab898cbcdba03d58e55e2bd2d9cfa130f84582e33600a92b112",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "3ac649e4d3aa884a8ec95b262a69b03626275b4c52dd9d67cc537783aa6dde48",
+  starter: "1cc98598540ed95f8eb3e636d97f43bb56bdb1aee5e85d026bec33bb8b49a4b5",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -271,7 +276,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "41d70e6b7146aab38871afa8e4f6641f7965e2e52960de6547529ce26de94a9f",
+  sailing: "a36b187ff8746b39166747a09f402ea13012e4a33128a21603d716d63a98bad3",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
