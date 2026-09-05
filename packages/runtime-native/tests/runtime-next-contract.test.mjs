@@ -30,7 +30,7 @@ const RUNTIME_SCRIPT_HASHES = {
   'event-constructors-setup.js': '3e7f592806866915e7d4fecd051bb5268542cefb79324efc8e15c9bc73978a11',
   'image-support-init.js': '1a674470d63a89e607d065c4b19794e28e87b955b292d63dbd2f974e94e1e6ee',
   'onload-trigger.js': '396a17433bcc18d6193b3167404ff51faecc1451b1b9dfaeb6a3473e86c6371a',
-  'install-async-pipelines.js': '1cf6f04727a5f0c4c43a575b1ab70cddd94ebcfed1257463ee9047832095b309',
+  'install-async-pipelines.js': 'd58fb3fb55d24743273ea79f9ec72303a79ec91b322969d705a9f4d11ce47024',
   'image-bitmap-polyfill.js': '30e2cb4a45fc20ee9b983ef4dd404afd63be1889d0b1e12055f01a8716b66cfa',
   'webtransport-polyfill.js': '4b5a07862083c8e905341190cf37c613083517db84139288bbf7cee12fb6d359',
   'webtransport-stub.js': '9b653430e429a8fad538151523a2c4346b0b9c52a201ec5e01314128b788081e',

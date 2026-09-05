@@ -67,6 +67,9 @@
   const createBuffer = device.createBuffer.bind(device);
   device.createBuffer = (descriptor) => {
     const buffer = createBuffer(descriptor);
+    // Native descriptor validation can leave the original JS exception pending while returning
+    // undefined. Do not replace that useful error with a wrapper access error.
+    if (buffer === undefined) return buffer;
     const mapAsync = buffer.mapAsync.bind(buffer);
     const unmap = buffer.unmap.bind(buffer);
     const destroy = buffer.destroy.bind(buffer);
