@@ -1,0 +1,515 @@
+{
+  "version": 1,
+  "rows": [
+    {
+      "id": "brief.endless-runner.1",
+      "query": "Use a forward-facing camera that makes the next obstacle and the player immediately readable.",
+      "scope": "mechanic",
+      "source": "brief:endless-runner#1",
+      "expect": ["defineGame"],
+      "reject": []
+    },
+    {
+      "id": "brief.endless-runner.2",
+      "query": "Move the player continuously and support lane changes plus a jump or slide.",
+      "scope": "mechanic",
+      "source": "brief:endless-runner#2",
+      "expect": ["CharacterBody3D"],
+      "reject": []
+    },
+    {
+      "id": "brief.endless-runner.3",
+      "query": "Spawn an unbounded-feeling sequence of obstacles and collectibles with increasing pace.",
+      "scope": "mechanic",
+      "source": "brief:endless-runner#3",
+      "expect": ["InstancedBatch"],
+      "reject": []
+    },
+    {
+      "id": "brief.endless-runner.4",
+      "query": "Show distance, score, and the current speed in a readable HUD.",
+      "scope": "mechanic",
+      "source": "brief:endless-runner#4",
+      "expect": ["Text", "publishUiState"],
+      "reject": []
+    },
+    {
+      "id": "brief.endless-runner.5",
+      "query": "Make a collision restart the run without a page reload.",
+      "scope": "mechanic",
+      "source": "brief:endless-runner#5",
+      "expect": ["defineGame"],
+      "reject": []
+    },
+    {
+      "id": "brief.exploration.1",
+      "query": "Use a third-person camera and a compact hub that leads to at least two distinct areas. Name the starting area the literal `hub`; the proof compares `state.area` against that word.",
+      "scope": "mechanic",
+      "source": "brief:exploration#1",
+      "expect": ["defineGame"],
+      "reject": []
+    },
+    {
+      "id": "brief.exploration.2",
+      "query": "Let the player walk, inspect three points of interest, and return to the hub.",
+      "scope": "mechanic",
+      "source": "brief:exploration#2",
+      "expect": ["NavigationAgent3D", "PointerEvents3D"],
+      "reject": []
+    },
+    {
+      "id": "brief.exploration.3",
+      "query": "Load or reveal a different arrangement of props in each area, with a clear transition.",
+      "scope": "mechanic",
+      "source": "brief:exploration#3",
+      "expect": ["createAssetLoader"],
+      "reject": []
+    },
+    {
+      "id": "brief.exploration.4",
+      "query": "Keep a journal or objective panel that records the inspected points of interest.",
+      "scope": "mechanic",
+      "source": "brief:exploration#4",
+      "expect": ["publishUiState", "Text"],
+      "reject": [
+        "Billboard3D",
+        "ensureVelocityOutput",
+        "readVelocityPreviousBoneMatrices",
+        "readVelocityPreviousMatrices",
+        "readVelocityPreviousWorldMatrix"
+      ]
+    },
+    {
+      "id": "brief.exploration.5",
+      "query": "Make the world readable through deliberate lighting, landmarks, and a restrained palette.",
+      "scope": "mechanic",
+      "source": "brief:exploration#5",
+      "expect": ["Atmosphere", "ProbeVolume"],
+      "reject": []
+    },
+    {
+      "id": "brief.fps.1",
+      "query": "First person. Eye height 1.66 m, walking 5.6 m/s, sprinting 8.2 m/s while not aiming.",
+      "scope": "mechanic",
+      "source": "brief:fps#1",
+      "expect": ["CharacterBody3D"],
+      "reject": []
+    },
+    {
+      "id": "brief.fps.2",
+      "query": "Vertical field of view 70°, narrowing to 22° while aiming down the sights, and mouse look is half as sensitive while aimed. Pitch is clamped roughly −66° to +72°.",
+      "scope": "mechanic",
+      "source": "brief:fps#2",
+      "expect": ["defineGame"],
+      "reject": ["SpectralOcean"]
+    },
+    {
+      "id": "brief.fps.3",
+      "query": "Health starts at 100 and never regenerates. There is no jump, no crouch and no stamina.",
+      "scope": "mechanic",
+      "source": "brief:fps#3",
+      "expect": ["defineGame"],
+      "reject": []
+    },
+    {
+      "id": "brief.fps.4",
+      "query": "Spawns at the firing line facing down the range, with the nearest target on the crosshair.",
+      "scope": "mechanic",
+      "source": "brief:fps#4",
+      "expect": ["defineGame"],
+      "reject": []
+    },
+    {
+      "id": "brief.fps.5",
+      "query": "One rifle, always equipped. **One round per press** — holding the fire input does not repeat.",
+      "scope": "mechanic",
+      "source": "brief:fps#5",
+      "expect": ["TracerPool3D"],
+      "reject": ["updateClusteredMeshes"]
+    },
+    {
+      "id": "brief.fps.6",
+      "query": "Magazine 30, reserve 90. Reload moves rounds from the reserve into the magazine; the sights drop for about 0.7 s while it happens.",
+      "scope": "mechanic",
+      "source": "brief:fps#6",
+      "expect": ["defineGame"],
+      "reject": []
+    },
+    {
+      "id": "brief.fps.7",
+      "query": "Hitscan along the exact camera forward axis out to 60 m. No spread, no bloom, no recoil kick, no damage falloff.",
+      "scope": "mechanic",
+      "source": "brief:fps#7",
+      "expect": ["PhysicsDirectSpaceState3D"],
+      "reject": ["defineGame"]
+    },
+    {
+      "id": "brief.fps.8",
+      "query": "10 damage a round; 4× in the top 12% of a body's height, 0.7× below a third of it.",
+      "scope": "mechanic",
+      "source": "brief:fps#8",
+      "expect": ["PhysicsDirectSpaceState3D"],
+      "reject": ["GPUReadback"]
+    },
+    {
+      "id": "brief.fps.9",
+      "query": "A target hit scores that target's value — 100, 150, 250 or 300. The struck target drops below its stand, cannot be scored, and swings back up about 1.4 s later.",
+      "scope": "mechanic",
+      "source": "brief:fps#9",
+      "expect": ["publishUiState", "ScenePicker"],
+      "reject": ["connectDevicePlaytestBridge"]
+    },
+    {
+      "id": "brief.fps.10",
+      "query": "**Patrols** a fixed six-point route, facing the way it walks.",
+      "scope": "mechanic",
+      "source": "brief:fps#10",
+      "expect": ["NavigationAgent3D"],
+      "reject": []
+    },
+    {
+      "id": "brief.fps.11",
+      "query": "**Hears** every player gunshot within 26 m and grows suspicious; **sees** the player within its vision cone when nothing blocks the line between them.",
+      "scope": "mechanic",
+      "source": "brief:fps#11",
+      "expect": ["NavigationAgent3D", "PhysicsDirectSpaceState3D"],
+      "reject": ["attachToBone", "Heightfield"]
+    },
+    {
+      "id": "brief.fps.12",
+      "query": "Once alerted it **closes to engagement range, strafes, and fires three-round bursts**; each round takes 9 health off the player, so a full burst costs 27.",
+      "scope": "mechanic",
+      "source": "brief:fps#12",
+      "expect": ["NavigationAgent3D", "CharacterBody3D"],
+      "reject": ["AtmosphereLuts"]
+    },
+    {
+      "id": "brief.fps.13",
+      "query": "Losing sight of the player sends it to **search** the last place it saw them, then **return** to its route.",
+      "scope": "mechanic",
+      "source": "brief:fps#13",
+      "expect": ["NavigationAgent3D"],
+      "reject": ["attachToBone"]
+    },
+    {
+      "id": "brief.fps.14",
+      "query": "Dies at 0 health, ragdolls, and comes back. Killing it scores 300; wounding it scores 100.",
+      "scope": "mechanic",
+      "source": "brief:fps#14",
+      "expect": ["publishUiState"],
+      "reject": []
+    },
+    {
+      "id": "brief.open-world.1",
+      "query": "Make the player walk across a continuous world at least 500 by 500 world units with visible terrain relief.",
+      "scope": "mechanic",
+      "source": "brief:open-world#1",
+      "expect": ["Heightfield"],
+      "reject": ["solarPosition"]
+    },
+    {
+      "id": "brief.open-world.2",
+      "query": "Stream or reveal terrain and content while the player travels across at least three chunk boundaries.",
+      "scope": "mechanic",
+      "source": "brief:open-world#2",
+      "expect": ["ClusteredMesh"],
+      "reject": []
+    },
+    {
+      "id": "brief.open-world.3",
+      "query": "Keep the player and the next destination readable with a third-person or elevated camera.",
+      "scope": "mechanic",
+      "source": "brief:open-world#3",
+      "expect": ["defineGame"],
+      "reject": ["CameraShake"]
+    },
+    {
+      "id": "brief.open-world.4",
+      "query": "Include at least two landmarks or points of interest that are separated by the traversal.",
+      "scope": "mechanic",
+      "source": "brief:open-world#4",
+      "expect": ["InstancedBatch"],
+      "reject": ["WaveField", "PhysicsDirectSpaceState3D", "softBodyCollision"]
+    },
+    {
+      "id": "brief.open-world.5",
+      "query": "Keep the first playable screen visible without a user account or external asset service.",
+      "scope": "mechanic",
+      "source": "brief:open-world#5",
+      "expect": ["createAssetLoader"],
+      "reject": []
+    },
+    {
+      "id": "brief.physics-puzzle.1",
+      "query": "Create a compact room with at least 30 dynamic bodies that stack, topple, collide, and come to rest after the initial drop.",
+      "scope": "mechanic",
+      "source": "brief:physics-puzzle#1",
+      "expect": ["RigidBody3D"],
+      "reject": ["softBodyCollision"]
+    },
+    {
+      "id": "brief.physics-puzzle.2",
+      "query": "Give the controlled character a visible controller that can push solid bodies and cannot walk through them.",
+      "scope": "mechanic",
+      "source": "brief:physics-puzzle#2",
+      "expect": ["CharacterBody3D"],
+      "reject": ["AnimationPlayer", "supportedGlyphs", "rapier", "RigidBody3D"]
+    },
+    {
+      "id": "brief.physics-puzzle.3",
+      "query": "Include one body class that the controlled character passes through and another that blocks the controlled character; make the distinction visible in the scene.",
+      "scope": "mechanic",
+      "source": "brief:physics-puzzle#3",
+      "expect": ["CollisionShape3D"],
+      "reject": ["onUiIntent", "CharacterBody3D", "Joint3D", "rapier", "RigidBody3D"]
+    },
+    {
+      "id": "brief.physics-puzzle.4",
+      "query": "Reach the destination only through simulated contact with the controlled character or a pushed body. A distance check or scripted timer is not a valid win condition. When it is reached, some gameplay state must read the literal `won`; the proof compares against that word and cannot infer it.",
+      "scope": "mechanic",
+      "source": "brief:physics-puzzle#4",
+      "expect": ["RigidBody3D"],
+      "reject": [
+        "AnimationPlayer",
+        "ClusteredBatch",
+        "ensureVelocityOutput",
+        "GPUReadback",
+        "GPUSceneBVH"
+      ]
+    },
+    {
+      "id": "brief.physics-puzzle.5",
+      "query": "Run the same input sequence twice with a fixed seed and fixed-step simulation, and expose whether the final state matched on both runs.",
+      "scope": "mechanic",
+      "source": "brief:physics-puzzle#5",
+      "expect": ["createReplayDriver", "replay"],
+      "reject": [
+        "ComputeDrivenRegistry",
+        "Scheduler",
+        "connectDevicePlaytestBridge",
+        "readPlaytestEndpoint"
+      ]
+    },
+    {
+      "id": "brief.physics-puzzle.6",
+      "query": "Use an angled camera and a readable HUD so the controlled character, stack, pass-through body, and destination remain legible on the first screen.",
+      "scope": "mechanic",
+      "source": "brief:physics-puzzle#6",
+      "expect": ["Text", "publishUiState"],
+      "reject": ["supportedGlyphs", "CharacterBody3D", "rapier", "RigidBody3D"]
+    },
+    {
+      "id": "brief.physics-puzzle.8",
+      "query": "The direct proof supplies no gameplay entity identifiers; the replay proof reads resource `state` paths `state.replayPhase` and `state.replayMatch`.",
+      "scope": "mechanic",
+      "source": "brief:physics-puzzle#8",
+      "expect": ["subscribeUiState"],
+      "reject": ["assertJsonSafe"]
+    },
+    {
+      "id": "brief.platformer.1",
+      "query": "Use a third-person camera behind and above the player.",
+      "scope": "mechanic",
+      "source": "brief:platformer#1",
+      "expect": ["defineGame"],
+      "reject": []
+    },
+    {
+      "id": "brief.platformer.2",
+      "query": "Make the player run, jump, collect a visible line of coins, and reach a goal.",
+      "scope": "mechanic",
+      "source": "brief:platformer#2",
+      "expect": ["CharacterBody3D"],
+      "reject": ["NavigationAgent3D"]
+    },
+    {
+      "id": "brief.platformer.3",
+      "query": "Include at least one raised platform, one gap, one enemy or hazard, and a restart path.",
+      "scope": "mechanic",
+      "source": "brief:platformer#3",
+      "expect": ["CharacterBody3D"],
+      "reject": ["PathFollow3D", "createAssetLoader", "onUiIntent", "softBodyCollision"]
+    },
+    {
+      "id": "brief.platformer.4",
+      "query": "Match the reference's bright sky, saturated green platforms, warm wood, and rounded toy-like silhouettes.",
+      "scope": "mechanic",
+      "source": "brief:platformer#4",
+      "expect": ["Atmosphere"],
+      "reject": []
+    },
+    {
+      "id": "brief.platformer.5",
+      "query": "Show the core objective and current collectible count in a readable HUD.",
+      "scope": "mechanic",
+      "source": "brief:platformer#5",
+      "expect": ["Text"],
+      "reject": []
+    },
+    {
+      "id": "brief.topdown-action.1",
+      "query": "Use an angled camera that keeps the player and the arena readable at once.",
+      "scope": "mechanic",
+      "source": "brief:topdown-action#1",
+      "expect": ["defineGame"],
+      "reject": ["Billboard3D", "AudioBus"]
+    },
+    {
+      "id": "brief.topdown-action.2",
+      "query": "Let the player move in four directions, aim toward the pointer, and fire a visible attack.",
+      "scope": "mechanic",
+      "source": "brief:topdown-action#2",
+      "expect": ["PointerEvents3D", "CharacterBody3D"],
+      "reject": []
+    },
+    {
+      "id": "brief.topdown-action.3",
+      "query": "Include three enemy targets, a short cooldown or reload feedback, and a win condition.",
+      "scope": "mechanic",
+      "source": "brief:topdown-action#3",
+      "expect": ["CharacterBody3D"],
+      "reject": [
+        "FrameBudget",
+        "PathFollow3D",
+        "connectDevicePlaytestBridge",
+        "readPlaytestEndpoint"
+      ]
+    },
+    {
+      "id": "brief.topdown-action.4",
+      "query": "Build the arena from a few walls, floor markings, and pickups with a clear color hierarchy.",
+      "scope": "mechanic",
+      "source": "brief:topdown-action#4",
+      "expect": ["CollisionShape3D"],
+      "reject": []
+    },
+    {
+      "id": "brief.topdown-action.5",
+      "query": "Show health, score, and the current objective in a readable HUD.",
+      "scope": "mechanic",
+      "source": "brief:topdown-action#5",
+      "expect": ["Text", "publishUiState"],
+      "reject": []
+    },
+    {
+      "id": "guard.animation-feet",
+      "query": "walking feet sliding spinning",
+      "scope": "mechanic",
+      "source": "template:action-rpg#Start every change",
+      "expect": ["AnimationPlayer"],
+      "reject": []
+    },
+    {
+      "id": "request.build-racing-game",
+      "query": "build a racing game",
+      "scope": "request",
+      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
+      "expect": ["PathFollow3D"],
+      "reject": []
+    },
+    {
+      "id": "request.tower-defense-game",
+      "query": "tower defense game",
+      "scope": "request",
+      "source": "template:defense#AGENTS.md — __PROJECT_NAME__ defense",
+      "expect": ["Scheduler"],
+      "reject": []
+    },
+    {
+      "id": "request.inventory-system",
+      "query": "make an inventory system",
+      "scope": "request",
+      "source": "template:action-rpg#AGENTS.md — __PROJECT_NAME__ action RPG",
+      "expect": ["assertPortableState"],
+      "reject": []
+    },
+    {
+      "id": "request.enemy-ai",
+      "query": "enemy AI that chases the player",
+      "scope": "request",
+      "source": "template:shooter#AGENTS.md — __PROJECT_NAME__ first-person arena shooter",
+      "expect": ["NavigationAgent3D", "CharacterBody3D"],
+      "reject": []
+    },
+    {
+      "id": "request.third-person-camera",
+      "query": "third person camera follow",
+      "scope": "request",
+      "source": "template:platformer#AGENTS.md — __PROJECT_NAME__ platformer",
+      "expect": ["defineGame"],
+      "reject": []
+    },
+    {
+      "id": "request.save-progress",
+      "query": "save the player progress",
+      "scope": "request",
+      "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
+      "expect": ["assertPortableState"],
+      "reject": [
+        "Area3D",
+        "PointerEvents3D",
+        "NavigationAgent3D",
+        "recast",
+        "CharacterBody3D",
+        "defineGame",
+        "Heightfield",
+        "attachToBone"
+      ]
+    },
+    {
+      "id": "request.spawn-waves",
+      "query": "spawn waves of enemies",
+      "scope": "request",
+      "source": "template:defense#AGENTS.md — __PROJECT_NAME__ defense",
+      "expect": ["Scheduler"],
+      "reject": [
+        "WaveField",
+        "Buoyancy3D",
+        "NavigationAgent3D",
+        "recast",
+        "createRandom",
+        "NavigationRegion3D",
+        "AudioBus",
+        "GPUReadback",
+        "SpectralOcean",
+        "Area3D",
+        "CharacterBody3D",
+        "interactionGroups",
+        "PathFollow3D",
+        "attachToBone"
+      ]
+    },
+    {
+      "id": "request.dialogue-npc",
+      "query": "dialogue with an NPC",
+      "scope": "request",
+      "source": "template:sailing#AGENTS.md — __PROJECT_NAME__ sailing",
+      "expect": ["Text"],
+      "reject": ["NavigationAgent3D", "recast"]
+    },
+    {
+      "id": "request.pick-up-item",
+      "query": "pick up an item",
+      "scope": "request",
+      "source": "template:minimal#AGENTS.md — __PROJECT_NAME__ minimal",
+      "expect": ["Area3D"],
+      "reject": ["ClusteredMesh"]
+    },
+    {
+      "id": "request.multiplayer",
+      "query": "multiplayer",
+      "scope": "request",
+      "source": "template:starter#Ownership",
+      "expect": ["defineGame"],
+      "reject": []
+    },
+    {
+      "id": "request.platformer-double-jump",
+      "query": "make a platformer with double jump",
+      "scope": "request",
+      "source": "template:platformer#AGENTS.md — __PROJECT_NAME__ platformer",
+      "expect": ["CharacterBody3D"],
+      "reject": []
+    }
+  ]
+}
