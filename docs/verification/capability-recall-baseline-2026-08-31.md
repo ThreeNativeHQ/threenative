@@ -16,6 +16,12 @@ rows even when later manifest changes make a row return results. The budget also
 records every currently recalled row, so a later ranking or tag change cannot
 compensate for losing one query with a different query's gain.
 
+The gate proof below is the historical predecessor measurement, preserved verbatim from
+before the not-owned response migration. It counts only returned owned symbols: 25/58
+recalled, 7/58 raw-empty, and 19 reject hits. It is not the current response-shape
+measurement; the dated migration record below names what changed and which floors still
+apply.
+
 ## Gate proof
 
 Command:
@@ -347,3 +353,73 @@ pnpm caps:recall --harvest
 
 Observed: Harvest candidates (115), exit code 0. It never edits
 corpus.json or invents expected/rejected symbols.
+
+## Migration measurement — 2026-09-05
+
+PRD-298 now measures two valid answer paths. An owned capability symbol remains a
+recalled answer, while a corpus-pinned `notOwned` response is actionable only when the
+returned empty result carries the exact guidance from the generated manifest. The
+historical predecessor's 25 recalled rows remain protected; the migration adds four
+verified guidance rows without pretending they are owned symbols: 25 symbol hits + 4
+verified guidance answers = 29 actionable rows out of 58.
+
+The current measurement was read from the real gate:
+
+~~~sh
+pnpm caps:recall --json
+~~~
+
+The relevant observed JSON fields were:
+
+~~~json
+{
+  "metrics": {
+    "recallAtK": 0.43103448275862066,
+    "recalled": 25,
+    "rejectHits": 16,
+    "rowCount": 58,
+    "zeroResultRate": 0.1724137931034483,
+    "zeroResults": 10,
+    "unresolvedResultRate": 0.10344827586206896,
+    "unresolvedResults": 6,
+    "guided": 4,
+    "actionable": 29
+  },
+  "budget": {
+    "rowCount": 58,
+    "recallAtK": 0.43103448275862066,
+    "rejectHits": 19,
+    "zeroResultRate": 0.1206896551724138,
+    "unresolvedResultRate": 0.1206896551724138,
+    "notOwnedRows": {
+      "request.inventory-system": "inventory",
+      "request.save-progress": "save-load",
+      "request.dialogue-npc": "dialogue",
+      "request.multiplayer": "networked-multiplayer"
+    }
+  },
+  "regressions": []
+}
+~~~
+
+The pinned values above were read directly from the budget file:
+
+~~~sh
+node --input-type=module -e 'import { readFile } from "node:fs/promises"; const b=JSON.parse(await readFile("scripts/fixtures/capability-recall/budget.json", "utf8")); console.log(JSON.stringify({rowCount:b.rowCount, rowIds:b.rowIds.length, recallAtK:b.recallAtK, recalledRows:b.recalledRows.length, rejectHits:b.rejectHits, zeroResultRate:b.zeroResultRate, unresolvedResultRate:b.unresolvedResultRate, notOwnedRows:b.notOwnedRows}, null, 2));'
+~~~
+
+That pin contains all 58 corpus identities, the 25 protected recalled-row IDs, and the
+four row-to-`notOwned` IDs shown above. Its `rejectHits` ceiling remains 19, so the
+current 16 is an improvement. Its 7/58 value is now the unresolved-answer ceiling:
+`unresolvedResultRate` is 6/58 (0.103448), below 7/58 (0.120690). The budget retains
+the predecessor `zeroResultRate` field at 7/58 for historical compatibility, but raw
+zero results are informational and are no longer the acceptance metric.
+
+The current raw zero count is 10/58 because all four guided answers intentionally have
+an empty `results` array. Six other empty responses remain unsupported and unresolved;
+they are what the 7/58 ceiling gates. The four verified expectations are `inventory`,
+`save-load`, `dialogue`, and `networked-multiplayer`, mapped respectively by the four
+corpus rows above. Losing their guidance is a dedicated failure: an empty array on a
+pinned row must fail as `expected a verified not-owned response envelope`, and an
+envelope whose guidance differs from the manifest must fail as
+`not-owned response guidance does not match its manifest entry`.
