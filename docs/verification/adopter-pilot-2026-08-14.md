@@ -17,7 +17,7 @@ browser-only, on this host, in the user's Chrome.
   non-protocol run where the protocol's readers look.
 
 ![the build](visuals/adopter-pilot-2026-08-14-endless-runner.jpg)
-![the sealed reference](visuals/adopter-pilot-2026-08-14-reference.png)
+![the sealed reference](../benchmark/genres/endless-runner/reference.png)
 
 ## What was measured
 

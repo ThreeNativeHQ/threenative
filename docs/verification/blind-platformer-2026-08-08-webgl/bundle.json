@@ -6,7 +6,7 @@
       "label": "sample-01"
     },
     {
-      "image": "sample-02/image.png",
+      "image": "../../benchmark/sweeps/platformer-2026-08-07-50/captures/platformer-run-proof-after.png",
       "label": "sample-02"
     },
     {
@@ -14,7 +14,7 @@
       "label": "sample-03"
     },
     {
-      "image": "sample-04/image.png",
+      "image": "../../benchmark/sweeps/platformer-2026-08-07-50/captures/platformer-jump-proof-after.png",
       "label": "sample-04"
     }
   ],

@@ -71,6 +71,7 @@ export function templateRoot(): string {
 
 const LOADING_SOURCE_RELATIVE_PATH = path.join("src", "render", "loading.ts");
 const LOADING_APPEARANCE_MARKER = "BEGIN THREENATIVE LOADING APPEARANCE";
+const TEMPLATE_ICON_NAME = "icon.png";
 const LOADING_APPEARANCE_BLOCK_PATTERN =
   /\/\* BEGIN THREENATIVE LOADING APPEARANCE \*\/[\s\S]*?\/\* END THREENATIVE LOADING APPEARANCE \*\//gu;
 /**
@@ -173,6 +174,23 @@ async function stampTemplateLoading(target: string, template: string, root: stri
     path.join(target, LOADING_SOURCE_RELATIVE_PATH),
     stampLoadingSource(canonical, source),
   );
+}
+
+/** Copies the one packaged icon to the fixed output path every generated project advertises. */
+async function copyTemplateIcon(target: string, templateRootDirectory: string): Promise<void> {
+  const source = path.join(
+    path.dirname(templateRootDirectory),
+    "template-assets",
+    TEMPLATE_ICON_NAME,
+  );
+  if (!existsSync(source)) {
+    throw new Error(
+      `TN_TEMPLATE_ICON_MISSING: '${source}' is not in the package; every generated project needs the native icon asset.`,
+    );
+  }
+  const destination = path.join(target, "public", TEMPLATE_ICON_NAME);
+  await mkdir(path.dirname(destination), { recursive: true });
+  await cp(source, destination, { errorOnExist: true, force: false });
 }
 
 function invalidManifest(file: string, reason: string): never {
@@ -624,6 +642,7 @@ export async function createProject(
   await mkdir(target, { recursive: true });
   const source = path.join(root, template);
   await cp(source, target, { recursive: true, errorOnExist: true });
+  await copyTemplateIcon(target, root);
   // pnpm pack strips `.gitignore` from published tarballs, so the template carries the asset
   // pipeline's ignore rules under a dotless name and the scaffold installs the real one.
   if (existsSync(path.join(target, "gitignore"))) {

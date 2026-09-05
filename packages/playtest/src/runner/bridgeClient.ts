@@ -17,12 +17,14 @@ import {
   type IPlaytestSampleRequest,
   type IPlaytestScenario,
   type IPlaytestSetupApplication,
+  type IPlaytestSetupConfirmation,
   type IPlaytestSetupRequest,
   requiredPlaytestCapabilities,
 } from "../index.js";
 import type { Page } from "playwright";
 
 import { HOST_PLAYTEST_OBSERVATION_FIELDS, STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
+import { setupApplication as resolveSetupApplication } from "./setup-confirmation.js";
 import { composeScenarioSetupRequest } from "./setup-request.js";
 import { requestedSetupRecords } from "./shared.js";
 
@@ -262,8 +264,11 @@ async function applySetupBeforeDescribe(
       },
     }, scenario);
     assertBoundedPayload(request);
-    await transport.call("applySetup", request);
-    return { applied: requested, requested };
+    const confirmation = await transport.call<IPlaytestSetupConfirmation | undefined>(
+      "applySetup",
+      request,
+    );
+    return resolveSetupApplication(requested, confirmation);
   } catch (error) {
     if (error instanceof PlaytestBridgeError) throw error;
     throw new PlaytestBridgeError(playtestDiagnostic(
