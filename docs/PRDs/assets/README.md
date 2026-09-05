@@ -5,14 +5,10 @@ Read `/AGENTS.md` and `docs/PRDs/AGENTS.md` first.
 
 ## The one distinction these PRDs turn on
 
-```
-   Unreal pack                 your repo                     the player
-        │                          │                              │
-        │  ① INGEST                │  ② COOK                      │
-        │  (once, your machine)    │  (every build, ships)        │
-        ▼                          ▼                              ▼
-   .uasset  ─────────────────►  assets/  ──────────────────►   public/
-             converter                      compile step
+```mermaid
+flowchart LR
+    U[Unreal pack: .uasset] -->|① ingest: converter| A[Your source: assets/]
+    A -->|② cook: compile step| P[Player payload: public/]
 ```
 
 `.uasset`→`.glb` conversion and direct `.uasset` loading answer ①. Compression, dedupe and mips are
@@ -24,15 +20,35 @@ Read `/AGENTS.md` and `docs/PRDs/AGENTS.md` first.
 |---|---|---|
 | **[349 — the cook is on by default](../done/PRD-349-the-cook-is-on-by-default.md)** | DONE: Wildwood 304.92 → 51.33 MB, Quarry 29.89 → 4.57 MB; iOS waived | — |
 | **[350 — the platform gate knows which passes need a decoder](./PRD-350-the-platform-gate-knows-which-passes-need-a-decoder.md)** | **PARTIAL:** Android cooked run and Wildwood 92.04 MB runtime load-set pass; raw/cooked identity, web/desktop byte identity and negative-control observations remain `UNVERIFIED` | 349 |
-| **351 — compression never looks worse than a floor** | quality floor + the 2048² resolution raise | 349 |
+| **[351 — compression never looks worse than a floor](PRD-351-compression-never-looks-worse-than-a-floor.md)** | Quality floor + measured import-resolution comparison | 349, delivered |
 | **352 — Unreal ingest is first-party** | **zero shipped bytes** — removes an external repo from the ingest path | none |
 
-**349 first, always.** It is the one that fixes every game scaffolded from here on. 352 is
-independent and is not a size win; anyone prioritizing it for bytes has misread it.
+**Execute 350 next.** 349 is delivered; 351 can proceed independently of 350, and 352 remains an
+independent ingest change. Read each PRD's preflight before implementation.
+
+## Delivered baseline for execution
+
+The final record is [PRD-349's evidence](../../verification/PRD-349-the-cook.md), especially
+“Merged-source final gates and distribution”. Executable source: `af8fe783`; final game pins:
+`ThreeNativeHQ/examples` commit `1bc083d8`. Re-measure if either source or package pins change.
+
+| Subject / measurement | Delivered result |
+| --- | --- |
+| Wildwood runtime load set, including HDR and Basis | **304,915,228 → 51,333,420 B**, zero resized textures; complete game test passed |
+| Wildwood full manifest including Basis | **297,738,622 B**; different scope from the runtime load set |
+| Quarry web and native desktop asset payload including Basis | **4,569,038 B**; real scenarios passed **8/8 per target** |
+| Quarry mobile authored payload after source decoding | **30,346,112 B**, six files; Android APK built, no cook savings |
+| Native proof limits | No mobile device executed in 349; local iOS packaging waived. Hosted iOS simulator CI later passed, which does not prove the proposed mobile dedupe path |
+
+Quarry's six source GLBs were decoded losslessly out of Meshopt during 349. Keep them as the
+decoder-free control; use a separate compressed-input fixture in 350. The accepted 51.33 MB
+Wildwood result supersedes the 35–45 MB projection. Asset payload, full manifest, APK size, GPU
+residency and network transfer are separate measurements and must never share a baseline.
 
 ## Measured evidence, once, so no PRD re-derives it
 
-From `sandbox/wildwood` at `d535f51`, 2026-09-04. Full record:
+Historical spike only, from `sandbox/wildwood` at `d535f51`, 2026-09-04. These numbers explain the
+original proposal; the delivered baseline above governs execution. Full record:
 `docs/verification/PRD-349-assumption-spike.md`.
 
 | | |
@@ -52,12 +68,15 @@ From `sandbox/wildwood` at `d535f51`, 2026-09-04. Full record:
   not show that Zstd needs RDO. The phase stays cut and the existing default is preserved.
 - **`chooseCodec` picks `uastc` for everything** in this pack — the diffuse maps carry cutout alpha,
   so ETC1S never fires. Remaining headroom is RDO, which is why 351 exists.
-- **The platform matrix was already solved** (`compile.ts:210-224`); the templates' `"none"` is a
-  fossil of the era before it, and the engine's own comment says so.
+- **349 removed the template cook opt-outs.** Mobile still drops the whole model/texture pass in
+  `compile.ts`; splitting decoder-free work from runtime compression remains 350's job.
+- **349 replaced the npm encoder with the owned Basis wrapper** in
+  `packages/assets/src/ktx2-encoder.ts`, supporting 4096² input with default Zstd preserved.
+  351 must reproduce RDO behaviour against this implementation and invalidate its cache keys.
 - **`quantize` needs no decoder** — `runtime-native/scripts/bundle.mjs` stubs only Basis, Meshopt
   and Draco.
-- **`raw-unreal` reads this pack**: 61/62, and 58/58 vertex-exact against the external importer.
-  wildwood's procedural-foliage workaround was unnecessary; its note is corrected in place.
+- **`raw-unreal` read 61/62 meshes** in the historical pack; 58/58 vertex and section counts
+  matched the external importer. Full attribute/transform equivalence remains 352's proof gate.
 - **Uncooked `.uasset` textures are `TSF_BGRA8`, PNG-wrapped** — so a first-party texture reader is
   small, not the bulk of 352.
 
@@ -67,8 +86,8 @@ From `sandbox/wildwood` at `d535f51`, 2026-09-04. Full record:
 |---|---|---|
 | the `.uasset`→`.glb` converter stays | 349 §1 | geometry is 0.5-3.4% of the bytes; no ingest path touches the other 97% |
 | `assets.budget` gates **uncooked** bytes (default 64 MB), not total | 349 §3 | games differ by 100×; the defect is "large **and** uncooked", and an absolute cap cannot express that |
-| `maxTextureSize` default → **2048**, masks stay 1024 | 351 §2B | with duplication gone, 4× the pixels still lands 3.4× smaller than today |
-| quality floor **SSIM ≥ 0.95, ΔE00 ≤ 3.0** | 351 §2A | today's measured minimum is 0.9689, so the floor cannot silently degrade an existing game |
+| Compare import caps 1024 / 2048 / 4096; per-slot caps remain explicit | 351 §2B | importer `maxTextureSize` and compiler `maxSize` are different controls; byte and visual results decide the game-owned policy |
+| Initial quality floor **SSIM ≥ 0.95, ΔE00 ≤ 3.0** | 351 §2A | validate both metrics on the final encoder and corpus; four SSIM samples do not establish a whole-game quality guarantee |
 | RDO ships behind the floor, one-day timebox on its crash | 351 Phase 2 | the floor and the escalation are the architecture; RDO is one rung on it |
 | skeletal goes to `ueformat`, not `raw-unreal` | 352 §4 | `ueformat` already reads skin weights and morphs; `raw-unreal` throws on skeletal by design |
 | the external importer is **kept**, not deprecated | 352 §4 | it owns cooked/IoStore packs, which `raw-unreal` explicitly refuses — disjoint scopes, not duplication |
@@ -78,36 +97,36 @@ From `sandbox/wildwood` at `d535f51`, 2026-09-04. Full record:
 
 | Question | Owner |
 |---|---|
-| a browser rendering a cooked GLB end to end — never yet done | 349 Phase 4 (`quarry`), and it must be a real render, not a structural assertion |
+| Quarry raw/cooked identical-frame proof on Android | 350 user verification; the cooked Pixel 8 run passed, but raw/cooked identity remains `UNVERIFIED` |
 | whether wildwood can build for Android *at all* today | ANSWERED by 350 Phase 1: Android build passes; runtime load-set is 92.04 MB |
+| Master-source availability, quality metrics and RDO on the owned encoder | 351 preflight; do not infer these from the old spike |
+| Real-pack availability and first-party ingest into the canonical cook | 352 preflight and integration gates |
 
 ---
 
 ## Traps that have already cost someone a day
 
-Verified live against `main` on 2026-09-04. Each names the file that still enforces it, so a stale
-entry is falsifiable rather than folklore.
+Use the shipped code and the final 349 evidence when checking these constraints. Historical
+failures are not automatically current defects.
 
-### Bites PRD-349 first, because turning the cook on changes who gets passes
+### Preserve the compiler behaviour delivered in 349
 
-- **An empty pass chain hangs `threenative build`.** `packages/assets/src/worker-pool.ts:85` spins
-  up a `Worker` unconditionally, and `compile.ts` has **no** `passes.length === 0` guard — grep it
-  and see. A template resolving to zero passes (today: `assets: "none"`) starts a pool that never
-  drains. 349 changes which templates get a non-empty chain, so it owns this either way: add the
-  guard, or make sure no template can land on the empty path.
-- **Every compressed source texture must be width- and height-divisible by 4.** BC7, BC1, ETC2 and
-  ASTC all use 4×4 blocks. Documented as a `@constraint` at `packages/assets/src/index.ts:88` and
-  `passes/texture.ts:78`. The failure is nasty: the pipeline reports **0 fail**, and WebGPU rejects
-  the texture at *draw* time. Use a `codec: "none"` override for an intentionally unaligned one.
+- **Keep empty/disabled cook and worker paths covered.** An old note inferred a hang from worker
+  construction alone. Reproduce any failure through the actual build before assigning a fix.
+- **Automatic unaligned textures remain authored bytes.** 349 reports `block-size` and counts
+  those bytes against the uncooked budget; an explicitly incompatible codec still refuses.
+  Preserve this in both standalone and embedded paths.
+- **Publication is canonical and atomic.** Keep receipt ownership, shared-output containment,
+  UUID staging, watcher recovery and aggregate budget accounting; do not add a second publisher.
 - **Validate the config seam producer→consumer, not each side.** `assets.models.virtual` was once
   accepted by one layer and rejected by the next, and both layers' tests passed. A round trip
   through the real config path is the only test that catches it.
 
-### Bites PRD-349 Phase 4 — the browser render that has never been done
+### Runtime proof
 
-- **Headless Chromium cannot capture WebGPU.** You get a white screenshot and a correct DOM, which
-  reads as a pass to anything checking structure. Capture *headed*. This is exactly why the README
-  says Phase 4 must be a real render, not a structural assertion.
+- **Use the existing WebGPU playtest recipe and real render assertions.** Quarry already passed
+  on browser and native desktop. Reuse its scenarios and wait for scene reveal before captures;
+  349's timed Wildwood screenshot once captured the loading curtain.
 - **Prefer a numeric probe to a capture.** `playtest doctor` and an assertion beat a screenshot; a
   capture is the last resort, not the first.
 - **`vite` needs `--host 127.0.0.1`** on this machine, and a WebGPU run that cannot name its

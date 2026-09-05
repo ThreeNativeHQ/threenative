@@ -6,6 +6,25 @@
 **Independent of:** PRD-349/350/351 — this changes ingest (①), those change the cook (②). It wins
 zero shipped bytes on its own.
 
+## Execution preflight after PRD-349
+
+349 delivered the canonical cook and [real Quarry browser/native desktop proof](../../verification/PRD-349-the-cook.md).
+Reuse its six props and checked-in scenarios, with final example pins at `1bc083d8` as the
+historical control. Quarry's authored GLBs are now losslessly decoded out of Meshopt; its cooked
+web/desktop asset payload including Basis is **4,569,038 B**. Record the current game/package
+revisions before comparing importers and keep identical source resolution and material mappings.
+
+Locate and verify the real Landscape Pro source pack before implementation. The old spike proves
+what was read then, not that the source files are available now. Missing source is a named
+execution prerequisite, not permission to download it or substitute a synthetic acceptance pack.
+The six-animal repair in 349 was loader-equivalent and did not establish a working reimport path;
+skeletal ingest remains outside this PRD.
+
+This is build-host plumbing in `packages/assets` and the existing reader packages. Emit through
+the current compiler publication/receipt path, including shared images, exclusions, budgets,
+containment, atomic writes and watcher recovery. Do not write directly to `public/` or introduce
+a parallel cooker. Runtime output must obey 350's gate when available and today's gate otherwise.
+
 ---
 
 ## 1. Context
@@ -60,7 +79,7 @@ and the PNG decode both already exist in this repo.
 
 ---
 
-## 3. The spike — two of three questions answered
+## 3. The historical spike — all three questions answered
 
 ### Q1: can `raw-unreal` read this pack? **YES — 61 of 62 static meshes (98.4%).**
 
@@ -79,7 +98,7 @@ OK:   61
 FAIL:  1     UNSUPPORTED_STATIC_MESH_LAYOUT (typed refusal, no invented geometry)
 ```
 
-**And the geometry is correct, not merely parsed.** Cross-validated against the external importer's
+**Counts match; full geometry equivalence remains an execution gate.** Cross-validated against the external importer's
 own `import-report.json` on the 58 models both read:
 
 | | |
@@ -93,8 +112,8 @@ SM_BoughGroup02   raw-unreal verts 3873 tris 1291 sections 2  |  importer verts 
 SM_FarnGroup01    raw-unreal verts  426 tris  142 sections 1  |  importer verts  426 prims 1
 ```
 
-Two independent readers — one engine-free TypeScript, one `umodel` + a provisioned converter —
-agreeing to the vertex. **The gate passes; wildwood's procedural-foliage workaround was unnecessary.**
+Two independent readers agree on vertex and section counts. This does not establish identical
+positions, normals, UVs, winding, units or transforms; compare those values during execution.
 
 ### Q3: how much material graph must be understood? **Less than feared, and the prior art is legible.**
 
@@ -132,7 +151,9 @@ already exist in this repo:
 1. the `FByteBulkData` walk — **`raw-unreal/src/bulk-data.ts` already does it**, for the same
    packages;
 2. a PNG decode — **`pngjs` is already a dependency of `packages/assets`**;
-3. a BGRA→RGBA swizzle — four lines.
+3. source-format interpretation — verify decoded pixel/channel order against the external
+   importer before applying any BGRA→RGBA swizzle; a PNG signature and `TSF_BGRA8` label alone
+   do not prove the decoded PNG still needs a channel swap.
 
 The reader is small. The estimate in §2 ("the majority of the work") was wrong; the material
 mapping in Q3 is the larger remaining piece.
@@ -172,6 +193,30 @@ flowchart LR
       Two readers with disjoint, documented scopes is not duplication; deleting the one that handles
       what the other refuses would be.
 
+### Execution sequence and integration gates
+
+1. **Freeze the source and control.** Record pack and six-prop hashes, importer revision, current
+   first-party reader results and matched-resolution external output. Verify positions, indices,
+   normals, UVs, section/material assignment, units and transforms, not only counts. Resolve
+   dependencies from the actual package manifests; consumers receive the build integration through
+   installed assets/CLI packages, without adding unnecessary reader imports to game runtime code.
+2. **Wire ingest into the existing cook.** Classify mesh, texture and material packages rather than
+   trying to emit every `.uasset` as a model. Mesh dependencies become cache/watch inputs; editing
+   a referenced texture or material invalidates the consuming output. Preserve logical asset
+   lookup paths so the existing scene resolves its six props. Refuse unsupported selected inputs
+   with typed errors; report excluded or unused source dependencies without copying the entire pack
+   into the player's payload. Cover sequential and worker paths, cold/warm caches, deletion and
+   failed-import recovery through the canonical receipt publisher.
+3. **Prove installed output.** Reuse Quarry's browser and native desktop scenarios on packaged
+   dependencies and compare matched captures. Exercise mobile compilation and its compatibility
+   validator; claim mobile runtime only when executed. Negative controls: swap decoded colour
+   channels, remove a material binding, and remove one shared output, each making its relevant
+   assertion fail. Preserve all 349 budget/publication tests and run the repository's required
+   gates. Record results in `docs/verification/PRD-352-first-party-ingest.md`, cited by this PRD.
+
+The PNG source decoder and slot mapping are build-time mechanisms. Per-pack appearance choices
+stay game-owned data, and package readers do not guess a replacement look for unsupported graphs.
+
 ---
 
 ## 5. Acceptance criteria
@@ -184,6 +229,8 @@ Consumer-scoped, and deliberately narrow for a first version.
 - [ ] **`sandbox/quarry`'s 6 props render identically** whether ingested by the external importer or
       by the first-party pass — compared as captures, not as byte counts.
 - [ ] **No PNG intermediate tree is written.** The pack is the source; `public/` is the output.
+- [ ] **The existing cook owns final output.** Shared images, exclusions, budgets, dependency
+      invalidation and atomic publication work on cold, cached and watched Unreal imports.
 - [ ] **The reader refuses clearly what it cannot read** — cooked packages, IoStore, Nanite,
       skeletal — with the same typed `UAssetError` discipline `raw-unreal` already has. A wrong
       guess that produces plausible-but-wrong geometry is the failure mode to design against.
@@ -195,6 +242,8 @@ Consumer-scoped, and deliberately narrow for a first version.
 - [x] Q2 answered: `TSF_BGRA8`, PNG-wrapped; the reader is small
 - [ ] Every new exported symbol has a non-test consumer
 - [ ] Proved on the real Landscape Pro pack, not a synthesized `.uasset`
+- [ ] Quarry passes on browser and native desktop from installed packages; mobile compatibility
+      is checked and runtime evidence is reported separately. No inherited iOS waiver is assumed.
 
 ## 6. Risks
 
