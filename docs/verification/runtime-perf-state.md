@@ -2482,12 +2482,12 @@ The following commands were run in this worktree:
 | `cmake --preset tn-linux -B build/tn-linux-quickjs -DCMAKE_MAKE_PROGRAM=/home/joao/projects/threenative/threenative-engine/.worktrees/prd-358-cross-platform-performance-regression-ci/packages/runtime-native/.runtime/tools-venv/bin/ninja -DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF` | PASS; documented QuickJS matrix directory configured |
 | `cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test threenative-rg11b10-renderable-test --parallel` | PASS; the two QuickJS contract targets built 403/403 |
 | `pnpm typecheck` | PASS |
-| `pnpm test` | PASS; 391 files passed, 1 skipped; 4,293 tests passed, 4 skipped |
+| `pnpm test` | PASS; 390 files passed, 2 skipped; 4,290 tests passed, 7 skipped |
 | `pnpm test:playtest` | PASS; framework movement/camera, Abyss axis/zoom, navigation, and streaming scenarios passed with the WebGPU recipe |
 | `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/engine-load-test.spec.ts scripts/__tests__/performance-regression.spec.ts scripts/__tests__/temp-dir-guard.spec.ts` | PASS; 4 files, 109 tests |
 | `pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs` | PASS; 1 file, 23 tests |
-| `pnpm lint` | NOT GREEN; the repository-wide run reports 2 pre-existing errors and 609 warnings in unchanged `examples/*` files, with no changed-file error |
-| `pnpm budgets` | BLOCKED by the pre-existing stale native coverage record: `source digest changed; run pnpm --filter @threenative/runtime-native native:coverage`; no C++ source changed in this lane, so the record was not edited |
+| `pnpm lint` | PASS; the repository-wide run reports 609 warnings and no errors, including complexity warnings in existing examples and the new helpers |
+| `pnpm budgets` | BLOCKED by the pre-existing stale retention index: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit)`; no benchmark evidence changed in this lane, so the record was not edited |
 | `git diff --check` | PASS |
 
 The required-baseline negative control also ran:

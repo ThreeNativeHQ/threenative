@@ -2,8 +2,8 @@ import { spawnSync } from "node:child_process";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { allTemplates } from "../../test-support/templates.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
+import { allTemplates } from "../../test-support/templates.js";
 import {
   renderPerformanceCiSummary,
   summarizePerformanceCi,

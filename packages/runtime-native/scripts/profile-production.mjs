@@ -1295,7 +1295,9 @@ export function aggregateMetrics(runs, startups, warmupFrames = 0) {
       if (sample.phases !== undefined && typeof sample.phases === 'object' && sample.phases !== null) {
         for (const [phase, value] of Object.entries(sample.phases)) {
           if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) continue;
-          (phaseSamples[phase] ??= []).push(value);
+          const samples = phaseSamples[phase] ?? [];
+          phaseSamples[phase] = samples;
+          samples.push(value);
         }
       }
       intervals.push({
