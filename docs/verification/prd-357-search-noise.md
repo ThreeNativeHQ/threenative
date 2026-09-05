@@ -86,7 +86,7 @@ evidence docs/benchmark: 1823 tracked file(s), 180.6 MB, 77.2 MB duplicate acros
 evidence budget: ok
 ```
 
-The generated compact inventory is 215 lines; its exact path is ignored by Biome so formatting does
+The generated compact inventory is 214 lines; its exact path is ignored by Biome so formatting does
 not expand this evidence artifact beyond the repository's 1,000-line evidence limit.
 
 ## Archive controls
