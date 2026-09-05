@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -65,5 +66,56 @@ describe("run-test-suite phase contract", () => {
     }
     expect(source).toContain("cannot resume unknown phase");
     expect(source).toContain("resume requires --phase");
+  });
+
+  it("keeps the default gate self-contained beside an explicit prebuilt path", async () => {
+    const source = await readFile(scriptPath, "utf8");
+    const manifest = JSON.parse(await readFile(path.resolve("package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+
+    expect(manifest.scripts.test).toBe("bash scripts/run-test-suite.sh");
+    expect(manifest.scripts["test:ci"]).toContain("TN_SUITE_PREBUILT=1");
+    expect(manifest.scripts["test:browser"]).toContain("@threenative/playtest build");
+    expect(manifest.scripts["test:browser:ci"]).not.toContain("@threenative/playtest build");
+    expect(manifest.scripts["test:playtest"]).toContain("@threenative/playtest build");
+    expect(manifest.scripts["test:playtest:ci"]).not.toContain("@threenative/playtest build");
+
+    expect(source).toContain('suite_prebuilt="${TN_SUITE_PREBUILT:-0}"');
+    expect(source).toContain('if [[ "$suite_prebuilt" -eq 1 ]]; then');
+    expect(source).toContain("run_prebuilt_package_tests");
+    const prebuiltPackageTestCall =
+      "run_phase package-test run_prebuilt_package_tests || test_status=$?";
+    const resumePackageTest = source.slice(
+      source.indexOf('case "$resume_phase"'),
+      source.indexOf("\nelse\n  if runs_phase docs"),
+    );
+    const normalPackageTest = source.slice(
+      source.indexOf('if [[ "$test_status" -eq 0 ]] && runs_phase package-test; then'),
+    );
+    expect(resumePackageTest, "resume package-test branch lost its prebuilt call").toContain(
+      prebuiltPackageTestCall,
+    );
+    expect(normalPackageTest, "normal package-test branch lost its prebuilt call").toContain(
+      prebuiltPackageTestCall,
+    );
+    expect(source.split(prebuiltPackageTestCall)).toHaveLength(3);
+    expect(source).toContain("TN_SUITE_PREBUILT_MISSING");
+    expect(source).toContain("packages/*/tsup.config.ts");
+    expect(source).toContain('"${TN_SUITE_PHASES:-docs,build,package-test,unit}"');
+    expect(source, "assets has no pure prebuilt check").toContain("@threenative/assets");
+    expect(source, "ueformat has no pure prebuilt check").toContain("@threenative/ueformat");
+    expect(source, "raw-unreal has no pure prebuilt check").toContain("@threenative/raw-unreal");
+    expect(source, "site has no pure prebuilt check").toContain("threenative-site");
+  });
+
+  it("fails a prebuilt browser run before invoking Playwright without its verified inputs", () => {
+    const result = spawnSync("pnpm", ["run", "test:browser:ci"], {
+      encoding: "utf8",
+      env: { ...process.env, THREENATIVE_PACKED_PACKAGES: "" },
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+    expect(result.status).not.toBe(0);
+    expect(output).toMatch(/TN_PREBUILT_(PLAYWRIGHT_RUNNER|WORKSPACE_ARCHIVE)_MISSING/u);
   });
 });

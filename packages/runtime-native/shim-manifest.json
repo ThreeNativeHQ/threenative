@@ -1,6 +1,7 @@
 {
   "version": 1,
   "shims": [
+    { "name": "__tnOnTrimMemory", "evidence": "packages/runtime-native/src/runtime.cpp" },
     { "name": "AbortController", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
     { "name": "AbortSignal", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
     { "name": "Blob", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },

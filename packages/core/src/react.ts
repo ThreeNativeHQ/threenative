@@ -52,6 +52,7 @@ export function View(props: IViewProps): ReactNode {
 /**
  * A run of bitmap glyphs, drawn as one instanced quad per lit pixel.
  * @situation show text in a native React HUD without a DOM
+ * @alias objective panel journal
  * @example <Text style={{ color: "#ffffff", fontSize: 24 }}>SCORE 10</Text>
  */
 export function Text(props: ITextProps): ReactNode {

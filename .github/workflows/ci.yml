@@ -91,7 +91,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/playwright-chromium
-      - run: pnpm test
+      - run: pnpm test:ci
 
   # The root vitest run was the longest single thing in the run's longest job — 351 files and
   # ~3,500 tests, measured at 151s of `test`'s 387s. It shards cleanly and it is the only part of
@@ -192,8 +192,11 @@ jobs:
       # tree costs a download. Measured locally at 315 MB for `build/tn-linux`, against ~240s of
       # compiling on the runner (host 154s + contract targets 53s + QuickJS 33s).
       #
-      # The key hashes what the build is made of. `restore-keys` matters more than an exact hit
-      # here: a partial match still hands ninja most of its objects and it rebuilds the rest.
+      # The key hashes what the build is made of. Do not restore a partial match: Ninja decides
+      # whether a cached object is current from mtimes, and an object built by an older source tree
+      # can be newer than the commit timestamp restored for the changed source. That produces a
+      # mixed tree which reaches the linker with missing symbols. The compiler cache below still
+      # reuses safe content-addressed objects; this cache must be exact-key only.
       - name: Restore the compiled native tree
         uses: actions/cache@v4
         with:
@@ -217,7 +220,6 @@ jobs:
             packages/runtime-native/.runtime/physics-target
             packages/runtime-native/native/ui-overlay/target
           key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**/*.cpp', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}
-          restore-keys: native-build-${{ runner.os }}-${{ runner.arch }}-
       - name: Restore native compiler cache
         uses: actions/cache@v4
         with:
@@ -385,7 +387,7 @@ jobs:
       # four browser tests runs. On run 33739951215 that setup was 245s against 40s of actual
       # testing. `THREENATIVE_PACKED_PACKAGES` is the seam the config already had; this points it
       # at the set the cached action just restored.
-      - run: sh scripts/xvfb.sh pnpm test:browser
+      - run: sh scripts/xvfb.sh pnpm test:browser:ci
         env:
           THREENATIVE_PACKED_PACKAGES: ${{ github.workspace }}/artifacts/workspace-packages
       # A pixel gate that fails on a runner nobody can log into is only diagnosable if the frame
