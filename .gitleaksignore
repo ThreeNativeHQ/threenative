@@ -11,3 +11,7 @@
 60b06a2403f1219fb601783d7f0e5f7f886507b0:docs/benchmark/sweeps/open-world-2026-08-09-3/framework-types/@threenative/physics/Area3D-B8LJ2C4S.d.ts:generic-api-key:403
 faf3f79b6d01e193e89fed532c0e539deb75de71:docs/benchmark/sweeps/exploration-2026-08-09/framework-types/@threenative/physics/Area3D-D0KKdmM2.d.ts:generic-api-key:272
 f9c62d2c7ee0b8ec0f88977afc11113bc79434a1:docs/benchmark/DELTA-2026-08-05.md:generic-api-key:379
+
+# Verified 2026-09-05 at the recorded commit: recook-fixture-v1 is a literal custom-pass
+# cache version in the receipt regression test, not a credential. Scope to this finding only.
+57b76a66f82ee829d5e0c0c9f79fb09c0ae0fbe4:packages/assets/__tests__/bake-receipt.spec.ts:generic-api-key:107

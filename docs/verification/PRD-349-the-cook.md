@@ -731,3 +731,14 @@ only four package/lock files changed. The engine's subsequent close-out commit i
 only; executable package provenance remains the immutable `af8fe783` source above. PRD-349 is
 filed in `docs/PRDs/done/` for the owner's requested single-PR handoff, with iOS waived and the
 practical 51 MB outcome accepted. No blanket thirty-game or physical-mobile green is claimed.
+
+## Hosted CI follow-up, 2026-09-05
+
+PR #111's first hosted run passed every executed check except `supply-chain`, including hosted
+iOS simulator, macOS/Windows desktop, browser, native, template and golden-path checks.
+Gitleaks reported `generic-api-key` on the literal custom-pass cache version `recook-fixture-v1`
+at `57b76a66`, `packages/assets/__tests__/bake-receipt.spec.ts:107`. Main read that exact historical
+line and reproduced the one finding with CI's pinned image and exact PR commit range (exit1).
+An exact commit/file/rule/line fingerprint in `.gitleaksignore` then makes the same scan report
+**seven commits scanned; no leaks found**, exit0. No rule or file-wide exclusion was added, and
+no runtime code changed. Logs: `/tmp/prd349-gitleaks-{red,green}.log`.
