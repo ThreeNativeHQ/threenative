@@ -75,6 +75,17 @@ describe("capability recall gate", () => {
     expect(measurement.rows[0]?.recalled).toBe(false);
   });
 
+  it("should accept the MCP response envelope used by the search server", () => {
+    const measurement = measureRecall([row()], manifestFile, (() => ({
+      guidance: "",
+      results: [result("GroundSnap")],
+      verdict: "matched",
+    })) as CapabilitySearcher);
+
+    expect(measurement.rows[0]?.returned).toEqual(["GroundSnap"]);
+    expect(measurement.rows[0]?.recalled).toBe(true);
+  });
+
   it("should fail when zeroResultRate exceeds the recorded floor", () => {
     const measurement = measureRecall([row()], manifestFile, (() => []) as CapabilitySearcher);
     const regressions = compareBudget(measurement, budget());

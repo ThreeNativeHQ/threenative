@@ -83,11 +83,17 @@ export interface IHarvestCandidate {
   readonly scope: CapabilityRecallScope;
 }
 
+export interface ICapabilitySearchResponse {
+  readonly verdict: "matched" | "none";
+  readonly results: readonly ICapabilitySearchResult[];
+  readonly guidance: string;
+}
+
 export type CapabilitySearcher = (
   query: string,
   manifestFile: string,
   scope: CapabilityRecallScope,
-) => readonly ICapabilitySearchResult[];
+) => readonly ICapabilitySearchResult[] | ICapabilitySearchResponse;
 
 export class CapabilityRecallError extends Error {
   constructor(message: string) {
@@ -415,6 +421,29 @@ function checkedSymbols(
   return symbols;
 }
 
+function responseResults(
+  response: readonly ICapabilitySearchResult[] | ICapabilitySearchResponse,
+  row: ICapabilityRecallRow,
+): readonly ICapabilitySearchResult[] {
+  if (Array.isArray(response)) return response;
+  if (response.verdict !== "matched" && response.verdict !== "none") {
+    throw recallError(`${row.id}: search returned an invalid verdict`);
+  }
+  if (typeof response.guidance !== "string" || !Array.isArray(response.results)) {
+    throw recallError(`${row.id}: search returned a malformed response envelope`);
+  }
+  if (
+    response.verdict === "matched" &&
+    (response.results.length === 0 || response.guidance !== "")
+  ) {
+    throw recallError(`${row.id}: matched search response must contain results and no guidance`);
+  }
+  if (response.verdict === "none" && response.results.length > 0) {
+    throw recallError(`${row.id}: none search response must not contain results`);
+  }
+  return response.results;
+}
+
 export function measureRecall(
   rows: readonly ICapabilityRecallRow[],
   manifestFile: string,
@@ -428,7 +457,7 @@ export function measureRecall(
     } catch (error) {
       throw recallError(`${row.id}: search failed: ${String(error)}`);
     }
-    const returned = checkedSymbols(results, row);
+    const returned = checkedSymbols(responseResults(results, row), row);
     const expected = row.expect.filter((symbol) => returned.includes(symbol));
     const rejected = row.reject.filter((symbol) => returned.includes(symbol));
     return {
