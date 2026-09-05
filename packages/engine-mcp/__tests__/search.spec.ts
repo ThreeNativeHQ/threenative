@@ -13,6 +13,14 @@ import {
 
 const workspaceManifest = path.resolve("packages/create-threenative/capabilities.json");
 
+function searchResults(
+  situation: string,
+  manifestFile = workspaceManifest,
+  scope: "mechanic" | "request" = "mechanic",
+) {
+  return searchCapabilities(situation, manifestFile, scope).results;
+}
+
 describe("threenative-engine-mcp", () => {
   it("exposes exactly the two read-only capability tools", () => {
     expect(toolDefinitions().map((tool) => tool.name)).toEqual([
@@ -21,8 +29,44 @@ describe("threenative-engine-mcp", () => {
     ]);
   });
 
+  it("returns a matched verdict and exposes a numeric score on every result", () => {
+    const response = searchCapabilities("enemy walks around a wall", workspaceManifest);
+
+    expect(response.verdict).toBe("matched");
+    expect(response.guidance).toBe("");
+    expect(response.results.length).toBeGreaterThan(0);
+    expect(response.results.every((result) => typeof result.score === "number")).toBe(true);
+    expect(response.results.every((result) => result.matchedSituation.length > 0)).toBe(true);
+  });
+
+  it("returns no capability for a save-system request", () => {
+    const response = searchCapabilities("save the player progress", workspaceManifest, "request");
+
+    expect(response.verdict).toBe("none");
+    expect(response.results).toEqual([]);
+    expect(response.guidance).toMatch(/write .*src\//iu);
+    expect(response.guidance).toContain("ctx.state");
+    expect(response.guidance).not.toContain("Area3D");
+    expect(response.guidance).not.toContain("Heightfield");
+  });
+
+  it("returns actionable guidance for measured not-owned requests", () => {
+    const cases = [
+      ["make an inventory system", "src/"],
+      ["dialogue with an NPC", "src/"],
+      ["multiplayer", "pnpm add"],
+    ] as const;
+
+    for (const [query, expectedGuidance] of cases) {
+      const response = searchCapabilities(query, workspaceManifest, "request");
+      expect(response.verdict, query).toBe("none");
+      expect(response.results, query).toEqual([]);
+      expect(response.guidance, query).toContain(expectedGuidance);
+    }
+  });
+
   it("ranks NavigationAgent3D for an agent walking around a wall", () => {
-    const results = searchCapabilities("enemy walks around a wall", workspaceManifest);
+    const results = searchResults("enemy walks around a wall", workspaceManifest);
     expect(results.slice(0, 3).map((result) => result.symbol)).toContain("NavigationAgent3D");
     expect(results.find((result) => result.symbol === "NavigationAgent3D")?.importPath).toBe(
       "@threenative/physics/navigation",
@@ -36,7 +80,7 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("finds the texture pass for a GPU texture-optimisation request", () => {
-    const results = searchCapabilities("optimize textures for the GPU", workspaceManifest);
+    const results = searchResults("optimize textures for the GPU", workspaceManifest);
     const texture = results.find((result) => result.symbol === "texturePass");
 
     expect(texture).toBeDefined();
@@ -53,7 +97,7 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("ranks NavigationAgent3D for the exact patrol and line-of-sight task", () => {
-    const results = searchCapabilities(
+    const results = searchResults(
       "enemy walks around a patrol path and chases the player when it sees them",
       workspaceManifest,
     );
@@ -77,7 +121,7 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("ranks attachToBone for putting a weapon in a character's hand", () => {
-    const results = searchCapabilities("put a weapon in a character's hand", workspaceManifest);
+    const results = searchResults("put a weapon in a character's hand", workspaceManifest);
     expect(results.slice(0, 3).map((result) => result.symbol)).toContain("attachToBone");
     expect(results.find((result) => result.symbol === "attachToBone")?.example).toContain(
       'from "@threenative/core"',
@@ -88,11 +132,13 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("does not pretend a genre label is a concrete capability recipe", () => {
-    expect(searchCapabilities("make a pirate game", workspaceManifest)).toEqual([]);
+    const response = searchCapabilities("make a pirate game", workspaceManifest);
+    expect(response.verdict).toBe("none");
+    expect(response.results).toEqual([]);
   });
 
   it("finds a cross-system set from a mechanically explicit complete request", () => {
-    const results = searchCapabilities(
+    const results = searchResults(
       "sailing ship on ocean waves with buoyancy, cloth sails in wind, cannonball physics and smoke particles, crew navigating a deck with swords, islands and coastlines, and positional sound",
       workspaceManifest,
       "request",
@@ -119,12 +165,12 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("finds cloth simulation from natural sail vocabulary", () => {
-    const results = searchCapabilities("cloth sails blowing in wind on a ship", workspaceManifest);
+    const results = searchResults("cloth sails blowing in wind on a ship", workspaceManifest);
     expect(results[0]?.symbol).toBe("SoftBody3D");
   });
 
   it("ranks fluid simulation for ocean currents affecting a ship", () => {
-    const results = searchCapabilities(
+    const results = searchResults(
       "ocean fluid dynamics and currents affect the ship",
       workspaceManifest,
     );
@@ -139,7 +185,7 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("finds physical cannonballs and pooled cannon smoke without broad-result noise", () => {
-    const results = searchCapabilities(
+    const results = searchResults(
       "fire a cannonball projectile with cannon smoke particles",
       workspaceManifest,
     );
@@ -150,7 +196,7 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("filters one-word coincidences from a verbose mechanic query", () => {
-    const results = searchCapabilities(
+    const results = searchResults(
       "detect overlap with a treasure chest, collect it, update score, and reach a win state",
       workspaceManifest,
     );
@@ -165,7 +211,7 @@ describe("threenative-engine-mcp", () => {
    * outright returned nothing and the agent hand-wrote a Raycaster that was already installed.
    */
   it("finds the pointer capabilities from an inflected pointer request", () => {
-    const results = searchCapabilities(
+    const results = searchResults(
       "drag a crate with the mouse by clicking on it in the 3D scene",
       workspaceManifest,
     );
@@ -176,7 +222,7 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("finds the batching and particle capabilities a runner request names outright", () => {
-    const results = searchCapabilities(
+    const results = searchResults(
       "an endless runner where procedurally generated track chunks stream toward the player, obstacles repeat as thousands of identical instanced blocks, dust particles trail behind, and the camera shakes on a near miss",
       workspaceManifest,
       "request",
@@ -188,7 +234,7 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("finds the joint and pointer capabilities a physics-puzzle request names outright", () => {
-    const results = searchCapabilities(
+    const results = searchResults(
       "a physics puzzle room where the player drags crates with the mouse, swings a hinged pendulum weight on a joint to knock a ball loose, and wins when the ball rolls into a goal zone on the floor",
       workspaceManifest,
       "request",
@@ -214,7 +260,7 @@ describe("threenative-engine-mcp", () => {
     ["a day and night cycle", "solarPosition", "AnimationPlayer"],
     ["a health bar that shows the player's damage", "publishUiState", "formatHealthReport"],
   ])("ranks %s above its homonym", (query, expected, homonym) => {
-    const symbols = searchCapabilities(query, workspaceManifest, "request").map(
+    const symbols = searchResults(query, workspaceManifest, "request").map(
       (result) => result.symbol,
     );
     const wanted = symbols.indexOf(expected);
@@ -225,7 +271,7 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("returns one compilable example for the plain-language zoom capability", async () => {
-    const results = searchCapabilities(
+    const results = searchResults(
       "let the player zoom the camera with a wheel, pinch, or gamepad axis",
       workspaceManifest,
     );
@@ -267,7 +313,7 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("answers that native ray tracing is unavailable until readable output interop exists", () => {
-    const results = searchCapabilities("can I raytrace on native", workspaceManifest);
+    const results = searchResults("can I raytrace on native", workspaceManifest);
     const platform = results.find((result) => result.symbol === "getPlatform");
     expect(platform).toBeDefined();
     expect(platform?.constraints.join(" ")).toContain("ray tracing is unavailable on native");
@@ -276,10 +322,7 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("ranks attachToBone for holding a rifle in a character's right hand", () => {
-    const results = searchCapabilities(
-      "hold a rifle in a character's right hand",
-      workspaceManifest,
-    );
+    const results = searchResults("hold a rifle in a character's right hand", workspaceManifest);
     const attachmentIndex = results.findIndex((result) => result.symbol === "attachToBone");
     expect(attachmentIndex).toBeGreaterThanOrEqual(0);
     expect(attachmentIndex).toBeLessThan(3);
@@ -298,7 +341,7 @@ describe("threenative-engine-mcp", () => {
   });
 
   it("returns attachment guidance for the exact full enemy task", () => {
-    const results = searchCapabilities(
+    const results = searchResults(
       "Add an enemy that patrols the level, chases the player when it sees them, and holds a rifle in its right hand.",
       workspaceManifest,
     );
@@ -346,7 +389,8 @@ describe("threenative-engine-mcp", () => {
       await writeFile(
         file,
         JSON.stringify({
-          version: 1,
+          version: 2,
+          notOwned: [],
           entries: [
             {
               symbol: "GroundSnap",
@@ -381,10 +425,10 @@ describe("threenative-engine-mcp", () => {
         "capabilities.json",
       );
       await mkdir(path.dirname(installed), { recursive: true });
-      await writeFile(installed, JSON.stringify({ entries: [], version: 1 }));
+      await writeFile(installed, JSON.stringify({ entries: [], notOwned: [], version: 2 }));
       await writeFile(
         path.join(root, "capabilities.json"),
-        JSON.stringify({ entries: [], version: 1 }),
+        JSON.stringify({ entries: [], notOwned: [], version: 2 }),
       );
       expect(defaultManifestPath(root)).toBe(installed);
     } finally {
@@ -404,7 +448,7 @@ describe("threenative-engine-mcp", () => {
       );
       await mkdir(path.join(root, "src", "render"), { recursive: true });
       await mkdir(path.dirname(installed), { recursive: true });
-      await writeFile(installed, JSON.stringify({ entries: [], version: 1 }));
+      await writeFile(installed, JSON.stringify({ entries: [], notOwned: [], version: 2 }));
       expect(defaultManifestPath(path.join(root, "src", "render"))).toBe(installed);
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -418,7 +462,7 @@ describe("threenative-engine-mcp", () => {
     try {
       await writeFile(
         path.join(root, "capabilities.json"),
-        JSON.stringify({ entries: [], version: 1 }),
+        JSON.stringify({ entries: [], notOwned: [], version: 2 }),
       );
       expect(defaultManifestPath(root)).toBe(path.resolve("packages/core/capabilities.json"));
     } finally {
@@ -458,24 +502,70 @@ describe("threenative-engine-mcp", () => {
         symbol: "GroundSnap",
       };
       const entries = (overrides: Record<string, unknown>): string =>
-        JSON.stringify({ entries: [{ ...entry, ...overrides }], version: 1 });
+        JSON.stringify({ entries: [{ ...entry, ...overrides }], notOwned: [], version: 2 });
       const cases: ReadonlyArray<[string, string, RegExp]> = [
-        ["nonobject-root", "[]", /root must contain a numeric version and entries array/u],
+        [
+          "nonobject-root",
+          "[]",
+          /root must contain manifest version 2.*entries array.*notOwned array/u,
+        ],
         [
           "nonnumeric-version",
           JSON.stringify({ entries: [entry], version: "1" }),
-          /root must contain a numeric version and entries array/u,
+          /root must contain manifest version 2.*entries array.*notOwned array/u,
         ],
-        ["entries-not-array", JSON.stringify({ entries: {}, version: 1 }), /entries array/u],
+        [
+          "entries-not-array",
+          JSON.stringify({ entries: {}, notOwned: [], version: 2 }),
+          /entries array/u,
+        ],
         ["nonstring-symbol", entries({ symbol: 7 }), /entry 0 is malformed/u],
         ["nonstring-situations", entries({ situations: [1, 2] }), /entry 0 is malformed/u],
         ["nonstring-constraints", entries({ constraints: [false] }), /entry 0 is malformed/u],
-        ["nonrecord-entry", JSON.stringify({ entries: [42], version: 1 }), /entry 0 is malformed/u],
+        [
+          "nonrecord-entry",
+          JSON.stringify({ entries: [42], notOwned: [], version: 2 }),
+          /entry 0 is malformed/u,
+        ],
       ];
       for (const [name, content, expected] of cases) {
         await writeFile(file, content);
         expect(() => loadCapabilityManifest(file), name).toThrow(expected);
       }
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects a v2 manifest whose notOwned section is malformed", async () => {
+    const root = await makeTempDir("threenative-engine-mcp-malformed-not-owned-");
+    try {
+      const file = path.join(root, "capabilities.json");
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(
+        file,
+        JSON.stringify({
+          entries: [],
+          notOwned: [{ guidance: "write it in src/", id: "save-load", situations: [7] }],
+          version: 2,
+        }),
+      );
+      expect(() => loadCapabilityManifest(file)).toThrow("notOwned 0 is malformed");
+      expect(() => searchCapabilities("save the player progress", file)).toThrow(
+        "notOwned 0 is malformed",
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects a v1 manifest that has no notOwned section", async () => {
+    const root = await makeTempDir("threenative-engine-mcp-v1-manifest-");
+    try {
+      const file = path.join(root, "capabilities.json");
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, JSON.stringify({ entries: [], version: 1 }));
+      expect(() => loadCapabilityManifest(file)).toThrow(/manifest version 2.*notOwned array/u);
     } finally {
       await rm(root, { force: true, recursive: true });
     }
