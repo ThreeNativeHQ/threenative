@@ -25,7 +25,7 @@ is kept intact underneath because the argument is what makes the ruling checkabl
 **No** — `packages/core/src/render/world-environment.ts` does not land. The composer, the stage
 graph, the composite maths and the tier→parameter table ship as generated source in
 `templates/*/src/render/`, merged into the file
-[PRD-278](./PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) is already
+[PRD-278](../done/PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) is already
 carrying. `packages/core/__tests__/constraints.spec.ts:62` keeps its eleven-filename allowlist
 **unwidened**, and that is the load-bearing test of the ruling: an answer that needed the
 prohibition weakened would have been the wrong answer.

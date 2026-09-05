@@ -421,8 +421,8 @@ describe("capability manifest generator", () => {
         ids: ["brief.topdown-action.4"],
         owners: ["CollisionShape3D"],
       },
-      "damage body height": {
-        ids: ["brief.fps.8"],
+      "hitscan camera": {
+        ids: ["brief.fps.7"],
         owners: ["PhysicsDirectSpaceState3D"],
       },
       "raised platform gap hazard restart": {

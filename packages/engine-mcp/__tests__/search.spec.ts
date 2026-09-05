@@ -103,7 +103,7 @@ describe("threenative-engine-mcp", () => {
     expect(results[terrainIndex]?.matchedSituation).toBe("stream terrain without cracks");
   });
 
-  it("does not advertise health or hitscan implementations the engine does not own", () => {
+  it("does not advertise health while retaining the owned hitscan primitive", () => {
     const manifest = loadCapabilityManifest(workspaceManifest);
     const defineGame = manifest.entries.find((entry) => entry.symbol === "defineGame");
     const physicsQuery = manifest.entries.find(
@@ -111,13 +111,13 @@ describe("threenative-engine-mcp", () => {
     );
 
     expect(defineGame?.aliases).not.toContain("health never regenerates");
-    expect(physicsQuery?.aliases).not.toContain("hitscan camera");
+    expect(physicsQuery?.aliases).toContain("hitscan camera");
     expect(
       searchResults("health never regenerates", workspaceManifest).map((result) => result.symbol),
     ).not.toContain("defineGame");
-    expect(
-      searchResults("hitscan camera", workspaceManifest).map((result) => result.symbol),
-    ).not.toContain("PhysicsDirectSpaceState3D");
+    expect(searchResults("hitscan camera", workspaceManifest)[0]?.symbol).toBe(
+      "PhysicsDirectSpaceState3D",
+    );
   });
 
   it("explains an alias hit with a readable situation", () => {

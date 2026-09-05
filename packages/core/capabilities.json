@@ -2313,7 +2313,7 @@
       "symbol": "Joint3D"
     },
     {
-      "aliases": ["damage body height"],
+      "aliases": ["hitscan camera"],
       "constraints": ["query results are bounded by the configured result limit"],
       "example": "const space = new PhysicsDirectSpaceState3D(context);",
       "importPath": "@threenative/physics",
@@ -2797,7 +2797,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
-      "signature": "export function resolveDiagnosticsPolicy( policy: IPlaytestDiagnosticsAssertion | undefined, ): IPlaytestDiagnosticsPolicy { … }",
+      "signature": "export function resolveDiagnosticsPolicy( policy: IPlaytestDiagnosticsAssertion | undefined, target?: string, ): IPlaytestDiagnosticsPolicy { … }",
       "situations": ["judge captured console, network, or runtime diagnostics for a playtest"],
       "summary": "Resolve the effective diagnostics policy for a run, with fail-closed defaults applied.",
       "supersedes": [],

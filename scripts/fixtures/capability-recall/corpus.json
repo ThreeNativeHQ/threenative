@@ -421,8 +421,8 @@
       "scope": "request",
       "source": "template:action-rpg#AGENTS.md — __PROJECT_NAME__ action RPG",
       "expect": ["assertPortableState"],
-      "notOwned": true,
-      "reject": []
+      "reject": [],
+      "notOwned": "inventory"
     },
     {
       "id": "request.enemy-ai",
@@ -446,7 +446,6 @@
       "scope": "request",
       "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
       "expect": ["assertPortableState"],
-      "notOwned": true,
       "reject": [
         "Area3D",
         "PointerEvents3D",
@@ -456,7 +455,8 @@
         "defineGame",
         "Heightfield",
         "attachToBone"
-      ]
+      ],
+      "notOwned": "save-load"
     },
     {
       "id": "request.spawn-waves",
@@ -487,8 +487,8 @@
       "scope": "request",
       "source": "template:sailing#AGENTS.md — __PROJECT_NAME__ sailing",
       "expect": ["Text"],
-      "notOwned": true,
-      "reject": ["NavigationAgent3D", "recast"]
+      "reject": ["NavigationAgent3D", "recast"],
+      "notOwned": "dialogue"
     },
     {
       "id": "request.pick-up-item",
@@ -504,8 +504,8 @@
       "scope": "request",
       "source": "template:starter#Ownership",
       "expect": ["defineGame"],
-      "notOwned": true,
-      "reject": []
+      "reject": [],
+      "notOwned": "networked-multiplayer"
     },
     {
       "id": "request.platformer-double-jump",

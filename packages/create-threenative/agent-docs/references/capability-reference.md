@@ -2297,7 +2297,7 @@ const result = evaluateRichPlaytestAssertions(input);
 `function` — Resolve the effective diagnostics policy for a run, with fail-closed defaults applied.
 
 ```ts
-export function resolveDiagnosticsPolicy( policy: IPlaytestDiagnosticsAssertion | undefined, ): IPlaytestDiagnosticsPolicy { … }
+export function resolveDiagnosticsPolicy( policy: IPlaytestDiagnosticsAssertion | undefined, target?: string, ): IPlaytestDiagnosticsPolicy { … }
 ```
 
 - **Use when:** judge captured console, network, or runtime diagnostics for a playtest

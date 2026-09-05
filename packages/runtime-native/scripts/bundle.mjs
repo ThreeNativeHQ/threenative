@@ -167,9 +167,9 @@ const MOBILE_KTX2_MESSAGE =
   // Deliberately never spells the WASM host object: `TN_NATIVE_WASM_ON_MOBILE` greps the
   // finished bundle for that identifier, and a refusal message must not read as the thing it
   // refuses.
-  "TN_NATIVE_KTX2_UNSUPPORTED: this Android/iOS bundle carries no Basis transcoder, because the mobile native runtime has no WASM engine. Compiled .ktx2 textures cannot be decoded here; build native targets with assets.textures set to \\\"none\\\", or keep those textures on the web target.";
+  "TN_NATIVE_KTX2_UNSUPPORTED: this Android/iOS bundle carries no Basis transcoder, because the mobile native runtime has no WASM engine. Compiled .ktx2 textures cannot be decoded here; native compilation automatically keeps decoder-free authored textures, or keep compressed textures on the web target.";
 const MOBILE_MESH_MESSAGE =
-  "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: this Android/iOS bundle carries no Meshopt or Draco decoder, because the mobile native runtime has no WASM engine. Compressed model geometry cannot be decoded here; build native targets with assets.models set to \\\"none\\\", or keep those models on the web target.";
+  "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: this Android/iOS bundle carries no Meshopt or Draco decoder, because the mobile native runtime has no WASM engine. Compressed model geometry cannot be decoded here; native compilation keeps shared images and decoder-free model geometry, or keep compressed models on the web target.";
 
 const MOBILE_DECODER_STUBS = [
   {

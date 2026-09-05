@@ -687,10 +687,15 @@ function unsupportedAssertion(
       target,
     );
   }
+  // Only an explicit `true`. The omitted case is no longer the same question: since
+  // `resolveDiagnosticsPolicy` learned the run target, a device lane defaults the network channel
+  // *off* with the reason recorded, rather than defaulting it on and comparing it to an
+  // observation that is hardwired empty. A scenario that spells out `true` is still asking the
+  // target for something it cannot do, and still fails here by name.
   if (scenario.assert?.diagnostics?.noNetworkErrors === true) {
     return unsupportedDiagnostic(
       "network assertions",
-      `Run this assertion on --target browser; ${targetLabel(target)} device transport has no CDP network observer.`,
+      `Run this assertion on --target browser; ${targetLabel(target)} device transport has no CDP network observer. Declare "diagnostics": { "noNetworkErrors": false, "networkErrorsOptOutReason": "..." } to say so in the scenario — the default is on, so omitting it asserts the lane rather than waiving it.`,
       target,
     );
   }

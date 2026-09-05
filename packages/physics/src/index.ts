@@ -69,7 +69,7 @@ export type {
  * Query the physics world without creating a body.
  * @situation raycast for visibility or aiming
  * @situation find bodies inside a shape or point query
- * @alias damage body height
+ * @alias hitscan camera
  * @constraint query results are bounded by the configured result limit
  * @example const space = new PhysicsDirectSpaceState3D(context);
  */

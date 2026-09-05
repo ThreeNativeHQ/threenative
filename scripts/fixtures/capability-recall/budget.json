@@ -119,5 +119,12 @@
   "rejectHits": 16,
   "rowCount": 58,
   "version": 1,
-  "zeroResultRate": 0.06896551724137931
+  "zeroResultRate": 0.06896551724137931,
+  "unresolvedResultRate": 0.1206896551724138,
+  "notOwnedRows": {
+    "request.inventory-system": "inventory",
+    "request.save-progress": "save-load",
+    "request.dialogue-npc": "dialogue",
+    "request.multiplayer": "networked-multiplayer"
+  }
 }

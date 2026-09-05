@@ -46,7 +46,11 @@ describe("asset worker pool lifetime", () => {
   it("terminates every worker when disposed", async () => {
     const moduleUrl = pathToFileURL(path.resolve("packages/assets/src/worker-pool.ts")).href;
     const script = `void import(${JSON.stringify(moduleUrl)}).then(async ({ createPassPool }) => {
-      const pool = createPassPool(2, [{ kind: "texture", options: {} }], process.cwd());
+      const pool = createPassPool(
+        2,
+        [{ kind: "texture", needsRuntimeDecoder: true, options: {} }],
+        process.cwd(),
+      );
       await pool.run("plain.txt", Buffer.from("unchanged"));
       await pool.dispose();
       process.stdout.write("disposed\\n");
