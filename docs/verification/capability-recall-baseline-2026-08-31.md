@@ -423,3 +423,30 @@ corpus rows above. Losing their guidance is a dedicated failure: an empty array 
 pinned row must fail as `expected a verified not-owned response envelope`, and an
 envelope whose guidance differs from the manifest must fail as
 `not-owned response guidance does not match its manifest entry`.
+
+## Vocabulary ownership correction — 2026-09-05
+
+The PRD-300 vocabulary pass initially raised the recalled-symbol count from the 25-row
+predecessor to 54/58. Review found that two of those matches described capabilities the engine
+does not own: `health never regenerates` was attached to `defineGame`, and `damage body height`
+was attached to `PhysicsDirectSpaceState3D`. Both aliases were removed. The real
+`PhysicsDirectSpaceState3D` raycast primitive still owns `hitscan camera`, and the terrain
+streaming phrase now belongs to `TerrainTiles` rather than virtual geometry.
+
+The corrected measurement is therefore 52/58 distinct-symbol rows, not a new search regression:
+
+~~~text
+zeroResultRate: 0.068966 (4/58)
+unresolvedResultRate: 0.000000 (0/58)
+actionable: 56/58 (52 distinct-symbol, 4 guided not-owned)
+recallAtK: 0.896552 (52/58)
+rejectHits: 16
+rowCount: 58
+~~~
+
+The budget now protects the corrected 52 recalled row IDs and the four pinned not-owned mappings;
+the 7/58 unresolved ceiling remains unchanged, while the reject ceiling tightens from the
+historical 19 to 16. The legacy corpus rows
+`brief.fps.3` (health) and `brief.fps.8` (damage by body height) remain explicit misses with their
+original expected symbols. They were not relabeled to make recall green; they document mechanics
+that still need game-owned implementation or a future measured `notOwned` entry.

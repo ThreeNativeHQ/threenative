@@ -1,6 +1,7 @@
 {
   "entries": [
     {
+      "aliases": [],
       "constraints": [
         "a clip declared a loop has its seam measured on the decoded output bytes and fails the build when it exceeds the threshold; the assertion cannot be declared away",
         "which clips loop, which are positional, and what a clip is for are declared per glob and never inferred from a filename",
@@ -22,6 +23,7 @@
       "symbol": "audioPass"
     },
     {
+      "aliases": [],
       "constraints": [
         "source and output directories must be disjoint; a pass failure stops the build with the asset path"
       ],
@@ -41,6 +43,7 @@
       "symbol": "compileAssets"
     },
     {
+      "aliases": [],
       "constraints": ["an empty row list produces no report lines"],
       "example": "const lines = formatAudioSizes(audioRows);",
       "importPath": "@threenative/assets",
@@ -57,6 +60,7 @@
       "symbol": "formatAudioSizes"
     },
     {
+      "aliases": [],
       "constraints": [
         "the returned lines describe findings; target enforcement happens in runHealthReport"
       ],
@@ -75,6 +79,7 @@
       "symbol": "formatHealthReport"
     },
     {
+      "aliases": [],
       "constraints": ["rows must use bytes before and after from the same compiled input"],
       "example": "const lines = formatModelSizes(modelRows);",
       "importPath": "@threenative/assets",
@@ -91,6 +96,7 @@
       "symbol": "formatModelSizes"
     },
     {
+      "aliases": [],
       "constraints": ["one row per pass in registry order, per-asset rows sorted by logical path"],
       "example": "const lines = formatPassCosts(result.passCosts);",
       "importPath": "@threenative/assets",
@@ -107,6 +113,7 @@
       "symbol": "formatPassCosts"
     },
     {
+      "aliases": [],
       "constraints": ["an empty row list produces no report lines"],
       "example": "const lines = formatTextureSizes(textureRows);",
       "importPath": "@threenative/assets",
@@ -123,6 +130,7 @@
       "symbol": "formatTextureSizes"
     },
     {
+      "aliases": [],
       "constraints": [
         "the input must be a static self-contained GLB with at least one punctual light"
       ],
@@ -141,6 +149,7 @@
       "symbol": "lightmapPass"
     },
     {
+      "aliases": [],
       "constraints": [
         "the pass self-verifies reachable geometry, animation, bounds, and embedded texture bindings before returning output"
       ],
@@ -159,6 +168,7 @@
       "symbol": "modelPass"
     },
     {
+      "aliases": [],
       "constraints": [
         "non-PNG or truncated bytes return undefined instead of being treated as a valid image"
       ],
@@ -177,6 +187,7 @@
       "symbol": "parsePng"
     },
     {
+      "aliases": [],
       "constraints": [
         "the supplied working directory must resolve both basis_transcoder.js and basis_transcoder.wasm from its Three.js installation"
       ],
@@ -195,6 +206,7 @@
       "symbol": "resolveBasisTranscoder"
     },
     {
+      "aliases": [],
       "constraints": [
         "a finding is fail-grade only when the corresponding project target was declared"
       ],
@@ -213,6 +225,7 @@
       "symbol": "runHealthReport"
     },
     {
+      "aliases": [],
       "constraints": [
         "compressed source width and height must each be divisible by 4; automatic cooking retains an unaligned source unchanged and reports block-size, while an explicit compression codec override fails",
         "every compressed source width and height must be divisible by 4 because BC7, BC1, ETC2, and ASTC 4x4 use 4x4 blocks; WebGPU rejects an unaligned texture at draw time",
@@ -233,6 +246,7 @@
       "symbol": "texturePass"
     },
     {
+      "aliases": [],
       "constraints": [
         "call close on the returned handle; initial and burst failures are reported without stopping the dev server"
       ],
@@ -251,6 +265,7 @@
       "symbol": "watchAssets"
     },
     {
+      "aliases": [],
       "constraints": [
         "the objects, and where each one goes, stay the game's; this decides only when each joins the graph",
         "input order is the attach order and cannot be changed",
@@ -273,6 +288,7 @@
       "symbol": "addInSlices"
     },
     {
+      "aliases": [],
       "constraints": ["register from a scene context; callbacks are cleared when that scene exits"],
       "example": "afterPhysics(ctx, (dt) => camera.position.copy(player.mesh.position));",
       "importPath": "@threenative/core",
@@ -289,6 +305,7 @@
       "symbol": "afterPhysics"
     },
     {
+      "aliases": [],
       "constraints": [
         "name the body a game moves as strideRoot when the animated rig is a child of it",
         "a one-shot clip always plays at its authored rate; the matched rate re-times loops only",
@@ -315,6 +332,7 @@
       "symbol": "AnimationPlayer"
     },
     {
+      "aliases": ["bright sky saturated green platforms"],
       "constraints": [
         "supply rayleigh, mie, ozone, planetRadius, and atmosphereRadius; there is no Earth fallback",
         "the game creates the sky object, surface, and sun from the returned nodes"
@@ -334,6 +352,7 @@
       "symbol": "Atmosphere"
     },
     {
+      "aliases": [],
       "constraints": ["supply all physical parameters; this class creates no scene appearance"],
       "example": "const luts = new AtmosphereLuts({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });",
       "importPath": "@threenative/core",
@@ -347,6 +366,7 @@
       "symbol": "AtmosphereLuts"
     },
     {
+      "aliases": [],
       "constraints": [
         "when a request is to hold or attach a weapon to a hand, import and call `attachToBone` from `@threenative/core`; do not manually parent, position, or rotate the rifle",
         "if a stock visual has no skeleton, add a portable Three.js Bone named `RightHand` under the character, then call `attachToBone`; do not replace the helper with manual parenting"
@@ -370,6 +390,7 @@
       "symbol": "attachToBone"
     },
     {
+      "aliases": [],
       "constraints": [
         "create buses before playing clips and dispose them with the game",
         "refDistance and rolloffFactor tune positional falloff and apply to playAt only"
@@ -391,6 +412,7 @@
       "symbol": "AudioBus"
     },
     {
+      "aliases": [],
       "constraints": [
         "call update from the owning scene; no global scene scan is installed",
         "orthographic cameras use their forward direction, and lockAxis restricts world rotation"
@@ -410,6 +432,7 @@
       "symbol": "Billboard3D"
     },
     {
+      "aliases": [],
       "constraints": [
         "this walks the target's vertices; call it on a check or a debug sample, not every frame"
       ],
@@ -429,6 +452,7 @@
       "symbol": "boneContact"
     },
     {
+      "aliases": [],
       "constraints": [
         "a rigid skeleton preserves every parent→child distance under any pose; a named bone is a defect with an address",
         "this is a diagnostic — it reports numbers and names; it moves nothing and decides no appearance"
@@ -449,6 +473,7 @@
       "symbol": "boneLengthDeviations"
     },
     {
+      "aliases": [],
       "constraints": [
         "the baseline and the later comparison must come from the same rig under the same ancestor transform, so a uniform scale cancels"
       ],
@@ -467,6 +492,7 @@
       "symbol": "boneLengths"
     },
     {
+      "aliases": [],
       "constraints": [
         "amplitude, rotationAmplitude, frequency, decay, and curve are required game choices",
         "update returns an offset and never writes to a camera"
@@ -486,6 +512,7 @@
       "symbol": "CameraShake"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "const hud = new CanvasLayer(ctx.viewport);",
       "importPath": "@threenative/core",
@@ -502,6 +529,7 @@
       "symbol": "CanvasLayer"
     },
     {
+      "aliases": [],
       "constraints": ["a track that binds nothing counts as driving nothing"],
       "example": "import { clipBoneCoverage } from \"@threenative/core\";\nconst coverage = clipBoneCoverage(character, clip);",
       "importPath": "@threenative/core",
@@ -518,6 +546,7 @@
       "symbol": "clipBoneCoverage"
     },
     {
+      "aliases": [],
       "constraints": [
         "each bone is compared as a whole quaternion relative to its own rig's bind pose, so the two rigs never have to share a bind convention; a bone-direction check reports zero on the roll this catches",
         "both rigs must face the same way in world space, and both are driven and then restored to the transforms they arrived with"
@@ -540,6 +569,7 @@
       "symbol": "clipPoseError"
     },
     {
+      "aliases": [],
       "constraints": [
         "the reason is Three.js's own, captured off its console hook so a scenario's console assertions stay clean"
       ],
@@ -558,6 +588,7 @@
       "symbol": "clipTrackBindings"
     },
     {
+      "aliases": [],
       "constraints": [
         "the body's geometry must carry a cluster table from `assets.models.virtual`",
         "every copy is placed before build(); place() after build() throws"
@@ -580,6 +611,7 @@
       "symbol": "ClusteredBatch"
     },
     {
+      "aliases": [],
       "constraints": [
         "the bake happens in the asset pipeline, never at run time — there is no runtime flag",
         "the payload costs about 3-4x a baked primitive's bytes; `assets.models.virtual: \"none\"` opts out and `minSourceTriangles` moves the 65,536 line",
@@ -605,6 +637,7 @@
       "symbol": "ClusteredMesh"
     },
     {
+      "aliases": [],
       "constraints": [
         "add the object through ctx.add so it attaches, dispatches, and releases with its scene"
       ],
@@ -624,6 +657,7 @@
       "symbol": "ComputeDrivenRegistry"
     },
     {
+      "aliases": ["different props in each area", "first playable screen external assets"],
       "constraints": [
         "reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches"
       ],
@@ -642,6 +676,7 @@
       "symbol": "createAssetLoader"
     },
     {
+      "aliases": [],
       "constraints": ["use the returned source instead of Math.random for replayable behavior"],
       "example": "const random = createRandom(42);",
       "importPath": "@threenative/core",
@@ -658,6 +693,7 @@
       "symbol": "createRandom"
     },
     {
+      "aliases": ["fixed seed fixed-step simulation"],
       "constraints": [
         "use a seeded random source and fixed-step simulation for meaningful replays"
       ],
@@ -676,6 +712,12 @@
       "symbol": "createReplayDriver"
     },
     {
+      "aliases": [
+        "firing line nearest target crosshair",
+        "third-person camera",
+        "restart the run without a page reload",
+        "field of view while aiming"
+      ],
       "constraints": [
         "keep DOM and React mounting in src/main.ts",
         "bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener",
@@ -690,13 +732,15 @@
       "situations": [
         "start a ThreeNative game from src/game.ts",
         "register physics and gameplay plugins",
-        "let the player zoom the camera with a wheel, pinch, or gamepad axis"
+        "let the player zoom the camera with a wheel, pinch, or gamepad axis",
+        "frame a camera behind the player"
       ],
       "summary": "Define the portable game entry shared by web and native.",
       "supersedes": [],
       "symbol": "defineGame"
     },
     {
+      "aliases": [],
       "constraints": ["pass a non-zero direction; coefficients and radii come from the game"],
       "example": "const transmittance = directionalTransmittance(parameters, sunDirection);",
       "importPath": "@threenative/core",
@@ -710,6 +754,7 @@
       "symbol": "directionalTransmittance"
     },
     {
+      "aliases": [],
       "constraints": ["elevation and azimuth must be finite degrees"],
       "example": "const direction = directionFromSolarPosition(sun.elevation, sun.azimuth);",
       "importPath": "@threenative/core",
@@ -723,6 +768,7 @@
       "symbol": "directionFromSolarPosition"
     },
     {
+      "aliases": [],
       "constraints": [
         "call `VelocityTracker.update()` before the render and `commit()` after it",
         "a pass is only given a velocity target when a temporal stage consumes it",
@@ -744,6 +790,7 @@
       "symbol": "ensureVelocityOutput"
     },
     {
+      "aliases": [],
       "constraints": [
         "add the field through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic",
         "`dye` and `velocity` are numeric samplers; appearance stays in the game's `src/render/` code",
@@ -769,6 +816,7 @@
       "symbol": "FluidField2D"
     },
     {
+      "aliases": [],
       "constraints": [
         "on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement"
       ],
@@ -787,6 +835,7 @@
       "symbol": "FrameBudget"
     },
     {
+      "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
         "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
@@ -807,6 +856,7 @@
       "symbol": "getPlatform"
     },
     {
+      "aliases": [],
       "constraints": ["geometry, color, and timing remain supplied by the game"],
       "example": "const particles = new GPUParticles3D(particleOptions);",
       "importPath": "@threenative/core",
@@ -826,6 +876,7 @@
       "symbol": "GPUParticles3D"
     },
     {
+      "aliases": [],
       "constraints": [
         "the copy is asynchronous, so every sample carries staleFrames and is never this frame",
         "WebGPU only; the seam throws on a WebGL2 renderer rather than returning nothing",
@@ -848,6 +899,7 @@
       "symbol": "GPUReadback"
     },
     {
+      "aliases": [],
       "constraints": [
         "call rebuild() after a scene transform or geometry change; the snapshot is static by default",
         "rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray"
@@ -867,6 +919,7 @@
       "symbol": "GPUSceneBVH"
     },
     {
+      "aliases": [],
       "constraints": [
         "import from `@threenative/core`; this moves the rendered model, not its physics collider"
       ],
@@ -887,6 +940,7 @@
       "symbol": "GroundSnap"
     },
     {
+      "aliases": ["landmarks points of interest", "obstacles collectibles increasing pace"],
       "constraints": [
         "geometry and material are required and come from the game; the batch chooses neither",
         "span stretches along +Y, so its geometry must be unit-height and centred on the origin",
@@ -911,6 +965,7 @@
       "symbol": "InstancedBatch"
     },
     {
+      "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
         "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
@@ -931,6 +986,7 @@
       "symbol": "isMobile"
     },
     {
+      "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
         "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
@@ -951,6 +1007,7 @@
       "symbol": "isNative"
     },
     {
+      "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
         "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
@@ -971,6 +1028,7 @@
       "symbol": "isTouchscreenAvailable"
     },
     {
+      "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
         "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
@@ -991,6 +1049,7 @@
       "symbol": "isWeb"
     },
     {
+      "aliases": [],
       "constraints": [
         "results are written to each item's own index and never appended, so a positional lookup finds the same asset on every load",
         "the first rejection rejects the call and no lane starts a load it had not begun"
@@ -1012,6 +1071,7 @@
       "symbol": "loadAll"
     },
     {
+      "aliases": [],
       "constraints": ["precise per-vertex measurement is opt-in and not for frame loops"],
       "example": "const measurement = measureThreePose(model);",
       "importPath": "@threenative/core",
@@ -1025,6 +1085,7 @@
       "symbol": "measureThreePose"
     },
     {
+      "aliases": [],
       "constraints": [
         "skinned height uses a crown bone; game-specific asset expectations stay in render code"
       ],
@@ -1043,6 +1104,7 @@
       "symbol": "normaliseToMetres"
     },
     {
+      "aliases": [],
       "constraints": ["recordings are version 1; the parser fails closed with TN_REPLAY_* codes"],
       "example": "const recording = parseReplayRecording(rawRecording);",
       "importPath": "@threenative/core",
@@ -1056,6 +1118,7 @@
       "symbol": "parseReplayRecording"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "const follower = new PathFollow3D({ points: patrolPoints, loop: true, speed: 3 });",
       "importPath": "@threenative/core",
@@ -1072,6 +1135,7 @@
       "symbol": "PathFollow3D"
     },
     {
+      "aliases": [],
       "constraints": [
         "listeners are side-table registrations; Three.js prototypes are never patched",
         "one raycast serves each active pointer and no raycast runs when nothing is registered"
@@ -1093,6 +1157,7 @@
       "symbol": "PointerEvents3D"
     },
     {
+      "aliases": [],
       "constraints": ["precise per-vertex measurement is opt-in and not for frame loops"],
       "example": "const measurement = measureThreePose(model);",
       "importPath": "@threenative/core",
@@ -1106,6 +1171,7 @@
       "symbol": "posedBounds"
     },
     {
+      "aliases": [],
       "constraints": [
         "keep the surface visible with zero opacity; do not hide it with `visible = false`"
       ],
@@ -1124,6 +1190,7 @@
       "symbol": "prewarm"
     },
     {
+      "aliases": ["readable world lighting"],
       "constraints": [
         "request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting",
         "add the volume with ctx.add() so its incremental work is measured in the render phase",
@@ -1144,26 +1211,23 @@
       "symbol": "ProbeVolume"
     },
     {
+      "aliases": [],
       "constraints": [
-        "request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting",
-        "add the volume with ctx.add() so its incremental work is measured in the render phase",
-        "call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour"
+        "the returned observation is a measurement; it does not own lighting or materials"
       ],
-      "example": "const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);",
+      "example": "const observation = readProbeVolumeObservation(probes);",
       "importPath": "@threenative/core",
       "kind": "function",
-      "overrides": ["density, bounds, bakeBudgetMs, and bounces are game-owned choices"],
+      "overrides": [],
       "package": "@threenative/core",
       "signature": "export function readProbeVolumeObservation(value: unknown): IProbeVolumeObservation | undefined { … }",
-      "situations": [
-        "light bouncing from a room I cannot see",
-        "light a wall with an off-screen emitter"
-      ],
-      "summary": "Bake static diffuse irradiance that reaches surfaces from outside the camera view.",
+      "situations": ["inspect the latest probe bake observation"],
+      "summary": "Read the most recent observation from a probe volume.",
       "supersedes": [],
       "symbol": "readProbeVolumeObservation"
     },
     {
+      "aliases": [],
       "constraints": [
         "stage factories own colour, strength, and all other appearance choices",
         "authored stages declare exactly one before or after anchor"
@@ -1184,6 +1248,7 @@
       "symbol": "readRenderChainObservation"
     },
     {
+      "aliases": [],
       "constraints": [
         "stage factories own colour, strength, and all other appearance choices",
         "authored stages declare exactly one before or after anchor",
@@ -1207,6 +1272,7 @@
       "symbol": "readRenderChainReport"
     },
     {
+      "aliases": [],
       "constraints": [
         "call `VelocityTracker.update()` before the render and `commit()` after it",
         "a pass is only given a velocity target when a temporal stage consumes it"
@@ -1227,6 +1293,7 @@
       "symbol": "readVelocityPreviousBoneMatrices"
     },
     {
+      "aliases": [],
       "constraints": [
         "call `VelocityTracker.update()` before the render and `commit()` after it",
         "a pass is only given a velocity target when a temporal stage consumes it"
@@ -1247,6 +1314,7 @@
       "symbol": "readVelocityPreviousMatrices"
     },
     {
+      "aliases": [],
       "constraints": [
         "call `VelocityTracker.update()` before the render and `commit()` after it",
         "a pass is only given a velocity target when a temporal stage consumes it"
@@ -1267,6 +1335,7 @@
       "symbol": "readVelocityPreviousWorldMatrix"
     },
     {
+      "aliases": [],
       "constraints": [
         "non-marker lines and markers with incomplete or non-numeric stats return `undefined`"
       ],
@@ -1282,6 +1351,7 @@
       "symbol": "readVirtualShadowMarker"
     },
     {
+      "aliases": [],
       "constraints": [
         "the model loader already applies this automatically; only a game loading GLBs around it needs the call",
         "detection votes per tracked bone and converts only on an overwhelming signature; a file that does not carry it is left byte-identical"
@@ -1302,6 +1372,7 @@
       "symbol": "reconcileMirroredClips"
     },
     {
+      "aliases": [],
       "constraints": [
         "stage factories own colour, strength, and all other appearance choices",
         "authored stages declare exactly one before or after anchor"
@@ -1322,6 +1393,7 @@
       "symbol": "RenderChain"
     },
     {
+      "aliases": ["fixed seed fixed-step simulation"],
       "constraints": [
         "use a seeded random source and fixed-step simulation for meaningful replays"
       ],
@@ -1340,6 +1412,7 @@
       "symbol": "replay"
     },
     {
+      "aliases": [],
       "constraints": [
         "every width and height must be a positive integer; the dimensions are not a named fidelity tier"
       ],
@@ -1355,6 +1428,7 @@
       "symbol": "resolveAtmosphereLutResolutions"
     },
     {
+      "aliases": [],
       "constraints": [
         "provide all three coefficient vectors and both radii; omitted fields are errors"
       ],
@@ -1370,6 +1444,7 @@
       "symbol": "resolveAtmosphereParameters"
     },
     {
+      "aliases": [],
       "constraints": ["scene code must stay portable across web and native"],
       "example": "class Play extends Scene { update(ctx, dt) {} }",
       "importPath": "@threenative/core",
@@ -1386,6 +1461,7 @@
       "symbol": "Scene"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "const picker = new ScenePicker({ camera: ctx.camera, scene: ctx.scene, pointer: () => ctx.input.raw.pointer, viewport: ctx.viewport });",
       "importPath": "@threenative/core",
@@ -1402,6 +1478,7 @@
       "symbol": "ScenePicker"
     },
     {
+      "aliases": ["tower defense game", "spawn waves"],
       "constraints": [
         "dispose returned handles when the owning scene exits",
         "ease receives progress in the range 0 to 1 and its return value is the interpolation factor"
@@ -1422,6 +1499,7 @@
       "symbol": "Scheduler"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "import { skeletonBones } from \"@threenative/core\";\nconst bones = skeletonBones(character);",
       "importPath": "@threenative/core",
@@ -1438,6 +1516,7 @@
       "symbol": "skeletonBones"
     },
     {
+      "aliases": [],
       "constraints": [
         "the mesh must use one Three.js node material and contain complete triangles",
         "pinned, stiffness, damping, gravity, and wind are required game-owned inputs",
@@ -1463,6 +1542,7 @@
       "symbol": "SoftBody3D"
     },
     {
+      "aliases": [],
       "constraints": [
         "canvas-painted images sample black under WebGPURenderer; write sprites as pixel data there"
       ],
@@ -1481,6 +1561,7 @@
       "symbol": "softCircleDataTexture"
     },
     {
+      "aliases": [],
       "constraints": [
         "dates are interpreted as UTC unless utcOffset is supplied; no fixed sun direction is assumed",
         "pass a mutable { azimuth, elevation } target to reuse the result object in a steady frame loop"
@@ -1500,6 +1581,7 @@
       "symbol": "solarPosition"
     },
     {
+      "aliases": [],
       "constraints": [
         "dates are interpreted as UTC; use solarPosition for an explicit local offset"
       ],
@@ -1515,6 +1597,7 @@
       "symbol": "solarPositionAt"
     },
     {
+      "aliases": [],
       "constraints": [
         "it draws nothing; the game supplies the mesh, the material and every colour",
         "CPU height is a throttled copy carrying staleFrames, never this frame and never exact",
@@ -1538,6 +1621,7 @@
       "symbol": "SpectralOcean"
     },
     {
+      "aliases": [],
       "constraints": [
         "the game supplies the atlas texture, surface, filtering, layout, and every frame duration",
         "update is driven by the scene fixed step; no wall clock or default frame rate is used"
@@ -1557,6 +1641,7 @@
       "symbol": "SpriteAnimator3D"
     },
     {
+      "aliases": [],
       "constraints": [
         "the surface comes from the game; pooling, travel, and fading belong to the engine",
         "update once per frame and dispose with the owning scene"
@@ -1576,6 +1661,7 @@
       "symbol": "TracerPool3D"
     },
     {
+      "aliases": [],
       "constraints": ["patches cannot introduce omitted, negative, or non-finite physical values"],
       "example": "atmosphere.setAtmosphere({ rayleigh: [0.008, 0.016, 0.04] });",
       "importPath": "@threenative/core",
@@ -1589,6 +1675,7 @@
       "symbol": "updateAtmosphereParameters"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "updateClusteredMeshes(stagedRoot, myCamera, ctx.renderer.domElement.height);",
       "importPath": "@threenative/core",
@@ -1602,6 +1689,7 @@
       "symbol": "updateClusteredMeshes"
     },
     {
+      "aliases": [],
       "constraints": [
         "call `VelocityTracker.update()` before the render and `commit()` after it",
         "a pass is only given a velocity target when a temporal stage consumes it"
@@ -1622,6 +1710,7 @@
       "symbol": "velocityTexture"
     },
     {
+      "aliases": [],
       "constraints": [
         "call `VelocityTracker.update()` before the render and `commit()` after it",
         "a pass is only given a velocity target when a temporal stage consumes it",
@@ -1643,6 +1732,7 @@
       "symbol": "VelocityTracker"
     },
     {
+      "aliases": [],
       "constraints": [
         "the light must be a DirectionalLight with `castShadow` and a target in the scene",
         "clipExtents are half-widths in world units, finest first, strictly increasing",
@@ -1668,6 +1758,7 @@
       "symbol": "VirtualShadowNode"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "await warmUpScene(renderer, scene, camera, { onProgress: (p) => setLoading(p) });",
       "importPath": "@threenative/core",
@@ -1684,6 +1775,7 @@
       "symbol": "warmUpScene"
     },
     {
+      "aliases": [],
       "constraints": [
         "it draws nothing; the game supplies the mesh, the material and every colour",
         "the material must be transparent so the frame beneath it is already drawn",
@@ -1708,6 +1800,7 @@
       "symbol": "WaterSurface3D"
     },
     {
+      "aliases": [],
       "constraints": [
         "supply every wave amplitude, wavelength, direction, speed and warp value",
         "call setTime for the default graph clock when the game advances its own time"
@@ -1728,6 +1821,7 @@
       "symbol": "WaveField"
     },
     {
+      "aliases": [],
       "constraints": [
         "call `VelocityTracker.update()` before the render and `commit()` after it",
         "a pass is only given a velocity target when a temporal stage consumes it"
@@ -1748,6 +1842,7 @@
       "symbol": "withVelocityContext"
     },
     {
+      "aliases": [],
       "constraints": [
         "use the returned value as a validation oracle; the rendered path samples the LUT"
       ],
@@ -1763,6 +1858,7 @@
       "symbol": "zenithTransmittance"
     },
     {
+      "aliases": [],
       "constraints": ["use only in the web development entry"],
       "example": "acceptHotUpdate(game, import.meta.hot);",
       "importPath": "@threenative/core/hot",
@@ -1779,6 +1875,7 @@
       "symbol": "acceptHotUpdate"
     },
     {
+      "aliases": [],
       "constraints": ["state must contain finite numbers and plain objects only"],
       "example": "assertPortableState(game.state.getState());",
       "importPath": "@threenative/core/hot",
@@ -1795,6 +1892,7 @@
       "symbol": "assertPortableState"
     },
     {
+      "aliases": [],
       "constraints": ["install once in the game's plugin list"],
       "example": "const game = defineGame({ plugins: [playtest()] });",
       "importPath": "@threenative/core/playtest",
@@ -1811,6 +1909,7 @@
       "symbol": "playtest"
     },
     {
+      "aliases": [],
       "constraints": [
         "styling is the `style` prop; Tailwind class names are CSS and cannot cross",
         "import `react`, never `react-dom`, from the portable native entry",
@@ -1833,6 +1932,7 @@
       "symbol": "createReactOverlay"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "const scoreWidth = measureText(\"SCORE 10\", 24)",
       "importPath": "@threenative/core/react",
@@ -1846,6 +1946,7 @@
       "symbol": "measureText"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "supportedGlyphs().includes(\"A\")",
       "importPath": "@threenative/core/react",
@@ -1859,6 +1960,7 @@
       "symbol": "supportedGlyphs"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "supportedStyleKeys().includes(\"centerX\")",
       "importPath": "@threenative/core/react",
@@ -1872,6 +1974,7 @@
       "symbol": "supportedStyleKeys"
     },
     {
+      "aliases": ["objective panel journal"],
       "constraints": [],
       "example": "<Text style={{ color: \"#ffffff\", fontSize: 24 }}>SCORE 10</Text>",
       "importPath": "@threenative/core/react",
@@ -1885,6 +1988,7 @@
       "symbol": "Text"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "<View style={{ centerX: true, top: 24 }}><Text>READY</Text></View>",
       "importPath": "@threenative/core/react",
@@ -1898,6 +2002,7 @@
       "symbol": "View"
     },
     {
+      "aliases": [],
       "constraints": ["the transport is discovered, never configured; no game names the web view"],
       "example": "const bridge = connectUiBridge({ end: \"ui\" });",
       "importPath": "@threenative/core/ui-layer",
@@ -1916,6 +2021,7 @@
       "symbol": "connectUiBridge"
     },
     {
+      "aliases": [],
       "constraints": ["prefer game.ui.onIntent, which connects the bridge for you"],
       "example": "onUiIntent(bridge, (intent) => { if (intent === \"restart\") game.goto(\"Play\"); });",
       "importPath": "@threenative/core/ui-layer",
@@ -1933,6 +2039,7 @@
       "symbol": "onUiIntent"
     },
     {
+      "aliases": [],
       "constraints": [
         "mark controls with data-tn-interactive; pointer-events is not the mechanism"
       ],
@@ -1953,6 +2060,7 @@
       "symbol": "publishHitRegions"
     },
     {
+      "aliases": ["journal objective panel", "readable HUD"],
       "constraints": [
         "publishes at the store's throttled cadence, and not at all with no UI listening"
       ],
@@ -1973,6 +2081,7 @@
       "symbol": "publishUiState"
     },
     {
+      "aliases": [],
       "constraints": ["one-way; the game decides what each name means and may ignore one"],
       "example": "sendUiIntent(bridge, \"restart\");",
       "importPath": "@threenative/core/ui-layer",
@@ -1991,6 +2100,7 @@
       "symbol": "sendUiIntent"
     },
     {
+      "aliases": [],
       "constraints": ["returns undefined until the game publishes its first state"],
       "example": "const mirror = subscribeUiState(bridge);",
       "importPath": "@threenative/core/ui-layer",
@@ -2008,6 +2118,7 @@
       "symbol": "subscribeUiState"
     },
     {
+      "aliases": [],
       "constraints": [
         "unsupported is returned when compute limits are unknown or below the requirement; callers must not silently continue"
       ],
@@ -2028,6 +2139,7 @@
       "symbol": "getWorldCapabilities"
     },
     {
+      "aliases": [],
       "constraints": [
         "sampleHeight owns the terrain shape and stays in game source; the framework stores and interpolates its output",
         "rows and columns are vertex counts; geometry is row-major z-then-x and collider export transposes once into Rapier's column-major matrix order"
@@ -2052,6 +2164,7 @@
       "symbol": "Heightfield"
     },
     {
+      "aliases": ["stream terrain across chunks"],
       "constraints": [
         "sampleHeight and surface are required game choices; no landform or surface preset is installed",
         "residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws"
@@ -2074,6 +2187,7 @@
       "symbol": "TerrainTiles"
     },
     {
+      "aliases": ["pick up item"],
       "constraints": ["add the area to the physics context before stepping the world"],
       "example": "const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });",
       "importPath": "@threenative/physics",
@@ -2090,6 +2204,7 @@
       "symbol": "Area3D"
     },
     {
+      "aliases": [],
       "constraints": [
         "supply the game-owned predicate for decorative meshes; the helper throws when it selects nothing",
         "generated bodies use trimesh geometry and world-space instance transforms"
@@ -2109,6 +2224,7 @@
       "symbol": "buildStaticColliders"
     },
     {
+      "aliases": [],
       "constraints": ["supply hull points, density, drag, and the height source"],
       "example": "new Buoyancy3D({ body, surface: field, hullPoints, density: 1_000, drag: 4 });",
       "importPath": "@threenative/physics",
@@ -2122,6 +2238,13 @@
       "symbol": "Buoyancy3D"
     },
     {
+      "aliases": [
+        "raised platform gap hazard restart",
+        "enemy targets cooldown reload win condition",
+        "platformer double jump",
+        "first person",
+        "run jump coins goal"
+      ],
       "constraints": ["use moveAndSlide inside the physics update"],
       "example": "const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });",
       "importPath": "@threenative/physics",
@@ -2138,6 +2261,7 @@
       "symbol": "CharacterBody3D"
     },
     {
+      "aliases": ["passes through body", "arena walls pickups"],
       "constraints": ["create shapes through the owning physics context"],
       "example": "const shape = CollisionShape3D.capsule(0.5, 0.35);",
       "importPath": "@threenative/physics",
@@ -2154,6 +2278,7 @@
       "symbol": "CollisionShape3D"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "const groups = interactionGroups(1, 3);",
       "importPath": "@threenative/physics",
@@ -2170,6 +2295,7 @@
       "symbol": "interactionGroups"
     },
     {
+      "aliases": [],
       "constraints": ["both bodies must belong to the same physics context"],
       "example": "const hinge = Joint3D.hinge({ physics: ctx.physics, bodyA: beam, bodyB: bob, anchorA: { x: 0, y: 0, z: 0 }, anchorB: { x: 0, y: 2.4, z: 0 }, axis: { x: 1, y: 0, z: 0 } });",
       "importPath": "@threenative/physics",
@@ -2187,6 +2313,7 @@
       "symbol": "Joint3D"
     },
     {
+      "aliases": ["hitscan camera"],
       "constraints": ["query results are bounded by the configured result limit"],
       "example": "const space = new PhysicsDirectSpaceState3D(context);",
       "importPath": "@threenative/physics",
@@ -2203,6 +2330,7 @@
       "symbol": "PhysicsDirectSpaceState3D"
     },
     {
+      "aliases": [],
       "constraints": ["place rapier() before recast() in the plugin list"],
       "example": "const game = defineGame({ plugins: [rapier()] });",
       "importPath": "@threenative/physics",
@@ -2219,6 +2347,7 @@
       "symbol": "rapier"
     },
     {
+      "aliases": [],
       "constraints": ["register rapier() in the game plugin list before using bodies"],
       "example": "const crate = new RigidBody3D({ object, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1), mass: 8 });",
       "importPath": "@threenative/physics",
@@ -2240,6 +2369,7 @@
       "symbol": "RigidBody3D"
     },
     {
+      "aliases": [],
       "constraints": [
         "every body must use CollisionShape3D.box and retain its Three.js object transform",
         "rotated boxes become conservative cloth-local axis-aligned bounds"
@@ -2259,6 +2389,7 @@
       "symbol": "softBodyCollision"
     },
     {
+      "aliases": ["close engagement range"],
       "constraints": [
         "import NavigationAgent3D from exactly `@threenative/physics/navigation`; `@threenative/physics` is not a valid import for this symbol; use this capability instead of hand-written A*; requires recast() after rapier(), plus a baked NavigationRegion3D"
       ],
@@ -2282,6 +2413,7 @@
       "symbol": "NavigationAgent3D"
     },
     {
+      "aliases": [],
       "constraints": ["create it after recast() and dispose it with the scene"],
       "example": "const obstacle = new NavigationObstacle3D({ navigation, object });",
       "importPath": "@threenative/physics/navigation",
@@ -2298,6 +2430,7 @@
       "symbol": "NavigationObstacle3D"
     },
     {
+      "aliases": [],
       "constraints": ["bake before creating agents or obstacles"],
       "example": "const region = new NavigationRegion3D({ navigation, meshes: [floor] });",
       "importPath": "@threenative/physics/navigation",
@@ -2314,6 +2447,7 @@
       "symbol": "NavigationRegion3D"
     },
     {
+      "aliases": [],
       "constraints": ["requires rapier() earlier in the plugins array"],
       "example": "const game = defineGame({ plugins: [rapier(), recast()] });",
       "importPath": "@threenative/physics/navigation",
@@ -2327,6 +2461,7 @@
       "symbol": "recast"
     },
     {
+      "aliases": [],
       "constraints": [
         "bridge values must be JSON-shaped",
         "throws instead of silently dropping the offending field"
@@ -2347,6 +2482,7 @@
       "symbol": "assertJsonSafe"
     },
     {
+      "aliases": [],
       "constraints": [
         "a reading the device does not expose reports unavailable, never zero",
         "a run that started hot or whose thermal status rose is flagged as confounded"
@@ -2366,6 +2502,7 @@
       "symbol": "DeviceMetricsError"
     },
     {
+      "aliases": [],
       "constraints": [
         "a reading the device does not expose reports unavailable, never zero",
         "a run that started hot or whose thermal status rose is flagged as confounded"
@@ -2385,6 +2522,7 @@
       "symbol": "DeviceMetricsRecorder"
     },
     {
+      "aliases": [],
       "constraints": ["malformed or empty assertions fail closed"],
       "example": "const result = evaluateRichPlaytestAssertions(input);",
       "importPath": "@threenative/playtest",
@@ -2401,6 +2539,7 @@
       "symbol": "evaluateRichPlaytestAssertions"
     },
     {
+      "aliases": [],
       "constraints": ["unknown scenario keys fail closed"],
       "example": "const scenario = await loadPlaytestScenario(project, file);",
       "importPath": "@threenative/playtest",
@@ -2417,6 +2556,7 @@
       "symbol": "invalidScenario"
     },
     {
+      "aliases": [],
       "constraints": ["bridge values must be JSON-shaped"],
       "example": "assertJsonSafe({ score: 10 });",
       "importPath": "@threenative/playtest",
@@ -2434,6 +2574,7 @@
       "symbol": "jsonByteLength"
     },
     {
+      "aliases": [],
       "constraints": ["unknown scenario keys fail closed"],
       "example": "const scenario = await loadPlaytestScenario(project, file);",
       "importPath": "@threenative/playtest",
@@ -2450,6 +2591,7 @@
       "symbol": "loadPlaytestScenario"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "const missing = missingPlaytestCapabilities(required, available);",
       "importPath": "@threenative/playtest",
@@ -2466,6 +2608,7 @@
       "symbol": "missingPlaytestCapabilities"
     },
     {
+      "aliases": [],
       "constraints": [
         "a reading the device does not expose reports unavailable, never zero",
         "a run that started hot or whose thermal status rose is flagged as confounded"
@@ -2485,6 +2628,7 @@
       "symbol": "parseDeviceBattery"
     },
     {
+      "aliases": [],
       "constraints": [
         "a reading the device does not expose reports unavailable, never zero",
         "a run that started hot or whose thermal status rose is flagged as confounded"
@@ -2504,6 +2648,7 @@
       "symbol": "parseDeviceCurrent"
     },
     {
+      "aliases": [],
       "constraints": [
         "a reading the device does not expose reports unavailable, never zero",
         "a run that started hot or whose thermal status rose is flagged as confounded"
@@ -2523,6 +2668,7 @@
       "symbol": "parseDevicePowerRails"
     },
     {
+      "aliases": [],
       "constraints": [
         "a reading the device does not expose reports unavailable, never zero",
         "a run that started hot or whose thermal status rose is flagged as confounded"
@@ -2542,6 +2688,7 @@
       "symbol": "parseDeviceThermal"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "playtestDiagnostic(\"TN_PLAYTEST_CAPABILITY_MISSING\", \"body missing\", \"register rapier() before adding bodies\");",
       "importPath": "@threenative/playtest",
@@ -2558,6 +2705,7 @@
       "symbol": "playtestDiagnostic"
     },
     {
+      "aliases": [],
       "constraints": ["unknown scenario keys fail closed"],
       "example": "const scenario = await loadPlaytestScenario(project, file);",
       "importPath": "@threenative/playtest",
@@ -2574,6 +2722,7 @@
       "symbol": "PlaytestScenarioError"
     },
     {
+      "aliases": [],
       "constraints": ["unknown scenario keys fail closed"],
       "example": "const scenario = await loadPlaytestScenario(project, file);",
       "importPath": "@threenative/playtest",
@@ -2590,6 +2739,7 @@
       "symbol": "playtestStepHoldTicks"
     },
     {
+      "aliases": [],
       "constraints": ["unknown scenario keys fail closed"],
       "example": "const scenario = await loadPlaytestScenario(project, file);",
       "importPath": "@threenative/playtest",
@@ -2606,6 +2756,7 @@
       "symbol": "playtestStepWaitTicks"
     },
     {
+      "aliases": [],
       "constraints": ["unknown scenario keys fail closed"],
       "example": "const scenario = await loadPlaytestScenario(project, file);",
       "importPath": "@threenative/playtest",
@@ -2622,6 +2773,7 @@
       "symbol": "rejectUnknownKeys"
     },
     {
+      "aliases": [],
       "constraints": ["malformed or empty assertions fail closed"],
       "example": "const result = evaluateRichPlaytestAssertions(input);",
       "importPath": "@threenative/playtest",
@@ -2638,6 +2790,7 @@
       "symbol": "requiredPlaytestCapabilities"
     },
     {
+      "aliases": [],
       "constraints": ["absent policy fields default to rejecting errors"],
       "example": "const policy = resolveDiagnosticsPolicy(scenario.assert?.diagnostics);",
       "importPath": "@threenative/playtest",
@@ -2651,6 +2804,7 @@
       "symbol": "resolveDiagnosticsPolicy"
     },
     {
+      "aliases": [],
       "constraints": [
         "a reading the device does not expose reports unavailable, never zero",
         "a run that started hot or whose thermal status rose is flagged as confounded"
@@ -2670,6 +2824,7 @@
       "symbol": "summarizeDeviceMetrics"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "const missing = missingPlaytestCapabilities(required, available);",
       "importPath": "@threenative/playtest",
@@ -2686,6 +2841,7 @@
       "symbol": "unknownPlaytestCapabilities"
     },
     {
+      "aliases": [],
       "constraints": ["the assertion throws instead of returning a false pass"],
       "example": "assertCaptureNotBlank(png, \"first frame\");",
       "importPath": "@threenative/playtest/capture",
@@ -2702,6 +2858,7 @@
       "symbol": "assertCaptureNotBlank"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "throw new CaptureGuardError(\"menu\", \"no bright pixels\");",
       "importPath": "@threenative/playtest/capture",
@@ -2718,6 +2875,7 @@
       "symbol": "CaptureGuardError"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "const stats = inspectFrame(png);",
       "importPath": "@threenative/playtest/capture",
@@ -2734,6 +2892,7 @@
       "symbol": "inspectFrame"
     },
     {
+      "aliases": [],
       "constraints": ["throws instead of silently dropping the offending field"],
       "example": "assertJsonSafe(snapshot, \"$.components\");",
       "importPath": "@threenative/playtest/protocol",
@@ -2749,6 +2908,7 @@
       "symbol": "assertJsonSafe"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "const bytes = jsonByteLength(observation);",
       "importPath": "@threenative/playtest/protocol",
@@ -2764,6 +2924,7 @@
       "symbol": "jsonByteLength"
     },
     {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -2780,6 +2941,7 @@
       "symbol": "AdbAndroidDriver"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -2796,6 +2958,7 @@
       "symbol": "advanceFixedStep"
     },
     {
+      "aliases": [],
       "constraints": ["the bridge must answer the handshake or the run fails"],
       "example": "const bridge = await connectPlaytestBridge(page, scenario);",
       "importPath": "@threenative/playtest/runner",
@@ -2812,6 +2975,7 @@
       "symbol": "advanceTimeoutMs"
     },
     {
+      "aliases": [],
       "constraints": ["paths stay inside the managed artifact directory"],
       "example": "const paths = deviceMailboxPaths(projectRoot);",
       "importPath": "@threenative/playtest/runner",
@@ -2828,6 +2992,7 @@
       "symbol": "androidMailboxPaths"
     },
     {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -2844,6 +3009,7 @@
       "symbol": "androidTouchBatches"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -2860,6 +3026,7 @@
       "symbol": "batchArtifactDirectory"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -2876,6 +3043,7 @@
       "symbol": "boundedTeardownStep"
     },
     {
+      "aliases": [],
       "constraints": ["the bridge must answer the handshake or the run fails"],
       "example": "const bridge = await connectPlaytestBridge(page, scenario);",
       "importPath": "@threenative/playtest/runner",
@@ -2892,6 +3060,7 @@
       "symbol": "bridgeWaitTimeoutMs"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -2908,6 +3077,7 @@
       "symbol": "buildReport"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -2924,6 +3094,7 @@
       "symbol": "captureVisualSurface"
     },
     {
+      "aliases": [],
       "constraints": ["the bridge must answer the handshake or the run fails"],
       "example": "const bridge = await connectPlaytestBridge(page, scenario);",
       "importPath": "@threenative/playtest/runner",
@@ -2940,6 +3111,7 @@
       "symbol": "connectPlaytestBridge"
     },
     {
+      "aliases": [],
       "constraints": ["the bridge must answer the handshake or the run fails"],
       "example": "const bridge = await connectPlaytestBridge(page, scenario);",
       "importPath": "@threenative/playtest/runner",
@@ -2956,6 +3128,7 @@
       "symbol": "connectPlaytestBridgeTransport"
     },
     {
+      "aliases": [],
       "constraints": ["the mailbox lifecycle must be disposed after the run"],
       "example": "const driver = new DesktopPlaytestDriver(options);",
       "importPath": "@threenative/playtest/runner",
@@ -2972,6 +3145,7 @@
       "symbol": "DesktopPlaytestDriver"
     },
     {
+      "aliases": [],
       "constraints": ["paths stay inside the managed artifact directory"],
       "example": "const paths = deviceMailboxPaths(projectRoot);",
       "importPath": "@threenative/playtest/runner",
@@ -2988,6 +3162,7 @@
       "symbol": "DeviceBridgeTransport"
     },
     {
+      "aliases": [],
       "constraints": ["paths stay inside the managed artifact directory"],
       "example": "const paths = deviceMailboxPaths(projectRoot);",
       "importPath": "@threenative/playtest/runner",
@@ -3004,6 +3179,7 @@
       "symbol": "deviceMailboxPaths"
     },
     {
+      "aliases": [],
       "constraints": ["paths stay inside the managed artifact directory"],
       "example": "const paths = deviceMailboxPaths(projectRoot);",
       "importPath": "@threenative/playtest/runner",
@@ -3020,6 +3196,7 @@
       "symbol": "DeviceMailboxTransport"
     },
     {
+      "aliases": [],
       "constraints": ["paths stay inside the managed artifact directory"],
       "example": "const paths = deviceMailboxPaths(projectRoot);",
       "importPath": "@threenative/playtest/runner",
@@ -3036,6 +3213,7 @@
       "symbol": "deviceTimeoutDiagnostic"
     },
     {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -3052,6 +3230,7 @@
       "symbol": "discoverAdb"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3068,6 +3247,7 @@
       "symbol": "failedDiagnosticsAssertion"
     },
     {
+      "aliases": [],
       "constraints": ["invalid flags throw a named usage error"],
       "example": "const config = parseStandalonePlaytestArgs(argv);",
       "importPath": "@threenative/playtest/runner",
@@ -3084,6 +3264,7 @@
       "symbol": "formatUsage"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3100,6 +3281,7 @@
       "symbol": "handlePlaytestSignal"
     },
     {
+      "aliases": [],
       "constraints": ["generated scenarios must contain real assertions"],
       "example": "await initStandalonePlaytest(projectPath);",
       "importPath": "@threenative/playtest/runner",
@@ -3113,6 +3295,7 @@
       "symbol": "initStandalonePlaytest"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3129,6 +3312,7 @@
       "symbol": "isRuntimeReadout"
     },
     {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -3145,6 +3329,7 @@
       "symbol": "keyboardIsShown"
     },
     {
+      "aliases": [],
       "constraints": ["the mailbox lifecycle must be disposed after the run"],
       "example": "const driver = new DesktopPlaytestDriver(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3161,6 +3346,7 @@
       "symbol": "LocalDeviceMailbox"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3177,6 +3363,7 @@
       "symbol": "ManagedServerError"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3193,6 +3380,7 @@
       "symbol": "openPageAndConnectBridge"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3209,6 +3397,7 @@
       "symbol": "pageLifecycleDiagnostic"
     },
     {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -3225,6 +3414,7 @@
       "symbol": "parseAndroidConsole"
     },
     {
+      "aliases": [],
       "constraints": ["simulator evidence does not claim physical-device proof"],
       "example": "const driver = new XcrunIosDriver(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3241,6 +3431,7 @@
       "symbol": "parseLaunchedPid"
     },
     {
+      "aliases": [],
       "constraints": ["invalid flags throw a named usage error"],
       "example": "const config = parseStandalonePlaytestArgs(argv);",
       "importPath": "@threenative/playtest/runner",
@@ -3257,6 +3448,7 @@
       "symbol": "parseStandalonePlaytestArgs"
     },
     {
+      "aliases": [],
       "constraints": ["the bridge must answer the handshake or the run fails"],
       "example": "const bridge = await connectPlaytestBridge(page, scenario);",
       "importPath": "@threenative/playtest/runner",
@@ -3273,6 +3465,7 @@
       "symbol": "PlaytestBridgeError"
     },
     {
+      "aliases": [],
       "constraints": ["invalid flags throw a named usage error"],
       "example": "const config = parseStandalonePlaytestArgs(argv);",
       "importPath": "@threenative/playtest/runner",
@@ -3289,6 +3482,7 @@
       "symbol": "PlaytestCliUsageError"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3305,6 +3499,7 @@
       "symbol": "playtestStepDrivesMovement"
     },
     {
+      "aliases": [],
       "constraints": ["the bridge must answer the handshake or the run fails"],
       "example": "const bridge = await connectPlaytestBridge(page, scenario);",
       "importPath": "@threenative/playtest/runner",
@@ -3321,6 +3516,7 @@
       "symbol": "PlaywrightTransport"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3337,6 +3533,7 @@
       "symbol": "preflightDisplay"
     },
     {
+      "aliases": [],
       "constraints": ["inspect the adapter name before claiming GPU proof"],
       "example": "const args = resolveBrowserArguments(undefined);",
       "importPath": "@threenative/playtest/runner",
@@ -3353,6 +3550,7 @@
       "symbol": "reconcileBrowserPointers"
     },
     {
+      "aliases": [],
       "constraints": ["an empty assertion set is a failure"],
       "example": "const scenario = recordToScenario(recording);",
       "importPath": "@threenative/playtest/runner",
@@ -3369,6 +3567,7 @@
       "symbol": "recordToScenario"
     },
     {
+      "aliases": [],
       "constraints": ["an empty assertion set is a failure"],
       "example": "const scenario = recordToScenario(recording);",
       "importPath": "@threenative/playtest/runner",
@@ -3385,6 +3584,7 @@
       "symbol": "requireAssertions"
     },
     {
+      "aliases": [],
       "constraints": ["inspect the adapter name before claiming GPU proof"],
       "example": "const args = resolveBrowserArguments(undefined);",
       "importPath": "@threenative/playtest/runner",
@@ -3401,6 +3601,7 @@
       "symbol": "resolveBrowserArguments"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3417,6 +3618,7 @@
       "symbol": "resolveManagedServerCommand"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3433,6 +3635,7 @@
       "symbol": "resolveManagedServerConfig"
     },
     {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -3449,6 +3652,7 @@
       "symbol": "rotatedTouchPosition"
     },
     {
+      "aliases": [],
       "constraints": ["the app bundle and device transport must be prepared"],
       "example": "await runAndroidPlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3465,6 +3669,7 @@
       "symbol": "runAndroidPlaytest"
     },
     {
+      "aliases": [],
       "constraints": ["the desktop host must be built before launching"],
       "example": "await runDesktopPlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3481,6 +3686,7 @@
       "symbol": "runDesktopPlaytest"
     },
     {
+      "aliases": [],
       "constraints": ["the app bundle and device transport must be prepared"],
       "example": "await runAndroidPlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3497,6 +3703,7 @@
       "symbol": "runDevicePlaytest"
     },
     {
+      "aliases": [],
       "constraints": ["identify simulator versus physical transport in evidence"],
       "example": "await runIosPlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3510,6 +3717,7 @@
       "symbol": "runIosPlaytest"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3526,6 +3734,7 @@
       "symbol": "runStandalonePlaytest"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3542,6 +3751,7 @@
       "symbol": "runStandalonePlaytests"
     },
     {
+      "aliases": [],
       "constraints": ["inspect the adapter name before claiming GPU proof"],
       "example": "const args = resolveBrowserArguments(undefined);",
       "importPath": "@threenative/playtest/runner",
@@ -3558,6 +3768,7 @@
       "symbol": "softwareAdapterName"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3574,6 +3785,7 @@
       "symbol": "substituteManagedPort"
     },
     {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -3590,6 +3802,7 @@
       "symbol": "tapCommand"
     },
     {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -3606,6 +3819,7 @@
       "symbol": "touchRotationFromWindowDump"
     },
     {
+      "aliases": [],
       "constraints": ["paths stay inside the managed artifact directory"],
       "example": "const paths = deviceMailboxPaths(projectRoot);",
       "importPath": "@threenative/playtest/runner",
@@ -3622,6 +3836,7 @@
       "symbol": "validateDeviceEndpoint"
     },
     {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -3638,6 +3853,7 @@
       "symbol": "viewportPresentationCommands"
     },
     {
+      "aliases": [],
       "constraints": ["Android evidence must name its target and transport"],
       "example": "const adb = discoverAdb(process.env);",
       "importPath": "@threenative/playtest/runner",
@@ -3654,6 +3870,7 @@
       "symbol": "viewportRestoreCommands"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3670,6 +3887,7 @@
       "symbol": "writeCaptureProvenance"
     },
     {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3686,6 +3904,7 @@
       "symbol": "writeObservationArtifacts"
     },
     {
+      "aliases": [],
       "constraints": ["simulator evidence does not claim physical-device proof"],
       "example": "const driver = new XcrunIosDriver(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3702,6 +3921,7 @@
       "symbol": "XcrunIosDriver"
     },
     {
+      "aliases": [],
       "constraints": ["use measured input rather than visual guesses"],
       "example": "const advice = adviseThreeRenderWorkload(input);",
       "importPath": "@threenative/playtest/three",
@@ -3718,6 +3938,7 @@
       "symbol": "adviseThreeRenderWorkload"
     },
     {
+      "aliases": [],
       "constraints": ["use the device transport selected by the runner"],
       "example": "const connection = connectDevicePlaytestBridge(bridge, endpoint);",
       "importPath": "@threenative/playtest/three",
@@ -3734,6 +3955,7 @@
       "symbol": "connectDevicePlaytestBridge"
     },
     {
+      "aliases": [],
       "constraints": ["install once before the runner connects"],
       "example": "const bridge = installThreePlaytestBridge(options);",
       "importPath": "@threenative/playtest/three",
@@ -3750,6 +3972,7 @@
       "symbol": "installThreePlaytestBridge"
     },
     {
+      "aliases": [],
       "constraints": [
         "reports counts and names only; it decides nothing about how the game looks",
         "reports counts and names only; nothing here decides how the game looks",
@@ -3770,6 +3993,7 @@
       "symbol": "observeSceneResources"
     },
     {
+      "aliases": [],
       "constraints": ["use the device transport selected by the runner"],
       "example": "const connection = connectDevicePlaytestBridge(bridge, endpoint);",
       "importPath": "@threenative/playtest/three",
@@ -3786,6 +4010,7 @@
       "symbol": "readPlaytestEndpoint"
     },
     {
+      "aliases": [],
       "constraints": ["keep recorder limits within the documented caps"],
       "example": "const physics = new ThreePlaytestPhysicsRecorder(worldPhysics);",
       "importPath": "@threenative/playtest/three",
@@ -3802,6 +4027,7 @@
       "symbol": "ThreePlaytestPhysicsRecorder"
     },
     {
+      "aliases": [],
       "constraints": [
         "materials are never chosen here; the geometry carries groups, the game carries materials"
       ],
@@ -3820,6 +4046,7 @@
       "symbol": "createThreeGeometry"
     },
     {
+      "aliases": [],
       "constraints": [
         "the fallback is three.js's own plain MeshStandardMaterial; every real material comes from the game"
       ],
@@ -3838,6 +4065,7 @@
       "symbol": "createThreeObject"
     },
     {
+      "aliases": [],
       "constraints": [
         "zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing",
         "a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry"
@@ -3857,6 +4085,7 @@
       "symbol": "decompressBulkData"
     },
     {
+      "aliases": [],
       "constraints": [
         "Oodle and LZ4 payloads require an injected codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing"
       ],
@@ -3872,6 +4101,7 @@
       "symbol": "decompressCompressedBuffer"
     },
     {
+      "aliases": [],
       "constraints": [
         "zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing",
         "a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry"
@@ -3891,6 +4121,7 @@
       "symbol": "findBulkDataHeaders"
     },
     {
+      "aliases": [],
       "constraints": [
         "Oodle and LZ4 payloads require an injected codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing"
       ],
@@ -3906,6 +4137,7 @@
       "symbol": "findCompressedBufferOffsets"
     },
     {
+      "aliases": [],
       "constraints": [
         "every count is validated against its neighbors before any geometry is built"
       ],
@@ -3923,6 +4155,7 @@
       "symbol": "findMeshDescriptionOffsets"
     },
     {
+      "aliases": [],
       "constraints": [
         "only inline uncompressed blobs are found; compressed or external bulk data throws rather than guessing"
       ],
@@ -3940,6 +4173,7 @@
       "symbol": "findRawMeshBlobs"
     },
     {
+      "aliases": [],
       "constraints": [
         "every count is validated against its neighbors before any geometry is built"
       ],
@@ -3957,6 +4191,7 @@
       "symbol": "looksLikeMeshDescription"
     },
     {
+      "aliases": [],
       "constraints": [
         "the walk must consume the payload exactly; a short walk throws rather than returning the geometry it managed to read"
       ],
@@ -3972,6 +4207,7 @@
       "symbol": "looksLikeMeshDescriptionUe4"
     },
     {
+      "aliases": [],
       "constraints": [
         "zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing",
         "a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry"
@@ -3991,6 +4227,7 @@
       "symbol": "parseBulkDataHeader"
     },
     {
+      "aliases": [],
       "constraints": [
         "Oodle and LZ4 payloads require an injected codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing"
       ],
@@ -4006,6 +4243,7 @@
       "symbol": "parseCompressedBuffer"
     },
     {
+      "aliases": [],
       "constraints": [
         "every count is validated against its neighbors before any geometry is built"
       ],
@@ -4023,6 +4261,7 @@
       "symbol": "parseMeshDescription"
     },
     {
+      "aliases": [],
       "constraints": [
         "the walk must consume the payload exactly; a short walk throws rather than returning the geometry it managed to read"
       ],
@@ -4038,6 +4277,7 @@
       "symbol": "parseMeshDescriptionUe4"
     },
     {
+      "aliases": [],
       "constraints": [
         "only inline uncompressed blobs are found; compressed or external bulk data throws rather than guessing"
       ],
@@ -4055,6 +4295,7 @@
       "symbol": "parseRawMesh"
     },
     {
+      "aliases": [],
       "constraints": [
         "only legacy-tag uncooked editor packages are read; IoStore (.utoc/.ucas), PAK archives, cooked render buffers, Nanite, and skeletal data throw UAssetError",
         "the format layer never invents fallback geometry; every malformed or unsupported layout surfaces as UAssetError with its byte offset or counts"
@@ -4074,6 +4315,7 @@
       "symbol": "parseUAssetStaticMesh"
     },
     {
+      "aliases": [],
       "constraints": [
         "returns undefined rather than guessing when the summary does not end on its own name table, or when the package uses a LegacyFileVersion this walk does not model"
       ],
@@ -4089,6 +4331,7 @@
       "symbol": "readPackageLayout"
     },
     {
+      "aliases": [],
       "constraints": [
         "only the summary prefix is read; locating payload data is the payload readers' self-validating signature scans"
       ],
@@ -4107,6 +4350,7 @@
       "symbol": "readPackageSummary"
     },
     {
+      "aliases": [],
       "constraints": [
         "zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing",
         "a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry"
@@ -4126,6 +4370,7 @@
       "symbol": "resolveBulkDataPayload"
     },
     {
+      "aliases": [],
       "constraints": [
         "every parse, decompression, and geometry failure surfaces as this error; the loader never invents fallback geometry"
       ],
@@ -4144,6 +4389,7 @@
       "symbol": "UAssetError"
     },
     {
+      "aliases": [],
       "constraints": [
         "UE5 Oodle payloads require an `oodle` codec in the parse options; see README licensing"
       ],
@@ -4174,7 +4420,8 @@
       "situations": ["grade a background by distance"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects gradualBackground.",
-      "symbol": "gradualBackground"
+      "symbol": "gradualBackground",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4189,7 +4436,8 @@
       "situations": ["warp the image with radial lens distortion"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects lensDistortion.",
-      "symbol": "lensDistortion"
+      "symbol": "lensDistortion",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4204,9 +4452,11 @@
       "situations": ["add glints to bright highlights"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects sparkle.",
-      "symbol": "sparkle"
+      "symbol": "sparkle",
+      "aliases": []
     },
     {
+      "aliases": [],
       "constraints": [
         "rejects indices, channels, or material sections that disagree with the vertex count before any geometry is constructed"
       ],
@@ -4225,6 +4475,7 @@
       "symbol": "createThreeGeometry"
     },
     {
+      "aliases": [],
       "constraints": [
         "every material comes from the game through `materialFactory`; the fallback is three.js's own GLTFLoader default, a plain MeshStandardMaterial",
         "parsed bones are exposed on `userData` but never bound into a THREE.SkinnedMesh — skeletal rendering is the game's job"
@@ -4244,6 +4495,7 @@
       "symbol": "createThreeObject"
     },
     {
+      "aliases": [],
       "constraints": [
         "only UEFormat v10 UEMODEL files are accepted; anything else throws UEFormatError with the byte offset",
         "ZSTD-compressed bodies require an injected `zstdDecoder`; the package never bundles a ZSTD implementation"
@@ -4263,6 +4515,7 @@
       "symbol": "parseUEModel"
     },
     {
+      "aliases": [],
       "constraints": [
         "the summary reflects one already-parsed model; it does not read files itself"
       ],
@@ -4281,6 +4534,7 @@
       "symbol": "summarizeUEModel"
     },
     {
+      "aliases": [],
       "constraints": [
         "every parse and geometry failure surfaces as this error; nothing malformed is silently skipped"
       ],
@@ -4299,6 +4553,7 @@
       "symbol": "UEFormatError"
     },
     {
+      "aliases": [],
       "constraints": [
         "ZSTD-compressed bodies require an injected `zstdDecoder` in the parse options"
       ],
@@ -4317,6 +4572,7 @@
       "symbol": "UEFormatLoader"
     },
     {
+      "aliases": [],
       "constraints": [],
       "example": "<DebugOverlay />",
       "importPath": "@threenative/ui",
@@ -4333,6 +4589,7 @@
       "symbol": "DebugOverlay"
     },
     {
+      "aliases": [],
       "constraints": ["keep the portable game entry free of React DOM code"],
       "example": "<GameCanvas game={game} />",
       "importPath": "@threenative/ui",
@@ -4349,6 +4606,7 @@
       "symbol": "GameCanvas"
     },
     {
+      "aliases": [],
       "constraints": ["mark every control the player touches with data-tn-interactive"],
       "example": "<UiLayer><Hud /></UiLayer>",
       "importPath": "@threenative/ui",
@@ -4365,6 +4623,7 @@
       "symbol": "UiLayer"
     },
     {
+      "aliases": [],
       "constraints": ["use this hook only from the web UI entry"],
       "example": "const score = useGameState(game, (state) => state.score);",
       "importPath": "@threenative/ui",
@@ -4381,6 +4640,7 @@
       "symbol": "useGameState"
     },
     {
+      "aliases": [],
       "constraints": ["the game decides what each intent name means; it may ignore one"],
       "example": "const send = useUiIntent(); send(\"restart\");",
       "importPath": "@threenative/ui",
@@ -4397,6 +4657,7 @@
       "symbol": "useUiIntent"
     },
     {
+      "aliases": [],
       "constraints": ["returns undefined until the game publishes its first state"],
       "example": "const score = useUiState<GameState, number>((state) => state.score);",
       "importPath": "@threenative/ui",
@@ -4432,7 +4693,8 @@
         "Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks."
       ],
       "overrides": [],
-      "supersedes": []
+      "supersedes": [],
+      "aliases": []
     },
     {
       "symbol": "bloom",
@@ -4447,7 +4709,8 @@
         "Strength above ~0.3 on an interior washes the mid-tones; the reference-matching band is lower than it looks."
       ],
       "overrides": [],
-      "supersedes": []
+      "supersedes": [],
+      "aliases": []
     },
     {
       "constraints": [
@@ -4462,7 +4725,8 @@
       "situations": ["denoise a noisy screen-space pass"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects denoise.",
-      "symbol": "denoise"
+      "symbol": "denoise",
+      "aliases": []
     },
     {
       "symbol": "godrays",
@@ -4486,7 +4750,8 @@
         "Measured band on an interior scene: density 0.7, floor 0.08, intensity 3.0, maxDensity 0.6. Above ~0.8 density the haze stops being confined to the beams and the room fogs."
       ],
       "overrides": [],
-      "supersedes": []
+      "supersedes": [],
+      "aliases": []
     },
     {
       "symbol": "ao",
@@ -4505,7 +4770,8 @@
         "Radius is in metres; a radius sized for a room reads as a smudge on a prop."
       ],
       "overrides": [],
-      "supersedes": []
+      "supersedes": [],
+      "aliases": []
     },
     {
       "constraints": [
@@ -4520,7 +4786,8 @@
       "situations": ["blur motion using a velocity buffer"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects motionBlur.",
-      "symbol": "motionBlur"
+      "symbol": "motionBlur",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4535,7 +4802,8 @@
       "situations": ["denoise a noisy screen-space pass"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects recurrentDenoise.",
-      "symbol": "recurrentDenoise"
+      "symbol": "recurrentDenoise",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4550,7 +4818,8 @@
       "situations": ["make the image sharper"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects sharpen.",
-      "symbol": "sharpen"
+      "symbol": "sharpen",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4565,7 +4834,8 @@
       "situations": ["anti-alias still and moving scenes"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects ssaaPass.",
-      "symbol": "ssaaPass"
+      "symbol": "ssaaPass",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4580,7 +4850,8 @@
       "situations": ["add screen-space global illumination"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects ssgi.",
-      "symbol": "ssgi"
+      "symbol": "ssgi",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4595,7 +4866,8 @@
       "situations": ["add screen-space reflections"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects ssr.",
-      "symbol": "ssr"
+      "symbol": "ssr",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4610,7 +4882,8 @@
       "situations": ["reproject a temporal history"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects temporalReproject.",
-      "symbol": "temporalReproject"
+      "symbol": "temporalReproject",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4625,7 +4898,8 @@
       "situations": ["temporally resolve a moving image"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects traa.",
-      "symbol": "traa"
+      "symbol": "traa",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4640,7 +4914,8 @@
       "situations": ["provide depth to screen-space effects"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects depth.",
-      "symbol": "depth"
+      "symbol": "depth",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4655,7 +4930,8 @@
       "situations": ["provision velocity, normal, and depth render targets"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects mrt.",
-      "symbol": "mrt"
+      "symbol": "mrt",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4670,7 +4946,8 @@
       "situations": ["provide normals to screen-space effects"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects normalView.",
-      "symbol": "normalView"
+      "symbol": "normalView",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4685,7 +4962,8 @@
       "situations": ["provide motion vectors to temporal effects"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects velocity.",
-      "symbol": "velocity"
+      "symbol": "velocity",
+      "aliases": []
     },
     {
       "constraints": [
@@ -4700,7 +4978,8 @@
       "situations": ["provide motion vectors to temporal effects"],
       "supersedes": [],
       "summary": "ThreeNative equivalent for realism-effects VelocityNode.",
-      "symbol": "VelocityNode"
+      "symbol": "VelocityNode",
+      "aliases": []
     }
   ],
   "notOwned": [

@@ -65,6 +65,157 @@ describe("threenative-engine-mcp", () => {
     }
   });
 
+  it("finds camera framing from third-person vocabulary", () => {
+    const results = searchResults("third person camera follow", workspaceManifest);
+    expect(results.slice(0, 3).map((result) => result.symbol)).toContain("defineGame");
+  });
+
+  it("finds platformer traversal from double-jump vocabulary", () => {
+    const results = searchResults("make a platformer with double jump", workspaceManifest);
+    expect(results.slice(0, 3).map((result) => result.symbol)).toContain("CharacterBody3D");
+  });
+
+  it("finds measured miss-list vocabulary across the owning packages", () => {
+    const cases = [
+      ["different props in each area", "createAssetLoader"],
+      ["journal objective panel", "publishUiState"],
+      ["landmarks points of interest", "InstancedBatch"],
+      ["bright sky saturated green platforms", "Atmosphere"],
+      ["raised platform gap hazard restart", "CharacterBody3D"],
+    ] as const;
+
+    for (const [query, symbol] of cases) {
+      expect(
+        searchResults(query, workspaceManifest).map((result) => result.symbol),
+        query,
+      ).toContain(symbol);
+    }
+  });
+
+  it("ranks the terrain streamer above virtual geometry for chunk streaming", () => {
+    const results = searchResults("stream terrain across chunks", workspaceManifest);
+    const terrainIndex = results.findIndex((result) => result.symbol === "TerrainTiles");
+    const clusteredIndex = results.findIndex((result) => result.symbol === "ClusteredMesh");
+
+    expect(terrainIndex).toBe(0);
+    expect(clusteredIndex === -1 || clusteredIndex > terrainIndex).toBe(true);
+    expect(results[terrainIndex]?.importPath).toBe("@threenative/core/world");
+    expect(results[terrainIndex]?.matchedSituation).toBe("stream terrain without cracks");
+  });
+
+  it("does not advertise health while retaining the owned hitscan primitive", () => {
+    const manifest = loadCapabilityManifest(workspaceManifest);
+    const defineGame = manifest.entries.find((entry) => entry.symbol === "defineGame");
+    const physicsQuery = manifest.entries.find(
+      (entry) => entry.symbol === "PhysicsDirectSpaceState3D",
+    );
+
+    expect(defineGame?.aliases).not.toContain("health never regenerates");
+    expect(physicsQuery?.aliases).toContain("hitscan camera");
+    expect(
+      searchResults("health never regenerates", workspaceManifest).map((result) => result.symbol),
+    ).not.toContain("defineGame");
+    expect(searchResults("hitscan camera", workspaceManifest)[0]?.symbol).toBe(
+      "PhysicsDirectSpaceState3D",
+    );
+  });
+
+  it("explains an alias hit with a readable situation", () => {
+    const manifest = loadCapabilityManifest(workspaceManifest);
+    const result = searchResults("third person camera follow", workspaceManifest).find(
+      (candidate) => candidate.symbol === "defineGame",
+    );
+    const defineGame = manifest.entries.find((entry) => entry.symbol === "defineGame");
+
+    expect(result?.matchedSituation).toBe("frame a camera behind the player");
+    expect(defineGame?.aliases).toContain("third-person camera");
+    expect(defineGame?.aliases).not.toContain(result?.matchedSituation);
+  });
+
+  it("uses an alias score while keeping a readable situation for explanation", async () => {
+    const root = await makeTempDir("threenative-engine-mcp-alias-score-");
+    try {
+      const file = path.join(root, "capabilities.json");
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(
+        file,
+        JSON.stringify({
+          version: 2,
+          notOwned: [],
+          entries: [
+            {
+              aliases: ["camera player"],
+              constraints: [],
+              example: "const capability = new CameraCapability();",
+              importPath: "@threenative/core",
+              kind: "class",
+              package: "@threenative/core",
+              signature: "class CameraCapability",
+              situations: ["frame the player from behind"],
+              summary: "Frames a player camera.",
+              symbol: "CameraCapability",
+            },
+          ],
+        }),
+      );
+
+      const response = searchCapabilities("camera player", file);
+      expect(response.results).toContainEqual(
+        expect.objectContaining({
+          matchedSituation: "frame the player from behind",
+          symbol: "CameraCapability",
+        }),
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("never returns an alias as the explanation for a match", () => {
+    const manifest = loadCapabilityManifest(workspaceManifest);
+    const aliases = new Set(manifest.entries.flatMap((entry) => entry.aliases));
+
+    for (const alias of aliases) {
+      const results = searchResults(alias, workspaceManifest);
+      expect(results.every((result) => !aliases.has(result.matchedSituation))).toBe(true);
+    }
+  });
+
+  it("does not return an alias hit when no readable situation is relevant", async () => {
+    const root = await makeTempDir("threenative-engine-mcp-unexplained-alias-");
+    try {
+      const file = path.join(root, "capabilities.json");
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(
+        file,
+        JSON.stringify({
+          version: 2,
+          notOwned: [],
+          entries: [
+            {
+              aliases: ["field of view while aiming"],
+              constraints: [],
+              example: "const game = defineGame({});",
+              importPath: "@threenative/core",
+              kind: "function",
+              package: "@threenative/core",
+              signature: "function defineGame()",
+              situations: [],
+              summary: "Define a game.",
+              symbol: "defineGame",
+            },
+          ],
+        }),
+      );
+
+      const response = searchCapabilities("field of view while aiming", file);
+      expect(response.verdict).toBe("none");
+      expect(response.results).toEqual([]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("ranks NavigationAgent3D for an agent walking around a wall", () => {
     const results = searchResults("enemy walks around a wall", workspaceManifest);
     expect(results.slice(0, 3).map((result) => result.symbol)).toContain("NavigationAgent3D");

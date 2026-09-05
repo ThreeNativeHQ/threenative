@@ -164,7 +164,7 @@ function validateManifest(value, file) {
     );
   }
   for (const [index, raw] of value.entries.entries()) {
-    if (!isRecord(raw) || typeof raw.symbol !== "string" || typeof raw.package !== "string" || typeof raw.importPath !== "string" || typeof raw.kind !== "string" || typeof raw.signature !== "string" || typeof raw.summary !== "string" || typeof raw.example !== "string" || !Array.isArray(raw.situations) || !Array.isArray(raw.constraints) || !raw.situations.every((situation) => typeof situation === "string") || !raw.constraints.every((constraint) => typeof constraint === "string")) {
+    if (!isRecord(raw) || typeof raw.symbol !== "string" || typeof raw.package !== "string" || typeof raw.importPath !== "string" || typeof raw.kind !== "string" || typeof raw.signature !== "string" || typeof raw.summary !== "string" || typeof raw.example !== "string" || !Array.isArray(raw.situations) || !Array.isArray(raw.aliases) || !Array.isArray(raw.constraints) || !raw.situations.every((situation) => typeof situation === "string") || !raw.aliases.every((alias) => typeof alias === "string") || !raw.constraints.every((constraint) => typeof constraint === "string")) {
       throw manifestError(file, `entry ${index} is malformed`);
     }
   }
@@ -220,7 +220,7 @@ function tokenWeights(entries) {
   const frequency = /* @__PURE__ */ new Map();
   let situations = 0;
   for (const entry of entries) {
-    for (const situation of entry.situations) {
+    for (const situation of [...entry.situations, ...entry.aliases]) {
       situations += 1;
       for (const token of new Set(tokens(situation)))
         frequency.set(token, (frequency.get(token) ?? 0) + 1);
@@ -241,29 +241,57 @@ function agreement(situation, query) {
   const matched = situation.filter((token) => query.has(token)).length;
   return 1 + AGREEMENT_WEIGHT * Math.max(0, matched - 1);
 }
-function situationScore(query, situations, weights) {
-  if (query.length === 0) return { matchedSituation: "", score: 0 };
-  const queryTokens = new Set(query);
-  const queryText = query.join(" ");
+function scorePhrase(value, queryTokens, queryText, weights) {
+  const phrase = tokens(value);
+  const unique = [...new Set(phrase)];
+  const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
+  const matched = unique.filter((token) => queryTokens.has(token)).reduce((sum, token) => sum + weightOf(weights, token), 0);
+  const phraseBonus = phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
+  if (total === 0 || matched === 0 && phraseBonus === 0) return void 0;
+  const coverage = matched / total;
+  const agreed = agreement(unique, queryTokens);
+  return { agreed, coverage, matched, phraseBonus, score: coverage * agreed + phraseBonus };
+}
+function isDistinctivePhrase(candidate) {
+  if (candidate.phraseBonus > 0) return true;
+  if (candidate.matched < DISTINCTIVE_FLOOR) return false;
+  return !(candidate.agreed === 1 && candidate.coverage < LONE_WORD_COVERAGE);
+}
+function scoreReadableSituations(situations, queryTokens, queryText, weights) {
   let best = 0;
   let matchedSituation = "";
+  let bestReadableScore = 0;
+  let bestReadableSituation = situations[0] ?? "";
   for (const situation of situations) {
-    const phrase = tokens(situation);
-    const unique = [...new Set(phrase)];
-    const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
-    const matched = unique.filter((token) => queryTokens.has(token)).reduce((sum, token) => sum + weightOf(weights, token), 0);
-    const phraseBonus = phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
-    if (total === 0 || matched < DISTINCTIVE_FLOOR && phraseBonus === 0) continue;
-    const coverage = matched / total;
-    const agreed = agreement(unique, queryTokens);
-    if (agreed === 1 && coverage < LONE_WORD_COVERAGE && phraseBonus === 0) continue;
-    const candidate = coverage * agreed + phraseBonus;
-    if (candidate > best) {
-      best = candidate;
+    const candidate = scorePhrase(situation, queryTokens, queryText, weights);
+    if (candidate === void 0) continue;
+    if (candidate.score > bestReadableScore) {
+      bestReadableScore = candidate.score;
+      bestReadableSituation = situation;
+    }
+    if (isDistinctivePhrase(candidate) && candidate.score > best) {
+      best = candidate.score;
       matchedSituation = situation;
     }
   }
-  return { matchedSituation, score: best };
+  return { best, bestReadableSituation, matchedSituation };
+}
+function scoreAliases(aliases, queryTokens, queryText, weights) {
+  let best = 0;
+  for (const alias of aliases) {
+    const candidate = scorePhrase(alias, queryTokens, queryText, weights);
+    if (candidate !== void 0) best = Math.max(best, candidate.score);
+  }
+  return best;
+}
+function situationScore(query, situations, aliases, weights) {
+  if (query.length === 0) return { matchedSituation: "", score: 0 };
+  const queryTokens = new Set(query);
+  const queryText = query.join(" ");
+  const readable = scoreReadableSituations(situations, queryTokens, queryText, weights);
+  const best = Math.max(readable.best, scoreAliases(aliases, queryTokens, queryText, weights));
+  const matchedSituation = readable.matchedSituation.length > 0 ? readable.matchedSituation : best >= RELEVANCE_FLOOR ? readable.bestReadableSituation : "";
+  return matchedSituation.length > 0 ? { matchedSituation, score: best } : { matchedSituation: "", score: 0 };
 }
 function notOwnedSituationScore(query, situations) {
   if (query.length === 0) return { matchedSituation: "", score: 0 };
@@ -320,7 +348,9 @@ function searchCapabilities(situation, manifestFile = defaultManifestPath(), sco
       verdict: "none"
     };
   }
-  const results = manifest.entries.map((entry) => ({ entry, ...situationScore(query, entry.situations, weights) })).filter(({ score }) => score >= RELEVANCE_FLOOR).sort(
+  const results = manifest.entries.map((entry) => ({ entry, ...situationScore(query, entry.situations, entry.aliases, weights) })).filter(
+    ({ matchedSituation, score }) => matchedSituation.length > 0 && score >= RELEVANCE_FLOOR
+  ).sort(
     (left, right) => right.score - left.score || `${left.entry.importPath}:${left.entry.symbol}`.localeCompare(
       `${right.entry.importPath}:${right.entry.symbol}`
     )
