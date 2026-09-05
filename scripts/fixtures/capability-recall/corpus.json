@@ -421,7 +421,8 @@
       "scope": "request",
       "source": "template:action-rpg#AGENTS.md — __PROJECT_NAME__ action RPG",
       "expect": ["assertPortableState"],
-      "reject": []
+      "reject": [],
+      "notOwned": "inventory"
     },
     {
       "id": "request.enemy-ai",
@@ -454,7 +455,8 @@
         "defineGame",
         "Heightfield",
         "attachToBone"
-      ]
+      ],
+      "notOwned": "save-load"
     },
     {
       "id": "request.spawn-waves",
@@ -485,7 +487,8 @@
       "scope": "request",
       "source": "template:sailing#AGENTS.md — __PROJECT_NAME__ sailing",
       "expect": ["Text"],
-      "reject": ["NavigationAgent3D", "recast"]
+      "reject": ["NavigationAgent3D", "recast"],
+      "notOwned": "dialogue"
     },
     {
       "id": "request.pick-up-item",
@@ -501,7 +504,8 @@
       "scope": "request",
       "source": "template:starter#Ownership",
       "expect": ["defineGame"],
-      "reject": []
+      "reject": [],
+      "notOwned": "networked-multiplayer"
     },
     {
       "id": "request.platformer-double-jump",

@@ -119,11 +119,11 @@ sequenceDiagram
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `RELEVANCE_FLOOR` + filter | `packages/engine-mcp/src/index.ts` `searchCapabilities` — TBD line | the `score > 0` filter at `:196` | **deleted in Phase 1** | restoring `score > 0` makes `save the player progress` return 8 again and fails the new test |
-| 2 | `{verdict, results, guidance}` response | `handleToolCall` `:315` → `toolText` — TBD line | bare-array response | replaced in Phase 1 | a client asserting `results.length` on the old shape fails; ~20 spec cases updated |
-| 3 | `notOwned` manifest section | `buildCapabilityManifest` `scripts/build-capability-manifest.ts:490` — TBD | nothing | n/a | removing the section must make `validateManifest` throw for a `version: 2` manifest |
-| 4 | `scripts/not-owned-capabilities.ts` | imported by row 3 — TBD | `AGENTS.md` prose that the tool never surfaced | prose stays (it is for humans); the tool now says it too | deleting one row makes its corpus query fall back to generic guidance — visible in `pnpm caps:recall` |
-| 5 | `MANIFEST_VERSION = 2` | `scripts/build-capability-manifest.ts:19` — TBD | `= 1` | replaced | a v1 manifest with no `notOwned` must be rejected by the v2 validator, observed red |
+| 1 | `RELEVANCE_FLOOR` + filter | `packages/engine-mcp/src/index.ts:569` — `searchCapabilities` result filter | the `score > 0` filter at `:196` | **deleted in Phase 1** | restoring `score > 0` makes `save the player progress` return 8 again and fails the new test |
+| 2 | `{verdict, results, guidance}` response | `packages/engine-mcp/src/index.ts:683` — `handleToolCall` → `toolText` (`:664`) | bare-array response | replaced in Phase 1 | a client asserting `results.length` on the old shape fails; ~20 spec cases updated |
+| 3 | `notOwned` manifest section | `scripts/build-capability-manifest.ts:635` — `buildCapabilityManifest` return | nothing | n/a | removing the section must make `validateManifest` throw for a `version: 2` manifest |
+| 4 | `scripts/not-owned-capabilities.ts` | `scripts/build-capability-manifest.ts:8` — imported by `buildCapabilityManifest` | `AGENTS.md` prose that the tool never surfaced | prose stays (it is for humans); the tool now says it too | deleting one row makes its corpus query fall back to generic guidance — visible in `pnpm caps:recall` |
+| 5 | `MANIFEST_VERSION = 2` | `scripts/build-capability-manifest.ts:22` — manifest return at `:635` | `= 1` | replaced | a v1 manifest with no `notOwned` must be rejected by the v2 validator, observed red |
 
 ### Reachability
 
@@ -278,7 +278,7 @@ git stash pop
 
 **Integration gates:**
 
-- [ ] Ledger has zero `TBD` cells
+- [x] Ledger has zero placeholder cells
 - [ ] `score > 0` is deleted, grep pasted — no two live filters
 - [ ] Revert check pasted
 - [ ] Every gate has an observed red

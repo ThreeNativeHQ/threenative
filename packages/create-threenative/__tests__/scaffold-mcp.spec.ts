@@ -20,6 +20,31 @@ const corePackageRoot = path.resolve("packages/core");
 const physicsPackageRoot = path.resolve("packages/physics");
 const temporaryRoots: string[] = [];
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function capabilitySearchResponse(value: unknown): {
+  guidance: string;
+  results: readonly Record<string, unknown>[];
+  verdict: "matched" | "none";
+} {
+  if (
+    !isRecord(value) ||
+    (value.verdict !== "matched" && value.verdict !== "none") ||
+    typeof value.guidance !== "string" ||
+    !Array.isArray(value.results) ||
+    !value.results.every(isRecord)
+  ) {
+    throw new Error("engine search response was malformed");
+  }
+  return {
+    guidance: value.guidance,
+    results: value.results,
+    verdict: value.verdict,
+  };
+}
+
 afterEach(async () => {
   await Promise.all(
     temporaryRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })),
@@ -110,7 +135,10 @@ async function probeEngineServer(target: string): Promise<void> {
       name: "engine_search_capabilities",
     });
     const content = called.content as Array<{ text: string }>;
-    const results = JSON.parse(content[0]?.text ?? "null") as Array<{
+    const parsed = capabilitySearchResponse(JSON.parse(content[0]?.text ?? "null") as unknown);
+    expect(parsed.verdict).toBe("matched");
+    expect(parsed.guidance).toBe("");
+    const results = parsed.results as Array<{
       example: string;
       importPath: string;
       symbol: string;
@@ -129,7 +157,12 @@ async function probeEngineServer(target: string): Promise<void> {
       name: "engine_search_capabilities",
     });
     const broadContent = broad.content as Array<{ text: string }>;
-    const broadResults = JSON.parse(broadContent[0]?.text ?? "null") as Array<{
+    const broadResponse = capabilitySearchResponse(
+      JSON.parse(broadContent[0]?.text ?? "null") as unknown,
+    );
+    expect(broadResponse.verdict).toBe("matched");
+    expect(broadResponse.guidance).toBe("");
+    const broadResults = broadResponse.results as Array<{
       matchedSituation: string;
       symbol: string;
     }>;

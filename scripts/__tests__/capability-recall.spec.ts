@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ICapabilitySearchResult } from "../../packages/engine-mcp/src/index.js";
+import {
+  type ICapabilitySearchResult,
+  loadCapabilityManifest,
+} from "../../packages/engine-mcp/src/index.js";
 import {
   type CapabilitySearcher,
   type ICapabilityRecallBudget,
@@ -30,6 +33,7 @@ function result(symbol: string): ICapabilitySearchResult {
     example: "const capability = new GroundSnap();",
     importPath: "@threenative/core",
     matchedSituation: "fixture",
+    score: 0,
     summary: "fixture",
     symbol,
   };
@@ -44,6 +48,8 @@ function budget(overrides: Partial<ICapabilityRecallBudget> = {}): ICapabilityRe
     rowIds: ["fixture.row"],
     version: 1,
     zeroResultRate: 0,
+    unresolvedResultRate: 0,
+    notOwnedRows: {},
     ...overrides,
   };
 }
@@ -86,12 +92,52 @@ describe("capability recall gate", () => {
     expect(measurement.rows[0]?.recalled).toBe(true);
   });
 
+  it("should keep an unpinned not-owned answer unresolved", () => {
+    const measurement = measureRecall([row()], manifestFile, (() => ({
+      guidance: "write it in src/",
+      results: [],
+      verdict: "none",
+    })) as CapabilitySearcher);
+
+    expect(measurement.rows[0]?.guided).toBe(false);
+    expect(measurement.rows[0]?.zeroResult).toBe(true);
+    expect(measurement.rows[0]?.unresolvedResult).toBe(true);
+    expect(measurement.metrics.zeroResultRate).toBe(1);
+    expect(measurement.metrics.unresolvedResultRate).toBe(1);
+  });
+
+  it("should require the corpus-pinned not-owned guidance", () => {
+    const guidance = loadCapabilityManifest(manifestFile).notOwned.find(
+      (entry) => entry.id === "inventory",
+    )?.guidance;
+    expect(guidance).toBeDefined();
+
+    const measurement = measureRecall([row({ notOwned: "inventory" })], manifestFile, (() => ({
+      guidance,
+      results: [],
+      verdict: "none",
+    })) as CapabilitySearcher);
+    expect(measurement.rows[0]?.guided).toBe(true);
+    expect(measurement.metrics.guided).toBe(1);
+    expect(measurement.metrics.actionable).toBe(1);
+  });
+
+  it("should reject a not-owned response whose guidance differs from the manifest", () => {
+    expect(() =>
+      measureRecall([row({ notOwned: "inventory" })], manifestFile, (() => ({
+        guidance: "write it in src/",
+        results: [],
+        verdict: "none",
+      })) as CapabilitySearcher),
+    ).toThrow("not-owned response guidance does not match its manifest entry");
+  });
+
   it("should fail when zeroResultRate exceeds the recorded floor", () => {
     const measurement = measureRecall([row()], manifestFile, (() => []) as CapabilitySearcher);
     const regressions = compareBudget(measurement, budget());
     expect(regressions).toContainEqual({
-      message: "zeroResultRate 1.000000 exceeds floor 0.000000",
-      metric: "zeroResultRate",
+      message: "unresolvedResultRate 1.000000 exceeds floor 0.000000",
+      metric: "unresolvedResultRate",
       rowIds: ["fixture.row"],
     });
   });
@@ -155,6 +201,31 @@ describe("capability recall gate", () => {
       message: "corpus row ids changed; missing baseline.miss; added compensating.improvement",
       metric: "rowIds",
       rowIds: ["baseline.miss", "compensating.improvement"],
+    });
+  });
+
+  it("should protect the pinned not-owned row-to-guidance mapping", () => {
+    const guidance = loadCapabilityManifest(manifestFile).notOwned.find(
+      (entry) => entry.id === "inventory",
+    )?.guidance;
+    const measurement = measureRecall(
+      [row({ id: "baseline.not-owned", notOwned: "inventory" })],
+      manifestFile,
+      (() => ({ guidance, results: [], verdict: "none" })) as CapabilitySearcher,
+    );
+
+    expect(
+      compareBudget(
+        measurement,
+        budget({
+          notOwnedRows: { "baseline.not-owned": "save-load" },
+        }),
+      ),
+    ).toContainEqual({
+      message:
+        "pinned notOwned rows changed; expected baseline.not-owned=save-load; current baseline.not-owned=inventory",
+      metric: "notOwnedRows",
+      rowIds: ["baseline.not-owned"],
     });
   });
 

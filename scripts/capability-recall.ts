@@ -17,6 +17,7 @@ export interface ICapabilityRecallRow {
   readonly source: string;
   readonly expect: readonly string[];
   readonly reject: readonly string[];
+  readonly notOwned?: string;
 }
 export interface ICapabilityRecallCorpus {
   readonly version: 1;
@@ -26,11 +27,13 @@ export interface ICapabilityRecallCorpus {
 export interface ICapabilityRecallBudget {
   readonly version: 1;
   readonly zeroResultRate: number;
+  readonly unresolvedResultRate: number;
   readonly recallAtK: number;
   readonly rejectHits: number;
   readonly rowCount: number;
   readonly rowIds: readonly string[];
   readonly recalledRows: readonly string[];
+  readonly notOwnedRows: Readonly<Record<string, string>>;
 }
 
 export interface IRecallRowResult {
@@ -41,7 +44,10 @@ export interface IRecallRowResult {
   readonly returned: readonly string[];
   readonly expected: readonly string[];
   readonly rejected: readonly string[];
+  readonly notOwned?: string;
+  readonly guided: boolean;
   readonly zeroResult: boolean;
+  readonly unresolvedResult: boolean;
   readonly recalled: boolean;
   readonly rejectHit: boolean;
 }
@@ -50,6 +56,10 @@ export interface IRecallMetrics {
   readonly rowCount: number;
   readonly zeroResults: number;
   readonly zeroResultRate: number;
+  readonly unresolvedResults: number;
+  readonly unresolvedResultRate: number;
+  readonly guided: number;
+  readonly actionable: number;
   readonly recalled: number;
   readonly recallAtK: number;
   readonly rejectHits: number;
@@ -63,11 +73,13 @@ export interface IRecallMeasurement {
 export interface IRecallRegression {
   readonly metric:
     | "zeroResultRate"
+    | "unresolvedResultRate"
     | "recallAtK"
     | "rejectHits"
     | "rowCount"
     | "rowIds"
-    | "recalledRows";
+    | "recalledRows"
+    | "notOwnedRows";
   readonly message: string;
   readonly rowIds: readonly string[];
 }
@@ -171,9 +183,14 @@ function validateCorpusRow(raw: unknown, index: number, file: string): ICapabili
   if (expected.some((symbol) => rejected.includes(symbol))) {
     throw recallError(`${file}: row ${index} cannot expect and reject the same symbol`);
   }
+  const notOwned =
+    raw.notOwned === undefined
+      ? undefined
+      : requireNonEmptyString(raw.notOwned, `${file}: row ${index}.notOwned`);
   return {
     expect: [...expected],
     id,
+    ...(notOwned === undefined ? {} : { notOwned }),
     query: query.trim(),
     reject: [...rejected],
     scope: raw.scope,
@@ -211,6 +228,35 @@ function validateBudgetRowIds(value: unknown, rowCount: number, file: string): r
   return [...value];
 }
 
+function validateNotOwnedRows(value: unknown, file: string): Readonly<Record<string, string>> {
+  if (!isRecord(value)) {
+    throw recallError(`${file}: notOwnedRows must be an object of corpus row ids to manifest ids`);
+  }
+  const rows: Record<string, string> = {};
+  for (const [rowId, notOwnedId] of Object.entries(value)) {
+    if (
+      rowId.trim().length === 0 ||
+      typeof notOwnedId !== "string" ||
+      notOwnedId.trim().length === 0
+    ) {
+      throw recallError(
+        `${file}: notOwnedRows must map non-empty row ids to non-empty manifest ids`,
+      );
+    }
+    rows[rowId] = notOwnedId;
+  }
+  return rows;
+}
+
+function notOwnedRowMap(
+  rows: readonly Pick<IRecallRowResult, "id" | "notOwned">[],
+): Readonly<Record<string, string>> {
+  return rows.reduce<Record<string, string>>((mapped, row) => {
+    if (row.notOwned !== undefined) mapped[row.id] = row.notOwned;
+    return mapped;
+  }, {});
+}
+
 export function validateBudget(value: unknown, file = "budget.json"): ICapabilityRecallBudget {
   if (!isRecord(value) || value.version !== 1) {
     throw recallError(`${file}: root must contain version 1`);
@@ -224,6 +270,15 @@ export function validateBudget(value: unknown, file = "budget.json"): ICapabilit
     zeroResultRate > 1
   ) {
     throw recallError(`${file}: zeroResultRate must be a finite number between 0 and 1`);
+  }
+  const unresolvedResultRate = value.unresolvedResultRate;
+  if (
+    typeof unresolvedResultRate !== "number" ||
+    !Number.isFinite(unresolvedResultRate) ||
+    unresolvedResultRate < 0 ||
+    unresolvedResultRate > 1
+  ) {
+    throw recallError(`${file}: unresolvedResultRate must be a finite number between 0 and 1`);
   }
   if (
     typeof recallAtK !== "number" ||
@@ -249,6 +304,7 @@ export function validateBudget(value: unknown, file = "budget.json"): ICapabilit
     throw recallError(`${file}: recalledRows contains duplicate row ids`);
   }
   const rowIds = validateBudgetRowIds(value.rowIds, rowCount, file);
+  const notOwnedRows = validateNotOwnedRows(value.notOwnedRows, file);
   return {
     recallAtK,
     recalledRows: [...recalledRows],
@@ -257,6 +313,8 @@ export function validateBudget(value: unknown, file = "budget.json"): ICapabilit
     rowIds: [...rowIds],
     version: 1,
     zeroResultRate,
+    unresolvedResultRate,
+    notOwnedRows,
   };
 }
 
@@ -389,10 +447,13 @@ export async function resolveCorpusSources(
   for (const row of rows) await resolveSource(row, root);
 }
 
-function validateManifestSymbols(
+function validateManifestExpectations(
   rows: readonly ICapabilityRecallRow[],
   manifestFile: string,
-): ReadonlySet<string> {
+): {
+  readonly notOwned: ReadonlyMap<string, string>;
+  readonly symbols: ReadonlySet<string>;
+} {
   let manifest: ReturnType<typeof loadCapabilityManifest>;
   try {
     manifest = loadCapabilityManifest(manifestFile);
@@ -400,14 +461,20 @@ function validateManifestSymbols(
     throw recallError(`manifest cannot be loaded: ${String(error)}`);
   }
   const symbols = new Set(manifest.entries.map((entry) => entry.symbol));
+  const notOwned = new Map(manifest.notOwned.map((entry) => [entry.id, entry.guidance] as const));
   for (const row of rows) {
     for (const symbol of [...row.expect, ...row.reject]) {
       if (!symbols.has(symbol)) {
         throw recallError(`${row.id}: symbol '${symbol}' is absent from manifest ${manifestFile}`);
       }
     }
+    if (row.notOwned !== undefined && !notOwned.has(row.notOwned)) {
+      throw recallError(
+        `${row.id}: notOwned id '${row.notOwned}' is absent from manifest ${manifestFile}`,
+      );
+    }
   }
-  return symbols;
+  return { notOwned, symbols };
 }
 
 function checkedSymbols(
@@ -421,17 +488,17 @@ function checkedSymbols(
   return symbols;
 }
 
-function isCapabilitySearchResponse(
-  response: readonly ICapabilitySearchResult[] | ICapabilitySearchResponse,
-): response is ICapabilitySearchResponse {
-  return !Array.isArray(response);
-}
-
 function responseResults(
   response: readonly ICapabilitySearchResult[] | ICapabilitySearchResponse,
   row: ICapabilityRecallRow,
-): readonly ICapabilitySearchResult[] {
-  if (!isCapabilitySearchResponse(response)) return response;
+  expectedGuidance: string | undefined,
+): { readonly guided: boolean; readonly results: readonly ICapabilitySearchResult[] } {
+  if (!isCapabilitySearchResponse(response)) {
+    if (expectedGuidance !== undefined) {
+      throw recallError(`${row.id}: expected a verified not-owned response envelope`);
+    }
+    return { guided: false, results: response };
+  }
   if (response.verdict !== "matched" && response.verdict !== "none") {
     throw recallError(`${row.id}: search returned an invalid verdict`);
   }
@@ -447,7 +514,20 @@ function responseResults(
   if (response.verdict === "none" && response.results.length > 0) {
     throw recallError(`${row.id}: none search response must not contain results`);
   }
-  return response.results;
+  const guided =
+    expectedGuidance !== undefined &&
+    response.verdict === "none" &&
+    response.guidance === expectedGuidance;
+  if (expectedGuidance !== undefined && !guided) {
+    throw recallError(`${row.id}: not-owned response guidance does not match its manifest entry`);
+  }
+  return { guided, results: response.results };
+}
+
+function isCapabilitySearchResponse(
+  response: readonly ICapabilitySearchResult[] | ICapabilitySearchResponse,
+): response is ICapabilitySearchResponse {
+  return !Array.isArray(response);
 }
 
 export function measureRecall(
@@ -455,7 +535,7 @@ export function measureRecall(
   manifestFile: string,
   searcher: CapabilitySearcher = searchCapabilities,
 ): IRecallMeasurement {
-  validateManifestSymbols(rows, manifestFile);
+  const manifestExpectations = validateManifestExpectations(rows, manifestFile);
   const rowResults = rows.map((row): IRecallRowResult => {
     let results: readonly ICapabilitySearchResult[] | ICapabilitySearchResponse;
     try {
@@ -463,12 +543,19 @@ export function measureRecall(
     } catch (error) {
       throw recallError(`${row.id}: search failed: ${String(error)}`);
     }
-    const returned = checkedSymbols(responseResults(results, row), row);
+    const checked = responseResults(
+      results,
+      row,
+      row.notOwned === undefined ? undefined : manifestExpectations.notOwned.get(row.notOwned),
+    );
+    const returned = checkedSymbols(checked.results, row);
     const expected = row.expect.filter((symbol) => returned.includes(symbol));
     const rejected = row.reject.filter((symbol) => returned.includes(symbol));
     return {
       expected,
+      guided: checked.guided,
       id: row.id,
+      ...(row.notOwned === undefined ? {} : { notOwned: row.notOwned }),
       query: row.query,
       recalled: expected.length > 0,
       rejected,
@@ -476,12 +563,15 @@ export function measureRecall(
       returned,
       scope: row.scope,
       source: row.source,
+      unresolvedResult: returned.length === 0 && !checked.guided,
       zeroResult: returned.length === 0,
     };
   });
   const rowCount = rowResults.length;
   if (rowCount === 0) throw recallError("cannot score an empty corpus");
   const zeroResults = rowResults.filter((row) => row.zeroResult).length;
+  const unresolvedResults = rowResults.filter((row) => row.unresolvedResult).length;
+  const guided = rowResults.filter((row) => row.guided).length;
   const recalled = rowResults.filter((row) => row.recalled).length;
   const rejectHits = rowResults.filter((row) => row.rejectHit).length;
   return {
@@ -492,6 +582,10 @@ export function measureRecall(
       rowCount,
       zeroResultRate: zeroResults / rowCount,
       zeroResults,
+      unresolvedResultRate: unresolvedResults / rowCount,
+      unresolvedResults,
+      guided,
+      actionable: guided + recalled,
     },
     rows: rowResults,
   };
@@ -504,17 +598,38 @@ function rowIds(
   return rows.filter(predicate).map((row) => row.id);
 }
 
+function pinnedNotOwnedRegression(
+  measurement: IRecallMeasurement,
+  budget: ICapabilityRecallBudget,
+): IRecallRegression | undefined {
+  const currentNotOwnedRows = new Map(Object.entries(notOwnedRowMap(measurement.rows)));
+  const expectedNotOwnedRows = new Map(Object.entries(budget.notOwnedRows));
+  const changedNotOwnedRows = [
+    ...expectedNotOwnedRows.keys(),
+    ...currentNotOwnedRows.keys(),
+  ].filter(
+    (id, index, ids) =>
+      ids.indexOf(id) === index && expectedNotOwnedRows.get(id) !== currentNotOwnedRows.get(id),
+  );
+  if (changedNotOwnedRows.length === 0) return undefined;
+  return {
+    message: `pinned notOwned rows changed; expected ${[...expectedNotOwnedRows.entries()].map(([id, value]) => `${id}=${value}`).join(", ") || "(none)"}; current ${[...currentNotOwnedRows.entries()].map(([id, value]) => `${id}=${value}`).join(", ") || "(none)"}`,
+    metric: "notOwnedRows",
+    rowIds: changedNotOwnedRows,
+  };
+}
+
 export function compareBudget(
   measurement: IRecallMeasurement,
   budget: ICapabilityRecallBudget,
 ): readonly IRecallRegression[] {
   const { metrics } = measurement;
   const regressions: IRecallRegression[] = [];
-  if (metrics.zeroResultRate > budget.zeroResultRate + Number.EPSILON) {
+  if (metrics.unresolvedResultRate > budget.unresolvedResultRate + Number.EPSILON) {
     regressions.push({
-      message: `zeroResultRate ${metrics.zeroResultRate.toFixed(6)} exceeds floor ${budget.zeroResultRate.toFixed(6)}`,
-      metric: "zeroResultRate",
-      rowIds: rowIds(measurement.rows, (row) => row.zeroResult),
+      message: `unresolvedResultRate ${metrics.unresolvedResultRate.toFixed(6)} exceeds floor ${budget.unresolvedResultRate.toFixed(6)}`,
+      metric: "unresolvedResultRate",
+      rowIds: rowIds(measurement.rows, (row) => row.unresolvedResult),
     });
   }
   if (metrics.recallAtK + Number.EPSILON < budget.recallAtK) {
@@ -531,6 +646,8 @@ export function compareBudget(
       rowIds: rowIds(measurement.rows, (row) => row.rejectHit),
     });
   }
+  const notOwnedRegression = pinnedNotOwnedRegression(measurement, budget);
+  if (notOwnedRegression !== undefined) regressions.push(notOwnedRegression);
   if (metrics.rowCount < budget.rowCount) {
     regressions.push({
       message: `rowCount ${metrics.rowCount} is below floor ${budget.rowCount}`,
@@ -571,6 +688,8 @@ export function formatRecallReport(report: IRecallReport): string {
     ),
     "",
     `zeroResultRate: ${report.metrics.zeroResultRate.toFixed(6)} (${report.metrics.zeroResults}/${report.metrics.rowCount})`,
+    `unresolvedResultRate: ${report.metrics.unresolvedResultRate.toFixed(6)} (${report.metrics.unresolvedResults}/${report.metrics.rowCount})`,
+    `actionable: ${report.metrics.actionable}/${report.metrics.rowCount} (${report.metrics.recalled} distinct-symbol, ${report.metrics.guided} guided not-owned)`,
     `recallAtK: ${report.metrics.recallAtK.toFixed(6)} (${report.metrics.recalled}/${report.metrics.rowCount})`,
     `rejectHits: ${report.metrics.rejectHits}`,
     `rowCount: ${report.metrics.rowCount}`,
@@ -647,6 +766,8 @@ async function writeBudget(file: string, measurement: IRecallMeasurement): Promi
         rowIds: measurement.rows.map((row) => row.id),
         version: 1,
         zeroResultRate: metrics.zeroResultRate,
+        unresolvedResultRate: metrics.unresolvedResultRate,
+        notOwnedRows: notOwnedRowMap(measurement.rows),
       } satisfies ICapabilityRecallBudget,
       null,
       2,

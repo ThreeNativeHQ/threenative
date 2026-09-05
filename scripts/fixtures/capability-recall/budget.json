@@ -90,5 +90,12 @@
     "request.platformer-double-jump"
   ],
   "version": 1,
-  "zeroResultRate": 0.1206896551724138
+  "zeroResultRate": 0.1206896551724138,
+  "unresolvedResultRate": 0.1206896551724138,
+  "notOwnedRows": {
+    "request.inventory-system": "inventory",
+    "request.save-progress": "save-load",
+    "request.dialogue-npc": "dialogue",
+    "request.multiplayer": "networked-multiplayer"
+  }
 }

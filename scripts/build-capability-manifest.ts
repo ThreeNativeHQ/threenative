@@ -3,7 +3,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
 
+import { RELEVANCE_FLOOR, capabilitySituationTokens } from "../packages/engine-mcp/src/index.js";
 import { CAPABILITY_PACKAGE_ALLOWLIST } from "./check-capability-docs.js";
+import { type INotOwnedCapability, NOT_OWNED_CAPABILITIES } from "./not-owned-capabilities.js";
 import {
   REALISM_EFFECTS_COVERAGE,
   REALISM_EFFECTS_MANIFEST_ENTRIES,
@@ -17,7 +19,7 @@ export const CAPABILITY_MANIFEST_RELATIVE_PATH = "packages/create-threenative/ca
 // project that was not scaffolded and therefore has no committed copy of its own.
 export const CAPABILITY_MANIFEST_MIRROR_PATH = "packages/core/capabilities.json";
 
-const MANIFEST_VERSION = 1 as const;
+const MANIFEST_VERSION = 2 as const;
 
 export type CapabilityKind = "class" | "function";
 
@@ -38,6 +40,7 @@ export interface ICapabilityManifestEntry {
 export interface ICapabilityManifest {
   readonly version: typeof MANIFEST_VERSION;
   readonly entries: readonly ICapabilityManifestEntry[];
+  readonly notOwned: readonly INotOwnedCapability[];
 }
 
 export interface ICapabilityAllowlistEntry {
@@ -474,9 +477,81 @@ function validateDocumentation(candidates: readonly ICapabilityCandidate[]): voi
     throw new Error(`Capability manifest generation failed:\n${errors.join("\n")}`);
 }
 
+function notOwnedOverlap(
+  situation: string,
+  entry: ICapabilityManifestEntry,
+):
+  | { readonly matchedSituation: string; readonly overlap: number; readonly score: number }
+  | undefined {
+  const query = capabilitySituationTokens(situation);
+  if (query.length === 0) return undefined;
+  const queryText = query.join(" ");
+  let best:
+    | { readonly matchedSituation: string; readonly overlap: number; readonly score: number }
+    | undefined;
+  for (const ownedSituation of entry.situations) {
+    const phrase = capabilitySituationTokens(ownedSituation);
+    const overlap = new Set(phrase.filter((token) => query.includes(token))).size;
+    const baseScore = overlap / Math.max(query.length, phrase.length);
+    const phraseBonus =
+      phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
+    if (overlap < (query.length >= 4 ? 2 : 1) && phraseBonus === 0) continue;
+    const score = baseScore + phraseBonus;
+    if (best === undefined || score > best.score) {
+      best = { matchedSituation: ownedSituation, overlap, score };
+    }
+  }
+  return best;
+}
+
+export function validateNotOwned(
+  entries: readonly ICapabilityManifestEntry[],
+  notOwned: readonly INotOwnedCapability[],
+): void {
+  const conflicts: string[] = [];
+  for (const notOwnedEntry of notOwned) {
+    for (const entry of entries) {
+      const overlap = notOwnedEntry.situations
+        .map((situation) => ({ situation, result: notOwnedOverlap(situation, entry) }))
+        .find(
+          (
+            candidate,
+          ): candidate is {
+            readonly situation: string;
+            readonly result: {
+              readonly matchedSituation: string;
+              readonly overlap: number;
+              readonly score: number;
+            };
+          } =>
+            candidate.result !== undefined &&
+            candidate.result.score >= RELEVANCE_FLOOR &&
+            (candidate.result.overlap >= 2 ||
+              capabilitySituationTokens(candidate.result.matchedSituation)
+                .join(" ")
+                .includes(capabilitySituationTokens(candidate.situation).join(" ")) ||
+              capabilitySituationTokens(candidate.situation)
+                .join(" ")
+                .includes(capabilitySituationTokens(candidate.result.matchedSituation).join(" "))),
+        );
+      if (overlap !== undefined) {
+        conflicts.push(
+          `notOwned '${notOwnedEntry.id}' situation '${overlap.situation}' overlaps owned capability '${entry.symbol}' situation '${overlap.result.matchedSituation}' at score ${overlap.result.score.toFixed(6)}`,
+        );
+      }
+    }
+  }
+  if (conflicts.length > 0) {
+    throw new Error(
+      `Capability manifest generation failed; a mechanic cannot be both owned and not owned:\n${conflicts.join("\n")}`,
+    );
+  }
+}
+
 export function buildCapabilityManifest(
   root: string,
   allowlist: readonly ICapabilityAllowlistEntry[] = CAPABILITY_ALLOWLIST,
+  notOwned: readonly INotOwnedCapability[] = NOT_OWNED_CAPABILITIES,
 ): ICapabilityManifest {
   validateCapabilityAllowlist(allowlist);
   const candidates = packageExportCandidates(root);
@@ -504,6 +579,7 @@ export function buildCapabilityManifest(
     .sort((left, right) =>
       `${left.importPath}:${left.symbol}`.localeCompare(`${right.importPath}:${right.symbol}`),
     );
+  validateNotOwned(entries, notOwned);
   // Fixture roots used by the manifest unit tests intentionally contain only synthetic package
   // sources. The checked-in realism-effects mapping is validated when the repository has its PRD
   // record; requiring those unrelated fixture trees to copy Three and every template would make
@@ -518,7 +594,7 @@ export function buildCapabilityManifest(
       throw new Error(`Realism-effects coverage validation failed:\n${coverageErrors.join("\n")}`);
     }
   }
-  return { entries, version: MANIFEST_VERSION };
+  return { entries, notOwned, version: MANIFEST_VERSION };
 }
 
 function manifestPath(root: string): string {
@@ -600,7 +676,7 @@ async function main(): Promise<void> {
     ? await checkCapabilityManifest(root)
     : await writeCapabilityManifest(root);
   process.stdout.write(
-    `${check ? "capability manifest fresh" : "capability manifest generated"}: ${manifest.entries.length} entries at ${manifestPath(root)}\n`,
+    `${check ? "capability manifest fresh" : "capability manifest generated"}: ${manifest.entries.length} entries and ${manifest.notOwned.length} notOwned rows at ${manifestPath(root)}\n`,
   );
 }
 

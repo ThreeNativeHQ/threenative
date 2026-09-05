@@ -1,11 +1,13 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { RELEVANCE_FLOOR } from "../../packages/engine-mcp/src/index.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   buildCapabilityManifest,
   checkCapabilityManifest,
   validateCapabilityAllowlist,
+  validateNotOwned,
   writeCapabilityManifest,
 } from "../build-capability-manifest.js";
 
@@ -99,6 +101,67 @@ describe("capability manifest generator", () => {
     expect(() =>
       validateCapabilityAllowlist([{ package: "@threenative/core", reason: "", symbol: "Hidden" }]),
     ).toThrow(/non-empty.*reason/u);
+  });
+
+  it("rejects a one-token owned situation when the notOwned match clears the relevance floor", () => {
+    const entries = [
+      {
+        constraints: [],
+        example: "const capability = new InventoryCapability();",
+        importPath: "@threenative/core",
+        kind: "class" as const,
+        overrides: [],
+        package: "@threenative/core",
+        signature: "class InventoryCapability",
+        situations: ["inventory"],
+        summary: "Manages inventory.",
+        supersedes: [],
+        symbol: "InventoryCapability",
+      },
+    ];
+    const notOwnedSituation = "inventory system";
+    const notOwned = [
+      {
+        guidance: "Write inventory state in the game's src/.",
+        id: "inventory-system",
+        situations: [notOwnedSituation],
+      },
+    ];
+    const rawOverlapScore = 1 / Math.max(notOwnedSituation.split(" ").length, 1);
+
+    expect(rawOverlapScore).toBeGreaterThanOrEqual(RELEVANCE_FLOOR);
+    expect(() => validateNotOwned(entries, notOwned)).toThrow(
+      /notOwned 'inventory-system'.*InventoryCapability/u,
+    );
+  });
+
+  it("rejects inflection-equivalent owned and notOwned situations", () => {
+    const entries = [
+      {
+        constraints: [],
+        example: "const capability = new SaveCapability();",
+        importPath: "@threenative/core",
+        kind: "class" as const,
+        overrides: [],
+        package: "@threenative/core",
+        signature: "class SaveCapability",
+        situations: ["saving progress"],
+        summary: "Saves progress.",
+        supersedes: [],
+        symbol: "SaveCapability",
+      },
+    ];
+    const notOwned = [
+      {
+        guidance: "Write save state in the game's src/.",
+        id: "save-progress",
+        situations: ["save progress"],
+      },
+    ];
+
+    expect(() => validateNotOwned(entries, notOwned)).toThrow(
+      /notOwned 'save-progress'.*SaveCapability/u,
+    );
   });
 
   it("writes and checks a generated manifest instead of accepting a stale copy", async () => {
