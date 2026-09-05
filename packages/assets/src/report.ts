@@ -440,7 +440,10 @@ export function formatSkippedCompression(rows: readonly ISkippedReportRow[]): re
     .filter(
       (row) =>
         (row.kind === "pass" || row.files > 0) &&
-        (row.kind !== "model" || row.decoders === undefined || row.decoders.length > 0),
+        (row.kind !== "model" ||
+          row.reason !== "platform" ||
+          row.decoders === undefined ||
+          row.decoders.length > 0),
     )
     .map((row) => {
       if (row.kind === "pass") {

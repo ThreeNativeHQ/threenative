@@ -913,8 +913,20 @@ describe("compileAssets", () => {
     await mkdir(path.join(root, "assets"));
     const source = Buffer.from(await buildFixtureGlb());
     await writeFile(path.join(root, "assets", "character.glb"), source);
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
 
-    await compileAssets({ config: { models: "none" }, cwd: root });
+    try {
+      await compileAssets({ config: { models: "none" }, cwd: root });
+      expect(lines.some((line) => line.startsWith("TN_ASSETS_COMPRESSION_SKIPPED model:"))).toBe(
+        true,
+      );
+      expect(lines.some((line) => line.includes('assets.models is "none"'))).toBe(true);
+    } finally {
+      log.mockRestore();
+    }
 
     const manifest = JSON.parse(
       await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
