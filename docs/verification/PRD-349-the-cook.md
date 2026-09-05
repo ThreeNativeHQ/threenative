@@ -1,15 +1,14 @@
 # PRD-349 — cook execution evidence
 
 Execution in `.worktrees/prd-349-cook-default`, branched from
-`assets/prd-349-352-execution` at `6685739e`. **PARTIAL** — in progress, no completion claim, no
-PR and no archive move. iOS packaging is unrun on this host, and nothing here claims every game.
+`assets/prd-349-352-execution` at `6685739e`. **Owner-accepted PR close-out** — iOS packaging
+waived and the practical approximately51MB Wildwood result accepted. Nothing here claims every
+sandbox game or physical mobile execution. The final sections supersede earlier partial checkpoints.
 
-Two source points are cited throughout and must not be conflated. **Frozen source `57b76a66`**
-carries the last official full-suite run and the packed tarballs every game lane below installed.
-The **working tree is ahead of it**: the encoder supercompression default is restored in
-uncommitted source, and separate workers hold in-flight watch and budget-review repairs. No gate
-recorded against `57b76a66` covers the working tree, and nothing here is re-packed distribution
-proof for it.
+Source checkpoints are explicit and must not be conflated. `57b76a66` is the intermediate
+distribution with a subsequently corrected encoder default; `2114d444` carries that correction;
+`bbfcb9da` adds auxiliary containment and atomic manifest publication. Earlier partial sections
+retain the actual failures and pending work at those moments; later records state what closed them.
 
 ## Compiler and template checkpoint, 2026-09-04
 

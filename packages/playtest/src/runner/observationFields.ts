@@ -16,6 +16,7 @@ export const STANDALONE_PLAYTEST_OBSERVATION_FIELDS = [
   "runtimeDiagnosticsBefore",
   "runtimeObservations",
   "scene",
+  "sceneNodes",
   "signals",
   "signalSeries",
   "startup",

@@ -22,7 +22,7 @@ Read `/AGENTS.md` and `docs/PRDs/AGENTS.md` first.
 
 | PRD | Wins | Depends on |
 |---|---|---|
-| **349 — the cook is on by default** | 289 MB → ~35-45 MB on web/desktop | — |
+| **[349 — the cook is on by default](../done/PRD-349-the-cook-is-on-by-default.md)** | DONE: Wildwood 304.92 → 51.33 MB, Quarry 29.89 → 4.57 MB; iOS waived | — |
 | **350 — the platform gate knows which passes need a decoder** | 289 MB → ~83 MB on Android/iOS | 349 |
 | **351 — compression never looks worse than a floor** | quality floor + the 2048² resolution raise | 349 |
 | **352 — Unreal ingest is first-party** | **zero shipped bytes** — removes an external repo from the ingest path | none |
