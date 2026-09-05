@@ -305,7 +305,11 @@ void clearSurfaceRevalidationRequest() {
 }
 
 void noteMemoryTrimLevel(int level) {
-    g_pendingMemoryTrimLevel.store(level, std::memory_order_release);
+    int pending = g_pendingMemoryTrimLevel.load(std::memory_order_acquire);
+    while (level > pending &&
+           !g_pendingMemoryTrimLevel.compare_exchange_weak(
+               pending, level, std::memory_order_release, std::memory_order_acquire)) {
+    }
 }
 
 bool takeMemoryTrimRequest(int& level) {

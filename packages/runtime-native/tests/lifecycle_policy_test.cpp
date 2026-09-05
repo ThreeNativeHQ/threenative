@@ -242,6 +242,22 @@ int main() {
     check(mystral::platform::takeMemoryTrimRequest(advisoryTrimLevel) && advisoryTrimLevel == 20,
           "an advisory Android level still reaches the game callback");
 
+    // SDL 3.2.30 queues and coalesces LOW_MEMORY, so ComponentCallbacks2 can report a severe
+    // level before the event watch runs and then report a less severe level. Keep the maximum
+    // pending level until the queued event consumes it.
+    mystral::platform::resetLifecycleForTesting();
+    mystral::platform::noteMemoryTrimLevel(80);
+    mystral::platform::noteMemoryTrimLevel(20);
+    mystral::platform::handleLifecycleEvent(SDL_EVENT_LOW_MEMORY);
+    markers = drainMarkers();
+    check(anyMarkerContains(markers, "TN_LIFECYCLE_MEMORY_TRIM:{\"level\":80"),
+          "coalesced low-memory events preserve the most severe pending level");
+    check(anyMarkerContains(markers, "\"action\":\"trim\""),
+          "the preserved severe level still trims host-owned memory");
+    int coalescedTrimLevel = -2;
+    check(mystral::platform::takeMemoryTrimRequest(coalescedTrimLevel) && coalescedTrimLevel == 80,
+          "the game callback receives the most severe coalesced level");
+
     // 2c. Android destroys the window whatever this host decided about pausing, so `continue`
     //     needs the same rebuild. The retreat that shipped `continue` as the default was living on
     //     this being untrue.
