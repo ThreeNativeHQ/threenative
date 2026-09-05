@@ -435,19 +435,15 @@ function drainContacts<TState extends Record<string, unknown>, TPhysics>(
   history: IPlaytestContactObservation[],
   tick: number | undefined,
 ): IPlaytestContactObservation[] {
-  // One snapshot and one value→id index per drain: findEntityId rebuilt both per contact event,
-  // O(n*c) field extractions on every runner sample. First id wins per value, matching the
-  // insertion-order find it replaced.
-  const snapshot = ctx.entities.snapshot();
+  // Build the value→id index without extracting debug fields. First id wins per value, matching
+  // the insertion-order find it replaced.
   const idsByEntity = new Map<object, string>();
-  for (const id of Object.keys(snapshot)) {
-    const registered = ctx.entities.get(id) as Record<string, unknown> | undefined;
-    if (registered === undefined) continue;
+  ctx.entities.forEach((id, registered) => {
     for (const value of objectGraphValues(registered))
       if (!idsByEntity.has(value)) idsByEntity.set(value, id);
-  }
-  for (const id of Object.keys(snapshot)) {
-    for (const source of entitySources(ctx.entities.get(id))) {
+  });
+  ctx.entities.forEach((id, registered) => {
+    for (const source of entitySources(registered)) {
       for (const event of source.drainContacts()) {
         const entity = idsByEntity.get(event.body);
         // The area's own `entity` option names the far side of the contact. A game that
@@ -468,7 +464,7 @@ function drainContacts<TState extends Record<string, unknown>, TPhysics>(
         if (history.length > PLAYTEST_PROTOCOL_LIMITS.maxEventsPerDrain) history.shift();
       }
     }
-  }
+  });
   return [...history];
 }
 /**
@@ -531,11 +527,10 @@ function createTransitionWatcher(): ITransitionWatcher {
     observe: (ctx, tick) => {
       tickSeen = tick;
       seen = true;
-      const snapshot = ctx.entities.snapshot();
-      for (const id of Object.keys(snapshot)) {
-        const entity = ctx.entities.get(id) as { state?: unknown } | undefined;
-        if (typeof entity?.state === "string") record(`states.${id}`, entity.state, tick);
-      }
+      ctx.entities.forEach((id, entity) => {
+        const candidate = entity as { state?: unknown };
+        if (typeof candidate.state === "string") record(`states.${id}`, candidate.state, tick);
+      });
       // The store is read without flushing: a flush is a publish to the UI, and an observer must
       // not change when the game's own subscribers run.
       const state = ctx.state.getState() as Record<string, unknown>;

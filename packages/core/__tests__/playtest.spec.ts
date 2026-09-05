@@ -508,6 +508,68 @@ describe("playtest plugin", () => {
     }
   });
 
+  it("keeps per-tick contacts and transitions without snapshotting entity diagnostics", async () => {
+    const canvas = testCanvas();
+    const body = {};
+    let debugCalls = 0;
+    let drained = false;
+    let updates = 0;
+    const area = {
+      drainContacts: () => {
+        if (drained) return [];
+        drained = true;
+        return [{ body, entity: "player", started: true }];
+      },
+    };
+    class TestScene extends Scene<{ score: number }> {
+      override enter(ctx: ICtx<{ score: number }>): void {
+        ctx.entities.add("player", {
+          debug: () => {
+            debugCalls += 1;
+            return { health: 100 };
+          },
+          physics: { rigidBody: body },
+        });
+        ctx.entities.add("trigger", { physics: { area } });
+      }
+
+      override update(ctx: ICtx<{ score: number }>): void {
+        updates += 1;
+        if (updates === 2) ctx.state.set({ score: 1 });
+      }
+    }
+    const game = defineGame({
+      initialState: { score: 0 },
+      plugins: [playtest()],
+      renderer: stubRenderer(canvas),
+      scenes: { test: TestScene },
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      await bridge().advance?.(2);
+
+      expect(debugCalls).toBe(0);
+      const sampled = await bridge().sample({});
+      expect(debugCalls).toBeGreaterThan(0);
+      expect(sampled.gameplay?.contacts).toContainEqual({
+        entity: "player",
+        kind: "trigger",
+        tick: 0,
+        with: "player",
+      });
+      expect(sampled.gameplay?.transitions).toContainEqual({
+        from: 0,
+        path: "state.score",
+        tick: 1,
+        to: 1,
+      });
+    } finally {
+      game.stop();
+    }
+  });
+
   it("should re-register only the active scene entities after goto", async () => {
     const canvas = testCanvas();
     let navigate: ((name: string) => Promise<void>) | undefined;

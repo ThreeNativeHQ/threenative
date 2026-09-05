@@ -21,6 +21,15 @@ export class Registry {
     return this.#named.get(name) as T | undefined;
   }
 
+  forEach(callback: (name: string, entity: object) => void): void {
+    this.#iterating = true;
+    try {
+      for (const [name, entity] of this.#named) callback(name, entity);
+    } finally {
+      this.#iterating = false;
+    }
+  }
+
   remove(name: string): void {
     assertNotIterating(this.#iterating, "remove");
     this.#pendingFree.delete(name);
