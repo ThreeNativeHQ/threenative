@@ -333,3 +333,4 @@ the playtest package gains only this reusable asynchronous wait primitive.
 ## Execution records
 
 - Task 0: [policy admission and primary-docs checks](../../verification/prd-359-task0-2026-09-05.md). Fresh read-only Luna review passed policy/mirror/test collection; missing checklist/link finding resolved here.
+- Prerequisites: [isolated workspace/native build and baseline contracts](../../verification/prd-359-build-prerequisites-2026-09-05.md); not multiplayer acceptance.
