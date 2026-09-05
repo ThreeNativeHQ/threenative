@@ -1129,6 +1129,11 @@ function resolveAuxiliaryOutputs(
     const output =
       auxiliary.outputPath ??
       outputNameFor(`${stem}.${auxiliary.role}${auxiliary.extension}`, digest, auxiliary.extension);
+    if (path.win32.isAbsolute(output) || output.split(/[\\/]/u).includes("..")) {
+      throw new Error(
+        `TN_ASSETS_OUTPUT_INVALID: auxiliary output '${output}' must stay relative to assets.output.`,
+      );
+    }
     return {
       buffer: auxiliary.buffer,
       manifestField: auxiliary.manifestField,
@@ -1431,7 +1436,13 @@ async function writeManifest(
   const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
   if (serialized === raw) return;
   await mkdir(outputRoot, { recursive: true });
-  await writeFile(manifestPath, serialized, "utf8");
+  const temporary = `${manifestPath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, serialized, "utf8");
+    await rename(temporary, manifestPath);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
 }
 
 /** Every file under `root`, as paths relative to it with `/` separators on every platform. */

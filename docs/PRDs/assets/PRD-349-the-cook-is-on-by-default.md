@@ -198,7 +198,8 @@ flowchart LR
       Rule 7 ("a default that is right with no option passed") is the entire PRD.
 
 **Data changes:** `IThreeNativeConfig.assets` gains `exclude?: readonly string[]` and
-`budget?: number | "none"`. `models.sharedImages`'s documented default changes false → true.
+`budget?: { uncooked?: number | "none"; total?: number | "none" } | "none"`.
+`models.sharedImages`'s documented default changes false → true.
 
 **Projection**
 
@@ -447,7 +448,7 @@ same.
 
 **Files**
 
-- `packages/core/src/config.ts` — EDIT: `budget?: number | "none"`.
+- `packages/core/src/config.ts` — EDIT: `budget?: { uncooked?: number | "none"; total?: number | "none" } | "none"`.
 - `packages/assets/src/compile.ts` — EDIT: throw `TN_ASSETS_BUDGET_EXCEEDED` at ~1817, beside
   `formatSkippedCompression`.
 - `packages/assets/src/report.ts` — EDIT: `formatBudget` — total, ceiling, top 5 by bytes.
@@ -494,7 +495,8 @@ measurement returns to 289 MB.
 
 **User verification (MANUAL)**
 
-- Action: set `budget: 1_000_000` in wildwood and run `node tools/compile-assets.mjs`.
+- Action: on the uncooked baseline with the material library included, set
+  `budget: { uncooked: 1_000_000 }` in wildwood and run `node tools/compile-assets.mjs`.
 - Expected: fails, naming `UnrealMaterialLibrary.glb` first.
 - Action: open wildwood's before/after frames side by side.
 - Expected: indistinguishable — bark normals and foliage alpha edges included.

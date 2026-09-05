@@ -23,6 +23,36 @@ const DEBOUNCE_MS = 25;
 // room to spare, and the test measures the burst against it rather than assuming it fits.
 const BURST_DEBOUNCE_MS = 500;
 
+const manifestWriteProbe = vi.hoisted(() => ({
+  onPartial: undefined as ((filename: string) => Promise<void>) | undefined,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...original,
+    writeFile: async (...args: Parameters<typeof original.writeFile>) => {
+      const filename = String(args[0]);
+      const finalName = `${path.sep}assets.manifest.json`;
+      const stagingPrefix = `${finalName}.`;
+      const isManifest = filename.endsWith(finalName) || filename.includes(stagingPrefix);
+      if (!isManifest || manifestWriteProbe.onPartial === undefined) {
+        return original.writeFile(...args);
+      }
+      const bytes = Buffer.from(String(args[1]), "utf8");
+      const split = Math.max(1, Math.floor(bytes.length / 2));
+      const handle = await original.open(filename, "w");
+      try {
+        await handle.write(bytes.subarray(0, split));
+        await manifestWriteProbe.onPartial(filename);
+        await handle.write(bytes.subarray(split));
+      } finally {
+        await handle.close();
+      }
+    },
+  };
+});
+
 interface IBurstRecorder {
   onChange(summary: IAssetWatchSummary): void;
   readonly summaries: IAssetWatchSummary[];
@@ -302,6 +332,40 @@ describe("watchAssets", () => {
     expect((await stat(knightPath)).mtimeMs).toBe(knightMtimeBefore);
   });
 
+  it("should keep the last manifest readable while publishing a replacement", async () => {
+    const root = await makeTempDir("threenative-watch-manifest-publication-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "town.txt"), "town v1");
+    const recorder = createBurstRecorder();
+    openHandles.push(
+      watchAssets({ cwd: root, debounceMs: DEBOUNCE_MS, onChange: recorder.onChange }),
+    );
+    await openHandles[0]?.ready;
+
+    const manifestPath = path.join(root, "public", "assets.manifest.json");
+    const previous = await readFile(manifestPath, "utf8");
+    let release = () => {};
+    const partial = new Promise<void>((resolve) => {
+      manifestWriteProbe.onPartial = async () => {
+        resolve();
+        await new Promise<void>((resume) => {
+          release = resume;
+        });
+      };
+    });
+    try {
+      await writeFile(path.join(root, "assets", "town.txt"), "town v2");
+      await partial;
+      await expect(readFile(manifestPath, "utf8")).resolves.toBe(previous);
+      release();
+      await recorder.waitForCount(1);
+      expect(await readFile(manifestPath, "utf8")).not.toBe(previous);
+    } finally {
+      release();
+      manifestWriteProbe.onPartial = undefined;
+    }
+  });
+
   it("should keep the previous output when compilation throws", async () => {
     const root = await makeTempDir("threenative-watch-throws-");
     await mkdir(path.join(root, "assets"));
@@ -572,10 +636,28 @@ describe("watchAssets", () => {
 
     // Deleted: a burst that compiles nothing still has to reconcile what the deletion left.
     const propsOutput = requireEntry(await readManifestEntries(manifestPath), "props.txt").output;
+    const receiptPath = path.join(publicDirectory, "bake.receipt.json");
+    const beforeDelete = JSON.parse(await readFile(receiptPath, "utf8")) as {
+      outputs: { source: string }[];
+    };
+    const afterDelete = `${JSON.stringify(
+      {
+        ...beforeDelete,
+        outputs: beforeDelete.outputs.filter((output) => output.source !== "props.txt"),
+      },
+      null,
+      2,
+    )}\n`;
     await rm(path.join(root, "assets", "props.txt"));
     await waitUntil(
       "the deleted asset to leave the manifest",
       async () => (await readManifestEntries(manifestPath))["props.txt"] === undefined,
+    );
+    // The receipt is published after stale-output cleanup. Wait for the complete expected
+    // receipt, not merely the earlier manifest update (close() does not drain an active cook).
+    await waitUntil(
+      "the deletion receipt to commit",
+      async () => (await readFile(receiptPath, "utf8")) === afterDelete,
     );
     await expect(stat(path.join(publicDirectory, propsOutput))).rejects.toThrow();
     await expectOnlyOwnedOutputs(publicDirectory, ["vendor/legacy.js"]);

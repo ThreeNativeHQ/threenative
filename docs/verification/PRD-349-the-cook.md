@@ -558,15 +558,110 @@ config and lockfiles remain unchanged. Logs:
 `/tmp/prd349-{last-harvest,spectral-sea}-baseline-{install,gates,missing-packages,summary}.log`.
 These are unavailable baselines, not green compatibility rows.
 
-## Still open after this update
+## Frozen 2114d444 distribution checkpoint — PARTIAL
 
-- Wildwood's cook is 55,409,248 bytes against a ≤45 MB target and predates the supercompression
-  correction. The final recook, its load-set accounting through the new manifest, the no-resize
-  proof and the before/after appearance pair are all unrun.
-- No lane has been re-measured, re-tested or re-packed on the restored default. Frozen `57b76a66`
-  remains the last official suite and the only packed distribution.
-- Watch and budget-review repairs are in flight with separate workers in this tree; no evidence
-  here covers them.
-- Quarry Android and iOS stay packaging-only: no device ran the APK, and iOS packaging is still
-  refused on Linux. No claim covers every game or every target.
-- PRD-349 remains **PARTIAL** — no PR, no archive move.
+Commit `2114d44488a0388d1f982b624e1f37ca5630c851`, tree
+`7fec89cab9a387bd5eade1eb7ae0fe94e255fab6`, clean before and after packing. All eight staged
+and copied package SHA256s independently recomputed against
+`/tmp/prd349-release-pack.H1bnal/provenance.json`. Assets SHA256
+`7449332067cd24c6beba56d882c62b38cd58518ab56df04fde2084ef10d3e223`; CLI
+`ca9d6cae5d8ca057e5db220babd73111d161a5354df348a25161115d4d15f54e`.
+
+Quarry install, typecheck, web/desktop builds and both checked-in scenario executions exit zero;
+**8/8 assertions per target**, browser NVIDIA/Turing. Logs
+`/tmp/prd349-quarry-release-{install,typecheck,web-build,desktop-build,browser,desktop}.log`.
+Opened raw and new `quarry-start.png`: textures and framing remain consistent. The vivid green
+rocks are present in the raw control too, not introduced by cooking.
+
+Actual web-manifest output files: six entries, nine unique primary/shared files, **3,984,176 B**.
+Basis adds **584,862 B**: **4,569,038 B** inclusive. Zero resized. Compared with the original
+**29,888,252 B** source payload: **25,319,214 B saved (84.71293%)**. The decoder-free fixture
+repair grew source files to 30,346,112 B; that growth is not used to inflate the baseline.
+Evidence `/tmp/prd349-quarry-release-web-bytes.json` sums actual filesystem sizes.
+
+Quarry Android build exits zero; APK **140,959,998 B**, SHA256
+`08917f3f72fb55bd1d14a51e521e400581e11f9bdeb63d724d84cc5d71f4ad82`.
+Android/iOS asset lanes each carry six files, **30,346,112 B**, no compression gain. iOS again
+cooks and bundles, then exits one because packaging requires darwin-arm64, not this linux-x64
+host. Logs `/tmp/prd349-quarry-release-{android,ios}-build.log`. No mobile device execution.
+
+Wildwood's restored-default cook exits zero. The same 76 baseline acquisitions map to 124 unique
+primary/shared outputs, **45,273,869 B**, plus **584,862 B** Basis and **5,451,493 B** HDR:
+**51,310,224 B**, versus **304,915,228 B** inclusive baseline. Savings **253,605,004 B (83.1723%)**;
+zero resized. This still **fails the ≤45 MB target**. Full manifest: 297,715,426 B; uncooked:
+10,386 B; exclusions: two files / 720,464,828 B. `/tmp/prd349-wildwood-release-cook.log`.
+These numbers precede the separate six-animal fixture repair; later replay is not yet claimed.
+
+HQ's refreshed four non-live browser scenarios exit zero, **29/29**, diagnostics zero,
+NVIDIA/Turing; unchanged **22,653,462 B**, 25 entries. Live bridge7373 remains unavailable.
+`/tmp/prd349-hq-final-web-scenarios.log`. Last Harvest and Spectral Sea were upgraded only after
+their historical package baselines proved unavailable: each now installs, typechecks and builds;
+their existing browser scenarios pass **12/12** and **10/10** respectively on NVIDIA/Turing.
+No gameplay/config changes or relaxed assertions. Logs
+`/tmp/prd349-{last-harvest,spectral-sea}-release-{install,typecheck,build-web,playtest}.log`.
+These rows are additional compatibility evidence, not proof covering all thirty games.
+
+The six stale Wildwood animal GLBs now have a **loader-equivalent fixture repair**, not a
+reimport. Originals are recoverable at `/tmp/prd349-animal-backup.C0eKu8`; importer45 remains.
+Main independently ran the strengthened verifier on actual replacements: all six pass with
+unchanged geometry, skins, node rest transforms/hierarchy, material/texture metadata and image
+hashes. Clip durations/counts, track values/times and interpolation match the original runtime's
+repaired result exactly; the baked first-load repair detector is false. No download or licensed
+source bytes committed. `/tmp/prd349-animal-root-verified.{json,log}`; runtime replay pending.
+
+## Post-checkpoint containment and full-suite review
+
+A trusted custom JS pass could publish `../outside.txt` outside its declared output directory.
+Independently reproduced against 2114d444 with `/tmp/prd349-auxiliary-containment.mjs`; the
+filing-base implementation has the same unchecked path. Five traversal/absolute-path regressions
+fail before the fix (`/tmp/prd349-containment-red.log`); a five-line validation guard rejects
+them before publication. Receipt/shared-image/watcher suites **43 passed**
+(`/tmp/prd349-containment-green.log`). This validates lexical paths, not a sandbox for arbitrary
+trusted pass code or hostile filesystem symlinks. Encoder/cache keys are unchanged.
+
+Build, typecheck and lint pass after that fix. The complete test command exposes **two failures /
+4,124 passes / seven skips**: the watcher can read truncated manifest JSON during a deletion,
+and a playtest diagnostic fixture unexpectedly returns exit2 instead of exit1. The latter passes
+all five tests in isolation (`/tmp/prd349-fails-closed-isolated.log`); its full-run cause is not
+established or waived. The manifest writer needs atomic publication, not a test that ignores
+malformed JSON. Logs `/tmp/prd349-containment-{build,typecheck,lint,test}.log`. A later immutable
+source/package checkpoint must cover these follow-up fixes; 2114 evidence is not final-HEAD proof.
+
+## Final stabilization and owner scope decision
+
+The owner waived iOS packaging (no iOS machine) and accepted the practical approximately51MB
+Wildwood result on 2026-09-04. No RDO, downsampling or other PRD-351 quality policy was added.
+A read-only lossless Zstd22 probe on the largest shared texture saved only **825 B / 0.060918%**
+against its existing level6 mip payloads; decoded lengths were validated and no assets changed.
+This is the best verified result at the existing quality policy, not a mathematical minimum.
+
+After the loader-equivalent animal fixture repair, Wildwood build and its complete `pnpm test`
+exit zero: audio **191 checks, none failed**, five cold starts, all five main scenarios, and
+the six-animal browser check. Asset health: **163 assets, 1,019 OK / 237 warnings / zero failures**.
+Logs: `/tmp/prd349-wildwood-repaired-{cook,playtests}.log`.
+Actual runtime primary/shared bytes **45,297,065**, HDR **5,451,493**, Basis **584,862**:
+**51,333,420 B** versus **304,915,228 B**, saving **253,581,808 B (83.1647%)**.
+Zero missing paths or resized textures. Full manifest including Basis: **297,738,622 B**;
+this is not the valley runtime load set. Exclusions remain **720,464,828 B**, uncooked **10,386 B**.
+
+Main opened `wildwood/artifacts/look/prd349-repaired-revealed.png` beside the full-resolution
+baseline: consistent bark, foliage alpha, terrain and framing. Capture waits for world reveal,
+records **2,341 revealed trees**, NVIDIA/Turing and zero browser/network errors. Log:
+`/tmp/prd349-wildwood-repaired-revealed.log`. Automatic resolution remains enabled.
+
+The manifest race now has a deterministic partial-write red and atomic sibling-file rename green.
+The deletion test waits for the complete receipt (published after cleanup), not the earlier
+manifest update; `watcher.close()` does not drain an active compile. Focused suites: **44 passed**.
+Two browser fixture assertions now print diagnostics on failure; expectations are unchanged.
+Their isolated run passes **24/24**. The final official full suite, with CPU affinity20–23 to
+bound contention and no filtered tests, passes **381 files / 4,127 tests**, seven existing skips,
+188.11 seconds; temporary directory count **1 → 1**. `/tmp/prd349-wrap-test.log`.
+An overlapping typecheck encountered physics declarations while the suite rebuilt distribution;
+the sequential post-build rerun is recorded in the close-out below.
+
+Cloth Catcher also installs, typechecks, builds and passes all three existing browser scenarios.
+Last Harvest and Spectral Sea are procedural compatibility fixtures with zero cooked asset bytes;
+no whole-bundle reduction is claimed. Exploratory upgrades for four additional games and
+Cloth CatcherV2 were restored to their exact protected baselines. V2's stale gameplay assertions
+were not weakened. The full thirty-game matrix and HQ's unavailable live bridge are **not green
+claims**. No mobile device execution occurred. Final packaging and PR close-out follow below.

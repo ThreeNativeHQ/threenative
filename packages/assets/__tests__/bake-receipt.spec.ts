@@ -62,6 +62,42 @@ describe("bake receipt", () => {
     expect(auxiliary?.bytes).toBe(4);
   });
 
+  it.each([
+    "../outside.txt",
+    "shared/../../outside.txt",
+    "..\\outside.txt",
+    "/outside.txt",
+    "C:\\outside.txt",
+  ])("should reject auxiliary traversal %s before publishing", async (outputPath) => {
+    const root = await makeTempDir("threenative-receipt-auxiliary-containment-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "level.bin"), "source");
+    const outside = path.join(root, "outside.txt");
+    await writeFile(outside, "belongs to the game");
+    await expect(
+      compileAssets({
+        cwd: root,
+        passes: [
+          {
+            ...lightmapFixture,
+            apply: (input: Buffer) => ({
+              buffer: input,
+              auxiliaryOutputs: lightmapFixture.apply(input).auxiliaryOutputs.map((output) => ({
+                ...output,
+                outputPath,
+              })),
+            }),
+          },
+        ],
+      }),
+    ).rejects.toThrow(/TN_ASSETS_OUTPUT_INVALID/u);
+    expect(await readFile(outside, "utf8")).toBe("belongs to the game");
+    await expect(readFile(path.join(root, "public", RECEIPT))).rejects.toThrow(/ENOENT/u);
+    await expect(readFile(path.join(root, "public", "assets.manifest.json"))).rejects.toThrow(
+      /ENOENT/u,
+    );
+  });
+
   it("should list the Basis transcoder it ships beside the compiled textures", async () => {
     const root = await makeTempDir("threenative-receipt-transcoder-");
     await mkdir(path.join(root, "assets"));
