@@ -1,7 +1,9 @@
 # PRD-296 item 3 — a skipped job says so, and the arrangement cannot come back
 
 **Executed 2026-09-04** on branch `quickwins/2026-09-04-five-closes`. Row 3 of
-[`docs/PRDs/quickwins-2026-09-04/README.md`](../PRDs/quickwins-2026-09-04/README.md).
+the `quickwins-2026-09-04` batch. That batch's README is deleted by the commit that closes its
+last row, per its own rule; `git log --diff-filter=D -- docs/PRDs/quickwins-2026-09-04/README.md`
+finds it, and the outcome table is in that commit's message.
 
 ## Re-measured before anything was written
 

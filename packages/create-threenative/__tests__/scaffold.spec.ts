@@ -108,6 +108,11 @@ const BUG_REPORT_SKILL_PATHS = [
 // refreshed genre kits.
 // Recomputed 2026-09-04 after merging PR #99: every scaffold gains the loading, trace, audio,
 // streaming, and alpha-antialiasing surfaces; starter also retains its authored coastal look.
+// Recomputed 2026-09-04 for PRD-265 and PRD-278 AC9. The playtest protocol gained a public
+// `IPlaytestSetupConfirmation` — the read-back that lets a report tell what a bridge confirmed
+// from what the runner asked for — and the generated capability reference is embedded in every
+// scaffold, so every tree moves. `sailing` moves for a second reason: its native scenario now
+// asserts the render chain it applies on the desktop host.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-03 after merging PRD-346's MCP host configs into the authored painterly
   // starter. Every scaffold gains the Blender server wiring; starter also gains its bounded mix.
@@ -235,19 +240,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "b3c4fd61dc4714f6a6dbaafe7daf3dc12ddadf0377d173dc2048f617df4afe72",
-  defense: "e285c968de52d3f36734523b5260ab280c9940251b0e90f5c3316cdd71fb51d3",
+  "action-rpg": "4e9c43da0489378a702afba12bbfd258bdb8e2b8e6eb91ad033d360417d79d2e",
+  defense: "72be4c32e18df1892c3e274886ee3b520647e3c4582ad5d84ecf71a5d7c2cfe7",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "ee8d7996110d44de232d93c4bdb5be949ccc556f3ce9b394c54f5747c8d327cf",
-  platformer: "dcb555c326b867ba3a6fd862529392915c36a0d504b23bfc91f4cdb66035573d",
-  runner: "e0560580da5bfaec7b74bc9323f11b7631015ae04fa9616fcb882d350be70728",
-  puzzle: "f58bbfbed74e5fcecaf48fb9195344939f5f56b6a66e30a6094150a2fcabcd05",
-  racing: "68bca0a1d558329dd9ddb35138f99d99362a6a750383d29cafdd7cfa083d098a",
-  shooter: "a003b65bb7a6a86513f33712ceb0e82091a7c17c1a82fb9acf7f03c8e9c65931",
+  minimal: "c98c77fba5156da4b2edbf40e63254f146a7cd0a2bdddfb273aee1888ce70384",
+  platformer: "48c41c2b475c192910ae4433956571ab7dbe234ba415746c4bd85e89911b6c23",
+  runner: "78d0b8ac401d8285a3112ea1c7a9cfc9aafadd2cde68f39b1792e749020d46d5",
+  puzzle: "1a1b7551456889fd7a37cd438d1eee016805cb8edb0e42cdff3e7baa951dcc82",
+  racing: "6e98404fe1a1447fc7972823523eef9fd59a69429862ca3491a1bd0ed25c05f6",
+  shooter: "69e6293643b746df31cf485e5739f3a5bd16e41ceb4dbe98caef78f70e048c0f",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "558f1877ae0cdaea58af65e3229621ca6438602786d300cce6de21f1d1c8a8fc",
+  starter: "e1848f5b9f1c6d1c3f1d65b97119821082a30baf641898241d305e6ccb924ced",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -268,7 +273,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "f0a5fd73ad390d808969ac8f5f6462c42d61e426d9a9da89f522057fd1a2ca26",
+  sailing: "196ab146eb71d3e806c4e64a0962ecbbc657359f29d4f2fc48906485774c0ae3",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

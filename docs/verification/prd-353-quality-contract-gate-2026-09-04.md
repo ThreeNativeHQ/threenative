@@ -1,7 +1,9 @@
 # PRD-353 — the eleven-way fail-closed throw now has a gate
 
 **Executed 2026-09-04** on branch `quickwins/2026-09-04-five-closes`, cut from `8df60c0c`.
-Row 2 of [`docs/PRDs/quickwins-2026-09-04/README.md`](../PRDs/quickwins-2026-09-04/README.md).
+Row 2 of the `quickwins-2026-09-04` batch. That batch's README is deleted by the commit that closes its
+last row, per its own rule; `git log --diff-filter=D -- docs/PRDs/quickwins-2026-09-04/README.md`
+finds it, and the outcome table is in that commit's message.
 
 ## The measurement the PRD claimed, re-run at HEAD
 

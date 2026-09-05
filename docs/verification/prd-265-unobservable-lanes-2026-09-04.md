@@ -1,7 +1,9 @@
 # PRD-265 — three lanes the runner graded without observing
 
 **Executed 2026-09-04** on branch `quickwins/2026-09-04-five-closes`. Row 4 of
-[`docs/PRDs/quickwins-2026-09-04/README.md`](../PRDs/quickwins-2026-09-04/README.md).
+the `quickwins-2026-09-04` batch. That batch's README is deleted by the commit that closes its
+last row, per its own rule; `git log --diff-filter=D -- docs/PRDs/quickwins-2026-09-04/README.md`
+finds it, and the outcome table is in that commit's message.
 
 All three sites were re-measured at HEAD before anything was written; the PRD's line numbers are
 from `84ca45b3` and have drifted, so each site is named by content below.

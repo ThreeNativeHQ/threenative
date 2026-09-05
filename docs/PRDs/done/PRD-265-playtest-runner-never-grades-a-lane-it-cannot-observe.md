@@ -15,7 +15,7 @@ rather than in the scenarios: the record explains why the first attempt — one 
 Filed 2026-08-29, measured at `84ca45b3`. Found by a test-gap sweep of
 `packages/playtest` (fail-closed audit, four explorer passes); all three sites re-verified by hand
 at HEAD before filing. Not a scan item from
-[the 2026-08-23 tech-debt scan](./README.md) — the two fail-open holes that scan found
+[the 2026-08-23 tech-debt scan](../tech-debt-code-quality/README.md) — the two fail-open holes that scan found
 in the schema layer were closed by PRD-199 and PRD-204; these three are in the *runner semantics*
 layer, which that scan did not open.
 

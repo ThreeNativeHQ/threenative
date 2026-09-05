@@ -184,7 +184,7 @@ afternoon this one did.
 **The gap this closes.** The §"Not verified" note above reads *"No `--target desktop` or device
 run. AC9 of PRD-278 is open: the chain refuses any non-WebGPU renderer by name, and that refusal
 has been observed on browser only."* Row 1 of
-[`docs/PRDs/quickwins-2026-09-04/README.md`](../PRDs/quickwins-2026-09-04/README.md) is that run.
+the `quickwins-2026-09-04` batch, whose README is deleted by the commit that closes its last row is that run.
 
 **Host.** Built from source in the lane worktree rather than taken from the machine's existing
 build, which was linked 2026-09-03 and predates `befc1094` — a commit that touches
