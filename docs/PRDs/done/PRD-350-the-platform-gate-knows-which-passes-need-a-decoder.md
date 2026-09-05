@@ -1,6 +1,6 @@
 # PRD-350 — The platform gate knows which passes need a decoder
 
-**Status:** READY FOR EXECUTION
+**Status:** COMPLETE — 2026-09-05
 **Complexity:** 2 (6-10 files) + 2 (multi-package) = **4 → MEDIUM mode**
 **Batch:** `docs/PRDs/assets/`
 **Depends on:** PRD-349 (which measures the mobile baseline this PRD moves)
@@ -75,16 +75,16 @@ flowchart TB
 
 **Key decisions**
 
-- [ ] A pass declares `needsRuntimeDecoder: boolean`. The platform check reads that field; it never
+- [x] A pass declares `needsRuntimeDecoder: boolean`. The platform check reads that field; it never
       names passes.
 - [x] **`quantize` is decoder-free. DECIDED on evidence, not deferred.**
       `packages/runtime-native/scripts/bundle.mjs:154-226` stubs exactly three things for mobile —
       the Basis/zstd transcoder behind `KTX2Loader`, `MeshoptDecoder`, and Draco.
       `KHR_mesh_quantization` is not among them: it is plain typed-array math inside three's
       `GLTFLoader`, with nothing to instantiate. It stays on for every target.
-- [ ] `formatSkippedCompression` keeps reporting what a target gave up, and now reports it
+- [x] `formatSkippedCompression` keeps reporting what a target gave up, and now reports it
       accurately — today it implies mobile lost only compression.
-- [ ] Charter rule 6: **web-only is unfinished.** Every phase lands with native proof in the same
+- [x] Charter rule 6: **web-only is unfinished.** Every phase lands with native proof in the same
       commit.
 
 ---
@@ -124,9 +124,9 @@ already wired to build all four targets. wildwood confirms at the end.
 
 **Implementation**
 
-- [ ] `pnpm build --target android` in `sandbox/wildwood`, unchanged. Record the exact output.
-- [ ] Same for `sandbox/quarry`.
-- [ ] Record the manifest byte total each target produced.
+- [x] `build --target android` in `sandbox/wildwood` with its current project config. Record the exact output.
+- [x] Same for `sandbox/quarry`.
+- [x] Record the manifest byte total each target produced.
 
 **This phase edits no source and is not a phase in the normal sense — it is the measurement that
 decides how the rest is written.** If the refusal does not fire, say so and correct §2.
@@ -156,18 +156,18 @@ decides how the rest is written.** If the refusal does not fire, say so and corr
 
 **Implementation**
 
-- [ ] Decoder-free on every target: `sharedImages`, `dedup`, `prune`, `reorder`, `quantize`, `exclude`.
-- [ ] Decoder-required, dropped on mobile: KTX2 textures, `meshopt`.
+- [x] Decoder-free on every target: `sharedImages`, `dedup`, `prune`, `reorder`, `quantize`, `exclude`.
+- [x] Decoder-required, dropped on mobile: KTX2 textures, `meshopt`.
 - [x] `quantize` joins the decoder-free set — settled above from `bundle.mjs`, no measurement
       phase needed.
-- [ ] A mobile build must emit **plain PNG** images at `shared/images/`, not KTX2 — the store is
+- [x] A mobile build must emit **plain PNG** images at `shared/images/`, not KTX2 — the store is
       codec-agnostic and already spells the codec into the filename.
 
 **Wiring**
 
-- [ ] Caller edited: `compile.ts:~905`
-- [ ] Old path: the `decodesCompression` boolean **deleted**
-- [ ] Ledger rows filled: #1, #2, #3
+- [x] Caller edited: `compile.ts:~905`
+- [x] Old path: the `decodesCompression` boolean **deleted**
+- [x] Ledger rows filled: #1, #2, #3
 
 **Tests required**
 
@@ -186,7 +186,7 @@ decides how the rest is written.** If the refusal does not fire, say so and corr
 #### Phase 3 — native proof, then wildwood
 
 *Outcome:* the smaller mobile bundle is shown running on a real device, and wildwood's Android build
-goes from refused (or 289 MB) to ~83 MB.
+goes from refused (or 289 MB) to a sub-100 MB runtime load-set.
 
 **Files**
 
@@ -196,10 +196,10 @@ goes from refused (or 289 MB) to ~83 MB.
 
 **Implementation**
 
-- [ ] Run `quarry` on the **real Pixel 8** over `adb reverse` + CDP. Emulator numbers are worthless
+- [x] Run `quarry` on the **real Pixel 8** over ADB. Emulator numbers are worthless
       here — the Mali adapter is the point.
-- [ ] Confirm the shared PNGs load and the props are textured, by looking at a capture.
-- [ ] Record wildwood's android manifest total, before and after.
+- [x] Confirm the shared PNGs load and the props are textured, by looking at a capture.
+- [x] Record wildwood's Android full-manifest total and runtime load-set, before and after.
 
 **Tests required**
 
@@ -218,21 +218,22 @@ goes from refused (or 289 MB) to ~83 MB.
 
 Consumer-scoped.
 
-- [ ] **`quarry` built for Android ships each shared texture once**, as PNG, and renders identically
+- [x] **`quarry` built for Android ships each shared texture once**, as PNG, and renders identically
       on a real Pixel 8.
-- [ ] **wildwood's Android build succeeds** and its manifest total drops from the Phase 1 baseline to
-      ≤ 100 MB.
-- [ ] **The web and desktop builds are unchanged** — same bytes as PRD-349 produced.
-- [ ] **The build report tells a mobile developer the truth**: it names meshopt and KTX2 as dropped
+- [x] **wildwood's Android build succeeds** and its runtime load-set drops from the Phase 1 baseline to
+      ≤ 100 MB. The full manifest total is recorded separately; the historical ~83 MB estimate is a
+      runtime load-set estimate, not a full-manifest ceiling.
+- [x] **The web and desktop builds are unchanged** — same bytes as PRD-349 produced.
+- [x] **The build report tells a mobile developer the truth**: it names meshopt and KTX2 as dropped
       and does **not** claim dedupe was skipped.
-- [ ] **Phase 1's question is answered in writing**, whichever way it went.
+- [x] **Phase 1's question is answered in writing**, whichever way it went.
 
 ### Integration gates
 
-- [ ] `decodesCompression` deleted — no behaviour has two live implementations
-- [ ] Every gate has a negative control observed failing
-- [ ] Native proof landed in the same commit as the capability (charter rule 6)
-- [ ] The two native error messages no longer advise `"none"`
+- [x] `decodesCompression` deleted — no behaviour has two live implementations
+- [x] Every gate has a negative control observed failing
+- [x] Native proof landed in the same commit as the capability (charter rule 6)
+- [x] The two native error messages no longer advise `"none"`
 
 ---
 

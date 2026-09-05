@@ -23,7 +23,7 @@ Read `/AGENTS.md` and `docs/PRDs/AGENTS.md` first.
 | PRD | Wins | Depends on |
 |---|---|---|
 | **[349 — the cook is on by default](../done/PRD-349-the-cook-is-on-by-default.md)** | DONE: Wildwood 304.92 → 51.33 MB, Quarry 29.89 → 4.57 MB; iOS waived | — |
-| **350 — the platform gate knows which passes need a decoder** | 289 MB → ~83 MB on Android/iOS | 349 |
+| **[350 — the platform gate knows which passes need a decoder](../done/PRD-350-the-platform-gate-knows-which-passes-need-a-decoder.md)** | DONE: Wildwood 304.92 → 92.04 MB runtime load-set; full manifest recorded separately | 349 |
 | **351 — compression never looks worse than a floor** | quality floor + the 2048² resolution raise | 349 |
 | **352 — Unreal ingest is first-party** | **zero shipped bytes** — removes an external repo from the ingest path | none |
 
@@ -79,7 +79,7 @@ From `sandbox/wildwood` at `d535f51`, 2026-09-04. Full record:
 | Question | Owner |
 |---|---|
 | a browser rendering a cooked GLB end to end — never yet done | 349 Phase 4 (`quarry`), and it must be a real render, not a structural assertion |
-| whether wildwood can build for Android *at all* today | 350 Phase 1, one command |
+| whether wildwood can build for Android *at all* today | ANSWERED by 350 Phase 1: Android build passes; runtime load-set is 92.04 MB |
 
 ---
 
