@@ -1009,8 +1009,11 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       needsRuntimeDecoder: false,
     });
     if (models !== undefined) {
+      const modelOptions = runtimeDecoderCapabilities.meshopt
+        ? models
+        : { ...models, vertexLayout: "separate" as const };
       const pass = modelPass({
-        ...models,
+        ...modelOptions,
         preserveLightmapUv: lightmap !== undefined,
         // Bound to the output root so a second build finds last build's encodes on
         // disk instead of paying for them again.
@@ -1024,9 +1027,9 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
         kind: "model",
         needsRuntimeDecoder: pass.needsRuntimeDecoder ?? false,
         options: {
-          ...models,
+          ...modelOptions,
           preserveLightmapUv: lightmap !== undefined,
-          sharedImages: models.sharedImages,
+          sharedImages: modelOptions.sharedImages,
         },
       });
     }

@@ -253,6 +253,7 @@ describe("compileAssets", () => {
         entries: Record<
           string,
           {
+            output: string;
             extensions?: string[];
             sharedImages?: { codec: string; output: string }[];
           }
@@ -266,6 +267,21 @@ describe("compileAssets", () => {
         expect(entry?.sharedImages?.[0]?.output).toMatch(
           /^shared\/images\/[0-9a-f]{16}\.none\.png$/u,
         );
+        const output = await readFile(path.join(root, "public", entry?.output ?? ""));
+        const { json } = unpackGlb(output);
+        const attributesPerView = new Map<number, Set<number>>();
+        for (const mesh of json.meshes ?? []) {
+          for (const primitive of mesh.primitives ?? []) {
+            for (const accessor of Object.values(primitive.attributes ?? {})) {
+              const view = json.accessors?.[accessor]?.bufferView;
+              if (view === undefined) continue;
+              const seen = attributesPerView.get(view) ?? new Set<number>();
+              seen.add(accessor);
+              attributesPerView.set(view, seen);
+            }
+          }
+        }
+        expect([...attributesPerView.values()].every((seen) => seen.size <= 1)).toBe(true);
       }
       const shared = await readdir(path.join(root, "public", "shared", "images"));
       expect(shared).toHaveLength(1);
