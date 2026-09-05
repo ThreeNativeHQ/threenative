@@ -212,9 +212,10 @@ function suffixStripped(token) {
   if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss")) return token.slice(0, -1);
   return token;
 }
-function tokens(value) {
+function capabilitySituationTokens(value) {
   return value.toLocaleLowerCase().split(/[^a-z0-9]+/u).filter((token) => token.length > 1 && !STOP_WORDS.has(token)).map(stem);
 }
+var tokens = capabilitySituationTokens;
 function tokenWeights(entries) {
   const frequency = /* @__PURE__ */ new Map();
   let situations = 0;
@@ -466,4 +467,4 @@ if (entryPath !== void 0 && realpathSync(path.resolve(entryPath)) === realpathSy
   }
 }
 
-export { ENGINE_MCP_TOOL_NAMES, RELEVANCE_FLOOR, capabilityDetail, defaultManifestPath, handleLine, loadCapabilityManifest, runServer, searchCapabilities, toolDefinitions };
+export { ENGINE_MCP_TOOL_NAMES, RELEVANCE_FLOOR, capabilityDetail, capabilitySituationTokens, defaultManifestPath, handleLine, loadCapabilityManifest, runServer, searchCapabilities, toolDefinitions };

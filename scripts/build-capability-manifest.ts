@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
 
-import { RELEVANCE_FLOOR } from "../packages/engine-mcp/src/index.js";
+import { RELEVANCE_FLOOR, capabilitySituationTokens } from "../packages/engine-mcp/src/index.js";
 import { CAPABILITY_PACKAGE_ALLOWLIST } from "./check-capability-docs.js";
 import { type INotOwnedCapability, NOT_OWNED_CAPABILITIES } from "./not-owned-capabilities.js";
 import {
@@ -477,58 +477,20 @@ function validateDocumentation(candidates: readonly ICapabilityCandidate[]): voi
     throw new Error(`Capability manifest generation failed:\n${errors.join("\n")}`);
 }
 
-const SITUATION_STOP_WORDS = new Set([
-  "a",
-  "add",
-  "an",
-  "and",
-  "around",
-  "build",
-  "by",
-  "create",
-  "for",
-  "from",
-  "game",
-  "in",
-  "into",
-  "it",
-  "make",
-  "of",
-  "on",
-  "that",
-  "the",
-  "to",
-  "use",
-  "with",
-]);
-
-function situationTokens(value: string): string[] {
-  return value
-    .toLocaleLowerCase()
-    .split(/[^a-z0-9]+/u)
-    .filter((token) => token.length > 1 && !SITUATION_STOP_WORDS.has(token))
-    .map((token) => {
-      if (token.length > 4 && token.endsWith("ies")) return `${token.slice(0, -3)}y`;
-      if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss"))
-        return token.slice(0, -1);
-      return token;
-    });
-}
-
 function notOwnedOverlap(
   situation: string,
   entry: ICapabilityManifestEntry,
 ):
   | { readonly matchedSituation: string; readonly overlap: number; readonly score: number }
   | undefined {
-  const query = situationTokens(situation);
+  const query = capabilitySituationTokens(situation);
   if (query.length === 0) return undefined;
   const queryText = query.join(" ");
   let best:
     | { readonly matchedSituation: string; readonly overlap: number; readonly score: number }
     | undefined;
   for (const ownedSituation of entry.situations) {
-    const phrase = situationTokens(ownedSituation);
+    const phrase = capabilitySituationTokens(ownedSituation);
     const overlap = new Set(phrase.filter((token) => query.includes(token))).size;
     const baseScore = overlap / Math.max(query.length, phrase.length);
     const phraseBonus =
@@ -565,12 +527,12 @@ export function validateNotOwned(
             candidate.result !== undefined &&
             candidate.result.score >= RELEVANCE_FLOOR &&
             (candidate.result.overlap >= 2 ||
-              situationTokens(candidate.result.matchedSituation)
+              capabilitySituationTokens(candidate.result.matchedSituation)
                 .join(" ")
-                .includes(situationTokens(candidate.situation).join(" ")) ||
-              situationTokens(candidate.situation)
+                .includes(capabilitySituationTokens(candidate.situation).join(" ")) ||
+              capabilitySituationTokens(candidate.situation)
                 .join(" ")
-                .includes(situationTokens(candidate.result.matchedSituation).join(" "))),
+                .includes(capabilitySituationTokens(candidate.result.matchedSituation).join(" "))),
         );
       if (overlap !== undefined) {
         conflicts.push(

@@ -135,6 +135,35 @@ describe("capability manifest generator", () => {
     );
   });
 
+  it("rejects inflection-equivalent owned and notOwned situations", () => {
+    const entries = [
+      {
+        constraints: [],
+        example: "const capability = new SaveCapability();",
+        importPath: "@threenative/core",
+        kind: "class" as const,
+        overrides: [],
+        package: "@threenative/core",
+        signature: "class SaveCapability",
+        situations: ["saving progress"],
+        summary: "Saves progress.",
+        supersedes: [],
+        symbol: "SaveCapability",
+      },
+    ];
+    const notOwned = [
+      {
+        guidance: "Write save state in the game's src/.",
+        id: "save-progress",
+        situations: ["save progress"],
+      },
+    ];
+
+    expect(() => validateNotOwned(entries, notOwned)).toThrow(
+      /notOwned 'save-progress'.*SaveCapability/u,
+    );
+  });
+
   it("writes and checks a generated manifest instead of accepting a stale copy", async () => {
     const root = await makeTempDir("threenative-capability-freshness-");
     temporaryRoots.push(root);

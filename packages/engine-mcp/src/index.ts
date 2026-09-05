@@ -367,13 +367,15 @@ function suffixStripped(token: string): string {
   return token;
 }
 
-function tokens(value: string): string[] {
+export function capabilitySituationTokens(value: string): string[] {
   return value
     .toLocaleLowerCase()
     .split(/[^a-z0-9]+/u)
     .filter((token) => token.length > 1 && !STOP_WORDS.has(token))
     .map(stem);
 }
+
+const tokens = capabilitySituationTokens;
 
 /**
  * How much a word narrows the search, measured against this manifest rather than assumed.
