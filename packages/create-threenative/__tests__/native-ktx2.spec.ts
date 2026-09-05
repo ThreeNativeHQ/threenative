@@ -159,9 +159,20 @@ export default defineGame({ scenes: {} });
     });
     await writeFile(path.join(project, "assets", "textures", "rock.ktx2"), ktx2);
 
-    await expect(build({ cwd: project, target: "android" })).rejects.toThrow(
+    let failure: unknown;
+    try {
+      await build({ cwd: project, target: "android" });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(Error);
+    const message = failure instanceof Error ? failure.message : String(failure);
+    expect(message).toMatch(
       /TN_NATIVE_KTX2_UNSUPPORTED: android cannot ship compiled KTX2 textures \(textures\/rock\.ktx2\)/u,
     );
+    expect(message).toMatch(/replace|transcode/iu);
+    expect(message).toMatch(/exclude.*mobile/iu);
+    expect(message).not.toMatch(/rebuild.*native/iu);
     // The refusal must land before anything is written, not after an APK exists.
     await expect(readFile(path.join(project, ".threenative/build/game.js"))).rejects.toMatchObject({
       code: "ENOENT",

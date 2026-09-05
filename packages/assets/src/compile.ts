@@ -1027,6 +1027,9 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       });
     }
   }
+  const customPasses = (options.passes ?? []).filter(
+    (pass) => pass.needsRuntimeDecoder !== true || runtimeDecoderAvailable,
+  );
   return {
     builtinRegistry: options.passes === undefined,
     exclude,
@@ -1042,7 +1045,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
             : "platform",
     outputRoot,
     passSpecs,
-    passes: [...builtinPasses, ...(options.passes ?? [])],
+    passes: [...builtinPasses, ...customPasses],
     sourceRoot,
     targets: config.targets === undefined ? {} : validateTargets(config.targets),
     budget: parseBudget(config.budget),

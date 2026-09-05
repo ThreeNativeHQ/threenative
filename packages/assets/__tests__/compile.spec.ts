@@ -338,6 +338,49 @@ describe("compileAssets", () => {
     ).rejects.toThrow(/rock\.png/u);
   });
 
+  it.each(["android", "ios", "web", "desktop"] as const)(
+    "should filter decoder-dependent custom passes for %s",
+    async (platform) => {
+      const root = await makeTempDir(`threenative-compile-custom-${platform}-`);
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "rock.txt"), "asset");
+      const invoked: string[] = [];
+      const decoderDependent = {
+        name: "decoder-dependent",
+        needsRuntimeDecoder: true,
+        apply: (input: Buffer) => {
+          invoked.push("decoder-dependent");
+          return input;
+        },
+      };
+      const decoderFree = {
+        name: "decoder-free",
+        needsRuntimeDecoder: false,
+        apply: (input: Buffer) => {
+          invoked.push("decoder-free");
+          return input;
+        },
+      };
+
+      const result = await compileAssets({
+        cwd: root,
+        passes: [decoderDependent, decoderFree],
+        platform,
+      });
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      ) as { entries: Record<string, { passes: string[] }> };
+      const expectedPasses =
+        platform === "android" || platform === "ios"
+          ? ["decoder-free"]
+          : ["decoder-dependent", "decoder-free"];
+
+      expect(result.written).toBe(1);
+      expect(invoked).toEqual(expectedPasses);
+      expect(manifest.entries["rock.txt"]?.passes).toEqual(expectedPasses);
+    },
+  );
+
   it("should content-address an auxiliary output and record its manifest path", async () => {
     const root = await makeTempDir("threenative-compile-auxiliary-");
     await mkdir(path.join(root, "assets"));

@@ -158,7 +158,7 @@ export async function assertNativeAssetsCompatible(
     .map(([logical]) => logical);
   if (ktx2.length > 0) {
     throw new Error(
-      `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot ship compiled KTX2 textures (${namedAssets(ktx2)}). The mobile native runtime has no WebAssembly and therefore no Basis transcoder, so nothing in the bundle can decode them. Native compilation automatically keeps decoder-free authored textures; rebuild the native target so the KTX2 pass is omitted, or keep compressed textures on the web target.`,
+      `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot ship compiled KTX2 textures (${namedAssets(ktx2)}). The mobile native runtime has no WebAssembly and therefore no Basis transcoder, so nothing in the bundle can decode them. Replace or transcode the authored KTX2 source for mobile, or exclude it from mobile builds; keep compressed textures on the web target.`,
     );
   }
   const compressedModels = rows
