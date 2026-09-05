@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { snapshotIosPackageOutputs } from "../ios-package-output-snapshot.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
+import { snapshotIosPackageOutputs } from "../ios-package-output-snapshot.js";
 
 async function fixture(): Promise<string> {
   const root = await makeTempDir("tn-ios-package-output-");
