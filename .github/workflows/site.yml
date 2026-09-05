@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v4
         with:
           node-version: 22.22.0
@@ -36,7 +36,7 @@ jobs:
       # says so: rename an export in packages/core and it fails here.
       - run: pnpm --filter threenative-site run typecheck
       - run: pnpm --filter threenative-site run test
-      - run: pnpm --filter threenative-site exec playwright install --with-deps chromium
+      - uses: ./.github/actions/playwright-chromium
       - run: pnpm --filter threenative-site run test:e2e
       # Pointing assets.directory at a missing directory fails here rather than in production.
       - run: pnpm --filter threenative-site exec wrangler deploy --dry-run
@@ -54,7 +54,7 @@ jobs:
     environment: site-production
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v4
         with:
           node-version: 22.22.0
