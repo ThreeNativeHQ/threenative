@@ -391,10 +391,21 @@ async function assertEngineCapabilityDiscovery(
     .map((item) => (isRecord(item) && typeof item.text === "string" ? item.text : ""))
     .join("");
   const parsed = JSON.parse(text) as unknown;
-  if (!Array.isArray(parsed)) {
-    throw new Error("threenative-engine returned a non-array capability search result.");
+  if (
+    !isRecord(parsed) ||
+    (parsed.verdict !== "matched" && parsed.verdict !== "none") ||
+    !Array.isArray(parsed.results) ||
+    typeof parsed.guidance !== "string"
+  ) {
+    throw new Error("threenative-engine returned an invalid capability search response.");
   }
-  const results = parsed.filter(isRecord);
+  if (parsed.verdict !== "matched" || parsed.results.length === 0 || parsed.guidance !== "") {
+    throw new Error("threenative-engine authoring request did not return matched capabilities.");
+  }
+  if (!parsed.results.every(isRecord)) {
+    throw new Error("threenative-engine returned a malformed capability result.");
+  }
+  const results = parsed.results;
   const symbols = results.flatMap((entry) =>
     typeof entry.symbol === "string" ? [entry.symbol] : [],
   );

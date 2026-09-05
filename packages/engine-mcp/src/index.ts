@@ -11,14 +11,22 @@ export interface ICapabilityEntry {
   readonly signature: string;
   readonly summary: string;
   readonly situations: readonly string[];
+  readonly aliases: readonly string[];
   readonly example: string;
   readonly constraints: readonly string[];
   readonly overrides?: readonly string[];
 }
 
+export interface INotOwnedCapability {
+  readonly id: string;
+  readonly situations: readonly string[];
+  readonly guidance: string;
+}
+
 export interface ICapabilityManifest {
   readonly version: number;
   readonly entries: readonly ICapabilityEntry[];
+  readonly notOwned: readonly INotOwnedCapability[];
 }
 
 export interface ICapabilitySearchResult {
@@ -28,6 +36,13 @@ export interface ICapabilitySearchResult {
   readonly example: string;
   readonly constraints: readonly string[];
   readonly matchedSituation: string;
+  readonly score: number;
+}
+
+export interface ICapabilitySearchResponse {
+  readonly verdict: "matched" | "none";
+  readonly results: readonly ICapabilitySearchResult[];
+  readonly guidance: string;
 }
 
 export interface ICapabilityDetail extends ICapabilityEntry {}
@@ -190,8 +205,12 @@ const STOP_WORDS = new Set([
 ]);
 const MAX_COMPLETE_REQUEST_RESULTS = 15;
 const MAX_SITUATION_RESULTS = 5;
+/** Chosen by the current-manifest threshold sweep: the highest recalled candidate at 0.27. */
+export const RELEVANCE_FLOOR = 0.27;
 const AUTHORING_INSTRUCTIONS =
-  'Before authoring, infer concrete gameplay mechanics. Preserve the request\'s distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state.';
+  'Before authoring, infer concrete gameplay mechanics. Preserve the request\'s distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state. A response with verdict "none" is an actionable answer: follow its guidance and write game-owned behavior in src/ instead of rephrasing the same request.';
+const GENERIC_GUIDANCE =
+  "No installed engine capability matches this situation. Decompose it into concrete mechanics and write the game-owned behavior in your project's src/; inspect the relevant template AGENTS.md before adding a package.";
 
 export function defaultManifestPath(cwd = process.cwd()): string {
   const override = process.env.THREENATIVE_CAPABILITIES_MANIFEST;
@@ -240,8 +259,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function validateManifest(value: unknown, file: string): ICapabilityManifest {
-  if (!isRecord(value) || typeof value.version !== "number" || !Array.isArray(value.entries)) {
-    throw manifestError(file, "root must contain a numeric version and entries array");
+  if (
+    !isRecord(value) ||
+    value.version !== 2 ||
+    !Array.isArray(value.entries) ||
+    !Array.isArray(value.notOwned)
+  ) {
+    throw manifestError(
+      file,
+      "root must contain manifest version 2, entries array, and notOwned array",
+    );
   }
   for (const [index, raw] of value.entries.entries()) {
     // Every field `ICapabilityEntry` declares is checked, `kind` and `example` included. They were
@@ -259,12 +286,35 @@ function validateManifest(value: unknown, file: string): ICapabilityManifest {
       typeof raw.summary !== "string" ||
       typeof raw.example !== "string" ||
       !Array.isArray(raw.situations) ||
+      !Array.isArray(raw.aliases) ||
       !Array.isArray(raw.constraints) ||
       !raw.situations.every((situation) => typeof situation === "string") ||
+      !raw.aliases.every((alias) => typeof alias === "string") ||
       !raw.constraints.every((constraint) => typeof constraint === "string")
     ) {
       throw manifestError(file, `entry ${index} is malformed`);
     }
+  }
+  const notOwnedIds = new Set<string>();
+  for (const [index, raw] of value.notOwned.entries()) {
+    if (
+      !isRecord(raw) ||
+      typeof raw.id !== "string" ||
+      raw.id.trim().length === 0 ||
+      !Array.isArray(raw.situations) ||
+      raw.situations.length === 0 ||
+      !raw.situations.every(
+        (situation) => typeof situation === "string" && situation.trim().length > 0,
+      ) ||
+      typeof raw.guidance !== "string" ||
+      raw.guidance.trim().length === 0
+    ) {
+      throw manifestError(file, `notOwned ${index} is malformed`);
+    }
+    if (notOwnedIds.has(raw.id)) {
+      throw manifestError(file, `notOwned contains duplicate id '${raw.id}'`);
+    }
+    notOwnedIds.add(raw.id);
   }
   return value as unknown as ICapabilityManifest;
 }
@@ -320,13 +370,15 @@ function suffixStripped(token: string): string {
   return token;
 }
 
-function tokens(value: string): string[] {
+export function capabilitySituationTokens(value: string): string[] {
   return value
     .toLocaleLowerCase()
     .split(/[^a-z0-9]+/u)
     .filter((token) => token.length > 1 && !STOP_WORDS.has(token))
     .map(stem);
 }
+
+const tokens = capabilitySituationTokens;
 
 /**
  * How much a word narrows the search, measured against this manifest rather than assumed.
@@ -341,7 +393,7 @@ function tokenWeights(entries: readonly ICapabilityEntry[]): ReadonlyMap<string,
   const frequency = new Map<string, number>();
   let situations = 0;
   for (const entry of entries) {
-    for (const situation of entry.situations) {
+    for (const situation of [...entry.situations, ...entry.aliases]) {
       situations += 1;
       for (const token of new Set(tokens(situation)))
         frequency.set(token, (frequency.get(token) ?? 0) + 1);
@@ -390,44 +442,159 @@ function agreement(situation: readonly string[], query: ReadonlySet<string>): nu
   return 1 + AGREEMENT_WEIGHT * Math.max(0, matched - 1);
 }
 
+interface IPhraseScore {
+  readonly agreed: number;
+  readonly coverage: number;
+  readonly matched: number;
+  readonly phraseBonus: number;
+  readonly score: number;
+}
+
+function scorePhrase(
+  value: string,
+  queryTokens: ReadonlySet<string>,
+  queryText: string,
+  weights: ReadonlyMap<string, number>,
+): IPhraseScore | undefined {
+  const phrase = tokens(value);
+  const unique = [...new Set(phrase)];
+  const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
+  const matched = unique
+    .filter((token) => queryTokens.has(token))
+    .reduce((sum, token) => sum + weightOf(weights, token), 0);
+  const phraseBonus =
+    phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
+  if (total === 0 || (matched === 0 && phraseBonus === 0)) return undefined;
+  const coverage = matched / total;
+  const agreed = agreement(unique, queryTokens);
+  return { agreed, coverage, matched, phraseBonus, score: coverage * agreed + phraseBonus };
+}
+
+function isDistinctivePhrase(candidate: IPhraseScore): boolean {
+  if (candidate.phraseBonus > 0) return true;
+  if (candidate.matched < DISTINCTIVE_FLOOR) return false;
+  return !(candidate.agreed === 1 && candidate.coverage < LONE_WORD_COVERAGE);
+}
+
+interface IReadabilityScore {
+  readonly best: number;
+  readonly matchedSituation: string;
+  readonly bestReadableSituation: string;
+}
+
+function scoreReadableSituations(
+  situations: readonly string[],
+  queryTokens: ReadonlySet<string>,
+  queryText: string,
+  weights: ReadonlyMap<string, number>,
+): IReadabilityScore {
+  let best = 0;
+  let matchedSituation = "";
+  let bestReadableScore = 0;
+  let bestReadableSituation = situations[0] ?? "";
+  for (const situation of situations) {
+    const candidate = scorePhrase(situation, queryTokens, queryText, weights);
+    if (candidate === undefined) continue;
+    if (candidate.score > bestReadableScore) {
+      bestReadableScore = candidate.score;
+      bestReadableSituation = situation;
+    }
+    if (isDistinctivePhrase(candidate) && candidate.score > best) {
+      best = candidate.score;
+      matchedSituation = situation;
+    }
+  }
+  return { best, bestReadableSituation, matchedSituation };
+}
+
+function scoreAliases(
+  aliases: readonly string[],
+  queryTokens: ReadonlySet<string>,
+  queryText: string,
+  weights: ReadonlyMap<string, number>,
+): number {
+  let best = 0;
+  for (const alias of aliases) {
+    const candidate = scorePhrase(alias, queryTokens, queryText, weights);
+    if (candidate !== undefined) best = Math.max(best, candidate.score);
+  }
+  return best;
+}
+
 function situationScore(
   query: readonly string[],
   situations: readonly string[],
+  aliases: readonly string[],
   weights: ReadonlyMap<string, number>,
 ): { readonly matchedSituation: string; readonly score: number } {
   if (query.length === 0) return { matchedSituation: "", score: 0 };
   const queryTokens = new Set(query);
   const queryText = query.join(" ");
+  const readable = scoreReadableSituations(situations, queryTokens, queryText, weights);
+  const best = Math.max(readable.best, scoreAliases(aliases, queryTokens, queryText, weights));
+  const matchedSituation =
+    readable.matchedSituation.length > 0
+      ? readable.matchedSituation
+      : best >= RELEVANCE_FLOOR
+        ? readable.bestReadableSituation
+        : "";
+  return matchedSituation.length > 0
+    ? { matchedSituation, score: best }
+    : { matchedSituation: "", score: 0 };
+}
+
+function notOwnedSituationScore(
+  query: readonly string[],
+  situations: readonly string[],
+): { readonly matchedSituation: string; readonly score: number } {
+  if (query.length === 0) return { matchedSituation: "", score: 0 };
+  const queryText = query.join(" ");
   let best = 0;
   let matchedSituation = "";
   for (const situation of situations) {
     const phrase = tokens(situation);
-    const unique = [...new Set(phrase)];
-    const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
-    const matched = unique
-      .filter((token) => queryTokens.has(token))
-      .reduce((sum, token) => sum + weightOf(weights, token), 0);
+    const overlap = new Set(phrase.filter((token) => query.includes(token))).size;
+    const score = overlap / Math.max(query.length, phrase.length);
     const phraseBonus =
       phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
-    if (total === 0 || (matched < DISTINCTIVE_FLOOR && phraseBonus === 0)) continue;
-    const coverage = matched / total;
-    const agreed = agreement(unique, queryTokens);
-    // One rare word that does not carry its own situation is a homonym rather than an answer.
-    //
-    // This narrows the problem and does not close it. *"a stealth guard's vision cone"* still
-    // answers with `assertCaptureNotBlank` (**guard** a blank frame) and `GodraysNode` (**cone**
-    // geometry), because every rare word in that request is a homonym and no vision-cone
-    // capability exists to outrank them. Raising this floor far enough to silence those two also
-    // silences real one-word answers the search exists to give — the physics-puzzle request loses
-    // `Joint3D` at 0.3. The real fix for that query is the capability, not the threshold.
-    if (agreed === 1 && coverage < LONE_WORD_COVERAGE && phraseBonus === 0) continue;
-    const candidate = coverage * agreed + phraseBonus;
+    if (overlap < (query.length >= 4 ? 2 : 1) && phraseBonus === 0) continue;
+    const candidate = score + phraseBonus;
     if (candidate > best) {
       best = candidate;
       matchedSituation = situation;
     }
   }
   return { matchedSituation, score: best };
+}
+
+function notOwnedMatch(
+  manifest: ICapabilityManifest,
+  query: readonly string[],
+):
+  | {
+      readonly entry: INotOwnedCapability;
+      readonly matchedSituation: string;
+      readonly score: number;
+    }
+  | undefined {
+  return manifest.notOwned
+    .map((entry) => ({ entry, ...notOwnedSituationScore(query, entry.situations) }))
+    .filter(
+      ({ matchedSituation, score }) => matchedSituation.length > 0 && score >= RELEVANCE_FLOOR,
+    )
+    .sort(
+      (left, right) => right.score - left.score || left.entry.id.localeCompare(right.entry.id),
+    )[0];
+}
+
+function isSpecificNotOwnedMatch(query: readonly string[], matchedSituation: string): boolean {
+  const queryText = query.join(" ");
+  const phrase = tokens(matchedSituation);
+  const phraseText = phrase.join(" ");
+  if (queryText === phraseText) return true;
+  if (query.length === 1 && phrase.length <= 2 && phrase.includes(query[0] ?? "")) return true;
+  if (query.length > phrase.length + 1) return false;
+  return new Set(phrase.filter((token) => query.includes(token))).size >= 2;
 }
 
 function capabilitySearchKey(entry: ICapabilityEntry): string {
@@ -448,16 +615,26 @@ export function searchCapabilities(
   situation: string,
   manifestFile = defaultManifestPath(),
   scope: "mechanic" | "request" = "mechanic",
-): readonly ICapabilitySearchResult[] {
+): ICapabilitySearchResponse {
   if (typeof situation !== "string" || situation.trim().length === 0)
     throw new Error("engine_search_capabilities requires a non-empty situation string.");
   const manifest = loadCapabilityManifest(manifestFile);
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   const weights = tokenWeights(manifest.entries);
-  return manifest.entries
-    .map((entry) => ({ entry, ...situationScore(query, entry.situations, weights) }))
-    .filter(({ score }) => score > 0)
+  const notOwned = notOwnedMatch(manifest, query);
+  if (notOwned !== undefined && isSpecificNotOwnedMatch(query, notOwned.matchedSituation)) {
+    return {
+      guidance: notOwned.entry.guidance,
+      results: [],
+      verdict: "none",
+    };
+  }
+  const results = manifest.entries
+    .map((entry) => ({ entry, ...situationScore(query, entry.situations, entry.aliases, weights) }))
+    .filter(
+      ({ matchedSituation, score }) => matchedSituation.length > 0 && score >= RELEVANCE_FLOOR,
+    )
     .sort(
       (left, right) =>
         right.score - left.score ||
@@ -472,14 +649,21 @@ export function searchCapabilities(
         ) === index,
     )
     .slice(0, limit)
-    .map(({ entry, matchedSituation }) => ({
+    .map(({ entry, matchedSituation, score }) => ({
       constraints: entry.constraints,
       example: entry.example,
       importPath: entry.importPath,
       matchedSituation,
+      score,
       summary: entry.summary,
       symbol: entry.symbol,
     }));
+  if (results.length > 0) return { guidance: "", results, verdict: "matched" };
+  return {
+    guidance: notOwned?.entry.guidance ?? GENERIC_GUIDANCE,
+    results: [],
+    verdict: "none",
+  };
 }
 
 export function capabilityDetail(
@@ -499,7 +683,7 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_search_capabilities",
     description:
-      'Search the installed engine by concrete gameplay mechanic. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation explains every result.',
+      'Search the installed engine by concrete gameplay mechanic. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation and score explain every result. The response verdict "none" is an actionable answer with guidance, not a failed search.',
     inputSchema: {
       additionalProperties: false,
       properties: {
@@ -595,7 +779,7 @@ export function handleLine(line: string, manifestFile: string): string | undefin
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.0" },
+        serverInfo: { name: "threenative-engine-mcp", version: "0.3.0" },
       });
     }
     if (request.method === "tools/list") {

@@ -1,11 +1,17 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  RELEVANCE_FLOOR,
+  capabilitySituationTokens,
+  searchCapabilities,
+} from "../../packages/engine-mcp/src/index.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   buildCapabilityManifest,
   checkCapabilityManifest,
   validateCapabilityAllowlist,
+  validateNotOwned,
   writeCapabilityManifest,
 } from "../build-capability-manifest.js";
 
@@ -99,6 +105,97 @@ describe("capability manifest generator", () => {
     expect(() =>
       validateCapabilityAllowlist([{ package: "@threenative/core", reason: "", symbol: "Hidden" }]),
     ).toThrow(/non-empty.*reason/u);
+  });
+
+  it("rejects a one-token owned situation when the notOwned match clears the relevance floor", () => {
+    const entries = [
+      {
+        constraints: [],
+        example: "const capability = new InventoryCapability();",
+        importPath: "@threenative/core",
+        kind: "class" as const,
+        overrides: [],
+        package: "@threenative/core",
+        signature: "class InventoryCapability",
+        situations: ["inventory"],
+        summary: "Manages inventory.",
+        supersedes: [],
+        symbol: "InventoryCapability",
+      },
+    ];
+    const notOwnedSituation = "inventory system";
+    const notOwned = [
+      {
+        guidance: "Write inventory state in the game's src/.",
+        id: "inventory-system",
+        situations: [notOwnedSituation],
+      },
+    ];
+    const rawOverlapScore = 1 / Math.max(notOwnedSituation.split(" ").length, 1);
+
+    expect(rawOverlapScore).toBeGreaterThanOrEqual(RELEVANCE_FLOOR);
+    expect(() => validateNotOwned(entries, notOwned)).toThrow(
+      /notOwned 'inventory-system'.*InventoryCapability/u,
+    );
+  });
+
+  it("rejects inflection-equivalent owned and notOwned situations", () => {
+    const entries = [
+      {
+        constraints: [],
+        example: "const capability = new SaveCapability();",
+        importPath: "@threenative/core",
+        kind: "class" as const,
+        overrides: [],
+        package: "@threenative/core",
+        signature: "class SaveCapability",
+        situations: ["saving progress"],
+        summary: "Saves progress.",
+        supersedes: [],
+        symbol: "SaveCapability",
+      },
+    ];
+    const notOwned = [
+      {
+        guidance: "Write save state in the game's src/.",
+        id: "save-progress",
+        situations: ["save progress"],
+      },
+    ];
+
+    expect(() => validateNotOwned(entries, notOwned)).toThrow(
+      /notOwned 'save-progress'.*SaveCapability/u,
+    );
+  });
+
+  it("rejects an alias that overlaps a notOwned situation", () => {
+    const entries = [
+      {
+        aliases: ["inventory system"],
+        constraints: [],
+        example: "const capability = new InventoryCapability();",
+        importPath: "@threenative/core",
+        kind: "class" as const,
+        overrides: [],
+        package: "@threenative/core",
+        signature: "class InventoryCapability",
+        situations: ["manage item slots"],
+        summary: "Manages inventory.",
+        supersedes: [],
+        symbol: "InventoryCapability",
+      },
+    ];
+    const notOwned = [
+      {
+        guidance: "Write inventory state in the game's src/.",
+        id: "inventory-system",
+        situations: ["inventory system"],
+      },
+    ];
+
+    expect(() => validateNotOwned(entries, notOwned)).toThrow(
+      /notOwned 'inventory-system'.*InventoryCapability/u,
+    );
   });
 
   it("writes and checks a generated manifest instead of accepting a stale copy", async () => {
@@ -236,5 +333,213 @@ describe("capability manifest generator", () => {
     const manifest = buildCapabilityManifest(root);
     const entry = manifest.entries.find((candidate) => candidate.symbol === "DocumentedCapability");
     expect(entry?.supersedes).toEqual([]);
+  });
+
+  it("emits authored aliases without changing the displayed situations", async () => {
+    const root = await makeTempDir("threenative-capability-alias-");
+    temporaryRoots.push(root);
+    await writePackage(
+      root,
+      "core",
+      "@threenative/core",
+      [
+        "/**",
+        " * A fixture capability with an alternate search key.",
+        " * @situation display the readable fixture sentence",
+        " * @alias fixture alternate wording",
+        " * @example const capability = new DocumentedCapability();",
+        " */",
+        "export class DocumentedCapability {}",
+        "",
+      ].join("\n"),
+    );
+
+    const manifest = buildCapabilityManifest(root);
+    expect(manifest.entries).toContainEqual(
+      expect.objectContaining({
+        aliases: ["fixture alternate wording"],
+        situations: ["display the readable fixture sentence"],
+        symbol: "DocumentedCapability",
+      }),
+    );
+  });
+
+  it("maps every authored alias to a named predecessor corpus row", async () => {
+    const manifest = await checkCapabilityManifest(process.cwd());
+    const aliases = manifest.entries.flatMap((entry) => entry.aliases ?? []);
+    const predecessorRows = {
+      "third-person camera": { ids: ["request.third-person-camera"], owners: ["defineGame"] },
+      "restart the run without a page reload": {
+        ids: ["brief.endless-runner.5"],
+        owners: ["defineGame"],
+      },
+      "field of view while aiming": { ids: ["brief.fps.2"], owners: ["defineGame"] },
+      "firing line nearest target crosshair": { ids: ["brief.fps.4"], owners: ["defineGame"] },
+      "obstacles collectibles increasing pace": {
+        ids: ["brief.endless-runner.3"],
+        owners: ["InstancedBatch"],
+      },
+      "readable world lighting": { ids: ["brief.exploration.5"], owners: ["ProbeVolume"] },
+      "different props in each area": {
+        ids: ["brief.exploration.3"],
+        owners: ["createAssetLoader"],
+      },
+      "journal objective panel": {
+        ids: ["brief.exploration.4"],
+        owners: ["publishUiState"],
+      },
+      "objective panel journal": { ids: ["brief.exploration.4"], owners: ["Text"] },
+      "readable HUD": { ids: ["brief.physics-puzzle.6"], owners: ["publishUiState"] },
+      "stream terrain across chunks": {
+        ids: ["brief.open-world.2"],
+        owners: ["TerrainTiles"],
+        baselineAlreadyRecalled: true,
+      },
+      "landmarks points of interest": {
+        ids: ["brief.open-world.4"],
+        owners: ["InstancedBatch"],
+      },
+      "first playable screen external assets": {
+        ids: ["brief.open-world.5"],
+        owners: ["createAssetLoader"],
+      },
+      "fixed seed fixed-step simulation": {
+        ids: ["brief.physics-puzzle.5"],
+        owners: ["createReplayDriver", "replay"],
+      },
+      "spawn waves": { ids: ["request.spawn-waves"], owners: ["Scheduler"] },
+      "tower defense game": { ids: ["request.tower-defense-game"], owners: ["Scheduler"] },
+      "pick up item": { ids: ["request.pick-up-item"], owners: ["Area3D"] },
+      "platformer double jump": {
+        ids: ["request.platformer-double-jump"],
+        owners: ["CharacterBody3D"],
+      },
+      "first person": { ids: ["brief.fps.1"], owners: ["CharacterBody3D"] },
+      "run jump coins goal": { ids: ["brief.platformer.2"], owners: ["CharacterBody3D"] },
+      "passes through body": { ids: ["brief.physics-puzzle.3"], owners: ["CollisionShape3D"] },
+      "arena walls pickups": {
+        ids: ["brief.topdown-action.4"],
+        owners: ["CollisionShape3D"],
+      },
+      "hitscan camera": {
+        ids: ["brief.fps.7"],
+        owners: ["PhysicsDirectSpaceState3D"],
+      },
+      "raised platform gap hazard restart": {
+        ids: ["brief.platformer.3"],
+        owners: ["CharacterBody3D"],
+      },
+      "bright sky saturated green platforms": {
+        ids: ["brief.platformer.4"],
+        owners: ["Atmosphere"],
+      },
+      "enemy targets cooldown reload win condition": {
+        ids: ["brief.topdown-action.3"],
+        owners: ["CharacterBody3D"],
+      },
+      "close engagement range": { ids: ["brief.fps.12"], owners: ["NavigationAgent3D"] },
+    } as const;
+
+    expect([...new Set(aliases)].sort()).toEqual(Object.keys(predecessorRows).sort());
+    const corpus = JSON.parse(
+      await readFile(
+        path.join(process.cwd(), "scripts/fixtures/capability-recall/corpus.json"),
+        "utf8",
+      ),
+    ) as {
+      rows: readonly {
+        readonly expect: readonly string[];
+        readonly id: string;
+        readonly query: string;
+        readonly scope: "mechanic" | "request";
+        readonly source: string;
+      }[];
+    };
+    const rows = new Map(corpus.rows.map((row) => [row.id, row]));
+    const predecessorRoot = await makeTempDir("threenative-capability-predecessor-");
+    temporaryRoots.push(predecessorRoot);
+    const predecessorFile = path.join(predecessorRoot, "capabilities.json");
+    await writeFile(
+      predecessorFile,
+      JSON.stringify({
+        ...manifest,
+        entries: manifest.entries.map((entry) => ({ ...entry, aliases: [] })),
+      }),
+    );
+
+    for (const [alias, predecessor] of Object.entries(predecessorRows)) {
+      const owners = manifest.entries.filter((entry) => entry.aliases?.includes(alias));
+      expect(owners.map((entry) => entry.symbol).sort(), alias).toEqual(
+        predecessor.owners.slice().sort(),
+      );
+      for (const id of predecessor.ids) {
+        const row = rows.get(id);
+        expect(row, `${alias} -> ${id}`).toBeDefined();
+        if (row === undefined) continue;
+        const rowTokens = new Set(capabilitySituationTokens(row.query));
+        expect(
+          capabilitySituationTokens(alias).every((token) => rowTokens.has(token)),
+          `${alias} uses vocabulary absent from ${row.source}`,
+        ).toBe(true);
+        const expectedOwners = predecessor.owners.filter((owner) => row.expect.includes(owner));
+        expect(expectedOwners.length, `${alias} -> ${id} has no expected owner`).toBeGreaterThan(0);
+        const before = searchCapabilities(row.query, predecessorFile, row.scope).results.map(
+          (result) => result.symbol,
+        );
+        const baselineAlreadyRecalled =
+          "baselineAlreadyRecalled" in predecessor && predecessor.baselineAlreadyRecalled === true;
+        if (!baselineAlreadyRecalled) {
+          expect(
+            expectedOwners.some((owner) => before.includes(owner)),
+            `${alias} -> ${id} was already recalled without aliases`,
+          ).toBe(false);
+        }
+        const after = searchCapabilities(
+          row.query,
+          "packages/create-threenative/capabilities.json",
+          row.scope,
+        ).results.map((result) => result.symbol);
+        expect(
+          expectedOwners.some((owner) => after.includes(owner)),
+          `${alias} -> ${id} is not recalled with its alias`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("should fail when one normalized alias spans more than MAX_ALIAS_FANOUT entries", async () => {
+    const root = await makeTempDir("threenative-capability-alias-fanout-");
+    temporaryRoots.push(root);
+    await writePackage(
+      root,
+      "core",
+      "@threenative/core",
+      [
+        "/**",
+        " * First fixture.",
+        " * @situation first fixture",
+        " * @alias RACING",
+        " * @example const first = new First();",
+        " */",
+        "export class First {}",
+        "/**",
+        " * Second fixture.",
+        " * @situation second fixture",
+        " * @alias racing!",
+        " * @example const second = new Second();",
+        " */",
+        "export class Second {}",
+        "/**",
+        " * Third fixture.",
+        " * @situation third fixture",
+        " * @alias racing",
+        " * @example const third = new Third();",
+        " */",
+        "export class Third {}",
+        "",
+      ].join("\n"),
+    );
+
+    expect(() => buildCapabilityManifest(root)).toThrow(/racing.*First.*Second.*Third/u);
   });
 });

@@ -586,7 +586,7 @@ const driver = createReplayDriver(recording, ctx.renderer.domElement);
 export function defineGame<TState extends Record<string, unknown>, TPhysics = undefined>( config: IGameConfig<TState, TPhysics>, ): IGame<TState, TPhysics> { … }
 ```
 
-- **Use when:** start a ThreeNative game from src/game.ts · register physics and gameplay plugins · let the player zoom the camera with a wheel, pinch, or gamepad axis
+- **Use when:** start a ThreeNative game from src/game.ts · register physics and gameplay plugins · let the player zoom the camera with a wheel, pinch, or gamepad axis · frame a camera behind the player
 - **Constraints:** keep DOM and React mounting in src/main.ts · bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener · scroll: true uses the DOM wheel sign on browser and native: negative deltaY toward the user is positive intent
 
 ```ts
@@ -972,18 +972,17 @@ const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void 
 
 ### `readProbeVolumeObservation`
 
-`function` — Bake static diffuse irradiance that reaches surfaces from outside the camera view.
+`function` — Read the most recent observation from a probe volume.
 
 ```ts
 export function readProbeVolumeObservation(value: unknown): IProbeVolumeObservation | undefined { … }
 ```
 
-- **Use when:** light bouncing from a room I cannot see · light a wall with an off-screen emitter
-- **Constraints:** request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting · add the volume with ctx.add() so its incremental work is measured in the render phase · call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour
-- **Overrides:** density, bounds, bakeBudgetMs, and bounces are game-owned choices
+- **Use when:** inspect the latest probe bake observation
+- **Constraints:** the returned observation is a measurement; it does not own lighting or materials
 
 ```ts
-const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);
+const observation = readProbeVolumeObservation(probes);
 ```
 
 ### `readRenderChainObservation`

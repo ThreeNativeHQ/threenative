@@ -124,7 +124,9 @@ var STOP_WORDS = /* @__PURE__ */ new Set([
 ]);
 var MAX_COMPLETE_REQUEST_RESULTS = 15;
 var MAX_SITUATION_RESULTS = 5;
-var AUTHORING_INSTRUCTIONS = `Before authoring, infer concrete gameplay mechanics. Preserve the request's distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state.`;
+var RELEVANCE_FLOOR = 0.27;
+var AUTHORING_INSTRUCTIONS = `Before authoring, infer concrete gameplay mechanics. Preserve the request's distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state. A response with verdict "none" is an actionable answer: follow its guidance and write game-owned behavior in src/ instead of rephrasing the same request.`;
+var GENERIC_GUIDANCE = "No installed engine capability matches this situation. Decompose it into concrete mechanics and write the game-owned behavior in your project's src/; inspect the relevant template AGENTS.md before adding a package.";
 function defaultManifestPath(cwd = process.cwd()) {
   const override = process.env.THREENATIVE_CAPABILITIES_MANIFEST;
   if (override !== void 0 && override.trim().length > 0) return path.resolve(cwd, override);
@@ -155,13 +157,28 @@ function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function validateManifest(value, file) {
-  if (!isRecord(value) || typeof value.version !== "number" || !Array.isArray(value.entries)) {
-    throw manifestError(file, "root must contain a numeric version and entries array");
+  if (!isRecord(value) || value.version !== 2 || !Array.isArray(value.entries) || !Array.isArray(value.notOwned)) {
+    throw manifestError(
+      file,
+      "root must contain manifest version 2, entries array, and notOwned array"
+    );
   }
   for (const [index, raw] of value.entries.entries()) {
-    if (!isRecord(raw) || typeof raw.symbol !== "string" || typeof raw.package !== "string" || typeof raw.importPath !== "string" || typeof raw.kind !== "string" || typeof raw.signature !== "string" || typeof raw.summary !== "string" || typeof raw.example !== "string" || !Array.isArray(raw.situations) || !Array.isArray(raw.constraints) || !raw.situations.every((situation) => typeof situation === "string") || !raw.constraints.every((constraint) => typeof constraint === "string")) {
+    if (!isRecord(raw) || typeof raw.symbol !== "string" || typeof raw.package !== "string" || typeof raw.importPath !== "string" || typeof raw.kind !== "string" || typeof raw.signature !== "string" || typeof raw.summary !== "string" || typeof raw.example !== "string" || !Array.isArray(raw.situations) || !Array.isArray(raw.aliases) || !Array.isArray(raw.constraints) || !raw.situations.every((situation) => typeof situation === "string") || !raw.aliases.every((alias) => typeof alias === "string") || !raw.constraints.every((constraint) => typeof constraint === "string")) {
       throw manifestError(file, `entry ${index} is malformed`);
     }
+  }
+  const notOwnedIds = /* @__PURE__ */ new Set();
+  for (const [index, raw] of value.notOwned.entries()) {
+    if (!isRecord(raw) || typeof raw.id !== "string" || raw.id.trim().length === 0 || !Array.isArray(raw.situations) || raw.situations.length === 0 || !raw.situations.every(
+      (situation) => typeof situation === "string" && situation.trim().length > 0
+    ) || typeof raw.guidance !== "string" || raw.guidance.trim().length === 0) {
+      throw manifestError(file, `notOwned ${index} is malformed`);
+    }
+    if (notOwnedIds.has(raw.id)) {
+      throw manifestError(file, `notOwned contains duplicate id '${raw.id}'`);
+    }
+    notOwnedIds.add(raw.id);
   }
   return value;
 }
@@ -195,14 +212,15 @@ function suffixStripped(token) {
   if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss")) return token.slice(0, -1);
   return token;
 }
-function tokens(value) {
+function capabilitySituationTokens(value) {
   return value.toLocaleLowerCase().split(/[^a-z0-9]+/u).filter((token) => token.length > 1 && !STOP_WORDS.has(token)).map(stem);
 }
+var tokens = capabilitySituationTokens;
 function tokenWeights(entries) {
   const frequency = /* @__PURE__ */ new Map();
   let situations = 0;
   for (const entry of entries) {
-    for (const situation of entry.situations) {
+    for (const situation of [...entry.situations, ...entry.aliases]) {
       situations += 1;
       for (const token of new Set(tokens(situation)))
         frequency.set(token, (frequency.get(token) ?? 0) + 1);
@@ -223,29 +241,92 @@ function agreement(situation, query) {
   const matched = situation.filter((token) => query.has(token)).length;
   return 1 + AGREEMENT_WEIGHT * Math.max(0, matched - 1);
 }
-function situationScore(query, situations, weights) {
+function scorePhrase(value, queryTokens, queryText, weights) {
+  const phrase = tokens(value);
+  const unique = [...new Set(phrase)];
+  const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
+  const matched = unique.filter((token) => queryTokens.has(token)).reduce((sum, token) => sum + weightOf(weights, token), 0);
+  const phraseBonus = phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
+  if (total === 0 || matched === 0 && phraseBonus === 0) return void 0;
+  const coverage = matched / total;
+  const agreed = agreement(unique, queryTokens);
+  return { agreed, coverage, matched, phraseBonus, score: coverage * agreed + phraseBonus };
+}
+function isDistinctivePhrase(candidate) {
+  if (candidate.phraseBonus > 0) return true;
+  if (candidate.matched < DISTINCTIVE_FLOOR) return false;
+  return !(candidate.agreed === 1 && candidate.coverage < LONE_WORD_COVERAGE);
+}
+function scoreReadableSituations(situations, queryTokens, queryText, weights) {
+  let best = 0;
+  let matchedSituation = "";
+  let bestReadableScore = 0;
+  let bestReadableSituation = situations[0] ?? "";
+  for (const situation of situations) {
+    const candidate = scorePhrase(situation, queryTokens, queryText, weights);
+    if (candidate === void 0) continue;
+    if (candidate.score > bestReadableScore) {
+      bestReadableScore = candidate.score;
+      bestReadableSituation = situation;
+    }
+    if (isDistinctivePhrase(candidate) && candidate.score > best) {
+      best = candidate.score;
+      matchedSituation = situation;
+    }
+  }
+  return { best, bestReadableSituation, matchedSituation };
+}
+function scoreAliases(aliases, queryTokens, queryText, weights) {
+  let best = 0;
+  for (const alias of aliases) {
+    const candidate = scorePhrase(alias, queryTokens, queryText, weights);
+    if (candidate !== void 0) best = Math.max(best, candidate.score);
+  }
+  return best;
+}
+function situationScore(query, situations, aliases, weights) {
   if (query.length === 0) return { matchedSituation: "", score: 0 };
   const queryTokens = new Set(query);
+  const queryText = query.join(" ");
+  const readable = scoreReadableSituations(situations, queryTokens, queryText, weights);
+  const best = Math.max(readable.best, scoreAliases(aliases, queryTokens, queryText, weights));
+  const matchedSituation = readable.matchedSituation.length > 0 ? readable.matchedSituation : best >= RELEVANCE_FLOOR ? readable.bestReadableSituation : "";
+  return matchedSituation.length > 0 ? { matchedSituation, score: best } : { matchedSituation: "", score: 0 };
+}
+function notOwnedSituationScore(query, situations) {
+  if (query.length === 0) return { matchedSituation: "", score: 0 };
   const queryText = query.join(" ");
   let best = 0;
   let matchedSituation = "";
   for (const situation of situations) {
     const phrase = tokens(situation);
-    const unique = [...new Set(phrase)];
-    const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
-    const matched = unique.filter((token) => queryTokens.has(token)).reduce((sum, token) => sum + weightOf(weights, token), 0);
+    const overlap = new Set(phrase.filter((token) => query.includes(token))).size;
+    const score = overlap / Math.max(query.length, phrase.length);
     const phraseBonus = phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
-    if (total === 0 || matched < DISTINCTIVE_FLOOR && phraseBonus === 0) continue;
-    const coverage = matched / total;
-    const agreed = agreement(unique, queryTokens);
-    if (agreed === 1 && coverage < LONE_WORD_COVERAGE && phraseBonus === 0) continue;
-    const candidate = coverage * agreed + phraseBonus;
+    if (overlap < (query.length >= 4 ? 2 : 1) && phraseBonus === 0) continue;
+    const candidate = score + phraseBonus;
     if (candidate > best) {
       best = candidate;
       matchedSituation = situation;
     }
   }
   return { matchedSituation, score: best };
+}
+function notOwnedMatch(manifest, query) {
+  return manifest.notOwned.map((entry) => ({ entry, ...notOwnedSituationScore(query, entry.situations) })).filter(
+    ({ matchedSituation, score }) => matchedSituation.length > 0 && score >= RELEVANCE_FLOOR
+  ).sort(
+    (left, right) => right.score - left.score || left.entry.id.localeCompare(right.entry.id)
+  )[0];
+}
+function isSpecificNotOwnedMatch(query, matchedSituation) {
+  const queryText = query.join(" ");
+  const phrase = tokens(matchedSituation);
+  const phraseText = phrase.join(" ");
+  if (queryText === phraseText) return true;
+  if (query.length === 1 && phrase.length <= 2 && phrase.includes(query[0] ?? "")) return true;
+  if (query.length > phrase.length + 1) return false;
+  return new Set(phrase.filter((token) => query.includes(token))).size >= 2;
 }
 function capabilitySearchKey(entry) {
   return `${entry.importPath}
@@ -259,7 +340,17 @@ function searchCapabilities(situation, manifestFile = defaultManifestPath(), sco
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   const weights = tokenWeights(manifest.entries);
-  return manifest.entries.map((entry) => ({ entry, ...situationScore(query, entry.situations, weights) })).filter(({ score }) => score > 0).sort(
+  const notOwned = notOwnedMatch(manifest, query);
+  if (notOwned !== void 0 && isSpecificNotOwnedMatch(query, notOwned.matchedSituation)) {
+    return {
+      guidance: notOwned.entry.guidance,
+      results: [],
+      verdict: "none"
+    };
+  }
+  const results = manifest.entries.map((entry) => ({ entry, ...situationScore(query, entry.situations, entry.aliases, weights) })).filter(
+    ({ matchedSituation, score }) => matchedSituation.length > 0 && score >= RELEVANCE_FLOOR
+  ).sort(
     (left, right) => right.score - left.score || `${left.entry.importPath}:${left.entry.symbol}`.localeCompare(
       `${right.entry.importPath}:${right.entry.symbol}`
     )
@@ -267,14 +358,21 @@ function searchCapabilities(situation, manifestFile = defaultManifestPath(), sco
     (candidate, index, candidates) => candidates.findIndex(
       (other) => capabilitySearchKey(other.entry) === capabilitySearchKey(candidate.entry)
     ) === index
-  ).slice(0, limit).map(({ entry, matchedSituation }) => ({
+  ).slice(0, limit).map(({ entry, matchedSituation, score }) => ({
     constraints: entry.constraints,
     example: entry.example,
     importPath: entry.importPath,
     matchedSituation,
+    score,
     summary: entry.summary,
     symbol: entry.symbol
   }));
+  if (results.length > 0) return { guidance: "", results, verdict: "matched" };
+  return {
+    guidance: notOwned?.entry.guidance ?? GENERIC_GUIDANCE,
+    results: [],
+    verdict: "none"
+  };
 }
 function capabilityDetail(symbol, manifestFile = defaultManifestPath()) {
   if (typeof symbol !== "string" || symbol.trim().length === 0)
@@ -288,7 +386,7 @@ var TOOL_DEFINITIONS = [
   {
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_search_capabilities",
-    description: 'Search the installed engine by concrete gameplay mechanic. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation explains every result.',
+    description: 'Search the installed engine by concrete gameplay mechanic. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation and score explain every result. The response verdict "none" is an actionable answer with guidance, not a failed search.',
     inputSchema: {
       additionalProperties: false,
       properties: {
@@ -365,7 +463,7 @@ function handleLine(line, manifestFile) {
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.0" }
+        serverInfo: { name: "threenative-engine-mcp", version: "0.3.0" }
       });
     }
     if (request.method === "tools/list") {
@@ -399,4 +497,4 @@ if (entryPath !== void 0 && realpathSync(path.resolve(entryPath)) === realpathSy
   }
 }
 
-export { ENGINE_MCP_TOOL_NAMES, capabilityDetail, defaultManifestPath, handleLine, loadCapabilityManifest, runServer, searchCapabilities, toolDefinitions };
+export { ENGINE_MCP_TOOL_NAMES, RELEVANCE_FLOOR, capabilityDetail, capabilitySituationTokens, defaultManifestPath, handleLine, loadCapabilityManifest, runServer, searchCapabilities, toolDefinitions };

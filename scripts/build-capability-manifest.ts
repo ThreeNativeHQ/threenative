@@ -3,7 +3,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
 
+import { RELEVANCE_FLOOR, capabilitySituationTokens } from "../packages/engine-mcp/src/index.js";
 import { CAPABILITY_PACKAGE_ALLOWLIST } from "./check-capability-docs.js";
+import { type INotOwnedCapability, NOT_OWNED_CAPABILITIES } from "./not-owned-capabilities.js";
 import {
   REALISM_EFFECTS_COVERAGE,
   REALISM_EFFECTS_MANIFEST_ENTRIES,
@@ -17,7 +19,7 @@ export const CAPABILITY_MANIFEST_RELATIVE_PATH = "packages/create-threenative/ca
 // project that was not scaffolded and therefore has no committed copy of its own.
 export const CAPABILITY_MANIFEST_MIRROR_PATH = "packages/core/capabilities.json";
 
-const MANIFEST_VERSION = 1 as const;
+const MANIFEST_VERSION = 2 as const;
 
 export type CapabilityKind = "class" | "function";
 
@@ -29,6 +31,7 @@ export interface ICapabilityManifestEntry {
   readonly signature: string;
   readonly summary: string;
   readonly situations: readonly string[];
+  readonly aliases?: readonly string[];
   readonly example: string;
   readonly constraints: readonly string[];
   readonly overrides: readonly string[];
@@ -38,6 +41,7 @@ export interface ICapabilityManifestEntry {
 export interface ICapabilityManifest {
   readonly version: typeof MANIFEST_VERSION;
   readonly entries: readonly ICapabilityManifestEntry[];
+  readonly notOwned: readonly INotOwnedCapability[];
 }
 
 export interface ICapabilityAllowlistEntry {
@@ -49,6 +53,7 @@ export interface ICapabilityAllowlistEntry {
 interface IParsedDocumentation {
   readonly summary: string;
   readonly situations: readonly string[];
+  readonly aliases: readonly string[];
   readonly example: string;
   readonly constraints: readonly string[];
   readonly overrides: readonly string[];
@@ -68,6 +73,7 @@ interface ICapabilityCandidate extends IRawExport {
 }
 
 const EMPTY_DOCUMENTATION: IParsedDocumentation = {
+  aliases: [],
   constraints: [],
   example: "",
   overrides: [],
@@ -212,6 +218,7 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
   if (comment === undefined) return EMPTY_DOCUMENTATION;
   const lines = comment.split(/\r?\n/u).map((line) => line.replace(/^\s*\* ?/u, "").trimEnd());
   const situations: string[] = [];
+  const aliases: string[] = [];
   const constraints: string[] = [];
   const overrides: string[] = [];
   const supersedes: string[] = [];
@@ -219,11 +226,14 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
   const summaryLines: string[] = [];
   let inExample = false;
   for (const line of lines) {
-    const tag = /^@(situation|constraint|example|override|supersedes)\b(?:\s+(.*))?$/u.exec(line);
+    const tag = /^@(situation|alias|constraint|example|override|supersedes)\b(?:\s+(.*))?$/u.exec(
+      line,
+    );
     if (tag !== null) {
       inExample = tag[1] === "example";
       const value = tag[2]?.trim() ?? "";
       if (tag[1] === "situation" && value.length > 0) situations.push(value);
+      if (tag[1] === "alias" && value.length > 0) aliases.push(value);
       if (tag[1] === "constraint" && value.length > 0) constraints.push(value);
       if (tag[1] === "override" && value.length > 0) overrides.push(value);
       if (tag[1] === "supersedes" && value.length > 0) supersedes.push(value);
@@ -241,6 +251,7 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
     .join("\n")
     .trim();
   return {
+    aliases: [...new Set(aliases)],
     constraints: [...new Set(constraints)],
     example,
     overrides: [...new Set(overrides)],
@@ -255,6 +266,7 @@ function mergeDocumentation(
   fallback: IParsedDocumentation,
 ): IParsedDocumentation {
   return {
+    aliases: [...new Set([...primary.aliases, ...fallback.aliases])],
     constraints: [...new Set([...primary.constraints, ...fallback.constraints])],
     example: primary.example || fallback.example,
     overrides: [...new Set([...primary.overrides, ...fallback.overrides])],
@@ -474,9 +486,124 @@ function validateDocumentation(candidates: readonly ICapabilityCandidate[]): voi
     throw new Error(`Capability manifest generation failed:\n${errors.join("\n")}`);
 }
 
+function notOwnedOverlap(
+  situation: string,
+  entry: ICapabilityManifestEntry,
+):
+  | { readonly matchedSituation: string; readonly overlap: number; readonly score: number }
+  | undefined {
+  const query = capabilitySituationTokens(situation);
+  if (query.length === 0) return undefined;
+  const queryText = query.join(" ");
+  let best:
+    | { readonly matchedSituation: string; readonly overlap: number; readonly score: number }
+    | undefined;
+  for (const ownedSituation of [...entry.situations, ...(entry.aliases ?? [])]) {
+    const phrase = capabilitySituationTokens(ownedSituation);
+    const overlap = new Set(phrase.filter((token) => query.includes(token))).size;
+    const baseScore = overlap / Math.max(query.length, phrase.length);
+    const phraseBonus =
+      phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
+    if (overlap < (query.length >= 4 ? 2 : 1) && phraseBonus === 0) continue;
+    const score = baseScore + phraseBonus;
+    if (best === undefined || score > best.score) {
+      best = { matchedSituation: ownedSituation, overlap, score };
+    }
+  }
+  return best;
+}
+
+export const MAX_ALIAS_FANOUT = 2;
+
+function validateAliasFanout(entries: readonly ICapabilityManifestEntry[]): void {
+  const fanout = new Map<
+    string,
+    {
+      readonly display: string;
+      readonly owners: Array<{ readonly importPath: string; readonly symbol: string }>;
+    }
+  >();
+  for (const entry of entries) {
+    const normalizedAliases = new Map(
+      (entry.aliases ?? [])
+        .map((alias) => [capabilitySituationTokens(alias).join("\u0000"), alias] as const)
+        .filter(([alias]) => alias.length > 0),
+    );
+    for (const [alias, authoredAlias] of normalizedAliases) {
+      const group = fanout.get(alias) ?? {
+        display: authoredAlias
+          .toLocaleLowerCase()
+          .replace(/[^a-z0-9]+/gu, " ")
+          .trim(),
+        owners: [],
+      };
+      group.owners.push({ importPath: entry.importPath, symbol: entry.symbol });
+      fanout.set(alias, group);
+    }
+  }
+  const violations = [...fanout.entries()]
+    .filter(([, group]) => group.owners.length > MAX_ALIAS_FANOUT)
+    .map(
+      ([, group]) =>
+        `alias '${group.display}' appears in ${group.owners.length} entries (maximum ${MAX_ALIAS_FANOUT}): ${group.owners
+          .map((owner) => `${owner.symbol} (${owner.importPath})`)
+          .join(", ")}`,
+    );
+  if (violations.length > 0) {
+    throw new Error(
+      `Capability manifest generation failed; alias fanout exceeded:\n${violations.join("\n")}`,
+    );
+  }
+}
+
+export function validateNotOwned(
+  entries: readonly ICapabilityManifestEntry[],
+  notOwned: readonly INotOwnedCapability[],
+): void {
+  const conflicts: string[] = [];
+  for (const notOwnedEntry of notOwned) {
+    for (const entry of entries) {
+      const overlap = notOwnedEntry.situations
+        .map((situation) => ({ situation, result: notOwnedOverlap(situation, entry) }))
+        .find(
+          (
+            candidate,
+          ): candidate is {
+            readonly situation: string;
+            readonly result: {
+              readonly matchedSituation: string;
+              readonly overlap: number;
+              readonly score: number;
+            };
+          } =>
+            candidate.result !== undefined &&
+            candidate.result.score >= RELEVANCE_FLOOR &&
+            (candidate.result.overlap >= 2 ||
+              capabilitySituationTokens(candidate.result.matchedSituation)
+                .join(" ")
+                .includes(capabilitySituationTokens(candidate.situation).join(" ")) ||
+              capabilitySituationTokens(candidate.situation)
+                .join(" ")
+                .includes(capabilitySituationTokens(candidate.result.matchedSituation).join(" "))),
+        );
+      if (overlap !== undefined) {
+        conflicts.push(
+          `notOwned '${notOwnedEntry.id}' situation '${overlap.situation}' overlaps owned capability '${entry.symbol}' situation '${overlap.result.matchedSituation}' at score ${overlap.result.score.toFixed(6)}`,
+        );
+      }
+    }
+  }
+  if (conflicts.length > 0) {
+    throw new Error(
+      `Capability manifest generation failed; a mechanic cannot be both owned and not owned:\n${conflicts.join("\n")}`,
+    );
+  }
+}
+
 export function buildCapabilityManifest(
   root: string,
   allowlist: readonly ICapabilityAllowlistEntry[] = CAPABILITY_ALLOWLIST,
+  notOwned: readonly INotOwnedCapability[] = NOT_OWNED_CAPABILITIES,
 ): ICapabilityManifest {
   validateCapabilityAllowlist(allowlist);
   const candidates = packageExportCandidates(root);
@@ -485,8 +612,9 @@ export function buildCapabilityManifest(
     (candidate) => !allowlisted.has(`${candidate.packageName}:${candidate.symbol}`),
   );
   validateDocumentation(documentedCandidates);
-  const entries = documentedCandidates
-    .map((candidate) => ({
+  const entries: ICapabilityManifestEntry[] = [
+    ...documentedCandidates.map((candidate) => ({
+      aliases: candidate.documentation.aliases,
       constraints: candidate.documentation.constraints,
       example: candidate.documentation.example,
       importPath: candidate.importPath,
@@ -498,12 +626,17 @@ export function buildCapabilityManifest(
       summary: candidate.documentation.summary || candidate.symbol,
       supersedes: candidate.documentation.supersedes,
       symbol: candidate.symbol,
-    }))
-    .concat(REALISM_EFFECTS_MANIFEST_ENTRIES)
-    .concat(RENDER_CHAIN_MANIFEST_ENTRIES)
-    .sort((left, right) =>
-      `${left.importPath}:${left.symbol}`.localeCompare(`${right.importPath}:${right.symbol}`),
-    );
+    })),
+    ...REALISM_EFFECTS_MANIFEST_ENTRIES.map((entry) => ({ ...entry, aliases: [] })),
+    ...RENDER_CHAIN_MANIFEST_ENTRIES.map((entry) => ({
+      ...entry,
+      aliases: entry.aliases ?? [],
+    })),
+  ].sort((left, right) =>
+    `${left.importPath}:${left.symbol}`.localeCompare(`${right.importPath}:${right.symbol}`),
+  );
+  validateAliasFanout(entries);
+  validateNotOwned(entries, notOwned);
   // Fixture roots used by the manifest unit tests intentionally contain only synthetic package
   // sources. The checked-in realism-effects mapping is validated when the repository has its PRD
   // record; requiring those unrelated fixture trees to copy Three and every template would make
@@ -518,7 +651,7 @@ export function buildCapabilityManifest(
       throw new Error(`Realism-effects coverage validation failed:\n${coverageErrors.join("\n")}`);
     }
   }
-  return { entries, version: MANIFEST_VERSION };
+  return { entries, notOwned, version: MANIFEST_VERSION };
 }
 
 function manifestPath(root: string): string {
@@ -600,7 +733,7 @@ async function main(): Promise<void> {
     ? await checkCapabilityManifest(root)
     : await writeCapabilityManifest(root);
   process.stdout.write(
-    `${check ? "capability manifest fresh" : "capability manifest generated"}: ${manifest.entries.length} entries at ${manifestPath(root)}\n`,
+    `${check ? "capability manifest fresh" : "capability manifest generated"}: ${manifest.entries.length} entries and ${manifest.notOwned.length} notOwned rows at ${manifestPath(root)}\n`,
   );
 }
 
