@@ -9,14 +9,14 @@ Deferred iOS results remain explicitly unverified, never passed.
 
 | PRD | Status | Outcome |
 | --- | --- | --- |
-| [PRD-359 — portable multiplayer transport](./PRD-359-portable-multiplayer-transport.md) | NOT STARTED — READY FOR EXECUTION | Players on browser, Windows, macOS, Linux, Android and iOS share a server using the same game source |
+| [PRD-359 — portable multiplayer transport](./PRD-359-portable-multiplayer-transport.md) | IN PROGRESS — Task 0 policy checks passed; Task 1a fixture underway | Players on browser, Windows, macOS, Linux, Android and iOS share a server using the same game source |
 
 The existing native implementation is incomplete evidence, not a release-ready transport.
 The PRD records the exploration, alternatives, bounded implementation slices and release matrix.
 Renet2 remains an alternative if the interoperability spike invalidates this direction.
-No implementation phase or platform acceptance gate has been completed.
+Task 0 policy checks passed; native baseline contracts passed locally. Transport interoperability and platform acceptance remain unverified.
 
-Start with [EXECUTION.md](./EXECUTION.md), Task 0, then Task 1a.
+Follow [EXECUTION.md](./EXECUTION.md); Task 1a is underway.
 The exact API, byte format and backend contract are in [PROTOCOL.md](./PROTOCOL.md).
 
 **Selected architecture:** one protocol and conformance suite, thin language adapters.

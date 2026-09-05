@@ -263,6 +263,13 @@ pose and report degrees, names and metres — they select no clip and move nothi
 **`Heightfield`** (one row-major buffer, interpolation, normals, and the ordering physics consumes;
 every height comes from the game's own sampler).
 
+**Optional portable message transport is also mechanism.** The proposed `core/net`
+(`@threenative/core/net`) subpath may own the browser/native transport seam: connection lifecycle,
+bounded queues, framing and delivery semantics. It carries application bytes only; gameplay
+serialization, authoritative simulation, snapshots, prediction, interpolation and replication
+remain game/server code. The subpath stays proposed until its export ships and must not be
+documented as an available API before then.
+
 ### "Looks good by default" and "never owns the look" are the same rule
 
 Vanilla Three.js out of the box is untonemapped, flat-lit grey. A scaffolded ThreeNative game must

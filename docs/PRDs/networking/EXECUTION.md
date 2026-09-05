@@ -1,6 +1,6 @@
 # PRD-359 execution handoff
 
-**Ready to execute; implementation NOT STARTED.** Execute this file in table order.
+**Execution in progress, 2026-09-05.** Task 0 policy checks passed; Task 1a is underway. Execute this file in table order.
 Read [the PRD](./PRD-359-portable-multiplayer-transport.md) for acceptance and
 [PROTOCOL.md](./PROTOCOL.md) for exact API and wire behavior. Do not redesign either.
 The approved architecture is a shared protocol/test suite with thin language adapters.
@@ -46,11 +46,11 @@ Do not create the earlier draft's Cargo.toml, Cargo.lock or Rust main.rs.
 ## Ordered tasks and owned files
 
 Existing files are marked E; files to create are marked N. A file created by an earlier
-row is E in later rows. All rows are unchecked because no implementation was performed.
+row is E in later rows. Check a row only after its required evidence and review pass.
 
 | Done | Task and files (maximum five) | Implementation and live caller | Required test / negative control |
 | --- | --- | --- | --- |
-| [ ] | **0. Admit the mechanism.** E `docs/architecture/CHARTER.md`, `C/AGENTS.md`, `C/CLAUDE.md` | Add one charter clause permitting optional portable message transport while leaving gameplay/replication outside core. Document `core/net` as proposed until exported. Run sync:agents; generated mirror lands with source. This is required by core's closed ownership list. | `pnpm sync:agents` and primary-docs test. Do not document an unshipped command or package as already available. This policy-only row requires no runtime proof. |
+| [x] | **0. Admit the mechanism.** E `docs/architecture/CHARTER.md`, `C/AGENTS.md`, `C/CLAUDE.md` | Add one charter clause permitting optional portable message transport while leaving gameplay/replication outside core. Document `core/net` as proposed until exported. Run sync:agents; generated mirror lands with source. This is required by core's closed ownership list. | `pnpm sync:agents` and primary-docs test. Do not document an unshipped command or package as already available. This policy-only row requires no runtime proof. |
 | [ ] | **1a. Restore executable Go fixture.** N `S/go.mod`, `S/go.sum`, `S/main.go`, `N/examples/webtransport/client.html`; E `N/tests/webtransport/webtransport.test.ts` | Replace Cargo discovery/build/start logic with Go commands and explicit executable path. Add Go echo server and browser page; server echoes datagrams, bidirectional streams and unidirectional streams. Existing live suite starts this server; browser page invokes real WebTransport. | Existing echo tests first fail for missing Go fixture in required mode, then execute bytes/lifecycle assertions. Preserve this as prerequisite evidence, not a native bug regression. Browser page verifies 64 KiB stream bytes and datagrams. |
 | [ ] | **2a. Correct datagram surface.** E `N/src/webtransport/webtransport.cpp`, `N/src/runtime-scripts/webtransport-polyfill.js`, `N/tests/webtransport_surface_test.cpp`, `N/tests/webtransport_wire_test.cpp`, `N/tests/webtransport/webtransport.test.ts` | Derive capacity from quiche, subtract session framing, propagate invalid-session/oversize errors, bound queues and count legitimate local drops. Repair existing bindings; do not install a second transport. Existing runtime poll remains caller. | Add `reports negotiated datagram capacity`, `rejects oversized datagram`, `distinguishes closed session from queue drop`. Clamp available capacity to 64 in test; a 65-byte write must fail. Remove repair and observe red. Run live echo again. |
 | [ ] | **2b. Streams and shutdown.** E same five files as 2a | Keep existing partial-write buffering. Apply finite bounds to native buffers and JS streams; correct close-before-ready, reader cancellation, pending promise settlement and stream errors. Reject non-default unsupported options instead of ignoring them. | Add `preserves partial stream writes`, `backpressures stalled receiver`, `settles close before ready`, `releases 100 reconnects`. Revert each relevant branch to prove red; live 64 KiB transfer must be byte-identical. |
@@ -329,3 +329,7 @@ use monotonic time and run the real networking loop; fast fixed-step ticks canno
 as elapsed seconds. Negative control: suppress server reply and verify timeout fails on
 browser and native. The proof runner still owns multi-client startup and failure injection;
 the playtest package gains only this reusable asynchronous wait primitive.
+
+## Execution records
+
+- Task 0: [policy admission and primary-docs checks](../../verification/prd-359-task0-2026-09-05.md). Fresh read-only Luna review passed policy/mirror/test collection; missing checklist/link finding resolved here.

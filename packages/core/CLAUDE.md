@@ -21,6 +21,11 @@ Clip conformance (`clipPoseError`, `clipTrackBindings`, `clipBoneCoverage`, `bon
 admitted the same way — see `CHARTER.md`'s "Pose conformance measurement is mechanism" and
 `docs/PRDs/done/PRD-314-a-broken-retarget-is-a-number-not-a-screenshot.md`. It measures and
 reports; it moves nothing and decides no appearance.
+Optional portable message transport is admitted by PRD-359 under the proposed `core/net`
+(`@threenative/core/net`) subpath. Until that export ships, do not document it as available. If
+exported, it owns only the browser/native transport seam — connection lifecycle, bounded queues,
+framing and delivery semantics. Gameplay serialization, authoritative simulation, snapshots,
+prediction, interpolation and replication remain game/server code.
 
 ### World subpath
 
