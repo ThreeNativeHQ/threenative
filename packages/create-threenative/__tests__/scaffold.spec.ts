@@ -108,8 +108,9 @@ const BUG_REPORT_SKILL_PATHS = [
 // refreshed genre kits.
 // Recomputed 2026-09-04 after merging PR #99: every scaffold gains the loading, trace, audio,
 // streaming, and alpha-antialiasing surfaces; starter also retains its authored coastal look.
-// Recomputed 2026-09-04 for the sceneNodes assertion family: the generated assertion reference
-// every scaffold ships now documents a 27th kind, so all ten trees move by that one file.
+// Recomputed 2026-09-04 for the sceneNodes and causedBy assertion families: the generated
+// assertion reference every scaffold ships now documents 28 kinds, so all ten trees move by that
+// one file.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-03 after merging PRD-346's MCP host configs into the authored painterly
   // starter. Every scaffold gains the Blender server wiring; starter also gains its bounded mix.
@@ -237,19 +238,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "c900176215c1d8bd274f7c0992ce0bf9a571814c01972da2e8a1a2d248e757d9",
-  defense: "730b714aabc03145ae0b6a8d409591664f17202abf260debb950b1c4425acfe2",
+  "action-rpg": "d7939effcd770cc8315471a8ae2e6a5831d1e4339567c8250c4ab4caee7f3ad1",
+  defense: "12d0b3f3d0d6ce558c14038657ebe245960b9f1846e862b03c59d10e64f4b881",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "4f2275d67c0b20bf2ca018cf7806a3bde011d8f55e96a5a2a3e5f2376251457f",
-  platformer: "8bd9d2c7d817389f6646831b729d092e5864047430352e0fd7d99148bf76c715",
-  runner: "1099333d9410dcf999de862417d7ff96c1ce13bbd5422dea1e6566bb9a0b6a2f",
-  puzzle: "0e85c83128f4d25663daa63084b0914939fa6dd492a4063d0b229aae12dc2430",
-  racing: "6150b826876471dc67f1614ebc994c3f8b44ee503772271e8f2c4a20ac2cdf07",
-  shooter: "5073919b277a2cb1f03e6d488008ae971d604a07c62ba380c7a1a284004d7bb8",
+  minimal: "05813e61f2f2cfcbdd73e199560e14ccc765dbac8756c911e4f3268706e16cce",
+  platformer: "46aa79045765abc93ae8083b9d3c5c1b10e08635363b1f7a48bc089492f9d41b",
+  runner: "a1b3413e6188105ce2276e4ab34013c2f23791659851f7b48a95268a8703e847",
+  puzzle: "16af8d7e83d6ff2122ed71a7cf458b30d8af6b47e1935d016c142155f4ab5305",
+  racing: "bf88decb98d09453d61895d49b09e8d9d3ad9275e630414596cd8e36a69f5371",
+  shooter: "3172d438b256d3122cc97f076f91eef91ebd7c7287c54b314e905f18a96af7ee",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "6212d8ccdfa3d28f2048a11d918b0473286be1a0d973b3094b713bd012cbdc19",
+  starter: "d366e63aeb841376fe94c59fd625c70cdbda23bc3cd2f8c9b9e7f6a8cb083d16",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -270,7 +271,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "2225ada0e537f95a247d207886010effc9b46d56bacdea4ca83189b14ecbcd9e",
+  sailing: "3fd736effa46cfff3620786343fd9060d9d69c0cb49c7f2132c98f11408e2c18",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

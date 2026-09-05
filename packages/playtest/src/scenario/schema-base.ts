@@ -268,6 +268,48 @@ export interface IPlaytestSceneNodeSelectorSpec {
   type?: string;
 }
 
+/**
+ * "It happened **because** of that, and never before it."
+ *
+ * The one sentence a proof of a physics puzzle actually has to make, and the one this harness
+ * could not make. A run could already say *a contact happened* and *the state reads `won`*, and
+ * `atSteps` could order them at step boundaries — where a win arriving one tick after the contact
+ * and a win arriving 199 ticks later inside the same step are the same observation. That is the
+ * signature of a terminal state driven by a timer or a distance check that merely lands near a
+ * contact, and it is what a sealed proof exists to refuse.
+ *
+ * Both sides are tick-stamped by the producer. A run whose contacts or transitions carry no ticks
+ * fails closed and names which side was unstamped; it never falls back to step granularity, which
+ * is a different measurement wearing the same name.
+ */
+export interface IPlaytestCausedByAssertion {
+  allowTrivial?: string;
+  cause: IPlaytestCauseSpec;
+  effect: IPlaytestEffectSpec;
+  /**
+   * Fail when the effect is ever observed before the first matching cause. This is the frame-one
+   * fake win: a goal volume overlapping the floor reports `won` before anything touched it.
+   */
+  neverBefore?: boolean;
+  /** Ceiling on `effectTick - causeTick`. A win long after the contact was not caused by it. */
+  withinTicks?: number;
+}
+
+/** What must have happened first. */
+export interface IPlaytestCauseSpec {
+  contact?: { entity: string; kind?: string; with: string };
+  /** A published value reaching a given value, named the same way an effect is. */
+  transition?: IPlaytestEffectSpec;
+}
+
+/** The published value whose change is being explained. */
+export interface IPlaytestEffectSpec {
+  /** `states.<entity>` or `state.<field>`, exactly as the transition log reports it. */
+  path: string;
+  /** The value the path must reach. */
+  becomes: boolean | number | string;
+}
+
 export interface IPlaytestAnimationAssertion {
   advancedFrames?: number;
   allowTrivial?: string;
@@ -475,6 +517,7 @@ export interface IPlaytestScenarioAssertions {
   settled?: IPlaytestSettledAssertion[];
   signals?: IPlaytestSignalAssertion[];
   scene?: IPlaytestSceneAssertion;
+  causedBy?: IPlaytestCausedByAssertion[];
   sceneNodes?: IPlaytestSceneNodesAssertion[];
   startup?: IPlaytestStartupAssertion;
   states?: IPlaytestStateAssertion[];

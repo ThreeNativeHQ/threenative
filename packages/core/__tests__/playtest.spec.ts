@@ -64,6 +64,7 @@ describe("playtest plugin", () => {
         "runtime.startup",
         "runtime.contacts",
         "runtime.tags",
+        "runtime.transitions",
         "runtime.audio",
         "runtime.world",
       ]);
@@ -111,6 +112,7 @@ describe("playtest plugin", () => {
         "runtime.startup",
         "runtime.contacts",
         "runtime.tags",
+        "runtime.transitions",
         "runtime.audio",
         "runtime.world",
         "runtime.components",
@@ -299,6 +301,7 @@ describe("playtest plugin", () => {
         "runtime.startup",
         "runtime.contacts",
         "runtime.tags",
+        "runtime.transitions",
         "runtime.audio",
         "runtime.world",
       ];

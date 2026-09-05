@@ -337,7 +337,29 @@ export interface IPlaytestSceneNodesObservation {
 export interface IPlaytestContactObservation {
   entity: string;
   kind: string;
+  /**
+   * The tick the contact happened on, when the producer drains its contact log per tick. Absent
+   * from a producer that drains only at sample time, and an assertion that needs it fails closed
+   * rather than falling back to step granularity — the two are not the same measurement.
+   */
+  tick?: number;
   with: string;
+}
+
+/**
+ * A published value changing, and the tick it changed on.
+ *
+ * Without this a run can say *a contact happened* and *the state reads `won`*, and nothing relates
+ * them. Comparing at step boundaries cannot separate a win that arrived with the contact from one
+ * that arrived 199 ticks later in the same step — which is the signature of a timer or a distance
+ * check that happens to land near a contact.
+ */
+export interface IPlaytestTransitionObservation {
+  from: JsonPrimitive;
+  /** `states.<entity>` for a registered entity, or `state.<field>` for a published field. */
+  path: string;
+  tick: number;
+  to: JsonPrimitive;
 }
 
 export interface IPlaytestTagObservation {
@@ -383,6 +405,8 @@ export interface IPlaytestGameplayObservation {
   contacts?: IPlaytestContactObservation[];
   states: Record<string, string>;
   tags?: Record<string, IPlaytestTagObservation>;
+  /** Tick-stamped changes to published values. Absent from a run whose loop never ticked. */
+  transitions?: IPlaytestTransitionObservation[];
   world?: IPlaytestWorldObservation;
 }
 

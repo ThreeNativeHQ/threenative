@@ -1,5 +1,5 @@
 import { AnimationPlayer, type ICtx, Scene, type SceneFrame } from "@threenative/core";
-import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
+import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import type { Object3D, PerspectiveCamera } from "three";
 import {
   AnimationClip,
@@ -80,6 +80,7 @@ function walkClip(): AnimationClip {
 export class Range extends Scene<IRangeState, IPhysicsContext> {
   static override readonly initialState: IRangeState = {
     allHits: 0,
+    crateLanding: "waiting",
     crateY: CRATE_DROP_HEIGHT,
     hits: 0,
     lookYaw: 0,
@@ -121,12 +122,34 @@ export class Range extends Scene<IRangeState, IPhysicsContext> {
     crate.name = "crate";
     crate.position.set(2.5, CRATE_DROP_HEIGHT, -6);
     ctx.add(crate);
-    new RigidBody3D({
+    const crateBody = new RigidBody3D({
       mass: 1,
       object: crate,
       physics: ctx.physics,
       shape: CollisionShape3D.box(CRATE_SIZE, CRATE_SIZE, CRATE_SIZE),
       type: "dynamic",
+    });
+    // Registered so both sides of the landing contact have names. An unregistered body reports a
+    // contact nothing can address, and a contacts assertion over it is green about nothing.
+    ctx.entities.add("crate", { body: crateBody, mesh: crate });
+
+    // The crate's landing spot, as a sensor rather than a height check. A distance test against
+    // `crate.position.y` would report the same `landed` on a crate that was never dropped; an
+    // overlap is the thing that actually happened, and it is what `assert.causedBy` relates the
+    // published transition to.
+    const pad = box(CRATE_SIZE * 2, 0.2, CRATE_SIZE * 2, 0x2f4858);
+    pad.name = "landing-pad";
+    pad.position.set(2.5, 0.15, -6);
+    ctx.add(pad);
+    const padArea = new Area3D({
+      physics: ctx.physics,
+      position: pad.position,
+      shape: CollisionShape3D.box(CRATE_SIZE * 2, 0.2, CRATE_SIZE * 2),
+    });
+    ctx.entities.add("landing-pad", { area: padArea, mesh: pad });
+    let crateLanding: IRangeState["crateLanding"] = "waiting";
+    padArea.on("bodyEntered", () => {
+      crateLanding = "landed";
     });
 
     // Thin dressing on the shot line. It is nearest, so `raycast` alone reports it and the
@@ -255,6 +278,7 @@ export class Range extends Scene<IRangeState, IPhysicsContext> {
 
       frameCtx.state.set({
         allHits,
+        crateLanding,
         crateY: crate.position.y,
         hits,
         lookYaw: yaw,

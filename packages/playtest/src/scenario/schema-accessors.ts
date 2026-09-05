@@ -3,7 +3,7 @@ import { PLAYTEST_FRAME_BUDGET_PHASES } from "../protocol.js";
 import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./errors.js";
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion,
-  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestStartupAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
+  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestStartupAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -630,6 +630,72 @@ export function validateSceneAssertion(
 
 const SCENE_NODE_SELECTOR_KEYS = ["limit", "name", "nameContains", "pathContains", "type"] as const;
 const SCENE_NODE_BOUNDS = ["animated", "inFrustum", "maxCount", "minCount", "minTriangles", "texturesLoaded", "visible"] as const;
+
+function validateEffectSpec(value: unknown, scenarioPath: string, objectPath: string): IPlaytestEffectSpec {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["becomes", "path"], scenarioPath, objectPath);
+  const becomes = record.becomes;
+  if (typeof becomes !== "string" && typeof becomes !== "number" && typeof becomes !== "boolean")
+    throw invalidScenario(
+      scenarioPath,
+      `'${objectPath}.becomes' must be a string, number or boolean; ${describeValue(becomes)} names no value a transition can reach.`,
+    );
+  if (typeof becomes === "number" && !Number.isFinite(becomes))
+    throw invalidScenario(scenarioPath, `'${objectPath}.becomes' must be a finite number.`);
+  return { becomes, path: requireString(record, "path", scenarioPath, objectPath) };
+}
+
+function validateCauseSpec(value: unknown, scenarioPath: string, objectPath: string): IPlaytestCauseSpec {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["contact", "transition"], scenarioPath, objectPath);
+  const hasContact = hasKey(record, "contact");
+  const hasTransition = hasKey(record, "transition");
+  // Exactly one: two causes in one row would silently make the earlier of them the cause, and a
+  // row with none names nothing that could have caused anything.
+  if (hasContact === hasTransition)
+    throw invalidScenario(
+      scenarioPath,
+      `'${objectPath}' must set exactly one of contact, transition.`,
+    );
+  if (hasTransition)
+    return { transition: validateEffectSpec(record.transition, scenarioPath, `${objectPath}.transition`) };
+  const contact = requireRecord(record.contact, scenarioPath, `${objectPath}.contact`);
+  rejectUnknownKeys(contact, ["entity", "kind", "with"], scenarioPath, `${objectPath}.contact`);
+  return {
+    contact: {
+      entity: requireString(contact, "entity", scenarioPath, `${objectPath}.contact`),
+      ...present("kind", optionalString(contact, "kind", scenarioPath, `${objectPath}.contact`)),
+      with: requireString(contact, "with", scenarioPath, `${objectPath}.contact`),
+    },
+  };
+}
+
+export function validateCausedByAssertion(
+  value: unknown,
+  scenarioPath: string,
+  objectPath: string,
+): IPlaytestCausedByAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["allowTrivial", "cause", "effect", "neverBefore", "withinTicks"], scenarioPath, objectPath);
+  if (!hasKey(record, "cause") || !hasKey(record, "effect"))
+    throw invalidScenario(scenarioPath, `'${objectPath}' must set both 'cause' and 'effect'.`);
+  const result: IPlaytestCausedByAssertion = {
+    ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
+    cause: validateCauseSpec(record.cause, scenarioPath, `${objectPath}.cause`),
+    effect: validateEffectSpec(record.effect, scenarioPath, `${objectPath}.effect`),
+    ...present("neverBefore", optionalBoolean(record, "neverBefore", scenarioPath, objectPath)),
+    ...present("withinTicks", optionalNonNegativeInteger(record, "withinTicks", scenarioPath, objectPath)),
+  };
+  // Ordering alone is what `atSteps` already does. A causedBy row that bounds neither the window
+  // nor the "never before" case asserts only that both things happened at some point, which is
+  // two assertions pretending to be one.
+  if (result.neverBefore === undefined && result.withinTicks === undefined)
+    throw invalidScenario(
+      scenarioPath,
+      `'${objectPath}' must set neverBefore or withinTicks; without one it asserts only that both events happened, which assert.states and assert.contacts already do separately.`,
+    );
+  return result;
+}
 
 export function validateSceneNodeSelector(
   value: unknown,

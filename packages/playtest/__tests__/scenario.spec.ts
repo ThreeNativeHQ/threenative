@@ -546,6 +546,14 @@ const FAMILY_SCENARIO_ASSERTS = {
   renderChain: { tier: "high", velocity: { maxRejectionFraction: 0.2 } },
   scene: { cameraClearsScene: true, fogClearsScene: true, litMaterialsAreLit: true, minVisibleLights: 1 },
   sceneNodes: [{ select: { nameContains: "crate" }, visible: true }],
+  causedBy: [
+    {
+      cause: { contact: { entity: "fox", kind: "trigger", with: "coin" } },
+      effect: { becomes: "won", path: "states.player" },
+      neverBefore: true,
+      withinTicks: 8,
+    },
+  ],
   startup: { maxReadyMs: 60_000 },
   settled: [{ entity: "crate", minBodies: 2 }],
   signals: [{ minCount: 1, name: "collected" }],
@@ -589,6 +597,8 @@ const FAMILY_PASS_IDS = [
   "scene.cameraClearsScene",
   "sceneNodes[0].count",
   "sceneNodes[0].visible",
+  "causedBy[0].neverBefore",
+  "causedBy[0].withinTicks",
   "startup.readyMs",
   "diagnostics",
   "movement.distance",
@@ -734,9 +744,10 @@ function familyReportObservations(fulfilled: boolean) {
     runtimeObservations: {
       gameplay: {
         animation: { player: { advancedFrames: 5, clip: "run", finished: true } },
-        contacts: [{ entity: "fox", kind: "trigger", with: "coin" }],
+        contacts: [{ entity: "fox", kind: "trigger", tick: 4, with: "coin" }],
         states: { player: "won" },
         tags: { coin: { count: 3 } },
+        transitions: [{ from: "playing", path: "states.player", tick: 5, to: "won" }],
         world: { seed: 90210 },
       },
     },
@@ -818,6 +829,7 @@ test("should preserve every assertion family's result contract", async () => {
     // family says so once rather than failing each bound against nothing.
     "scene.observed",
     "sceneNodes.observed",
+    "causedBy.observed",
     "startup.readyMs",
     "diagnostics",
     "movement.distance",
@@ -857,6 +869,7 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_RENDER_CHAIN_UNOBSERVABLE",
     "TN_PLAYTEST_SCENE_UNOBSERVED",
     "TN_PLAYTEST_SCENE_NODES_UNOBSERVED",
+    "TN_PLAYTEST_TRANSITIONS_UNOBSERVED",
     "TN_PLAYTEST_STARTUP_UNOBSERVABLE",
     "TN_PLAYTEST_VISIBILITY_FAILED",
     "TN_PLAYTEST_CONTACT_NOT_OBSERVED",

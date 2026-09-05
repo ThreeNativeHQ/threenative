@@ -719,6 +719,42 @@ Bounds on named nodes of the scene graph — where an object is, whether it is o
 }
 ```
 
+### `causedBy`
+
+Relates a tick-stamped effect to the tick-stamped cause that must precede it — the 'because' a terminal state needs. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web, desktop, bevy · **Requires:** runtime.transitions
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `cause` | object | no |
+| `effect` | object | no |
+| `neverBefore` | boolean | no |
+| `withinTicks` | number | no |
+
+
+```json
+{
+  "causedBy": [
+    {
+      "cause": {
+        "contact": {
+          "entity": "player",
+          "kind": "trigger",
+          "with": "seal"
+        }
+      },
+      "effect": {
+        "becomes": "won",
+        "path": "state.status"
+      },
+      "neverBefore": true,
+      "withinTicks": 4
+    }
+  ]
+}
+```
+
 ### `startup`
 
 Bounds when the application's startup milestones happened: the world entered, first-use compilation settled, readiness reached — in milliseconds since navigation, from the runtime's own startup timeline. **Use when** that is the thing the scenario must prove.

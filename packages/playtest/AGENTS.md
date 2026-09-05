@@ -298,6 +298,60 @@ assertion that selects nodes and bounds none of them, and a `minCount` above its
 throw at load. A run with no node observation fails once as `sceneNodes.observed`
 (`TN_PLAYTEST_SCENE_NODES_UNOBSERVED`). Advertised as the `scene.nodes` capability.
 
+## "Because", not "and then"
+
+A run could always say *a contact happened* and *the state reads `won`*. Nothing related the two.
+`assert.states[].atSteps` orders them at **step** boundaries, which cannot separate a win arriving
+with the contact from one arriving 199 ticks later inside the same step — and that is exactly the
+shape of a terminal state driven by a timer or a distance check that merely lands near a contact.
+
+Measured in the field: a sandbox physics puzzle reported `won` on frame one with the player
+untouched eight metres away, because its goal volume overlapped the floor slab. Its own HUD agreed
+the game was won. Every assertion in the harness was green, because each was individually true.
+
+Both sides are now tick-stamped by the producer, and `assert.causedBy` relates them:
+
+```json
+{ "assert": { "causedBy": [
+  { "cause": { "contact": { "entity": "warden", "with": "seal", "kind": "trigger" } },
+    "effect": { "path": "state.status", "becomes": "won" },
+    "neverBefore": true, "withinTicks": 4 }
+] } }
+```
+
+- `neverBefore` fails when the effect is ever observed before the first matching cause. That is the
+  frame-one fake win, at tick granularity.
+- `withinTicks` bounds `effectTick - causeTick`. A win long after the contact was not caused by it.
+- `cause` takes a `contact` **or** a `transition`, never both — two causes in one row would
+  silently make the earlier one the cause. So "the door opened because the plate was pressed" is
+  the same row shape.
+- A row setting neither `neverBefore` nor `withinTicks` throws at load: ordering alone is what
+  `atSteps` already does, and asserting only that both events happened is two assertions wearing
+  one name.
+
+Core's `playtest()` plugin drains both logs **per tick** rather than per sample and advertises
+`runtime.transitions`. The transition watcher diffs each registered entity's `state` and the
+top-level primitive fields of the published game state, recording `{ path, from, to, tick }` —
+`states.<entity>` or `state.<field>`. A path's first observed value is its starting point, not a
+transition; recording it as one would fail every `neverBefore` against the game's own initial
+state. The log is bounded by `PLAYTEST_TRANSITION_LOG_LIMIT`.
+
+Every failure mode is named and closed. A run with no transition log fails once as
+`causedBy.observed` (`TN_PLAYTEST_TRANSITIONS_UNOBSERVED`) — a loop that never ticked has observed
+nothing, not nothing-changed. A matching contact carrying **no tick** fails
+`TN_PLAYTEST_CAUSE_UNSTAMPED` rather than being read as a cause at tick zero, and the message says
+the producer drains only at sample time. A cause the run never observed is
+`TN_PLAYTEST_CAUSE_NOT_OBSERVED`; an effect that never transitioned is
+`TN_PLAYTEST_EFFECT_NOT_OBSERVED`; the frame-one case is `TN_PLAYTEST_EFFECT_PRECEDES_CAUSE` with
+both ticks; a late effect is `TN_PLAYTEST_CAUSE_TOO_DISTANT`. **The family never falls back to step
+granularity** — that is a different measurement, and answering a tick question with it would be the
+confident wrong number this package exists to refuse.
+
+One related fix in core, from the same build: an area's contact used to be dropped unless the game
+passed an explicit `entity` option, so a trigger that demonstrably fired reported no contact at all
+and a `contacts` assertion went green over a run whose own state proved the overlap. The far side
+now falls back to the scene-registry id the area is registered under.
+
 A run with no scene observation fails once as `scene.observed`
 (`TN_PLAYTEST_SCENE_UNOBSERVED`) rather than failing each bound against nothing, and an
 `assert.scene` that sets no bound throws at load. An unmeasurable comparison — no world extent,

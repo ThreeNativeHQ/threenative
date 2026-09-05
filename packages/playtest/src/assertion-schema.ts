@@ -527,6 +527,34 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "A node's presence, visibility, framing and texture state are properties of the scene as built; a crate that is already on screen is the assertion holding, not a trivial pass.",
   },
   {
+    cardinality: "array",
+    description:
+      "Relates a tick-stamped effect to the tick-stamped cause that must precede it — the 'because' a terminal state needs.",
+    example: {
+      causedBy: [
+        {
+          cause: { contact: { entity: "player", kind: "trigger", with: "seal" } },
+          effect: { becomes: "won", path: "state.status" },
+          neverBefore: true,
+          withinTicks: 4,
+        },
+      ],
+    },
+    fields: [
+      { description: "The event that must happen first: a contact, or another transition.", name: "cause", type: "object" },
+      { description: "The published value whose change is being explained: path and becomes.", name: "effect", type: "object" },
+      { description: "Fail when the effect is ever observed before the first matching cause.", name: "neverBefore", type: "boolean" },
+      { description: "Ceiling on effectTick minus causeTick.", name: "withinTicks", type: "number" },
+    ],
+    kind: "causedBy",
+    observationPath: "runtimeObservations",
+    requiredCapabilities: ["runtime.transitions"],
+    resultIdPrefix: "causedBy",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+    trivialityRationale: "It relates two tick-stamped observations the run produced; a pre-existing value cannot manufacture an ordering, and a value already at the asserted state never transitions to it.",
+  },
+  {
     description: "Bounds when the application's startup milestones happened: the world entered, first-use compilation settled, readiness reached — in milliseconds since navigation, from the runtime's own startup timeline.",
     example: { startup: { maxEnteredMs: 2500, maxReadyMs: 8000 } },
     fields: [
