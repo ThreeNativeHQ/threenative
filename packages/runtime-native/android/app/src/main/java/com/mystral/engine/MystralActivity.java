@@ -92,6 +92,17 @@ public class MystralActivity extends SDLActivity {
         if (mSurface != null) requestPreferredFrameRate(mSurface.getHolder(), applicationMetadata());
     }
 
+    @Override
+    public void onTrimMemory(int level) {
+        // SDL's implementation below forwards a level-less SDL_EVENT_LOW_MEMORY. Capture the
+        // ComponentCallbacks2 level first so the existing lifecycle watch can answer moderate and
+        // critical pressure differently, then preserve SDL's event delivery with super.
+        nativeOnTrimMemory(level);
+        super.onTrimMemory(level);
+    }
+
+    private static native void nativeOnTrimMemory(int level);
+
     private void installPreferredFrameRate(Bundle metadata) {
         if (mSurface == null) {
             Log.w(LOG_TAG, "TN_DISPLAY_FRAME_RATE_REQUEST:{\"applied\":false,\"reason\":\"surface-missing\"}");

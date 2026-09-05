@@ -13,8 +13,9 @@
  * the time `SDL_PollEvent` would return the event, the thread is already parked.
  * `SDL_AddEventWatch` is synchronous at send time, which is why it is the only correct hook.
  *
- * The watch therefore runs on SDL's sending thread. It does the smallest safe thing — flips an
- * atomic and queues a marker — and the main loop does the rest.
+ * The watch therefore runs on SDL's sending thread. It flips lifecycle atomics, trims host-owned
+ * allocator memory when pressure warrants it, and queues markers/levels; the main loop does all
+ * JavaScript and surface work on its owning thread.
  */
 
 #include <cstdint>
@@ -51,6 +52,8 @@ enum class LifecycleAction {
     Resume,
     /** Terminal and fail-closed: the window or the app is going away. */
     Terminate,
+    /** Answer a low-memory notification with host-owned trimming and a queued game callback. */
+    MemoryTrim,
     /** Recorded in the marker stream, no behaviour change (occlusion, focus). */
     RecordOnly,
 };
@@ -123,6 +126,17 @@ bool surfaceRevalidationPending();
 bool takeSurfaceRevalidationRequest();
 
 /**
+ * Records the Android `ComponentCallbacks2` level before SDL forwards its level-less
+ * `SDL_EVENT_LOW_MEMORY` event to the lifecycle watch. The native activity calls this on Android's
+ * UI thread; the watch consumes it synchronously and the runtime delivers the optional game hook
+ * on the JavaScript thread.
+ */
+void noteMemoryTrimLevel(int level);
+
+/** Takes the next memory-pressure notification for delivery to the JavaScript thread. */
+bool takeMemoryTrimRequest(int& level);
+
+/**
  * Drops a pending request without acting on it. Startup calls this after it has created and
  * configured the surface itself: the `WINDOW_SHOWN` that arrives while the host is still waiting
  * for its first valid window is not a resume, and rebuilding a surface that was built moments ago
@@ -140,6 +154,9 @@ void clearSurfaceRevalidationRequest();
  * `debug.threenative.prefix_handlers` does for the crash handlers.
  */
 bool surfaceRevalidationDisabled();
+
+/** True only when the deterministic resume-failure harness asks every probe to fail. */
+bool surfaceRevalidationForcedFailure();
 
 /**
  * True when the host should configure its surface with an uncapped present mode.

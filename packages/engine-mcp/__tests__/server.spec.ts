@@ -17,9 +17,9 @@ describe("threenative-engine-mcp stdio contract", () => {
       result: {
         capabilities: { tools: { listChanged: false } },
         instructions:
-          'Before authoring, infer concrete gameplay mechanics. Preserve the request\'s distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state.',
+          'Before authoring, infer concrete gameplay mechanics. Preserve the request\'s distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state. A response with verdict "none" is an actionable answer: follow its guidance and write game-owned behavior in src/ instead of rephrasing the same request.',
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.0" },
+        serverInfo: { name: "threenative-engine-mcp", version: "0.3.0" },
       },
     });
   });
@@ -50,9 +50,11 @@ describe("threenative-engine-mcp stdio contract", () => {
       ) ?? "",
     );
     expect(response.error).toBeUndefined();
-    expect(JSON.parse(response.result.content[0].text)).toEqual(
-      expect.arrayContaining([expect.objectContaining({ symbol: "attachToBone" })]),
-    );
+    expect(JSON.parse(response.result.content[0].text)).toMatchObject({
+      guidance: "",
+      results: expect.arrayContaining([expect.objectContaining({ symbol: "attachToBone" })]),
+      verdict: "matched",
+    });
   });
 
   it("answers tools/call for a detail lookup", () => {

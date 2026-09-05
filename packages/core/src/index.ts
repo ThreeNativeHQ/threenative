@@ -60,6 +60,8 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * Create the portable asset loader a scene also receives as `ctx.assets`.
  * @situation preload models, textures, or audio before a scene enters
  * @situation load assets from a nonstandard base path or a compiled asset manifest
+ * @alias different props in each area
+ * @alias first playable screen external assets
  * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
  * @example const assets = createAssetLoader({ basePath: "/assets" });
  * const rock = await assets.texture("rock.png");
@@ -110,6 +112,11 @@ export type { IRandom } from "./random.js";
  * @situation start a ThreeNative game from src/game.ts
  * @situation register physics and gameplay plugins
  * @situation let the player zoom the camera with a wheel, pinch, or gamepad axis
+ * @situation frame a camera behind the player
+ * @alias firing line nearest target crosshair
+ * @alias third-person camera
+ * @alias restart the run without a page reload
+ * @alias field of view while aiming
  * @constraint keep DOM and React mounting in src/main.ts
  * @constraint bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener
  * @constraint scroll: true uses the DOM wheel sign on browser and native: negative deltaY toward the user is positive intent
@@ -180,6 +187,8 @@ export type {
  * @situation draw thousands of identical instanced blocks or obstacles in one mesh
  * @situation place repeated props when the count is not known until the layout has been walked
  * @situation build a chain, railing, cable, or tie rod out of point-to-point segments
+ * @alias landmarks points of interest
+ * @alias obstacles collectibles increasing pace
  * @constraint geometry and material are required and come from the game; the batch chooses neither
  * @constraint span stretches along +Y, so its geometry must be unit-height and centred on the origin
  * @constraint placing after build() throws, and build() returns undefined when nothing was placed
@@ -333,6 +342,7 @@ export type {
  * Bake static diffuse irradiance that reaches surfaces from outside the camera view.
  * @situation light bouncing from a room I cannot see
  * @situation light a wall with an off-screen emitter
+ * @alias readable world lighting
  * @constraint request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting
  * @constraint add the volume with ctx.add() so its incremental work is measured in the render phase
  * @constraint call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour
@@ -343,8 +353,14 @@ export {
   ATLAS_PADDING,
   PROBE_VOLUME_MARKER,
   ProbeVolume,
-  readProbeVolumeObservation,
 } from "./render/probe-volume.js";
+/**
+ * Read the most recent observation from a probe volume.
+ * @situation inspect the latest probe bake observation
+ * @constraint the returned observation is a measurement; it does not own lighting or materials
+ * @example const observation = readProbeVolumeObservation(probes);
+ */
+export { readProbeVolumeObservation } from "./render/probe-volume.js";
 export type {
   IProbeVolumeBakeProgress,
   IProbeVolumeCoefficient,
@@ -655,6 +671,7 @@ export type { IRaycastOptions, IScenePickerOptions } from "./picking.js";
  * Record or replay deterministic game input and state.
  * @situation reproduce a gameplay bug from recorded input
  * @situation run a deterministic replay in a playtest
+ * @alias fixed seed fixed-step simulation
  * @constraint use a seeded random source and fixed-step simulation for meaningful replays
  * @example const driver = createReplayDriver(recording, ctx.renderer.domElement);
  */
@@ -677,6 +694,8 @@ export type {
  * @situation delay an enemy patrol transition
  * @situation run a callback every simulation tick
  * @situation tween a numeric property with a game-owned curve
+ * @alias tower defense game
+ * @alias spawn waves
  * @constraint dispose returned handles when the owning scene exits
  * @constraint ease receives progress in the range 0 to 1 and its return value is the interpolation factor
  * @example const door = { y: 0 };

@@ -4,6 +4,7 @@ import "./web.js";
  * Detect overlaps without turning the body into a moving collider.
  * @situation detect when an enemy enters a trigger area
  * @situation react to a player entering a zone
+ * @alias pick up item
  * @constraint add the area to the physics context before stepping the world
  * @example const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });
  */
@@ -12,6 +13,11 @@ export { Area3D } from "./Area3D.js";
  * Move a character body with collision-aware sliding.
  * @situation move an enemy or player through a level
  * @situation keep a character from walking through walls
+ * @alias raised platform gap hazard restart
+ * @alias enemy targets cooldown reload win condition
+ * @alias platformer double jump
+ * @alias first person
+ * @alias run jump coins goal
  * @constraint use moveAndSlide inside the physics update
  * @example const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });
  */
@@ -20,6 +26,8 @@ export { CharacterBody3D } from "./CharacterBody3D.js";
  * Give a physics body a Three.js collision shape.
  * @situation add a capsule or box collider to a character
  * @situation configure the shape used by a rigid body
+ * @alias passes through body
+ * @alias arena walls pickups
  * @constraint create shapes through the owning physics context
  * @example const shape = CollisionShape3D.capsule(0.5, 0.35);
  */
@@ -61,6 +69,7 @@ export type {
  * Query the physics world without creating a body.
  * @situation raycast for visibility or aiming
  * @situation find bodies inside a shape or point query
+ * @alias hitscan camera
  * @constraint query results are bounded by the configured result limit
  * @example const space = new PhysicsDirectSpaceState3D(context);
  */

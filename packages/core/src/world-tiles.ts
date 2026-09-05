@@ -1254,6 +1254,7 @@ function setManualLodLevel(lod: LOD, level: number): void {
  * @situation stream terrain without cracks
  * @situation keep generated terrain resident around a moving player
  * @situation put a generated terrain tile into a game-owned physics world
+ * @alias stream terrain across chunks
  * @constraint sampleHeight and surface are required game choices; no landform or surface preset is installed
  * @constraint residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws
  * @override tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, and budgets
