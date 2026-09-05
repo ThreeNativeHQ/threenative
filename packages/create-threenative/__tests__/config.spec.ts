@@ -6,6 +6,41 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
 
 const roots: string[] = [];
+
+it("should carry both budget gates through the real config loader into the compiler", async () => {
+  const root = await project();
+  await mkdir(path.join(root, "assets"));
+  await writeFile(path.join(root, "assets/large.txt"), "more than one byte");
+  await config(root, 'export default { assets: { budget: { uncooked: "none", total: 1 } } };');
+  const loaded = await loadConfig(root);
+  await expect(compileAssets({ cwd: root, config: loaded.assets })).rejects.toThrow(
+    "TN_ASSETS_BUDGET_EXCEEDED",
+  );
+});
+
+it.each([0, -1, 1.5, null, { uncooked: "bad" }, { typo: 1 }, { total: -1 }])(
+  "rejects malformed asset budget %j at config load",
+  async (budget) => {
+    const root = await project();
+    await config(root, `export default ${JSON.stringify({ assets: { budget } })};`);
+    await expect(loadConfig(root)).rejects.toThrow("TN_CONFIG_ASSETS_INVALID");
+  },
+);
+
+it("should carry asset exclusions from the real config loader into the compiler", async () => {
+  const root = await project();
+  await mkdir(path.join(root, "assets"));
+  await writeFile(path.join(root, "assets/keep.txt"), "keep");
+  await writeFile(path.join(root, "assets/library.glb"), "excluded before parsing");
+  await config(root, 'export default { assets: { exclude: ["*.glb"] } };');
+  const loaded = await loadConfig(root);
+  await compileAssets({ cwd: root, config: loaded.assets });
+  const manifest = JSON.parse(
+    await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+  );
+  expect(manifest.entries["keep.txt"]).toBeDefined();
+  expect(manifest.entries["library.glb"]).toBeUndefined();
+});
 const VALID_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAXUlEQVR4AaXBQRHEAAgEwclWHGDivIBckIWG3Hf/dD/frz9MdOK2BhedOHEkjsTRG524rcFFJ25rcOJIHImjd2tw0YnbGlx04sSROBJHb3TitgYXnbitwYkjcSSO/o/fGRJxtqYFAAAAAElFTkSuQmCC",
   "base64",

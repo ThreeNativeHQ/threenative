@@ -392,6 +392,49 @@ describe("RenderChain", () => {
     expect(() => chain.observeFrame()).toThrow(/must advance/u);
   });
 
+  it.each(["auto", "high"] as const)(
+    "keeps %s stages alive during compilation and resumes only on consecutive clean windows",
+    (tier) => {
+      const dispose = vi.fn();
+      const chain = new RenderChain(renderer("webgpu"), {
+        report: () => {},
+        stages: [{ ...stage("ssgi", []), dispose }],
+        request: { stages: ["ssgi"], tier },
+        targetFps: 60,
+      });
+      const clean = { phases: { render: { p95: 30 } } };
+      const compiling = { ...clean, surface: { compiling: true } };
+      chain.observeFrameBudget(compiling);
+      chain.observeFrameBudget(compiling);
+      expect(chain.applied.tier).toBe("high");
+      expect(chain.applied.stages).toEqual(["ssgi"]);
+      expect(dispose).not.toHaveBeenCalled();
+
+      chain.observeFrameBudget(clean);
+      chain.observeFrameBudget(compiling);
+      chain.observeFrameBudget(clean);
+      expect(chain.applied.tier).toBe("high");
+      expect(dispose).not.toHaveBeenCalled();
+      chain.observeFrameBudget(clean);
+      expect(chain.applied.tier).toBe(tier === "auto" ? "medium" : "high");
+      expect(dispose).toHaveBeenCalledTimes(tier === "auto" ? 1 : 0);
+    },
+  );
+
+  it("rejects malformed compilation observations for an automatic tier", () => {
+    const chain = new RenderChain(renderer("webgpu"), {
+      report: () => {},
+      stages: [stage("ssgi", [])],
+      request: { stages: ["ssgi"], tier: "auto" },
+    });
+    expect(() =>
+      chain.observeFrameBudget({
+        phases: { render: { p95: 30 } },
+        surface: { compiling: "true" as unknown as boolean },
+      }),
+    ).toThrow("compiling must be a boolean");
+  });
+
   it("steps down an automatic tier after an over-budget window but never moves a pinned tier", () => {
     const automatic = new RenderChain(renderer("webgpu"), {
       stages: [stage("ssgi", [])],

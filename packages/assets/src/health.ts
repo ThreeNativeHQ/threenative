@@ -49,6 +49,8 @@ export interface IAssetHealthReport {
 export interface IAssetHealthInput {
   readonly data: Buffer;
   readonly logicalPath: string;
+  /** Compiler-owned model output, when an imported source's GLB references shared images. */
+  readonly modelPath?: string;
 }
 
 interface IParsedModel {
@@ -117,13 +119,18 @@ export function textureStats(bytes: Buffer, mimeType?: string): ITextureStats {
   };
 }
 
-async function parseModel(data: Buffer, logicalPath: string): Promise<Document> {
+async function parseModel(
+  data: Buffer,
+  logicalPath: string,
+  modelPath?: string,
+): Promise<Document> {
   // The same codec-aware reader as the model pass. The health report only measures and must
   // never decide whether a build runs: a bare reader refused ordinary EXT_texture_webp exports
   // for an unregistered required extension, then Meshopt-compressed sources for a missing
   // decoder, and both killed `models: "none"` builds from a report that is meant to be advisory.
   try {
-    return await readGltfDocument(await createGltfReader(data), data);
+    const io = await createGltfReader(data);
+    return modelPath === undefined ? await readGltfDocument(io, data) : await io.read(modelPath);
   } catch (error) {
     throw new Error(
       `TN_ASSETS_MODEL_UNREADABLE: could not parse '${logicalPath}' for the health report: ${messageOf(error)}. External buffer or image URIs are not measured; use a self-contained .glb.`,
@@ -142,8 +149,12 @@ function primitiveTriangles(
   return 0;
 }
 
-async function parseModelStats(data: Buffer, logicalPath: string): Promise<IParsedModel> {
-  const root = (await parseModel(data, logicalPath)).getRoot();
+async function parseModelStats(
+  data: Buffer,
+  logicalPath: string,
+  modelPath?: string,
+): Promise<IParsedModel> {
+  const root = (await parseModel(data, logicalPath, modelPath)).getRoot();
   let triangles = 0;
   for (const mesh of root.listMeshes()) {
     for (const prim of mesh.listPrimitives()) {
@@ -262,7 +273,11 @@ async function measureAsset(
 ): Promise<IAssetHealthEntry> {
   const kind = classify(input.logicalPath);
   if (kind === "model") {
-    const { license, model } = await parseModelStats(input.data, input.logicalPath);
+    const { license, model } = await parseModelStats(
+      input.data,
+      input.logicalPath,
+      input.modelPath,
+    );
     budgeted(
       draft,
       "triangles",

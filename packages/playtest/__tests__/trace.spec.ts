@@ -5,6 +5,7 @@ import {
   createTraceAccumulator,
   formatTraceSummary,
   parseTraceArgs,
+  summariseRafTimestamps,
   traceExitCode,
   TRACE_CATEGORIES,
   type ITraceEvent,
@@ -25,9 +26,11 @@ function runContext(overrides: Partial<ITraceRunContext> = {}): ITraceRunContext
   return {
     allowSoftware: false,
     allowVirtualDisplay: false,
+    adapter: { architecture: "turing", vendor: "nvidia" },
     drivenInput: ["KeyW"],
     displayStrategy: "existing",
     output: "/tmp/trace.json",
+    presentationControl: { count: 180, fps: 60, maxMs: 16.7, p50: 16.7, p95: 16.7 },
     readiness: "observed",
     seconds: 20,
     url: "http://127.0.0.1:5173",
@@ -35,6 +38,44 @@ function runContext(overrides: Partial<ITraceRunContext> = {}): ITraceRunContext
     ...overrides,
   };
 }
+
+describe("presentation control", () => {
+  it("summarises the empty page's rAF intervals independently of the game", () => {
+    expect(summariseRafTimestamps([0, 16, 33, 50])).toEqual({
+      count: 3,
+      fps: 60,
+      maxMs: 17,
+      p50: 17,
+      p95: 17,
+    });
+  });
+
+  it.each([
+    { name: "missing intervals", timestamps: [0] },
+    { name: "a non-finite timestamp", timestamps: [0, Number.NaN] },
+    { name: "a duplicate timestamp", timestamps: [0, 16, 16] },
+    { name: "a backwards timestamp", timestamps: [0, 16, 15] },
+  ])("fails closed on $name", ({ timestamps }) => {
+    expect(() => summariseRafTimestamps(timestamps)).toThrow("TN_TRACE_PRESENTATION_CONTROL_MALFORMED");
+  });
+
+  it("reports the control and adapter without calling either a physical refresh measurement", () => {
+    const accumulator = createTraceAccumulator({ stallThresholdMs: 40, topFunctions: 5 });
+    for (const event of frameEvents(11, 10)) accumulator.add(event);
+    accumulator.add(profileChunk(7, [{ deltaUs: 4_000, name: "build" }]));
+    const summary = accumulator.summarise(runContext({
+      adapter: { architecture: "turing", vendor: "nvidia" },
+      presentationControl: { count: 180, fps: 59.9, maxMs: 18.2, p50: 16.7, p95: 16.9 },
+    }));
+
+    expect(summary.adapter).toEqual({ architecture: "turing", vendor: "nvidia" });
+    expect(summary.presentationControl?.count).toBe(180);
+    const text = formatTraceSummary(summary);
+    expect(text).toContain("presentation control rAF");
+    expect(text).toContain("architecture=turing");
+    expect(text).not.toContain("physical refresh");
+  });
+});
 
 /** rAF events every `intervalMs`, with long frames injected at the named indices. */
 function frameEvents(count: number, intervalMs: number, stall?: { at: readonly number[]; ms: number }): ITraceEvent[] {
@@ -196,6 +237,17 @@ describe("summarising a trace", () => {
     const summary = accumulator.summarise(runContext());
     expect(summary.functions.top.map(({ name }) => name)).toEqual(["build"]);
   });
+
+  it("correlates profiler-thread chunks to the frame thread through the Profile id", () => {
+    const accumulator = createTraceAccumulator({ stallThresholdMs: 40, topFunctions: 3 });
+    for (const event of frameEvents(11, 10)) accumulator.add(event);
+    accumulator.add({ id: "0x1", name: "Profile", ph: "P", pid: 1, tid: 7, ts: 1_000_000 });
+    accumulator.add({ ...profileChunk(99, [{ deltaUs: 4_000, name: "buildWater" }]), id: "0x1", pid: 1 });
+
+    const summary = accumulator.summarise(runContext());
+    expect(summary.functions.top.map(({ name }) => name)).toEqual(["buildWater"]);
+    expect(summary.functions.totalMs).toBe(4);
+  });
 });
 
 describe("the virtual-display trap", () => {
@@ -256,6 +308,41 @@ describe("exit codes", () => {
     expect(traceExitCode({ ...summary, blockers: [] })).toBe(0);
   });
 
+  it("reports unavailable adapter identity without rejecting a CPU-only trace", () => {
+    const accumulator = createTraceAccumulator({ stallThresholdMs: 40, topFunctions: 5 });
+    for (const event of frameEvents(101, 10)) accumulator.add(event);
+    accumulator.add(profileChunk(7, [{ deltaUs: 4_000, name: "build" }]));
+    const summary = accumulator.summarise(runContext({ adapter: undefined }));
+    expect(summary.blockers.map(({ code }) => code)).not.toContain("TN_TRACE_ADAPTER_UNOBSERVABLE");
+    expect(formatTraceSummary(summary)).toContain("adapter.info: unavailable");
+    expect(traceExitCode(summary)).toBe(0);
+  });
+
+  it("fails when the mandatory presentation control was not observed", () => {
+    const accumulator = createTraceAccumulator({ stallThresholdMs: 40, topFunctions: 5 });
+    for (const event of frameEvents(101, 10)) accumulator.add(event);
+    accumulator.add(profileChunk(7, [{ deltaUs: 4_000, name: "build" }]));
+    const summary = accumulator.summarise(runContext({ presentationControl: undefined }));
+    expect(summary.blockers.map(({ code }) => code)).toContain("TN_TRACE_PRESENTATION_CONTROL_UNOBSERVABLE");
+    expect(traceExitCode(summary)).toBe(1);
+  });
+
+  it("exits 1 and prints the authored stack when an invalid depth pipeline was attempted", () => {
+    const accumulator = createTraceAccumulator({ stallThresholdMs: 40, topFunctions: 5 });
+    for (const event of frameEvents(101, 10)) accumulator.add(event);
+    accumulator.add(profileChunk(7, [{ deltaUs: 4_000, name: "build" }]));
+    const summary = accumulator.summarise(runContext({
+      pipelineDiagnostics: [{
+        depthStencil: { depthWriteEnabled: true },
+        label: "water-depth",
+        stack: "Error: invalid depth\n    at buildWater (water.ts:42:3)",
+      }],
+    }));
+    expect(summary.blockers.map(({ code }) => code)).toContain("TN_TRACE_INVALID_GPU_PIPELINE");
+    expect(formatTraceSummary(summary)).toContain("buildWater (water.ts:42:3)");
+    expect(traceExitCode(summary)).toBe(1);
+  });
+
   it("exits 0 on a complete trace and says where the file is", () => {
     const accumulator = createTraceAccumulator({ stallThresholdMs: 40, topFunctions: 5 });
     for (const event of frameEvents(101, 10)) accumulator.add(event);
@@ -268,6 +355,15 @@ describe("exit codes", () => {
 });
 
 describe("warnings that keep a number honest", () => {
+  it("warns when the empty-page callback lane is a clean slow divisor", () => {
+    const accumulator = createTraceAccumulator({ stallThresholdMs: 40, topFunctions: 5 });
+    for (const event of frameEvents(101, 10)) accumulator.add(event);
+    accumulator.add(profileChunk(7, [{ deltaUs: 4_000, name: "build" }]));
+    const summary = accumulator.summarise(runContext({
+      presentationControl: { count: 180, fps: 30, maxMs: 33.4, p50: 33.3, p95: 33.4 },
+    }));
+    expect(summary.warnings.some((warning) => warning.includes("clean slow divisor"))).toBe(true);
+  });
   it("says when the camera stood still, because a standing camera reuses last frame's work", () => {
     const accumulator = createTraceAccumulator({ stallThresholdMs: 40, topFunctions: 5 });
     for (const event of frameEvents(101, 10)) accumulator.add(event);

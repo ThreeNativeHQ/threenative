@@ -25,9 +25,49 @@ describe("formatTextureSizes", () => {
   it("should print nothing when no texture was compressed", () => {
     expect(formatTextureSizes([])).toEqual([]);
   });
+
+  it("should name the reason on a row whose bytes were retained rather than compressed", () => {
+    const rows: readonly ITextureSizeRow[] = [
+      { after: 51_234, before: 184_320, format: "etc1s", logicalPath: "rock.png" },
+      {
+        after: 512,
+        before: 512,
+        compressionSkipped: "block-size",
+        format: undefined,
+        logicalPath: "ui/decal.png",
+      },
+    ];
+
+    expect(formatTextureSizes(rows)).toEqual([
+      "texture rock.png (etc1s): 184320 -> 51234 bytes (-72.2%)",
+      "texture ui/decal.png: 512 -> 512 bytes (-0.0%); compression skipped: block-size",
+      "textures total: 184832 -> 51746 bytes (-72.0%)",
+    ]);
+  });
 });
 
 describe("formatModelSizes", () => {
+  it("names each retained embedded image and its compression fallback", () => {
+    const lines = formatModelSizes([
+      {
+        after: 100,
+        before: 100,
+        logicalPath: "prop.glb",
+        embeddedTextures: {
+          bytesAfter: 50,
+          bytesBefore: 50,
+          count: 2,
+          gpuBytesAfter: 100,
+          gpuBytesBefore: 100,
+          resized: 0,
+          skippedCompression: { decal: "block-size", tiny: "not-smaller" },
+        },
+      },
+    ]);
+    expect(lines).toContain("embedded texture prop.glb#decal: compression skipped: block-size");
+    expect(lines).toContain("embedded texture prop.glb#tiny: compression skipped: not-smaller");
+  });
+
   it("should report fewer bytes and the geometry count after the model pass", () => {
     const rows: readonly IModelSizeRow[] = [
       {

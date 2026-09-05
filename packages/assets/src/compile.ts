@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import {
   copyFile,
@@ -13,6 +13,8 @@ import {
 } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { assertBudget, measureBudget, parseBudget } from "./budget.js";
+import type { IAssetBudget } from "./budget.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
 import { applyPasses } from "./pass-chain.js";
@@ -25,6 +27,7 @@ import {
   blenderImportPass,
   needsBlenderImport,
 } from "./passes/blender-import.js";
+import { globMatch } from "./passes/glob.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
 import { modelPass } from "./passes/model.js";
@@ -37,11 +40,12 @@ import type {
   IModelTexturesOptions,
   IModelVirtualOptions,
 } from "./passes/model.js";
-import { createSharedImageStore } from "./passes/shared-images.js";
+import { createSharedImageStore, unpackGlb } from "./passes/shared-images.js";
 import { texturePass } from "./passes/texture.js";
-import type { ITextureOverride, ITexturePassOptions } from "./passes/texture.js";
+import type { ITextureOverride, ITexturePassOptions, TextureSkipReason } from "./passes/texture.js";
 import {
   formatAudioSizes,
+  formatBudget,
   formatModelSizes,
   formatPassCosts,
   formatSkippedCompression,
@@ -118,6 +122,9 @@ export interface IAssetPass {
 }
 
 export interface IAssetSourceConfig {
+  readonly budget?: Partial<IAssetBudget> | number | "none";
+  /** Source-relative globs omitted from the build; excluded bytes are always reported. */
+  readonly exclude?: readonly string[];
   /**
    * Audio conditioning: an object of options, or the string `"none"` to ship every clip exactly
    * as committed. Absent means conditioning runs with defaults. See `passes/audio-config.ts` for
@@ -154,7 +161,8 @@ export interface IModelsConfig {
    * Write each distinct embedded image once under `shared/images/` and reference it from every
    * model that carries it, instead of embedding a copy in each. A marketplace pack's eight pines
    * stop shipping eight copies of the same bark map, and a rebuild reuses last build's encodes.
-   * Default false: the served GLB then references files beside it, which a host must serve.
+   * Default true: the served GLB references files beside it, which a host must serve. False
+   * keeps each model self-contained and reports the duplicated embedded-image byte cost.
    */
   readonly sharedImages?: boolean;
   /** LOD simplification. Absent means none: it is the one lossy stage, and it is opt-in. */
@@ -271,6 +279,7 @@ export interface IBakeReceipt {
 }
 
 interface IAssetManifestEntry {
+  readonly compressionSkipped?: TextureSkipReason;
   /** What the audio pass measured and did to one clip. */
   readonly audio?: IAudioRow;
   readonly bytes: number;
@@ -304,6 +313,8 @@ interface IAssetManifest {
 }
 
 interface ICompileLayout {
+  readonly budget: IAssetBudget;
+  readonly exclude: readonly string[];
   /** True when the built-in pass registry is in play — a caller that supplied its own opted out of nothing. */
   readonly builtinRegistry: boolean;
   /** False on a platform with no WebAssembly, where compressed output cannot be decoded at all. */
@@ -338,6 +349,8 @@ const MANIFEST_NAME = "assets.manifest.json";
  * this file**; deleting it is part of the test.
  */
 const RECEIPT_NAME = "bake.receipt.json";
+/** Files emitted after the last successful receipt, retained so a failed cook can be recovered. */
+const PENDING_RECEIPT_NAME = ".bake.pending-receipt.json";
 const DEFAULT_SOURCE = "assets";
 const DEFAULT_OUTPUT = "public";
 const BASIS_DIRECTORY = "basis";
@@ -426,6 +439,15 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
     bytesBefore: value.bytesBefore as number,
     count: value.count as number,
     ...(formats === undefined ? {} : { formats: formats as Record<string, string> }),
+    ...(isRecord(value.skippedCompression)
+      ? {
+          skippedCompression: Object.fromEntries(
+            Object.entries(value.skippedCompression).filter(
+              ([, reason]) => reason === "block-size" || reason === "not-smaller",
+            ),
+          ) as Record<string, TextureSkipReason>,
+        }
+      : {}),
     gpuBytesAfter: value.gpuBytesAfter as number,
     gpuBytesBefore: value.gpuBytesBefore as number,
     resized: value.resized as number,
@@ -620,11 +642,11 @@ function positiveTextureSize(value: unknown, label: string): number {
 
 /** `"none"` disables the built-in model pass; an object configures it; absent means defaults. */
 type ParsedModelsConfig = Omit<IModelPassOptions, "sharedImages"> & {
-  readonly sharedImages?: boolean;
+  readonly sharedImages: boolean;
 };
 
 function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
-  if (raw === undefined) return {};
+  if (raw === undefined) return { sharedImages: true };
   if (raw === "none") return undefined;
   if (!isRecord(raw)) {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models must be "none" or an object.');
@@ -655,7 +677,7 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
     throw new Error("TN_ASSETS_CONFIG_INVALID: assets.models.sharedImages must be a boolean.");
   }
   return {
-    ...(raw.sharedImages === true ? { sharedImages: true } : {}),
+    sharedImages: raw.sharedImages !== false,
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(Object.keys(passes).length === 0 ? {} : { passes }),
     ...(Object.keys(quantize).length === 0 ? {} : { quantize }),
@@ -879,6 +901,8 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   for (const key of Object.keys(config)) {
     if (
       key !== "audio" &&
+      key !== "budget" &&
+      key !== "exclude" &&
       key !== "concurrency" &&
       key !== "source" &&
       key !== "output" &&
@@ -890,6 +914,15 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     }
   }
   const source = options.source ?? config.source ?? DEFAULT_SOURCE;
+  const exclude = config.exclude ?? [];
+  if (
+    !Array.isArray(exclude) ||
+    exclude.some((glob) => typeof glob !== "string" || glob.trim() === "")
+  ) {
+    throw new Error(
+      "TN_ASSETS_CONFIG_INVALID: assets.exclude must be an array of non-empty glob strings.",
+    );
+  }
   const output = options.output ?? config.output ?? DEFAULT_OUTPUT;
   const sourceRoot = path.resolve(cwd, nonEmptyString(source, "assets.source"));
   const outputRoot = path.resolve(cwd, nonEmptyString(output, "assets.output"));
@@ -942,8 +975,11 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
           preserveLightmapUv: lightmap !== undefined,
           // Bound to the output root so a second build finds last build's encodes on
           // disk instead of paying for them again.
-          sharedImages:
-            models.sharedImages === true ? createSharedImageStore(outputRoot) : undefined,
+          // The driver publishes every returned auxiliary output after journalling ownership.
+          // The store still remembers within this pass chain and reads last build's public cache.
+          sharedImages: models.sharedImages
+            ? createSharedImageStore(outputRoot, { writeThrough: false })
+            : undefined,
         }),
       );
       passSpecs.push({
@@ -951,13 +987,14 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
         options: {
           ...models,
           preserveLightmapUv: lightmap !== undefined,
-          sharedImages: models.sharedImages === true,
+          sharedImages: models.sharedImages,
         },
       });
     }
   }
   return {
     builtinRegistry: options.passes === undefined,
+    exclude,
     concurrency: config.concurrency as number | undefined,
     // A platform that cannot decode compression did not opt out of it, so it is not reported as
     // an override the author should reconsider — the engine made that call, for this bake only.
@@ -968,6 +1005,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     passes: [...builtinPasses, ...(options.passes ?? [])],
     sourceRoot,
     targets: config.targets === undefined ? {} : validateTargets(config.targets),
+    budget: parseBudget(config.budget),
     texturesActive: textures !== undefined && options.passes === undefined,
   };
 }
@@ -1091,6 +1129,11 @@ function resolveAuxiliaryOutputs(
     const output =
       auxiliary.outputPath ??
       outputNameFor(`${stem}.${auxiliary.role}${auxiliary.extension}`, digest, auxiliary.extension);
+    if (path.win32.isAbsolute(output) || output.split(/[\\/]/u).includes("..")) {
+      throw new Error(
+        `TN_ASSETS_OUTPUT_INVALID: auxiliary output '${output}' must stay relative to assets.output.`,
+      );
+    }
     return {
       buffer: auxiliary.buffer,
       manifestField: auxiliary.manifestField,
@@ -1140,6 +1183,22 @@ function declaredAuxiliaryOutputs(
   return outputs;
 }
 
+/** Compression declarations a decoder-free target must retain when it passes a GLB through. */
+function sourceModelExtensions(logicalPath: string, input: Buffer): readonly string[] | undefined {
+  if (classify(logicalPath) !== "model" || path.extname(logicalPath).toLowerCase() !== ".glb")
+    return undefined;
+  try {
+    const extensions = unpackGlb(input).json.extensionsUsed;
+    return Array.isArray(extensions)
+      ? extensions.filter((extension): extension is string => typeof extension === "string")
+      : undefined;
+  } catch {
+    // The health reader owns the actionable malformed-model error. This helper only preserves
+    // declarations from a readable pass-through GLB for the native compatibility backstop.
+    return undefined;
+  }
+}
+
 /**
  * The previous entry, when it is exactly what this build would produce and every file it
  * declares still exists — or `undefined`, in which case the passes run.
@@ -1176,6 +1235,54 @@ async function readPreviousReceiptPaths(receiptPath: string): Promise<ReadonlySe
   } catch {
     return new Set();
   }
+}
+
+/** Resolve and validate every stale receipt target before any output is deleted or published. */
+async function resolveStaleReceiptOutputs(
+  outputRoot: string,
+  previous: ReadonlySet<string>,
+  current: ReadonlySet<string>,
+): Promise<readonly string[]> {
+  if (previous.size === 0) return [];
+  const root = path.resolve(outputRoot);
+  const realRoot = await realpath(root);
+  const stale: string[] = [];
+  for (const relative of previous) {
+    if (current.has(relative)) continue;
+    const target = path.resolve(root, relative);
+    if (!target.startsWith(`${root}${path.sep}`)) {
+      throw new Error(`TN_ASSETS_RECEIPT_INVALID: output '${relative}' is outside assets.output.`);
+    }
+    if (!(await outputExists(target))) continue;
+    const actual = await realpath(target);
+    if (!actual.startsWith(`${realRoot}${path.sep}`)) {
+      throw new Error(`TN_ASSETS_RECEIPT_INVALID: output '${relative}' escapes assets.output.`);
+    }
+    stale.push(target);
+  }
+  return stale;
+}
+
+/** Remove only files an earlier receipt/journal owned and the completed recook no longer owns. */
+async function removeStaleReceiptOutputs(
+  outputRoot: string,
+  previous: ReadonlySet<string>,
+  current: ReadonlySet<string>,
+): Promise<void> {
+  for (const target of await resolveStaleReceiptOutputs(outputRoot, previous, current))
+    await rm(target, { force: true });
+}
+
+async function writePendingOwnership(
+  outputRoot: string,
+  paths: ReadonlySet<string>,
+): Promise<void> {
+  await mkdir(outputRoot, { recursive: true });
+  await writeFile(
+    path.join(outputRoot, PENDING_RECEIPT_NAME),
+    `${JSON.stringify({ outputs: [...paths].sort().map((outputPath) => ({ path: outputPath })) }, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 async function readExistingManifest(
@@ -1329,7 +1436,13 @@ async function writeManifest(
   const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
   if (serialized === raw) return;
   await mkdir(outputRoot, { recursive: true });
-  await writeFile(manifestPath, serialized, "utf8");
+  const temporary = `${manifestPath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, serialized, "utf8");
+    await rename(temporary, manifestPath);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
 }
 
 /** Every file under `root`, as paths relative to it with `/` separators on every platform. */
@@ -1365,7 +1478,12 @@ async function assertNoUndeclaredOutputs(
 ): Promise<void> {
   const undeclared: string[] = [];
   for (const relative of await walkOutputFiles(outputRoot)) {
-    if (relative === MANIFEST_NAME || relative === RECEIPT_NAME) continue;
+    if (
+      relative === MANIFEST_NAME ||
+      relative === RECEIPT_NAME ||
+      relative === PENDING_RECEIPT_NAME
+    )
+      continue;
     if (declared.has(relative)) continue;
     // A file the previous receipt lists was written by an earlier bake, however close its mtime
     // is to this run's start: with the cache skipping unchanged inputs, two bakes can be one
@@ -1462,14 +1580,22 @@ export async function compileAssets(
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const layout = resolveLayout(cwd, options);
   const receiptPath = path.join(layout.outputRoot, RECEIPT_NAME);
-  const writtenBefore = await readPreviousReceiptPaths(receiptPath);
+  const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
+  const pendingReceiptPath = path.join(layout.outputRoot, PENDING_RECEIPT_NAME);
+  const successfulBefore = await readPreviousReceiptPaths(receiptPath);
+  const failedBefore = await readPreviousReceiptPaths(pendingReceiptPath);
+  const writtenBefore = new Set([...successfulBefore, ...failedBefore]);
   if (!(await hasSourceDirectory(layout.sourceRoot))) {
-    // No bake ran, so no receipt describes this output root. A stale one from a previous build
-    // would have the delete-test remove files nothing produces any more.
+    await removeStaleReceiptOutputs(layout.outputRoot, writtenBefore, new Set());
+    for (const line of formatBudget(
+      await measureBudget({}, layout.outputRoot, layout.decodesCompression, layout.budget),
+    ))
+      console.log(line);
+    await rm(manifestPath, { force: true });
     await rm(receiptPath, { force: true });
+    await rm(pendingReceiptPath, { force: true });
     return { concurrencyUsed: 1, passCosts: [], skipped: 0, skippedCompression: [], written: 0 };
   }
-  const manifestPath = path.join(layout.outputRoot, MANIFEST_NAME);
   const previous = await readExistingManifest(manifestPath);
 
   // Read before the first write *and before the source walk*, so the undeclared-output guard can
@@ -1480,7 +1606,16 @@ export async function compileAssets(
   // the receipt: that stays deterministic.
   const runStart = Date.now();
 
-  const logicals = await walkSources(layout.sourceRoot);
+  const sources = await walkSources(layout.sourceRoot);
+  const excluded = sources.filter((logical) =>
+    layout.exclude.some((glob) => globMatch(glob, logical)),
+  );
+  const excludedSet = new Set(excluded);
+  const logicals = sources.filter((logical) => !excludedSet.has(logical));
+  let excludedBytes = 0;
+  for (const logical of excluded)
+    excludedBytes += (await stat(path.join(layout.sourceRoot, logical))).size;
+  console.log(`TN_ASSETS_EXCLUDED: ${excluded.length} file(s), ${excludedBytes} bytes`);
   // The determinism gate's seam: reversed processing order reverses which input's work completes
   // first, so the gate can prove the emitted bytes do not depend on it.
   if (options.processingOrder === "reversed") logicals.reverse();
@@ -1535,8 +1670,14 @@ export async function compileAssets(
   // a served manifest as authoritative and would reject every load against it. A source that
   // held inputs last build drops its stale manifest here, restoring the no-manifest fallback.
   if (logicals.length === 0) {
+    for (const line of formatBudget(
+      await measureBudget({}, layout.outputRoot, layout.decodesCompression, layout.budget),
+    ))
+      console.log(line);
+    await removeStaleReceiptOutputs(layout.outputRoot, writtenBefore, new Set());
     if (previous.raw !== undefined) await rm(manifestPath, { force: true });
     await rm(receiptPath, { force: true });
+    await rm(pendingReceiptPath, { force: true });
     const report = await runHealthReport([], layout.targets);
     return options.health === true
       ? {
@@ -1549,6 +1690,18 @@ export async function compileAssets(
         }
       : { concurrencyUsed: 1, passCosts: [], skipped: 0, skippedCompression: [], written: 0 };
   }
+
+  const pendingPaths = new Set(failedBefore);
+  let pendingUpdate = Promise.resolve();
+  const recordPendingOutputs = async (outputs: readonly string[]): Promise<void> => {
+    for (const output of outputs) pendingPaths.add(output);
+    // `processOne` may have several runners. Serialize journal writes so one runner cannot publish
+    // an older snapshot after another has already recorded more owned outputs.
+    pendingUpdate = pendingUpdate.then(() =>
+      writePendingOwnership(layout.outputRoot, pendingPaths),
+    );
+    await pendingUpdate;
+  };
 
   /** Everything one entry contributes to the receipt, the health report and the size report.
    *
@@ -1583,7 +1736,13 @@ export async function compileAssets(
     // against, and the pass's self-verification guarantees they survive compilation within
     // tolerance. Byte savings are reported per kind below instead. A Blender-imported source is
     // the exception the caller resolves: its earliest readable form is the converted GLB.
-    healthInputs.push({ data: measured, logicalPath: logical });
+    healthInputs.push({
+      data: measured,
+      logicalPath: logical,
+      ...(needsBlenderImport(logical)
+        ? { modelPath: path.join(layout.outputRoot, entry.output) }
+        : {}),
+    });
     if (entry.audio !== undefined) {
       // Routed before the texture branch: an audio entry carries `bytesBefore` and no triangle
       // count, which is exactly the shape the texture fallback below claims for itself.
@@ -1608,6 +1767,12 @@ export async function compileAssets(
       textureRows.push({
         after: entry.bytes,
         before: entry.bytesBefore,
+        // Read off the manifest entry, not off the pass: a cache hit reuses the previous entry
+        // and never runs the pass that decided this, and a silent flat row is what let an
+        // uncompressed texture look like a compressed one.
+        ...(entry.compressionSkipped === undefined
+          ? {}
+          : { compressionSkipped: entry.compressionSkipped }),
         format: entry.format,
         logicalPath: logical,
       });
@@ -1660,12 +1825,16 @@ export async function compileAssets(
     recordRanTimings(costInputs, logical, applied.timings);
     const auxiliaryOutputs = resolveAuxiliaryOutputs(logical, applied.auxiliaryOutputs);
     const auxiliaryFields = auxiliaryManifestFields(auxiliaryOutputs);
+    const extensions = Array.isArray(applied.entry?.extensions)
+      ? (applied.entry.extensions as string[])
+      : sourceModelExtensions(logical, input);
     const entry: IAssetManifestEntry = {
       bytes: applied.buffer.length,
       kind: classify(logical),
       output: outputNameFor(logical, digest.slice(0, 8), applied.extension),
       passes: [...passNames],
       ...auxiliaryFields,
+      ...(extensions === undefined ? {} : { extensions }),
       ...(applied.entry === undefined
         ? {}
         : {
@@ -1674,10 +1843,11 @@ export async function compileAssets(
             audio: audioRow(applied.entry.audio),
             embeddedTextures: embeddedTextureRow(applied.entry.embeddedTextures),
             simplify: simplifyRow(applied.entry.simplify),
-            extensions: Array.isArray(applied.entry.extensions)
-              ? (applied.entry.extensions as string[])
-              : undefined,
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
+            ...(applied.entry.compressionSkipped === "block-size" ||
+            applied.entry.compressionSkipped === "not-smaller"
+              ? { compressionSkipped: applied.entry.compressionSkipped }
+              : {}),
             importedFrom:
               typeof applied.entry.importedFrom === "string"
                 ? applied.entry.importedFrom
@@ -1741,6 +1911,7 @@ export async function compileAssets(
       skipped += 1;
       return;
     }
+    await recordPendingOutputs([entry.output, ...auxiliaryOutputs.map((output) => output.output)]);
     await writeOutput(layout.outputRoot, entry, applied.buffer);
     for (const output of auxiliaryOutputs) {
       const absolute = path.join(layout.outputRoot, output.output);
@@ -1750,9 +1921,13 @@ export async function compileAssets(
       // file, and two identical-content writers cannot interleave.
       if (output.shared && (await outputExists(absolute))) continue;
       await mkdir(path.dirname(absolute), { recursive: true });
-      const temporary = `${absolute}.${process.pid}.tmp`;
-      await writeFile(temporary, output.buffer);
-      await rename(temporary, absolute);
+      const temporary = `${absolute}.${process.pid}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(temporary, output.buffer);
+        await rename(temporary, absolute);
+      } finally {
+        await rm(temporary, { force: true }).catch(() => undefined);
+      }
     }
     written += 1;
   };
@@ -1783,6 +1958,10 @@ export async function compileAssets(
   if ((layout.texturesActive && textureCount > 0) || compressedModelCount > 0) {
     const basisJs = path.join(layout.outputRoot, BASIS_DIRECTORY, "basis_transcoder.js");
     if (written > 0 || !(await outputExists(basisJs))) {
+      await recordPendingOutputs([
+        `${BASIS_DIRECTORY}/basis_transcoder.js`,
+        `${BASIS_DIRECTORY}/basis_transcoder.wasm`,
+      ]);
       await copyBasisTranscoder(
         layout.outputRoot,
         options.transcoder ?? resolveBasisTranscoder(cwd),
@@ -1812,9 +1991,31 @@ export async function compileAssets(
   for (const line of formatAudioSizes(audioRows)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
+  if (
+    isRecord(options.config) &&
+    isRecord(options.config.models) &&
+    options.config.models.sharedImages === false
+  ) {
+    const embeddedBytes = modelRows.reduce(
+      (total, row) => total + (row.embeddedTextures?.bytesAfter ?? 0),
+      0,
+    );
+    console.log(
+      `TN_ASSETS_SHARED_IMAGES_DISABLED: assets.models.sharedImages=false; ${modelRows.length} model(s), ${embeddedBytes} image bytes embedded separately; duplicates are not shared.`,
+    );
+  }
   const skippedCompression = skippedCompressionRows(entries, layout);
   for (const line of formatPassCosts(passCosts)) console.log(line);
   for (const line of formatSkippedCompression(skippedCompression)) console.log(line);
+  const budgetReport = await measureBudget(
+    entries,
+    layout.outputRoot,
+    layout.decodesCompression,
+    layout.budget,
+    receiptOutputs,
+  );
+  for (const line of formatBudget(budgetReport)) console.log(line);
+  assertBudget(budgetReport);
   if (report.failed) {
     const failedAssets = report.findings
       .filter((finding) => finding.grade === "fail")
@@ -1823,14 +2024,21 @@ export async function compileAssets(
       `TN_ASSETS_HEALTH_FAILED: ${failedAssets.length} declared asset target(s) exceeded: ${[...new Set(failedAssets)].join(", ")}`,
     );
   }
-  await writeManifest(manifestPath, layout.outputRoot, previous.raw, entries);
-  await assertNoUndeclaredOutputs(
+  const currentReceiptPaths = new Set(receiptOutputs.map((output) => output.path));
+  await assertNoUndeclaredOutputs(layout.outputRoot, currentReceiptPaths, runStart, writtenBefore);
+  const staleOutputs = await resolveStaleReceiptOutputs(
     layout.outputRoot,
-    new Set(receiptOutputs.map((output) => output.path)),
-    runStart,
-    writtenBefore,
+    new Set([...writtenBefore, ...pendingPaths]),
+    currentReceiptPaths,
   );
+  // An invalid old receipt must not replace the last successful manifest with a manifest for a
+  // cook that cannot commit. Validation is complete before this publication point.
+  await writeManifest(manifestPath, layout.outputRoot, previous.raw, entries);
+  for (const target of staleOutputs) await rm(target, { force: true });
+  // Publish success only after cleanup. If validation/deletion fails, the old receipt and pending
+  // journal jointly retain ownership for a reliable retry.
   const receipt = await writeReceipt(layout.outputRoot, receiptOutputs);
+  await rm(pendingReceiptPath, { force: true });
   const concurrencyUsed = pool === undefined ? 1 : Math.min(concurrency, logicals.length);
   return options.health === true
     ? { concurrencyUsed, passCosts, receipt, report, skipped, skippedCompression, written }

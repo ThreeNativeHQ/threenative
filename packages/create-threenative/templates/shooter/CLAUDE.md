@@ -61,8 +61,8 @@ hitscan/radius/target scans. `src/weapons/` owns combat, `src/scenes/Play.ts` wi
 
 ## Portable authoring contracts
 
-First person, four rules: place the camera in `afterPhysics`, never the frame function, or the eye
-sits one step behind the body and shots land in the floor on stairs; start every shot at
+Leave `assets` absent: the cook selects target-decodable passes, with `models.sharedImages: true` deduplicating images. `sharedImages: false` embeds duplicate copies; `models: "none"` / `textures: "none"` skip those passes and report uncooked bytes. Android/iOS currently skip compression and model dedupe. `assets.exclude` defaults to `[]`; source-relative globs (for example `["unused/**"]`) omit matching files and report saved bytes. `assets.budget` accepts `{ uncooked?: number | "none", total?: number | "none" }`, default `{ uncooked: 64_000_000, total: "none" }`: only bytes left uncooked where cooking was possible count toward `uncooked`. A number sets that ceiling; `"none"` disables both gates. Either disabled gate still reports bytes. Automatic texture cooking retains unaligned source images unchanged and reports `block-size`; those bytes still count toward the uncooked budget. An explicit compression codec override must satisfy four-pixel block alignment; `codec: "none"` opts out. Cooking never silently resizes an image to fix alignment.
+First person, four rules: place the camera in `afterPhysics`, never the frame function, or the eye sits one step behind the body and shots land in the floor on stairs; start every shot at
 `player.aimRay()`, where the crosshair is, and let `Viewmodel.converge` lean the weapon to meet it;
 the trigger takes `pressed` and `justPressed`, because the cooldown makes the cadence and the edge
 catches a click the harness delivers no other way; `src/render/scale.ts` is the only size table.

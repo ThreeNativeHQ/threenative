@@ -21,6 +21,27 @@ function budgetLine(windowId: number, surface: string | undefined): string {
 }
 
 describe("perf reports the surface each window was drawn at", () => {
+  it.each([
+    { compiling: true, text: "compile pending" },
+    { compiling: false, text: "compile idle" },
+  ])("carries and prints a measured compiling=$compiling", ({ compiling, text: expected }) => {
+    const measured = SURFACE.replace("{", `{"compiling":${String(compiling)},`);
+    const parsed = parsePerformanceMarkers(budgetLine(1, measured));
+    expect(parsed.budgets[0]?.surface?.compiling).toBe(compiling);
+    const text = formatPerfReport({
+      budgets: parsed.budgets,
+      discardedWindows: [],
+      hitches: [],
+      hostGaps: [],
+      pass: true,
+      presentMode: undefined,
+      projections: [],
+      source: "log",
+      violations: [],
+    });
+    expect(text).toContain(expected);
+  });
+
   it("names the scale, its source, the sample count and the drawing buffer", () => {
     const parsed = parsePerformanceMarkers(
       [budgetLine(1, SURFACE), budgetLine(2, SURFACE), budgetLine(3, SURFACE)].join("\n"),
@@ -44,6 +65,7 @@ describe("perf reports the surface each window was drawn at", () => {
       violations: [],
     });
     expect(text).toContain("surface: scale 0.32 pinned, 768x346, 1x samples");
+    expect(text).not.toMatch(/compile (?:idle|pending)/u);
   });
 
   it("says so rather than implying an unscaled full-sample frame when no window reported one", () => {
