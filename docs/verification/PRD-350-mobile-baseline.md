@@ -2,9 +2,11 @@
 
 Date: 2026-09-05
 
-This record closes the Android asset/build and real-device proof for PRD-350. The sandbox projects
-are separate repositories. Quarry received the game-side fixes required to expose the native frame;
-Wildwood was read-only during this proof because its checkout already contained unrelated changes.
+This record captures the Android asset/build and real-device evidence for PRD-350. It does not close
+the PRD: web/desktop byte identity, raw/cooked visual identity and the missing-shared-image negative
+control remain `UNVERIFIED`. The sandbox projects are separate repositories. Quarry received the
+game-side fixes required to expose the native frame; Wildwood was read-only during this proof because
+its checkout already contained unrelated changes.
 
 ## Commands
 
@@ -84,16 +86,19 @@ List of devices attached
 ```
 
 The Pixel 8 reported Android 17/API 37. The initial-world screenshot visibly contains the sky,
-ground, path, shadows and all six textured, normal-mapped props:
+ground, path, shadows and all six textured, normal-mapped props. Durable copies of the selected
+captures and the compact result record are kept in this repository:
 
-- `/home/joao/projects/threenative/sandbox/quarry/artifacts/playtest-android-prd350/initial-world.png`
-- `/home/joao/projects/threenative/sandbox/quarry/artifacts/playtest-android-prd350/device-transparent-body.png`
+- [`initial-world.png`](artifacts/prd-350/quarry/initial-world.png)
+- [`device-transparent-body.png`](artifacts/prd-350/quarry/device-transparent-body.png)
+- [`android-result.txt`](artifacts/prd-350/quarry/android-result.txt)
 
 The latter is the manual before/after capture that caught the white screen. The WebView HUD was
 painting an opaque `body` background over the native WebGPU surface. Quarry now keeps `body`
 transparent and scopes the web-only background to `#root`; the fix is in examples PR [#1](https://github.com/ThreeNativeHQ/examples/pull/1).
 
-The Android scenario exited 0 with `pass: true`:
+The Android scenario exited 0 with `pass: true`; the selected assertion and device details are
+retained in [`android-result.txt`](artifacts/prd-350/quarry/android-result.txt):
 
 ```text
 props=6
@@ -113,9 +118,12 @@ thermal or performance claim is made.
 
 - Mobile shared PNG emission and Android packaging: PASS for Quarry.
 - Wildwood Android build and runtime load-set: PASS; 92,044,733 B is below the 100 MB criterion.
-- Real Pixel 8 rendering and textured shared-image proof: PASS for Quarry.
-- Web/desktop byte-for-byte comparison: PASS in the merged engine PR's existing output tests; no new
-  browser/desktop run was required for this evidence-only follow-up.
+- Real Pixel 8 rendering and textured shared-image proof: PASS for Quarry's cooked run. Raw/cooked
+  visual identity was not run and is `UNVERIFIED`.
+- Web/desktop byte-for-byte comparison with PRD-349: `UNVERIFIED` — no output hashes or byte-for-byte
+  browser/desktop run is retained. The cited tests cover extension, custom-pass and cache behavior;
+  they do not prove unchanged bytes.
+- Missing-shared-image negative control: `UNVERIFIED` — no run or failure artifact was retained.
 - Build report truth and removal of `decodesCompression`: PASS in the merged engine PR and its tests.
 
 The browser rerun in this lane is not a gate: headless Chromium selected SwiftShader and then emitted

@@ -23,7 +23,7 @@ Read `/AGENTS.md` and `docs/PRDs/AGENTS.md` first.
 | PRD | Wins | Depends on |
 |---|---|---|
 | **[349 — the cook is on by default](../done/PRD-349-the-cook-is-on-by-default.md)** | DONE: Wildwood 304.92 → 51.33 MB, Quarry 29.89 → 4.57 MB; iOS waived | — |
-| **[350 — the platform gate knows which passes need a decoder](../done/PRD-350-the-platform-gate-knows-which-passes-need-a-decoder.md)** | DONE: Wildwood 304.92 → 92.04 MB runtime load-set; full manifest recorded separately | 349 |
+| **[350 — the platform gate knows which passes need a decoder](./PRD-350-the-platform-gate-knows-which-passes-need-a-decoder.md)** | **PARTIAL:** Android cooked run and Wildwood 92.04 MB runtime load-set pass; raw/cooked identity, web/desktop byte identity and negative-control observations remain `UNVERIFIED` | 349 |
 | **351 — compression never looks worse than a floor** | quality floor + the 2048² resolution raise | 349 |
 | **352 — Unreal ingest is first-party** | **zero shipped bytes** — removes an external repo from the ingest path | none |
 

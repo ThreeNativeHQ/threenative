@@ -1,6 +1,7 @@
 # PRD-350 — The platform gate knows which passes need a decoder
 
-**Status:** COMPLETE — 2026-09-05
+**Status:** PARTIAL — Android capability and cooked real-device proof landed 2026-09-05; raw/cooked
+visual identity, web/desktop byte identity and observed negative-control evidence remain `UNVERIFIED`.
 **Complexity:** 2 (6-10 files) + 2 (multi-package) = **4 → MEDIUM mode**
 **Batch:** `docs/PRDs/assets/`
 **Depends on:** PRD-349 (which measures the mobile baseline this PRD moves)
@@ -134,6 +135,9 @@ decides how the rest is written.** If the refusal does not fire, say so and corr
 **Negative control:** run the same command against a game with no meshopt in its assets; it must
 *not* refuse. A refusal that fires on everything proves nothing.
 
+**Negative-control result:** `UNVERIFIED` — no no-meshopt control run or failure/pass artifact is
+retained in this evidence record.
+
 ---
 
 #### Phase 2 — passes declare whether they need a decoder
@@ -171,7 +175,7 @@ decides how the rest is written.** If the refusal does not fire, say so and corr
 
 **Tests required**
 
-| Test file | Test name | Assertion | Negative control (observed red) |
+| Test file | Test name | Assertion | Negative control (planned; not observed here) |
 |---|---|---|---|
 | `__tests__/compile.spec.ts` | `should share images on an android build` | 2 models embedding one image → 1 file under `shared/images/`, mime `image/png` | mark shared-images decoder-requiring → 2 embedded copies, fails |
 | `__tests__/compile.spec.ts` | `should not emit ktx2 on an android build` | no `image/ktx2`, no `KHR_texture_basisu` | allow it → fails |
@@ -179,7 +183,7 @@ decides how the rest is written.** If the refusal does not fire, say so and corr
 | `__tests__/compile.spec.ts` | `should still emit ktx2 on a web build` | present | drop it for web too → fails, proving the split is per-target not global |
 | `create-threenative/__tests__/build.spec.ts` | `should accept the android manifest this compile produces` | `assertNativeAssetsCompatible` does not throw | feed it a meshopt manifest → throws |
 
-**Revert check:** restore `decodesCompression` → the first test goes red.
+**Revert check:** `UNVERIFIED` — no revert-run output is retained in this evidence record.
 
 ---
 
@@ -205,12 +209,14 @@ goes from refused (or 289 MB) to a sub-100 MB runtime load-set.
 
 | Test | Assertion | Negative control |
 |---|---|---|
-| `quarry-android.playtest.json` | all 6 props present and textured on device | delete one shared image → the playtest fails, proving it reads the real files |
+| `quarry-android.playtest.json` | all 6 props present and textured on device | **UNVERIFIED** — deleting one shared image was not run and no failure artifact was retained |
 
 **User verification (MANUAL — device)**
 
 - Action: capture `quarry` on the Pixel 8 before and after.
-- Expected: identical frames, one bundle a fraction of the other's size.
+- Result: the cooked Android run passed and is recorded in
+  [`docs/verification/artifacts/prd-350/quarry/android-result.txt`](../../verification/artifacts/prd-350/quarry/android-result.txt).
+  The raw/cooked identical-frame comparison was not run and remains `UNVERIFIED`.
 
 ---
 
@@ -218,12 +224,15 @@ goes from refused (or 289 MB) to a sub-100 MB runtime load-set.
 
 Consumer-scoped.
 
-- [x] **`quarry` built for Android ships each shared texture once**, as PNG, and renders identically
-      on a real Pixel 8.
+- [ ] **`quarry` built for Android ships each shared texture once**, as PNG, and renders identically
+      on a real Pixel 8. The cooked run passed with six textured and normal-mapped props, but the
+      raw/cooked identity comparison is `UNVERIFIED`.
 - [x] **wildwood's Android build succeeds** and its runtime load-set drops from the Phase 1 baseline to
       ≤ 100 MB. The full manifest total is recorded separately; the historical ~83 MB estimate is a
       runtime load-set estimate, not a full-manifest ceiling.
-- [x] **The web and desktop builds are unchanged** — same bytes as PRD-349 produced.
+- [ ] **The web and desktop builds are unchanged** — `UNVERIFIED`: no output hashes or byte-for-byte
+      browser/desktop run is retained. The cited tests cover extension, custom-pass and cache
+      behavior only.
 - [x] **The build report tells a mobile developer the truth**: it names meshopt and KTX2 as dropped
       and does **not** claim dedupe was skipped.
 - [x] **Phase 1's question is answered in writing**, whichever way it went.
@@ -231,8 +240,10 @@ Consumer-scoped.
 ### Integration gates
 
 - [x] `decodesCompression` deleted — no behaviour has two live implementations
-- [x] Every gate has a negative control observed failing
-- [x] Native proof landed in the same commit as the capability (charter rule 6)
+- [ ] Every gate has a negative control observed failing — `UNVERIFIED`: the required
+      missing-shared-image control was not run or retained.
+- [ ] Native proof landed in the same commit as the capability (charter rule 6) — the capability
+      landed in `1aca2b84`; the real-device proof was recorded later, so this gate is open.
 - [x] The two native error messages no longer advise `"none"`
 
 ---
