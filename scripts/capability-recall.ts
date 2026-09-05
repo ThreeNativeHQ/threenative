@@ -84,6 +84,27 @@ export class CapabilityRecallError extends Error {
 const CORPUS_FILE = "scripts/fixtures/capability-recall/corpus.json";
 const BUDGET_FILE = "scripts/fixtures/capability-recall/budget.json";
 const MANIFEST_FILE = "packages/create-threenative/capabilities.json";
+const SOURCE_PATTERN = /^(brief|template):([a-z0-9-]+)#(.+)$/u;
+const HEADING_PATTERN = /^\s{0,3}#{1,6}\s+(.+?)\s*#?\s*$/u;
+const BRIEF_NAMES = new Set([
+  "endless-runner",
+  "exploration",
+  "fps",
+  "open-world",
+  "physics-puzzle",
+  "platformer",
+  "topdown-action",
+]);
+const TEMPLATE_NAMES = new Set([
+  "action-rpg",
+  "defense",
+  "minimal",
+  "platformer",
+  "racing",
+  "sailing",
+  "shooter",
+  "starter",
+]);
 
 function fail(message: string): never {
   throw new CapabilityRecallError(message);
@@ -141,7 +162,7 @@ function validateCorpus(value: unknown, file: string): ICapabilityRecallCorpus {
   return { rows, version: 1 };
 }
 
-function validateBudget(value: unknown, file: string): ICapabilityRecallBudget {
+export function validateBudget(value: unknown, file = "budget.json"): ICapabilityRecallBudget {
   if (
     typeof value !== "object" ||
     value === null ||
@@ -149,18 +170,144 @@ function validateBudget(value: unknown, file: string): ICapabilityRecallBudget {
   ) {
     return fail(`${file} must contain budget version 1`);
   }
-  const budget = value as ICapabilityRecallBudget;
+  const budget = value as Record<string, unknown>;
+  const zeroResultRate = budget.zeroResultRate;
   if (
-    !Number.isFinite(budget.zeroResultRate) ||
-    !Number.isFinite(budget.recallAtK) ||
-    !Number.isInteger(budget.rejectHits) ||
-    !Number.isInteger(budget.rowCount) ||
-    !Array.isArray(budget.rowIds) ||
-    !Array.isArray(budget.recalledRows)
+    typeof zeroResultRate !== "number" ||
+    !Number.isFinite(zeroResultRate) ||
+    zeroResultRate < 0 ||
+    zeroResultRate > 1
   ) {
-    return fail(`${file} has malformed metric floors`);
+    return fail(`${file} zeroResultRate must be a finite number between 0 and 1`);
   }
-  return budget;
+  const recallAtK = budget.recallAtK;
+  if (
+    typeof recallAtK !== "number" ||
+    !Number.isFinite(recallAtK) ||
+    recallAtK < 0 ||
+    recallAtK > 1
+  ) {
+    return fail(`${file} recallAtK must be a finite number between 0 and 1`);
+  }
+  const rowCount = budget.rowCount;
+  if (typeof rowCount !== "number" || !Number.isInteger(rowCount) || rowCount < 1) {
+    return fail(`${file} rowCount must be a positive integer`);
+  }
+  const rejectHits = budget.rejectHits;
+  if (
+    typeof rejectHits !== "number" ||
+    !Number.isInteger(rejectHits) ||
+    rejectHits < 0 ||
+    rejectHits > rowCount
+  ) {
+    return fail(`${file} rejectHits must be an integer between 0 and rowCount`);
+  }
+  const rowIds = budget.rowIds;
+  if (
+    !Array.isArray(rowIds) ||
+    rowIds.length !== rowCount ||
+    rowIds.some((id) => typeof id !== "string" || id.trim().length === 0) ||
+    new Set(rowIds).size !== rowIds.length
+  ) {
+    return fail(`${file} rowIds must contain rowCount unique, non-empty row ids`);
+  }
+  const recalledRows = budget.recalledRows;
+  if (
+    !Array.isArray(recalledRows) ||
+    recalledRows.some((id) => typeof id !== "string" || id.trim().length === 0) ||
+    new Set(recalledRows).size !== recalledRows.length ||
+    recalledRows.some((id) => !rowIds.includes(id))
+  ) {
+    return fail(`${file} recalledRows must be unique rowIds from rowIds`);
+  }
+  return {
+    recallAtK,
+    recalledRows: [...recalledRows],
+    rejectHits,
+    rowCount,
+    rowIds: [...rowIds],
+    version: 1,
+    zeroResultRate,
+  };
+}
+
+function briefFile(root: string, genre: string): string {
+  if (!BRIEF_NAMES.has(genre)) return fail(`source uses unknown brief '${genre}'`);
+  return path.join(root, "docs", "benchmark", "genres", genre, "brief.md");
+}
+
+function templateFile(root: string, template: string): string {
+  if (!TEMPLATE_NAMES.has(template)) return fail(`source uses unknown template '${template}'`);
+  return path.join(root, "packages", "create-threenative", "templates", template, "AGENTS.md");
+}
+
+function briefBullets(text: string): readonly { readonly index: number; readonly text: string }[] {
+  const bullets: { index: number; text: string }[] = [];
+  let parts: string[] | undefined;
+  const finish = (): void => {
+    if (parts === undefined) return;
+    bullets.push({ index: bullets.length + 1, text: parts.join(" ") });
+    parts = undefined;
+  };
+
+  for (const line of text.split(/\r?\n/u)) {
+    if (line.startsWith("- ")) {
+      finish();
+      parts = [line.slice(2).trim()];
+    } else if (parts !== undefined && /^\s{2,}\S/u.test(line)) {
+      parts.push(line.trim());
+    } else {
+      finish();
+    }
+  }
+  finish();
+  return bullets;
+}
+
+function resolveSource(row: ICapabilityRecallRow, root: string): void {
+  const match = SOURCE_PATTERN.exec(row.source);
+  if (match === null) {
+    fail(
+      `${row.id}: source '${row.source}' must be brief:<genre>#<bullet-index> or template:<name>#<heading>`,
+    );
+  }
+  const kind = match[1];
+  const name = match[2];
+  const key = match[3];
+  if (kind === undefined || name === undefined || key === undefined) {
+    fail(`${row.id}: source '${row.source}' is incomplete`);
+  }
+  const file = kind === "brief" ? briefFile(root, name) : templateFile(root, name);
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch (error) {
+    fail(`${row.id}: source '${row.source}' cannot be read: ${String(error)}`);
+  }
+
+  if (kind === "brief") {
+    const index = Number(key);
+    const bullet = briefBullets(text).find((candidate) => candidate.index === index);
+    if (!Number.isInteger(index) || index < 1 || bullet === undefined) {
+      fail(`${row.id}: source '${row.source}' no longer resolves`);
+    }
+    if (bullet.text !== row.query) {
+      fail(`${row.id}: source '${row.source}' no longer matches its query`);
+    }
+    return;
+  }
+
+  const headingExists = text
+    .split(/\r?\n/u)
+    .some((line) => HEADING_PATTERN.exec(line)?.[1]?.trim() === key);
+  if (!headingExists) fail(`${row.id}: source '${row.source}' no longer resolves`);
+}
+
+export function resolveCorpusSources(
+  rows: readonly ICapabilityRecallRow[],
+  root = process.cwd(),
+): void {
+  for (const row of rows) resolveSource(row, root);
 }
 
 function checkedSymbols(
@@ -275,6 +422,7 @@ function compareBudget(
 export function runRecall(root = process.cwd()): IRecallReport {
   const corpus = validateCorpus(readJson(path.join(root, CORPUS_FILE)), CORPUS_FILE);
   const budget = validateBudget(readJson(path.join(root, BUDGET_FILE)), BUDGET_FILE);
+  resolveCorpusSources(corpus.rows, root);
   const manifestFile = path.join(root, MANIFEST_FILE);
   const measurement = measureRecall(corpus.rows, manifestFile);
   return { ...measurement, budget, regressions: compareBudget(measurement, budget) };

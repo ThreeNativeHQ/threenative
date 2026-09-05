@@ -395,7 +395,7 @@
       "id": "guard.animation-feet",
       "query": "walking feet sliding spinning",
       "scope": "mechanic",
-      "source": "template:action-rpg#Engine capabilities — look it up before writing a replacement",
+      "source": "template:action-rpg#Start every change",
       "expect": ["AnimationPlayer"],
       "reject": []
     },
@@ -428,7 +428,7 @@
       "id": "request.enemy-ai",
       "query": "enemy AI that chases the player",
       "scope": "request",
-      "source": "template:shooter#AGENTS.md — __PROJECT_NAME__ arena shooter",
+      "source": "template:shooter#AGENTS.md — __PROJECT_NAME__ first-person arena shooter",
       "expect": ["NavigationAgent3D", "CharacterBody3D"],
       "reject": []
     },
@@ -444,7 +444,7 @@
       "id": "request.save-progress",
       "query": "save the player progress",
       "scope": "request",
-      "source": "template:starter#AGENTS.md — __PROJECT_NAME__",
+      "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
       "expect": ["assertPortableState"],
       "notOwned": true,
       "reject": [
@@ -494,7 +494,7 @@
       "id": "request.pick-up-item",
       "query": "pick up an item",
       "scope": "request",
-      "source": "template:minimal#AGENTS.md — __PROJECT_NAME__",
+      "source": "template:minimal#AGENTS.md — __PROJECT_NAME__ minimal",
       "expect": ["Area3D"],
       "reject": ["ClusteredMesh"]
     },
@@ -502,7 +502,7 @@
       "id": "request.multiplayer",
       "query": "multiplayer",
       "scope": "request",
-      "source": "template:starter#What the framework owns, and what you own",
+      "source": "template:starter#Ownership",
       "expect": ["defineGame"],
       "notOwned": true,
       "reject": []
