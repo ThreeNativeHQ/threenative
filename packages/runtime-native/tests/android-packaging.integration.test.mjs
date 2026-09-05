@@ -281,6 +281,7 @@ public class SDLActivity {
 
   protected void onCreate(Bundle state) {}
   protected void onResume() {}
+  public void onTrimMemory(int level) {}
   protected String[] getLibraries() { return new String[0]; }
   protected String getMainFunction() { return ""; }
   protected String[] getArguments() { return new String[0]; }

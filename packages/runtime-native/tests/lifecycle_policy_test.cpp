@@ -12,13 +12,20 @@
 
 #include "mystral/audio/audio_context.h"
 #include "mystral/platform/lifecycle.h"
+#include "mystral/runtime.h"
 #include "mystral/webgpu/bindings.h"
 #include "../src/webgpu/bindings_state.h"
 
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
+
+#if !defined(_WIN32)
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 #include <SDL3/SDL.h>
 
@@ -68,6 +75,7 @@ const EventCase kEvents[] = {
     {SDL_EVENT_WINDOW_SHOWN, "WINDOW_SHOWN", LifecycleAction::Resume},
     {SDL_EVENT_TERMINATING, "TERMINATING", LifecycleAction::Terminate},
     {SDL_EVENT_WINDOW_DESTROYED, "WINDOW_DESTROYED", LifecycleAction::Terminate},
+    {SDL_EVENT_LOW_MEMORY, "LOW_MEMORY", LifecycleAction::MemoryTrim},
     // Never a pause on focus alone: a desktop game in split screen is still on screen, and on
     // Android focus loss accompanies a real pause rather than being one.
     {SDL_EVENT_WINDOW_FOCUS_LOST, "WINDOW_FOCUS_LOST", LifecycleAction::RecordOnly},
@@ -98,15 +106,66 @@ bool surfaceBindingStateFollowsRebuild() {
     return published && detached && state == nullptr;
 }
 
+bool forcedResumeFailureRetriesBeforeStopping() {
+#if defined(_WIN32)
+    return false;
+#else
+    const pid_t child = fork();
+    if (child < 0) return false;
+    if (child == 0) {
+        setenv("THREENATIVE_FORCE_SURFACE_REVALIDATE_FAILURE", "1", 1);
+
+        bool passed = false;
+        {
+            mystral::RuntimeConfig config;
+            config.width = 320;
+            config.height = 240;
+            config.maxFps = 60;
+            auto runtime = mystral::Runtime::create(config);
+            if (runtime) {
+                mystral::platform::handleLifecycleEvent(SDL_EVENT_WINDOW_RESTORED);
+                const auto started = std::chrono::steady_clock::now();
+                const bool stillRunning = runtime->pollEvents();
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started);
+                passed = !stillRunning && runtime->getExitCode() == 1 &&
+                         runtime->getPresentCount() == 0 &&
+                         elapsed >= std::chrono::milliseconds(3900) &&
+                         elapsed < std::chrono::milliseconds(5000);
+                std::cout << "TN_LIFECYCLE_RETRY_HARNESS:{\"elapsedMs\":" << elapsed.count()
+                          << ",\"presentCount\":" << runtime->getPresentCount()
+                          << ",\"exitCode\":" << runtime->getExitCode() << "}" << std::endl;
+                // The child exits immediately after this assertion; do not enter the unrelated
+                // X11 teardown path that would otherwise run from Runtime's destructor.
+                runtime.release();
+            }
+        }
+
+        // The harness deliberately exits after observing the terminal path. Runtime shutdown is
+        // outside this assertion; `_exit` keeps that teardown path from changing the retry result
+        // the harness reports.
+        std::cout.flush();
+        std::cerr.flush();
+        _exit(passed ? 0 : 1);
+    }
+
+    int status = 0;
+    if (waitpid(child, &status, 0) != child) return false;
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+#endif
+}
+
 }  // namespace
 
 int main() {
+    const char* retryHarness = std::getenv("THREENATIVE_RUN_RESUME_RETRY_HARNESS");
+    const bool runRetryHarness = retryHarness != nullptr && retryHarness[0] == '1';
 #if defined(_WIN32)
     _putenv_s("SDL_AUDIO_DRIVER", "dummy");
-    _putenv_s("SDL_VIDEO_DRIVER", "dummy");
+    if (!runRetryHarness) _putenv_s("SDL_VIDEO_DRIVER", "dummy");
 #else
     setenv("SDL_AUDIO_DRIVER", "dummy", 1);
-    setenv("SDL_VIDEO_DRIVER", "dummy", 1);
+    if (!runRetryHarness) setenv("SDL_VIDEO_DRIVER", "dummy", 1);
 #endif
 
     // 1. The transition table, event by event.
@@ -126,6 +185,11 @@ int main() {
           "the pause is reported as a TN_LIFECYCLE marker");
     check(anyMarkerContains(markers, "\"applied\":true"),
           "the pause marker says the pause was applied");
+    int pauseTrimLevel = -2;
+    check(mystral::platform::takeMemoryTrimRequest(pauseTrimLevel) && pauseTrimLevel == 20,
+          "pausing queues the Android UI-hidden trim callback level");
+    check(anyMarkerContains(markers, "TN_LIFECYCLE_MEMORY_TRIM:{\"level\":20"),
+          "pausing records the host trim measurement");
 
     mystral::platform::handleLifecycleEvent(SDL_EVENT_DID_ENTER_FOREGROUND);
     check(!mystral::platform::isPaused(), "foregrounding resumes the loop");
@@ -151,6 +215,48 @@ int main() {
     check(!mystral::platform::surfaceRevalidationPending(),
           "and it is taken exactly once, so one resume is not rebuilt on every later frame");
     drainMarkers();
+
+    // 2e. Android forwards its ComponentCallbacks2 level through SDL's level-less event. Moderate
+    // pressure trims host-owned allocations; a lower advisory level remains observable but does
+    // not pretend that memory was released.
+    mystral::platform::resetLifecycleForTesting();
+    mystral::platform::noteMemoryTrimLevel(60);
+    mystral::platform::handleLifecycleEvent(SDL_EVENT_LOW_MEMORY);
+    markers = drainMarkers();
+    check(anyMarkerContains(markers, "TN_LIFECYCLE_MEMORY_TRIM:{\"level\":60"),
+          "moderate Android pressure records a trim measurement");
+    check(anyMarkerContains(markers, "\"action\":\"trim\""),
+          "moderate Android pressure takes the host trim action");
+    int moderateTrimLevel = -2;
+    check(mystral::platform::takeMemoryTrimRequest(moderateTrimLevel) && moderateTrimLevel == 60,
+          "moderate Android pressure queues its level for the game callback");
+
+    mystral::platform::noteMemoryTrimLevel(20);
+    mystral::platform::handleLifecycleEvent(SDL_EVENT_LOW_MEMORY);
+    markers = drainMarkers();
+    check(anyMarkerContains(markers, "\"level\":20"),
+          "an advisory Android trim level remains observable");
+    check(anyMarkerContains(markers, "\"action\":\"observed\""),
+          "an advisory Android trim level does not claim a host trim");
+    int advisoryTrimLevel = -2;
+    check(mystral::platform::takeMemoryTrimRequest(advisoryTrimLevel) && advisoryTrimLevel == 20,
+          "an advisory Android level still reaches the game callback");
+
+    // SDL 3.2.30 queues and coalesces LOW_MEMORY, so ComponentCallbacks2 can report a severe
+    // level before the event watch runs and then report a less severe level. Keep the maximum
+    // pending level until the queued event consumes it.
+    mystral::platform::resetLifecycleForTesting();
+    mystral::platform::noteMemoryTrimLevel(80);
+    mystral::platform::noteMemoryTrimLevel(20);
+    mystral::platform::handleLifecycleEvent(SDL_EVENT_LOW_MEMORY);
+    markers = drainMarkers();
+    check(anyMarkerContains(markers, "TN_LIFECYCLE_MEMORY_TRIM:{\"level\":80"),
+          "coalesced low-memory events preserve the most severe pending level");
+    check(anyMarkerContains(markers, "\"action\":\"trim\""),
+          "the preserved severe level still trims host-owned memory");
+    int coalescedTrimLevel = -2;
+    check(mystral::platform::takeMemoryTrimRequest(coalescedTrimLevel) && coalescedTrimLevel == 80,
+          "the game callback receives the most severe coalesced level");
 
     // 2c. Android destroys the window whatever this host decided about pausing, so `continue`
     //     needs the same rebuild. The retreat that shipped `continue` as the default was living on
@@ -273,6 +379,10 @@ int main() {
         failures.push_back("SDL video could not start, so the watch install was not proven");
         std::cerr << "FAIL SDL_InitSubSystem(SDL_INIT_VIDEO): " << SDL_GetError() << '\n';
     }
+
+    if (runRetryHarness)
+        check(forcedResumeFailureRetriesBeforeStopping(),
+              "forced resume failure retries five times, stops within five seconds, and presents no frame");
 
     if (!failures.empty()) {
         std::cerr << "native lifecycle policy contract failed:\n";

@@ -190,6 +190,68 @@ test("a surface that cannot be revalidated fails loudly instead of going black",
   );
 });
 
+test("failed resume revalidation retries inside the recorded five-second window", () => {
+  const runtime = read("src/runtime.cpp");
+  assert.match(
+    runtime,
+    /kResumeRevalidationMaxAttempts\s*=\s*5/u,
+    "Phase 0 recorded five seconds as the existing revalidation bound; retries must stay inside it",
+  );
+  assert.match(
+    runtime,
+    /kResumeRevalidationWindow\s*=\s*std::chrono::seconds\(5\)/u,
+    "the retry window must remain bounded by the existing five-second resume wait",
+  );
+  assert.match(
+    runtime,
+    /TN_LIFECYCLE_SURFACE_RETRY/u,
+    "each failed attempt must be named before the terminal marker",
+  );
+  assert.match(
+    runtime,
+    /for \(int attempt = 1; attempt <= kResumeRevalidationMaxAttempts; \+\+attempt\)/u,
+    "the retry count must be finite rather than an unbounded resume loop",
+  );
+  const retry = runtime.slice(runtime.indexOf("kResumeRevalidationMaxAttempts"));
+  assert.match(
+    retry,
+    /takeSurfaceRevalidationRequest\(\)[\s\S]*?revalidateSurfaceAfterResume\(\)[\s\S]*?reportSurfaceRevalidationFailure\(\)/u,
+    "resume must retry the real revalidation and keep the existing fail-closed exhaustion path",
+  );
+  assert.match(
+    runtime,
+    /surfaceRevalidationForcedFailure\(\)/u,
+    "the forced-fail harness must be able to exercise the terminal path deterministically",
+  );
+});
+
+test("Android trim levels enter the lifecycle watch and expose a game callback", () => {
+  const lifecycle = read("src/platform/lifecycle.cpp");
+  const runtime = read("src/runtime.cpp");
+  const java = read("android/app/src/main/java/com/mystral/engine/MystralActivity.java");
+  const shims = read("shim-manifest.json");
+
+  assert.match(
+    lifecycle,
+    /case SDL_EVENT_LOW_MEMORY:[\s\S]*?return LifecycleAction::MemoryTrim;/u,
+    "LOW_MEMORY must be actionable through the existing SDL event watch",
+  );
+  assert.match(
+    lifecycle,
+    /TRIM_MEMORY_MODERATE|kTrimMemoryModerate/u,
+    "the moderate threshold must be named rather than hidden in a magic comparison",
+  );
+  assert.match(lifecycle, /mallopt\(M_PURGE,\s*0\)/u, "Android must attempt an immediate allocator purge");
+  assert.match(lifecycle, /malloc_trim\(0\)/u, "glibc must attempt an immediate allocator trim");
+  assert.match(lifecycle, /TN_LIFECYCLE_MEMORY_TRIM/u, "trim deltas must be observable");
+  assert.match(runtime, /__tnOnTrimMemory/u, "the runtime must install the optional callback slot");
+  assert.match(runtime, /takeMemoryTrimRequest\(/u, "the JS callback must be delivered on the runtime thread");
+  assert.match(java, /nativeOnTrimMemory\(level\);\s*super\.onTrimMemory\(level\);/u);
+  assert.match(java, /nativeOnTrimMemory\(int level\)/u);
+  assert.match(lifecycle, /Java_com_threenative_runtime_MystralActivity_nativeOnTrimMemory/u);
+  assert.match(shims, /"name":\s*"__tnOnTrimMemory"/u);
+});
+
 test("the background default is `pause` again, on both sides of the JNI boundary", () => {
   // This default has moved twice and the second move is the one to read carefully.
   //

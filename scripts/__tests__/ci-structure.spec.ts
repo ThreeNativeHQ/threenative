@@ -805,8 +805,9 @@ describe("CI pipeline structure", () => {
   // ccache has never paid off on this lane: 195 of 272 cacheable compiles miss on every run, and
   // the other half of the invocations sit behind SDL3's precompiled header where ccache cannot
   // reach them at all. Caching the compiled tree instead is safe because ninja re-stats every
-  // input — a stale entry costs a recompile, never a wrong binary — but only while the key still
-  // hashes the sources, or a source change would be served a tree built from different code.
+  // input — a stale entry costs a recompile, never a wrong binary — but only while the cache is
+  // exact-key: a partial restore can serve a tree built from different code because cached object
+  // mtimes are newer than the commit timestamps restored for changed sources.
   it("keys the cached native build tree on the sources it was built from", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const native = requiredJob(ci, "test-native");
@@ -832,7 +833,7 @@ describe("CI pipeline structure", () => {
       buildKey,
       "a run-scoped build-tree key stores the same tree once per run and evicts the budget",
     ).not.toContain("github.run_id");
-    expect(native).toContain("restore-keys: native-build-");
+    expect(native).not.toContain("restore-keys: native-build-");
     // Both configured build directories, or the QuickJS variant recompiles from nothing.
     expect(native).toContain("packages/runtime-native/build/tn-linux");
     expect(native).toContain("packages/runtime-native/build/tn-linux-quickjs");
