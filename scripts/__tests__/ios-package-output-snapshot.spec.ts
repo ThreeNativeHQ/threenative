@@ -1,20 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { snapshotIosPackageOutputs } from "../ios-package-output-snapshot.js";
-
-const temporaryRoots: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(
-    temporaryRoots.splice(0).map((root) => rm(root, { force: true, recursive: true })),
-  );
-});
+import { makeTempDir } from "../../test-support/temp-dir.js";
 
 async function fixture(): Promise<string> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "tn-ios-package-output-"));
-  temporaryRoots.push(root);
+  const root = await makeTempDir("tn-ios-package-output-");
   await mkdir(path.join(root, "packages", "core", "dist"), { recursive: true });
   await mkdir(path.join(root, "packages", "core", "mcp"), { recursive: true });
   await mkdir(path.join(root, "packages", "runtime-native", "dist"), { recursive: true });
