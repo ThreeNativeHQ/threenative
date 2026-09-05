@@ -41,9 +41,11 @@ node /home/joao/projects/threenative/threenative-engine/.worktrees/prd-350-proof
   --artifacts /tmp/prd350-quarry-proof.nGv0U1/artifacts/cooked-runner-fixed
 ```
 
-The runner now launches Android's owner user explicitly. Android 17 on this Pixel can resolve the
-activity in the package table but rejects `am start` without `--user 0`; the red/green regression is
-in `packages/playtest/__tests__/device-playtest.spec.ts` and the fix is in
+The runner now detects Android's current foreground user with `am get-current-user` and applies that
+user to both `am force-stop` and `am start`; `--user <id>` is available for an explicit target.
+Android 17 on this Pixel can resolve the activity in the package table but rejects `am start`
+without a user selector. The red/green regression is in
+`packages/playtest/__tests__/device-playtest.spec.ts` and the fix is in
 `packages/playtest/src/runner/android.ts`.
 
 ## Observed results
@@ -92,13 +94,14 @@ List of devices attached
 
 The Pixel 8 reported Android 17/API 37 and the native adapter was Mali-G715. Both the raw control
 (`assets.models: "none"`, `assets.textures: "none"`, 30,346,112 B) and the cooked build (7,807,727 B,
-three shared PNGs) ran through the same Android scenario over Wi-Fi ADB and passed:
+three shared PNGs) ran through the same Android scenario over Wi-Fi ADB and passed with the
+post-fix runner:
 
 ```text
 raw:    pass=true, props=6, texturedProps=6, normalMappedProps=6, visited=6,
-        distance=25.49116254846763, diagnostics=[], thermalStatus=NONE
+        distance=25.47482793903439, diagnostics=[], thermalStatus=NONE
 cooked: pass=true, props=6, texturedProps=6, normalMappedProps=6, visited=6,
-        distance=25.49116254853428, diagnostics=[], thermalStatus=NONE
+        distance=25.48145842388785, diagnostics=[], thermalStatus=NONE
 ```
 
 The runner captured both targets at 1280x720. The raw and cooked initial frames are byte-identical
@@ -126,14 +129,15 @@ props=6
 texturedProps=6
 normalMappedProps=6
 visited=6
-distance=25.491744205820467
+distance=25.48145842388785
 groundGap=0.010098910331726052
 diagnostics=[]
 runtime=native
 ```
 
-The final raw/cooked run was at 69% battery, 31.2 °C and thermal status `NONE`, so this is functional
-and visual evidence only; no power, thermal or performance claim is made.
+The raw run was at 66% battery and 29.2 °C; the cooked run was at 65% battery and 30.1 °C. Both
+reported thermal status `NONE`, so this is functional and visual evidence only; no power, thermal
+or performance claim is made.
 
 ## Cross-target identity
 

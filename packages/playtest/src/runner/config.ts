@@ -17,7 +17,7 @@ export interface IStandalonePlaytestConfig {
    * render evidence, so it fails unless the operator says otherwise.
    */
   allowSoftwareAdapter?: boolean;
-  android?: { activity: string; packageName: string };
+  android?: { activity: string; packageName: string; user?: string };
   adbPath?: string;
   /** @see IAndroidDriverOptions.touchRotation */
   touchRotation?: number;
@@ -64,6 +64,7 @@ export const PLAYTEST_FLAGS = {
   },
   "--allow-software": { default: "false", summary: "accept a software WebGPU adapter as evidence", takesValue: false },
   "--activity": { default: ".MystralActivity", summary: "Android launch activity", takesValue: true },
+  "--user": { default: "current foreground Android user", summary: "Android user id for force-stop and launch", takesValue: true },
   "--app": { default: "required for iOS", summary: "built iOS .app bundle", takesValue: true },
   "--artifacts": { default: "artifacts/playtest", summary: "artifact output directory", takesValue: true },
   "--no-screenshots": { default: "false", summary: "skip the before/after artifact frames; scenarios that assert on a frame still capture one", takesValue: false },
@@ -234,6 +235,10 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     );
   }
   const touchRotation = rawTouchRotation === undefined ? undefined : Number(rawTouchRotation);
+  const androidUser = flags.get("--user")?.[0];
+  if (androidUser !== undefined && !/^\d+$/u.test(androidUser)) {
+    throw new PlaytestCliUsageError(`Android --user must be numeric, got '${androidUser}'.`);
+  }
   const browserArgs =
     explicitBrowserArgs.length > 0
       ? explicitBrowserArgs
@@ -254,6 +259,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     android: {
       activity: flags.get("--activity")?.[0] ?? ".MystralActivity",
       packageName: flags.get("--package")?.[0] ?? "com.mystral.engine",
+      ...(androidUser === undefined ? {} : { user: androidUser }),
     },
     artifactDirectory: resolve(projectPath, flags.get("--artifacts")?.[0] ?? "artifacts/playtest"),
     captureArtifactScreenshots: !argv.includes("--no-screenshots"),

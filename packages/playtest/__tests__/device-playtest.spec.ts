@@ -850,7 +850,7 @@ test("emulator touch batches position a slot before activating it", async () => 
   expect(sent[1]?.some((event) => event.includes("ABS_MT_TRACKING_ID"))).toBe(true);
 });
 
-test("Android launches the playtest activity in the owner user", async () => {
+test("Android launches the playtest activity in the current foreground user", async () => {
   const calls: string[][] = [];
   const driver = new AdbAndroidDriver({
     activity: "com.threenative.runtime.MystralActivity",
@@ -859,6 +859,7 @@ test("Android launches the playtest activity in the owner user", async () => {
   });
   (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (args) => {
     calls.push([...args]);
+    if (args.join(" ") === "shell am get-current-user") return "10\n";
     return "";
   };
 
@@ -867,9 +868,17 @@ test("Android launches the playtest activity in the owner user", async () => {
   expect(calls).toContainEqual([
     "shell",
     "am",
+    "force-stop",
+    "--user",
+    "10",
+    "com.example.game",
+  ]);
+  expect(calls).toContainEqual([
+    "shell",
+    "am",
     "start",
     "--user",
-    "0",
+    "10",
     "-W",
     "-n",
     "com.example.game/com.threenative.runtime.MystralActivity",
@@ -879,5 +888,14 @@ test("Android launches the playtest activity in the owner user", async () => {
     "--es",
     "TN_PLAYTEST_MAILBOX_ROOT",
     "/sdcard/Android/data/com.example.game/files",
+  ]);
+  await driver.stop();
+  expect(calls).toContainEqual([
+    "shell",
+    "am",
+    "force-stop",
+    "--user",
+    "10",
+    "com.example.game",
   ]);
 });

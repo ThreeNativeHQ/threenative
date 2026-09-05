@@ -12,6 +12,8 @@ export interface IAndroidDriverOptions {
   adbPath?: string;
   packageName: string;
   serial?: string;
+  /** Android user id to target; when omitted, the device's current foreground user is detected. */
+  user?: string;
   /**
    * The rotation between the touchscreen's raw axes and the frame the app draws in, when the
    * device cannot be asked.
@@ -82,10 +84,13 @@ export class AdbAndroidDriver implements IAndroidDriver {
   }>();
   private nextTrackingId = 100;
   private rotation?: number;
+  private readonly user?: string;
+  private activeUser?: string;
   private viewportPresented = false;
 
   constructor(private readonly options: IAndroidDriverOptions) {
     this.adbPath = options.adbPath ?? discoverAdb();
+    this.user = options.user === undefined ? undefined : validateAndroidUser(options.user);
     if (options.touchRotation !== undefined) {
       if (![0, 1, 2, 3].includes(options.touchRotation)) {
         throw new Error(
@@ -103,16 +108,18 @@ export class AdbAndroidDriver implements IAndroidDriver {
   ): Promise<void> {
     const url = new URL(endpoint);
     const port = url.port;
+    const user = await this.resolveUser();
+    this.activeUser = user;
     await this.adb(["reverse", `tcp:${port}`, `tcp:${port}`]);
     await this.adb(["logcat", "-c"]);
-    await this.adb(["shell", "am", "force-stop", this.options.packageName]);
+    await this.adb(["shell", "am", "force-stop", "--user", user, this.options.packageName]);
     if (viewport !== undefined) await this.presentViewport(viewport);
     await this.adb([
       "shell",
       "am",
       "start",
       "--user",
-      "0",
+      user,
       "-W",
       "-n",
       `${this.options.packageName}/${this.options.activity}`,
@@ -121,6 +128,17 @@ export class AdbAndroidDriver implements IAndroidDriver {
       endpoint,
       ...(mailboxRoot === undefined ? [] : ["--es", "TN_PLAYTEST_MAILBOX_ROOT", mailboxRoot]),
     ]);
+  }
+
+  private async resolveUser(): Promise<string> {
+    if (this.user !== undefined) return this.user;
+    const user = (await this.adb(["shell", "am", "get-current-user"])).trim();
+    if (!/^\d+$/u.test(user)) {
+      throw new Error(
+        `TN_PLAYTEST_ANDROID_USER_UNKNOWN: am get-current-user returned '${user || "empty output"}'. Pass --user with a numeric Android user id.`,
+      );
+    }
+    return user;
   }
 
   /**
@@ -342,7 +360,13 @@ export class AdbAndroidDriver implements IAndroidDriver {
         await this.adb(command).catch(() => undefined);
       }
     }
-    await this.adb(["shell", "am", "force-stop", this.options.packageName]).catch(() => undefined);
+    await this.adb([
+      "shell",
+      "am",
+      "force-stop",
+      ...(this.activeUser === undefined ? [] : ["--user", this.activeUser]),
+      this.options.packageName,
+    ]).catch(() => undefined);
     await this.adb(["reverse", "--remove-all"]).catch(() => undefined);
   }
 
@@ -656,6 +680,14 @@ function isMissingRemoteFile(error: unknown): boolean {
 
 function isMissingRemoteFileOutput(output: string): boolean {
   return /No such file|not found/u.test(output);
+}
+
+function validateAndroidUser(user: string): string {
+  const trimmed = user.trim();
+  if (!/^\d+$/u.test(trimmed)) {
+    throw new Error(`TN_PLAYTEST_ANDROID_USER_INVALID: Android user must be numeric, got '${user}'.`);
+  }
+  return trimmed;
 }
 
 export function discoverAdb(environment: NodeJS.ProcessEnv = process.env): string {
