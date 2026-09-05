@@ -55,6 +55,7 @@ const MICROSECONDS_PER_SECOND = 1_000_000;
 export interface ITraceEvent {
   readonly args?: unknown;
   readonly dur?: number;
+  readonly id?: number | string;
   readonly name?: string;
   readonly ph?: string;
   readonly pid?: number;
@@ -90,10 +91,27 @@ export interface ITraceRunContext {
   readonly displayStrategy: string;
   readonly drivenInput: readonly string[];
   readonly output: string;
+  readonly pipelineDiagnostics?: readonly IInvalidGpuPipelineDiagnostic[];
+  readonly presentationControl?: IRafStats;
+  readonly presentationControlError?: string;
   readonly readiness: TraceReadiness;
   readonly seconds: number;
   readonly url: string;
   readonly virtualDisplay: boolean;
+}
+
+export interface IRafStats {
+  readonly count: number;
+  readonly fps: number;
+  readonly maxMs: number;
+  readonly p50: number;
+  readonly p95: number;
+}
+
+export interface IInvalidGpuPipelineDiagnostic {
+  readonly depthStencil: Readonly<Record<string, unknown>>;
+  readonly label?: string;
+  readonly stack: string;
 }
 
 export interface ITraceFrameStats {
@@ -115,7 +133,9 @@ export interface ITraceFunctionSelfTime {
 
 export type TraceBlockerCode =
   | "TN_TRACE_EMPTY"
+  | "TN_TRACE_INVALID_GPU_PIPELINE"
   | "TN_TRACE_NO_SAMPLES"
+  | "TN_TRACE_PRESENTATION_CONTROL_UNOBSERVABLE"
   | "TN_TRACE_SOFTWARE_ADAPTER"
   | "TN_TRACE_VIRTUAL_DISPLAY";
 
@@ -125,6 +145,7 @@ export interface ITraceBlocker {
 }
 
 export interface ITraceSummary {
+  readonly adapter: Readonly<Record<string, string>> | undefined;
   readonly blockers: readonly ITraceBlocker[];
   /** Main thread idle across the traced span; an idle main thread means the CPU is not the wall. */
   readonly cpuIdlePercent: number | undefined;
@@ -135,9 +156,38 @@ export interface ITraceSummary {
   readonly functions: { readonly top: readonly ITraceFunctionSelfTime[]; readonly totalMs: number };
   readonly gpuBusyPercent: number | undefined;
   readonly output: string;
+  readonly pipelineDiagnostics: readonly IInvalidGpuPipelineDiagnostic[];
+  readonly presentationControl: IRafStats | undefined;
   readonly stalls: { readonly count: number; readonly thresholdMs: number; readonly worstMs: readonly number[] };
   readonly url: string;
   readonly warnings: readonly string[];
+}
+
+/** Summarise browser rAF callbacks sampled on the empty same-origin control page. */
+export function summariseRafTimestamps(timestamps: readonly number[]): IRafStats | undefined {
+  if (timestamps.length < 2) {
+    throw new Error("TN_TRACE_PRESENTATION_CONTROL_MALFORMED: fewer than two rAF timestamps arrived");
+  }
+  const intervals: number[] = [];
+  for (let index = 1; index < timestamps.length; index += 1) {
+    const previous = timestamps[index - 1] as number;
+    const current = timestamps[index] as number;
+    if (!Number.isFinite(previous) || !Number.isFinite(current) || current <= previous) {
+      throw new Error(
+        `TN_TRACE_PRESENTATION_CONTROL_MALFORMED: rAF timestamps must be finite and strictly increasing (index ${index})`,
+      );
+    }
+    intervals.push(current - previous);
+  }
+  intervals.sort((left, right) => left - right);
+  const elapsed = intervals.reduce((total, interval) => total + interval, 0);
+  return {
+    count: intervals.length,
+    fps: elapsed === 0 ? 0 : (intervals.length * 1_000) / elapsed,
+    maxMs: intervals.at(-1) as number,
+    p50: quantile(intervals, 0.5),
+    p95: quantile(intervals, 0.95),
+  };
 }
 
 interface IThreadProfile {
@@ -168,7 +218,8 @@ export function createTraceAccumulator(options: ITraceAccumulatorOptions): ITrac
   const frameTimestamps: number[] = [];
   const stalls: number[] = [];
   const busyByThread = new Map<number, number>();
-  const profiles = new Map<number, IThreadProfile>();
+  const profiles = new Map<string, IThreadProfile>();
+  const profileThreads = new Map<string, number>();
   let frameThread: number | undefined;
   let gpuBusyUs = 0;
   let events = 0;
@@ -192,6 +243,10 @@ export function createTraceAccumulator(options: ITraceAccumulatorOptions): ITrac
         if (event.dur > stallThresholdUs) stalls.push(event.dur);
         return;
       }
+      if (name === "Profile" && typeof event.tid === "number") {
+        profileThreads.set(traceProfileKey(event), event.tid);
+        return;
+      }
       if (name === "ProfileChunk") foldProfileChunk(profiles, event);
     },
     summarise(run: ITraceRunContext): ITraceSummary {
@@ -203,6 +258,7 @@ export function createTraceAccumulator(options: ITraceAccumulatorOptions): ITrac
         busyByThread,
         options,
         profiles,
+        profileThreads,
         run,
         stalls,
       });
@@ -216,14 +272,20 @@ export function createTraceAccumulator(options: ITraceAccumulatorOptions): ITrac
  * chunk-local, so folding per chunk gives the same answer as concatenating every chunk first —
  * without holding a million sample ids to do it.
  */
-function foldProfileChunk(profiles: Map<number, IThreadProfile>, event: ITraceEvent): void {
+function traceProfileKey(event: ITraceEvent): string {
+  return event.id === undefined
+    ? `tid:${event.tid ?? -1}`
+    : `pid:${event.pid ?? -1}:id:${String(event.id)}`;
+}
+
+function foldProfileChunk(profiles: Map<string, IThreadProfile>, event: ITraceEvent): void {
   const data = (event.args as { data?: { cpuProfile?: { nodes?: unknown; samples?: unknown }; timeDeltas?: unknown } } | undefined)?.data;
   if (data === undefined) return;
-  const thread = typeof event.tid === "number" ? event.tid : -1;
-  let profile = profiles.get(thread);
+  const key = traceProfileKey(event);
+  let profile = profiles.get(key);
   if (profile === undefined) {
     profile = { nodes: new Map(), self: new Map(), totalUs: 0 };
-    profiles.set(thread, profile);
+    profiles.set(key, profile);
   }
   const nodes = data.cpuProfile?.nodes;
   if (Array.isArray(nodes)) {
@@ -261,7 +323,8 @@ interface ISummariseInput {
   readonly frameTimestamps: readonly number[];
   readonly gpuBusyUs: number;
   readonly options: ITraceAccumulatorOptions;
-  readonly profiles: ReadonlyMap<number, IThreadProfile>;
+  readonly profiles: ReadonlyMap<string, IThreadProfile>;
+  readonly profileThreads: ReadonlyMap<string, number>;
   readonly run: ITraceRunContext;
   readonly stalls: readonly number[];
 }
@@ -288,7 +351,11 @@ function summarise(input: ISummariseInput): ITraceSummary {
           p99: quantile(gaps, 0.99),
           spanSeconds,
         };
-  const profile = input.profiles.get(input.frameThread ?? -1) ?? busiestProfile(input.profiles, input.frameThread);
+  const correlatedProfile = [...input.profileThreads].find(([, thread]) => thread === input.frameThread)?.[0];
+  const profile =
+    (correlatedProfile === undefined ? undefined : input.profiles.get(correlatedProfile)) ??
+    input.profiles.get(`tid:${input.frameThread ?? -1}`) ??
+    busiestProfile(input.profiles, input.frameThread);
   const totalUs = profile?.totalUs ?? 0;
   const top = [...(profile?.self ?? new Map<string, number>())]
     .sort((left, right) => right[1] - left[1] || (left[0] < right[0] ? -1 : 1))
@@ -299,6 +366,7 @@ function summarise(input: ISummariseInput): ITraceSummary {
     });
   const mainBusyUs = input.frameThread === undefined ? undefined : input.busyByThread.get(input.frameThread);
   const summary: ITraceSummary = {
+    adapter: run.adapter,
     blockers: blockersFor(input, totalUs),
     cpuIdlePercent:
       mainBusyUs === undefined || spanUs === 0 ? undefined : Math.max(0, 100 - (mainBusyUs / spanUs) * 100),
@@ -308,6 +376,8 @@ function summarise(input: ISummariseInput): ITraceSummary {
     functions: { top, totalMs: totalUs / MICROSECONDS_PER_MS },
     gpuBusyPercent: spanUs === 0 ? undefined : (input.gpuBusyUs / spanUs) * 100,
     output: run.output,
+    pipelineDiagnostics: run.pipelineDiagnostics ?? [],
+    presentationControl: run.presentationControl,
     stalls: {
       count: input.stalls.length,
       thresholdMs: input.options.stallThresholdMs,
@@ -325,7 +395,7 @@ function summarise(input: ISummariseInput): ITraceSummary {
  * all — then the busiest profile is the best available guess and is reported as such.
  */
 function busiestProfile(
-  profiles: ReadonlyMap<number, IThreadProfile>,
+  profiles: ReadonlyMap<string, IThreadProfile>,
   frameThread: number | undefined,
 ): IThreadProfile | undefined {
   if (frameThread !== undefined) return undefined;
@@ -369,11 +439,35 @@ function blockersFor(input: ISummariseInput, sampledUs: number): readonly ITrace
         "No ProfileChunk samples arrived, so no function can be named — which is the whole reason to take a trace rather than read the frame meters. Confirm 'disabled-by-default-v8.cpu_profiler' survived into the trace config.",
     });
   }
+  if ((run.pipelineDiagnostics?.length ?? 0) > 0) {
+    blockers.push({
+      code: "TN_TRACE_INVALID_GPU_PIPELINE",
+      message:
+        `${run.pipelineDiagnostics?.length ?? 0} createRenderPipelineAsync call(s) supplied depthStencil without a format. The authored call-site stacks are included in this report; WebGPU validation and rejection were not suppressed.`,
+    });
+  }
+  if (run.presentationControl === undefined) {
+    blockers.push({
+      code: "TN_TRACE_PRESENTATION_CONTROL_UNOBSERVABLE",
+      message:
+        `The empty same-origin presentation control produced no valid rAF distribution${run.presentationControlError === undefined ? "." : `: ${run.presentationControlError}`}`,
+    });
+  }
   return blockers;
 }
 
 function warningsFor(run: ITraceRunContext): readonly string[] {
   const warnings: string[] = [];
+  const control = run.presentationControl;
+  if (control !== undefined) {
+    const nominalIntervalMs = 1_000 / 60;
+    const divisor = Math.round(control.p50 / nominalIntervalMs);
+    if (divisor >= 2 && Math.abs(control.p50 / nominalIntervalMs - divisor) <= 0.08) {
+      warnings.push(
+        `The empty-page rAF control is on an apparent clean slow divisor (${control.p50.toFixed(1)}ms median, about 1/${divisor} of a nominal 60-callback lane). Treat game cadence attribution as confounded; this is not a physical refresh measurement.`,
+      );
+    }
+  }
   if (run.virtualDisplay) {
     warnings.push(
       `Ran on a virtual display (${run.displayStrategy}); the frame rate is suppressed because a frame rate measured there is wrong rather than absent.`,
@@ -507,6 +601,17 @@ export function formatTraceSummary(summary: ITraceSummary): string {
     `trace — ${summary.events} events from ${summary.url}`,
     `raw trace: ${summary.output} (open it in Chrome DevTools' Performance panel when a line below points somewhere specific)`,
   ];
+  lines.push(
+    summary.adapter === undefined
+      ? "adapter.info: unavailable"
+      : `adapter.info: ${Object.entries(summary.adapter).map(([key, value]) => `${key}=${value}`).join(" ")}`,
+  );
+  if (summary.presentationControl !== undefined) {
+    const { count, fps, maxMs, p50, p95 } = summary.presentationControl;
+    lines.push(
+      `presentation control rAF: ${count} intervals  p50 ${p50.toFixed(1)}ms  p95 ${p95.toFixed(1)}ms  max ${maxMs.toFixed(1)}ms  average ${fps.toFixed(1)}/s (browser callbacks on an empty same-origin page; not a display refresh measurement)`,
+    );
+  }
   if (summary.frames === undefined) {
     lines.push(
       summary.display.virtual
@@ -543,6 +648,11 @@ export function formatTraceSummary(summary: ITraceSummary): string {
         `  ${entry.percent.toFixed(1).padStart(5)}%  ${entry.selfMs.toFixed(0).padStart(6)}ms  ${entry.name} ${entry.site}`,
       );
     }
+  }
+  for (const diagnostic of summary.pipelineDiagnostics) {
+    lines.push(
+      `DIAGNOSTIC TN_INVALID_DEPTH_PIPELINE${diagnostic.label === undefined ? "" : ` label=${diagnostic.label}`} depthStencil=${JSON.stringify(diagnostic.depthStencil)}\n${diagnostic.stack}`,
+    );
   }
   for (const warning of summary.warnings) lines.push(`WARN ${warning}`);
   for (const blocker of summary.blockers) lines.push(`FAIL ${blocker.code}: ${blocker.message}`);

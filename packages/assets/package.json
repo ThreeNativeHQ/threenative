@@ -14,7 +14,7 @@
     "directory": "packages/assets"
   },
   "type": "module",
-  "files": ["dist", "README.md"],
+  "files": ["dist", "README.md", "THIRD_PARTY_NOTICES.md", "LICENSES"],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -30,7 +30,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "tsup --config tsup.config.ts && node scripts/bundle-blender-gpl.mjs && publint",
+    "build": "tsup --config tsup.config.ts && node scripts/copy-basis-encoder.mjs && node scripts/bundle-blender-gpl.mjs && publint",
     "typecheck": "tsc --noEmit",
     "test": "pnpm run build && publint --strict"
   },
@@ -52,7 +52,6 @@
     "draco3dgltf": "^1.5.7",
     "jpeg-js": "0.4.4",
     "ktx-parse": "^1.1.0",
-    "ktx2-encoder": "0.6.0",
     "meshoptimizer": "1.1.1",
     "pngjs": "7.0.0",
     "three": "catalog:",

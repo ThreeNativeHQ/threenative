@@ -23,6 +23,14 @@ export interface ISharedImage {
   readonly mimeType: string;
 }
 
+export interface ISharedImageStoreOptions {
+  /**
+   * Persist `put()` immediately. The compiler disables this because it publishes the returned
+   * auxiliary output itself, after recording ownership; direct stores retain write-through.
+   */
+  readonly writeThrough?: boolean;
+}
+
 export interface ISharedImageStore {
   /** The image encoded from this key, from memory or from a previous build's output. */
   get(key: string): Promise<ISharedImage | undefined>;
@@ -93,7 +101,10 @@ export function sharedImageKey(
  * Disk hits are read lazily from `<outputRoot>/shared/images/`; nothing there is ever rewritten,
  * because a content-addressed file that exists is by definition already right.
  */
-export function createSharedImageStore(outputRoot?: string): ISharedImageStore {
+export function createSharedImageStore(
+  outputRoot?: string,
+  options: ISharedImageStoreOptions = {},
+): ISharedImageStore {
   const memory = new Map<string, ISharedImage>();
   let listing: Promise<Map<string, string>> | undefined;
   const directory =
@@ -138,7 +149,7 @@ export function createSharedImageStore(outputRoot?: string): ISharedImageStore {
     outputPath: (key, image) => `${SHARED_IMAGES_DIRECTORY}/${fileNameFor(key, image)}`,
     put: async (key, image) => {
       memory.set(key, image);
-      if (directory === undefined) return;
+      if (directory === undefined || options.writeThrough === false) return;
       const name = fileNameFor(key, image);
       const known = await onDisk();
       if (known.has(key)) return;
@@ -217,18 +228,18 @@ export async function writeSharedGlb(
   const buffers = json.buffers ?? [];
   const external = buffers.filter((buffer) => buffer.uri !== undefined);
   const first = buffers[0];
-  if (external.length !== 1 || first === undefined || first.uri === undefined) {
+  if (buffers.length > 0 && (external.length !== 1 || first?.uri === undefined)) {
     throw new Error(
       `TN_ASSETS_MODEL_WRITE_FAILED: '${logicalPath}' must write exactly one binary buffer as buffer 0 to pack as GLB; found ${String(external.length)} external buffer(s).`,
     );
   }
-  const bin = resources[first.uri];
-  if (bin === undefined) {
+  const bin = first?.uri === undefined ? undefined : resources[first.uri];
+  if (first !== undefined && bin === undefined) {
     throw new Error(`TN_ASSETS_MODEL_WRITE_FAILED: '${logicalPath}' wrote no bytes for buffer 0.`);
   }
-  delete resources[first.uri];
+  if (first?.uri !== undefined) delete resources[first.uri];
   // JSON.stringify drops an undefined member, so the packed buffer 0 has no uri.
-  first.uri = undefined;
+  if (first !== undefined) first.uri = undefined;
   const remaining = Object.keys(resources);
   if (remaining.length > 0) {
     throw new Error(
@@ -236,9 +247,12 @@ export async function writeSharedGlb(
     );
   }
   const jsonChunk = padded(Buffer.from(JSON.stringify(json), "utf8"), 0x20);
-  const binChunk = padded(Buffer.from(bin.buffer, bin.byteOffset, bin.byteLength), 0x00);
+  const binChunk =
+    bin === undefined
+      ? undefined
+      : padded(Buffer.from(bin.buffer, bin.byteOffset, bin.byteLength), 0x00);
   const header = Buffer.alloc(12);
-  const total = 12 + 8 + jsonChunk.length + 8 + binChunk.length;
+  const total = 12 + 8 + jsonChunk.length + (binChunk === undefined ? 0 : 8 + binChunk.length);
   header.writeUInt32LE(GLB_MAGIC, 0);
   header.writeUInt32LE(2, 4);
   header.writeUInt32LE(total, 8);
@@ -246,10 +260,15 @@ export async function writeSharedGlb(
   jsonHeader.writeUInt32LE(jsonChunk.length, 0);
   jsonHeader.writeUInt32LE(CHUNK_JSON, 4);
   const binHeader = Buffer.alloc(8);
-  binHeader.writeUInt32LE(binChunk.length, 0);
+  binHeader.writeUInt32LE(binChunk?.length ?? 0, 0);
   binHeader.writeUInt32LE(CHUNK_BIN, 4);
   return {
-    buffer: Buffer.concat([header, jsonHeader, jsonChunk, binHeader, binChunk]),
+    buffer: Buffer.concat([
+      header,
+      jsonHeader,
+      jsonChunk,
+      ...(binChunk === undefined ? [] : [binHeader, binChunk]),
+    ]),
     extensionsUsed: json.extensionsUsed ?? [],
     json,
   };

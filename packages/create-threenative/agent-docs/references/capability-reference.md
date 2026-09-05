@@ -199,7 +199,7 @@ export function texturePass(options: ITexturePassOptions = { … }
 ```
 
 - **Use when:** optimize textures for the GPU · compress PNG or JPEG files before runtime loading
-- **Constraints:** compressed source width and height must each be divisible by 4; use a codec "none" override for an intentionally unaligned texture · every compressed source width and height must be divisible by 4 because BC7, BC1, ETC2, and ASTC 4x4 use 4x4 blocks; WebGPU rejects an unaligned texture at draw time · use a matching codec "none" override when an intentionally unaligned source cannot be resized
+- **Constraints:** compressed source width and height must each be divisible by 4; automatic cooking retains an unaligned source unchanged and reports block-size, while an explicit compression codec override fails · every compressed source width and height must be divisible by 4 because BC7, BC1, ETC2, and ASTC 4x4 use 4x4 blocks; WebGPU rejects an unaligned texture at draw time · automatic cooking retains an unaligned source unchanged and reports block-size; an explicit compression codec override fails, while codec "none" remains available
 
 ```ts
 const pass = texturePass({ quality: 150 });

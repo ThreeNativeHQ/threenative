@@ -525,7 +525,7 @@ The final comparison returned finite diagnostic evidence (`score: 0.417777`,
 The packaged example spec passed; empty specs and missing, zero-byte, and decoded single-colour
 captures returned MCP errors.
 
-- [Reference](../../verification/prd-049-sculpt-reference.png)
+- [Reference](../../benchmark/genres/exploration/reference.png)
 - [Sculpt arm](../../verification/prd-049-sculpt-frame.png)
 - [No-sculpt control](../../verification/prd-049-sculpt-control.png)
 

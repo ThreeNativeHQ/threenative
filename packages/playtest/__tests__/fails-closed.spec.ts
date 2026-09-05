@@ -70,7 +70,7 @@ async function runFixture(mode: string, scenarioPath: string) {
 test("should fail when console errors are captured and the scenario is silent", async () => {
   const report = await runFixture("console-only", "permissive.playtest.json");
 
-  expect(exitCodeForReport(report)).toBe(1);
+  expect(exitCodeForReport(report), JSON.stringify(report.diagnostics)).toBe(1);
   expect(report.pass).toBe(false);
   expect(report.assertionResults).toContainEqual(expect.objectContaining({ id: "diagnostics", pass: false }));
   expect(report.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_CONSOLE_ERROR");

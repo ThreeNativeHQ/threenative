@@ -199,9 +199,13 @@ Device lanes are in `packages/runtime-native/AGENTS.md`; PRD filing and the roun
 `docs/PRDs/AGENTS.md`. Another agent may be working in this tree at the same time, so commit as you
 go — an uncommitted edit here does get overwritten.
 
-`.worktrees/` holds other agents' lanes — never search it, never read its AGENTS.md. A repo-wide
-grep or a "closest AGENTS.md" walk that lands there is reading a dead lane from another day, not
-this repository. `docs/benchmark/sweeps/*/` had the same hazard: 2,963 generated arm `.ts` sources
-every grep used to cross. Those are now untracked — the measurements beside them (`proof.json`,
-`proof-artifacts/`, captures) stay tracked, because they are the benchmark record and three test
-suites read them.
+`.worktrees/` and `.claude/worktrees/` hold other agents' lanes — never search them, never read
+their AGENTS.md. A repo-wide grep or a "closest AGENTS.md" walk that lands there is reading a dead
+lane from another day, not this repository. Both are in `.gitignore`. Generated sweep arm sources
+and scaffold instruction files are untracked; their benchmark records (`proof.json`,
+`proof-artifacts/`, captures) stay tracked.
+
+A tracked `.ignore` keeps `docs/PRDs/done/` and generated `CLAUDE.md` mirrors out of the **default**
+search path without untracking or deleting them. Both stay tracked, cited and budgeted. Reach them
+on purpose with `rg --no-ignore <pattern>` or by naming the directory as the search root
+(`rg <pattern> docs/PRDs/done`).

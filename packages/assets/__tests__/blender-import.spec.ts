@@ -41,9 +41,9 @@ interface IGlbFacts {
   readonly triangles: number;
 }
 
-async function readGlbFacts(buffer: Buffer): Promise<IGlbFacts> {
+async function readGlbFacts(buffer: Buffer, file?: string): Promise<IGlbFacts> {
   const io = await createGltfReader(buffer);
-  const document = await readGltfDocument(io, buffer);
+  const document = file === undefined ? await readGltfDocument(io, buffer) : await io.read(file);
   const root = document.getRoot();
   const triangles = root
     .listMeshes()
@@ -192,10 +192,16 @@ withBlender("compileAssets with a blender source", () => {
       expect(output.endsWith(".glb"), output).toBe(true);
 
       const produced = await readFile(path.join(outputRoot, output));
-      const facts = await readGlbFacts(produced);
+      const facts = await readGlbFacts(produced, path.join(outputRoot, output));
       expect(facts.animations.length).toBeGreaterThanOrEqual(2);
       expect(facts.joints).toBeGreaterThan(0);
       expect(facts.materials.length).toBeGreaterThanOrEqual(2);
+      const cached = await compileAssets({ cwd: root, health: true });
+      expect(cached.skipped).toBe(1);
+      expect(cached.report?.entries[0]?.model?.materials).toBeGreaterThanOrEqual(2);
+      await expect(
+        compileAssets({ cwd: root, config: { targets: { maxTriangles: 1 } } }),
+      ).rejects.toThrow("TN_ASSETS_HEALTH_FAILED");
 
       // The incumbent is gone: no `.fbx` survives into the output tree.
       const copied = await readdir(outputRoot, { recursive: true });

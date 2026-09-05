@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
 import { describe, expect, it } from "vitest";
+import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
 import {
@@ -108,6 +109,12 @@ const BUG_REPORT_SKILL_PATHS = [
 // refreshed genre kits.
 // Recomputed 2026-09-04 after merging PR #99: every scaffold gains the loading, trace, audio,
 // streaming, and alpha-antialiasing surfaces; starter also retains its authored coastal look.
+// Recomputed 2026-09-04 for PRD-349 after observing the old pin fail: every template documents
+// cook defaults and overrides; starter and sailing also omit their assets opt-outs.
+// Recomputed 2026-09-04 after the observed PRD-349 alignment-doc red: every template and its
+// generated capability reference now document the automatic unchanged-size fallback.
+// Re-pinned after folding that guidance into the existing paragraph to retain the 100-line
+// agent-document budget; the template contract red and all ten changed hashes were observed.
 // Recomputed 2026-09-04 for the sceneNodes and causedBy assertion families: the generated
 // assertion reference every scaffold ships now documents 28 kinds, so all ten trees move by that
 // one file. Recomputed again the same day, on the merge, for PRD-265 and PRD-278 AC9: the playtest
@@ -116,6 +123,10 @@ const BUG_REPORT_SKILL_PATHS = [
 // reference carries into every scaffold too. The values below are measured on the merged tree, so
 // they are neither branch's. `sailing` moves for a third reason: its native scenario now asserts
 // the render chain it applies on the desktop host.
+// Recomputed 2026-09-05 on the merge of origin/main (PRD-357) into this lane. Both sides had
+// re-pinned this table for unrelated reasons — PRD-265/PRD-278 here, PRD-349's cook defaults
+// there — so neither branch's values describe the merged tree. All ten are measured from the
+// merged worktree with no sibling lane's edits in it, per the clean-checkout rule above.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-03 after merging PRD-346's MCP host configs into the authored painterly
   // starter. Every scaffold gains the Blender server wiring; starter also gains its bounded mix.
@@ -243,19 +254,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "4f4c15b58835c2cba4b0956411bfd10bc0a271a273c08069aa5eb2ef3e510b52",
-  defense: "b5fedafec96e917988e0aae2b339ac0d211045d528220ada96fcf2cd10c5407e",
+  "action-rpg": "e2da0aa7381c0919f85e4a71b644fb3f11e8f4cbbb3e845f341d453d1b96df0f",
+  defense: "561b5f9b995bd7d474453b3a335a5fac535603e1dd62753666926528e4fd2523",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "fa1bd1fdc1f89bf6faa0b6ec76a89ebdc594ad02e111fce5bd9efe80c53739ee",
-  platformer: "b0767f920a0f390da2dc53adbfc4e594d079683c7a0bd4d94ed228ae5396cc64",
-  runner: "f71a7dcfef63252737f75ad25fbefd9891aceb36a53547cf7939ee6613b0d313",
-  puzzle: "392dc15a39001758b348ed5525ac4f451f2c97fa40de17a7e1a5c485ce0fc5d5",
-  racing: "472a43a19a118b663d91eb19403ad257c88ad0291f38120430266e08657866ff",
-  shooter: "8086d11b625a6d02a2f18c42f8441392c12079c885cb74a5070cffd6eee83859",
+  minimal: "c5c7dec1da48c9c55ff765664652a686565aa5f5799766cc445e9179fbc9e058",
+  platformer: "ca8f2cc3000fcc4c35fbbc859a75785bd6c31cfcf12bbc8051e0d88110699829",
+  runner: "5792baffe8e6a50e5c1e3fa04df7cbb60a647f65de4729896740c58889ad4d7e",
+  puzzle: "c9dbfac289ba9d396e70ae501d3578d74d4c347e8dc9b54485f250adc1ec3be9",
+  racing: "8f8b1cf7874f6e9461926cf5d811eaf49e6b5f7359a6a9a84c1eb144fac18af7",
+  shooter: "48d28e61dc5ddcad129f26f76b43561ab6beb710f3784df05cb7f8ed3b39e08e",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "ff92dcb8f6ed0fe1a7f7395422e92f4d16bc4cf09f8b75a7aa059b4ff3156674",
+  starter: "d98d8e658271f833664b0324b1da182035edede728ecc34b6a9badc6501041c9",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -276,7 +287,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "55cbf760c40e6790a65fa549183adcb24c771188481aed4bc63c2cae635013f4",
+  sailing: "c0e6785e308b06cc7a0f26639487eb55b079d25865c8979cdfb10464394606c2",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -576,6 +587,24 @@ describe("create-threenative", () => {
     }
   });
 
+  it("copies the canonical native icon to every fixed generated output", async () => {
+    const canonical = await readFile(
+      path.resolve("packages/create-threenative/template-assets/icon.png"),
+    );
+    const root = await makeTempDir("threenative-scaffold-icon-");
+    try {
+      for (const template of ALL_TEMPLATES) {
+        const { target } = await createProject(
+          { install: false, target: `${template}-game`, template },
+          root,
+        );
+        expect(await readFile(path.join(target, "public/icon.png")), template).toEqual(canonical);
+      }
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   // P2-2: the bounded instructions name long recipes by their shipped path. This is the
   // generated-project check behind the "omit reference copying" negative control: with
   // `copyReferenceBundle` removed from `createProject`, the scaffold itself throws
@@ -722,6 +751,21 @@ describe("create-threenative", () => {
       await cp(path.join(TEMPLATE_ROOT, "starter", "assets"), path.join(root, "assets"), {
         recursive: true,
       });
+      const channel = (x: number, y: number, shift: number): number => {
+        let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
+        value ^= value >>> 16;
+        return value >>> shift;
+      };
+      await writeFile(
+        path.join(root, "assets", "web-codec-proof.png"),
+        rgbaPng({
+          blue: (x, y) => channel(x, y, 16),
+          green: (x, y) => channel(x, y, 8),
+          height: 128,
+          red: (x, y) => channel(x, y, 0),
+          width: 128,
+        }),
+      );
 
       await compileAssets({ cwd: root, platform: "android" });
       const android = JSON.parse(
@@ -739,7 +783,8 @@ describe("create-threenative", () => {
       const web = JSON.parse(
         await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
       ) as { entries: Record<string, { output: string }> };
-      expect(Object.values(web.entries).some((entry) => entry.output.endsWith(".ktx2"))).toBe(true);
+      expect(web.entries["native-proof.png"]?.output).toMatch(/\.png$/u);
+      expect(web.entries["web-codec-proof.png"]?.output).toMatch(/\.ktx2$/u);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

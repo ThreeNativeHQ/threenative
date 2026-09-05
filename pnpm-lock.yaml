@@ -536,9 +536,6 @@ importers:
       ktx-parse:
         specifier: ^1.1.0
         version: 1.1.0
-      ktx2-encoder:
-        specifier: 0.6.0
-        version: 0.6.0
       meshoptimizer:
         specifier: 1.1.1
         version: 1.1.1

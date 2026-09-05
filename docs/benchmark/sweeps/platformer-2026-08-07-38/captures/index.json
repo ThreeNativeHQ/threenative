@@ -8,7 +8,7 @@
       "luminanceStdDev": 0.16626283437654615,
       "width": 1280,
       "bytes": 206257,
-      "capture": "platformer-jump-proof-after.png",
+      "capture": "../../platformer-2026-08-07-37/captures/platformer-jump-proof-after.png",
       "scenario": "platformer-jump-proof",
       "source": "proof-artifacts/0/after.png"
     },

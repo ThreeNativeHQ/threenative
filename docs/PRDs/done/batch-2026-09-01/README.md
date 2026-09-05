@@ -61,7 +61,7 @@ flowchart LR
 | [PRD-321](../PRD-321-the-animal-state-machine-is-mechanism-the-animals-are-the-game.md) (DECLINED) | Wildwood extraction | — | — |
 | [PRD-322](../PRD-322-quality-tier-resolution-is-a-platform-seam.md) (DECLINED 2026-09-04) | Wildwood extraction | — | ~2h |
 | [PRD-323](../PRD-323-evidence-has-a-retention-policy-and-a-gate.md) (archived 2026-09-04) | doc and evidence bloat | — | ~5h |
-| [PRD-324](../../authoring/PRD-324-an-imported-rig-instances-and-poses-correctly-once.md) (filed 2026-09-02; Phases 0–2 DONE, 3–7 **open** — moved to `authoring/` beside its owning round) | Wildwood extraction | — | — |
+| [PRD-324](../../authoring/PRD-354-an-imported-rig-instances-and-poses-correctly-once.md) (filed 2026-09-02; Phases 0–2 DONE, 3–7 **open** — moved to `authoring/` beside its owning round) | Wildwood extraction | — | — |
 
 ## The third theme: the evidence record outgrew its readers
 

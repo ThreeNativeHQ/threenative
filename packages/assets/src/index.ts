@@ -85,7 +85,7 @@ export type { ITextureOverride, ITexturePassOptions, TextureCodec } from "./pass
  * Encodes standalone textures as mipmapped KTX2/Basis assets for GPU storage.
  * @situation optimize textures for the GPU
  * @situation compress PNG or JPEG files before runtime loading
- * @constraint compressed source width and height must each be divisible by 4; use a codec "none" override for an intentionally unaligned texture
+ * @constraint compressed source width and height must each be divisible by 4; automatic cooking retains an unaligned source unchanged and reports block-size, while an explicit compression codec override fails
  * @example const pass = texturePass({ quality: 150 });
  */
 export { texturePass } from "./passes/texture.js";

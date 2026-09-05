@@ -1,19 +1,29 @@
 import { type FSWatcher, watch } from "node:fs";
-import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { stat } from "node:fs/promises";
 import path from "node:path";
-import {
-  type IAssetCompileOptions,
-  type IBasisTranscoder,
-  compileAssets,
-  resolveBasisTranscoder,
-} from "./compile.js";
+import { type IAssetCompileOptions, compileAssets } from "./compile.js";
 import type { IPassCostRow } from "./report.js";
-import { DEFAULT_CONCURRENCY } from "./worker-pool.js";
 
 /**
- * Dev-mode compilation: watches the asset source directory and recompiles changed inputs into
- * the output directory, so the dev loop is not "rebuild to see a texture".
+ * Dev-mode compilation: watches the asset source directory and recompiles into the output
+ * directory, so the dev loop is not "rebuild to see a texture".
+ *
+ * A settled burst runs `compileAssets` over the whole project — the same call the build lane
+ * makes, once per burst rather than once per changed file. The compiler's cache is what makes
+ * that affordable: an input whose bytes and pass configuration are unchanged is a hit and is
+ * never re-encoded, so a save pays for the file that changed. It is also the only way the output
+ * root stays honest, because nothing that matters here is per-file. One cook writes the manifest,
+ * the receipt naming every file it owns, the shared images several models point at and the Basis
+ * runtime the KTX2 loader fetches for them; it deletes the outputs the previous receipt owned and
+ * this one does not; and it measures the byte budget across the project, which is the only scale
+ * a ceiling means anything at. Cooking one file in isolation can produce a file but never a
+ * project: it publishes an entry without the images underneath it, orphans yesterday's output in
+ * `public/` the moment a save renames it, and clears a whole-game budget by weighing one asset.
+ *
+ * The price is that a burst fails closed. One compile means a broken file fails the burst, so a
+ * good file saved beside it is not published either. That is the compiler's own contract — a pass
+ * failure stops the build with the asset path — and the safe direction here: the last good cook
+ * keeps serving, the named failure goes to stderr, and the next good save heals it.
  *
  * Watcher mechanism: `node:fs.watch({ recursive: true })` — deliberately neither chokidar nor
  * Vite's own server watcher. This package is Node-only with zero runtime dependencies; Vite's
@@ -27,9 +37,9 @@ export interface IAssetWatchSummary {
   readonly compiled: readonly string[];
   readonly failed: readonly string[];
   /**
-   * One cost row per pass across this burst's compiles, the same record shape a build emits.
-   * Present only when the burst compiled something; a scratch compile never reports `cached`
-   * because it starts from an empty output root.
+   * One cost row per pass for this burst's compile, the same records a build emits. Present only
+   * when the burst compiled something; a burst compiles the whole project, so an input the cache
+   * skipped is counted in `cachedInputs` rather than left out.
    */
   readonly passCosts?: readonly IPassCostRow[];
 }
@@ -52,196 +62,23 @@ export interface IAssetWatchHandle {
   close(): void;
 }
 
-interface IWatchLayout {
-  readonly manifestPath: string;
-  readonly outputRoot: string;
-  readonly sourceRoot: string;
-}
-
-interface IManifestFile {
-  readonly entries: Record<string, unknown>;
-  readonly raw: string | undefined;
-}
-
-interface ICompiledEntry {
-  readonly output: string;
-}
-
-// Mirrors compile.ts, whose resolver is internal; its validation (unknown keys, overlapping
-// directories) runs through every compileAssets call below, so only resolution is repeated here.
-const MANIFEST_NAME = "assets.manifest.json";
 const DEFAULT_SOURCE = "assets";
-const DEFAULT_OUTPUT = "public";
 const DEFAULT_DEBOUNCE_MS = 100;
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Folds a burst's per-file cost rows into one row per pass, in first-seen registry order. */
-function mergePassCosts(perFile: readonly (readonly IPassCostRow[])[]): readonly IPassCostRow[] {
-  const merged = new Map<
-    string,
-    { assets: IPassCostRow["assets"]; cachedInputs: number; durationMs: number; ranInputs: number }
-  >();
-  for (const rows of perFile) {
-    for (const row of rows) {
-      const record = merged.get(row.pass) ?? {
-        assets: [],
-        cachedInputs: 0,
-        durationMs: 0,
-        ranInputs: 0,
-      };
-      merged.set(row.pass, {
-        assets: [...record.assets, ...row.assets],
-        cachedInputs: record.cachedInputs + row.cachedInputs,
-        durationMs: record.durationMs + row.durationMs,
-        ranInputs: record.ranInputs + row.ranInputs,
-      });
-    }
-  }
-  return [...merged].map(([pass, record]) => ({
-    assets: [...record.assets].sort((left, right) =>
-      left.logicalPath < right.logicalPath ? -1 : 1,
-    ),
-    cachedInputs: record.cachedInputs,
-    durationMs: record.durationMs,
-    pass,
-    ranInputs: record.ranInputs,
-    status: record.ranInputs > 0 ? ("ran" as const) : ("cached" as const),
-  }));
-}
-
-function resolveWatchLayout(cwd: string, options: IAssetWatchOptions): IWatchLayout {
-  const source = options.source ?? options.config?.source ?? DEFAULT_SOURCE;
-  const output = options.output ?? options.config?.output ?? DEFAULT_OUTPUT;
-  const sourceRoot = path.resolve(cwd, source);
-  const outputRoot = path.resolve(cwd, output);
-  return { manifestPath: path.join(outputRoot, MANIFEST_NAME), outputRoot, sourceRoot };
-}
-
-function readManifest(manifestPath: string): Promise<IManifestFile> {
-  const fail = (reason: string): Error =>
-    new Error(`TN_ASSETS_MANIFEST_INVALID: '${manifestPath}' ${reason}.`);
-  return readFile(manifestPath, "utf8").then(
-    (raw) => {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        throw fail("is not valid JSON");
-      }
-      if (
-        typeof parsed !== "object" ||
-        parsed === null ||
-        Array.isArray(parsed) ||
-        (parsed as { version?: unknown }).version !== 1 ||
-        typeof (parsed as { entries?: unknown }).entries !== "object" ||
-        (parsed as { entries: unknown }).entries === null ||
-        Array.isArray((parsed as { entries: unknown }).entries)
-      ) {
-        throw fail("must hold version 1 entries");
-      }
-      return { entries: (parsed as { entries: Record<string, unknown> }).entries, raw };
-    },
-    () => ({ entries: {}, raw: undefined }),
-  );
-}
-
-/** Temp file + rename: a crash mid-write must never leave a truncated manifest behind. */
-async function writeManifestAtomically(
-  manifestPath: string,
-  entries: Record<string, unknown>,
-  raw: string | undefined,
-): Promise<void> {
-  const ordered: Record<string, unknown> = {};
-  for (const key of Object.keys(entries).sort()) ordered[key] = entries[key];
-  const serialized = `${JSON.stringify({ version: 1, entries: ordered }, null, 2)}\n`;
-  if (serialized === raw) return;
-  const temporary = `${manifestPath}.${process.pid}.tmp`;
-  await writeFile(temporary, serialized, "utf8");
-  await rename(temporary, manifestPath);
-}
-
-/**
- * Compiles exactly one input by running `compileAssets` inside a scratch directory holding only
- * that file, then copying the hashed output out. Delegating keeps hashing, classification and
- * pass semantics in one place, so a dev save can never produce names the build would not.
- */
-interface IRecompiled {
-  readonly entry: ICompiledEntry;
-  /** The driver-measured per-pass costs this one input produced, from the scratch compile. */
-  readonly passCosts: readonly IPassCostRow[];
-}
-
-async function recompileOne(
-  layout: IWatchLayout,
-  compileOptions: {
-    readonly config?: IAssetCompileOptions["config"];
-    readonly output?: string;
-    readonly passes?: IAssetCompileOptions["passes"];
-    readonly source?: string;
-    readonly transcoder?: IBasisTranscoder;
-  },
-  logical: string,
-): Promise<IRecompiled> {
-  const scratch = await mkdtemp(path.join(tmpdir(), "threenative-watch-"));
-  try {
-    const stagedInput = path.join(scratch, DEFAULT_SOURCE, logical);
-    await mkdir(path.dirname(stagedInput), { recursive: true });
-    await writeFile(stagedInput, await readFile(path.join(layout.sourceRoot, logical)));
-    // The scratch directory has no node_modules of its own; the resolved options carry the
-    // project's transcoder paths so a single-texture save produces exactly what a build
-    // would — including the Basis runtime files the KTX2 loader fetches. cwd/output/source
-    // stay the scratch lane's own: the resolved options must never override them.
-    const compiled = await compileAssets({
-      cwd: scratch,
-      output: "out",
-      source: DEFAULT_SOURCE,
-      ...(compileOptions.config === undefined ? {} : { config: compileOptions.config }),
-      ...(compileOptions.passes === undefined ? {} : { passes: compileOptions.passes }),
-      ...(compileOptions.transcoder === undefined ? {} : { transcoder: compileOptions.transcoder }),
-    });
-    const scratchManifest = JSON.parse(
-      await readFile(path.join(scratch, "out", MANIFEST_NAME), "utf8"),
-    ) as { entries: Record<string, ICompiledEntry | undefined> };
-    const entry = scratchManifest.entries[logical];
-    if (entry === undefined || entry.output === undefined) {
-      throw new Error("compiled without producing a manifest entry");
-    }
-    const destination = path.join(layout.outputRoot, entry.output);
-    await mkdir(path.dirname(destination), { recursive: true });
-    await writeFile(destination, await readFile(path.join(scratch, "out", entry.output)));
-    return { entry, passCosts: compiled.passCosts };
-  } finally {
-    await rm(scratch, { force: true, recursive: true });
-  }
-}
-
 export function watchAssets(options: IAssetWatchOptions = {}): IAssetWatchHandle {
+  const { debounceMs, onChange, ...compileOverrides } = options;
   const cwd = path.resolve(options.cwd ?? process.cwd());
-  const layout = resolveWatchLayout(cwd, options);
-  const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
-  // Resolved once against the project root: the scratch compiles have no node_modules of
-  // their own. A project where three cannot be resolved keeps its dev server alive and sees
-  // the named per-file failure instead.
-  const transcoder =
-    options.transcoder ??
-    (() => {
-      try {
-        return resolveBasisTranscoder(cwd);
-      } catch {
-        return undefined;
-      }
-    })();
-  const compileOptions = {
-    config: options.config,
-    cwd,
-    output: options.output,
-    passes: options.passes,
-    source: options.source,
-    ...(transcoder === undefined ? {} : { transcoder }),
-  };
+  // Every option but the two watch-only ones is the compiler's and is forwarded whole, so a dev
+  // loop cooking for a platform or under a concurrency bound cooks exactly what its build does.
+  const compileOptions: IAssetCompileOptions = { ...compileOverrides, cwd };
+  // Resolution only. compileAssets validates the layout it is handed — unknown config keys, a
+  // source that overlaps its output — on every call below, including the first one.
+  const sourceRoot = path.resolve(cwd, options.source ?? options.config?.source ?? DEFAULT_SOURCE);
+  const debounce = debounceMs ?? DEFAULT_DEBOUNCE_MS;
   const logFailure = (message: string): void => {
     process.stderr.write(`TN_ASSETS_WATCH_FAILED: ${message}\n`);
   };
@@ -249,7 +86,6 @@ export function watchAssets(options: IAssetWatchOptions = {}): IAssetWatchHandle
   let watcher: FSWatcher | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let flushing: Promise<void> = Promise.resolve();
-  let fullReconcileQueued = false;
   let closed = false;
   const queue = new Set<string>();
 
@@ -258,14 +94,7 @@ export function watchAssets(options: IAssetWatchOptions = {}): IAssetWatchHandle
     timer = setTimeout(() => {
       timer = undefined;
       void runFlush();
-    }, debounceMs);
-  };
-
-  const queueFullReconcile = (): void => {
-    // A vanished file or an unnamed event cannot be handled per input: rebuild everything
-    // through the one canonical compiler instead of guessing deletions per manifest entry.
-    fullReconcileQueued = true;
-    armDebounce();
+    }, debounce);
   };
 
   const queueEvent = (filename: string): void => {
@@ -273,37 +102,19 @@ export function watchAssets(options: IAssetWatchOptions = {}): IAssetWatchHandle
     if (logical.length === 0 || logical.split("/").some((segment) => segment.startsWith("."))) {
       return;
     }
-    void stat(path.join(layout.sourceRoot, logical)).then(
+    void stat(path.join(sourceRoot, logical)).then(
       (info) => {
         if (!info.isFile()) return; // directories announce their children separately
         queue.add(logical);
         armDebounce();
       },
       () => {
+        // A vanished file is not a path to compile, and needs no special handling beyond running
+        // the burst: the cook owns the output root and reconciles the deletion by rewriting it.
         queue.delete(logical);
-        queueFullReconcile();
+        armDebounce();
       },
     );
-  };
-
-  const fullRebuild = async (): Promise<void> => {
-    try {
-      await compileAssets(compileOptions);
-    } catch (error) {
-      logFailure(`full reconcile failed: ${messageOf(error)}`);
-    }
-  };
-
-  /** Merges this burst's successful entries and writes the manifest temp-then-rename. */
-  const mergeEntries = async (merged: ReadonlyMap<string, ICompiledEntry>): Promise<void> => {
-    if (merged.size === 0) return;
-    try {
-      const current = await readManifest(layout.manifestPath);
-      for (const [logical, entry] of merged) current.entries[logical] = entry;
-      await writeManifestAtomically(layout.manifestPath, current.entries, current.raw);
-    } catch (error) {
-      logFailure(`manifest update deferred: ${messageOf(error)}`);
-    }
   };
 
   const reportBurst = (
@@ -311,90 +122,58 @@ export function watchAssets(options: IAssetWatchOptions = {}): IAssetWatchHandle
     failed: readonly string[],
     passCosts: readonly IPassCostRow[],
   ): void => {
-    if (options.onChange === undefined || (compiled.length === 0 && failed.length === 0)) return;
+    if (onChange === undefined || (compiled.length === 0 && failed.length === 0)) return;
     try {
-      options.onChange({
-        compiled,
-        failed,
-        ...(compiled.length > 0 ? { passCosts } : {}),
-      });
+      onChange({ compiled, failed, ...(compiled.length > 0 ? { passCosts } : {}) });
     } catch (error) {
       logFailure(`onChange listener threw: ${messageOf(error)}`);
     }
   };
 
-  const flush = async (batch: readonly string[], reconcileAll: boolean): Promise<void> => {
-    if (reconcileAll) await fullRebuild();
-    const compiled: string[] = [];
-    const failed: string[] = [];
-    const passCostRows: (readonly IPassCostRow[])[] = [];
-    const merged = new Map<string, ICompiledEntry>();
-    // The burst runs through the same execution model as a build: bounded workers, results
-    // merged on this thread keyed by logical path. A scratch compile is one input, so the
-    // parallelism lives here — a burst of saves recompiles together, not one per drain.
-    const queue = [...batch];
-    const runners = Math.min(queue.length, Math.max(1, DEFAULT_CONCURRENCY));
-    const record = (
-      logical: string,
-      error: unknown,
-      entry?: ICompiledEntry,
-      costs?: readonly IPassCostRow[],
-    ): void => {
-      if (entry !== undefined && costs !== undefined) {
-        merged.set(logical, entry);
-        passCostRows.push(costs);
-        compiled.push(logical);
-        return;
-      }
-      // The previous output (content-addressed, never overwritten) and previous manifest
-      // entry stay untouched; the path is reported and the next good save heals it.
-      failed.push(logical);
-      logFailure(`could not recompile '${logical}': ${messageOf(error)}`);
-    };
-    await Promise.all(
-      Array.from({ length: runners }, () =>
-        (async () => {
-          for (;;) {
-            const logical = queue.shift();
-            if (logical === undefined) return;
-            try {
-              const recompiled = await recompileOne(layout, compileOptions, logical);
-              record(logical, undefined, recompiled.entry, recompiled.passCosts);
-            } catch (error) {
-              record(logical, error);
-            }
-          }
-        })(),
-      ),
-    );
-    await mergeEntries(merged);
-    // A dev save reports the same per-pass records a build does; without them the watch loop
-    // is blind to which pass a slow save paid for.
-    reportBurst(compiled, failed, mergePassCosts(passCostRows));
+  const flush = async (batch: readonly string[]): Promise<void> => {
+    try {
+      const result = await compileAssets(compileOptions);
+      // The receipt names the source of every file the cook owns, so a saved path it excluded —
+      // or one deleted again before the burst settled — is not announced as compiled.
+      const cooked = new Set(
+        (result.receipt?.outputs ?? []).flatMap((output) =>
+          output.source === null ? [] : [output.source],
+        ),
+      );
+      reportBurst(
+        batch.filter((logical) => cooked.has(logical)),
+        [],
+        result.passCosts,
+      );
+    } catch (error) {
+      // Nothing was published: the previous manifest, receipt and outputs still serve the game.
+      // The paths this burst touched are reported, the compiler's error names the asset, and the
+      // next good save heals it.
+      const scope = batch.length === 0 ? "reconcile" : batch.join(", ");
+      logFailure(`burst failed (${scope}): ${messageOf(error)}`);
+      reportBurst([], batch, []);
+    }
   };
 
   const runFlush = (): void => {
     const batch = [...queue].sort();
     queue.clear();
-    const reconcileAll = fullReconcileQueued;
-    fullReconcileQueued = false;
     flushing = flushing.then(async () => {
-      if (!closed) {
-        try {
-          await flush(batch, reconcileAll);
-        } catch (error) {
-          logFailure(`burst failed: ${messageOf(error)}`);
-        }
+      if (closed) return;
+      try {
+        await flush(batch);
+      } catch (error) {
+        logFailure(`burst failed: ${messageOf(error)}`);
       }
     });
   };
 
   const startWatching = (): void => {
     try {
-      watcher = watch(layout.sourceRoot, { recursive: true }, (_eventType, filename) => {
+      watcher = watch(sourceRoot, { recursive: true }, (_eventType, filename) => {
         if (closed) return;
         if (typeof filename !== "string" || filename.length === 0) {
-          queueFullReconcile();
+          armDebounce(); // an unnamed event: reconcile the project rather than guess at a path
           return;
         }
         queueEvent(filename);
@@ -405,7 +184,7 @@ export function watchAssets(options: IAssetWatchOptions = {}): IAssetWatchHandle
     }
     watcher.on("error", (error) => {
       logFailure(messageOf(error));
-      queueFullReconcile();
+      armDebounce();
     });
   };
 

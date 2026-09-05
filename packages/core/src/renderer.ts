@@ -111,6 +111,10 @@ export interface IRendererLike {
    * and a game that cannot warm up without a cast will not warm up.
    */
   compileAsync(scene: Object3D, camera: Camera): Promise<void>;
+  /** A warm-up may outlive its caller's timeout; its render targets must remain alive. */
+  readonly compiling?: boolean;
+  /** Compilation starts, including work that settles entirely between rendered frames. */
+  readonly compileCount?: number;
   /**
    * What alpha antialiasing did with the multisampled surface, and why, when it did nothing.
    *
@@ -165,7 +169,7 @@ export interface IRendererLike {
   /** Starts a resolve of the GPU timestamps for the frames drawn since the last call. */
   resolveGpuFrame(): void;
   /**
-   * Moves the drawing-buffer scale, re-applying it immediately. The adaptive scaler is the only
+   * Moves the drawing-buffer scale, deferring while a compile retains its targets. The adaptive scaler is the only
    * caller; a pinned game never reaches this, which is what makes "pinned" mean pinned.
    */
   setResolutionScale(scale: number, scaleSource: "auto" | "auto-pinned"): void;
@@ -296,8 +300,19 @@ function wrapRenderer(
   let outputPass: PassNode | undefined;
   const renderChains = new Set<RenderChain>();
   let renderChainUsesPerObjectVelocity = false;
+  let activeCompiles = 0;
+  let compileCount = 0;
+  let disposed = false;
+  let pendingScale: { scale: number; source: "auto" | "auto-pinned" } | undefined;
+  let pendingSize: Parameters<IRendererLike["setSize"]> | undefined;
 
   const wrapped: IRendererLike = {
+    get compileCount() {
+      return compileCount;
+    },
+    get compiling() {
+      return activeCompiles > 0;
+    },
     gpuFrameMs: () => {
       const timestamp = raw.info?.render?.timestamp;
       return typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0
@@ -309,14 +324,21 @@ function wrapRenderer(
       // reported absence rather than a frame-time error.
       const resolveTimestampsAsync = raw.resolveTimestampsAsync;
       if (resolveTimestampsAsync === undefined) return;
-      void resolveTimestampsAsync()?.catch(() => undefined);
+      void resolveTimestampsAsync.call(raw)?.catch(() => undefined);
       // Three maintains independent 2,048-query pools for render and compute passes. Resolving
       // only the default render pool lets GPU simulations exhaust the compute pool even when the
       // render pool is healthy, after which the adapter can be lost instead of merely reporting
       // an absent timestamp.
-      void resolveTimestampsAsync("compute")?.catch(() => undefined);
+      void resolveTimestampsAsync.call(raw, "compute")?.catch(() => undefined);
     },
     setResolutionScale: (scale, scaleSource) => {
+      if (disposed) return;
+      // Three's asynchronous compile retains a depth target across yields. Resizing here
+      // disposes it before pipeline creation reads its format. Keep the latest request only.
+      if (activeCompiles > 0) {
+        pendingScale = { scale, source: scaleSource };
+        return;
+      }
       state.resolutionScale = scale;
       state.scaleSource = scaleSource;
       reapply.resize?.();
@@ -325,6 +347,7 @@ function wrapRenderer(
       // The renderer cannot be at a floor it does not know about; the loop that owns the scaler
       // overrides this when one exists.
       atFloor: false,
+      ...(activeCompiles > 0 ? { compiling: true } : {}),
       drawingBufferHeight: applied.height,
       drawingBufferWidth: applied.width,
       resolutionScale: state.resolutionScale,
@@ -344,6 +367,7 @@ function wrapRenderer(
       return info;
     },
     compileAsync: async (scene, camera) => {
+      if (disposed) return;
       // Before the compile, never after: three builds a pipeline from `alphaToCoverage` and
       // rebuilds it when the flag moves, so converting afterwards would throw away the warm-up
       // this call exists to buy. Ahead of the WebGL guard below for the same reason — the
@@ -358,11 +382,31 @@ function wrapRenderer(
           if (prewarmedRoots.has(object) && hasHiddenAncestor(object)) hiddenRoots.push(object);
         });
       }
-      for (const root of hiddenRoots) {
-        await raw.compileAsync(root, camera, scene);
-        prewarmedRoots.delete(root);
+      activeCompiles += 1;
+      compileCount += 1;
+      try {
+        for (const root of hiddenRoots) {
+          if (disposed) return;
+          await raw.compileAsync(root, camera, scene);
+          prewarmedRoots.delete(root);
+        }
+        if (!disposed) await raw.compileAsync(scene, camera);
+      } finally {
+        activeCompiles -= 1;
+        if (activeCompiles === 0) {
+          const requestedScale = pendingScale;
+          const requestedSize = pendingSize;
+          pendingScale = undefined;
+          pendingSize = undefined;
+          if (!disposed) {
+            // Re-read the latest viewport when scale also changed; a queued old-scale size
+            // must not overwrite the new drawing buffer.
+            if (requestedScale !== undefined)
+              wrapped.setResolutionScale(requestedScale.scale, requestedScale.source);
+            else if (requestedSize !== undefined) wrapped.setSize(...requestedSize);
+          }
+        }
       }
-      await raw.compileAsync(scene, camera);
     },
     compute: (node) => {
       if (kind !== "webgpu") throw new Error(`compute is unavailable on the ${kind} renderer.`);
@@ -377,6 +421,10 @@ function wrapRenderer(
       return raw.getArrayBufferAsync(attribute);
     },
     dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      pendingScale = undefined;
+      pendingSize = undefined;
       for (const chain of renderChains) chain.dispose();
       renderChains.clear();
       renderChainUsesPerObjectVelocity = false;
@@ -454,7 +502,16 @@ function wrapRenderer(
         chain.observeFrame();
       }
     },
-    setSize: (width, height, updateStyle = false) => raw.setSize(width, height, updateStyle),
+    setSize: (width, height, updateStyle = false) => {
+      if (disposed) return;
+      if (activeCompiles > 0) {
+        pendingSize = [width, height, updateStyle];
+        return;
+      }
+      raw.setSize(width, height, updateStyle);
+      applied.width = width;
+      applied.height = height;
+    },
   };
   return wrapped;
 }
@@ -500,7 +557,6 @@ function addResizeHandling(
   renderer: IRendererLike,
   source: IRendererPlatformSource | undefined,
   state: ISurfaceState,
-  applied: { width: number; height: number },
   pixelRatio: number,
 ): { resize: () => void; stop: () => void } {
   const resize = () => {
@@ -509,9 +565,11 @@ function addResizeHandling(
     // Recorded as it is applied rather than read back off the canvas: the canvas dimensions are
     // the host's to define and on native they have been the physical surface, which is exactly
     // the number this scale exists to stop a game from paying by hand.
-    applied.width = Math.max(1, Math.round(width * pixelRatio * state.resolutionScale));
-    applied.height = Math.max(1, Math.round(height * pixelRatio * state.resolutionScale));
-    renderer.setSize(applied.width, applied.height, false);
+    renderer.setSize(
+      Math.max(1, Math.round(width * pixelRatio * state.resolutionScale)),
+      Math.max(1, Math.round(height * pixelRatio * state.resolutionScale)),
+      false,
+    );
   };
   resize();
   const stop =
@@ -587,7 +645,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     renderer = wrapRenderer(raw, "webgl2", applied, state, reapply, alphaAntialiasing);
   }
 
-  const resizing = addResizeHandling(renderer, source, state, applied, pixelRatio);
+  const resizing = addResizeHandling(renderer, source, state, pixelRatio);
   reapply.resize = resizing.resize;
   const stopResize = resizing.stop;
   const dispose = renderer.dispose;

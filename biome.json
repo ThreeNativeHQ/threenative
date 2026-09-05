@@ -21,6 +21,7 @@
       "packages/runtime-native/build/**",
       "packages/runtime-native/**/build/**",
       "packages/runtime-native/third_party/**",
+      "packages/assets/vendor/basis-encoder/basis_encoder.js",
       "packages/runtime-native/**/*.json",
       "test-results/**",
       "examples/abyss-vanilla/index.html",
@@ -29,6 +30,8 @@
       "examples/abyss-vanilla/vite.config.js",
       "docs/benchmark/sweeps/**",
       "docs/benchmark/rounds/**",
+      "docs/verification/prd-357-c4-duplicate-inventory.json",
+      "docs/verification/prd-357-c4-duplicate-inventory-before.json",
       "docs/verification/visuals/**"
     ]
   },

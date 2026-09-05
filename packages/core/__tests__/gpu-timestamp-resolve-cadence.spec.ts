@@ -52,7 +52,10 @@ describe("GPU timestamp queries are resolved often enough to stay readable", () 
           domElement: canvas,
           info: { render: { timestamp: 0 } },
           render: () => undefined,
-          resolveTimestampsAsync: (type = "render") => {
+          async resolveTimestampsAsync(this: { info?: unknown } | undefined, type = "render") {
+            // Three's real method reads this.backend. An arrow stub hid a detached call.
+            if (this === undefined || this.info === undefined)
+              throw new Error("lost renderer receiver");
             resolves += 1;
             resolveTypes.push(type);
             return Promise.resolve(undefined);

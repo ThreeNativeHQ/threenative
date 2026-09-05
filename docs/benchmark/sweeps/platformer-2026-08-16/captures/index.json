@@ -30,7 +30,7 @@
       "luminanceStdDev": 0.17154086159763512,
       "width": 1280,
       "bytes": 585169,
-      "capture": "platformer-run-proof-after.png",
+      "capture": "../../../rounds/round-9/bundle/sample-02/image.png",
       "scenario": "platformer-run-proof",
       "source": "proof-artifacts/1/after.png"
     },
@@ -41,7 +41,7 @@
       "luminanceStdDev": 0.15110697909887424,
       "width": 1280,
       "bytes": 449865,
-      "capture": "platformer-run-proof-before.png",
+      "capture": "../../../rounds/round-9/bundle/sample-04/image.png",
       "scenario": "platformer-run-proof",
       "source": "proof-artifacts/1/before.png"
     }

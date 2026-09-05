@@ -2,11 +2,11 @@
   "promptSha256": "21a0d1035d21b0520da448104271118570528cf5416d33e8ceed64efeb6326ec",
   "samples": [
     {
-      "image": "sample-01/image.png",
+      "image": "../../benchmark/sweeps/endless-runner-2026-08-08-6/captures/endless-runner-brief-proof-after.png",
       "label": "sample-01"
     },
     {
-      "image": "sample-02/image.png",
+      "image": "../../benchmark/sweeps/endless-runner-2026-08-08-11/proof-artifacts/0/after.png",
       "label": "sample-02"
     }
   ],

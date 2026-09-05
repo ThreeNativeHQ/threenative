@@ -41,7 +41,7 @@
       "luminanceStdDev": 0.19772489697711473,
       "width": 1280,
       "bytes": 166055,
-      "capture": "platformer-run-proof-before.png",
+      "capture": "platformer-jump-proof-before.png",
       "scenario": "platformer-run-proof",
       "source": "proof-artifacts/1/before.png"
     }
