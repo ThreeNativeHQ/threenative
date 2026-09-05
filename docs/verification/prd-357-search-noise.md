@@ -1,9 +1,8 @@
 # PRD-357 search-path verification
 
-Status: PARTIAL. C1-C4 are implemented, the approved duplicate cleanup is complete, and the
-search-path, consumer, scaffold and budget controls are green. The required unfiltered test gate
-still has one unrelated baseline failure in `negative-fixtures.spec.ts`; no runtime source was
-changed to hide it. No owner checkpoint remains.
+Status: COMPLETE. C1-C4 are implemented, the approved duplicate cleanup is complete, and all
+acceptance evidence and required gates are green. No runtime source was changed to hide a failure;
+the historical red controls below were restored immediately. No owner checkpoint remains.
 
 Source PRD: `docs/PRDs/agent-leverage/PRD-357-the-search-path-is-mostly-noise.md`
 
@@ -13,13 +12,16 @@ Delivery base: `origin/main` at `8ea7b3a47c655415150df585f16a632575db3d28`
 
 Pre-C4 delivery HEAD: `5d300c897cf29d107621b8f08995e3c0cddeab88`
 
+Tested implementation source: `24033e5bb43808abf43d24798997c71496ef7875`. Subsequent work is
+limited to this verification record and generated retention metadata.
+
 ## Acceptance evidence
 
 | Criterion | Evidence |
 |---|---|
-| A1 | Removing `.claude/worktrees` from `.gitignore` made the search-path spec exit **1**: one assertion saw no ignore match and the other received `../../.git/info/exclude` instead of `.gitignore`. With the line restored, the final search-path suite passed 9/9. |
-| A2 | Removing `.claude/worktrees/` from the root never-search sentence made the spec exit **1** for both `AGENTS.md` and its generated mirror. The final suite checks both clauses green. |
-| A3 | Removing `.ignore` made its spec exit **1** with two `ENOENT` failures. The tracked file now lists `docs/PRDs/done/` and `CLAUDE.md`; sync, budgets, quality and primary-docs gates are green with it present. |
+| A1 | The observed mutation was red: `.claude/worktrees` was not ignored, and a file below it resolved to `../../.git/info/exclude` instead of `.gitignore`. The restored search-path suite passed 9/9. Exact red excerpts are below. |
+| A2 | The observed mutation was red for both `AGENTS.md` and its generated mirror: the never-search clause lacked `.claude/worktrees/`. The restored search-path suite passed 9/9. Exact red excerpt is below. |
+| A3 | The observed mutation was red: the tracked-file assertion returned `[]` instead of `[ '.ignore' ]`, followed by `ENOENT` for `.ignore`. The restored file lists `docs/PRDs/done/` and `CLAUDE.md`; all dependent gates passed. Exact red excerpts are below. |
 | A4 | The complete `origin/main` archive control passed: 383 files (1 skipped), 4,055 tests (3 skipped). The post-C4 delivery archive also passed: 384 files (1 skipped), 4,072 tests (3 skipped), with the five cached native executables. |
 | A5 | Restoring the deleted 1,675,247-byte physics-puzzle alias made the cap check exit **1** and name the duplicate group `docs/benchmark/genres/physics-puzzle/reference.png`. The alias was moved back to ignored scratch and the clean cap check is green. |
 | A6 | The exact headline commands now report 66,479,735 bytes for raw lane grep and 955,476 bytes for `docs packages`; the PRD §1 before values were 41,171,218 and 982,814. Scope is documented below. |
@@ -28,6 +30,34 @@ Red-control output is retained in ignored `artifacts/prd-357/` logs; the origina
 restored immediately. The final focused consumer/scaffold run passed 8 files and 138 tests,
 including all 9 search-path tests, 12 evidence-budget tests, 4 sweep-judge tests, 55 scaffold
 tests and 38 template tests.
+
+Observed red excerpts (from `artifacts/prd-357/red-a1-a2-a3.txt`):
+
+```text
+AssertionError: .claude/worktrees is not ignored at all: expected undefined to be defined
+Expected: ".gitignore"
+Received: "../../.git/info/exclude"
+
+expected '\n\n`.worktrees/` holds other agents…' to contain '.claude/worktrees/'
+
+expected [] to deeply equal [ '.ignore' ]
+Error: ENOENT: no such file or directory, open '/home/joao/projects/threenative/threenative-engine/.worktrees/prd-357-search-noise/.ignore'
+```
+
+The never-search failure was reported twice, once for each mirror. The A4 mutation had this
+observed red output (from `artifacts/prd-357/red-a4-a5.txt`) after re-adding one sweep instruction
+file to the index:
+
+```text
+docs/benchmark/sweeps/fps-2026-08-17/AGENTS.md
+evidence tree 'docs/benchmark' tracks 1 scaffolded sweep instruction file(s) — docs/benchmark/sweeps/fps-2026-08-17/AGENTS.md
+FAIL scripts/__tests__/evidence-budget.spec.ts > checkEvidenceBudget > should track no scaffolded sweep instruction file in the real tree
+FAIL scripts/__tests__/evidence-budget.spec.ts > checkEvidenceBudget > should pass the real tree under the shipped caps
+Tests 2 failed | 8 passed (10)
+```
+
+The mutation wrapper recorded an unreliable blank/zero exit field; the Vitest result above is the
+authoritative red observation. The file was restored before delivery.
 
 ## C4 full-tree cleanup
 
@@ -128,29 +158,32 @@ primary-docs spec          EXIT 0
 focused C4/search suite   EXIT 0 — 8 files, 138 tests
 ```
 
-The unfiltered lane test remains honest and ungreen:
+The manager’s independent unfiltered lane test passed on the tested implementation source:
 
 ```text
-pnpm test                  EXIT 1
-4066 passed, 1 failed, 6 skipped tests
-FAIL packages/playtest/__tests__/negative-fixtures.spec.ts > seeded page error fixture is observed red
-expected exit code 1, received 2
+pnpm test                  EXIT 0
+Test Files                 383 passed | 2 skipped (385)
+Tests                      4069 passed | 6 skipped (4075)
 ```
 
-The manager’s isolated same-file rerun passed 10/10, but the full lane failure is not part of this
-PRD’s scope and no source was changed for it. The committed post-C4 archive used the same five
-cached native executables as the origin control and passed:
+This result is recorded in `artifacts/prd-357/manager-final2-gates/test.log`; the direct package
+diagnostics are in `artifacts/prd-357/manager-package-diagnostic.log`. No implementation source
+changed after that run; the later delta was documentation/generated-retention metadata only.
+
+The authoritative post-C4 archive used the same five cached native executables as the origin
+control and passed:
 
 ```text
-git archive HEAD                 final delivery commit
-pnpm install --frozen-lockfile   EXIT 0
-pnpm test                        EXIT 0
-Test Files                       384 passed | 1 skipped (385)
-Tests                            4072 passed | 3 skipped (4075)
+archive source                 24033e5bb43808abf43d24798997c71496ef7875
+pnpm install --frozen-lockfile EXIT 0
+pnpm test                       EXIT 0
+Test Files                      384 passed | 1 skipped (385)
+Tests                           4072 passed | 3 skipped (4075)
 ```
 
-The final archive log is `artifacts/prd-357/post-c4-archive-delivery-final-2.log`; it records the exact
-HEAD and the five native executable hashes.
+The authoritative archive log is `artifacts/prd-357/post-c4-archive-delivery-final.log`; it records
+the exact tested source and the five native executable hashes. A later documentation-only archive
+attempt was interrupted and is not claimed as evidence.
 
 ## A6 scope
 
