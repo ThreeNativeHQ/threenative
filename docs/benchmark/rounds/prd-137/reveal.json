@@ -2,41 +2,41 @@
   {
     "arm": "framework",
     "label": "sample-01",
-    "source": "docs/benchmark/sweeps/fps-2026-08-17/captures/fps-fire-and-reload-proof-after.png"
+    "source": "docs/benchmark/rounds/prd-137/bundle/sample-01/image.png"
   },
   {
     "arm": "vanilla",
     "label": "sample-02",
-    "source": "docs/benchmark/sweeps/fps-2026-08-18/captures/fps-move-and-hit-proof-after.png"
+    "source": "docs/benchmark/rounds/prd-137/bundle/sample-02/image.png"
   },
   {
     "arm": "framework",
     "label": "sample-03",
-    "source": "docs/benchmark/sweeps/fps-2026-08-17/captures/fps-fire-and-reload-proof-before.png"
+    "source": "docs/benchmark/rounds/prd-137/bundle/sample-03/image.png"
   },
   {
     "arm": "framework",
     "label": "sample-04",
-    "source": "docs/benchmark/sweeps/fps-2026-08-17/captures/fps-move-and-hit-proof-before.png"
+    "source": "docs/benchmark/rounds/prd-137/bundle/sample-04/image.png"
   },
   {
     "arm": "framework",
     "label": "sample-05",
-    "source": "docs/benchmark/sweeps/fps-2026-08-17/captures/fps-move-and-hit-proof-after.png"
+    "source": "docs/benchmark/rounds/prd-137/bundle/sample-05/image.png"
   },
   {
     "arm": "vanilla",
     "label": "sample-06",
-    "source": "docs/benchmark/sweeps/fps-2026-08-18/captures/fps-fire-and-reload-proof-before.png"
+    "source": "docs/benchmark/rounds/prd-137/bundle/sample-06/image.png"
   },
   {
     "arm": "vanilla",
     "label": "sample-07",
-    "source": "docs/benchmark/sweeps/fps-2026-08-18/captures/fps-move-and-hit-proof-before.png"
+    "source": "docs/benchmark/rounds/prd-137/bundle/sample-07/image.png"
   },
   {
     "arm": "vanilla",
     "label": "sample-08",
-    "source": "docs/benchmark/sweeps/fps-2026-08-18/captures/fps-fire-and-reload-proof-after.png"
+    "source": "docs/benchmark/rounds/prd-137/bundle/sample-08/image.png"
   }
 ]

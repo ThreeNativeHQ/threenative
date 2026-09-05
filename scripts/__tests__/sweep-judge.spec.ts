@@ -98,4 +98,26 @@ describe("sweep judge", () => {
 
     expect(() => runJudge(bundle, critic)).toThrow(/TN_JUDGE_VOID/);
   });
+
+  it("accepts a canonical image outside the blind bundle inside the repository root", () => {
+    const { bundle, critic, root } = bundleRoot();
+    writeCritic(critic);
+    writeFileSync(join(root, "canonical.png"), frame());
+    const manifestPath = join(bundle, "bundle.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      samples: Array<{ image: string; label: string }>;
+    };
+    const first = manifest.samples[0];
+    if (first === undefined) throw new Error("Image bundle has no samples.");
+    first.image = "../canonical.png";
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+    const result = runJudge(bundle, critic, join(bundle, "judge.json"), root);
+
+    expect(result.verdict).toBe("ready");
+    expect(
+      (JSON.parse(readFileSync(manifestPath, "utf8")) as { samples: Array<{ image: string }> })
+        .samples[0]?.image,
+    ).toBe("../canonical.png");
+  });
 });

@@ -112,8 +112,10 @@ confirm that only that arm's proof fails.
 ## Instrument scores
 
 The capture and judge path is an instrument for the improvement loop, not an authoritative
-benchmark result. `pnpm sweep:judge <bundle> --input <fresh-critic.json>` rechecks every PNG,
-validates the blind sample labels and bounded scores, and writes `judge.json`. The critic
+benchmark result. `pnpm sweep:judge <bundle> --input <fresh-critic.json>` rechecks every referenced
+PNG, validates the blind sample labels and bounded scores, and writes `judge.json`. A committed
+bundle may reference a retained canonical image elsewhere in this repository; the judge accepts
+that only within the repository root. Generated bundles remain self-contained. The critic
 input must be produced before reveal and must not contain an arm identifier.
 
 An instrument score can identify a broken or empty frame, compare a candidate during a round,

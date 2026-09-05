@@ -2,19 +2,19 @@
   "promptSha256": "8a7ee799256676d10fc7d22966e3e4fa93ed54c888fc91fd0f34fc3520ddd9fa",
   "samples": [
     {
-      "image": "sample-01/image.png",
+      "image": "../../benchmark/sweeps/platformer-2026-08-07-49/captures/platformer-jump-proof-after.png",
       "label": "sample-01"
     },
     {
-      "image": "sample-02/image.png",
+      "image": "../../benchmark/sweeps/platformer-2026-08-07-49/captures/platformer-run-proof-after.png",
       "label": "sample-02"
     },
     {
-      "image": "sample-03/image.png",
+      "image": "../blind-platformer-2026-08-08-webgl/sample-03/image.png",
       "label": "sample-03"
     },
     {
-      "image": "sample-04/image.png",
+      "image": "../blind-platformer-2026-08-08-webgl/sample-01/image.png",
       "label": "sample-04"
     }
   ],

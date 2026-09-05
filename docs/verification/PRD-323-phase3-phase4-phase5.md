@@ -52,7 +52,7 @@ enumeration at the end of this section matters more than the three fixes.
 Two entries in the first delete list read wrong:
 
 ```
-docs/verification/visuals/shooter.png
+docs/verification/visuals/shooter-third-person-2026-09-01.png
 docs/benchmark/genres/exploration/proof/exploration.playtest.json
 ```
 

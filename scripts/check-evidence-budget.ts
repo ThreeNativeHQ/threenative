@@ -13,8 +13,8 @@ import path from "node:path";
 export const EVIDENCE_BUDGETS = {
   // 2026-09-04, after Phase 3 deleted the uncited artifacts: 65.9 MB over 664 tracked files.
   // Was 80 MB / 800 files at the 2026-09-02 growth-stop setting.
-  // Provisional PRD-357 C4 cap, measured by tracked blob SHA; lower it after approved cleanup.
-  "docs/verification": { bytes: 72 * 1024 * 1024, duplicateBytes: 15_214_948, files: 700 },
+  // PRD-357 C4 residual cap: only non-image duplicates remain after canonicalization.
+  "docs/verification": { bytes: 72 * 1024 * 1024, duplicateBytes: 3_073, files: 700 },
   // 2026-09-04, after Phase 3 and Phase 4: 180.9 MB over 1,849 tracked files, down from
   // 203.3 MB over 5,362. Phase 4 untracked the generated arm sources under
   // docs/benchmark/sweeps but kept every measurement artifact, and kept the source of the 13
@@ -22,8 +22,8 @@ export const EVIDENCE_BUDGETS = {
   // So the file count fell by two thirds while the bytes barely moved — the sweep record is
   // mostly PNG frames a blind judge scored, and those are the benchmark, not its build output.
   // C3's 26 generated sweep instruction files are untracked; the byte/file caps remain fixed.
-  // Provisional PRD-357 C4 cap, measured by tracked blob SHA; lower it after approved cleanup.
-  "docs/benchmark": { bytes: 200 * 1024 * 1024, duplicateBytes: 80_909_071, files: 1950 },
+  // PRD-357 C4 residual cap: only non-image duplicates remain after canonicalization.
+  "docs/benchmark": { bytes: 200 * 1024 * 1024, duplicateBytes: 1_007_187, files: 1950 },
 } as const;
 
 /** Reject generated sweep instruction files if one returns to the Git index. */
@@ -410,12 +410,12 @@ function formatImageInventory(
   pathspecs: readonly string[],
 ): string {
   const groups = inventory.groups.map((group) => `    ${JSON.stringify(group)}`).join(",\n");
+  const groupBlock = groups.length === 0 ? "" : `\n${groups}\n`;
   return `{
   "generatedFrom": "git index",
   "pathspecs": ${JSON.stringify(pathspecs)},
   "bytes": ${String(inventory.bytes)},
-  "groups": [
-${groups}
+  "groups": [${groupBlock}
   ]
 }\n`;
 }
@@ -423,11 +423,11 @@ ${groups}
 async function main(): Promise<void> {
   const root = process.cwd();
   if (process.argv.includes("--duplicates")) {
-    console.log(formatJsonArray(duplicateInventory(root)));
+    process.stdout.write(formatJsonArray(duplicateInventory(root)));
     return;
   }
   if (process.argv.includes("--image-duplicates")) {
-    console.log(formatImageInventory(duplicateImageInventory(root), ALL_TRACKED_PATHSPEC));
+    process.stdout.write(formatImageInventory(duplicateImageInventory(root), ALL_TRACKED_PATHSPEC));
     return;
   }
   const report = await checkEvidenceBudget(root);
