@@ -4,8 +4,13 @@ prd_contract: v1
 
 # PRD-353 — eleven copies of a fail-closed throw, and nothing notices when one drifts
 
-**Status: PROPOSED, 2026-09-04.** Filed out of PRD-322's Phase 0 audit, which measured the
-duplication and then explicitly declined to act on it:
+**Status: DONE, 2026-09-04.** The gate ships in `scripts/template-quality.ts` and runs under
+`pnpm budgets`; AC1-AC5 with their reds, greens and the re-measured span identity are in
+[`docs/verification/prd-353-quality-contract-gate-2026-09-04.md`](../../verification/prd-353-quality-contract-gate-2026-09-04.md).
+The span is delimited by a structural anchor, not a marker comment: §4 Phase 2's first option.
+
+Filed out of PRD-322's Phase 0 audit, which measured the duplication and then explicitly declined
+to act on it:
 [`docs/verification/PRD-322-phase0-boundary-audit.md`](../../verification/PRD-322-phase0-boundary-audit.md)
 §8 — *"If it is to be removed, the argument is scaffold-generation drift, not rule 1(a) — a
 different PRD with a different justification."* That PRD did not exist. This is it.
@@ -82,15 +87,15 @@ anchor (`export type QualityTier` … `qualityPreset`). A marker is more honest 
 
 ## 5. Acceptance criteria
 
-- [ ] **AC1 — drift fails.** One template's narrower changed → `pnpm budgets` fails naming it. Red
+- [x] **AC1 — drift fails.** One template's narrower changed → `pnpm budgets` fails naming it. Red
       pasted.
-- [ ] **AC2 — a lost throw fails.** One template's `throw` replaced by a fallback → the gate fails,
+- [x] **AC2 — a lost throw fails.** One template's `throw` replaced by a fallback → the gate fails,
       even though the copies still agree with each other. Red pasted.
-- [ ] **AC3 — look divergence stays legal.** A template's preset values edited → green. This is the
+- [x] **AC3 — look divergence stays legal.** A template's preset values edited → green. This is the
       control that stops the gate becoming a look freeze.
-- [ ] **AC4 — Wildwood is not gated.** It is a sandbox game in another repository; the gate covers
+- [x] **AC4 — Wildwood is not gated.** It is a sandbox game in another repository; the gate covers
       what this repository generates.
-- [ ] **AC5 — gates.** `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets`, output pasted.
+- [x] **AC5 — gates.** `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets`, output pasted.
 
 ## 6. Decline conditions
 
