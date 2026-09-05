@@ -284,16 +284,16 @@ dependencies {
 }
 
 android {
-    namespace = "com.threenative.game"
+    namespace = "com.threenative.quarry"
     compileSdk = 35
     ndkVersion = "27.1.12297006"
 
     defaultConfig {
-        applicationId = "com.threenative.game"
+        applicationId = "com.threenative.quarry"
         minSdk = 24  // Android 7.0 - minimum for Vulkan
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
 
         ndk {
             // Target modern 64-bit architectures

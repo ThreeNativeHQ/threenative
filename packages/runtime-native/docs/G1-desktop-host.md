@@ -173,3 +173,23 @@ and reported zero console, network, or runtime diagnostics. Its inspected 1280x7
 the baked darker receiver patch; SHA-256
 `a7668f6d18591500732c890fc0f9a774b5c1d199fbe0b64c075d9b7039af301c`. Android/iOS are not claimed:
 their existing `TN_NATIVE_KTX2_UNSUPPORTED` build guard remains intact.
+
+## Shared shadow-material invalidation — 2026-09-05
+
+The `17-shadow-map` conformance case now mixes an opaque torus with two planar casters. One source
+material changes `alphaTest` from 0 to 0.5 on render 2. On render 3, the other source is replaced by
+a material at the same version whose white alpha map changes its checker-cutout shadow to solid.
+The final frame shows all three shadows separately.
+
+After `pnpm native:build`, the selected case passed on browser WebGPU (NVIDIA/Turing) and the
+Linux desktop host at 1280×720: pixel mismatch ratio 0, perceptual delta E 0, no GPU validation
+errors, native exit 0. This verifies the dependency patch that avoids shared override-material
+version churn while tracking the source material's version and identity.
+
+The conformance runner returned 2 because the other 92 rows were deliberately unselected and
+reported blocked; this is one selected case passing, not a full-registry pass. The native capture
+also warned that its startup gate had not opened within 30 seconds and captured anyway. This
+receipt proves rendering, not startup readiness or performance. No Android/iOS result is claimed.
+
+[Machine-readable receipt](../../../docs/verification/wildwood-shadow-cache/native-conformance.json)
+and [shared browser/native image](../../../docs/verification/wildwood-shadow-cache/shadow-materials.png).

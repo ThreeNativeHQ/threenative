@@ -1,0 +1,331 @@
+# PRD-359 execution handoff
+
+**Ready to execute; implementation NOT STARTED.** Execute this file in table order.
+Read [the PRD](./PRD-359-portable-multiplayer-transport.md) for acceptance and
+[PROTOCOL.md](./PROTOCOL.md) for exact API and wire behavior. Do not redesign either.
+The approved architecture is a shared protocol/test suite with thin language adapters.
+Implement Go only in this PRD; defer Node/Rust adapters and iOS qualification.
+
+## Operating rules
+
+1. Read root and closest AGENTS files. Use an ignored repository-local worktree under
+   `.worktrees/` if isolation is needed. Preserve other agents' edits. Search capabilities
+   with `engine_search_capabilities`, read every hit with `engine_capability_detail`, and
+   record reuse decisions before adding source. If tools are unavailable, restore the
+   shipped engine MCP connection before source implementation; do not substitute guessing.
+2. Write the named regression first, run it and retain the failure. Implement only its
+   task, then run the same test and live proof. A missing prerequisite is not the feature's
+   red test. An uncollected test is not a passed test. Never skip a required lane to green.
+3. Each row owns at most five files, including generated mirrors. Amend this plan with a
+   bounded follow-on row before editing a sixth. Evidence files and this task checklist
+   record results; they do not authorize unrelated source changes.
+4. After each row, fill actual caller `file:line`, command, exit code, red and green output
+   in `docs/verification/prd-359-<task>-<YYYY-MM-DD>.md` and link it from this file. Commit
+   the row's files and evidence together. Request a fresh review agent checkpoint for
+   wiring, test collection and negative controls; use an available reviewer role instead
+   of assuming the skill's `prd-work-reviewer` tool exists. Review is read-only.
+5. After three failed fixes stop and name the doubtful assumption. Do not change transport,
+   add native server FFI, weaken acceptance, add fallback or remove a non-iOS platform to
+   make a gate pass. iOS rows remain `unverified — deferred by owner` and non-blocking.
+
+## File aliases
+
+These aliases are path abbreviations only, not shell variables or new packages.
+
+| Alias | Exact directory |
+| --- | --- |
+| N | `packages/runtime-native` |
+| S | `packages/runtime-native/examples/webtransport/server` |
+| G | `examples/native-smoke` |
+| C | `packages/core` |
+| P | `docs/PRDs/networking` |
+
+`S` does not exist at planning time. Restore that canonical fixture path with Go sources.
+Do not create the earlier draft's Cargo.toml, Cargo.lock or Rust main.rs.
+
+## Ordered tasks and owned files
+
+Existing files are marked E; files to create are marked N. A file created by an earlier
+row is E in later rows. All rows are unchecked because no implementation was performed.
+
+| Done | Task and files (maximum five) | Implementation and live caller | Required test / negative control |
+| --- | --- | --- | --- |
+| [ ] | **0. Admit the mechanism.** E `docs/architecture/CHARTER.md`, `C/AGENTS.md`, `C/CLAUDE.md` | Add one charter clause permitting optional portable message transport while leaving gameplay/replication outside core. Document `core/net` as proposed until exported. Run sync:agents; generated mirror lands with source. This is required by core's closed ownership list. | `pnpm sync:agents` and primary-docs test. Do not document an unshipped command or package as already available. This policy-only row requires no runtime proof. |
+| [ ] | **1a. Restore executable Go fixture.** N `S/go.mod`, `S/go.sum`, `S/main.go`, `N/examples/webtransport/client.html`; E `N/tests/webtransport/webtransport.test.ts` | Replace Cargo discovery/build/start logic with Go commands and explicit executable path. Add Go echo server and browser page; server echoes datagrams, bidirectional streams and unidirectional streams. Existing live suite starts this server; browser page invokes real WebTransport. | Existing echo tests first fail for missing Go fixture in required mode, then execute bytes/lifecycle assertions. Preserve this as prerequisite evidence, not a native bug regression. Browser page verifies 64 KiB stream bytes and datagrams. |
+| [ ] | **2a. Correct datagram surface.** E `N/src/webtransport/webtransport.cpp`, `N/src/runtime-scripts/webtransport-polyfill.js`, `N/tests/webtransport_surface_test.cpp`, `N/tests/webtransport_wire_test.cpp`, `N/tests/webtransport/webtransport.test.ts` | Derive capacity from quiche, subtract session framing, propagate invalid-session/oversize errors, bound queues and count legitimate local drops. Repair existing bindings; do not install a second transport. Existing runtime poll remains caller. | Add `reports negotiated datagram capacity`, `rejects oversized datagram`, `distinguishes closed session from queue drop`. Clamp available capacity to 64 in test; a 65-byte write must fail. Remove repair and observe red. Run live echo again. |
+| [ ] | **2b. Streams and shutdown.** E same five files as 2a | Keep existing partial-write buffering. Apply finite bounds to native buffers and JS streams; correct close-before-ready, reader cancellation, pending promise settlement and stream errors. Reject non-default unsupported options instead of ignoring them. | Add `preserves partial stream writes`, `backpressures stalled receiver`, `settles close before ready`, `releases 100 reconnects`. Revert each relevant branch to prove red; live 64 KiB transfer must be byte-identical. |
+| [ ] | **2c. DNS does not freeze the game.** E `N/src/webtransport/webtransport.cpp`, `N/include/mystral/webtransport/webtransport.h`, `N/tests/webtransport_surface_test.cpp`, `N/tests/webtransport/webtransport.test.ts` | Move blocking name resolution to a bounded worker job; copy results back to the main-thread session owner. Session generation/cancellation guards must discard late results. Try returned IPv4/IPv6 addresses with remaining connection deadline. No JS callback from resolver thread. | Add `renders while DNS is delayed`, `ignores DNS result after close`, `tries second resolved address`. Delay resolver 500 ms with a test seam; frames continue and no stale session is touched. Run address-only IPv4/IPv6 live probes. |
+| [ ] | **1b. Verified desktop/browser interoperability.** E `N/tests/runtime-test-utils.ts`, `N/tests/webtransport/webtransport.test.ts`, `S/main.go`, `N/examples/webtransport/client.html` | Remove the live suite's Linux-only assumption using explicit executable override. Add verified certificate/hostname fixture mode; preserve insecure echo as an explicitly separate development test. Run real Chrome and Linux native first, no insecure flag in positive qualification. | `accepts trusted peer`, `rejects wrong hostname`, `rejects expired certificate`, `fails missing required executable`. Record browser/native/backend versions. After this row, no unresolved handshake/draft incompatibility may remain before continuing. |
+| [ ] | **3a. Native artifacts.** E `N/scripts/download-deps.mjs`, `N/CMakeLists.txt`, `N/scripts/install-prebuilt.mjs`, `N/tests/webtransport/webtransport.test.ts`, `N/package.json` | Verify existing quiche artifacts for Windows x64, Linux x64, macOS ARM64/x64 and Android advertised ABIs. Pin checksums. Add a required-WebTransport build mode for qualification; optional offline host builds may keep refusing stubs. Retain iOS integration and record unavailable artifacts as deferred. | Remove quiche artifact: required build/qualification fails naming platform/path. Run real echo per available non-iOS host. Do not fabricate artifact URLs; unavailable non-iOS artifacts remain open dependencies. |
+| [ ] | **4a. Go application adapter.** E `S/main.go`; N `S/protocol.go`, `S/protocol_test.go`, `P/protocol-v1-vectors.json` | Implement PROTOCOL.md envelope, HELLO/WELCOME and BIND/BOUND. Factor application adapter into protocol.go, using webtransport-go sessions; no custom reliability. Main exposes `/game` in addition to `/echo` and calls adapter. Add literal shared vectors. | Go tests `TestVectors`, `TestSplitFrames`, `TestMalformedFrame`, `TestDuplicateBind`, `TestChannelMismatch`, `TestNegotiatedLimits`. Corrupt a literal vector and observe test failure. A browser raw client completes HELLO/BIND against live `/game`. |
+| [ ] | **4b. Shared client and real caller.** N `C/src/net.ts`, `C/__tests__/net.spec.ts`; E `C/package.json`, `C/tsup.config.ts`, `G/src/game.ts` | Implement exact API and framing in net.ts; add `./net` export and tsup entry. Add an internal opt-in networking proof method to NativeSmoke, initially disabled, that connects, polls in the existing returned frame-update callback and closes in scene exit. Later row 5a wires its configuration. | Tests `matches shared protocol vectors`, `honors typed array offsets`, `rejects invalid options`, `bounds queues`, `settles cancellation`, `polls disconnect once`. Test collection must show these names. Temporarily enable proof for browser/native echo; removal of export breaks game build. Do not call this row integrated until that opt-in flow executes. |
+| [ ] | **4c. Boundaries and portable type surface.** E `C/src/net.ts`, `C/__tests__/net.spec.ts`, `N/shim-manifest.json`; N `C/src/net-protocol.ts`, `C/src/net-session.ts` | Move framing and session lifecycle into internal modules so public net.ts is a small entry point. Keep the exact implementation; no duplicate codec. Audit every global against shim manifest. Add inventory entries only for actually installed globals. If AbortSignal/streams are absent, fix that owner in a new bounded row before calling the client portable. | Same API tests plus `offline import opens no transport`. Grep live imports: net.ts calls internal modules and the game calls connect. No default-index re-export. Packed client imports cannot require Node globals. |
+| [ ] | **4d. Authenticated session fixture.** E `S/main.go`, `S/protocol.go`, `S/protocol_test.go`; N `S/auth.go` | Add loopback-only token issuer, random hashed one-time tokens, expiry and room/player binding. Before readiness deny unauthenticated gameplay. Add --room and compare token room to the configured server room. Task 4e supplies the runtime issuer proxy before any game uses it. Never bake secrets into game bundles. No public unauthenticated issuer. | `TestExpiredToken`, `TestTokenReplay`, `TestWrongRoom`, `TestUnauthorizedGameplay`, `TestOriginAllowlist`; live revoked/bad token never creates a player. Verify logs/artifacts redact tokens. |
+| [ ] | **4e. Runtime credential delivery.** N `scripts/networking-issuer.mjs`, `scripts/__tests__/networking-issuer.spec.ts`; E `N/tests/webtransport/webtransport.test.ts` | Implement the issuer proxy and grant staging contract below as a callable module and standalone Node entry. Existing live fixture starts it and obtains credentials through it. It must run before Task 5a; Task 7a later reuses it rather than writing another issuer. | Tests `rejects missing grant`, `rejects expired grant`, `rejects wrong player`, `redacts credentials`, `cleans staged grants`. Live fixture joins /game with newly issued token. |
+| [ ] | **5a. Example configuration and operator controls.** E `G/vite.config.ts`, `G/package.json`, `G/src/game.ts`; N `G/src/networking-game.ts`, `G/networking.config.example.json` | Add `dev: vite`. Build-time config path env `THREENATIVE_NETWORKING_CONFIG` defaults to disabled. Vite reads JSON and injects `__TN_NETWORKING_CONFIG__`; game code never reads process.env/window/location. Extract proof logic into networking-game.ts and call it from scene enter/update/exit. Render connection state and Retry using existing example mechanisms. | `pnpm --filter threenative-native-smoke test` with networking disabled and enabled. Disabled config opens no socket. Enabled build reaches `/game`; bad config throws during build. Example JSON contains no credential. |
+| [ ] | **5b. Authoritative server simulation.** E `S/main.go`, `S/protocol.go`, `S/protocol_test.go`, `G/src/networking-game.ts`; N `S/game_test.go` | Implement the exact reference channel map and JSON schemas from PROTOCOL.md; 60 Hz simulation, 20 Hz snapshots, validated axes, server-owned positions. Game renders local/remote players from per-player snapshot datagrams, discards stale ticks per player and sends numbered actions. | `TestServerOwnsPosition`, `TestStaleInput`, `TestActionDeduplication`, `TestInvalidGameplayPayload`. Two actual clients join, move and receive server action acknowledgements. Dropping input at sender must prevent peer motion. |
+| [ ] | **6b. Rejoin and local lifecycle.** E `C/src/net-session.ts`, `C/__tests__/net.spec.ts`, `G/src/networking-game.ts`, `S/game_test.go`, `S/main.go` | Retry obtains a new token and requests a fresh snapshot. Clear pending game actions on disconnect; do not replay. Pause/resume/network loss eventually closes or recovers transport within documented deadlines; game joins cleanly after failure. | `does not replay actions on reconnect`, `releases readers after server restart`, plus server restart/30-second loss/suspend cases on real clients. 100 cycles return resource counts to baseline. |
+| [ ] | **7a. Existing scenario reaches both clients.** E `G/src/networking-game.ts`, `G/src/game.ts`; N `G/playtests/networking.playtest.json`, `scripts/run-networking-proof.mjs`, `scripts/__tests__/run-networking-proof.spec.ts` | Implement the runner contract below. Start Go server, reuse Task 4e credential proxy and start partner client; invoke the existing playtest CLI for the subject client. Publish observations through ctx.state. Do not add a new scenario language, fake renderer or pixel-conformance registry row. | Unit tests reject missing server/partner, mismatched identities and zero assertions. Live scenario checks peer motion and action. Kill partner and observe failure. Resource assertions work on browser and native through existing bridge. |
+| [ ] | **7wait-a. Bounded resource wait on browser.** E `packages/playtest/src/scenario/schema-base.ts`, `packages/playtest/src/scenario/schema-validate.ts`, `packages/playtest/src/runner/steps.ts`, `packages/playtest/__tests__/scenario.spec.ts`; N `packages/playtest/src/runner/wait-for-resource.ts` | Implement the portable waitForResource step specified below. Browser steps call the shared bounded helper using existing resource observation and tick-control APIs. | Reject missing timeout, malformed path/predicate and mixed action/wait steps. An asynchronously changing resource passes; a permanently false predicate times out with its last observation. |
+| [ ] | **7wait-b. Same wait on native.** E `packages/playtest/src/runner/androidRunner.ts`, `packages/playtest/src/runner/wait-for-resource.ts`, `packages/playtest/__tests__/device-playtest.spec.ts`, `packages/playtest/__tests__/ios-device-playtest.spec.ts`, `G/playtests/networking.playtest.json` | Wire the shared helper into the common native scenario path used by Android/desktop/iOS. Use the existing resource bridge, not CDP. If dispatch differs, document its actual caller before modifying another file. | Run same wait-positive and wait-timeout cases on browser and desktop; device transport tests cover missing observations. iOS mocked dispatch may run but live iOS remains deferred. |
+| [ ] | **7native. Native transport CPU meter.** E `N/src/runtime.cpp`, `N/tests/host-gap-meter.test.mjs`, `scripts/run-networking-proof.mjs`, `scripts/__tests__/run-networking-proof.spec.ts` | Time the existing webtransport::processEvents call using the host monotonic clock and emit a separately named per-frame WebTransport duration through the existing meter path. Parse it with frame identity in proof runner; do not substitute the whole I/O segment. | Delay that call by 5 ms through a test seam: parsed networking CPU rises and budget fails. Missing or duplicated frame samples cannot pass. |
+| [ ] | **7metrics. Measured latency and CPU.** E `G/src/networking-game.ts`, `S/main.go`, `S/game_test.go`, `scripts/run-networking-proof.mjs`, `scripts/__tests__/run-networking-proof.spec.ts` | Implement the clock/metrics method below and channel 4 from PROTOCOL.md. Collect actual samples, apply thresholds, reject missing or excessive clock uncertainty. | Inject 500 ms snapshot delay: state-age gate fails; inject a 5 ms busy loop inside net poll wrapper: CPU gate fails; omit clock samples: result unavailable/nonzero. No literal success metric. |
+| [ ] | **7b. Aggregate required lanes.** E `.github/workflows/native-platforms.yml`; N `scripts/verify-networking-matrix.mjs`, `scripts/__tests__/networking-matrix.spec.ts`, `P/qualification-lanes.json` | Add exact platform lane manifest and aggregator contract below; existing native workflow invokes runner on provisioned lanes and aggregator on evidence. Hardware rows can consume separately executed matching evidence. Ordinary CI does not claim a physical device it did not run. | Tests `rejects missing required lane`, `rejects wrong commit`, `rejects empty observations`, `rejects Android deferral`, `reports iOS deferred without passing it`. All required rows need success; no advisory green substitutes for release verdict. |
+| [ ] | **7c. Real qualification.** E `P/qualification-lanes.json`, `P/EXECUTION.md` | Execute all PRD non-iOS lanes, workload profiles and adverse cases. Link separate evidence per run. Record resolved OS minimums, exact executables, versions and hashes in lane manifest before runs. No source changes in this evidence row. | Run commands below. Observe human two-client movement and actions on desktop and physical Android. Missing macOS/Windows/browser/hardware remains incomplete; only iOS is exempt. |
+| [ ] | **8a. Publish discovery metadata.** E `C/src/net.ts`, `scripts/not-owned-capabilities.ts`, `packages/core/capabilities.json`, `packages/create-threenative/capabilities.json`, `packages/create-threenative/agent-docs/references/capability-reference.md` | Add capability documentation to shipped export; narrow not-owned answer to replication/prediction. Run capabilities:sync; generated outputs land with their source. Search must return the real import and delivery limitations. | `pnpm capabilities:check`; manifest tests. Revert export metadata and intended query must no longer resolve, proving the test depends on new surface. |
+| [ ] | **8b. Recall and core instructions.** E `scripts/fixtures/capability-recall/corpus.json`, `scripts/fixtures/capability-recall/budget.json`, `scripts/__tests__/capability-recall.spec.ts`, `C/AGENTS.md`, `C/CLAUDE.md` | Update multiplayer transport queries to owned capability while retaining out-of-scope queries. Document actual subpath, defaults/overrides, no fallback, Go server and iOS unverified status. Regenerate mirror. | `pnpm caps:recall`; named recall test; sync:agents check. Old blanket answer must fail new positive query. |
+
+Template instructions are five final rows, each owns four existing files: both AGENTS.md
+and its generated CLAUDE.md for the named two templates. Execute pairs in this order:
+`action-rpg/defense`, `minimal/platformer`, `puzzle/racing`, `runner/sailing`,
+`shooter/starter`, under `packages/create-threenative/templates/`. Each source edit
+documents optional `core/net`, Go reference example, queue overrides, delivery guarantees
+and unsupported-network behavior. Run `pnpm sync:agents` in the same row; no deferred
+mirror-only phase. After the last pair, cold-scaffold and import from packed packages.
+
+## Server and fixture commands to implement
+
+Tasks 4b and 5a form one client integration checkpoint: do not mark 4b complete until
+5a supplies the actual opt-in caller configuration and the shared game runs live. The
+five-file limit applies per task, not permission to claim an uncalled intermediate module
+is complete. Likewise authenticate the initial Task 4a game path using per-run random
+credentials supplied by the fixture; Task 4d hardens issuance/expiry/replay before game integration. Never expose
+a temporary unauthenticated game endpoint outside the isolated fixture.
+
+Task 1a creates Go module `threenative.local/networking-reference`, binary name
+`tn-network-server` (`.exe` on Windows). Resolve the latest stable webtransport-go once,
+record version/revision, then pin it in go.mod/go.sum. Use its declared supported Go
+version, record the toolchain and do not use floating dependency versions in CI. Preserve
+the existing quiche pin unless observed draft incompatibility requires an explicit update.
+Do not implement legacy wire fallback to hide an incompatible server/client pairing.
+
+The server accepts these flags; they are new example flags, not a new engine CLI:
+
+```text
+--listen <host:port>        required; UDP WebTransport bind
+--cert <pem-path>          required for verified mode
+--key <pem-path>           required for verified mode
+--dev-self-signed          explicit alternative to --cert/--key, echo probes only
+--admin-listen <host:port>  loopback only; default 127.0.0.1:0
+--room <room-id>           served room; default networking-proof
+--allow-origin <origin>    repeatable; exact normalized scheme/host/port match
+```
+
+Invalid/unknown flags exit 2. Print `LISTENING` with resolved UDP and admin addresses
+after both listeners bind; never print private keys/tokens. SIGTERM stops acceptance,
+closes sessions and exits within five seconds. `/echo` is transport conformance only;
+`/game` requires protocol authentication. Keep both served by one canonical executable.
+Admin `POST /token` accepts `{room,playerId}` and returns `{credential,expiresAt}`;
+bind strictly to loopback and reject forwarded/nonlocal requests. Test orchestrator
+obtains tokens there, then exposes a temporary authorized HTTPS endpoint reachable by
+devices. Endpoint authorization is a run-specific secret transferred outside checked-in
+config, with bounded issuance; never put that secret or issued credentials in evidence.
+Disable the proxy outside proof runs. Deployment of a real issuer is out of scope.
+
+The existing native test file gains `TN_WEBTRANSPORT_EXECUTABLE`,
+`TN_WEBTRANSPORT_TEST_URL`, `TN_WEBTRANSPORT_TEST_CERT` and `TN_WEBTRANSPORT_TEST_KEY`
+overrides. Default executable remains the current Linux helper path for compatibility.
+An explicit missing override fails rather than falling back. Required TLS tests use a
+trusted certificate/hostname supplied by the operator or provisioned fixture trust store;
+an insecure environment flag cannot satisfy them. Never change a user's trust store
+silently. Certificate prerequisites remain named dependencies if unavailable.
+
+## Game config and observations
+
+Task 5a JSON config schema is `{enabled:boolean, endpoint:string, issuerUrl:string,
+room:string, playerId:string}`. Disabled config may omit other keys; enabled config
+requires HTTPS URLs and nonempty strings. Reject unknown keys. Secrets are excluded.
+Both normal browser entry and native build consume the same injected value. The proof
+runner supplies per-client config files under ignored artifacts. For runtime-only issuer
+authorization, stage `networking-session.json` beside each client's served/packaged assets
+with `{issuerAuthorization,expiresAt}`. Read it using the existing portable
+`fetch('networking-session.json')` path and validate it; native fetch already supports
+relative asset reads. Send `issuerAuthorization` as a Bearer header to issuerUrl; never
+as a query string. The grant is random, limited to that run/room/player, expires after
+15 minutes and can issue only that player's fresh 60-second join tokens. The proxy
+validates the grant before calling loopback `/token` and permits only configured browser
+origins. Deploy trusted HTTPS; no TLS bypass. Browser CORS permits the Authorization
+header only for those origins.
+
+This grant file is an ignored test-run asset, never a compiled constant, checked-in
+example, published package or captured artifact. Stage it independently for each client;
+remove it during runner cleanup. A missing/expired file produces a named error, not
+anonymous joining. The existing native file-asset resolver must be verified on packaged
+Android as part of Task 5a. Do not read browser URL query strings or Node environment in
+game code. Real products replace this development authorization asset with their login
+flow and supply the resulting credential to connect; core knows nothing of that flow.
+
+Store primitive observations in the existing `ctx.state` surface:
+
+| Field | How to derive it; initial value |
+| --- | --- |
+| `networkConnected`, `networkPeerObserved` | false; true only after application readiness / snapshot containing a distinct authenticated peer |
+| `networkRemoteDistance` | 0; accumulate distance between validated successive remote positions, never local input |
+| `networkActionAcks` | 0; count distinct accepted server replies for actions this client actually submitted |
+| `networkSessionId`, `networkPeerId` | empty strings; copy only from authenticated welcome/snapshot |
+| `networkProtocolErrors`, `networkReconnects` | 0; count real protocol failures / completed rejoin transitions |
+
+Task 7a creates schemaVersion 1 playtest using existing `assert.resources` entries
+with `id: "state"`, matching `path`, and equals/gte. Required assertions: connected=true,
+peerObserved=true, remoteDistance≥1 metre, actionAcks≥1, protocolErrors=0. Runner also
+asserts distinct session/player IDs and cross-checks server logs against both clients.
+Run long enough for both clients to join before input steps. A client automation schedule
+sends input for two seconds and one action only after observing its peer; subsequent
+snapshot/reply drives assertions. The server must not generate fake peer movement. Same-tick snapshots for different
+players must all be consumed; add a regression for this and assert that every snapshot
+datagram fits its negotiated payload limit in the 32-client soak.
+
+## Proof runner and aggregate contract
+
+Task 7a creates a repository script, invoked with Node, not a public engine CLI command:
+
+```text
+node scripts/run-networking-proof.mjs --config <absolute-json> --output <absolute-json>
+```
+
+Config specifies `laneId`, `profile`, `server` spawn command/args, `subject` and `partner`
+existing playtest CLI argument arrays, `endpoint`, certificate paths and required build
+hashes. Use spawn argument arrays, never shell interpolation. The script injects no
+success assertions. Use `scripts/networking-issuer.mjs` for authorization/staging, not
+a second implementation. Its standalone invocation is `node scripts/networking-issuer.mjs
+--config <absolute-json>`; config carries admin URL, HTTPS cert/key paths, bind address,
+allowed origins and per-client asset directories. It prints only listener/readiness
+metadata, stages per-player grants, and revokes/deletes them on shutdown. Validate config before starting processes, bound every wait, own all
+child cleanup and require actual test count/peer observations. Record game artifacts and
+server stdout after redacting credentials. For devices use reachable host addresses:
+127.0.0.1 on a phone is not the development machine. Provision UDP reachability explicitly.
+Impairment is external to the adapter; record the platform-specific command and measured
+profile. Only provision impairment in an isolated namespace/test host, not global routes.
+
+Output schema contains `schemaVersion:1`, `prd:359`, `laneId`, `profile`, `commit`,
+`clientBundleHash`, `nativeBinaryHash` (null for browser), `serverBinaryHash`, `versions`,
+`startedAt`, `finishedAt`, `commandExitCodes`, `assertionCount`, `subjectSessionId`,
+`partnerSessionId`, `serverObservedPlayerIds`, `observations`, `metrics`, `artifacts`,
+`status:"passed"|"failed"|"unavailable"`. Validate finite metrics and nonempty evidence;
+do not accept logs without matching artifact identities. Exit 0 only for passed,
+1 for observed failures, 2 for prerequisites/config/process failures.
+
+Task 7b creates `node scripts/verify-networking-matrix.mjs --manifest <path> --results <dir>`.
+Manifest lists expected lane IDs, required profiles, commit/build identity, and required
+versus owner-deferred status. Aggregate by exact lane/profile, reject duplicates and
+missing required rows, and require common client source revision/protocol version.
+Platform-specific binary hashes differ; compare each against that lane's expected hash.
+Only iOS-labelled lanes may be deferred. Output required verdict plus explicit deferred
+rows; exit nonzero unless every required row passes. Do not use the pixel conformance
+registry for this multiplayer orchestration; its existing scene schema is not this format.
+
+## Commands by task
+
+Existing commands below are available today. New source paths/flags become runnable only
+after their owning task creates them. Run commands from repository root unless stated.
+
+```sh
+# Current baseline: source-contract tests, not live TLS proof.
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/webtransport/peer-verification-contract.test.mjs
+
+# Task 1a onward: package config is necessary for live tests to be collected.
+TN_REQUIRE_LIVE_WEBTRANSPORT_FIXTURE=1 pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/webtransport/webtransport.test.ts
+
+# Task 4a onward, cwd packages/runtime-native/examples/webtransport/server:
+go test ./...
+go test -race ./...
+go build -o tn-network-server .
+
+# Task 4b onward:
+pnpm exec vitest run packages/core/__tests__/net.spec.ts
+pnpm --filter @threenative/core build
+pnpm --filter threenative-native-smoke test
+
+# Task 7 onward:
+pnpm --filter @threenative/playtest build
+pnpm exec vitest run scripts/__tests__/run-networking-proof.spec.ts scripts/__tests__/networking-matrix.spec.ts
+
+# Task 8 and closure:
+pnpm capabilities:sync
+pnpm sync:agents
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+pnpm budgets
+pnpm test:playtest
+pnpm test:templates
+```
+
+Go race tests run on the Linux reference-server lane with its supported race toolchain;
+do not substitute a no-race pass. Native C++ tests are built and run through the existing
+runtime native contract infrastructure after `pnpm native:build`; check that the named
+WebTransport wire/surface tests executed instead of registered blocked tests. For a
+failed browser/device prerequisite use the playtest `doctor` commands in root AGENTS.
+
+## Completion record
+
+Do not check task rows at planning time. At implementation closure record every required
+row's evidence links, independent review, published caller and negative-control output.
+Node/Rust adapters remain deferred product scope; iOS remains owner-deferred verification.
+They need no fake passing tests or unresolved required checkbox to archive this batch.
+The final verdict may say browser/desktop/Android qualified; never all-platform or iOS
+qualified without real iOS evidence. Move the entire networking batch to done only when
+required tasks pass, and update any vector consumers and incoming links in that commit.
+
+## Task 7metrics: exact sample producers
+
+Use channel 4 probes from PROTOCOL.md. For client send/receive times c0/c3 and server
+receive/send times s1/s2, compute RTT=(c3-c0)-(s2-s1), offset=((s1-c0)+(s2-c3))/2 and
+uncertainty=RTT/2. Require all values finite. Reject negative RTT or uncertainty;
+allow signed clock offsets because monotonic clock origins differ. For each measurement choose the
+minimum-RTT probe from the preceding 10 seconds; no probe means unavailable. Reject
+qualification if uncertainty exceeds 100 ms. Snapshot age estimate at application is
+clientNow+offset-snapshot.serverMonoMs; store the conservative upper bound
+max(0,estimate+uncertainty). The PRD's age thresholds apply to that upper bound. Record
+uncertainty too; never claim perfect cross-machine clock synchronization.
+
+At each real game update, measure time spent inside send/poll and message processing
+using performance.now. That is JS networking CPU time, not total transport CPU. Native
+processEvents is separately measured by Task 7native in the existing host I/O profiling path. Add its measured per-frame time to
+JS cost for the native networking budget; reject missing native transport samples.
+Browser transport CPU is opaque: report JS CPU separately and require the existing
+whole-frame budget, never claim browser QUIC-thread CPU was measured.
+
+For action acknowledgement latency, store local monotonic send time by action ID and
+subtract it only on that action's distinct accepted reply. After a 10-second warmup,
+collect 60 seconds of samples per profile and at least 100 acknowledged actions; the
+load schedule sends two actions per second. Use nearest-rank percentiles on the sorted
+samples. Emit sample count, p50/p95/p99, maximum, units and raw-sample artifact hash for
+age, action latency and CPU. Runner enforces the PRD's 150/350 ms age p95, 2,000 ms action
+p99 and 1 ms native total / browser JS CPU p95 plus whole-frame budget. Missing samples
+or unmatched action IDs cannot pass. The 10-minute soak is additional to these windows.
+
+## Required sandbox checkpoint
+
+After the public API is built and before closure, execute [SANDBOX.md](./SANDBOX.md).
+The small game at `../sandbox/networking-proof` must pass browser/browser and
+browser/native desktop local tests using installed tarballs. An in-repo fixture pass
+does not replace it. Record its required evidence link alongside the task rows.
+
+## Portable asynchronous resource wait
+
+Current waitTicks advances simulation and is not a network deadline. Tasks 7wait-a/b
+add one generic step, not networking-specific assertions:
+
+```json
+{"waitForResource":{"id":"state","path":"networkConnected","equals":true},"timeoutMs":10000}
+```
+
+Require a positive integer timeoutMs ≤120000 and exactly one equals/gte/lte predicate.
+Disallow mixing this step with input, holdTicks or waitTicks. Validate id/path against
+the existing resource-path rules. Read through the existing resource observer. Use a
+monotonic wall-clock deadline; when not satisfied, yield to actual I/O for up to 16 ms
+before reading again. When the runner owns fixed stepping, advance at most one tick per
+poll, paced by that real interval, so the game can consume incoming messages without
+fast-forwarding the server's clock. Never busy-spin or replace the deadline with ticks.
+Missing resource/unsupported observer fails immediately; a valid but unsatisfied value
+waits until timeout and then fails with the predicate, elapsed time and last observation.
+It must never time out successfully or ignore malformed conditions.
+
+The networking scenario waits for readiness and peer presence with this step, drives
+input, then waits for measured remote distance and acknowledgement. Measurement windows
+use monotonic time and run the real networking loop; fast fixed-step ticks cannot count
+as elapsed seconds. Negative control: suppress server reply and verify timeout fails on
+browser and native. The proof runner still owns multi-client startup and failure injection;
+the playtest package gains only this reusable asynchronous wait primitive.

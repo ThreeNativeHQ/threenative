@@ -1,6 +1,6 @@
 ---
 name: threenative-playtest
-description: Diagnose a ThreeNative game, prove behavior, and keep playtests fail-closed.
+description: Diagnose a ThreeNative game, prove behavior, and keep playtests fail-closed. Use for a blank, black, or washed-out frame, a browser, device, or import failure, or when writing or repairing a playtest scenario and its assertions.
 ---
 
 # ThreeNative diagnosis and playtests

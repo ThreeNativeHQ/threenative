@@ -182,14 +182,8 @@ Diagnostics: without proof, framework NN, vanilla NN. Without abstraction levera
 
 Keep it concise, but do not omit the visual evidence or abstraction audit to fit one screen.
 
-## What not to do
+## Two rules the sections above do not carry
 
-- Do not score a run you did not execute, and do not score someone's description of one.
-- Do not adjust the weights, invent axes, or drop the diagnostics because the answer is awkward.
-- Do not score visual quality from source code, a reference image alone, or one convenient frame.
-- Do not reward abstraction count, framework import count, reach rate, or wrappers with no
-  demonstrated leverage.
-- Do not penalise ordinary Three.js used for game-owned rendering merely because it is vanilla.
-- Do not average the two totals into a verdict. They are two readings, and the reader owns the
-  decision.
-- Do not carry a score forward to a later run. Re-score, or say the old number is stale.
+Report the two totals side by side; they are two readings and the reader owns the decision.
+Re-score every run — a score carried forward from an earlier run is stale, and say so if you
+quote one.

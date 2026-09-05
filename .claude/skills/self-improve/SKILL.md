@@ -8,9 +8,9 @@ description: Run one round of ThreeNative improving itself — build the same se
 One round of the framework earning its existence against the only control that matters:
 the same agent, the same brief, no framework.
 
-This is `gauntlet-loop` with the charter's bar already chosen and the arms already
-specified. Read `~/.claude/skills/gauntlet-loop/SKILL.md` for the builder/critic method;
-everything below is what this repository adds on top, and it wins where they differ.
+This is the `gauntlet-loop` skill with the charter's bar already chosen and the arms already
+specified. Read that skill for the builder/critic method if it is installed; everything below is
+what this repository adds on top, and it wins where the two differ.
 
 ## The bar, and why you do not get to pick it
 
@@ -37,9 +37,7 @@ Run these in order. Each step writes evidence to disk before the next begins; a 
 evidence is missing has not happened, whatever the transcript says.
 
 **0. Resume, don't restart.** `pnpm round:next` prints the single next action from what is
-already on disk. Days-long runs re-enter here after every context reset. If the command does
-not exist yet, read the most recent `docs/verification/round-*.md` and continue from its
-`Next action` field.
+already on disk. Days-long runs re-enter here after every context reset.
 
 **1. Charter the round.** Create `docs/verification/round-<n>-<date>.md` from
 `references/round-ledger-template.md`. Record: round number, genres, the framework commit
@@ -183,21 +181,3 @@ The loop survives context resets because nothing lives in the conversation:
 
 A fresh session runs step 0 and continues. Report to the user at round boundaries, not at
 every step — long silence with evidence on disk beats narration.
-
-## Degraded mode — what is not built yet
-
-This skill ships ahead of its tooling on purpose. When a command below does not exist, do
-the manual fallback, mark the ledger column `unmeasured`, and **do not substitute a
-guess**.
-
-| Step | Command | Ships in | Fallback until then |
-|---|---|---|---|
-| Vanilla arm | `pnpm sandbox --arm vanilla --name <genre>-vanilla` | PRD-019 | none — without it there is no pair. Run a single-armed sweep and say so |
-| Sealed proof | `pnpm sweep:proof` | PRD-019 | builder-authored playtests, recorded as self-graded and therefore not a functional verdict |
-| Pair report | `pnpm sweep:pair` | PRD-019 | read two ledgers by hand |
-| Capture | `pnpm sweep:capture` | PRD-020 | drive the real browser yourself; a black frame is a capture failure, not a scene bug |
-| Blind judge | `pnpm sweep:judge` | PRD-020 | a fresh `gauntlet-critic` with the rubric, given screenshots you shuffled and stripped by hand |
-| Resume | `pnpm round:next` | PRD-021 | the ledger's `Next action` field |
-
-Closing these is itself round work: the gap between what this skill promises and what the
-repository can measure is the first gap list.

@@ -1,6 +1,6 @@
 ---
 name: threenative-ui
-description: Build a native-safe ThreeNative React UI that communicates through state and intents.
+description: Build a native-safe ThreeNative React UI that communicates through state and intents. Use when adding or changing a HUD, menu, or any React UI that must also run on native, where the layout key set is fixed and CSS does not exist.
 ---
 
 # ThreeNative UI

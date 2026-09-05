@@ -1,6 +1,6 @@
 ---
 name: threenative-assets
-description: Find, import, license, or sculpt assets for a portable ThreeNative game.
+description: Find, import, license, or sculpt assets for a portable ThreeNative game. Use when the game needs textures, materials, HDRIs, sounds, or models, when importing an owned Fab or Unreal pack, or when sculpting bespoke geometry from a reference image.
 ---
 
 # ThreeNative assets and sculpting
