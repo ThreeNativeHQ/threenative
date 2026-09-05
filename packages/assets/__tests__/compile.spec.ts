@@ -361,23 +361,44 @@ describe("compileAssets", () => {
           return input;
         },
       };
-
-      const result = await compileAssets({
-        cwd: root,
-        passes: [decoderDependent, decoderFree],
-        platform,
+      const lines: string[] = [];
+      const log = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
+        lines.push(String(line));
       });
-      const manifest = JSON.parse(
-        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
-      ) as { entries: Record<string, { passes: string[] }> };
-      const expectedPasses =
-        platform === "android" || platform === "ios"
-          ? ["decoder-free"]
-          : ["decoder-dependent", "decoder-free"];
 
-      expect(result.written).toBe(1);
-      expect(invoked).toEqual(expectedPasses);
-      expect(manifest.entries["rock.txt"]?.passes).toEqual(expectedPasses);
+      try {
+        const result = await compileAssets({
+          cwd: root,
+          passes: [decoderDependent, decoderFree],
+          platform,
+        });
+        const manifest = JSON.parse(
+          await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+        ) as { entries: Record<string, { passes: string[] }> };
+        const expectedPasses =
+          platform === "android" || platform === "ios"
+            ? ["decoder-free"]
+            : ["decoder-dependent", "decoder-free"];
+
+        expect(result.written).toBe(1);
+        expect(invoked).toEqual(expectedPasses);
+        expect(manifest.entries["rock.txt"]?.passes).toEqual(expectedPasses);
+        expect(result.skippedCompression).toEqual(
+          platform === "android" || platform === "ios"
+            ? [{ kind: "pass", pass: "decoder-dependent", reason: "platform" }]
+            : [],
+        );
+        if (platform === "android" || platform === "ios") {
+          expect(lines).toContain(
+            "TN_ASSETS_PASS_SKIPPED decoder-dependent: omitted because the pass declares needsRuntimeDecoder=true and this target has no runtime decoder (reason: platform).",
+          );
+          expect(lines.some((line) => line.startsWith("TN_ASSETS_COMPRESSION_SKIPPED"))).toBe(
+            false,
+          );
+        }
+      } finally {
+        log.mockRestore();
+      }
     },
   );
 

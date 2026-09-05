@@ -59,6 +59,7 @@ import type {
   IPassCostRow,
   ISimplifyRow,
   ISkippedCompressionRow,
+  ISkippedReportRow,
   ITextureSizeRow,
   PassCostStatus,
 } from "./report.js";
@@ -248,10 +249,11 @@ export interface IAssetCompileResult {
   /** One cost row per pass, driver-measured; empty when no bake ran. */
   readonly passCosts: readonly IPassCostRow[];
   /**
-   * What each `assets.*: "none"` shipped uncompressed, per kind; empty when nothing opted out.
-   * Turning a convention off does not turn its measurement off.
+   * What built-in compression shipped uncompressed, plus caller-supplied decoder-dependent passes
+   * omitted for this target as `kind: "pass"` rows. Turning a convention off does not turn its
+   * measurement off.
    */
-  readonly skippedCompression: readonly ISkippedCompressionRow[];
+  readonly skippedCompression: readonly ISkippedReportRow[];
   readonly receipt?: IBakeReceipt;
   readonly report?: IAssetHealthReport;
   readonly skipped: number;
@@ -325,6 +327,8 @@ interface ICompileLayout {
   readonly outputRoot: string;
   /** The built-in registry's serialisable mirror; empty when the caller supplied passes. */
   readonly passSpecs: readonly PassSpec[];
+  /** Names of caller-supplied decoder-dependent passes omitted on a target without a decoder. */
+  readonly skippedPasses: readonly string[];
   readonly passes: readonly IAssetPass[];
   readonly sourceRoot: string;
   readonly targets: IAssetTargets;
@@ -1027,7 +1031,11 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       });
     }
   }
-  const customPasses = (options.passes ?? []).filter(
+  const suppliedPasses = options.passes ?? [];
+  const skippedPasses = suppliedPasses
+    .filter((pass) => pass.needsRuntimeDecoder === true && !runtimeDecoderAvailable)
+    .map((pass) => pass.name);
+  const customPasses = suppliedPasses.filter(
     (pass) => pass.needsRuntimeDecoder !== true || runtimeDecoderAvailable,
   );
   return {
@@ -1045,6 +1053,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
             : "platform",
     outputRoot,
     passSpecs,
+    skippedPasses,
     passes: [...builtinPasses, ...customPasses],
     sourceRoot,
     targets: config.targets === undefined ? {} : validateTargets(config.targets),
@@ -2108,8 +2117,12 @@ export async function compileAssets(
 function skippedCompressionRows(
   entries: Readonly<Record<string, IAssetManifestEntry>>,
   layout: ICompileLayout,
-): readonly ISkippedCompressionRow[] {
-  const rows: ISkippedCompressionRow[] = [];
+): readonly ISkippedReportRow[] {
+  const rows: ISkippedReportRow[] = layout.skippedPasses.map((pass) => ({
+    kind: "pass",
+    pass,
+    reason: "platform",
+  }));
   const decisions = [
     { kind: "model" as const, reason: layout.modelCompressionReason },
     { kind: "texture" as const, reason: layout.textureCompressionReason },
