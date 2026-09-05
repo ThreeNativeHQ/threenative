@@ -579,7 +579,7 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
     write: async (path, contents) => writeFile(path, contents, 'utf8'),
   };
   const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath });
-  const driver = createDesktopDriver(artifactPath, project, options, screenshotRequestPath);
+  const driver = createDesktopDriver(artifactPath, project, options, screenshotRequestPath, mailboxRoot);
   const transport = {
     capabilities: innerTransport.capabilities,
     call: innerTransport.call.bind(innerTransport),
@@ -628,14 +628,14 @@ export function profileConfigPath(project, configPath = undefined) {
   return configPath ?? join(project, '.threenative', 'build', 'config.json');
 }
 
-function createDesktopDriver(artifactPath, project, options, screenshotRequestPath) {
+function createDesktopDriver(artifactPath, project, options, screenshotRequestPath, mailboxRoot) {
   let child;
   let output = '';
   return {
     captureConsole: async () => output.split(/\r?\n/u).filter(Boolean).map((text) => ({ text, type: /\b(?:Error|FAILED|FATAL)\b/u.test(text) ? 'error' : 'log' })),
     isAlive: async () => child !== undefined && child.exitCode === null,
     launch: async () => {
-      child = spawnNative(artifactPath, project, options);
+      child = spawnNative(artifactPath, project, options, mailboxRoot);
       child.stdout?.on('data', (chunk) => { output += chunk.toString(); });
       child.stderr?.on('data', (chunk) => { output += chunk.toString(); });
       await new Promise((resolve, reject) => {
@@ -667,7 +667,7 @@ function createDesktopDriver(artifactPath, project, options, screenshotRequestPa
   };
 }
 
-function spawnNative(artifactPath, project, options) {
+function spawnNative(artifactPath, project, options, mailboxRoot) {
   const bundle = join(project, '.threenative/build/game.js');
   const nativeArgs = [
     'run',
@@ -681,7 +681,7 @@ function spawnNative(artifactPath, project, options) {
   return spawn(command, args, {
     cwd: project,
     detached: process.platform !== 'win32',
-    env: { ...process.env, SDL_VIDEODRIVER: process.platform === 'linux' ? 'x11' : process.env.SDL_VIDEODRIVER },
+    env: { ...process.env, TN_PLAYTEST_MAILBOX_ROOT: mailboxRoot, SDL_VIDEODRIVER: process.platform === 'linux' ? 'x11' : process.env.SDL_VIDEODRIVER },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }

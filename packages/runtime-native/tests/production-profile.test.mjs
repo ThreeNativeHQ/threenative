@@ -1,5 +1,6 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 import { join } from 'node:path';
@@ -36,6 +37,38 @@ import {
 const temporary = [];
 const sourceSha = 'a'.repeat(64);
 const artifactSha = sha256(Buffer.from('fixture-artifact'));
+
+test('desktop child receives the transport mailbox root without changing the screenshot path', async () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const project = '/fixture/scaffold';
+  const mailboxRoot = join(project, '.runtime-mailbox');
+  const screenshotRequestPath = join(mailboxRoot, 'tn-production-screenshot-request.json');
+  let childOptions;
+  const writes = [];
+  const context = {
+    join,
+    process: { platform: 'linux', env: { DISPLAY: ':fixture', TN_PLAYTEST_MAILBOX_ROOT: '/wrong/inherited/root' } },
+    spawn: (_command, _args, options) => {
+      childOptions = options;
+      const child = new EventEmitter();
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    },
+    writeFile: async (path) => writes.push(path),
+    rename: async (_from, to) => writes.push(to),
+    nonBlankPng: async () => true,
+    DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
+  };
+  runInNewContext(driverSource, context);
+  const driver = context.createDesktopDriver('/fixture/mystral', project, { renderSize: { width: 1920, height: 1080 } }, screenshotRequestPath, mailboxRoot);
+  await driver.launch();
+  assert.equal(childOptions.env.TN_PLAYTEST_MAILBOX_ROOT, mailboxRoot);
+  assert.equal(childOptions.cwd, project);
+  await driver.screenshot('/fixture/capture.png');
+  assert.deepEqual(writes, [`${screenshotRequestPath}.tmp`, screenshotRequestPath]);
+  assert.match(source, /const driver = createDesktopDriver\(artifactPath, project, options, screenshotRequestPath, mailboxRoot\)/u);
+});
 
 afterEach(() => {
   for (const path of temporary.splice(0)) rmSync(path, { force: true, recursive: true });

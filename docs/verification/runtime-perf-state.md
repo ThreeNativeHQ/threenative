@@ -2698,6 +2698,56 @@ throughput, and GitHub-hosted workflow execution remain UNVERIFIED from this che
 parsing and structure tests do not claim those platforms ran. Missing promoted evidence remains
 BLOCKED/2; regression FAIL remains 1 and a fully evidenced PASS remains 0.
 
+### PRD-358 desktop mailbox repair — 2026-09-05
+
+The collector now passes the exact `project/.runtime-mailbox` root from
+`runDesktopBridgeScenario()` through `createDesktopDriver()` and `spawnNative()` into
+`TN_PLAYTEST_MAILBOX_ROOT`. It overrides a stale inherited root and leaves the screenshot request
+path unchanged. This is a collector plumbing repair, not a game, baseline, or threshold change.
+The debugging-strategies skill guided the isolated child-environment reproduction.
+
+Observed red: with the implementation still at `e00e8614`, running
+`pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'desktop child receives'`
+exited 1: `Test Files 1 failed (1)`; `Tests 1 failed / 28 skipped (29)`.
+The assertion expected `/fixture/scaffold/.runtime-mailbox` but received
+`/wrong/inherited/root`. After the repair, the full production-profile command without `-t`
+exited 0: `Test Files 1 passed (1)`; `Tests 29 passed (29)`. The test executes the actual driver
+and spawn functions with an observed child-environment stub; it also verifies the screenshot
+request/rename paths and the live mailbox argument wiring.
+
+`pnpm native:build` exited 0, including dependency checks, native physics/UI preparation,
+`tn-linux` CMake configure and native executable linking. The executed probe was:
+
+```sh
+node packages/runtime-native/scripts/profile-production.mjs --profile production \
+  --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
+  --prebuilt-artifact "$PWD/packages/runtime-native/build/tn-linux/mystral" \
+  --out artifacts/prd358-mailbox-desktop
+```
+
+It retained `artifacts/prd358-mailbox-desktop/production-evidence.json` and a startup playtest
+report at `artifacts/prd358-mailbox-desktop/artifacts/c85491d9bc7d657b71f9577cbd77eb35a56134bca445a4272cb94768456d6fec`.
+The probe still exited 2 (`BLOCKED`): the startup report now reports
+`TN_PLAYTEST_CAPABILITY_MISSING` for `browser.network`, not `TN_PLAYTEST_BRIDGE_MISSING`.
+The existing connection path in `packages/playtest/src/runner/bridgeClient.ts:207` only reaches
+this capability validation after successful mailbox connection, `describe`, protocol validation,
+and `ready`. Thus the retained failure demonstrates the repaired handshake; it does not establish
+complete workload readiness or performance. The steady launch did not retain a successful report;
+the aggregate has one zero-duration/zero-sample window. No assertion was removed or weakened to
+accept this evidence. Missing render/startup samples, markers and budget evidence remain BLOCKED.
+
+Reports remain local only. Physical Android/iOS execution, performance calibration, hardware
+promotion and baseline regeneration are not claimed by this repair. The source PRD is untouched.
+
+| Executed gate | Exact result |
+|---|---|
+| `pnpm typecheck` | Exit 0; workspace checks completed, ending `examples/abyss-framework typecheck: Done`. |
+| `pnpm test` | Exit 0; root `Test Files 391 passed / 1 skipped (392)`, `Tests 4306 passed / 4 skipped (4310)`; native `100 passed` files, `723 passed / 34 skipped (757)` tests, plus `29 passed` physics-parity tests. |
+| `pnpm test:playtest` | Exit 0; the repository's real example playtest command completed with its private Xvfb display. This is browser correctness evidence, not physical performance proof. |
+| `pnpm lint` | Exit 0; `Checked 1962 files`; `Found 611 warnings.` No fixes applied. |
+| `pnpm budgets` | Exit 1: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit).` Unrelated retention index unchanged. |
+| `git diff --check` | Exit 0; no output. |
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,
