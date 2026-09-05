@@ -141,20 +141,36 @@ void runContract(bool disableStreamControl) {
 #endif
     expect(engine->evalScript(
         R"JS((async () => {
-          await __tnUploadDst.mapAsync(GPUMapMode.READ, 0, 16);
-          globalThis.__tnUploadReadback = Array.from(new Uint32Array(__tnUploadDst.getMappedRange(0, 16)));
-          __tnUploadDst.unmap();
+          try {
+            await __tnUploadDst.mapAsync(GPUMapMode.READ, 0, 16);
+            globalThis.__tnUploadReadback = Array.from(new Uint32Array(__tnUploadDst.getMappedRange(0, 16)));
+            __tnUploadDst.unmap();
+          } catch (error) {
+            globalThis.__tnUploadReadbackError = String(error);
+          } finally {
+            globalThis.__tnUploadReadbackDone = true;
+          }
         })())JS",
         "tn-upload-readback.js"),
         "upload readback requested");
-    for (int pump = 0; pump < 200; ++pump) {
+    // Metal can deliver a spontaneous Dawn map callback on the next run-loop turn. Yield between
+    // polls so this contract waits for the same backend completion it is asserting rather than
+    // exhausting a tight loop before the driver has had a chance to signal it.
+    for (int pump = 0; pump < 5000; ++pump) {
         engine->processMicrotasks();
-        if (!engine->isUndefined(engine->getGlobalProperty("__tnUploadReadback"))) break;
+        if (!engine->isUndefined(engine->getGlobalProperty("__tnUploadReadbackDone"))) break;
         runtime->pollEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    expect(engine->toBoolean(engine->evalScriptWithResult(
-        "JSON.stringify(__tnUploadReadback) === '[1,2,3,4]'", "tn-upload-readback-check.js")),
-        "writeBuffer payload was copied eagerly before source mutation");
+    expect(engine->toBoolean(engine->getGlobalProperty("__tnUploadReadbackDone")),
+           "upload readback promise settled");
+    expect(engine->isUndefined(engine->getGlobalProperty("__tnUploadReadbackError")),
+           "upload readback completed without an error");
+    if (!engine->isUndefined(engine->getGlobalProperty("__tnUploadReadback"))) {
+        expect(engine->toBoolean(engine->evalScriptWithResult(
+            "JSON.stringify(__tnUploadReadback) === '[1,2,3,4]'", "tn-upload-readback-check.js")),
+            "writeBuffer payload was copied eagerly before source mutation");
+    }
 
     // Same-frame readback. `queue.submit` is recorded, not executed, so the copy a game hands the
     // queue only reaches the GPU when the frame drains. `buffer.mapAsync` is the one call that
