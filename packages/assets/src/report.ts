@@ -413,6 +413,15 @@ export interface ISkippedCompressionRow {
   readonly reason: "config" | "platform";
 }
 
+/** A caller-supplied pass omitted because this target cannot provide its runtime decoder. */
+export interface ISkippedPassRow {
+  readonly kind: "pass";
+  readonly pass: string;
+  readonly reason: "platform";
+}
+
+export type ISkippedReportRow = ISkippedCompressionRow | ISkippedPassRow;
+
 /**
  * Reports what an opted-out pass is shipping uncompressed.
  *
@@ -421,19 +430,25 @@ export interface ISkippedCompressionRow {
  * bytes and KTX2 would grow it. But that value is copied into every scaffolded game and never
  * revisited: one shipped 2,003 MB of manifest output holding 53 PNG, 35 JPG and zero `.ktx2`, and
  * the build never said a word about it. This is the word. It is informational, never fatal, and
- * costs one sum over sizes the manifest already recorded.
+ * costs one sum over sizes the manifest already recorded. Caller-supplied decoder-dependent
+ * passes use a separate `kind: "pass"` row so this report never calls arbitrary work compression.
  */
-export function formatSkippedCompression(
-  rows: readonly ISkippedCompressionRow[],
-): readonly string[] {
+export function formatSkippedCompression(rows: readonly ISkippedReportRow[]): readonly string[] {
   return rows
-    .filter((row) => row.files > 0)
-    .map(
-      (row) =>
-        `TN_ASSETS_COMPRESSION_SKIPPED ${row.kind}: ${String(row.files)} file(s), ${(row.bytes / 1e6).toFixed(1)} MB shipped as authored ${
-          row.reason === "config"
-            ? `because assets.${row.kind}s is "none"`
-            : "because this target has no WebAssembly and could not decode it"
-        }.`,
-    );
+    .filter((row) => row.kind === "pass" || row.files > 0)
+    .map((row) => {
+      if (row.kind === "pass") {
+        return `TN_ASSETS_PASS_SKIPPED ${row.pass}: omitted because the pass declares needsRuntimeDecoder=true and this target has no runtime decoder (reason: platform).`;
+      }
+      const decoders = row.kind === "model" ? "meshopt and KTX2" : "KTX2";
+      const action =
+        row.kind === "model" && row.reason === "platform"
+          ? "retained without decoder-backed compression while decoder-free model passes still ran"
+          : "shipped as authored";
+      const reason =
+        row.reason === "config"
+          ? `assets.${row.kind}s is "none"`
+          : `this target has no WebAssembly and cannot run its ${decoders} decoder`;
+      return `TN_ASSETS_COMPRESSION_SKIPPED ${row.kind}: ${String(row.files)} file(s), ${(row.bytes / 1e6).toFixed(1)} MB ${action} because ${reason}.`;
+    });
 }

@@ -7,6 +7,12 @@ export interface IAssetBudget {
   readonly total: number | "none";
 }
 
+/** Runtime decoder capabilities that decide which emitted bytes can be compressed on-device. */
+export interface IAssetRuntimeDecoderCapabilities {
+  readonly ktx2: boolean;
+  readonly meshopt: boolean;
+}
+
 export interface IBudgetRow {
   readonly logicalPath: string;
   readonly total: number;
@@ -121,6 +127,7 @@ function exemptImageViews(
   filename: string,
   skipped: Readonly<Record<string, TextureSkipReason>>,
   exemptImages: ImageExemptions,
+  runtimeDecoders: IAssetRuntimeDecoderCapabilities,
 ): ReadonlySet<number> {
   const keys = skipKeys(images);
   const settled = new Set<number>();
@@ -131,7 +138,7 @@ function exemptImageViews(
     // charging it would fail a gate nobody can pass. `block-size` is charged, because a resize
     // to a multiple of four is a fix the project can actually make.
     const key = keys[index];
-    const exempt = key !== undefined && skipped[key] === "not-smaller";
+    const exempt = !runtimeDecoders.ktx2 || (key !== undefined && skipped[key] === "not-smaller");
     const view = image.bufferView;
     if (view !== undefined && image.mimeType === "image/ktx2") settled.add(view);
     else if (view !== undefined) voteExempt(views, view, exempt);
@@ -150,13 +157,14 @@ async function uncookedModel(
   bytes: number,
   skipped: Readonly<Record<string, TextureSkipReason>> = {},
   exemptImages: ImageExemptions = new Map(),
+  runtimeDecoders: IAssetRuntimeDecoderCapabilities = { ktx2: true, meshopt: true },
 ): Promise<number> {
   const file = await open(filename, "r");
   try {
     const header = Buffer.alloc(20);
     await file.read(header, 0, header.length, 0);
     if (header.readUInt32LE(0) !== 0x46546c67 || header.readUInt32LE(16) !== 0x4e4f534a)
-      return bytes;
+      return runtimeDecoders.ktx2 || runtimeDecoders.meshopt ? bytes : 0;
     const jsonLength = header.readUInt32LE(12);
     if (jsonLength > bytes - 20)
       throw new Error(`TN_ASSETS_OUTPUT_INVALID: truncated GLB ${filename}`);
@@ -165,8 +173,13 @@ async function uncookedModel(
     if (read.bytesRead !== jsonLength)
       throw new Error(`TN_ASSETS_OUTPUT_INVALID: truncated GLB ${filename}`);
     const gltf = JSON.parse(json.toString("utf8")) as IGltf;
+    const imageViews = new Set(
+      (gltf.images ?? [])
+        .map((image) => image.bufferView)
+        .filter((view): view is number => view !== undefined),
+    );
     const compressed = new Set(
-      exemptImageViews(gltf.images ?? [], filename, skipped, exemptImages),
+      exemptImageViews(gltf.images ?? [], filename, skipped, exemptImages, runtimeDecoders),
     );
     for (const mesh of gltf.meshes ?? []) {
       for (const primitive of mesh.primitives) {
@@ -176,7 +189,13 @@ async function uncookedModel(
     }
     let raw = 0;
     for (const [index, view] of (gltf.bufferViews ?? []).entries()) {
-      if (compressed.has(index) || view.extensions?.EXT_meshopt_compression !== undefined) continue;
+      if (
+        compressed.has(index) ||
+        view.extensions?.EXT_meshopt_compression !== undefined ||
+        (!runtimeDecoders.meshopt && !imageViews.has(index)) ||
+        (!runtimeDecoders.ktx2 && imageViews.has(index))
+      )
+        continue;
       if (!Number.isSafeInteger(view.byteLength) || view.byteLength < 0)
         throw new Error(`TN_ASSETS_OUTPUT_INVALID: invalid bufferView in ${filename}`);
       raw += view.byteLength;
@@ -192,27 +211,32 @@ async function uncookedModel(
 export async function measureBudget(
   entries: Readonly<Record<string, IOutput>>,
   outputRoot: string,
-  decodesCompression: boolean,
+  runtimeDecoderCapabilities: IAssetRuntimeDecoderCapabilities | boolean,
   budget: IAssetBudget,
   compilerOutputs: readonly ICompilerOutput[] = [],
 ): Promise<IBudgetReport> {
+  // The boolean form remains accepted for callers compiled against PRD-349; new callers pass the
+  // two independent capabilities so mobile can exempt authored PNGs and model geometry separately.
+  const runtimeDecoders: IAssetRuntimeDecoderCapabilities =
+    typeof runtimeDecoderCapabilities === "boolean"
+      ? { ktx2: runtimeDecoderCapabilities, meshopt: runtimeDecoderCapabilities }
+      : runtimeDecoderCapabilities;
   const seen = new Set<string>();
   const exemptImages: ImageExemptions = new Map();
   const modelBytes = new Map<string, number>();
-  if (decodesCompression) {
-    for (const entry of Object.values(entries)) {
-      if (path.extname(entry.output).toLowerCase() !== ".glb" || modelBytes.has(entry.output))
-        continue;
-      modelBytes.set(
-        entry.output,
-        await uncookedModel(
-          path.join(outputRoot, entry.output),
-          (await stat(path.join(outputRoot, entry.output))).size,
-          entry.embeddedTextures?.skippedCompression,
-          exemptImages,
-        ),
-      );
-    }
+  for (const entry of Object.values(entries)) {
+    if (path.extname(entry.output).toLowerCase() !== ".glb" || modelBytes.has(entry.output))
+      continue;
+    modelBytes.set(
+      entry.output,
+      await uncookedModel(
+        path.join(outputRoot, entry.output),
+        (await stat(path.join(outputRoot, entry.output))).size,
+        entry.embeddedTextures?.skippedCompression,
+        exemptImages,
+        runtimeDecoders,
+      ),
+    );
   }
   const rows: IBudgetRow[] = [];
   for (const [logicalPath, entry] of Object.entries(entries).sort(([a], [b]) =>
@@ -238,7 +262,6 @@ export async function measureBudget(
       seen.add(output.output);
       const shippedBytes = (await stat(path.join(outputRoot, output.output))).size;
       total += shippedBytes;
-      if (!decodesCompression) continue;
       // Same split as the embedded images above: only the reason no author can act on is exempt.
       if (
         output.compressionSkipped === "not-smaller" ||
@@ -249,10 +272,16 @@ export async function measureBudget(
       if (extension === ".glb")
         uncooked +=
           modelBytes.get(output.output) ??
-          (await uncookedModel(path.join(outputRoot, output.output), shippedBytes));
+          (await uncookedModel(
+            path.join(outputRoot, output.output),
+            shippedBytes,
+            {},
+            exemptImages,
+            runtimeDecoders,
+          ));
       else if (
-        [".png", ".jpg", ".jpeg", ".webp"].includes(extension) ||
-        (output.kind === "model" && extension !== ".ktx2")
+        (runtimeDecoders.ktx2 && [".png", ".jpg", ".jpeg", ".webp"].includes(extension)) ||
+        (runtimeDecoders.meshopt && output.kind === "model" && extension !== ".ktx2")
       )
         uncooked += shippedBytes;
     }

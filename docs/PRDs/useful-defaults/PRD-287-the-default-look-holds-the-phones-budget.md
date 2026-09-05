@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status: OPEN — filed 2026-08-30 against `728f72e8`. Nothing below has been executed.** Part of
 the [decent-defaults batch](./ORIGIN-decent-defaults-2026-08-30.md). Depends on
-[PRD-278](./PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) for a chain to
+[PRD-278](../done/PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) for a chain to
 measure, The ruling on where the ladder lives was answered
 2026-08-30 in
 [PRD-266](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md): the

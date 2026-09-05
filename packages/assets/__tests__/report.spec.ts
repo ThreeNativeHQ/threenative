@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatModelSizes, formatTextureSizes } from "../src/report.js";
-import type { IModelSizeRow, ITextureSizeRow } from "../src/report.js";
+import { formatModelSizes, formatSkippedCompression, formatTextureSizes } from "../src/report.js";
+import type { IModelSizeRow, ISkippedCompressionRow, ITextureSizeRow } from "../src/report.js";
 
 describe("formatTextureSizes", () => {
   it("should report a smaller total after compression", async () => {
@@ -117,5 +117,20 @@ describe("formatModelSizes", () => {
     expect(lines[1]).toBe(
       "lightmap static-light.glb: atlas 76x68, 320 valid + 48 dilated texels, 12 occluded, 20672 -> 1402 bytes (-93.2%), bake 12.3 ms",
     );
+  });
+});
+
+describe("formatSkippedCompression", () => {
+  it("names the decoder capability that a target skipped without blaming dedupe", () => {
+    const rows: readonly ISkippedCompressionRow[] = [
+      { bytes: 240, files: 2, kind: "model", reason: "platform" },
+      { bytes: 120, files: 1, kind: "texture", reason: "platform" },
+    ];
+    const lines = formatSkippedCompression(rows);
+
+    expect(lines[0]).toContain("meshopt");
+    expect(lines[0]).toContain("KTX2");
+    expect(lines[1]).toContain("KTX2");
+    expect(lines.join("\n")).not.toContain("dedupe");
   });
 });

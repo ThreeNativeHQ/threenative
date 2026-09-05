@@ -9,6 +9,7 @@ import {
   NodeIO,
   type Skin,
   type Texture,
+  VertexLayout,
 } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, EXTMeshoptCompression } from "@gltf-transform/extensions";
 import {
@@ -121,6 +122,8 @@ export interface IModelSimplifyOptions {
 
 export interface IModelPassOptions {
   readonly passes?: IModelPassesOptions;
+  /** Native WebGPU rejects interleaved vertex attributes; mobile output uses separate buffers. */
+  readonly vertexLayout?: "interleaved" | "separate";
   /** Preserve generated TEXCOORD_1 data that is consumed by a runtime-attached lightmap. */
   readonly preserveLightmapUv?: boolean;
   readonly quantize?: IModelQuantizeOptions;
@@ -174,6 +177,7 @@ export interface IModelPassOutputEntry {
 }
 
 const DRACO_EXTENSION = "KHR_draco_mesh_compression";
+const EXT_MESHOPT_EXTENSION = "EXT_meshopt_compression";
 
 /** Relative bounding-box tolerance of the self-verify check (PRD: 0.1%). */
 const BBOX_TOLERANCE = 0.001;
@@ -225,9 +229,11 @@ async function readDocument(input: Buffer, logicalPath: string): Promise<Documen
 async function writeDocument(
   document: Document,
   logicalPath: string,
+  vertexLayout: "interleaved" | "separate" = "interleaved",
 ): Promise<{ buffer: Buffer; extensions: readonly string[] }> {
   await MeshoptEncoder.ready;
   const io = new NodeIO()
+    .setVertexLayout(vertexLayout === "separate" ? VertexLayout.SEPARATE : VertexLayout.INTERLEAVED)
     .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry])
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
   try {
@@ -622,6 +628,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         quantize: options.passes?.quantize ?? true,
         reorder: options.passes?.reorder ?? true,
       },
+      ...(options.vertexLayout === undefined ? {} : { vertexLayout: options.vertexLayout }),
       quantize: {
         normalBits: options.quantize?.normalBits ?? DEFAULT_NORMAL_BITS,
         positionBits: options.quantize?.positionBits ?? DEFAULT_POSITION_BITS,
@@ -651,6 +658,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
             },
     },
     name: "model",
+    // A mobile compile replaces these two decoder-backed sub-passes in the effective options;
+    // geometry rewrites and shared-image emission remain plain glTF and stay enabled there.
+    needsRuntimeDecoder: (options.passes?.meshopt ?? true) || options.textures !== "none",
     apply: async (input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> => {
       if (classify(logicalPath) !== "model") return input;
       const passes = options.passes ?? {};
@@ -678,9 +688,15 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // fully switched-off pass promises.
       if (!geometryActive && document.getRoot().listTextures().length === 0) return input;
       // Draco is an input format only: the extension was consumed by the reader's decode,
-      // so it never reaches the writer — the output re-emits as Meshopt further below.
+      // so it never reaches the writer — the output re-emits as Meshopt further below. A source
+      // may already carry Meshopt from an earlier cook; dispose that consumed extension when the
+      // mobile effective options deliberately disable the runtime decoder.
       for (const extension of document.getRoot().listExtensionsUsed()) {
-        if (extension.extensionName === DRACO_EXTENSION) extension.dispose();
+        if (
+          extension.extensionName === DRACO_EXTENSION ||
+          (!enabled.meshopt && extension.extensionName === EXT_MESHOPT_EXTENSION)
+        )
+          extension.dispose();
       }
       const source = reachableStats(document.getRoot());
       const jointFloor = jointComponentSizes(document.getRoot());
@@ -765,8 +781,8 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
 
       const { auxiliaryOutputs, buffer, extensions, verified } =
         store === undefined || shared === undefined || shared.keys.length === 0
-          ? await writeAndVerify(document, logicalPath)
-          : await writeAndVerifyShared(document, logicalPath, store, shared);
+          ? await writeAndVerify(document, logicalPath, options.vertexLayout)
+          : await writeAndVerifyShared(document, logicalPath, store, shared, options.vertexLayout);
       const output = reachableStats(verified);
       if (options.simplify === undefined) {
         assertNoDrift(source, output, logicalPath);
@@ -804,13 +820,14 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
 async function writeAndVerify(
   document: Document,
   logicalPath: string,
+  vertexLayout: "interleaved" | "separate" | undefined,
 ): Promise<{
   auxiliaryOutputs: IAssetAuxiliaryOutput[];
   buffer: Buffer;
   extensions: readonly string[];
   verified: RootOf;
 }> {
-  const { buffer, extensions } = await writeDocument(document, logicalPath);
+  const { buffer, extensions } = await writeDocument(document, logicalPath, vertexLayout);
   const verified = (await readDocument(buffer, logicalPath)).getRoot();
   return { auxiliaryOutputs: [], buffer, extensions, verified };
 }
@@ -948,6 +965,7 @@ async function writeAndVerifyShared(
   logicalPath: string,
   store: ISharedImageStore,
   plan: ISharedImagePlan,
+  vertexLayout: "interleaved" | "separate" | undefined,
 ): Promise<{
   auxiliaryOutputs: IAssetAuxiliaryOutput[];
   buffer: Buffer;
@@ -956,6 +974,7 @@ async function writeAndVerifyShared(
 }> {
   await MeshoptEncoder.ready;
   const io = new NodeIO()
+    .setVertexLayout(vertexLayout === "separate" ? VertexLayout.SEPARATE : VertexLayout.INTERLEAVED)
     .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry])
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
   // Encoded bytes → every store key they were filed under. Equal encoded bytes can come from

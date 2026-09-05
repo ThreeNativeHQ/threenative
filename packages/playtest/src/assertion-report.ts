@@ -99,14 +99,50 @@ export interface IPlaytestObservations {
   };
 }
 
+/**
+ * Targets whose network observation is hardwired empty.
+ *
+ * `androidRunner.ts` builds every device report with `network: []` — there is no CDP session on a
+ * device transport to fill it. The browser lane is the only one that observes network at all.
+ */
+const NETWORK_BLIND_TARGETS = new Set(["android", "desktop", "ios"]);
+
+/** The reason the runner writes for itself when it waives a channel the target cannot observe. */
+export const UNOBSERVABLE_NETWORK_REASON =
+  "The run target has no network observer; its network observation is hardwired empty, so the default network policy is waived rather than evaluated against nothing.";
+
+/**
+ * The policy the evaluator actually applies, defaults included.
+ *
+ * `target` is the target the run *executed on*, not the scenario file's `target` field — the two
+ * differ routinely, because `examples/native-smoke/playtests/*.json` say `"target": "web"` and are
+ * driven with `--target android`.
+ *
+ * Why the target matters: the three channels default to on, and the evaluator applies that default
+ * on every run. On a device lane the network observation is hardwired empty, so
+ * `noNetworkErrors: true` was compared against an empty array and reported a passing row — a green
+ * computed from evidence the target structurally cannot produce, which is the one thing this
+ * harness exists not to do. The asymmetry was visible in the scenarios too: one that spelled out
+ * `noNetworkErrors: true` failed honestly with `TN_PLAYTEST_UNSUPPORTED_ON_TARGET`, and the same
+ * scenario with the field omitted passed.
+ *
+ * So on a network-blind target the default is **off, with the reason recorded in the policy the
+ * report prints**. An explicit `true` is left exactly as written, because that is a scenario asking
+ * for something the target cannot do, and the runner still fails it by name.
+ */
 export function resolveDiagnosticsPolicy(
   policy: IPlaytestDiagnosticsAssertion | undefined,
+  target?: string,
 ): IPlaytestDiagnosticsPolicy {
+  const networkBlind = target !== undefined && NETWORK_BLIND_TARGETS.has(target);
+  const waivedByTarget = networkBlind && policy?.noNetworkErrors === undefined;
   return {
     ...(policy?.consoleErrorsOptOutReason === undefined ? {} : { consoleErrorsOptOutReason: policy.consoleErrorsOptOutReason }),
-    ...(policy?.networkErrorsOptOutReason === undefined ? {} : { networkErrorsOptOutReason: policy.networkErrorsOptOutReason }),
+    ...(policy?.networkErrorsOptOutReason === undefined
+      ? (waivedByTarget ? { networkErrorsOptOutReason: UNOBSERVABLE_NETWORK_REASON } : {})
+      : { networkErrorsOptOutReason: policy.networkErrorsOptOutReason }),
     noConsoleErrors: policy?.noConsoleErrors ?? true,
-    noNetworkErrors: policy?.noNetworkErrors ?? true,
+    noNetworkErrors: policy?.noNetworkErrors ?? !networkBlind,
     noRuntimeDiagnostics: policy?.noRuntimeDiagnostics ?? true,
     ...(policy?.runtimeReady === undefined ? {} : { runtimeReady: policy.runtimeReady }),
     ...(policy?.runtimeDiagnosticsOptOutReason === undefined ? {} : { runtimeDiagnosticsOptOutReason: policy.runtimeDiagnosticsOptOutReason }),

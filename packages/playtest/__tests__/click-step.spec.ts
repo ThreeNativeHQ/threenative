@@ -64,7 +64,10 @@ test("wheel input delivers exactly one browser input sample", async () => {
   await runStep(
     page,
     undefined,
-    { release: true, waitTicks: 1, wheel: { deltaY: -160 } } as never,
+    // waitFrames, not waitTicks: this page has no bridge, so there is no fixed step to count.
+    // Authored in ticks it counted display refresh instead, which is what the guard in
+    // steps.ts now refuses rather than substituting silently.
+    { release: true, waitFrames: 1, wheel: { deltaY: -160 } } as never,
     { height: 360, width: 640 },
     undefined,
     [],

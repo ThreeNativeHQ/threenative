@@ -244,7 +244,7 @@ Stated rather than claimed, per `docs/PRDs/AGENTS.md`.
 - **The eleven-way duplication is left standing here, and is now filed.** It is real and it is
   byte-identical, but what is duplicated is a narrower over names each game declares, not a seam,
   so removing it is a scaffold-drift argument rather than a rule-1(a) one. Filed as
-  [PRD-353](../PRDs/tech-debt-code-quality/PRD-353-eleven-copies-of-a-fail-closed-throw-drift-silently.md)
+  [PRD-353](../PRDs/done/PRD-353-eleven-copies-of-a-fail-closed-throw-drift-silently.md)
   — a review pointed out that what is duplicated eleven times includes a **fail-closed throw**, in
   a repository whose invariant is "fail closed everywhere", and that `scripts/template-quality.ts`
   checks the tier *names* and the prose but never compares the implementations or asserts the

@@ -1,6 +1,12 @@
 # PRD-296 — three gates were hiding behind a permanently red one
 
-**Status: PROPOSED, filed 2026-08-31 at `c3a0f595`.** Filed the day CI went green for the first
+**Status: DONE, 2026-09-04.** Items 1 and 2 shipped before this status line was moved — the
+re-measurement that found them met, item 3's guard and summary, and their reds are in
+[`docs/verification/prd-296-ci-needs-guard-2026-09-04.md`](../../verification/prd-296-ci-needs-guard-2026-09-04.md).
+The lasting half is `scripts/__tests__/ci-needs.spec.ts`, which fails when a coverage job is
+ordered behind another coverage job; the `run-summary` job reports and never gates.
+
+Filed 2026-08-31 at `c3a0f595`, the day CI went green for the first
 time, because that is the day three gates ran for the first time and all three failed.
 
 ## What happened
