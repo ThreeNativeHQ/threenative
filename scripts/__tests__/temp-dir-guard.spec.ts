@@ -42,6 +42,10 @@ const allowedProductionCreators = new Map<string, string>([
   ["scripts/verify-golden-path.ts", "The production golden-path gate removes roots in finally."],
   ["scripts/verify-one-template.ts", "The production template gate owns its cleanup."],
   [
+    "scripts/verify-one-template-desktop.ts",
+    "The native half of that gate, for the same reason: the scaffold it builds is the artifact an operator reads after the run.",
+  ],
+  [
     "scripts/verify-template-playtests.ts",
     "The production template playtest gate owns its cleanup.",
   ],

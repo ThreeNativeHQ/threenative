@@ -421,9 +421,12 @@ test("setup.spawn and aim, then an aimAt step, steer the subject over the wire",
         aim: { pitch: 0, yaw: Math.PI / 2 },
         spawn: { x: 3, z: 7 },
       },
+      // Frames, not ticks. The fixture page advertises `runtime.fixedStep` only in physics mode,
+      // so these steps had no fixed step to count and were quietly waiting on display refresh —
+      // the substitution steps.ts now refuses.
       steps: [
-        { kind: "aimAt", label: "aim-northwest", target: { x: -5, z: 0 }, waitTicks: 2 },
-        { release: true, waitTicks: 1 },
+        { kind: "aimAt", label: "aim-northwest", target: { x: -5, z: 0 }, waitFrames: 2 },
+        { release: true, waitFrames: 1 },
       ],
       subject: "player",
       target: "web",

@@ -8,7 +8,13 @@ export function emitMovementEvidence(ctx: IEvaluationContext): void {
   const { assertions, diagnostics } = ctx;
   const { input, scenarioAssertions } = ctx;
   {
-    const diagnosticsPolicy = resolveDiagnosticsPolicy(scenarioAssertions.diagnostics);
+    // The run target, not the scenario file's. A native-smoke scenario says "target": "web" and
+    // is driven with --target android; reading the file would keep asserting the network lane the
+    // device cannot observe.
+    const diagnosticsPolicy = resolveDiagnosticsPolicy(
+      scenarioAssertions.diagnostics,
+      input.report.target,
+    );
     const policyDiagnostics = evaluateDiagnosticsPolicy(input.report, diagnosticsPolicy);
     diagnostics.push(...policyDiagnostics);
     assertions.push({
