@@ -589,9 +589,14 @@ export function requiredPlaytestCapabilities(scenario: IPlaytestScenario): Playt
   for (const entry of PLAYTEST_ASSERTION_REGISTRY) {
     if (scenario.assert?.[entry.kind] !== undefined) {
       if (entry.kind === "diagnostics") {
+        // `!== false` throughout, because that is what `resolveDiagnosticsPolicy` does: all three
+        // default to on. Two of these read `=== true`, so a scenario that declared a diagnostics
+        // block and omitted a field required no capability for it while the evaluator went on
+        // asserting it — the gate and the evaluator disagreed about the same run, in the direction
+        // that passes.
         const policy = scenario.assert.diagnostics;
-        if (policy?.noConsoleErrors === true) required.add("browser.console");
-        if (policy?.noNetworkErrors === true) required.add("browser.network");
+        if (policy?.noConsoleErrors !== false) required.add("browser.console");
+        if (policy?.noNetworkErrors !== false) required.add("browser.network");
         if (policy?.noRuntimeDiagnostics !== false) required.add("runtime.diagnostics");
       } else {
         entry.requiredCapabilities.forEach((capability) => required.add(capability));

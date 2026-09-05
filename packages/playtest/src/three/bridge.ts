@@ -9,6 +9,7 @@ import {
   type IPlaytestGameplayObservation,
   type IPlaytestRuntimeDiagnosticsSample,
   type IPlaytestRenderChainObservation,
+  type IPlaytestSetupConfirmation,
   type IPlaytestSetupRequest,
   type IPlaytestStartupObservation,
   type JsonValue,
@@ -116,7 +117,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
         }),
     applySetup: async (request) => {
       syncEntities(registry, options.entities);
-      applySetup(registry, options.resources, request);
+      return applySetup(registry, options.resources, request);
     },
     ...(options.events === undefined
       ? {}
@@ -198,7 +199,12 @@ function applySetup(
   registry: ThreePlaytestEntityRegistry,
   resources: IThreePlaytestResources | undefined,
   request: IPlaytestSetupRequest,
-): void {
+): IPlaytestSetupConfirmation {
+  // Every id this returns was applied by the loops below, so the runner's report is a read-back
+  // rather than its own request echoed back. The throw contract still holds; this is what makes
+  // it visible in the report when it does not.
+  const entities: string[] = [];
+  const resourceIds: string[] = [];
   // Presence semantics: every named entity must exist in the registry right now. A miss
   // throws with the id named — placement is never silently skipped.
   request.entities?.forEach(({ entity, frozen, transform }) => {
@@ -209,10 +215,13 @@ function applySetup(
     if (transform.scale !== undefined) object.scale.fromArray(transform.scale);
     if (frozen === true) object.userData[PLAYTEST_FROZEN_MARKER] = true;
     object.updateMatrix();
+    entities.push(entity);
   });
   request.resources?.forEach(({ id, path, value }) => {
     assertJsonSafe(value);
     if (resources?.write === undefined) throw new Error(`Resource setup '${id}' requires a writable resources provider.`);
     if (!resources.write(id, path, value)) throw new Error(`Resource setup '${id}' was rejected by the application provider.`);
+    resourceIds.push(id);
   });
+  return { entities, resources: resourceIds };
 }

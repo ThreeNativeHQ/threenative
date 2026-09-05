@@ -269,6 +269,18 @@ export async function runStep(
   const frames = (step.holdFrames ?? 0) + (step.waitFrames ?? 0);
   const fixedStep = bridge?.description.capabilities.includes("runtime.fixedStep") === true;
   const ticks = playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step) + (fixedStep ? frames : 0);
+  const authoredTicks = playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step);
+  if (authoredTicks > 0 && !fixedStep) {
+    // A tick step counts fixed-step ticks, never wall clock. Falling back to `waitFrames` here
+    // makes it count display refresh instead — a different unit, silently substituted, with the
+    // scenario still reporting the tick count it asked for. The harness's rule is that a lane it
+    // cannot observe is named rather than approximated.
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+      `Step '${step.label ?? step.kind}' counts ${authoredTicks} fixed-step tick(s), and this bridge does not advertise 'runtime.fixedStep'.`,
+      "Advertise runtime.fixedStep from the bridge so ticks are deterministic, or author the step in waitFrames/holdFrames, which are display frames and say so.",
+    ));
+  }
   if (ticks > 0 && fixedStep) {
     // Keep the virtual clock ahead of requestAnimationFrame while preserving a bounded
     // path sample cadence. One browser round-trip per tick lets live frames race the

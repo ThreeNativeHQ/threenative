@@ -223,7 +223,7 @@ export function buildReport(
     ...(afterPosition === undefined ? {} : { after: { frame: scenario.steps.length, position: afterPosition, ...(afterRotation === undefined ? {} : { rotation: afterRotation }), tick: afterSnapshot?.clock.tick ?? 0 } }),
     ...(beforePosition === undefined ? {} : { before: { frame: 0, position: beforePosition, ...(beforeRotation === undefined ? {} : { rotation: beforeRotation }), tick: beforeSnapshot?.clock.tick ?? 0 } }),
     diagnostics,
-    diagnosticsPolicy: resolveDiagnosticsPolicy(scenario.assert?.diagnostics),
+    diagnosticsPolicy: resolveDiagnosticsPolicy(scenario.assert?.diagnostics, config.target),
     distance,
     entity,
     expectMoved: scenario.assert?.movement?.minDistance !== undefined,
@@ -235,6 +235,8 @@ export function buildReport(
       return total + Math.max(frameCount, tickCount, 1);
     }, 0),
     trivialityOptOuts: [],
+    // The target the run executed on, so the evaluator knows which channels this lane can observe.
+    ...(config.target === undefined ? {} : { target: config.target }),
     ...(movementDelta === undefined ? {} : { movementDelta }),
     ...(pathLength === undefined ? {} : { pathLength }),
     // Honest placement reporting: what the scenario asked to override, and what applied.

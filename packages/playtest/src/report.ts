@@ -10,10 +10,19 @@ export interface IPlaytestSetupRecord {
   value: JsonValue;
 }
 
-/** Requested overrides next to what actually applied; an unapplied request fails the run. */
+/**
+ * Requested overrides next to what actually applied; an unapplied request fails the run.
+ *
+ * `confirmedBy` says which of those two sentences the evidence supports. `read-back` means the
+ * bridge named the ids it applied and `applied` is that answer. `throw-contract` means the bridge
+ * resolved without naming anything, so the only evidence is that it did not throw — `applied`
+ * mirrors `requested` there, and the field is what stops the report reading as a confirmation it
+ * never received.
+ */
 export interface IPlaytestSetupApplication {
   applied: IPlaytestSetupRecord[];
   requested: IPlaytestSetupRecord[];
+  confirmedBy?: "read-back" | "throw-contract";
 }
 
 export interface IPlaytestTransformSample {
@@ -79,5 +88,13 @@ export interface IPlaytestReport {
   observations?: IPlaytestObservations;
   pathLength?: number;
   setup?: IPlaytestSetupApplication;
+  /**
+   * The target the run executed on — `browser`, `android`, `desktop`, `ios`.
+   *
+   * Not the scenario file's `target` field, which the two differ from routinely:
+   * `examples/native-smoke/playtests/*.json` say `"target": "web"` and are driven with
+   * `--target android`. Evaluators that must know what the lane can observe read this one.
+   */
+  target?: string;
   trivialityOptOuts: IPlaytestTrivialityOptOut[];
 }

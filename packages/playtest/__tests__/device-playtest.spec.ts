@@ -149,6 +149,9 @@ test("the native lane composes setup overrides and reports the applied receipt",
   ];
   expect(result.setup).toEqual({
     applied: expectedSetupRecords,
+    // This fake bridge resolves without naming what it applied, so the only evidence is that it
+    // did not throw. The report says which — it does not call an echo of the request a read-back.
+    confirmedBy: "throw-contract",
     requested: expectedSetupRecords,
   });
 });
@@ -156,7 +159,7 @@ test("the native lane composes setup overrides and reports the applied receipt",
 test("native screenshot evidence fails closed when the driver does not produce a frame", async () => {
   const driver = new FakeAndroidDriver(movingBridge().bridge);
   await expect(runDevice(
-    { movement: { entity: "player", maxDistance: 10 } },
+    { diagnostics: deviceDiagnosticsOptOut, movement: { entity: "player", maxDistance: 10 } },
     driver,
     1_000,
     [{ waitTicks: 1 }],
@@ -181,7 +184,7 @@ test("buttonless native pointer movement drives anonymous evidence", async () =>
   };
   try {
     const result = await runDevice(
-      { movement: { minDistance: 2 } },
+      { diagnostics: deviceDiagnosticsOptOut, movement: { minDistance: 2 } },
       new FakeAndroidDriver(moving.bridge),
       1_000,
       [
@@ -246,7 +249,10 @@ test("one device scenario reaches the same semantic evaluator and passes", async
     },
   };
   try {
-    const result = await runDevice({ movement: { entity: "player", minDistance: 2 } }, new FakeAndroidDriver(bridge));
+    const result = await runDevice(
+      { diagnostics: deviceDiagnosticsOptOut, movement: { entity: "player", minDistance: 2 } },
+      new FakeAndroidDriver(bridge),
+    );
     expect(result.pass).toBe(true);
     expect(result.runtime).toBe("native");
     expect(result.target).toBe("android");
@@ -270,7 +276,7 @@ test("anonymous device movement omits the entity selector from bridge samples", 
   };
   try {
     const result = await runDevice(
-      { movement: { minDistance: 2 } },
+      { diagnostics: deviceDiagnosticsOptOut, movement: { minDistance: 2 } },
       new FakeAndroidDriver(moving.bridge),
       1_000,
       [
@@ -306,7 +312,7 @@ test("device wait preserves held input classification", async () => {
   };
   try {
     const result = await runDevice(
-      { movement: { minDistance: 2 } },
+      { diagnostics: deviceDiagnosticsOptOut, movement: { minDistance: 2 } },
       new FakeAndroidDriver(moving.bridge),
       1_000,
       [

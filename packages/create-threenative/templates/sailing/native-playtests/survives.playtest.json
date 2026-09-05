@@ -31,9 +31,7 @@
     "renderChain": {
       "tier": "high",
       "stages": {
-        "includes": [
-          "bloom"
-        ]
+        "includes": ["bloom"]
       }
     }
   }
