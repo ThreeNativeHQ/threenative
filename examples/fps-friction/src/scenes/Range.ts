@@ -111,12 +111,14 @@ export class Range extends Scene<IRangeState, IPhysicsContext> {
     }
 
     const floor = box(40, 0.1, 64, 0x1d2733);
+    floor.name = "floor";
     floor.position.set(0, 0, -30);
     ctx.add(floor);
 
     // Dropped onto the position-only floor body. If that body were missing the crate would
     // fall past the yard forever, so `crateY` settling is what makes PRD-145 observable.
     const crate = box(CRATE_SIZE, CRATE_SIZE, CRATE_SIZE, 0x7f8c8d);
+    crate.name = "crate";
     crate.position.set(2.5, CRATE_DROP_HEIGHT, -6);
     ctx.add(crate);
     new RigidBody3D({
@@ -130,11 +132,13 @@ export class Range extends Scene<IRangeState, IPhysicsContext> {
     // Thin dressing on the shot line. It is nearest, so `raycast` alone reports it and the
     // enemy behind it is never scored — the shape of the FPS build's occlusion problem.
     const plate = new Mesh(new PlaneGeometry(1.4, 1.4), new MeshBasicMaterial({ color: 0xd8a657 }));
+    plate.name = "plate";
     plate.position.set(0, 1.4, -8);
     plate.userData.dressing = 1;
     ctx.add(plate);
 
     const enemyProxy = box(0.7, 1.8, 0.5, 0xc0392b);
+    enemyProxy.name = "enemy-proxy";
     enemyProxy.position.set(0, 0.9, -16);
     enemyProxy.userData.enemy = 1;
     ctx.add(enemyProxy);

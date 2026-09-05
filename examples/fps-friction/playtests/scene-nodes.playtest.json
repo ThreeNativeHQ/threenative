@@ -1,0 +1,19 @@
+{
+  "name": "fps-friction-scene-nodes",
+  "schemaVersion": 1,
+  "subject": "enemy",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "steps": [
+    { "kind": "wait", "label": "settle", "waitTicks": 60, "release": true }
+  ],
+  "assert": {
+    "sceneNodes": [
+      { "select": { "name": "floor" }, "visible": true, "inFrustum": true, "minTriangles": 12 },
+      { "select": { "name": "crate" }, "visible": true, "texturesLoaded": true },
+      { "select": { "type": "Mesh" }, "minCount": 4, "visible": true },
+      { "select": { "nameContains": "debug" }, "maxCount": 0 }
+    ]
+  }
+}
