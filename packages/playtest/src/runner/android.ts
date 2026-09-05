@@ -111,6 +111,8 @@ export class AdbAndroidDriver implements IAndroidDriver {
       "shell",
       "am",
       "start",
+      "--user",
+      "0",
       "-W",
       "-n",
       `${this.options.packageName}/${this.options.activity}`,

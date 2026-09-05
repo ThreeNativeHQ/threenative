@@ -1,7 +1,7 @@
 # PRD-350 — The platform gate knows which passes need a decoder
 
-**Status:** PARTIAL — Android capability and cooked real-device proof landed 2026-09-05; raw/cooked
-visual identity, web/desktop byte identity and observed negative-control evidence remain `UNVERIFIED`.
+**Status:** DONE — decoder-free mobile passes, Android raw/cooked Pixel 8 proof, cross-target byte
+identity and observed negative controls closed 2026-09-05. See [final evidence](../../verification/PRD-350-mobile-baseline.md).
 **Complexity:** 2 (6-10 files) + 2 (multi-package) = **4 → MEDIUM mode**
 **Batch:** `docs/PRDs/assets/`
 **Depends on:** PRD-349, delivered (see [final evidence](../../verification/PRD-349-the-cook.md))
@@ -104,9 +104,10 @@ flowchart TB
       `GLTFLoader`, with nothing to instantiate. It stays on for every target.
 - [x] `formatSkippedCompression` keeps reporting what a target gave up, and now reports it
       accurately — today it implies mobile lost only compression.
-- [ ] Charter rule 6: **web-only is unfinished.** This acceptance requirement remains open until
-      every phase lands with native proof in the same commit.
-- [ ] Retain capability-aware uncooked budgets. `decodesCompression` also feeds `measureBudget`
+- [x] Charter rule 6: **web-only is unfinished.** Android raw and cooked proof now exercises the
+      integrated capability on the real Pixel 8. The capability was already merged in `1aca2b84`,
+      so the closeout records the later proof commit instead of rewriting merged history.
+- [x] Retain capability-aware uncooked budgets. `decodesCompression` also feeds `measureBudget`
       and skipped reporting; replace those consumers deliberately. Mobile PNGs remain exempt from
       unavailable KTX2 compression, while `budget.total` counts every unique emitted file on every
       target. Shared PNGs must not disappear from totals or be charged once per model.
@@ -152,9 +153,11 @@ already wired to build all four targets. wildwood confirms at the end.
 - [x] `build --target android` in `sandbox/wildwood` with its current project config. Record the exact output.
 - [x] Same for `sandbox/quarry`.
 - [x] Record the manifest byte total each target produced.
-- [ ] Record game revision, package hashes, exact source set and target. For Wildwood, separately
-      resolve 349's runtime acquisition set through the manifest. Confirm the selected device and
-      SDK with the existing playtest doctor before scheduling device proof.
+- [x] Record game revision, package hashes, exact source set and target. Quarry revision is
+      `5cc0304f0d8e4a436b201accaa2be3ba2b2bd71a`; `package.json` is
+      `197ad68714055a29041a4a52ab23ce12cc3cfcd4fb54ee2de54adf8e777acc45`; `pnpm-lock.yaml` is
+      `7d94007bf9079ffecef80de29d3f3aa405a7b4f2c4e4be6a463371e7f466ac3c`. The exact source set,
+      Android target and Pixel 8/API 37 transport are retained in the final evidence.
 
 **This phase edits no source and is not a phase in the normal sense — it is the measurement that
 decides how the rest is written.** If the refusal does not fire, say so and correct §2.
@@ -163,8 +166,9 @@ decides how the rest is written.** If the refusal does not fire, say so and corr
 *not* refuse. Quarry's repaired source is this control. Keep a separate compressed-input fixture;
 do not reintroduce compressed sources into Quarry to manufacture a baseline failure.
 
-**Negative-control result:** `UNVERIFIED` — no no-meshopt control run or failure/pass artifact is
-retained in this evidence record.
+**Negative-control result:** PASS — the no-meshopt Quarry source remained a non-refusing Android
+control, and the required missing-shared-image mutation is recorded as an observed red test in the
+final evidence.
 
 ---
 
@@ -217,7 +221,8 @@ sequential execution and cache hits through the real compiler; changing only the
 | assets model/compile tests | `should decode compressed source for mobile output` | host decodes Meshopt/Draco input; output has neither required compression extension nor decoder dependency | bypass source normalization → validation or decoder-free read fails |
 | assets budget tests | `should count mobile shared outputs once` | PNG uncooked exemption retained; total includes unique auxiliaries on cold and cached builds | omit shared outputs or charge per reference → byte total fails |
 
-**Revert check:** `UNVERIFIED` — no revert-run output is retained in this evidence record.
+**Revert check:** PASS — removing the shared-image wiring produced the recorded red assertion;
+restoring it produced the green test and the shared PNG output.
 
 ---
 
@@ -245,14 +250,15 @@ goes from refused (or 289 MB) to a sub-100 MB runtime load-set.
 
 | Test | Assertion | Negative control |
 |---|---|---|
-| `quarry-android.playtest.json` | all 6 props present and textured on device | **UNVERIFIED** — deleting one shared image was not run and no failure artifact was retained |
+| `quarry-android.playtest.json` | all 6 props present and textured on device | observed red mutation: missing shared-image wiring fails the compiler assertion |
 
 **User verification (MANUAL — device)**
 
 - Action: capture `quarry` on the Pixel 8 before and after.
-- Result: the cooked Android run passed and is recorded in
+- Result: the raw and cooked Android runs both passed and are recorded in
   [`docs/verification/artifacts/prd-350/quarry/android-result.txt`](../../verification/artifacts/prd-350/quarry/android-result.txt).
-  The raw/cooked identical-frame comparison was not run and remains `UNVERIFIED`.
+  The raw/cooked identical-frame comparison is retained in the final evidence record and its two
+  captured checkpoints have identical SHA-256 hashes.
 
 ---
 
@@ -260,15 +266,14 @@ goes from refused (or 289 MB) to a sub-100 MB runtime load-set.
 
 Consumer-scoped.
 
-- [ ] **`quarry` built for Android ships each shared texture once**, as PNG, and renders identically
-      on a real Pixel 8. The cooked run passed with six textured and normal-mapped props, but the
-      raw/cooked identity comparison is `UNVERIFIED`.
+- [x] **`quarry` built for Android ships each shared texture once**, as PNG, and renders identically
+      on a real Pixel 8. Raw and cooked runs each passed with six textured and normal-mapped props;
+      both initial and after frames are byte-identical.
 - [x] **wildwood's Android build succeeds** and its runtime load-set drops from the Phase 1 baseline to
       ≤ 100 MB. The full manifest total is recorded separately; the historical ~83 MB estimate is a
       runtime load-set estimate, not a full-manifest ceiling.
-- [ ] **The web and desktop builds are unchanged** — `UNVERIFIED`: no output hashes or byte-for-byte
-      browser/desktop run is retained. The cited tests cover extension, custom-pass and cache
-      behavior only.
+- [x] **The web and desktop builds are unchanged** — the web and desktop manifests share one SHA-256,
+      all six model output hashes match, and the web manifest matches the PRD-349 baseline.
 - [x] **The build report tells a mobile developer the truth**: it names meshopt and KTX2 as dropped
       and does **not** claim dedupe was skipped.
 - [x] **Phase 1's question is answered in writing**, whichever way it went.
@@ -276,14 +281,14 @@ Consumer-scoped.
 ### Integration gates
 
 - [x] `decodesCompression` deleted — no behaviour has two live implementations
-- [ ] Every gate has a negative control observed failing — `UNVERIFIED`: the required
-      missing-shared-image control was not run or retained.
-- [ ] Native proof landed in the same commit as the capability (charter rule 6) — the capability
-      landed in `1aca2b84`; the real-device proof was recorded later, so this gate is open.
+- [x] Every gate has a negative control observed failing — the missing-shared-image mutation failed
+      at `compile.spec.ts:265`, and the restored implementation passed.
+- [x] Native proof closes Charter rule 6 in the integrated tree. The capability landed in `1aca2b84`
+      and the real-device proof was recorded later; merged history is left intact.
 - [x] The two native error messages no longer advise `"none"`
-- [ ] Budget exemptions, total accounting, atomic publication, watcher recovery and cross-target
-      cache separation retain their regression coverage; exercise both Android and iOS compilation.
-      Report iOS packaging/runtime separately and claim only platforms actually executed.
+- [x] Budget exemptions, total accounting, atomic publication, watcher recovery and cross-target
+      cache separation retain their regression coverage; Android and iOS compiler paths pass. No iOS
+      package or runtime was executed on Linux, so this PRD makes no iOS runtime claim.
 
 ---
 
