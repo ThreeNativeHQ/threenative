@@ -4,13 +4,17 @@ prd_contract: v1
 
 # PRD-278 — every template ships the render chain, and says which stages actually ran
 
-**Status:** DONE on browser, native open — 2026-08-30. All seven templates ship the chain; the
-evidence, the numbers and what was not verified are in
+**Status: DONE — 2026-09-04.** All seven templates ship the chain; the evidence, the numbers and
+what was not verified are in
 [docs/verification/prd-278-render-chain-in-every-template-2026-08-30.md](../../verification/prd-278-render-chain-in-every-template-2026-08-30.md).
-AC1–AC8 met on browser WebGPU; **AC9 (native) is open** — no `--target desktop` run was executed,
-so the WebGPU-only refusal has been observed on browser only. AC7's exposure question was settled
-before this landed (`docs/verification/exposure-ab-2026-08-30.md`) and the shipped comment states
-the measured answer.
+AC1–AC8 were met on browser WebGPU on 2026-08-30. **AC9 closed 2026-09-04**: a `--target desktop`
+run against a freshly built host reported `renderChain.tier: "high"` and the applied stage `bloom`
+with `runtime: "native"`, so the stages apply there rather than reporting the WebGL refusal. The
+run, the host's provenance and what it does not show are appended to the same record under
+§"AC9 — native".
+
+AC7's exposure question was settled before this landed
+(`docs/verification/exposure-ab-2026-08-30.md`) and the shipped comment states the measured answer.
 
 The port found and fixed an engine bug on the way: `renderChain` assertions could never pass,
 because `dist/playtest.js` is its own `tsup` entry with its own copy of `chain.ts` and the report
@@ -173,24 +177,24 @@ from §3, and the one-line enable for each stage that ships off.
 
 ## Acceptance criteria
 
-- [ ] **AC1 — every template reports.** A playtest on each scaffolded template asserts a
+- [x] **AC1 — every template reports.** A playtest on each scaffolded template asserts a
       `TN_WORLD_ENVIRONMENT` console line, and that every stage it names is either `applied: true`
       or carries a non-empty `reason`.
-- [ ] **AC2 — the report survives the stages being off.** With every optional stage disabled the
+- [x] **AC2 — the report survives the stages being off.** With every optional stage disabled the
       line is still printed and every stage is named. Red-green: deleting the `console.info` fails
       it.
-- [ ] **AC3 — fail closed.** An unknown `ssgiQuality` and an unknown `tonemapMode` each throw,
+- [x] **AC3 — fail closed.** An unknown `ssgiQuality` and an unknown `tonemapMode` each throw,
       naming the valid values. Red-green: removing either guard silently selects the default.
-- [ ] **AC4 — godrays refuse a shadowless light** by name rather than rendering a black pass.
-- [ ] **AC5 — no performance regression.** Each template's `performance.playtest.json` passes at
+- [x] **AC4 — godrays refuse a shadowless light** by name rather than rendering a black pass.
+- [x] **AC5 — no performance regression.** Each template's `performance.playtest.json` passes at
       its current thresholds on the default (mobile-tier stages off) path.
-- [ ] **AC6 — desktop actually gained something.** A before/after capture per template, looked at,
+- [x] **AC6 — desktop actually gained something.** A before/after capture per template, looked at,
       not just asserted.
-- [ ] **AC7 — §5 settled.** One A/B capture decides whether `toneMappingExposure` reaches the frame
+- [x] **AC7 — §5 settled.** One A/B capture decides whether `toneMappingExposure` reaches the frame
       through `setOutputNode` on `three@0.185.1`, and the comment that ships states the measured
       answer.
-- [ ] **AC8 — the boundary holds.** `check-core-boundary.ts` green; no `@threenative/` import in any
+- [x] **AC8 — the boundary holds.** `check-core-boundary.ts` green; no `@threenative/` import in any
       `src/render/`.
-- [ ] **AC9 — native.** The chain is WebGPU-only by construction and names that as its refusal
+- [x] **AC9 — native.** The chain is WebGPU-only by construction and names that as its refusal
       reason on any other renderer; a `--target desktop` run must confirm the stages actually apply
       there rather than reporting the WebGL refusal.

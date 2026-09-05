@@ -176,3 +176,80 @@ afternoon this one did.
   2026-08-21 and predates every capture above. Its own provenance note asks for a human pass, and
   re-scoring my own work with a model would not be that pass.
 - **`pnpm test` (root suite)** was not run to completion in this session.
+
+---
+
+# AC9 — native, 2026-09-04
+
+**The gap this closes.** The §"Not verified" note above reads *"No `--target desktop` or device
+run. AC9 of PRD-278 is open: the chain refuses any non-WebGPU renderer by name, and that refusal
+has been observed on browser only."* Row 1 of
+[`docs/PRDs/quickwins-2026-09-04/README.md`](../PRDs/quickwins-2026-09-04/README.md) is that run.
+
+**Host.** Built from source in the lane worktree rather than taken from the machine's existing
+build, which was linked 2026-09-03 and predates `befc1094` — a commit that touches
+`packages/runtime-native/src`. A stale binary reads as evidence about a host nobody is shipping.
+
+```
+[403/403] Linking CXX executable mystral-tools
+packages/runtime-native/build/tn-linux/mystral   127,481,312 bytes, 2026-09-04 18:01
+```
+
+Passed to the scaffold's desktop packaging through `THREENATIVE_RUNTIME_BINARY`, which
+`packages/create-threenative/src/build.ts:420` honours ahead of the prebuilt a scaffold would
+otherwise download.
+
+**What was run.** `scripts/verify-one-template-desktop.ts` — a sibling of the existing
+`verify-one-template.ts`, which runs the browser lane — scaffolds one template from locally packed
+tarballs and runs its `test:native` script: `pnpm build:desktop` then
+`threenative-playtest --target desktop --executable dist-native/<name>`.
+
+`sailing` is the template, because it is the one whose `test:native` already drives a real
+`--target desktop` playtest rather than the starter screenshot gate. Its
+`native-playtests/survives.playtest.json` gains the assertion AC9 asks for, so the chain is
+proved on native by the template's own lane on every later run rather than once by hand:
+
+```json
+"renderChain": { "tier": "high", "stages": { "includes": ["bloom"] } }
+```
+
+`bloom` is the one stage `sailing`'s `high` preset turns on; SSGI, SSR, sharpen and denoise are
+off at every tier in that template by choice, and asserting them would assert the look rather than
+the chain.
+
+**Result — the stages apply on native.**
+
+```
+$ THREENATIVE_RUNTIME_BINARY=$PWD/packages/runtime-native/build/tn-linux/mystral \
+    pnpm tsx scripts/verify-one-template-desktop.ts sailing
+
+  "assertionResults": [
+    { "id": "renderChain.tier",            "pass": true, "details": { "expected": "high",     "observed": "high" } },
+    { "id": "renderChain.stages.includes", "pass": true, "details": { "expected": ["bloom"],  "observed": ["bloom"] } },
+    { "id": "diagnostics",                 "pass": true },
+    { "id": "movement.distance",           "pass": true, "details": { "distance": 3.65, "minimum": 0.5 } }
+  ],
+  "pass": true,
+  "runtime": "native",
+  "scenario": "native-sailing-smoke",
+  "target": "desktop",
+  "url": "/tmp/threenative-sailing-desktop-LoFAXz/sailing/dist-native/sailing"
+
+sailing: native playtests passed at /tmp/threenative-sailing-desktop-LoFAXz/sailing
+exit 0
+```
+
+`runtime: "native"` and an executable `url` are what make this a native observation rather than a
+browser one. The chain reported the tier it resolved and the stage it applied; it did not report
+the WebGL refusal, which is exactly what AC9 asked to be distinguished.
+
+**What this run does not show.** One template and one stage. The chain's *refusal* path on a
+non-WebGPU native renderer is still unobserved — the desktop host is WebGPU, so there is no
+non-WebGPU native renderer here to refuse. AC9 asked that the stages apply on desktop rather than
+reporting the refusal, and that is what was measured; a native WebGL refusal would need a renderer
+this repository does not ship.
+
+**Found in passing, and filed rather than fixed here.** The same report carries a passing
+`diagnostics` row with `"noNetworkErrors": true` and `"networkErrors": 0` on a desktop lane whose
+network observation is hardwired empty — a green computed from evidence the target cannot produce.
+That is PRD-265 §1, executed as row 4 of the same batch.
