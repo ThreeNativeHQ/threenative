@@ -428,12 +428,16 @@ export function formatSkippedCompression(
 ): readonly string[] {
   return rows
     .filter((row) => row.files > 0)
-    .map(
-      (row) =>
-        `TN_ASSETS_COMPRESSION_SKIPPED ${row.kind}: ${String(row.files)} file(s), ${(row.bytes / 1e6).toFixed(1)} MB shipped as authored ${
-          row.reason === "config"
-            ? `because assets.${row.kind}s is "none"`
-            : "because this target has no WebAssembly and could not decode it"
-        }.`,
-    );
+    .map((row) => {
+      const decoders = row.kind === "model" ? "meshopt and KTX2" : "KTX2";
+      const action =
+        row.kind === "model" && row.reason === "platform"
+          ? "retained without decoder-backed compression while decoder-free model passes still ran"
+          : "shipped as authored";
+      const reason =
+        row.reason === "config"
+          ? `assets.${row.kind}s is "none"`
+          : `this target has no WebAssembly and cannot run its ${decoders} decoder`;
+      return `TN_ASSETS_COMPRESSION_SKIPPED ${row.kind}: ${String(row.files)} file(s), ${(row.bytes / 1e6).toFixed(1)} MB ${action} because ${reason}.`;
+    });
 }

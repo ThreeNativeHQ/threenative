@@ -360,6 +360,65 @@ describe("asset byte budgets", () => {
     },
   );
 
+  it("counts mobile shared outputs once on cold and cached builds", async () => {
+    const root = await makeTempDir("asset-budget-mobile-shared-");
+    await mkdir(path.join(root, "assets"));
+    const source = await buildFixtureGlb();
+    await writeFile(path.join(root, "assets/one.glb"), source);
+    await writeFile(path.join(root, "assets/two.glb"), source);
+    const options = {
+      config: { budget: "none", models: { sharedImages: true } },
+      concurrency: 1,
+      cwd: root,
+      platform: "android" as const,
+    } as const;
+
+    const first = await compileAssets(options);
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+    ) as {
+      entries: Record<
+        string,
+        { bytes: number; output: string; kind?: string; sharedImages?: readonly unknown[] }
+      >;
+    };
+    const outputRoot = path.join(root, "public");
+    const measured = await measureBudget(
+      manifest.entries,
+      outputRoot,
+      { ktx2: false, meshopt: false },
+      parseBudget("none"),
+    );
+    const uniqueReceiptPaths = new Set(first.receipt?.outputs.map((output) => output.path));
+    const receiptBytes = await Promise.all(
+      [...uniqueReceiptPaths].map(
+        async (output) => (await stat(path.join(outputRoot, output))).size,
+      ),
+    );
+    expect(measured.total).toBe(receiptBytes.reduce((total, bytes) => total + bytes, 0));
+    expect(measured.uncooked).toBe(0);
+    expect(manifest.entries["one.glb"]?.sharedImages).toBeDefined();
+
+    const second = await compileAssets(options);
+    expect(second.skipped).toBe(2);
+    const cachedManifest = JSON.parse(
+      await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+    ) as {
+      entries: Record<
+        string,
+        { bytes: number; output: string; kind?: string; sharedImages?: readonly unknown[] }
+      >;
+    };
+    const cached = await measureBudget(
+      cachedManifest.entries,
+      outputRoot,
+      { ktx2: false, meshopt: false },
+      parseBudget("none"),
+    );
+    expect(cached.total).toBe(measured.total);
+    expect(cached.uncooked).toBe(0);
+  });
+
   it("accepts the exact ceiling and rejects one byte below on a cache hit", async () => {
     const { root, bytes } = await fixture();
     await compileAssets({ cwd: root, config: { textures: "none", budget: bytes.length } });

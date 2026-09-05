@@ -174,6 +174,7 @@ export interface IModelPassOutputEntry {
 }
 
 const DRACO_EXTENSION = "KHR_draco_mesh_compression";
+const EXT_MESHOPT_EXTENSION = "EXT_meshopt_compression";
 
 /** Relative bounding-box tolerance of the self-verify check (PRD: 0.1%). */
 const BBOX_TOLERANCE = 0.001;
@@ -651,6 +652,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
             },
     },
     name: "model",
+    // A mobile compile replaces these two decoder-backed sub-passes in the effective options;
+    // geometry rewrites and shared-image emission remain plain glTF and stay enabled there.
+    needsRuntimeDecoder: (options.passes?.meshopt ?? true) || options.textures !== "none",
     apply: async (input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> => {
       if (classify(logicalPath) !== "model") return input;
       const passes = options.passes ?? {};
@@ -678,9 +682,15 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // fully switched-off pass promises.
       if (!geometryActive && document.getRoot().listTextures().length === 0) return input;
       // Draco is an input format only: the extension was consumed by the reader's decode,
-      // so it never reaches the writer — the output re-emits as Meshopt further below.
+      // so it never reaches the writer — the output re-emits as Meshopt further below. A source
+      // may already carry Meshopt from an earlier cook; dispose that consumed extension when the
+      // mobile effective options deliberately disable the runtime decoder.
       for (const extension of document.getRoot().listExtensionsUsed()) {
-        if (extension.extensionName === DRACO_EXTENSION) extension.dispose();
+        if (
+          extension.extensionName === DRACO_EXTENSION ||
+          (!enabled.meshopt && extension.extensionName === EXT_MESHOPT_EXTENSION)
+        )
+          extension.dispose();
       }
       const source = reachableStats(document.getRoot());
       const jointFloor = jointComponentSizes(document.getRoot());

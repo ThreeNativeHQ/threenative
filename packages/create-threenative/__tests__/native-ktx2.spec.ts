@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { modelPass } from "@threenative/assets";
+import { compileAssets, modelPass } from "@threenative/assets";
 import { encodeToKTX2 } from "ktx2-encoder";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
@@ -168,8 +168,8 @@ export default defineGame({ scenes: {} });
     });
   }, 60_000);
 
-  it("refuses a mobile build whose compiled models carry compressed geometry, by name", async () => {
-    const project = await gameProject("threenative-meshopt-refusal-");
+  it("accepts a mobile build after normalizing compressed model sources", async () => {
+    const project = await gameProject("threenative-meshopt-normalization-");
     await mkdir(path.join(project, "assets", "models"), { recursive: true });
     const compressed = await modelPass({ textures: "none" }).apply(
       Buffer.from(await buildFixtureGlb()),
@@ -178,12 +178,21 @@ export default defineGame({ scenes: {} });
     if (Buffer.isBuffer(compressed)) throw new Error("model fixture was not compressed");
     await writeFile(path.join(project, "assets", "models", "hero.glb"), compressed.buffer);
 
-    await expect(build({ cwd: project, target: "ios" })).rejects.toThrow(
-      /TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: ios cannot ship compressed model geometry \(models\/hero\.glb\)/u,
-    );
-    await expect(readFile(path.join(project, ".threenative/build/game.js"))).rejects.toMatchObject({
-      code: "ENOENT",
+    const result = await compileAssets({
+      config: { budget: "none" },
+      cwd: project,
+      platform: "ios",
     });
+    expect(result.written).toBe(1);
+    const manifest = JSON.parse(
+      await readFile(path.join(project, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { extensions?: string[] }> };
+    expect(manifest.entries["models/hero.glb"]?.extensions ?? []).not.toContain(
+      "EXT_meshopt_compression",
+    );
+    await expect(
+      assertNativeAssetsCompatible(project, "ios", await loadConfig(project)),
+    ).resolves.toBeUndefined();
   }, 60_000);
 
   it("accepts the same compiled assets on desktop and on web", async () => {

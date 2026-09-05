@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
+  assertNativeAssetsCompatible,
   assertNativeBundleCompatible,
   assertNativeUiRendererCompatible,
   build,
@@ -188,6 +189,50 @@ describe("threenative build", () => {
     );
     expect(() => assertNativeUiRendererCompatible("desktop", "web", "win32")).toThrow(
       /TN_UI_RENDERER_UNSUPPORTED.*desktop.*Windows/u,
+    );
+  });
+
+  it("accepts the decoder-free Android manifest produced by the asset compiler", async () => {
+    const root = await makeTempDir("threenative-mobile-assets-");
+    roots.push(root);
+    await mkdir(path.join(root, "public"), { recursive: true });
+    const manifestPath = path.join(root, "public", "assets.manifest.json");
+    const config = { assets: { output: "public" } } as Parameters<
+      typeof assertNativeAssetsCompatible
+    >[2];
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        entries: {
+          "models/hero.glb": {
+            extensions: ["KHR_mesh_quantization"],
+            output: "models/hero.12345678.glb",
+          },
+          "models/rock.glb": {
+            output: "models/rock.87654321.glb",
+            sharedImages: [{ codec: "none", output: "shared/images/1234567890abcdef.none.png" }],
+          },
+        },
+        version: 1,
+      }),
+    );
+
+    await expect(assertNativeAssetsCompatible(root, "android", config)).resolves.toBeUndefined();
+
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        entries: {
+          "models/hero.glb": {
+            extensions: ["EXT_meshopt_compression"],
+            output: "models/hero.12345678.glb",
+          },
+        },
+        version: 1,
+      }),
+    );
+    await expect(assertNativeAssetsCompatible(root, "android", config)).rejects.toThrow(
+      "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED",
     );
   });
 
