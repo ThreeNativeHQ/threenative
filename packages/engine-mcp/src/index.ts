@@ -11,6 +11,7 @@ export interface ICapabilityEntry {
   readonly signature: string;
   readonly summary: string;
   readonly situations: readonly string[];
+  readonly aliases: readonly string[];
   readonly example: string;
   readonly constraints: readonly string[];
   readonly overrides?: readonly string[];
@@ -285,8 +286,10 @@ function validateManifest(value: unknown, file: string): ICapabilityManifest {
       typeof raw.summary !== "string" ||
       typeof raw.example !== "string" ||
       !Array.isArray(raw.situations) ||
+      !Array.isArray(raw.aliases) ||
       !Array.isArray(raw.constraints) ||
       !raw.situations.every((situation) => typeof situation === "string") ||
+      !raw.aliases.every((alias) => typeof alias === "string") ||
       !raw.constraints.every((constraint) => typeof constraint === "string")
     ) {
       throw manifestError(file, `entry ${index} is malformed`);
@@ -390,7 +393,7 @@ function tokenWeights(entries: readonly ICapabilityEntry[]): ReadonlyMap<string,
   const frequency = new Map<string, number>();
   let situations = 0;
   for (const entry of entries) {
-    for (const situation of entry.situations) {
+    for (const situation of [...entry.situations, ...entry.aliases]) {
       situations += 1;
       for (const token of new Set(tokens(situation)))
         frequency.set(token, (frequency.get(token) ?? 0) + 1);
@@ -442,6 +445,7 @@ function agreement(situation: readonly string[], query: ReadonlySet<string>): nu
 function situationScore(
   query: readonly string[],
   situations: readonly string[],
+  aliases: readonly string[],
   weights: ReadonlyMap<string, number>,
 ): { readonly matchedSituation: string; readonly score: number } {
   if (query.length === 0) return { matchedSituation: "", score: 0 };
@@ -449,8 +453,9 @@ function situationScore(
   const queryText = query.join(" ");
   let best = 0;
   let matchedSituation = "";
-  for (const situation of situations) {
-    const phrase = tokens(situation);
+
+  const scorePhrase = (value: string): number | undefined => {
+    const phrase = tokens(value);
     const unique = [...new Set(phrase)];
     const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
     const matched = unique
@@ -458,7 +463,7 @@ function situationScore(
       .reduce((sum, token) => sum + weightOf(weights, token), 0);
     const phraseBonus =
       phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
-    if (total === 0 || (matched < DISTINCTIVE_FLOOR && phraseBonus === 0)) continue;
+    if (total === 0 || (matched < DISTINCTIVE_FLOOR && phraseBonus === 0)) return undefined;
     const coverage = matched / total;
     const agreed = agreement(unique, queryTokens);
     // One rare word that does not carry its own situation is a homonym rather than an answer.
@@ -469,14 +474,24 @@ function situationScore(
     // capability exists to outrank them. Raising this floor far enough to silence those two also
     // silences real one-word answers the search exists to give — the physics-puzzle request loses
     // `Joint3D` at 0.3. The real fix for that query is the capability, not the threshold.
-    if (agreed === 1 && coverage < LONE_WORD_COVERAGE && phraseBonus === 0) continue;
-    const candidate = coverage * agreed + phraseBonus;
-    if (candidate > best) {
+    if (agreed === 1 && coverage < LONE_WORD_COVERAGE && phraseBonus === 0) return undefined;
+    return coverage * agreed + phraseBonus;
+  };
+
+  for (const situation of situations) {
+    const candidate = scorePhrase(situation);
+    if (candidate !== undefined && candidate > best) {
       best = candidate;
       matchedSituation = situation;
     }
   }
-  return { matchedSituation, score: best };
+  for (const alias of aliases) {
+    const candidate = scorePhrase(alias);
+    if (candidate !== undefined) best = Math.max(best, candidate);
+  }
+  return matchedSituation.length > 0
+    ? { matchedSituation, score: best }
+    : { matchedSituation: "", score: 0 };
 }
 
 function notOwnedSituationScore(
@@ -567,8 +582,10 @@ export function searchCapabilities(
     };
   }
   const results = manifest.entries
-    .map((entry) => ({ entry, ...situationScore(query, entry.situations, weights) }))
-    .filter(({ score }) => score >= RELEVANCE_FLOOR)
+    .map((entry) => ({ entry, ...situationScore(query, entry.situations, entry.aliases, weights) }))
+    .filter(
+      ({ matchedSituation, score }) => matchedSituation.length > 0 && score >= RELEVANCE_FLOOR,
+    )
     .sort(
       (left, right) =>
         right.score - left.score ||

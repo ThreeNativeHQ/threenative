@@ -164,6 +164,36 @@ describe("capability manifest generator", () => {
     );
   });
 
+  it("rejects an alias that overlaps a notOwned situation", () => {
+    const entries = [
+      {
+        aliases: ["inventory system"],
+        constraints: [],
+        example: "const capability = new InventoryCapability();",
+        importPath: "@threenative/core",
+        kind: "class" as const,
+        overrides: [],
+        package: "@threenative/core",
+        signature: "class InventoryCapability",
+        situations: ["manage item slots"],
+        summary: "Manages inventory.",
+        supersedes: [],
+        symbol: "InventoryCapability",
+      },
+    ];
+    const notOwned = [
+      {
+        guidance: "Write inventory state in the game's src/.",
+        id: "inventory-system",
+        situations: ["inventory system"],
+      },
+    ];
+
+    expect(() => validateNotOwned(entries, notOwned)).toThrow(
+      /notOwned 'inventory-system'.*InventoryCapability/u,
+    );
+  });
+
   it("writes and checks a generated manifest instead of accepting a stale copy", async () => {
     const root = await makeTempDir("threenative-capability-freshness-");
     temporaryRoots.push(root);
@@ -299,5 +329,115 @@ describe("capability manifest generator", () => {
     const manifest = buildCapabilityManifest(root);
     const entry = manifest.entries.find((candidate) => candidate.symbol === "DocumentedCapability");
     expect(entry?.supersedes).toEqual([]);
+  });
+
+  it("emits authored aliases without changing the displayed situations", async () => {
+    const root = await makeTempDir("threenative-capability-alias-");
+    temporaryRoots.push(root);
+    await writePackage(
+      root,
+      "core",
+      "@threenative/core",
+      [
+        "/**",
+        " * A fixture capability with an alternate search key.",
+        " * @situation display the readable fixture sentence",
+        " * @alias fixture alternate wording",
+        " * @example const capability = new DocumentedCapability();",
+        " */",
+        "export class DocumentedCapability {}",
+        "",
+      ].join("\n"),
+    );
+
+    const manifest = buildCapabilityManifest(root);
+    expect(manifest.entries).toContainEqual(
+      expect.objectContaining({
+        aliases: ["fixture alternate wording"],
+        situations: ["display the readable fixture sentence"],
+        symbol: "DocumentedCapability",
+      }),
+    );
+  });
+
+  it("maps every authored alias to a named predecessor corpus row", async () => {
+    const manifest = await checkCapabilityManifest(process.cwd());
+    const aliases = manifest.entries.flatMap((entry) => entry.aliases ?? []);
+    const predecessorRows = {
+      "third-person camera": ["request.third-person-camera"],
+      "restart the run without a page reload": ["brief.endless-runner.5"],
+      "field of view while aiming": ["brief.fps.2"],
+      "health never regenerates": ["brief.fps.3"],
+      "firing line nearest target crosshair": ["brief.fps.4"],
+      "obstacles collectibles increasing pace": ["brief.endless-runner.3"],
+      "readable world lighting": ["brief.exploration.5"],
+      "different props in each area": ["brief.exploration.3"],
+      "journal objective panel": ["brief.exploration.4"],
+      "objective panel journal text": ["brief.exploration.4"],
+      "readable HUD": ["brief.physics-puzzle.6"],
+      "stream terrain across chunks": ["brief.open-world.2"],
+      "landmarks points of interest": ["brief.open-world.4"],
+      "first playable screen external assets": ["brief.open-world.5"],
+      "fixed seed fixed-step simulation": ["brief.physics-puzzle.5"],
+      "spawn waves": ["request.spawn-waves"],
+      "tower defense game": ["request.tower-defense-game"],
+      "one round per press": ["brief.fps.5"],
+      "pick up item": ["request.pick-up-item"],
+      "platformer double jump": ["request.platformer-double-jump"],
+      "first person": ["brief.fps.1"],
+      "push solid bodies": ["brief.physics-puzzle.2"],
+      "run jump coins goal": ["brief.platformer.2"],
+      "passes through body": ["brief.physics-puzzle.3"],
+      "arena walls pickups": ["brief.topdown-action.4"],
+      "hitscan camera": ["brief.fps.7"],
+      "damage body height": ["brief.fps.8"],
+      "dynamic bodies stack topple": ["brief.physics-puzzle.1"],
+      "simulated contact": ["brief.physics-puzzle.4"],
+      "raised platform gap hazard restart": ["brief.platformer.3"],
+      "bright sky saturated green platforms": ["brief.platformer.4"],
+      "enemy targets cooldown reload win condition": ["brief.topdown-action.3"],
+      "patrol route": ["brief.fps.10"],
+      "close engagement range": ["brief.fps.12"],
+      "search last place saw player": ["brief.fps.13"],
+    } as const;
+
+    expect([...new Set(aliases)].sort()).toEqual(Object.keys(predecessorRows).sort());
+    expect(Object.values(predecessorRows).every((rows) => rows.length > 0)).toBe(true);
+  });
+
+  it("should fail when one normalized alias spans more than MAX_ALIAS_FANOUT entries", async () => {
+    const root = await makeTempDir("threenative-capability-alias-fanout-");
+    temporaryRoots.push(root);
+    await writePackage(
+      root,
+      "core",
+      "@threenative/core",
+      [
+        "/**",
+        " * First fixture.",
+        " * @situation first fixture",
+        " * @alias RACING",
+        " * @example const first = new First();",
+        " */",
+        "export class First {}",
+        "/**",
+        " * Second fixture.",
+        " * @situation second fixture",
+        " * @alias racing!",
+        " * @example const second = new Second();",
+        " */",
+        "export class Second {}",
+        "/**",
+        " * Third fixture.",
+        " * @situation third fixture",
+        " * @alias racing",
+        " * @example const third = new Third();",
+        " */",
+        "export class Third {}",
+        "",
+      ].join("\n"),
+    );
+
+    expect(() => buildCapabilityManifest(root)).toThrow(/racing.*First.*Second.*Third/u);
   });
 });
