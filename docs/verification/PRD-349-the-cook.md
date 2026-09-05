@@ -664,3 +664,70 @@ no whole-bundle reduction is claimed. Exploratory upgrades for four additional g
 Cloth CatcherV2 were restored to their exact protected baselines. V2's stale gameplay assertions
 were not weakened. The full thirty-game matrix and HQ's unavailable live bridge are **not green
 claims**. No mobile device execution occurred. Final packaging and PR close-out follow below.
+
+## Merged-source final gates and distribution
+
+Source **af8fe783d1b9e071392ec1dcdcb928da75ccb64a**, tree
+**9ceefbfbcb52d601e4c9ef4ac9c537e72a605b04**, includes main at `8ea7b3a4`.
+Merge conflicts were limited to generated retention and scaffold hashes. The old hashes failed
+once (one failed / 53 passed); the merged-template hashes were re-pinned from the observed result.
+The subsequent official full suite passes the scaffold test and every other executed test.
+
+```text
+taskset -c 20-23 pnpm test
+Test Files  384 passed | 2 skipped (386)
+Tests       4165 passed | 7 skipped (4172)
+Duration    186.25s
+suite temporary directory count: before 1, after 1
+pnpm typecheck: exit 0
+pnpm lint: exit 0, 592 warnings, no errors
+pnpm budgets: exit 0
+pnpm exec tsx scripts/count-loc.ts --check: exit 0
+```
+
+Logs: `/tmp/prd349-merged-{test,typecheck,lint,budgets,loc}.log`. CPU affinity limits worker
+contention; no test was filtered out. The official command also rebuilt distribution, passed
+native package tests (708 passed / 39 skipped), 29 physics parity tests and 16 Rust tests.
+
+All eight packages were freshly packed from that clean source, with source identity checked
+before and after. Main independently recomputed staged and copied SHA256s against
+`/tmp/prd349-release-pack.pyZv1m/provenance.json`; all sixteen comparisons matched.
+
+| Package | SHA256 |
+| --- | --- |
+| create-threenative | `746944db6f7a6a252576038bf3088834ad34c4fa37d1c017f1c3a656a4232539` |
+| assets | `5453e0035088ed6585bb465f552b8a2667a150af5caab5d5eef2dd04dcae153f` |
+| core | `17361b6ad7ad8bca8e2489f63adcedb7488a0787e4e79fb6e6419f5e072346d9` |
+| engine-mcp | `eb1f55151faa03e9d8103043be10c010d22a33c43eab85787dbef1069625acfe` |
+| physics | `15e1261f0d2cbfd4a4f251392c949f2e97c0748527cf1a20004794440f7cd25c` |
+| playtest | `11797e7d3539683124e51529238c599d44404362e74164f4f7484b8bbe4159e1` |
+| runtime-native | `e64c2454cdbd3dfa7879ea64b7812fced65e89b552b8297fdb1e6f131fd951c8` |
+| ui | `48199aa2c8213e2a252fbe1e03f90076e173b7224f44a06b8bad12ea4ba39c0b` |
+
+Wildwood and Quarry install and cached web builds pass on these packages. Main independently
+resolved the baseline acquisition paths through each final `dist/assets.manifest.json` and
+summed actual files: Wildwood **124 primary/shared outputs / 45,297,065 B**, plus HDR and Basis
+as above, still **51,333,420 B**; Quarry **nine outputs / 3,984,176 B**, plus Basis, still
+**4,569,038 B**. These are asset payloads, not browser network-transfer or full-application sizes.
+The screenshot pair is published in examples commit `501424a`; both raw image URLs return HTTP200.
+The separate verified compatibility pins are preserved in examples commit `dcf6b01`.
+
+Final installed-package commands all exit zero: Wildwood and Quarry installs and web builds,
+Wildwood's complete `pnpm test`, Quarry desktop packaging, and Quarry's same checked-in browser
+and native desktop scenarios (**8/8 each**). Logs:
+`/tmp/prd349-{wildwood,quarry}-final-{install,cook}.log`,
+`/tmp/prd349-wildwood-final-test.log`,
+`/tmp/prd349-quarry-final-{desktop-build,browser,desktop}.log`.
+Wildwood again passes audio **191 checks**, all five cold starts, five main scenarios and its
+six-animal check. No assertions were relaxed. Quarry's first desktop packaging attempt lacked
+the supplied host path; setting `THREENATIVE_RUNTIME_BINARY` to the previously verified host
+produced the passing package. Host SHA256:
+`b0199eaf8a7c66576529e9705798e355f3322743cf2d80ec995360e29510d28b`.
+This reuses the host, not a fresh C++ build. The existing Quarry Playwright peer-version warning
+and bundler warnings were non-fatal; the real scenario observations passed.
+
+Final game pins are committed as examples `1bc083d8ff72912ae8d159430da3943726a6ccf9`;
+only four package/lock files changed. The engine's subsequent close-out commit is documentation
+only; executable package provenance remains the immutable `af8fe783` source above. PRD-349 is
+filed in `docs/PRDs/done/` for the owner's requested single-PR handoff, with iOS waived and the
+practical 51 MB outcome accepted. No blanket thirty-game or physical-mobile green is claimed.
