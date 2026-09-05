@@ -2,7 +2,8 @@
 // native side cannot parse must reject `ready` with a WebTransportError, the
 // low-level bridge must refuse malformed calls with 0, and a failed connect
 // must leave no session behind. Drives the real runtime with its installed
-// polyfill — no sockets are opened, because every probe URL fails `parseUrl`.
+// polyfill — no sockets are opened: malformed URLs fail `parseUrl`, and the
+// close-before-ready probe substitutes session creation before driving dispatch.
 
 #include "mystral/runtime.h"
 #include "mystral/webtransport/webtransport.h"
@@ -46,6 +47,22 @@ constexpr const char* kScript = R"JS((() => {
     () => settled.push('closed=RESOLVED'),
     () => settled.push('closed=REJECTED'),
   ));
+
+  // A native TLS failure can report closed without a preceding error event.
+  // Isolate that dispatcher branch without opening a socket in this surface test.
+  const nativeConnect = globalThis.__wtConnect;
+  globalThis.__wtConnect = () => 4242;
+  const closing = new WebTransport('https://127.0.0.1:4433/echo');
+  globalThis.__wtConnect = nativeConnect;
+  pending.push(closing.ready.then(
+    () => settled.push('early-close-ready=RESOLVED'),
+    (e) => settled.push('early-close-ready=' + (e instanceof WebTransportError ? 'REJECTED' : 'REJECTED-OTHER')),
+  ));
+  pending.push(closing.closed.then(
+    () => settled.push('early-close-closed=RESOLVED'),
+    (e) => settled.push('early-close-closed=' + (e instanceof WebTransportError ? 'REJECTED' : 'REJECTED-OTHER')),
+  ));
+  __wtDispatch(4242, 'closed', 'TLS handshake failed');
 
   Promise.all(pending).then(() => {
     setTimeout(() => {

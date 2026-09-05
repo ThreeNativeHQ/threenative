@@ -170,8 +170,10 @@
         if (st.closedFlag) break;
         st.closedFlag = true;
         const info = { closeCode: 0, reason: a || '' };
-        if (st.lastError && !st.ready) {
-          st.closedReject(st.lastError);
+        if (!st.ready) {
+          const err = st.lastError || new WebTransportError(a || 'WebTransport closed before ready');
+          st.readyReject(err);
+          st.closedReject(err);
         } else {
           st.closedResolve(info);
         }

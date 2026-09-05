@@ -173,3 +173,7 @@ and reported zero console, network, or runtime diagnostics. Its inspected 1280x7
 the baked darker receiver patch; SHA-256
 `a7668f6d18591500732c890fc0f9a774b5c1d199fbe0b64c075d9b7039af301c`. Android/iOS are not claimed:
 their existing `TN_NATIVE_KTX2_UNSUPPORTED` build guard remains intact.
+
+## PRD-359 failed WebTransport handshake — 2026-09-05
+
+The Linux V8+Dawn host now settles both establishment promises when WebTransport closes before readiness. The compiled surface regression went red then green, and the real Go fixture suite passed 11/11 tests, including self-signed certificate rejection without the insecure override. This does not qualify positive trusted TLS or other platforms. Evidence: [Task 1a-close](../../../docs/verification/prd-359-task1a-close-2026-09-05.md).
