@@ -11,6 +11,12 @@ export interface IRangeState extends Record<string, unknown> {
    * falls forever, so this number is what proves the body exists.
    */
   crateY: number;
+  /**
+   * `waiting` until the dropped crate overlaps the landing pad, then `landed`. A published
+   * primitive so the transition carries a tick, which is what lets a scenario say the state
+   * changed *because* of the contact rather than merely after it.
+   */
+  crateLanding: "landed" | "waiting";
   shots: number;
   timeRemaining: number;
 }

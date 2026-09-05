@@ -25,8 +25,10 @@ export type PlaytestCapability =
   | "runtime.startup"
   | "runtime.state"
   | "runtime.tags"
+  | "runtime.transitions"
   | "runtime.ui"
   | "runtime.world"
+  | "scene.nodes"
   | "scene.observe";
 
 export interface IPlaytestCapabilityDescriptor {
@@ -61,9 +63,11 @@ export const PLAYTEST_CAPABILITY_REGISTRY: readonly IPlaytestCapabilityDescripto
   capability("runtime.resources", "Reads and writes registered JSON-safe application state."),
   capability("runtime.startup", "Reports whether first-use startup work has finished and the world is safe to observe."),
   capability("runtime.state", "Samples application-owned state-machine state."),
+  capability("runtime.transitions", "Samples tick-stamped changes to published entity states and game-state fields."),
   capability("runtime.tags", "Samples bounded application-owned entity tags."),
   capability("runtime.ui", "Samples registered JSON-safe UI and HUD state."),
   capability("runtime.world", "Samples bounded runtime world metadata."),
+  capability("scene.nodes", "Reports scene-graph nodes selected by name, path or type, with world transform, bounds, frustum membership, geometry, materials and texture load state."),
   capability("scene.observe", "Counts the lights, materials, fog, background and camera framing mounted in the scene."),
 ];
 

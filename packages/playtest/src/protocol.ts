@@ -131,6 +131,8 @@ export interface IPlaytestSampleRequest {
   /** Scenario-step label for providers that retain labelled observation series. */
   label?: string;
   resources?: readonly string[];
+  /** Scene-graph selectors to report, one observation per selector, in request order. */
+  sceneNodes?: readonly IPlaytestSceneNodeSelector[];
 }
 
 export interface IPlaytestEntityObservation {
@@ -249,10 +251,115 @@ export interface IPlaytestSceneObservation {
   worldExtent?: { max: [number, number, number]; min: [number, number, number] };
 }
 
+/**
+ * One node of the scene graph, read as numbers instead of looked at.
+ *
+ * `scene.observe` reports the room as counts — how many lights, how many materials of each
+ * constructor. That answers "is anything lit" and cannot answer "is the crate on screen", "did
+ * the seal plate load its texture", "is this mesh inside the wall". Those are the questions an
+ * agent otherwise takes a screenshot for, and a screenshot cannot say why. Every field here is
+ * read off the object the renderer will draw; nothing is inferred and nothing decides how the
+ * game looks.
+ */
+export interface IPlaytestSceneNodeObservation {
+  /** Clips mounted on this node's mixer, and which of them are advancing. */
+  animation?: { clips: string[]; playing: string[] };
+  /** World-space axis-aligned bounds, absent when the node encloses nothing. */
+  bounds?: { max: [number, number, number]; min: [number, number, number] };
+  geometry?: { attributes: string[]; triangles: number; vertices: number };
+  /** Whether the node's world bounds intersect the active camera's frustum. */
+  inFrustum?: boolean;
+  /** Instance count for an InstancedMesh or BatchedMesh. */
+  instances?: number;
+  materials?: IPlaytestSceneNodeMaterial[];
+  name: string;
+  /** Slash-joined path from the scene root, the same shape `entity.observe` reports. */
+  path: string;
+  position: [number, number, number];
+  scale: [number, number, number];
+  skinned?: { bones: number };
+  type: string;
+  /** The node's own visible flag. */
+  visible: boolean;
+  /** The node's flag and every ancestor's — what the renderer actually acts on. */
+  visibleInTree: boolean;
+}
+
+/**
+ * A material as mounted, including the two facts that make a mesh render black while every
+ * count above it reads healthy: a map slot bound to a texture that never loaded, and a lit
+ * material in a scene with nothing to light it.
+ */
+export interface IPlaytestSceneNodeMaterial {
+  color?: string;
+  emissive?: string;
+  /** True when the material reads scene lighting, so an unlit scene renders it black. */
+  lit: boolean;
+  /** Map slots bound to a texture, by property name. */
+  maps: string[];
+  /** Bound slots whose texture carries no image — the black-texture case a count cannot show. */
+  mapsUnloaded: string[];
+  metalness?: number;
+  name: string;
+  opacity?: number;
+  roughness?: number;
+  transparent: boolean;
+  type: string;
+  visible: boolean;
+}
+
+/**
+ * Which nodes to report. An absent field does not filter; every present field must match.
+ * A selector that matches nothing is reported as `matched: 0`, never as an empty success.
+ */
+export interface IPlaytestSceneNodeSelector {
+  /** Ceiling on reported nodes. The walk still counts every match, so `matched` is a total. */
+  limit?: number;
+  /** Exact `Object3D.name`. */
+  name?: string;
+  /** Case-insensitive substring of `Object3D.name`. */
+  nameContains?: string;
+  /** Case-insensitive substring of the slash-joined path. */
+  pathContains?: string;
+  /** Exact `Object3D.type` — `Mesh`, `SkinnedMesh`, `PointLight`, `Group`. */
+  type?: string;
+}
+
+export interface IPlaytestSceneNodesObservation {
+  /** Total nodes the selector matched, before `limit` was applied. */
+  matched: number;
+  nodes: IPlaytestSceneNodeObservation[];
+  selector: IPlaytestSceneNodeSelector;
+  /** True when `limit` or the walk cap cut the list, so `nodes` is a sample and not the set. */
+  truncated: boolean;
+}
+
 export interface IPlaytestContactObservation {
   entity: string;
   kind: string;
+  /**
+   * The tick the contact happened on, when the producer drains its contact log per tick. Absent
+   * from a producer that drains only at sample time, and an assertion that needs it fails closed
+   * rather than falling back to step granularity — the two are not the same measurement.
+   */
+  tick?: number;
   with: string;
+}
+
+/**
+ * A published value changing, and the tick it changed on.
+ *
+ * Without this a run can say *a contact happened* and *the state reads `won`*, and nothing relates
+ * them. Comparing at step boundaries cannot separate a win that arrived with the contact from one
+ * that arrived 199 ticks later in the same step — which is the signature of a timer or a distance
+ * check that happens to land near a contact.
+ */
+export interface IPlaytestTransitionObservation {
+  from: JsonPrimitive;
+  /** `states.<entity>` for a registered entity, or `state.<field>` for a published field. */
+  path: string;
+  tick: number;
+  to: JsonPrimitive;
 }
 
 export interface IPlaytestTagObservation {
@@ -298,6 +405,8 @@ export interface IPlaytestGameplayObservation {
   contacts?: IPlaytestContactObservation[];
   states: Record<string, string>;
   tags?: Record<string, IPlaytestTagObservation>;
+  /** Tick-stamped changes to published values. Absent from a run whose loop never ticked. */
+  transitions?: IPlaytestTransitionObservation[];
   world?: IPlaytestWorldObservation;
 }
 
@@ -344,6 +453,7 @@ export interface IPlaytestObservationSnapshot {
   runtimeDiagnosticsSeries?: IPlaytestRuntimeDiagnosticsSample[];
   resources?: Record<string, JsonValue>;
   scene?: IPlaytestSceneObservation;
+  sceneNodes?: IPlaytestSceneNodesObservation[];
 }
 
 /**

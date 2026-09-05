@@ -1,5 +1,5 @@
 import { AnimationPlayer, type ICtx, Scene, type SceneFrame } from "@threenative/core";
-import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
+import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import type { Object3D, PerspectiveCamera } from "three";
 import {
   AnimationClip,
@@ -80,6 +80,7 @@ function walkClip(): AnimationClip {
 export class Range extends Scene<IRangeState, IPhysicsContext> {
   static override readonly initialState: IRangeState = {
     allHits: 0,
+    crateLanding: "waiting",
     crateY: CRATE_DROP_HEIGHT,
     hits: 0,
     lookYaw: 0,
@@ -111,30 +112,56 @@ export class Range extends Scene<IRangeState, IPhysicsContext> {
     }
 
     const floor = box(40, 0.1, 64, 0x1d2733);
+    floor.name = "floor";
     floor.position.set(0, 0, -30);
     ctx.add(floor);
 
     // Dropped onto the position-only floor body. If that body were missing the crate would
     // fall past the yard forever, so `crateY` settling is what makes PRD-145 observable.
     const crate = box(CRATE_SIZE, CRATE_SIZE, CRATE_SIZE, 0x7f8c8d);
+    crate.name = "crate";
     crate.position.set(2.5, CRATE_DROP_HEIGHT, -6);
     ctx.add(crate);
-    new RigidBody3D({
+    const crateBody = new RigidBody3D({
       mass: 1,
       object: crate,
       physics: ctx.physics,
       shape: CollisionShape3D.box(CRATE_SIZE, CRATE_SIZE, CRATE_SIZE),
       type: "dynamic",
     });
+    // Registered so both sides of the landing contact have names. An unregistered body reports a
+    // contact nothing can address, and a contacts assertion over it is green about nothing.
+    ctx.entities.add("crate", { body: crateBody, mesh: crate });
+
+    // The crate's landing spot, as a sensor rather than a height check. A distance test against
+    // `crate.position.y` would report the same `landed` on a crate that was never dropped; an
+    // overlap is the thing that actually happened, and it is what `assert.causedBy` relates the
+    // published transition to.
+    const pad = box(CRATE_SIZE * 2, 0.2, CRATE_SIZE * 2, 0x2f4858);
+    pad.name = "landing-pad";
+    pad.position.set(2.5, 0.15, -6);
+    ctx.add(pad);
+    const padArea = new Area3D({
+      physics: ctx.physics,
+      position: pad.position,
+      shape: CollisionShape3D.box(CRATE_SIZE * 2, 0.2, CRATE_SIZE * 2),
+    });
+    ctx.entities.add("landing-pad", { area: padArea, mesh: pad });
+    let crateLanding: IRangeState["crateLanding"] = "waiting";
+    padArea.on("bodyEntered", () => {
+      crateLanding = "landed";
+    });
 
     // Thin dressing on the shot line. It is nearest, so `raycast` alone reports it and the
     // enemy behind it is never scored — the shape of the FPS build's occlusion problem.
     const plate = new Mesh(new PlaneGeometry(1.4, 1.4), new MeshBasicMaterial({ color: 0xd8a657 }));
+    plate.name = "plate";
     plate.position.set(0, 1.4, -8);
     plate.userData.dressing = 1;
     ctx.add(plate);
 
     const enemyProxy = box(0.7, 1.8, 0.5, 0xc0392b);
+    enemyProxy.name = "enemy-proxy";
     enemyProxy.position.set(0, 0.9, -16);
     enemyProxy.userData.enemy = 1;
     ctx.add(enemyProxy);
@@ -251,6 +278,7 @@ export class Range extends Scene<IRangeState, IPhysicsContext> {
 
       frameCtx.state.set({
         allHits,
+        crateLanding,
         crateY: crate.position.y,
         hits,
         lookYaw: yaw,

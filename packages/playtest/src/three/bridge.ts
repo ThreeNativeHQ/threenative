@@ -46,7 +46,7 @@ export interface IThreePlaytestBridgeOptions {
   entities?: readonly IThreePlaytestEntity[] | (() => readonly IThreePlaytestEntity[]);
   fixedStep?: (ticks: number) => Promise<number | void> | number | void;
   gameplay?: () => IPlaytestGameplayObservation;
-  gameplayChannels?: () => readonly ("runtime.contacts" | "runtime.tags" | "runtime.world")[];
+  gameplayChannels?: () => readonly ("runtime.contacts" | "runtime.tags" | "runtime.transitions" | "runtime.world")[];
   runtimeDiagnosticsSeries?: () => readonly IPlaytestRuntimeDiagnosticsSample[];
   events?: () => JsonValue[];
   /** Physics bodies to retain per labelled step. Requires the authoritative tick provider. */
@@ -85,6 +85,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     "entity.bounds",
     "entity.observe",
     "entity.setup",
+    "scene.nodes",
     "scene.observe",
     ...(options.fixedStep === undefined ? [] : ["runtime.fixedStep"]),
     ...(options.resources === undefined ? [] : ["runtime.resources"]),
@@ -98,6 +99,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(options.startup === undefined ? [] : ["runtime.startup"]),
     ...(options.gameplayChannels?.().includes("runtime.contacts") === true ? ["runtime.contacts"] : []),
     ...(options.gameplayChannels?.().includes("runtime.tags") === true ? ["runtime.tags"] : []),
+    ...(options.gameplayChannels?.().includes("runtime.transitions") === true ? ["runtime.transitions"] : []),
     ...(options.gameplayChannels?.().includes("runtime.world") === true ? ["runtime.world"] : []),
   ];
   const bridge: IPlaytestBridgeV1 = {

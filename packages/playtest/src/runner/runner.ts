@@ -426,6 +426,11 @@ async function runStandalonePlaytestInternal(
         ...(scenario.assert?.renderChain === undefined ? [] : ["renderChain"]),
       ],
       resources: resourceIds,
+      // One selector per assertion, in scenario order: the evaluator reads observation `i` for
+      // assertion `i`, so the mapping has to be positional and never deduplicated.
+      ...(scenario.assert?.sceneNodes === undefined
+        ? {}
+        : { sceneNodes: scenario.assert.sceneNodes.map(({ select }) => select) }),
     } as const;
     const labeledSamples: ILabeledPlaytestSample[] = [];
     const capturesAnonymousMovement = isAnonymousMovementScenario(scenario);
