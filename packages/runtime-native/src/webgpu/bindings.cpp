@@ -2771,6 +2771,10 @@ bool initBindings(BindingsState* state, js::Engine* engine, void* wgpuInstance, 
     state->presentation.surfaceFormat = state->presentation.requiresSrgbPresentationBridge
                                             ? linearSurfaceFormat(state->presentation.nativeSurfaceFormat)
                                             : state->presentation.nativeSurfaceFormat;
+    reportSurfaceFormatMarker(state->presentation.nativeSurfaceFormat,
+                              state->presentation.surfaceFormat,
+                              state->presentation.requiresSrgbPresentationBridge,
+                              state->presentation.presentMode);
 
     if (state->verboseLogging) {
         std::cout << "[WebGPU] Initializing JavaScript bindings..." << std::endl;

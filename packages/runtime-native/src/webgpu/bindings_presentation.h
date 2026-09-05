@@ -10,6 +10,11 @@ namespace mystral::webgpu {
 void paceToPresentationCap();
 bool isSrgbSurfaceFormat(WGPUTextureFormat format);
 WGPUTextureFormat linearSurfaceFormat(WGPUTextureFormat format);
+void reportSurfaceFormatMarker(
+    WGPUTextureFormat nativeFormat,
+    WGPUTextureFormat renderFormat,
+    bool usesSrgbBridge,
+    WGPUPresentMode presentMode);
 bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas);
 WGPUTexture getCurrentSwapchainTexture(BindingsState* state);
 void trackCurrentSurfaceTextureView(BindingsState* state, uint64_t viewId, WGPUTextureView view);

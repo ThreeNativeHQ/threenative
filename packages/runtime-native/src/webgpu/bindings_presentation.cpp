@@ -8,6 +8,7 @@
 #include "mystral/js/engine.h"
 #include "mystral/stall_budget.h"
 #include "mystral/webgpu/bindings.h"
+#include "bindings_resources.h"
 
 #include <algorithm>
 #include <chrono>
@@ -108,6 +109,25 @@ WGPUTextureFormat linearSurfaceFormat(WGPUTextureFormat format) {
     return format;
 }
 
+static const char* presentModeName(WGPUPresentMode mode) {
+    switch (mode) {
+        case WGPUPresentMode_Immediate: return "immediate";
+        case WGPUPresentMode_Mailbox: return "mailbox";
+        case WGPUPresentMode_Fifo: return "fifo";
+        default: return "unknown";
+    }
+}
+
+void reportSurfaceFormatMarker(WGPUTextureFormat nativeFormat,
+                               WGPUTextureFormat renderFormat,
+                               bool usesSrgbBridge,
+                               WGPUPresentMode presentMode) {
+    std::cout << "TN_SURFACE_FORMAT:{\"native\":\"" << formatToString(nativeFormat)
+              << "\",\"render\":\"" << formatToString(renderFormat)
+              << "\",\"bridge\":" << (usesSrgbBridge ? "true" : "false")
+              << ",\"present\":\"" << presentModeName(presentMode) << "\"}" << std::endl;
+}
+
 static bool readCanvasDimension(
     BindingsState* state,
     js::JSValueHandle canvas,
@@ -189,6 +209,11 @@ bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas) {
     config.height = height;
     config.presentMode = state->presentation.presentMode;
     wgpuSurfaceConfigure(state->surface, &config);
+
+    reportSurfaceFormatMarker(state->presentation.nativeSurfaceFormat,
+                              state->presentation.surfaceFormat,
+                              state->presentation.requiresSrgbPresentationBridge,
+                              state->presentation.presentMode);
 
     state->presentation.canvasWidth = width;
     state->presentation.canvasHeight = height;
@@ -557,6 +582,10 @@ void republishSurface(BindingsState* state, void* wgpuSurface, uint32_t surfaceF
     // rendering at a different one.
     state->presentation.canvasWidth = width;
     state->presentation.canvasHeight = height;
+    reportSurfaceFormatMarker(state->presentation.nativeSurfaceFormat,
+                              state->presentation.surfaceFormat,
+                              state->presentation.requiresSrgbPresentationBridge,
+                              state->presentation.presentMode);
     std::cout << "[WebGPU] Surface republished to bindings: " << wgpuSurface << " " << width << "x" << height
               << " (format=" << state->presentation.surfaceFormat << ")" << std::endl;
 #else

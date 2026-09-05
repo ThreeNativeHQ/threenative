@@ -101,6 +101,25 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(MYSTRAL_USE_DAWN "Use Dawn WebGPU implementation" ON)  # Default - best compatibility
 option(MYSTRAL_USE_WGPU "Use wgpu-native WebGPU implementation" OFF)  # Alternative - has iOS support
 set(THREENATIVE_WGPU_ROOT "" CACHE PATH "Override the platform wgpu-native dependency root")
+set(MYSTRAL_WEBGPU_BACKEND "auto" CACHE STRING "WebGPU backend selection; Android accepts dawn or wgpu")
+set_property(CACHE MYSTRAL_WEBGPU_BACKEND PROPERTY STRINGS auto dawn wgpu)
+if(NOT MYSTRAL_WEBGPU_BACKEND STREQUAL "auto" AND
+   NOT MYSTRAL_WEBGPU_BACKEND STREQUAL "dawn" AND
+   NOT MYSTRAL_WEBGPU_BACKEND STREQUAL "wgpu")
+    message(FATAL_ERROR
+        "TN_WEBGPU_BACKEND_INVALID: MYSTRAL_WEBGPU_BACKEND must be auto, dawn, or wgpu")
+endif()
+if(MYSTRAL_WEBGPU_BACKEND STREQUAL "dawn" AND NOT ANDROID)
+    message(FATAL_ERROR
+        "TN_DAWN_ANDROID_ONLY: MYSTRAL_WEBGPU_BACKEND=dawn is an Android arm64 spike")
+endif()
+if(MYSTRAL_WEBGPU_BACKEND STREQUAL "dawn")
+    set(MYSTRAL_USE_DAWN ON)
+    set(MYSTRAL_USE_WGPU OFF)
+elseif(MYSTRAL_WEBGPU_BACKEND STREQUAL "wgpu")
+    set(MYSTRAL_USE_DAWN OFF)
+    set(MYSTRAL_USE_WGPU ON)
+endif()
 
 # Ray Tracing (optional - hardware RT via DXR/Vulkan/Metal)
 option(MYSTRAL_USE_RAYTRACING "Enable hardware ray tracing support" OFF)
@@ -237,9 +256,12 @@ elseif(ANDROID)
     else()
         set(MYSTRAL_USE_V8 OFF)
     endif()
-    # wgpu-native has Android support
-    set(MYSTRAL_USE_DAWN OFF)
-    set(MYSTRAL_USE_WGPU ON)
+    # wgpu-native remains the Android product default. Dawn is a named PRD-329 spike and only
+    # takes this branch when the caller explicitly passes MYSTRAL_WEBGPU_BACKEND=dawn.
+    if(MYSTRAL_WEBGPU_BACKEND STREQUAL "auto")
+        set(MYSTRAL_USE_DAWN OFF)
+        set(MYSTRAL_USE_WGPU ON)
+    endif()
 elseif(UNIX)
     set(MYSTRAL_PLATFORM "linux")
 endif()
@@ -253,6 +275,8 @@ message(STATUS "WebGPU: Dawn=${MYSTRAL_USE_DAWN} wgpu=${MYSTRAL_USE_WGPU}")
 # ============================================================================
 
 set(THIRD_PARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+set(THREENATIVE_DAWN_ANDROID_ROOT "${THIRD_PARTY_DIR}/dawn-android" CACHE PATH
+    "Extracted Dawn Android arm64 spike root containing include/ and lib/")
 
 # SDL3 - Build from source as static library for single-binary distribution
 set(SDL3_DIR ${THIRD_PARTY_DIR}/sdl3)
@@ -496,6 +520,32 @@ if(MYSTRAL_USE_DAWN)
         if(NOT DAWN_FOUND)
             message(WARNING "Dawn not found. Run 'node scripts/download-deps.mjs --only dawn' first.")
         endif()
+    elseif(ANDROID)
+        if(NOT ANDROID_ABI STREQUAL "arm64-v8a" AND
+           NOT CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+            message(FATAL_ERROR
+                "TN_DAWN_ANDROID_ABI_UNSUPPORTED: Dawn-on-Android spike only supports arm64-v8a")
+        endif()
+        set(TN_DAWN_ANDROID_ARCHIVE_NAME
+            "Dawn-d14ae3d97ad74100e9f382efef5e9c0872ddbeb2-android-arm64-v8a-Release.tar.gz")
+        set(TN_DAWN_ANDROID_ARCHIVE
+            "${THREENATIVE_DAWN_ANDROID_ROOT}/${TN_DAWN_ANDROID_ARCHIVE_NAME}")
+        if(NOT EXISTS "${TN_DAWN_ANDROID_ARCHIVE}")
+            message(FATAL_ERROR
+                "TN_DAWN_ANDROID_ARCHIVE_MISSING: ${TN_DAWN_ANDROID_ARCHIVE}; build Dawn d14ae3d97ad74100e9f382efef5e9c0872ddbeb2 for arm64-v8a and place the archive beside its extracted include/ and lib/ directories")
+        endif()
+        set(DAWN_INCLUDE_DIR "${THREENATIVE_DAWN_ANDROID_ROOT}/include")
+        if(EXISTS "${THREENATIVE_DAWN_ANDROID_ROOT}/lib/libwebgpu_dawn.a")
+            set(DAWN_LIBRARY "${THREENATIVE_DAWN_ANDROID_ROOT}/lib/libwebgpu_dawn.a")
+        elseif(EXISTS "${THREENATIVE_DAWN_ANDROID_ROOT}/lib/libdawn.a")
+            set(DAWN_LIBRARY "${THREENATIVE_DAWN_ANDROID_ROOT}/lib/libdawn.a")
+        endif()
+        if(NOT EXISTS "${DAWN_INCLUDE_DIR}" OR NOT DAWN_LIBRARY)
+            message(FATAL_ERROR
+                "TN_DAWN_ANDROID_ARTIFACT_MISSING: ${THREENATIVE_DAWN_ANDROID_ROOT} must contain include/ and lib/libwebgpu_dawn.a (or lib/libdawn.a) for arm64-v8a")
+        endif()
+        set(DAWN_FOUND ON)
+        message(STATUS "Found Dawn Android arm64 spike: ${DAWN_LIBRARY}")
     else()
         # Non-Windows: Use official Dawn releases
         set(DAWN_DIR ${THIRD_PARTY_DIR}/dawn)

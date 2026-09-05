@@ -89,10 +89,47 @@ export function analyzeColdStartMarkers(log, segments = DESKTOP_COLD_START_SEGME
   return { failures: [...new Set(failures)], markers: seen };
 }
 
+/**
+ * Reads the format negotiated at the surface boundary. This is deliberately independent from
+ * verbose logging: the desktop gate must still know whether the render target is linear and
+ * whether the sRGB bridge is active when a quiet production-style launch is being measured.
+ */
+export function analyzeSurfaceFormatMarkers(log) {
+  const failures = [];
+  const markers = [];
+  for (const match of log.matchAll(/^TN_SURFACE_FORMAT:(\{[^\r\n]*\})$/gmu)) {
+    let payload;
+    try {
+      payload = JSON.parse(match[1]);
+    } catch {
+      failures.push(`TN_SURFACE_FORMAT_MALFORMED:${match[1]}`);
+      continue;
+    }
+    if (
+      payload === null ||
+      Array.isArray(payload) ||
+      typeof payload.native !== 'string' ||
+      payload.native.length === 0 ||
+      typeof payload.render !== 'string' ||
+      payload.render.length === 0 ||
+      typeof payload.bridge !== 'boolean' ||
+      typeof payload.present !== 'string' ||
+      payload.present.length === 0
+    ) {
+      failures.push(`TN_SURFACE_FORMAT_INVALID:${match[1]}`);
+      continue;
+    }
+    markers.push(payload);
+  }
+  if (markers.length === 0 && failures.length === 0) failures.push('missing TN_SURFACE_FORMAT marker');
+  return { failures: [...new Set(failures)], markers };
+}
+
 export function analyzeDesktopLog(log, frames = 300) {
   const failures = [];
   if (!log.includes(READY_MARKER)) failures.push(`missing ${READY_MARKER}`);
   if (!log.includes(FIRST_FRAME_MARKER)) failures.push(`missing ${FIRST_FRAME_MARKER}`);
+  failures.push(...analyzeSurfaceFormatMarkers(log).failures);
   // The launch instrument has to run on the engine that ships, and only a gate keeps it running.
   failures.push(...analyzeColdStartMarkers(log).failures);
   if (!new RegExp(`Rendered ${frames} frames in \\d+ms`).test(log)) {
@@ -305,7 +342,14 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
       sha256: createHash('sha256').update(readFileSync(binary)).digest('hex'),
     },
     log: relative(workspace, logPath),
-    markers: [READY_MARKER, FIRST_FRAME_MARKER, WORKER_PROOF_MARKER.slice(0, -1), `Rendered ${frames} frames`],
+    markers: [
+      READY_MARKER,
+      FIRST_FRAME_MARKER,
+      WORKER_PROOF_MARKER.slice(0, -1),
+      'TN_SURFACE_FORMAT',
+      `Rendered ${frames} frames`,
+    ],
+    surfaceFormats: analyzeSurfaceFormatMarkers(log).markers,
     pass: true,
     preset,
     worker,

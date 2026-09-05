@@ -7,6 +7,7 @@
  *   node scripts/download-deps.mjs              # Download desktop deps for current platform
  *   node scripts/download-deps.mjs --ios        # Download iOS deps (macOS only)
  *   node scripts/download-deps.mjs --android    # Download Android deps
+ *   node scripts/download-deps.mjs --android --backend dawn  # Check the local Dawn arm64 spike drop
  *   node scripts/download-deps.mjs --all        # Download everything (desktop + iOS + Android)
  *   node scripts/download-deps.mjs --only wgpu  # Download only wgpu-native
  *   node scripts/download-deps.mjs --only skia-ios  # Download only iOS Skia
@@ -53,6 +54,9 @@ const archName = ARCH_MAP[ARCH] || ARCH;
 
 export const DEFAULT_WGPU_VERSION = 'v25.0.2.2';
 export const WGPU_REGRESSION_VERSIONS = Object.freeze(['v24.0.3.1', DEFAULT_WGPU_VERSION]);
+export const DAWN_ANDROID_COMMIT = 'd14ae3d97ad74100e9f382efef5e9c0872ddbeb2';
+export const DAWN_ANDROID_ARCHIVE_NAME =
+  `Dawn-${DAWN_ANDROID_COMMIT}-android-arm64-v8a-Release.tar.gz`;
 const WGPU_DEPS = new Set(['wgpu', 'wgpu-ios', 'wgpu-android']);
 let wgpuVersionOverride = null;
 
@@ -110,7 +114,7 @@ const DEPS = {
     // Skia's /MT (static CRT). See Skia section for workaround details.
     //
     version: 'v20260117.152313',
-    commit: 'd14ae3d97ad74100e9f382efef5e9c0872ddbeb2',
+    commit: DAWN_ANDROID_COMMIT,
     getUrl: () => {
       // Dawn releases have platform-specific binaries and separate headers
       const commit = DEPS.dawn.commit;
@@ -474,6 +478,27 @@ function valueAfter(args, flag) {
   const value = args[index + 1];
   if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value`);
   return value;
+}
+
+export function normalizeWebgpuBackend(value) {
+  if (!['auto', 'dawn', 'wgpu'].includes(value)) {
+    throw new Error(`TN_WEBGPU_BACKEND_INVALID: expected auto, dawn, or wgpu; received ${value}`);
+  }
+  return value;
+}
+
+export function dawnAndroidArchivePath(thirdPartyRoot = THIRD_PARTY) {
+  return join(thirdPartyRoot, 'dawn-android', DAWN_ANDROID_ARCHIVE_NAME);
+}
+
+export function assertDawnAndroidArchive(thirdPartyRoot = THIRD_PARTY) {
+  const archive = dawnAndroidArchivePath(thirdPartyRoot);
+  if (!existsSync(archive)) {
+    throw new Error(
+      `TN_DAWN_ANDROID_ARCHIVE_MISSING: ${archive}; build Dawn ${DAWN_ANDROID_COMMIT} for arm64-v8a and place the archive beside its extracted include/ and lib/ directories`,
+    );
+  }
+  return archive;
 }
 
 export function normalizeWgpuVersion(value) {
@@ -1026,6 +1051,12 @@ async function main() {
   const args = process.argv.slice(2);
   const onlyIndex = args.indexOf('--only');
   const requestedWgpuVersion = valueAfter(args, '--wgpu-version');
+  const requestedBackend = normalizeWebgpuBackend(valueAfter(args, '--backend') ?? 'auto');
+  const androidRequested = args.includes('--android');
+  if (requestedBackend !== 'auto' && !androidRequested) {
+    throw new Error('--backend is only supported with --android');
+  }
+  if (requestedBackend === 'dawn') assertDawnAndroidArchive();
   if (requestedWgpuVersion) configureWgpuOverride(requestedWgpuVersion);
 
   // Desktop deps (downloaded by default)
@@ -1036,6 +1067,9 @@ async function main() {
 
   // Android deps (only downloaded with --only or --android)
   const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android', 'webp-source'];
+  const selectedAndroidDeps = requestedBackend === 'dawn'
+    ? androidDeps.filter((name) => name !== 'wgpu-android')
+    : androidDeps;
 
   // Windows-specific deps (only downloaded with --only)
   // skia-win-static: Static Skia+Dawn build from library-builder with /MT
@@ -1062,7 +1096,7 @@ async function main() {
     depsToDownload = iosDeps;
   } else if (args.includes('--android')) {
     // Download Android cross-compilation deps
-    depsToDownload = androidDeps;
+    depsToDownload = selectedAndroidDeps;
   } else if (args.includes('--all')) {
     // Download everything
     depsToDownload = allDeps;

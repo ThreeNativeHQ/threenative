@@ -8,6 +8,7 @@
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/bindings.h"
 #include <array>
+#include <cstdlib>
 #include <iostream>
 #include <iterator>
 #include <cstring>
@@ -19,6 +20,7 @@
 
 #ifdef __ANDROID__
 #include <android/log.h>
+#include <sys/system_properties.h>
 #define TN_CONTEXT_LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "ThreeNativeWGPU", __VA_ARGS__)
 #define TN_CONTEXT_LOGI(...) __android_log_print(ANDROID_LOG_INFO, "ThreeNativeWGPU", __VA_ARGS__)
 #else
@@ -116,6 +118,29 @@ WGPUBool wgpuDevicePoll(WGPUDevice device, WGPUBool wait, WGPUWrappedSubmissionI
 
 namespace mystral {
 namespace webgpu {
+
+#if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
+static bool linearSurfaceRequested() {
+#if defined(__ANDROID__)
+    char property[PROP_VALUE_MAX] = {};
+    if (__system_property_get("debug.threenative.linear_surface", property) > 0)
+        return property[0] == '1';
+#endif
+    const char* configured = std::getenv("THREENATIVE_LINEAR_SURFACE");
+    return configured != nullptr && configured[0] == '1';
+}
+
+static WGPUTextureFormat linearSurfaceFormatForProbe(WGPUTextureFormat format) {
+    if (format == WGPUTextureFormat_RGBA8UnormSrgb) return WGPUTextureFormat_RGBA8Unorm;
+    if (format == WGPUTextureFormat_BGRA8UnormSrgb) return WGPUTextureFormat_BGRA8Unorm;
+    return format;
+}
+
+static bool isSrgbSurfaceFormatForProbe(WGPUTextureFormat format) {
+    return format == WGPUTextureFormat_RGBA8UnormSrgb ||
+           format == WGPUTextureFormat_BGRA8UnormSrgb;
+}
+#endif
 
 // Callback data for async operations
 struct AdapterRequestData {
@@ -1124,6 +1149,27 @@ bool Context::configureSurface(uint32_t width, uint32_t height, bool vsync) {
         if (capabilities.formats[i] == WGPUTextureFormat_RGBA8Unorm) {
             preferredFormat_ = WGPUTextureFormat_RGBA8Unorm;
         }
+    }
+
+    if (linearSurfaceRequested() && isSrgbSurfaceFormatForProbe(preferredFormat_)) {
+        const WGPUTextureFormat linearFormat = linearSurfaceFormatForProbe(preferredFormat_);
+        bool linearFormatSupported = false;
+        for (uint32_t i = 0; i < capabilities.formatCount; i++) {
+            if (capabilities.formats[i] == linearFormat) {
+                linearFormatSupported = true;
+                break;
+            }
+        }
+        if (!linearFormatSupported) {
+            std::cerr << "TN_LINEAR_SURFACE_UNSUPPORTED: requested linear twin for surface format "
+                      << preferredFormat_ << " but the adapter does not expose " << linearFormat
+                      << std::endl;
+            wgpuSurfaceCapabilitiesFreeMembers(capabilities);
+            return false;
+        }
+        preferredFormat_ = linearFormat;
+        std::cout << "[WebGPU] Linear surface diagnostic enabled; using format: "
+                  << preferredFormat_ << std::endl;
     }
     std::cout << "[WebGPU] Using surface format: " << preferredFormat_ << std::endl;
     TN_CONTEXT_LOGI("surface format %u", static_cast<unsigned>(preferredFormat_));
