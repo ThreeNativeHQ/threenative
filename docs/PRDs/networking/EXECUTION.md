@@ -335,6 +335,10 @@ the playtest package gains only this reusable asynchronous wait primitive.
 
 Owner confirmed on 2026-09-05 that networking verification belongs in CI. Task 7b must wire executable networking checks into the existing workflows, including protocol/fixture checks and provisioned browser/native interoperability lanes. Qualification aggregation must fail for missing required evidence; ordinary CI must never imply a physical-device run it did not execute. CI passing, merge and pull remain part of the requested delivery.
 
+## Authoring discovery requirement
+
+Owner reaffirmed on 2026-09-05 that networking must be discoverable through the authoring layer. Tasks 8a/8b and all five template pairs are required delivery: capability search/detail must expose the installed `@threenative/core/net` API, recall tests must cover concrete multiplayer requests, and core/template instructions must state delivery guarantees, defaults/overrides and failure behavior. Verify the cold tarball sandbox discovers and imports the actual export; metadata alone is insufficient.
+
 ## Execution records
 
 - Task 0: [policy admission and primary-docs checks](../../verification/prd-359-task0-2026-09-05.md). Fresh read-only Luna review passed policy/mirror/test collection; missing checklist/link finding resolved here.
