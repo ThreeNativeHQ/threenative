@@ -84,6 +84,22 @@ describe("run-test-suite phase contract", () => {
     expect(source).toContain('suite_prebuilt="${TN_SUITE_PREBUILT:-0}"');
     expect(source).toContain('if [[ "$suite_prebuilt" -eq 1 ]]; then');
     expect(source).toContain("run_prebuilt_package_tests");
+    const prebuiltPackageTestCall =
+      "run_phase package-test run_prebuilt_package_tests || test_status=$?";
+    const resumePackageTest = source.slice(
+      source.indexOf('case "$resume_phase"'),
+      source.indexOf("\nelse\n  if runs_phase docs"),
+    );
+    const normalPackageTest = source.slice(
+      source.indexOf('if [[ "$test_status" -eq 0 ]] && runs_phase package-test; then'),
+    );
+    expect(resumePackageTest, "resume package-test branch lost its prebuilt call").toContain(
+      prebuiltPackageTestCall,
+    );
+    expect(normalPackageTest, "normal package-test branch lost its prebuilt call").toContain(
+      prebuiltPackageTestCall,
+    );
+    expect(source.split(prebuiltPackageTestCall)).toHaveLength(3);
     expect(source).toContain("TN_SUITE_PREBUILT_MISSING");
     expect(source).toContain("packages/*/tsup.config.ts");
     expect(source).toContain('"${TN_SUITE_PHASES:-docs,build,package-test,unit}"');

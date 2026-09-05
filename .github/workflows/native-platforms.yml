@@ -58,7 +58,10 @@ permissions:
 jobs:
   web-reference:
     name: Commit-keyed web conformance reference
-    if: inputs.ios_only == false
+    if: >-
+      inputs.ios_only != true &&
+      (github.event_name != 'pull_request' ||
+       contains(github.event.pull_request.labels.*.name, 'native'))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

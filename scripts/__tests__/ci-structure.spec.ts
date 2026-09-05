@@ -1020,8 +1020,17 @@ describe("CI pipeline structure", () => {
         .filter((line) => !/^\s*#/u.test(line))
         .join("\n");
     const producerCommands = commands(producer);
+    const parityEligibility = [
+      "if: >-",
+      "      inputs.ios_only != true &&",
+      "      (github.event_name != 'pull_request' ||",
+      "       contains(github.event.pull_request.labels.*.name, 'native'))",
+    ].join("\n");
 
     expect(producerCommands).toContain("--target web --out artifacts/conformance/web");
+    expect(producer, "web reference is an orphan on unlabelled pull requests").toContain(
+      parityEligibility,
+    );
     expect(producer).toContain("actions/upload-artifact");
     expect(producer).toContain("native-web-reference-${{ github.sha }}");
     expect(producer).toContain("if-no-files-found: error");
@@ -1032,6 +1041,9 @@ describe("CI pipeline structure", () => {
       ["desktop", desktop],
     ] as const) {
       const consumer = commands(section);
+      expect(section, `${name} eligibility drifted from the web producer`).toContain(
+        parityEligibility,
+      );
       expect(section, `${name} is not ordered behind the producer`).toContain(
         "needs: web-reference",
       );
