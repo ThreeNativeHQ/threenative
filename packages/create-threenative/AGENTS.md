@@ -35,9 +35,11 @@ output look worse than vanilla.
   expected to run on all four targets, so each kit's `AGENTS.md` steers an authoring agent to the
   direct physics queries instead.
 
-Every file is copied verbatim, then `__PROJECT_NAME__` is replaced everywhere. Any new
-placeholder needs the same treatment in `renderTemplate`. `pnpm budgets` reports each
-template's LOC but no longer caps it.
+Every template file is copied verbatim, then `__PROJECT_NAME__` is replaced everywhere. The
+shared `template-assets/icon.png` is the one asset exception: the scaffolder copies it to the
+fixed generated `public/icon.png` path after the template copy. Any new placeholder needs the
+same treatment in `renderTemplate`. `pnpm budgets` reports each template's LOC but no longer caps
+it.
 
 Reusable workflows live in `agent-files/.agents/skills/` and `agent-files/.claude/skills/`; each
 template links both adapters, and the scaffolder copies them unchanged. Long recipes live in

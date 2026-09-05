@@ -3,6 +3,8 @@ import path from "node:path";
 import { assertFrameShowsSomething } from "./capture-guard.js";
 import { hasArmIdentifier } from "./score-blind.js";
 
+const REPO = path.resolve(import.meta.dirname, "..");
+
 export interface PolishScore {
   readonly behavior: number;
   readonly visuals: number;
@@ -149,7 +151,7 @@ function parseJudgeInput(value: unknown): JudgeInput {
   };
 }
 
-function validateManifest(bundle: string): ImageManifest {
+function validateManifest(bundle: string, repositoryRoot = REPO): ImageManifest {
   const manifestPath = path.join(bundle, "bundle.json");
   const value = readJson(manifestPath);
   if (
@@ -168,11 +170,18 @@ function validateManifest(bundle: string): ImageManifest {
     if (!isRecord(sample) || !nonEmptyString(sample.label) || !nonEmptyString(sample.image)) {
       throw new Error("TN_JUDGE_INVALID_BUNDLE: sample entry is malformed.");
     }
-    const relative = path.relative(bundle, path.resolve(bundle, sample.image));
-    if (relative === "" || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-      throw new Error(`TN_JUDGE_VOID: sample escapes bundle: ${sample.image}`);
-    }
     const imagePath = path.resolve(bundle, sample.image);
+    const relative = path.relative(bundle, imagePath);
+    if (relative === "" || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      const repositoryRelative = path.relative(repositoryRoot, imagePath);
+      if (
+        repositoryRelative === "" ||
+        repositoryRelative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(repositoryRelative)
+      ) {
+        throw new Error(`TN_JUDGE_VOID: sample escapes repository root: ${sample.image}`);
+      }
+    }
     if (!fs.existsSync(imagePath))
       throw new Error(`TN_JUDGE_INVALID_BUNDLE: missing ${sample.image}.`);
     if (hasArmIdentifier(sample.image)) {
@@ -191,9 +200,10 @@ export function runJudge(
   bundleDirectory: string,
   inputPath: string,
   outputPath = path.join(bundleDirectory, "judge.json"),
+  repositoryRoot = REPO,
 ): JudgeResult {
   const bundle = path.resolve(bundleDirectory);
-  const manifest = validateManifest(bundle);
+  const manifest = validateManifest(bundle, path.resolve(repositoryRoot));
   const rawInput = fs.readFileSync(inputPath, "utf8");
   if (hasArmIdentifier(rawInput))
     throw new Error("TN_JUDGE_VOID: critic input contains an arm identifier.");

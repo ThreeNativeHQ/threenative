@@ -12,18 +12,31 @@ import type { ITexturePassOptions } from "./passes/texture.js";
  * result says so (`concurrencyUsed`).
  */
 export type PassSpec =
-  | { readonly kind: "audio"; readonly options: IAudioPassOptions }
+  | {
+      readonly kind: "audio";
+      readonly needsRuntimeDecoder: boolean;
+      readonly options: IAudioPassOptions;
+    }
   /** No options: the pass is decided entirely by the input's extension. */
-  | { readonly kind: "blender-import" }
-  | { readonly kind: "lightmap"; readonly options: ILightmapPassOptions }
+  | { readonly kind: "blender-import"; readonly needsRuntimeDecoder: boolean }
+  | {
+      readonly kind: "lightmap";
+      readonly needsRuntimeDecoder: boolean;
+      readonly options: ILightmapPassOptions;
+    }
   | {
       readonly kind: "model";
+      readonly needsRuntimeDecoder: boolean;
       /** `sharedImages` arrives as a flag; the worker builds the store against its output root. */
       readonly options: Omit<IModelPassOptions, "sharedImages"> & {
         readonly sharedImages?: boolean;
       };
     }
-  | { readonly kind: "texture"; readonly options?: ITexturePassOptions };
+  | {
+      readonly kind: "texture";
+      readonly needsRuntimeDecoder: boolean;
+      readonly options?: ITexturePassOptions;
+    };
 
 /** One input's job, posted from the driver to a worker. */
 export interface IWorkerJob {

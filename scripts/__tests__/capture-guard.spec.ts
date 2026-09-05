@@ -55,7 +55,7 @@ describe("capture guard", () => {
   it("accepts a real archived frame", () => {
     const path = resolve(
       process.cwd(),
-      "docs/benchmark/sweeps/platformer-2026-08-06/proof-artifacts/0/after.png",
+      "docs/benchmark/sweeps/platformer-2026-08-06/captures/platformer-jump-proof-after.png",
     );
     const stats = assertFrameShowsSomething(readFileSync(path), path);
     expect(stats.width).toBe(1280);

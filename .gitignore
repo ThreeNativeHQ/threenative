@@ -104,6 +104,9 @@ docs/benchmark/sweeps/*/pnpm-lock.yaml
 # records "user-provided; verify upstream pack terms before redistribution" and its enemy is
 # CC-BY-4.0 carrying retargeted Mixamo clips, so neither is ours to redistribute from an MIT
 # repository. The archive keeps them on disk; git does not carry them.
+# Generated sweep instruction files are not benchmark evidence; their proof records remain tracked.
+docs/benchmark/sweeps/*/AGENTS.md
+docs/benchmark/sweeps/*/CLAUDE.md
 docs/benchmark/sweeps/*/vendor/
 docs/benchmark/sweeps/*/assets/models/
 docs/benchmark/sweeps/*/assets/imported/
@@ -123,6 +126,13 @@ docs/benchmark/sweeps/*/transcript.jsonl.gz
 
 # Other agents' lanes. Never searched, never read; see AGENTS.md.
 .worktrees
+# The other half of the same rule (PRD-357 F1). The global worktree convention puts Claude Code's
+# lanes in `<repo-root>/.claude/worktrees/`, and until 2026-09-04 the only thing keeping them out
+# of a search was line 12 of `.git/info/exclude` — per-clone, untracked, hand-written on one
+# machine. Every other clone's ripgrep crossed 629,652 files and stopped being the fast path.
+# No trailing slash, matching `.worktrees` above, so `git check-ignore .claude/worktrees` resolves
+# from this file even when the directory does not exist yet.
+.claude/worktrees
 
 # Secrets. Never committed, never copied into an image.
 .env

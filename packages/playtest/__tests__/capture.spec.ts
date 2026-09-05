@@ -45,7 +45,9 @@ test("inspectFrame keeps the stats used to diagnose a capture failure", () => {
 });
 
 test("a real archived frame remains accepted by the package guard", async () => {
-  const path = resolve("docs/benchmark/sweeps/platformer-2026-08-06/proof-artifacts/0/after.png");
+  const path = resolve(
+    "docs/benchmark/sweeps/platformer-2026-08-06/captures/platformer-jump-proof-after.png",
+  );
   const stats = assertCaptureNotBlank(await readFile(path), path);
 
   expect(stats.width).toBe(1280);

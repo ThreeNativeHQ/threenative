@@ -456,6 +456,23 @@ export interface IPlaytestObservationSnapshot {
   sceneNodes?: IPlaytestSceneNodesObservation[];
 }
 
+/**
+ * What the bridge says it actually applied, as opposed to what the runner asked for.
+ *
+ * The setup contract used to rest entirely on the bridge throwing: `applied` was assigned the
+ * *requested* records, so a bridge that partially applied and resolved reported full application
+ * and `applied === requested` always. A bridge that returns this instead lets the report show the
+ * difference, and lets the runner fail on a request nobody confirmed.
+ *
+ * `entities` and `resources` are the ids the bridge applied. Returning nothing at all is still
+ * accepted — the runner then records that the evidence is the throw contract and not a read-back,
+ * rather than claiming a confirmation it never received.
+ */
+export interface IPlaytestSetupConfirmation {
+  entities?: readonly string[];
+  resources?: readonly string[];
+}
+
 export interface IPlaytestAdvanceResult {
   clock: IPlaytestObservationSnapshot["clock"];
   ticks: number;
@@ -463,7 +480,7 @@ export interface IPlaytestAdvanceResult {
 
 export interface IPlaytestBridgeV1 {
   advance?(ticks: number): Promise<IPlaytestAdvanceResult>;
-  applySetup?(request: IPlaytestSetupRequest): Promise<void>;
+  applySetup?(request: IPlaytestSetupRequest): Promise<IPlaytestSetupConfirmation | void>;
   describe(): IPlaytestBridgeDescription | Promise<IPlaytestBridgeDescription>;
   drainEvents?(limit?: number): Promise<JsonValue[]>;
   focus?(): boolean | Promise<boolean>;

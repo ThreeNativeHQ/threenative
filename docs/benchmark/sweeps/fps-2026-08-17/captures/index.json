@@ -8,7 +8,7 @@
       "luminanceStdDev": 0.21255526724281074,
       "width": 1536,
       "bytes": 1026074,
-      "capture": "fps-fire-and-reload-proof-after.png",
+      "capture": "../../../rounds/prd-137/bundle/sample-01/image.png",
       "scenario": "fps-fire-and-reload-proof",
       "source": "proof-artifacts/0/after.png"
     },
@@ -19,7 +19,7 @@
       "luminanceStdDev": 0.21233191230414725,
       "width": 1536,
       "bytes": 1023981,
-      "capture": "fps-fire-and-reload-proof-before.png",
+      "capture": "../../../rounds/prd-137/bundle/sample-03/image.png",
       "scenario": "fps-fire-and-reload-proof",
       "source": "proof-artifacts/0/before.png"
     },
@@ -30,7 +30,7 @@
       "luminanceStdDev": 0.21196716196744786,
       "width": 1536,
       "bytes": 1013413,
-      "capture": "fps-move-and-hit-proof-after.png",
+      "capture": "../../../rounds/prd-137/bundle/sample-05/image.png",
       "scenario": "fps-move-and-hit-proof",
       "source": "proof-artifacts/1/after.png"
     },
@@ -41,7 +41,7 @@
       "luminanceStdDev": 0.2123043304787714,
       "width": 1536,
       "bytes": 1024063,
-      "capture": "fps-move-and-hit-proof-before.png",
+      "capture": "../../../rounds/prd-137/bundle/sample-04/image.png",
       "scenario": "fps-move-and-hit-proof",
       "source": "proof-artifacts/1/before.png"
     }

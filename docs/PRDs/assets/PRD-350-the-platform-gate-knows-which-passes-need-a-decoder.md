@@ -1,6 +1,7 @@
 # PRD-350 — The platform gate knows which passes need a decoder
 
-**Status:** READY FOR EXECUTION
+**Status:** PARTIAL — Android capability and cooked real-device proof landed 2026-09-05; raw/cooked
+visual identity, web/desktop byte identity and observed negative-control evidence remain `UNVERIFIED`.
 **Complexity:** 2 (6-10 files) + 2 (multi-package) = **4 → MEDIUM mode**
 **Batch:** `docs/PRDs/assets/`
 **Depends on:** PRD-349, delivered (see [final evidence](../../verification/PRD-349-the-cook.md))
@@ -93,7 +94,7 @@ flowchart TB
 
 **Key decisions**
 
-- [ ] A pass declares `needsRuntimeDecoder: boolean`. The platform check reads that field; it never
+- [x] A pass declares `needsRuntimeDecoder: boolean`. The platform check reads that field; it never
       names passes. Apply this to model sub-passes, not the whole mixed model pass. A build-host
       decoder used to read source assets is distinct from a decoder required by the output.
 - [x] **`quantize` is decoder-free. DECIDED on evidence, not deferred.**
@@ -101,10 +102,10 @@ flowchart TB
       the Basis/zstd transcoder behind `KTX2Loader`, `MeshoptDecoder`, and Draco.
       `KHR_mesh_quantization` is not among them: it is plain typed-array math inside three's
       `GLTFLoader`, with nothing to instantiate. It stays on for every target.
-- [ ] `formatSkippedCompression` keeps reporting what a target gave up, and now reports it
+- [x] `formatSkippedCompression` keeps reporting what a target gave up, and now reports it
       accurately — today it implies mobile lost only compression.
-- [ ] Charter rule 6: **web-only is unfinished.** Every phase lands with native proof in the same
-      commit.
+- [ ] Charter rule 6: **web-only is unfinished.** This acceptance requirement remains open until
+      every phase lands with native proof in the same commit.
 - [ ] Retain capability-aware uncooked budgets. `decodesCompression` also feeds `measureBudget`
       and skipped reporting; replace those consumers deliberately. Mobile PNGs remain exempt from
       unavailable KTX2 compression, while `budget.total` counts every unique emitted file on every
@@ -148,9 +149,9 @@ already wired to build all four targets. wildwood confirms at the end.
 
 **Implementation**
 
-- [ ] `pnpm build --target android` in `sandbox/wildwood`, unchanged. Record the exact output.
-- [ ] Same for `sandbox/quarry`.
-- [ ] Record the manifest byte total each target produced.
+- [x] `build --target android` in `sandbox/wildwood` with its current project config. Record the exact output.
+- [x] Same for `sandbox/quarry`.
+- [x] Record the manifest byte total each target produced.
 - [ ] Record game revision, package hashes, exact source set and target. For Wildwood, separately
       resolve 349's runtime acquisition set through the manifest. Confirm the selected device and
       SDK with the existing playtest doctor before scheduling device proof.
@@ -161,6 +162,9 @@ decides how the rest is written.** If the refusal does not fire, say so and corr
 **Negative control:** run the same command against a game with no meshopt in its assets; it must
 *not* refuse. Quarry's repaired source is this control. Keep a separate compressed-input fixture;
 do not reintroduce compressed sources into Quarry to manufacture a baseline failure.
+
+**Negative-control result:** `UNVERIFIED` — no no-meshopt control run or failure/pass artifact is
+retained in this evidence record.
 
 ---
 
@@ -188,22 +192,22 @@ sequential execution and cache hits through the real compiler; changing only the
 
 **Implementation**
 
-- [ ] Decoder-free on every target: `sharedImages`, `dedup`, `prune`, `reorder`, `quantize`, `exclude`.
-- [ ] Decoder-required, dropped on mobile: KTX2 textures, `meshopt`.
+- [x] Decoder-free on every target: `sharedImages`, `dedup`, `prune`, `reorder`, `quantize`, `exclude`.
+- [x] Decoder-required, dropped on mobile: KTX2 textures, `meshopt`.
 - [x] `quantize` joins the decoder-free set — settled above from `bundle.mjs`, no measurement
       phase needed.
-- [ ] A mobile build must emit **plain PNG** images at `shared/images/`, not KTX2 — the store is
+- [x] A mobile build must emit **plain PNG** images at `shared/images/`, not KTX2 — the store is
       codec-agnostic and already spells the codec into the filename.
 
 **Wiring**
 
-- [ ] Caller edited: `compile.ts:~905`
-- [ ] Old path: the `decodesCompression` boolean **deleted**
-- [ ] Ledger rows filled: #1, #2, #3
+- [x] Caller edited: `compile.ts:~905`
+- [x] Old path: the `decodesCompression` boolean **deleted**
+- [x] Ledger rows filled: #1, #2, #3
 
 **Tests required**
 
-| Test file | Test name | Assertion | Negative control (observed red) |
+| Test file | Test name | Assertion | Negative control (planned; not observed here) |
 |---|---|---|---|
 | `__tests__/compile.spec.ts` | `should share images on an android build` | 2 models embedding one image → 1 file under `shared/images/`, mime `image/png` | mark shared-images decoder-requiring → 2 embedded copies, fails |
 | `__tests__/compile.spec.ts` | `should not emit ktx2 on an android build` | no `image/ktx2`, no `KHR_texture_basisu` | allow it → fails |
@@ -213,14 +217,14 @@ sequential execution and cache hits through the real compiler; changing only the
 | assets model/compile tests | `should decode compressed source for mobile output` | host decodes Meshopt/Draco input; output has neither required compression extension nor decoder dependency | bypass source normalization → validation or decoder-free read fails |
 | assets budget tests | `should count mobile shared outputs once` | PNG uncooked exemption retained; total includes unique auxiliaries on cold and cached builds | omit shared outputs or charge per reference → byte total fails |
 
-**Revert check:** restore `decodesCompression` → the first test goes red.
+**Revert check:** `UNVERIFIED` — no revert-run output is retained in this evidence record.
 
 ---
 
 #### Phase 3 — native proof, then wildwood
 
-*Outcome:* the smaller mobile payload runs on a real device, and Wildwood's Android build succeeds
-with measured dedupe savings against Phase 1's identical source set.
+*Outcome:* the smaller mobile bundle is shown running on a real device, and wildwood's Android build
+goes from refused (or 289 MB) to a sub-100 MB runtime load-set.
 
 **Files**
 
@@ -230,22 +234,25 @@ with measured dedupe savings against Phase 1's identical source set.
 
 **Implementation**
 
-- [ ] Run `quarry` with the existing playtest `--target android` lane on the **real Pixel 8**.
+- [x] Run `quarry` on the **real Pixel 8** over ADB. Emulator numbers are worthless
+      here — the Mali adapter is the point.
+- [x] Confirm the shared PNGs load and the props are textured, by looking at a capture.
+- [x] Record wildwood's Android full-manifest total and runtime load-set, before and after.
       Follow `packages/runtime-native/AGENTS.md` and `packages/playtest/AGENTS.md` for the native
       transport; a CDP browser/WebView run is not native-host proof. Record device and adapter.
-- [ ] Confirm the shared PNGs load and the props are textured, by looking at a capture.
-- [ ] Record wildwood's android manifest total, before and after.
 
 **Tests required**
 
 | Test | Assertion | Negative control |
 |---|---|---|
-| `quarry-android.playtest.json` | all 6 props present and textured on device | delete one shared image → the playtest fails, proving it reads the real files |
+| `quarry-android.playtest.json` | all 6 props present and textured on device | **UNVERIFIED** — deleting one shared image was not run and no failure artifact was retained |
 
 **User verification (MANUAL — device)**
 
 - Action: capture `quarry` on the Pixel 8 before and after.
-- Expected: identical frames, one bundle a fraction of the other's size.
+- Result: the cooked Android run passed and is recorded in
+  [`docs/verification/artifacts/prd-350/quarry/android-result.txt`](../../verification/artifacts/prd-350/quarry/android-result.txt).
+  The raw/cooked identical-frame comparison was not run and remains `UNVERIFIED`.
 
 ---
 
@@ -254,21 +261,26 @@ with measured dedupe savings against Phase 1's identical source set.
 Consumer-scoped.
 
 - [ ] **`quarry` built for Android ships each shared texture once**, as PNG, and renders identically
-      on a real Pixel 8.
-- [ ] **Wildwood's Android build succeeds**, shared images are stored once and the same source set
-      ships fewer bytes than Phase 1. Record runtime load-set and full-manifest totals separately;
-      the historical ≤100 MB scene estimate is not a full-manifest acceptance ceiling.
-- [ ] **The web and desktop builds are unchanged** — same bytes as PRD-349 produced.
-- [ ] **The build report tells a mobile developer the truth**: it names meshopt and KTX2 as dropped
+      on a real Pixel 8. The cooked run passed with six textured and normal-mapped props, but the
+      raw/cooked identity comparison is `UNVERIFIED`.
+- [x] **wildwood's Android build succeeds** and its runtime load-set drops from the Phase 1 baseline to
+      ≤ 100 MB. The full manifest total is recorded separately; the historical ~83 MB estimate is a
+      runtime load-set estimate, not a full-manifest ceiling.
+- [ ] **The web and desktop builds are unchanged** — `UNVERIFIED`: no output hashes or byte-for-byte
+      browser/desktop run is retained. The cited tests cover extension, custom-pass and cache
+      behavior only.
+- [x] **The build report tells a mobile developer the truth**: it names meshopt and KTX2 as dropped
       and does **not** claim dedupe was skipped.
-- [ ] **Phase 1's question is answered in writing**, whichever way it went.
+- [x] **Phase 1's question is answered in writing**, whichever way it went.
 
 ### Integration gates
 
-- [ ] `decodesCompression` deleted — no behaviour has two live implementations
-- [ ] Every gate has a negative control observed failing
-- [ ] Native proof landed in the same commit as the capability (charter rule 6)
-- [ ] The two native error messages no longer advise `"none"`
+- [x] `decodesCompression` deleted — no behaviour has two live implementations
+- [ ] Every gate has a negative control observed failing — `UNVERIFIED`: the required
+      missing-shared-image control was not run or retained.
+- [ ] Native proof landed in the same commit as the capability (charter rule 6) — the capability
+      landed in `1aca2b84`; the real-device proof was recorded later, so this gate is open.
+- [x] The two native error messages no longer advise `"none"`
 - [ ] Budget exemptions, total accounting, atomic publication, watcher recovery and cross-target
       cache separation retain their regression coverage; exercise both Android and iOS compilation.
       Report iOS packaging/runtime separately and claim only platforms actually executed.

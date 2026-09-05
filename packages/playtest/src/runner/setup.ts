@@ -5,6 +5,7 @@ import {
 } from "../index.js";
 
 import { PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
+import { setupApplication } from "./setup-confirmation.js";
 import { composeScenarioSetupRequest } from "./setup-request.js";
 import { requestedSetupRecords } from "./shared.js";
 
@@ -19,8 +20,10 @@ export async function applyScenarioSetup(
 ): Promise<IPlaytestSetupApplication> {
   const requested = requestedSetupRecords(scenario);
   try {
-    await bridge.applySetup(await composeScenarioSetupRequest(bridge, scenario));
-    return { applied: requested, requested };
+    return setupApplication(
+      requested,
+      await bridge.applySetup(await composeScenarioSetupRequest(bridge, scenario)),
+    );
   } catch (error) {
     if ((error as object) instanceof PlaytestBridgeError) throw error;
     throw new PlaytestBridgeError(playtestDiagnostic(

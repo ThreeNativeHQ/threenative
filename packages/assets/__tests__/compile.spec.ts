@@ -1,15 +1,20 @@
-import { chmod, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, KHRLightsPunctual } from "@gltf-transform/extensions";
 import { read as readKtx2 } from "ktx-parse";
 import { TorusKnotGeometry } from "three";
 import { describe, expect, it, vi } from "vitest";
-import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
+import {
+  buildFixtureDocument,
+  buildFixtureGlb,
+} from "../../../test-support/generate-fixture-model.js";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
+import { modelPass } from "../src/passes/model.js";
+import { unpackGlb } from "../src/passes/shared-images.js";
 
 const TRANSCODER = basisTranscoderPaths();
 const THREE_INSTALL = path.resolve(import.meta.dirname, "../node_modules/three");
@@ -64,6 +69,23 @@ async function denseFixtureGlb(): Promise<Buffer> {
 /** 2,048 triangles: far under the default, so a bake here can only come from the config. */
 async function sparseFixtureGlb(): Promise<Buffer> {
   return torusKnotGlb(64, 16);
+}
+
+async function singleImageFixtureGlb(): Promise<Buffer> {
+  const document = buildFixtureDocument();
+  const cloth = document
+    .getRoot()
+    .listMaterials()
+    .find((material) => material.getName() === "cloth");
+  const normalMap = document
+    .getRoot()
+    .listTextures()
+    .find((texture) => texture.getName() === "cloth-normal");
+  if (cloth === undefined || normalMap === undefined)
+    throw new Error("the fixture model no longer has its expected normal map");
+  cloth.setNormalTexture(null);
+  normalMap.dispose();
+  return Buffer.from(await new NodeIO().writeBinary(document));
 }
 
 describe("compileAssets", () => {
@@ -205,6 +227,94 @@ describe("compileAssets", () => {
     expect(webManifest.entries["rock.png"]?.output).toMatch(/\.ktx2$/u);
   });
 
+  it("should share images on an android build while retaining decoder-free model work", async () => {
+    const root = await makeTempDir("threenative-compile-android-shared-");
+    await mkdir(path.join(root, "assets"));
+    const source = await singleImageFixtureGlb();
+    await writeFile(path.join(root, "assets", "one.glb"), source);
+    await writeFile(path.join(root, "assets", "two.glb"), source);
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+
+    try {
+      const result = await compileAssets({
+        config: { budget: "none" },
+        concurrency: 2,
+        cwd: root,
+        platform: "android",
+      });
+      expect(result.written).toBe(2);
+
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      ) as {
+        entries: Record<
+          string,
+          {
+            output: string;
+            extensions?: string[];
+            sharedImages?: { codec: string; output: string }[];
+          }
+        >;
+      };
+      for (const logical of ["one.glb", "two.glb"]) {
+        const entry = manifest.entries[logical];
+        expect(entry?.extensions ?? []).not.toContain("EXT_meshopt_compression");
+        expect(entry?.sharedImages).toHaveLength(1);
+        expect(entry?.sharedImages?.[0]?.codec).toBe("none");
+        expect(entry?.sharedImages?.[0]?.output).toMatch(
+          /^shared\/images\/[0-9a-f]{16}\.none\.png$/u,
+        );
+        const output = await readFile(path.join(root, "public", entry?.output ?? ""));
+        const { json } = unpackGlb(output);
+        const attributesPerView = new Map<number, Set<number>>();
+        for (const mesh of json.meshes ?? []) {
+          for (const primitive of mesh.primitives ?? []) {
+            for (const accessor of Object.values(primitive.attributes ?? {})) {
+              const view = json.accessors?.[accessor]?.bufferView;
+              if (view === undefined) continue;
+              const seen = attributesPerView.get(view) ?? new Set<number>();
+              seen.add(accessor);
+              attributesPerView.set(view, seen);
+            }
+          }
+        }
+        expect([...attributesPerView.values()].every((seen) => seen.size <= 1)).toBe(true);
+      }
+      const shared = await readdir(path.join(root, "public", "shared", "images"));
+      expect(shared).toHaveLength(1);
+      expect(shared[0]).toMatch(/\.none\.png$/u);
+      expect(lines.join("\n")).toContain("meshopt");
+      expect(lines.join("\n")).toContain("KTX2");
+      expect(lines.join("\n")).not.toContain("dedupe");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("should decode compressed source for mobile output", async () => {
+    const root = await makeTempDir("threenative-compile-android-source-");
+    await mkdir(path.join(root, "assets"));
+    const compressed = await modelPass({ textures: "none" }).apply(
+      Buffer.from(await buildFixtureGlb({ textured: false })),
+      "hero.glb",
+    );
+    if (Buffer.isBuffer(compressed)) throw new Error("the fixture was not compressed");
+    await writeFile(path.join(root, "assets", "hero.glb"), compressed.buffer);
+
+    await compileAssets({ config: { budget: "none" }, cwd: root, platform: "android" });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { extensions?: string[]; output: string }> };
+    const entry = manifest.entries["hero.glb"];
+    expect(entry?.extensions ?? []).not.toContain("EXT_meshopt_compression");
+    const output = await readFile(path.join(root, "public", entry?.output ?? ""));
+    expect(unpackGlb(output).json.extensionsUsed ?? []).not.toContain("EXT_meshopt_compression");
+  });
+
   it("should report nothing when the texture pass is running", async () => {
     const root = await makeTempDir("threenative-compile-skipped-none-");
     await mkdir(path.join(root, "assets"));
@@ -243,6 +353,70 @@ describe("compileAssets", () => {
       }),
     ).rejects.toThrow(/rock\.png/u);
   });
+
+  it.each(["android", "ios", "web", "desktop"] as const)(
+    "should filter decoder-dependent custom passes for %s",
+    async (platform) => {
+      const root = await makeTempDir(`threenative-compile-custom-${platform}-`);
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "rock.txt"), "asset");
+      const invoked: string[] = [];
+      const decoderDependent = {
+        name: "decoder-dependent",
+        needsRuntimeDecoder: true,
+        apply: (input: Buffer) => {
+          invoked.push("decoder-dependent");
+          return input;
+        },
+      };
+      const decoderFree = {
+        name: "decoder-free",
+        needsRuntimeDecoder: false,
+        apply: (input: Buffer) => {
+          invoked.push("decoder-free");
+          return input;
+        },
+      };
+      const lines: string[] = [];
+      const log = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
+        lines.push(String(line));
+      });
+
+      try {
+        const result = await compileAssets({
+          cwd: root,
+          passes: [decoderDependent, decoderFree],
+          platform,
+        });
+        const manifest = JSON.parse(
+          await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+        ) as { entries: Record<string, { passes: string[] }> };
+        const expectedPasses =
+          platform === "android" || platform === "ios"
+            ? ["decoder-free"]
+            : ["decoder-dependent", "decoder-free"];
+
+        expect(result.written).toBe(1);
+        expect(invoked).toEqual(expectedPasses);
+        expect(manifest.entries["rock.txt"]?.passes).toEqual(expectedPasses);
+        expect(result.skippedCompression).toEqual(
+          platform === "android" || platform === "ios"
+            ? [{ kind: "pass", pass: "decoder-dependent", reason: "platform" }]
+            : [],
+        );
+        if (platform === "android" || platform === "ios") {
+          expect(lines).toContain(
+            "TN_ASSETS_PASS_SKIPPED decoder-dependent: omitted because the pass declares needsRuntimeDecoder=true and this target has no runtime decoder (reason: platform).",
+          );
+          expect(lines.some((line) => line.startsWith("TN_ASSETS_COMPRESSION_SKIPPED"))).toBe(
+            false,
+          );
+        }
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
 
   it("should content-address an auxiliary output and record its manifest path", async () => {
     const root = await makeTempDir("threenative-compile-auxiliary-");
