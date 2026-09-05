@@ -30,6 +30,7 @@ function result(symbol: string): ICapabilitySearchResult {
     example: "const capability = new GroundSnap();",
     importPath: "@threenative/core",
     matchedSituation: "fixture",
+    score: 0,
     summary: "fixture",
     symbol,
   };

@@ -425,7 +425,7 @@ function responseResults(
   response: readonly ICapabilitySearchResult[] | ICapabilitySearchResponse,
   row: ICapabilityRecallRow,
 ): readonly ICapabilitySearchResult[] {
-  if (Array.isArray(response)) return response;
+  if (!isCapabilitySearchResponse(response)) return response;
   if (response.verdict !== "matched" && response.verdict !== "none") {
     throw recallError(`${row.id}: search returned an invalid verdict`);
   }
@@ -444,6 +444,12 @@ function responseResults(
   return response.results;
 }
 
+function isCapabilitySearchResponse(
+  response: readonly ICapabilitySearchResult[] | ICapabilitySearchResponse,
+): response is ICapabilitySearchResponse {
+  return !Array.isArray(response);
+}
+
 export function measureRecall(
   rows: readonly ICapabilityRecallRow[],
   manifestFile: string,
@@ -451,7 +457,7 @@ export function measureRecall(
 ): IRecallMeasurement {
   validateManifestSymbols(rows, manifestFile);
   const rowResults = rows.map((row): IRecallRowResult => {
-    let results: readonly ICapabilitySearchResult[];
+    let results: ReturnType<CapabilitySearcher>;
     try {
       results = searcher(row.query, manifestFile, row.scope);
     } catch (error) {
