@@ -330,6 +330,10 @@ as elapsed seconds. Negative control: suppress server reply and verify timeout f
 browser and native. The proof runner still owns multi-client startup and failure injection;
 the playtest package gains only this reusable asynchronous wait primitive.
 
+## CI execution requirement
+
+Owner confirmed on 2026-09-05 that networking verification belongs in CI. Task 7b must wire executable networking checks into the existing workflows, including protocol/fixture checks and provisioned browser/native interoperability lanes. Qualification aggregation must fail for missing required evidence; ordinary CI must never imply a physical-device run it did not execute. CI passing, merge and pull remain part of the requested delivery.
+
 ## Execution records
 
 - Task 0: [policy admission and primary-docs checks](../../verification/prd-359-task0-2026-09-05.md). Fresh read-only Luna review passed policy/mirror/test collection; missing checklist/link finding resolved here.
