@@ -1,3 +1,7 @@
+#if defined(_WIN32) && !defined(NOMINMAX)
+#define NOMINMAX
+#endif
+
 #include "mystral/runtime.h"
 #include "mystral/platform/window.h"
 #include "mystral/platform/input.h"
