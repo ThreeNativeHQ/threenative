@@ -1,6 +1,6 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -43,7 +43,7 @@ describe("bake receipt", () => {
     expect(receipt.pipelineVersion).toBe(9);
     expect(result.receipt).toEqual(receipt);
     const compiled = receipt.outputs.find((output) => output.source === "rock.png");
-    expect(compiled?.path).toMatch(/^rock\.[0-9a-f]{8}\.ktx2$/u);
+    expect(compiled?.path).toMatch(/^rock\.[0-9a-f]{8}\.png$/u);
     expect(compiled?.producer).toBe("audio+ktx2+model");
     expect(compiled?.bytes).toBeGreaterThan(0);
   });
@@ -93,6 +93,138 @@ describe("bake receipt", () => {
     // The point of the whole receipt: a cache hit writes nothing and the file is still this
     // bake's output, so the delete-test must be told to remove it.
     expect(await readFile(path.join(root, "public", RECEIPT), "utf8")).toBe(firstReceipt);
+  });
+
+  it("should remove only receipt-owned outputs that a recook no longer references", async () => {
+    const root = await makeTempDir("threenative-receipt-recook-");
+    await mkdir(path.join(root, "assets"));
+    await mkdir(path.join(root, "public"));
+    await writeFile(path.join(root, "assets", "level.bin"), "first");
+    await writeFile(path.join(root, "public", "icon.txt"), "authored by the game");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const fixturePass = {
+      name: "recook-fixture",
+      cacheKey: "recook-fixture-v1",
+      apply: (input: Buffer) => ({
+        auxiliaryOutputs: [
+          {
+            buffer: input,
+            extension: ".bin",
+            manifestField: "sharedImages",
+            outputPath: `shared/images/${input.toString("utf8")}.bin`,
+            role: "image",
+          },
+          {
+            buffer: Buffer.from("keep"),
+            extension: ".bin",
+            manifestField: "sharedImages",
+            outputPath: "shared/images/keep.bin",
+            role: "image",
+          },
+        ],
+        buffer: input,
+      }),
+    };
+
+    const first = await compileAssets({ cwd: root, passes: [fixturePass] });
+    const firstPaths = first.receipt?.outputs.map((output) => output.path) ?? [];
+    const oldPrimary = firstPaths.find((output) => /^level\.[0-9a-f]{8}\.bin$/u.test(output));
+    expect(oldPrimary).toBeDefined();
+
+    await writeFile(path.join(root, "assets", "level.bin"), "second");
+    const second = await compileAssets({ cwd: root, passes: [fixturePass] });
+    const secondPaths = second.receipt?.outputs.map((output) => output.path) ?? [];
+
+    await expect(readFile(path.join(root, "public", oldPrimary ?? ""))).rejects.toThrow(/ENOENT/u);
+    await expect(readFile(path.join(root, "public", "shared/images/first.bin"))).rejects.toThrow(
+      /ENOENT/u,
+    );
+    expect(await readFile(path.join(root, "public", "shared/images/second.bin"), "utf8")).toBe(
+      "second",
+    );
+    expect(secondPaths).toContain("shared/images/keep.bin");
+    expect(await readFile(path.join(root, "public", "shared/images/keep.bin"), "utf8")).toBe(
+      "keep",
+    );
+    expect(await readFile(path.join(root, "public", "icon.txt"), "utf8")).toBe(
+      "authored by the game",
+    );
+  });
+
+  it("should reject a stale receipt path outside the output root", async () => {
+    const root = await makeTempDir("threenative-receipt-containment-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "level.bin"), "first");
+    await compileAssets({ cwd: root, passes: [lightmapFixture] });
+    const goodManifest = await readFile(path.join(root, "public", "assets.manifest.json"), "utf8");
+    const outside = path.join(root, "outside.txt");
+    await writeFile(outside, "belongs to the game");
+    const receipt = await readReceipt(root);
+    const invalidReceipt = `${JSON.stringify({
+      ...receipt,
+      outputs: [
+        ...receipt.outputs,
+        { bytes: 19, path: "../outside.txt", producer: "fixture", source: "level.bin" },
+      ],
+    })}\n`;
+    await writeFile(path.join(root, "public", RECEIPT), invalidReceipt);
+    const oldOutput = receipt.outputs.find((output) => output.source === "level.bin")?.path;
+    expect(oldOutput).toBeDefined();
+    await writeFile(path.join(root, "assets", "level.bin"), "second");
+
+    await expect(compileAssets({ cwd: root, passes: [lightmapFixture] })).rejects.toThrow(
+      /TN_ASSETS_RECEIPT_INVALID.*outside assets\.output/u,
+    );
+    expect(await readFile(outside, "utf8")).toBe("belongs to the game");
+    expect(await readFile(path.join(root, "public", oldOutput ?? ""), "utf8")).toBe("first");
+    expect(await readFile(path.join(root, "public", RECEIPT), "utf8")).toBe(invalidReceipt);
+    expect(await readFile(path.join(root, "public", "assets.manifest.json"), "utf8")).toBe(
+      goodManifest,
+    );
+  });
+
+  it("should recover outputs written by a failed cook without losing the last good receipt", async () => {
+    const root = await makeTempDir("threenative-receipt-failed-cook-");
+    await mkdir(path.join(root, "assets"));
+    await mkdir(path.join(root, "public"));
+    await writeFile(path.join(root, "assets", "level.bin"), "old");
+    const identity = { name: "identity", apply: (input: Buffer) => input };
+    await compileAssets({ cwd: root, passes: [identity], config: { budget: "none" } });
+    const goodReceipt = await readFile(path.join(root, "public", RECEIPT), "utf8");
+    const oldOutput = (JSON.parse(goodReceipt) as IBakeReceipt).outputs[0]?.path;
+
+    await writeFile(path.join(root, "assets", "level.bin"), "failed-output");
+    await expect(
+      compileAssets({
+        cwd: root,
+        passes: [identity],
+        config: { budget: { total: 1, uncooked: "none" } },
+      }),
+    ).rejects.toThrow("TN_ASSETS_BUDGET_EXCEEDED");
+    expect(await readFile(path.join(root, "public", RECEIPT), "utf8")).toBe(goodReceipt);
+    const failedOutputs = (await readdir(path.join(root, "public"))).filter(
+      (name) => name.endsWith(".bin") && name !== oldOutput,
+    );
+    expect(failedOutputs).toHaveLength(1);
+    await writeFile(path.join(root, "public", "icon.txt"), "belongs to the game");
+
+    await compileAssets({
+      cwd: root,
+      passes: [identity],
+      config: { budget: "none", exclude: ["level.bin"] },
+    });
+
+    await expect(readFile(path.join(root, "public", oldOutput ?? ""))).rejects.toThrow(/ENOENT/u);
+    await expect(readFile(path.join(root, "public", failedOutputs[0] ?? ""))).rejects.toThrow(
+      /ENOENT/u,
+    );
+    await expect(readFile(path.join(root, "public", RECEIPT), "utf8")).rejects.toThrow(/ENOENT/u);
+    await expect(
+      readFile(path.join(root, "public", ".bake.pending-receipt.json"), "utf8"),
+    ).rejects.toThrow(/ENOENT/u);
+    expect(await readFile(path.join(root, "public", "icon.txt"), "utf8")).toBe(
+      "belongs to the game",
+    );
   });
 
   it("should produce an identical receipt for identical inputs", async () => {
@@ -163,10 +295,45 @@ describe("bake receipt", () => {
 
   it("should write no receipt at all when there is no source directory", async () => {
     const root = await makeTempDir("threenative-receipt-nosource-");
-    const result = await compileAssets({ cwd: root, transcoder: TRANSCODER });
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    let result: Awaited<ReturnType<typeof compileAssets>>;
+    try {
+      result = await compileAssets({ cwd: root, transcoder: TRANSCODER });
+    } finally {
+      log.mockRestore();
+    }
 
     expect(result.written).toBe(0);
     expect(result.receipt).toBeUndefined();
+    expect(lines).toContain(
+      "TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 0 bytes (ceiling none)",
+    );
     await expect(readFile(path.join(root, "public", RECEIPT), "utf8")).rejects.toThrow(/ENOENT/u);
+  });
+
+  it("should remove owned outputs and report zero when the source directory disappeared", async () => {
+    const root = await makeTempDir("threenative-receipt-removed-source-");
+    await mkdir(path.join(root, "assets"));
+    await mkdir(path.join(root, "public"));
+    await writeFile(path.join(root, "assets", "level.bin"), "compiled");
+    const first = await compileAssets({
+      cwd: root,
+      passes: [{ name: "identity", apply: (input: Buffer) => input }],
+      config: { budget: "none" },
+    });
+    const output = first.receipt?.outputs[0]?.path;
+    await writeFile(path.join(root, "public", "icon.txt"), "belongs to the game");
+    await rm(path.join(root, "assets"), { recursive: true });
+
+    await compileAssets({ cwd: root, config: { budget: "none" } });
+
+    await expect(readFile(path.join(root, "public", output ?? ""))).rejects.toThrow(/ENOENT/u);
+    await expect(readFile(path.join(root, "public", "assets.manifest.json"))).rejects.toThrow(
+      /ENOENT/u,
+    );
+    expect(await readFile(path.join(root, "public", "icon.txt"), "utf8")).toBe(
+      "belongs to the game",
+    );
   });
 });

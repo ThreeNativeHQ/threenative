@@ -14,9 +14,9 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
 | `docs/benchmark` | 1848 | 189708037 | 0 |
-| `docs/verification` | 665 | 69152147 | 18 |
+| `docs/verification` | 668 | 69194996 | 20 |
 
-**18 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
+**20 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories
 
@@ -37,6 +37,8 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Artifact | Bytes |
 |---|---:|
 | `docs/verification/PRD-315-vsm-proof-2026-09-02.json` | 5628 |
+| `docs/verification/PRD-349-self-verification-plan.md` | 3928 |
+| `docs/verification/PRD-349-wildwood-runtime-baseline.json` | 15438 |
 | `docs/verification/artifacts/prd-222-resume/emulator-phase1/fontscale-exit-info.txt` | 1769 |
 | `docs/verification/artifacts/prd-222-resume/emulator-phase1/fontscale-screen.png` | 3553247 |
 | `docs/verification/artifacts/prd-222-resume/emulator/fontscale-exit-info.txt` | 974 |

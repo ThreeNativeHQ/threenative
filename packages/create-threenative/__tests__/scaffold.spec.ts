@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
 import { describe, expect, it } from "vitest";
+import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
 import {
@@ -108,6 +109,12 @@ const BUG_REPORT_SKILL_PATHS = [
 // refreshed genre kits.
 // Recomputed 2026-09-04 after merging PR #99: every scaffold gains the loading, trace, audio,
 // streaming, and alpha-antialiasing surfaces; starter also retains its authored coastal look.
+// Recomputed 2026-09-04 for PRD-349 after observing the old pin fail: every template documents
+// cook defaults and overrides; starter and sailing also omit their assets opt-outs.
+// Recomputed 2026-09-04 after the observed PRD-349 alignment-doc red: every template and its
+// generated capability reference now document the automatic unchanged-size fallback.
+// Re-pinned after folding that guidance into the existing paragraph to retain the 100-line
+// agent-document budget; the template contract red and all ten changed hashes were observed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-03 after merging PRD-346's MCP host configs into the authored painterly
   // starter. Every scaffold gains the Blender server wiring; starter also gains its bounded mix.
@@ -235,19 +242,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  "action-rpg": "b3c4fd61dc4714f6a6dbaafe7daf3dc12ddadf0377d173dc2048f617df4afe72",
-  defense: "e285c968de52d3f36734523b5260ab280c9940251b0e90f5c3316cdd71fb51d3",
+  "action-rpg": "6cee079c5d2c65c3691ebfa4eda330dc774694d09a3b2010b91deba1ec30c9f3",
+  defense: "199ff0da6f91bb9cd5a39a10cf0d1b209830f4bb25367ca72c1c970854ea45f5",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "ee8d7996110d44de232d93c4bdb5be949ccc556f3ce9b394c54f5747c8d327cf",
-  platformer: "dcb555c326b867ba3a6fd862529392915c36a0d504b23bfc91f4cdb66035573d",
-  runner: "e0560580da5bfaec7b74bc9323f11b7631015ae04fa9616fcb882d350be70728",
-  puzzle: "f58bbfbed74e5fcecaf48fb9195344939f5f56b6a66e30a6094150a2fcabcd05",
-  racing: "68bca0a1d558329dd9ddb35138f99d99362a6a750383d29cafdd7cfa083d098a",
-  shooter: "a003b65bb7a6a86513f33712ceb0e82091a7c17c1a82fb9acf7f03c8e9c65931",
+  minimal: "ba951f33fc7d0e7ceae847b6f1334f53b4ce1b08fd5a37f9b5966794f9e73afb",
+  platformer: "02b841dfdf2468cf29b89722e8c00f34aea45b7cafa25e39cb5f269286a6fcbf",
+  runner: "18f6aee2e6a19ede6b59fc9a7bbd81547ac91a42c7fae1d965c41b08d7b12b8a",
+  puzzle: "461bf7b4e3b959ad6a413d5c00f349f22005efb3ad6b6927151fc849852ce0b7",
+  racing: "2c48365e16a621713f0aaef2fcedfec943db8c231f6aab0ba4aa9febdcaf4509",
+  shooter: "59c371ba802a5711e7fbfc82a14105d556469efcf7ba1eb55aa52f0d617281aa",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "558f1877ae0cdaea58af65e3229621ca6438602786d300cce6de21f1d1c8a8fc",
+  starter: "5b7233d7a4ee0a3dcae02abde6ca43603716bbe4ee80aca33682016164c64861",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -268,7 +275,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "bdafb6fa5fa172279393b898a9ad448480b2d442b45ea67cf96a99b423e81817",
+  sailing: "f8b795e453623b7865fe8dcd5027f9de8e6817975a65ec01d5b2bfea01ee6f3e",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -714,6 +721,21 @@ describe("create-threenative", () => {
       await cp(path.join(TEMPLATE_ROOT, "starter", "assets"), path.join(root, "assets"), {
         recursive: true,
       });
+      const channel = (x: number, y: number, shift: number): number => {
+        let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
+        value ^= value >>> 16;
+        return value >>> shift;
+      };
+      await writeFile(
+        path.join(root, "assets", "web-codec-proof.png"),
+        rgbaPng({
+          blue: (x, y) => channel(x, y, 16),
+          green: (x, y) => channel(x, y, 8),
+          height: 128,
+          red: (x, y) => channel(x, y, 0),
+          width: 128,
+        }),
+      );
 
       await compileAssets({ cwd: root, platform: "android" });
       const android = JSON.parse(
@@ -731,7 +753,8 @@ describe("create-threenative", () => {
       const web = JSON.parse(
         await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
       ) as { entries: Record<string, { output: string }> };
-      expect(Object.values(web.entries).some((entry) => entry.output.endsWith(".ktx2"))).toBe(true);
+      expect(web.entries["native-proof.png"]?.output).toMatch(/\.png$/u);
+      expect(web.entries["web-codec-proof.png"]?.output).toMatch(/\.ktx2$/u);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

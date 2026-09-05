@@ -131,6 +131,8 @@ export function formatUsage(): string {
     "                        __TN_STARTUP_READY__), --wait-timeout <s>, --no-wait",
     "                        --out <path> raw trace JSON, --stall-ms <n>, --top <n>,",
     "                        --viewport <WxH>, --browser-arg <arg>, --text",
+    "                        samples empty same-origin rAF before the game, reports adapter.info,",
+    "                        and records invalid depth-pipeline call-site stacks automatically",
     "                        --allow-virtual-display / --allow-software acknowledge a degraded",
     "                        run; a frame rate is never printed from a virtual display, because",
     "                        without vsync that number is wrong rather than missing",

@@ -67,7 +67,8 @@ export interface IThreeNativeModelsConfig {
   /**
    * Write each distinct embedded image once under `shared/images/` and reference it from every
    * model that carries it. A marketplace pack whose eight pines all embed the same bark map then
-   * ships and encodes it once. Default false; the served GLB references files beside it.
+   * ships and encodes it once. Default true; false embeds and re-encodes duplicate images in
+   * each model. The served GLB references files beside it.
    */
   readonly sharedImages?: boolean;
   /**
@@ -162,6 +163,20 @@ export interface IThreeNativeConfig {
     readonly resizable?: boolean;
   };
   readonly assets?: {
+    /**
+     * Byte ceilings: uncooked defaults to 64,000,000; total defaults to "none". Mobile
+     * targets without decoders are exempt from uncooked. A number sets uncooked; "none"
+     * disables both gates. Measurements still print when a gate is disabled.
+     */
+    readonly budget?:
+      | number
+      | "none"
+      | {
+          readonly uncooked?: number | "none";
+          readonly total?: number | "none";
+        };
+    /** Source-relative globs omitted from builds; excluded bytes are still reported. */
+    readonly exclude?: readonly string[];
     readonly models?: "none" | IThreeNativeModelsConfig;
     readonly output?: string;
     readonly source?: string;

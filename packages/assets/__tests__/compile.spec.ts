@@ -67,6 +67,39 @@ async function sparseFixtureGlb(): Promise<Buffer> {
 }
 
 describe("compileAssets", () => {
+  it("should omit an excluded model from the manifest and report saved bytes", async () => {
+    const root = await makeTempDir("threenative-exclude-");
+    await mkdir(path.join(root, "assets/unused"), { recursive: true });
+    const model = await buildFixtureGlb();
+    await writeFile(path.join(root, "assets/unused/library.glb"), model);
+    await writeFile(path.join(root, "assets/keep.txt"), "keep");
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    const config = { audio: "none", models: "none", textures: "none" } as const;
+    await compileAssets({ cwd: root, config });
+    const before = JSON.parse(
+      await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+    );
+    expect(before.entries["unused/library.glb"]).toBeDefined();
+    await compileAssets({ cwd: root, config: { ...config, exclude: ["unused/**"] } });
+    const after = JSON.parse(
+      await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+    );
+    expect(after.entries["unused/library.glb"]).toBeUndefined();
+    expect(after.entries["keep.txt"]).toBeDefined();
+    await expect(
+      stat(path.join(root, "public", before.entries["unused/library.glb"].output)),
+    ).rejects.toThrow();
+    expect(lines).toContain(`TN_ASSETS_EXCLUDED: 1 file(s), ${model.length} bytes`);
+    expect(lines).toContain("TN_ASSETS_EXCLUDED: 0 file(s), 0 bytes");
+  });
+
+  it.each(["unused/**", [4], [""]])("should reject invalid exclude %j", async (exclude) => {
+    await expect(
+      compileAssets({ config: { exclude } as unknown as IAssetSourceConfig }),
+    ).rejects.toThrow("TN_ASSETS_CONFIG_INVALID");
+  });
+
   it("should write a hashed output and a manifest entry when an input exists", async () => {
     const root = await makeTempDir("threenative-compile-hashed-");
     await mkdir(path.join(root, "assets"));
@@ -379,7 +412,8 @@ describe("compileAssets", () => {
   it("should regenerate a deleted manifest instead of passing on its absence", async () => {
     const root = await makeTempDir("threenative-compile-regen-");
     await mkdir(path.join(root, "assets"));
-    await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
+    const source = rgbaPng({ height: 32, width: 32 });
+    await writeFile(path.join(root, "assets", "rock.png"), source);
     await compileAssets({ cwd: root, transcoder: TRANSCODER });
     const firstName = JSON.parse(
       await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
@@ -397,9 +431,7 @@ describe("compileAssets", () => {
     );
     expect(manifest.entries["rock.png"].output).toBe(firstName);
     const compiled = await readFile(output);
-    expect([...compiled.subarray(1, 7)].map((byte) => String.fromCharCode(byte)).join("")).toBe(
-      "KTX 20",
-    );
+    expect(compiled).toEqual(source);
   });
 
   it("should not publish an empty manifest when the source holds only dotfiles", async () => {
@@ -546,11 +578,7 @@ describe("compileAssets", () => {
       expect(entry.output).toMatch(/^character\.[0-9a-f]{8}\.glb$/u);
       expect(entry.kind).toBe("model");
       expect(entry.passes).toEqual(["audio", "ktx2", "model"]);
-      expect(entry.extensions).toEqual([
-        "EXT_meshopt_compression",
-        "KHR_mesh_quantization",
-        "KHR_texture_basisu",
-      ]);
+      expect(entry.extensions).toEqual(["EXT_meshopt_compression", "KHR_mesh_quantization"]);
       expect(entry.triangles).toBe(20);
       expect(entry.vertices).toBe(18);
       expect(entry.bytesBefore).toBe(source.length);

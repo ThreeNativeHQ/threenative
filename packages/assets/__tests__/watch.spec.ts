@@ -122,6 +122,7 @@ describe("watchAssets", () => {
     const recorder = createBurstRecorder();
     openHandles.push(
       watchAssets({
+        config: { textures: { overrides: [{ glob: "rock.png", codec: "etc1s" }] } },
         cwd: root,
         debounceMs: DEBOUNCE_MS,
         onChange: recorder.onChange,

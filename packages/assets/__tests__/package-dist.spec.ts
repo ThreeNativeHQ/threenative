@@ -12,6 +12,24 @@ type AssetsDist = { readonly modelPass: typeof import("../src/index.js").modelPa
  * make those helpers inspect properties from a different `core` instance than the document reader.
  */
 describe("packed @threenative/assets", () => {
+  it("should ship the package-owned Basis encoder and its modification notice", async () => {
+    const manifest = JSON.parse(
+      await readFile(path.resolve("packages/assets/package.json"), "utf8"),
+    ) as { dependencies?: Record<string, string>; files?: string[] };
+    expect(manifest.dependencies?.["ktx2-encoder"]).toBeUndefined();
+    expect(manifest.files).toContain("THIRD_PARTY_NOTICES.md");
+    expect(manifest.files).toContain("LICENSES");
+    await expect(
+      readFile(path.resolve("packages/assets/dist/basis_encoder.wasm")),
+    ).resolves.not.toHaveLength(0);
+    await expect(
+      readFile(path.resolve("packages/assets/THIRD_PARTY_NOTICES.md"), "utf8"),
+    ).resolves.toContain("raised from 12 to 16 Mi texels");
+    await expect(
+      readFile(path.resolve("packages/assets/LICENSES/Basis-Universal-Apache-2.0.txt"), "utf8"),
+    ).resolves.toContain("Apache License");
+  });
+
   it("should bundle glTF-Transform and run the model pass from the packed output", async () => {
     const dist = new URL("../dist/index.js", import.meta.url);
     const source = await readFile(dist, "utf8");
@@ -21,7 +39,9 @@ describe("packed @threenative/assets", () => {
     );
 
     const { modelPass } = (await import(pathToFileURL(dist.pathname).href)) as AssetsDist;
-    const result = await modelPass().apply(Buffer.from(await buildFixtureGlb()), "character.glb");
+    const result = await modelPass({
+      textures: { overrides: [{ slot: "normalTexture", codec: "uastc" }] },
+    }).apply(Buffer.from(await buildFixtureGlb()), "character.glb");
 
     expect(Buffer.isBuffer(result)).toBe(false);
     if (Buffer.isBuffer(result)) return;

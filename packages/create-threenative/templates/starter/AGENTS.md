@@ -59,9 +59,9 @@ On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), local `src
 
 ## Portable authoring contracts
 
+Leave `assets` absent: the cook selects target-decodable passes, with `models.sharedImages: true` deduplicating images. `sharedImages: false` embeds duplicate copies; `models: "none"` / `textures: "none"` skip those passes and report uncooked bytes. Android/iOS currently skip compression and model dedupe. `assets.exclude` defaults to `[]`; source-relative globs (for example `["unused/**"]`) omit matching files and report saved bytes. `assets.budget` accepts `{ uncooked?: number | "none", total?: number | "none" }`, default `{ uncooked: 64_000_000, total: "none" }`: only bytes left uncooked where cooking was possible count toward `uncooked`. A number sets that ceiling; `"none"` disables both gates. Either disabled gate still reports bytes. Automatic texture cooking retains unaligned source images unchanged and reports `block-size`; those bytes still count toward the uncooked budget. An explicit compression codec override must satisfy four-pixel block alignment; `codec: "none"` opts out. Cooking never silently resizes an image to fix alignment.
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable; generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
-React never touches the scene graph. Native UI reads published state and sends intents; mark every
-touch target `data-tn-interactive`. Rigged assets: put a `.glb` in `assets/`, await
+React never touches the scene graph. Native UI reads published state and sends intents; mark every touch target `data-tn-interactive`. Rigged assets: put a `.glb` in `assets/`, await
 `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity.
 `ctx.goto(name)` rebuilds without resetting game state; from a frame function `goto` and then
 `return`; `ctx.state.set({ /* copy this game's initial-state shape */ })` is a partial patch.

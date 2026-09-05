@@ -12,61 +12,55 @@
  * compile step's default is compression on; the template's job is to leave it alone. This gate
  * holds it there, and proves the default actually compiles what the templates ship.
  *
- * Two templates are still pinned, named below, and not because the argument above is wrong.
  */
 
 import { readdirSync, statSync } from "node:fs";
-import { cp, mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compileAssets } from "@threenative/assets";
 import { describe, expect, it } from "vitest";
+import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
+import { loadConfig } from "../src/config.js";
+import { createProject } from "../src/index.js";
 
 const templatesRoot = fileURLToPath(new URL("../templates", import.meta.url));
 const templates = readdirSync(templatesRoot).filter((entry) =>
   statSync(join(templatesRoot, entry)).isDirectory(),
 );
 
-function assetsDirectory(template: string): string | undefined {
-  const directory = join(templatesRoot, template, "assets");
-  try {
-    return statSync(directory).isDirectory() ? directory : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * The whole exception, and the reason is a hang rather than a disagreement.
- *
- * Enabling the default for these two templates stopped `golden-path-template (starter)` producing
- * output after its build, twice: runs 33801767525 and 33805466971 were both killed at the job's
- * 45-minute timeout, while the same job takes 2-3 minutes on `main` and the `platformer` leg —
- * whose config this change does not touch — passed in 95 seconds beside it. Flipping the shipped
- * templates is a separate change that owes that hang a diagnosis; the mechanism this file's
- * second case proves is live for every project that omits `assets` either way.
- */
-const PINS_AWAITING_A_GOLDEN_PATH_DIAGNOSIS = new Set(["sailing", "starter"]);
-
 describe("shipped templates", () => {
+  it.each(templates)(
+    "%s reaches the uncooked budget with an eligible source probe",
+    async (template) => {
+      const root = await makeTempDir(`threenative-template-budget-${template}-`);
+      const { target } = await createProject({ install: false, target: template, template }, root);
+      const config = await loadConfig(target);
+      await mkdir(join(target, "assets"), { recursive: true });
+      await writeFile(join(target, "assets/budget-probe.png"), rgbaPng({ width: 16, height: 16 }));
+      // Empty and fully cooked templates should pass any uncooked ceiling. The planted raw
+      // source makes the negative control meaningful for every scaffold, including empty kits.
+      const options = {
+        cwd: target,
+        transcoder: basisTranscoderPaths(),
+        config: { ...config.assets, textures: "none" as const },
+      };
+      await expect(compileAssets(options)).resolves.toBeDefined();
+      await expect(
+        compileAssets({ ...options, config: { ...options.config, budget: 1 } }),
+      ).rejects.toThrow("TN_ASSETS_BUDGET_EXCEEDED");
+    },
+  );
+
   it("should name at least one template, or this gate is measuring nothing", () => {
     expect(templates.length).toBeGreaterThan(0);
   });
 
-  it.each(templates)("%s should not switch a compile pass off", async (template) => {
+  it.each(templates)("%s should compile with compression on by default", async (template) => {
     const source = await readFile(join(templatesRoot, template, "threenative.config.ts"), "utf8");
-    const pinsAPassOff = /\bmodels:\s*"none"/u.test(source) || /\btextures:\s*"none"/u.test(source);
-
-    if (PINS_AWAITING_A_GOLDEN_PATH_DIAGNOSIS.has(template)) {
-      // Fail closed in the other direction too. An exception that has quietly stopped being one
-      // should shrink this list, not sit in it unread — so a template listed here and no longer
-      // pinned fails until someone removes it from the list.
-      expect(pinsAPassOff).toBe(true);
-      return;
-    }
 
     // Narrow on purpose: an override that *configures* a pass is welcome, and only the "none"
     // shorthand — the one that ships bytes as authored forever — is refused here.
@@ -75,17 +69,27 @@ describe("shipped templates", () => {
   });
 
   it.each(templates)("%s assets should compile under the default config", async (template) => {
-    const directory = assetsDirectory(template);
-    if (directory === undefined) return;
     const root = await makeTempDir(`threenative-template-assets-${template}-`);
-    await mkdir(join(root, "assets"), { recursive: true });
-    await cp(directory, join(root, "assets"), { recursive: true });
-
-    // No `config`: exactly the defaults a scaffolded project now gets.
-    await compileAssets({ cwd: root, transcoder: basisTranscoderPaths() });
+    const { target } = await createProject({ install: false, target: template, template }, root);
+    const config = await loadConfig(target);
+    expect(config.assets).toBeUndefined();
+    // Exercise the actual scaffold's config seam, including kits with no source assets.
+    const result = await compileAssets({
+      cwd: target,
+      config: config.assets,
+      transcoder: basisTranscoderPaths(),
+    });
+    if (result.written === 0) {
+      await expect(
+        readFile(path.join(target, "public", "assets.manifest.json")),
+      ).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      return;
+    }
 
     const manifest = JSON.parse(
-      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      await readFile(path.join(target, "public", "assets.manifest.json"), "utf8"),
     ) as { entries: Record<string, { output: string }> };
     expect(Object.keys(manifest.entries).length).toBeGreaterThan(0);
   });

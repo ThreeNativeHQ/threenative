@@ -1,11 +1,12 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { read as readKTX2 } from "ktx-parse";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { type IAssetSourceConfig, compileAssets, texturePass } from "../src/index.js";
+import { parsePng } from "../src/png.js";
 
 const TRANSCODER = basisTranscoderPaths();
 
@@ -39,7 +40,37 @@ function ktx2Magic(bytes: Buffer): boolean {
   return [...bytes.subarray(1, 7)].map((byte) => String.fromCharCode(byte)).join("") === "KTX 20";
 }
 
+/** Enough distinct pixels for compression to save bytes, so codec assertions reach encoding. */
+function compressiblePng(alpha?: (x: number, y: number) => number): Buffer {
+  return rgbaPng({
+    alpha,
+    width: 64,
+    height: 64,
+    red: (x, y) => (x * 37 + y * 41) % 256,
+    green: (x, y) => (x * 29 + y * 31) % 256,
+    blue: (x, y) => (x * 19 + y * 23) % 256,
+  });
+}
+
 describe("the ktx2 texture pass", () => {
+  it("should not grow the starter's 150-byte source image unless its codec is overridden", async () => {
+    const input = await readFile(
+      new URL(
+        "../../create-threenative/templates/starter/assets/native-proof.png",
+        import.meta.url,
+      ),
+    );
+    expect(input.byteLength).toBe(150);
+    const { outputBytes } = await compileOne("threenative-tiny-default-", "proof.png", input);
+    expect(outputBytes.byteLength).toBeLessThanOrEqual(input.byteLength);
+    expect(outputBytes).toEqual(input);
+    const forced = await compileOne("threenative-tiny-forced-", "proof.png", input, {
+      textures: { overrides: [{ glob: "proof.png", codec: "etc1s" }] },
+    });
+    expect(ktx2Magic(forced.outputBytes)).toBe(true);
+    expect(forced.outputBytes.byteLength).toBeGreaterThan(input.byteLength);
+  });
+
   it("should keep a non-block-aligned maxSize as an actual maximum", async () => {
     // Removing the floor snap makes this 16x8 source encode at 12x8 for maxSize 10, exceeding
     // the game-owned cap. The literal 8x4 result preserves this source's 2:1 aspect ratio.
@@ -93,7 +124,7 @@ describe("the ktx2 texture pass", () => {
     const smallOutput = await readFile(
       path.join(root, "public", manifest.entries["small.png"].output),
     );
-    expect([readKTX2(smallOutput).pixelWidth, readKTX2(smallOutput).pixelHeight]).toEqual([4, 4]);
+    expect(smallOutput).toEqual(small);
     expect(
       await readFile(path.join(root, "public", manifest.entries["ui/icon.png"].output)),
     ).toEqual(source);
@@ -105,17 +136,15 @@ describe("the ktx2 texture pass", () => {
     const { entry, outputBytes } = await compileOne(
       "threenative-tex-uastc-",
       "decal.png",
-      rgbaPng({ alpha: (x) => (x % 2 === 0 ? 255 : 0), height: 64, width: 64 }),
+      compressiblePng((x) => (x % 2 === 0 ? 255 : 0)),
     );
 
     expect(entry.format).toBe("uastc");
     expect(entry.transcodeTargets).toEqual(["astc4x4", "bc7"]);
     expect(String(entry.output)).toMatch(/^decal\.[0-9a-f]{8}\.ktx2$/u);
     expect(ktx2Magic(outputBytes)).toBe(true);
-    // UASTC ships Zstandard-supercompressed (KTX2 scheme 2): raw UASTC is 8 bits per texel and
-    // a 2K map would be 5.3 MB on the wire; the encoder's default keeps a 2K normal at 4.3 MB
-    // and three's KTX2Loader inflates it before transcoding. Pinned so the default cannot slip.
-    expect(readKTX2(outputBytes).supercompressionScheme).toBe(2);
+    // Zstd without UASTC RDO measured no gain, so the default deliberately remains scheme 0.
+    expect(readKTX2(outputBytes).supercompressionScheme).toBe(0);
   });
 
   it("should honour a config override over the heuristic", async () => {
@@ -149,10 +178,7 @@ describe("the ktx2 texture pass", () => {
   it("should emit a full mip chain", async () => {
     const root = await makeTempDir("threenative-tex-mips-");
     await mkdir(path.join(root, "assets"));
-    await writeFile(
-      path.join(root, "assets", "ground.png"),
-      rgbaPng({ blue: (x) => x * 4, height: 64, width: 64 }),
-    );
+    await writeFile(path.join(root, "assets", "ground.png"), compressiblePng());
     await compileAssets({ cwd: root, transcoder: TRANSCODER });
     const manifest = JSON.parse(
       await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
@@ -166,11 +192,7 @@ describe("the ktx2 texture pass", () => {
   });
 
   it("should fall back to ETC1S for an opaque texture without the normal-map convention", async () => {
-    const { entry } = await compileOne(
-      "threenative-tex-etc1s-",
-      "wall.jpg",
-      rgbaPng({ green: (y) => y * 8, height: 64, width: 64 }),
-    );
+    const { entry } = await compileOne("threenative-tex-etc1s-", "wall.jpg", compressiblePng());
     expect(entry.format).toBe("etc1s");
   });
 
@@ -179,7 +201,7 @@ describe("the ktx2 texture pass", () => {
       const { entry } = await compileOne(
         "threenative-tex-normal-",
         name.toLowerCase(),
-        rgbaPng({ height: 32, width: 32 }),
+        compressiblePng(),
       );
       expect(entry.format).toBe("uastc");
     }
@@ -211,7 +233,8 @@ describe("the ktx2 texture pass", () => {
   // not a whole number of blocks: "the size (Extent3D width:1254, height:1254) ... is not a
   // multiple of the block width (4) and height (4)". Basis encodes such a source happily and
   // stamps the odd size into the KTX2 header, so the build went green and the game died at
-  // the first draw call. Fail closed at encode instead, naming the escape hatch.
+  // the first draw call. A requested codec therefore fails closed at encode, naming the escape
+  // hatch — but only when the project asked for that codec by name.
   it("should refuse a source whose dimensions are not a multiple of the 4x4 block", async () => {
     const root = await makeTempDir("threenative-tex-block-size-");
     await mkdir(path.join(root, "assets"));
@@ -220,9 +243,67 @@ describe("the ktx2 texture pass", () => {
       rgbaPng({ blue: (x) => x * 2, height: 66, width: 66 }),
     );
 
-    await expect(compileAssets({ cwd: root, transcoder: TRANSCODER })).rejects.toThrow(
-      /TN_ASSETS_TEXTURE_BLOCK_SIZE.*floor\.png.*66x66.*4x4/su,
+    await expect(
+      compileAssets({
+        cwd: root,
+        transcoder: TRANSCODER,
+        config: { textures: { overrides: [{ codec: "uastc", glob: "**/*.png" }] } },
+      }),
+    ).rejects.toThrow(/TN_ASSETS_TEXTURE_BLOCK_SIZE.*floor\.png.*66x66.*4x4/su);
+  });
+
+  // The cook runs on every scaffolded project with no `assets` config at all, so the throw
+  // above used to end a whole build over one 11x10 decal, with both escapes on the game's side
+  // of the line: resize the art, or hand-write a `codec: "none"` override. Nothing can compress
+  // this source, so retain its exact bytes and report why rather than refusing the build.
+  it("should retain a non-block-aligned source unchanged when no override names a codec", async () => {
+    const source = rgbaPng({ blue: (x) => x * 2, height: 10, width: 11 });
+    const { entry, outputBytes } = await compileOne(
+      "threenative-tex-block-size-default-",
+      "decal.png",
+      source,
     );
+
+    expect(entry.compressionSkipped).toBe("block-size");
+    expect(entry.format).toBeUndefined();
+    expect(entry.output).toMatch(/\.png$/u);
+    // Byte-identical, because resampling a texture moves every UV the model was authored
+    // against: the dimensions the game shipped are the dimensions it gets back.
+    expect(outputBytes.equals(source)).toBe(true);
+    expect(parsePng(outputBytes)).toMatchObject({ height: 10, width: 11 });
+  });
+
+  it("should print the block-size reason on a fresh compile and again on a cache hit", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const root = await makeTempDir("threenative-tex-block-size-report-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(
+        path.join(root, "assets", "decal.png"),
+        rgbaPng({ blue: (x) => x * 2, height: 10, width: 11 }),
+      );
+
+      await compileAssets({ cwd: root, transcoder: TRANSCODER });
+      const fresh = vi.mocked(console.log).mock.calls.map((call) => String(call[0]));
+      vi.mocked(console.log).mockClear();
+      const second = await compileAssets({ cwd: root, transcoder: TRANSCODER });
+      const cached = vi.mocked(console.log).mock.calls.map((call) => String(call[0]));
+
+      // A cache hit reuses the previous manifest entry wholesale, so the reason has to survive
+      // on the entry rather than being computed by the pass that no longer runs.
+      expect(second.skipped).toBe(1);
+      for (const lines of [fresh, cached]) {
+        expect(
+          lines.filter((line) =>
+            /^texture decal\.png: \d+ -> \d+ bytes \([^)]*\); compression skipped: block-size$/u.test(
+              line,
+            ),
+          ),
+        ).toHaveLength(1);
+      }
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it("should let the none codec carry a source the block formats cannot take", async () => {
@@ -267,7 +348,7 @@ describe("the ktx2 texture pass", () => {
   it("should restore the Basis transcoder after public/ is cleaned", async () => {
     const root = await makeTempDir("threenative-tex-transcoder-regen-");
     await mkdir(path.join(root, "assets"));
-    await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
+    await writeFile(path.join(root, "assets", "rock.png"), compressiblePng());
     await compileAssets({ cwd: root, transcoder: TRANSCODER });
     await rm(path.join(root, "public", "basis"), { recursive: true });
 
@@ -280,3 +361,33 @@ describe("the ktx2 texture pass", () => {
     );
   });
 });
+
+it.runIf(process.env.TN_ASSETS_RUN_4K_KTX2 === "1")(
+  "should retain an ordinary 4096-square normal map through the default KTX2 pass",
+  async () => {
+    const noise = (x: number, y: number, salt: number): number => {
+      let value = Math.imul(x + salt, 0x45d9f3b) ^ Math.imul(y + salt, 0x119de1f3);
+      value = Math.imul(value ^ (value >>> 16), 0x45d9f3b);
+      return (value ^ (value >>> 16)) & 0xff;
+    };
+    const { entry, outputBytes } = await compileOne(
+      "threenative-tex-4k-",
+      "cliff_normal.png",
+      rgbaPng({
+        blue: (x, y) => noise(x, y, 97),
+        green: (x, y) => noise(x, y, 53),
+        height: 4096,
+        red: (x, y) => noise(x, y, 11),
+        width: 4096,
+      }),
+    );
+
+    const container = readKTX2(outputBytes);
+    expect([container.pixelWidth, container.pixelHeight]).toEqual([4096, 4096]);
+    expect(container.levelCount).toBe(13);
+    expect(container.supercompressionScheme).toBe(0);
+    expect(entry.format).toBe("uastc");
+    expect(entry.transcodeTargets).toEqual(["astc4x4", "bc7"]);
+  },
+  180_000,
+);

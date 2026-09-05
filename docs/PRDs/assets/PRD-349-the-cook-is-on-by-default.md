@@ -1,6 +1,6 @@
 # PRD-349 — The cook is on by default
 
-**Status:** READY FOR EXECUTION — **assumptions spiked 2026-09-04**, see `docs/verification/PRD-349-assumption-spike.md`
+**Status:** IN PROGRESS — execution evidence: `docs/verification/PRD-349-the-cook.md`; assumptions: `docs/verification/PRD-349-assumption-spike.md`
 **Complexity:** 3 (10+ files) + 2 (new gate/field) + 2 (multi-package) = **7 → HIGH mode**
 **Batch:** `docs/PRDs/assets/`
 **Siblings:** PRD-350 (platform gate per pass), PRD-351 (quality floor), PRD-352 (first-party ingest)

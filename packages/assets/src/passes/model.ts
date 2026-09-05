@@ -643,6 +643,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
           ? "none"
           : {
               maxSize: options.textures?.maxSize ?? null,
+              keepSmallerSource: true,
               overrides: options.textures?.overrides ?? [],
               quality: options.textures?.quality ?? null,
             },
@@ -761,7 +762,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       }
 
       const { auxiliaryOutputs, buffer, extensions, verified } =
-        store === undefined || shared === undefined
+        store === undefined || shared === undefined || shared.keys.length === 0
           ? await writeAndVerify(document, logicalPath)
           : await writeAndVerifyShared(document, logicalPath, store, shared);
       const output = reachableStats(verified);
@@ -836,6 +837,7 @@ function sharedSettings(
       textureOptions === undefined
         ? "none"
         : {
+            keepSmallerSource: true,
             maxSize: textureOptions.maxSize ?? null,
             overrides: textureOptions.overrides ?? [],
             quality: textureOptions.quality ?? null,

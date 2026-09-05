@@ -1,8 +1,8 @@
-import { PerspectiveCamera, Scene } from "three";
+import { Object3D, PerspectiveCamera, Scene } from "three";
 import { pass } from "three/tsl";
 import { RenderPipeline } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
-import { createRenderer } from "../src/renderer.js";
+import { createRenderer, prewarm } from "../src/renderer.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -15,6 +15,146 @@ function testCanvas(): HTMLCanvasElement {
 }
 
 describe("createRenderer", () => {
+  it("defers platform resize and reports the old buffer until compilation releases it", async () => {
+    const canvas = testCanvas();
+    let resize = () => {};
+    let width = 320;
+    let finish = () => {};
+    const sizes: number[] = [];
+    const renderer = await createRenderer({
+      source: {
+        createCanvas: () => canvas,
+        hasWebGPU: () => false,
+        readSize: () => [width, 180],
+        observeResize: (_canvas, callback) => {
+          resize = callback;
+          return () => {};
+        },
+      },
+      webgl2Factory: () => ({
+        domElement: canvas,
+        render: () => undefined,
+        setSize: (nextWidth: number) => {
+          sizes.push(nextWidth);
+        },
+        compileAsync: () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      }),
+    });
+    const compilation = renderer.compileAsync(new Scene(), new PerspectiveCamera());
+    try {
+      width = 640;
+      resize();
+      width = 800;
+      resize();
+      expect(sizes).toEqual([320]);
+      expect(renderer.surface().drawingBufferWidth).toBe(320);
+      finish();
+      await compilation;
+      expect(sizes).toEqual([320, 800]);
+      expect(renderer.surface().drawingBufferWidth).toBe(800);
+    } finally {
+      finish();
+      await compilation;
+      renderer.dispose();
+    }
+  });
+
+  it("stops scheduling hidden-root compilation and deferred resize after disposal", async () => {
+    const canvas = testCanvas();
+    let finish = () => {};
+    const calls: Object3D[] = [];
+    const sizes: number[] = [];
+    let disposed = false;
+    const first = new Object3D();
+    const second = new Object3D();
+    const hidden = new Object3D();
+    hidden.visible = false;
+    hidden.add(first, second);
+    const scene = new Scene();
+    scene.add(hidden);
+    prewarm([first, second]);
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: false,
+      webgl2Factory: () => ({
+        domElement: canvas,
+        render: () => undefined,
+        dispose: () => {
+          disposed = true;
+        },
+        setSize: (width: number) => {
+          sizes.push(width);
+        },
+        compileAsync: async (root: Object3D) => {
+          calls.push(root);
+          if (calls.length === 1)
+            await new Promise<void>((resolve) => {
+              finish = resolve;
+            });
+        },
+      }),
+    });
+    const compilation = renderer.compileAsync(scene, new PerspectiveCamera());
+    renderer.setResolutionScale(0.61, "auto");
+    renderer.dispose();
+    expect(disposed).toBe(true);
+    finish();
+    await compilation;
+    expect(calls).toEqual([first]);
+    expect(sizes).toEqual([320]);
+  });
+  it.each([false, true])(
+    "keeps resolution targets alive until pending compilation settles (reject=%s)",
+    async (reject) => {
+      const canvas = testCanvas();
+      let finish: (() => void) | undefined;
+      let targetAlive = true;
+      let compiling = false;
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => {
+            if (compiling) targetAlive = false;
+          },
+          compileAsync: async () => {
+            compiling = true;
+            await new Promise<void>((resolve) => {
+              finish = resolve;
+            });
+            const retained = targetAlive;
+            compiling = false;
+            if (!retained) throw new Error("compile read a disposed depth target");
+            if (reject) throw new Error("compile failed independently");
+          },
+        }),
+      });
+      const compilation = renderer.compileAsync(new Scene(), new PerspectiveCamera());
+      const settled = compilation.catch((error: Error) => error.message);
+      try {
+        expect(renderer.compiling).toBe(true);
+        expect(renderer.surface()).toMatchObject({ compiling: true });
+        renderer.setResolutionScale(0.61, "auto");
+        expect(renderer.surface()).toMatchObject({ resolutionScale: 1, drawingBufferWidth: 320 });
+        finish?.();
+        expect(await settled).toBe(reject ? "compile failed independently" : undefined);
+        expect(renderer.compiling).toBe(false);
+        expect(renderer.surface()).toMatchObject({
+          resolutionScale: 0.61,
+          drawingBufferWidth: 195,
+        });
+      } finally {
+        finish?.();
+        await settled;
+        renderer.dispose();
+      }
+    },
+  );
   // Without this on the wrapper a game must cast through `.raw` to warm up, and a game that
   // cannot warm up without a cast will not warm up. 2,500 ms of a 2,882 ms Pixel 8 cold start is
   // spent compiling pipelines on first draw.

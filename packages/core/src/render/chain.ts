@@ -174,6 +174,8 @@ export interface IRenderChainMarker {
 }
 
 export interface IRenderChainBudgetWindow {
+  /** Compilation-contaminated windows remain observable but cannot drive quality changes. */
+  readonly surface?: Pick<NonNullable<IFrameBudgetWindow["surface"]>, "compiling">;
   readonly phases: {
     readonly render: Pick<IFrameBudgetWindow["phases"]["render"], "p95">;
   };
@@ -494,6 +496,18 @@ export class RenderChain {
     const renderP95 = window.phases.render?.p95;
     if (typeof renderP95 !== "number" || !Number.isFinite(renderP95) || renderP95 < 0) {
       throw new Error("RenderChain frame budget render.p95 must be a finite non-negative number.");
+    }
+    const compiling = window.surface?.compiling;
+    if (compiling !== undefined && typeof compiling !== "boolean") {
+      throw new Error(
+        "RenderChain frame budget surface.compiling must be a boolean when observed.",
+      );
+    }
+    if (compiling === true) {
+      // Compilation is not steady-state render cost. It also retains resources that a tier
+      // rebuild disposes, so only consecutive clean windows may replace the active stages.
+      this.#overBudgetWindows = 0;
+      return this.#tier;
     }
     const budgetMs = 1_000 / this.#targetFps;
     if (renderP95 > budgetMs) this.#overBudgetWindows += 1;

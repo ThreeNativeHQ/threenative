@@ -73,6 +73,8 @@ export interface IFrameSurfaceState {
    * false under a pinned scale, which has no floor to reach.
    */
   readonly atFloor: boolean;
+  /** Compilation overlapped the measured window; automatic scaling waits for a clean window. */
+  readonly compiling?: boolean;
 }
 
 const SCALE_SOURCES: readonly IFrameSurfaceState["scaleSource"][] = [
@@ -85,12 +87,15 @@ const SCALE_SOURCES: readonly IFrameSurfaceState["scaleSource"][] = [
 function requireSurface(surface: IFrameSurfaceState): IFrameSurfaceState {
   const {
     atFloor,
+    compiling,
     drawingBufferHeight,
     drawingBufferWidth,
     resolutionScale,
     sampleCount,
     scaleSource,
   } = surface;
+  if (compiling !== undefined && typeof compiling !== "boolean")
+    throw new Error("Frame budget surface compiling must be a boolean when observed.");
   if (typeof atFloor !== "boolean")
     throw new Error(
       `Frame budget surface atFloor must say whether the scaler had room left, received ${String(atFloor)}.`,
@@ -118,6 +123,7 @@ function requireSurface(surface: IFrameSurfaceState): IFrameSurfaceState {
   }
   return {
     atFloor,
+    ...(compiling === undefined ? {} : { compiling }),
     drawingBufferHeight,
     drawingBufferWidth,
     resolutionScale,

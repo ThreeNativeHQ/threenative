@@ -32,7 +32,13 @@ if (path.basename(target) !== "blender-gpl" || path.basename(path.dirname(target
   throw new Error(`TN_ASSETS_BLENDER_GPL: refusing to remove '${target}'.`);
 }
 rmSync(target, { force: true, recursive: true });
-cpSync(source, target, { recursive: true });
+cpSync(source, target, {
+  filter: (candidate) => {
+    const name = path.basename(candidate);
+    return name !== "__pycache__" && !/\.py[co]$/u.test(name);
+  },
+  recursive: true,
+});
 if (!existsSync(path.join(target, "convert.py"))) {
   throw new Error(`TN_ASSETS_BLENDER_GPL: copy produced no convert.py at ${target}`);
 }
