@@ -421,11 +421,17 @@ function checkedSymbols(
   return symbols;
 }
 
+function isCapabilitySearchResponse(
+  response: readonly ICapabilitySearchResult[] | ICapabilitySearchResponse,
+): response is ICapabilitySearchResponse {
+  return !Array.isArray(response);
+}
+
 function responseResults(
   response: readonly ICapabilitySearchResult[] | ICapabilitySearchResponse,
   row: ICapabilityRecallRow,
 ): readonly ICapabilitySearchResult[] {
-  if (Array.isArray(response)) return response;
+  if (!isCapabilitySearchResponse(response)) return response;
   if (response.verdict !== "matched" && response.verdict !== "none") {
     throw recallError(`${row.id}: search returned an invalid verdict`);
   }
@@ -451,7 +457,7 @@ export function measureRecall(
 ): IRecallMeasurement {
   validateManifestSymbols(rows, manifestFile);
   const rowResults = rows.map((row): IRecallRowResult => {
-    let results: readonly ICapabilitySearchResult[];
+    let results: readonly ICapabilitySearchResult[] | ICapabilitySearchResponse;
     try {
       results = searcher(row.query, manifestFile, row.scope);
     } catch (error) {
