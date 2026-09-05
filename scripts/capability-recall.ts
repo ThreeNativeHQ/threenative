@@ -33,6 +33,7 @@ export interface ICapabilityRecallBudget {
   readonly rowCount: number;
   readonly rowIds: readonly string[];
   readonly recalledRows: readonly string[];
+  readonly notOwnedRows: Readonly<Record<string, string>>;
 }
 
 export interface IRecallRowResult {
@@ -43,6 +44,7 @@ export interface IRecallRowResult {
   readonly returned: readonly string[];
   readonly expected: readonly string[];
   readonly rejected: readonly string[];
+  readonly notOwned?: string;
   readonly guided: boolean;
   readonly zeroResult: boolean;
   readonly unresolvedResult: boolean;
@@ -56,6 +58,8 @@ export interface IRecallMetrics {
   readonly zeroResultRate: number;
   readonly unresolvedResults: number;
   readonly unresolvedResultRate: number;
+  readonly guided: number;
+  readonly actionable: number;
   readonly recalled: number;
   readonly recallAtK: number;
   readonly rejectHits: number;
@@ -74,7 +78,8 @@ export interface IRecallRegression {
     | "rejectHits"
     | "rowCount"
     | "rowIds"
-    | "recalledRows";
+    | "recalledRows"
+    | "notOwnedRows";
   readonly message: string;
   readonly rowIds: readonly string[];
 }
@@ -223,6 +228,35 @@ function validateBudgetRowIds(value: unknown, rowCount: number, file: string): r
   return [...value];
 }
 
+function validateNotOwnedRows(value: unknown, file: string): Readonly<Record<string, string>> {
+  if (!isRecord(value)) {
+    throw recallError(`${file}: notOwnedRows must be an object of corpus row ids to manifest ids`);
+  }
+  const rows: Record<string, string> = {};
+  for (const [rowId, notOwnedId] of Object.entries(value)) {
+    if (
+      rowId.trim().length === 0 ||
+      typeof notOwnedId !== "string" ||
+      notOwnedId.trim().length === 0
+    ) {
+      throw recallError(
+        `${file}: notOwnedRows must map non-empty row ids to non-empty manifest ids`,
+      );
+    }
+    rows[rowId] = notOwnedId;
+  }
+  return rows;
+}
+
+function notOwnedRowMap(
+  rows: readonly Pick<IRecallRowResult, "id" | "notOwned">[],
+): Readonly<Record<string, string>> {
+  return rows.reduce<Record<string, string>>((mapped, row) => {
+    if (row.notOwned !== undefined) mapped[row.id] = row.notOwned;
+    return mapped;
+  }, {});
+}
+
 export function validateBudget(value: unknown, file = "budget.json"): ICapabilityRecallBudget {
   if (!isRecord(value) || value.version !== 1) {
     throw recallError(`${file}: root must contain version 1`);
@@ -270,6 +304,7 @@ export function validateBudget(value: unknown, file = "budget.json"): ICapabilit
     throw recallError(`${file}: recalledRows contains duplicate row ids`);
   }
   const rowIds = validateBudgetRowIds(value.rowIds, rowCount, file);
+  const notOwnedRows = validateNotOwnedRows(value.notOwnedRows, file);
   return {
     recallAtK,
     recalledRows: [...recalledRows],
@@ -279,6 +314,7 @@ export function validateBudget(value: unknown, file = "budget.json"): ICapabilit
     version: 1,
     zeroResultRate,
     unresolvedResultRate,
+    notOwnedRows,
   };
 }
 
@@ -519,6 +555,7 @@ export function measureRecall(
       expected,
       guided: checked.guided,
       id: row.id,
+      ...(row.notOwned === undefined ? {} : { notOwned: row.notOwned }),
       query: row.query,
       recalled: expected.length > 0,
       rejected,
@@ -534,6 +571,7 @@ export function measureRecall(
   if (rowCount === 0) throw recallError("cannot score an empty corpus");
   const zeroResults = rowResults.filter((row) => row.zeroResult).length;
   const unresolvedResults = rowResults.filter((row) => row.unresolvedResult).length;
+  const guided = rowResults.filter((row) => row.guided).length;
   const recalled = rowResults.filter((row) => row.recalled).length;
   const rejectHits = rowResults.filter((row) => row.rejectHit).length;
   return {
@@ -546,6 +584,8 @@ export function measureRecall(
       zeroResults,
       unresolvedResultRate: unresolvedResults / rowCount,
       unresolvedResults,
+      guided,
+      actionable: guided + recalled,
     },
     rows: rowResults,
   };
@@ -556,6 +596,27 @@ function rowIds(
   predicate: (row: IRecallRowResult) => boolean,
 ): readonly string[] {
   return rows.filter(predicate).map((row) => row.id);
+}
+
+function pinnedNotOwnedRegression(
+  measurement: IRecallMeasurement,
+  budget: ICapabilityRecallBudget,
+): IRecallRegression | undefined {
+  const currentNotOwnedRows = new Map(Object.entries(notOwnedRowMap(measurement.rows)));
+  const expectedNotOwnedRows = new Map(Object.entries(budget.notOwnedRows));
+  const changedNotOwnedRows = [
+    ...expectedNotOwnedRows.keys(),
+    ...currentNotOwnedRows.keys(),
+  ].filter(
+    (id, index, ids) =>
+      ids.indexOf(id) === index && expectedNotOwnedRows.get(id) !== currentNotOwnedRows.get(id),
+  );
+  if (changedNotOwnedRows.length === 0) return undefined;
+  return {
+    message: `pinned notOwned rows changed; expected ${[...expectedNotOwnedRows.entries()].map(([id, value]) => `${id}=${value}`).join(", ") || "(none)"}; current ${[...currentNotOwnedRows.entries()].map(([id, value]) => `${id}=${value}`).join(", ") || "(none)"}`,
+    metric: "notOwnedRows",
+    rowIds: changedNotOwnedRows,
+  };
 }
 
 export function compareBudget(
@@ -585,6 +646,8 @@ export function compareBudget(
       rowIds: rowIds(measurement.rows, (row) => row.rejectHit),
     });
   }
+  const notOwnedRegression = pinnedNotOwnedRegression(measurement, budget);
+  if (notOwnedRegression !== undefined) regressions.push(notOwnedRegression);
   if (metrics.rowCount < budget.rowCount) {
     regressions.push({
       message: `rowCount ${metrics.rowCount} is below floor ${budget.rowCount}`,
@@ -626,6 +689,7 @@ export function formatRecallReport(report: IRecallReport): string {
     "",
     `zeroResultRate: ${report.metrics.zeroResultRate.toFixed(6)} (${report.metrics.zeroResults}/${report.metrics.rowCount})`,
     `unresolvedResultRate: ${report.metrics.unresolvedResultRate.toFixed(6)} (${report.metrics.unresolvedResults}/${report.metrics.rowCount})`,
+    `actionable: ${report.metrics.actionable}/${report.metrics.rowCount} (${report.metrics.recalled} distinct-symbol, ${report.metrics.guided} guided not-owned)`,
     `recallAtK: ${report.metrics.recallAtK.toFixed(6)} (${report.metrics.recalled}/${report.metrics.rowCount})`,
     `rejectHits: ${report.metrics.rejectHits}`,
     `rowCount: ${report.metrics.rowCount}`,
@@ -703,6 +767,7 @@ async function writeBudget(file: string, measurement: IRecallMeasurement): Promi
         version: 1,
         zeroResultRate: metrics.zeroResultRate,
         unresolvedResultRate: metrics.unresolvedResultRate,
+        notOwnedRows: notOwnedRowMap(measurement.rows),
       } satisfies ICapabilityRecallBudget,
       null,
       2,

@@ -49,6 +49,7 @@ function budget(overrides: Partial<ICapabilityRecallBudget> = {}): ICapabilityRe
     version: 1,
     zeroResultRate: 0,
     unresolvedResultRate: 0,
+    notOwnedRows: {},
     ...overrides,
   };
 }
@@ -117,6 +118,8 @@ describe("capability recall gate", () => {
       verdict: "none",
     })) as CapabilitySearcher);
     expect(measurement.rows[0]?.guided).toBe(true);
+    expect(measurement.metrics.guided).toBe(1);
+    expect(measurement.metrics.actionable).toBe(1);
   });
 
   it("should reject a not-owned response whose guidance differs from the manifest", () => {
@@ -198,6 +201,31 @@ describe("capability recall gate", () => {
       message: "corpus row ids changed; missing baseline.miss; added compensating.improvement",
       metric: "rowIds",
       rowIds: ["baseline.miss", "compensating.improvement"],
+    });
+  });
+
+  it("should protect the pinned not-owned row-to-guidance mapping", () => {
+    const guidance = loadCapabilityManifest(manifestFile).notOwned.find(
+      (entry) => entry.id === "inventory",
+    )?.guidance;
+    const measurement = measureRecall(
+      [row({ id: "baseline.not-owned", notOwned: "inventory" })],
+      manifestFile,
+      (() => ({ guidance, results: [], verdict: "none" })) as CapabilitySearcher,
+    );
+
+    expect(
+      compareBudget(
+        measurement,
+        budget({
+          notOwnedRows: { "baseline.not-owned": "save-load" },
+        }),
+      ),
+    ).toContainEqual({
+      message:
+        "pinned notOwned rows changed; expected baseline.not-owned=save-load; current baseline.not-owned=inventory",
+      metric: "notOwnedRows",
+      rowIds: ["baseline.not-owned"],
     });
   });
 
