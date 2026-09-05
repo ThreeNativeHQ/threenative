@@ -2,7 +2,10 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { modelPass } from "@threenative/assets";
+import { encodeToKTX2 } from "ktx2-encoder";
 import { afterEach, describe, expect, it } from "vitest";
+import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { assertNativeAssetsCompatible, assertNativeBundleCompatible, build } from "../src/build.js";
 import { loadConfig } from "../src/config.js";
@@ -144,17 +147,20 @@ export default defineGame({ scenes: {} });
 
   it("refuses a mobile build whose compiled assets include KTX2, by name", async () => {
     const project = await gameProject("threenative-ktx2-refusal-");
-    await writeManifest(project, {
-      "textures/rock.png": {
-        bytes: 4096,
-        kind: "texture",
-        output: "textures/rock.a1b2c3d4.ktx2",
-        passes: ["ktx2"],
-      },
+    await mkdir(path.join(project, "assets", "textures"), { recursive: true });
+    const ktx2 = await encodeToKTX2(new Uint8Array([0]), {
+      generateMipmap: false,
+      imageDecoder: async () => ({
+        data: new Uint8Array(4 * 4 * 4).fill(255),
+        height: 4,
+        width: 4,
+      }),
+      isUASTC: true,
     });
+    await writeFile(path.join(project, "assets", "textures", "rock.ktx2"), ktx2);
 
     await expect(build({ cwd: project, target: "android" })).rejects.toThrow(
-      /TN_NATIVE_KTX2_UNSUPPORTED: android cannot ship compiled KTX2 textures \(textures\/rock\.png\)/u,
+      /TN_NATIVE_KTX2_UNSUPPORTED: android cannot ship compiled KTX2 textures \(textures\/rock\.ktx2\)/u,
     );
     // The refusal must land before anything is written, not after an APK exists.
     await expect(readFile(path.join(project, ".threenative/build/game.js"))).rejects.toMatchObject({
@@ -164,19 +170,20 @@ export default defineGame({ scenes: {} });
 
   it("refuses a mobile build whose compiled models carry compressed geometry, by name", async () => {
     const project = await gameProject("threenative-meshopt-refusal-");
-    await writeManifest(project, {
-      "models/hero.glb": {
-        bytes: 2048,
-        extensions: ["EXT_meshopt_compression"],
-        kind: "model",
-        output: "models/hero.a1b2c3d4.glb",
-        passes: ["models"],
-      },
-    });
+    await mkdir(path.join(project, "assets", "models"), { recursive: true });
+    const compressed = await modelPass({ textures: "none" }).apply(
+      Buffer.from(await buildFixtureGlb()),
+      "models/hero.glb",
+    );
+    if (Buffer.isBuffer(compressed)) throw new Error("model fixture was not compressed");
+    await writeFile(path.join(project, "assets", "models", "hero.glb"), compressed.buffer);
 
     await expect(build({ cwd: project, target: "ios" })).rejects.toThrow(
       /TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: ios cannot ship compressed model geometry \(models\/hero\.glb\)/u,
     );
+    await expect(readFile(path.join(project, ".threenative/build/game.js"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   }, 60_000);
 
   it("accepts the same compiled assets on desktop and on web", async () => {

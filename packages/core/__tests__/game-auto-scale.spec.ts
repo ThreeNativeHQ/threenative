@@ -25,17 +25,34 @@ async function run(
   render: Record<string, unknown>,
   presentedP95: number,
   windows: number,
+  duringCompile: boolean | "last-frame" | "between-frames" = false,
+  cleanFrames = 0,
 ): Promise<{ scale: number; scaleSource: string }> {
   const canvas = testCanvas();
   let frame: ((time: number) => void) | undefined;
+  let holdCompile = false;
+  let releaseCompile = () => {};
+  const compileWindows: boolean[] = [];
   const game = defineGame({
     display: { maxFps: 60 },
-    frameBudget: { report: () => {}, reportEvery: 1 },
+    frameBudget: {
+      report: () => {},
+      reportEvery: typeof duringCompile === "string" ? 2 : 1,
+      onWindow: (window) => {
+        compileWindows.push(window.surface?.compiling === true);
+      },
+    },
     render,
     renderer: {
       canvas,
       preferWebGPU: false,
       webgl2Factory: () => ({
+        compileAsync: () =>
+          holdCompile
+            ? new Promise<void>((resolve) => {
+                releaseCompile = resolve;
+              })
+            : Promise.resolve(),
         domElement: canvas,
         render: () => undefined,
         setSize: () => undefined,
@@ -69,17 +86,45 @@ async function run(
       await Promise.resolve();
     }
     await game.ctx?.startup.whenReady();
+    compileWindows.length = 0;
+    holdCompile = Boolean(duringCompile) && duringCompile !== "between-frames";
+    const compilation =
+      holdCompile && game.ctx !== undefined
+        ? game.ctx.renderer.compileAsync(game.ctx.scene, game.ctx.camera)
+        : Promise.resolve();
     for (let index = 0; index < windows; index += 1) {
+      if (duringCompile === "between-frames" && game.ctx !== undefined) {
+        await game.ctx.renderer.compileAsync(game.ctx.scene, game.ctx.camera);
+      }
+      if (duringCompile === "last-frame" && index === windows - 1) {
+        releaseCompile();
+        await compilation;
+      }
       time += presentedP95;
       frame(time);
       await Promise.resolve();
     }
+    releaseCompile();
+    await compilation;
+    if (duringCompile) expect(compileWindows).toContain(true);
+    if (duringCompile === "last-frame") expect(compileWindows.at(-1)).toBe(true);
+    if (duringCompile === "between-frames") {
+      expect(compileWindows.length).toBeGreaterThan(0);
+      expect(compileWindows.every(Boolean)).toBe(true);
+    }
+    for (let index = 0; index < cleanFrames; index += 1) {
+      time += presentedP95;
+      frame(time);
+      await Promise.resolve();
+    }
+    if (cleanFrames > 0) expect(compileWindows.at(-1)).toBe(false);
     const surface = game.ctx?.renderer.surface();
     return {
       scale: surface?.resolutionScale ?? Number.NaN,
       scaleSource: surface?.scaleSource ?? "?",
     };
   } finally {
+    releaseCompile();
     await game.stop();
     Object.defineProperty(globalThis, "requestAnimationFrame", {
       configurable: true,
@@ -89,6 +134,33 @@ async function run(
 }
 
 describe('resolutionScale: "auto"', () => {
+  it("resumes automatic scaling on clean windows after between-frame compilation", async () => {
+    const result = await run({ resolutionScale: "auto" }, 40, 6, "between-frames", 6);
+    expect(result.scale).toBeLessThan(1);
+    expect(result.scaleSource).toBe("auto");
+  });
+  it.each(["auto", 0.44] as const)(
+    "observes compilation entirely between frames with resolution %s",
+    async (resolutionScale) => {
+      const result = await run({ resolutionScale }, 40, 6, "between-frames");
+      expect(result).toEqual({
+        scale: resolutionScale === "auto" ? 1 : resolutionScale,
+        scaleSource: resolutionScale === "auto" ? "auto" : "pinned",
+      });
+    },
+  );
+  it("keeps partial compilation-window reporting when resolution is pinned", async () => {
+    const result = await run({ resolutionScale: 0.44 }, 40, 6, "last-frame");
+    expect(result).toEqual({ scale: 0.44, scaleSource: "pinned" });
+  });
+  it("discards a partly compiled window even when compilation settles before its final frame", async () => {
+    const result = await run({ resolutionScale: "auto" }, 40, 6, "last-frame");
+    expect(result).toEqual({ scale: 1, scaleSource: "auto" });
+  });
+  it("does not bank down-steps from frames spent compiling after readiness", async () => {
+    const result = await run({ resolutionScale: "auto" }, 40, 6, true);
+    expect(result).toEqual({ scale: 1, scaleSource: "auto" });
+  });
   it("falls off the ceiling when the presented tail is over the budget", async () => {
     const result = await run({ resolutionScale: "auto" }, 40, 6);
     expect(result.scale).toBeLessThan(1);

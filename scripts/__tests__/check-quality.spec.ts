@@ -56,6 +56,33 @@ describe("quality gate", () => {
     );
   });
 
+  it("reports only Biome ignores that overlap a package source root", async () => {
+    const root = await fixtureRoot();
+    const biomePath = path.join(root, "biome.json");
+
+    await writeFile(
+      biomePath,
+      JSON.stringify({ files: { ignore: ["packages/core/vendor/generated.js"] } }),
+    );
+    expect(await collectQualityFindings(root)).not.toContainEqual(
+      expect.objectContaining({ signal: "lint-coverage-hole" }),
+    );
+
+    for (const pattern of [
+      "packages/core/src",
+      "packages/core/src/generated.ts",
+      "packages/core/**",
+    ]) {
+      await writeFile(biomePath, JSON.stringify({ files: { ignore: [pattern] } }));
+      expect(await collectQualityFindings(root)).toContainEqual(
+        expect.objectContaining({
+          file: "packages/core/src",
+          signal: "lint-coverage-hole",
+        }),
+      );
+    }
+  });
+
   it("reports generic and multiline object aliases but exempts mapped and other type aliases", async () => {
     const root = await fixtureRoot();
     await sourceFile(

@@ -461,8 +461,10 @@ describe("health over compressed source models", () => {
     expect(result.written).toBeGreaterThan(0);
     const manifest = JSON.parse(
       await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
-    ) as { entries: Record<string, { output: string }> };
-    const output = manifest.entries["models/pine.glb"]?.output;
+    ) as { entries: Record<string, { extensions?: string[]; output: string }> };
+    const entry = manifest.entries["models/pine.glb"];
+    expect(entry?.extensions).toContain("EXT_meshopt_compression");
+    const output = entry?.output;
     if (output === undefined) throw new Error("the manifest has no models/pine.glb entry");
     const served = await readFile(path.join(root, "public", output));
     // `models: "none"` promises byte-identical output; a decode-then-rewrite would change them.

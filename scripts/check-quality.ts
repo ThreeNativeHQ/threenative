@@ -146,9 +146,13 @@ async function collectCoverageFindings(root: string): Promise<RawFinding[]> {
   const roots = await allPackageSourceRoots(root);
   return roots.flatMap((sourceRoot) => {
     const packageName = path.basename(path.dirname(sourceRoot));
-    const prefix = `packages/${packageName}/`;
+    const packageRoot = `packages/${packageName}`;
+    const sourcePath = `${packageRoot}/src`;
     const ignored = patterns.some(
-      (pattern) => pattern === `packages/${packageName}/**` || pattern.startsWith(prefix),
+      (pattern) =>
+        pattern === `${packageRoot}/**` ||
+        pattern === sourcePath ||
+        pattern.startsWith(`${sourcePath}/`),
     );
     const hasNativeLint =
       packageName === "runtime-native" &&

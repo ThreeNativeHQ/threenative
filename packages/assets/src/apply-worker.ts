@@ -38,8 +38,12 @@ function buildInstances(specs: readonly PassSpec[], root: string): readonly IAss
           // The store is per-worker state against the same output root: content-addressed
           // writes make identical results idempotent, and the receipt's stable merge keeps
           // provenance arrival-independent.
-          sharedImages:
-            spec.options.sharedImages === true ? createSharedImageStore(root) : undefined,
+          // Public emission stays driver-owned so a pass failure cannot leave an unjournalled
+          // shared file behind. This store still deduplicates later jobs on the same worker and
+          // reads outputs from successful earlier builds.
+          sharedImages: spec.options.sharedImages
+            ? createSharedImageStore(root, { writeThrough: false })
+            : undefined,
         });
       case "texture":
         return texturePass(spec.options);

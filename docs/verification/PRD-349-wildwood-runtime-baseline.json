@@ -1,0 +1,386 @@
+{
+  "entries": 76,
+  "bytes": 299463735,
+  "rows": [
+    {
+      "path": "landscape/ground_grass_01_diffuse.jpg",
+      "output": "landscape/ground_grass_01_diffuse.b2e4b450.jpg",
+      "bytes": 282583
+    },
+    {
+      "path": "landscape/ground_forest_diffuse.jpg",
+      "output": "landscape/ground_forest_diffuse.552b68bb.jpg",
+      "bytes": 370977
+    },
+    {
+      "path": "landscape/ground_grass_01_normal.jpg",
+      "output": "landscape/ground_grass_01_normal.89146a60.jpg",
+      "bytes": 1144853
+    },
+    {
+      "path": "native-proof.png",
+      "output": "native-proof.c70e1b5e.png",
+      "bytes": 150
+    },
+    {
+      "path": "landscape/ground_rock_01_diffuse.jpg",
+      "output": "landscape/ground_rock_01_diffuse.0ba22e0b.jpg",
+      "bytes": 323064
+    },
+    {
+      "path": "landscape/ground_dirt_01_diffuse.jpg",
+      "output": "landscape/ground_dirt_01_diffuse.da7339ae.jpg",
+      "bytes": 329268
+    },
+    {
+      "path": "native-proof.glb",
+      "output": "native-proof.76e567c1.glb",
+      "bytes": 624
+    },
+    {
+      "path": "landscape/ground_rock_01_normal.jpg",
+      "output": "landscape/ground_rock_01_normal.e87659af.jpg",
+      "bytes": 838054
+    },
+    {
+      "path": "landscape/ground_forest_normal.jpg",
+      "output": "landscape/ground_forest_normal.890b29b3.jpg",
+      "bytes": 1163986
+    },
+    {
+      "path": "landscape/ground_dirt_01_normal.jpg",
+      "output": "landscape/ground_dirt_01_normal.5af4ba34.jpg",
+      "bytes": 1170362
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine-small01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine-small01.17a44382.glb",
+      "bytes": 9093564
+    },
+    {
+      "path": "landscape/cliffrocks_diffuse.jpg",
+      "output": "landscape/cliffrocks_diffuse.be29b985.jpg",
+      "bytes": 384832
+    },
+    {
+      "path": "landscape/dead_tree_trunk_diffuse.jpg",
+      "output": "landscape/dead_tree_trunk_diffuse.7449ad55.jpg",
+      "bytes": 337305
+    },
+    {
+      "path": "landscape/dead_tree_trunk_normal.jpg",
+      "output": "landscape/dead_tree_trunk_normal.1440daca.jpg",
+      "bytes": 699338
+    },
+    {
+      "path": "landscape/cliffrocks_normal.jpg",
+      "output": "landscape/cliffrocks_normal.d03e41a7.jpg",
+      "bytes": 1040451
+    },
+    {
+      "path": "fab/2dd7964c-a601-4264-a53d-465dcae1644c/ue/Models/SK_Wolf.glb",
+      "output": "fab/2dd7964c-a601-4264-a53d-465dcae1644c/ue/Models/SK_Wolf.93413fda.glb",
+      "bytes": 573156
+    },
+    {
+      "path": "fab/2dd7964c-a601-4264-a53d-465dcae1644c/ue/Models/SK_Crow.glb",
+      "output": "fab/2dd7964c-a601-4264-a53d-465dcae1644c/ue/Models/SK_Crow.524360df.glb",
+      "bytes": 522540
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine02.ad041099.glb",
+      "bytes": 9204540
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine03.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine03.616e4c78.glb",
+      "bytes": 9194072
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine01.e8e092fc.glb",
+      "bytes": 9208532
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine04.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine04.f02ffd93.glb",
+      "bytes": 9218288
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_BoughGroup01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_BoughGroup01.0d77b429.glb",
+      "bytes": 10530964
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine05.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine05.440a7950.glb",
+      "bytes": 9292876
+    },
+    {
+      "path": "fab/2dd7964c-a601-4264-a53d-465dcae1644c/ue/Models/SK_DeerStag.glb",
+      "output": "fab/2dd7964c-a601-4264-a53d-465dcae1644c/ue/Models/SK_DeerStag.7f2a888e.glb",
+      "bytes": 4157912
+    },
+    {
+      "path": "fab/2dd7964c-a601-4264-a53d-465dcae1644c/ue/Models/SK_Fox.glb",
+      "output": "fab/2dd7964c-a601-4264-a53d-465dcae1644c/ue/Models/SK_Fox.572cca26.glb",
+      "bytes": 4506768
+    },
+    {
+      "path": "fab/2dd7964c-a601-4264-a53d-465dcae1644c/ue/Models/SK_DeerDoe.glb",
+      "output": "fab/2dd7964c-a601-4264-a53d-465dcae1644c/ue/Models/SK_DeerDoe.83db21f0.glb",
+      "bytes": 3448564
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_BoughGroup02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_BoughGroup02.554f9861.glb",
+      "bytes": 10521200
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_BoughGroup03.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_BoughGroup03.749459d4.glb",
+      "bytes": 10521640
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_tree_dead.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_tree_dead.e5c161e7.glb",
+      "bytes": 6266944
+    },
+    {
+      "path": "fab/2dd7964c-a601-4264-a53d-465dcae1644c/ue/Models/SK_Pig.glb",
+      "output": "fab/2dd7964c-a601-4264-a53d-465dcae1644c/ue/Models/SK_Pig.9ff1546e.glb",
+      "bytes": 3397048
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine-small02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine-small02.6c255d3b.glb",
+      "bytes": 9090912
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_green-tree01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_green-tree01.1d8077ef.glb",
+      "bytes": 9365852
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_dead-tree01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_dead-tree01.f42fddf1.glb",
+      "bytes": 8994328
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_green-tree02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_green-tree02.299ceff5.glb",
+      "bytes": 9404424
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine-small03.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_pine-small03.35b65646.glb",
+      "bytes": 9092052
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_dead-tree02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_dead-tree02.320bd83a.glb",
+      "bytes": 9032896
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_dead-tree03.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_dead-tree03.e6d0048b.glb",
+      "bytes": 9300704
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_FlowerGroup01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_FlowerGroup01.fe1ff22c.glb",
+      "bytes": 828544
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_FlowerGroup02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_FlowerGroup02.e1530d6e.glb",
+      "bytes": 830164
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_bush01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_bush01.7b889bd8.glb",
+      "bytes": 8168892
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_dead-tree05.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_dead-tree05.80049008.glb",
+      "bytes": 9410588
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_dead-tree04.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_dead-tree04.3609dfbb.glb",
+      "bytes": 9273476
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_NettleGroup01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_NettleGroup01.f30cdb80.glb",
+      "bytes": 483036
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_NettleGroup02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_NettleGroup02.56ae39d0.glb",
+      "bytes": 491568
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_PlantGroup01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_PlantGroup01.05a3135a.glb",
+      "bytes": 829680
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_LargePlant.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_LargePlant.2384b9f8.glb",
+      "bytes": 828196
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_WeathGroup01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_WeathGroup01.d288b9d9.glb",
+      "bytes": 844600
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_WeathGroup02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_WeathGroup02.3b866cad.glb",
+      "bytes": 835976
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_FarnGroup01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_FarnGroup01.a845333d.glb",
+      "bytes": 1751632
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_FarnGroup02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_FarnGroup02.dffb649c.glb",
+      "bytes": 1751424
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_FarnGroup03.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_FarnGroup03.1ee348d2.glb",
+      "bytes": 1751460
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_new_farn01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_new_farn01.67a38a59.glb",
+      "bytes": 2711364
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_new_farn02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_new_farn02.6875cece.glb",
+      "bytes": 2706024
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_GrassGroup01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_GrassGroup01.bcf89463.glb",
+      "bytes": 831680
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_GrassGroup02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_GrassGroup02.16a1eb48.glb",
+      "bytes": 830924
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_grass_bush01_lod00.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_grass_bush01_lod00.dccbc0bc.glb",
+      "bytes": 503484
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_GrassGroup03.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_GrassGroup03.d4fa6163.glb",
+      "bytes": 829800
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_grass_bush02_lod00.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_grass_bush02_lod00.0a9f97db.glb",
+      "bytes": 509896
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_grass_bush03_lod00.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_grass_bush03_lod00.decfc21d.glb",
+      "bytes": 511812
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_grass_bush04_lod00.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_grass_bush04_lod00.f261a7f2.glb",
+      "bytes": 509500
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_clover01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_clover01.570e9080.glb",
+      "bytes": 2272804
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_clover02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_clover02.4774dd80.glb",
+      "bytes": 2272732
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_clover03.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_clover03.18031211.glb",
+      "bytes": 2272768
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_rock01_lod000.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_rock01_lod000.4cb12009.glb",
+      "bytes": 4908420
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_rock02_lod000.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_rock02_lod000.7938eeee.glb",
+      "bytes": 4909168
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_rock03_lod000.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_rock03_lod000.440138e0.glb",
+      "bytes": 4909656
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_rock04_lod000.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_rock04_lod000.2e48350f.glb",
+      "bytes": 4909432
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_RockGroup02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_RockGroup02.ecf7391c.glb",
+      "bytes": 3302576
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_RockGroup01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_RockGroup01.f952f7b8.glb",
+      "bytes": 3303220
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliff01.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliff01.ff167691.glb",
+      "bytes": 4944880
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliff02.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliff02.3487faa8.glb",
+      "bytes": 5279152
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliff03.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliff03.7fbb396f.glb",
+      "bytes": 5333356
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliffrock01_lod00.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliffrock01_lod00.bd135df1.glb",
+      "bytes": 4936976
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliffrock02_lod00.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliffrock02_lod00.46329337.glb",
+      "bytes": 5282632
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliffrock03_lod00.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliffrock03_lod00.51e14ae5.glb",
+      "bytes": 5328048
+    },
+    {
+      "path": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliffrock04_lod00.glb",
+      "output": "fab/1ac647da-b1bc-4e72-a56d-60aaeb6918e1/Models/SM_cliffrock04_lod00.3524a8e8.glb",
+      "bytes": 5248572
+    }
+  ]
+}

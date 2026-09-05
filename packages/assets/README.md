@@ -44,6 +44,18 @@ there reports `frames: 0`, which is the runner, not the game. The account is in
 
 ## Embedded model textures
 
+| Setting | Default | Override |
+| --- | --- | --- |
+| `assets.models.sharedImages` | `true`: write each distinct image once under `shared/images/` | `false` embeds and re-encodes duplicate images in every model |
+
+With no asset config, models share their content-addressed images across the build and reuse the
+store on later builds. Tiny images retain their original bytes when KTX2 would grow the download
+without reducing resolution; an explicit slot codec override can still force compression.
+Automatic cooking also retains sources whose encode dimensions are not divisible by four,
+without changing their bytes or dimensions. The report and manifest name `block-size` as the
+reason; these retained bytes still count toward the uncooked budget. An explicit compression
+codec override rejects an unaligned image, while `codec: "none"` remains available.
+
 The images inside a `.glb` go through the pipeline too, on by default. A prop carrying three
 2048x2048 JPEGs is a small file and about 64 MiB of VRAM once the driver decodes it, so each
 embedded image is transcoded to KTX2/Basis (UASTC for normal maps, ETC1S for colour and
@@ -112,9 +124,10 @@ reduces further. Because that gap is silent by nature, the compile step prints b
 simplified candela.glb: 99482 -> 15104 triangles (15.2% kept, requested 5.0%) — the error tolerance 0.001 stopped it short
 ```
 
-Mobile native targets still refuse compressed assets — Android QuickJS and iOS JSC have no
-WebAssembly and therefore no Basis transcoder — so an Android or iOS build needs
-`assets.models: "none"`, exactly as it already did for compressed geometry.
+Android QuickJS and iOS JSC have no WebAssembly and therefore no Basis transcoder. The build
+automatically skips the unsupported texture and model passes for those targets; games do not
+need an `assets.models: "none"` override. Already-compressed source assets still fail native
+preflight when their required decoder is unavailable.
 
 ## Static lightmaps
 

@@ -1,11 +1,49 @@
 # PRD-349 — The cook is on by default
 
-**Status:** READY FOR EXECUTION — **assumptions spiked 2026-09-04**, see `docs/verification/PRD-349-assumption-spike.md`
+**Status:** DONE for the owner-requested PR handoff — iOS waived; approximately 51 MB accepted at unchanged texture resolution. Evidence: `docs/verification/PRD-349-the-cook.md`; assumptions: `docs/verification/PRD-349-assumption-spike.md`.
 **Complexity:** 3 (10+ files) + 2 (new gate/field) + 2 (multi-package) = **7 → HIGH mode**
 **Batch:** `docs/PRDs/assets/`
 **Siblings:** PRD-350 (platform gate per pass), PRD-351 (quality floor), PRD-352 (first-party ingest)
 
 ---
+
+## Close-out, 2026-09-04
+
+The owner requested stopping after one PR for this PRD, explicitly waived iOS (no machine), and
+accepted the practical approximately 51 MB result instead of pursuing the original 45 MB
+projection. No work on PRDs 350–352 is included in this completion decision.
+
+| Delivered / measured | Result |
+| --- | --- |
+| Default cook, shared images, exclusions and uncooked budget | Implemented, override reporting retained, ten templates covered by regression tests |
+| Wildwood runtime load set including HDR and Basis | **304,915,228 → 51,333,420 B; 83.1647% smaller**, zero resized textures; complete game test command passes |
+| Quarry web/desktop, no assets config | **29,888,252 → 4,569,038 B; 84.71293% smaller**; both real runtime scenarios pass |
+| Native boundary | Android APK builds; 30,346,112 B asset payload, no cook savings. iOS packaging waived; neither mobile device executed |
+| Stability | Atomic manifest/auxiliary publication, owned-output cleanup, 4K encoder support, automatic-resolution guards; regression reds and greens in evidence |
+
+The original implementation plan below is retained as historical intent, including its proposed
+test names and unchecked planning boxes; it is **not** a claim that each proposed procedure ran.
+The final evidence record is authoritative. In particular, the original thirty-game compatibility
+census is incomplete: verified consumers are Wildwood, Quarry, HQ's four non-live scenarios,
+Last Harvest, Spectral Sea and Cloth Catcher. HQ's live bridge was unavailable; exploratory
+upgrades with unavailable historical packages or stale game assertions were restored, not
+given invented opt-outs. No all-game-green or phase-by-phase named-reviewer PASS is claimed.
+
+Live caller census at the implementation checkpoint:
+
+```text
+packages/assets/src/compile.ts:649:  if (raw === undefined) return { sharedImages: true };
+packages/assets/src/compile.ts:680:    sharedImages: raw.sharedImages !== false,
+packages/assets/src/compile.ts:1611:    layout.exclude.some((glob) => globMatch(glob, logical)),
+packages/assets/src/compile.ts:1590:    for (const line of formatBudget(
+packages/assets/src/compile.ts:1673:    for (const line of formatBudget(
+packages/assets/src/compile.ts:2017:  for (const line of formatBudget(budgetReport)) console.log(line);
+packages/assets/src/apply-worker.ts:44:          sharedImages: spec.options.sharedImages
+```
+
+`formatBudget` is an internal module export, not a new package-root API. The former
+`sharedImages === true` opt-in gates have no remaining source hits. Quarry source and paired
+screenshots are committed and pushed to `ThreeNativeHQ/examples`.
 
 ## 1. Context
 
@@ -38,7 +76,7 @@ mips are ②. **All of the 289 MB lives in ②.** ① is working and this PRD do
 | `packages/assets/src/compile.ts:945, 654-658` · `apply-worker.ts:41` | `sharedImages` honoured only on `=== true` |
 | `packages/assets/src/passes/shared-images.ts:8-17` | the dedupe store — built, tested, off; its doc comment describes wildwood exactly |
 | `packages/assets/src/passes/model-textures.ts:479-487` | `encodeToKTX2` called **without** `needSupercompression` |
-| `node_modules/ktx2-encoder@0.6.0/types/type.d.ts:37,200` | `setKTX2UASTCSupercompression` / `needSupercompression` exist and default false |
+| `ktx2-encoder@0.6.0/src/utils.ts`, `applyInputOptions.ts` | `needSupercompression` defaults **true** in executable code; the original false assumption was incorrect |
 | `packages/assets/src/passes/model-textures.ts:357-360` | `chooseCodec`: normals→`uastc`, alpha→`uastc`, else `etc1s` — already quality-aware |
 | `packages/assets/src/compile.ts:210-224` | **the platform matrix is already solved** — `platform` drops undecodable passes per target |
 | `packages/create-threenative/templates/starter/threenative.config.ts:54` | ships `models: "none", textures: "none"` |
@@ -113,7 +151,7 @@ Quality, decoded back through the shipped transcoder at `cTFRGBA32` and compared
 The model pass also accepted input that was **already** meshopt-compressed — all 6 inputs carry
 `EXT_meshopt_compression` and all 6 recompiled without error.
 
-**Still open, and Phase 4 must close it:** a browser has not yet rendered a cooked GLB end to end.
+**Historical spike limitation, closed by Phase 4's browser/desktop playtests:** at this point a browser had not yet rendered a cooked GLB end to end.
 The structure is right and the textures decode standalone, but the headed-capture harness failed on
 module resolution, not on the assets. `quarry` must prove this with a real render, never a
 structural assertion.
@@ -156,8 +194,8 @@ already exists, and no pixel is discarded: **output resolution is unchanged by t
 
 - **Switch 1 — `sharedImages` defaults `true`.** 206 MB, bit-exact, provable by sha256.
 - ~~**Switch 2 — `needSupercompression: true`**~~ — **REFUTED by the spike: 0.0% on all four
-  textures.** Raw UASTC blocks are high-entropy; zstd only pays once RDO has made them
-  compressible. The flag stays unset; RDO is lossy and belongs to PRD-351.
+  textures.** Both arms already used Zstd: the dependency defaults omission to true. The flag
+  stays unset and that default is preserved; RDO is lossy and belongs to PRD-351.
 - **Switch 2 — the templates stop saying `"none"`.** The per-target gate already protects mobile.
 - **New `assets.exclude`** — glob list on the existing `globMatch`, so 677 MB nothing loads stops
   being copied.
@@ -198,7 +236,8 @@ flowchart LR
       Rule 7 ("a default that is right with no option passed") is the entire PRD.
 
 **Data changes:** `IThreeNativeConfig.assets` gains `exclude?: readonly string[]` and
-`budget?: number | "none"`. `models.sharedImages`'s documented default changes false → true.
+`budget?: { uncooked?: number | "none"; total?: number | "none" } | "none"`.
+`models.sharedImages`'s documented default changes false → true.
 
 **Projection**
 
@@ -319,8 +358,10 @@ T_pine_bark_diffuse  1024x1024   source PNG 3.55 MB
    uastc+zstd        1.287 MB      <-- 0.0% smaller
 ```
 
-Raw UASTC blocks are high-entropy; zstd only pays once RDO has restructured them, and RDO is lossy.
-The flag stays unset. **PRD-351 owns RDO**, behind the quality floor that makes it safe to turn on.
+Execution correction: `ktx2-encoder@0.6.0` merges `DefaultOptions.needSupercompression: true`
+before applying options. This comparison used Zstd on both sides, not raw UASTC versus Zstd.
+The flag stays unset and its existing default stays true. **PRD-351 owns RDO**, behind the
+quality floor that makes it safe to turn on.
 
 A second spike finding shapes PRD-351: `chooseCodec` selected `uastc` for **all four** textures,
 including `T_pine_bark_diffuse`, because this pack stores cutout alpha in the diffuse map. ETC1S —
@@ -445,7 +486,7 @@ same.
 
 **Files**
 
-- `packages/core/src/config.ts` — EDIT: `budget?: number | "none"`.
+- `packages/core/src/config.ts` — EDIT: `budget?: { uncooked?: number | "none"; total?: number | "none" } | "none"`.
 - `packages/assets/src/compile.ts` — EDIT: throw `TN_ASSETS_BUDGET_EXCEEDED` at ~1817, beside
   `formatSkippedCompression`.
 - `packages/assets/src/report.ts` — EDIT: `formatBudget` — total, ceiling, top 5 by bytes.
@@ -492,7 +533,8 @@ measurement returns to 289 MB.
 
 **User verification (MANUAL)**
 
-- Action: set `budget: 1_000_000` in wildwood and run `node tools/compile-assets.mjs`.
+- Action: on the uncooked baseline with the material library included, set
+  `budget: { uncooked: 1_000_000 }` in wildwood and run `node tools/compile-assets.mjs`.
 - Expected: fails, naming `UnrealMaterialLibrary.glb` first.
 - Action: open wildwood's before/after frames side by side.
 - Expected: indistinguishable — bark normals and foliage alpha edges included.
@@ -527,7 +569,7 @@ measurement returns to 289 MB.
 
 ---
 
-## 6. Acceptance criteria
+## 6. Original acceptance plan (see measured close-out above)
 
 Consumer-scoped. Each is false for a build a user could not tell apart from today's.
 
@@ -589,7 +631,7 @@ Consumer-scoped. Each is false for a build a user could not tell apart from toda
 | Zstd-supercompressed UASTC fails to transcode on some target | Phase 2 requires it observed on web and desktop before landing, not assumed |
 | KTX2 makes tiny template assets larger | Phase 1's 150-byte regression; `chooseCodec` already returns `none` where compression does not pay |
 | A game changes appearance under ETC1S | Phases 4 and 5 are manual visual checkpoints; PRD-351 adds the measured floor |
-| The 256 MB default budget breaks an existing sandbox game | Phase 5's third test compiles every template; run every sandbox game before landing |
+| The 64 MB uncooked default budget breaks an existing sandbox game | Phase 5's third test compiles every template; actual sandbox coverage and unavailable rows are recorded above |
 | Flipping `sharedImages` invalidates cache keys and forces a full re-encode | Expected once; the store is content-addressed and the second build is a cache hit |
 | Concurrent lanes in this shared tree | Stage only these paths; attribute gate failures before owning them |
 

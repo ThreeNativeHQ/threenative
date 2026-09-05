@@ -30,6 +30,29 @@ function countTriangles(document: ReturnType<Document["getRoot"]>): number {
 }
 
 describe("modelPass", () => {
+  it("should not grow a 150-byte source image", async () => {
+    const image = await readFile(
+      new URL(
+        "../../create-threenative/templates/starter/assets/native-proof.png",
+        import.meta.url,
+      ),
+    );
+    expect(image.byteLength).toBe(150);
+    const document = buildFixtureDocument();
+    for (const texture of document.getRoot().listTextures()) {
+      texture.setImage(image).setMimeType("image/png");
+    }
+    const input = Buffer.from(await new NodeIO().writeBinary(document));
+    const result = await modelPass().apply(input, "tiny.glb");
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const output = await readVerified(result.buffer);
+    expect(output.listTextures().length).toBeGreaterThan(0);
+    for (const texture of output.listTextures()) {
+      expect(texture.getImage()?.byteLength).toBeLessThanOrEqual(image.byteLength);
+      expect(Buffer.from(texture.getImage() ?? [])).toEqual(image);
+    }
+  });
+
   it("should preserve triangle and vertex counts through the full pass chain", async () => {
     const input = Buffer.from(await buildFixtureGlb());
     const result = await modelPass().apply(input, "character.glb");
@@ -41,13 +64,8 @@ describe("modelPass", () => {
     expect(result.entry?.triangles).toBe(20);
     expect(result.entry?.vertices).toBe(18);
     const extensions = (result.entry?.extensions as readonly string[] | undefined) ?? [];
-    // The fixture carries two embedded maps, so the compiled output declares the Basis
-    // extension alongside the geometry ones.
-    expect([...extensions]).toEqual([
-      "EXT_meshopt_compression",
-      "KHR_mesh_quantization",
-      "KHR_texture_basisu",
-    ]);
+    // The tiny fixture maps cost fewer bytes as PNG, so the default keeps them lossless.
+    expect([...extensions]).toEqual(["EXT_meshopt_compression", "KHR_mesh_quantization"]);
   });
 
   it("should keep the bounding box within tolerance at default precision", async () => {

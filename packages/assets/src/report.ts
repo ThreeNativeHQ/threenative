@@ -1,3 +1,25 @@
+import type { IBudgetReport } from "./budget.js";
+import type { TextureSkipReason } from "./passes/texture.js";
+
+/** Both counters stay visible when either ceiling is disabled. */
+export function formatBudget(report: IBudgetReport): readonly string[] {
+  return [
+    `TN_ASSETS_BUDGET: uncooked ${report.uncooked} bytes (ceiling ${report.budget.uncooked}); total ${report.total} bytes (ceiling ${report.budget.total})`,
+    ...[...report.rows]
+      .sort(
+        (a, b) =>
+          b.uncooked - a.uncooked ||
+          b.total - a.total ||
+          a.logicalPath.localeCompare(b.logicalPath),
+      )
+      .slice(0, 5)
+      .map(
+        (row) =>
+          `  budget ${row.logicalPath}: uncooked ${row.uncooked} bytes, total ${row.total} bytes`,
+      ),
+  ];
+}
+
 /**
  * The person-readable size report the compile step prints after encoding: one line per
  * compressed texture and optimized model plus a total, before against after. Pure formatting
@@ -6,6 +28,8 @@
 export interface ITextureSizeRow {
   readonly after: number;
   readonly before: number;
+  /** Set when the bytes shipped as authored; printed so a flat row is never left unexplained. */
+  readonly compressionSkipped?: TextureSkipReason;
   readonly format: string | undefined;
   readonly logicalPath: string;
 }
@@ -14,7 +38,7 @@ export function formatTextureSizes(rows: readonly ITextureSizeRow[]): readonly s
   if (rows.length === 0) return [];
   const lines = rows.map(
     (row) =>
-      `texture ${row.logicalPath}${row.format === undefined ? "" : ` (${row.format})`}: ${row.before} -> ${row.after} bytes ${deltaLabel(row.before, row.after)}`,
+      `texture ${row.logicalPath}${row.format === undefined ? "" : ` (${row.format})`}: ${row.before} -> ${row.after} bytes ${deltaLabel(row.before, row.after)}${row.compressionSkipped === undefined ? "" : `; compression skipped: ${row.compressionSkipped}`}`,
   );
   const before = rows.reduce((total, row) => total + row.before, 0);
   const after = rows.reduce((total, row) => total + row.after, 0);
@@ -24,6 +48,7 @@ export function formatTextureSizes(rows: readonly ITextureSizeRow[]): readonly s
 
 /** What the model pass did to the images inside one `.glb`. */
 export interface IEmbeddedTextureRow {
+  readonly skippedCompression?: Readonly<Record<string, TextureSkipReason>>;
   readonly bytesAfter: number;
   readonly bytesBefore: number;
   readonly count: number;
@@ -349,6 +374,10 @@ export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly strin
         ? []
         : [
             `embedded textures ${row.logicalPath}: ${embedded.count} image(s), ${embedded.bytesBefore} -> ${embedded.bytesAfter} bytes ${deltaLabel(embedded.bytesBefore, embedded.bytesAfter)}, GPU ${embedded.gpuBytesBefore} -> ${embedded.gpuBytesAfter} bytes ${deltaLabel(embedded.gpuBytesBefore, embedded.gpuBytesAfter)}, ${embedded.resized} resized`,
+            ...Object.entries(embedded.skippedCompression ?? {}).map(
+              ([name, reason]) =>
+                `embedded texture ${row.logicalPath}#${name}: compression skipped: ${reason}`,
+            ),
           ];
     const reduced = [...simplifyLine(row), ...virtualLine(row)];
     if (row.lightmap === undefined) return [model, ...reduced, ...images];

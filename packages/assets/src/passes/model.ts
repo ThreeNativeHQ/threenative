@@ -28,6 +28,7 @@ import {
   classify,
 } from "../compile.js";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
+import { KTX2_ENCODER_VERSION } from "../ktx2-encoder.js";
 import {
   type IModelVirtualOptions,
   type IModelVirtualSummary,
@@ -642,7 +643,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         options.textures === "none"
           ? "none"
           : {
+              encoder: KTX2_ENCODER_VERSION,
               maxSize: options.textures?.maxSize ?? null,
+              keepSmallerSource: true,
               overrides: options.textures?.overrides ?? [],
               quality: options.textures?.quality ?? null,
             },
@@ -761,7 +764,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       }
 
       const { auxiliaryOutputs, buffer, extensions, verified } =
-        store === undefined || shared === undefined
+        store === undefined || shared === undefined || shared.keys.length === 0
           ? await writeAndVerify(document, logicalPath)
           : await writeAndVerifyShared(document, logicalPath, store, shared);
       const output = reachableStats(verified);
@@ -836,6 +839,8 @@ function sharedSettings(
       textureOptions === undefined
         ? "none"
         : {
+            encoder: KTX2_ENCODER_VERSION,
+            keepSmallerSource: true,
             maxSize: textureOptions.maxSize ?? null,
             overrides: textureOptions.overrides ?? [],
             quality: textureOptions.quality ?? null,

@@ -1,7 +1,7 @@
 import { read as readKTX2 } from "ktx-parse";
-import { encodeToKTX2 } from "ktx2-encoder";
 import { type IAssetPass, type IAssetPassOutput, classify } from "../compile.js";
 import { textureStats } from "../health.js";
+import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
 import { globMatch } from "./glob.js";
 import { cappedSize, resampleRgba } from "./model-textures.js";
@@ -22,6 +22,14 @@ import { cappedSize, resampleRgba } from "./model-textures.js";
  */
 
 export type TextureCodec = "etc1s" | "none" | "uastc";
+
+/**
+ * Why a source shipped uncompressed although its pass ran. `not-smaller` means encoding would
+ * have grown the download; `block-size` means no block codec can address the source's
+ * dimensions. Both keep the authored bytes; neither is a silent decision — the manifest carries
+ * the reason and the report prints it.
+ */
+export type TextureSkipReason = "block-size" | "not-smaller";
 
 export interface ITextureOverride {
   readonly codec: TextureCodec;
@@ -76,12 +84,14 @@ export async function encodeLinearRgbaKtx2(
 /**
  * Encodes source textures as mipmapped KTX2/Basis data and declares their runtime transcode targets.
  * @constraint every compressed source width and height must be divisible by 4 because BC7, BC1, ETC2, and ASTC 4x4 use 4x4 blocks; WebGPU rejects an unaligned texture at draw time
- * @constraint use a matching codec "none" override when an intentionally unaligned source cannot be resized
+ * @constraint automatic cooking retains an unaligned source unchanged and reports block-size; an explicit compression codec override fails, while codec "none" remains available
  * @example const pass = texturePass({ overrides: [{ glob: "ui/*", codec: "none" }] });
  */
 export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
   return {
     configuration: {
+      encoder: KTX2_ENCODER_VERSION,
+      keepSmallerSource: true,
       ...(options.maxSize === undefined ? {} : { maxSize: options.maxSize }),
       overrides: options.overrides ?? [],
       quality: options.quality ?? DEFAULT_ETC1S_QUALITY,
@@ -105,7 +115,11 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
         choice.normalMap,
         options.maxSize,
       );
-      assertBlockAligned(logicalPath, choice.codec, target.width, target.height);
+      // Decided before `encodeToKTX2`, because Basis accepts an unaligned source and stamps the
+      // odd size into the KTX2 header: that silence is how this reached a draw call.
+      if (target.width % BLOCK_SIZE !== 0 || target.height % BLOCK_SIZE !== 0) {
+        return unalignedOutcome(input, logicalPath, choice.codec, choice.explicit, target);
+      }
       const encoded = await encodeToKTX2(
         resized
           ? new Uint8Array([0])
@@ -116,6 +130,9 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
           ...encodeSettingsFor(choice),
         },
       );
+      if (!resized && encoded.byteLength >= input.byteLength && !choice.explicit) {
+        return { buffer: input, entry: { compressionSkipped: "not-smaller" } };
+      }
       const container = readKTX2(encoded);
       if (container.levelCount < 2) {
         throw new Error(
@@ -168,19 +185,27 @@ function resizeForEncoding(
  * complaint and stamps the odd size into the KTX2 header, so the build reports success and the
  * game dies at its first draw call with a GPUValidationError. Padding would move every UV the
  * model was authored against and resampling would silently change the pixels, so neither is the
- * pipeline's to decide: it names the dimension and the block size, and `codec: "none"` is the
- * declared way to ship such a source uncompressed.
+ * pipeline's to decide. So an automatic cook — the one every project gets with no `assets` block
+ * at all — retains the authored bytes and reports `block-size` rather than ending a build over
+ * art nobody asked it to compress. A codec named by an override is a request that cannot be
+ * honoured: that names the dimension and the block size, and `codec: "none"` is the way to say
+ * it out loud.
  */
-function assertBlockAligned(
+function unalignedOutcome(
+  input: Buffer,
   logicalPath: string,
   codec: Exclude<TextureCodec, "none">,
-  width: number,
-  height: number,
-): void {
-  if (width % BLOCK_SIZE === 0 && height % BLOCK_SIZE === 0) return;
-  throw new Error(
-    `TN_ASSETS_TEXTURE_BLOCK_SIZE: '${logicalPath}' is ${width}x${height}, which is not a multiple of the ${BLOCK_SIZE}x${BLOCK_SIZE} block the ${codec} codec transcodes to (${TRANSCODE_TARGETS[codec].join(", ")}); WebGPU rejects such a texture at draw time. Resize the source to a multiple of ${BLOCK_SIZE}, or declare a texture override with codec "none" for it.`,
-  );
+  explicit: boolean,
+  target: { readonly height: number; readonly width: number },
+): IAssetPassOutput {
+  if (explicit) {
+    throw new Error(
+      `TN_ASSETS_TEXTURE_BLOCK_SIZE: '${logicalPath}' is ${target.width}x${target.height}, which is not a multiple of the ${BLOCK_SIZE}x${BLOCK_SIZE} block the ${codec} codec transcodes to (${TRANSCODE_TARGETS[codec].join(", ")}); WebGPU rejects such a texture at draw time. Resize the source to a multiple of ${BLOCK_SIZE}, or declare a texture override with codec "none" for it.`,
+    );
+  }
+  // `resizeForEncoding` only ever lands on multiples of four, so an unaligned target is the
+  // source's own size and `input` is exactly the bytes and dimensions that were authored.
+  return { buffer: input, entry: { compressionSkipped: "block-size" } };
 }
 
 function rgbaHasAlpha(rgba: Uint8Array): boolean {
@@ -192,6 +217,8 @@ function rgbaHasAlpha(rgba: Uint8Array): boolean {
 
 interface IChosenCodec {
   readonly codec: TextureCodec;
+  /** True when an override named this codec, so the pass may not quietly substitute another. */
+  readonly explicit: boolean;
   readonly normalMap: boolean;
   readonly quality: number;
 }
@@ -207,12 +234,14 @@ function chooseCodec(
     if (!globMatch(override.glob, logicalPath)) continue;
     return {
       codec: override.codec,
+      explicit: true,
       normalMap,
       quality: clampQuality(override.quality ?? fallbackQuality),
     };
   }
   return {
     codec: alpha || normalMap ? "uastc" : "etc1s",
+    explicit: false,
     normalMap,
     quality: clampQuality(fallbackQuality),
   };

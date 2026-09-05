@@ -2,10 +2,10 @@ import type { Document, Texture } from "@gltf-transform/core";
 import { KHRTextureBasisu } from "@gltf-transform/extensions";
 import { getTextureColorSpace, listTextureInfo, listTextureSlots } from "@gltf-transform/functions";
 import { read as readKTX2 } from "ktx-parse";
-import { encodeToKTX2 } from "ktx2-encoder";
 import { textureStats } from "../health.js";
+import { encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
-import type { TextureCodec } from "./texture.js";
+import type { TextureCodec, TextureSkipReason } from "./texture.js";
 
 /**
  * Compresses the images embedded *inside* a `.glb` — the half of a model the geometry passes
@@ -55,6 +55,8 @@ export interface IEmbeddedTextureSummary {
   readonly gpuBytesBefore: number;
   /** How many images the resolution cap actually downsampled. */
   readonly resized: number;
+  /** Images retained at their authored bytes, by name, with the reason each one was not cooked. */
+  readonly skippedCompression: Readonly<Record<string, TextureSkipReason>>;
 }
 
 /** One embedded image as the verification compares it, source against re-read output. */
@@ -393,6 +395,7 @@ export async function compressEmbeddedTextures(
   const quality = Math.min(255, Math.max(1, Math.round(options.quality ?? DEFAULT_ETC1S_QUALITY)));
   const keys = textureKeys(root);
   const formats: Record<string, string> = {};
+  const skippedCompression: Record<string, TextureSkipReason> = {};
   let bytesBefore = 0;
   let bytesAfter = 0;
   let gpuBytesBefore = 0;
@@ -445,6 +448,7 @@ export async function compressEmbeddedTextures(
         `TN_ASSETS_MODEL_TEXTURE_UNDECODABLE: could not decode embedded texture '${key}' of '${logicalPath}': ${messageOf(error)}`,
       );
     }
+    const explicit = (options.overrides ?? []).some((override) => slots.includes(override.slot));
     const codec = chooseCodec(slots, rgbaHasAlpha(decoded.data), options);
     bytesBefore += image.byteLength;
     gpuBytesBefore += gpuBytes(decoded.width, decoded.height, "none");
@@ -470,9 +474,20 @@ export async function compressEmbeddedTextures(
       resized += 1;
     }
     if (target.width % BLOCK_SIZE !== 0 || target.height % BLOCK_SIZE !== 0) {
-      throw new Error(
-        `TN_ASSETS_MODEL_TEXTURE_BLOCK_SIZE: embedded texture '${key}' of '${logicalPath}' is ${String(target.width)}x${String(target.height)}, which is not a multiple of the ${String(BLOCK_SIZE)}x${String(BLOCK_SIZE)} block the ${codec} codec transcodes to; WebGPU rejects such a texture at draw time. Resize the source to a multiple of ${String(BLOCK_SIZE)} inside the model, or declare an override with codec "none" for its slot.`,
-      );
+      // Same split as the standalone pass: a codec named per slot is a request no block format
+      // can satisfy, while an automatic choice retains the image untouched. `cappedSize` only
+      // ever returns multiples of four, so an unaligned target means nothing was resampled and
+      // `image` is still the bytes and dimensions the model was authored with.
+      if (explicit) {
+        throw new Error(
+          `TN_ASSETS_MODEL_TEXTURE_BLOCK_SIZE: embedded texture '${key}' of '${logicalPath}' is ${String(target.width)}x${String(target.height)}, which is not a multiple of the ${String(BLOCK_SIZE)}x${String(BLOCK_SIZE)} block the ${codec} codec transcodes to; WebGPU rejects such a texture at draw time. Resize the source to a multiple of ${String(BLOCK_SIZE)} inside the model, or declare an override with codec "none" for its slot.`,
+        );
+      }
+      bytesAfter += image.byteLength;
+      gpuBytesAfter += gpuBytes(decoded.width, decoded.height, "none");
+      formats[key] = "none";
+      skippedCompression[key] = "block-size";
+      continue;
     }
 
     const normalMap = slots.some((slot) => NORMAL_SLOTS.has(slot));
@@ -485,6 +500,20 @@ export async function compressEmbeddedTextures(
         ? { isUASTC: true, ...(normalMap ? { isNormalMap: true } : {}) }
         : { isUASTC: false, qualityLevel: quality }),
     });
+    // A tiny source can cost less than the KTX2 container alone. Keep its exact bytes when
+    // encoding cannot save download bytes; a named codec override still requests GPU compression.
+    if (
+      encoded.byteLength >= image.byteLength &&
+      target.width === decoded.width &&
+      target.height === decoded.height &&
+      !explicit
+    ) {
+      bytesAfter += image.byteLength;
+      gpuBytesAfter += gpuBytes(decoded.width, decoded.height, "none");
+      formats[key] = "none";
+      skippedCompression[key] = "not-smaller";
+      continue;
+    }
     const container = readKTX2(encoded);
     if (container.levelCount < 2) {
       throw new Error(
@@ -511,5 +540,6 @@ export async function compressEmbeddedTextures(
     gpuBytesAfter,
     gpuBytesBefore,
     resized,
+    skippedCompression,
   };
 }

@@ -17,6 +17,7 @@ import {
   type ITraceEvent,
   type ITraceSummary,
   type TraceReadiness,
+  summariseRafTimestamps,
 } from "./trace.js";
 
 /**
@@ -87,10 +88,27 @@ async function recordTrace(args: ITraceArgs, output: string): Promise<ITraceSumm
       headless: false,
     });
     const page = await browser.newPage({ viewport: args.viewport });
+    await page.addInitScript(installGpuPipelineDiagnostics);
+    const controlUrl = new URL("/__tn_trace_presentation_control__", args.url).href;
+    await page.route(controlUrl, (route) => route.fulfill({
+      body: "<!doctype html><title>ThreeNative trace presentation control</title>",
+      contentType: "text/html",
+    }));
+    await page.goto(controlUrl, { timeout: args.waitTimeoutSeconds * 1_000, waitUntil: "load" });
+    await page.bringToFront();
+    let presentationControl: ReturnType<typeof summariseRafTimestamps>;
+    let presentationControlError: string | undefined;
+    try {
+      presentationControl = summariseRafTimestamps(
+        await sampleRafTimestamps(page, Math.min(args.waitTimeoutSeconds * 1_000, 30_000)),
+      );
+    } catch (error) {
+      presentationControlError = error instanceof Error ? error.message : String(error);
+    }
+    const adapter = await probeAdapter(page);
     await page.goto(args.url, { timeout: args.waitTimeoutSeconds * 1_000, waitUntil: "commit" });
     const readiness = await awaitWorld(page, args);
     await page.waitForTimeout(args.settleSeconds * 1_000);
-    const adapter = await probeAdapter(page);
 
     const writer = openTraceFile(output);
     const cdp = await page.context().newCDPSession(page);
@@ -106,6 +124,15 @@ async function recordTrace(args: ITraceArgs, output: string): Promise<ITraceSumm
       transferMode: "ReportEvents",
     });
     await driveInput(page, args);
+    const pipelineDiagnostics = await page.evaluate(() => {
+      return (globalThis as typeof globalThis & {
+        __TN_TRACE_INVALID_GPU_PIPELINES__?: readonly {
+          depthStencil: Readonly<Record<string, unknown>>;
+          label?: string;
+          stack: string;
+        }[];
+      }).__TN_TRACE_INVALID_GPU_PIPELINES__ ?? [];
+    });
     await cdp.send("Tracing.end");
     await complete;
     await writer.close();
@@ -117,6 +144,9 @@ async function recordTrace(args: ITraceArgs, output: string): Promise<ITraceSumm
       displayStrategy: display.strategy.kind,
       drivenInput: args.keys,
       output,
+      pipelineDiagnostics,
+      ...(presentationControl === undefined ? {} : { presentationControl }),
+      ...(presentationControlError === undefined ? {} : { presentationControlError }),
       readiness,
       seconds: args.seconds,
       url: args.url,
@@ -127,6 +157,69 @@ async function recordTrace(args: ITraceArgs, output: string): Promise<ITraceSumm
     await display?.release();
     await lease.release();
   }
+}
+
+/**
+ * Preserve WebGPU's behavior while recording the authored call site that supplied an invalid
+ * depth descriptor. Chromium's eventual validation error otherwise points only into its async
+ * pipeline compiler, after the descriptor's owner is no longer on the stack.
+ */
+export function installGpuPipelineDiagnostics(): void {
+  type PipelineDescriptor = {
+    readonly depthStencil?: Readonly<Record<string, unknown>>;
+    readonly label?: string;
+  };
+  type PipelineDiagnostic = {
+    readonly depthStencil: Readonly<Record<string, unknown>>;
+    readonly label?: string;
+    readonly stack: string;
+  };
+  const globals = globalThis as typeof globalThis & {
+    GPUDevice?: { prototype?: { createRenderPipelineAsync?: (descriptor: PipelineDescriptor) => Promise<unknown> } };
+    __TN_TRACE_INVALID_GPU_PIPELINES__?: PipelineDiagnostic[];
+    __TN_TRACE_GPU_PIPELINES_INSTALLED__?: boolean;
+  };
+  globals.__TN_TRACE_INVALID_GPU_PIPELINES__ = [];
+  if (globals.__TN_TRACE_GPU_PIPELINES_INSTALLED__ === true) return;
+  const prototype = globals.GPUDevice?.prototype;
+  const create = prototype?.createRenderPipelineAsync;
+  if (prototype === undefined || create === undefined) return;
+  globals.__TN_TRACE_GPU_PIPELINES_INSTALLED__ = true;
+  prototype.createRenderPipelineAsync = function (descriptor: PipelineDescriptor): Promise<unknown> {
+    const depthStencil = descriptor?.depthStencil;
+    if (depthStencil !== undefined && typeof depthStencil.format !== "string") {
+      const diagnostic: PipelineDiagnostic = {
+        depthStencil: { ...depthStencil },
+        ...(typeof descriptor.label === "string" ? { label: descriptor.label } : {}),
+        stack: new Error("createRenderPipelineAsync called without depthStencil.format").stack ?? "stack unavailable",
+      };
+      globals.__TN_TRACE_INVALID_GPU_PIPELINES__?.push(diagnostic);
+      console.error("TN_INVALID_DEPTH_PIPELINE", diagnostic);
+    }
+    return create.call(this, descriptor);
+  };
+}
+
+async function sampleRafTimestamps(
+  page: import("playwright").Page,
+  timeoutMs: number,
+): Promise<readonly number[]> {
+  return await page.evaluate((sampleTimeoutMs) => new Promise<number[]>((resolveSample, rejectSample) => {
+    const timestamps: number[] = [];
+    const timeout = setTimeout(
+      () => rejectSample(new Error(`presentation control observed only ${timestamps.length - 1} of 180 rAF intervals`)),
+      sampleTimeoutMs,
+    );
+    function sample(time: number): void {
+      timestamps.push(time);
+      if (timestamps.length < 181) requestAnimationFrame(sample);
+      else {
+        clearTimeout(timeout);
+        resolveSample(timestamps);
+      }
+    }
+    requestAnimationFrame(sample);
+  }), timeoutMs);
 }
 
 /**

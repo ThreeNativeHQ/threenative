@@ -30,6 +30,15 @@ function driveWindow(budget: FrameBudget, frames: number): void {
 }
 
 describe("frame-budget surface reporting", () => {
+  it.each([true, false])("preserves the observed compilation state (%s)", (compiling) => {
+    const budget = new FrameBudget({
+      readSurface: () => ({ ...PINNED, compiling }),
+      report: () => {},
+      reportEvery: 4,
+    });
+    driveWindow(budget, 4);
+    expect(budget.window().surface).toMatchObject({ compiling });
+  });
   it("names the scale, its source, the sample count and the drawing buffer in every window", () => {
     const lines: string[] = [];
     const budget = new FrameBudget({
@@ -64,6 +73,10 @@ describe("frame-budget surface reporting", () => {
       ["a non-finite scale", { ...PINNED, resolutionScale: Number.NaN }],
       ["a zero-width buffer", { ...PINNED, drawingBufferWidth: 0 }],
       ["a sample count below one", { ...PINNED, sampleCount: 0 }],
+      [
+        "a malformed compilation observation",
+        { ...PINNED, compiling: "yes" as unknown as boolean },
+      ],
       [
         "an unnamed scale source",
         { ...PINNED, scaleSource: "guessed" as IFrameSurfaceState["scaleSource"] },

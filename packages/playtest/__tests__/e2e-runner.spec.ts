@@ -274,7 +274,7 @@ test("transport-only browser errors reach runtime diagnostics without a bridge",
     },
   });
 
-  expect(report.assertionResults).toContainEqual({
+  expect(report.assertionResults, JSON.stringify(report.diagnostics)).toContainEqual({
     details: {
       consoleErrors: 1,
       networkErrors: 0,
