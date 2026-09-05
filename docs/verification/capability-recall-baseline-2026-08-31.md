@@ -445,7 +445,8 @@ rowCount: 58
 ~~~
 
 The budget now protects the corrected 52 recalled row IDs and the four pinned not-owned mappings;
-the 7/58 unresolved ceiling and 19 reject ceiling remain unchanged. The legacy corpus rows
+the 7/58 unresolved ceiling remains unchanged, while the reject ceiling tightens from the
+historical 19 to 16. The legacy corpus rows
 `brief.fps.3` (health) and `brief.fps.8` (damage by body height) remain explicit misses with their
 original expected symbols. They were not relabeled to make recall green; they document mechanics
 that still need game-owned implementation or a future measured `notOwned` entry.
