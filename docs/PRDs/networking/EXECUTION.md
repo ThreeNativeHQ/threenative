@@ -337,7 +337,7 @@ Owner confirmed on 2026-09-05 that networking verification belongs in CI. Task 7
 
 ## Authoring discovery requirement
 
-Owner reaffirmed on 2026-09-05 that networking must be discoverable through the authoring layer. Tasks 8a/8b and all five template pairs are required delivery: capability search/detail must expose the installed `@threenative/core/net` API, recall tests must cover concrete multiplayer requests, and core/template instructions must state delivery guarantees, defaults/overrides and failure behavior. Verify the cold tarball sandbox discovers and imports the actual export; metadata alone is insufficient.
+Owner clarified on 2026-09-05 that authoring discovery specifically means the engine capabilities MCP: execute `engine_search_capabilities` for concrete multiplayer requests, then `engine_capability_detail` on the networking hit, and verify the real installed import, constraints and overrides. Tasks 8a/8b and all five template pairs are required delivery: capability search/detail must expose the installed `@threenative/core/net` API, recall tests must cover concrete multiplayer requests, and core/template instructions must state delivery guarantees, defaults/overrides and failure behavior. Verify the cold tarball sandbox discovers and imports the actual export; metadata alone is insufficient.
 
 ## Execution records
 
