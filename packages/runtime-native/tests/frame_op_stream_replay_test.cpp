@@ -309,6 +309,40 @@ void runContract(bool disableStreamControl) {
     expect(engine->toBoolean(engine->evalScriptWithResult("__tnMapErrors.length === 0", "tn-map-check.js")),
            "buffer map lifecycle: " + engine->toString(engine->evalScriptWithResult("JSON.stringify(__tnMapErrors)", "tn-map-errors.js")));
 
+    // Exercise a backend completion with an error, not just cancellation. The failed request must
+    // leave both pending maps empty so the same buffer can be mapped successfully immediately
+    // afterwards; otherwise a driver validation error turns into a permanent map-state leak.
+    expect(engine->evalScript(R"JS((() => {
+      globalThis.__tnMapFailure = __tnDevice.createBuffer({size:16, usage:GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST});
+      globalThis.__tnMapFailureErrors = [];
+      globalThis.__tnMapFailureDone = false;
+      (async () => {
+        const buffer = __tnMapFailure;
+        await buffer.mapAsync(1, 0, 15).then(
+          () => __tnMapFailureErrors.push('invalid map resolved'),
+          () => {
+            if (buffer.mapState !== 'unmapped') __tnMapFailureErrors.push('failed map state');
+          });
+        await buffer.mapAsync(1, 0, 16);
+        if (buffer.mapState !== 'mapped') __tnMapFailureErrors.push('reused map state');
+        buffer.unmap();
+        buffer.destroy();
+        globalThis.__tnMapFailureDone = true;
+      })().catch((error) => {
+        __tnMapFailureErrors.push(String(error));
+        globalThis.__tnMapFailureDone = true;
+      });
+    })())JS", "tn-map-failure.js"), "backend map failure requested");
+    awaitFlag(runtime.get(), engine, "__tnMapFailureDone");
+    expect(engine->toBoolean(engine->evalScriptWithResult(
+        "__tnMapFailureErrors.length === 0 && __tnBufferMapPendingCount() === 0",
+        "tn-map-failure-check.js")),
+           "backend map failures clear every promise: " +
+               engine->toString(engine->evalScriptWithResult(
+                   "JSON.stringify(__tnMapFailureErrors)", "tn-map-failure-errors.js")));
+    expect(state->asyncBufferMaps.pending.empty(),
+           "backend map failures clear every native pending request");
+
     expect(engine->evalScript(R"JS((() => {
       globalThis.__tnShutdownBuffer = __tnDevice.createBuffer({size:16, usage:GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST});
       globalThis.__tnShutdownSettlements = 0;
