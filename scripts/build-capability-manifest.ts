@@ -565,9 +565,12 @@ export function validateNotOwned(
             candidate.result !== undefined &&
             candidate.result.score >= RELEVANCE_FLOOR &&
             (candidate.result.overlap >= 2 ||
-              candidate.result.matchedSituation
-                .toLocaleLowerCase()
-                .includes(situationTokens(candidate.situation).join(" "))),
+              situationTokens(candidate.result.matchedSituation)
+                .join(" ")
+                .includes(situationTokens(candidate.situation).join(" ")) ||
+              situationTokens(candidate.situation)
+                .join(" ")
+                .includes(situationTokens(candidate.result.matchedSituation).join(" "))),
         );
       if (overlap !== undefined) {
         conflicts.push(

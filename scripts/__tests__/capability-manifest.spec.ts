@@ -1,11 +1,13 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { RELEVANCE_FLOOR } from "../../packages/engine-mcp/src/index.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   buildCapabilityManifest,
   checkCapabilityManifest,
   validateCapabilityAllowlist,
+  validateNotOwned,
   writeCapabilityManifest,
 } from "../build-capability-manifest.js";
 
@@ -99,6 +101,37 @@ describe("capability manifest generator", () => {
     expect(() =>
       validateCapabilityAllowlist([{ package: "@threenative/core", reason: "", symbol: "Hidden" }]),
     ).toThrow(/non-empty.*reason/u);
+  });
+
+  it("rejects a one-token owned situation when the notOwned match clears the relevance floor", () => {
+    const entries = [
+      {
+        constraints: [],
+        example: "const capability = new InventoryCapability();",
+        importPath: "@threenative/core",
+        kind: "class" as const,
+        overrides: [],
+        package: "@threenative/core",
+        signature: "class InventoryCapability",
+        situations: ["inventory"],
+        summary: "Manages inventory.",
+        supersedes: [],
+        symbol: "InventoryCapability",
+      },
+    ];
+    const notOwned = [
+      {
+        guidance: "Write inventory state in the game's src/.",
+        id: "inventory-system",
+        situations: ["inventory system"],
+      },
+    ];
+    const rawOverlapScore = 1 / Math.max(notOwned[0].situations[0].split(" ").length, 1);
+
+    expect(rawOverlapScore).toBeGreaterThanOrEqual(RELEVANCE_FLOOR);
+    expect(() => validateNotOwned(entries, notOwned)).toThrow(
+      /notOwned 'inventory-system'.*InventoryCapability/u,
+    );
   });
 
   it("writes and checks a generated manifest instead of accepting a stale copy", async () => {
