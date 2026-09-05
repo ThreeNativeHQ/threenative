@@ -7,7 +7,7 @@ fresh drift check; each step has its own verification command.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Consume verified CI outputs once | P1 | M | — | TODO |
+| 001 | Consume verified CI outputs once | P1 | M | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale).
 
