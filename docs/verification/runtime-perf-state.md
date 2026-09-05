@@ -1446,7 +1446,7 @@ parity claim:
 | Chrome rung B | 0.55 | true | not captured | — | — | blocked before launch |
 | Native rung B | 0.55 | true | not captured | — | — | blocked before launch |
 
-The rule remains, quoted exactly: **native slope >= 1.3× Chrome OR native intercept >= Chrome + 3ms => runtime-owned GPU term; anything less content-owned.** It was not evaluated because there are no two rungs. The deliberate reader-control swap and the deliberately mismatched DPR/physical pixel pair were not run for the same reason.
+The rule remains, quoted exactly: **native slope ≥ 1.3× Chrome's, or native intercept ≥ Chrome's + 3 ms at matched pixels, means a runtime-owned GPU term exists. Anything less closes the question as content-owned.** It was not evaluated because there are no two rungs. The deliberate reader-control swap and the deliberately mismatched DPR/physical pixel pair were not run for the same reason.
 
 The exact preflight command and observed result were:
 

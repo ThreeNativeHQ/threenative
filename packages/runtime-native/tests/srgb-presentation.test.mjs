@@ -18,6 +18,7 @@ function presentationDefinitions() {
     pipeline: nativeDefinition("ensureSrgbPresentationPipeline").text,
     present: nativeDefinition("presentPendingSurface").text,
     republish: nativeDefinition("republishSurface").text,
+    selection: nativeDefinition("selectSurfaceFormat", { root: WEBGPU_SOURCE_ROOT }).text,
   };
 }
 
@@ -72,7 +73,7 @@ function assertLinearSurfaceAblation(definitions) {
   assert.match(definitions.linearRequested, /debug\.threenative\.linear_surface/u);
   assert.match(definitions.linearRequested, /THREENATIVE_LINEAR_SURFACE/u);
   assert.match(definitions.context, /linearSurfaceRequested\(\)/u);
-  assert.match(definitions.context, /TN_LINEAR_SURFACE_UNSUPPORTED/u);
+  assert.match(definitions.selection, /TN_LINEAR_SURFACE_UNSUPPORTED/u);
 }
 
 test("sRGB-only native surfaces present Three.js encoded output through a linear canvas", () => {

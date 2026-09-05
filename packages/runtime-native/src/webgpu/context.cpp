@@ -45,6 +45,7 @@ extern "C" int stbi_write_png(const char* filename, int w, int h, int comp, cons
 #endif
 #endif
 #include "mystral/webgpu_compat.h"
+#include "surface_format_selection.h"
 #endif
 
 // Dawn-specific includes for proc table setup
@@ -139,6 +140,60 @@ static WGPUTextureFormat linearSurfaceFormatForProbe(WGPUTextureFormat format) {
 static bool isSrgbSurfaceFormatForProbe(WGPUTextureFormat format) {
     return format == WGPUTextureFormat_RGBA8UnormSrgb ||
            format == WGPUTextureFormat_BGRA8UnormSrgb;
+}
+
+static bool hasSurfaceFormat(
+    const WGPUTextureFormat* formats,
+    uint32_t formatCount,
+    WGPUTextureFormat requestedFormat) {
+    for (uint32_t i = 0; i < formatCount; i++) {
+        if (formats[i] == requestedFormat) return true;
+    }
+    return false;
+}
+
+SurfaceFormatSelection selectSurfaceFormat(
+    const WGPUTextureFormat* formats,
+    uint32_t formatCount,
+    bool linearDiagnosticRequested) {
+    if (!formats || formatCount == 0) {
+        return {WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,
+                "TN_LINEAR_SURFACE_UNSUPPORTED"};
+    }
+
+    // Keep the product path byte-for-byte equivalent to the existing preference: BGRA linear
+    // wins, then RGBA linear, then the first capability. The diagnostic arm is deliberately
+    // selected after this value so the product default cannot drift when the switch is off.
+    WGPUTextureFormat productDefaultFormat = formats[0];
+    for (uint32_t i = 0; i < formatCount; i++) {
+        if (formats[i] == WGPUTextureFormat_BGRA8Unorm) {
+            productDefaultFormat = WGPUTextureFormat_BGRA8Unorm;
+            break;
+        }
+        if (formats[i] == WGPUTextureFormat_RGBA8Unorm) {
+            productDefaultFormat = WGPUTextureFormat_RGBA8Unorm;
+        }
+    }
+
+    if (!linearDiagnosticRequested) {
+        return {productDefaultFormat, productDefaultFormat, nullptr};
+    }
+
+    bool matchingLinearTwinFound = false;
+    for (uint32_t i = 0; i < formatCount; i++) {
+        if (!isSrgbSurfaceFormatForProbe(formats[i])) continue;
+        const WGPUTextureFormat linearTwin = linearSurfaceFormatForProbe(formats[i]);
+        if (!hasSurfaceFormat(formats, formatCount, linearTwin)) continue;
+        matchingLinearTwinFound = true;
+        if (linearTwin != productDefaultFormat) {
+            return {productDefaultFormat, linearTwin, nullptr};
+        }
+    }
+
+    if (matchingLinearTwinFound) {
+        return {productDefaultFormat, productDefaultFormat, "TN_LINEAR_SURFACE_NO_CHANGE"};
+    }
+    return {productDefaultFormat, productDefaultFormat, "TN_LINEAR_SURFACE_UNSUPPORTED"};
 }
 #endif
 
@@ -1139,36 +1194,20 @@ bool Context::configureSurface(uint32_t width, uint32_t height, bool vsync) {
 
     // Prefer a non-sRGB surface to match the byte-encoded output Three.js writes for the
     // browser canvas. Bindings add a presentation bridge only when the platform exposes no
-    // linear surface format.
-    preferredFormat_ = capabilities.formats[0];
-    for (uint32_t i = 0; i < capabilities.formatCount; i++) {
-        if (capabilities.formats[i] == WGPUTextureFormat_BGRA8Unorm) {
-            preferredFormat_ = WGPUTextureFormat_BGRA8Unorm;
-            break;
-        }
-        if (capabilities.formats[i] == WGPUTextureFormat_RGBA8Unorm) {
-            preferredFormat_ = WGPUTextureFormat_RGBA8Unorm;
-        }
+    // linear surface format. The diagnostic selector runs after this product choice and can
+    // only opt into a supported, changed linear twin.
+    const bool linearDiagnosticRequested = linearSurfaceRequested();
+    const SurfaceFormatSelection selection = selectSurfaceFormat(
+        capabilities.formats, capabilities.formatCount, linearDiagnosticRequested);
+    if (selection.errorCode != nullptr) {
+        std::cerr << selection.errorCode
+                  << ": linear surface diagnostic could not select a changed supported format"
+                  << std::endl;
+        wgpuSurfaceCapabilitiesFreeMembers(capabilities);
+        return false;
     }
-
-    const WGPUTextureFormat preferredFormat = static_cast<WGPUTextureFormat>(preferredFormat_);
-    if (linearSurfaceRequested() && isSrgbSurfaceFormatForProbe(preferredFormat)) {
-        const WGPUTextureFormat linearFormat = linearSurfaceFormatForProbe(preferredFormat);
-        bool linearFormatSupported = false;
-        for (uint32_t i = 0; i < capabilities.formatCount; i++) {
-            if (capabilities.formats[i] == linearFormat) {
-                linearFormatSupported = true;
-                break;
-            }
-        }
-        if (!linearFormatSupported) {
-            std::cerr << "TN_LINEAR_SURFACE_UNSUPPORTED: requested linear twin for surface format "
-                      << preferredFormat_ << " but the adapter does not expose " << linearFormat
-                      << std::endl;
-            wgpuSurfaceCapabilitiesFreeMembers(capabilities);
-            return false;
-        }
-        preferredFormat_ = linearFormat;
+    preferredFormat_ = static_cast<uint32_t>(selection.selectedFormat);
+    if (linearDiagnosticRequested) {
         std::cout << "[WebGPU] Linear surface diagnostic enabled; using format: "
                   << preferredFormat_ << std::endl;
     }

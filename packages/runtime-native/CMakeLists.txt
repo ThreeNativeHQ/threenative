@@ -2099,6 +2099,12 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/wgpu_null_handle_test.cpp)
     target_link_libraries(threenative-wgpu-null-handle-test PRIVATE mystral-runtime)
 
+    add_executable(threenative-surface-format-selection-test EXCLUDE_FROM_ALL
+        tests/surface_format_selection_test.cpp)
+    target_include_directories(threenative-surface-format-selection-test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(threenative-surface-format-selection-test PRIVATE mystral-runtime)
+
     # localStorage is the persistence contract behind the JS storagePolyfill;
     # this proves the file-backed backend without a display or engine. The
     # header is internal to src/, so only this test gets that include dir.
@@ -2124,8 +2130,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     # backend headers the bindings use. mystral-runtime links these PRIVATE.
     if(TARGET dawn::webgpu)
         target_link_libraries(threenative-wgpu-null-handle-test PRIVATE dawn::webgpu)
+        target_link_libraries(threenative-surface-format-selection-test PRIVATE dawn::webgpu)
     elseif(TARGET wgpu::wgpu)
         target_link_libraries(threenative-wgpu-null-handle-test PRIVATE wgpu::wgpu)
+        target_link_libraries(threenative-surface-format-selection-test PRIVATE wgpu::wgpu)
     endif()
 
     # rg11b10ufloat-renderable: the feature behind three's SSGI target format. The oracle
@@ -2218,6 +2226,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-webgpu-bindings-reentrancy-test)
     tn_register_contract_test(threenative-rg11b10-renderable-test)
     tn_register_contract_test(threenative-wgpu-null-handle-test)
+    tn_register_contract_test(threenative-surface-format-selection-test)
     tn_mark_sanitizer_contract_test(threenative-bindings-creation-test)
     tn_mark_sanitizer_contract_test(threenative-dom-dispatch-lifetime-test)
     tn_mark_sanitizer_contract_test(threenative-frame-op-stream-replay-test)
