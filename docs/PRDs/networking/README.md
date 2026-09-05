@@ -16,7 +16,7 @@ The PRD records the exploration, alternatives, bounded implementation slices and
 Renet2 remains an alternative if the interoperability spike invalidates this direction.
 The Go fixture now passes real Chromium byte echo and 11 native tests; failed-handshake readiness is repaired. Trusted TLS qualification and the full platform matrix remain unverified.
 
-Follow [EXECUTION.md](./EXECUTION.md); Task 2a is next.
+Follow [EXECUTION.md](./EXECUTION.md); Task 2b-streams is next. The reviewed Task 2a native slice is implemented; full queue-bound acceptance remains open through Task 2b.
 The exact API, byte format and backend contract are in [PROTOCOL.md](./PROTOCOL.md).
 
 **Selected architecture:** one protocol and conformance suite, thin language adapters.

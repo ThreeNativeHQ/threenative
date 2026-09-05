@@ -19,6 +19,16 @@
   const sessions = new Map();
   globalThis.__wtSessions = sessions;
 
+  // Statuses returned by __wtSendDatagram, mirroring the kDatagram* constants in
+  // webtransport.cpp. Without them a write cannot tell a closed session from a
+  // payload that does not fit from a local queue drop, which is what the old
+  // "ignore the return value" write did.
+  const dgramAccepted = 0;
+  const dgramInvalidSession = -1;
+  const dgramTooLarge = -2;
+  const dgramDropped = -3;
+  const dgramSendFailed = -4;
+
   class WebTransportError extends Error {
     constructor(message, options) {
       super(message || 'WebTransport error');
@@ -60,11 +70,44 @@
     });
   }
 
-  function makeDatagramWritable(sessionId) {
+  // `datagrams` is the live object whose maxDatagramSize the native side keeps
+  // current, so the limit is read at write time rather than captured here.
+  function makeDatagramWritable(sessionId, datagrams) {
     return new WritableStream({
       write(chunk) {
         const bytes = toBytes(chunk);
-        __wtSendDatagram(sessionId, bytes);
+        // W3C WebTransport discards an oversized datagram silently and resolves.
+        // This runtime reports it instead: PROTOCOL.md requires the write to be
+        // validated against the real negotiated limit, and a game that writes
+        // past it has a bug that silence would hide until the packets vanished.
+        const limit = datagrams.maxDatagramSize;
+        if (bytes.byteLength > limit) {
+          throw new WebTransportError(
+            `Datagram of ${bytes.byteLength} bytes exceeds the negotiated ${limit}-byte limit`,
+          );
+        }
+        const status = __wtSendDatagram(sessionId, bytes);
+        if (status === dgramInvalidSession) {
+          throw new WebTransportError('Cannot send a datagram: the session is closed');
+        }
+        if (status === dgramTooLarge) {
+          throw new WebTransportError(
+            `Datagram of ${bytes.byteLength} bytes exceeds the transport's datagram limit`,
+          );
+        }
+        // The path refused the frame outright. Unlike dgramDropped below this
+        // is a transport failure, not this host trimming its own backlog, so
+        // the write fails rather than being reported as sent.
+        if (status === dgramSendFailed) {
+          throw new WebTransportError('Datagram not sent: the transport refused it');
+        }
+        // dgramDropped: the local send queue was full and discarded its oldest
+        // waiting datagram to admit this one. That is unreliable delivery doing
+        // its job — local backlog, never network packet loss — so the write
+        // succeeds, exactly as dgramAccepted does.
+        if (status !== dgramAccepted && status !== dgramDropped) {
+          throw new WebTransportError(`Datagram not sent (native status ${status})`);
+        }
       },
     });
   }
@@ -91,16 +134,20 @@
       }
 
       const dgramReadable = makeReadable();
-      this.datagrams = {
+      const datagrams = {
         readable: dgramReadable.stream,
-        writable: makeDatagramWritable(id),
-        createWritable: () => makeDatagramWritable(id),
-        maxDatagramSize: 1200,
+        // Zero until the native side reports what this connection actually
+        // negotiated, which it does with `ready`. A write before then is
+        // refused rather than sent against an invented limit.
+        maxDatagramSize: 0,
         incomingMaxAge: null,
         outgoingMaxAge: null,
         incomingHighWaterMark: 1,
         outgoingHighWaterMark: 1,
       };
+      datagrams.writable = makeDatagramWritable(id, datagrams);
+      datagrams.createWritable = () => makeDatagramWritable(id, datagrams);
+      this.datagrams = datagrams;
 
       const incomingUni = makeReadable();
       const incomingBidi = makeReadable();
@@ -110,7 +157,7 @@
       const state = {
         id,
         readyResolve, readyReject, closedResolve, closedReject,
-        dgramReadable, incomingUni, incomingBidi,
+        dgramReadable, incomingUni, incomingBidi, datagrams,
         streams: new Map(),
         ready: false,
         closedFlag: false,
@@ -154,9 +201,17 @@
     if (!st) return;
 
     switch (type) {
+      // `a` is the datagram payload capacity the native side negotiated: quiche's
+      // current writable datagram length minus this client's HTTP/3 session
+      // framing. It arrives with ready and again whenever the path changes it.
       case 'ready':
         st.ready = true;
+        st.datagrams.maxDatagramSize = Number(a) || 0;
         st.readyResolve();
+        break;
+
+      case 'datagramCapacity':
+        st.datagrams.maxDatagramSize = Number(a) || 0;
         break;
 
       case 'error': {

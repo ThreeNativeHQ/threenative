@@ -120,7 +120,14 @@ async function startServer(): Promise<boolean> {
   });
 }
 
-type ScriptOptions = { allowInsecurePeerVerification?: boolean };
+type ScriptOptions = {
+  allowInsecurePeerVerification?: boolean;
+  // Lowers the datagram capacity the native side negotiates, so an oversize
+  // rejection is provable against a small number instead of whatever this
+  // machine's path happens to allow. A string passes the raw value through so a
+  // malformed clamp can be proven to fail closed; `""` sets the variable empty.
+  maxDatagramBytes?: number | string;
+};
 
 // Runs a JS script under the mystral runtime (headless) and returns combined output.
 async function runScript(
@@ -136,6 +143,11 @@ async function runScript(
     env.MYSTRAL_WEBTRANSPORT_INSECURE = "1";
   } else {
     Reflect.deleteProperty(env, "MYSTRAL_WEBTRANSPORT_INSECURE");
+  }
+  if (options.maxDatagramBytes !== undefined) {
+    env.MYSTRAL_WEBTRANSPORT_MAX_DATAGRAM = String(options.maxDatagramBytes);
+  } else {
+    Reflect.deleteProperty(env, "MYSTRAL_WEBTRANSPORT_MAX_DATAGRAM");
   }
   const { stdout, stderr } = await runCommand(runtimeBinary, ["run", path, "--headless"], {
     env,
@@ -276,6 +288,129 @@ describe("WebTransport API", () => {
       main();`,
     );
     expect(out).toContain("PASS: datagram 1,2,3,4,5");
+  });
+
+  it("reports negotiated datagram capacity", async ({ skip }) => {
+    requireWebTransport(skip);
+    const out = await runTrustedScript(
+      "wt-dgram-capacity.js",
+      `async function main() {
+        const wt = new WebTransport('${SERVER_URL}');
+        await wt.ready;
+        const limit = wt.datagrams.maxDatagramSize;
+        // A live connection's limit comes from quiche's writable DATAGRAM length
+        // minus this client's HTTP/3 session framing, so it must sit below the
+        // runtime's 1350-byte UDP payload and above nothing usable.
+        if (!Number.isInteger(limit) || limit <= 0 || limit >= 1350) {
+          console.log('FAIL: capacity ' + limit);
+          process.exit(0);
+        }
+        // The reported number has to be the number that is actually enforced.
+        let atLimit = 'unset';
+        let overLimit = 'unset';
+        await wt.datagrams.createWritable().getWriter().write(new Uint8Array(limit))
+          .then(() => { atLimit = 'accepted'; }, (e) => { atLimit = 'refused:' + e.message; });
+        await wt.datagrams.createWritable().getWriter().write(new Uint8Array(limit + 1))
+          .then(() => { overLimit = 'accepted'; }, () => { overLimit = 'refused'; });
+        console.log(atLimit === 'accepted' && overLimit === 'refused'
+          ? 'PASS: capacity ' + limit + ' enforced'
+          : 'FAIL: capacity ' + limit + ' at=' + atLimit + ' over=' + overLimit);
+        process.exit(0);
+      }
+      main();`,
+    );
+    expect(out).toMatch(/PASS: capacity \d+ enforced/u);
+  });
+
+  it("rejects oversized datagram", async ({ skip }) => {
+    requireWebTransport(skip);
+    const out = await runScript(
+      "wt-dgram-oversize.js",
+      `async function main() {
+        const wt = new WebTransport('${SERVER_URL}');
+        await wt.ready;
+        const limit = wt.datagrams.maxDatagramSize;
+        let over = 'unset';
+        await wt.datagrams.createWritable().getWriter().write(new Uint8Array(65)).then(
+          () => { over = 'accepted'; },
+          (e) => { over = (e instanceof WebTransportError ? 'refused' : 'refused-other') + ':' + e.message; },
+        );
+        // The clamp must not break sending: a datagram at the clamped capacity
+        // still round-trips through the echo server.
+        const reader = wt.datagrams.readable.getReader();
+        await wt.datagrams.createWritable().getWriter().write(new Uint8Array(64).fill(7));
+        const { value } = await reader.read();
+        const echoed = value && value.length === 64 && value[0] === 7 && value[63] === 7;
+        console.log(limit === 64 && over.startsWith('refused:') && echoed
+          ? 'PASS: oversize refused at ' + limit
+          : 'FAIL: limit=' + limit + ' over=' + over + ' echoed=' + (value ? value.length : 'none'));
+        process.exit(0);
+      }
+      main();`,
+      { allowInsecurePeerVerification: true, maxDatagramBytes: 64 },
+    );
+    expect(out).toContain("PASS: oversize refused at 64");
+  });
+
+  // The two tests above stop at the polyfill's own size guard, so on their own
+  // they prove the JavaScript check and say nothing about the native limit
+  // underneath it. This one calls the native bridge directly, past the guard.
+  // `wt._state.id` is the native session id the polyfill stores when it opens a
+  // session (webtransport-polyfill.js: `const state = { id, ... }`).
+  it("enforces the datagram limit natively, past the JS guard", async ({ skip }) => {
+    requireWebTransport(skip);
+    const out = await runScript(
+      "wt-dgram-native-boundary.js",
+      `async function main() {
+        const wt = new WebTransport('${SERVER_URL}');
+        await wt.ready;
+        const id = wt._state.id;
+        const limit = wt.datagrams.maxDatagramSize;
+        // Statuses from webtransport.cpp: 0 accepted, -2 too large.
+        const atLimit = __wtSendDatagram(id, new Uint8Array(limit));
+        const overLimit = __wtSendDatagram(id, new Uint8Array(limit + 1));
+        const wayOver = __wtSendDatagram(id, new Uint8Array(limit + 4096));
+        // A session id the native side does not know is a closed session (-1),
+        // which must not be reported as a size problem.
+        const unknown = __wtSendDatagram(id + 9999, new Uint8Array(1));
+        console.log(limit === 64 && atLimit === 0 && overLimit === -2 && wayOver === -2 && unknown === -1
+          ? 'PASS: native boundary at ' + limit
+          : 'FAIL: limit=' + limit + ' at=' + atLimit + ' over=' + overLimit +
+            ' wayOver=' + wayOver + ' unknown=' + unknown);
+        process.exit(0);
+      }
+      main();`,
+      { allowInsecurePeerVerification: true, maxDatagramBytes: 64 },
+    );
+    expect(out).toContain("PASS: native boundary at 64");
+  });
+
+  // An explicit clamp the runtime cannot parse is a configuration error. Keeping
+  // the negotiated capacity while the operator believes a limit is in force is
+  // the same silent substitution the hardcoded 1200 was.
+  it("fails the session on an unusable explicit datagram clamp", async ({ skip }) => {
+    requireWebTransport(skip);
+    for (const bad of ["abc", "0", "-5", ""]) {
+      const out = await runScript(
+        "wt-dgram-bad-clamp.js",
+        `async function main() {
+          let outcome = 'unset';
+          const wt = new WebTransport('${SERVER_URL}');
+          await wt.ready.then(
+            () => { outcome = 'ready:' + wt.datagrams.maxDatagramSize; },
+            (e) => { outcome = 'refused:' + e.message; },
+          );
+          console.log(outcome.startsWith('refused:') &&
+              outcome.includes('MYSTRAL_WEBTRANSPORT_MAX_DATAGRAM')
+            ? 'PASS: bad clamp refused'
+            : 'FAIL: ' + outcome);
+          process.exit(0);
+        }
+        main();`,
+        { allowInsecurePeerVerification: true, maxDatagramBytes: bad },
+      );
+      expect(out, `clamp value ${JSON.stringify(bad)}`).toContain("PASS: bad clamp refused");
+    }
   });
 
   it("echoes a bidirectional stream", async ({ skip }) => {

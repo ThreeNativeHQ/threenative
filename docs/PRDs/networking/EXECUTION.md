@@ -1,6 +1,6 @@
 # PRD-359 execution handoff
 
-**Execution in progress, 2026-09-05.** Tasks 0, 1a and 1a-close passed; Task 2a is next. Execute this file in table order.
+**Execution in progress, 2026-09-05.** Tasks 0, 1a and 1a-close passed. Task 2a native capacity/status slice passed review; Task 2b-streams is next. Task 2a stays open until the queue-bound integration checkpoint. Execute this file in table order.
 Read [the PRD](./PRD-359-portable-multiplayer-transport.md) for acceptance and
 [PROTOCOL.md](./PROTOCOL.md) for exact API and wire behavior. Do not redesign either.
 The approved architecture is a shared protocol/test suite with thin language adapters.
@@ -364,3 +364,5 @@ an in-process server test. Task 8c closes this specific integration gap. Launch 
 sandbox's `node node_modules/@threenative/core/mcp/engine.mjs`, whose bundled launcher pins
 its own installed capability manifest; a tool connected to the primary checkout cannot
 prove the worktree or packed result.
+
+- Task 2a native slice: [datagram limits, error classification, bounded native queues and idle-frame regression](../../verification/prd-359-task2a-2026-09-05.md); coordinator and fresh read-only review accepted. Final native contracts 2/2 and live suite 15/15 passed. Full Task 2a queue acceptance remains open through 2b-streams/2b.

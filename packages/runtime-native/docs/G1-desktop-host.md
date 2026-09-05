@@ -177,3 +177,7 @@ their existing `TN_NATIVE_KTX2_UNSUPPORTED` build guard remains intact.
 ## PRD-359 failed WebTransport handshake — 2026-09-05
 
 The Linux V8+Dawn host now settles both establishment promises when WebTransport closes before readiness. The compiled surface regression went red then green, and the real Go fixture suite passed 11/11 tests, including self-signed certificate rejection without the insecure override. This does not qualify positive trusted TLS or other platforms. Evidence: [Task 1a-close](../../../docs/verification/prd-359-task1a-close-2026-09-05.md).
+
+## PRD-359 native datagram slice — 2026-09-05
+
+The Linux host now reports negotiated payload capacity, rejects invalid/oversized sends, distinguishes hard transport failures from local backlog drops, and drains bounded native receive backlog on idle frames. The idle-frame regression failed before repair; restoring a hard-error drop increment failed the real session-counter test. Final compiled contracts passed 2/2 and the Go/native live suite passed 15/15. Coordinator and independent review accepted this native slice. JS stream backpressure, positive trusted TLS and remaining platform qualification are still open. Evidence: [Task 2a](../../../docs/verification/prd-359-task2a-2026-09-05.md).

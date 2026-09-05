@@ -19,10 +19,12 @@
 
 #include <quiche.h>
 
+#include <cerrno>
 #include <chrono>
 #include <cstring>
 #include <cstdint>
 #include <cstdlib>
+#include <deque>
 #include <map>
 #include <memory>
 #include <queue>
@@ -97,6 +99,27 @@ constexpr uint64_t SETTINGS_WT_MAX_SESSIONS = 0xc671706a;                  // dr
 constexpr size_t MAX_DATAGRAM_SIZE = 1350;
 constexpr size_t STREAM_READ_CHUNK = 64 * 1024;
 constexpr const char* kInsecurePeerVerificationEnv = "MYSTRAL_WEBTRANSPORT_INSECURE";
+// Lowers the negotiated datagram capacity so a test can prove an oversize
+// refusal against a small number instead of whatever the current path allows.
+// It only ever lowers: a value above the negotiated capacity is ignored.
+constexpr const char* kMaxDatagramEnv = "MYSTRAL_WEBTRANSPORT_MAX_DATAGRAM";
+
+// Outgoing datagrams waiting for capacity, per session. PROTOCOL.md's default
+// of 256 queued datagrams per direction; past it the oldest waiting datagram is
+// discarded to admit the newest, which is what unreliable delivery is for.
+constexpr size_t kDatagramQueueLimit = 256;
+
+// Status returned by __wtSendDatagram. The JS polyfill mirrors these values —
+// they are the only thing that tells a closed session, a payload that cannot
+// fit and a local queue drop apart at the call site.
+constexpr int kDatagramAccepted = 0;
+constexpr int kDatagramInvalidSession = -1;
+constexpr int kDatagramTooLarge = -2;
+constexpr int kDatagramDropped = -3;
+// The path refused the frame outright. Distinct from kDatagramDropped: that one
+// is this host trimming its own backlog and is normal for an unreliable
+// transport, this one is a transport failure the caller must not read as sent.
+constexpr int kDatagramSendFailed = -4;
 
 bool isTruthyEnvironmentValue(const char* value) {
     return value != nullptr && std::string(value) == "1";
@@ -144,15 +167,171 @@ size_t varintDecode(const uint8_t* buf, size_t len, uint64_t* out) {
     return length;
 }
 
+// Bytes varintEncode() will spend on v, without encoding it.
+size_t varintLength(uint64_t v) {
+    if (v <= 63) return 1;
+    if (v <= 16383) return 2;
+    if (v <= 1073741823ull) return 4;
+    return 8;
+}
+
+// ---------------------------------------------------------------------------
+// Datagram capacity and admission (pure; no session state)
+// ---------------------------------------------------------------------------
+
+// The browser-style `datagrams.maxDatagramSize`: what quiche says it can write
+// right now, minus the HTTP/3 session framing this client prepends to every
+// datagram (the quarter-stream-id varint, whose width follows the CONNECT
+// stream id). `maxWritable` is quiche_conn_dgram_max_writable_len, which is
+// negative when the peer never enabled datagrams. Reports 0 rather than a guess
+// whenever there is no usable capacity.
+size_t datagramPayloadCapacity(ssize_t maxWritable, int64_t connectStreamId) {
+    if (maxWritable <= 0 || connectStreamId < 0) return 0;
+    const size_t framing = varintLength(static_cast<uint64_t>(connectStreamId) / 4);
+    const size_t writable = static_cast<size_t>(maxWritable);
+    return writable > framing ? writable - framing : 0;
+}
+
+// Applies the explicit test clamp, which only ever lowers the measured
+// capacity. Unset means no clamp and is not an error. An explicit value that
+// cannot be used fails closed — returns false with a message and writes no
+// capacity — because keeping the negotiated number while whoever set the
+// variable believes a limit is in force is the same silent substitution the
+// hardcoded limit was. Never throws: the caller fails the session instead.
+bool clampDatagramCapacity(size_t capacity, const char* clampValue, size_t* out,
+                           std::string* error) {
+    if (clampValue == nullptr) {  // unset: no clamp
+        *out = capacity;
+        return true;
+    }
+    const auto refuse = [&](const char* why) {
+        *error = std::string("Unusable ") + kMaxDatagramEnv + "=\"" + clampValue + "\": " + why +
+                 ". Set a positive byte count, or unset it to use the negotiated capacity.";
+        return false;
+    };
+    if (*clampValue == '\0') return refuse("the value is empty");
+    // strtoll silently skips leading whitespace and accepts a leading '+', so a
+    // value like " 64" would parse clean. Neither is a byte count anyone meant
+    // to write, and guessing at one is how a wrong limit gets in.
+    if (*clampValue != '-' && (*clampValue < '0' || *clampValue > '9')) {
+        return refuse("expected a base-10 integer with no other characters");
+    }
+    char* end = nullptr;
+    errno = 0;
+    const long long parsed = std::strtoll(clampValue, &end, 10);
+    if (errno == ERANGE) return refuse("the value does not fit in a byte count");
+    if (errno != 0 || end == clampValue || *end != '\0') {
+        return refuse("expected a base-10 integer with no other characters");
+    }
+    if (parsed <= 0) return refuse("a datagram limit must be greater than zero");
+    const size_t clamp = static_cast<size_t>(parsed);
+    *out = clamp < capacity ? clamp : capacity;
+    return true;
+}
+
+// What a datagram write is, before anything is copied or queued. An unusable
+// session outranks the size check: a caller whose session has gone must not be
+// told to send a smaller datagram.
+int classifyDatagramSend(bool sessionUsable, size_t capacity, size_t length) {
+    if (!sessionUsable) return kDatagramInvalidSession;
+    if (length > capacity) return kDatagramTooLarge;
+    return kDatagramAccepted;
+}
+
+// Admits a datagram to a bounded queue, discarding the oldest waiting ones to
+// make room. Returns how many were discarded — a legitimate local drop, which
+// is backlog and never network packet loss. A bound of zero would discard the
+// datagram being admitted, so the smallest usable queue is one.
+size_t admitDatagram(std::deque<std::vector<uint8_t>>& queue, size_t limit,
+                     std::vector<uint8_t> payload) {
+    const size_t bound = limit == 0 ? 1 : limit;
+    size_t dropped = 0;
+    while (queue.size() >= bound) {
+        queue.pop_front();
+        dropped += 1;
+    }
+    queue.push_back(std::move(payload));
+    return dropped;
+}
+
+// Reads at most `budget` datagrams from `recv` (quiche_conn_dgram_recv's
+// contract: >0 is a datagram, anything else means nothing waiting), strips the
+// session framing and hands each payload to `emit`. Returns how many reads it
+// spent, which is what the budget bounds: a datagram for another session costs
+// budget too, because the point is to bound work per tick and not only events.
+template <typename Recv, typename Emit>
+size_t drainDatagramReads(const Recv& recv, uint64_t expectedFlow, size_t budget,
+                          const Emit& emit) {
+    uint8_t buf[MAX_DATAGRAM_SIZE];
+    size_t reads = 0;
+    while (reads < budget) {
+        const ssize_t len = recv(buf, sizeof(buf));
+        if (len <= 0) break;
+        reads += 1;
+        uint64_t flowId = 0;
+        const size_t consumed = varintDecode(buf, static_cast<size_t>(len), &flowId);
+        if (consumed == 0 || flowId != expectedFlow) continue;  // not our session
+        emit(buf + consumed, static_cast<size_t>(len) - consumed);
+    }
+    return reads;
+}
+
+// Spends from a budget that belongs to the whole poll tick rather than to this
+// call. pumpSocket() calls the reader once per inbound UDP packet, so a budget
+// that restarts on every call bounds nothing — a burst still pushes an
+// unbounded number of events at JS in one turn. `used` is the caller's tick
+// counter and is only ever reset at the top of a poll pass.
+template <typename Recv, typename Emit>
+void readDatagramsBudgeted(size_t& used, size_t limit, const Recv& recv, uint64_t expectedFlow,
+                           const Emit& emit) {
+    if (used >= limit) return;
+    used += drainDatagramReads(recv, expectedFlow, limit - used, emit);
+}
+
+// What a drain of the outgoing queue did. `hardErrors` is a transport failure,
+// never backlog: it is deliberately separate from the legitimate local-drop
+// count so the two cannot be confused at the call site.
+struct DatagramDrainResult {
+    size_t sent = 0;
+    size_t hardErrors = 0;
+    ssize_t lastError = 0;
+};
+
+// Drains queued datagrams into `send` (quiche_conn_dgram_send's contract).
+// QUICHE_ERR_DONE alone means "no room right now": the queue is left intact and
+// the rest wait for the next frame, exactly as pumpStream does for a
+// congestion-blocked stream write. Any other negative is a hard failure on this
+// path — the frame is discarded, the drain stops, and the caller is told so it
+// can fail the session rather than report the write as sent.
+template <typename Send>
+DatagramDrainResult drainDatagramQueue(std::deque<std::vector<uint8_t>>& queue, const Send& send) {
+    DatagramDrainResult result;
+    while (!queue.empty()) {
+        const std::vector<uint8_t>& packet = queue.front();
+        const ssize_t r = send(packet.data(), packet.size());
+        if (r == QUICHE_ERR_DONE) break;
+        if (r < 0) {
+            result.hardErrors += 1;
+            result.lastError = r;
+            queue.pop_front();
+            break;
+        }
+        result.sent += 1;
+        queue.pop_front();
+    }
+    return result;
+}
+
 // ---------------------------------------------------------------------------
 // Event queue: native -> JS, drained on the main thread in processEvents().
 // ---------------------------------------------------------------------------
 
 enum class EventType {
-    Ready,
-    Closed,       // graceful / remote close (message = reason)
-    Error,        // failure before/around ready (message = reason)
-    Datagram,     // data
+    Ready,            // code = negotiated datagram payload capacity
+    Closed,           // graceful / remote close (message = reason)
+    Error,            // failure before/around ready (message = reason)
+    DatagramCapacity, // code = new capacity, when the path changes it
+    Datagram,         // data
     IncomingUni,  // streamId
     IncomingBidi, // streamId
     StreamData,   // streamId, data, fin
@@ -241,6 +420,21 @@ struct Session {
     uint64_t nextClientUni = 14;
 
     std::map<uint64_t, StreamState> streams;
+
+    // Datagram plane. `datagramCapacity` is the negotiated payload limit last
+    // reported to JS; `outgoingDatagrams` holds framed datagrams waiting for
+    // quiche capacity, bounded by kDatagramQueueLimit. `droppedDatagrams`
+    // counts what this host discarded locally — backlog, not packet loss.
+    size_t datagramCapacity = 0;
+    std::deque<std::vector<uint8_t>> outgoingDatagrams;
+    uint64_t droppedDatagrams = 0;
+    // Receive admissions spent in the current processEvents() pass. Reset once
+    // per pass, never by the reader: pumpSocket() reads once per inbound UDP
+    // packet, so a per-call budget would not bound a burst at all.
+    size_t datagramReadsThisTick = 0;
+    // Set when the path refused a frame outright, so the next send answers
+    // kDatagramSendFailed instead of reporting a queued write as accepted.
+    bool datagramSendFailed = false;
 
     ~Session() {
         if (sock != kInvalidSocket) closeSocket(sock);
@@ -338,6 +532,13 @@ void pumpSocket(Session* s) {
             readDatagrams(s);
             readStreams(s);
         }
+    }
+
+    // quiche can retain DATAGRAM frames after the socket has no new UDP packet.
+    // Drain once per poll pass so that backlog makes progress on an idle socket,
+    // while the session's shared per-tick read budget still caps repeated calls.
+    if (s->wtReady && !s->failed) {
+        readDatagrams(s);
     }
 
     // Drive QUIC timers off a monotonic clock instead of a libuv timer.
@@ -445,22 +646,24 @@ void pollHandshake(Session* s) {
 // Datagram I/O (HTTP/3 datagram = quarter-stream-id varint + payload)
 // ---------------------------------------------------------------------------
 
+// Bounded across the whole poll tick, not per call: pumpSocket() calls this
+// once for every inbound UDP packet. Whatever is left stays in quiche's own
+// receive queue for the next tick instead of pushing an unbounded burst of
+// events at the JS side in one turn; nothing is discarded here.
 void readDatagrams(Session* s) {
     if (!s->conn || s->connectStreamId < 0) return;
-    uint64_t expectedFlow = static_cast<uint64_t>(s->connectStreamId) / 4;
-    static uint8_t buf[MAX_DATAGRAM_SIZE];
-    while (true) {
-        ssize_t len = quiche_conn_dgram_recv(s->conn, buf, sizeof(buf));
-        if (len <= 0) break;
-        uint64_t flowId = 0;
-        size_t consumed = varintDecode(buf, static_cast<size_t>(len), &flowId);
-        if (consumed == 0 || flowId != expectedFlow) continue;  // not our session
-        Event e;
-        e.sessionId = s->id;
-        e.type = EventType::Datagram;
-        e.data.assign(buf + consumed, buf + len);
-        g_events.push(std::move(e));
-    }
+    const uint64_t expectedFlow = static_cast<uint64_t>(s->connectStreamId) / 4;
+    readDatagramsBudgeted(
+        s->datagramReadsThisTick, kDatagramQueueLimit,
+        [s](uint8_t* out, size_t cap) { return quiche_conn_dgram_recv(s->conn, out, cap); },
+        expectedFlow,
+        [s](const uint8_t* payload, size_t len) {
+            Event e;
+            e.sessionId = s->id;
+            e.type = EventType::Datagram;
+            e.data.assign(payload, payload + len);
+            g_events.push(std::move(e));
+        });
 }
 
 // ---------------------------------------------------------------------------
@@ -647,6 +850,7 @@ void dispatchEvent(const Event& e) {
         case EventType::Ready: typeStr = "ready"; break;
         case EventType::Closed: typeStr = "closed"; break;
         case EventType::Error: typeStr = "error"; break;
+        case EventType::DatagramCapacity: typeStr = "datagramCapacity"; break;
         case EventType::Datagram: typeStr = "datagram"; break;
         case EventType::IncomingUni: typeStr = "incomingUni"; break;
         case EventType::IncomingBidi: typeStr = "incomingBidi"; break;
@@ -659,6 +863,11 @@ void dispatchEvent(const Event& e) {
     args.push_back(g_engine->newString(typeStr));
 
     switch (e.type) {
+        case EventType::Ready:
+        case EventType::DatagramCapacity:
+            // The negotiated datagram payload capacity, in bytes.
+            args.push_back(g_engine->newNumber(static_cast<double>(e.code)));
+            break;
         case EventType::Datagram:
             args.push_back(g_engine->createUint8Array(e.data.data(), e.data.size()));
             break;
@@ -856,16 +1065,79 @@ void closeSession(uint32_t id, uint64_t code, const std::string& reason) {
     s->wantClose = true;
 }
 
-// Returns 0 on success, -1 on failure (e.g. queue full or session gone).
+// Outcome of recomputing the negotiated datagram capacity. Invalid is a
+// configuration error the caller turns into a session failure, so an unusable
+// clamp cannot pass for a working connection.
+enum class CapacityUpdate { Unchanged, Changed, Invalid };
+
+// Recomputes the negotiated datagram capacity from quiche's current writable
+// length. Reports a change so JS is told rather than left holding a stale
+// `datagrams.maxDatagramSize`.
+CapacityUpdate refreshDatagramCapacity(Session* s, std::string* error) {
+    if (!s->conn) return CapacityUpdate::Unchanged;
+    size_t capacity = 0;
+    if (!clampDatagramCapacity(
+            datagramPayloadCapacity(quiche_conn_dgram_max_writable_len(s->conn),
+                                    s->connectStreamId),
+            std::getenv(kMaxDatagramEnv), &capacity, error)) {
+        return CapacityUpdate::Invalid;
+    }
+    if (capacity == s->datagramCapacity) return CapacityUpdate::Unchanged;
+    s->datagramCapacity = capacity;
+    return CapacityUpdate::Changed;
+}
+
+// Fails a session and tells JS why, through the same error/closed path a
+// handshake failure takes.
+void failSession(Session* s, const std::string& message) {
+    if (s->failed) return;
+    s->failed = true;
+    g_events.push({s->id, EventType::Error, -1, 0, false, {}, message});
+}
+
+// Drains queued datagrams into quiche. Done means the send queue is momentarily
+// full and the rest wait for the next frame; any other error is a transport
+// failure that fails the session rather than being filed as backlog.
+void pumpDatagramSends(Session* s) {
+    if (!s->conn) return;
+    const DatagramDrainResult r = drainDatagramQueue(
+        s->outgoingDatagrams, [s](const uint8_t* p, size_t n) {
+            return quiche_conn_dgram_send(s->conn, p, n);
+        });
+    if (r.hardErrors == 0) return;
+    // Not backlog: the path refused the frame. droppedDatagrams is deliberately
+    // untouched — labelling this a local drop is what made a broken connection
+    // look like normal unreliable delivery.
+    s->datagramSendFailed = true;
+    failSession(s, "Datagram send failed: quiche error " + std::to_string(r.lastError));
+}
+
+// __wtSendDatagram(id, bytes) -> one of the kDatagram* statuses. The caller
+// needs to tell a closed session from a payload that cannot fit from a local
+// queue drop, so each answers with its own value; a single -1 for "something
+// went wrong" is what the JS side used to have to ignore.
 int sendDatagram(uint32_t id, const uint8_t* data, size_t len) {
     Session* s = findSession(id);
-    if (!s || !s->conn || !s->wtReady || s->connectStreamId < 0) return -1;
+    const bool usable = s != nullptr && s->conn != nullptr && s->wtReady && !s->failed &&
+                        s->connectStreamId >= 0 && !quiche_conn_is_closed(s->conn);
+    const int status = classifyDatagramSend(usable, usable ? s->datagramCapacity : 0, len);
+    if (status != kDatagramAccepted) return status;
+
     std::vector<uint8_t> packet;
     varintEncode(packet, static_cast<uint64_t>(s->connectStreamId) / 4);
     packet.insert(packet.end(), data, data + len);
-    ssize_t r = quiche_conn_dgram_send(s->conn, packet.data(), packet.size());
+    const size_t dropped =
+        admitDatagram(s->outgoingDatagrams, kDatagramQueueLimit, std::move(packet));
+    s->droppedDatagrams += dropped;
+
+    pumpDatagramSends(s);
     flushEgress(s);
-    return r < 0 ? -1 : 0;
+    // A hard failure during that drain outranks everything: the path refused a
+    // frame, so this write must not be reported as sent.
+    if (s->datagramSendFailed) return kDatagramSendFailed;
+    // The write was admitted either way — unreliable delivery does not fail
+    // because a backlog was trimmed — but the caller is told a drop happened.
+    return dropped > 0 ? kDatagramDropped : kDatagramAccepted;
 }
 
 // Attempts to flush a single stream's buffered outbound bytes to quiche. Safe to
@@ -966,6 +1238,10 @@ void processEvents() {
         Session* s = sessPtr.get();
         if (!s->conn) continue;
 
+        // One receive budget per pass over this session, spent by however many
+        // pumpSocket() reads happen below. This is the only place it resets.
+        s->datagramReadsThisTick = 0;
+
         // Drain inbound UDP, feed quiche, read the data plane, and fire timers.
         pumpSocket(s);
 
@@ -1000,15 +1276,40 @@ void processEvents() {
                     quiche_h3_conn_free(s->h3);
                     s->h3 = nullptr;
                 }
-                g_events.push({s->id, EventType::Ready, -1, 0, false, {}, ""});
+                // Ready carries the negotiated datagram capacity, so JS never
+                // sees a session whose `maxDatagramSize` is a placeholder. An
+                // unusable explicit clamp fails the session here instead of
+                // handing back a connection whose limit is not the one asked for.
+                std::string capacityError;
+                if (refreshDatagramCapacity(s, &capacityError) == CapacityUpdate::Invalid) {
+                    failSession(s, capacityError);
+                } else {
+                    g_events.push({s->id, EventType::Ready, -1,
+                                   static_cast<uint64_t>(s->datagramCapacity), false, {}, ""});
+                }
             }
             flushEgress(s);
         }
         // Data plane: datagram/stream READS happen in pumpSocket() (right after
         // quiche_conn_recv) so server-initiated streams are not garbage-collected
         // before we read them. Here we only retry blocked writes and flush egress.
-        if (s->wtReady) {
-            pumpStreamSends(s);  // retry any congestion-blocked writes
+        if (s->wtReady && !s->failed) {
+            // The path's datagram capacity moves with the connection, so a
+            // change is reported instead of leaving JS on the ready-time value.
+            std::string capacityError;
+            switch (refreshDatagramCapacity(s, &capacityError)) {
+                case CapacityUpdate::Invalid:
+                    failSession(s, capacityError);
+                    break;
+                case CapacityUpdate::Changed:
+                    g_events.push({s->id, EventType::DatagramCapacity, -1,
+                                   static_cast<uint64_t>(s->datagramCapacity), false, {}, ""});
+                    break;
+                case CapacityUpdate::Unchanged:
+                    break;
+            }
+            pumpDatagramSends(s);  // retry datagrams quiche had no room for
+            pumpStreamSends(s);    // retry any congestion-blocked writes
             flushEgress(s);
         }
 

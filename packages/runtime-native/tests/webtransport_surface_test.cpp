@@ -64,10 +64,62 @@ constexpr const char* kScript = R"JS((() => {
   ));
   __wtDispatch(4242, 'closed', 'TLS handshake failed');
 
+  // --- datagram surface. Capacity is negotiated by the native side and arrives
+  // with `ready`; a write then reports what actually happened to it. Session
+  // 4343 is substituted the same way, so no socket is opened: the real
+  // __wtSendDatagram finds no such session and answers with its closed-session
+  // status, which is exactly the arm under test.
+  globalThis.__wtConnect = () => 4343;
+  const dgram = new WebTransport('https://127.0.0.1:4433/echo');
+  globalThis.__wtConnect = nativeConnect;
+  dgram.closed.catch(() => {});
+  dgram.ready.catch(() => {});
+  __wtDispatch(4343, 'ready', 64);
+
+  // reports negotiated datagram capacity: the clamped 64 the dispatch carried,
+  // not a compiled-in constant.
+  const capacity = dgram.datagrams.maxDatagramSize;
+  const verdicts = ['capacity=' + capacity];
+
+  // Each check takes its own writable: a throwing sink errors the stream it
+  // was written to, so one writer could not carry the next case.
+  const write = (label, bytes) =>
+    dgram.datagrams.createWritable().getWriter().write(bytes).then(
+      () => verdicts.push(label + '=RESOLVED'),
+      (e) => verdicts.push(label + '=' + (e instanceof WebTransportError ? 'REJECTED' : 'REJECTED-OTHER')),
+    );
+
+  // rejects oversized datagram: one byte past the negotiated capacity.
+  pending.push(write('oversize', new Uint8Array(65)));
+  // ...while a datagram exactly at the capacity is not refused for its size.
+  // This one reaches the native bridge, which refuses the substituted session.
+  pending.push(write('closed-session', new Uint8Array(64)));
+
+  // distinguishes closed session from queue drop: same call, same size, and the
+  // only difference is the status the native side returns. A local queue drop is
+  // unreliable delivery working as designed, so the write must not throw.
+  const nativeSendDatagram = globalThis.__wtSendDatagram;
+  globalThis.__wtSendDatagram = () => -3;  // kDatagramDropped
+  pending.push(write('queue-drop', new Uint8Array(8)).then(() => {
+    // A hard transport failure is the other half of that distinction: same
+    // call, same size, and it must NOT resolve the way a backlog trim does.
+    globalThis.__wtSendDatagram = () => -4;  // kDatagramSendFailed
+    return write('send-failed', new Uint8Array(8));
+  }).then(() => {
+    globalThis.__wtSendDatagram = nativeSendDatagram;
+  }));
+
   Promise.all(pending).then(() => {
     setTimeout(() => {
       const allRejected = settled.every((m) => m.endsWith('REJECTED'));
-      process.exit(ok.every(Boolean) && allRejected ? 42 : 1);
+      const datagramOk =
+        verdicts.includes('capacity=64') &&
+        verdicts.includes('oversize=REJECTED') &&
+        verdicts.includes('closed-session=REJECTED') &&
+        verdicts.includes('queue-drop=RESOLVED') &&
+        verdicts.includes('send-failed=REJECTED');
+      if (!datagramOk) console.log('datagram surface: ' + verdicts.join(' '));
+      process.exit(ok.every(Boolean) && allRejected && datagramOk ? 42 : 1);
     }, 0);
   });
 })())JS";
