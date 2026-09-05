@@ -89,6 +89,37 @@ jobs:
           path: packages/runtime-native/artifacts/conformance/web
           if-no-files-found: error
 
+  performance-coverage:
+    name: Native collector evidence coverage
+    needs: [android-emulator-parity, desktop-parity, desktop, ios-simulator]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        if: always()
+        with:
+          pattern: native-*
+          path: artifacts/native-performance-coverage
+      - name: Aggregate retained collector evidence and unscheduled platforms
+        if: always()
+        env:
+          TN_PERF_REQUIRED_DESKTOP: ${{ needs.desktop.result != 'skipped' && 'Windows,macOS' || '' }}
+        run: |
+          pnpm tsx scripts/performance-regression/ci-summary.ts \
+            --artifact-dir artifacts/native-performance-coverage \
+            --manifest scripts/performance-regression/lanes.json \
+            --coverage desktop-parity,Windows,macOS,android-emulator,ios-simulator \
+            --required-lanes "$TN_PERF_REQUIRED_DESKTOP" \
+            --expected-sha "$GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+
   android-emulator-parity:
     name: Android emulator visual parity
     needs: web-reference

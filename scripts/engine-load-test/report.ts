@@ -784,6 +784,7 @@ export function parsePerformanceLaneManifest(value: unknown): IPerformanceLaneMa
   }
   const seenIds = new Set<string>();
   const seenPlatforms = new Set<string>();
+  const seenWorkloads = new Set<string>();
   const lanes = rawLanes.map((valueForLane, index) => {
     const field = `lane manifest.lanes[${index}]`;
     const source = requireObject(valueForLane, field);
@@ -795,10 +796,12 @@ export function parsePerformanceLaneManifest(value: unknown): IPerformanceLaneMa
         `${field}.platform ${platform} is unknown`,
       );
     }
-    if (seenIds.has(id) || seenPlatforms.has(platform)) {
+    const workloadKey = `${platform}:${requireString(source, "workload", field)}`;
+    if (seenIds.has(id) || seenWorkloads.has(workloadKey)) {
       throw new BenchError("TN_BENCH_BAD_LANE_MANIFEST", `${field} duplicates lane id or platform`);
     }
     seenIds.add(id);
+    seenWorkloads.add(workloadKey);
     seenPlatforms.add(platform);
     const arms = parseStringArray(source.arms, `${field}.arms`, true).map((arm) => {
       if (!(ARMS as readonly string[]).includes(arm)) {

@@ -20,8 +20,11 @@ import {
   aggregateMetrics,
   assembleEvidence,
   isSuccessfulStartupSample,
+  installNativeProfileEntry,
   nativeFrameInstrumentation,
   parseProductionArgs,
+  prepareNativeWorkload,
+  collectionLaunchPlan,
   profileConfigPath,
   postWarmupFrameSamples,
   runProductionProfile,
@@ -126,6 +129,7 @@ test('production evidence uses nearest-rank pacing and arithmetic mean fps', () 
   );
   assert.equal(budget.failures.length, 0);
   assert.ok(budget.mean > 60);
+  assert.deepEqual(evaluateFrameBudget({ frameIntervalsMs: [40, 40, 40] }, { minFps: 30 }).failures, ['TN_PROD_PERFORMANCE_BUDGET']);
 });
 
 test('complete current evidence is the only PASS state', () => {
@@ -200,6 +204,28 @@ test('regression evidence requires every launch to meet the full steady-state wi
   assert.equal(result.status, 'BLOCKED');
   assert.equal(result.exitCode, 2);
   assert.ok(result.codes.includes('TN_PROD_REGRESSION_WINDOW'));
+});
+
+test('regression rejects pooling two individually valid steady launches', () => {
+  const base = regressionEvidence();
+  const result = evaluateProductionEvidence({ ...base, metrics: { ...base.metrics, runWindows: [
+    { durationSeconds: 30, sampleCount: 1800 }, { durationSeconds: 30, sampleCount: 1800 },
+  ] } });
+  assert.equal(result.status, 'BLOCKED');
+});
+
+test('generated native mailbox declaration is executable and independent of scaffold directory', async () => {
+  const project = makeTempDirSync('tn-profile-mailbox-');
+  temporary.push(project);
+  mkdirSync(join(project, 'src'));
+  writeFileSync(join(project, 'package.json'), '{}');
+  writeFileSync(join(project, 'threenative.config.ts'), 'export default { nativeEntry: "src/game.ts" };');
+  await installNativeProfileEntry(project, 'desktop', { warmup: 1 });
+  const source = readFileSync(join(project, 'src/profile-native-entry.ts'), 'utf8');
+  const declaration = source.split('\n').find((line) => line.startsWith('globalThis.TN_PLAYTEST_MAILBOX'));
+  const context = {};
+  runInNewContext(declaration, context);
+  assert.equal(context.TN_PLAYTEST_MAILBOX.request, '.runtime-mailbox/tn-playtest-request.json');
 });
 
 test('physical regression evidence blocks a thermally confounded device result', () => {
@@ -317,7 +343,7 @@ test('accepted profile controls are parsed and execution receives every value', 
   assert.equal(regression.duration, 30);
   assert.equal(regression.warmup, 5);
   assert.equal(regression.coldStarts, 5);
-  assert.equal(regression.repetitions, 3);
+  assert.equal(regression.repetitions, 1);
   assert.equal(parseProductionArgs(['--target', 'desktop-web']).target, 'web');
   assert.throws(
     () => parseProductionArgs(['--target', 'web', '--device', 'emulator-5554']),
@@ -355,6 +381,29 @@ test('native profile reads the generated app identity when no config override is
   );
 });
 
+test('regression collects one steady launch and five startup launches per paired arm', () => {
+  const options = parseProductionArgs(['--target', 'desktop', '--profile', 'regression']);
+  const plan = collectionLaunchPlan(options);
+  assert.equal(plan.filter((entry) => entry === 'startup').length, 5);
+  assert.equal(plan.filter((entry) => entry === 'steady').length, 1);
+  assert.ok(6 * (options.duration + options.warmup + options.coldStarts * 8) < 900);
+  assert.throws(() => parseProductionArgs(['--target', 'desktop', '--profile', 'regression', '--repetitions', '3']), { code: 'TN_PROD_PAIR_UNIT' });
+});
+
+test('prebuilt desktop still builds its instrumented scaffold with the supplied runtime', async () => {
+  const calls = [];
+  await prepareNativeWorkload('/project', 'desktop', { prebuiltArtifact: '/runtime/mystral' }, async (...args) => {
+    calls.push(args);
+    return { status: 0 };
+  });
+  assert.deepEqual(calls[0].slice(0, 3), ['pnpm', ['run', 'build:desktop'], '/project']);
+  assert.equal(calls[0][3].THREENATIVE_RUNTIME_BINARY, '/runtime/mystral');
+});
+
+test('prebuilt mobile refuses an app without a bound instrumented workload receipt', async () => {
+  await assert.rejects(prepareNativeWorkload('/project', 'android', { prebuiltArtifact: '/missing.apk' }), { code: 'TN_PROD_PREBUILT_WORKLOAD' });
+});
+
 test('startup aggregation rejects failed reports and blank first frames', () => {
   const blank = new PNG({ height: 2, width: 2 });
   blank.data.fill(255);
@@ -384,7 +433,7 @@ test('generated production workload runs through the playtest validator and keep
   const project = makeTempDirSync('tn-prd064-scenario-');
   temporary.push(project);
   mkdirSync(join(project, 'playtests'));
-  const assertion = { performance: { maxDrawCalls: 180, maxFrameMsP95: 15, maxTriangles: 100_000 } };
+  const assertion = { performance: { maxDrawCalls: 180, maxFrameMsP95: 15, maxTriangles: 100_000, minFps: 30 } };
   writeFileSync(join(project, 'playtests/performance.playtest.json'), JSON.stringify({
     assert: assertion,
     artifacts: { screenshots: 'after' },
@@ -521,6 +570,7 @@ test('generated production workload runs through the playtest validator and keep
     maxStartupMs: 5_000,
     maxTriangles: 100_000,
     minMeanFps: 60,
+    minFps: 30,
   });
   assert.equal(evaluateProductionEvidence(evidence).status, 'PASS');
   assert.equal(evidence.metrics.drawCalls, 180);

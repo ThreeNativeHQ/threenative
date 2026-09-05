@@ -116,7 +116,7 @@ describe("performance regression lane manifest", () => {
       ),
     );
     expect(manifest.policyRevision).toBe("prd-358-v1");
-    expect(manifest.lanes.map((lane) => lane.platform)).toEqual([
+    expect([...new Set(manifest.lanes.map((lane) => lane.platform))]).toEqual([
       "browser-webgpu",
       "native-linux",
       "native-windows-macos",

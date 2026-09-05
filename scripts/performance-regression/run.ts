@@ -8,7 +8,9 @@ import {
   type IPerformanceLane,
   type IPerformanceLaneManifest,
   parsePerformanceLaneManifest,
+  parseRunReport,
   percentile,
+  summarize,
 } from "../engine-load-test/report.js";
 import {
   DEFAULT_PERFORMANCE_POLICY,
@@ -16,6 +18,7 @@ import {
   type IPerformanceRun,
   type PairOrder,
   evaluatePairedComparison,
+  parsePerformanceRun,
   renderRegressionMarkdown,
 } from "./compare.js";
 
@@ -55,6 +58,8 @@ export interface IPerformanceLaneRunResult {
 }
 
 export interface IPerformanceCollectorOptions {
+  readonly workload?: string;
+  readonly deadline?: number;
   readonly device?: string;
   readonly physicalEvidence?: string;
 }
@@ -152,6 +157,9 @@ export function collectorCommand(
   prebuiltArtifact?: string,
   collectorOptions: IPerformanceCollectorOptions = {},
 ): string {
+  if (collectorOptions.workload === "moving-l2-l3-16384") {
+    return `pnpm tsx scripts/engine-load-test/cli.ts --arm tn-web --modes L2,L3 --ladder 16384 --repeats 1 --frames 1800 --skip-baseline # cwd=${worktree}`;
+  }
   return [
     "node",
     "packages/runtime-native/scripts/profile-production.mjs",
@@ -411,6 +419,49 @@ async function runCollector(
   prebuiltArtifact?: string,
   collectorOptions: IPerformanceCollectorOptions = {},
 ): Promise<{ readonly command: string; readonly evidence: Record<string, unknown> }> {
+  const remainingMs = Math.min(
+    120_000,
+    (collectorOptions.deadline ?? Date.now() + 120_000) - Date.now(),
+  );
+  if (remainingMs <= 0)
+    throw new PerformanceLaneRunError("hardware quick-suite exceeded its 15-minute budget");
+  if (collectorOptions.workload === "moving-l2-l3-16384") {
+    await execFileAsync(
+      "pnpm",
+      [
+        "tsx",
+        "scripts/engine-load-test/cli.ts",
+        "--arm",
+        "tn-web",
+        "--modes",
+        "L2,L3",
+        "--ladder",
+        "16384",
+        "--repeats",
+        "1",
+        "--frames",
+        "1800",
+        "--skip-baseline",
+      ],
+      { cwd: worktree, timeout: remainingMs, maxBuffer: 32 * 1024 * 1024 },
+    );
+    const report = JSON.parse(
+      await readFile(path.join(worktree, "artifacts/engine-load-test/tn-web.json"), "utf8"),
+    );
+    await mkdir(outputDirectory, { recursive: true });
+    await writeFile(path.join(outputDirectory, "ladder-report.json"), JSON.stringify(report));
+    return {
+      command: collectorCommand(
+        worktree,
+        target,
+        sourceSha,
+        outputDirectory,
+        undefined,
+        collectorOptions,
+      ),
+      evidence: report,
+    };
+  }
   const args = [
     "packages/runtime-native/scripts/profile-production.mjs",
     ...collectorArguments(target, sourceSha, outputDirectory, prebuiltArtifact, collectorOptions),
@@ -427,7 +478,7 @@ async function runCollector(
     await execFileAsync(process.execPath, args, {
       cwd: worktree,
       maxBuffer: 32 * 1024 * 1024,
-      timeout: 15 * 60_000,
+      timeout: remainingMs,
     });
     const file = path.join(outputDirectory, "production-evidence.json");
     return { command, evidence: objectValue(JSON.parse(await readFile(file, "utf8")), file) };
@@ -452,11 +503,62 @@ function metricSamples(metrics: Record<string, unknown>, key: string): number[] 
   return value.map((sample, index) => finitePositive(sample, `evidence.metrics.${key}[${index}]`));
 }
 
+function observedIdentity(value: unknown, field: string): string {
+  const text = nonEmpty(value, `evidence.identity.${field}`);
+  if (
+    /unknown|synthetic|fixture|default-target|selected-target|software|swiftshader|llvmpipe/i.test(
+      text,
+    )
+  ) {
+    throw new PerformanceLaneRunError(
+      `evidence.identity.${field} is not observed hardware: ${text}`,
+    );
+  }
+  return text;
+}
+
+export function validateApprovedBaseline(approved: object, observed: object): void {
+  for (const [field, expected] of Object.entries(approved)) {
+    if (expected === undefined || (observed as Record<string, unknown>)[field] !== expected) {
+      throw new PerformanceLaneRunError(
+        `approved baseline ${field} does not match collected identity`,
+      );
+    }
+  }
+}
+
 export function productionEvidenceToPerformanceRun(
   evidence: Record<string, unknown>,
   lane: Pick<IPerformanceLane, "id" | "platform" | "workload">,
   expectedSourceSha?: string,
 ): IPerformanceRun {
+  if (lane.workload === "moving-l2-l3-16384") {
+    const report = parseRunReport(evidence);
+    if (report.identity?.sourceSha !== expectedSourceSha)
+      throw new PerformanceLaneRunError("ladder identity source does not match selected build");
+    for (const [field, value] of Object.entries(report.identity ?? {}))
+      observedIdentity(value, field);
+    const metrics = Object.fromEntries(
+      summarize(report).flatMap((row) => [
+        [`frameP95Ms.${row.mode}`, { value: row.p95, samples: [row.p95], unit: "ms" }],
+        [
+          `drawCalls.${row.mode}`,
+          { value: row.drawCalls, samples: [row.drawCalls], unit: "count" },
+        ],
+        [
+          `triangles.${row.mode}`,
+          { value: row.triangles, samples: [row.triangles], unit: "count" },
+        ],
+      ]),
+    );
+    return parsePerformanceRun({
+      lane: lane.id,
+      workload: lane.workload,
+      identity: report.identity,
+      reportHash: sha256(JSON.stringify(report)),
+      metrics,
+    });
+  }
   const source = objectValue(evidence.source, "evidence.source");
   const artifact = objectValue(evidence.artifact, "evidence.artifact");
   const identity = objectValue(evidence.identity, "evidence.identity");
@@ -466,21 +568,23 @@ export function productionEvidenceToPerformanceRun(
     ? nonEmpty(identity.nativeBinarySha256, "evidence.identity.nativeBinarySha256")
     : String(identity.nativeBinarySha256 ?? artifact.sha256);
   const evidenceIdentity = {
-    architecture: String(identity.hostClass ?? "unknown-architecture"),
+    architecture: observedIdentity(identity.architecture ?? identity.hostClass, "architecture"),
     artifactHash: nonEmpty(artifact.sha256, "evidence.artifact.sha256"),
     browser:
-      lane.platform === "browser-webgpu" ? String(identity.browserClass ?? "webgpu") : "none",
-    device: String(identity.deviceClass ?? lane.id),
-    graphicsBackend: String(identity.graphicsBackend ?? "unknown-backend"),
-    gpu: String(identity.gpuClass ?? "unknown-gpu"),
+      lane.platform === "browser-webgpu"
+        ? observedIdentity(identity.browserClass, "browserClass")
+        : "none",
+    device: observedIdentity(identity.deviceClass, "deviceClass"),
+    graphicsBackend: observedIdentity(identity.graphicsBackend, "graphicsBackend"),
+    gpu: observedIdentity(identity.gpuClass, "gpuClass"),
     instrumentationRevision: "productionEvidenceV1",
-    jsRuntime: String(identity.jsRuntime ?? "unknown-runtime"),
+    jsRuntime: observedIdentity(identity.jsRuntime, "jsRuntime"),
     nativeBinaryHash,
-    operatingSystem: String(identity.osClass ?? "unknown-os"),
-    presentMode: String(identity.presentMode ?? "unknown-present-mode"),
-    resolution: `${String(identity.renderWidth ?? "unknown")}x${String(identity.renderHeight ?? "unknown")}`,
+    operatingSystem: observedIdentity(identity.osClass, "osClass"),
+    presentMode: observedIdentity(identity.presentMode, "presentMode"),
+    resolution: `${finitePositive(identity.renderWidth, "identity.renderWidth")}x${finitePositive(identity.renderHeight, "identity.renderHeight")}`,
     sourceSha: nonEmpty(source.sha, "evidence.source.sha"),
-    workloadHash: sha256(lane.workload),
+    workloadHash: observedIdentity(identity.workloadHash, "workloadHash"),
   };
   validateArtifactIdentity({
     artifactHash: evidenceIdentity.artifactHash,
@@ -562,6 +666,8 @@ export async function runPerformanceLane(
   const baselineWorktree = options.baselineWorktree ?? process.cwd();
   const candidateWorktree = options.candidateWorktree ?? process.cwd();
   const collectorOptions: IPerformanceCollectorOptions = {
+    workload: lane.workload,
+    deadline: Date.now() + 15 * 60_000,
     ...(options.device === undefined ? {} : { device: options.device }),
     ...(options.physicalEvidence === undefined
       ? {}
@@ -645,6 +751,9 @@ export async function runPerformanceLane(
     options.baselineArtifact ?? (await findPrebuiltArtifact(baselineWorktree, target));
   const candidateArtifact =
     options.candidateArtifact ?? (await findPrebuiltArtifact(candidateWorktree, target));
+  if (lane.baseline.identity?.sourceSha !== options.baselineSourceSha) {
+    throw new PerformanceLaneRunError("requested source SHA does not match approved baseline");
+  }
   const rawPairs: IPerformancePair[] = [];
   return withPerformanceLease(leaseDirectory, lane.id, owner, async () => {
     for (const attempt of attempts) {
@@ -694,12 +803,14 @@ export async function runPerformanceLane(
             );
       const baseline = attempt.order === "baseline-first" ? first : second;
       const candidate = attempt.order === "baseline-first" ? second : first;
+      const approvedRun = productionEvidenceToPerformanceRun(
+        baseline.evidence,
+        lane,
+        options.baselineSourceSha,
+      );
+      validateApprovedBaseline(lane.baseline.identity ?? {}, approvedRun.identity);
       rawPairs.push({
-        baseline: productionEvidenceToPerformanceRun(
-          baseline.evidence,
-          lane,
-          options.baselineSourceSha,
-        ),
+        baseline: approvedRun,
         candidate: productionEvidenceToPerformanceRun(
           candidate.evidence,
           lane,

@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -165,6 +165,9 @@ export function summarizePerformanceCi(input: unknown): IPerformanceCiSummary {
         (candidate) => (candidate.resultKey ?? candidate.lane) === lane,
       );
       if (result === undefined) reasons.push(`required performance lane ${lane} has no result`);
+      else if (result.status === "SKIPPED" || result.status === "UNVERIFIED") {
+        reasons.push(`required performance lane ${lane} is ${result.status.toLowerCase()}`);
+      }
     }
     const status: CiEvidenceStatus =
       reasons.length > 0 || counts.BLOCKED > 0
@@ -220,6 +223,46 @@ export function requiredLanesFromManifest(manifest: IPerformanceLaneManifest): s
   return manifest.lanes.filter((lane) => lane.required === true).map((lane) => lane.id);
 }
 
+/** Read actual collector artifacts; a status stub without raw evidence can never certify PASS. */
+export async function collectorCoverage(directory: string): Promise<IPerformanceCiResult[]> {
+  const results: IPerformanceCiResult[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) results.push(...(await collectorCoverage(file)));
+    else if (entry.name === "summary-input.json") {
+      results.push(
+        ...parsePerformanceCiSummaryInput(JSON.parse(await readFile(file, "utf8"))).results,
+      );
+    } else if (entry.name === "production-evidence.json") {
+      const evidence = JSON.parse(await readFile(file, "utf8"));
+      if (evidence.target === "fixture") continue;
+      const lane = path.basename(directory);
+      const simulated = /emulator|simulator/u.test(lane);
+      results.push(
+        parseResult(
+          {
+            lane,
+            sourceSha: evidence.source?.sha,
+            artifactHash: evidence.artifact?.sha256,
+            status: simulated && evidence.status === "PASS" ? "UNVERIFIED" : evidence.status,
+            reason: `collector ${evidence.target}: ${(evidence.codes ?? []).join(", ") || "complete"}${simulated ? "; simulator evidence only" : ""}`,
+          },
+          results.length,
+        ),
+      );
+    } else if (entry.name === "collector-status.json") {
+      const files = await readdir(directory);
+      if (files.includes("production-evidence.json")) continue;
+      results.push({
+        lane: path.basename(directory),
+        status: "BLOCKED",
+        reason: "collector did not retain production-evidence.json",
+      });
+    }
+  }
+  return results;
+}
+
 export function renderPerformanceCiSummary(summary: IPerformanceCiSummary): string {
   const lines = [
     `## Performance CI evidence ${summary.status}`,
@@ -253,7 +296,32 @@ async function main(): Promise<void> {
   if (expectedSha === undefined)
     throw new PerformanceCiSummaryError("--expected-sha or GITHUB_SHA is required");
   let raw: unknown;
-  if (inputPath !== undefined) {
+  const artifactDirectory = argument("artifact-dir");
+  if (artifactDirectory !== undefined) {
+    const results = await collectorCoverage(artifactDirectory);
+    const expected = (argument("coverage") ?? "").split(",").filter(Boolean);
+    for (const lane of expected)
+      if (!results.some((result) => result.lane === lane)) {
+        results.push({
+          lane,
+          status: "SKIPPED",
+          reason: "collector artifact missing or platform intentionally unscheduled",
+        });
+      }
+    if (manifestPath !== undefined) {
+      const manifest = parsePerformanceLaneManifest(
+        JSON.parse(await readFile(manifestPath, "utf8")),
+      );
+      results.push(
+        ...coverageResultsFromManifest(manifest).map((row) => ({
+          ...row,
+          lane: `${row.lane}-hardware`,
+        })),
+      );
+    }
+    const requiredLanes = (argument("required-lanes") ?? "").split(",").filter(Boolean);
+    raw = { expectedSha, results, ...(requiredLanes.length === 0 ? {} : { requiredLanes }) };
+  } else if (inputPath !== undefined) {
     raw = JSON.parse(await readFile(inputPath, "utf8"));
   } else if (manifestPath !== undefined) {
     const manifest = parsePerformanceLaneManifest(JSON.parse(await readFile(manifestPath, "utf8")));

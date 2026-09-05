@@ -2624,6 +2624,80 @@ required-check promotion.
 
 ---
 
+### PRD-358 final-audit repair — 2026-09-05
+
+This repair does not accept a baseline, promote a required check, or claim physical Android/iOS
+execution. The source PRD remains unchanged. Hardware calibration and the 20-run accuracy/cost
+promotion evidence remain UNVERIFIED.
+
+The scheduled matrix now uses runner-aware dispatch and explicit Bash, with hosted reporting for
+unprovisioned physical resources. Desktop collection rebuilds the instrumented game bundle while
+reusing the supplied native host. Mobile prebuilt collection requires a matching, hash-verified
+production workload receipt and packaged app identity; existing conformance applications without
+that receipt are BLOCKED, not interchangeable production workloads. Regression collection has
+five startup launches and one steady observation per arm, three alternating pairs, and a shared
+15-minute collection deadline. Pooled steady windows are rejected.
+
+Promoted conversion rejects missing/unknown/synthetic hardware identity; each baseline observation
+must match its approved lane identity. Candidate build provenance may differ. Browser production
+and the moving L2/L3 ladder now have separate manifest workloads and comparison consumers. Both
+remain unprovisioned until actual hardware identity and accepted baselines exist. Required
+SKIPPED/UNVERIFIED coverage cannot yield PASS, and hosted aggregation reads collector artifacts,
+not a synthetic job-success row.
+
+Observed red/green commands and output (local logs are temporary, not checked-in frame archives):
+
+| Command | Observed result |
+|---|---|
+| `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts` before fixes | `Test Files 1 failed (1)`; `Tests 4 failed / 59 passed (63)`; exit 1. Identity, approved-baseline, required coverage, and workflow assertions rejected the old implementation. |
+| `pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs` before fixes | `Test Files 1 failed (1)`; `Tests 4 failed / 22 passed (26)`; exit 1. Bounded launch and prebuilt workload tests rejected the old contract. |
+| Same native command, additional negative controls | Pooled valid windows: received `PASS`, expected `BLOCKED` before guard. Source `minFps` test: `1 failed / 27 passed (28)` before mapping the existing playtest FPS bound. |
+| `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/performance-regression.spec.ts scripts/__tests__/engine-load-test.spec.ts scripts/__tests__/ci-needs.spec.ts` after fixes | `Test Files 4 passed (4)`; `Tests 134 passed (134)`; exit 0. |
+| Native command above after fixes | `Test Files 1 passed (1)`; `Tests 28 passed (28)`; exit 0. |
+| `pnpm test` (final complete run) | Exit 0; root `Test Files 391 passed / 1 skipped (392)`, `Tests 4306 passed / 4 skipped (4310)`; native `100 passed` files, `722 passed / 34 skipped` tests, plus `29 passed` physics-parity tests. |
+| `pnpm typecheck` (serial retry after the build completed) | Exit 0; all workspace checks completed, ending `examples/abyss-framework typecheck: Done`. |
+| `pnpm lint` | Exit 0; `Checked 1962 files`; `Found 611 warnings.` No fixes applied by the gate. |
+| `pnpm test:playtest` | Exit 0; framework movement, camera, axis, zoom, navigation and streaming scenarios passed. This is not physical-device performance evidence. |
+| `pnpm budgets` | Exit 1: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit).` Unrelated index left unchanged. |
+| `yq eval '.' .github/workflows/ci.yml`, same command for `native-platforms.yml` and `performance-regression.yml` | Each exit 0. YAML parsing only; no hosted execution or actionlint claim. |
+| `git diff --check` | Exit 0, no output. |
+
+The executed bounded desktop probe was:
+
+```sh
+node packages/runtime-native/scripts/profile-production.mjs --profile production \
+  --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
+  --prebuilt-artifact "$PWD/packages/runtime-native/build/tn-linux/mystral" \
+  --out artifacts/prd358-final-audit-desktop
+```
+
+Final observed output: `"status": "BLOCKED"`, `"exitCode": 2`; one steady window with
+`durationSeconds: 0` and `sampleCount: 0`. Codes: `TN_PROD_RENDER_SAMPLES_INCOMPLETE`,
+`TN_PROD_STARTUP_SAMPLES_INCOMPLETE`, `TN_PROD_PLAYTEST_FAILED`, `TN_PROD_MARKER_MISSING`,
+`TN_PROD_PERFORMANCE_BUDGET`, `TN_PROD_STARTUP_BUDGET`. Evidence is retained locally at
+`artifacts/prd358-final-audit-desktop/production-evidence.json`, including hashes and dirty-source
+identity. It is not a throughput, readiness or startup pass. Earlier executions exposed a malformed
+generated mailbox declaration (fixed and VM-tested) and unsupported existing `minFps` bounds
+(fixed and tested). An intervening build reported missing playtest peer exports while another
+gate rebuilt distributions; the serial retry got past that build. A concurrent typecheck similarly
+reported TS7016 missing playtest declarations during `pnpm test`'s rebuild; this is recorded as a
+setup collision, not dismissed as a passing check.
+
+Current non-test integration callers supersede the historical line references above:
+
+| Ledger contract | Live caller |
+|---|---|
+| Approved baseline binding and paired comparison | `scripts/performance-regression/run.ts:811` validates the collected baseline before adding the pair and evaluating the manifest metrics. |
+| Reusable prebuilt workload | `packages/runtime-native/scripts/profile-production.mjs:470` invokes the instrumented desktop build or mobile receipt verification. |
+| Hosted native collector | `.github/workflows/ci.yml:363`, `.github/workflows/native-platforms.yml:677`, and `.github/workflows/native-platforms.yml:980` invoke bounded collectors. |
+| Real artifact coverage | `.github/workflows/ci.yml:1065` and `.github/workflows/native-platforms.yml:116` invoke artifact-backed coverage aggregation. |
+| Scheduled hardware dispatch and summary | `.github/workflows/performance-regression.yml:61` selects the runner; `:292` aggregates every expected execution key, including separate Windows/macOS and browser-ladder rows. |
+
+Physical Android/iOS, Windows/macOS, simulator/emulator execution, calibrated browser/Linux
+throughput, and GitHub-hosted workflow execution remain UNVERIFIED from this checkout. YAML
+parsing and structure tests do not claim those platforms ran. Missing promoted evidence remains
+BLOCKED/2; regression FAIL remains 1 and a fully evidenced PASS remains 0.
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,

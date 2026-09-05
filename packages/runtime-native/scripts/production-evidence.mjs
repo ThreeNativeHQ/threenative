@@ -53,6 +53,8 @@ export function evaluateFrameBudget(metrics, budget = {}) {
   const mean = finiteMetric(metrics.meanFps) ? metrics.meanFps : meanFps(metrics.frameIntervalsMs);
   const p95 = finiteMetric(metrics.p95FrameMs) ? metrics.p95FrameMs : nearestRank(metrics.frameIntervalsMs, 0.95);
   const p99 = finiteMetric(metrics.p99FrameMs) ? metrics.p99FrameMs : nearestRank(metrics.frameIntervalsMs, 0.99);
+  const medianFrameMs = nearestRank(metrics.frameIntervalsMs, 0.5);
+  if (budget.minFps !== undefined && (!finiteMetric(medianFrameMs) || Math.round(100_000 / medianFrameMs) / 100 < budget.minFps)) failures.push('TN_PROD_PERFORMANCE_BUDGET');
   const floors = metrics.oneSecondFps ?? oneSecondFrameFloors(metrics.intervals ?? []);
   const drawCalls = maximumMetric(metrics, 'drawCalls');
   const triangles = maximumMetric(metrics, 'triangles');
@@ -83,7 +85,7 @@ export function regressionCollectionCodes(input) {
   const frameCount = Array.isArray(frameSamples) ? frameSamples.length : 0;
   const windows = metrics.runWindows;
   const completeWindows = Array.isArray(windows)
-    && windows.length > 0
+    && windows.length === 1
     && windows.every((window) => isRecord(window)
       && Number.isInteger(window.sampleCount)
       && window.sampleCount >= REGRESSION_COLLECTION_PROFILE.minFrameSamples

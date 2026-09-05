@@ -127,7 +127,7 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     if (!explicit.has('coldStarts')) options.coldStarts = REGRESSION_COLLECTION_PROFILE.coldStarts;
     if (!explicit.has('duration')) options.duration = REGRESSION_COLLECTION_PROFILE.durationSeconds;
     if (!explicit.has('out')) options.out = '.runtime/prd358/regression';
-    if (!explicit.has('repetitions')) options.repetitions = 3;
+    if (!explicit.has('repetitions')) options.repetitions = 1;
     if (!explicit.has('warmup')) options.warmup = 5;
   }
   return validateProductionOptions(options);
@@ -136,6 +136,9 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
 export function validateProductionOptions(input) {
   const options = normalizeOptions(input);
   if (options.help) return options;
+  if (options.profile === REGRESSION_PROFILE && (options.repetitions !== 1 || options.coldStarts !== 5 || options.duration < 30 || options.duration > 60 || options.warmup > 10)) {
+    throw new ProductionEvidenceError('TN_PROD_PAIR_UNIT', 'Each regression arm requires one 30–60 second steady launch, five startup launches, and at most ten seconds warmup.');
+  }
   if (options.profile !== PRODUCTION_PROFILE && options.profile !== REGRESSION_PROFILE) {
     throw new ProductionEvidenceError('TN_PROD_PROFILE_UNSUPPORTED', `Production profile '${options.profile}' is not supported.`);
   }
@@ -177,6 +180,7 @@ export async function runProductionProfile(input, dependencies = {}) {
   const sourceState = await currentSourceState();
   const requiredSourceSha = sourceState.sha;
   const sourceSha = options.sourceSha ?? requiredSourceSha;
+  options.sourceSha = sourceSha;
   const runId = `${options.target}-${Date.now()}`;
   const physicalEvidence = await readPhysicalEvidence(options.physicalEvidence);
   const audioEvidence = await readOptionalArtifact(options.audioEvidence);
@@ -209,6 +213,7 @@ export async function collectProduction(options, context, runId) {
   const startedAt = new Date().toISOString();
   try {
     await scaffoldPlatformer(project, tools);
+    tools.workloadSourceHash = await hashPath(join(project, 'src'));
     const scenarios = await writeRunScenarios(project, options);
     const artifactsRoot = join(project, 'artifacts', 'production');
     await mkdir(artifactsRoot, { recursive: true });
@@ -250,7 +255,7 @@ function normalizeOptions(input = {}) {
     physicalEvidence: input.physicalEvidence,
     renderSize: renderSize ?? { height: 1080, width: 1920 },
     profile,
-    repetitions: input.repetitions ?? 3,
+    repetitions: input.repetitions ?? (regression ? 1 : 3),
     sourceSha: input.sourceSha,
     target,
     warmup: input.warmup ?? (regression ? 5 : 60),
@@ -394,7 +399,7 @@ export async function writeRunScenarios(project, options) {
 }
 
 async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
-  const markerServer = await createFrameMarkerServer();
+  const markerServer = await createFrameMarkerServer(options.profile === REGRESSION_PROFILE ? 41778 : 0);
   try {
     await installWebProfileEntry(project, markerServer.url, options.control, warmupFramesFor(options));
     const build = await runCommand('pnpm', ['run', 'build:web'], project);
@@ -405,7 +410,7 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
     for (let coldStart = 0; coldStart < options.coldStarts; coldStart += 1) {
       const startup = await runWebScenario(project, scenarios.startupPath, join(artifactsRoot, `web-startup-${coldStart + 1}`), markerServer, tools.playtestCli);
       startups.push(startup);
-      for (let repetition = 0; repetition < options.repetitions; repetition += 1) {
+      for (let repetition = 0; repetition < steadyLaunchesAt(options, coldStart); repetition += 1) {
         runs.push(await runWebScenario(
           project,
           scenarios.workloadPath,
@@ -417,6 +422,7 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
     }
     return {
       artifactSha,
+      workloadHash: await workloadHashFor(project, tools.workloadSourceHash),
       applicationClass: 'platformer-web-build',
       driverClass: 'playwright-chromium-webgpu',
       kind: 'web',
@@ -438,7 +444,7 @@ async function runWebScenario(project, scenarioPath, artifactDirectory, markerSe
     '--artifacts', relativeArtifact,
     '--browser-recipe', 'webgpu',
     '--project', project,
-    '--server-command', `pnpm dev --host 127.0.0.1 --port ${port} --strictPort`,
+    '--server-command', `pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
     '--timeout', '30000',
     '--url', `http://127.0.0.1:${port}`,
   ];
@@ -461,9 +467,7 @@ async function runWebScenario(project, scenarioPath, artifactDirectory, markerSe
 async function collectNative(project, scenarios, artifactsRoot, options, tools) {
   const target = options.target === 'desktop-pair' || options.target === 'desktop' ? 'desktop' : options.target.startsWith('ios') ? 'ios' : 'android';
   await installNativeProfileEntry(project, target, options);
-  const build = options.prebuiltArtifact === undefined
-    ? await runCommand('pnpm', ['run', `build:${target}`], project)
-    : { status: 0 };
+  const build = await prepareNativeWorkload(project, target, options);
   if (build.status !== 0) {
     const details = [build.stdout, build.stderr]
       .filter((value) => typeof value === 'string' && value.trim().length > 0)
@@ -481,7 +485,7 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
   for (let coldStart = 0; coldStart < options.coldStarts; coldStart += 1) {
     const startup = await runNativeScenario(project, target, scenarios.nativeStartupPath, join(artifactsRoot, `native-startup-${coldStart + 1}`), options, artifactPath, tools);
     startups.push(startup);
-    for (let repetition = 0; repetition < options.repetitions; repetition += 1) {
+    for (let repetition = 0; repetition < steadyLaunchesAt(options, coldStart); repetition += 1) {
       runs.push(await runNativeScenario(
         project,
         target,
@@ -495,6 +499,8 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
   }
   return {
     artifactSha,
+    workloadHash: build.workloadHash ?? await workloadHashFor(project, tools.workloadSourceHash),
+    bundleSha: build.bundleSha ?? await hashPath(join(project, '.threenative/build/game.js')),
     applicationClass: `platformer-${target}-build`,
     driverClass: `threenative-${target}-runtime`,
     kind: target,
@@ -515,7 +521,9 @@ async function runNativeScenario(project, target, scenarioPath, artifactDirector
   if (target === 'android') await installAndroidArtifact(artifactPath, options.device);
   // The game declares its identity in `threenative.config.ts` and packaging resolves it; profiling
   // launches whatever packaging shipped, so it reads the id from there instead of restating one.
-  const appId = readAndroidConfig(profileConfigPath(project, options.config)).app.id;
+  const appId = options.prebuiltArtifact === undefined
+    ? readAndroidConfig(profileConfigPath(project, options.config)).app.id
+    : (await readPrebuiltWorkload(options.prebuiltArtifact, target, options)).appId;
   const config = {
     android: { activity: 'com.threenative.runtime.MystralActivity', packageName: appId },
     artifactDirectory,
@@ -678,11 +686,11 @@ function spawnNative(artifactPath, project, options) {
   });
 }
 
-async function installNativeProfileEntry(project, target, options) {
+export async function installNativeProfileEntry(project, target, options) {
   const entryPath = join(project, 'src/profile-native-entry.ts');
-  const mailboxRoot = join(project, '.runtime-mailbox');
+  const mailboxRoot = '.runtime-mailbox';
   const mailbox = target === 'desktop'
-    ? `globalThis.TN_PLAYTEST_MAILBOX = { request: ${JSON.stringify(join(mailboxRoot, 'tn-playtest-request.json'))}, response: ${JSON.stringify(join(mailboxRoot, 'tn-playtest-response.json'))};\n`
+    ? `globalThis.TN_PLAYTEST_MAILBOX = ${JSON.stringify({ request: join(mailboxRoot, 'tn-playtest-request.json'), response: join(mailboxRoot, 'tn-playtest-response.json') })};\n`
     : '';
   const screenshotRequestPath = target === 'desktop' ? join(mailboxRoot, 'tn-production-screenshot-request.json') : undefined;
   const source = `import game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), screenshotRequestPath)}\n${mailbox}export default game;\n`;
@@ -880,7 +888,7 @@ async function installWebProfileEntry(project, markerUrl, control, warmupFrames 
   if (!main.includes(markerImport)) await writeFile(mainPath, `${markerImport}\n${main}`);
 }
 
-async function createFrameMarkerServer() {
+async function createFrameMarkerServer(port = 0) {
   const events = [];
   const waiters = [];
   const server = createServer((request, response) => {
@@ -906,7 +914,7 @@ async function createFrameMarkerServer() {
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
+    server.listen(port, '127.0.0.1', resolve);
   });
   const address = server.address();
   if (address === null || typeof address === 'string') throw new ProductionEvidenceError('TN_PROD_MARKER_SERVER_FAILED', 'The first-frame marker server did not expose a TCP port.');
@@ -1021,7 +1029,7 @@ function frameSeriesFromReport(report) {
 export function assembleEvidence({ context, native, options, performanceBounds, project, runId, startedAt, web }) {
   const arms = [web, native].filter((arm) => arm !== undefined);
   const regression = options.profile === REGRESSION_PROFILE;
-  const expectedRuns = options.coldStarts * options.repetitions;
+  const expectedRuns = collectionLaunchPlan(options).filter((entry) => entry === 'steady').length;
   const codes = [];
   const rawArtifacts = [];
   for (const arm of arms) {
@@ -1071,7 +1079,7 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
     }
     if (selectedMetrics.phaseP95Ms !== undefined) metrics.phaseP95Ms = selectedMetrics.phaseP95Ms;
   }
-  const artifactHashes = arms.map(({ artifactSha }) => artifactSha);
+  const artifactHashes = arms.map(({ artifactSha, bundleSha }) => `${artifactSha}:${bundleSha ?? artifactSha}`);
   const target = options.target;
   const identity = identityFor(options, web, native, artifactHashes);
   const evidence = {
@@ -1215,7 +1223,7 @@ function productionPerformanceBudget(bounds) {
   if (typeof bounds !== 'object' || bounds === null || Array.isArray(bounds)) {
     throw new ProductionEvidenceError('TN_PROD_PERFORMANCE_BUDGET_INVALID', 'The source performance bounds must be an object.');
   }
-  const keys = ['maxDrawCalls', 'maxFrameMsP95', 'maxTriangles'];
+  const keys = ['maxDrawCalls', 'maxFrameMsP95', 'maxTriangles', 'minFps'];
   const unknown = Object.keys(bounds).filter((key) => !keys.includes(key));
   if (unknown.length > 0) {
     throw new ProductionEvidenceError('TN_PROD_PERFORMANCE_BUDGET_INVALID', `The source performance bounds contain unsupported keys: ${unknown.join(', ')}.`);
@@ -1359,10 +1367,9 @@ function pairMetrics(metrics) {
 
 function identityFor(options, web, native, artifactHashes) {
   const common = {
-    deviceClass: options.device === undefined ? 'default-target' : 'selected-target',
-    hostClass: `${process.platform}-${process.arch}`,
-    osClass: process.platform,
-    refreshHz: 60,
+    // Only observed hardware data may certify a promoted comparison. Missing fields remain absent.
+    ...(web?.runs[0]?.report?.observations?.hardwareIdentity ?? native?.runs[0]?.report?.observations?.hardwareIdentity ?? {}),
+    workloadHash: web?.workloadHash ?? native?.workloadHash,
     renderHeight: options.renderSize.height,
     renderWidth: options.renderSize.width,
   };
@@ -1381,6 +1388,46 @@ function identityFor(options, web, native, artifactHashes) {
     ...(native === undefined ? {} : { nativeBinarySha256: native.artifactSha }),
     executableClass: web?.driverClass ?? native?.driverClass,
   };
+}
+
+function steadyLaunchesAt(options, coldStart) {
+  return options.profile === REGRESSION_PROFILE ? (coldStart === options.coldStarts - 1 ? 1 : 0) : options.repetitions;
+}
+
+export function collectionLaunchPlan(options) {
+  return Array.from({ length: options.coldStarts }, (_, index) => ['startup', ...Array(steadyLaunchesAt(options, index)).fill('steady')]).flat();
+}
+
+export async function prepareNativeWorkload(project, target, options, execute = runCommand) {
+  if (options.prebuiltArtifact !== undefined && target !== 'desktop') {
+    const receipt = await readPrebuiltWorkload(options.prebuiltArtifact, target, options);
+    return { status: 0, workloadHash: receipt.workloadHash, bundleSha: receipt.bundleSha256 };
+  }
+  // build:desktop compiles assets, the instrumented entry and UI, then packages the existing host.
+  // THREENATIVE_RUNTIME_BINARY prevents a second native compile without omitting the game bundle.
+  return execute('pnpm', ['run', `build:${target}`], project, {
+    ...process.env,
+    ...(options.prebuiltArtifact === undefined ? {} : { THREENATIVE_RUNTIME_BINARY: resolve(options.prebuiltArtifact) }),
+  });
+}
+
+export async function readPrebuiltWorkload(artifact, target, options) {
+  try {
+    const receipt = JSON.parse(await readFile(`${artifact}.production.json`, 'utf8'));
+    if (receipt.target !== target || receipt.workload !== 'platformer-production' || receipt.instrumentationRevision !== 'productionEvidenceV1'
+      || receipt.sourceSha !== options.sourceSha || !receipt.appId || !receipt.workloadHash
+      || receipt.artifactSha256 !== await hashPath(artifact)) throw new Error('receipt identity mismatch');
+    const bundle = target === 'ios'
+      ? await readFile(join(artifact, 'native-smoke.js'))
+      : (await execFileAsync('unzip', ['-p', artifact, 'assets/scripts/main.js'], { encoding: 'buffer' })).stdout;
+    const appId = target === 'ios'
+      ? (await execFileAsync('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', join(artifact, 'Info.plist')])).stdout.trim()
+      : (await execFileAsync('aapt', ['dump', 'badging', artifact])).stdout.match(/package: name='([^']+)'/u)?.[1];
+    if (appId !== receipt.appId || sha256(bundle) !== receipt.bundleSha256 || !bundle.includes('TN_PROD_FRAME_SAMPLES:')) throw new Error('packaged workload mismatch');
+    return receipt;
+  } catch (error) {
+    throw new ProductionEvidenceError('TN_PROD_PREBUILT_WORKLOAD', `Prebuilt ${target} requires a matching instrumented platformer receipt and packaged application identity: ${error.message}`);
+  }
 }
 
 function markersFor(arms, codes) {
@@ -1629,6 +1676,11 @@ async function hashPath(path) {
   const hashInput = [];
   for (const file of files) hashInput.push(`${relative(path, file)}\0${sha256(await readFile(file))}`);
   return sha256(Buffer.from(hashInput.join('\n')));
+}
+
+async function workloadHashFor(project, sourceHash) {
+  if (!sourceHash) throw new ProductionEvidenceError('TN_PROD_WORKLOAD_IDENTITY', 'The workload source tree was not hashed before instrumentation.');
+  return sha256(Buffer.from(`${sourceHash}:${await hashPath(join(project, 'public'))}`));
 }
 
 async function listFiles(directory) {

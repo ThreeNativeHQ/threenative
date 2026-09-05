@@ -57,11 +57,11 @@ permissions:
 jobs:
   hardware-pairs:
     name: ${{ matrix.result_key }} paired hardware evidence
-    if: >-
-      (inputs.lane == '' || inputs.lane == matrix.lane || inputs.lane == matrix.result_key) &&
-      (matrix.lane != 'native-android' && matrix.lane != 'native-ios' ||
-       github.event_name == 'schedule' || inputs.trusted == true)
-    runs-on: ${{ matrix.runner }}
+    # Unprovisioned phones report on hosted Linux; only configured, trusted dispatch reaches a device.
+    runs-on: ${{ (matrix.physical == true && (vars.TN_PERF_PHYSICAL_PROVISIONED != 'true' || !(github.event_name == 'schedule' || inputs.trusted == true))) && 'ubuntu-24.04' || matrix.runner }}
+    defaults:
+      run:
+        shell: bash
     env:
       TN_PERF_DEVICE: ${{ matrix.device }}
       TN_PERF_PHYSICAL_EVIDENCE: ${{ matrix.physical_evidence }}
@@ -83,6 +83,12 @@ jobs:
             resource: linux-gpu-performance-runner
             device: ''
             physical_evidence: ''
+          - lane: browser-moving-ladder
+            result_key: browser-moving-ladder
+            runner: ubuntu-24.04
+            resource: browser-webgpu-runner
+            device: ''
+            physical_evidence: ''
           - lane: native-windows-macos
             result_key: native-windows
             runner: windows-2025
@@ -96,12 +102,14 @@ jobs:
             device: ''
             physical_evidence: ''
           - lane: native-android
+            physical: true
             result_key: native-android
             runner: [self-hosted, linux, android, android-physical-performance-device]
             resource: android-physical-performance-device
             device: ''
             physical_evidence: ''
           - lane: native-ios
+            physical: true
             result_key: native-ios
             runner: [self-hosted, macOS, ios, ios-physical-performance-device]
             resource: ios-physical-performance-device
@@ -121,6 +129,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Prepare isolated source checkouts inside the repository worktree
+        if: inputs.lane == '' || inputs.lane == matrix.lane || inputs.lane == matrix.result_key
         env:
           BASELINE_INPUT: ${{ inputs.baseline_source_sha }}
           CANDIDATE_INPUT: ${{ inputs.candidate_source_sha }}
@@ -145,8 +154,15 @@ jobs:
           TN_TRUSTED_DISPATCH: ${{ github.event_name == 'schedule' || inputs.trusted == true }}
           TN_PERF_LANE: ${{ matrix.lane }}
           TN_PERF_RESULT_KEY: ${{ matrix.result_key }}
+          TN_PERF_SELECTED: ${{ inputs.lane == '' || inputs.lane == matrix.lane || inputs.lane == matrix.result_key }}
+          TN_PERF_RESOURCE_READY: ${{ matrix.physical != true || vars.TN_PERF_PHYSICAL_PROVISIONED == 'true' }}
         run: |
           set +e
+          if [ "$TN_PERF_SELECTED" != "true" ] || [ "$TN_PERF_RESOURCE_READY" != "true" ]; then
+            mkdir -p artifacts/performance-regression
+            node --input-type=module -e 'import {writeFile} from "node:fs/promises"; await writeFile(`artifacts/performance-regression/${process.env.TN_PERF_RESULT_KEY}.json`, JSON.stringify({lane:process.env.TN_PERF_LANE,status:process.env.TN_PERF_SELECTED === "true" ? "UNVERIFIED" : "SKIPPED",reason:"platform not selected or physical resource unprovisioned; no collector ran"}));'
+            exit 0
+          fi
           args=(
             --manifest scripts/performance-regression/lanes.json
             --lane "${{ matrix.lane }}"
@@ -217,6 +233,7 @@ jobs:
           const manifest = JSON.parse(await readFile("scripts/performance-regression/lanes.json", "utf8"));
           const expectedResultKeys = [
             "browser-webgpu",
+            "browser-moving-ladder",
             "native-linux",
             "native-windows",
             "native-macos",

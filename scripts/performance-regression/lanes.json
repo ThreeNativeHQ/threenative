@@ -19,7 +19,7 @@
       "arms": ["tn-web"],
       "workload": "platformer-production",
       "requiredMetrics": ["drawCalls", "triangles", "frameP95Ms"],
-      "producer": "scripts/engine-load-test/cli.ts --arm tn-web",
+      "producer": "packages/runtime-native/scripts/profile-production.mjs --target web --profile regression",
       "evidenceClass": "hosted-software-contract",
       "provisioning": "hosted-software",
       "required": false,
@@ -81,6 +81,28 @@
       "baseline": {
         "status": "unavailable",
         "reason": "Historical Android ladder numbers are diagnostic; ten-pair calibration is not accepted yet."
+      }
+    },
+    {
+      "id": "browser-moving-ladder",
+      "platform": "browser-webgpu",
+      "arms": ["tn-web"],
+      "workload": "moving-l2-l3-16384",
+      "requiredMetrics": [
+        "frameP95Ms.L2",
+        "frameP95Ms.L3",
+        "drawCalls.L2",
+        "drawCalls.L3",
+        "triangles.L2",
+        "triangles.L3"
+      ],
+      "producer": "scripts/engine-load-test/cli.ts --arm tn-web --modes L2,L3 --ladder 16384 --repeats 1 --frames 1800",
+      "evidenceClass": "physical-hardware-throughput",
+      "provisioning": "unprovisioned",
+      "required": false,
+      "baseline": {
+        "status": "unavailable",
+        "reason": "Moving ladder throughput needs its own observed hardware identity and approved baseline; platformer timings cannot substitute."
       }
     },
     {
