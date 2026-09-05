@@ -2455,3 +2455,72 @@ remain the protocol for what it does not cover (SurfaceFlinger cross-check, devi
 | `prd-189-core-frame-allocations-2026-08-22.md` | Negative-control table for the allocation-free contract |
 | `prd-170-physics-allocations-2026-08-22.md` | Physics hygiene changes + BigInt key derivation |
 | `prd-193-template-frame-allocations-2026-08-23.md` | Template probe design (`PathFollow3D` identity contract) |
+
+
+## Performance regression strategy discovery (2026-09-05)
+
+Planning evidence for [PRD-358](../PRDs/performance/PRD-358-cross-platform-performance-regression-ci.md).
+Source: `d4635c2a96a8ffb2a2cfd6d3c0ab2b1d63fbaa3e`; dirty checkout already contained an unrelated
+`docs/PRDs/quickwins-2026-09-04/README.md` deletion. No engine, game or CI implementation changed.
+
+Discovery found the CI `benchmark` job's Playwright selection is
+`examples/abyss-framework/tests/viewport.playtest.ts` (resize/visibility, no timing regression).
+The separate engine-load CLI has Android physical/emulator baselines with 25% tolerance, while
+`checkPerformance` returns undefined for an absent baseline. Production-profile and playtest
+collectors already own the measurement/evidence mechanisms; PRD-358 proposes their CI integration.
+
+Executed commands and selected verbatim output:
+
+```text
+node packages/playtest/dist/runner/cli.js doctor --text
+✓ node: node 20.19.6
+✓ display: DISPLAY=:0
+✓ adb: adb is on PATH, so --target android can run
+! xcrun: xcrun is not on PATH, so --target ios cannot run here
+
+node packages/playtest/dist/runner/cli.js doctor --device <connected-wifi-device> --text
+✓ device.thermal: battery 32.8 °C, thermal status 0 (NONE), skin 33.4 °C
+✓ device.battery: battery 80%
+✓ device.charging: discharging (dumpsys battery status 3)
+
+pnpm exec vitest run packages/playtest/__tests__/performance.spec.ts packages/playtest/__tests__/perf.spec.ts scripts/__tests__/ci-structure.spec.ts
+Test Files  3 passed (3)
+     Tests  82 passed (82)
+  Duration  1.04s
+
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts
+Test Files  1 passed (1)
+     Tests  35 passed (35)
+  Duration  1.20s
+```
+
+Both test commands exited 0. Existing tests include regressed draw-count and missing-observation
+controls. These are harness/unit results, not real-device frame-rate measurements.
+
+```text
+pnpm profile:production -- --target fixture --control missing-marker --out artifacts/performance-strategy-discovery/missing-marker
+"codes": ["TN_PROD_MARKER_MISSING"]
+"status": "BLOCKED"
+"exitCode": 2
+
+node packages/runtime-native/scripts/profile-production.mjs --target fixture --control slow-path --out artifacts/performance-strategy-discovery/slow-path
+"codes": ["TN_PROD_PERFORMANCE_BUDGET"]
+"status": "FAIL"
+"exitCode": 1
+```
+
+Observed process exits matched those values. Raw manifests are local at the named output paths
+(`production-evidence.json`); fixture-negative-control provenance is explicit. These observed reds
+prove missing-marker and synthetic-slowdown verdict paths; they do not prove live hardware
+slowdown injection or all-platform sensitivity. Phase 3/5 require those additional controls.
+
+Read-only GitHub probe: `gh run view 33981507785 --json jobs` plus `gh run list --workflow ci.yml`.
+Successful run created `2026-09-05T17:36:53Z`, updated `2026-09-05T17:49:43Z`: 770 seconds.
+Selected job start/end UTC: benchmark 17:42:31–17:43:20 (49s); test-native
+17:39:47–17:45:17 (330s); build 17:41:03–17:41:38 (35s). The 250s before build started includes
+scheduling/startup effects; it is not separately measured queue time. One run cannot establish p95.
+
+UNVERIFIED: physical FPS, new baselines/noise limits, actual regression CI enforcement, native
+Linux/Windows/macOS runs, physical Android workload, iOS simulator/physical workload, startup and
+soak measurements. No GPU workload was launched during this discovery. Full typecheck/lint/test
+were not run for this planning-only change; the four focused test files above were executed.
