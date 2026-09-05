@@ -367,3 +367,5 @@ prove the worktree or packed result.
 
 - Task 2a native slice: [datagram limits, error classification, bounded native queues and idle-frame regression](../../verification/prd-359-task2a-2026-09-05.md); coordinator and fresh read-only review accepted. Final native contracts 2/2 and live suite 15/15 passed. Full Task 2a queue acceptance remains open through 2b-streams/2b.
 - Impairment prerequisite: [disposable Linux namespace/netem preflight](../../verification/prd-359-network-isolation-preflight-2026-09-05.md) executed successfully without changing host networking; game/UDP profile qualification remains open.
+
+- Task 3a prerequisite: [six pinned non-iOS quiche archives and verified digests](../../verification/prd-359-quiche-artifact-preflight-2026-09-05.md) are available; downloader checksum enforcement and platform execution remain open.
