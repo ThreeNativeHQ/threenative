@@ -90,5 +90,6 @@
     "request.platformer-double-jump"
   ],
   "version": 1,
-  "zeroResultRate": 0.1206896551724138
+  "zeroResultRate": 0.1206896551724138,
+  "unresolvedResultRate": 0.1206896551724138
 }
