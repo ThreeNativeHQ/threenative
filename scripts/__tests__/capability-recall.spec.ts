@@ -41,6 +41,7 @@ function budget(overrides: Partial<ICapabilityRecallBudget> = {}): ICapabilityRe
     recalledRows: [],
     rejectHits: 0,
     rowCount: 1,
+    rowIds: ["fixture.row"],
     version: 1,
     zeroResultRate: 0,
     ...overrides,
@@ -119,6 +120,30 @@ describe("capability recall gate", () => {
       message: "1 previously recalled row no longer reaches an expected symbol",
       metric: "recalledRows",
       rowIds: ["baseline.hit"],
+    });
+  });
+
+  it("should reject a corpus row replacement even when rowCount stays constant", () => {
+    const measurement = measureRecall(
+      [
+        row({ id: "baseline.hit", query: "baseline still valid" }),
+        row({ id: "compensating.improvement", query: "newly recalled" }),
+      ],
+      manifestFile,
+      (() => [result("GroundSnap")]) as CapabilitySearcher,
+    );
+    const protectedBudget = budget({
+      recallAtK: 0.5,
+      recalledRows: ["baseline.hit"],
+      rowCount: 2,
+      rowIds: ["baseline.hit", "baseline.miss"],
+      zeroResultRate: 0.5,
+    });
+
+    expect(compareBudget(measurement, protectedBudget)).toContainEqual({
+      message: "corpus row ids changed; missing baseline.miss; added compensating.improvement",
+      metric: "rowIds",
+      rowIds: ["baseline.miss", "compensating.improvement"],
     });
   });
 

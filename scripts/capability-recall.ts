@@ -29,6 +29,7 @@ export interface ICapabilityRecallBudget {
   readonly recallAtK: number;
   readonly rejectHits: number;
   readonly rowCount: number;
+  readonly rowIds: readonly string[];
   readonly recalledRows: readonly string[];
 }
 
@@ -60,7 +61,13 @@ export interface IRecallMeasurement {
 }
 
 export interface IRecallRegression {
-  readonly metric: "zeroResultRate" | "recallAtK" | "rejectHits" | "rowCount" | "recalledRows";
+  readonly metric:
+    | "zeroResultRate"
+    | "recallAtK"
+    | "rejectHits"
+    | "rowCount"
+    | "rowIds"
+    | "recalledRows";
   readonly message: string;
   readonly rowIds: readonly string[];
 }
@@ -185,6 +192,19 @@ export function validateCorpus(value: unknown, file = "corpus.json"): ICapabilit
   return { rows, version: 1 };
 }
 
+function validateBudgetRowIds(value: unknown, rowCount: number, file: string): readonly string[] {
+  if (!strings(value) || value.some((id) => id.trim().length === 0)) {
+    throw recallError(`${file}: rowIds must be an array of non-empty row ids`);
+  }
+  if (new Set(value).size !== value.length) {
+    throw recallError(`${file}: rowIds contains duplicate row ids`);
+  }
+  if (value.length !== rowCount) {
+    throw recallError(`${file}: rowIds length must equal rowCount`);
+  }
+  return [...value];
+}
+
 export function validateBudget(value: unknown, file = "budget.json"): ICapabilityRecallBudget {
   if (!isRecord(value) || value.version !== 1) {
     throw recallError(`${file}: root must contain version 1`);
@@ -222,11 +242,13 @@ export function validateBudget(value: unknown, file = "budget.json"): ICapabilit
   if (new Set(recalledRows).size !== recalledRows.length) {
     throw recallError(`${file}: recalledRows contains duplicate row ids`);
   }
+  const rowIds = validateBudgetRowIds(value.rowIds, rowCount, file);
   return {
     recallAtK,
     recalledRows: [...recalledRows],
     rejectHits,
     rowCount,
+    rowIds: [...rowIds],
     version: 1,
     zeroResultRate,
   };
@@ -481,6 +503,17 @@ export function compareBudget(
       rowIds: ["corpus"],
     });
   }
+  const baselineIds = new Set(budget.rowIds);
+  const currentIds = new Set(measurement.rows.map((row) => row.id));
+  const missingIds = budget.rowIds.filter((id) => !currentIds.has(id));
+  const addedIds = measurement.rows.filter((row) => !baselineIds.has(row.id)).map((row) => row.id);
+  if (missingIds.length > 0 || addedIds.length > 0) {
+    regressions.push({
+      message: `corpus row ids changed; missing ${missingIds.join(", ") || "(none)"}; added ${addedIds.join(", ") || "(none)"}`,
+      metric: "rowIds",
+      rowIds: [...missingIds, ...addedIds],
+    });
+  }
   const recalledById = new Map(measurement.rows.map((row) => [row.id, row.recalled]));
   const regressedRows = budget.recalledRows.filter((id) => recalledById.get(id) !== true);
   if (regressedRows.length > 0) {
@@ -576,6 +609,7 @@ async function writeBudget(file: string, measurement: IRecallMeasurement): Promi
         recalledRows: rowIds(measurement.rows, (row) => row.recalled),
         rejectHits: metrics.rejectHits,
         rowCount: metrics.rowCount,
+        rowIds: measurement.rows.map((row) => row.id),
         version: 1,
         zeroResultRate: metrics.zeroResultRate,
       } satisfies ICapabilityRecallBudget,
