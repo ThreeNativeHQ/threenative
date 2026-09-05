@@ -997,7 +997,8 @@ describe("CI pipeline structure", () => {
     expect(initialBuild).toBeGreaterThanOrEqual(0);
     expect(verifier).toBeGreaterThan(initialBuild);
     expect(pack).toBeGreaterThan(verifier);
-    expect(ios).toContain("shasum -a 256");
+    expect(ios).toContain("scripts/ios-package-output-snapshot.ts");
+    expect(ios).not.toContain("find packages -type f \\( -path '*/dist/*'");
     expect(ios).toContain("cmp -s");
     expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_CHANGED");
     expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_MISSING");

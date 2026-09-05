@@ -732,9 +732,7 @@ jobs:
             exit 1
           fi
           snapshot="$RUNNER_TEMP/threenative-package-outputs.sha256"
-          find packages -type f \( -path '*/dist/*' -o -path 'packages/core/mcp/*' \) -print \
-            | LC_ALL=C sort \
-            | while IFS= read -r file; do shasum -a 256 "$file"; done > "$snapshot"
+          pnpm tsx scripts/ios-package-output-snapshot.ts > "$snapshot"
           test -s "$snapshot"
       - run: rustup target add aarch64-apple-ios-sim
       - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
@@ -753,9 +751,7 @@ jobs:
           set -euo pipefail
           snapshot="$RUNNER_TEMP/threenative-package-outputs.sha256"
           current="$RUNNER_TEMP/threenative-package-outputs-current.sha256"
-          find packages -type f \( -path '*/dist/*' -o -path 'packages/core/mcp/*' \) -print \
-            | LC_ALL=C sort \
-            | while IFS= read -r file; do shasum -a 256 "$file"; done > "$current"
+          pnpm tsx scripts/ios-package-output-snapshot.ts > "$current"
           if ! cmp -s "$snapshot" "$current"; then
             echo "TN_IOS_PACKAGE_OUTPUTS_CHANGED: public archive package outputs changed during simulator verification" >&2
             diff -u "$snapshot" "$current" || true
