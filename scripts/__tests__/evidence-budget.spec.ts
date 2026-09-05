@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
-import { checkEvidenceBudget } from "../check-evidence-budget.js";
+import { checkEvidenceBudget, duplicateImageInventory } from "../check-evidence-budget.js";
 
 /**
  * PRD-323 Phase 0: the evidence budget. The gate bounds tracked bytes and file counts under
@@ -135,6 +135,158 @@ describe("checkEvidenceBudget", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
+  });
+
+  it("should fail when a scaffolded sweep instruction file is tracked", async () => {
+    // PRD-357 F3. `git ls-files` does not say what a spec reads, so the untracking was proven by
+    // running the suite inside `git archive HEAD`; this is what stops one coming back. A sweep
+    // arm's `AGENTS.md` describes a game that no longer exists, and a "closest AGENTS.md" walk
+    // that lands on it reads it as binding.
+    const root = await makeTempDir("evidence-budget-sweep-");
+    try {
+      await mkdir(path.join(root, "docs/benchmark/sweeps/fps-2026-08-17"), { recursive: true });
+      await writeFile(
+        path.join(root, "docs/benchmark/sweeps/fps-2026-08-17/AGENTS.md"),
+        "# AGENTS.md — fps-framework\n",
+      );
+      spawnSync("git", ["init"], { cwd: root });
+      spawnSync("git", ["add", "-Af"], { cwd: root });
+      const report = await checkEvidenceBudget(root, {
+        "docs/benchmark": { bytes: 1024 * 1024, files: 100 },
+      });
+      expect(report.ok).toBe(false);
+      expect(report.findings.join("\n")).toMatch(
+        /tracks 1 scaffolded sweep instruction file\(s\) — docs\/benchmark\/sweeps\/fps-2026-08-17\/AGENTS\.md/u,
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("should count duplicate tracked bytes and fail above the cap, naming the group", async () => {
+    // PRD-357 F4. The byte and file caps cannot see this: 42% of the tracked image record is the
+    // same content stored again, one blob seventeen times, and both caps sat just above usage
+    // while that was true. A cap satisfied by duplicates is measuring the wrong thing.
+    const root = await makeTempDir("evidence-budget-duplicates-");
+    try {
+      await mkdir(path.join(root, "docs/benchmark/a"), { recursive: true });
+      await mkdir(path.join(root, "docs/benchmark/b"), { recursive: true });
+      const blob = Buffer.alloc(4096, 7);
+      await writeFile(path.join(root, "docs/benchmark/a/reference.png"), blob);
+      await writeFile(path.join(root, "docs/benchmark/b/reference.png"), blob);
+      await writeFile(path.join(root, "docs/benchmark/b/unique.png"), Buffer.alloc(4096, 9));
+      spawnSync("git", ["init"], { cwd: root });
+      spawnSync("git", ["add", "-A"], { cwd: root });
+
+      const overCap = await checkEvidenceBudget(root, {
+        "docs/benchmark": { bytes: 1024 * 1024, duplicateBytes: 1024, files: 100 },
+      });
+      expect(overCap.ok).toBe(false);
+      expect(overCap.findings.join("\n")).toMatch(/byte-identical tracked content/u);
+      // Naming the group is the point: a failure that says only "docs/benchmark" tells an author
+      // to go looking for 4 KB in 180 MB.
+      expect(overCap.findings.join("\n")).toMatch(
+        /largest group: 'docs\/benchmark\/a\/reference\.png' stored 2 times/u,
+      );
+
+      // The redundant copy, not the content: one 4,096-byte blob at two paths is 4,096 bytes
+      // duplicate, not 8,192.
+      const [tree] = overCap.trees;
+      expect(tree?.duplicateBytes).toBe(4096);
+      expect(tree?.duplicateGroups).toBe(1);
+
+      const atCap = await checkEvidenceBudget(root, {
+        "docs/benchmark": { bytes: 1024 * 1024, duplicateBytes: 4096, files: 100 },
+      });
+      expect(atCap.ok, atCap.findings.join("; ")).toBe(true);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("should leave the duplicate check off when a budget does not declare a cap", async () => {
+    // The negative control for the rule above. A budget without `duplicateBytes` is unmeasured,
+    // not zero-tolerance — otherwise adding the field to one tree would fail every other.
+    const root = await makeTempDir("evidence-budget-duplicates-off-");
+    try {
+      await mkdir(path.join(root, "docs/benchmark"), { recursive: true });
+      const blob = Buffer.alloc(4096, 7);
+      await writeFile(path.join(root, "docs/benchmark/one.png"), blob);
+      await writeFile(path.join(root, "docs/benchmark/two.png"), blob);
+      spawnSync("git", ["init"], { cwd: root });
+      spawnSync("git", ["add", "-A"], { cwd: root });
+      const report = await checkEvidenceBudget(root, {
+        "docs/benchmark": { bytes: 1024 * 1024, files: 100 },
+      });
+      expect(report.ok, report.findings.join("; ")).toBe(true);
+      // Still reported, so the number is visible before a cap exists to hold it.
+      expect(report.trees[0]?.duplicateBytes).toBe(4096);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("should include duplicate images that cross evidence trees in the inventory", async () => {
+    const root = await makeTempDir("evidence-budget-cross-tree-");
+    try {
+      await mkdir(path.join(root, "docs/verification"), { recursive: true });
+      await mkdir(path.join(root, "docs/benchmark"), { recursive: true });
+      const blob = Buffer.alloc(4096, 7);
+      await writeFile(path.join(root, "docs/verification/proof.png"), blob);
+      await writeFile(path.join(root, "docs/benchmark/proof.png"), blob);
+      spawnSync("git", ["init"], { cwd: root });
+      spawnSync("git", ["add", "-A"], { cwd: root });
+
+      const inventory = duplicateImageInventory(root, ["docs/verification", "docs/benchmark"]);
+      expect(inventory.bytes).toBe(4096);
+      expect(inventory.groups).toHaveLength(1);
+      expect(inventory.groups[0]).toMatchObject({
+        canonical: "docs/benchmark/proof.png",
+        copies: 2,
+        remove: ["docs/verification/proof.png"],
+        size: 4096,
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("should default the image inventory to every tracked path", async () => {
+    const root = await makeTempDir("evidence-budget-global-images-");
+    try {
+      await mkdir(path.join(root, "docs/verification"), { recursive: true });
+      await mkdir(path.join(root, "packages/create-threenative/templates/starter"), {
+        recursive: true,
+      });
+      const blob = Buffer.alloc(4096, 7);
+      await writeFile(path.join(root, "docs/verification/proof.png"), blob);
+      await writeFile(
+        path.join(root, "packages/create-threenative/templates/starter/icon.png"),
+        blob,
+      );
+      spawnSync("git", ["init"], { cwd: root });
+      spawnSync("git", ["add", "-A"], { cwd: root });
+
+      const inventory = duplicateImageInventory(root);
+      expect(inventory.groups).toHaveLength(1);
+      expect(inventory.groups[0]?.files).toEqual([
+        "docs/verification/proof.png",
+        "packages/create-threenative/templates/starter/icon.png",
+      ]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("should track no scaffolded sweep instruction file in the real tree", async () => {
+    // PRD-357 A4's mutation runs against this: `git add -f` one of the 26 files back and the
+    // gate fails. They stay on disk and stay ignored.
+    const tracked = spawnSync(
+      "git",
+      ["ls-files", "docs/benchmark/sweeps/*/AGENTS.md", "docs/benchmark/sweeps/*/CLAUDE.md"],
+      { encoding: "utf8" },
+    );
+    expect(tracked.stdout.trim()).toBe("");
   });
 
   it("should pass the real tree under the shipped caps", async () => {

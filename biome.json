@@ -29,6 +29,7 @@
       "examples/abyss-vanilla/vite.config.js",
       "docs/benchmark/sweeps/**",
       "docs/benchmark/rounds/**",
+      "docs/verification/prd-357-c4-duplicate-inventory.json",
       "docs/verification/visuals/**"
     ]
   },
