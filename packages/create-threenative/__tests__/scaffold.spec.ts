@@ -575,6 +575,24 @@ describe("create-threenative", () => {
     }
   });
 
+  it("copies the canonical native icon to every fixed generated output", async () => {
+    const canonical = await readFile(
+      path.resolve("packages/create-threenative/template-assets/icon.png"),
+    );
+    const root = await makeTempDir("threenative-scaffold-icon-");
+    try {
+      for (const template of ALL_TEMPLATES) {
+        const { target } = await createProject(
+          { install: false, target: `${template}-game`, template },
+          root,
+        );
+        expect(await readFile(path.join(target, "public/icon.png")), template).toEqual(canonical);
+      }
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   // P2-2: the bounded instructions name long recipes by their shipped path. This is the
   // generated-project check behind the "omit reference copying" negative control: with
   // `copyReferenceBundle` removed from `createProject`, the scaffold itself throws

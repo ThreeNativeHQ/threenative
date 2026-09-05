@@ -15,7 +15,7 @@ scorer is needed.
 | 150 | `templates/starter/assets/native-proof.png` | Yes — the only texture any shipped game loads through `ctx.assets.texture()` (`starter/src/scenes/Play.ts:49`) |
 | 150 | `templates/{minimal,platformer,starter}/public/icon.png` | No — launcher icons consumed by the native packager, never sampled by a material |
 | 117,101 | `templates/starter/playtests/textures-baseline.png` | No — playtest evidence artifact, not game art |
-| 2,021,836 | `examples/REFERENCE.png` | No — documentation reference image |
+| 2,021,836 | `docs/benchmark/genres/platformer/reference.png` | No — documentation reference image |
 
 Every favicon in the repo is already `.svg`. The templates' in-game art is otherwise
 procedural (`CanvasTexture` in `src/render/shapes.ts`, `loading.ts`; plain geometries).

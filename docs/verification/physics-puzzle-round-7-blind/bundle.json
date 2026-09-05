@@ -2,11 +2,11 @@
   "promptSha256": "81d03ec057ae2e5cba791397d719d9b4a53926487109cefb168719e6f5dd3b1b",
   "samples": [
     {
-      "image": "sample-01/image.png",
+      "image": "../../benchmark/sweeps/physics-puzzle-2026-08-15-3/captures/manual-round7.png",
       "label": "sample-01"
     },
     {
-      "image": "sample-02/image.png",
+      "image": "../../benchmark/sweeps/physics-puzzle-2026-08-15-2/captures/manual-round7.png",
       "label": "sample-02"
     }
   ],

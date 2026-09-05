@@ -2,67 +2,67 @@
   "promptSha256": "abf9eb1ebfdd8ae86ab67682754826d6fe383b0e367e9b6f21854e6207e01aed",
   "samples": [
     {
-      "image": "sample-01/image.png",
+      "image": "../after/platformer.png",
       "label": "sample-01"
     },
     {
-      "image": "sample-02/image.png",
+      "image": "../before/defense.png",
       "label": "sample-02"
     },
     {
-      "image": "sample-03/image.png",
+      "image": "../after/racing.png",
       "label": "sample-03"
     },
     {
-      "image": "sample-04/image.png",
+      "image": "../after/shooter.png",
       "label": "sample-04"
     },
     {
-      "image": "sample-05/image.png",
+      "image": "../before/starter.png",
       "label": "sample-05"
     },
     {
-      "image": "sample-06/image.png",
+      "image": "../after/starter.png",
       "label": "sample-06"
     },
     {
-      "image": "sample-07/image.png",
+      "image": "../before/defense.png",
       "label": "sample-07"
     },
     {
-      "image": "sample-08/image.png",
+      "image": "../../ab-2026-08-19/after/action-rpg.png",
       "label": "sample-08"
     },
     {
-      "image": "sample-09/image.png",
+      "image": "../after/minimal.png",
       "label": "sample-09"
     },
     {
-      "image": "sample-10/image.png",
+      "image": "../../ab-2026-08-19/after/action-rpg.png",
       "label": "sample-10"
     },
     {
-      "image": "sample-11/image.png",
+      "image": "../../ab-2026-08-19/after/action-rpg.png",
       "label": "sample-11"
     },
     {
-      "image": "sample-12/image.png",
+      "image": "../before/minimal.png",
       "label": "sample-12"
     },
     {
-      "image": "sample-13/image.png",
+      "image": "../before/platformer.png",
       "label": "sample-13"
     },
     {
-      "image": "sample-14/image.png",
+      "image": "../before/racing.png",
       "label": "sample-14"
     },
     {
-      "image": "sample-15/image.png",
+      "image": "../after/shooter.png",
       "label": "sample-15"
     },
     {
-      "image": "sample-16/image.png",
+      "image": "../after/defense.png",
       "label": "sample-16"
     }
   ],

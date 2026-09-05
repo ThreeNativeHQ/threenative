@@ -341,14 +341,18 @@ describe("template contracts", () => {
   });
 
   it("declares a packaged native icon in every template config", async () => {
+    const canonical = await readFile(
+      path.resolve(templateRoot, "..", "template-assets", "icon.png"),
+    );
     for (const template of await templateNames()) {
       const root = path.join(templateRoot, template);
       const config = await readFile(path.join(root, "threenative.config.ts"), "utf8");
       expect(config, template).toMatch(/\bicon:\s*["']public\/icon\.png["']/u);
-      const icon = parsePng(await readFile(path.join(root, "public/icon.png")));
+      const icon = parsePng(canonical);
       expect(icon, template).toBeDefined();
       expect(icon?.width, template).toBe(1024);
       expect(icon?.height, template).toBe(1024);
+      expect(await readdir(path.join(root, "public")), template).not.toContain("icon.png");
     }
   });
 
