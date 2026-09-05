@@ -1,0 +1,31 @@
+# PRD-350 Quarry Android playtest result
+
+Date: 2026-09-05
+Scenario: quarry-android-walk-past-six-textured-props
+Target/runtime: android / native
+Device: Pixel 8 (`192.168.1.192:5555`), Android 17/API 37
+Result: `pass: true`
+
+Assertions:
+
+- props: `before=6`, `after=6`
+- texturedProps: `before=6`, `after=6`
+- normalMappedProps: `before=6`, `after=6`
+- visited: `before=0`, `after=6`
+- movement.distance: `25.491744205820467` (minimum `20`)
+- groundGap: `0.010098910331726052`
+- diagnostics: `consoleErrors=0`, `runtimeDiagnostics=0`, `runtimeReady=true`, `diagnostics=[]`
+
+Run conditions: 540 movement frames; battery 53%; charging; device temperature 32.7 C;
+thermal status `NONE`. Network errors were not observable on the Android mailbox transport.
+
+Selected captures (copied from the sandbox run):
+
+- `initial-world.png`: 262,077 bytes, SHA-256
+  `5bbbd67c6c0f61f6d52f7dd7b3ab9fe8a0fbfe831d44d189a708f5e3a318155e`
+- `device-transparent-body.png`: 579,358 bytes, SHA-256
+  `5cf43bcc98024e1e64da4c35f8ece62448dc8951dcb1a4fbbe6387f8e8b91d01`
+
+Scope: this record proves the successful cooked Android run and its textured native rendering. It
+does not prove raw/cooked visual identity, web/desktop byte identity with PRD-349, or the missing-
+shared-image negative control.

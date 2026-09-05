@@ -46,6 +46,19 @@ if [[ "$resume_mode" -eq 1 && -z "$resume_phase" ]]; then
   exit 2
 fi
 
+suite_prebuilt="${TN_SUITE_PREBUILT:-0}"
+case "$suite_prebuilt" in
+  0|"")
+    suite_prebuilt=0
+    ;;
+  1)
+    ;;
+  *)
+    printf 'TN_SUITE_PREBUILT must be 0 or 1, got %q\n' "$suite_prebuilt" >&2
+    exit 2
+    ;;
+esac
+
 suite_tmp_root="$(mktemp -d /tmp/threenative-suite.XXXXXX)"
 export TN_SUITE_TMPDIR="$suite_tmp_root"
 export TMPDIR="$suite_tmp_root"
@@ -201,7 +214,53 @@ if [[ -n "${TN_SUITE_EXCLUDE_PACKAGES:-}" ]]; then
     package_test_command+=(--filter "!$tn_excluded_package")
   done
 fi
+if [[ "$suite_prebuilt" -eq 1 ]]; then
+  # These package test scripts deliberately rebuild outputs for standalone developers. The build
+  # phase already produced them here, so CI runs their pure checks below instead of hiding a second
+  # build behind the recursive test walk.
+  for tn_prebuilt_package in \
+    @threenative/assets \
+    @threenative/ueformat \
+    @threenative/raw-unreal \
+    threenative-site; do
+    package_test_command+=(--filter "!$tn_prebuilt_package")
+  done
+fi
 package_test_command+=(--if-present run test)
+
+verify_prebuilt_outputs() {
+  local missing=()
+  local config=""
+  local package_directory=""
+  local output=""
+
+  for config in packages/*/tsup.config.ts; do
+    package_directory="${config%/tsup.config.ts}"
+    output="$package_directory/dist/index.js"
+    if [[ ! -f "$output" ]]; then
+      missing+=("$output")
+    fi
+  done
+  [[ -f packages/playtest/dist/runner/cli.js ]] || missing+=("packages/playtest/dist/runner/cli.js")
+  [[ -f site/dist/client/index.html ]] || missing+=("site/dist/client/index.html")
+
+  if [[ "${#missing[@]}" -gt 0 ]]; then
+    printf 'TN_SUITE_PREBUILT_MISSING: %s\n' "${missing[*]}" >&2
+    return 2
+  fi
+}
+
+run_prebuilt_package_tests() {
+  verify_prebuilt_outputs || return $?
+  "${package_test_command[@]}" || return $?
+
+  pnpm --filter @threenative/assets exec publint --strict || return $?
+  pnpm --filter @threenative/ueformat exec vitest run --root ../.. ueformat/__tests__ || return $?
+  pnpm --filter @threenative/ueformat exec publint --strict || return $?
+  pnpm --filter @threenative/raw-unreal exec vitest run --root ../.. raw-unreal/__tests__ || return $?
+  pnpm --filter @threenative/raw-unreal exec publint --strict || return $?
+  pnpm --filter threenative-site exec vitest run || return $?
+}
 
 
 # Which phases this invocation runs, and which slice of the unit suite.
@@ -238,7 +297,11 @@ if [[ "$resume_mode" -eq 1 ]]; then
       run_phase unit "${unit_command[@]}" || test_status=$?
       ;;
     package-test)
-      run_phase package-test "${package_test_command[@]}" || test_status=$?
+      if [[ "$suite_prebuilt" -eq 1 ]]; then
+        run_phase package-test run_prebuilt_package_tests || test_status=$?
+      else
+        run_phase package-test "${package_test_command[@]}" || test_status=$?
+      fi
       ;;
     *)
       printf 'cannot resume unknown phase %q\n' "$resume_phase" >&2
@@ -253,7 +316,11 @@ else
     run_phase build pnpm run build || test_status=$?
   fi
   if [[ "$test_status" -eq 0 ]] && runs_phase package-test; then
-    run_phase package-test "${package_test_command[@]}" || test_status=$?
+    if [[ "$suite_prebuilt" -eq 1 ]]; then
+      run_phase package-test run_prebuilt_package_tests || test_status=$?
+    else
+      run_phase package-test "${package_test_command[@]}" || test_status=$?
+    fi
   fi
   if [[ "$test_status" -eq 0 ]] && runs_phase unit; then
     run_phase unit "${unit_command[@]}" || test_status=$?
