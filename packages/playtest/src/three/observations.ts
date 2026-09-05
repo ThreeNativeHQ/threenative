@@ -10,6 +10,7 @@ import type {
 import { Box3, Frustum, Matrix4, Vector2, Vector3, type Camera, type Object3D, type Scene } from "three";
 
 import type { ThreePlaytestEntityRegistry } from "./entities.js";
+import { observeSceneNodes } from "./scene-nodes.js";
 import { observeSceneResources } from "./scene-observation.js";
 
 export interface IThreeObservationInput {
@@ -60,6 +61,12 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
       : { runtimeDiagnosticsSeries: input.runtimeDiagnosticsSeries().map((sample) => ({ ...sample })) }),
     ...(input.resources === undefined ? {} : { resources: input.resources() }),
     scene: observeSceneResources(input.scene, input.camera),
+    // Only walked when a scenario asks. The node walk reads geometry, materials and world
+    // bounds per object, which is real work on a large scene, and no run should pay for it
+    // when nothing is going to read it.
+    ...(request.sceneNodes === undefined || request.sceneNodes.length === 0
+      ? {}
+      : { sceneNodes: observeSceneNodes(input.scene, input.camera, request.sceneNodes) }),
   };
 }
 

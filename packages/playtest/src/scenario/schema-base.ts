@@ -222,6 +222,52 @@ export interface IPlaytestSceneAssertion {
   minVisibleLights?: number;
 }
 
+/**
+ * Bounds on named nodes of the scene graph — the questions a screenshot gets taken for.
+ *
+ * `scene` bounds the room as a whole: is anything lit, does the fog clear the world. This bounds
+ * one object: is the crate where the game says it is, is it inside the camera's frustum, did its
+ * texture load, is the character's mesh actually visible once every ancestor's flag is taken into
+ * account. Each is a frame-destroying failure that leaves every count healthy.
+ *
+ * `select` is required and every other member is optional, but an assertion that sets only
+ * `select` throws at load: selecting nodes and bounding nothing is the vacuous pass this package
+ * refuses. Every bound fails closed — a run whose bridge reported no scene nodes has not reported
+ * a visible crate, it has reported nothing.
+ */
+export interface IPlaytestSceneNodesAssertion {
+  allowTrivial?: string;
+  /** Require every matched node to have at least one clip mounted, or none to. */
+  animated?: boolean;
+  /** Require every matched node's world bounds to intersect the active camera's frustum. */
+  inFrustum?: boolean;
+  /** Ceiling on how many nodes the selector may match. Zero asserts absence. */
+  maxCount?: number;
+  /** Floor on how many nodes the selector must match. Defaults to 1 when absent. */
+  minCount?: number;
+  /** Floor on the summed triangle count of every matched node. */
+  minTriangles?: number;
+  /** Which nodes to bound. A selector that matches fewer than `minCount` fails. */
+  select: IPlaytestSceneNodeSelectorSpec;
+  /** Require every bound texture slot on every matched node to carry pixels. */
+  texturesLoaded?: boolean;
+  /** Require every matched node to be visible with every ancestor visible too. */
+  visible?: boolean;
+}
+
+/**
+ * Which nodes an assertion is about. Every present field must match; an absent field does not
+ * filter. At least one field is required — a selector that filters nothing selects the whole
+ * scene graph and bounds nothing in particular.
+ */
+export interface IPlaytestSceneNodeSelectorSpec {
+  limit?: number;
+  name?: string;
+  nameContains?: string;
+  pathContains?: string;
+  type?: string;
+}
+
 export interface IPlaytestAnimationAssertion {
   advancedFrames?: number;
   allowTrivial?: string;
@@ -429,6 +475,7 @@ export interface IPlaytestScenarioAssertions {
   settled?: IPlaytestSettledAssertion[];
   signals?: IPlaytestSignalAssertion[];
   scene?: IPlaytestSceneAssertion;
+  sceneNodes?: IPlaytestSceneNodesAssertion[];
   startup?: IPlaytestStartupAssertion;
   states?: IPlaytestStateAssertion[];
   tags?: IPlaytestTagCountAssertion[];

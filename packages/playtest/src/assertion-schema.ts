@@ -504,6 +504,29 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "The room is a property of the scene as built, not of anything the scenario drives; a scene that is already lit is the assertion holding, not a trivial pass.",
   },
   {
+    cardinality: "array",
+    description:
+      "Bounds on named nodes of the scene graph — where an object is, whether it is on screen, whether its textures loaded.",
+    example: { sceneNodes: [{ inFrustum: true, select: { nameContains: "crate" }, texturesLoaded: true, visible: true }] },
+    fields: [
+      { description: "Which nodes to bound, by name, nameContains, pathContains or type.", name: "select", type: "object" },
+      { description: "Require every matched node visible with every ancestor visible too.", name: "visible", type: "boolean" },
+      { description: "Require every matched node's world bounds inside the active camera's frustum.", name: "inFrustum", type: "boolean" },
+      { description: "Require every bound texture slot on every matched node to carry pixels.", name: "texturesLoaded", type: "boolean" },
+      { description: "Require every matched node to carry animation clips, or none to.", name: "animated", type: "boolean" },
+      { description: "Floor on how many nodes the selector must match. Defaults to 1.", name: "minCount", type: "number" },
+      { description: "Ceiling on how many nodes the selector may match. Zero asserts absence.", name: "maxCount", type: "number" },
+      { description: "Floor on the summed triangle count across the matched nodes.", name: "minTriangles", type: "number" },
+    ],
+    kind: "sceneNodes",
+    observationPath: "sceneNodes",
+    requiredCapabilities: ["scene.nodes"],
+    resultIdPrefix: "sceneNodes",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+    trivialityRationale: "A node's presence, visibility, framing and texture state are properties of the scene as built; a crate that is already on screen is the assertion holding, not a trivial pass.",
+  },
+  {
     description: "Bounds when the application's startup milestones happened: the world entered, first-use compilation settled, readiness reached — in milliseconds since navigation, from the runtime's own startup timeline.",
     example: { startup: { maxEnteredMs: 2500, maxReadyMs: 8000 } },
     fields: [

@@ -686,6 +686,39 @@ Bounds the room the game is played in — the lights, materials, fog and camera 
 }
 ```
 
+### `sceneNodes`
+
+Bounds on named nodes of the scene graph — where an object is, whether it is on screen, whether its textures loaded. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web, desktop, bevy · **Requires:** scene.nodes
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `select` | object | no |
+| `visible` | boolean | no |
+| `inFrustum` | boolean | no |
+| `texturesLoaded` | boolean | no |
+| `animated` | boolean | no |
+| `minCount` | number | no |
+| `maxCount` | number | no |
+| `minTriangles` | number | no |
+
+
+```json
+{
+  "sceneNodes": [
+    {
+      "inFrustum": true,
+      "select": {
+        "nameContains": "crate"
+      },
+      "texturesLoaded": true,
+      "visible": true
+    }
+  ]
+}
+```
+
 ### `startup`
 
 Bounds when the application's startup milestones happened: the world entered, first-use compilation settled, readiness reached — in milliseconds since navigation, from the runtime's own startup timeline. **Use when** that is the thing the scenario must prove.
@@ -710,13 +743,15 @@ Bounds when the application's startup milestones happened: the world entered, fi
 
 ### `renderChain`
 
-Proves the render chain reports the requested quality tier and, when asserted, a bounded temporal-history rejection fraction. **Use when** that is the thing the scenario must prove.
+Proves the render chain reports its quality tier, authored stage ids/order, graph-output changes for named stages, and, when asserted, a bounded temporal-history rejection fraction. **Use when** that is the thing the scenario must prove.
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.renderChain
 
 | Field | Type | Required |
 | --- | --- | --- |
 | `tier` | string | no |
+| `stages` | object | no |
+| `contributions` | object | no |
 | `velocity` | object | no |
 
 
@@ -724,8 +759,24 @@ Proves the render chain reports the requested quality tier and, when asserted, a
 {
   "renderChain": {
     "tier": "high",
-    "velocity": {
-      "maxRejectionFraction": 0.2
+    "stages": {
+      "includes": [
+        "outline",
+        "kuwahara",
+        "watercolor"
+      ],
+      "order": [
+        "outline",
+        "kuwahara",
+        "watercolor"
+      ]
+    },
+    "contributions": {
+      "graphOutputChanged": [
+        "outline",
+        "kuwahara",
+        "watercolor"
+      ]
     }
   }
 }

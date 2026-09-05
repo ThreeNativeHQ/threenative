@@ -545,6 +545,7 @@ const FAMILY_SCENARIO_ASSERTS = {
   resources: [{ changed: true, gte: 1, id: "GameState", path: "coins" }],
   renderChain: { tier: "high", velocity: { maxRejectionFraction: 0.2 } },
   scene: { cameraClearsScene: true, fogClearsScene: true, litMaterialsAreLit: true, minVisibleLights: 1 },
+  sceneNodes: [{ select: { nameContains: "crate" }, visible: true }],
   startup: { maxReadyMs: 60_000 },
   settled: [{ entity: "crate", minBodies: 2 }],
   signals: [{ minCount: 1, name: "collected" }],
@@ -586,6 +587,8 @@ const FAMILY_PASS_IDS = [
   "scene.litMaterialsAreLit",
   "scene.fogClearsScene",
   "scene.cameraClearsScene",
+  "sceneNodes[0].count",
+  "sceneNodes[0].visible",
   "startup.readyMs",
   "diagnostics",
   "movement.distance",
@@ -700,6 +703,24 @@ function familyReportObservations(fulfilled: boolean) {
       },
     },
     resources: { GameState: { after: { coins: 2 }, before: { coins: 0 } } },
+    sceneNodes: [
+      {
+        matched: 1,
+        nodes: [
+          {
+            name: "crate",
+            path: "Scene/crate",
+            position: [0, 1, 0],
+            scale: [1, 1, 1],
+            type: "Mesh",
+            visible: true,
+            visibleInTree: true,
+          },
+        ],
+        selector: { nameContains: "crate" },
+        truncated: false,
+      },
+    ],
     scene: {
       background: "color:#101018",
       camera: { far: 500, forward: [0, 0, -1], fov: 60, near: 0.1, position: [0, 2, 8], type: "PerspectiveCamera" },
@@ -796,6 +817,7 @@ test("should preserve every assertion family's result contract", async () => {
     // One result, not four: with no scene observed at all there is nothing to bound, and the
     // family says so once rather than failing each bound against nothing.
     "scene.observed",
+    "sceneNodes.observed",
     "startup.readyMs",
     "diagnostics",
     "movement.distance",
@@ -834,6 +856,7 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_RENDER_CHAIN_UNOBSERVABLE",
     "TN_PLAYTEST_RENDER_CHAIN_UNOBSERVABLE",
     "TN_PLAYTEST_SCENE_UNOBSERVED",
+    "TN_PLAYTEST_SCENE_NODES_UNOBSERVED",
     "TN_PLAYTEST_STARTUP_UNOBSERVABLE",
     "TN_PLAYTEST_VISIBILITY_FAILED",
     "TN_PLAYTEST_CONTACT_NOT_OBSERVED",

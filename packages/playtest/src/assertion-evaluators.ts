@@ -12,6 +12,7 @@ import { emitParity } from "./evaluators/parity-evidence.js";
 import { emitPerfSignalsWorld } from "./evaluators/perf-signals-world.js";
 import { emitWorldGameplay } from "./evaluators/world-gameplay.js";
 import { emitRenderChain } from "./evaluators/render-chain.js";
+import { emitSceneNodes } from "./evaluators/scene-nodes.js";
 import { emitScene } from "./evaluators/scene.js";
 import { emitStartup } from "./evaluators/startup.js";
 
@@ -33,6 +34,7 @@ export function evaluateRichPlaytestAssertions(input: {
   emitWorldGameplay(ctx);
   emitRenderChain(ctx);
   emitScene(ctx);
+  emitSceneNodes(ctx);
   emitStartup(ctx);
   emitMovementEvidence(ctx);
   if (

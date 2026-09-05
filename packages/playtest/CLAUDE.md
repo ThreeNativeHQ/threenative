@@ -263,6 +263,43 @@ A scenario bounds the same numbers with `assert.scene`, so the check outlives wh
 - `fogClearsScene` — fail when a linear fog goes opaque in front of the scene's furthest corner.
 - `cameraClearsScene` — fail when the camera's far plane cuts the world it is pointed at.
 
+`assert.scene` bounds the room. It cannot say **where one object is**, and that is the other half
+of every screenshot an agent takes: is the crate in the vault or under the floor, is the camera
+pointed at it, did the plate's normal map ever load, is the character's mesh visible once every
+ancestor's `visible` flag is counted. Those kill a frame while every count above them stays
+healthy, and a screenshot shows the damage without naming the cause.
+
+`sceneNodes` reports the graph node by node, for the nodes a selector picks out — `name`,
+`nameContains`, `pathContains`, `type` — and bounds them:
+
+```json
+{ "assert": { "sceneNodes": [
+  { "select": { "nameContains": "crate" }, "minCount": 30, "visible": true, "texturesLoaded": true },
+  { "select": { "name": "seal" }, "inFrustum": true },
+  { "select": { "nameContains": "debug" }, "maxCount": 0 }
+] } }
+```
+
+- `visible` — the node's own flag **and every ancestor's**, which is what the renderer acts on. A
+  visible mesh under a hidden group draws nothing and reports `visible: true` on itself.
+- `inFrustum` — the node's world bounds against the active camera's frustum. A node with no
+  bounds is never tested and reports no membership, which fails rather than passing unmeasured.
+- `texturesLoaded` — every bound map slot carries pixels. A slot bound to a texture whose image
+  never arrived samples black while the material, the light count and the network all read fine.
+- `animated` — clips are mounted on the object. This is not what the game's mixer is *playing*;
+  that is `gameplay.animation` and `assert.animation`, and the failure message says so.
+- `minCount` (default 1) / `maxCount` — `maxCount: 0` is how a scenario asserts a node is absent.
+- `minTriangles` — summed across the matched nodes, and reported as a floor when the selector's
+  limit cut the list.
+
+Each observation is walked only when a scenario asks for it, because reading geometry, materials
+and world bounds per object is real work on a large scene. The walk is capped
+(`SCENE_NODE_WALK_CAP`, per-selector `limit`), `matched` always counts every match, and a cut list
+reports `truncated: true` — a floor is never read as a total. A selector that filters nothing, an
+assertion that selects nodes and bounds none of them, and a `minCount` above its `maxCount` all
+throw at load. A run with no node observation fails once as `sceneNodes.observed`
+(`TN_PLAYTEST_SCENE_NODES_UNOBSERVED`). Advertised as the `scene.nodes` capability.
+
 A run with no scene observation fails once as `scene.observed`
 (`TN_PLAYTEST_SCENE_UNOBSERVED`) rather than failing each bound against nothing, and an
 `assert.scene` that sets no bound throws at load. An unmeasurable comparison — no world extent,
