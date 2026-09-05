@@ -20,7 +20,7 @@ flowchart LR
 |---|---|---|
 | **[349 — the cook is on by default](../done/PRD-349-the-cook-is-on-by-default.md)** | DONE: Wildwood 304.92 → 51.33 MB, Quarry 29.89 → 4.57 MB; iOS waived | — |
 | **[350 — the platform gate knows which passes need a decoder](./PRD-350-the-platform-gate-knows-which-passes-need-a-decoder.md)** | **PARTIAL:** Android cooked run and Wildwood 92.04 MB runtime load-set pass; raw/cooked identity, web/desktop byte identity and negative-control observations remain `UNVERIFIED` | 349 |
-| **351 — compression never looks worse than a floor** | quality floor + the 2048² resolution raise | 349 |
+| **[351 — compression never looks worse than a floor](PRD-351-compression-never-looks-worse-than-a-floor.md)** | Quality floor + measured import-resolution comparison | 349, delivered |
 | **352 — Unreal ingest is first-party** | **zero shipped bytes** — removes an external repo from the ingest path | none |
 
 **Execute 350 next.** 349 is delivered; 351 can proceed independently of 350, and 352 remains an
@@ -97,7 +97,7 @@ original proposal; the delivered baseline above governs execution. Full record:
 
 | Question | Owner |
 |---|---|
-| a browser rendering a cooked GLB end to end — never yet done | 349 Phase 4 (`quarry`), and it must be a real render, not a structural assertion |
+| Quarry raw/cooked identical-frame proof on Android | 350 user verification; the cooked Pixel 8 run passed, but raw/cooked identity remains `UNVERIFIED` |
 | whether wildwood can build for Android *at all* today | ANSWERED by 350 Phase 1: Android build passes; runtime load-set is 92.04 MB |
 | Master-source availability, quality metrics and RDO on the owned encoder | 351 preflight; do not infer these from the old spike |
 | Real-pack availability and first-party ingest into the canonical cook | 352 preflight and integration gates |
