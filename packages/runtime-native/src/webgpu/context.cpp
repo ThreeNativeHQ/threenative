@@ -179,6 +179,14 @@ SurfaceFormatSelection selectSurfaceFormat(
         return {productDefaultFormat, productDefaultFormat, nullptr};
     }
 
+    // This arm is an sRGB presentation-bridge ablation, not a colour-channel preference test.
+    // When the product selection is already linear, changing BGRA to RGBA would leave the bridge
+    // disabled in both runs and make any timing delta impossible to attribute. Report that the arm
+    // is unavailable instead of manufacturing a false treatment/control pair.
+    if (!isSrgbSurfaceFormatForProbe(productDefaultFormat)) {
+        return {productDefaultFormat, productDefaultFormat, "TN_LINEAR_SURFACE_NO_CHANGE"};
+    }
+
     bool matchingLinearTwinFound = false;
     for (uint32_t i = 0; i < formatCount; i++) {
         if (!isSrgbSurfaceFormatForProbe(formats[i])) continue;
@@ -1194,8 +1202,8 @@ bool Context::configureSurface(uint32_t width, uint32_t height, bool vsync) {
 
     // Prefer a non-sRGB surface to match the byte-encoded output Three.js writes for the
     // browser canvas. Bindings add a presentation bridge only when the platform exposes no
-    // linear surface format. The diagnostic selector runs after this product choice and can
-    // only opt into a supported, changed linear twin.
+    // linear surface format. The diagnostic selector runs after this product choice and only
+    // succeeds when it can turn a real sRGB bridge into a linear-surface treatment.
     const bool linearDiagnosticRequested = linearSurfaceRequested();
     const SurfaceFormatSelection selection = selectSurfaceFormat(
         capabilities.formats, capabilities.formatCount, linearDiagnosticRequested);
