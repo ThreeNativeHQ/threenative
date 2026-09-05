@@ -181,3 +181,16 @@ The Linux V8+Dawn host now settles both establishment promises when WebTransport
 ## PRD-359 native datagram slice — 2026-09-05
 
 The Linux host now reports negotiated payload capacity, rejects invalid/oversized sends, distinguishes hard transport failures from local backlog drops, and drains bounded native receive backlog on idle frames. The idle-frame regression failed before repair; restoring a hard-error drop increment failed the real session-counter test. Final compiled contracts passed 2/2 and the Go/native live suite passed 15/15. Coordinator and independent review accepted this native slice. JS stream backpressure, positive trusted TLS and remaining platform qualification are still open. Evidence: [Task 2a](../../../docs/verification/prd-359-task2a-2026-09-05.md).
+
+## PRD-359 native stream strategies — 2026-09-05
+
+The installed Streams shim now measures readable/writable queue sizes and signals
+pressure, serializes asynchronous pulls/writes, and preserves active sink results
+while deferring abort teardown. Root review rejected incorrect in-flight-write
+expectations and added Node-reference regressions for abort, ready rejection and
+size-callback reentrancy. The current unit suite passes 19/19, including close during an erroring stream. Compiled networking
+contracts pass 2/2 on Linux V8 and 2/2 on Linux QuickJS; real Go/native transport
+checks pass 15/15 on Linux V8. Independent review passed after the close-ordering and duplicate-close corrections.
+Typecheck, lint and the full test suite passed; this prerequisite row is accepted. Hard transport queue bounds remain Task 2b work; no Android,
+Windows, macOS or iOS execution is claimed here. Evidence:
+[Task 2b-streams](../../../docs/verification/prd-359-task2b-streams-2026-09-05.md).

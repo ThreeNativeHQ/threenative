@@ -225,3 +225,404 @@ test("identity TransformStream passes chunks through untouched", async () => {
   );
   assert.equal(guest(result), "passthrough");
 });
+
+test("queue strategies measure byte sizes and terminal desiredSize", async () => {
+  const context = setupStreamsContext();
+  const result = await vm.runInContext(
+    `(async () => {
+      let controller;
+      let sized = 0;
+      const stream = new ReadableStream({
+        start(c) { controller = c; },
+      }, {
+        highWaterMark: 3,
+        size(chunk) { sized += 1; return chunk.byteLength; },
+      });
+      const reader = stream.getReader();
+      const initial = controller.desiredSize;
+      controller.enqueue(new Uint8Array(2));
+      const afterTwo = controller.desiredSize;
+      controller.enqueue(new Uint8Array(1));
+      const atPressure = controller.desiredSize;
+      controller.close();
+      const whileClosing = controller.desiredSize;
+      await reader.read();
+      const afterFirstRead = controller.desiredSize;
+      await reader.read();
+      const done = await reader.read();
+      await reader.closed;
+
+      let errorController;
+      const failed = new ReadableStream({ start(c) { errorController = c; } }, { highWaterMark: 4 });
+      const failedReader = failed.getReader();
+      errorController.enqueue("stale");
+      errorController.error(new Error("queue failed"));
+      let failure;
+      try { await failedReader.read(); } catch (e) { failure = e.message; }
+      return {
+        initial, afterTwo, atPressure, whileClosing, afterFirstRead,
+        final: controller.desiredSize, sized, done: done.done,
+        error: failure, errorDesiredSize: errorController.desiredSize,
+      };
+    })()`,
+    context,
+  );
+  assert.deepEqual(guest(result), {
+    initial: 3,
+    afterTwo: 1,
+    atPressure: 0,
+    whileClosing: 0,
+    afterFirstRead: 2,
+    final: 0,
+    sized: 2,
+    done: true,
+    error: "queue failed",
+    errorDesiredSize: null,
+  });
+});
+
+test("ReadableStream pulls on demand, serializes async pulls, and stops at pressure", async () => {
+  const context = setupStreamsContext();
+  const result = await vm.runInContext(
+    `(async () => {
+      let pulls = 0;
+      let active = 0;
+      let maxActive = 0;
+      let release;
+      const stream = new ReadableStream({
+        pull(c) {
+          pulls += 1;
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          if (pulls === 1) {
+            return new Promise((resolve) => {
+              release = () => {
+                c.enqueue("one");
+                active -= 1;
+                resolve();
+              };
+            });
+          }
+          c.enqueue("two");
+          c.close();
+          active -= 1;
+        },
+      }, { highWaterMark: 1 });
+      await Promise.resolve();
+      await Promise.resolve();
+      const started = pulls;
+      if (!release) return { started, pulls, maxActive, missingPull: true };
+      release();
+      await Promise.resolve();
+      await Promise.resolve();
+      const unread = pulls;
+      const reader = stream.getReader();
+      const first = reader.read();
+      const firstResult = await first;
+      await Promise.resolve();
+      await Promise.resolve();
+      const afterRead = pulls;
+      const secondResult = await reader.read();
+      const finalResult = await reader.read();
+      return {
+        started,
+        unread,
+        afterRead,
+        pulls,
+        maxActive,
+        missingPull: false,
+        first: firstResult.value,
+        second: secondResult.value,
+        done: finalResult.done,
+      };
+    })()`,
+    context,
+  );
+  assert.deepEqual(guest(result), {
+    started: 1,
+    unread: 1,
+    afterRead: 2,
+    pulls: 2,
+    maxActive: 1,
+    missingPull: false,
+    first: "one",
+    second: "two",
+    done: true,
+  });
+});
+
+test("WritableStream awaits start, serializes writes, and makes ready reflect pressure", async () => {
+  const context = setupStreamsContext();
+  const result = await vm.runInContext(
+    `(async () => {
+      const events = [];
+      let releaseStart;
+      const startDone = new Promise((resolve) => { releaseStart = resolve; });
+      const releases = [];
+      const stream = new WritableStream({
+        start() {
+          events.push("start");
+          return startDone;
+        },
+        write(chunk) {
+          events.push("write:" + chunk);
+          return new Promise((resolve) => releases.push(() => {
+            events.push("done:" + chunk);
+            resolve();
+          }));
+        },
+        close() { events.push("close"); },
+      }, { highWaterMark: 2, size: (chunk) => chunk.length });
+      const writer = stream.getWriter();
+      const first = writer.write("aa");
+      await Promise.resolve();
+      const beforeStart = events.slice();
+      const settlesByCheckpoint = async (promise) => {
+        let state = "pending";
+        promise.then(() => { state = "resolved"; }, () => { state = "rejected"; });
+        await Promise.resolve();
+        await Promise.resolve();
+        return state;
+      };
+      const knownResolved = await settlesByCheckpoint(Promise.resolve());
+      const readyBeforeStart = await settlesByCheckpoint(writer.ready);
+      releaseStart();
+      await Promise.resolve();
+      await Promise.resolve();
+      const afterStart = events.slice();
+      const second = writer.write("b");
+      const serial = events.filter((event) => event.startsWith("write:")).join(",") === "write:aa";
+      const readyWithTwoQueued = await settlesByCheckpoint(writer.ready);
+      const readyDuringFirst = writer.ready;
+      releases.shift()();
+      await first;
+      await Promise.resolve();
+      await Promise.resolve();
+      const afterFirst = events.slice();
+      const readyAfterFirst = await settlesByCheckpoint(readyDuringFirst);
+      const close = writer.close();
+      const closeBeforeSecond = await settlesByCheckpoint(close);
+      releases.shift()();
+      await second;
+      await close;
+      await writer.closed;
+      return {
+        beforeStart, knownResolved, readyBeforeStart, afterStart, serial,
+        readyWithTwoQueued, readyAfterFirst, afterFirst, closeBeforeSecond, events,
+      };
+    })()`,
+    context,
+  );
+  assert.deepEqual(guest(result), {
+    beforeStart: ["start"],
+    knownResolved: "resolved",
+    readyBeforeStart: "pending",
+    afterStart: ["start", "write:aa"],
+    serial: true,
+    readyWithTwoQueued: "pending",
+    readyAfterFirst: "resolved",
+    afterFirst: ["start", "write:aa", "done:aa", "write:b"],
+    closeBeforeSecond: "pending",
+    events: ["start", "write:aa", "done:aa", "write:b", "done:b", "close"],
+  });
+});
+
+test("stream errors, cancellation, and release settle pending operations and propagate async failures", async () => {
+  const context = setupStreamsContext();
+  const result = await vm.runInContext(
+    `(async () => {
+      let readController;
+      const readable = new ReadableStream({ start(c) { readController = c; } });
+      const reader = readable.getReader();
+      const pendingRead = reader.read();
+      readController.error(new Error("read failed"));
+      const readFailure = await pendingRead.then(() => "resolved", (e) => e.message);
+      const closedFailure = await reader.closed.then(() => "resolved", (e) => e.message);
+
+      const cancelled = new ReadableStream({
+        cancel() { return Promise.reject(new Error("cancel failed")); },
+      });
+      const cancelledReader = cancelled.getReader();
+      const pendingCancelledRead = cancelledReader.read();
+      const cancelFailure = await cancelledReader.cancel("stop").then(() => "resolved", (e) => e.message);
+      const cancelledRead = await pendingCancelledRead.then(
+        (value) => value.done ? "done" : "value",
+        (e) => e.message,
+      );
+
+      const released = new ReadableStream({});
+      const releasedReader = released.getReader();
+      const pendingReleasedRead = releasedReader.read();
+      releasedReader.releaseLock();
+      const releaseFailure = await pendingReleasedRead.then(() => "resolved", (e) => e.name);
+      const releasedClosedPending = await releasedReader.closed.then(() => "resolved", (e) => e.name);
+
+      let sinkController;
+      let releaseWrite;
+      const writable = new WritableStream({
+        start(c) { sinkController = c; },
+        write() { return new Promise((resolve) => { releaseWrite = resolve; }); },
+      });
+      const writer = writable.getWriter();
+      const firstWrite = writer.write("first");
+      await Promise.resolve();
+      const queuedWrite = writer.write("queued");
+      const readyBeforeError = writer.ready;
+      sinkController.error(new Error("sink failed"));
+      const queuedFailurePromise = queuedWrite.then(() => "resolved", (e) => e.message);
+      const readyFailurePromise = readyBeforeError.then(() => "resolved", (e) => e.message);
+      releaseWrite();
+      const firstResult = await firstWrite.then(() => "resolved", (e) => e.message);
+      const queuedFailure = await queuedFailurePromise;
+      const readyFailure = await readyFailurePromise;
+
+      let lateController;
+      const late = new WritableStream({ start(c) { lateController = c; } });
+      lateController.error(new Error("late"));
+      const lateWriter = late.getWriter();
+      lateWriter.closed.catch(() => {});
+      const lateReady = await lateWriter.ready.then(() => "resolved", (e) => e.message);
+
+      const releasedWriter = new WritableStream().getWriter();
+      await releasedWriter.ready;
+      releasedWriter.releaseLock();
+      const releasedReady = await releasedWriter.ready.then(() => "resolved", (e) => e.name);
+
+      let releasedReadableController;
+      const settledReader = new ReadableStream({
+        start(c) { releasedReadableController = c; },
+      }).getReader();
+      releasedReadableController.close();
+      await settledReader.closed;
+      settledReader.releaseLock();
+      const releasedClosedAfterSettlement = await settledReader.closed.then(() => "resolved", (e) => e.name);
+
+      const abortWritable = new WritableStream({
+        abort() { return Promise.reject(new Error("abort failed")); },
+      });
+      const abortWriter = abortWritable.getWriter();
+      const abortFailure = await abortWriter.abort("stop").then(() => "resolved", (e) => e.message);
+      const closedAfterAbort = await abortWriter.closed.then(() => "resolved", (e) => e);
+      return {
+        readFailure, closedFailure, cancelFailure, cancelledRead,
+        releaseFailure, releasedClosedPending, queuedFailure, readyFailure,
+        firstResult, lateReady, releasedReady, releasedClosedAfterSettlement,
+        abortFailure, closedAfterAbort,
+      };
+    })()`,
+    context,
+  );
+  const observed = guest(result);
+  assert.equal(observed.readFailure, "read failed");
+  assert.equal(observed.closedFailure, "read failed");
+  assert.equal(observed.cancelFailure, "cancel failed");
+  assert.equal(observed.cancelledRead, "done");
+  assert.equal(observed.releaseFailure, "TypeError");
+  assert.equal(observed.releasedClosedPending, "TypeError");
+  assert.equal(observed.queuedFailure, "sink failed");
+  assert.equal(observed.readyFailure, "sink failed");
+  assert.equal(observed.firstResult, "resolved");
+  assert.equal(observed.lateReady, "late");
+  assert.equal(observed.releasedReady, "TypeError");
+  assert.equal(observed.releasedClosedAfterSettlement, "TypeError");
+  assert.equal(observed.abortFailure, "abort failed");
+  assert.equal(observed.closedAfterAbort, "stop");
+});
+
+test("WritableStream replaces fulfilled ready with a rejection after controller error", async () => {
+  const probe = `(async () => {
+    let controller;
+    const writer = new WritableStream({ start(c) { controller = c; } }).getWriter();
+    writer.closed.catch(() => {});
+    await writer.ready;
+    controller.error(new Error("sink failed"));
+    return writer.ready.then(() => "resolved", (error) => error.message);
+  })()`;
+  assert.equal(await vm.runInNewContext(probe, { WritableStream }), "sink failed");
+  assert.equal(await vm.runInContext(probe, setupStreamsContext()), "sink failed");
+});
+
+for (const phase of ["start", "write"]) {
+  test(`WritableStream abort waits for pending ${phase} and preserves in-flight completion`, async () => {
+    const probe = `(async () => {
+      const events = [];
+      let release;
+      const held = new Promise((resolve) => { release = resolve; });
+      const stream = new WritableStream({
+        start() { if (${JSON.stringify(phase)} === "start") return held; },
+        write() { events.push("write"); return held; },
+        abort(reason) { events.push("abort:" + reason); },
+      });
+      const writer = stream.getWriter();
+      writer.closed.catch(() => {});
+      const writing = writer.write("first").then(() => "resolved", (e) => e);
+      await Promise.resolve(); await Promise.resolve();
+      const queued = writer.write("queued").then(() => "resolved", (e) => e);
+      const aborting = writer.abort("stop");
+      let abortSettled = false;
+      aborting.then(() => { abortSettled = true; });
+      await Promise.resolve(); await Promise.resolve();
+      const before = { events: events.slice(), abortSettled };
+      release();
+      await aborting;
+      return { before, first: await writing, queued: await queued, events };
+    })()`;
+    const expected = {
+      before: { events: phase === "write" ? ["write"] : [], abortSettled: false },
+      first: phase === "write" ? "resolved" : "stop",
+      queued: "stop",
+      events: phase === "write" ? ["write", "abort:stop"] : ["abort:stop"],
+    };
+    assert.deepEqual(guest(await vm.runInNewContext(probe, { WritableStream })), expected);
+    assert.deepEqual(guest(await vm.runInContext(probe, setupStreamsContext())), expected);
+  });
+}
+
+test("WritableStream does not send after a size callback errors the stream", async () => {
+  const probe = `(async () => {
+    let controller;
+    const writes = [];
+    const writer = new WritableStream({
+      start(c) { controller = c; },
+      write(chunk) { writes.push(chunk); },
+    }, { size() { controller.error(new Error("size failed")); return 1; } }).getWriter();
+    writer.closed.catch(() => {});
+    await Promise.resolve();
+    const result = await writer.write("must not send").then(() => "resolved", (e) => e.message);
+    return { result, writes };
+  })()`;
+  const expected = { result: "size failed", writes: [] };
+  assert.deepEqual(guest(await vm.runInNewContext(probe, { WritableStream })), expected);
+  assert.deepEqual(guest(await vm.runInContext(probe, setupStreamsContext())), expected);
+});
+
+for (const phase of ["start", "write"]) {
+  test(`WritableStream close during erroring waits for pending ${phase}`, async () => {
+    const probe = `(async () => {
+      let controller;
+      let release;
+      const held = new Promise((resolve) => { release = resolve; });
+      const writer = new WritableStream({
+        start(c) { controller = c; if (${JSON.stringify(phase)} === "start") return held; },
+        write() { return held; },
+      }).getWriter();
+      writer.closed.catch(() => {});
+      const writing = writer.write("first").then(() => "resolved", (e) => e.message);
+      await Promise.resolve(); await Promise.resolve();
+      controller.error(new Error("ctrl"));
+      let closeState = "pending";
+      writer.close().then(() => { closeState = "resolved"; }, (e) => { closeState = e.message; });
+      let duplicate = "pending";
+      writer.close().then(() => { duplicate = "resolved"; }, (e) => { duplicate = e.name; });
+      await Promise.resolve(); await Promise.resolve();
+      const before = closeState;
+      release();
+      const write = await writing;
+      await Promise.resolve(); await Promise.resolve();
+      return { before, after: closeState, write, duplicate };
+    })()`;
+    const expected = { before: "pending", after: "ctrl", write: phase === "write" ? "resolved" : "ctrl", duplicate: "TypeError" };
+    assert.deepEqual(guest(await vm.runInNewContext(probe, { WritableStream })), expected);
+    assert.deepEqual(guest(await vm.runInContext(probe, setupStreamsContext())), expected);
+  });
+}

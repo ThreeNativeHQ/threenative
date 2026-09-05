@@ -89,24 +89,84 @@ constexpr const char* kScript = R"JS((() => {
       (e) => verdicts.push(label + '=' + (e instanceof WebTransportError ? 'REJECTED' : 'REJECTED-OTHER')),
     );
 
-  // rejects oversized datagram: one byte past the negotiated capacity.
-  pending.push(write('oversize', new Uint8Array(65)));
-  // ...while a datagram exactly at the capacity is not refused for its size.
-  // This one reaches the native bridge, which refuses the substituted session.
-  pending.push(write('closed-session', new Uint8Array(64)));
-
-  // distinguishes closed session from queue drop: same call, same size, and the
-  // only difference is the status the native side returns. A local queue drop is
-  // unreliable delivery working as designed, so the write must not throw.
   const nativeSendDatagram = globalThis.__wtSendDatagram;
-  globalThis.__wtSendDatagram = () => -3;  // kDatagramDropped
-  pending.push(write('queue-drop', new Uint8Array(8)).then(() => {
-    // A hard transport failure is the other half of that distinction: same
-    // call, same size, and it must NOT resolve the way a backlog trim does.
-    globalThis.__wtSendDatagram = () => -4;  // kDatagramSendFailed
-    return write('send-failed', new Uint8Array(8));
-  }).then(() => {
-    globalThis.__wtSendDatagram = nativeSendDatagram;
+  // Run each bridge status after the preceding write has reached its sink. The
+  // stream sink is async, so swapping the bridge while a write is queued would
+  // test scheduling instead of the native status it is meant to classify.
+  pending.push((async () => {
+    // rejects oversized datagram: one byte past the negotiated capacity.
+    await write('oversize', new Uint8Array(65));
+    // ...while a datagram exactly at the capacity reaches the real bridge,
+    // which refuses the substituted session.
+    await write('closed-session', new Uint8Array(64));
+    try {
+      // A local queue drop is unreliable delivery working as designed, so the
+      // write must not throw.
+      globalThis.__wtSendDatagram = () => -3;  // kDatagramDropped
+      await write('queue-drop', new Uint8Array(8));
+      // A hard transport failure is the other half of that distinction: same
+      // call, same size, and it must NOT resolve the way a backlog trim does.
+      globalThis.__wtSendDatagram = () => -4;  // kDatagramSendFailed
+      await write('send-failed', new Uint8Array(8));
+    } finally {
+      globalThis.__wtSendDatagram = nativeSendDatagram;
+    }
+  })());
+
+  // Streams surface: run the installed native globals through a strategy-sized
+  // readable and a held writable. This observes pressure and promise
+  // transitions without substituting Node's stream implementation.
+  const streamVerdicts = [];
+  const settlesByCheckpoint = async (promise) => {
+    let settled = false;
+    promise.then(() => { settled = true; }, () => { settled = true; });
+    await Promise.resolve();
+    await Promise.resolve();
+    return settled;
+  };
+  pending.push((async () => {
+    let readableController;
+    const readable = new ReadableStream({
+      start(controller) { readableController = controller; },
+    }, { highWaterMark: 2, size: (chunk) => chunk.byteLength });
+    const reader = readable.getReader();
+    streamVerdicts.push('read-initial=' + readableController.desiredSize);
+    readableController.enqueue(new Uint8Array(2));
+    streamVerdicts.push('read-pressure=' + readableController.desiredSize);
+    await reader.read();
+    const pendingRead = reader.read();
+    const readPending = !(await settlesByCheckpoint(pendingRead));
+    readableController.enqueue(new Uint8Array(1));
+    const readResult = await pendingRead;
+    readableController.close();
+    const readDone = await reader.read();
+    streamVerdicts.push('read-pending=' + readPending);
+    streamVerdicts.push('read-value=' + readResult.value.byteLength);
+    streamVerdicts.push('read-done=' + readDone.done);
+
+    let releaseWrite;
+    const writable = new WritableStream({
+      write() {
+        return new Promise((resolve) => { releaseWrite = resolve; });
+      },
+    }, { highWaterMark: 1, size: () => 1 });
+    const writer = writable.getWriter();
+    const write = writer.write(new Uint8Array(1));
+    const readyWasPending = !(await settlesByCheckpoint(writer.ready));
+    releaseWrite();
+    await write;
+    const readyRecovered = await settlesByCheckpoint(writer.ready);
+    await writer.ready;
+    await writer.close();
+    streamVerdicts.push('write-pending=' + readyWasPending);
+    streamVerdicts.push('write-ready=' + readyRecovered);
+    return streamVerdicts.every((value) =>
+      ['read-initial=2', 'read-pressure=0', 'read-pending=true',
+       'read-value=1', 'read-done=true', 'write-pending=true',
+       'write-ready=true'].includes(value));
+  })().then((passed) => {
+    if (!passed) console.log('stream surface: ' + streamVerdicts.join(' '));
+    return passed;
   }));
 
   Promise.all(pending).then(() => {
@@ -118,8 +178,17 @@ constexpr const char* kScript = R"JS((() => {
         verdicts.includes('closed-session=REJECTED') &&
         verdicts.includes('queue-drop=RESOLVED') &&
         verdicts.includes('send-failed=REJECTED');
+      const streamOk = streamVerdicts.length === 7 &&
+        streamVerdicts.includes('read-initial=2') &&
+        streamVerdicts.includes('read-pressure=0') &&
+        streamVerdicts.includes('read-pending=true') &&
+        streamVerdicts.includes('read-value=1') &&
+        streamVerdicts.includes('read-done=true') &&
+        streamVerdicts.includes('write-pending=true') &&
+        streamVerdicts.includes('write-ready=true');
       if (!datagramOk) console.log('datagram surface: ' + verdicts.join(' '));
-      process.exit(ok.every(Boolean) && allRejected && datagramOk ? 42 : 1);
+      if (!streamOk) console.log('stream surface: ' + streamVerdicts.join(' '));
+      process.exit(ok.every(Boolean) && allRejected && datagramOk && streamOk ? 42 : 1);
     }, 0);
   });
 })())JS";

@@ -24,7 +24,7 @@ function implementedRows() {
 const RUNTIME_SCRIPT_HASHES = {
   'storage-polyfill.js': '7e03f256b0e11b5370bf86ccb5ae286be221080a1baa8339efe2aa570dd3c25d',
   'fetch-polyfill.js': '0b9f8553897fa012e5eb2a754f9f36e3178d8a1bc1de4645dbeac0a2545a45e5',
-  'streams-polyfill.js': '134957d3cb3154f4e27b95b611af510b55c4e0e48a56c3785444ca0b31d45901',
+  'streams-polyfill.js': '8a2bd99c31ea86748daed52db3d32cc813d12de7d1a4c9c1f1dc914bacbd16d3',
   'url-worker-polyfill.js': 'fb709b56f527c82cc7ba4d2c3430a6f17c81e0550f736d145819b25463811af3',
   'create-element-setup.js': '3891c716e3e7b8801f45306b50c5c8c5990042276524fbaac745b157389d1bee',
   'event-constructors-setup.js': '3e7f592806866915e7d4fecd051bb5268542cefb79324efc8e15c9bc73978a11',
@@ -32,7 +32,7 @@ const RUNTIME_SCRIPT_HASHES = {
   'onload-trigger.js': '396a17433bcc18d6193b3167404ff51faecc1451b1b9dfaeb6a3473e86c6371a',
   'install-async-pipelines.js': 'd58fb3fb55d24743273ea79f9ec72303a79ec91b322969d705a9f4d11ce47024',
   'image-bitmap-polyfill.js': '30e2cb4a45fc20ee9b983ef4dd404afd63be1889d0b1e12055f01a8716b66cfa',
-  'webtransport-polyfill.js': '4b5a07862083c8e905341190cf37c613083517db84139288bbf7cee12fb6d359',
+  'webtransport-polyfill.js': '75e163d6d9b6188c1040e740ca0484480c4e4eff71b8973030f97d5e561e86de',
   'webtransport-stub.js': '9b653430e429a8fad538151523a2c4346b0b9c52a201ec5e01314128b788081e',
   'audio-context-constructor.js': 'c3436f70b2597d2d953f780a3388c24b7e60fa3697796973d5002d0c378de227',
   'audio-source-properties.js': 'e631cdd093d660c0ada6f9cf23e0627a2bd1f16d22d8c003c52d7f86419d29ef',
