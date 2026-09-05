@@ -85,8 +85,8 @@ flowchart TB
       `GLTFLoader`, with nothing to instantiate. It stays on for every target.
 - [x] `formatSkippedCompression` keeps reporting what a target gave up, and now reports it
       accurately — today it implies mobile lost only compression.
-- [x] Charter rule 6: **web-only is unfinished.** Every phase lands with native proof in the same
-      commit.
+- [ ] Charter rule 6: **web-only is unfinished.** This acceptance requirement remains open until
+      every phase lands with native proof in the same commit.
 
 ---
 

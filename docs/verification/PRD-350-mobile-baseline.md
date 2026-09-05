@@ -93,7 +93,8 @@ captures and the compact result record are kept in this repository:
 - [`device-transparent-body.png`](artifacts/prd-350/quarry/device-transparent-body.png)
 - [`android-result.txt`](artifacts/prd-350/quarry/android-result.txt)
 
-The latter is the manual before/after capture that caught the white screen. The WebView HUD was
+The `device-transparent-body.png` capture is the manual before/after capture that caught the white
+screen. The WebView HUD was
 painting an opaque `body` background over the native WebGPU surface. Quarry now keeps `body`
 transparent and scopes the web-only background to `#root`; the fix is in examples PR [#1](https://github.com/ThreeNativeHQ/examples/pull/1).
 
