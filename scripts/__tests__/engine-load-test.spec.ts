@@ -494,6 +494,48 @@ describe("the performance baseline gate", () => {
     ).toThrow(/TN_BENCH_BASELINE_IDENTITY_MISMATCH/u);
   });
 
+  it("requires source and artifact provenance for a required baseline candidate", () => {
+    const provenance = {
+      architecture: "arm64",
+      artifactHash: "accepted-artifact",
+      browser: "none",
+      device: "desktop-chrome-linux",
+      graphicsBackend: "vulkan",
+      gpu: "accepted-gpu",
+      instrumentationRevision: "accepted-instrumentation",
+      jsRuntime: "v8",
+      operatingSystem: "linux",
+      presentMode: "immediate",
+      resolution: "1280x720",
+      sourceSha: "accepted-source",
+      workloadHash: "accepted-workload",
+    };
+    const baseline = {
+      "tn-android": {
+        evidence: "docs/verification/accepted.md",
+        identity: provenance,
+        rungs: { "L2@4096": 8.27, "L3@16384": 8.34 },
+        status: "accepted" as const,
+      },
+    };
+    for (const [field, value] of [
+      ["sourceSha", undefined],
+      ["sourceSha", "stale-source"],
+      ["artifactHash", undefined],
+      ["artifactHash", "stale-artifact"],
+    ] as const) {
+      const candidateIdentity = { ...provenance, [field]: value };
+      expect(() =>
+        checkPerformance(
+          androidReport(8.27, 8.34, { identity: candidateIdentity }),
+          baseline,
+          undefined,
+          { required: true },
+        ),
+      ).toThrow(/TN_BENCH_BASELINE_IDENTITY_MISMATCH/u);
+    }
+  });
+
   it("refuses a negative tolerance instead of inverting the comparison", () => {
     expect(() => checkPerformance(androidReport(8.27, 8.34), BASELINES, -0.1)).toThrow(
       /TN_BENCH_BAD_TOLERANCE/u,

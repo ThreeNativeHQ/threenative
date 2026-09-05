@@ -1,6 +1,17 @@
 {
   "schemaVersion": 1,
   "policyRevision": "prd-358-v1",
+  "promotionPolicy": {
+    "accuracyRuns": 20,
+    "baselineRegeneration": "separate-reviewed-change",
+    "calibrationStatus": "unverified",
+    "calibrationPairs": 10,
+    "ciCostRuns": 20,
+    "maxIncrementalRunnerMinutes": 6,
+    "maxQueueSeconds": 120,
+    "minimumCalibrationSessions": 3,
+    "requiredCheckPromotion": "maintainer-review"
+  },
   "lanes": [
     {
       "id": "browser-webgpu",
@@ -10,6 +21,8 @@
       "requiredMetrics": ["drawCalls", "triangles", "frameP95Ms"],
       "producer": "scripts/engine-load-test/cli.ts --arm tn-web",
       "evidenceClass": "hosted-software-contract",
+      "provisioning": "hosted-software",
+      "required": false,
       "baseline": {
         "status": "unavailable",
         "reason": "Hosted software timing is advisory until a pinned physical GPU baseline is calibrated."
@@ -23,6 +36,9 @@
       "requiredMetrics": ["drawCalls", "triangles", "frameP95Ms", "phaseP95Ms"],
       "producer": "packages/runtime-native/scripts/profile-production.mjs --target desktop",
       "evidenceClass": "hosted-telemetry",
+      "deviceResource": "linux-gpu-performance-runner",
+      "provisioning": "unprovisioned",
+      "required": false,
       "baseline": {
         "status": "unavailable",
         "reason": "No calibrated dedicated Linux GPU baseline has been accepted."
@@ -36,6 +52,9 @@
       "requiredMetrics": ["drawCalls", "triangles", "frameP95Ms", "phaseP95Ms"],
       "producer": "packages/runtime-native/scripts/profile-production.mjs --target desktop",
       "evidenceClass": "hosted-telemetry",
+      "deviceResource": "windows-or-macos-gpu-performance-runner",
+      "provisioning": "unprovisioned",
+      "required": false,
       "baseline": {
         "status": "unavailable",
         "reason": "Windows and macOS GPU identities require independent provisioned baselines."
@@ -56,6 +75,9 @@
       ],
       "producer": "packages/runtime-native/scripts/profile-production.mjs --target android",
       "evidenceClass": "physical-hardware-comparison",
+      "deviceResource": "android-physical-performance-device",
+      "provisioning": "unprovisioned",
+      "required": false,
       "baseline": {
         "status": "unavailable",
         "reason": "Historical Android ladder numbers are diagnostic; ten-pair calibration is not accepted yet."
@@ -76,6 +98,9 @@
       ],
       "producer": "packages/runtime-native/scripts/profile-production.mjs --target ios",
       "evidenceClass": "physical-hardware-comparison",
+      "deviceResource": "ios-physical-performance-device",
+      "provisioning": "unprovisioned",
+      "required": false,
       "baseline": {
         "status": "unavailable",
         "reason": "No signed physical iOS device baseline has been provisioned or calibrated."

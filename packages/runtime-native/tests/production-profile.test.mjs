@@ -135,6 +135,105 @@ test('complete current evidence is the only PASS state', () => {
   assert.deepEqual(result.codes, []);
 });
 
+function regressionEvidence(overrides = {}) {
+  const count = 1_800;
+  const frameMs = 1_000 / 60;
+  const intervals = Array.from({ length: count }, (_, index) => ({
+    clockMs: index * frameMs,
+    frameMs,
+    sequence: index + 1,
+    timestampMs: index * frameMs,
+  }));
+  return completeEvidence({
+    budget: {
+      maxP99FrameMs: 33,
+      maxStartupMs: 5_000,
+      minMeanFps: 60,
+      minDurationSeconds: 30,
+      minFrameSamples: 1_000,
+    },
+    execution: {
+      coldStarts: 5,
+      profile: 'regression',
+      readiness: { ready: true, sampleReset: true },
+      warmupReset: true,
+    },
+    markers: ['run-start', 'first-workload-frame', 'clean-end'],
+    metrics: {
+      battery: { complete: true, samples: 1 },
+      clockSamplesMs: intervals.map(({ clockMs }) => clockMs),
+      clockSource: 'monotonic-performance',
+      durationSeconds: 30,
+      frameIntervalsMs: intervals.map(({ frameMs: value }) => value),
+      intervals,
+      meanFps: 60,
+      memory: { complete: true, growthBytes: 0, highWaterBytes: 1, slopeBytesPerMinute: 0 },
+      motion: { moved: true, movingObjects: 256 },
+      pixels: { changed: true, nonBlank: true },
+      presentationClockSource: 'raf-presentation',
+      presentationSamplesMs: intervals.map(({ clockMs }) => clockMs),
+      runWindows: [{ durationSeconds: 30, sampleCount: count }],
+      startupSamplesMs: [100, 100, 100, 100, 100],
+      startupMs: 100,
+      thermal: { complete: true, samples: 1 },
+    },
+    ...overrides,
+  });
+}
+
+test('regression evidence accepts a bounded real-clock, ready, moving, pixel-backed window', () => {
+  const result = evaluateProductionEvidence(regressionEvidence());
+  assert.equal(result.status, 'PASS');
+  assert.equal(result.exitCode, 0);
+});
+
+test('regression evidence requires every launch to meet the full steady-state window', () => {
+  const result = evaluateProductionEvidence(regressionEvidence({
+    metrics: {
+      ...regressionEvidence().metrics,
+      runWindows: [
+        { durationSeconds: 30, sampleCount: 1_800 },
+        { durationSeconds: 2, sampleCount: 120 },
+      ],
+    },
+  }));
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.exitCode, 2);
+  assert.ok(result.codes.includes('TN_PROD_REGRESSION_WINDOW'));
+});
+
+test('physical regression evidence blocks a thermally confounded device result', () => {
+  const base = regressionEvidence();
+  const result = evaluateProductionEvidence({
+    ...base,
+    metrics: {
+      ...base.metrics,
+      thermal: { complete: true, samples: 2, thermallyConfounded: true },
+    },
+    physical: { provenance: 'physical-hardware' },
+    target: 'android-physical',
+  });
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.exitCode, 2);
+  assert.ok(result.codes.includes('TN_PROD_THERMAL_STATE_INVALID'));
+});
+
+test('regression evidence blocks short windows, fixed clocks, contaminated startup, frozen work, and changed-pixel gaps', () => {
+  const cases = [
+    ['short window', { metrics: { ...regressionEvidence().metrics, durationSeconds: 29, frameIntervalsMs: Array(999).fill(16.666) } }, 'TN_PROD_REGRESSION_WINDOW'],
+    ['fixed tick', { metrics: { ...regressionEvidence().metrics, clockSource: 'fixed-tick' } }, 'TN_PROD_CLOCK_INVALID'],
+    ['startup contamination', { execution: { ...regressionEvidence().execution, warmupReset: false } }, 'TN_PROD_STARTUP_CONTAMINATION'],
+    ['frozen motion', { metrics: { ...regressionEvidence().metrics, motion: { moved: false, movingObjects: 0 } } }, 'TN_PROD_MOTION_MISSING'],
+    ['changed pixels missing', { metrics: { ...regressionEvidence().metrics, pixels: { changed: false, nonBlank: true } } }, 'TN_PROD_PIXEL_EVIDENCE_MISSING'],
+  ];
+  for (const [name, override, code] of cases) {
+    const result = evaluateProductionEvidence(regressionEvidence(override));
+    assert.equal(result.status, 'BLOCKED', name);
+    assert.equal(result.exitCode, 2, name);
+    assert.ok(result.codes.includes(code), `${name}: ${result.codes.join(', ')}`);
+  }
+});
+
 test('missing lifecycle marker is BLOCKED with exit 2', () => {
   const result = evaluateProductionEvidence(completeEvidence({ markers: ['run-start', 'clean-end'] }));
   assert.equal(result.status, 'BLOCKED');
@@ -202,14 +301,23 @@ test('accepted profile controls are parsed and execution receives every value', 
     '--render-size', '1920x1080',
     '--cold-starts', '2',
     '--device', 'emulator-5554',
+    '--prebuilt-artifact', '/tmp/already-built-runtime.apk',
     '--warmup', '3',
     '--repetitions', '4',
   ]);
   assert.deepEqual(parsed.renderSize, { height: 1080, width: 1920 });
   assert.equal(parsed.coldStarts, 2);
   assert.equal(parsed.device, 'emulator-5554');
+  assert.equal(parsed.prebuiltArtifact, '/tmp/already-built-runtime.apk');
   assert.equal(parsed.warmup, 3);
   assert.equal(parsed.repetitions, 4);
+  assert.equal(parsed.profile, 'production');
+  const regression = parseProductionArgs(['--target', 'desktop', '--profile', 'regression']);
+  assert.equal(regression.profile, 'regression');
+  assert.equal(regression.duration, 30);
+  assert.equal(regression.warmup, 5);
+  assert.equal(regression.coldStarts, 5);
+  assert.equal(regression.repetitions, 3);
   assert.equal(parseProductionArgs(['--target', 'desktop-web']).target, 'web');
   assert.throws(
     () => parseProductionArgs(['--target', 'web', '--device', 'emulator-5554']),
@@ -340,6 +448,20 @@ test('generated production workload runs through the playtest validator and keep
   });
   assert.deepEqual(androidWorkload.steps.at(-1), { kind: 'wait', release: true, waitFrames: 1 });
 
+  const regressionPaths = await writeRunScenarios(project, {
+    duration: 30,
+    profile: 'regression',
+    renderSize: { height: 1080, width: 1920 },
+    target: 'android-physical',
+    warmup: 5,
+  });
+  const regressionWorkload = JSON.parse(readFileSync(regressionPaths.workloadPath, 'utf8'));
+  const regressionNativeWorkload = JSON.parse(readFileSync(regressionPaths.nativeWorkloadPath, 'utf8'));
+  assert.deepEqual(regressionWorkload.assert.movement, { entity: 'player', minDistance: 0.1 });
+  assert.equal(regressionNativeWorkload.artifacts.screenshots, 'after');
+  assert.equal(regressionNativeWorkload.steps.length, 1_741);
+  assert.equal(regressionNativeWorkload.steps.at(-1).waitFrames, 1);
+
   const rendererPerformance = { drawCalls: 180, triangles: 100_000 };
   const nativeSamples = injectedFrameSamples(
     nativeFrameInstrumentation(undefined, 0),
@@ -354,8 +476,8 @@ test('generated production workload runs through the playtest validator and keep
   assert.equal(nativeSamples.samples.length, 30);
   assert.equal(webSamples.samples.length, 30);
   assert.ok(nativeSamples.sampleLines.every((line) => line.length < 1_000));
-  assert.deepEqual(nativeSamples.samples[0], { drawCalls: 180, frameIndex: 1, frameMs: 14, triangles: 100_000 });
-  assert.deepEqual(webSamples.samples[0], { drawCalls: 180, frameIndex: 1, frameMs: 14, triangles: 100_000 });
+  assert.deepEqual(nativeSamples.samples[0], { clockMs: 14, drawCalls: 180, frameIndex: 1, frameMs: 14, presentationMs: 14, triangles: 100_000 });
+  assert.deepEqual(webSamples.samples[0], { clockMs: 14, drawCalls: 180, frameIndex: 1, frameMs: 14, presentationMs: 14, triangles: 100_000 });
   const missingSamples = injectedFrameSamples(
     webFrameInstrumentation('http://127.0.0.1:41777', undefined, 0),
     undefined,
@@ -424,6 +546,7 @@ test('generated production workload runs through the playtest validator and keep
       frameIntervalsMs: [16],
       intervals: [{ drawCalls: 180, frameMs: 16, timestampMs: 0, triangles: 100_000 }],
       meanFps: 62.5,
+      p95FrameMs: undefined,
       p99FrameMs: 16,
     },
   });

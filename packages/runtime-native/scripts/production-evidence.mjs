@@ -6,6 +6,11 @@ import { join, relative, resolve } from 'node:path';
 
 export const PRODUCTION_EVIDENCE_VERSION = 'productionEvidenceV1';
 export const REQUIRED_LIFECYCLE_MARKERS = ['run-start', 'first-workload-frame', 'clean-end'];
+export const REGRESSION_COLLECTION_PROFILE = Object.freeze({
+  coldStarts: 5,
+  durationSeconds: 30,
+  minFrameSamples: 1_000,
+});
 
 export class ProductionEvidenceError extends Error {
   constructor(code, message, status = 'BLOCKED') {
@@ -63,6 +68,70 @@ export function evaluateFrameBudget(metrics, budget = {}) {
   return { drawCalls, failures: [...new Set(failures)], floors, mean, p95, p99, triangles };
 }
 
+/**
+ * Regression runs are deliberately stricter than the long-standing production report. A number
+ * is useful only after the workload is ready, the warmup buffer was reset, and both the monotonic
+ * wall clock and presented-frame clock have supplied the requested window. These checks are kept
+ * here so browser, desktop, Android, and iOS collectors share one fail-closed contract.
+ */
+export function regressionCollectionCodes(input) {
+  if (input.execution?.profile !== 'regression') return [];
+  const codes = [];
+  const metrics = input.metrics ?? {};
+  const execution = input.execution ?? {};
+  const frameSamples = metrics.frameIntervalsMs;
+  const frameCount = Array.isArray(frameSamples) ? frameSamples.length : 0;
+  const windows = metrics.runWindows;
+  const completeWindows = Array.isArray(windows)
+    && windows.length > 0
+    && windows.every((window) => isRecord(window)
+      && Number.isInteger(window.sampleCount)
+      && window.sampleCount >= REGRESSION_COLLECTION_PROFILE.minFrameSamples
+      && finiteMetric(window.durationSeconds)
+      && window.durationSeconds >= REGRESSION_COLLECTION_PROFILE.durationSeconds);
+  const windowSampleCount = Array.isArray(windows)
+    ? windows.reduce((total, window) => total + (isRecord(window) && Number.isInteger(window.sampleCount) ? window.sampleCount : 0), 0)
+    : 0;
+  const duration = metrics.durationSeconds;
+  if (frameCount < REGRESSION_COLLECTION_PROFILE.minFrameSamples
+    || !completeWindows
+    || windowSampleCount < REGRESSION_COLLECTION_PROFILE.minFrameSamples
+    || !finiteMetric(duration)
+    || duration < REGRESSION_COLLECTION_PROFILE.durationSeconds) {
+    codes.push('TN_PROD_REGRESSION_WINDOW');
+  }
+  if (execution.readiness?.ready !== true || execution.readiness?.sampleReset !== true) {
+    codes.push('TN_PROD_READINESS_MISSING');
+  }
+  if (execution.warmupReset !== true) codes.push('TN_PROD_STARTUP_CONTAMINATION');
+  if (metrics.clockSource !== 'monotonic-performance'
+    || !strictlyIncreasing(metrics.clockSamplesMs)
+    || metrics.fixedTick === true) {
+    codes.push('TN_PROD_CLOCK_INVALID');
+  }
+  if (metrics.presentationClockSource !== 'raf-presentation'
+    || !strictlyIncreasing(metrics.presentationSamplesMs)) {
+    codes.push('TN_PROD_PRESENTATION_CLOCK_INVALID');
+  }
+  if (!Number.isInteger(execution.coldStarts)
+    || execution.coldStarts < REGRESSION_COLLECTION_PROFILE.coldStarts
+    || !Array.isArray(metrics.startupSamplesMs)
+    || metrics.startupSamplesMs.length < REGRESSION_COLLECTION_PROFILE.coldStarts) {
+    codes.push('TN_PROD_STARTUP_SAMPLES_INCOMPLETE');
+  }
+  if (metrics.motion?.moved !== true || metrics.motion?.movingObjects <= 0) {
+    codes.push('TN_PROD_MOTION_MISSING');
+  }
+  if (metrics.pixels?.nonBlank !== true || metrics.pixels?.changed !== true) {
+    codes.push('TN_PROD_PIXEL_EVIDENCE_MISSING');
+  }
+  if (String(input.target ?? '').includes('physical')
+    && (metrics.thermal?.complete !== true || metrics.thermal?.thermallyConfounded === true)) {
+    codes.push('TN_PROD_THERMAL_STATE_INVALID');
+  }
+  return [...new Set(codes)];
+}
+
 export function evaluateProductionEvidence(input, options = {}) {
   validateProductionEvidence(input);
   const codes = new Set(input.codes ?? []);
@@ -88,6 +157,7 @@ export function evaluateProductionEvidence(input, options = {}) {
   if (input.source.dirty === true && input.source.diffSha === undefined) codes.add('TN_PROD_SOURCE_DIFF_MISSING');
   const frameBudget = evaluateFrameBudget(input.metrics ?? {}, input.budget ?? {});
   for (const code of frameBudget.failures) codes.add(code);
+  for (const code of regressionCollectionCodes(input)) codes.add(code);
   if (input.metrics?.thermal?.complete === false || input.metrics?.battery?.complete === false) codes.add('TN_PROD_RESOURCE_SAMPLES_INCOMPLETE');
   if (input.metrics?.thermal?.severeSeconds >= 60) codes.add('TN_PROD_THERMAL_BUDGET');
   if (input.metrics?.durationSeconds !== undefined && input.budget?.minDurationSeconds !== undefined && input.metrics.durationSeconds < input.budget.minDurationSeconds) codes.add('TN_PROD_MARKER_MISSING');
@@ -125,6 +195,11 @@ export function evaluateProductionEvidence(input, options = {}) {
   if (input.audioClaim === 'claimed' && typeof input.audioEvidenceSha256 !== 'string') codes.add('TN_PROD_AUDIO_EVIDENCE');
   const blockedCodes = [...codes].filter((code) => [
     'TN_PROD_MARKER_MISSING',
+    'TN_PROD_REGRESSION_WINDOW',
+    'TN_PROD_READINESS_MISSING',
+    'TN_PROD_STARTUP_CONTAMINATION',
+    'TN_PROD_CLOCK_INVALID',
+    'TN_PROD_PRESENTATION_CLOCK_INVALID',
     'TN_PROD_SOURCE_SHA_MISMATCH',
     'TN_PROD_SOURCE_DIFF_MISSING',
     'TN_PROD_RESOURCE_SAMPLES_INCOMPLETE',
@@ -137,6 +212,9 @@ export function evaluateProductionEvidence(input, options = {}) {
     'TN_PROD_PLAYTEST_FAILED',
     'TN_PROD_RENDER_SAMPLES_INCOMPLETE',
     'TN_PROD_STARTUP_SAMPLES_INCOMPLETE',
+    'TN_PROD_MOTION_MISSING',
+    'TN_PROD_PIXEL_EVIDENCE_MISSING',
+    'TN_PROD_THERMAL_STATE_INVALID',
   ].includes(code));
   const failureCodes = [...codes].filter((code) => code.startsWith('TN_PROD_') && !blockedCodes.includes(code));
   const status = blockedCodes.length > 0 ? 'BLOCKED' : failureCodes.length > 0 ? 'FAIL' : 'PASS';
@@ -229,6 +307,13 @@ function isRecord(value) {
 
 function finiteMetric(value) {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function strictlyIncreasing(values) {
+  return Array.isArray(values)
+    && values.length > 1
+    && values.every((value, index) => finiteMetric(value)
+      && (index === 0 || value > values[index - 1]));
 }
 
 function maximumMetric(metrics, key) {

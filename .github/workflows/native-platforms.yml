@@ -295,11 +295,36 @@ jobs:
           pnpm parity:ledger "$RUNNER_TEMP/prd-215-parity-ledger.md"
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
             packages/runtime-native/artifacts/conformance/android "android emulator"
+      - name: Collect bounded Android performance evidence from the emulator build
+        if: always()
+        run: |
+          set +e
+          mkdir -p packages/runtime-native/artifacts/performance-contract/android-emulator
+          apk=$(find packages/runtime-native -type f -name '*.apk' -path '*build*' -print -quit)
+          if [ -n "$apk" ]; then
+            node packages/runtime-native/scripts/profile-production.mjs \
+              --profile production --target android --device emulator-5554 \
+              --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
+              --prebuilt-artifact "$apk" \
+              --out packages/runtime-native/artifacts/performance-contract/android-emulator
+            status=$?
+          else
+            status=2
+            echo "TN_PERF_PREBUILT_ANDROID_MISSING: no APK was produced by the existing emulator build" >&2
+          fi
+          set -e
+          printf '{"collectorExitCode":%s,"sourceSha":"%s","provenance":"android-emulator","status":"%s"}\n' \
+            "$status" "$GITHUB_SHA" "$([ "$status" -eq 0 ] && echo UNVERIFIED || echo BLOCKED)" \
+            > packages/runtime-native/artifacts/performance-contract/android-emulator/collector-status.json
+          node packages/runtime-native/scripts/production-evidence.mjs \
+            > packages/runtime-native/artifacts/performance-contract/android-emulator/collector-contract.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: native-android-emulator-parity
-          path: packages/runtime-native/artifacts/conformance/
+          path: |
+            packages/runtime-native/artifacts/conformance/
+            packages/runtime-native/artifacts/performance-contract/
           if-no-files-found: error
 
   desktop-parity:
@@ -455,11 +480,35 @@ jobs:
           pnpm parity:ledger "$RUNNER_TEMP/prd-303-desktop-parity-ledger.md"
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
             packages/runtime-native/artifacts/conformance/desktop "desktop parity"
+      - name: Collect bounded desktop performance evidence from the existing binary
+        if: always()
+        run: |
+          set +e
+          mkdir -p packages/runtime-native/artifacts/performance-contract/desktop-parity
+          binary="$GITHUB_WORKSPACE/packages/runtime-native/build/tn-linux/mystral"
+          if [ -x "$binary" ]; then
+            node packages/runtime-native/scripts/profile-production.mjs \
+              --profile production --target desktop --duration 1 --cold-starts 1 \
+              --repetitions 1 --warmup 1 --prebuilt-artifact "$binary" \
+              --out packages/runtime-native/artifacts/performance-contract/desktop-parity
+            status=$?
+          else
+            status=2
+            echo "TN_PERF_PREBUILT_DESKTOP_MISSING: $binary" >&2
+          fi
+          set -e
+          printf '{"collectorExitCode":%s,"sourceSha":"%s","status":"%s"}\n' \
+            "$status" "$GITHUB_SHA" "$([ "$status" -eq 0 ] && echo PASS || echo BLOCKED)" \
+            > packages/runtime-native/artifacts/performance-contract/desktop-parity/collector-status.json
+          node packages/runtime-native/scripts/production-evidence.mjs \
+            > packages/runtime-native/artifacts/performance-contract/desktop-parity/collector-contract.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: native-desktop-parity
-          path: packages/runtime-native/artifacts/conformance/
+          path: |
+            packages/runtime-native/artifacts/conformance/
+            packages/runtime-native/artifacts/performance-contract/
           if-no-files-found: error
 
   desktop:
@@ -581,6 +630,15 @@ jobs:
           pnpm --filter @threenative/runtime-native native:verify:desktop
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:verify:desktop
+      - name: Record bounded desktop collector contract
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}
+          node packages/runtime-native/scripts/profile-production.mjs --help \
+            > packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}/profile-command.txt
+          node packages/runtime-native/scripts/production-evidence.mjs \
+            > packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}/collector-contract.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -857,11 +915,24 @@ jobs:
           pnpm exec vitest run
           packages/playtest/__tests__/ios-driver.spec.ts
           packages/playtest/__tests__/ios-device-playtest.spec.ts
+      - name: Record simulator performance provenance without claiming a phone run
+        if: always()
+        run: |
+          set +e
+          mkdir -p packages/runtime-native/artifacts/performance-contract/ios-simulator
+          node packages/runtime-native/scripts/profile-production.mjs --help \
+            > packages/runtime-native/artifacts/performance-contract/ios-simulator/profile-command.txt
+          node packages/runtime-native/scripts/production-evidence.mjs \
+            > packages/runtime-native/artifacts/performance-contract/ios-simulator/collector-contract.json
+          printf '{"sourceSha":"%s","provenance":"simulator","status":"UNVERIFIED"}\n' "$GITHUB_SHA" \
+            > packages/runtime-native/artifacts/performance-contract/ios-simulator/collector-status.json
+          set -e
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: native-ios-simulator
           path: |
             packages/runtime-native/artifacts/ios/
+            packages/runtime-native/artifacts/performance-contract/
             ${{ runner.temp }}/ios-consumer-*.log
           if-no-files-found: error

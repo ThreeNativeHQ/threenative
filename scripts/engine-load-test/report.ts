@@ -27,6 +27,24 @@ export const REQUIRED_PLATFORM_LANES = [
 
 export type RequiredPlatformLane = (typeof REQUIRED_PLATFORM_LANES)[number];
 
+export type PerformanceLaneProvisioning =
+  | "hosted-software"
+  | "physical-hardware"
+  | "simulator"
+  | "unprovisioned";
+
+export interface IPerformancePromotionPolicy {
+  readonly accuracyRuns: number;
+  readonly baselineRegeneration: "separate-reviewed-change";
+  readonly calibrationStatus: "accepted" | "unverified";
+  readonly calibrationPairs: number;
+  readonly ciCostRuns: number;
+  readonly maxIncrementalRunnerMinutes: number;
+  readonly maxQueueSeconds: number;
+  readonly minimumCalibrationSessions: number;
+  readonly requiredCheckPromotion: "maintainer-review";
+}
+
 export interface IRunReportRung {
   drawCalls: number;
   frameMs: number[];
@@ -472,12 +490,16 @@ export interface IPerformanceLane {
   readonly producer: string;
   readonly evidenceClass: string;
   readonly baseline: IPerformanceLaneBaseline;
+  readonly deviceResource?: string;
+  readonly provisioning?: PerformanceLaneProvisioning;
+  readonly required?: boolean;
 }
 
 export interface IPerformanceLaneManifest {
   readonly schemaVersion: 1;
   readonly policyRevision: string;
   readonly lanes: readonly IPerformanceLane[];
+  readonly promotionPolicy?: IPerformancePromotionPolicy;
 }
 
 function parseStringArray(value: unknown, field: string, allowEmpty = false): string[] {
@@ -510,6 +532,112 @@ function optionalString(
     );
   }
   return value;
+}
+
+function optionalBoolean(
+  source: Record<string, unknown>,
+  key: string,
+  field: string,
+): boolean | undefined {
+  const value = source[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") {
+    throw new BenchError("TN_BENCH_BAD_LANE_MANIFEST", `${field}.${key} must be boolean`);
+  }
+  return value;
+}
+
+function optionalProvisioning(
+  source: Record<string, unknown>,
+  field: string,
+): PerformanceLaneProvisioning | undefined {
+  const value = optionalString(source, "provisioning", field);
+  if (value === undefined) return undefined;
+  if (
+    value !== "hosted-software" &&
+    value !== "physical-hardware" &&
+    value !== "simulator" &&
+    value !== "unprovisioned"
+  ) {
+    throw new BenchError("TN_BENCH_BAD_LANE_MANIFEST", `${field}.provisioning is unknown`);
+  }
+  return value;
+}
+
+function positiveInteger(source: Record<string, unknown>, key: string, field: string): number {
+  const value = source[key];
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `${field}.${key} must be a positive integer`,
+    );
+  }
+  return value;
+}
+
+function nonNegativeNumber(source: Record<string, unknown>, key: string, field: string): number {
+  const value = source[key];
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `${field}.${key} must be a finite non-negative number`,
+    );
+  }
+  return value;
+}
+
+function parsePromotionPolicy(value: unknown): IPerformancePromotionPolicy | undefined {
+  if (value === undefined) return undefined;
+  const field = "lane manifest.promotionPolicy";
+  const source = requireObject(value, field);
+  const requiredCheckPromotion = requireString(source, "requiredCheckPromotion", field);
+  const baselineRegeneration = requireString(source, "baselineRegeneration", field);
+  const calibrationStatus = requireString(source, "calibrationStatus", field);
+  if (requiredCheckPromotion !== "maintainer-review") {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `${field}.requiredCheckPromotion must be maintainer-review`,
+    );
+  }
+  if (baselineRegeneration !== "separate-reviewed-change") {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `${field}.baselineRegeneration must be separate-reviewed-change`,
+    );
+  }
+  if (calibrationStatus !== "accepted" && calibrationStatus !== "unverified") {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `${field}.calibrationStatus must be accepted or unverified`,
+    );
+  }
+  const requiredCounts = {
+    accuracyRuns: 20,
+    calibrationPairs: 10,
+    ciCostRuns: 20,
+    maxIncrementalRunnerMinutes: 6,
+    maxQueueSeconds: 120,
+    minimumCalibrationSessions: 3,
+  } as const;
+  for (const [key, expected] of Object.entries(requiredCounts)) {
+    if (source[key] !== expected) {
+      throw new BenchError(
+        "TN_BENCH_BAD_LANE_MANIFEST",
+        `${field}.${key} must remain ${expected} until measured promotion evidence is reviewed`,
+      );
+    }
+  }
+  return {
+    accuracyRuns: positiveInteger(source, "accuracyRuns", field),
+    baselineRegeneration,
+    calibrationStatus,
+    calibrationPairs: positiveInteger(source, "calibrationPairs", field),
+    ciCostRuns: positiveInteger(source, "ciCostRuns", field),
+    maxIncrementalRunnerMinutes: nonNegativeNumber(source, "maxIncrementalRunnerMinutes", field),
+    maxQueueSeconds: nonNegativeNumber(source, "maxQueueSeconds", field),
+    minimumCalibrationSessions: positiveInteger(source, "minimumCalibrationSessions", field),
+    requiredCheckPromotion,
+  };
 }
 
 function parseIdentity(
@@ -680,14 +808,20 @@ export function parsePerformanceLaneManifest(value: unknown): IPerformanceLaneMa
       }
       return arm as Arm;
     });
+    const deviceResource = optionalString(source, "deviceResource", field);
+    const provisioning = optionalProvisioning(source, field);
+    const required = optionalBoolean(source, "required", field);
     return {
       arms,
       baseline: parseLaneBaseline(source.baseline, `${field}.baseline`),
+      ...(deviceResource === undefined ? {} : { deviceResource }),
       evidenceClass: requireString(source, "evidenceClass", field),
       id,
       platform: platform as RequiredPlatformLane,
       producer: requireString(source, "producer", field),
+      ...(provisioning === undefined ? {} : { provisioning }),
       requiredMetrics: parseStringArray(source.requiredMetrics, `${field}.requiredMetrics`),
+      ...(required === undefined ? {} : { required }),
       workload: requireString(source, "workload", field),
     };
   });
@@ -700,7 +834,31 @@ export function parsePerformanceLaneManifest(value: unknown): IPerformanceLaneMa
       `missing required platform lanes: ${missingPlatforms.join(", ")}`,
     );
   }
-  return { lanes, policyRevision, schemaVersion: 1 };
+  const promotionPolicy = parsePromotionPolicy(root.promotionPolicy);
+  if (
+    promotionPolicy?.calibrationStatus !== "accepted" &&
+    lanes.some((lane) => lane.required === true)
+  ) {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      "required performance lanes need accepted calibration evidence before promotion",
+    );
+  }
+  const unapprovedRequiredLanes = lanes.filter(
+    (lane) => lane.required === true && lane.baseline.status !== "accepted",
+  );
+  if (unapprovedRequiredLanes.length > 0) {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `required performance lanes need accepted baselines: ${unapprovedRequiredLanes.map((lane) => lane.id).join(", ")}`,
+    );
+  }
+  return {
+    lanes,
+    policyRevision,
+    ...(promotionPolicy === undefined ? {} : { promotionPolicy }),
+    schemaVersion: 1,
+  };
 }
 
 export function laneForArm(
@@ -857,6 +1015,7 @@ function validateBaseline(
   }
   const identityFields: readonly (keyof IPerformanceIdentity)[] = [
     "architecture",
+    "artifactHash",
     "browser",
     "graphicsBackend",
     "gpu",
@@ -866,6 +1025,7 @@ function validateBaseline(
     "operatingSystem",
     "presentMode",
     "resolution",
+    "sourceSha",
     "workloadHash",
   ];
   for (const field of identityFields) {

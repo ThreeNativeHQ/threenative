@@ -807,6 +807,68 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  performance-contracts:
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Initialize the fail-closed performance evidence input
+        env:
+          TN_PERF_ARTIFACT_HASH: ${{ hashFiles('scripts/performance-regression/lanes.json') }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/performance-contract
+          node --input-type=module -e 'import { writeFile } from "node:fs/promises"; await writeFile("artifacts/performance-contract/summary-input.json", JSON.stringify({expectedSha: process.env.GITHUB_SHA, requiredLanes: ["performance-contracts"], results: [{artifactHash: process.env.TN_PERF_ARTIFACT_HASH, lane: "performance-contracts", reason: "bounded performance contract has not completed", required: true, sourceSha: process.env.GITHUB_SHA, status: "BLOCKED"}]}));'
+      - name: Invoke the bounded production collector control
+        run: |
+          set +e
+          node packages/runtime-native/scripts/profile-production.mjs \
+            --profile production --target fixture --control missing-marker \
+            --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
+            --out artifacts/performance-contract/collector
+          status=$?
+          set -e
+          test "$status" -eq 2
+          node packages/runtime-native/scripts/production-evidence.mjs > artifacts/performance-contract/evidence-contract.json
+      - name: Mark the hosted performance contract PASS
+        run: |
+          set -euo pipefail
+          node --input-type=module -e 'import { readFile, writeFile } from "node:fs/promises"; const input = JSON.parse(await readFile("artifacts/performance-contract/summary-input.json", "utf8")); input.results[0] = {...input.results[0], reason: "policy, workload and collector contract checks passed", status: "PASS"}; await writeFile("artifacts/performance-contract/summary-input.json", `${JSON.stringify(input, null, 2)}\n`);'
+      - name: Aggregate performance evidence
+        if: always()
+        run: |
+          set +e
+          pnpm tsx scripts/performance-regression/ci-summary.ts \
+            --input artifacts/performance-contract/summary-input.json \
+            --expected-sha "$GITHUB_SHA" \
+            --out artifacts/performance-contract/summary.json \
+            | tee artifacts/performance-contract/summary.md >> "$GITHUB_STEP_SUMMARY"
+          status=${PIPESTATUS[0]}
+          set -e
+          test "$status" -eq 0
+      - uses: actions/upload-artifact@v7
+        if: success()
+        with:
+          name: performance-contract-evidence
+          path: artifacts/performance-contract/
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: performance-contract-evidence-failure
+          path: artifacts/performance-contract/
+          retention-days: 30
+          if-no-files-found: warn
+
   budgets:
     needs: build
     runs-on: ubuntu-latest
@@ -943,6 +1005,7 @@ jobs:
       - benchmark
       - build
       - budgets
+      - performance-contracts
       - supply-chain
     # `!cancelled()` and not `always()`, for the reason golden-path gives above: a cancelled run
     # has nothing to report and its summary would only describe the cancellation.
@@ -970,3 +1033,16 @@ jobs:
             --workflow .github/workflows/ci.yml \
             --results "$RUNNER_TEMP/needs.json" \
             --reporter run-summary | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Report the performance contract through the shared comparison summary
+        if: always()
+        env:
+          TN_PERF_JOB_RESULT: ${{ needs.performance-contracts.result }}
+          TN_PERF_ARTIFACT_HASH: ${{ hashFiles('scripts/performance-regression/lanes.json') }}
+          TN_PERF_INPUT: ${{ runner.temp }}/performance-summary-input.json
+        run: |
+          set -euo pipefail
+          node --input-type=module -e 'import { writeFile } from "node:fs/promises"; const status = process.env.TN_PERF_JOB_RESULT === "success" ? "PASS" : process.env.TN_PERF_JOB_RESULT === "failure" ? "BLOCKED" : process.env.TN_PERF_JOB_RESULT === "cancelled" ? "BLOCKED" : "SKIPPED"; await writeFile(process.env.TN_PERF_INPUT, JSON.stringify({expectedSha: process.env.GITHUB_SHA, requiredLanes: ["performance-contracts"], results: [{artifactHash: process.env.TN_PERF_ARTIFACT_HASH, lane: "performance-contracts", reason: `CI job result: ${process.env.TN_PERF_JOB_RESULT}`, required: true, sourceSha: process.env.GITHUB_SHA, status}]}));'
+          pnpm tsx scripts/performance-regression/ci-summary.ts \
+            --input "$RUNNER_TEMP/performance-summary-input.json" \
+            --expected-sha "$GITHUB_SHA" \
+            | tee -a "$GITHUB_STEP_SUMMARY"

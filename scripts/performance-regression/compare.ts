@@ -1,7 +1,13 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { BenchError, percentile } from "../engine-load-test/report.js";
+import {
+  BenchError,
+  type IPerformanceLane,
+  laneForId,
+  parsePerformanceLaneManifest,
+  percentile,
+} from "../engine-load-test/report.js";
 
 export { parsePerformanceLaneManifest } from "../engine-load-test/report.js";
 
@@ -21,6 +27,7 @@ export interface IMetricPolicy {
   readonly unit: string;
   readonly relativeLimit: number;
   readonly absoluteLimit: number;
+  readonly exact?: boolean;
   readonly direction?: "higher-is-worse" | "lower-is-worse";
   readonly minimumSamples?: number;
   readonly minimum?: number;
@@ -41,6 +48,12 @@ export interface IPerformancePolicy {
 export const DEFAULT_PERFORMANCE_POLICY: IPerformancePolicy = {
   policyRevision: PERFORMANCE_POLICY_REVISION,
   metrics: {
+    drawCalls: {
+      absoluteLimit: 1,
+      exact: true,
+      relativeLimit: 0.01,
+      unit: "count",
+    },
     frameP95Ms: { absoluteLimit: 1, direction: "higher-is-worse", relativeLimit: 0.1, unit: "ms" },
     phaseP95Ms: { absoluteLimit: 1, direction: "higher-is-worse", relativeLimit: 0.1, unit: "ms" },
     startupP95Ms: {
@@ -55,6 +68,12 @@ export const DEFAULT_PERFORMANCE_POLICY: IPerformancePolicy = {
       direction: "higher-is-worse",
       relativeLimit: 0.1,
       unit: "MiB",
+    },
+    triangles: {
+      absoluteLimit: 1,
+      exact: true,
+      relativeLimit: 0.01,
+      unit: "count",
     },
   },
   requiredMetrics: ["frameP95Ms"],
@@ -77,7 +96,8 @@ export interface IPerformanceIdentity {
   readonly resolution: string;
   readonly sourceSha: string;
   readonly workloadHash: string;
-  readonly nativeBinaryHash?: string;
+  /** Required for every collected arm; web collectors use their immutable bundle identity here. */
+  readonly nativeBinaryHash: string;
 }
 
 export interface IMetricObservation {
@@ -107,6 +127,8 @@ export interface IPerformancePair {
 
 export interface IPerformanceComparisonInput {
   readonly lane?: string;
+  /** Parsed by the comparator so a caller cannot narrow a selected lane's metric contract. */
+  readonly laneManifest?: unknown;
   readonly workload?: string;
   readonly requiredMetrics?: readonly string[];
   readonly calibration?: boolean;
@@ -147,6 +169,8 @@ export interface IValidPairSummary {
   readonly candidateReportHash: string;
   readonly baselineArtifactHash: string;
   readonly candidateArtifactHash: string;
+  readonly baselineNativeBinaryHash: string;
+  readonly candidateNativeBinaryHash: string;
   readonly baselineDurationSeconds?: number;
   readonly candidateDurationSeconds?: number;
   readonly baselineSampleCount?: number;
@@ -273,12 +297,11 @@ function parseIdentity(source: Record<string, unknown>, field: string): IPerform
   }
   const nativeBinaryHash =
     alias(nested, ["nativeBinaryHash", "binaryHash"]) ?? source.nativeBinaryHash;
-  if (nativeBinaryHash !== undefined)
-    identity.nativeBinaryHash = nonEmptyString(
-      nativeBinaryHash,
-      `${field}.identity.nativeBinaryHash`,
-    );
-  return identity;
+  identity.nativeBinaryHash = nonEmptyString(
+    nativeBinaryHash,
+    `${field}.identity.nativeBinaryHash`,
+  );
+  return identity as IPerformanceIdentity;
 }
 
 function parseMetricSamples(value: unknown, field: string): number[] {
@@ -328,7 +351,14 @@ function parseMetric(value: unknown, field: string, policy: IMetricPolicy): IMet
 function expandMetricValues(source: Record<string, unknown>): Record<string, unknown> {
   if (source.metrics !== undefined) return objectValue(source.metrics, "run.metrics");
   const values: Record<string, unknown> = {};
-  for (const metric of ["frameP95Ms", "phaseP95Ms", "startupP95Ms", "memoryHighWaterMiB"]) {
+  for (const metric of [
+    "drawCalls",
+    "triangles",
+    "frameP95Ms",
+    "phaseP95Ms",
+    "startupP95Ms",
+    "memoryHighWaterMiB",
+  ]) {
     if (source[metric] !== undefined) values[metric] = source[metric];
   }
   return values;
@@ -399,6 +429,10 @@ function parseMetricPolicy(value: unknown, field: string): IMetricPolicy {
     source.absoluteLimit ?? source.absolute,
     `${field}.absoluteLimit`,
   );
+  const exact = source.exact;
+  if (exact !== undefined && typeof exact !== "boolean") {
+    throw new PerformanceRegressionError("TN_PERF_BAD_POLICY", `${field}.exact must be boolean`);
+  }
   const direction = source.direction;
   if (
     direction !== undefined &&
@@ -429,6 +463,7 @@ function parseMetricPolicy(value: unknown, field: string): IMetricPolicy {
     absoluteLimit,
     ...(absoluteFloor === undefined ? {} : { absoluteFloor }),
     ...(direction === undefined ? {} : { direction }),
+    ...(exact === undefined ? {} : { exact }),
     ...(minimumSamples === undefined ? {} : { minimumSamples }),
     ...(maximum === undefined ? {} : { maximum: finitePositive(maximum, `${field}.maximum`) }),
     ...(minimum === undefined ? {} : { minimum: finitePositive(minimum, `${field}.minimum`) }),
@@ -499,12 +534,18 @@ export function parsePerformancePolicy(
     "policy.maxInvalidPairs",
     DEFAULT_MAX_INVALID_PAIRS,
   );
-  const requireAlternatingOrder =
-    source.requireAlternatingOrder === undefined ? true : source.requireAlternatingOrder;
-  if (typeof requireAlternatingOrder !== "boolean") {
+  if (maxInvalidPairs > DEFAULT_MAX_INVALID_PAIRS) {
     throw new PerformanceRegressionError(
       "TN_PERF_BAD_POLICY",
-      "policy.requireAlternatingOrder must be boolean",
+      `policy.maxInvalidPairs cannot exceed ${DEFAULT_MAX_INVALID_PAIRS}; retries cannot replace a valid comparison`,
+    );
+  }
+  const requireAlternatingOrder =
+    source.requireAlternatingOrder === undefined ? true : source.requireAlternatingOrder;
+  if (requireAlternatingOrder !== true) {
+    throw new PerformanceRegressionError(
+      "TN_PERF_BAD_POLICY",
+      "policy.requireAlternatingOrder must remain true for paired regression evidence",
     );
   }
   const absoluteFloors = parseFloors(source.absoluteFloors);
@@ -594,6 +635,7 @@ function parseInput(value: unknown): IPerformanceComparisonInput {
     ...(source.workload === undefined
       ? {}
       : { workload: nonEmptyString(source.workload, "comparison.workload") }),
+    ...(source.laneManifest === undefined ? {} : { laneManifest: source.laneManifest }),
   };
 }
 
@@ -641,17 +683,13 @@ function compareIdentity(
       );
     }
   }
-  if (baseline.identity.nativeBinaryHash !== candidate.identity.nativeBinaryHash) {
-    failures.push("native binary hashes differ");
-  }
   return failures;
 }
 
 function comparableIdentityKey(identity: IPerformanceIdentity): string {
-  return JSON.stringify([
-    ...COMPARABLE_IDENTITY_FIELDS.map((field) => identity[field]),
-    identity.nativeBinaryHash ?? null,
-  ]);
+  // Native baseline/candidate binaries are independently built. Their hashes are preserved in the
+  // arm summaries, but are not part of the comparable device identity.
+  return JSON.stringify(COMPARABLE_IDENTITY_FIELDS.map((field) => identity[field]));
 }
 
 function median(values: readonly number[]): number {
@@ -695,12 +733,14 @@ function pairSummaries(
 ): IValidPairSummary[] {
   return pairs.map(({ baseline, candidate, index, order }) => ({
     baselineArtifactHash: baseline.identity.artifactHash,
+    baselineNativeBinaryHash: baseline.identity.nativeBinaryHash,
     ...(baseline.durationSeconds === undefined
       ? {}
       : { baselineDurationSeconds: baseline.durationSeconds }),
     ...(baseline.sampleCount === undefined ? {} : { baselineSampleCount: baseline.sampleCount }),
     baselineReportHash: baseline.reportHash,
     candidateArtifactHash: candidate.identity.artifactHash,
+    candidateNativeBinaryHash: candidate.identity.nativeBinaryHash,
     ...(candidate.durationSeconds === undefined
       ? {}
       : { candidateDurationSeconds: candidate.durationSeconds }),
@@ -742,8 +782,9 @@ function evaluateMetric(
     const rawDelta = candidateMetric.value - baselineMetric.value;
     const delta = policyMetric.direction === "lower-is-worse" ? -rawDelta : rawDelta;
     const relativeDelta = delta / baselineMetric.value;
-    const breaches =
-      delta > policyMetric.absoluteLimit && relativeDelta > policyMetric.relativeLimit;
+    const breaches = policyMetric.exact
+      ? candidateMetric.value !== baselineMetric.value
+      : delta > policyMetric.absoluteLimit && relativeDelta > policyMetric.relativeLimit;
     const floorBreaches: number[] = [];
     const floor = policy.absoluteFloors?.[metric] ??
       policyMetric.absoluteFloor ?? {
@@ -787,9 +828,11 @@ function evaluateMetric(
     })),
     regression:
       floorBreaches.length > 0 ||
-      (medianDelta > policyMetric.absoluteLimit &&
-        medianRelativeDelta > policyMetric.relativeLimit &&
-        pairBreaches >= 2),
+      (policyMetric.exact
+        ? pairBreaches > 0
+        : medianDelta > policyMetric.absoluteLimit &&
+          medianRelativeDelta > policyMetric.relativeLimit &&
+          pairBreaches >= 2),
     relativeLimit: policyMetric.relativeLimit,
     unit: policyMetric.unit,
   };
@@ -809,12 +852,52 @@ function evaluateParsed(
   const seenReportHashes = new Set<string>();
   const baselineArtifacts = new Set<string>();
   const candidateArtifacts = new Set<string>();
+  const baselineNativeBinaries = new Set<string>();
+  const candidateNativeBinaries = new Set<string>();
   const baselineSources = new Set<string>();
   const candidateSources = new Set<string>();
   const comparableIdentities = new Set<string>();
-  const orders = new Set<PairOrder>();
   let lane = input.lane ?? null;
   let workload = input.workload ?? null;
+  let manifestLane: IPerformanceLane | undefined;
+
+  if (input.laneManifest !== undefined) {
+    const manifest = parsePerformanceLaneManifest(input.laneManifest);
+    if (lane === null) {
+      reasons.push("a selected lane is required when a lane manifest is supplied");
+    } else {
+      manifestLane = laneForId(manifest, lane);
+      if (manifestLane === undefined) {
+        reasons.push(`selected lane ${lane} is not declared by the lane manifest`);
+      } else {
+        if (workload === null) workload = manifestLane.workload;
+        if (input.workload !== undefined && input.workload !== manifestLane.workload) {
+          reasons.push(
+            `selected lane ${lane} requires workload ${manifestLane.workload}, received ${input.workload}`,
+          );
+        }
+        const omittedMetrics =
+          input.requiredMetrics === undefined
+            ? []
+            : manifestLane.requiredMetrics.filter(
+                (metric) => !input.requiredMetrics?.includes(metric),
+              );
+        if (omittedMetrics.length > 0) {
+          reasons.push(
+            `requested metrics omit lane-required metrics: ${omittedMetrics.join(", ")}`,
+          );
+        }
+        for (const metric of manifestLane.requiredMetrics) {
+          if (
+            policy.metrics[metric] === undefined &&
+            policy.metrics[metric.split(".")[0] as string] === undefined
+          ) {
+            reasons.push(`lane-required metric ${metric} is unknown to policy`);
+          }
+        }
+      }
+    }
+  }
 
   input.pairs.forEach((rawPair, index) => {
     const pair = objectValue(rawPair, `comparison.pairs[${index}]`);
@@ -855,11 +938,12 @@ function evaluateParsed(
       }
       baselineArtifacts.add(baseline.identity.artifactHash);
       candidateArtifacts.add(candidate.identity.artifactHash);
+      baselineNativeBinaries.add(baseline.identity.nativeBinaryHash);
+      candidateNativeBinaries.add(candidate.identity.nativeBinaryHash);
       baselineSources.add(baseline.identity.sourceSha);
       candidateSources.add(candidate.identity.sourceSha);
       comparableIdentities.add(comparableIdentityKey(baseline.identity));
       comparableIdentities.add(comparableIdentityKey(candidate.identity));
-      orders.add(order);
       valid.push({ baseline, candidate, index, order });
     } catch (error) {
       reasons.push(`pair ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
@@ -874,14 +958,36 @@ function evaluateParsed(
   if (valid.length < minimumValid) {
     reasons.push(`only ${valid.length} valid pair(s); ${minimumValid} are required`);
   }
-  if (policy.requireAlternatingOrder !== false && (orders.size < 2 || valid.length < 2)) {
-    reasons.push("valid pairs must include both initial orders");
+  if (valid.length !== DEFAULT_REQUIRED_PAIRS) {
+    reasons.push(
+      `exactly three valid pair(s) are required; received ${valid.length}; retries cannot replace the median`,
+    );
+  }
+  if (valid.length >= 2) {
+    const firstOrder = valid[0]?.order;
+    const alternating = valid.every(
+      (pair, index) =>
+        pair.order ===
+        (index % 2 === 0
+          ? firstOrder
+          : firstOrder === "baseline-first"
+            ? "candidate-first"
+            : "baseline-first"),
+    );
+    if (!alternating) {
+      reasons.push(
+        "valid pair initial orders must alternate baseline-first/candidate-first/baseline-first or the reverse",
+      );
+    }
   }
   if (seenReportHashes.size !== valid.length * 2) {
     reasons.push("identical report hashes make the attempt set non-independent");
   }
   if (baselineArtifacts.size > 1 || candidateArtifacts.size > 1) {
     reasons.push("baseline or candidate artifact identity changed between pair attempts");
+  }
+  if (baselineNativeBinaries.size > 1 || candidateNativeBinaries.size > 1) {
+    reasons.push("baseline or candidate native binary identity changed between pair attempts");
   }
   if (baselineSources.size > 1 || candidateSources.size > 1) {
     reasons.push("baseline or candidate source identity changed between pair attempts");
@@ -904,7 +1010,10 @@ function evaluateParsed(
   }
 
   const requestedMetrics =
-    input.requiredMetrics ?? policy.requiredMetrics ?? Object.keys(policy.metrics);
+    manifestLane?.requiredMetrics ??
+    input.requiredMetrics ??
+    policy.requiredMetrics ??
+    Object.keys(policy.metrics);
   const metrics: IMetricPairResult[] = [];
   for (const metric of requestedMetrics) {
     const policyMetric = policy.metrics[metric] ?? policy.metrics[metric.split(".")[0] as string];
@@ -1018,11 +1127,11 @@ export function renderRegressionMarkdown(result: IRegressionComparison): string 
     lines.push(
       "### Pair identities",
       "",
-      "| Pair | Initial order | Baseline report | Candidate report | Baseline artifact | Candidate artifact |",
-      "| ---: | --- | --- | --- | --- | --- |",
+      "| Pair | Initial order | Baseline report | Candidate report | Baseline artifact | Candidate artifact | Baseline native binary | Candidate native binary |",
+      "| ---: | --- | --- | --- | --- | --- | --- | --- |",
       ...result.pairs.map(
         (pair) =>
-          `| ${pair.index + 1} | ${pair.order} | ${pair.baselineReportHash} | ${pair.candidateReportHash} | ${pair.baselineArtifactHash} | ${pair.candidateArtifactHash} |`,
+          `| ${pair.index + 1} | ${pair.order} | ${pair.baselineReportHash} | ${pair.candidateReportHash} | ${pair.baselineArtifactHash} | ${pair.candidateArtifactHash} | ${pair.baselineNativeBinaryHash} | ${pair.candidateNativeBinaryHash} |`,
       ),
     );
   }
@@ -1031,6 +1140,8 @@ export function renderRegressionMarkdown(result: IRegressionComparison): string 
 
 export async function runPerformanceRegressionCli(options: {
   readonly input?: string;
+  readonly lane?: string;
+  readonly lanes?: string;
   readonly policy?: string;
   readonly output?: string;
 }): Promise<IPerformanceRegressionCliResult> {
@@ -1053,6 +1164,34 @@ export async function runPerformanceRegressionCli(options: {
       `could not read or parse comparison input: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  const inputObject =
+    typeof input === "object" && input !== null && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : undefined;
+  const inputLane =
+    options.lane ?? (typeof inputObject?.lane === "string" ? inputObject.lane : undefined);
+  if (options.lanes !== undefined || inputLane !== undefined) {
+    const manifestFile =
+      options.lanes ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "lanes.json");
+    let laneManifest: unknown;
+    try {
+      laneManifest = JSON.parse(await readFile(manifestFile, "utf8")) as unknown;
+      parsePerformanceLaneManifest(laneManifest);
+    } catch (error) {
+      if (error instanceof BenchError) {
+        throw new PerformanceRegressionError(error.code, error.message);
+      }
+      throw new PerformanceRegressionError(
+        "TN_PERF_BAD_LANE_MANIFEST",
+        `could not read or parse ${manifestFile}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    input = {
+      ...(inputObject ?? { pairs: Array.isArray(input) ? input : [] }),
+      ...(inputLane === undefined ? {} : { lane: inputLane }),
+      laneManifest,
+    };
+  }
   const summary = evaluatePairedComparison(input, policy);
   if (options.output !== undefined) {
     await writeFile(options.output, `${JSON.stringify(summary, null, 2)}\n`);
@@ -1068,6 +1207,8 @@ function argument(name: string): string | undefined {
 async function main(): Promise<void> {
   const result = await runPerformanceRegressionCli({
     input: argument("input"),
+    lane: argument("lane"),
+    lanes: argument("lanes"),
     output: argument("out"),
     policy: argument("policy"),
   });

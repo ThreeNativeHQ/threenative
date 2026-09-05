@@ -1,8 +1,10 @@
 // `pnpm bench:engines` — PRD-117's entry point. Opt-in by construction: nothing here is wired
 // into `pnpm test`, and the Godot arms are the only thing that needs Godot installed.
+import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { runPerformanceRegressionCli } from "../performance-regression/compare.js";
 import { driveBenchmarkPage, serveDirectory, startProcess, waitForUrl } from "./browser.js";
 import {
@@ -30,6 +32,7 @@ const artifactRoot = path.join(repoRoot, "artifacts/engine-load-test");
 const TN_PORT = 5199;
 const GODOT_PORT = 5198;
 const DEFAULT_LANE_MANIFEST = path.join(repoRoot, "scripts/performance-regression/lanes.json");
+const execFileAsync = promisify(execFile);
 
 interface ILadderOptions {
   frames: number;
@@ -231,11 +234,70 @@ async function runArmCommand(arm: string, options: ILadderOptions): Promise<void
 async function runRegressionCommand(): Promise<void> {
   const result = await runPerformanceRegressionCli({
     input: flag("input") ?? flag("report"),
+    lane: flag("lane"),
+    lanes: flag("lanes"),
     output: flag("out"),
     policy: flag("policy"),
   });
   process.stdout.write(`${result.markdown}\n`);
   if (result.exitCode !== 0) process.exitCode = result.exitCode;
+}
+
+async function runRegressionCollectionCommand(): Promise<void> {
+  const target = flag("target");
+  if (target === undefined) {
+    throw new BenchError(
+      "TN_BENCH_COLLECTION_TARGET_MISSING",
+      "--regression-collection requires --target so the collector records the selected platform",
+    );
+  }
+  const script = path.join(repoRoot, "packages/runtime-native/scripts/profile-production.mjs");
+  const forwardedNames = [
+    "config",
+    "control",
+    "device",
+    "out",
+    "physical-evidence",
+    "prebuilt-artifact",
+    "render-size",
+    "source-sha",
+    "cold-starts",
+    "duration",
+    "repetitions",
+    "warmup",
+  ] as const;
+  const forwarded = [
+    "--target",
+    target,
+    "--profile",
+    "regression",
+    ...forwardedNames.flatMap((name) => {
+      const value = flag(name);
+      return value === undefined ? [] : [`--${name}`, value];
+    }),
+  ];
+  try {
+    const result = await execFileAsync(process.execPath, [script, ...forwarded], {
+      cwd: repoRoot,
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    if (result.stdout.length > 0) process.stdout.write(result.stdout);
+    if (result.stderr.length > 0) process.stderr.write(result.stderr);
+  } catch (error) {
+    if (typeof error === "object" && error !== null) {
+      const output = "stdout" in error && typeof error.stdout === "string" ? error.stdout : "";
+      const diagnostics = "stderr" in error && typeof error.stderr === "string" ? error.stderr : "";
+      if (output.length > 0) process.stdout.write(output);
+      if (diagnostics.length > 0) process.stderr.write(diagnostics);
+    }
+    const exitCode =
+      typeof error === "object" && error !== null && "code" in error && error.code === 1 ? 1 : 2;
+    throw new BenchError(
+      "TN_BENCH_REGRESSION_COLLECTION_FAILED",
+      `bounded regression collector failed for ${target}: ${error instanceof Error ? error.message : String(error)}`,
+      exitCode,
+    );
+  }
 }
 
 async function runReportCheckCommand(file: string): Promise<void> {
@@ -272,12 +334,13 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--policy policy.json] [--out summary.json]\n",
+    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
   );
 }
 
 async function main(): Promise<void> {
   await mkdir(artifactRoot, { recursive: true });
+  if (process.argv.includes("--regression-collection")) return runRegressionCollectionCommand();
   if (process.argv.includes("--regression")) return runRegressionCommand();
   const checkReport = flag("check-report");
   if (checkReport !== undefined) return runReportCheckCommand(checkReport);

@@ -16,6 +16,7 @@ import { suppressPlayProtectOnAdbInstalls } from './device-preflight.mjs';
 import {
   PRODUCTION_EVIDENCE_VERSION,
   ProductionEvidenceError,
+  REGRESSION_COLLECTION_PROFILE,
   meanFps,
   nearestRank,
   sha256,
@@ -52,6 +53,8 @@ const FRAME_SAMPLE_BATCH_SIZE = 30;
 // Android logcat truncates long lines, so native samples use a smaller JSON batch.
 const NATIVE_FRAME_SAMPLE_BATCH_SIZE = 5;
 const DESKTOP_SCREENSHOT_TIMEOUT_MS = 5_000;
+const PRODUCTION_PROFILE = 'production';
+const REGRESSION_PROFILE = 'regression';
 
 function installedPackageFile(packageName, file) {
   try {
@@ -87,39 +90,55 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     device: undefined,
     duration: 60,
     out: '.runtime/prd064/production',
+    prebuiltArtifact: undefined,
     physicalEvidence: undefined,
+    profile: PRODUCTION_PROFILE,
     renderSize: { height: 1080, width: 1920 },
     repetitions: 3,
     sourceSha: undefined,
     target: undefined,
     warmup: 60,
   };
+  const explicit = new Set();
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === '--') continue;
-    if (flag === '--audio-evidence') options.audioEvidence = nextValue(argv, ++index, flag);
-    else if (flag === '--cold-starts') options.coldStarts = positiveInteger(nextValue(argv, ++index, flag), flag);
-    else if (flag === '--config') options.config = nextValue(argv, ++index, flag);
-    else if (flag === '--control') options.control = nextValue(argv, ++index, flag);
-    else if (flag === '--device') options.device = nextValue(argv, ++index, flag);
-    else if (flag === '--duration') options.duration = positiveNumber(nextValue(argv, ++index, flag), flag);
-    else if (flag === '--out') options.out = nextValue(argv, ++index, flag);
-    else if (flag === '--physical-evidence') options.physicalEvidence = nextValue(argv, ++index, flag);
-    else if (flag === '--render-size') options.renderSize = parseRenderSize(nextValue(argv, ++index, flag));
-    else if (flag === '--repetitions') options.repetitions = positiveInteger(nextValue(argv, ++index, flag), flag);
-    else if (flag === '--source-sha') options.sourceSha = nextValue(argv, ++index, flag);
-    else if (flag === '--target') options.target = nextValue(argv, ++index, flag);
-    else if (flag === '--warmup') options.warmup = positiveNumber(nextValue(argv, ++index, flag), flag);
+    if (flag === '--audio-evidence') { explicit.add('audioEvidence'); options.audioEvidence = nextValue(argv, ++index, flag); }
+    else if (flag === '--cold-starts') { explicit.add('coldStarts'); options.coldStarts = positiveInteger(nextValue(argv, ++index, flag), flag); }
+    else if (flag === '--config') { explicit.add('config'); options.config = nextValue(argv, ++index, flag); }
+    else if (flag === '--control') { explicit.add('control'); options.control = nextValue(argv, ++index, flag); }
+    else if (flag === '--device') { explicit.add('device'); options.device = nextValue(argv, ++index, flag); }
+    else if (flag === '--duration') { explicit.add('duration'); options.duration = positiveNumber(nextValue(argv, ++index, flag), flag); }
+    else if (flag === '--out') { explicit.add('out'); options.out = nextValue(argv, ++index, flag); }
+    else if (flag === '--prebuilt-artifact') { explicit.add('prebuiltArtifact'); options.prebuiltArtifact = nextValue(argv, ++index, flag); }
+    else if (flag === '--physical-evidence') { explicit.add('physicalEvidence'); options.physicalEvidence = nextValue(argv, ++index, flag); }
+    else if (flag === '--profile') options.profile = nextValue(argv, ++index, flag);
+    else if (flag === '--regression') options.profile = REGRESSION_PROFILE;
+    else if (flag === '--render-size') { explicit.add('renderSize'); options.renderSize = parseRenderSize(nextValue(argv, ++index, flag)); }
+    else if (flag === '--repetitions') { explicit.add('repetitions'); options.repetitions = positiveInteger(nextValue(argv, ++index, flag), flag); }
+    else if (flag === '--source-sha') { explicit.add('sourceSha'); options.sourceSha = nextValue(argv, ++index, flag); }
+    else if (flag === '--target') { explicit.add('target'); options.target = nextValue(argv, ++index, flag); }
+    else if (flag === '--warmup') { explicit.add('warmup'); options.warmup = positiveNumber(nextValue(argv, ++index, flag), flag); }
     else if (flag === '--help') return { ...options, help: true };
     else throw new ProductionEvidenceError('TN_PROD_CLI_USAGE', `Unknown production profile option '${flag}'.`);
   }
   if (options.target === undefined) throw new ProductionEvidenceError('TN_PROD_CLI_USAGE', 'Production profile requires --target.');
+  if (options.profile === REGRESSION_PROFILE) {
+    if (!explicit.has('coldStarts')) options.coldStarts = REGRESSION_COLLECTION_PROFILE.coldStarts;
+    if (!explicit.has('duration')) options.duration = REGRESSION_COLLECTION_PROFILE.durationSeconds;
+    if (!explicit.has('out')) options.out = '.runtime/prd358/regression';
+    if (!explicit.has('repetitions')) options.repetitions = 3;
+    if (!explicit.has('warmup')) options.warmup = 5;
+  }
   return validateProductionOptions(options);
 }
 
 export function validateProductionOptions(input) {
   const options = normalizeOptions(input);
   if (options.help) return options;
+  if (options.profile !== PRODUCTION_PROFILE && options.profile !== REGRESSION_PROFILE) {
+    throw new ProductionEvidenceError('TN_PROD_PROFILE_UNSUPPORTED', `Production profile '${options.profile}' is not supported.`);
+  }
   if (!supportedTargets.has(options.target)) {
     throw new ProductionEvidenceError('TN_PROD_TARGET_UNSUPPORTED', `Production target '${options.target}' is not supported.`);
   }
@@ -217,20 +236,24 @@ export async function collectProduction(options, context, runId) {
 function normalizeOptions(input = {}) {
   const renderSize = typeof input.renderSize === 'string' ? parseRenderSize(input.renderSize) : input.renderSize;
   const target = input.target === 'desktop-web' ? 'web' : input.target;
+  const profile = input.profile ?? PRODUCTION_PROFILE;
+  const regression = profile === REGRESSION_PROFILE;
   return {
     audioEvidence: input.audioEvidence,
-    coldStarts: input.coldStarts ?? 1,
+    coldStarts: input.coldStarts ?? (regression ? REGRESSION_COLLECTION_PROFILE.coldStarts : 1),
     control: input.control,
     device: input.device,
-    duration: input.duration ?? 60,
+    duration: input.duration ?? (regression ? REGRESSION_COLLECTION_PROFILE.durationSeconds : 60),
     help: input.help,
-    out: input.out ?? '.runtime/prd064/production',
+    out: input.out ?? (regression ? '.runtime/prd358/regression' : '.runtime/prd064/production'),
+    prebuiltArtifact: input.prebuiltArtifact,
     physicalEvidence: input.physicalEvidence,
     renderSize: renderSize ?? { height: 1080, width: 1920 },
+    profile,
     repetitions: input.repetitions ?? 3,
     sourceSha: input.sourceSha,
     target,
-    warmup: input.warmup ?? 60,
+    warmup: input.warmup ?? (regression ? 5 : 60),
   };
 }
 
@@ -304,9 +327,12 @@ export async function writeRunScenarios(project, options) {
     ? source.assert
     : {};
   const { performance: performanceBounds, ...playtestAssertions } = sourceAssertions;
-  const workloadAssertions = Object.keys(playtestAssertions).length === 0
+  const baseWorkloadAssertions = Object.keys(playtestAssertions).length === 0
     ? { diagnostics: { noConsoleErrors: true, runtimeReady: true } }
     : playtestAssertions;
+  const workloadAssertions = options.profile === REGRESSION_PROFILE
+    ? { ...baseWorkloadAssertions, movement: { entity: 'player', minDistance: 0.1 } }
+    : baseWorkloadAssertions;
   const { assert: _sourceAssertions, ...scenarioSource } = source;
   const workloadFrames = Math.max(1, Math.ceil(options.duration * 60));
   const warmupFrames = Math.max(0, Math.ceil(options.warmup * 60));
@@ -342,7 +368,11 @@ export async function writeRunScenarios(project, options) {
   };
   const nativeWorkload = {
     ...workload,
-    artifacts: { screenshots: nativeTarget === 'desktop' ? 'after' : false },
+    artifacts: {
+      screenshots: options.profile === REGRESSION_PROFILE || nativeTarget === 'desktop'
+        ? 'after'
+        : false,
+    },
     steps: nativeWorkloadSteps,
   };
   const nativeStartup = { ...startup, artifacts: { screenshots: 'after' } };
@@ -431,7 +461,9 @@ async function runWebScenario(project, scenarioPath, artifactDirectory, markerSe
 async function collectNative(project, scenarios, artifactsRoot, options, tools) {
   const target = options.target === 'desktop-pair' || options.target === 'desktop' ? 'desktop' : options.target.startsWith('ios') ? 'ios' : 'android';
   await installNativeProfileEntry(project, target, options);
-  const build = await runCommand('pnpm', ['run', `build:${target}`], project);
+  const build = options.prebuiltArtifact === undefined
+    ? await runCommand('pnpm', ['run', `build:${target}`], project)
+    : { status: 0 };
   if (build.status !== 0) {
     const details = [build.stdout, build.stderr]
       .filter((value) => typeof value === 'string' && value.trim().length > 0)
@@ -442,7 +474,7 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
       `The scaffolded platformer ${target} build failed.${details.length === 0 ? '' : `\n${details.slice(-4_000)}`}`,
     );
   }
-  const artifactPath = await nativeArtifactPath(project, target);
+  const artifactPath = options.prebuiltArtifact ?? await nativeArtifactPath(project, target);
   const artifactSha = await hashPath(artifactPath);
   const runs = [];
   const startups = [];
@@ -694,6 +726,7 @@ const tnProductionReadPerformance = () => {
     const performance = snapshot.performance;
     return {
       ...(Number.isFinite(performance?.drawCalls) ? { drawCalls: performance.drawCalls } : {}),
+      ...(performance?.phases !== undefined ? { phases: performance.phases } : {}),
       ...(Number.isFinite(performance?.triangles) ? { triangles: performance.triangles } : {}),
     };
   } catch {
@@ -739,7 +772,13 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
     console.log("TN_PROD_FIRST_NONBLANK_FRAME:" + Date.now());
   }
   if (!inWarmup && frameMs !== undefined) {
-    tnProductionSamples.push({ ...tnProductionReadPerformance(), frameIndex, frameMs });
+    tnProductionSamples.push({
+      ...tnProductionReadPerformance(),
+      ...(Number.isFinite(timestamp) ? { presentationMs: timestamp } : {}),
+      clockMs: now,
+      frameIndex,
+      frameMs,
+    });
     if (tnProductionSamples.length >= ${NATIVE_FRAME_SAMPLE_BATCH_SIZE}) {
       console.log("TN_PROD_FRAME_SAMPLES:" + JSON.stringify(tnProductionSamples));
       tnProductionSamples = [];
@@ -811,7 +850,13 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
     tnProductionPost({ kind: "first-frame" });
   }
   if (!inWarmup && frameMs !== undefined) {
-    tnProductionSamples.push({ ...tnProductionReadPerformance(), frameIndex, frameMs });
+    tnProductionSamples.push({
+      ...tnProductionReadPerformance(),
+      ...(Number.isFinite(timestamp) ? { presentationMs: timestamp } : {}),
+      clockMs: now,
+      frameIndex,
+      frameMs,
+    });
     if (tnProductionSamples.length >= ${FRAME_SAMPLE_BATCH_SIZE}) {
       tnProductionPost({ kind: "samples", samples: tnProductionSamples });
       tnProductionSamples = [];
@@ -975,6 +1020,7 @@ function frameSeriesFromReport(report) {
 
 export function assembleEvidence({ context, native, options, performanceBounds, project, runId, startedAt, web }) {
   const arms = [web, native].filter((arm) => arm !== undefined);
+  const regression = options.profile === REGRESSION_PROFILE;
   const expectedRuns = options.coldStarts * options.repetitions;
   const codes = [];
   const rawArtifacts = [];
@@ -1003,6 +1049,28 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
     ...(webMetrics === undefined ? {} : { web: pairMetrics(webMetrics) }),
     ...(nativeMetrics === undefined ? {} : { native: pairMetrics(nativeMetrics) }),
   };
+  const selectedMetrics = webMetrics ?? nativeMetrics ?? emptyMetrics();
+  const readiness = regressionReadiness(arms, warmupFramesFor(options));
+  const warmupReset = regressionWarmupReset(arms, warmupFramesFor(options));
+  const motion = regressionMotion(arms);
+  const pixels = regressionPixels(arms);
+  if (regression) {
+    metrics.clockSamplesMs = selectedMetrics.clockSamplesMs;
+    metrics.clockSource = selectedMetrics.clockSource;
+    metrics.hitchCount = selectedMetrics.hitchCount;
+    metrics.presentationClockSource = selectedMetrics.presentationClockSource;
+    metrics.presentationSamplesMs = selectedMetrics.presentationSamplesMs;
+    metrics.sampleCount = selectedMetrics.sampleCount;
+    metrics.worstFrameMs = selectedMetrics.worstFrameMs;
+    metrics.motion = motion;
+    metrics.pixels = pixels;
+    const resources = resourceMetrics(arms);
+    if (resources !== undefined) {
+      metrics.battery = resources.battery;
+      metrics.thermal = resources.thermal;
+    }
+    if (selectedMetrics.phaseP95Ms !== undefined) metrics.phaseP95Ms = selectedMetrics.phaseP95Ms;
+  }
   const artifactHashes = arms.map(({ artifactSha }) => artifactSha);
   const target = options.target;
   const identity = identityFor(options, web, native, artifactHashes);
@@ -1017,6 +1085,10 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
       maxP99FrameMs: 33,
       maxStartupMs: target.includes('physical') ? 8_000 : 5_000,
       minMeanFps: target.includes('physical') ? 59.4 : 60,
+      ...(regression ? {
+        minDurationSeconds: REGRESSION_COLLECTION_PROFILE.durationSeconds,
+        minFrameSamples: REGRESSION_COLLECTION_PROFILE.minFrameSamples,
+      } : {}),
       ...productionPerformanceBudget(performanceBounds),
     },
     command: profileCommand(options),
@@ -1026,8 +1098,11 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
       coldStarts: options.coldStarts,
       ...(options.control === undefined ? {} : { control: options.control }),
       deviceSelected: options.device !== undefined,
+      profile: options.profile,
+      ...(regression ? { readiness } : {}),
       renderSize: `${options.renderSize.width}x${options.renderSize.height}`,
       repetitions: options.repetitions,
+      ...(regression ? { warmupReset } : {}),
       warmupSeconds: options.warmup,
     },
     identity,
@@ -1053,6 +1128,86 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
   }
   if (target.includes('physical')) evidence.evidenceClasses = ['production', context.physicalEvidence.physicalEvidenceClass ?? 'missing-physical-evidence'];
   return evidence;
+}
+
+function allProfileRuns(arms) {
+  return arms.flatMap(({ runs }) => runs);
+}
+
+function passedAssertion(report, prefix) {
+  return report?.assertionResults?.some(({ id, pass }) => id.startsWith(prefix) && pass === true) === true;
+}
+
+function regressionReadiness(arms, warmupFrames) {
+  const reports = allProfileRuns(arms).map(({ report }) => report).filter(Boolean);
+  const ready = reports.length > 0 && reports.every((report) =>
+    passedAssertion(report, 'diagnostics.runtimeReady')
+      || (report?.pass === true && report?.diagnostics?.every(({ code }) => code !== 'TN_PLAYTEST_RUNTIME_NOT_READY')));
+  return { ready, sampleReset: regressionWarmupReset(arms, warmupFrames) };
+}
+
+function regressionWarmupReset(arms, warmupFrames) {
+  const runs = allProfileRuns(arms);
+  return runs.length > 0 && runs.every(({ series }) => {
+    if (!Array.isArray(series) || series.length === 0) return false;
+    if (warmupFrames === 0) return true;
+    const first = series[0];
+    return Number.isFinite(first?.frameIndex) && first.frameIndex > warmupFrames;
+  });
+}
+
+function regressionMotion(arms) {
+  const runs = allProfileRuns(arms);
+  const moved = runs.length > 0 && runs.every(({ report }) =>
+    (typeof report?.distance === 'number' && report.distance > 0)
+      || (Array.isArray(report?.movementDelta) && report.movementDelta.some((value) => typeof value === 'number' && Math.abs(value) > 0))
+      || passedAssertion(report, 'movement.'));
+  return { moved, movingObjects: moved ? 1 : 0 };
+}
+
+function regressionPixels(arms) {
+  const runs = allProfileRuns(arms);
+  const nonBlank = runs.length > 0 && runs.every(({ screenshot }) => screenshot !== undefined && isNonBlankFrame(screenshot));
+  const changed = arms.length > 0 && arms.every(({ runs: armRuns, startups }) => {
+    const startupScreenshot = startups.find(({ screenshot }) => screenshot !== undefined)?.screenshot;
+    return startupScreenshot !== undefined
+      && armRuns.some(({ screenshot }) => screenshot !== undefined && screenshotsDiffer(startupScreenshot, screenshot));
+  });
+  return { changed, nonBlank };
+}
+
+function resourceMetrics(arms) {
+  const observations = allProfileRuns(arms)
+    .map(({ report }) => report?.observations?.deviceMetrics)
+    .filter(Boolean);
+  if (observations.length === 0) return undefined;
+  const complete = observations.every((observation) =>
+    observation.available === true
+      && Array.isArray(observation.samples)
+      && observation.samples.length >= 2
+      && Array.isArray(observation.errors)
+      && observation.errors.length === 0,
+  );
+  const verdicts = observations
+    .map((observation) => observation.verdict)
+    .filter((verdict) => verdict !== undefined);
+  return {
+    battery: {
+      complete,
+      samples: observations.reduce((count, observation) => count + (observation.samples?.length ?? 0), 0),
+    },
+    thermal: {
+      complete,
+      samples: observations.reduce((count, observation) => count + (observation.samples?.length ?? 0), 0),
+      thermallyConfounded: verdicts.some((verdict) => verdict.thermallyConfounded === true),
+    },
+  };
+}
+
+function screenshotsDiffer(left, right) {
+  if (!Buffer.isBuffer(left) || !Buffer.isBuffer(right) || left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) if (left[index] !== right[index]) return true;
+  return false;
 }
 
 function productionPerformanceBudget(bounds) {
@@ -1094,35 +1249,94 @@ export function postWarmupFrameSamples(samples, warmupFrames = 0) {
 export function aggregateMetrics(runs, startups, warmupFrames = 0) {
   const intervals = [];
   const frameIntervalsMs = [];
+  const clockSamplesMs = [];
+  const presentationSamplesMs = [];
+  const runWindows = [];
+  const phaseSamples = {};
   const startupSamplesMs = startups
     .filter(isSuccessfulStartupSample)
     .map(({ firstFrameMs }) => firstFrameMs);
   let timestampMs = 0;
   let sequence = 1;
+  let sampleCount = 0;
+  let hitchCount = 0;
+  let worstFrameMs;
+  let missingClock = false;
+  let missingPresentationClock = false;
   for (const run of runs) {
-    for (const sample of postWarmupFrameSamples(run.series ?? [], warmupFrames)) {
+    let clockOrigin;
+    let presentationOrigin;
+    const postWarmupSamples = postWarmupFrameSamples(run.series ?? [], warmupFrames);
+    let runDurationMs = 0;
+    let runSampleCount = 0;
+    for (const sample of postWarmupSamples) {
       if (typeof sample?.frameMs !== 'number') {
         frameIntervalsMs.push(sample?.frameMs);
         continue;
       }
       frameIntervalsMs.push(sample.frameMs);
+      sampleCount += 1;
+      runSampleCount += 1;
+      runDurationMs += sample.frameMs;
+      if (sample.frameMs > 33.3) hitchCount += 1;
+      worstFrameMs = worstFrameMs === undefined ? sample.frameMs : Math.max(worstFrameMs, sample.frameMs);
+      if (Number.isFinite(sample.clockMs)) {
+        clockOrigin ??= sample.clockMs;
+        clockSamplesMs.push(timestampMs + sample.clockMs - clockOrigin);
+      } else {
+        missingClock = true;
+      }
+      if (Number.isFinite(sample.presentationMs)) {
+        presentationOrigin ??= sample.presentationMs;
+        presentationSamplesMs.push(timestampMs + sample.presentationMs - presentationOrigin);
+      } else {
+        missingPresentationClock = true;
+      }
+      if (sample.phases !== undefined && typeof sample.phases === 'object' && sample.phases !== null) {
+        for (const [phase, value] of Object.entries(sample.phases)) {
+          if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) continue;
+          (phaseSamples[phase] ??= []).push(value);
+        }
+      }
       intervals.push({
         ...(typeof sample.drawCalls === 'number' ? { drawCalls: sample.drawCalls } : {}),
         frameMs: sample.frameMs,
+        ...(Number.isFinite(sample.clockMs) ? { clockMs: sample.clockMs } : {}),
+        ...(Number.isFinite(sample.presentationMs) ? { presentationMs: sample.presentationMs } : {}),
+        ...(sample.phases === undefined ? {} : { phases: sample.phases }),
         sequence: sequence++,
         timestampMs,
         ...(typeof sample.triangles === 'number' ? { triangles: sample.triangles } : {}),
       });
       timestampMs += sample.frameMs;
     }
+    runWindows.push({ durationSeconds: runDurationMs / 1_000, sampleCount: runSampleCount });
   }
+  const phaseP95ByName = Object.fromEntries(
+    Object.entries(phaseSamples).map(([phase, samples]) => [phase, nearestRank(samples, 0.95)]),
+  );
   return {
+    ...(clockSamplesMs.length === 0 ? {} : { clockSamplesMs }),
+    ...(sampleCount === 0 ? {} : { clockSource: missingClock ? 'missing' : 'monotonic-performance' }),
     ...(frameIntervalsMs.length === 0 ? {} : { frameIntervalsMs }),
+    ...(hitchCount === 0 ? { hitchCount: 0 } : { hitchCount }),
     ...(intervals.length === 0 ? {} : { intervals }),
+    ...(Object.keys(phaseP95ByName).length === 0 ? {} : {
+      phaseP95ByName,
+      ...(phaseP95ByName.render === undefined ? {} : { phaseP95Ms: phaseP95ByName.render }),
+    }),
+    ...(presentationSamplesMs.length === 0 ? {} : { presentationSamplesMs }),
+    ...(runWindows.length === 0 ? {} : { runWindows }),
+    ...(sampleCount === 0 ? {} : { presentationClockSource: missingPresentationClock ? 'missing' : 'raf-presentation', sampleCount, worstFrameMs }),
     ...(startupSamplesMs.length === 0 ? {} : { startupSamplesMs, startupMs: startupSamplesMs[0] }),
     ...(timestampMs === 0 ? {} : { durationSeconds: timestampMs / 1_000 }),
     ...(startupSamplesMs.length === 0 ? {} : { startupP95Ms: nearestRank(startupSamplesMs, 0.95) }),
-    ...(frameIntervalsMs.length === 0 ? {} : { meanFps: meanFps(frameIntervalsMs), p99FrameMs: nearestRank(frameIntervalsMs, 0.99) }),
+    ...(frameIntervalsMs.length === 0 ? {} : {
+      meanFps: meanFps(frameIntervalsMs),
+      p50FrameMs: nearestRank(frameIntervalsMs, 0.5),
+      p95FrameMs: nearestRank(frameIntervalsMs, 0.95),
+      p99FrameMs: nearestRank(frameIntervalsMs, 0.99),
+    }),
     ...(intervals.some(({ drawCalls }) => drawCalls !== undefined) ? { drawCalls: Math.max(...intervals.flatMap(({ drawCalls }) => drawCalls === undefined ? [] : [drawCalls])) } : {}),
     ...(intervals.some(({ triangles }) => triangles !== undefined) ? { triangles: Math.max(...intervals.flatMap(({ triangles }) => triangles === undefined ? [] : [triangles])) } : {}),
   };
@@ -1159,7 +1373,12 @@ function identityFor(options, web, native, artifactHashes) {
       webProcess: web?.driverClass,
     };
   }
-  return { ...common, artifactSha256: artifactHashes[0], executableClass: web?.driverClass ?? native?.driverClass };
+  return {
+    ...common,
+    artifactSha256: artifactHashes[0],
+    ...(native === undefined ? {} : { nativeBinarySha256: native.artifactSha }),
+    executableClass: web?.driverClass ?? native?.driverClass,
+  };
 }
 
 function markersFor(arms, codes) {
@@ -1193,6 +1412,7 @@ function profileCommand(options) {
     `--warmup ${options.warmup}`,
     `--repetitions ${options.repetitions}`,
     ...(options.device === undefined ? [] : ['--device <selected>']),
+    ...(options.prebuiltArtifact === undefined ? [] : ['--prebuilt-artifact <existing-build>']),
   ].join(' ');
 }
 

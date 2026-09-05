@@ -28,6 +28,7 @@ function identity(overrides: Partial<IPerformanceIdentity> = {}): IPerformanceId
     gpu: "gpu-1",
     instrumentationRevision: "instrumentation-1",
     jsRuntime: "v8",
+    nativeBinaryHash: "native-binary-1",
     operatingSystem: "linux",
     presentMode: "immediate",
     resolution: "1280x720",
@@ -44,6 +45,8 @@ function run(
     readonly sourceSha?: string;
     readonly artifactHash?: string;
     readonly device?: string;
+    readonly nativeBinaryHash?: string;
+    readonly lane?: string;
     readonly metrics?: Record<string, unknown>;
   } = {},
 ): Record<string, unknown> {
@@ -51,9 +54,10 @@ function run(
     identity: identity({
       artifactHash: overrides.artifactHash ?? "candidate-artifact",
       device: overrides.device ?? "device-1",
+      nativeBinaryHash: overrides.nativeBinaryHash ?? "native-binary-1",
       sourceSha: overrides.sourceSha ?? "candidate-source",
     }),
-    lane: "native-linux",
+    lane: overrides.lane ?? "native-linux",
     metrics: overrides.metrics ?? { frameP95Ms: { samples: [value], unit: "ms" } },
     reportHash: overrides.reportHash ?? `report-${value}`,
     workload: "platformer-production",
@@ -135,6 +139,31 @@ describe("performance regression lane manifest", () => {
     expect(() => parsePerformanceLaneManifest({ ...raw, lanes: raw.lanes.slice(0, -1) })).toThrow(
       /missing required platform lanes.*native-ios/u,
     );
+  });
+
+  it("does not allow policy promotion or required lanes before measured calibration", () => {
+    const raw = JSON.parse(
+      readFileSync(path.join(process.cwd(), "scripts/performance-regression/lanes.json"), "utf8"),
+    ) as { lanes: Array<Record<string, unknown>>; promotionPolicy: Record<string, unknown> };
+    expect(() =>
+      parsePerformanceLaneManifest({
+        ...raw,
+        promotionPolicy: { ...raw.promotionPolicy, accuracyRuns: 19 },
+      }),
+    ).toThrow(/accuracyRuns must remain 20/u);
+    expect(() =>
+      parsePerformanceLaneManifest({
+        ...raw,
+        lanes: raw.lanes.map((lane, index) => (index === 0 ? { ...lane, required: true } : lane)),
+      }),
+    ).toThrow(/accepted calibration evidence/u);
+    expect(() =>
+      parsePerformanceLaneManifest({
+        ...raw,
+        lanes: raw.lanes.map((lane, index) => (index === 0 ? { ...lane, required: true } : lane)),
+        promotionPolicy: { ...raw.promotionPolicy, calibrationStatus: "accepted" },
+      }),
+    ).toThrow(/accepted baselines/u);
   });
 });
 
@@ -306,6 +335,23 @@ describe("paired performance regression policy", () => {
         ],
       }).verdict,
     ).toBe("BLOCKED");
+    expect(
+      evaluatePairedComparison(
+        {
+          lane: "native-linux",
+          pairs: [
+            pair(10, 10.5, 0),
+            pair(10, 10.5, 1),
+            pair(10, 10.5, 2),
+            { valid: false, reason: "thermal state changed" },
+            { valid: false, reason: "presentation lost" },
+          ],
+          requiredMetrics: ["frameP95Ms"],
+          workload: "platformer-production",
+        },
+        { ...POLICY, maxInvalidPairs: 2 },
+      ).verdict,
+    ).toBe("BLOCKED");
   });
 
   it("blocks missing metrics, unknown metrics, and unrelated devices", () => {
@@ -411,6 +457,128 @@ describe("paired performance regression policy", () => {
         pairs: [pair(10, 10.5, 0), changedDevice, pair(10, 10.5, 2)],
       }).verdict,
     ).toBe("BLOCKED");
+  });
+
+  it("keeps independently built native binary hashes in each arm without blocking the pair", () => {
+    const result = comparison(10.5, {
+      pairs: [
+        pair(10, 10.5, 0, {
+          baseline: {
+            ...run(10, {
+              artifactHash: "baseline-artifact",
+              nativeBinaryHash: "native-baseline-a",
+              reportHash: "native-baseline-0",
+              sourceSha: "baseline-source",
+            }),
+          },
+          candidate: {
+            ...run(10.5, {
+              artifactHash: "candidate-artifact",
+              nativeBinaryHash: "native-candidate-a",
+              reportHash: "native-candidate-0",
+              sourceSha: "candidate-source",
+            }),
+          },
+        }),
+        pair(10, 10.5, 1, {
+          baseline: run(10, {
+            artifactHash: "baseline-artifact",
+            nativeBinaryHash: "native-baseline-a",
+            reportHash: "native-baseline-1",
+            sourceSha: "baseline-source",
+          }),
+          candidate: run(10.5, {
+            artifactHash: "candidate-artifact",
+            nativeBinaryHash: "native-candidate-a",
+            reportHash: "native-candidate-1",
+            sourceSha: "candidate-source",
+          }),
+        }),
+        pair(10, 10.5, 2, {
+          baseline: run(10, {
+            artifactHash: "baseline-artifact",
+            nativeBinaryHash: "native-baseline-a",
+            reportHash: "native-baseline-2",
+            sourceSha: "baseline-source",
+          }),
+          candidate: run(10.5, {
+            artifactHash: "candidate-artifact",
+            nativeBinaryHash: "native-candidate-a",
+            reportHash: "native-candidate-2",
+            sourceSha: "candidate-source",
+          }),
+        }),
+      ],
+    });
+    expect(result.verdict).toBe("PASS");
+    expect(result.pairs[0]).toMatchObject({
+      baselineNativeBinaryHash: "native-baseline-a",
+      candidateNativeBinaryHash: "native-candidate-a",
+    });
+  });
+
+  it("rejects seven valid attempts instead of allowing retries to change the median", () => {
+    const result = comparison(10.5, {
+      pairs: [
+        pair(10, 60, 0),
+        pair(10, 60, 1),
+        pair(10, 60, 2),
+        pair(10, 10.5, 3),
+        pair(10, 10.5, 4),
+        pair(10, 10.5, 5),
+        pair(10, 10.5, 6),
+      ],
+    });
+    expect(result.verdict).toBe("BLOCKED");
+    expect(result.validPairs).toBe(7);
+    expect(result.metrics).toEqual([]);
+    expect(result.reasons.join(" ")).toMatch(/exactly three valid/u);
+  });
+
+  it("rejects a repeated initial order even when both order labels appear", () => {
+    const result = comparison(10.5, {
+      pairs: [
+        pair(10, 10.5, 0),
+        pair(10, 10.5, 1),
+        { ...pair(10, 10.5, 2), order: "candidate-first" },
+      ],
+    });
+    expect(result.verdict).toBe("BLOCKED");
+    expect(result.reasons.join(" ")).toMatch(/alternate/u);
+  });
+
+  it("requires every metric declared by the selected lane manifest", () => {
+    const manifest = JSON.parse(
+      readFileSync(path.join(process.cwd(), "scripts/performance-regression/lanes.json"), "utf8"),
+    );
+    const browserPairs = [0, 1, 2].map((index) =>
+      pair(10, 10.5, index, {
+        baseline: run(10, {
+          artifactHash: "baseline-artifact",
+          lane: "browser-webgpu",
+          reportHash: `browser-baseline-${index}`,
+          sourceSha: "baseline-source",
+        }),
+        candidate: run(10.5, {
+          artifactHash: "candidate-artifact",
+          lane: "browser-webgpu",
+          reportHash: `browser-candidate-${index}`,
+          sourceSha: "candidate-source",
+        }),
+      }),
+    );
+    const result = evaluatePairedComparison(
+      {
+        lane: "browser-webgpu",
+        laneManifest: manifest,
+        pairs: browserPairs,
+        requiredMetrics: ["frameP95Ms"],
+        workload: "platformer-production",
+      },
+      POLICY,
+    );
+    expect(result.verdict).toBe("BLOCKED");
+    expect(result.reasons.join(" ")).toMatch(/lane-required metrics.*drawCalls.*triangles/u);
   });
 
   it("allows same-source A/A calibration but labels it separately", () => {

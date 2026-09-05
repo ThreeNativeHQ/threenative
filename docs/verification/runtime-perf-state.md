@@ -2462,6 +2462,84 @@ The final result is 10.4× on identical source.
 
 ---
 
+## PRD-358 cross-platform performance regression CI — repair round 1 (2026-09-05)
+
+Policy revision `prd-358-v1` is implemented and committed in the lane branch. No performance
+baseline was promoted: the manifest remains `calibrationStatus: unverified`, every physical lane
+is unprovisioned, and the hosted browser lane has no accepted baseline. The comparison exit
+contract is PASS=0, regression FAIL=1, and invalid or missing required evidence BLOCKED=2. Raw
+artifacts are configured for 14 days on success and 30 days on failure.
+
+### Executed evidence
+
+The following commands were run in this worktree:
+
+| Command | Result |
+|---|---|
+| `pnpm install --frozen-lockfile` | PASS |
+| `pnpm native:build` | PASS; pinned Linux CMake 4.4.3/Ninja 1.13.2 build completed 403/403 and produced `mystral` and `mystral-tools` |
+| `cmake --build packages/runtime-native/build/tn-linux --target threenative-crash-handler-policy-test threenative-timestamp-query-test threenative-rg11b10-renderable-test --parallel` | PASS; the three on-demand V8 contract targets built |
+| `cmake --preset tn-linux -B build/tn-linux-quickjs -DCMAKE_MAKE_PROGRAM=/home/joao/projects/threenative/threenative-engine/.worktrees/prd-358-cross-platform-performance-regression-ci/packages/runtime-native/.runtime/tools-venv/bin/ninja -DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF` | PASS; documented QuickJS matrix directory configured |
+| `cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test threenative-rg11b10-renderable-test --parallel` | PASS; the two QuickJS contract targets built 403/403 |
+| `pnpm typecheck` | PASS |
+| `pnpm test` | PASS; 391 files passed, 1 skipped; 4,293 tests passed, 4 skipped |
+| `pnpm test:playtest` | PASS; framework movement/camera, Abyss axis/zoom, navigation, and streaming scenarios passed with the WebGPU recipe |
+| `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/engine-load-test.spec.ts scripts/__tests__/performance-regression.spec.ts scripts/__tests__/temp-dir-guard.spec.ts` | PASS; 4 files, 109 tests |
+| `pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs` | PASS; 1 file, 23 tests |
+| `pnpm lint` | NOT GREEN; the repository-wide run reports 2 pre-existing errors and 609 warnings in unchanged `examples/*` files, with no changed-file error |
+| `pnpm budgets` | BLOCKED by the pre-existing stale native coverage record: `source digest changed; run pnpm --filter @threenative/runtime-native native:coverage`; no C++ source changed in this lane, so the record was not edited |
+| `git diff --check` | PASS |
+
+The required-baseline negative control also ran:
+
+```text
+pnpm --silent bench:engines --check-report /tmp/tn-required-report.json --required-baseline
+TN_BENCH_BASELINE_MISSING: tn-web has no accepted baseline for requested lane browser-webgpu
+CLI_EXIT=2
+```
+
+The reviewer controls were red before their guards were restored (5 failed, 49 passed): missing
+or stale baseline provenance, distinct native binary identities, seven attempts, repeated initial
+order, and omitted manifest metrics. The restored run passed all five controls (54/54). The
+additional per-launch regression-window and maximum-invalid-pair controls were also run red then
+green; the final focused run above is 109/109.
+
+### Platform evidence disposition
+
+These rows are deliberately explicit. A local Linux build and emulator/simulator contract check
+are not a physical-device pair and do not substitute for one. No row below claims a timed
+cross-platform comparison ran.
+
+| Row | Provisioning | Status | Evidence disposition |
+|---|---|---|---|
+| `browser-webgpu` | hosted software | UNVERIFIED | No accepted calibrated baseline; the required-baseline control correctly returned BLOCKED/exit 2. |
+| `native-linux` | unprovisioned physical GPU | UNVERIFIED | The Linux native binary built locally, but no dedicated leased GPU pair was provisioned. If promoted to required, missing hardware evidence is BLOCKED/exit 2. |
+| `native-windows-macos` | unprovisioned | UNVERIFIED | No Windows or macOS runner was available in this Linux worktree. |
+| `native-android` | unprovisioned physical device | UNVERIFIED | No physical Android device pair was run; emulator evidence cannot satisfy this row. |
+| `native-ios` | unprovisioned physical device | UNVERIFIED | No Apple hardware or `xcrun` environment was available; no simulator was counted as physical iOS. |
+| `android-emulator` | simulator/emulator | UNVERIFIED | Advisory collector hook only; no physical-device claim. |
+| `ios-simulator` | simulator | UNVERIFIED | Advisory collector hook only; no physical-device claim. |
+
+Calibration and cost promotion remain separate from baseline regeneration: the manifest records
+10 calibration pairs across at least 3 sessions, 20 accuracy runs, and 20 CI-cost runs as required
+evidence, with `maintainer-review` for required-check promotion and
+`separate-reviewed-change` for baseline regeneration. Those samples were not claimed as
+executed by this Linux lane.
+
+### PRD-358 integration ledger evidence
+
+The planned call sites are now live non-test callers:
+
+| Ledger row | Actual caller |
+|---|---|
+| Required baseline validation | [`scripts/engine-load-test/cli.ts:192`](../../scripts/engine-load-test/cli.ts#L192) calls `requiredBaseline`; [`scripts/engine-load-test/report.ts:1016`](../../scripts/engine-load-test/report.ts#L1016) compares source and artifact identity. |
+| Lane policy and paired comparison | [`scripts/engine-load-test/cli.ts:235`](../../scripts/engine-load-test/cli.ts#L235) invokes the comparison CLI; [`scripts/performance-regression/run.ts:612`](../../scripts/performance-regression/run.ts#L612) evaluates paired evidence. |
+| Reusable workload collection | [`scripts/engine-load-test/cli.ts:280`](../../scripts/engine-load-test/cli.ts#L280) invokes [`packages/runtime-native/scripts/profile-production.mjs:174`](../../packages/runtime-native/scripts/profile-production.mjs#L174). |
+| Hosted probes and hardware workflow | [`.github/workflows/ci.yml:808`](../../.github/workflows/ci.yml#L808) runs the bounded contract; [`.github/workflows/native-platforms.yml:298`](../../.github/workflows/native-platforms.yml#L298) and [`:483`](../../.github/workflows/native-platforms.yml#L483) invoke native collectors. |
+| Evidence summary and baseline approval | [`.github/workflows/ci.yml:1034`](../../.github/workflows/ci.yml#L1034) and [`.github/workflows/performance-regression.yml:165`](../../.github/workflows/performance-regression.yml#L165) invoke the summary; [`.github/workflows/performance-regression.yml:184`](../../.github/workflows/performance-regression.yml#L184) keeps promotion policy separate. |
+
+---
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,

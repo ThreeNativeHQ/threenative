@@ -1,0 +1,296 @@
+name: Performance regression hardware lanes
+
+on:
+  schedule:
+    - cron: "47 4 * * *"
+    - cron: "17 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Optional lane id; leave empty for every declared platform row"
+        required: false
+        type: string
+      baseline_source_sha:
+        description: "Reviewed accepted-baseline source SHA"
+        required: false
+        type: string
+      candidate_source_sha:
+        description: "Candidate source SHA"
+        required: false
+        type: string
+      trusted:
+        description: "Allow code to reach an isolated hardware runner"
+        required: false
+        default: false
+        type: boolean
+      release_soak:
+        description: "Run the delegated two-hour physical-device release soak"
+        required: false
+        default: false
+        type: boolean
+      soak_platform:
+        description: "Release soak platform (android or ios)"
+        required: false
+        type: string
+      soak_device:
+        description: "Named physical device identifier for the release soak"
+        required: false
+        type: string
+      soak_app:
+        description: "Signed Android APK or iOS app path for the release soak"
+        required: false
+        type: string
+      soak_candidate_sha:
+        description: "Exact source SHA covered by the release soak"
+        required: false
+        type: string
+
+# The workflow has no privileged pull-request trigger. Hardware runs execute source code, so only
+# the nightly schedule or an explicitly trusted manual dispatch may reach a device.
+concurrency:
+  group: performance-regression-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  hardware-pairs:
+    name: ${{ matrix.lane }} paired hardware evidence
+    if: inputs.lane == '' || inputs.lane == matrix.lane
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - { lane: browser-webgpu, resource: browser-webgpu-runner }
+          - { lane: native-linux, resource: native-linux-gpu }
+          - { lane: native-windows-macos, resource: native-windows-macos-gpu }
+          - { lane: native-android, resource: android-physical-device }
+          - { lane: native-ios, resource: ios-physical-device }
+    concurrency:
+      group: performance-device-${{ matrix.resource }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prepare isolated source checkouts inside the repository worktree
+        env:
+          BASELINE_INPUT: ${{ inputs.baseline_source_sha }}
+          CANDIDATE_INPUT: ${{ inputs.candidate_source_sha }}
+        run: |
+          set -euo pipefail
+          baseline_sha="${BASELINE_INPUT:-$GITHUB_SHA}"
+          candidate_sha="${CANDIDATE_INPUT:-$GITHUB_SHA}"
+          git fetch --no-tags origin "$baseline_sha" "$candidate_sha"
+          mkdir -p "$GITHUB_WORKSPACE/.worktrees"
+          baseline_worktree="$GITHUB_WORKSPACE/.worktrees/performance-baseline-${{ matrix.lane }}"
+          candidate_worktree="$GITHUB_WORKSPACE/.worktrees/performance-candidate-${{ matrix.lane }}"
+          git worktree add --detach "$baseline_worktree" "$baseline_sha"
+          git worktree add --detach "$candidate_worktree" "$candidate_sha"
+          {
+            echo "BASELINE_SOURCE_SHA=$baseline_sha"
+            echo "CANDIDATE_SOURCE_SHA=$candidate_sha"
+            echo "BASELINE_WORKTREE=$baseline_worktree"
+            echo "CANDIDATE_WORKTREE=$candidate_worktree"
+          } >> "$GITHUB_ENV"
+      - name: Run independent alternating baseline/candidate pairs
+        env:
+          TN_TRUSTED_DISPATCH: ${{ github.event_name == 'schedule' || inputs.trusted == true }}
+          TN_PERF_LANE: ${{ matrix.lane }}
+        run: |
+          set +e
+          args=(
+            --manifest scripts/performance-regression/lanes.json
+            --lane "${{ matrix.lane }}"
+            --baseline-source-sha "$BASELINE_SOURCE_SHA"
+            --candidate-source-sha "$CANDIDATE_SOURCE_SHA"
+            --baseline-worktree "$BASELINE_WORKTREE"
+            --candidate-worktree "$CANDIDATE_WORKTREE"
+            --out "artifacts/performance-regression/${{ matrix.lane }}.json"
+          )
+          if [ "$TN_TRUSTED_DISPATCH" = "true" ]; then args+=(--trusted); fi
+          pnpm tsx scripts/performance-regression/run.ts "${args[@]}"
+          status=$?
+          set -e
+          if [ ! -f "artifacts/performance-regression/${{ matrix.lane }}.json" ]; then
+            mkdir -p artifacts/performance-regression
+            node --input-type=module -e 'import { writeFile } from "node:fs/promises"; await writeFile(process.argv[1], `${JSON.stringify({candidateSourceSha: process.env.CANDIDATE_SOURCE_SHA, exitCode: 2, lane: process.env.TN_PERF_LANE, provenance: "unverified", reason: "performance runner did not produce a result", sourceSha: process.env.BASELINE_SOURCE_SHA, status: "BLOCKED"}, null, 2)}\n`);' "artifacts/performance-regression/${{ matrix.lane }}.json"
+          fi
+          exit "$status"
+      - uses: actions/upload-artifact@v7
+        if: success()
+        with:
+          name: performance-regression-${{ matrix.lane }}
+          path: artifacts/performance-regression/
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: performance-regression-${{ matrix.lane }}-failure
+          path: artifacts/performance-regression/
+          retention-days: 30
+          if-no-files-found: warn
+
+  performance-summary:
+    name: Performance regression evidence summary
+    needs: hardware-pairs
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Download every available platform result
+        uses: actions/download-artifact@v7
+        with:
+          pattern: performance-regression-*
+          path: artifacts/performance-regression
+          merge-multiple: true
+      - name: Fill missing matrix rows and aggregate fail-closed evidence
+        env:
+          TN_PERF_EXPECTED_SHA: ${{ inputs.candidate_source_sha || github.sha }}
+          TN_PERF_CANCELLED: ${{ cancelled() }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/performance-regression
+          node packages/runtime-native/scripts/production-evidence.mjs \
+            > artifacts/performance-regression/collector-contract.json
+          node --input-type=module -e 'import { readdir, readFile, writeFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile("scripts/performance-regression/lanes.json", "utf8")); const root = "artifacts/performance-regression"; const files = await readdir(root).catch(() => []); const results = []; for (const file of files.filter((name) => name.endsWith(".json"))) { const value = JSON.parse(await readFile(`${root}/${file}`, "utf8")); if (typeof value.lane !== "string" || typeof value.status !== "string") continue; results.push({artifactHash: value.artifactHash, lane: value.lane, reason: value.reason, required: manifest.lanes.find((lane) => lane.id === value.lane)?.required === true, sourceSha: value.candidateSourceSha ?? value.sourceSha, status: value.status}); } const seen = new Set(results.map((result) => result.lane)); for (const lane of manifest.lanes) if (!seen.has(lane.id)) results.push({lane: lane.id, reason: "matrix row was not selected or did not publish evidence", required: lane.required === true, status: "SKIPPED"}); if (process.env.TN_PERF_CANCELLED === "true") results.push({artifactHash: "workflow-cancelled", lane: "performance-workflow", reason: "cancelled run cannot publish PASS", required: true, sourceSha: process.env.TN_PERF_EXPECTED_SHA, status: "BLOCKED"}); await writeFile("artifacts/performance-regression/summary-input.json", `${JSON.stringify({expectedSha: process.env.TN_PERF_EXPECTED_SHA, requiredLanes: manifest.lanes.filter((lane) => lane.required === true).map((lane) => lane.id), results}, null, 2)}\n`);'
+          set +e
+          pnpm tsx scripts/performance-regression/ci-summary.ts \
+            --input artifacts/performance-regression/summary-input.json \
+            --expected-sha "$TN_PERF_EXPECTED_SHA" \
+            --out artifacts/performance-regression/summary.json \
+            | tee artifacts/performance-regression/summary.md >> "$GITHUB_STEP_SUMMARY"
+          status=${PIPESTATUS[0]}
+          set -e
+          test "$status" -eq 0
+      - name: Check calibration and CI-cost promotion policy separately from baseline regeneration
+        run: |
+          set -euo pipefail
+           node --input-type=module -e 'import { readFile } from "node:fs/promises"; const policy = JSON.parse(await readFile("scripts/performance-regression/lanes.json", "utf8")).promotionPolicy; if (policy.calibrationPairs !== 10 || policy.minimumCalibrationSessions !== 3 || policy.accuracyRuns !== 20 || policy.ciCostRuns !== 20) throw new Error("promotion policy evidence requirements changed without the required calibration/cost sample counts"); if (policy.requiredCheckPromotion === policy.baselineRegeneration) throw new Error("required-check promotion must remain separate from baseline regeneration");'
+      - uses: actions/upload-artifact@v7
+        if: success()
+        with:
+          name: performance-regression-summary
+          path: artifacts/performance-regression/
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: performance-regression-summary-failure
+          path: artifacts/performance-regression/
+          retention-days: 30
+          if-no-files-found: warn
+
+  weekly-workload-rotation:
+    name: Weekly full template workload rotation
+    if: github.event_name == 'schedule' && github.event.schedule == '17 4 * * 0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run the existing full template workload rotation
+        run: pnpm test:templates
+
+  release-soak:
+    name: Delegated physical release soak
+    if: github.event_name == 'workflow_dispatch' && inputs.release_soak == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 130
+    concurrency:
+      group: performance-release-soak-${{ inputs.soak_device || 'unselected-device' }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run the existing PRD-058 physical qualification tool for two hours
+        env:
+          SOAK_APP: ${{ inputs.soak_app }}
+          SOAK_CANDIDATE_SHA: ${{ inputs.soak_candidate_sha || github.sha }}
+          SOAK_DEVICE: ${{ inputs.soak_device }}
+          SOAK_PLATFORM: ${{ inputs.soak_platform }}
+        run: |
+          set +e
+          mkdir -p artifacts/release-soak
+          status=2
+          if [ -n "$SOAK_APP" ] && [ -n "$SOAK_CANDIDATE_SHA" ] && [ -n "$SOAK_DEVICE" ]; then
+            case "$SOAK_PLATFORM" in
+              android) app_args=(--android-app "$SOAK_APP"); status=0 ;;
+              ios) app_args=(--ios-app "$SOAK_APP"); status=0 ;;
+              *) echo "TN_PERF_SOAK_PLATFORM_INVALID: expected android or ios" >&2 ;;
+            esac
+            if [ "$status" -eq 0 ]; then
+              pnpm native:qualify:physical \
+                --platform "$SOAK_PLATFORM" --device "$SOAK_DEVICE" \
+                "${app_args[@]}" --candidate-sha "$SOAK_CANDIDATE_SHA" \
+                --duration-ms 7200000 --cadence-ms 1000 --out .runtime/prd056/prd358-release-soak
+              status=$?
+            fi
+          else
+            echo "TN_PERF_SOAK_INPUT_MISSING: signed app, physical device, platform, and candidate SHA are required" >&2
+          fi
+          mkdir -p .runtime/prd056/prd358-release-soak
+          cp -R .runtime/prd056/prd358-release-soak/. artifacts/release-soak/ 2>/dev/null || true
+          printf '{"candidateSha":"%s","durationMs":7200000,"platform":"%s","provenance":"physical-hardware","status":"%s"}\n' \
+            "$SOAK_CANDIDATE_SHA" "$SOAK_PLATFORM" "$([ "$status" -eq 0 ] && echo PASS || echo BLOCKED)" \
+            > artifacts/release-soak/status.json
+          node packages/runtime-native/scripts/production-evidence.mjs \
+            > artifacts/release-soak/collector-contract.json
+          set -e
+          exit "$status"
+      - uses: actions/upload-artifact@v7
+        if: success()
+        with:
+          name: performance-release-soak
+          path: artifacts/release-soak/
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: performance-release-soak-failure
+          path: artifacts/release-soak/
+          retention-days: 30
+          if-no-files-found: warn
+
+  required-check-promotion:
+    name: Required-check promotion remains maintainer-owned
+    needs: performance-summary
+    if: ${{ always() && needs.performance-summary.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v7
+      - name: Keep promotion separate from baseline regeneration
+        run: |
+          echo "required-check-promotion requires maintainer review after calibration evidence"
+          echo "baseline-regeneration is a separate-reviewed-change and never runs in this gate"

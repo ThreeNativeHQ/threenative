@@ -1,9 +1,22 @@
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { allTemplates } from "../../test-support/templates.js";
+import { makeTempDir } from "../../test-support/temp-dir.js";
+import {
+  renderPerformanceCiSummary,
+  summarizePerformanceCi,
+} from "../performance-regression/ci-summary.js";
+import {
+  acquirePerformanceLease,
+  plannedPerformancePairs,
+  runPerformanceLane,
+  validateArtifactIdentity,
+  validatePerformanceDispatch,
+  validateThermalEvidence,
+  withPerformanceLease,
+} from "../performance-regression/run.js";
 
 const repo = path.resolve(import.meta.dirname, "../..");
 const workflows = [
@@ -1448,5 +1461,173 @@ describe("CI pipeline structure", () => {
     expect(step, "the KVM step must report its mode, not assert it").not.toMatch(
       /\n\s+test -w \/dev\/kvm\s*\n/u,
     );
+  });
+
+  it("aggregates performance evidence fail-closed across empty, stale, failed, and advisory rows", () => {
+    const expectedSha = "a".repeat(40);
+    const pass = {
+      artifactHash: "artifact-browser",
+      lane: "browser-webgpu",
+      required: true,
+      sourceSha: expectedSha,
+      status: "PASS" as const,
+    };
+    expect(summarizePerformanceCi({ expectedSha, results: [pass] })).toMatchObject({
+      exitCode: 0,
+      status: "PASS",
+    });
+    expect(summarizePerformanceCi({ expectedSha, results: [] })).toMatchObject({
+      exitCode: 2,
+      status: "BLOCKED",
+    });
+    expect(
+      summarizePerformanceCi({
+        expectedSha,
+        results: [{ ...pass, sourceSha: "b".repeat(40) }],
+      }),
+    ).toMatchObject({ exitCode: 2, status: "BLOCKED" });
+    expect(
+      summarizePerformanceCi({
+        expectedSha,
+        results: [{ ...pass, status: "FAIL" }],
+      }),
+    ).toMatchObject({ exitCode: 1, status: "FAIL" });
+    const advisory = summarizePerformanceCi({
+      expectedSha,
+      requiredLanes: ["browser-webgpu"],
+      results: [
+        { lane: "native-ios", reason: "physical device unavailable", status: "UNVERIFIED" },
+      ],
+    });
+    expect(advisory.status).toBe("BLOCKED");
+    expect(renderPerformanceCiSummary(advisory)).toContain("UNVERIFIED=1");
+  });
+
+  it("requires the performance workflow structure to retain collectors, failure evidence, and promotion separation", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const performance = await readFile(
+      path.join(repo, ".github/workflows/performance-regression.yml"),
+      "utf8",
+    );
+    const contracts = requiredJob(ci, "performance-contracts");
+    expect(contracts).toContain("profile-production.mjs");
+    expect(contracts).toContain("ci-summary.ts");
+    expect(contracts).toContain("if: always()");
+    expect(contracts).toContain("retention-days: 14");
+    expect(contracts).toContain("retention-days: 30");
+    for (const source of [native, performance]) {
+      expect(source).toContain("production-evidence.mjs");
+      expect(source).toContain("actions/upload-artifact");
+      expect(source).toContain("if: always()");
+    }
+    expect(performance).toContain("workflow_dispatch:");
+    expect(performance).toContain("schedule:");
+    expect(performance).not.toContain("pull_request_target");
+    expect(performance).toContain("max-parallel: 2");
+    expect(performance).toContain("--trusted");
+    expect(performance).toContain("required-check-promotion");
+    expect(performance).toContain("baseline-regeneration");
+    expect(performance).toContain("weekly-workload-rotation");
+    expect(performance).toContain("pnpm test:templates");
+    expect(performance).toContain("release-soak");
+    expect(performance).toContain("pnpm native:qualify:physical");
+    expect(performance).toContain("7200000");
+  });
+
+  it("plans real alternating pairs and rejects unsafe or incomparable hardware evidence", () => {
+    expect(
+      plannedPerformancePairs("native-android", "/repo/baseline", "/repo/candidate").map(
+        ({ order }) => order,
+      ),
+    ).toEqual(["baseline-first", "candidate-first", "baseline-first"]);
+    expect(
+      plannedPerformancePairs("native-linux", "/repo/baseline", "/repo/candidate")[0]
+        ?.baselineCommand,
+    ).toContain("--profile regression");
+    expect(() => validatePerformanceDispatch({ eventName: "pull_request", trusted: true })).toThrow(
+      /only schedule and trusted manual dispatch/u,
+    );
+    expect(() =>
+      validatePerformanceDispatch({ eventName: "workflow_dispatch", trusted: false }),
+    ).toThrow(/trusted dispatch/u);
+    expect(() =>
+      validateArtifactIdentity({
+        artifactHash: "apk-hash",
+        expectedSourceSha: "a".repeat(40),
+        lane: "native-android",
+        nativeBinaryHash: "binary-hash",
+        provenance: "android-emulator",
+        sourceSha: "a".repeat(40),
+      }),
+    ).toThrow(/physical-hardware/u);
+    expect(() =>
+      validateThermalEvidence({
+        lane: "native-android",
+        metrics: { thermal: { complete: false, thermallyConfounded: true } },
+      }),
+    ).toThrow(/thermally confounded/u);
+  });
+
+  it("keeps an unapproved advisory baseline UNVERIFIED instead of manufacturing a BLOCKED result", async () => {
+    const result = await runPerformanceLane({
+      baselineSourceSha: "a".repeat(40),
+      candidateSourceSha: "b".repeat(40),
+      dryRun: false,
+      eventName: "workflow_dispatch",
+      lane: "browser-webgpu",
+      manifestPath: path.join(repo, "scripts/performance-regression/lanes.json"),
+      trusted: true,
+    });
+    expect(result.status).toBe("UNVERIFIED");
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("serializes a hardware resource and releases the lease after failure", async () => {
+    const directory = await makeTempDir("threenative-performance-lease-");
+    const first = await acquirePerformanceLease(directory, "pixel-8", "first-owner");
+    await expect(acquirePerformanceLease(directory, "pixel-8", "second-owner")).rejects.toThrow(
+      /already leased/u,
+    );
+    await first.release();
+    await expect(
+      withPerformanceLease(directory, "pixel-8", "throwing-owner", async () => {
+        throw new Error("measurement failed");
+      }),
+    ).rejects.toThrow("measurement failed");
+    const afterFailure = await acquirePerformanceLease(directory, "pixel-8", "third-owner");
+    await afterFailure.release();
+  });
+
+  it("encodes the unpromoted calibration and CI-cost sample requirements in the lane manifest", async () => {
+    const manifest = JSON.parse(
+      await readFile(path.join(repo, "scripts/performance-regression/lanes.json"), "utf8"),
+    ) as {
+      promotionPolicy: {
+        accuracyRuns: number;
+        baselineRegeneration: string;
+        calibrationPairs: number;
+        ciCostRuns: number;
+        minimumCalibrationSessions: number;
+        requiredCheckPromotion: string;
+      };
+      lanes: { id: string; provisioning: string; required: boolean }[];
+    };
+    expect(manifest.promotionPolicy).toMatchObject({
+      accuracyRuns: 20,
+      baselineRegeneration: "separate-reviewed-change",
+      calibrationPairs: 10,
+      ciCostRuns: 20,
+      minimumCalibrationSessions: 3,
+      requiredCheckPromotion: "maintainer-review",
+    });
+    expect(manifest.lanes).toHaveLength(5);
+    expect(manifest.lanes.every(({ required }) => required === false)).toBe(true);
+    expect(
+      manifest.lanes.filter(({ provisioning }) => provisioning === "unprovisioned"),
+    ).toHaveLength(4);
   });
 });
