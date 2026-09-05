@@ -156,3 +156,5 @@ site/test-results/
 # writes a `__pycache__` beside the recipes on every run; one .pyc was committed by accident.
 __pycache__/
 *.pyc
+
+.afk/
