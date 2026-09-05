@@ -280,7 +280,7 @@ const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });
 export class Atmosphere extends Group implements IComputeDriven { … }
 ```
 
-- **Use when:** render a sunrise that changes as time and place change · add distance haze from the depth of a scene pass · render a bright sky around game-authored platforms
+- **Use when:** render a sunrise that changes as time and place change · add distance haze from the depth of a scene pass
 - **Constraints:** supply rayleigh, mie, ozone, planetRadius, and atmosphereRadius; there is no Earth fallback · the game creates the sky object, surface, and sun from the returned nodes
 
 ```ts
@@ -506,7 +506,7 @@ boulders.update(ctx.camera, ctx.renderer.domElement.height);
 export class ClusteredMesh extends Mesh { … }
 ```
 
-- **Use when:** draw a model too detailed for the screen to resolve · import a scanned or sculpted mesh of millions of triangles and still hold the frame · stop a dense rock face or terrain body from costing its full triangle count up close · stream content across chunk boundaries
+- **Use when:** draw a model too detailed for the screen to resolve · import a scanned or sculpted mesh of millions of triangles and still hold the frame · stop a dense rock face or terrain body from costing its full triangle count up close
 - **Constraints:** the bake happens in the asset pipeline, never at run time — there is no runtime flag · the payload costs about 3-4x a baked primitive's bytes; `assets.models.virtual: "none"` opts out and `minSourceTriangles` moves the 65,536 line · needs a perspective camera; a screen-space error has no meaning without one · one shadow cut is chosen at load and does not follow a shadow camera
 - **Overrides:** errorPixels sets the screen-space error budget, default 1 pixel · recutDistance sets how far the camera moves before the cut is retaken, default a thousandth of the mesh's radius
 
@@ -539,7 +539,7 @@ const registry = new ComputeDrivenRegistry(); registry.add(cloth, ctx.renderer.r
 export function createAssetLoader(options: IAssetLoaderOptions = { … }
 ```
 
-- **Use when:** preload models, textures, or audio before a scene enters · load assets from a nonstandard base path or a compiled asset manifest · load a different arrangement of props in each area · keep the first playable screen without an external asset service
+- **Use when:** preload models, textures, or audio before a scene enters · load assets from a nonstandard base path or a compiled asset manifest
 - **Constraints:** reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
 
 ```ts
@@ -571,7 +571,7 @@ const random = createRandom(42);
 export function createReplayDriver( recording: Recording, target: EventTarget, pointerTarget = target, ) { … }
 ```
 
-- **Use when:** reproduce a gameplay bug from recorded input · run a deterministic replay in a playtest · run a replay with a fixed seed and fixed-step simulation
+- **Use when:** reproduce a gameplay bug from recorded input · run a deterministic replay in a playtest
 - **Constraints:** use a seeded random source and fixed-step simulation for meaningful replays
 
 ```ts
@@ -586,7 +586,7 @@ const driver = createReplayDriver(recording, ctx.renderer.domElement);
 export function defineGame<TState extends Record<string, unknown>, TPhysics = undefined>( config: IGameConfig<TState, TPhysics>, ): IGame<TState, TPhysics> { … }
 ```
 
-- **Use when:** start a ThreeNative game from src/game.ts · register physics and gameplay plugins · let the player zoom the camera with a wheel, pinch, or gamepad axis · frame a third-person camera behind the player · handle a restart without reloading the page · change the field of view while aiming down the sights · start with health that never regenerates · spawn at a firing line facing the range
+- **Use when:** start a ThreeNative game from src/game.ts · register physics and gameplay plugins · let the player zoom the camera with a wheel, pinch, or gamepad axis · frame a camera behind the player
 - **Constraints:** keep DOM and React mounting in src/main.ts · bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener · scroll: true uses the DOM wheel sign on browser and native: negative deltaY toward the user is positive intent
 
 ```ts
@@ -762,7 +762,7 @@ const snap = new GroundSnap(character, { enabled: true });
 export class InstancedBatch { … }
 ```
 
-- **Use when:** draw hundreds of repeated props without hundreds of draw calls · draw thousands of identical instanced blocks or obstacles in one mesh · place repeated props when the count is not known until the layout has been walked · build a chain, railing, cable, or tie rod out of point-to-point segments · spawn a sequence of obstacles and collectibles with increasing pace · place landmarks separated by a traversal
+- **Use when:** draw hundreds of repeated props without hundreds of draw calls · draw thousands of identical instanced blocks or obstacles in one mesh · place repeated props when the count is not known until the layout has been walked · build a chain, railing, cable, or tie rod out of point-to-point segments
 - **Constraints:** geometry and material are required and come from the game; the batch chooses neither · span stretches along +Y, so its geometry must be unit-height and centred on the origin · placing after build() throws, and build() returns undefined when nothing was placed
 - **Overrides:** castShadow and receiveShadow pass through to the built mesh and default to Three.js's own false
 
@@ -962,7 +962,7 @@ prewarm(tracerPool);
 export class ProbeVolume extends Object3D implements IComputeDriven { … }
 ```
 
-- **Use when:** light bouncing from a room I cannot see · light a wall with an off-screen emitter · make the world readable through deliberate lighting
+- **Use when:** light bouncing from a room I cannot see · light a wall with an off-screen emitter
 - **Constraints:** request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting · add the volume with ctx.add() so its incremental work is measured in the render phase · call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour
 - **Overrides:** density, bounds, bakeBudgetMs, and bounces are game-owned choices
 
@@ -1133,7 +1133,7 @@ const chain = new RenderChain(renderer, { input: colour, stages, request: { stag
 export function replay< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, >(options: IReplayOptions = { … }
 ```
 
-- **Use when:** reproduce a gameplay bug from recorded input · run a deterministic replay in a playtest · run a replay with a fixed seed and fixed-step simulation
+- **Use when:** reproduce a gameplay bug from recorded input · run a deterministic replay in a playtest
 - **Constraints:** use a seeded random source and fixed-step simulation for meaningful replays
 
 ```ts
@@ -1208,7 +1208,7 @@ const picker = new ScenePicker({ camera: ctx.camera, scene: ctx.scene, pointer: 
 export class Scheduler { … }
 ```
 
-- **Use when:** delay an enemy patrol transition · run a callback every simulation tick · tween a numeric property with a game-owned curve · spawn waves of enemies on a schedule · schedule waves for a tower defense
+- **Use when:** delay an enemy patrol transition · run a callback every simulation tick · tween a numeric property with a game-owned curve
 - **Constraints:** dispose returned handles when the owning scene exits · ease receives progress in the range 0 to 1 and its return value is the interpolation factor
 
 ```ts
@@ -1330,7 +1330,7 @@ const animator = new SpriteAnimator3D({ texture: atlas, frames, mode: "pingPong"
 export class TracerPool3D { … }
 ```
 
-- **Use when:** show where a hitscan round went · draw incoming fire without spawning projectiles · show one round per press without repeating fire
+- **Use when:** show where a hitscan round went · draw incoming fire without spawning projectiles
 - **Constraints:** the surface comes from the game; pooling, travel, and fading belong to the engine · update once per frame and dispose with the owning scene
 
 ```ts
@@ -1625,7 +1625,7 @@ supportedStyleKeys().includes("centerX")
 export function Text(props: ITextProps): ReactNode { … }
 ```
 
-- **Use when:** show text in a native React HUD without a DOM · render an objective panel or journal in a HUD
+- **Use when:** show text in a native React HUD without a DOM
 
 ```ts
 <Text style={{ color: "#ffffff", fontSize: 24 }}>SCORE 10</Text>
@@ -1700,7 +1700,7 @@ publishHitRegions({ bridge });
 export function publishUiState<T>( bridge: IUiBridge, store: IPublishableStore<T>, options: IPublishOptions = { … }
 ```
 
-- **Use when:** show score or health in a UI rendered over the game surface · keep a HUD in step with the game without re-rendering on the loop · keep a journal or objective panel of inspected points · show a readable HUD for gameplay state · publish game state to a HUD in another realm · keep a web and native UI mirror on the same throttled state stream
+- **Use when:** show score or health in a UI rendered over the game surface · keep a HUD in step with the game without re-rendering on the loop · publish game state to a HUD in another realm · keep a web and native UI mirror on the same throttled state stream
 - **Constraints:** publishes at the store's throttled cadence, and not at all with no UI listening
 
 ```ts
@@ -1797,7 +1797,7 @@ const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize:
 export class Area3D { … }
 ```
 
-- **Use when:** detect when an enemy enters a trigger area · react to a player entering a zone · pick up an item when the player enters a zone
+- **Use when:** detect when an enemy enters a trigger area · react to a player entering a zone
 - **Constraints:** add the area to the physics context before stepping the world
 
 ```ts
@@ -1843,7 +1843,7 @@ new Buoyancy3D({ body, surface: field, hullPoints, density: 1_000, drag: 4 });
 export class CharacterBody3D { … }
 ```
 
-- **Use when:** move an enemy or player through a level · keep a character from walking through walls · move a platformer character with a double jump · move a first-person player · push solid bodies with a character · run and jump to collect coins and reach a goal · move through raised platforms, gaps, hazards, and a restart path · move a character through enemy targets toward a win condition
+- **Use when:** move an enemy or player through a level · keep a character from walking through walls
 - **Constraints:** use moveAndSlide inside the physics update
 
 ```ts
@@ -1858,7 +1858,7 @@ const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: Co
 export class CollisionShape3D { … }
 ```
 
-- **Use when:** add a capsule or box collider to a character · configure the shape used by a rigid body · prevent a character from passing through a body · build arena walls and pickups with collision shapes
+- **Use when:** add a capsule or box collider to a character · configure the shape used by a rigid body
 - **Constraints:** create shapes through the owning physics context
 
 ```ts
@@ -1902,7 +1902,7 @@ const hinge = Joint3D.hinge({ physics: ctx.physics, bodyA: beam, bodyB: bob, anc
 export class PhysicsDirectSpaceState3D { … }
 ```
 
-- **Use when:** raycast for visibility or aiming · find bodies inside a shape or point query · aim a hitscan ray along the camera · apply damage based on body height
+- **Use when:** raycast for visibility or aiming · find bodies inside a shape or point query
 - **Constraints:** query results are bounded by the configured result limit
 
 ```ts
@@ -1932,7 +1932,7 @@ const game = defineGame({ plugins: [rapier()] });
 export class RigidBody3D { … }
 ```
 
-- **Use when:** give a crate or prop physical motion · create a body that collides with a character · fire physical cannonballs that collide with ships or scenery · fire a cannonball projectile with cannon smoke particles · a bullet passes through a wall · stack and topple dynamic bodies · win through simulated contact
+- **Use when:** give a crate or prop physical motion · create a body that collides with a character · fire physical cannonballs that collide with ships or scenery · fire a cannonball projectile with cannon smoke particles · a bullet passes through a wall
 - **Constraints:** register rapier() in the game plugin list before using bodies
 - **Overrides:** continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting
 
@@ -1965,7 +1965,7 @@ const cloth = new SoftBody3D(mesh, { ...options, collision: softBodyCollision(wa
 export class NavigationAgent3D { … }
 ```
 
-- **Use when:** enemy walks around a wall · enemy patrols a level and chases the player · enemy walks around a patrol path and chases the player when it sees them · enemy patrols and chases while avoiding obstacles · enemy chases the player with line of sight and obstacle avoidance · NPC walks to a destination · move crew around a ship deck · follow a patrol route · close to engagement range · search the last place the player was seen
+- **Use when:** enemy walks around a wall · enemy patrols a level and chases the player · enemy walks around a patrol path and chases the player when it sees them · enemy patrols and chases while avoiding obstacles · enemy chases the player with line of sight and obstacle avoidance · NPC walks to a destination · move crew around a ship deck
 - **Constraints:** import NavigationAgent3D from exactly `@threenative/physics/navigation`; `@threenative/physics` is not a valid import for this symbol; use this capability instead of hand-written A*; requires recast() after rapier(), plus a baked NavigationRegion3D
 
 ```ts

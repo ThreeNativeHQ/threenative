@@ -442,6 +442,85 @@ function agreement(situation: readonly string[], query: ReadonlySet<string>): nu
   return 1 + AGREEMENT_WEIGHT * Math.max(0, matched - 1);
 }
 
+interface IPhraseScore {
+  readonly agreed: number;
+  readonly coverage: number;
+  readonly matched: number;
+  readonly phraseBonus: number;
+  readonly score: number;
+}
+
+function scorePhrase(
+  value: string,
+  queryTokens: ReadonlySet<string>,
+  queryText: string,
+  weights: ReadonlyMap<string, number>,
+): IPhraseScore | undefined {
+  const phrase = tokens(value);
+  const unique = [...new Set(phrase)];
+  const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
+  const matched = unique
+    .filter((token) => queryTokens.has(token))
+    .reduce((sum, token) => sum + weightOf(weights, token), 0);
+  const phraseBonus =
+    phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
+  if (total === 0 || (matched === 0 && phraseBonus === 0)) return undefined;
+  const coverage = matched / total;
+  const agreed = agreement(unique, queryTokens);
+  return { agreed, coverage, matched, phraseBonus, score: coverage * agreed + phraseBonus };
+}
+
+function isDistinctivePhrase(candidate: IPhraseScore): boolean {
+  if (candidate.phraseBonus > 0) return true;
+  if (candidate.matched < DISTINCTIVE_FLOOR) return false;
+  return !(candidate.agreed === 1 && candidate.coverage < LONE_WORD_COVERAGE);
+}
+
+interface IReadabilityScore {
+  readonly best: number;
+  readonly matchedSituation: string;
+  readonly bestReadableSituation: string;
+}
+
+function scoreReadableSituations(
+  situations: readonly string[],
+  queryTokens: ReadonlySet<string>,
+  queryText: string,
+  weights: ReadonlyMap<string, number>,
+): IReadabilityScore {
+  let best = 0;
+  let matchedSituation = "";
+  let bestReadableScore = 0;
+  let bestReadableSituation = situations[0] ?? "";
+  for (const situation of situations) {
+    const candidate = scorePhrase(situation, queryTokens, queryText, weights);
+    if (candidate === undefined) continue;
+    if (candidate.score > bestReadableScore) {
+      bestReadableScore = candidate.score;
+      bestReadableSituation = situation;
+    }
+    if (isDistinctivePhrase(candidate) && candidate.score > best) {
+      best = candidate.score;
+      matchedSituation = situation;
+    }
+  }
+  return { best, bestReadableSituation, matchedSituation };
+}
+
+function scoreAliases(
+  aliases: readonly string[],
+  queryTokens: ReadonlySet<string>,
+  queryText: string,
+  weights: ReadonlyMap<string, number>,
+): number {
+  let best = 0;
+  for (const alias of aliases) {
+    const candidate = scorePhrase(alias, queryTokens, queryText, weights);
+    if (candidate !== undefined) best = Math.max(best, candidate.score);
+  }
+  return best;
+}
+
 function situationScore(
   query: readonly string[],
   situations: readonly string[],
@@ -451,44 +530,14 @@ function situationScore(
   if (query.length === 0) return { matchedSituation: "", score: 0 };
   const queryTokens = new Set(query);
   const queryText = query.join(" ");
-  let best = 0;
-  let matchedSituation = "";
-
-  const scorePhrase = (value: string): number | undefined => {
-    const phrase = tokens(value);
-    const unique = [...new Set(phrase)];
-    const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
-    const matched = unique
-      .filter((token) => queryTokens.has(token))
-      .reduce((sum, token) => sum + weightOf(weights, token), 0);
-    const phraseBonus =
-      phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
-    if (total === 0 || (matched < DISTINCTIVE_FLOOR && phraseBonus === 0)) return undefined;
-    const coverage = matched / total;
-    const agreed = agreement(unique, queryTokens);
-    // One rare word that does not carry its own situation is a homonym rather than an answer.
-    //
-    // This narrows the problem and does not close it. *"a stealth guard's vision cone"* still
-    // answers with `assertCaptureNotBlank` (**guard** a blank frame) and `GodraysNode` (**cone**
-    // geometry), because every rare word in that request is a homonym and no vision-cone
-    // capability exists to outrank them. Raising this floor far enough to silence those two also
-    // silences real one-word answers the search exists to give — the physics-puzzle request loses
-    // `Joint3D` at 0.3. The real fix for that query is the capability, not the threshold.
-    if (agreed === 1 && coverage < LONE_WORD_COVERAGE && phraseBonus === 0) return undefined;
-    return coverage * agreed + phraseBonus;
-  };
-
-  for (const situation of situations) {
-    const candidate = scorePhrase(situation);
-    if (candidate !== undefined && candidate > best) {
-      best = candidate;
-      matchedSituation = situation;
-    }
-  }
-  for (const alias of aliases) {
-    const candidate = scorePhrase(alias);
-    if (candidate !== undefined) best = Math.max(best, candidate);
-  }
+  const readable = scoreReadableSituations(situations, queryTokens, queryText, weights);
+  const best = Math.max(readable.best, scoreAliases(aliases, queryTokens, queryText, weights));
+  const matchedSituation =
+    readable.matchedSituation.length > 0
+      ? readable.matchedSituation
+      : best >= RELEVANCE_FLOOR
+        ? readable.bestReadableSituation
+        : "";
   return matchedSituation.length > 0
     ? { matchedSituation, score: best }
     : { matchedSituation: "", score: 0 };

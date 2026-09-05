@@ -241,35 +241,56 @@ function agreement(situation, query) {
   const matched = situation.filter((token) => query.has(token)).length;
   return 1 + AGREEMENT_WEIGHT * Math.max(0, matched - 1);
 }
+function scorePhrase(value, queryTokens, queryText, weights) {
+  const phrase = tokens(value);
+  const unique = [...new Set(phrase)];
+  const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
+  const matched = unique.filter((token) => queryTokens.has(token)).reduce((sum, token) => sum + weightOf(weights, token), 0);
+  const phraseBonus = phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
+  if (total === 0 || matched === 0 && phraseBonus === 0) return void 0;
+  const coverage = matched / total;
+  const agreed = agreement(unique, queryTokens);
+  return { agreed, coverage, matched, phraseBonus, score: coverage * agreed + phraseBonus };
+}
+function isDistinctivePhrase(candidate) {
+  if (candidate.phraseBonus > 0) return true;
+  if (candidate.matched < DISTINCTIVE_FLOOR) return false;
+  return !(candidate.agreed === 1 && candidate.coverage < LONE_WORD_COVERAGE);
+}
+function scoreReadableSituations(situations, queryTokens, queryText, weights) {
+  let best = 0;
+  let matchedSituation = "";
+  let bestReadableScore = 0;
+  let bestReadableSituation = situations[0] ?? "";
+  for (const situation of situations) {
+    const candidate = scorePhrase(situation, queryTokens, queryText, weights);
+    if (candidate === void 0) continue;
+    if (candidate.score > bestReadableScore) {
+      bestReadableScore = candidate.score;
+      bestReadableSituation = situation;
+    }
+    if (isDistinctivePhrase(candidate) && candidate.score > best) {
+      best = candidate.score;
+      matchedSituation = situation;
+    }
+  }
+  return { best, bestReadableSituation, matchedSituation };
+}
+function scoreAliases(aliases, queryTokens, queryText, weights) {
+  let best = 0;
+  for (const alias of aliases) {
+    const candidate = scorePhrase(alias, queryTokens, queryText, weights);
+    if (candidate !== void 0) best = Math.max(best, candidate.score);
+  }
+  return best;
+}
 function situationScore(query, situations, aliases, weights) {
   if (query.length === 0) return { matchedSituation: "", score: 0 };
   const queryTokens = new Set(query);
   const queryText = query.join(" ");
-  let best = 0;
-  let matchedSituation = "";
-  const scorePhrase = (value) => {
-    const phrase = tokens(value);
-    const unique = [...new Set(phrase)];
-    const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
-    const matched = unique.filter((token) => queryTokens.has(token)).reduce((sum, token) => sum + weightOf(weights, token), 0);
-    const phraseBonus = phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
-    if (total === 0 || matched < DISTINCTIVE_FLOOR && phraseBonus === 0) return void 0;
-    const coverage = matched / total;
-    const agreed = agreement(unique, queryTokens);
-    if (agreed === 1 && coverage < LONE_WORD_COVERAGE && phraseBonus === 0) return void 0;
-    return coverage * agreed + phraseBonus;
-  };
-  for (const situation of situations) {
-    const candidate = scorePhrase(situation);
-    if (candidate !== void 0 && candidate > best) {
-      best = candidate;
-      matchedSituation = situation;
-    }
-  }
-  for (const alias of aliases) {
-    const candidate = scorePhrase(alias);
-    if (candidate !== void 0) best = Math.max(best, candidate);
-  }
+  const readable = scoreReadableSituations(situations, queryTokens, queryText, weights);
+  const best = Math.max(readable.best, scoreAliases(aliases, queryTokens, queryText, weights));
+  const matchedSituation = readable.matchedSituation.length > 0 ? readable.matchedSituation : best >= RELEVANCE_FLOOR ? readable.bestReadableSituation : "";
   return matchedSituation.length > 0 ? { matchedSituation, score: best } : { matchedSituation: "", score: 0 };
 }
 function notOwnedSituationScore(query, situations) {

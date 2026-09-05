@@ -34,9 +34,7 @@ export {
  * Publish the game's state so a UI in another process can mirror it.
  * @situation show score or health in a UI rendered over the game surface
  * @situation keep a HUD in step with the game without re-rendering on the loop
- * @situation keep a journal or objective panel of inspected points
  * @alias journal objective panel
- * @situation show a readable HUD for gameplay state
  * @alias readable HUD
  * @constraint publishes at the store's throttled cadence, and not at all with no UI listening
  * @example publishUiState(bridge, game.state);

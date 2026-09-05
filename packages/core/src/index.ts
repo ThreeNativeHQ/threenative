@@ -60,9 +60,7 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * Create the portable asset loader a scene also receives as `ctx.assets`.
  * @situation preload models, textures, or audio before a scene enters
  * @situation load assets from a nonstandard base path or a compiled asset manifest
- * @situation load a different arrangement of props in each area
  * @alias different props in each area
- * @situation keep the first playable screen without an external asset service
  * @alias first playable screen external assets
  * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
  * @example const assets = createAssetLoader({ basePath: "/assets" });
@@ -114,12 +112,8 @@ export type { IRandom } from "./random.js";
  * @situation start a ThreeNative game from src/game.ts
  * @situation register physics and gameplay plugins
  * @situation let the player zoom the camera with a wheel, pinch, or gamepad axis
- * @situation frame a third-person camera behind the player
- * @situation handle a restart without reloading the page
- * @situation change the field of view while aiming down the sights
- * @situation start with health that never regenerates
+ * @situation frame a camera behind the player
  * @alias health never regenerates
- * @situation spawn at a firing line facing the range
  * @alias firing line nearest target crosshair
  * @alias third-person camera
  * @alias restart the run without a page reload
@@ -194,8 +188,6 @@ export type {
  * @situation draw thousands of identical instanced blocks or obstacles in one mesh
  * @situation place repeated props when the count is not known until the layout has been walked
  * @situation build a chain, railing, cable, or tie rod out of point-to-point segments
- * @situation spawn a sequence of obstacles and collectibles with increasing pace
- * @situation place landmarks separated by a traversal
  * @alias landmarks points of interest
  * @alias obstacles collectibles increasing pace
  * @constraint geometry and material are required and come from the game; the batch chooses neither
@@ -225,7 +217,6 @@ export type {
  * @situation draw a model too detailed for the screen to resolve
  * @situation import a scanned or sculpted mesh of millions of triangles and still hold the frame
  * @situation stop a dense rock face or terrain body from costing its full triangle count up close
- * @situation stream content across chunk boundaries
  * @alias stream terrain across chunks
  * @constraint the bake happens in the asset pipeline, never at run time — there is no runtime flag
  * @constraint the payload costs about 3-4x a baked primitive's bytes; `assets.models.virtual: "none"` opts out and `minSourceTriangles` moves the 65,536 line
@@ -353,7 +344,6 @@ export type {
  * Bake static diffuse irradiance that reaches surfaces from outside the camera view.
  * @situation light bouncing from a room I cannot see
  * @situation light a wall with an off-screen emitter
- * @situation make the world readable through deliberate lighting
  * @alias readable world lighting
  * @constraint request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting
  * @constraint add the volume with ctx.add() so its incremental work is measured in the render phase
@@ -588,8 +578,6 @@ export { softCircleDataTexture } from "./textures.js";
  * Pool travelling bullet-streak meshes for hitscan shots.
  * @situation show where a hitscan round went
  * @situation draw incoming fire without spawning projectiles
- * @situation show one round per press without repeating fire
- * @alias one round per press
  * @constraint the surface comes from the game; pooling, travel, and fading belong to the engine
  * @constraint update once per frame and dispose with the owning scene
  * @example const tracers = new TracerPool3D(ctx.scene, tracerOptions);
@@ -685,7 +673,6 @@ export type { IRaycastOptions, IScenePickerOptions } from "./picking.js";
  * Record or replay deterministic game input and state.
  * @situation reproduce a gameplay bug from recorded input
  * @situation run a deterministic replay in a playtest
- * @situation run a replay with a fixed seed and fixed-step simulation
  * @alias fixed seed fixed-step simulation
  * @constraint use a seeded random source and fixed-step simulation for meaningful replays
  * @example const driver = createReplayDriver(recording, ctx.renderer.domElement);
@@ -709,8 +696,6 @@ export type {
  * @situation delay an enemy patrol transition
  * @situation run a callback every simulation tick
  * @situation tween a numeric property with a game-owned curve
- * @situation spawn waves of enemies on a schedule
- * @situation schedule waves for a tower defense
  * @alias tower defense game
  * @alias spawn waves
  * @constraint dispose returned handles when the owning scene exits

@@ -345,8 +345,7 @@
       "signature": "export class Atmosphere extends Group implements IComputeDriven { … }",
       "situations": [
         "render a sunrise that changes as time and place change",
-        "add distance haze from the depth of a scene pass",
-        "render a bright sky around game-authored platforms"
+        "add distance haze from the depth of a scene pass"
       ],
       "summary": "Own the compute lifetime and expose only parameter-driven atmosphere nodes. The class deliberately creates no mesh, material, or scene light. A template chooses all of those, and the same object remains useful when a game supplies a completely different look.",
       "supersedes": [],
@@ -631,8 +630,7 @@
       "situations": [
         "draw a model too detailed for the screen to resolve",
         "import a scanned or sculpted mesh of millions of triangles and still hold the frame",
-        "stop a dense rock face or terrain body from costing its full triangle count up close",
-        "stream content across chunk boundaries"
+        "stop a dense rock face or terrain body from costing its full triangle count up close"
       ],
       "summary": "Draw a model too detailed for the screen to resolve, without submitting the part it cannot. **This is on, and a game does not call it.** Any primitive of 65,536 triangles or more bakes to a cluster DAG in the asset pipeline, the loader returns a `ClusteredMesh` for it, and the engine takes the cut every frame before it renders. Each frame the mesh submits one draw holding only the clusters whose error projects to fewer than `errorPixels` screen pixels; a mesh nothing has cut yet draws in full, so the worst case is an ordinary `Mesh`. Geometry, surface and every appearance parameter stay the game's.",
       "supersedes": [],
@@ -671,9 +669,7 @@
       "signature": "export function createAssetLoader(options: IAssetLoaderOptions = { … }",
       "situations": [
         "preload models, textures, or audio before a scene enters",
-        "load assets from a nonstandard base path or a compiled asset manifest",
-        "load a different arrangement of props in each area",
-        "keep the first playable screen without an external asset service"
+        "load assets from a nonstandard base path or a compiled asset manifest"
       ],
       "summary": "Create the portable asset loader a scene also receives as `ctx.assets`.",
       "supersedes": [],
@@ -709,8 +705,7 @@
       "signature": "export function createReplayDriver( recording: Recording, target: EventTarget, pointerTarget = target, ) { … }",
       "situations": [
         "reproduce a gameplay bug from recorded input",
-        "run a deterministic replay in a playtest",
-        "run a replay with a fixed seed and fixed-step simulation"
+        "run a deterministic replay in a playtest"
       ],
       "summary": "Record or replay deterministic game input and state.",
       "supersedes": [],
@@ -739,11 +734,7 @@
         "start a ThreeNative game from src/game.ts",
         "register physics and gameplay plugins",
         "let the player zoom the camera with a wheel, pinch, or gamepad axis",
-        "frame a third-person camera behind the player",
-        "handle a restart without reloading the page",
-        "change the field of view while aiming down the sights",
-        "start with health that never regenerates",
-        "spawn at a firing line facing the range"
+        "frame a camera behind the player"
       ],
       "summary": "Define the portable game entry shared by web and native.",
       "supersedes": [],
@@ -968,9 +959,7 @@
         "draw hundreds of repeated props without hundreds of draw calls",
         "draw thousands of identical instanced blocks or obstacles in one mesh",
         "place repeated props when the count is not known until the layout has been walked",
-        "build a chain, railing, cable, or tie rod out of point-to-point segments",
-        "spawn a sequence of obstacles and collectibles with increasing pace",
-        "place landmarks separated by a traversal"
+        "build a chain, railing, cable, or tie rod out of point-to-point segments"
       ],
       "summary": "Collapse many copies of one game-authored shape into a single draw, without counting them first. `new InstancedMesh(geometry, material, count)` needs the count before anything is placed, so a procedural builder ends up walking its layout twice or over-allocating. Place as you go and `build()` once; the shape, the surface and every transform stay the game's, and the built mesh is returned so instances can still be animated by the index `place` and `span` hand back.",
       "supersedes": [],
@@ -1216,8 +1205,7 @@
       "signature": "export class ProbeVolume extends Object3D implements IComputeDriven { … }",
       "situations": [
         "light bouncing from a room I cannot see",
-        "light a wall with an off-screen emitter",
-        "make the world readable through deliberate lighting"
+        "light a wall with an off-screen emitter"
       ],
       "summary": "Bake static diffuse irradiance that reaches surfaces from outside the camera view.",
       "supersedes": [],
@@ -1418,8 +1406,7 @@
       "signature": "export function replay< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, >(options: IReplayOptions = { … }",
       "situations": [
         "reproduce a gameplay bug from recorded input",
-        "run a deterministic replay in a playtest",
-        "run a replay with a fixed seed and fixed-step simulation"
+        "run a deterministic replay in a playtest"
       ],
       "summary": "Record or replay deterministic game input and state.",
       "supersedes": [],
@@ -1506,9 +1493,7 @@
       "situations": [
         "delay an enemy patrol transition",
         "run a callback every simulation tick",
-        "tween a numeric property with a game-owned curve",
-        "spawn waves of enemies on a schedule",
-        "schedule waves for a tower defense"
+        "tween a numeric property with a game-owned curve"
       ],
       "summary": "Schedule delayed and repeating callbacks or tween numeric properties with game-owned cleanup.",
       "supersedes": [],
@@ -1657,7 +1642,7 @@
       "symbol": "SpriteAnimator3D"
     },
     {
-      "aliases": ["one round per press"],
+      "aliases": [],
       "constraints": [
         "the surface comes from the game; pooling, travel, and fading belong to the engine",
         "update once per frame and dispose with the owning scene"
@@ -1670,8 +1655,7 @@
       "signature": "export class TracerPool3D { … }",
       "situations": [
         "show where a hitscan round went",
-        "draw incoming fire without spawning projectiles",
-        "show one round per press without repeating fire"
+        "draw incoming fire without spawning projectiles"
       ],
       "summary": "Pool travelling bullet-streak meshes for hitscan shots.",
       "supersedes": [],
@@ -1991,7 +1975,7 @@
       "symbol": "supportedStyleKeys"
     },
     {
-      "aliases": ["objective panel journal text"],
+      "aliases": ["objective panel journal"],
       "constraints": [],
       "example": "<Text style={{ color: \"#ffffff\", fontSize: 24 }}>SCORE 10</Text>",
       "importPath": "@threenative/core/react",
@@ -1999,10 +1983,7 @@
       "overrides": [],
       "package": "@threenative/core",
       "signature": "export function Text(props: ITextProps): ReactNode { … }",
-      "situations": [
-        "show text in a native React HUD without a DOM",
-        "render an objective panel or journal in a HUD"
-      ],
+      "situations": ["show text in a native React HUD without a DOM"],
       "summary": "A run of bitmap glyphs, drawn as one instanced quad per lit pixel.",
       "supersedes": [],
       "symbol": "Text"
@@ -2093,8 +2074,6 @@
       "situations": [
         "show score or health in a UI rendered over the game surface",
         "keep a HUD in step with the game without re-rendering on the loop",
-        "keep a journal or objective panel of inspected points",
-        "show a readable HUD for gameplay state",
         "publish game state to a HUD in another realm",
         "keep a web and native UI mirror on the same throttled state stream"
       ],
@@ -2219,8 +2198,7 @@
       "signature": "export class Area3D { … }",
       "situations": [
         "detect when an enemy enters a trigger area",
-        "react to a player entering a zone",
-        "pick up an item when the player enters a zone"
+        "react to a player entering a zone"
       ],
       "summary": "Detect overlaps without turning the body into a moving collider.",
       "supersedes": [],
@@ -2266,7 +2244,6 @@
         "enemy targets cooldown reload win condition",
         "platformer double jump",
         "first person",
-        "push solid bodies",
         "run jump coins goal"
       ],
       "constraints": ["use moveAndSlide inside the physics update"],
@@ -2278,13 +2255,7 @@
       "signature": "export class CharacterBody3D { … }",
       "situations": [
         "move an enemy or player through a level",
-        "keep a character from walking through walls",
-        "move a platformer character with a double jump",
-        "move a first-person player",
-        "push solid bodies with a character",
-        "run and jump to collect coins and reach a goal",
-        "move through raised platforms, gaps, hazards, and a restart path",
-        "move a character through enemy targets toward a win condition"
+        "keep a character from walking through walls"
       ],
       "summary": "Move a character body with collision-aware sliding.",
       "supersedes": [],
@@ -2301,9 +2272,7 @@
       "signature": "export class CollisionShape3D { … }",
       "situations": [
         "add a capsule or box collider to a character",
-        "configure the shape used by a rigid body",
-        "prevent a character from passing through a body",
-        "build arena walls and pickups with collision shapes"
+        "configure the shape used by a rigid body"
       ],
       "summary": "Give a physics body a Three.js collision shape.",
       "supersedes": [],
@@ -2355,9 +2324,7 @@
       "signature": "export class PhysicsDirectSpaceState3D { … }",
       "situations": [
         "raycast for visibility or aiming",
-        "find bodies inside a shape or point query",
-        "aim a hitscan ray along the camera",
-        "apply damage based on body height"
+        "find bodies inside a shape or point query"
       ],
       "summary": "Query the physics world without creating a body.",
       "supersedes": [],
@@ -2381,7 +2348,7 @@
       "symbol": "rapier"
     },
     {
-      "aliases": ["dynamic bodies stack topple", "simulated contact"],
+      "aliases": [],
       "constraints": ["register rapier() in the game plugin list before using bodies"],
       "example": "const crate = new RigidBody3D({ object, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1), mass: 8 });",
       "importPath": "@threenative/physics",
@@ -2396,9 +2363,7 @@
         "create a body that collides with a character",
         "fire physical cannonballs that collide with ships or scenery",
         "fire a cannonball projectile with cannon smoke particles",
-        "a bullet passes through a wall",
-        "stack and topple dynamic bodies",
-        "win through simulated contact"
+        "a bullet passes through a wall"
       ],
       "summary": "Simulate a dynamic or static rigid body.",
       "supersedes": [],
@@ -2425,7 +2390,7 @@
       "symbol": "softBodyCollision"
     },
     {
-      "aliases": ["patrol route", "close engagement range", "search last place saw player"],
+      "aliases": ["close engagement range"],
       "constraints": [
         "import NavigationAgent3D from exactly `@threenative/physics/navigation`; `@threenative/physics` is not a valid import for this symbol; use this capability instead of hand-written A*; requires recast() after rapier(), plus a baked NavigationRegion3D"
       ],
@@ -2442,10 +2407,7 @@
         "enemy patrols and chases while avoiding obstacles",
         "enemy chases the player with line of sight and obstacle avoidance",
         "NPC walks to a destination",
-        "move crew around a ship deck",
-        "follow a patrol route",
-        "close to engagement range",
-        "search the last place the player was seen"
+        "move crew around a ship deck"
       ],
       "summary": "Move an agent along a baked navmesh toward a target.",
       "supersedes": [],

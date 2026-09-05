@@ -4,7 +4,6 @@ import "./web.js";
  * Detect overlaps without turning the body into a moving collider.
  * @situation detect when an enemy enters a trigger area
  * @situation react to a player entering a zone
- * @situation pick up an item when the player enters a zone
  * @alias pick up item
  * @constraint add the area to the physics context before stepping the world
  * @example const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });
@@ -14,17 +13,10 @@ export { Area3D } from "./Area3D.js";
  * Move a character body with collision-aware sliding.
  * @situation move an enemy or player through a level
  * @situation keep a character from walking through walls
- * @situation move a platformer character with a double jump
- * @situation move a first-person player
- * @situation push solid bodies with a character
- * @situation run and jump to collect coins and reach a goal
- * @situation move through raised platforms, gaps, hazards, and a restart path
  * @alias raised platform gap hazard restart
- * @situation move a character through enemy targets toward a win condition
  * @alias enemy targets cooldown reload win condition
  * @alias platformer double jump
  * @alias first person
- * @alias push solid bodies
  * @alias run jump coins goal
  * @constraint use moveAndSlide inside the physics update
  * @example const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });
@@ -34,8 +26,6 @@ export { CharacterBody3D } from "./CharacterBody3D.js";
  * Give a physics body a Three.js collision shape.
  * @situation add a capsule or box collider to a character
  * @situation configure the shape used by a rigid body
- * @situation prevent a character from passing through a body
- * @situation build arena walls and pickups with collision shapes
  * @alias passes through body
  * @alias arena walls pickups
  * @constraint create shapes through the owning physics context
@@ -79,8 +69,6 @@ export type {
  * Query the physics world without creating a body.
  * @situation raycast for visibility or aiming
  * @situation find bodies inside a shape or point query
- * @situation aim a hitscan ray along the camera
- * @situation apply damage based on body height
  * @alias hitscan camera
  * @alias damage body height
  * @constraint query results are bounded by the configured result limit
@@ -139,10 +127,6 @@ export { interactionGroups } from "./collision.js";
  * @situation fire physical cannonballs that collide with ships or scenery
  * @situation fire a cannonball projectile with cannon smoke particles
  * @situation a bullet passes through a wall
- * @situation stack and topple dynamic bodies
- * @situation win through simulated contact
- * @alias dynamic bodies stack topple
- * @alias simulated contact
  * @constraint register rapier() in the game plugin list before using bodies
  * @override continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting
  * @example const crate = new RigidBody3D({ object, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1), mass: 8 });

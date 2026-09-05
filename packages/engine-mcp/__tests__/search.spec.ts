@@ -101,9 +101,48 @@ describe("threenative-engine-mcp", () => {
     );
     const defineGame = manifest.entries.find((entry) => entry.symbol === "defineGame");
 
-    expect(result?.matchedSituation).toBe("frame a third-person camera behind the player");
+    expect(result?.matchedSituation).toBe("frame a camera behind the player");
     expect(defineGame?.aliases).toContain("third-person camera");
     expect(defineGame?.aliases).not.toContain(result?.matchedSituation);
+  });
+
+  it("uses an alias score while keeping a readable situation for explanation", async () => {
+    const root = await makeTempDir("threenative-engine-mcp-alias-score-");
+    try {
+      const file = path.join(root, "capabilities.json");
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(
+        file,
+        JSON.stringify({
+          version: 2,
+          notOwned: [],
+          entries: [
+            {
+              aliases: ["camera player"],
+              constraints: [],
+              example: "const capability = new CameraCapability();",
+              importPath: "@threenative/core",
+              kind: "class",
+              package: "@threenative/core",
+              signature: "class CameraCapability",
+              situations: ["frame the player from behind"],
+              summary: "Frames a player camera.",
+              symbol: "CameraCapability",
+            },
+          ],
+        }),
+      );
+
+      const response = searchCapabilities("camera player", file);
+      expect(response.results).toContainEqual(
+        expect.objectContaining({
+          matchedSituation: "frame the player from behind",
+          symbol: "CameraCapability",
+        }),
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
   });
 
   it("never returns an alias as the explanation for a match", () => {
@@ -135,7 +174,7 @@ describe("threenative-engine-mcp", () => {
               kind: "function",
               package: "@threenative/core",
               signature: "function defineGame()",
-              situations: ["start a ThreeNative game", "register gameplay plugins"],
+              situations: [],
               summary: "Define a game.",
               symbol: "defineGame",
             },

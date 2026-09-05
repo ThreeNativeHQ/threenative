@@ -1,7 +1,11 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { RELEVANCE_FLOOR } from "../../packages/engine-mcp/src/index.js";
+import {
+  RELEVANCE_FLOOR,
+  capabilitySituationTokens,
+  searchCapabilities,
+} from "../../packages/engine-mcp/src/index.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   buildCapabilityManifest,
@@ -364,45 +368,143 @@ describe("capability manifest generator", () => {
     const manifest = await checkCapabilityManifest(process.cwd());
     const aliases = manifest.entries.flatMap((entry) => entry.aliases ?? []);
     const predecessorRows = {
-      "third-person camera": ["request.third-person-camera"],
-      "restart the run without a page reload": ["brief.endless-runner.5"],
-      "field of view while aiming": ["brief.fps.2"],
-      "health never regenerates": ["brief.fps.3"],
-      "firing line nearest target crosshair": ["brief.fps.4"],
-      "obstacles collectibles increasing pace": ["brief.endless-runner.3"],
-      "readable world lighting": ["brief.exploration.5"],
-      "different props in each area": ["brief.exploration.3"],
-      "journal objective panel": ["brief.exploration.4"],
-      "objective panel journal text": ["brief.exploration.4"],
-      "readable HUD": ["brief.physics-puzzle.6"],
-      "stream terrain across chunks": ["brief.open-world.2"],
-      "landmarks points of interest": ["brief.open-world.4"],
-      "first playable screen external assets": ["brief.open-world.5"],
-      "fixed seed fixed-step simulation": ["brief.physics-puzzle.5"],
-      "spawn waves": ["request.spawn-waves"],
-      "tower defense game": ["request.tower-defense-game"],
-      "one round per press": ["brief.fps.5"],
-      "pick up item": ["request.pick-up-item"],
-      "platformer double jump": ["request.platformer-double-jump"],
-      "first person": ["brief.fps.1"],
-      "push solid bodies": ["brief.physics-puzzle.2"],
-      "run jump coins goal": ["brief.platformer.2"],
-      "passes through body": ["brief.physics-puzzle.3"],
-      "arena walls pickups": ["brief.topdown-action.4"],
-      "hitscan camera": ["brief.fps.7"],
-      "damage body height": ["brief.fps.8"],
-      "dynamic bodies stack topple": ["brief.physics-puzzle.1"],
-      "simulated contact": ["brief.physics-puzzle.4"],
-      "raised platform gap hazard restart": ["brief.platformer.3"],
-      "bright sky saturated green platforms": ["brief.platformer.4"],
-      "enemy targets cooldown reload win condition": ["brief.topdown-action.3"],
-      "patrol route": ["brief.fps.10"],
-      "close engagement range": ["brief.fps.12"],
-      "search last place saw player": ["brief.fps.13"],
+      "third-person camera": { ids: ["request.third-person-camera"], owners: ["defineGame"] },
+      "restart the run without a page reload": {
+        ids: ["brief.endless-runner.5"],
+        owners: ["defineGame"],
+      },
+      "field of view while aiming": { ids: ["brief.fps.2"], owners: ["defineGame"] },
+      "health never regenerates": { ids: ["brief.fps.3"], owners: ["defineGame"] },
+      "firing line nearest target crosshair": { ids: ["brief.fps.4"], owners: ["defineGame"] },
+      "obstacles collectibles increasing pace": {
+        ids: ["brief.endless-runner.3"],
+        owners: ["InstancedBatch"],
+      },
+      "readable world lighting": { ids: ["brief.exploration.5"], owners: ["ProbeVolume"] },
+      "different props in each area": {
+        ids: ["brief.exploration.3"],
+        owners: ["createAssetLoader"],
+      },
+      "journal objective panel": {
+        ids: ["brief.exploration.4"],
+        owners: ["publishUiState"],
+      },
+      "objective panel journal": { ids: ["brief.exploration.4"], owners: ["Text"] },
+      "readable HUD": { ids: ["brief.physics-puzzle.6"], owners: ["publishUiState"] },
+      "stream terrain across chunks": {
+        ids: ["brief.open-world.2"],
+        owners: ["ClusteredMesh"],
+      },
+      "landmarks points of interest": {
+        ids: ["brief.open-world.4"],
+        owners: ["InstancedBatch"],
+      },
+      "first playable screen external assets": {
+        ids: ["brief.open-world.5"],
+        owners: ["createAssetLoader"],
+      },
+      "fixed seed fixed-step simulation": {
+        ids: ["brief.physics-puzzle.5"],
+        owners: ["createReplayDriver", "replay"],
+      },
+      "spawn waves": { ids: ["request.spawn-waves"], owners: ["Scheduler"] },
+      "tower defense game": { ids: ["request.tower-defense-game"], owners: ["Scheduler"] },
+      "pick up item": { ids: ["request.pick-up-item"], owners: ["Area3D"] },
+      "platformer double jump": {
+        ids: ["request.platformer-double-jump"],
+        owners: ["CharacterBody3D"],
+      },
+      "first person": { ids: ["brief.fps.1"], owners: ["CharacterBody3D"] },
+      "run jump coins goal": { ids: ["brief.platformer.2"], owners: ["CharacterBody3D"] },
+      "passes through body": { ids: ["brief.physics-puzzle.3"], owners: ["CollisionShape3D"] },
+      "arena walls pickups": {
+        ids: ["brief.topdown-action.4"],
+        owners: ["CollisionShape3D"],
+      },
+      "hitscan camera": {
+        ids: ["brief.fps.7"],
+        owners: ["PhysicsDirectSpaceState3D"],
+      },
+      "damage body height": {
+        ids: ["brief.fps.8"],
+        owners: ["PhysicsDirectSpaceState3D"],
+      },
+      "raised platform gap hazard restart": {
+        ids: ["brief.platformer.3"],
+        owners: ["CharacterBody3D"],
+      },
+      "bright sky saturated green platforms": {
+        ids: ["brief.platformer.4"],
+        owners: ["Atmosphere"],
+      },
+      "enemy targets cooldown reload win condition": {
+        ids: ["brief.topdown-action.3"],
+        owners: ["CharacterBody3D"],
+      },
+      "close engagement range": { ids: ["brief.fps.12"], owners: ["NavigationAgent3D"] },
     } as const;
 
     expect([...new Set(aliases)].sort()).toEqual(Object.keys(predecessorRows).sort());
-    expect(Object.values(predecessorRows).every((rows) => rows.length > 0)).toBe(true);
+    const corpus = JSON.parse(
+      await readFile(
+        path.join(process.cwd(), "scripts/fixtures/capability-recall/corpus.json"),
+        "utf8",
+      ),
+    ) as {
+      rows: readonly {
+        readonly expect: readonly string[];
+        readonly id: string;
+        readonly query: string;
+        readonly scope: "mechanic" | "request";
+        readonly source: string;
+      }[];
+    };
+    const rows = new Map(corpus.rows.map((row) => [row.id, row]));
+    const predecessorRoot = await makeTempDir("threenative-capability-predecessor-");
+    temporaryRoots.push(predecessorRoot);
+    const predecessorFile = path.join(predecessorRoot, "capabilities.json");
+    await writeFile(
+      predecessorFile,
+      JSON.stringify({
+        ...manifest,
+        entries: manifest.entries.map((entry) => ({ ...entry, aliases: [] })),
+      }),
+    );
+
+    for (const [alias, predecessor] of Object.entries(predecessorRows)) {
+      const owners = manifest.entries.filter((entry) => entry.aliases?.includes(alias));
+      expect(owners.map((entry) => entry.symbol).sort(), alias).toEqual(
+        predecessor.owners.slice().sort(),
+      );
+      for (const id of predecessor.ids) {
+        const row = rows.get(id);
+        expect(row, `${alias} -> ${id}`).toBeDefined();
+        if (row === undefined) continue;
+        const rowTokens = new Set(capabilitySituationTokens(row.query));
+        expect(
+          capabilitySituationTokens(alias).every((token) => rowTokens.has(token)),
+          `${alias} uses vocabulary absent from ${row.source}`,
+        ).toBe(true);
+        const expectedOwners = predecessor.owners.filter((owner) => row.expect.includes(owner));
+        expect(expectedOwners.length, `${alias} -> ${id} has no expected owner`).toBeGreaterThan(0);
+        const before = searchCapabilities(row.query, predecessorFile, row.scope).results.map(
+          (result) => result.symbol,
+        );
+        expect(
+          expectedOwners.some((owner) => before.includes(owner)),
+          `${alias} -> ${id} was already recalled without aliases`,
+        ).toBe(false);
+        const after = searchCapabilities(
+          row.query,
+          "packages/create-threenative/capabilities.json",
+          row.scope,
+        ).results.map((result) => result.symbol);
+        expect(
+          expectedOwners.some((owner) => after.includes(owner)),
+          `${alias} -> ${id} is not recalled with its alias`,
+        ).toBe(true);
+      }
+    }
   });
 
   it("should fail when one normalized alias spans more than MAX_ALIAS_FANOUT entries", async () => {

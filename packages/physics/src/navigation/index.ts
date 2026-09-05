@@ -100,12 +100,7 @@ export function recast(): NavigationPlugin {
  * @situation enemy chases the player with line of sight and obstacle avoidance
  * @situation NPC walks to a destination
  * @situation move crew around a ship deck
- * @situation follow a patrol route
- * @situation close to engagement range
- * @situation search the last place the player was seen
- * @alias patrol route
  * @alias close engagement range
- * @alias search last place saw player
  * @constraint import NavigationAgent3D from exactly `@threenative/physics/navigation`; `@threenative/physics` is not a valid import for this symbol; use this capability instead of hand-written A*; requires recast() after rapier(), plus a baked NavigationRegion3D
  * @example import { NavigationAgent3D } from "@threenative/physics/navigation";
  * import { Vector3 } from "three";
