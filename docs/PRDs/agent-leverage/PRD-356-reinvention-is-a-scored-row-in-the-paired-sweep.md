@@ -4,15 +4,15 @@ prd_contract: v1
 
 # PRD-356 — "the framework stopped a rewrite" is an anecdote; make it a row
 
-**Status: PROPOSED, 2026-09-04.** Filed into
-[`astra-batch-2026-09-04`](./README.md), measured at `dae30759`.
+**Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/` from the
+[`ASTRA-BATCH-2026-09-04` provenance index](../ASTRA-BATCH-2026-09-04.md), measured at `dae30759`.
 
 **Complexity:** +2 for 6–10 files, +2 for a new module (the scorer and its ledger row), +2 for
 multi-package (`scripts/`, the round ledger, the detector from PRD-355) = **6 → HIGH mode.**
 
 **Depends on** [PRD-355](./PRD-355-the-reinvention-gate-sees-one-capability-in-fifty.md) — there is
 no score without a detector that sees more than 1.8% of the engine.
-**Depends on** [PRD-297](./PRD-297-capability-recall-is-a-measured-number.md) — a
+**Depends on** [PRD-297](../authoring/PRD-297-capability-recall-is-a-measured-number.md) — a
 reinvention count beside an unmeasured recall cannot be attributed to either.
 
 ## 1. Context
@@ -51,16 +51,16 @@ had*** — which is the mechanism by which the other three are supposed to impro
 
 **Overlap check.** Every open PRD surveyed 2026-09-04.
 
-- **PRD-297** (now beside this file) — recall as a number. Measures the *pull* side against a corpus of
+- **PRD-297** ([`authoring/PRD-297`](../authoring/PRD-297-capability-recall-is-a-measured-number.md)) — recall as a number. Measures the *pull* side against a corpus of
   phrasings. This measures the *outcome* on real generated game source. Hard dependency, not
   overlap: without 297's number, a reinvention count cannot be attributed to search quality versus
   search absence.
-- **PRD-124** (`agent-leverage/`, PROPOSED, planning only) — *agent evidence and repair benchmark*.
+- **PRD-124** ([`agent-leverage/PRD-124`](./PRD-124-agent-evidence-and-repair-benchmark.md), PROPOSED, planning only) — *agent evidence and repair benchmark*.
   Adjacent and the closest thing to a collision in the tree. 124 measures whether an agent
   **repairs** its own game from evidence; this measures what it **rebuilt** before running
   anything. Read 124's §1 before Phase 0 and, if its harness is the better host, land this as a row
   inside it rather than as a second scorer.
-- **PRD-123** (`agent-leverage/`) — Three.js ecosystem compatibility corpus. Different corpus,
+- **PRD-123** ([`agent-leverage/PRD-123`](./PRD-123-threejs-ecosystem-compatibility-corpus.md)) — Three.js ecosystem compatibility corpus. Different corpus,
   different question.
 - **PRD-355** — the detector. Hard dependency; this PRD adds no detection logic of its own and must
   not fork the rules.

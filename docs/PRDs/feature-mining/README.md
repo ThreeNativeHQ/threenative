@@ -113,6 +113,10 @@ is filed here because it extracts a rendering mechanism from `lumen-hall` while 
 appearance choice in the game. Its sibling [PRD-277](../useful-defaults/PRD-277-merged-geometry-keeps-its-per-part-tint.md)
 remains in `useful-defaults/` because it is still a proposed default, not a mined mechanism record.
 
+[PRD-325 — three sandbox games hand-wrote the same three seams](./PRD-325-three-games-hand-wrote-the-same-three-seams.md)
+is filed here because it mines repeated cross-frame and physics seams from real game source for
+possible engine extraction. Its capability-search follow-up is tracked from `agent-leverage/`.
+
 **Order to attack:** 251 → 243 → 246 → 240 → 245.
 253 is blocked until its detached Bistro consumer loads the same assets on browser and native;
 258 is blocked until its committed many-soldier consumer boots against exact current-engine

@@ -4,7 +4,7 @@
 **Complexity:** 3 (10+ files) + 2 (multi-package) + 2 (new module: the session hook) = **7 → HIGH mode**
 **Owner:** unassigned
 **Predecessors:** PRD-187 (built the search mechanism; proved prose lists fail at authoring time);
-[ORIGIN-authoring-discoverability-2026-08-31](../authoring/ORIGIN-authoring-discoverability-2026-08-31.md)
+[ORIGIN-authoring-discoverability-2026-08-31](./ORIGIN-authoring-discoverability-2026-08-31.md)
 and PRD-297/298/299/300/301 (recall quality — see §1f for the division of labour)
 
 ---
@@ -103,7 +103,7 @@ The check costs ~1.6 s on this checkout — cheap enough for `pnpm test`.
 
 ### 1f. Prior art — the authoring batch owns recall quality; this PRD owns currency
 
-The [ORIGIN note](../authoring/ORIGIN-authoring-discoverability-2026-08-31.md) and PRD-297
+The [ORIGIN note](./ORIGIN-authoring-discoverability-2026-08-31.md) and PRD-297
 (recall is a measured number), PRD-298 (search fails closed), PRD-299 (decomposition index),
 PRD-300 (vocabulary expansion) and PRD-301 (manifest covers every shipped package) attack a
 different half of the problem: when an agent *does* search, the results are right. Their measured
