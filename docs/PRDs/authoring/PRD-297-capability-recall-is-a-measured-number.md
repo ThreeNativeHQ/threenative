@@ -130,10 +130,10 @@ sequenceDiagram
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `scripts/capability-recall.ts` | `package.json:16` (`budgets` chain) — TBD exact line after edit | nothing | n/a, new measurement | deleting one `@situation` line from `AnimationPlayer` and rebuilding the manifest turns its corpus row red |
-| 2 | `caps:recall` npm script | `package.json` scripts — TBD | nothing | n/a | running it with an emptied `corpus.json` must exit non-zero, not report 100% |
-| 3 | `corpus.json` | read by row 1 — TBD | nothing | n/a | breaking one `source` pointer (renaming a template heading) must fail the gate |
-| 4 | `budget.json` floor | read by row 1 — TBD | nothing | n/a | hand-lowering one recorded number must fail the gate on the next run |
+| 1 | `scripts/capability-recall.ts` | `package.json:17` (`budgets` chain) | nothing | n/a, new measurement | deleting one `@situation` line from `AnimationPlayer` and rebuilding the manifest turns its corpus row red |
+| 2 | `caps:recall` npm script | `package.json:19` (`scripts` entry) | nothing | n/a | running it with an emptied `corpus.json` must exit non-zero, not report 100% |
+| 3 | `corpus.json` | `scripts/capability-recall.ts:92` (`CORPUS_RELATIVE_PATH`) | nothing | n/a | breaking one `source` pointer (renaming a template heading) must fail the gate |
+| 4 | `budget.json` floor | `scripts/capability-recall.ts:93` (`BUDGET_RELATIVE_PATH`) | nothing | n/a | hand-lowering one recorded number must fail the gate on the next run |
 
 ### Reachability
 
