@@ -40,6 +40,8 @@ export interface IPerfSummary {
 
 /** What the window's frames were drawn at, when the loop reported it. */
 export interface IFrameSurfaceJson {
+  /** Present only when the runtime measured whether asynchronous pipeline compilation remained active. */
+  readonly compiling?: boolean;
   readonly resolutionScale: number;
   readonly scaleSource: string;
   readonly sampleCount: number;
@@ -431,6 +433,11 @@ export function formatPerfReport(report: IPerfReport): string {
       ? "surface: unreported — this fps does not say what resolution or sampling produced it"
       : `surface: scale ${surface.resolutionScale} ${surface.scaleSource}, ` +
         `${surface.drawingBufferWidth}x${surface.drawingBufferHeight}, ${surface.sampleCount}x samples` +
+        (surface.compiling === undefined
+          ? ""
+          : surface.compiling
+            ? ", compile pending"
+            : ", compile idle") +
         // At the floor the scaler has no room left and the target is still missed. Saying only
         // the scale here would read as a budget met at a low resolution.
         (surface.atFloor === true ? " — AT FLOOR, budget not met" : ""),

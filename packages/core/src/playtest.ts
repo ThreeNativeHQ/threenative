@@ -7,6 +7,7 @@ import {
   type IPlaytestSampleRequest,
   type IPlaytestStrideObservation,
   type IPlaytestWorldObservation,
+  type JsonPrimitive,
   type JsonValue,
   PLAYTEST_PROTOCOL_LIMITS,
   assertJsonSafe,
@@ -37,11 +38,25 @@ export function playtest<
   let attached: Promise<void> | undefined;
   let startSceneEntered: Promise<void> | undefined;
   let contactHistory: IPlaytestContactObservation[] = [];
+  // The tick a contact happened on, and the tick a published value changed on, are the two
+  // halves of "the door opened because the plate was pressed". Both are drained per tick rather
+  // than per sample: a sample is a step boundary, and a win arriving 199 ticks into a 200-tick
+  // step is indistinguishable at that granularity from one arriving with the contact.
+  const watcher = createTransitionWatcher();
+  let readTick: (() => number) | undefined;
   return {
     sceneExit: () => {
       contactHistory = [];
+      watcher.reset();
+    },
+    update: (ctx) => {
+      const tick = readTick?.();
+      if (tick === undefined) return;
+      drainContacts(ctx, contactHistory, tick);
+      watcher.observe(ctx, tick);
     },
     setup: async (ctx, runtime) => {
+      readTick = runtime?.tick;
       const seed = runtime?.seed ?? null;
       const replayRuntime: IPlaytestWorldObservation["runtime"] =
         runtime?.seed === null || runtime?.seed === undefined
@@ -62,7 +77,7 @@ export function playtest<
           ? {}
           : { runtimeDiagnosticsSeries: runtime.runtimeDiagnosticsSeries }),
         ...(options.events === undefined ? {} : { events: options.events }),
-        gameplay: () => gameplayObservations(ctx, contactHistory, seed, replayRuntime),
+        gameplay: () => gameplayObservations(ctx, contactHistory, seed, replayRuntime, watcher),
         gameplayChannels: () => gameplayChannels(ctx),
         renderer: ctx.renderer.raw as { getDrawingBufferSize(target: Vector2): Vector2 },
         renderChain: () => {
@@ -112,6 +127,8 @@ export function playtest<
         attached = undefined;
         startSceneEntered = undefined;
         contactHistory = [];
+        readTick = undefined;
+        watcher.reset();
       };
       // Hand the hold to the game rather than blocking this plugin's setup. The game waits after
       // load() has registered setup placeholders but before enter() transfers them into live state.
@@ -319,6 +336,7 @@ function gameplayObservations<TState extends Record<string, unknown>, TPhysics>(
   contactHistory: IPlaytestContactObservation[],
   seed: number | null,
   replayRuntime: IPlaytestWorldObservation["runtime"],
+  watcher: ITransitionWatcher,
 ): IPlaytestGameplayObservation {
   const animation: IPlaytestGameplayObservation["animation"] = {};
   const states: IPlaytestGameplayObservation["states"] = {};
@@ -352,15 +370,21 @@ function gameplayObservations<TState extends Record<string, unknown>, TPhysics>(
     if (typeof entity?.state === "string") states[id] = entity.state;
   }
   const channels = gameplayChannels(ctx);
+  // The per-tick update hook has already drained everything that happened since the last sample
+  // and stamped each event with its tick. This final drain catches a run whose bridge is sampled
+  // without the loop having ticked — a paused game, a wall-clock scenario — and stamps those with
+  // the tick the loop last reported. Contacts are never dropped for want of a tick.
   const contacts = channels.includes("runtime.contacts")
-    ? drainContacts(ctx, contactHistory)
+    ? drainContacts(ctx, contactHistory, watcher.lastTick())
     : undefined;
   const tags = channels.includes("runtime.tags") ? tagCounts(snapshot) : undefined;
+  const transitions = watcher.read();
   return {
     animation,
     ...(contacts === undefined ? {} : { contacts }),
     states,
     ...(tags === undefined ? {} : { tags }),
+    ...(transitions === undefined ? {} : { transitions }),
     ...runtimeObservation(seed, replayRuntime),
   };
 }
@@ -389,8 +413,10 @@ function strideObservation(value: unknown): IPlaytestStrideObservation | undefin
   };
 }
 
-type GameplayChannel = "runtime.contacts" | "runtime.tags";
+type GameplayChannel = "runtime.contacts" | "runtime.tags" | "runtime.transitions";
 interface IContactEvent {
+  /** The area that observed the contact, when the source reports one. */
+  readonly area?: object;
   readonly body: object;
   readonly entity?: string;
   readonly started: boolean;
@@ -402,11 +428,12 @@ interface IContactSource {
 function gameplayChannels<TState extends Record<string, unknown>, TPhysics>(
   _ctx: ICtx<TState, TPhysics>,
 ): GameplayChannel[] {
-  return ["runtime.contacts", "runtime.tags"];
+  return ["runtime.contacts", "runtime.tags", "runtime.transitions"];
 }
 function drainContacts<TState extends Record<string, unknown>, TPhysics>(
   ctx: ICtx<TState, TPhysics>,
   history: IPlaytestContactObservation[],
+  tick: number | undefined,
 ): IPlaytestContactObservation[] {
   // One snapshot and one value→id index per drain: findEntityId rebuilt both per contact event,
   // O(n*c) field extractions on every runner sample. First id wins per value, matching the
@@ -423,11 +450,20 @@ function drainContacts<TState extends Record<string, unknown>, TPhysics>(
     for (const source of entitySources(ctx.entities.get(id))) {
       for (const event of source.drainContacts()) {
         const entity = idsByEntity.get(event.body);
-        if (entity === undefined || event.entity === undefined) continue;
+        // The area's own `entity` option names the far side of the contact. A game that
+        // registered the area under a scene-registry id has already named it, and requiring the
+        // option again meant a demonstrably firing trigger reported no contact at all — a green
+        // `contacts` assertion over a run whose own state proved the overlap happened.
+        const other =
+          event.entity ??
+          (event.area === undefined ? undefined : idsByEntity.get(event.area)) ??
+          idsByEntity.get(source);
+        if (entity === undefined || other === undefined) continue;
         history.push({
           entity,
           kind: event.started ? "trigger" : "trigger.exit",
-          with: event.entity,
+          ...(tick === undefined ? {} : { tick }),
+          with: other,
         });
         if (history.length > PLAYTEST_PROTOCOL_LIMITS.maxEventsPerDrain) history.shift();
       }
@@ -435,6 +471,91 @@ function drainContacts<TState extends Record<string, unknown>, TPhysics>(
   }
   return [...history];
 }
+/**
+ * When a published value changed, and to what — the other half of "because".
+ *
+ * A run has always been able to say *a contact happened* and *the state reads `won`*. Nothing
+ * related the two, and a scenario could only compare at step boundaries, where a win arriving one
+ * tick after the contact and a win arriving 199 ticks later inside the same step are the same
+ * observation. That is exactly the shape of a game whose terminal state comes from a timer or a
+ * distance check and merely happens to land near a contact.
+ *
+ * The watcher diffs the published surface once per tick and records every change with the tick it
+ * happened on. It watches what a scenario can name: each registered entity's `state`, and the
+ * top-level primitive fields of the game's own published state. A deeper path is not watched, and
+ * an assertion about one fails closed rather than being answered from a value nobody diffed.
+ */
+export const PLAYTEST_TRANSITION_LOG_LIMIT = 512;
+
+export interface IPlaytestTransition {
+  from: JsonPrimitive;
+  /** `states.<entity>` for a registered entity, or `state.<field>` for a published field. */
+  path: string;
+  tick: number;
+  to: JsonPrimitive;
+}
+
+interface ITransitionWatcher {
+  lastTick(): number | undefined;
+  observe<TState extends Record<string, unknown>, TPhysics>(
+    ctx: ICtx<TState, TPhysics>,
+    tick: number,
+  ): void;
+  read(): IPlaytestTransition[] | undefined;
+  reset(): void;
+}
+
+function primitiveOrUndefined(value: unknown): JsonPrimitive | undefined {
+  if (value === null) return null;
+  if (typeof value === "string" || typeof value === "boolean") return value;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function createTransitionWatcher(): ITransitionWatcher {
+  let previous = new Map<string, JsonPrimitive>();
+  let log: IPlaytestTransition[] = [];
+  let seen = false;
+  let tickSeen: number | undefined;
+  const record = (path: string, to: JsonPrimitive, tick: number): void => {
+    const had = previous.has(path);
+    const from = previous.get(path);
+    previous.set(path, to);
+    // The first value a path ever reports is its initial value, not a transition. Recording it as
+    // one would make every scenario's `neverBefore` fail against the game's own starting state.
+    if (!had || from === to) return;
+    log.push({ from: from as JsonPrimitive, path, tick, to });
+    if (log.length > PLAYTEST_TRANSITION_LOG_LIMIT) log.shift();
+  };
+  return {
+    lastTick: () => tickSeen,
+    observe: (ctx, tick) => {
+      tickSeen = tick;
+      seen = true;
+      const snapshot = ctx.entities.snapshot();
+      for (const id of Object.keys(snapshot)) {
+        const entity = ctx.entities.get(id) as { state?: unknown } | undefined;
+        if (typeof entity?.state === "string") record(`states.${id}`, entity.state, tick);
+      }
+      // The store is read without flushing: a flush is a publish to the UI, and an observer must
+      // not change when the game's own subscribers run.
+      const state = ctx.state.getState() as Record<string, unknown>;
+      for (const key of Object.keys(state)) {
+        const value = primitiveOrUndefined(state[key]);
+        if (value !== undefined) record(`state.${key}`, value, tick);
+      }
+    },
+    // Absent until the loop has ticked at least once. A run that never ticked has not observed
+    // that nothing changed; it has observed nothing, and an assertion against it must say so.
+    read: () => (seen ? log.map((entry) => ({ ...entry })) : undefined),
+    reset: () => {
+      previous = new Map();
+      log = [];
+      seen = false;
+      tickSeen = undefined;
+    },
+  };
+}
+
 function entitySources(entity: object | undefined): IContactSource[] {
   return objectGraphValues(entity).filter(
     (value): value is IContactSource =>

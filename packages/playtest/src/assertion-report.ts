@@ -9,6 +9,7 @@ import type { IPlaytestDeviceMetricsObservation } from "./runner/deviceMetrics.j
 import type { IPlaytestDiagnosticsPolicy } from "./report.js";
 import type {
   IPlaytestRenderChainObservation,
+  IPlaytestSceneNodesObservation,
   IPlaytestSceneObservation,
   IPlaytestStartupTimeline,
 } from "./protocol.js";
@@ -71,6 +72,7 @@ export interface IPlaytestObservations {
   resources: Record<string, { after?: unknown; before?: unknown }>;
   /** Lights, materials, fog, background, camera framing and world extent, as the bridge found them. */
   scene?: IPlaytestSceneObservation;
+  sceneNodes?: IPlaytestSceneNodesObservation[];
   /** The startup observation the runner waited on, with the rule it resolved under. */
   startup?: {
     compileSettled?: boolean;

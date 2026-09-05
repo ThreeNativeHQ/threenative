@@ -1031,6 +1031,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // A plan and a measurement that disagree is the finding; one number pretending to be both
     // is how an optimizer reports a win it did not deliver.
     let lastWorldDrawCalls: number | undefined;
+    // Completion on the last frame must not make an otherwise compiling window look clean.
+    let compilingInWindow = false;
+    let lastCompileCount = renderer.compileCount;
+    const observeCompilation = (): void => {
+      const count = renderer.compileCount;
+      compilingInWindow ||= renderer.compiling === true || count !== lastCompileCount;
+      lastCompileCount = count;
+    };
     // Built here rather than inside the loop so `frameBudget: false` is a single decision with a
     // single owner, and so the render phases below feed the same instrument the loop feeds.
     const frameBudget =
@@ -1041,6 +1049,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // The scaler reads the same windows the marker reports, so what it acted on and what
             // the record shows are the same measurement rather than two sampling paths.
             onWindow: (reported) => {
+              observeCompilation();
+              const compileObserved = compilingInWindow;
+              compilingInWindow = false;
               renderer.observeRenderChainBudget?.(reported);
               const projection = this.#projection;
               // Printed every window, projecting or declined. `TN_RENDER_PROJECTION` says once
@@ -1069,7 +1080,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               // the framework already defines as "the world is safe to show", it now includes
               // anything the game held startup for, and a host that never reaches it still gets
               // there on the bounded fallbacks inside `StartupReadiness`.
-              if (!startupReadiness.ready) return;
+              if (!startupReadiness.ready || compileObserved) return;
               const stepped = scaler.observe(reported);
               if (stepped !== undefined) renderer.setResolutionScale(stepped, scaler.scaleSource);
             },
@@ -1077,10 +1088,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // resolution it is not drawing at. The window carries it in both pinned and auto
             // modes: turning the convention off does not turn its measurement off.
             readGpuMs: () => renderer.gpuFrameMs(),
-            readSurface: () =>
-              scaler === undefined
-                ? renderer.surface()
-                : { ...renderer.surface(), atFloor: scaler.atFloor },
+            readSurface: () => {
+              observeCompilation();
+              return {
+                ...renderer.surface(),
+                ...(scaler === undefined ? {} : { atFloor: scaler.atFloor }),
+                ...(compilingInWindow ? { compiling: true } : {}),
+              };
+            },
           });
     this.#frameBudget = frameBudget;
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
@@ -1088,6 +1103,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       maxSteps: this.#config.maxSteps,
       onRender: () => {
+        observeCompilation();
         // The engine owns this requestAnimationFrame loop instead of delegating to Three's
         // setAnimationLoop(). Three's renderer therefore cannot reset its frame counters for us;
         // a concurrent internal renderer callback can otherwise leave stale work in the first

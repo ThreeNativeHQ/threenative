@@ -8,7 +8,16 @@ Run before implementation, to kill wrong assumptions cheaply. Subject: **6 real 
 config: { models: { sharedImages: true } }      // textures absent = defaults = on
 ```
 
-## What was proved
+## Execution correction: the supercompression control was not independent
+
+The original measured bytes below remain the spike record. Inspection of the actual
+`ktx2-encoder@0.6.0` implementation later found `DefaultOptions.needSupercompression: true`,
+merged before applying caller options. Thus omission and explicit true both used Zstd; the
+0.0% result does **not** prove Zstd is ineffective without RDO. PRD-349 still leaves the caller
+flag unset and preserves the dependency's true default. The private 4K adapter initially
+regressed it to false; the red/green correction is recorded in `PRD-349-the-cook.md`.
+
+## What was proved (original interpretation; correction above applies to row 7)
 
 | # | Assumption | Verdict | Evidence |
 |---|---|---|---|

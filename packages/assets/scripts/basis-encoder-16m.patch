@@ -1,0 +1,18 @@
+diff --git a/webgl/transcoder/basis_wrappers.cpp b/webgl/transcoder/basis_wrappers.cpp
+index 1e69bc1..58b3759 100644
+--- a/webgl/transcoder/basis_wrappers.cpp
++++ b/webgl/transcoder/basis_wrappers.cpp
+@@ -37,3 +37,6 @@
+ // This check can be removed, but you risk crashing on larger images in 32-bit WASM. Also, ETC1S/UASTC LDR 4x4 encoding uses way less memory than UASTC HDR 6x6 encoding, so you could boost this in those cases.
++// ThreeNative raises only the simpler LDR compressor ceiling so an ordinary 4096x4096
++// source can compile without resizing. HDR retains upstream's conservative wasm32 limit.
++// Modified from Basis Universal upstream commit 1b33fd5098c6e7b58324146b8f5518cbb4cdfb72.
+ // 32-bit WASM limitation (TODO: remove for 64-bit), to prevent OOM crashes during HDR encoding in particular.
+ // TODO: Even WASM64 in Chrome has limits which seem too low for us. For now, just impose this limit.
+@@ -42,5 +45,5 @@
+     #define BASISU_ENCODER_MAX_SOURCE_IMAGE_PIXELS_HIGHER_LIMIT (1024*1024*16)
+ #else
+     #define BASISU_ENCODER_MAX_SOURCE_IMAGE_PIXELS (1024*1024*4)
+-    #define BASISU_ENCODER_MAX_SOURCE_IMAGE_PIXELS_HIGHER_LIMIT (1024*1024*12)
++    #define BASISU_ENCODER_MAX_SOURCE_IMAGE_PIXELS_HIGHER_LIMIT (1024*1024*16)
+ #endif

@@ -1,10 +1,11 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { NodeIO } from "@gltf-transform/core";
+import { Document, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
+import { getTextureColorSpace, listTextureSlots } from "@gltf-transform/functions";
 import { MeshoptDecoder } from "meshoptimizer";
 import { PNG } from "pngjs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildFixtureDocument } from "../../../test-support/generate-fixture-model.js";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -18,7 +19,23 @@ import {
   sharedImageKey,
   sharedImageUri,
   unpackGlb,
+  writeSharedGlb,
 } from "../src/passes/shared-images.js";
+
+const publicationProbe = vi.hoisted(() => ({
+  afterWrite: undefined as ((filename: string) => Promise<void>) | undefined,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...original,
+    writeFile: async (...args: Parameters<typeof original.writeFile>) => {
+      await original.writeFile(...args);
+      await publicationProbe.afterWrite?.(String(args[0]));
+    },
+  };
+});
 
 /**
  * A marketplace pack embeds the same textures in every model that uses them: Wildwood's eight
@@ -149,6 +166,129 @@ async function applyShared(
 }
 
 describe("shared model images", () => {
+  it("should publish concurrent shared images with independent staging files", async () => {
+    const root = await makeTempDir("threenative-shared-publication-");
+    await mkdir(path.join(root, "assets"));
+    const input = await repeatedSourceKeyFixture();
+    await writeFile(path.join(root, "assets", "a.glb"), input);
+    await writeFile(path.join(root, "assets", "b.glb"), input);
+    const staged: string[] = [];
+    let release = () => {};
+    const bothWritten = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    publicationProbe.afterWrite = async (filename) => {
+      if (!filename.includes("/shared/images/") || !filename.endsWith(".tmp")) return;
+      staged.push(filename);
+      if (staged.length === 2) release();
+      await bothWritten;
+    };
+    try {
+      // Hold the first writer before rename so both runners necessarily see a missing final
+      // output. PID-only staging names then deterministically collide, without a flaky loop.
+      await compileAssets({ cwd: root, concurrency: 2, transcoder: basisTranscoderPaths() });
+      expect(staged).toHaveLength(2);
+      expect(new Set(staged).size).toBe(2);
+      const files = await readdir(path.join(root, "public", "shared", "images"));
+      expect(files).toHaveLength(1);
+      expect(files.some((file) => file.endsWith(".tmp"))).toBe(false);
+    } finally {
+      publicationProbe.afterWrite = undefined;
+      release();
+    }
+  });
+
+  it("should not recall images encoded under the previous encoder cache policy", async () => {
+    const input = await fixture(7);
+    const document = await new NodeIO().readBinary(input);
+    const legacyKeys = document
+      .getRoot()
+      .listTextures()
+      .map((texture) =>
+        sharedImageKey(texture.getImage() ?? new Uint8Array(), {
+          colorSpace: getTextureColorSpace(texture),
+          slots: [...listTextureSlots(texture)].sort(),
+          textures: { keepSmallerSource: true, maxSize: null, overrides: [], quality: null },
+        }),
+      );
+    const store = createSharedImageStore();
+    const get = vi.spyOn(store, "get");
+    await applyShared(store, input, "model.glb");
+    expect(get).toHaveBeenCalled();
+    expect(new Set(get.mock.calls.map(([key]) => key)).size).toBe(2);
+    for (const [key] of get.mock.calls) expect(legacyKeys).not.toContain(key);
+    expect(modelPass().configuration?.textures).toHaveProperty("encoder");
+  });
+
+  it("should write a model without a binary buffer when the scene only contains nodes", async () => {
+    const document = new Document();
+    document.createScene().addChild(document.createNode("marker"));
+    const written = await writeSharedGlb(new NodeIO(), document, "marker.gltf", () => {
+      throw new Error("node-only scene must not request an image URI");
+    });
+    const unpacked = unpackGlb(written.buffer);
+    expect(unpacked.bin).toBeUndefined();
+    expect(unpacked.json.nodes?.[0]?.name).toBe("marker");
+    const decoded = await new NodeIO().readBinary(written.buffer);
+    expect(decoded.getRoot().listNodes()[0]?.getName()).toBe("marker");
+  });
+
+  it.each([undefined, 1, 2])(
+    "should write one image when two models embed the same bytes and no config is given (concurrency %s)",
+    async (concurrency) => {
+      const root = await makeTempDir("threenative-shared-default-");
+      await mkdir(path.join(root, "assets"));
+      const input = await repeatedSourceKeyFixture();
+      await writeFile(path.join(root, "assets", "a.glb"), input);
+      await writeFile(path.join(root, "assets", "b.glb"), input);
+      await compileAssets({ cwd: root, concurrency, transcoder: basisTranscoderPaths() });
+      const files = await readdir(path.join(root, "public", "shared", "images"));
+      expect(files).toHaveLength(1);
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      ) as { entries: Record<string, { output: string }> };
+      for (const logical of ["a.glb", "b.glb"]) {
+        const entry = manifest.entries[logical];
+        expect(entry).toBeDefined();
+        const output = unpackGlb(await readFile(path.join(root, "public", entry?.output ?? "")));
+        expect(output.json.images).toHaveLength(1);
+        expect(output.json.images?.[0]?.uri).toBe(`shared/images/${files[0]}`);
+        expect(output.json.images?.[0]?.bufferView).toBeUndefined();
+      }
+    },
+  );
+
+  it("should keep the opt-out honoured when sharedImages is false", async () => {
+    const log = vi.spyOn(console, "log");
+    const root = await makeTempDir("threenative-shared-opt-out-");
+    await mkdir(path.join(root, "assets"));
+    const input = await repeatedSourceKeyFixture();
+    await writeFile(path.join(root, "assets", "a.glb"), input);
+    await writeFile(path.join(root, "assets", "b.glb"), input);
+    const result = await compileAssets({
+      config: { models: { sharedImages: false } },
+      cwd: root,
+      transcoder: basisTranscoderPaths(),
+    });
+    expect(result.written).toBe(2);
+    expect(log.mock.calls.flat().join("\n")).toMatch(
+      /TN_ASSETS_SHARED_IMAGES_DISABLED:.*2 model\(s\).*\d+ image bytes/u,
+    );
+    log.mockRestore();
+    await expect(readdir(path.join(root, "public", "shared", "images"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string }> };
+    for (const entry of Object.values(manifest.entries)) {
+      const output = unpackGlb(await readFile(path.join(root, "public", entry.output)));
+      expect(output.json.images).toHaveLength(1);
+      expect(output.json.images?.[0]?.bufferView).toBeDefined();
+      expect(output.json.images?.[0]?.uri).toBeUndefined();
+    }
+  });
+
   it("should atomically accept concurrent writes for the same shared image", async () => {
     const root = await makeTempDir("threenative-shared-images-concurrent-");
     const store = createSharedImageStore(root);
@@ -166,6 +306,22 @@ describe("shared model images", () => {
     await expect(readdir(path.join(root, "shared", "images"))).resolves.toEqual([
       `${key}.uastc.ktx2`,
     ]);
+  });
+
+  it("should retain a compiler-cached image without publishing it before compiler emission", async () => {
+    const root = await makeTempDir("threenative-shared-images-ownership-");
+    const image = {
+      buffer: Buffer.from("shared image"),
+      codec: "uastc",
+      mimeType: "image/ktx2",
+    };
+    const key = sharedImageKey(image.buffer, { test: true });
+    const outputPath = `shared/images/${key}.uastc.ktx2`;
+    const store = createSharedImageStore(root, { writeThrough: false });
+
+    await store.put(key, image);
+    await expect(store.get(key)).resolves.toEqual(image);
+    await expect(readFile(path.join(root, outputPath))).rejects.toThrow(/ENOENT/u);
   });
 
   it("should declare one repeated source key when model dedup is disabled", async () => {
@@ -240,8 +396,16 @@ describe("shared model images", () => {
 
   it("should write each distinct image once and reference it from every model by a relative uri", async () => {
     const store = countingStore(createSharedImageStore());
-    const a = await applyShared(store, await fixture(0), "props/a.glb");
-    const b = await applyShared(store, await fixture(0), "props/deep/b.glb");
+    const options = {
+      textures: {
+        overrides: [
+          { slot: "baseColorTexture", codec: "etc1s" as const },
+          { slot: "normalTexture", codec: "uastc" as const },
+        ],
+      },
+    };
+    const a = await applyShared(store, await fixture(0), "props/a.glb", options);
+    const b = await applyShared(store, await fixture(0), "props/deep/b.glb", options);
 
     // Neither GLB embeds an image any more: every image is a uri into shared/images.
     const jsonA = unpackGlb(a.buffer).json;

@@ -11,6 +11,7 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
 import { modelPass } from "../src/passes/model.js";
+import { parsePng } from "../src/png.js";
 
 /**
  * Proof that the textures *inside* a `.glb` go through the pipeline too. A prop carrying
@@ -38,9 +39,10 @@ async function fixtureWithTextures(options: {
   baseColor
     ?.setImage(
       rgbaPng({
-        blue: (x) => (x * 4) % 256,
+        blue: (x, y) => (x * 19 + y * 23) % 256,
+        green: (x, y) => (x * 29 + y * 31) % 256,
         height,
-        red: (x, y) => (x + y) % 256,
+        red: (x, y) => (x * 37 + y * 41) % 256,
         width,
       }),
     )
@@ -51,9 +53,9 @@ async function fixtureWithTextures(options: {
       // every assertion below measure one texture instead of two.
       rgbaPng({
         blue: () => 255,
-        green: (_x, y) => 128 + (y % 5),
+        green: (x, y) => 96 + ((x * 29 + y * 31) % 64),
         height,
-        red: (x) => 128 + (x % 7),
+        red: (x, y) => 96 + ((x * 37 + y * 41) % 64),
         width,
       }),
     )
@@ -209,9 +211,45 @@ describe("embedded model textures", () => {
     expect(summary?.formats["cloth-normal"]).toBe("etc1s");
   });
 
-  it("should fail closed naming an image whose size is not a whole number of blocks", async () => {
+  // Same 4x4 block rule as the standalone pass, same split: an automatic cook retains an image
+  // no block codec can take, and only a named per-slot codec fails the build.
+  it("should retain an image whose size is not a whole number of blocks", async () => {
     const input = await fixtureWithTextures({ height: 30, width: 30 });
-    await expect(apply(input)).rejects.toThrow(/TN_ASSETS_MODEL_TEXTURE_BLOCK_SIZE.*30x30/su);
+    const before = new Map(
+      (await readOutput(input))
+        .getRoot()
+        .listTextures()
+        .map((texture) => [texture.getName(), Buffer.from(texture.getImage() ?? new Uint8Array())]),
+    );
+    const { buffer, entry } = await compiled(input);
+    const summary = entry.embeddedTextures as {
+      readonly formats: Readonly<Record<string, string>>;
+      readonly gpuBytesAfter: number;
+      readonly gpuBytesBefore: number;
+      readonly resized: number;
+      readonly skippedCompression: Readonly<Record<string, string>>;
+    };
+
+    for (const texture of (await readOutput(buffer)).getRoot().listTextures()) {
+      const key = texture.getName();
+      const image = Buffer.from(texture.getImage() ?? new Uint8Array());
+      expect(texture.getMimeType()).toBe("image/png");
+      expect(image.equals(before.get(key) ?? Buffer.alloc(0))).toBe(true);
+      expect(parsePng(image)).toMatchObject({ height: 30, width: 30 });
+      expect(summary.formats[key]).toBe("none");
+      expect(summary.skippedCompression[key]).toBe("block-size");
+    }
+    expect(summary.resized).toBe(0);
+    // Nothing was compressed, so the VRAM estimate must still charge 4 bytes per pixel.
+    expect(summary.gpuBytesAfter).toBe(2 * Math.round(30 * 30 * 4 * (4 / 3)));
+    expect(summary.gpuBytesAfter).toBe(summary.gpuBytesBefore);
+  });
+
+  it("should still fail closed on a non-block-aligned image under a named per-slot codec", async () => {
+    const input = await fixtureWithTextures({ height: 30, width: 30 });
+    await expect(
+      apply(input, { textures: { overrides: [{ codec: "uastc", slot: "baseColorTexture" }] } }),
+    ).rejects.toThrow(/TN_ASSETS_MODEL_TEXTURE_BLOCK_SIZE.*30x30/su);
   });
 
   it("should fail closed naming an embedded image it cannot decode", async () => {
@@ -381,6 +419,43 @@ describe("embedded textures through the compile step", () => {
     expect(manifest.entries["prop.glb"]?.extensions).not.toContain("KHR_texture_basisu");
     expect(manifest.entries["prop.glb"]?.embeddedTextures).toBeUndefined();
     await expect(stat(path.join(root, "public", "basis"))).rejects.toThrow();
+  });
+
+  // The manifest narrows the pass summary field by field rather than casting it, so a reason the
+  // narrowing does not recognise is dropped on the way out and the budget never sees it.
+  it("should carry the block-size reason into the manifest, fresh and on a cache hit", async () => {
+    const root = await makeTempDir("threenative-model-textures-block-size-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "prop.glb"),
+      await fixtureWithTextures({ height: 30, width: 30 }),
+    );
+    const options = { concurrency: 1, cwd: root, transcoder: basisTranscoderPaths() };
+
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((line) => lines.push(String(line)));
+    try {
+      await compileAssets(options);
+      expect(lines).toContain(
+        "embedded texture prop.glb#cloth-normal: compression skipped: block-size",
+      );
+      lines.length = 0;
+      const second = await compileAssets(options);
+      expect(second.skipped).toBe(1);
+      expect(lines).toContain(
+        "embedded texture prop.glb#cloth-normal: compression skipped: block-size",
+      );
+    } finally {
+      log.mockRestore();
+    }
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, Record<string, unknown>> };
+    const summary = manifest.entries["prop.glb"]?.embeddedTextures as {
+      readonly skippedCompression: Readonly<Record<string, string>>;
+    };
+    expect(summary.skippedCompression["cloth-normal"]).toBe("block-size");
+    expect(manifest.entries["prop.glb"]?.extensions).not.toContain("KHR_texture_basisu");
   });
 
   it("should reject malformed embedded-texture and simplify config", async () => {

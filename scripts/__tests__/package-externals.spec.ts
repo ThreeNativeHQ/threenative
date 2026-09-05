@@ -1,7 +1,9 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { publicWorkspacePackages } from "../workspace-packages.js";
 
 const REPO = path.resolve(import.meta.dirname, "..", "..");
@@ -145,6 +147,41 @@ const INLINED_BY_DESIGN: Readonly<Record<string, readonly string[]>> = {
 };
 
 describe("published packages keep their runtime dependencies external", () => {
+  it("copies Blender GPL sources without Python interpreter caches", () => {
+    const fixture = makeTempDirSync("tn-blender-gpl-bundle-");
+    const assets = path.join(fixture, "packages", "assets");
+    const source = path.join(fixture, "packages", "blender-mcp", "gpl");
+    const target = path.join(assets, "dist", "blender-gpl");
+    try {
+      fs.mkdirSync(path.join(assets, "scripts"), { recursive: true });
+      fs.mkdirSync(path.join(source, "recipes", "__pycache__"), { recursive: true });
+      fs.copyFileSync(
+        path.join(REPO, "packages", "assets", "scripts", "bundle-blender-gpl.mjs"),
+        path.join(assets, "scripts", "bundle-blender-gpl.mjs"),
+      );
+      fs.writeFileSync(path.join(source, "convert.py"), "# real source\n");
+      fs.writeFileSync(path.join(source, "LICENSE.GPL"), "GPL-2.0-or-later\n");
+      fs.writeFileSync(path.join(source, "recipes", "material.py"), "# recipe\n");
+      fs.writeFileSync(path.join(source, "recipes", "loose.pyo"), "cached");
+      fs.writeFileSync(
+        path.join(source, "recipes", "__pycache__", "_common.cpython-313.pyc"),
+        "cached",
+      );
+
+      execFileSync(process.execPath, [path.join(assets, "scripts", "bundle-blender-gpl.mjs")]);
+
+      expect(fs.readFileSync(path.join(target, "convert.py"), "utf8")).toBe("# real source\n");
+      expect(fs.readFileSync(path.join(target, "LICENSE.GPL"), "utf8")).toBe("GPL-2.0-or-later\n");
+      expect(fs.readFileSync(path.join(target, "recipes", "material.py"), "utf8")).toBe(
+        "# recipe\n",
+      );
+      expect(fs.existsSync(path.join(target, "recipes", "loose.pyo"))).toBe(false);
+      expect(fs.existsSync(path.join(target, "recipes", "__pycache__"))).toBe(false);
+    } finally {
+      fs.rmSync(fixture, { force: true, recursive: true });
+    }
+  });
+
   // tsup externalises exactly what the manifest declares in `dependencies` and
   // `peerDependencies`; anything else it inlines into `dist`. A package that imports a module it
   // only declares in `devDependencies` therefore publishes a private copy of it, and no workspace

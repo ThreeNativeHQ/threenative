@@ -21,6 +21,7 @@
       "packages/runtime-native/build/**",
       "packages/runtime-native/**/build/**",
       "packages/runtime-native/third_party/**",
+      "packages/assets/vendor/basis-encoder/basis_encoder.js",
       "packages/runtime-native/**/*.json",
       "test-results/**",
       "examples/abyss-vanilla/index.html",

@@ -57,6 +57,8 @@ export interface IResolvedThreeNativeConfig {
     readonly renderer: ThreeNativeUiRenderer;
   };
   readonly assets?: {
+    readonly budget?: NonNullable<IThreeNativeConfig["assets"]>["budget"];
+    readonly exclude?: readonly string[];
     /** The bound on how many workers a bake may use; absent means the driver's default. */
     readonly concurrency?: number;
     readonly models?: "none" | IThreeNativeModelsConfig;
@@ -1209,9 +1211,31 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
   };
 }
 
+function validateBudget(raw: unknown): NonNullable<IResolvedThreeNativeConfig["assets"]>["budget"] {
+  const limit = (value: unknown): value is number | "none" =>
+    value === "none" || (typeof value === "number" && Number.isSafeInteger(value) && value > 0);
+  if (limit(raw)) return raw;
+  if (
+    typeof raw !== "object" ||
+    raw === null ||
+    Array.isArray(raw) ||
+    Object.entries(raw).some(
+      ([key, value]) => !["uncooked", "total"].includes(key) || !limit(value),
+    )
+  ) {
+    fail(
+      "TN_CONFIG_ASSETS_INVALID",
+      'assets.budget must contain positive integer byte limits or "none" for uncooked and total.',
+    );
+  }
+  return raw as NonNullable<IResolvedThreeNativeConfig["assets"]>["budget"];
+}
+
 function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
   const assets = assertRecord(raw, "assets");
   assertKeys(assets, "assets", [
+    "budget",
+    "exclude",
     "concurrency",
     "models",
     "source",
@@ -1222,7 +1246,16 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
   const targets = assets.targets === undefined ? undefined : validateAssetTargets(assets.targets);
   const models = assets.models === undefined ? undefined : validateModels(assets.models);
   const textures = assets.textures === undefined ? undefined : validateTextures(assets.textures);
+  if (
+    assets.exclude !== undefined &&
+    (!Array.isArray(assets.exclude) ||
+      assets.exclude.some((glob) => typeof glob !== "string" || glob.trim() === ""))
+  ) {
+    fail("TN_CONFIG_ASSETS_INVALID", "assets.exclude must be an array of non-empty glob strings.");
+  }
   return {
+    ...(assets.exclude === undefined ? {} : { exclude: assets.exclude as readonly string[] }),
+    ...(assets.budget === undefined ? {} : { budget: validateBudget(assets.budget) }),
     // The worker bound a bake may use. Validated here so a malformed value fails at config
     // load with the named code, and handed to the driver unchanged, which re-checks it —
     // the producer→consumer seam the config spec proves by running the pipeline.
