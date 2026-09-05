@@ -1,93 +1,349 @@
-# Capability search recall — baseline measurement, 2026-08-31
+# Capability search recall — gated baseline, 2026-08-31
 
-**What executed:** two ad-hoc Node one-liners against the committed manifest
-(`packages/create-threenative/capabilities.json`, 210 entries) through the built
-`packages/engine-mcp/dist/index.js`, at `77a68bec`. Nothing was changed. This is a read-only
-baseline, **not a gate** — `docs/PRDs/authoring/PRD-297` is the PRD that turns it into one.
+Recorded on 2026-09-05 from the clean PRD-297 checkout. The file name preserves the
+baseline date used by the sealed brief. The gate reads the generated
+packages/create-threenative/capabilities.json manifest (272 entries) and the same
+manifest copied at packages/core/capabilities.json.
 
-## Run 1 — every mechanic bullet in the sealed sweep briefs
+The sealed corpus has 58 rows:
 
-```sh
-node --input-type=module -e "
-import {searchCapabilities} from './packages/engine-mcp/dist/index.js';
-import fs from 'node:fs';
-const dir='docs/benchmark/genres';
-let total=0,empty=0;
-for(const g of fs.readdirSync(dir)){
-  const md=fs.readFileSync(\`\${dir}/\${g}/brief.md\`,'utf8');
-  const bullets=md.split('\n').filter(l=>l.startsWith('- ')&&!l.includes('sealed proof')).map(l=>l.slice(2).trim());
-  for(const b of bullets){
-    total++;
-    let r=[];try{r=searchCapabilities(b,'packages/create-threenative/capabilities.json','mechanic')}catch(e){}
-    if(!r.length){empty++;console.log('MISS ['+g+']',b.slice(0,72));}
-  }
+- 46 mechanic bullets copied from the seven sealed genre briefs.
+- 11 plain authoring requests.
+- 1 animation-foot guard row used by the situation-tag mutation.
+
+The 11 brief bullets that were zero-result in the historical baseline remain corpus
+rows even when later manifest changes make a row return results. The budget also
+records every currently recalled row, so a later ranking or tag change cannot
+compensate for losing one query with a different query's gain.
+
+## Gate proof
+
+Command:
+
+~~~sh
+pnpm caps:recall
+~~~
+
+Observed output:
+
+~~~text
+Capability recall (58 rows)
+id | scope | results | recalled | reject | returned
+brief.endless-runner.1 | mechanic | 5 | yes | no | Billboard3D, NavigationAgent3D, defineGame, VirtualShadowNode, Heightfield
+brief.endless-runner.2 | mechanic | 5 | yes | no | CharacterBody3D, DebugOverlay, TerrainTiles, buildStaticColliders, VirtualShadowNode
+brief.endless-runner.3 | mechanic | 2 | no | no | TracerPool3D, NavigationAgent3D
+brief.endless-runner.4 | mechanic | 5 | yes | no | publishUiState, useUiState, createReactOverlay, Atmosphere, Text
+brief.endless-runner.5 | mechanic | 5 | no | no | sendUiIntent, useUiIntent, watchAssets, onUiIntent, parseUEModel
+brief.exploration.1 | mechanic | 5 | no | no | formatPassCosts, subscribeUiState, boneLengthDeviations, VirtualShadowNode, runDesktopPlaytest
+brief.exploration.2 | mechanic | 5 | yes | no | NavigationAgent3D, Heightfield, WaveField, buildStaticColliders, PointerEvents3D
+brief.exploration.3 | mechanic | 2 | no | no | Scheduler, Area3D
+brief.exploration.4 | mechanic | 5 | no | no | boneLengthDeviations, WaveField, GroundSnap, UiLayer, useGameState
+brief.exploration.5 | mechanic | 5 | no | no | interactionGroups, VirtualShadowNode, PointerEvents3D, godrays, DesktopPlaytestDriver
+brief.fps.1 | mechanic | 1 | no | no | PhysicsDirectSpaceState3D
+brief.fps.2 | mechanic | 5 | no | yes | SpectralOcean, UiLayer, PointerEvents3D, PhysicsDirectSpaceState3D, subscribeUiState
+brief.fps.3 | mechanic | 0 | no | no | (none)
+brief.fps.4 | mechanic | 5 | no | no | TracerPool3D, connectDevicePlaytestBridge, DesktopPlaytestDriver, Billboard3D, runAndroidPlaytest
+brief.fps.5 | mechanic | 5 | yes | no | attachToBone, TracerPool3D, publishHitRegions, InstancedBatch, Scene
+brief.fps.6 | mechanic | 5 | no | no | VirtualShadowNode, readRenderChainReport, NavigationAgent3D, TracerPool3D, Scene
+brief.fps.7 | mechanic | 5 | no | yes | defineGame, VirtualShadowNode, bloom, afterPhysics, TracerPool3D
+brief.fps.8 | mechanic | 5 | no | yes | GPUReadback, WaveField, CollisionShape3D, TracerPool3D, rapier
+brief.fps.9 | mechanic | 5 | yes | yes | connectDevicePlaytestBridge, ScenePicker, DesktopPlaytestDriver, clipPoseError, readRenderChainReport
+brief.fps.10 | mechanic | 5 | yes | no | NavigationAgent3D, WaveField, Billboard3D, Scene, AnimationPlayer
+brief.fps.11 | mechanic | 5 | yes | yes | NavigationAgent3D, Heightfield, buildStaticColliders, attachToBone, PointerEvents3D
+brief.fps.12 | mechanic | 5 | yes | no | ClusteredMesh, VirtualShadowNode, buildStaticColliders, PointerEvents3D, NavigationAgent3D
+brief.fps.13 | mechanic | 5 | yes | no | NavigationAgent3D, buildStaticColliders, assertJsonSafe, jsonByteLength, PointerEvents3D
+brief.fps.14 | mechanic | 2 | yes | no | publishUiState, useUiState
+brief.open-world.1 | mechanic | 5 | yes | no | Heightfield, PointerEvents3D, NavigationAgent3D, TerrainTiles, interactionGroups
+brief.open-world.2 | mechanic | 5 | no | no | Heightfield, TerrainTiles, VirtualShadowNode, buildStaticColliders, PointerEvents3D
+brief.open-world.3 | mechanic | 5 | yes | no | Billboard3D, defineGame, VirtualShadowNode, NavigationAgent3D, buildStaticColliders
+brief.open-world.4 | mechanic | 5 | no | yes | WaveField, CaptureGuardError, UiLayer, formatPassCosts, boneLengthDeviations
+brief.open-world.5 | mechanic | 5 | no | no | ComputeDrivenRegistry, loadAll, warmUpScene, prewarm, createThreeObject
+brief.physics-puzzle.1 | mechanic | 5 | yes | yes | RigidBody3D, softBodyCollision, Heightfield, interactionGroups, FluidField2D
+brief.physics-puzzle.2 | mechanic | 5 | yes | yes | RigidBody3D, CharacterBody3D, rapier, reconcileMirroredClips, boneContact
+brief.physics-puzzle.3 | mechanic | 5 | no | yes | RigidBody3D, Joint3D, ensureVelocityOutput, readVelocityPreviousBoneMatrices, readVelocityPreviousMatrices
+brief.physics-puzzle.4 | mechanic | 5 | yes | no | boneContact, RigidBody3D, subscribeUiState, afterPhysics, ThreePlaytestPhysicsRecorder
+brief.physics-puzzle.5 | mechanic | 5 | no | yes | Scheduler, subscribeUiState, installThreePlaytestBridge, publishUiState, AnimationPlayer
+brief.physics-puzzle.6 | mechanic | 5 | no | yes | RigidBody3D, CharacterBody3D, afterPhysics, rapier, denoise
+brief.physics-puzzle.8 | mechanic | 5 | yes | yes | assertJsonSafe, assertJsonSafe, subscribeUiState, connectDevicePlaytestBridge, parseLaunchedPid
+brief.platformer.1 | mechanic | 5 | yes | no | defineGame, VirtualShadowNode, buildStaticColliders, PointerEvents3D, NavigationAgent3D
+brief.platformer.2 | mechanic | 5 | no | yes | NavigationAgent3D, buildStaticColliders, PointerEvents3D, runAndroidPlaytest, runIosPlaytest
+brief.platformer.3 | mechanic | 5 | no | yes | PathFollow3D, NavigationAgent3D, onUiIntent, CaptureGuardError, sendUiIntent
+brief.platformer.4 | mechanic | 5 | no | no | WorldEnvironment, solarPosition, subscribeUiState, sparkle, ComputeDrivenRegistry
+brief.platformer.5 | mechanic | 5 | yes | no | createReactOverlay, Text, sendUiIntent, useUiIntent, publishUiState
+brief.topdown-action.1 | mechanic | 5 | yes | yes | boneLengthDeviations, Billboard3D, defineGame, VirtualShadowNode, Heightfield
+brief.topdown-action.2 | mechanic | 5 | yes | no | CharacterBody3D, ScenePicker, TerrainTiles, buildStaticColliders, VirtualShadowNode
+brief.topdown-action.3 | mechanic | 4 | no | yes | runAndroidPlaytest, CaptureGuardError, runIosPlaytest, connectDevicePlaytestBridge
+brief.topdown-action.4 | mechanic | 5 | no | no | GroundSnap, interactionGroups, ao, NavigationAgent3D, recast
+brief.topdown-action.5 | mechanic | 5 | yes | no | publishUiState, useUiState, formatHealthReport, createReactOverlay, Text
+guard.animation-feet | mechanic | 3 | yes | no | AnimationPlayer, reconcileMirroredClips, GroundSnap
+request.build-racing-game | request | 15 | yes | no | PathFollow3D, afterPhysics, AnimationPlayer, attachToBone, boneContact, boneLengthDeviations, clipBoneCoverage, clipPoseError, clipTrackBindings, ensureVelocityOutput, getPlatform, GPUSceneBVH, GroundSnap, measureThreePose, normaliseToMetres
+request.tower-defense-game | request | 0 | no | no | (none)
+request.inventory-system | request | 0 | no | no | (none)
+request.enemy-ai | request | 15 | yes | no | NavigationAgent3D, attachToBone, CharacterBody3D, recast, Heightfield, buildStaticColliders, interactionGroups, PointerEvents3D, UiLayer, boneLengthDeviations, subscribeUiState, connectUiBridge, boneContact, decompressCompressedBuffer, clipTrackBindings
+request.third-person-camera | request | 0 | no | no | (none)
+request.save-progress | request | 8 | no | yes | buildStaticColliders, PointerEvents3D, NavigationAgent3D, findRawMeshBlobs, Heightfield, defineGame, VirtualShadowNode, attachToBone
+request.spawn-waves | request | 3 | no | yes | WaveField, Buoyancy3D, TracerPool3D
+request.dialogue-npc | request | 2 | no | yes | NavigationAgent3D, recast
+request.pick-up-item | request | 0 | no | no | (none)
+request.multiplayer | request | 0 | no | no | (none)
+request.platformer-double-jump | request | 0 | no | no | (none)
+
+zeroResultRate: 0.120690 (7/58)
+recallAtK: 0.431034 (25/58)
+rejectHits: 19
+rowCount: 58
+
+Misses (33)
+- brief.endless-runner.3: Spawn an unbounded-feeling sequence of obstacles and collectibles with increasing pace.
+- brief.endless-runner.5: Make a collision restart the run without a page reload.
+- brief.exploration.1: Use a third-person camera and a compact hub that leads to at least two distinct areas. Name the starting area the literal `hub`; the proof compares `state.area` against that word.
+- brief.exploration.3: Load or reveal a different arrangement of props in each area, with a clear transition.
+- brief.exploration.4: Keep a journal or objective panel that records the inspected points of interest.
+- brief.exploration.5: Make the world readable through deliberate lighting, landmarks, and a restrained palette.
+- brief.fps.1: First person. Eye height 1.66 m, walking 5.6 m/s, sprinting 8.2 m/s while not aiming.
+- brief.fps.2: Vertical field of view 70°, narrowing to 22° while aiming down the sights, and mouse look is half as sensitive while aimed. Pitch is clamped roughly −66° to +72°.
+- brief.fps.3: Health starts at 100 and never regenerates. There is no jump, no crouch and no stamina.
+- brief.fps.4: Spawns at the firing line facing down the range, with the nearest target on the crosshair.
+- brief.fps.6: Magazine 30, reserve 90. Reload moves rounds from the reserve into the magazine; the sights drop for about 0.7 s while it happens.
+- brief.fps.7: Hitscan along the exact camera forward axis out to 60 m. No spread, no bloom, no recoil kick, no damage falloff.
+- brief.fps.8: 10 damage a round; 4× in the top 12% of a body's height, 0.7× below a third of it.
+- brief.open-world.2: Stream or reveal terrain and content while the player travels across at least three chunk boundaries.
+- brief.open-world.4: Include at least two landmarks or points of interest that are separated by the traversal.
+- brief.open-world.5: Keep the first playable screen visible without a user account or external asset service.
+- brief.physics-puzzle.3: Include one body class that the controlled character passes through and another that blocks the controlled character; make the distinction visible in the scene.
+- brief.physics-puzzle.5: Run the same input sequence twice with a fixed seed and fixed-step simulation, and expose whether the final state matched on both runs.
+- brief.physics-puzzle.6: Use an angled camera and a readable HUD so the controlled character, stack, pass-through body, and destination remain legible on the first screen.
+- brief.platformer.2: Make the player run, jump, collect a visible line of coins, and reach a goal.
+- brief.platformer.3: Include at least one raised platform, one gap, one enemy or hazard, and a restart path.
+- brief.platformer.4: Match the reference's bright sky, saturated green platforms, warm wood, and rounded toy-like silhouettes.
+- brief.topdown-action.3: Include three enemy targets, a short cooldown or reload feedback, and a win condition.
+- brief.topdown-action.4: Build the arena from a few walls, floor markings, and pickups with a clear color hierarchy.
+- request.tower-defense-game: tower defense game
+- request.inventory-system: make an inventory system
+- request.third-person-camera: third person camera follow
+- request.save-progress: save the player progress
+- request.spawn-waves: spawn waves of enemies
+- request.dialogue-npc: dialogue with an NPC
+- request.pick-up-item: pick up an item
+- request.multiplayer: multiplayer
+- request.platformer-double-jump: make a platformer with double jump
+~~~
+
+The recorded budget is:
+
+~~~json
+{
+  "recallAtK": 0.43103448275862066,
+  "rejectHits": 19,
+  "rowCount": 58,
+  "rowIds": [
+    "brief.endless-runner.1",
+    "brief.endless-runner.2",
+    "brief.endless-runner.3",
+    "brief.endless-runner.4",
+    "brief.endless-runner.5",
+    "brief.exploration.1",
+    "brief.exploration.2",
+    "brief.exploration.3",
+    "brief.exploration.4",
+    "brief.exploration.5",
+    "brief.fps.1",
+    "brief.fps.2",
+    "brief.fps.3",
+    "brief.fps.4",
+    "brief.fps.5",
+    "brief.fps.6",
+    "brief.fps.7",
+    "brief.fps.8",
+    "brief.fps.9",
+    "brief.fps.10",
+    "brief.fps.11",
+    "brief.fps.12",
+    "brief.fps.13",
+    "brief.fps.14",
+    "brief.open-world.1",
+    "brief.open-world.2",
+    "brief.open-world.3",
+    "brief.open-world.4",
+    "brief.open-world.5",
+    "brief.physics-puzzle.1",
+    "brief.physics-puzzle.2",
+    "brief.physics-puzzle.3",
+    "brief.physics-puzzle.4",
+    "brief.physics-puzzle.5",
+    "brief.physics-puzzle.6",
+    "brief.physics-puzzle.8",
+    "brief.platformer.1",
+    "brief.platformer.2",
+    "brief.platformer.3",
+    "brief.platformer.4",
+    "brief.platformer.5",
+    "brief.topdown-action.1",
+    "brief.topdown-action.2",
+    "brief.topdown-action.3",
+    "brief.topdown-action.4",
+    "brief.topdown-action.5",
+    "guard.animation-feet",
+    "request.build-racing-game",
+    "request.tower-defense-game",
+    "request.inventory-system",
+    "request.enemy-ai",
+    "request.third-person-camera",
+    "request.save-progress",
+    "request.spawn-waves",
+    "request.dialogue-npc",
+    "request.pick-up-item",
+    "request.multiplayer",
+    "request.platformer-double-jump"
+  ],
+  "version": 1,
+  "zeroResultRate": 0.1206896551724138
 }
-console.log(empty+' of '+total+' brief mechanics return zero results');
-"
-```
+~~~
 
-Output:
+budget.json additionally stores the complete 58-row identity set as rowIds and the 25 recalled row IDs as recalledRows.
 
-```
-MISS [endless-runner] Spawn an unbounded-feeling sequence of obstacles and collectibles with i
-MISS [endless-runner] Make a collision restart the run without a page reload.
-MISS [exploration] Use a third-person camera and a compact hub that leads to at least two d
-MISS [exploration] Make the world readable through deliberate lighting, landmarks, and a re
-MISS [fps] First person. Eye height 1.66 m, walking 5.6 m/s, sprinting 8.2 m/s whil
-MISS [fps] Vertical field of view 70°, narrowing to 22° while aiming down the sight
-MISS [fps] Health starts at 100 and never regenerates. There is no jump, no crouch
-MISS [fps] Spawns at the firing line facing down the range, with the nearest target
-MISS [fps] Magazine 30, reserve 90. Reload moves rounds from the reserve into the m
-MISS [platformer] Match the reference's bright sky, saturated green platforms, warm wood,
-MISS [topdown-action] Build the arena from a few walls, floor markings, and pickups with a cle
+The build-and-chain proof was run as:
 
-11 of 46 brief mechanics return zero results
-```
+~~~sh
+pnpm build && pnpm budgets
+~~~
 
-**24% zero-result** on the repository's own sealed sweep inputs — the exact corpus the
-self-improvement loop measures agents against.
+Observed output excerpts:
 
-## Run 2 — plain-words queries an authoring agent actually types
+~~~text
+capability manifest generated: 272 entries
+Capability recall (58 rows)
+zeroResultRate: 0.120690 (7/58)
+recallAtK: 0.431034 (25/58)
+rejectHits: 19
+rowCount: 58
+capability manifest fresh: 272 entries
+budgets ok: 11 framework packages, 16 example workspaces, 59329/15000 framework LOC, 121751/100000 native runtime LOC, 107 PRD files, largest template 5457 LOC, no compiled texture manifests found
+MCP host configs current: 10 templates × 7 hosts
+exit=0
+~~~
 
-`scope: "request"`, same manifest:
+## Integration proof
 
-| Query | Result |
-| --- | --- |
-| `build a racing game` | `PathFollow3D` |
-| `tower defense game` | **(none)** — a `defense` template ships |
-| `make an inventory system` | (none) |
-| `enemy AI that chases the player` | `NavigationAgent3D, recast, CharacterBody3D, attachToBone` |
-| `third person camera follow` | **(none)** |
-| `save the player progress` | **8 results, none relevant** — `Area3D, PointerEvents3D, NavigationAgent3D, recast, CharacterBody3D, defineGame, Heightfield, attachToBone` |
-| `spawn waves of enemies` | 15 results, unranked mixture including `Buoyancy3D`, `SpectralOcean` |
-| `dialogue with an NPC` | `NavigationAgent3D, recast` |
-| `pick up an item` | `ClusteredMesh` |
-| `multiplayer` | (none) |
-| `make a platformer with double jump` | **(none)** — a `platformer` template ships |
+The caller census found the non-test consumer inside the pre-existing budgets chain:
 
-## What the numbers say
+~~~sh
+$ grep -n "capability-recall" package.json
+17:    "budgets": "... && tsx scripts/capability-recall.ts && ...",
+19:    "caps:recall": "tsx scripts/capability-recall.ts",
+~~~
 
-1. **No confidence signal.** `searchCapabilities` filters on `score > 0` only
-   (`packages/engine-mcp/src/index.ts:196`). One shared token after stop-word removal is a
-   result, ranked beside a genuine phrase match. `save the player progress` returning eight
-   wrong capabilities is worse for an authoring agent than returning none: it teaches a wrong
-   abstraction with the same confidence as a right one.
-2. **No negative answer exists.** The tool cannot say *the engine does not own this, write it in
-   game code* — the outcome the charter's kill-switch rule wants for inventory, save/load and
-   dialogue.
-3. **One authored phrasing per situation.** 446 `@situation` phrases across 210 entries, matched
-   by token overlap. `third person camera follow` misses every camera capability.
-4. **Coverage holes.** `@threenative/assets` has **0** manifest entries;
-   `CAPABILITY_PACKAGE_DIRECTORIES` (`scripts/build-capability-manifest.ts:18`) is
-   `["core","physics","playtest","ui"]`. Template entries exist only for `starter` (3).
-5. **No systemic recall gate.** `packages/engine-mcp/__tests__/search.spec.ts` asserts ~20
-   hand-picked cases. Each is a real regression guard; none of them measures recall over a
-   corpus, so the 24% above was invisible.
+The shipping check found no corpus content in either generated manifest:
 
-## Not measured
+~~~sh
+$ grep -rn "endless runner\|firing line\|Magazine 30" packages/create-threenative/capabilities.json packages/core/capabilities.json
+$ echo $?
+1
+~~~
 
-- Whether an agent that receives a zero-result answer writes better code than one that receives
-  eight wrong ones. Only the retrieval was measured, not the downstream authoring outcome; that
-  needs a sweep arm (`pnpm sweep:pair`), which was not run.
-- Anything on native, on device, or in a scaffolded project. This is a pure manifest/search
-  measurement on the repository checkout.
+The command produced no stdout. The corpus is read at gate time and is not copied
+into a shipped artifact.
+
+## Observed red controls
+
+Each control was run against a temporary mutation and restored before the positive
+gates and commit.
+
+### Situation deletion
+
+The real @situation stop a walking character's feet from sliding or spinning line
+was deleted from packages/core/src/index.ts; pnpm build still completed and
+regenerated the 272-entry manifest. The following gate then failed:
+
+~~~text
+Capability recall (58 rows)
+zeroResultRate: 0.120690 (7/58)
+recallAtK: 0.413793 (24/58)
+rejectHits: 19
+rowCount: 58
+
+Regressions
+- recallAtK: recallAtK 0.413793 is below floor 0.431034
+- recalledRows: 1 previously recalled row no longer reaches an expected symbol
+rows: guard.animation-feet
+~~~
+
+### Row-count floor
+
+Deleting request.platformer-double-jump from the corpus produced:
+
+~~~text
+Capability recall (57 rows)
+Regressions
+- rowCount: rowCount 57 is below floor 58
+rows: corpus
+~~~
+
+### Source-pointer resolution
+
+Renaming the template:action-rpg#Start every change heading produced:
+
+~~~text
+TN_CAPABILITY_RECALL: guard.animation-feet: source 'template:action-rpg#Start every change renamed' no longer resolves
+~~~
+
+### Empty corpus
+
+Replacing the corpus with a valid empty object produced:
+
+~~~text
+TN_CAPABILITY_RECALL: .../scripts/fixtures/capability-recall/corpus.json: corpus has no rows
+~~~
+
+The exit code was 1; it did not report a vacuous 100% recall.
+
+### Stale manifest
+
+Pointing THREENATIVE_CAPABILITIES_MANIFEST at a hand-written manifest with no
+entries produced:
+
+~~~text
+TN_CAPABILITY_RECALL: brief.endless-runner.1: symbol 'defineGame' is absent from manifest .../scripts/fixtures/capability-recall/stale-manifest.json
+~~~
+
+The override was read and failed before any cached budget number could pass.
+
+### Lowered zero-result floor
+
+Temporarily changing budget.json's zeroResultRate floor from
+0.1206896551724138 to 0 produced:
+
+~~~text
+Regressions
+- zeroResultRate: zeroResultRate 0.120690 exceeds floor 0.000000
+rows: brief.fps.3, request.tower-defense-game, request.inventory-system, request.third-person-camera, request.pick-up-item, request.multiplayer, request.platformer-double-jump
+~~~
+
+### Gate removal / revert check
+
+Temporarily removing scripts/capability-recall.ts and running pnpm budgets
+produced exit code 1 at the in-chain caller:
+
+~~~text
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '.../scripts/capability-recall.ts'
+~~~
+
+The script was restored before the successful pnpm budgets run.
+
+## Unit proof
+
+~~~sh
+pnpm exec vitest run scripts/__tests__/capability-recall.spec.ts
+~~~
+
+Observed: 1 test file passed, 9 tests passed.
+
+The read-only candidate helper also runs:
+
+~~~sh
+pnpm caps:recall --harvest
+~~~
+
+Observed: Harvest candidates (115), exit code 0. It never edits
+corpus.json or invents expected/rejected symbols.
