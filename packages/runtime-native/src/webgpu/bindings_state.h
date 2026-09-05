@@ -75,18 +75,31 @@ struct BufferInfo {
     uint64_t size = 0;
     WGPUBufferUsage usage = {};
     bool isMapped = false;
+    bool mapPending = false;
     void* mappedData = nullptr;
     uint64_t mappedSize = 0;
     WGPUMapMode mapMode = {};
     bool accounted = false;
 };
 
-struct BufferMapData {
+struct BufferMapRequest {
+    uint64_t requestId = 0;
+    uint64_t bufferId = 0;
+    WGPUBuffer buffer = nullptr;
+    WGPUMapMode mode = WGPUMapMode_None;
+    uint64_t offset = 0;
+    uint64_t size = 0;
     bool completed = false;
     WGPUBufferMapAsyncStatus_Compat status = WGPUBufferMapAsyncStatus_Unknown_Compat;
     std::string errorMessage;
     std::mutex waitMutex;
-    std::condition_variable waitCondition;
+};
+
+struct AsyncBufferMaps {
+    std::mutex mutex;
+    std::unordered_map<uint64_t, std::shared_ptr<BufferMapRequest>> pending;
+    uint64_t nextRequestId = 1;
+    bool stopping = false;
 };
 
 #if TN_ANDROID_JS_PROFILE
@@ -226,7 +239,6 @@ struct ResourceRegistries {
     std::unordered_map<uint64_t, WGPUQuerySet> querySetRegistry;
     uint64_t nextQuerySetId = 1;
     std::vector<std::unique_ptr<WGPUBlendState>> blendStates;
-    BufferMapData bufferMapData;
 };
 
 struct PresentationState {
@@ -395,6 +407,7 @@ struct BindingsState {
     FrameProfiling profiling;
     ScreenshotCapture screenshot;
     Canvas2DComposite canvas2D;
+    AsyncBufferMaps asyncBufferMaps;
     AsyncPipelineCompiles asyncPipelines;
 };
 

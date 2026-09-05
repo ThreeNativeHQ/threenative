@@ -367,6 +367,7 @@ void destroyBindingsState(BindingsState*& state) {
     if (!state) return;
     // Join the compile pool before anything it touches goes away. A worker holds `state` and the
     // device; letting one run past this point is a use-after-free with a two-thread window.
+    shutdownAsyncBufferMaps(state);
     shutdownAsyncPipelineCompiles(state);
     BindingsState* ownedState = state;
     state = nullptr;
@@ -1990,27 +1991,6 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                                             {"GPUDevice", "createComputePipelineAsync", 0, nullptr,
                         &handleGpuDeviceCreateComputePipelineAsync
                     , device}}))) return state->engine->newUndefined();
-                    // The deferred half — the promise map the host settles from `pollEvents()`.
-                    {
-                        js::JSValueGuard installer(
-                            *state->engine,
-                            evalEmbeddedRuntimeScriptWithResult(
-                                *state->engine, "install-async-pipelines",
-                                "install-async-pipelines.js"));
-                        js::JSValueGuard installed(*state->engine, {});
-                        if (installer) {
-                            js::JSValueGuard thisArg(
-                                *state->engine, state->engine->newUndefined());
-                            installed.reset(
-                                state->engine->call(installer.get(), thisArg.get(), {device}));
-                        }
-                        // Fail loudly rather than leave the renderer to discover it mid-frame.
-                        if (!installed || !state->engine->toBoolean(installed.get())) {
-                            std::cerr << "[WebGPU] failed to install async pipeline creation"
-                                      << std::endl;
-                            return state->engine->newUndefined();
-                        }
-                    }
                     // device.createCommandEncoder(descriptor?)
                     if (!installBindingTable(state->engine, state, bindingTable({
                         {"GPUDevice", "createCommandEncoder", 0, nullptr,
@@ -2089,6 +2069,26 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                     }
                     state->engine->freezeHandle(drain);
                     state->profiling.frameOpStreamDrain = drain;
+                    // Install lifecycle wrappers last: destroy must invalidate the JS buffer
+                    // immediately while the recorder still orders backend destruction after submit.
+                    {
+                        js::JSValueGuard asyncInstaller(
+                            *state->engine,
+                            evalEmbeddedRuntimeScriptWithResult(
+                                *state->engine, "install-async-pipelines",
+                                "install-async-pipelines.js"));
+                        js::JSValueGuard installed(*state->engine, {});
+                        if (asyncInstaller) {
+                            js::JSValueGuard thisArg(
+                                *state->engine, state->engine->newUndefined());
+                            installed.reset(
+                                state->engine->call(asyncInstaller.get(), thisArg.get(), {device}));
+                        }
+                        if (!installed || !state->engine->toBoolean(installed.get())) {
+                            state->engine->throwException("failed to install async GPU operations");
+                            return state->engine->newUndefined();
+                        }
+                    }
                     // Return the device directly
                     // await on a non-Promise just returns the value
                     return device;
