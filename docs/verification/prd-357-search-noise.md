@@ -52,6 +52,7 @@ pnpm typecheck                      exit 0
 pnpm lint                           exit 0 — Biome checked 1,929 files; 577 pre-existing warnings
 pnpm budgets                        exit 0 — evidence and retention budgets ok
 pnpm quality                        exit 0 — advisory findings only
+pnpm tsx scripts/check-evidence-budget.ts exit 0 — evidence budget: ok
 scoped Biome check                  exit 0 — 3 files checked, no fixes
 ```
 
@@ -63,6 +64,9 @@ Test Files  3 passed (3)
 Tests       28 passed (28)
 EXIT=0
 ```
+
+The standalone primary-docs gate also passed: `scripts/__tests__/primary-docs.spec.ts`, 7 tests,
+exit 0.
 
 The full lane test, with the five cached native executables provisioned from the manager control,
 also passed:
@@ -100,7 +104,23 @@ EXIT 0
 ```
 
 The same native cache must be provisioned for the post-untracking archive and lane `pnpm test`.
-The post-change archive result is recorded here before delivery.
+At commit `7ae37434`, the first post-change archive invocation exited 1 in two playtest
+negative-control tests (`e2e-runner.spec.ts` and `generated-shooter-input.spec.ts`); its log also
+reported private-Xvfb listener collisions while another archive process was active. A fresh archive
+extraction after that process ended, with the same five native hashes, passed:
+
+```text
+git archive HEAD -> artifacts/prd-357/post-untracking-archive-rerun
+pnpm install --frozen-lockfile       exit 0
+pnpm test
+Test Files  381 passed | 1 skipped (382)
+Tests       4032 passed | 3 skipped (4035)
+EXIT=0
+```
+
+The initial failed log is `/tmp/prd357-post-archive.log`; the accepting rerun log is
+`/tmp/prd357-post-archive-rerun.log`. Both archive scratch trees are inside this lane's ignored
+`artifacts/prd-357/` directory.
 
 ## Headline measurement (A6)
 
@@ -170,7 +190,6 @@ ignore list. The run checked 1,929 files and reported 577 pre-existing warnings 
 example files, including `examples/vfx-gallery/src/scenes/Gallery.ts`; no changed PRD-357 file
 appears in those diagnostics.
 
-Still required before the manager can call the PRD complete: a committed post-untracking
-`git archive HEAD` full `pnpm test` with the native cache and the post-checkpoint A5
+Still required before the manager can call the PRD complete: the post-checkpoint A5
 restore-deleted-blob proof. C4 remains PARTIAL until the owner approves the exact 207-group map; no
 tracked evidence image is removed in this lane.
