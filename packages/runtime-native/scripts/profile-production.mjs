@@ -21,6 +21,7 @@ import {
   nearestRank,
   sha256,
   writeProductionEvidence,
+  sanitizeManifest,
 } from './production-evidence.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -326,6 +327,20 @@ function packageSourceFlag(name) {
   throw new Error(`TN_PROD_PACKAGE_FLAG_UNSUPPORTED: ${name}`);
 }
 
+function nativeDiagnostics(assertions) {
+  return {
+    ...assertions,
+    diagnostics: {
+      ...assertions.diagnostics,
+      noConsoleErrors: true,
+      noRuntimeDiagnostics: true,
+      runtimeReady: true,
+      noNetworkErrors: false,
+      networkErrorsOptOutReason: 'Native mailbox transports have no browser network observer; console and runtime diagnostics remain required.',
+    },
+  };
+}
+
 export async function writeRunScenarios(project, options) {
   const source = JSON.parse(await readFile(join(project, platformerScenario), 'utf8'));
   const sourceAssertions = source.assert && typeof source.assert === 'object' && !Array.isArray(source.assert)
@@ -373,6 +388,7 @@ export async function writeRunScenarios(project, options) {
   };
   const nativeWorkload = {
     ...workload,
+    assert: nativeDiagnostics(workload.assert),
     artifacts: {
       screenshots: options.profile === REGRESSION_PROFILE || nativeTarget === 'desktop'
         ? 'after'
@@ -380,7 +396,7 @@ export async function writeRunScenarios(project, options) {
     },
     steps: nativeWorkloadSteps,
   };
-  const nativeStartup = { ...startup, artifacts: { screenshots: 'after' } };
+  const nativeStartup = { ...startup, assert: nativeDiagnostics(startup.assert), artifacts: { screenshots: 'after' } };
   const workloadPath = join(project, 'playtests/production-performance.run.playtest.json');
   const startupPath = join(project, 'playtests/production-startup.run.playtest.json');
   const nativeWorkloadPath = join(project, 'playtests/production-performance.native.playtest.json');
@@ -618,10 +634,29 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
       firstFrameMsFromReport(report, startedAt),
       frameSeriesFromReport(report),
     );
-  } catch {
+  } catch (error) {
     await driver.stop();
-    return { elapsedMs: performance.now() - started, report: undefined, screenshot: undefined, series: undefined, status: 2 };
+    return desktopFailureRun(error, await driver.captureConsole(), performance.now() - started);
   }
+}
+
+export function desktopFailureRun(error, consoleOutput, elapsedMs) {
+  const retain = (value, fallback) => {
+    try { return sanitizeManifest(value); } catch { return fallback; }
+  };
+  return {
+    elapsedMs, status: 2, screenshot: undefined, series: undefined,
+    report: {
+      pass: false, target: 'desktop', assertionResults: [],
+      diagnostics: [retain(error?.diagnostic ?? {
+        code: 'TN_PROD_PLAYTEST_FAILED', severity: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      }, { code: 'TN_PROD_REDACTION', severity: 'error', message: 'Unsafe native error details withheld.' })],
+      observations: { console: consoleOutput.map((entry) => retain(entry, {
+        type: 'error', text: 'TN_PROD_REDACTION: unsafe native console entry withheld.',
+      })) },
+    },
+  };
 }
 
 export function profileConfigPath(project, configPath = undefined) {

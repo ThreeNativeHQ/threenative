@@ -19,6 +19,7 @@ import {
 } from '../scripts/production-evidence.mjs';
 import {
   aggregateMetrics,
+  desktopFailureRun,
   assembleEvidence,
   isSuccessfulStartupSample,
   installNativeProfileEntry,
@@ -37,6 +38,22 @@ import {
 const temporary = [];
 const sourceSha = 'a'.repeat(64);
 const artifactSha = sha256(Buffer.from('fixture-artifact'));
+
+test('desktop runner exceptions retain failed evidence rather than disappearing', () => {
+  const error = new Error('TN_PLAYTEST_OPERATION_TIMEOUT: advance');
+  const output = [{ text: 'native bridge connected', type: 'log' }];
+  const run = desktopFailureRun(error, output, 123);
+  assert.equal(run.status, 2);
+  assert.equal(run.report.pass, false);
+  assert.equal(run.report.diagnostics[0].message, error.message);
+  assert.deepEqual(run.report.observations.console, output);
+  assert.equal(run.series, undefined);
+  const unsafe = desktopFailureRun(error, [{ text: '/home/operator/private/build', type: 'log' }], 123);
+  assert.equal(JSON.stringify(unsafe.report).includes('/home/'), false);
+  assert.match(unsafe.report.observations.console[0].text, /TN_PROD_REDACTION/u);
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  assert.match(source, /return desktopFailureRun\(error, await driver.captureConsole\(\),/u);
+});
 
 test('desktop child receives the transport mailbox root without changing the screenshot path', async () => {
   const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
@@ -462,6 +479,36 @@ test('startup aggregation rejects failed reports and blank first frames', () => 
   assert.equal(metrics.startupP95Ms, undefined);
 });
 
+test('native scenarios explicitly waive browser network observation while browser startup retains it', async () => {
+  const project = makeTempDirSync('tn-native-diagnostics-');
+  temporary.push(project);
+  mkdirSync(join(project, 'playtests'));
+  writeFileSync(join(project, 'playtests/performance.playtest.json'), JSON.stringify({
+    name: 'production-performance', schemaVersion: 1, steps: [{ kind: 'wait', waitFrames: 10 }],
+    assert: { diagnostics: { noConsoleErrors: true, noNetworkErrors: true, noRuntimeDiagnostics: true, runtimeReady: true } },
+  }));
+  const playtest = await import(new URL('../../playtest/dist/index.js', import.meta.url).href);
+  for (const target of ['desktop', 'android', 'ios']) {
+    const paths = await writeRunScenarios(project, { duration: 1, warmup: 1, target, renderSize: { width: 1920, height: 1080 } });
+    for (const path of [paths.startupPath, paths.workloadPath]) {
+      const scenario = await playtest.loadPlaytestScenario(project, path);
+      assert.notEqual(scenario.assert.diagnostics.noNetworkErrors, false);
+      assert.equal(playtest.requiredPlaytestCapabilities(scenario).includes('browser.network'), true);
+      assert.equal(scenario.assert.diagnostics.networkErrorsOptOutReason, undefined);
+    }
+    for (const path of [paths.nativeStartupPath, paths.nativeWorkloadPath]) {
+      const scenario = await playtest.loadPlaytestScenario(project, path);
+      const policy = scenario.assert.diagnostics;
+      assert.equal(policy.noNetworkErrors, false);
+      assert.equal(playtest.requiredPlaytestCapabilities(scenario).includes('browser.network'), false);
+      assert.match(policy.networkErrorsOptOutReason, /native.*network/i);
+      assert.equal(policy.noConsoleErrors, true);
+      assert.equal(policy.noRuntimeDiagnostics, true);
+      assert.equal(policy.runtimeReady, true);
+    }
+  }
+});
+
 test('generated production workload runs through the playtest validator and keeps source bounds out of band', async () => {
   const project = makeTempDirSync('tn-prd064-scenario-');
   temporary.push(project);
@@ -484,7 +531,8 @@ test('generated production workload runs through the playtest validator and keep
   const workload = JSON.parse(readFileSync(paths.workloadPath, 'utf8'));
   const nativeWorkload = JSON.parse(readFileSync(paths.nativeWorkloadPath, 'utf8'));
   assert.deepEqual(workload.assert, { diagnostics: { noConsoleErrors: true, runtimeReady: true } });
-  assert.deepEqual(nativeWorkload.assert, workload.assert);
+  assert.equal(nativeWorkload.assert.diagnostics.noNetworkErrors, false);
+  assert.equal(nativeWorkload.assert.diagnostics.noConsoleErrors, true);
   assert.equal(workload.assert.performance, undefined);
   assert.deepEqual(paths.performanceBounds, assertion.performance);
   assert.equal(nativeWorkload.artifacts.screenshots, 'after');

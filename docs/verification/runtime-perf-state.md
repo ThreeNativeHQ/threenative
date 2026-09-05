@@ -2748,6 +2748,75 @@ promotion and baseline regeneration are not claimed by this repair. The source P
 | `pnpm budgets` | Exit 1: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit).` Unrelated retention index unchanged. |
 | `git diff --check` | Exit 0; no output. |
 
+### PRD-358 native diagnostics policy repair — 2026-09-05
+
+The generated native startup and steady scenarios explicitly set `noNetworkErrors: false`
+with `networkErrorsOptOutReason: "Native mailbox transports have no browser network observer;
+console and runtime diagnostics remain required."` The browser scenarios are unchanged and
+still require `browser.network`. Native `noConsoleErrors`, `noRuntimeDiagnostics` and
+`runtimeReady` remain true; runner capability validation and workload budgets are unchanged.
+The debugging-strategies skill guided the browser/native policy split test.
+
+Observed red against `2327df9a`:
+`pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'native scenarios explicitly'`
+exited 1 (`1 failed / 29 skipped (30)`), with native `noNetworkErrors` received `undefined`,
+expected `false`. After the fix, the full production-profile command without `-t` passed 30 tests.
+The test loads both native scenarios through the real playtest schema for desktop/Android/iOS,
+checks the non-empty opt-out reason, preserves console/runtime checks, and verifies that only
+browser scenarios require the network capability. These are scenario tests, not mobile execution.
+
+The first live rerun exited 2 but revealed that the existing collector catch discarded both
+runner exceptions and their console output. The collector now retains them as failed JSON
+reports with status 2, never as successful samples. The focused `-t 'desktop runner exceptions'`
+test first exited 1 with the helper absent; the final full production-profile run exited 0:
+`Test Files 1 passed (1)`; `Tests 31 passed (31)`. No runner or native runtime code was changed.
+
+A retention retry correctly hit `TN_PROD_REDACTION` because child console output contained
+absolute workstation paths. The collector now uses the existing `sanitizeManifest` guard for
+each retained entry and replaces unsafe entries with explicit redaction notices, without relaxing
+the guard. Its privacy assertion was observed red (`1 failed / 30 skipped (31)`, unsafe path
+still present) and then green in the full 31-test production-profile run.
+
+The final live command was:
+
+```sh
+node packages/runtime-native/scripts/profile-production.mjs --profile production \
+  --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
+  --prebuilt-artifact "$PWD/packages/runtime-native/build/tn-linux/mystral" \
+  --out artifacts/prd358-native-diagnostics-safe
+```
+
+The native binary was reused from the successful `pnpm native:build` in the preceding mailbox
+repair; this change does not alter C++. The collector rebuilt its instrumented platformer bundle.
+Earlier executions of the same command used output directories
+`artifacts/prd358-native-diagnostics-desktop` (discarded exceptions) and
+`artifacts/prd358-native-diagnostics-retained` (privacy rejection). All three exited 2.
+
+Final retained manifest: `artifacts/prd358-native-diagnostics-safe/production-evidence.json`.
+Both real launches passed the bridge/capability setup and reached screenshot capture. Both report
+`TN_PROD_NATIVE_SCREENSHOT_UNAVAILABLE`, with console evidence
+`[Mystral] Desktop playtest mailbox configured` and `[info] TN_NATIVE_SMOKE_READY:webgpu`.
+Neither reports the old `browser.network` or missing-bridge failure. Local JSON evidence:
+
+| Launch | Path relative to `artifacts/prd358-native-diagnostics-safe/` |
+|---|---|
+| Steady | `artifacts/e4fb3a06d61a7681e315dd614c0c0458ad09134391373fcb0705fb1cf9f9933a` |
+| Startup | `artifacts/e953d4cb0d3c8be6bb46153f477e9a0df5d048c5c5f2b49be40d2ce672b40c72` |
+
+Final verdict remains `BLOCKED`, exit 2, not valid performance evidence. One failed steady window
+records duration 0 seconds and sample count 0. No screenshot requirement, runtime assertion,
+timing threshold, baseline or promotion policy was weakened. Physical Android/iOS execution is
+UNVERIFIED; scenario-generation tests do not claim those devices ran. Reports stay local only.
+
+| Executed gate | Exact result |
+|---|---|
+| `pnpm typecheck` | Exit 0; all workspace checks completed, ending `examples/abyss-framework typecheck: Done`. |
+| `pnpm test` | Exit 0; root `391 passed / 1 skipped` files and `4306 passed / 4 skipped (4310)` tests; native `100 passed` files and `725 passed / 34 skipped (759)` tests, plus `29 passed` physics-parity tests. The later privacy normalization was additionally verified by the full 31-test production-profile rerun. |
+| `pnpm test:playtest` | Exit 0; repository example playtests passed, ending with `streaming-sliced-attach-and-parallel-load` reporting `pass: true`. Browser correctness only, not native screenshot or physical performance proof. |
+| `pnpm lint` | Exit 0; `Checked 1962 files`; `Found 611 warnings.` No fixes applied. |
+| `pnpm budgets` | Exit 1: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit).` Unrelated index unchanged. |
+| `git diff --check` | Exit 0; no output. |
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,
