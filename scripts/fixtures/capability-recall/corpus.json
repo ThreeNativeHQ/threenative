@@ -212,8 +212,8 @@
       "query": "Stream or reveal terrain and content while the player travels across at least three chunk boundaries.",
       "scope": "mechanic",
       "source": "brief:open-world#2",
-      "expect": ["ClusteredMesh"],
-      "reject": []
+      "expect": ["TerrainTiles"],
+      "reject": ["ClusteredMesh"]
     },
     {
       "id": "brief.open-world.3",

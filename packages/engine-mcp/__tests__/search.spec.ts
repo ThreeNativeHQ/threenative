@@ -79,8 +79,6 @@ describe("threenative-engine-mcp", () => {
     const cases = [
       ["different props in each area", "createAssetLoader"],
       ["journal objective panel", "publishUiState"],
-      ["health never regenerates", "defineGame"],
-      ["stream terrain across chunks", "ClusteredMesh"],
       ["landmarks points of interest", "InstancedBatch"],
       ["bright sky saturated green platforms", "Atmosphere"],
       ["raised platform gap hazard restart", "CharacterBody3D"],
@@ -92,6 +90,34 @@ describe("threenative-engine-mcp", () => {
         query,
       ).toContain(symbol);
     }
+  });
+
+  it("ranks the terrain streamer above virtual geometry for chunk streaming", () => {
+    const results = searchResults("stream terrain across chunks", workspaceManifest);
+    const terrainIndex = results.findIndex((result) => result.symbol === "TerrainTiles");
+    const clusteredIndex = results.findIndex((result) => result.symbol === "ClusteredMesh");
+
+    expect(terrainIndex).toBe(0);
+    expect(clusteredIndex === -1 || clusteredIndex > terrainIndex).toBe(true);
+    expect(results[terrainIndex]?.importPath).toBe("@threenative/core/world");
+    expect(results[terrainIndex]?.matchedSituation).toBe("stream terrain without cracks");
+  });
+
+  it("does not advertise health or hitscan implementations the engine does not own", () => {
+    const manifest = loadCapabilityManifest(workspaceManifest);
+    const defineGame = manifest.entries.find((entry) => entry.symbol === "defineGame");
+    const physicsQuery = manifest.entries.find(
+      (entry) => entry.symbol === "PhysicsDirectSpaceState3D",
+    );
+
+    expect(defineGame?.aliases).not.toContain("health never regenerates");
+    expect(physicsQuery?.aliases).not.toContain("hitscan camera");
+    expect(
+      searchResults("health never regenerates", workspaceManifest).map((result) => result.symbol),
+    ).not.toContain("defineGame");
+    expect(
+      searchResults("hitscan camera", workspaceManifest).map((result) => result.symbol),
+    ).not.toContain("PhysicsDirectSpaceState3D");
   });
 
   it("explains an alias hit with a readable situation", () => {

@@ -113,7 +113,6 @@ export type { IRandom } from "./random.js";
  * @situation register physics and gameplay plugins
  * @situation let the player zoom the camera with a wheel, pinch, or gamepad axis
  * @situation frame a camera behind the player
- * @alias health never regenerates
  * @alias firing line nearest target crosshair
  * @alias third-person camera
  * @alias restart the run without a page reload
@@ -217,7 +216,6 @@ export type {
  * @situation draw a model too detailed for the screen to resolve
  * @situation import a scanned or sculpted mesh of millions of triangles and still hold the frame
  * @situation stop a dense rock face or terrain body from costing its full triangle count up close
- * @alias stream terrain across chunks
  * @constraint the bake happens in the asset pipeline, never at run time — there is no runtime flag
  * @constraint the payload costs about 3-4x a baked primitive's bytes; `assets.models.virtual: "none"` opts out and `minSourceTriangles` moves the 65,536 line
  * @constraint needs a perspective camera; a screen-space error has no meaning without one

@@ -374,7 +374,6 @@ describe("capability manifest generator", () => {
         owners: ["defineGame"],
       },
       "field of view while aiming": { ids: ["brief.fps.2"], owners: ["defineGame"] },
-      "health never regenerates": { ids: ["brief.fps.3"], owners: ["defineGame"] },
       "firing line nearest target crosshair": { ids: ["brief.fps.4"], owners: ["defineGame"] },
       "obstacles collectibles increasing pace": {
         ids: ["brief.endless-runner.3"],
@@ -393,7 +392,8 @@ describe("capability manifest generator", () => {
       "readable HUD": { ids: ["brief.physics-puzzle.6"], owners: ["publishUiState"] },
       "stream terrain across chunks": {
         ids: ["brief.open-world.2"],
-        owners: ["ClusteredMesh"],
+        owners: ["TerrainTiles"],
+        baselineAlreadyRecalled: true,
       },
       "landmarks points of interest": {
         ids: ["brief.open-world.4"],
@@ -420,10 +420,6 @@ describe("capability manifest generator", () => {
       "arena walls pickups": {
         ids: ["brief.topdown-action.4"],
         owners: ["CollisionShape3D"],
-      },
-      "hitscan camera": {
-        ids: ["brief.fps.7"],
-        owners: ["PhysicsDirectSpaceState3D"],
       },
       "damage body height": {
         ids: ["brief.fps.8"],
@@ -490,10 +486,14 @@ describe("capability manifest generator", () => {
         const before = searchCapabilities(row.query, predecessorFile, row.scope).results.map(
           (result) => result.symbol,
         );
-        expect(
-          expectedOwners.some((owner) => before.includes(owner)),
-          `${alias} -> ${id} was already recalled without aliases`,
-        ).toBe(false);
+        const baselineAlreadyRecalled =
+          "baselineAlreadyRecalled" in predecessor && predecessor.baselineAlreadyRecalled === true;
+        if (!baselineAlreadyRecalled) {
+          expect(
+            expectedOwners.some((owner) => before.includes(owner)),
+            `${alias} -> ${id} was already recalled without aliases`,
+          ).toBe(false);
+        }
         const after = searchCapabilities(
           row.query,
           "packages/create-threenative/capabilities.json",

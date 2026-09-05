@@ -611,7 +611,7 @@
       "symbol": "ClusteredBatch"
     },
     {
-      "aliases": ["stream terrain across chunks"],
+      "aliases": [],
       "constraints": [
         "the bake happens in the asset pipeline, never at run time — there is no runtime flag",
         "the payload costs about 3-4x a baked primitive's bytes; `assets.models.virtual: \"none\"` opts out and `minSourceTriangles` moves the 65,536 line",
@@ -713,7 +713,6 @@
     },
     {
       "aliases": [
-        "health never regenerates",
         "firing line nearest target crosshair",
         "third-person camera",
         "restart the run without a page reload",
@@ -2165,7 +2164,7 @@
       "symbol": "Heightfield"
     },
     {
-      "aliases": [],
+      "aliases": ["stream terrain across chunks"],
       "constraints": [
         "sampleHeight and surface are required game choices; no landform or surface preset is installed",
         "residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws"
@@ -2314,7 +2313,7 @@
       "symbol": "Joint3D"
     },
     {
-      "aliases": ["hitscan camera", "damage body height"],
+      "aliases": ["damage body height"],
       "constraints": ["query results are bounded by the configured result limit"],
       "example": "const space = new PhysicsDirectSpaceState3D(context);",
       "importPath": "@threenative/physics",
