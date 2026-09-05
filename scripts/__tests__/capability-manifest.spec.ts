@@ -119,14 +119,15 @@ describe("capability manifest generator", () => {
         symbol: "InventoryCapability",
       },
     ];
+    const notOwnedSituation = "inventory system";
     const notOwned = [
       {
         guidance: "Write inventory state in the game's src/.",
         id: "inventory-system",
-        situations: ["inventory system"],
+        situations: [notOwnedSituation],
       },
     ];
-    const rawOverlapScore = 1 / Math.max(notOwned[0].situations[0].split(" ").length, 1);
+    const rawOverlapScore = 1 / Math.max(notOwnedSituation.split(" ").length, 1);
 
     expect(rawOverlapScore).toBeGreaterThanOrEqual(RELEVANCE_FLOOR);
     expect(() => validateNotOwned(entries, notOwned)).toThrow(
