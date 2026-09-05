@@ -89,6 +89,11 @@ documents optional `core/net`, Go reference example, queue overrides, delivery g
 and unsupported-network behavior. Run `pnpm sync:agents` in the same row; no deferred
 mirror-only phase. After the last pair, cold-scaffold and import from packed packages.
 
+Tasks 2a, 2b-streams and 2b form one queue-bound integration checkpoint: commit each reviewed
+slice in table order, but leave Task 2a unchecked until Task 2b proves finite native and JS
+queues together. The installed stream shim is the prerequisite for JS pressure; completing
+the native capacity/status slice does not prove the full queue requirement.
+
 ## Server and fixture commands to implement
 
 Tasks 4b and 5a form one client integration checkpoint: do not mark 4b complete until
