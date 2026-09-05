@@ -91,7 +91,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/playwright-chromium
-      - run: pnpm test
+      - run: pnpm test:ci
 
   # The root vitest run was the longest single thing in the run's longest job — 351 files and
   # ~3,500 tests, measured at 151s of `test`'s 387s. It shards cleanly and it is the only part of
@@ -385,7 +385,7 @@ jobs:
       # four browser tests runs. On run 33739951215 that setup was 245s against 40s of actual
       # testing. `THREENATIVE_PACKED_PACKAGES` is the seam the config already had; this points it
       # at the set the cached action just restored.
-      - run: sh scripts/xvfb.sh pnpm test:browser
+      - run: sh scripts/xvfb.sh pnpm test:browser:ci
         env:
           THREENATIVE_PACKED_PACKAGES: ${{ github.workspace }}/artifacts/workspace-packages
       # A pixel gate that fails on a runner nobody can log into is only diagnosable if the frame

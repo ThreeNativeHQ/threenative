@@ -56,8 +56,39 @@ permissions:
   contents: read
 
 jobs:
+  web-reference:
+    name: Commit-keyed web conformance reference
+    if: inputs.ios_only == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/workspace-dist
+      - uses: ./.github/actions/playwright-chromium
+      - name: Capture commit-keyed browser reference
+        run: |
+          set +e
+          sh scripts/xvfb.sh node packages/runtime-native/conformance/run-conformance.mjs --target web --out artifacts/conformance/web
+          status=$?
+          set -e
+          test "$status" -eq 0 -o "$status" -eq 2
+          node packages/runtime-native/conformance/check-lane-blocks.mjs \
+            packages/runtime-native/artifacts/conformance/web "web reference"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-web-reference-${{ github.sha }}
+          path: packages/runtime-native/artifacts/conformance/web
+          if-no-files-found: error
+
   android-emulator-parity:
     name: Android emulator visual parity
+    needs: web-reference
     # Runs on every event since 2026-09-01 (owner call): the earlier narrowing held the expensive
     # platform legs behind pushes to main and a `native` label, and the lane then spent its runs
     # being cancelled by the next push instead of reporting anything. A leg that is skipped on the
@@ -143,9 +174,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build browser reference workspace imports
         run: pnpm tsx scripts/workspace-packages.ts build
-      - name: Install browser and Android build prerequisites
+      - uses: ./.github/actions/playwright-chromium
+      - name: Capture browser references from the commit-keyed artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: native-web-reference-${{ github.sha }}
+          path: packages/runtime-native/artifacts/conformance/web
+      - name: Verify the downloaded browser reference
         run: |
-          pnpm exec playwright install --with-deps chromium
+          node packages/runtime-native/conformance/check-lane-blocks.mjs \
+            packages/runtime-native/artifacts/conformance/web "downloaded web reference"
+      - name: Install Android build prerequisites
+        run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006"
           # build-native-physics.mjs cross-compiles the Rust physics crate for both ABIs
           # Gradle packages. Without these targets `:app:buildNativePhysics` fails with
@@ -158,20 +198,6 @@ jobs:
           # fails with "'stb_image.h' file not found" without these. The iOS lane already
           # fetches both explicitly (verify-ios-simulator.mjs); this mirrors it.
           node packages/runtime-native/scripts/download-deps.mjs --only stb
-      - name: Capture browser references
-        run: |
-          set +e
-          sh scripts/xvfb.sh \
-            node packages/runtime-native/conformance/run-conformance.mjs \
-            --target web --out artifacts/conformance/web
-          status=$?
-          set -e
-          # 2 means "some row did not run". A hosted runner exposes SwiftShader, so every
-          # requiresHardwareAdapter row refuses to start; the gate below decides whether the
-          # blocked set is only that, and fails on a failure or any other blocked row.
-          test "$status" -eq 0 -o "$status" -eq 2
-          node packages/runtime-native/conformance/check-lane-blocks.mjs \
-            packages/runtime-native/artifacts/conformance/web "web reference"
       # Without this the x86_64 image is emulated in software: `-accel auto` finds no writable
       # /dev/kvm and falls back silently. That is the 474-second boot this lane logged, and the
       # load behind the `adb ETIMEDOUT` that then discarded a run which had already passed 74/0.
@@ -275,6 +301,7 @@ jobs:
 
   desktop-parity:
     name: Desktop web/native parity
+    needs: web-reference
     # Runs on every event except an unlabelled pull request — the only two legs that are gated,
     # and the numbers behind it rather than a preference:
     #
@@ -347,18 +374,15 @@ jobs:
       - name: Build browser reference workspace imports
         run: pnpm tsx scripts/workspace-packages.ts build
       - uses: ./.github/actions/playwright-chromium
-      # Capture before the native Vulkan packages are installed. On the same ubuntu-24.04 image,
-      # Chromium's SwiftShader compositor produces 74/0 here (as the Android lane proves) but a
-      # uniform white surface after mesa-vulkan-drivers changes the runner's Vulkan stack.
-      - name: Capture browser references
+      - name: Capture browser references from the commit-keyed artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: native-web-reference-${{ github.sha }}
+          path: packages/runtime-native/artifacts/conformance/web
+      - name: Verify the downloaded browser reference
         run: |
-          set +e
-          sh scripts/xvfb.sh node packages/runtime-native/conformance/run-conformance.mjs --target web --out artifacts/conformance/web
-          status=$?
-          set -e
-          test "$status" -eq 0 -o "$status" -eq 2
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
-            packages/runtime-native/artifacts/conformance/web "web reference"
+            packages/runtime-native/artifacts/conformance/web "downloaded web reference"
       - name: Install Linux desktop build dependencies and ccache
         run: >-
           sudo apt-get update && sudo apt-get install -y
@@ -686,10 +710,29 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build iOS proof workspace dependencies
         run: |
+          set -euo pipefail
+          pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
           while IFS=$'\t' read -r package_name _; do
             [ -n "$package_name" ] || continue
             pnpm --filter "$package_name" --if-present run build
-          done < <(pnpm tsx scripts/workspace-packages.ts --archives)
+          done < "$RUNNER_TEMP/threenative-package-specs"
+      - name: Snapshot iOS archive package outputs
+        run: |
+          set -euo pipefail
+          missing=()
+          for config in packages/*/tsup.config.ts; do
+            directory="${config%/tsup.config.ts}"
+            [ -f "$directory/dist/index.js" ] || missing+=("$directory/dist/index.js")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "TN_IOS_PACKAGE_OUTPUTS_MISSING: ${missing[*]}" >&2
+            exit 1
+          fi
+          snapshot="$RUNNER_TEMP/threenative-package-outputs.sha256"
+          find packages -type f \( -path '*/dist/*' -o -path 'packages/core/mcp/*' \) -print \
+            | LC_ALL=C sort \
+            | while IFS= read -r file; do shasum -a 256 "$file"; done > "$snapshot"
+          test -s "$snapshot"
       - run: rustup target add aarch64-apple-ios-sim
       - run: node packages/runtime-native/scripts/verify-ios-simulator.mjs
       - name: Archive the scenario-verified unsigned simulator host
@@ -702,13 +745,26 @@ jobs:
           echo "THREENATIVE_IOS_SIMULATOR_ARCHIVE=$archive" >> "$GITHUB_ENV"
           echo "THREENATIVE_IOS_SIMULATOR_SHA256=$sha" >> "$GITHUB_ENV"
           cp "$archive" packages/runtime-native/artifacts/ios/
+      - name: Verify iOS archive package outputs before packing
+        run: |
+          set -euo pipefail
+          snapshot="$RUNNER_TEMP/threenative-package-outputs.sha256"
+          current="$RUNNER_TEMP/threenative-package-outputs-current.sha256"
+          find packages -type f \( -path '*/dist/*' -o -path 'packages/core/mcp/*' \) -print \
+            | LC_ALL=C sort \
+            | while IFS= read -r file; do shasum -a 256 "$file"; done > "$current"
+          if ! cmp -s "$snapshot" "$current"; then
+            echo "TN_IOS_PACKAGE_OUTPUTS_CHANGED: public archive package outputs changed during simulator verification" >&2
+            diff -u "$snapshot" "$current" || true
+            exit 1
+          fi
       - name: Pack the exact consumer packages
         run: |
+          set -euo pipefail
           mkdir -p "$RUNNER_TEMP/ios-packages"
           pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
           while IFS=$'\t' read -r package_name archive_prefix; do
             [ -n "$package_name" ] || continue
-            pnpm --filter "$package_name" --if-present run build
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/ios-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
       - name: Scaffold the iOS consumer from local tarballs
