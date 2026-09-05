@@ -12,8 +12,9 @@ Delivery base: `origin/main` at `8ea7b3a47c655415150df585f16a632575db3d28`
 
 Pre-C4 delivery HEAD: `5d300c897cf29d107621b8f08995e3c0cddeab88`
 
-Tested implementation source: `24033e5bb43808abf43d24798997c71496ef7875`. Subsequent work is
-limited to this verification record and generated retention metadata.
+Initial tested implementation source: `24033e5bb43808abf43d24798997c71496ef7875`.
+The final integration test below covers the later merge from `main`; after that tested commit,
+only this verification record and generated retention metadata changed.
 
 ## Acceptance evidence
 
@@ -197,3 +198,27 @@ rg -n "CharacterBody3D" docs packages | wc -c 955,476
 The raw grep ignores neither `.gitignore` nor `.ignore`; it traversed this lane’s ignored archive
 scratch and counted binary matches in extracted `.git/index` files. Therefore the `.ignore` file
 is not claimed to change that raw number. The `rg` measurement is limited to `docs packages`.
+
+## Final integration and review
+
+Astra medium reviewed `6f167cd9` against the original delivery base and approved with no findings.
+The subsequent merge from `main` at `f9be9ba2453b80de605c76d7a7d95294878f996c` had one conflict,
+in the generated retention index. Regenerating it produced integration commit
+`c1606f1f61789a2e516cda7dfbf9aae8d1fe98dc`; no PRD-357 implementation was manually changed.
+
+The manager ran the full unfiltered suite in a fresh archive of that integration commit, using
+frozen-lockfile installation and the same five native executable caches:
+
+```text
+pnpm install --frozen-lockfile   EXIT 0
+pnpm test                       EXIT 0
+Test Files                      386 passed | 1 skipped (387)
+Tests                           4185 passed | 4 skipped (4189)
+MANAGER_FULL_ARCHIVE_INTEGRATED_PASS
+```
+
+Build, typecheck, lint, targeted search/budget/primary-doc tests, mirror sync, budgets and quality
+also exited 0 on the integrated branch. The independent Git-blob audit still found 819 image paths
+before and 450 after, exactly 369 removed copies, no missing distinct content, and no remaining
+image duplicate groups. The final integration logs are retained locally under
+`.linchpin/prd-357-manager-integrated-archive.log` and `artifacts/prd-357/manager-integrated-gates/`.
