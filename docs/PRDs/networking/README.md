@@ -9,14 +9,14 @@ Deferred iOS results remain explicitly unverified, never passed.
 
 | PRD | Status | Outcome |
 | --- | --- | --- |
-| [PRD-359 — portable multiplayer transport](./PRD-359-portable-multiplayer-transport.md) | IN PROGRESS — Task 0 policy checks passed; Task 1a fixture underway | Players on browser, Windows, macOS, Linux, Android and iOS share a server using the same game source |
+| [PRD-359 — portable multiplayer transport](./PRD-359-portable-multiplayer-transport.md) | IN PROGRESS — Tasks 0/1a/1a-close passed; native limits next | Players on browser, Windows, macOS, Linux, Android and iOS share a server using the same game source |
 
 The existing native implementation is incomplete evidence, not a release-ready transport.
 The PRD records the exploration, alternatives, bounded implementation slices and release matrix.
 Renet2 remains an alternative if the interoperability spike invalidates this direction.
-Task 0 policy checks passed; native baseline contracts passed locally. Transport interoperability and platform acceptance remain unverified.
+The Go fixture now passes real Chromium byte echo and 11 native tests; failed-handshake readiness is repaired. Trusted TLS qualification and the full platform matrix remain unverified.
 
-Follow [EXECUTION.md](./EXECUTION.md); Task 1a is underway.
+Follow [EXECUTION.md](./EXECUTION.md); Task 2a is next.
 The exact API, byte format and backend contract are in [PROTOCOL.md](./PROTOCOL.md).
 
 **Selected architecture:** one protocol and conformance suite, thin language adapters.

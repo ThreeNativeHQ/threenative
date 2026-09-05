@@ -2,24 +2,29 @@
  * WebTransport API end-to-end tests.
  *
  * These exercise the native WebTransport implementation (QUIC + HTTP/3 via
- * quiche) against a real WebTransport echo server (the small Rust `wtransport`
- * server shipped at `examples/webtransport/server`). They validate the full
- * client surface:
+ * quiche) against a real WebTransport echo server (the Go reference server
+ * shipped at `examples/webtransport/server`, built with `webtransport-go`).
+ * They validate the full client surface:
  *   - connection lifecycle (ready)
  *   - datagrams (send + receive echo)
  *   - bidirectional streams (send + receive echo)
  *   - unidirectional streams (send + receive a server-initiated echo stream)
  *
+ * The same server is what `examples/webtransport/client.html` drives from a real
+ * browser, so both halves of the "web and native are one codebase" rule are
+ * measured against one fixture.
+ *
  * Requirements (the suite skips cleanly if any are missing):
  *   - The `mystral` binary built WITH quiche (MYSTRAL_HAS_QUICHE). WebTransport
  *     is feature-detected at runtime by attempting a connection.
- *   - A Rust toolchain (`cargo`) to build the echo server.
+ *   - A Go toolchain (`go`) to build the echo server.
  *
  * Set TN_REQUIRE_LIVE_WEBTRANSPORT_FIXTURE=1 when the live fixture is a required
- * verification gate. Missing fixture inputs then fail the suite with their exact
- * paths instead of being reported as skipped.
+ * verification gate. Missing fixture inputs then fail with their exact paths
+ * instead of being reported as skipped — in that mode nothing skips, because a
+ * skipped required lane reads as a pass it never earned.
  *
- * Because they need a Rust toolchain and a live UDP server, the default pnpm
+ * Because they need a Go toolchain and a live UDP server, the default pnpm
  * test lane reports them as explicitly skipped until those requirements exist.
  */
 
@@ -30,19 +35,33 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runCommand, runtimeBinary, runtimeRoot } from "../runtime-test-utils.js";
 
 // The echo server lives with the runnable example so users can verify
-// WebTransport themselves (see examples/webtransport/README.md).
+// WebTransport themselves (see examples/webtransport/client.html).
 const SERVER_DIR = join(runtimeRoot, "examples/webtransport/server");
-const SERVER_BIN = join(SERVER_DIR, "target/release/wt-echo-server");
+// One explicit executable path, built before every run: nothing is discovered, so a
+// stale binary can never stand in for the source under test. `build/` is untracked.
+const SERVER_EXECUTABLE = join(
+  runtimeRoot,
+  "build/webtransport",
+  process.platform === "win32" ? "tn-network-server.exe" : "tn-network-server",
+);
 const TEST_DIR = join(runtimeRoot, ".test-tmp/webtransport");
-const SERVER_URL = "https://127.0.0.1:4433/echo";
+const SERVER_LISTEN = "127.0.0.1:4433";
+const SERVER_URL = `https://${SERVER_LISTEN}/echo`;
+// The server serves only /echo, so this path exercises the constructor and nothing else.
+const PROBE_URL = `https://${SERVER_LISTEN}/probe`;
 const REQUIRE_LIVE_FIXTURE = process.env.TN_REQUIRE_LIVE_WEBTRANSPORT_FIXTURE === "1";
+// A cold `go build` compiles quic-go and its dependencies, which is far longer than
+// vitest's default 10s hook budget.
+const FIXTURE_SETUP_TIMEOUT_MS = 300_000;
+// Stays below vitest's testTimeout on purpose: when a script hangs, the assertion has to
+// fail on the output the runtime actually produced. A script budget equal to the test
+// budget reports a bare "Test timed out" and throws that output away.
+const SCRIPT_TIMEOUT_MS = 20_000;
 
 const missingRequirements = [
   !existsSync(runtimeBinary) ? `built native runtime (${runtimeBinary})` : null,
   !existsSync(SERVER_DIR) ? `WebTransport echo-server source (${SERVER_DIR})` : null,
-  spawnSync("cargo", ["--version"], { stdio: "ignore" }).status !== 0
-    ? "Rust cargo toolchain"
-    : null,
+  spawnSync("go", ["version"], { stdio: "ignore" }).status !== 0 ? "Go toolchain" : null,
 ].filter((reason): reason is string => reason !== null);
 
 let unavailableReason =
@@ -50,19 +69,33 @@ let unavailableReason =
 
 let serverProc: ChildProcess | null = null;
 
-async function startServer(): Promise<boolean> {
-  if (!existsSync(SERVER_BIN)) {
-    console.log("Building WebTransport echo server (cargo)...");
-    const build = spawnSync("cargo", ["build", "--release"], {
-      cwd: SERVER_DIR,
-      encoding: "utf8",
-    });
-    if (build.status !== 0) {
-      unavailableReason = `requires a buildable WebTransport echo server: ${build.stderr}`;
-      return false;
-    }
+function failClosed(reason: string): void {
+  unavailableReason ??= reason;
+  if (REQUIRE_LIVE_FIXTURE) {
+    throw new Error(
+      `WebTransport live certificate fixture prerequisite failed: ${unavailableReason}`,
+    );
   }
-  serverProc = spawn(SERVER_BIN, [], { stdio: ["ignore", "pipe", "pipe"] });
+}
+
+async function startServer(): Promise<boolean> {
+  console.log("Building WebTransport echo server (go build)...");
+  const build = spawnSync("go", ["build", "-o", SERVER_EXECUTABLE, "."], {
+    cwd: SERVER_DIR,
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  if (build.status !== 0) {
+    unavailableReason = `requires a buildable Go WebTransport echo server in ${SERVER_DIR}: ${build.stderr}`;
+    return false;
+  }
+  if (!existsSync(SERVER_EXECUTABLE)) {
+    unavailableReason = `requires the built echo-server executable (${SERVER_EXECUTABLE})`;
+    return false;
+  }
+  serverProc = spawn(SERVER_EXECUTABLE, ["--listen", SERVER_LISTEN, "--dev-self-signed"], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 
   // Wait for the "LISTENING" line so we know the UDP socket is bound.
   return new Promise((resolve) => {
@@ -106,7 +139,7 @@ async function runScript(
   }
   const { stdout, stderr } = await runCommand(runtimeBinary, ["run", path, "--headless"], {
     env,
-    timeoutMs: 30_000,
+    timeoutMs: SCRIPT_TIMEOUT_MS,
   });
   return `${stdout}\n${stderr}`;
 }
@@ -116,17 +149,17 @@ async function runTrustedScript(name: string, source: string): Promise<string> {
 }
 
 function requireWebTransport(skip: (note?: string) => never): void {
-  if (unavailableReason) skip(unavailableReason);
+  if (!unavailableReason) return;
+  // A required lane fails here rather than skipping: `beforeAll` is not the only place
+  // a prerequisite can go missing, and a skipped test reports green.
+  failClosed(unavailableReason);
+  skip(unavailableReason);
 }
 
 describe("WebTransport API", () => {
   beforeAll(async () => {
     if (unavailableReason) {
-      if (REQUIRE_LIVE_FIXTURE) {
-        throw new Error(
-          `WebTransport live certificate fixture prerequisite failed: ${unavailableReason}`,
-        );
-      }
+      failClosed(unavailableReason);
       return;
     }
 
@@ -135,25 +168,20 @@ describe("WebTransport API", () => {
     const probe = await runScript(
       "wt-probe.js",
       `console.log('WT_GLOBAL:' + (typeof WebTransport));
-       const wt = new WebTransport('https://127.0.0.1:4433/probe');
+       const wt = new WebTransport('${PROBE_URL}');
        wt.ready.then(() => {}).catch(() => {});
        console.log('WT_CONSTRUCT_OK');
        process.exit(0);`,
     );
     if (!probe.includes("WT_CONSTRUCT_OK")) {
-      unavailableReason = "requires a runtime built with WebTransport/quiche support";
+      failClosed("requires a runtime built with WebTransport/quiche support");
       return;
     }
     const started = await startServer();
     if (!started) {
-      unavailableReason ??= "requires a WebTransport echo server that reaches LISTENING";
-      if (REQUIRE_LIVE_FIXTURE) {
-        throw new Error(
-          `WebTransport live certificate fixture prerequisite failed: ${unavailableReason}`,
-        );
-      }
+      failClosed("requires a WebTransport echo server that reaches LISTENING");
     }
-  });
+  }, FIXTURE_SETUP_TIMEOUT_MS);
 
   it("rejects the echo server certificate without the development override", async ({ skip }) => {
     requireWebTransport(skip);
@@ -190,9 +218,26 @@ describe("WebTransport API", () => {
     expect(out).toContain("MYSTRAL_WEBTRANSPORT_INSECURE=1");
   });
 
-  afterAll(() => {
-    serverProc?.kill();
-    rmSync(TEST_DIR, { recursive: true, force: true });
+  afterAll(async () => {
+    const child = serverProc;
+    serverProc = null;
+    try {
+      if (child?.pid && child.exitCode === null && child.signalCode === null) {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            child.kill("SIGKILL");
+            reject(new Error("WebTransport echo server did not stop within 5 seconds"));
+          }, 5_000);
+          child.once("close", () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+          child.kill("SIGTERM");
+        });
+      }
+    } finally {
+      rmSync(TEST_DIR, { recursive: true, force: true });
+    }
   });
 
   it("connects and the ready promise fulfills", async ({ skip }) => {
