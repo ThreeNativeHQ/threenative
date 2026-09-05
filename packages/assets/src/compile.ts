@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import {
   copyFile,
@@ -161,7 +161,8 @@ export interface IModelsConfig {
    * Write each distinct embedded image once under `shared/images/` and reference it from every
    * model that carries it, instead of embedding a copy in each. A marketplace pack's eight pines
    * stop shipping eight copies of the same bark map, and a rebuild reuses last build's encodes.
-   * Default false: the served GLB then references files beside it, which a host must serve.
+   * Default true: the served GLB references files beside it, which a host must serve. False
+   * keeps each model self-contained and reports the duplicated embedded-image byte cost.
    */
   readonly sharedImages?: boolean;
   /** LOD simplification. Absent means none: it is the one lossy stage, and it is opt-in. */
@@ -1909,9 +1910,13 @@ export async function compileAssets(
       // file, and two identical-content writers cannot interleave.
       if (output.shared && (await outputExists(absolute))) continue;
       await mkdir(path.dirname(absolute), { recursive: true });
-      const temporary = `${absolute}.${process.pid}.tmp`;
-      await writeFile(temporary, output.buffer);
-      await rename(temporary, absolute);
+      const temporary = `${absolute}.${process.pid}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(temporary, output.buffer);
+        await rename(temporary, absolute);
+      } finally {
+        await rm(temporary, { force: true }).catch(() => undefined);
+      }
     }
     written += 1;
   };

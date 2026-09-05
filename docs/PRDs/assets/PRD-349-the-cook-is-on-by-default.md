@@ -38,7 +38,7 @@ mips are ②. **All of the 289 MB lives in ②.** ① is working and this PRD do
 | `packages/assets/src/compile.ts:945, 654-658` · `apply-worker.ts:41` | `sharedImages` honoured only on `=== true` |
 | `packages/assets/src/passes/shared-images.ts:8-17` | the dedupe store — built, tested, off; its doc comment describes wildwood exactly |
 | `packages/assets/src/passes/model-textures.ts:479-487` | `encodeToKTX2` called **without** `needSupercompression` |
-| `node_modules/ktx2-encoder@0.6.0/types/type.d.ts:37,200` | `setKTX2UASTCSupercompression` / `needSupercompression` exist and default false |
+| `ktx2-encoder@0.6.0/src/utils.ts`, `applyInputOptions.ts` | `needSupercompression` defaults **true** in executable code; the original false assumption was incorrect |
 | `packages/assets/src/passes/model-textures.ts:357-360` | `chooseCodec`: normals→`uastc`, alpha→`uastc`, else `etc1s` — already quality-aware |
 | `packages/assets/src/compile.ts:210-224` | **the platform matrix is already solved** — `platform` drops undecodable passes per target |
 | `packages/create-threenative/templates/starter/threenative.config.ts:54` | ships `models: "none", textures: "none"` |
@@ -156,8 +156,8 @@ already exists, and no pixel is discarded: **output resolution is unchanged by t
 
 - **Switch 1 — `sharedImages` defaults `true`.** 206 MB, bit-exact, provable by sha256.
 - ~~**Switch 2 — `needSupercompression: true`**~~ — **REFUTED by the spike: 0.0% on all four
-  textures.** Raw UASTC blocks are high-entropy; zstd only pays once RDO has made them
-  compressible. The flag stays unset; RDO is lossy and belongs to PRD-351.
+  textures.** Both arms already used Zstd: the dependency defaults omission to true. The flag
+  stays unset and that default is preserved; RDO is lossy and belongs to PRD-351.
 - **Switch 2 — the templates stop saying `"none"`.** The per-target gate already protects mobile.
 - **New `assets.exclude`** — glob list on the existing `globMatch`, so 677 MB nothing loads stops
   being copied.
@@ -319,8 +319,10 @@ T_pine_bark_diffuse  1024x1024   source PNG 3.55 MB
    uastc+zstd        1.287 MB      <-- 0.0% smaller
 ```
 
-Raw UASTC blocks are high-entropy; zstd only pays once RDO has restructured them, and RDO is lossy.
-The flag stays unset. **PRD-351 owns RDO**, behind the quality floor that makes it safe to turn on.
+Execution correction: `ktx2-encoder@0.6.0` merges `DefaultOptions.needSupercompression: true`
+before applying options. This comparison used Zstd on both sides, not raw UASTC versus Zstd.
+The flag stays unset and its existing default stays true. **PRD-351 owns RDO**, behind the
+quality floor that makes it safe to turn on.
 
 A second spike finding shapes PRD-351: `chooseCodec` selected `uastc` for **all four** textures,
 including `T_pine_bark_diffuse`, because this pack stores cutout alpha in the diffuse map. ETC1S —

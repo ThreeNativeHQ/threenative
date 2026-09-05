@@ -1,7 +1,7 @@
 import { read as readKTX2 } from "ktx-parse";
 import { type IAssetPass, type IAssetPassOutput, classify } from "../compile.js";
 import { textureStats } from "../health.js";
-import { encodeToKTX2 } from "../ktx2-encoder.js";
+import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
 import { globMatch } from "./glob.js";
 import { cappedSize, resampleRgba } from "./model-textures.js";
@@ -90,6 +90,7 @@ export async function encodeLinearRgbaKtx2(
 export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
   return {
     configuration: {
+      encoder: KTX2_ENCODER_VERSION,
       keepSmallerSource: true,
       ...(options.maxSize === undefined ? {} : { maxSize: options.maxSize }),
       overrides: options.overrides ?? [],

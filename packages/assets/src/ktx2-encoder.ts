@@ -1,5 +1,8 @@
 import BASIS from "../vendor/basis-encoder/basis_encoder.js";
 
+/** Included in both pass and shared-image cache keys whenever encoded bytes can change. */
+export const KTX2_ENCODER_VERSION = "basis-v2.5-ldr16m-zstd-v1";
+
 const OUTPUT_HEADER_SLACK = 64 * 1024;
 const MAX_SOURCE_TEXELS = 16 * 1024 * 1024;
 
@@ -81,8 +84,8 @@ export async function encodeToKTX2(
     encoder.setMipGen(generateMipmap);
     if (options.isNormalMap === true) encoder.setNormalMapPreset();
     encoder.setQualityLevel(options.qualityLevel ?? 150);
-    // The PRD's measured default is deliberately false: Zstd without UASTC RDO saved 0%.
-    encoder.setKTX2UASTCSupercompression(options.needSupercompression ?? false);
+    // Preserve ktx2-encoder@0.6.0's omitted-option default; this is lossless, not UASTC RDO.
+    encoder.setKTX2UASTCSupercompression(options.needSupercompression ?? true);
     if (options.isPerceptual !== undefined) encoder.setPerceptual(options.isPerceptual);
     encoder.setTexType(0);
 

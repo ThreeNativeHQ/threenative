@@ -1,7 +1,15 @@
 # PRD-349 — cook execution evidence
 
 Execution in `.worktrees/prd-349-cook-default`, branched from
-`assets/prd-349-352-execution` at `6685739e`. In progress; no completion claim.
+`assets/prd-349-352-execution` at `6685739e`. **PARTIAL** — in progress, no completion claim, no
+PR and no archive move. iOS packaging is unrun on this host, and nothing here claims every game.
+
+Two source points are cited throughout and must not be conflated. **Frozen source `57b76a66`**
+carries the last official full-suite run and the packed tarballs every game lane below installed.
+The **working tree is ahead of it**: the encoder supercompression default is restored in
+uncommitted source, and separate workers hold in-flight watch and budget-review repairs. No gate
+recorded against `57b76a66` covers the working tree, and nothing here is re-packed distribution
+proof for it.
 
 ## Compiler and template checkpoint, 2026-09-04
 
@@ -243,8 +251,9 @@ guard directly. Full suite still needs a green rerun after those repairs and the
 The shipped `ktx2-encoder@0.6.0` rejects a 4096² source in both its JavaScript guard and Basis v2.5
 WASM32 wrapper. The package now carries a private LDR adapter and a reproducibly rebuilt version
 of the same Basis source with its conservative LDR ceiling raised from 12 to 16 Mi texels. No
-downscale, codec-policy change, supercompression default change or new runtime dependency is
-introduced. The original npm encoder dependency is removed; the Apache license, MIT-derived
+downscale, codec-policy change or new runtime dependency is introduced. That sentence also
+claimed no supercompression default change; **the claim was false and is corrected below**.
+The original npm encoder dependency is removed; the Apache license, MIT-derived
 adapter attribution, source commit, container digest and artifact hashes ship with the package.
 
 Observed red: `/tmp/prd349-ktx2-4k-red.log`, original encoder rejects 16,777,216 source texels.
@@ -252,10 +261,12 @@ Default-path green: `/tmp/prd349-assets-4k-green.log`, conditional real 4K test 
 14 unrelated tests deselected; output remains **4096×4096**, **13 mip levels**, **UASTC**, KTX2
 supercompression scheme **0**. The high-entropy fixture encodes in 171.344 seconds, source
 57,402,213 bytes to 22,370,128 bytes. This test is explicitly executed, not inferred from its
-conditional presence in the default suite.
+conditional presence in the default suite. Scheme 0 and 22,370,128 bytes are what the wrapper
+shipping at the time produced, not the encoder's own default; both are superseded below.
 
-Existing-size parity: `/tmp/prd349-ktx2-1024-parity.log` compares the old and new encoders with
-the actual caller policy (`needSupercompression:false`). ETC1S output is byte-identical at
+Existing-size parity: `/tmp/prd349-ktx2-1024-parity.log` compares the old and new encoders under
+an explicit `needSupercompression:false` — which this entry wrongly called the caller's actual
+policy, and which is not the path a cook takes. ETC1S output is byte-identical at
 156,962 bytes; UASTC normal output is byte-identical at 1,398,560 bytes. The pinned-source rebuild
 reproduces both generated JS and WASM hashes in 22 seconds
 (`/tmp/prd349-basis-rebuild-proof.log`). Package build/typecheck, 36 focused tests and packed
@@ -270,6 +281,13 @@ on disk, not guessed from source filenames. The exact 76 path/output/byte rows a
 `docs/verification/PRD-349-wildwood-runtime-baseline.json` before the cooked manifest replaces
 the baseline; later load-set accounting must resolve these paths through the new manifest and
 deduplicate its shared outputs, rather than summing only the primary GLBs.
+
+**Correction.** That sweep resolved acquisitions through the manifest, and the game fetches its
+HDRI directly, so the 5,451,493-byte `kloofendal_48d_2k.hdr` is absent from the 76 rows. A
+like-for-like comparison adds it, giving **304,915,228 bytes**. It is not a cook gain on either
+side: source and emitted output are byte-identical, sha256
+`5244534e9cf5b606f2ff513aa00ddb161b0a4826ffd88a0d3bd03ac29247d198`, 5,451,493 bytes, both statted
+and hashed on disk.
 
 ## Integration checkpoint and remaining odd-size defect
 
@@ -334,3 +352,221 @@ in `/tmp/prd349-final-source-test-rerun.log`, so this checkpoint does not claim 
 The final encoder rebuild reproduces both pinned hashes
 (`/tmp/prd349-final-source-encoder-rebuild.log`); its patch now avoids whitespace-only context
 lines, and `git diff --check` is clean. No codec or generated binary changed in that cleanup.
+
+## Encoder supercompression default — correction, 2026-09-04
+
+The two entries above call the encoder's default scheme 0 and name `needSupercompression:false`
+the caller's actual policy. **Both are wrong, and this repository's wrapper was the reason.**
+`ktx2-encoder@0.6.0` sets `needSupercompression: true` in `DefaultOptions` (`dist/utils.js:7`) and
+merges it as `{ ...DefaultOptions, ...options }` in `applyInputOptions`, so an omitted option means
+Zstandard upstream, not none. `packages/assets/src/ktx2-encoder.ts` passed
+`options.needSupercompression ?? false`, silently inverting that default for every cook, under a
+comment crediting a PRD measurement of UASTC RDO — a different feature. The working-tree source
+restores `?? true`: upstream's original default, lossless, with no RDO, no resizing and no codec
+change. An explicit `false` still wins.
+
+Red, with the wrapper still forcing false (`/tmp/prd349-encoder-default-red.log`):
+
+```text
+FAIL  packages/assets/__tests__/texture-pass.spec.ts > the ktx2 texture pass >
+  should encode to UASTC when the source has an alpha channel
+AssertionError: expected +0 to be 2 // Object.is equality
+Tests  1 failed | 16 skipped (17)
+```
+
+Because encoded bytes change, `KTX2_ENCODER_VERSION` now enters the texture-pass configuration and
+both model/shared-image cache keys, so earlier encodes cannot be recalled. Stale-key red
+(`/tmp/prd349-encoder-cache-red.log`): `expected [ 'fd881d24b114411e', …(1) ] to not include
+'fd881d24b114411e'`, 1 failed | 15 skipped. Green after both repairs: **54 passed | 1 skipped**
+across three specs, 11.63 s (`/tmp/prd349-encoder-cache-green.log`). That single skip is the opt-in
+4K case, run separately below — it is not new 4K evidence.
+
+Old/new encoder parity re-run with the option **omitted**, which is the path a cook takes
+(`/tmp/prd349-ktx2-omitted-default-parity.log`):
+
+```text
+{"equal":true,"name":"etc1s","newBytes":156962,"oldBytes":156962}
+{"equal":true,"name":"uastc-normal","newBytes":38832,"oldBytes":38832}
+```
+
+Old and new encoders stay byte-identical on the default path, hashes included. The UASTC figure is
+**not** comparable with the 1,398,560 bytes recorded earlier: that run pinned `false`, this one is
+Zstandard-supercompressed, and ETC1S is unaffected by the setting either way.
+
+The opt-in 4K case re-ran to completion under the restored default and passed
+(`/tmp/prd349-4k-zstd-green.log`, **1 passed | 17 skipped**, 174.56 s): still 4096×4096, 13 mip
+levels, UASTC, now supercompression scheme 2, `cliff_normal.png (uastc): 57402213 -> 21899523 bytes
+(-61.8%)`. This supersedes the scheme-0 / 22,370,128-byte figure for the default path; that number
+stands only for an explicit `needSupercompression:false`.
+
+**Every byte total recorded in this file, including all three game lanes below, was produced with
+the wrapper still forcing scheme 0.** None of them measures the restored default.
+
+## Frozen-source checkpoint `57b76a66`
+
+`pnpm test` (`bash scripts/run-test-suite.sh`) on the clean frozen tree, worktree-verified at
+`57b76a66f82ee829d5e0c0c9f79fb09c0ae0fbe4` — `/tmp/prd349-frozen-test.log`:
+
+```text
+Test Files  381 passed | 2 skipped (383)
+     Tests  4111 passed | 7 skipped (4118)
+  Duration  84.35s
+suite temporary directory count did not grow in '/tmp/threenative-suite.BypxWC': before 1, after 1
+```
+
+Inside the same run: `packages/runtime-native` 708 passed | 39 skipped over 100 files, the 29
+physics-parity checks, and 16 Rust tests (14 lib + 2 parity). This supersedes the 4,092/2-failed and
+4,110/1-failed runs recorded above and closes the rerun those entries left open. It does **not**
+cover the working tree's encoder-default source, nor the in-flight watch and budget-review repairs.
+
+Packed distribution the game lanes installed — `/tmp/prd349-frozen-pack.fNE24A/provenance.json`:
+source commit `57b76a66`, tree `27bbdd60`, `cleanAtPack: true`, node 20.19.6, pnpm 10.25.0. sha256
+prefixes (full digests in that file): core `48b6a99019ef6031`, assets `bd6c5950adac4b6e`, playtest
+`c0cf06c5f1f1a4cb`, `create-threenative` `f7633f23d088f132`. This is frozen-source distribution
+evidence, not final-source distribution evidence.
+
+## Frozen-package game lanes
+
+**threenative-hq (web).** The four checked-in browser scenarios re-ran on the frozen tarballs after
+their sha256s were matched against `provenance.json`; only `package.json` and the lockfile changed,
+and `threenative.config.ts` kept its authored `models: "none"` / `textures: "none"`. Parsed from
+`/tmp/prd349-hq-after/web-scenarios.log`: `hq-office` 8, `hq-visitor` 4, `hq-office-animation` 9,
+`hq-office-poses` 8 — **29 assertions, 0 failing, 0 diagnostics**, every scenario `pass: true`,
+adapter `nvidia`/`turing` on all four, `hq-visitor` carrying its two pre-existing triviality
+opt-outs. **`office-live` is unverified**: nothing listens on `127.0.0.1:7373` and the runner
+printed `skipped: no live bridge on 127.0.0.1:7373, so the machine lane proves nothing`. Manifest
+and receipt-owned bytes are **22,653,462 over 25 entries before and after, per-entry identical** —
+the correct result for that opt-out, and the build said so:
+`TN_ASSETS_COMPRESSION_SKIPPED model: 23 file(s), 22.4 MB shipped as authored`. Outputs rehashed
+1:1 with no orphans; `assets.manifest.json` grew 2,213 bytes and `bake.receipt.json` 125 bytes for
+the new per-entry `passes`/`extensions` fields. Evidence: `/tmp/prd349-opus-hq-frozen-proof.json`,
+`/tmp/prd349-hq-after/{install,build,bridge,web-scenarios}.log` and its two manifest summaries.
+Pushed as `ThreeNativeHQ/examples` `5e51bd8`. One compatibility lane on one host, not acceptance.
+
+**Quarry source repair.** The six source GLBs were Meshopt-compressed, so the "uncooked source"
+they stood for was not uncooked. `gltf-transform copy --vertex-layout separate` decoded them
+losslessly: 216 checks over six files, **0 failures** — every index and attribute value equal under
+`Object.is`, embedded image sha256s and byte lengths unchanged, no `EXT_meshopt_compression` in
+parsed extensions or the raw JSON chunk, and the repaired files read with **no decoder registered**
+where the originals throw. Sources moved 29,888,252 → 30,346,112 bytes (+457,860) at unchanged
+56,124 triangles. This is a fixture repair: **the larger number is not a new baseline**, and the
+growth is not a cook result. Proof: `sandbox/quarry/artifacts/prd349-meshopt-decode/proof.json`,
+`/tmp/prd349-opus-quarry-source-repair.json`.
+
+**Quarry (Android).** Rebuilt on the frozen packages over the decoded sources —
+`/tmp/prd349-quarry-decoded-android-build.log`, `BUILD SUCCESSFUL`, and
+`TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 30346112 bytes (ceiling none)`. The
+APK is **140,959,998 bytes**, statted at `sandbox/quarry/dist-native/quarry.apk` rather than read
+from the log. Compression is skipped by design: `this target has no WebAssembly and could not
+decode it`. This replaces the earlier 29,888,252-byte figure for the same lane. **No device
+executed it** — packaging only, still unverified on hardware.
+
+## Provisional per-game byte gains
+
+Manifest and receipt-owned bytes only. A whole-`public/` figure is never substituted for these:
+threenative-hq's folder alone holds 71 unrelated historical files no cook touches. Every row was
+produced on frozen `57b76a66` packages, **before** the supercompression correction, so all of them
+are provisional.
+
+| Game / target | Baseline input | Current cooked bytes | Overhead inside that total | Provisional gain |
+| --- | --- | --- | --- | --- |
+| Wildwood, web | 304,915,228 — 76 runtime acquisitions plus the HDR they omitted | 55,409,248 over 124 acquired outputs | 5,451,493 HDR passthrough + 584,862 Basis runtime | ≈ −81.8%, **not** the ≤45 MB target |
+| Quarry, Android | 30,346,112 authored source, post-decode | 30,346,112 | none | 0% by design — no-WASM decoder exemption |
+| threenative-hq, web | 22,653,462 over 25 entries | 22,653,462 over 25 entries | none | 0% by design — authored `models`/`textures` `"none"` |
+
+Wildwood's two sides are not the same row set: 76 baseline acquisitions become 124 cooked outputs
+because shared-image cooking splits embedded textures into separate files, so this is a whole
+load-set ratio, not a matched per-entry diff. Excluding the HDR from both sides gives
+299,463,735 → 49,957,755, ≈ −83.3%. Neither pairing is acceptance: the cook is the intermediate one
+in `/tmp/prd349-wildwood-57-byte-proof.json`, whose own status field reads
+`intermediate; encoder default regression, not final acceptance`.
+
+## Post-review integration checks
+
+The restored encoder and unnamed/duplicate-image budget repair pass the complete assets suite:
+**300 passed / 2 skipped**, 29 files passed / 1 skipped, exit zero
+(`/tmp/prd349-postreview-assets.log`). The separate opt-in 4K execution above closes that skip
+for this checkpoint. Workspace build, typecheck and lint exit zero
+(`/tmp/prd349-postreview-{build,typecheck,lint}.log`). These are working-tree checks, not a new
+frozen distribution. The first missing-shared-image watcher fix was rejected for leaving
+publication ownership and aggregate-budget gaps. The replacement uses one canonical
+`compileAssets` call per burst, deleting the scratch publisher and manifest merger. Final
+watcher regression results: **5 failed / 3 passed** on the old code, then **8 passed** with
+the repair (`/tmp/prd349-watch-ownership-{red,green}.log`). They cover shared files, aggregate
+budget rejection, add/edit/delete ownership, preservation of unowned files, cache accounting,
+and recovery after a mixed valid/invalid burst. One invalid file now fails the whole burst;
+the previous manifest stays live and the pending journal cleans partial writes on recovery.
+
+A subsequent assets-suite run exposed a separate concurrent-publication defect:
+**302 passed / 1 failed / 2 skipped** (`/tmp/prd349-watch-integrated-assets.log`). Two models
+sharing an image raced on the same PID-based temporary filename; one rename failed `ENOENT`
+in `compile.ts`'s auxiliary-output publication. This red supersedes the earlier full-assets
+green until the targeted fix and rerun complete. The deterministic regression now holds both
+writers after staging and before rename: PID-only names fail with the same `ENOENT`
+(`/tmp/prd349-publish-race-red.log`). Per-write UUID staging names plus `finally` cleanup fix
+the collision without changing final content-addressed paths or ownership order. Focused shared
+image tests **17 passed**; the complete assets suite **304 passed / 2 skipped**, exit zero
+(`/tmp/prd349-publish-race-green.log`); package typecheck and formatting also pass.
+
+Quarry's repaired-source iOS retry again reaches asset cooking and UI bundling, then exits one:
+`iOS simulator packaging requires a darwin-arm64 host; received linux-x64`
+(`/tmp/prd349-quarry-decoded-ios-build.log`). Android APK SHA256 before that retry:
+`08917f3f72fb55bd1d14a51e521e400581e11f9bdeb63d724d84cc5d71f4ad82`.
+
+Wildwood's intermediate `pnpm test` ran on the frozen packages. Its cold-start probe
+completed five runs on NVIDIA/Turing, reporting 79.95 MB transfer each. That is **not** the
+deduplicated asset-size figure above: `tools/measure-startup.mjs` keeps
+`Network.setCacheDisabled: true` throughout each run, and its first resource census contains
+208 requests over 171 distinct URLs, including shared-image URLs fetched two to four times.
+It also includes scripts and HTTP transfer encoding. Do not present either number as the other,
+or claim a network-transfer reduction without a matching baseline using the same probe.
+Evidence: `/tmp/prd349-wildwood-57-playtests.log` and the game's
+`artifacts/startup/phase0-lowtier.json`. All five main gameplay scenarios pass. The overall
+command exits one at the later animal check: `TN_ANIMAL_CLIPS_NEEDED_REPAIR` names all six
+models; baseline/source diagnosis is pending, not waived. Final-source replay remains required.
+
+Opened `artifacts/look/prd349-57-revealed.png` beside `prd349-before-full.png`: the same spawn
+view retains bark detail, foliage alpha edges, terrain and framing, with no apparent material
+regression. The new capture waits for the game's `__TN_WORLD_REVEALED__` signal, then five
+seconds, and reports NVIDIA/Turing with zero console errors
+(`/tmp/prd349-wildwood-57-revealed.log`). The ordinary 15-second `look.mjs` shot instead caught
+the loading curtain and is **not visual evidence**. The full-resolution baseline was a temporary
+fixed-scale control; the new capture keeps the game's automatic resolution policy. Neither
+this intermediate comparison nor that control is a final-source performance claim.
+
+## Release-source gate checkpoint
+
+After the encoder, budget, canonical-watcher and concurrent-publication repairs, the sequential
+workspace `pnpm build`, `pnpm typecheck`, `pnpm lint`, and official `pnpm test` all exit zero.
+Root Vitest: **381 files passed / 2 skipped; 4,121 tests passed / 7 skipped**, 80.72 seconds.
+The suite's temporary-directory count remains **1 → 1**. Logs:
+`/tmp/prd349-release-{build,typecheck,lint,test}.log`. Lint reports 587 non-fatal warnings;
+no limit was raised. This supersedes the previous integration test failure, but final package
+installation and game evidence still need the new immutable source checkpoint.
+
+The source-level animal diagnosis found the same mirrored-animation votes before and after
+cooking for all six models; the five non-PSA animated controls remain unflagged in both forms.
+Thus the animal failure is stale imported source, not a cooking regression. The original pack
+is absent, and conflicting local entitlement records prevent assuming a re-download is
+authorized. No importer change or download was performed. An exact, runtime-equivalent
+fixture repair is being evaluated separately (`/tmp/prd349-opus-animal-diagnosis.json`).
+
+Two additional compatibility baselines fail before any upgrade: Last Harvest and Spectral Sea
+both lack eight pinned historical tarballs, with no exact-hash alternatives available locally.
+`pnpm install --frozen-lockfile` exits 254; build and browser gates are unreachable. Their source,
+config and lockfiles remain unchanged. Logs:
+`/tmp/prd349-{last-harvest,spectral-sea}-baseline-{install,gates,missing-packages,summary}.log`.
+These are unavailable baselines, not green compatibility rows.
+
+## Still open after this update
+
+- Wildwood's cook is 55,409,248 bytes against a ≤45 MB target and predates the supercompression
+  correction. The final recook, its load-set accounting through the new manifest, the no-resize
+  proof and the before/after appearance pair are all unrun.
+- No lane has been re-measured, re-tested or re-packed on the restored default. Frozen `57b76a66`
+  remains the last official suite and the only packed distribution.
+- Watch and budget-review repairs are in flight with separate workers in this tree; no evidence
+  here covers them.
+- Quarry Android and iOS stay packaging-only: no device ran the APK, and iOS packaging is still
+  refused on Linux. No claim covers every game or every target.
+- PRD-349 remains **PARTIAL** — no PR, no archive move.

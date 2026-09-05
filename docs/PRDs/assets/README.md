@@ -47,7 +47,9 @@ From `sandbox/wildwood` at `d535f51`, 2026-09-04. Full record:
 
 ## Findings that changed a plan
 
-- **`needSupercompression` gains 0.0%.** Zstd needs RDO first. A PRD-349 phase was cut on this.
+- **Explicit `needSupercompression:true` gains 0.0% over omission.** Execution found why:
+  `ktx2-encoder@0.6.0` already defaults it to true. Both spike arms used Zstd; the result does
+  not show that Zstd needs RDO. The phase stays cut and the existing default is preserved.
 - **`chooseCodec` picks `uastc` for everything** in this pack — the diffuse maps carry cutout alpha,
   so ETC1S never fires. Remaining headroom is RDO, which is why 351 exists.
 - **The platform matrix was already solved** (`compile.ts:210-224`); the templates' `"none"` is a

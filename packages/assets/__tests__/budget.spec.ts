@@ -1,12 +1,17 @@
-import { mkdir, readFile, truncate, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, truncate, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { NodeIO } from "@gltf-transform/core";
 import { describe, expect, it, vi } from "vitest";
-import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
+import {
+  buildFixtureDocument,
+  buildFixtureGlb,
+} from "../../../test-support/generate-fixture-model.js";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { assertBudget, measureBudget, parseBudget } from "../src/budget.js";
 import { compileAssets } from "../src/compile.js";
+import { unpackGlb } from "../src/passes/shared-images.js";
 import { encodeLinearRgbaKtx2 } from "../src/passes/texture.js";
 
 async function fixture() {
@@ -15,6 +20,64 @@ async function fixture() {
   const bytes = rgbaPng({ width: 16, height: 16, red: () => 100, green: () => 50, blue: () => 20 });
   await writeFile(path.join(root, "assets/largest.png"), bytes);
   return { root, bytes };
+}
+
+/** Two colours in 4x4 cells: too small for any encode to save a byte, never a solid `prune` drops. */
+function tinyPng(seed: number): Buffer {
+  return rgbaPng({
+    width: 16,
+    height: 16,
+    red: (x, y) => (((x >> 2) + (y >> 2)) % 2 === 0 ? 30 + seed : 210),
+    green: (x, y) => (((x >> 2) + (y >> 2)) % 2 === 0 ? 40 : 150 + seed),
+    blue: () => 90 + seed,
+  });
+}
+
+/** 11x10: neither edge is a whole number of 4x4 blocks, so the cook retains it as authored. */
+function unalignedPng(seed: number): Buffer {
+  return rgbaPng({
+    width: 11,
+    height: 10,
+    red: (x, y) => ((x + y) % 2 === 0 ? 40 + seed : 190),
+    green: (x) => (x * 11 + seed) & 0xff,
+    blue: (_x, y) => (y * 13 + seed) & 0xff,
+  });
+}
+
+/**
+ * Four embedded images on one material: an unnamed one and a `wood` that both skip as
+ * `not-smaller`, then a second `wood` and another unnamed one that skip as `block-size`.
+ * The pass files them as `texture#0`, `wood`, `wood#2` and `texture#3` — two keys the GLB's
+ * `images[].name` cannot spell at all, and one it spells the same as an earlier image's.
+ */
+async function duplicateNameGlb(): Promise<Uint8Array> {
+  const document = buildFixtureDocument({ textured: false });
+  const cloth = document
+    .getRoot()
+    .listMaterials()
+    .find((material) => material.getName() === "cloth");
+  if (cloth === undefined) throw new Error("the fixture model no longer has a cloth material");
+  const embed = (name: string, bytes: Buffer) =>
+    document.createTexture(name).setImage(new Uint8Array(bytes)).setMimeType("image/png");
+  cloth.setBaseColorTexture(embed("", tinyPng(0)));
+  cloth.setNormalTexture(embed("wood", tinyPng(60)));
+  cloth.setOcclusionTexture(embed("wood", unalignedPng(0)));
+  cloth.setMetallicRoughnessTexture(embed("", unalignedPng(60)));
+  return new NodeIO().writeBinary(document);
+}
+
+/** What each image of a compiled model costs the download, in `images[]` order. */
+async function shippedImageBytes(outputRoot: string, output: string): Promise<number[]> {
+  const model = path.join(outputRoot, output);
+  const { json } = unpackGlb(await readFile(model));
+  const views = json.bufferViews ?? [];
+  return Promise.all(
+    (json.images ?? []).map(async (image) =>
+      image.uri === undefined
+        ? (views[image.bufferView ?? -1]?.byteLength ?? 0)
+        : (await stat(path.resolve(path.dirname(model), image.uri))).size,
+    ),
+  );
 }
 
 describe("asset byte budgets", () => {
@@ -209,6 +272,55 @@ describe("asset byte budgets", () => {
       expect(
         Object.keys(manifest.entries["rock.glb"].embeddedTextures.skippedCompression).length,
       ).toBeGreaterThan(0);
+    },
+  );
+
+  /**
+   * Skip reasons are filed under the pass's texture keys, and two of those keys are not a name:
+   * an unnamed texture is `texture#<index>` and a repeated name is `<name>#<index>`. Matching a
+   * GLB's `images[].name` instead charged every unnamed image the encoder could not have
+   * shrunk, and let the first `not-smaller` of a duplicated name carry a later `block-size`
+   * image out of the count with it.
+   */
+  it.each([false, true])(
+    "keys retained-image exemptions by texture index with sharedImages=%s",
+    async (sharedImages) => {
+      const root = await makeTempDir("asset-budget-image-key-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets/rock.glb"), await duplicateNameGlb());
+      const compile = (budget: number | "none") =>
+        compileAssets({
+          cwd: root,
+          concurrency: 1,
+          transcoder: basisTranscoderPaths(),
+          config: { budget, models: { sharedImages } },
+        });
+      await compile("none");
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+      );
+      const entry = manifest.entries["rock.glb"];
+      expect(entry.embeddedTextures.skippedCompression).toEqual({
+        "texture#0": "not-smaller",
+        wood: "not-smaller",
+        "wood#2": "block-size",
+        "texture#3": "block-size",
+      });
+
+      const outputRoot = path.join(root, "public");
+      const shipped = await shippedImageBytes(outputRoot, entry.output);
+      const exempt = (shipped[0] ?? 0) + (shipped[1] ?? 0);
+      const charged = (shipped[2] ?? 0) + (shipped[3] ?? 0);
+      // A fixture whose two halves happened to weigh the same would pass either way.
+      expect(exempt).toBeGreaterThan(0);
+      expect(charged).not.toBe(exempt);
+
+      const measured = await measureBudget(manifest.entries, outputRoot, true, parseBudget("none"));
+      // Every geometry bufferView is meshopt-compressed, so the only uncooked bytes left are the
+      // two images retained for a reason a project can act on.
+      expect(measured.uncooked).toBe(charged);
+      await compile(charged);
+      await expect(compile(charged - 1)).rejects.toThrow("TN_ASSETS_BUDGET_EXCEEDED");
     },
   );
 

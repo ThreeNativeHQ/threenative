@@ -6,6 +6,7 @@ import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { type IAssetSourceConfig, compileAssets, texturePass } from "../src/index.js";
+import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../src/ktx2-encoder.js";
 import { parsePng } from "../src/png.js";
 
 const TRANSCODER = basisTranscoderPaths();
@@ -53,6 +54,18 @@ function compressiblePng(alpha?: (x: number, y: number) => number): Buffer {
 }
 
 describe("the ktx2 texture pass", () => {
+  it("should preserve the upstream supercompression default and its explicit false override", async () => {
+    const data = new Uint8Array(16 * 16 * 4).fill(128);
+    const options = { imageDecoder: async () => ({ data, height: 16, width: 16 }) };
+    const implicit = await encodeToKTX2(data, options);
+    const explicit = await encodeToKTX2(data, { ...options, needSupercompression: true });
+    const disabled = await encodeToKTX2(data, { ...options, needSupercompression: false });
+    expect(implicit).toEqual(explicit);
+    expect(readKTX2(implicit).supercompressionScheme).toBe(2);
+    expect(readKTX2(disabled).supercompressionScheme).toBe(0);
+    expect(texturePass().configuration?.encoder).toBe(KTX2_ENCODER_VERSION);
+  });
+
   it("should not grow the starter's 150-byte source image unless its codec is overridden", async () => {
     const input = await readFile(
       new URL(
@@ -143,8 +156,9 @@ describe("the ktx2 texture pass", () => {
     expect(entry.transcodeTargets).toEqual(["astc4x4", "bc7"]);
     expect(String(entry.output)).toMatch(/^decal\.[0-9a-f]{8}\.ktx2$/u);
     expect(ktx2Magic(outputBytes)).toBe(true);
-    // Zstd without UASTC RDO measured no gain, so the default deliberately remains scheme 0.
-    expect(readKTX2(outputBytes).supercompressionScheme).toBe(0);
+    // ktx2-encoder@0.6.0 defaults omitted needSupercompression to true (Zstandard).
+    // Replacing its 4K guard must not silently change that existing compression policy.
+    expect(readKTX2(outputBytes).supercompressionScheme).toBe(2);
   });
 
   it("should honour a config override over the heuristic", async () => {
@@ -385,7 +399,7 @@ it.runIf(process.env.TN_ASSETS_RUN_4K_KTX2 === "1")(
     const container = readKTX2(outputBytes);
     expect([container.pixelWidth, container.pixelHeight]).toEqual([4096, 4096]);
     expect(container.levelCount).toBe(13);
-    expect(container.supercompressionScheme).toBe(0);
+    expect(container.supercompressionScheme).toBe(2);
     expect(entry.format).toBe("uastc");
     expect(entry.transcodeTargets).toEqual(["astc4x4", "bc7"]);
   },

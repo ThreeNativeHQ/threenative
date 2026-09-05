@@ -80,12 +80,76 @@ interface IGltf {
   }[];
 }
 
+/** Path of an image stored outside the GLB -> may its bytes be left out of `uncooked`. */
+type ImageExemptions = Map<string, boolean>;
+
+/**
+ * The keys the model pass filed its skip reasons under, which are not the images' names: an
+ * unnamed texture is `texture#<index>` and every repeat of a name is `<name>#<index>`. Deriving
+ * them from the index is exact rather than hopeful — glTF-Transform writes one image per texture
+ * in `listTextures()` order and reads them back the same way, so an image's index *is* its
+ * texture's, and `assertNoTextureDrift` fails the build if that ever stops holding.
+ */
+function skipKeys(images: NonNullable<IGltf["images"]>): readonly string[] {
+  const repeats = new Map<string, number>();
+  return images.map((image, index) => {
+    const base =
+      image.name === undefined || image.name === "" ? `texture#${String(index)}` : image.name;
+    const seen = repeats.get(base) ?? 0;
+    repeats.set(base, seen + 1);
+    return seen === 0 ? base : `${base}#${String(index)}`;
+  });
+}
+
+/**
+ * Folds one image's verdict into a payload several images can share. Any image that must be
+ * charged vetoes the whole payload, so an exemption never carries another image's bytes with it:
+ * a `block-size` image still counts where a writer collapsed it onto a `not-smaller` image's
+ * bufferView or shared file.
+ */
+function voteExempt<TKey>(verdicts: Map<TKey, boolean>, payload: TKey, exempt: boolean): void {
+  verdicts.set(payload, exempt && (verdicts.get(payload) ?? true));
+}
+
+/**
+ * BufferViews this model's images hold that no compression pass can improve on: images already
+ * in KTX2, and images retained at their authored bytes for the one reason no author can act on.
+ * Images stored outside the GLB are recorded in `exemptImages` under the same rule.
+ */
+function exemptImageViews(
+  images: NonNullable<IGltf["images"]>,
+  filename: string,
+  skipped: Readonly<Record<string, TextureSkipReason>>,
+  exemptImages: ImageExemptions,
+): ReadonlySet<number> {
+  const keys = skipKeys(images);
+  const settled = new Set<number>();
+  const views = new Map<number, boolean>();
+  const directory = path.dirname(filename);
+  for (const [index, image] of images.entries()) {
+    // `not-smaller` only, and deliberately: encoding this image could not have saved a byte, so
+    // charging it would fail a gate nobody can pass. `block-size` is charged, because a resize
+    // to a multiple of four is a fix the project can actually make.
+    const key = keys[index];
+    const exempt = key !== undefined && skipped[key] === "not-smaller";
+    const view = image.bufferView;
+    if (view !== undefined && image.mimeType === "image/ktx2") settled.add(view);
+    else if (view !== undefined) voteExempt(views, view, exempt);
+    if (image.uri !== undefined)
+      voteExempt(exemptImages, path.resolve(directory, image.uri), exempt);
+  }
+  for (const [view, exempt] of views) {
+    if (exempt) settled.add(view);
+  }
+  return settled;
+}
+
 /** Read only the GLB header and JSON, never duplicate a pack's hundreds of MB of image data. */
 async function uncookedModel(
   filename: string,
   bytes: number,
   skipped: Readonly<Record<string, TextureSkipReason>> = {},
-  exemptImages = new Set<string>(),
+  exemptImages: ImageExemptions = new Map(),
 ): Promise<number> {
   const file = await open(filename, "r");
   try {
@@ -101,19 +165,9 @@ async function uncookedModel(
     if (read.bytesRead !== jsonLength)
       throw new Error(`TN_ASSETS_OUTPUT_INVALID: truncated GLB ${filename}`);
     const gltf = JSON.parse(json.toString("utf8")) as IGltf;
-    const compressed = new Set<number>();
-    for (const image of gltf.images ?? []) {
-      if (image.bufferView !== undefined && image.mimeType === "image/ktx2")
-        compressed.add(image.bufferView);
-      // `not-smaller` only, and deliberately: encoding this image could not have saved a byte,
-      // so charging it would fail a gate nobody can pass. `block-size` is charged, because a
-      // resize to a multiple of four is a fix the project can actually make.
-      if (image.name !== undefined && skipped[image.name] === "not-smaller") {
-        if (image.bufferView !== undefined) compressed.add(image.bufferView);
-        if (image.uri !== undefined)
-          exemptImages.add(path.resolve(path.dirname(filename), image.uri));
-      }
-    }
+    const compressed = new Set(
+      exemptImageViews(gltf.images ?? [], filename, skipped, exemptImages),
+    );
     for (const mesh of gltf.meshes ?? []) {
       for (const primitive of mesh.primitives) {
         const draco = primitive.extensions?.KHR_draco_mesh_compression;
@@ -143,7 +197,7 @@ export async function measureBudget(
   compilerOutputs: readonly ICompilerOutput[] = [],
 ): Promise<IBudgetReport> {
   const seen = new Set<string>();
-  const exemptImages = new Set<string>();
+  const exemptImages: ImageExemptions = new Map();
   const modelBytes = new Map<string, number>();
   if (decodesCompression) {
     for (const entry of Object.values(entries)) {
@@ -188,7 +242,7 @@ export async function measureBudget(
       // Same split as the embedded images above: only the reason no author can act on is exempt.
       if (
         output.compressionSkipped === "not-smaller" ||
-        exemptImages.has(path.resolve(outputRoot, output.output))
+        exemptImages.get(path.resolve(outputRoot, output.output)) === true
       )
         continue;
       const extension = path.extname(output.output).toLowerCase();
