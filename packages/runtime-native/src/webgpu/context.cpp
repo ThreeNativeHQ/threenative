@@ -1151,8 +1151,9 @@ bool Context::configureSurface(uint32_t width, uint32_t height, bool vsync) {
         }
     }
 
-    if (linearSurfaceRequested() && isSrgbSurfaceFormatForProbe(preferredFormat_)) {
-        const WGPUTextureFormat linearFormat = linearSurfaceFormatForProbe(preferredFormat_);
+    const WGPUTextureFormat preferredFormat = static_cast<WGPUTextureFormat>(preferredFormat_);
+    if (linearSurfaceRequested() && isSrgbSurfaceFormatForProbe(preferredFormat)) {
+        const WGPUTextureFormat linearFormat = linearSurfaceFormatForProbe(preferredFormat);
         bool linearFormatSupported = false;
         for (uint32_t i = 0; i < capabilities.formatCount; i++) {
             if (capabilities.formats[i] == linearFormat) {
