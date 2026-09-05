@@ -8,6 +8,7 @@ import {
   type IPerformanceLane,
   type IPerformanceLaneManifest,
   parsePerformanceLaneManifest,
+  percentile,
 } from "../engine-load-test/report.js";
 import {
   DEFAULT_PERFORMANCE_POLICY,
@@ -53,6 +54,11 @@ export interface IPerformanceLaneRunResult {
   readonly summary?: ReturnType<typeof evaluatePairedComparison>;
 }
 
+export interface IPerformanceCollectorOptions {
+  readonly device?: string;
+  readonly physicalEvidence?: string;
+}
+
 export interface IPerformanceLaneRunOptions {
   readonly baselineArtifact?: string;
   readonly baselineSourceSha: string;
@@ -60,6 +66,7 @@ export interface IPerformanceLaneRunOptions {
   readonly candidateArtifact?: string;
   readonly candidateSourceSha: string;
   readonly candidateWorktree?: string;
+  readonly device?: string;
   readonly dryRun?: boolean;
   readonly eventName?: string;
   readonly lane: string;
@@ -67,6 +74,7 @@ export interface IPerformanceLaneRunOptions {
   readonly manifestPath: string;
   readonly owner?: string;
   readonly outputPath?: string;
+  readonly physicalEvidence?: string;
   readonly required?: boolean;
   readonly trusted?: boolean;
 }
@@ -105,6 +113,7 @@ export function plannedPerformancePairs(
   lane: string,
   baselineWorktree: string,
   candidateWorktree: string,
+  collectorOptions: IPerformanceCollectorOptions = {},
 ): IPlannedPerformancePair[] {
   const target = lane.startsWith("browser-")
     ? "web"
@@ -119,12 +128,16 @@ export function plannedPerformancePairs(
       target,
       "<baseline-source>",
       `<pair-${index + 1}-baseline>`,
+      undefined,
+      collectorOptions,
     ),
     candidateCommand: collectorCommand(
       candidateWorktree,
       target,
       "<candidate-source>",
       `<pair-${index + 1}-candidate>`,
+      undefined,
+      collectorOptions,
     ),
     index,
     order,
@@ -137,21 +150,42 @@ export function collectorCommand(
   sourceSha: string,
   outputDirectory: string,
   prebuiltArtifact?: string,
+  collectorOptions: IPerformanceCollectorOptions = {},
 ): string {
   return [
     "node",
     "packages/runtime-native/scripts/profile-production.mjs",
+    ...collectorArguments(target, sourceSha, outputDirectory, prebuiltArtifact, collectorOptions),
+    `# cwd=${worktree}`,
+  ].join(" ");
+}
+
+function hasText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function collectorArguments(
+  target: string,
+  sourceSha: string,
+  outputDirectory: string,
+  prebuiltArtifact: string | undefined,
+  collectorOptions: IPerformanceCollectorOptions,
+): string[] {
+  return [
     "--profile",
     "regression",
     "--target",
     target,
+    ...(hasText(collectorOptions.device) ? ["--device", collectorOptions.device] : []),
+    ...(hasText(collectorOptions.physicalEvidence)
+      ? ["--physical-evidence", collectorOptions.physicalEvidence]
+      : []),
     "--source-sha",
     sourceSha,
     "--out",
     outputDirectory,
     ...(prebuiltArtifact === undefined ? [] : ["--prebuilt-artifact", prebuiltArtifact]),
-    `# cwd=${worktree}`,
-  ].join(" ");
+  ];
 }
 
 export function validatePerformanceDispatch(input: {
@@ -375,20 +409,20 @@ async function runCollector(
   sourceSha: string,
   outputDirectory: string,
   prebuiltArtifact?: string,
+  collectorOptions: IPerformanceCollectorOptions = {},
 ): Promise<{ readonly command: string; readonly evidence: Record<string, unknown> }> {
   const args = [
     "packages/runtime-native/scripts/profile-production.mjs",
-    "--profile",
-    "regression",
-    "--target",
-    target,
-    "--source-sha",
-    sourceSha,
-    "--out",
-    outputDirectory,
-    ...(prebuiltArtifact === undefined ? [] : ["--prebuilt-artifact", prebuiltArtifact]),
+    ...collectorArguments(target, sourceSha, outputDirectory, prebuiltArtifact, collectorOptions),
   ];
-  const command = collectorCommand(worktree, target, sourceSha, outputDirectory, prebuiltArtifact);
+  const command = collectorCommand(
+    worktree,
+    target,
+    sourceSha,
+    outputDirectory,
+    prebuiltArtifact,
+    collectorOptions,
+  );
   try {
     await execFileAsync(process.execPath, args, {
       cwd: worktree,
@@ -409,15 +443,25 @@ function metricValue(metrics: Record<string, unknown>, key: string): number | un
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-function evidenceToRun(
+function metricSamples(metrics: Record<string, unknown>, key: string): number[] | undefined {
+  const value = metrics[key];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new PerformanceLaneRunError(`evidence.metrics.${key} must contain samples`);
+  }
+  return value.map((sample, index) => finitePositive(sample, `evidence.metrics.${key}[${index}]`));
+}
+
+export function productionEvidenceToPerformanceRun(
   evidence: Record<string, unknown>,
-  lane: IPerformanceLane,
-  expectedSourceSha: string,
+  lane: Pick<IPerformanceLane, "id" | "platform" | "workload">,
+  expectedSourceSha?: string,
 ): IPerformanceRun {
   const source = objectValue(evidence.source, "evidence.source");
   const artifact = objectValue(evidence.artifact, "evidence.artifact");
   const identity = objectValue(evidence.identity, "evidence.identity");
   const metrics = objectValue(evidence.metrics, "evidence.metrics");
+  const requiredSourceSha = expectedSourceSha ?? nonEmpty(source.sha, "evidence.source.sha");
   const nativeBinaryHash = lane.platform.startsWith("native-")
     ? nonEmpty(identity.nativeBinarySha256, "evidence.identity.nativeBinarySha256")
     : String(identity.nativeBinarySha256 ?? artifact.sha256);
@@ -440,7 +484,7 @@ function evidenceToRun(
   };
   validateArtifactIdentity({
     artifactHash: evidenceIdentity.artifactHash,
-    expectedSourceSha,
+    expectedSourceSha: requiredSourceSha,
     lane: lane.id,
     nativeBinaryHash: evidenceIdentity.nativeBinaryHash,
     provenance: objectValue(evidence.physical ?? {}, "evidence.physical").provenance,
@@ -464,10 +508,14 @@ function evidenceToRun(
     const highWaterBytes = metricValue(memory as Record<string, unknown>, "highWaterBytes");
     if (highWaterBytes !== undefined) mapped.memoryHighWaterMiB = highWaterBytes / (1024 * 1024);
   }
+  const startupSamples = metricSamples(metrics, "startupSamplesMs");
   const runId = nonEmpty(evidence.runId, "evidence.runId");
   const timestamps = objectValue(evidence.timestamps, "evidence.timestamps");
   const execution = objectValue(evidence.execution ?? {}, "evidence.execution");
-  const mappedMetrics = Object.fromEntries(
+  const mappedMetrics: Record<
+    string,
+    { readonly samples: readonly number[]; readonly unit: string; readonly value: number }
+  > = Object.fromEntries(
     Object.entries(mapped).map(([metric, value]) => [
       metric,
       {
@@ -477,6 +525,13 @@ function evidenceToRun(
       },
     ]),
   );
+  if (startupSamples !== undefined) {
+    mappedMetrics.startupP95Ms = {
+      samples: startupSamples,
+      unit: "ms",
+      value: metricValue(metrics, "startupP95Ms") ?? percentile(startupSamples, 0.95),
+    };
+  }
   return {
     command: nonEmpty(evidence.command, "evidence.command"),
     durationSeconds: metricValue(metrics, "durationSeconds"),
@@ -506,7 +561,18 @@ export async function runPerformanceLane(
   const required = laneRequired(lane, options.required);
   const baselineWorktree = options.baselineWorktree ?? process.cwd();
   const candidateWorktree = options.candidateWorktree ?? process.cwd();
-  const attempts = plannedPerformancePairs(lane.id, baselineWorktree, candidateWorktree);
+  const collectorOptions: IPerformanceCollectorOptions = {
+    ...(options.device === undefined ? {} : { device: options.device }),
+    ...(options.physicalEvidence === undefined
+      ? {}
+      : { physicalEvidence: options.physicalEvidence }),
+  };
+  const attempts = plannedPerformancePairs(
+    lane.id,
+    baselineWorktree,
+    candidateWorktree,
+    collectorOptions,
+  );
   validatePerformanceDispatch({
     dryRun: options.dryRun,
     eventName: options.eventName ?? process.env.GITHUB_EVENT_NAME ?? "workflow_dispatch",
@@ -554,6 +620,27 @@ export async function runPerformanceLane(
     options.leaseDirectory ?? path.join(process.cwd(), ".runtime/performance-leases");
   const owner = options.owner ?? `${process.pid}-${Date.now()}`;
   const target = targetForLane(lane);
+  if (target === "android-physical" || target === "ios-physical") {
+    const missing = [];
+    if (!hasText(options.device)) missing.push("device");
+    if (!hasText(options.physicalEvidence)) missing.push("physical-evidence");
+    if (missing.length === 0) {
+      const exists = await stat(options.physicalEvidence as string)
+        .then((details) => details.isFile())
+        .catch(() => false);
+      if (!exists) missing.push("physical-evidence file");
+    }
+    if (missing.length > 0) {
+      return unavailableResult(
+        lane,
+        options.baselineSourceSha,
+        options.candidateSourceSha,
+        required,
+        `physical collector input missing: ${missing.join(", ")}; no collector ran`,
+        attempts,
+      );
+    }
+  }
   const baselineArtifact =
     options.baselineArtifact ?? (await findPrebuiltArtifact(baselineWorktree, target));
   const candidateArtifact =
@@ -577,6 +664,7 @@ export async function runPerformanceLane(
               options.baselineSourceSha,
               baselineOut,
               baselineArtifact,
+              collectorOptions,
             )
           : await runCollector(
               candidateWorktree,
@@ -584,6 +672,7 @@ export async function runPerformanceLane(
               options.candidateSourceSha,
               candidateOut,
               candidateArtifact,
+              collectorOptions,
             );
       const second =
         attempt.order === "baseline-first"
@@ -593,6 +682,7 @@ export async function runPerformanceLane(
               options.candidateSourceSha,
               candidateOut,
               candidateArtifact,
+              collectorOptions,
             )
           : await runCollector(
               baselineWorktree,
@@ -600,12 +690,21 @@ export async function runPerformanceLane(
               options.baselineSourceSha,
               baselineOut,
               baselineArtifact,
+              collectorOptions,
             );
       const baseline = attempt.order === "baseline-first" ? first : second;
       const candidate = attempt.order === "baseline-first" ? second : first;
       rawPairs.push({
-        baseline: evidenceToRun(baseline.evidence, lane, options.baselineSourceSha),
-        candidate: evidenceToRun(candidate.evidence, lane, options.candidateSourceSha),
+        baseline: productionEvidenceToPerformanceRun(
+          baseline.evidence,
+          lane,
+          options.baselineSourceSha,
+        ),
+        candidate: productionEvidenceToPerformanceRun(
+          candidate.evidence,
+          lane,
+          options.candidateSourceSha,
+        ),
         order: attempt.order,
       });
     }
@@ -658,6 +757,7 @@ async function main(): Promise<void> {
     candidateSourceSha,
     candidateArtifact: argument("candidate-artifact"),
     candidateWorktree: argument("candidate-worktree"),
+    device: argument("device") ?? process.env.TN_PERF_DEVICE,
     dryRun: process.argv.includes("--dry-run"),
     eventName: process.env.GITHUB_EVENT_NAME,
     lane,
@@ -665,6 +765,7 @@ async function main(): Promise<void> {
     manifestPath,
     outputPath: path.dirname(outputPath),
     owner: process.env.GITHUB_RUN_ID,
+    physicalEvidence: argument("physical-evidence") ?? process.env.TN_PERF_PHYSICAL_EVIDENCE,
     required: process.argv.includes("--required"),
     trusted: process.argv.includes("--trusted"),
   });

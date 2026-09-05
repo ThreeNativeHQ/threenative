@@ -2538,6 +2538,90 @@ The planned call sites are now live non-test callers:
 | Hosted probes and hardware workflow | [`.github/workflows/ci.yml:808`](../../.github/workflows/ci.yml#L808) runs the bounded contract; [`.github/workflows/native-platforms.yml:298`](../../.github/workflows/native-platforms.yml#L298) and [`:483`](../../.github/workflows/native-platforms.yml#L483) invoke native collectors. |
 | Evidence summary and baseline approval | [`.github/workflows/ci.yml:1034`](../../.github/workflows/ci.yml#L1034) and [`.github/workflows/performance-regression.yml:165`](../../.github/workflows/performance-regression.yml#L165) invoke the summary; [`.github/workflows/performance-regression.yml:184`](../../.github/workflows/performance-regression.yml#L184) keeps promotion policy separate. |
 
+## PRD-358 cross-platform performance regression CI — repair round 2 (2026-09-05)
+
+Repair round 2 is committed after the five blocking defects were reproduced and repaired. Required
+baseline validation now requires candidate provenance without requiring it to equal the accepted
+baseline; native paired arms retain independent binary hashes; comparison accepts exactly three
+alternating valid pairs and at most one invalid replacement; selected-lane manifest metrics cannot
+be omitted; and physical collector inputs are propagated or fail closed. No baseline was promoted.
+
+### Repair-round evidence
+
+The focused red run was captured before the repair guards were restored:
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts scripts/__tests__/ci-structure.spec.ts
+Test Files 2 failed (2)
+Tests 5 failed, 91 passed (96)
+```
+
+Those failures covered fresh candidate provenance, platform workflow mapping, physical collector
+arguments and missing-input handling, and startup evidence conversion. The final focused run is:
+
+```text
+pnpm exec vitest run scripts/__tests__/performance-regression.spec.ts scripts/__tests__/engine-load-test.spec.ts scripts/__tests__/ci-structure.spec.ts
+Test Files 3 passed (3)
+Tests 115 passed (115)
+EXIT_CODE=0
+```
+
+The relevant runtime-native production-profile tests are also green:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs
+Test Files 1 passed (1)
+Tests 23 passed (23)
+EXIT_CODE=0
+```
+
+The required repository gates were run after the repair:
+
+| Command | Exact result |
+|---|---|
+| `pnpm typecheck` | PASS; workspace root and all 28 participating packages completed; exit 0 |
+| `pnpm lint` | PASS; `Checked 1962 files`; `Found 609 warnings`; no errors; exit 0 |
+| `pnpm test` | PASS; 391 files passed, 1 skipped; 4,300 tests passed, 4 skipped; exit 0 |
+| `pnpm budgets` | BLOCKED; `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit)`; exit 1. This is the unchanged repository blocker and was not edited. |
+| `pnpm test:playtest` | PASS; framework movement/camera, axis/zoom, navigation, and streaming scenarios passed with the WebGPU recipe; exit 0 |
+| `git diff --check` | PASS; exit 0 |
+| `yq eval '.' .github/workflows/performance-regression.yml >/dev/null` | PASS; YAML parsed |
+| `yq eval '.' .github/workflows/native-platforms.yml >/dev/null` | PASS; YAML parsed |
+
+The physical Android and iOS rows were not executed from this Linux checkout. The workflow keeps
+their configured self-hosted labels visible, but the manifest remains `provisioning:
+unprovisioned`, with no selected device or physical-evidence file. The runner returns explicit
+`UNVERIFIED` for advisory rows or `BLOCKED`/exit 2 when required; it never invokes a physical
+collector without both inputs. The existing iOS simulator row is explicitly simulator
+`UNVERIFIED`, not physical iOS. Windows/macOS hosted collector steps are configured against their
+job-built binaries but were not executed locally and remain unverified evidence.
+
+| Row | Local/declared state | Result claimed by this record |
+|---|---|---|
+| `browser-webgpu` | Hosted software hook; no accepted calibrated baseline | UNVERIFIED |
+| `native-linux` | Linux binary build exists; no dedicated leased GPU pair | UNVERIFIED |
+| `native-windows` / `native-macos` | Separate pinned runner rows; no local runner execution | UNVERIFIED |
+| `native-android` | Self-hosted physical label declared; device/evidence unavailable | UNVERIFIED; required mode is BLOCKED/2 |
+| `native-ios` | Self-hosted physical label declared; signed phone/evidence unavailable | UNVERIFIED; required mode is BLOCKED/2 |
+| `android-emulator` | Advisory emulator collector only | UNVERIFIED |
+| `ios-simulator` | Real simulator `.app` collector hook with simulator provenance | UNVERIFIED |
+
+### Repair-round integration ledger updates
+
+These are live non-test callers in the repaired tree:
+
+| Ledger row | Actual caller and contract |
+|---|---|
+| Required baseline validation | [`scripts/engine-load-test/cli.ts:192`](../../scripts/engine-load-test/cli.ts#L192) calls required validation; [`scripts/engine-load-test/report.ts:1018`](../../scripts/engine-load-test/report.ts#L1018) requires candidate provenance and `:1029` compares stable execution identity. |
+| Lane policy and paired comparison | [`scripts/engine-load-test/cli.ts:235`](../../scripts/engine-load-test/cli.ts#L235) invokes the comparator; [`scripts/performance-regression/run.ts:711`](../../scripts/performance-regression/run.ts#L711) evaluates the six collected arms with manifest metrics. |
+| Reusable workload collection | [`scripts/engine-load-test/cli.ts:280`](../../scripts/engine-load-test/cli.ts#L280) forwards the bounded collection contract to [`packages/runtime-native/scripts/profile-production.mjs`](../../packages/runtime-native/scripts/profile-production.mjs); the collector writes the shared evidence contract. |
+| Hosted probes and hardware workflow | [`.github/workflows/ci.yml:831`](../../.github/workflows/ci.yml#L831), [`.github/workflows/native-platforms.yml:646`](../../.github/workflows/native-platforms.yml#L646), and [`.github/workflows/native-platforms.yml:949`](../../.github/workflows/native-platforms.yml#L949) invoke real bounded collectors; [`.github/workflows/performance-regression.yml:61`](../../.github/workflows/performance-regression.yml#L61) maps each result key to its runner. |
+| Evidence summary and baseline approval | [`.github/workflows/ci.yml:847`](../../.github/workflows/ci.yml#L847), [`.github/workflows/ci.yml:1043`](../../.github/workflows/ci.yml#L1043), and [`.github/workflows/performance-regression.yml:275`](../../.github/workflows/performance-regression.yml#L275) use the shared summary; [`.github/workflows/performance-regression.yml:283`](../../.github/workflows/performance-regression.yml#L283) checks calibration/cost policy while [`:395`](../../.github/workflows/performance-regression.yml#L395) keeps baseline regeneration separate. |
+
+Calibration remains unverified and promotion remains maintainer-owned. The 20-run accuracy and
+20-run CI-cost requirements remain encoded in the manifest; this repair made no baseline or
+required-check promotion.
+
 ---
 
 ## 7. Harness status

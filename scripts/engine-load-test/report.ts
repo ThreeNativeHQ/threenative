@@ -686,6 +686,7 @@ function parseIdentity(
       "gpu",
       "instrumentationRevision",
       "jsRuntime",
+      "nativeBinaryHash",
       "operatingSystem",
       "presentMode",
       "resolution",
@@ -1013,19 +1014,28 @@ function validateBaseline(
     }
     return;
   }
+  if (options.required) {
+    const missingProvenance = ["sourceSha", "artifactHash", "nativeBinaryHash"].filter((field) => {
+      const value = reportIdentity[field as keyof IPerformanceIdentity];
+      return typeof value !== "string" || value.length === 0;
+    });
+    if (missingProvenance.length > 0) {
+      throw new BenchError(
+        "TN_BENCH_BASELINE_IDENTITY_MISSING",
+        `${report.arm} required run is missing provenance fields: ${missingProvenance.join(", ")}`,
+      );
+    }
+  }
   const identityFields: readonly (keyof IPerformanceIdentity)[] = [
     "architecture",
-    "artifactHash",
     "browser",
     "graphicsBackend",
     "gpu",
     "instrumentationRevision",
     "jsRuntime",
-    "nativeBinaryHash",
     "operatingSystem",
     "presentMode",
     "resolution",
-    "sourceSha",
     "workloadHash",
   ];
   for (const field of identityFields) {

@@ -630,15 +630,37 @@ jobs:
           pnpm --filter @threenative/runtime-native native:verify:desktop
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:verify:desktop
-      - name: Record bounded desktop collector contract
+      - name: Collect bounded desktop performance evidence from the built runtime
         if: always()
         shell: bash
         run: |
+          set +e
+          status=2
+          if [ "${{ matrix.platform }}" = "Windows" ]; then
+            artifact=packages/runtime-native/build/tn-windows/mystral.exe
+          else
+            artifact=packages/runtime-native/build/tn-macos/mystral
+          fi
           mkdir -p packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}
-          node packages/runtime-native/scripts/profile-production.mjs --help \
-            > packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}/profile-command.txt
+          if [ -f "$artifact" ]; then
+            node packages/runtime-native/scripts/profile-production.mjs \
+              --profile production --target desktop --duration 1 --cold-starts 1 \
+              --warmup 1 --repetitions 1 --prebuilt-artifact "$artifact" \
+              --out "packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}"
+            status=$?
+          else
+            echo "TN_PERF_DESKTOP_ARTIFACT_MISSING: $artifact" >&2
+          fi
+          collector_status=BLOCKED
+          if [ "$status" -eq 0 ]; then collector_status=PASS; fi
+          if [ "$status" -eq 1 ]; then collector_status=FAIL; fi
+          printf '{"artifact":"%s","collectorExitCode":%s,"platform":"%s","provenance":"hosted-software","status":"%s"}\n' \
+            "$artifact" "$status" "${{ matrix.platform }}" "$collector_status" \
+            > packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}/collector-status.json
           node packages/runtime-native/scripts/production-evidence.mjs \
             > packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}/collector-contract.json
+          set -e
+          exit "$status"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -915,17 +937,27 @@ jobs:
           pnpm exec vitest run
           packages/playtest/__tests__/ios-driver.spec.ts
           packages/playtest/__tests__/ios-device-playtest.spec.ts
-      - name: Record simulator performance provenance without claiming a phone run
+      - name: Collect bounded iOS simulator evidence without claiming a phone run
         if: always()
         run: |
           set +e
-          mkdir -p packages/runtime-native/artifacts/performance-contract/ios-simulator
-          node packages/runtime-native/scripts/profile-production.mjs --help \
-            > packages/runtime-native/artifacts/performance-contract/ios-simulator/profile-command.txt
+          root=packages/runtime-native/artifacts/performance-contract/ios-simulator
+          mkdir -p "$root"
+          app=$(find packages/runtime-native/build/tn-ios-simulator -name threenative-ios.app -type d -print -quit)
+          status=2
+          if [ -n "$app" ]; then
+            node packages/runtime-native/scripts/profile-production.mjs \
+              --profile production --target ios --device ios-simulator \
+              --duration 1 --cold-starts 1 --warmup 1 --repetitions 1 \
+              --prebuilt-artifact "$app" --out "$root"
+            status=$?
+          else
+            echo "TN_PERF_IOS_SIMULATOR_ARTIFACT_MISSING: threenative-ios.app" >&2
+          fi
+          printf '{"artifact":"%s","collectorExitCode":%s,"provenance":"simulator","status":"UNVERIFIED"}\n' \
+            "$app" "$status" > "$root/collector-status.json"
           node packages/runtime-native/scripts/production-evidence.mjs \
-            > packages/runtime-native/artifacts/performance-contract/ios-simulator/collector-contract.json
-          printf '{"sourceSha":"%s","provenance":"simulator","status":"UNVERIFIED"}\n' "$GITHUB_SHA" \
-            > packages/runtime-native/artifacts/performance-contract/ios-simulator/collector-status.json
+            > "$root/collector-contract.json"
           set -e
       - uses: actions/upload-artifact@v7
         if: always()

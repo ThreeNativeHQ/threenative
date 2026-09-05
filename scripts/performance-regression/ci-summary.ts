@@ -13,6 +13,8 @@ export type CiEvidenceStatus = "PASS" | "FAIL" | "BLOCKED" | "SKIPPED" | "UNVERI
 export interface IPerformanceCiResult {
   readonly artifactHash?: string;
   readonly lane: string;
+  /** Distinguishes separate executions that share one manifest lane (for example Windows/macOS). */
+  readonly resultKey?: string;
   readonly reason?: string;
   readonly required?: boolean;
   readonly sourceSha?: string;
@@ -83,9 +85,13 @@ function parseResult(value: unknown, index: number): IPerformanceCiResult {
   const reason = source.reason;
   const parsedReason =
     reason === undefined ? undefined : nonEmptyString(reason, `results[${index}].reason`);
+  const resultKey = source.resultKey;
+  const parsedResultKey =
+    resultKey === undefined ? undefined : nonEmptyString(resultKey, `results[${index}].resultKey`);
   return {
     ...(parsedArtifactHash === undefined ? {} : { artifactHash: parsedArtifactHash }),
     lane: nonEmptyString(source.lane, `results[${index}].lane`),
+    ...(parsedResultKey === undefined ? {} : { resultKey: parsedResultKey }),
     ...(parsedReason === undefined ? {} : { reason: parsedReason }),
     ...(required === undefined ? {} : { required }),
     ...(parsedSourceSha === undefined ? {} : { sourceSha: parsedSourceSha }),
@@ -133,9 +139,9 @@ export function summarizePerformanceCi(input: unknown): IPerformanceCiSummary {
     const seen = new Set<string>();
     for (const result of parsed.results) {
       counts[result.status] += 1;
-      if (seen.has(result.lane))
-        reasons.push(`duplicate performance result for lane ${result.lane}`);
-      seen.add(result.lane);
+      const resultKey = result.resultKey ?? result.lane;
+      if (seen.has(resultKey)) reasons.push(`duplicate performance result for lane ${resultKey}`);
+      seen.add(resultKey);
       if (result.status === "PASS" || result.status === "FAIL" || result.status === "BLOCKED") {
         if (result.sourceSha !== parsed.expectedSha) {
           reasons.push(
@@ -150,12 +156,14 @@ export function summarizePerformanceCi(input: unknown): IPerformanceCiSummary {
         (result.status === "SKIPPED" || result.status === "UNVERIFIED") &&
         result.required === true
       ) {
-        reasons.push(`${result.lane} is required but ${result.status.toLowerCase()}`);
+        reasons.push(`${resultKey} is required but ${result.status.toLowerCase()}`);
       }
     }
     if (parsed.results.length === 0) reasons.push("performance result set is empty");
     for (const lane of parsed.requiredLanes ?? []) {
-      const result = parsed.results.find((candidate) => candidate.lane === lane);
+      const result = parsed.results.find(
+        (candidate) => (candidate.resultKey ?? candidate.lane) === lane,
+      );
       if (result === undefined) reasons.push(`required performance lane ${lane} has no result`);
     }
     const status: CiEvidenceStatus =
@@ -225,7 +233,7 @@ export function renderPerformanceCiSummary(summary: IPerformanceCiSummary): stri
     "| --- | --- | --- | --- | --- | --- |",
     ...summary.results.map(
       (result) =>
-        `| ${result.lane} | ${result.status} | ${result.required === true ? "yes" : "no"} | ${result.sourceSha ?? "—"} | ${result.artifactHash ?? "—"} | ${result.reason ?? "—"} |`,
+        `| ${result.resultKey ?? result.lane} | ${result.status} | ${result.required === true ? "yes" : "no"} | ${result.sourceSha ?? "—"} | ${result.artifactHash ?? "—"} | ${result.reason ?? "—"} |`,
     ),
   ];
   if (summary.reasons.length > 0)

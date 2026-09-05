@@ -56,20 +56,57 @@ permissions:
 
 jobs:
   hardware-pairs:
-    name: ${{ matrix.lane }} paired hardware evidence
-    if: inputs.lane == '' || inputs.lane == matrix.lane
-    runs-on: ubuntu-latest
+    name: ${{ matrix.result_key }} paired hardware evidence
+    if: >-
+      (inputs.lane == '' || inputs.lane == matrix.lane || inputs.lane == matrix.result_key) &&
+      (matrix.lane != 'native-android' && matrix.lane != 'native-ios' ||
+       github.event_name == 'schedule' || inputs.trusted == true)
+    runs-on: ${{ matrix.runner }}
+    env:
+      TN_PERF_DEVICE: ${{ matrix.device }}
+      TN_PERF_PHYSICAL_EVIDENCE: ${{ matrix.physical_evidence }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
         include:
-          - { lane: browser-webgpu, resource: browser-webgpu-runner }
-          - { lane: native-linux, resource: native-linux-gpu }
-          - { lane: native-windows-macos, resource: native-windows-macos-gpu }
-          - { lane: native-android, resource: android-physical-device }
-          - { lane: native-ios, resource: ios-physical-device }
+          - lane: browser-webgpu
+            result_key: browser-webgpu
+            runner: ubuntu-24.04
+            resource: browser-webgpu-runner
+            device: ''
+            physical_evidence: ''
+          - lane: native-linux
+            result_key: native-linux
+            runner: ubuntu-24.04
+            resource: linux-gpu-performance-runner
+            device: ''
+            physical_evidence: ''
+          - lane: native-windows-macos
+            result_key: native-windows
+            runner: windows-2025
+            resource: windows-gpu-performance-runner
+            device: ''
+            physical_evidence: ''
+          - lane: native-windows-macos
+            result_key: native-macos
+            runner: macos-15
+            resource: macos-gpu-performance-runner
+            device: ''
+            physical_evidence: ''
+          - lane: native-android
+            result_key: native-android
+            runner: [self-hosted, linux, android, android-physical-performance-device]
+            resource: android-physical-performance-device
+            device: ''
+            physical_evidence: ''
+          - lane: native-ios
+            result_key: native-ios
+            runner: [self-hosted, macOS, ios, ios-physical-performance-device]
+            resource: ios-physical-performance-device
+            device: ''
+            physical_evidence: ''
     concurrency:
       group: performance-device-${{ matrix.resource }}
       cancel-in-progress: false
@@ -93,8 +130,8 @@ jobs:
           candidate_sha="${CANDIDATE_INPUT:-$GITHUB_SHA}"
           git fetch --no-tags origin "$baseline_sha" "$candidate_sha"
           mkdir -p "$GITHUB_WORKSPACE/.worktrees"
-          baseline_worktree="$GITHUB_WORKSPACE/.worktrees/performance-baseline-${{ matrix.lane }}"
-          candidate_worktree="$GITHUB_WORKSPACE/.worktrees/performance-candidate-${{ matrix.lane }}"
+          baseline_worktree="$GITHUB_WORKSPACE/.worktrees/performance-baseline-${{ matrix.result_key }}"
+          candidate_worktree="$GITHUB_WORKSPACE/.worktrees/performance-candidate-${{ matrix.result_key }}"
           git worktree add --detach "$baseline_worktree" "$baseline_sha"
           git worktree add --detach "$candidate_worktree" "$candidate_sha"
           {
@@ -107,6 +144,7 @@ jobs:
         env:
           TN_TRUSTED_DISPATCH: ${{ github.event_name == 'schedule' || inputs.trusted == true }}
           TN_PERF_LANE: ${{ matrix.lane }}
+          TN_PERF_RESULT_KEY: ${{ matrix.result_key }}
         run: |
           set +e
           args=(
@@ -116,28 +154,30 @@ jobs:
             --candidate-source-sha "$CANDIDATE_SOURCE_SHA"
             --baseline-worktree "$BASELINE_WORKTREE"
             --candidate-worktree "$CANDIDATE_WORKTREE"
-            --out "artifacts/performance-regression/${{ matrix.lane }}.json"
+            --out "artifacts/performance-regression/${{ matrix.result_key }}.json"
           )
+          if [ -n "$TN_PERF_DEVICE" ]; then args+=(--device "$TN_PERF_DEVICE"); fi
+          if [ -n "$TN_PERF_PHYSICAL_EVIDENCE" ]; then args+=(--physical-evidence "$TN_PERF_PHYSICAL_EVIDENCE"); fi
           if [ "$TN_TRUSTED_DISPATCH" = "true" ]; then args+=(--trusted); fi
           pnpm tsx scripts/performance-regression/run.ts "${args[@]}"
           status=$?
           set -e
-          if [ ! -f "artifacts/performance-regression/${{ matrix.lane }}.json" ]; then
+          if [ ! -f "artifacts/performance-regression/${{ matrix.result_key }}.json" ]; then
             mkdir -p artifacts/performance-regression
-            node --input-type=module -e 'import { writeFile } from "node:fs/promises"; await writeFile(process.argv[1], `${JSON.stringify({candidateSourceSha: process.env.CANDIDATE_SOURCE_SHA, exitCode: 2, lane: process.env.TN_PERF_LANE, provenance: "unverified", reason: "performance runner did not produce a result", sourceSha: process.env.BASELINE_SOURCE_SHA, status: "BLOCKED"}, null, 2)}\n`);' "artifacts/performance-regression/${{ matrix.lane }}.json"
+            node --input-type=module -e 'import { writeFile } from "node:fs/promises"; await writeFile(process.argv[1], `${JSON.stringify({candidateSourceSha: process.env.CANDIDATE_SOURCE_SHA, exitCode: 2, lane: process.env.TN_PERF_LANE, provenance: "unverified", reason: "performance runner did not produce a result", resultKey: process.env.TN_PERF_RESULT_KEY, sourceSha: process.env.BASELINE_SOURCE_SHA, status: "BLOCKED"}, null, 2)}\n`);' "artifacts/performance-regression/${{ matrix.result_key }}.json"
           fi
           exit "$status"
       - uses: actions/upload-artifact@v7
         if: success()
         with:
-          name: performance-regression-${{ matrix.lane }}
+          name: performance-regression-${{ matrix.result_key }}
           path: artifacts/performance-regression/
           retention-days: 14
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: performance-regression-${{ matrix.lane }}-failure
+          name: performance-regression-${{ matrix.result_key }}-failure
           path: artifacts/performance-regression/
           retention-days: 30
           if-no-files-found: warn
@@ -171,7 +211,66 @@ jobs:
           mkdir -p artifacts/performance-regression
           node packages/runtime-native/scripts/production-evidence.mjs \
             > artifacts/performance-regression/collector-contract.json
-          node --input-type=module -e 'import { readdir, readFile, writeFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile("scripts/performance-regression/lanes.json", "utf8")); const root = "artifacts/performance-regression"; const files = await readdir(root).catch(() => []); const results = []; for (const file of files.filter((name) => name.endsWith(".json"))) { const value = JSON.parse(await readFile(`${root}/${file}`, "utf8")); if (typeof value.lane !== "string" || typeof value.status !== "string") continue; results.push({artifactHash: value.artifactHash, lane: value.lane, reason: value.reason, required: manifest.lanes.find((lane) => lane.id === value.lane)?.required === true, sourceSha: value.candidateSourceSha ?? value.sourceSha, status: value.status}); } const seen = new Set(results.map((result) => result.lane)); for (const lane of manifest.lanes) if (!seen.has(lane.id)) results.push({lane: lane.id, reason: "matrix row was not selected or did not publish evidence", required: lane.required === true, status: "SKIPPED"}); if (process.env.TN_PERF_CANCELLED === "true") results.push({artifactHash: "workflow-cancelled", lane: "performance-workflow", reason: "cancelled run cannot publish PASS", required: true, sourceSha: process.env.TN_PERF_EXPECTED_SHA, status: "BLOCKED"}); await writeFile("artifacts/performance-regression/summary-input.json", `${JSON.stringify({expectedSha: process.env.TN_PERF_EXPECTED_SHA, requiredLanes: manifest.lanes.filter((lane) => lane.required === true).map((lane) => lane.id), results}, null, 2)}\n`);'
+          node --input-type=module <<'NODE'
+          import { readdir, readFile, writeFile } from "node:fs/promises";
+
+          const manifest = JSON.parse(await readFile("scripts/performance-regression/lanes.json", "utf8"));
+          const expectedResultKeys = [
+            "browser-webgpu",
+            "native-linux",
+            "native-windows",
+            "native-macos",
+            "native-android",
+            "native-ios",
+          ];
+          const root = "artifacts/performance-regression";
+          const files = await readdir(root).catch(() => []);
+          const results = [];
+          for (const file of files.filter((name) => name.endsWith(".json"))) {
+            const value = JSON.parse(await readFile(`${root}/${file}`, "utf8"));
+            if (typeof value.lane !== "string" || typeof value.status !== "string") continue;
+            const resultKey = file.slice(0, -5);
+            results.push({
+              artifactHash: value.artifactHash,
+              lane: value.lane,
+              reason: value.reason,
+              required: manifest.lanes.find((lane) => lane.id === value.lane)?.required === true,
+              resultKey,
+              sourceSha: value.candidateSourceSha ?? value.sourceSha,
+              status: value.status,
+            });
+          }
+          const seen = new Set(results.map((result) => result.resultKey));
+          for (const resultKey of expectedResultKeys) {
+            if (seen.has(resultKey)) continue;
+            results.push({
+              lane: resultKey,
+              reason: "matrix row was not selected or did not publish evidence",
+              required: true,
+              resultKey,
+              status: "SKIPPED",
+            });
+          }
+          if (process.env.TN_PERF_CANCELLED === "true") {
+            results.push({
+              artifactHash: "workflow-cancelled",
+              lane: "performance-workflow",
+              reason: "cancelled run cannot publish PASS",
+              required: true,
+              resultKey: "performance-workflow",
+              sourceSha: process.env.TN_PERF_EXPECTED_SHA,
+              status: "BLOCKED",
+            });
+          }
+          await writeFile(
+            "artifacts/performance-regression/summary-input.json",
+            `${JSON.stringify({
+              expectedSha: process.env.TN_PERF_EXPECTED_SHA,
+              requiredLanes: expectedResultKeys,
+              results,
+            }, null, 2)}\n`,
+          );
+          NODE
           set +e
           pnpm tsx scripts/performance-regression/ci-summary.ts \
             --input artifacts/performance-regression/summary-input.json \

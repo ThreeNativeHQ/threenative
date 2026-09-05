@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -9,8 +9,13 @@ import {
   summarizePerformanceCi,
 } from "../performance-regression/ci-summary.js";
 import {
+  DEFAULT_PERFORMANCE_POLICY,
+  parsePerformanceRun,
+} from "../performance-regression/compare.js";
+import {
   acquirePerformanceLease,
   plannedPerformancePairs,
+  productionEvidenceToPerformanceRun,
   runPerformanceLane,
   validateArtifactIdentity,
   validatePerformanceDispatch,
@@ -1503,6 +1508,34 @@ describe("CI pipeline structure", () => {
     expect(renderPerformanceCiSummary(advisory)).toContain("UNVERIFIED=1");
   });
 
+  it("treats shared-lane result keys as required independent executions", () => {
+    const expectedSha = "a".repeat(40);
+    const windows = {
+      ...{
+        artifactHash: "artifact-windows",
+        lane: "native-windows-macos",
+        sourceSha: expectedSha,
+        status: "PASS" as const,
+      },
+      resultKey: "native-windows",
+    };
+    const macos = { ...windows, artifactHash: "artifact-macos", resultKey: "native-macos" };
+    expect(
+      summarizePerformanceCi({
+        expectedSha,
+        requiredLanes: ["native-windows", "native-macos"],
+        results: [windows, macos],
+      }),
+    ).toMatchObject({ exitCode: 0, status: "PASS" });
+    expect(
+      summarizePerformanceCi({
+        expectedSha,
+        requiredLanes: ["native-windows", "native-macos"],
+        results: [windows],
+      }),
+    ).toMatchObject({ exitCode: 2, status: "BLOCKED" });
+  });
+
   it("requires the performance workflow structure to retain collectors, failure evidence, and promotion separation", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const native = await readFile(
@@ -1529,6 +1562,9 @@ describe("CI pipeline structure", () => {
     expect(performance).not.toContain("pull_request_target");
     expect(performance).toContain("max-parallel: 2");
     expect(performance).toContain("--trusted");
+    expect(performance).toContain("matrix.lane != 'native-android'");
+    expect(performance).toContain("matrix.lane != 'native-ios'");
+    expect(performance).toContain("inputs.trusted == true");
     expect(performance).toContain("required-check-promotion");
     expect(performance).toContain("baseline-regeneration");
     expect(performance).toContain("weekly-workload-rotation");
@@ -1536,6 +1572,65 @@ describe("CI pipeline structure", () => {
     expect(performance).toContain("release-soak");
     expect(performance).toContain("pnpm native:qualify:physical");
     expect(performance).toContain("7200000");
+  });
+
+  it("maps every performance matrix row to its declared platform runner and unique result key", async () => {
+    const performance = await readFile(
+      path.join(repo, ".github/workflows/performance-regression.yml"),
+      "utf8",
+    );
+    expect(performance).toMatch(/matrix:[\s\S]*runner: ubuntu-24\.04/u);
+    expect(performance).toMatch(
+      /lane: native-windows-macos[\s\S]*result_key: native-windows[\s\S]*runner: windows-2025/u,
+    );
+    expect(performance).toMatch(
+      /lane: native-windows-macos[\s\S]*result_key: native-macos[\s\S]*runner: macos-15/u,
+    );
+    expect(performance).toMatch(
+      /lane: native-android[\s\S]*runner:\s*\[self-hosted, linux, android,/u,
+    );
+    expect(performance).toMatch(/lane: native-ios[\s\S]*runner:\s*\[self-hosted, macOS, ios,/u);
+    expect(performance).toContain("runs-on: ${{ matrix.runner }}");
+    expect(performance).toContain("result_key");
+    expect(performance).toContain("native-windows");
+    expect(performance).toContain("native-macos");
+  });
+
+  it("runs bounded native desktop and simulator collectors against built artifacts", async () => {
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const desktopStart = native.indexOf(
+      "Collect bounded desktop performance evidence from the built runtime",
+    );
+    const desktopEnd = native.indexOf("uses: actions/upload-artifact", desktopStart);
+    const desktop = native.slice(desktopStart, desktopEnd);
+    expect(desktop).toContain("--target desktop");
+    expect(desktop).toContain('--prebuilt-artifact "$artifact"');
+    expect(desktop).toContain("--duration 1");
+    expect(desktop).toContain("--cold-starts 1");
+    expect(desktop).toContain("--repetitions 1");
+    expect(desktop).toContain("collector_status=FAIL");
+    expect(desktop).toContain("build/tn-windows/mystral.exe");
+    expect(desktop).toContain("build/tn-macos/mystral");
+    expect(desktop).not.toContain("--help");
+    const simulatorStart = native.indexOf(
+      "Collect bounded iOS simulator evidence without claiming a phone run",
+    );
+    const simulatorEnd = native.indexOf("uses: actions/upload-artifact", simulatorStart);
+    const simulator = native.slice(simulatorStart, simulatorEnd);
+    expect(simulator).toContain(
+      "find packages/runtime-native/build/tn-ios-simulator -name threenative-ios.app",
+    );
+    expect(simulator).toContain("--target ios");
+    expect(simulator).toContain("--device ios-simulator");
+    expect(simulator).toContain('--prebuilt-artifact "$app"');
+    expect(simulator).toContain("--duration 1");
+    expect(simulator).toContain("--cold-starts 1");
+    expect(simulator).toContain('provenance":"simulator"');
+    expect(simulator).toContain('status":"UNVERIFIED"');
+    expect(simulator).not.toContain("--help");
   });
 
   it("plans real alternating pairs and rejects unsafe or incomparable hardware evidence", () => {
@@ -1570,6 +1665,132 @@ describe("CI pipeline structure", () => {
         metrics: { thermal: { complete: false, thermallyConfounded: true } },
       }),
     ).toThrow(/thermally confounded/u);
+  });
+
+  it("puts the selected physical device and evidence artifact on every collector command", () => {
+    const plan = (
+      plannedPerformancePairs as unknown as (
+        lane: string,
+        baselineWorktree: string,
+        candidateWorktree: string,
+        options: { device: string; physicalEvidence: string },
+      ) => ReturnType<typeof plannedPerformancePairs>
+    )("native-android", "/repo/baseline", "/repo/candidate", {
+      device: "pixel-8",
+      physicalEvidence: "/evidence/android.json",
+    });
+    for (const attempt of plan) {
+      expect(attempt.baselineCommand).toContain(
+        "--device pixel-8 --physical-evidence /evidence/android.json",
+      );
+      expect(attempt.candidateCommand).toContain(
+        "--device pixel-8 --physical-evidence /evidence/android.json",
+      );
+    }
+  });
+
+  it("does not invoke a physical collector when its selected device or evidence is missing", async () => {
+    const directory = await makeTempDir("threenative-performance-missing-input-");
+    const raw = JSON.parse(
+      await readFile(path.join(repo, "scripts/performance-regression/lanes.json"), "utf8"),
+    ) as {
+      promotionPolicy: Record<string, unknown>;
+      lanes: Array<Record<string, unknown>>;
+    };
+    const acceptedIdentity = {
+      architecture: "arm64",
+      artifactHash: "accepted-artifact",
+      browser: "none",
+      device: "pixel-8",
+      graphicsBackend: "vulkan",
+      gpu: "accepted-gpu",
+      instrumentationRevision: "productionEvidenceV1",
+      jsRuntime: "v8",
+      nativeBinaryHash: "accepted-binary",
+      operatingSystem: "android",
+      presentMode: "surfaceflinger",
+      resolution: "1920x1080",
+      sourceSha: "accepted-source",
+      workloadHash: "workload-1",
+    };
+    const manifest = {
+      ...raw,
+      promotionPolicy: { ...raw.promotionPolicy, calibrationStatus: "accepted" },
+      lanes: raw.lanes.map((lane) =>
+        lane.id === "native-android"
+          ? {
+              ...lane,
+              baseline: {
+                evidence: "docs/verification/accepted.md",
+                identity: acceptedIdentity,
+                rungs: { "L2@4096": 8.27 },
+                status: "accepted",
+              },
+              provisioning: "physical-hardware",
+            }
+          : lane,
+      ),
+    };
+    const manifestPath = path.join(directory, "lanes.json");
+    await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
+    const result = await runPerformanceLane({
+      baselineSourceSha: "a".repeat(40),
+      candidateSourceSha: "b".repeat(40),
+      candidateWorktree: directory,
+      eventName: "workflow_dispatch",
+      lane: "native-android",
+      leaseDirectory: path.join(directory, "leases"),
+      manifestPath,
+      outputPath: directory,
+      trusted: true,
+    });
+    expect(["BLOCKED", "UNVERIFIED"]).toContain(result.status);
+    expect(result.reason).toMatch(/device|physical-evidence/u);
+  });
+
+  it("preserves all five startup samples while keeping the p95 value", () => {
+    const evidence = {
+      artifact: { sha256: "a".repeat(64) },
+      command: "profile",
+      execution: { profile: "regression" },
+      identity: {
+        hostClass: "x86_64",
+        nativeBinarySha256: "binary-hash",
+        osClass: "linux",
+      },
+      metrics: {
+        frameSampleCount: 1_000,
+        p95FrameMs: 10,
+        startupP95Ms: 125,
+        startupSamplesMs: [100, 110, 120, 125, 125],
+      },
+      physical: {},
+      runId: "run-1",
+      source: { sha: "a".repeat(40) },
+      target: "desktop",
+      timestamps: { endedAt: "2026-09-05T00:00:01Z", startedAt: "2026-09-05T00:00:00Z" },
+    };
+    const converted = productionEvidenceToPerformanceRun(evidence, {
+      id: "native-linux",
+      platform: "native-linux",
+      workload: "platformer-production",
+    });
+    expect(converted.metrics.startupP95Ms).toMatchObject({
+      samples: [100, 110, 120, 125, 125],
+      unit: "ms",
+      value: 125,
+    });
+    const shortWindow = productionEvidenceToPerformanceRun(
+      {
+        ...evidence,
+        metrics: { ...evidence.metrics, startupSamplesMs: [100, 110, 120, 125] },
+        runId: "run-short-window",
+      },
+      { id: "native-linux", platform: "native-linux", workload: "platformer-production" },
+    );
+    expect(() => parsePerformanceRun(shortWindow, DEFAULT_PERFORMANCE_POLICY)).toThrow(
+      /TN_PERF_SHORT_SAMPLE_WINDOW/u,
+    );
   });
 
   it("keeps an unapproved advisory baseline UNVERIFIED instead of manufacturing a BLOCKED result", async () => {
