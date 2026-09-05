@@ -1,7 +1,8 @@
-# astra-batch-2026-09-04 — the framework stops depending on the agent to search
+# astra-batch-2026-09-04 — provenance index for the capability-discovery work
 
-**Status: OPEN — filed 2026-09-04 against `dae30759`. Nothing in this batch has been executed.**
-**Assignee: astra.** Nine PRDs — three filed here, six pulled in from four other folders.
+**Status: REHOMED — the nine PRDs were filed into their owning categories on 2026-09-05.**
+This file preserves the batch's evidence, dependency order and scope decisions; the links below
+point to the categorized PRDs.
 
 Every gate in this batch runs on this machine with **no device, no browser session and no human in
 the loop**. That is deliberate: it is what makes a batch handable to an agent overnight, and it is
@@ -108,10 +109,9 @@ that lesson as a gate, not as a caution.
 | [PRD-355](./PRD-355-the-reinvention-gate-sees-one-capability-in-fifty.md) | The reinvention gate reaches the engine it guards, and reaches a user's game | 7 → HIGH | 354 |
 | [PRD-356](./PRD-356-reinvention-is-a-scored-row-in-the-paired-sweep.md) | "Did the framework stop a rewrite" becomes a number in the round ledger | 6 → HIGH | 355 |
 
-And these six, **pulled into this folder on 2026-09-04** by owner instruction. `docs/PRDs/AGENTS.md`
-says `OPEN` / `PROPOSED` PRDs stay in their owning batch; the owner moved them, so the rule is
-satisfied by this folder *becoming* their owning batch rather than by leaving them behind. The
-"came from" column is their provenance, not a place to look for them.
+And these six, **pulled into the batch on 2026-09-04** by owner instruction, are listed here for
+provenance. They now live in the categories that own their subject; the "came from" column records
+where each PRD was filed before the batch was assembled.
 
 | # | PRD | Came from | State | Why it is in the run order |
 |---|---|---|---|---|
