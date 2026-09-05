@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.9310344827586207,
+  "recallAtK": 0.896551724137931,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -13,12 +13,10 @@
     "brief.exploration.5",
     "brief.fps.1",
     "brief.fps.2",
-    "brief.fps.3",
     "brief.fps.4",
     "brief.fps.5",
     "brief.fps.6",
     "brief.fps.7",
-    "brief.fps.8",
     "brief.fps.9",
     "brief.fps.10",
     "brief.fps.11",
