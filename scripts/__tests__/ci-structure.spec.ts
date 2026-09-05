@@ -270,18 +270,20 @@ describe("CI pipeline structure", () => {
       "utf8",
     );
     const desktop = requiredJob(native, "desktop-parity");
+    const producer = requiredJob(native, "web-reference");
     expect(desktop).toContain("timeout-minutes: 75");
-    const capture = desktop.indexOf("--target web --out artifacts/conformance/web");
+    const capture = producer.indexOf("--target web --out artifacts/conformance/web");
     const comparison = desktop.indexOf(
       "--target desktop --reference artifacts/conformance/web --out artifacts/conformance/desktop",
     );
     expect(capture).toBeGreaterThanOrEqual(0);
-    expect(comparison).toBeGreaterThan(capture);
-    expect(capture).toBeLessThan(desktop.indexOf("Install Linux desktop build dependencies"));
+    expect(producer.indexOf("actions/upload-artifact")).toBeGreaterThan(capture);
+    expect(desktop.indexOf("actions/download-artifact")).toBeLessThan(comparison);
+    expect(desktop).not.toContain("--target web --out artifacts/conformance/web");
     expect(desktop).toMatch(
       /sh scripts\/xvfb\.sh \\\n\s+node packages\/runtime-native\/conformance\/run-conformance\.mjs \\\n\s+--target desktop/u,
     );
-    expect(occurrences(desktop, /test "\$status" -eq 0 -o "\$status" -eq 2/gu)).toBe(2);
+    expect(occurrences(desktop, /test "\$status" -eq 0 -o "\$status" -eq 2/gu)).toBe(1);
     expect(occurrences(desktop, /check-lane-blocks\.mjs/gu)).toBe(2);
     expect(desktop).toContain("TN_PARITY_DESKTOP_REPORT_MISSING");
     expect(desktop).toContain('"## Target results"');
@@ -948,6 +950,148 @@ describe("CI pipeline structure", () => {
       budgets.indexOf(dist),
       "the budgets job builds after the gate that needs the build",
     ).toBeLessThan(budgets.indexOf("- run: pnpm budgets"));
+  });
+
+  it("keeps developer tests self-contained and gives CI an explicit prebuilt path", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const manifest = JSON.parse(await readFile(path.join(repo, "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    const test = requiredJob(ci, "test");
+    const browser = requiredJob(ci, "test-browser");
+    const playtest = requiredJob(ci, "test-playtest");
+    const browserDist = browser.indexOf("uses: ./.github/actions/workspace-dist");
+    const playtestDist = playtest.indexOf("uses: ./.github/actions/workspace-dist");
+
+    expect(manifest.scripts.test).toBe("bash scripts/run-test-suite.sh");
+    expect(manifest.scripts["test:ci"]).toContain("TN_SUITE_PREBUILT=1");
+    expect(manifest.scripts["test:browser"]).toContain("@threenative/playtest build");
+    expect(manifest.scripts["test:browser:ci"]).not.toContain("@threenative/playtest build");
+    expect(manifest.scripts["test:playtest"]).toContain("@threenative/playtest build");
+    expect(manifest.scripts["test:playtest:ci"]).not.toContain("@threenative/playtest build");
+
+    expect(test).toContain('TN_SUITE_PHASES: "docs,build,package-test"');
+    expect(test).toContain("run: pnpm test:ci");
+    expect(browserDist).toBeGreaterThanOrEqual(0);
+    expect(playtestDist).toBeGreaterThanOrEqual(0);
+    expect(browser.indexOf("pnpm test:browser:ci")).toBeGreaterThan(browserDist);
+    expect(playtest.indexOf("pnpm test:playtest:ci")).toBeGreaterThan(playtestDist);
+    expect(browser).toContain("THREENATIVE_PACKED_PACKAGES");
+
+    const prebuiltSection = test.slice(test.indexOf("run: pnpm test:ci"));
+    expect(prebuiltSection).toContain("run: pnpm test:ci");
+    expect(prebuiltSection).not.toContain("@threenative/playtest build");
+  });
+
+  it("reuses iOS archive outputs only after simulator verification and an identity check", async () => {
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const ios = requiredJob(native, "ios-simulator");
+    const initialBuild = ios.indexOf("Build iOS proof workspace dependencies");
+    const verifier = ios.indexOf("verify-ios-simulator.mjs");
+    const pack = ios.indexOf("Pack the exact consumer packages");
+    const packEnd = ios.indexOf("Scaffold the iOS consumer from local tarballs", pack);
+    const packSection = ios.slice(pack, packEnd < 0 ? undefined : packEnd);
+
+    expect(initialBuild).toBeGreaterThanOrEqual(0);
+    expect(verifier).toBeGreaterThan(initialBuild);
+    expect(pack).toBeGreaterThan(verifier);
+    expect(ios).toContain("scripts/ios-package-output-snapshot.ts");
+    expect(ios).not.toContain("find packages -type f \\( -path '*/dist/*'");
+    expect(ios).toContain("cmp -s");
+    expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_CHANGED");
+    expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_MISSING");
+    expect(packSection).toContain("workspace-packages.ts --archives");
+    expect(packSection).toContain('pnpm --filter "$package_name" pack --pack-destination');
+    expect(packSection).not.toContain("--if-present run build");
+  });
+
+  it("produces one commit-keyed web reference and makes Android and desktop consume it", async () => {
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const producer = requiredJob(native, "web-reference");
+    const android = requiredJob(native, "android-emulator-parity");
+    const desktop = requiredJob(native, "desktop-parity");
+    const commands = (section: string): string =>
+      section
+        .split("\n")
+        .filter((line) => !/^\s*#/u.test(line))
+        .join("\n");
+    const producerCommands = commands(producer);
+    const pullRequestEligibility = [
+      "      (github.event_name != 'pull_request' ||",
+      "       contains(github.event.pull_request.labels.*.name, 'native'))",
+    ].join("\n");
+
+    expect(producerCommands).toContain("--target web --out artifacts/conformance/web");
+    expect(producer, "web reference is an orphan on unlabelled pull requests").toContain(
+      ["if: >-", "      inputs.ios_only == false &&", pullRequestEligibility].join("\n"),
+    );
+    expect(producer).toContain("actions/upload-artifact");
+    expect(producer).toContain("native-web-reference-${{ github.sha }}");
+    expect(producer).toContain("if-no-files-found: error");
+    expect(producer).toContain("check-lane-blocks.mjs");
+
+    for (const [name, section] of [
+      ["android", android],
+      ["desktop", desktop],
+    ] as const) {
+      const consumer = commands(section);
+      expect(section, `${name} eligibility drifted from the web producer`).toContain(
+        ["if: >-", "      inputs.ios_only != true &&", pullRequestEligibility].join("\n"),
+      );
+      expect(section, `${name} is not ordered behind the producer`).toContain(
+        "needs: web-reference",
+      );
+      expect(section, `${name} does not download the commit-keyed reference`).toContain(
+        "actions/download-artifact",
+      );
+      expect(section, `${name} can download another commit's reference`).toContain(
+        "native-web-reference-${{ github.sha }}",
+      );
+      expect(section, `${name} does not validate its downloaded reference`).toContain(
+        "check-lane-blocks.mjs",
+      );
+      expect(consumer, `${name} captures a private web fallback`).not.toContain(
+        "--target web --out artifacts/conformance/web",
+      );
+    }
+
+    expect(occurrences(producerCommands, /--target web --out artifacts\/conformance\/web/gu)).toBe(
+      1,
+    );
+  });
+
+  it("uses the cache-aware pnpm and Chromium actions in site and Android lanes", async () => {
+    const site = await readFile(path.join(repo, ".github/workflows/site.yml"), "utf8");
+    const siteBuild = requiredJob(site, "build");
+    const siteDeploy = requiredJob(site, "deploy");
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const android = requiredJob(native, "android-emulator-parity");
+
+    for (const [name, section] of [
+      ["site build", siteBuild],
+      ["site deploy", siteDeploy],
+    ] as const) {
+      expect(section, `${name} does not use the local pnpm action`).toContain(
+        "uses: ./.github/actions/pnpm",
+      );
+      expect(section, `${name} still installs pnpm through the registry`).not.toContain(
+        "pnpm/action-setup",
+      );
+    }
+    expect(siteBuild).toContain("uses: ./.github/actions/playwright-chromium");
+    expect(siteBuild.indexOf("playwright-chromium")).toBeLessThan(siteBuild.indexOf("test:e2e"));
+    expect(siteBuild).not.toContain("playwright install --with-deps chromium");
+    expect(android).toContain("uses: ./.github/actions/playwright-chromium");
+    expect(android).not.toContain("playwright install --with-deps chromium");
   });
 
   // Splitting the suite across jobs is how coverage disappears quietly: a phase named in no job,
