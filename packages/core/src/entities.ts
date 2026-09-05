@@ -7,7 +7,6 @@ export class Registry {
   #pendingFree = new Set<string>();
   #iterating = false;
   readonly #namesOf = new WeakMap<object, string[]>();
-
   add<T extends object>(name: string, entity: T): T {
     if (this.#named.has(name)) throw new Error(`Entity "${name}" already registered.`);
     this.#named.set(name, entity);
@@ -16,11 +15,9 @@ export class Registry {
     else names.push(name);
     return entity;
   }
-
   get<T extends object = object>(name: string): T | undefined {
     return this.#named.get(name) as T | undefined;
   }
-
   forEach(callback: (name: string, entity: object) => void): void {
     this.#iterating = true;
     try {
@@ -29,7 +26,6 @@ export class Registry {
       this.#iterating = false;
     }
   }
-
   remove(name: string): void {
     assertNotIterating(this.#iterating, "remove");
     this.#pendingFree.delete(name);
@@ -44,14 +40,12 @@ export class Registry {
       disposeEntity(entity);
     }
   }
-
   queueFree(target: string | object): void {
     const name = typeof target === "string" ? target : this.#nameOf(target);
     if (name === undefined || !this.#named.has(name))
       throw new Error("Cannot queue an entity that is not registered.");
     this.#pendingFree.add(name);
   }
-
   sweep(): void {
     assertNotIterating(this.#iterating, "sweep");
     if (this.#pendingFree.size === 0) return;
@@ -64,7 +58,6 @@ export class Registry {
       disposeEntity(entity);
     }
   }
-
   clear(): void {
     assertNotIterating(this.#iterating, "clear");
     this.#pendingFree.clear();
@@ -72,7 +65,6 @@ export class Registry {
     this.#named.clear();
     for (const entity of entities) disposeEntity(entity);
   }
-
   snapshot(): EntitySnapshot {
     this.#iterating = true;
     try {
@@ -81,7 +73,6 @@ export class Registry {
       this.#iterating = false;
     }
   }
-
   #nameOf(entity: object): string | undefined {
     return this.#namesOf.get(entity)?.[0];
   }
