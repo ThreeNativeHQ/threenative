@@ -13,7 +13,9 @@
 
 #include "mystral/runtime.h"
 
+#include <chrono>
 #include <iostream>
+#include <thread>
 
 namespace {
 
@@ -163,8 +165,12 @@ int main() {
 
     // Frames, not ticks: the packed frame op stream is drained and replayed by the host once per
     // frame, and every command this test recorded is sitting in it.
-    for (int frame = 0; frame < 60; frame += 1) {
+    // Timestamp readback is delivered asynchronously by the GPU. A tight poll loop can finish
+    // before a coverage-instrumented or Metal/Vulkan device has advanced its queue, falsely
+    // reporting that the map never completed.
+    for (int frame = 0; frame < 1000; frame += 1) {
         if (!runtime->pollEvents()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     if (!runtime->evalScript(kRead, "timestamp_query_read.js")) {

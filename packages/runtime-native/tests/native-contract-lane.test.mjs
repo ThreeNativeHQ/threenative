@@ -84,9 +84,10 @@ test("should fail when a declared test target is not executed", () => {
   // Phase 2's worker production contract; +2 for the webtransport wire and surface contracts;
   // +1 for the rg11b10ufloat-renderable bindings contract; +1 for PRD-327's async pipeline
   // thread contract; +1 for PRD-327 Phase 4's stall-budget hitch shape contract; +1 for the
-  // screenshot capture-gate ordering contract.
+  // screenshot capture-gate ordering contract; +1 for PRD-329's surface-format selection
+  // diagnostic contract.
   // Bump alongside any new add_executable contract target.
-  assert.equal(discovered.length, 34);
+  assert.equal(discovered.length, 35);
   assert.deepEqual(discovered, declaredTargets(cmake));
   assert.doesNotThrow(() => validateExecutionContracts(discovered, executionContracts));
 

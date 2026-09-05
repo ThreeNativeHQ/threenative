@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import { test } from 'vitest';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -29,7 +30,7 @@ const RUNTIME_SCRIPT_HASHES = {
   'event-constructors-setup.js': '3e7f592806866915e7d4fecd051bb5268542cefb79324efc8e15c9bc73978a11',
   'image-support-init.js': '1a674470d63a89e607d065c4b19794e28e87b955b292d63dbd2f974e94e1e6ee',
   'onload-trigger.js': '396a17433bcc18d6193b3167404ff51faecc1451b1b9dfaeb6a3473e86c6371a',
-  'install-async-pipelines.js': '864f5e6787ff00bb54a873e402e4b531d3cd840bf6195d406533ca03fbb12983',
+  'install-async-pipelines.js': 'd58fb3fb55d24743273ea79f9ec72303a79ec91b322969d705a9f4d11ce47024',
   'image-bitmap-polyfill.js': '30e2cb4a45fc20ee9b983ef4dd404afd63be1889d0b1e12055f01a8716b66cfa',
   'webtransport-polyfill.js': '4b5a07862083c8e905341190cf37c613083517db84139288bbf7cee12fb6d359',
   'webtransport-stub.js': '9b653430e429a8fad538151523a2c4346b0b9c52a201ec5e01314128b788081e',
@@ -670,6 +671,73 @@ test('the device exposes asynchronous pipeline creation, and it leaves the main 
     /deferred\.reject\(new Error\(String\(error\)\)\)/,
     'a failed pipeline build must reject the returned promise',
   );
+});
+
+test('buffer mapping remains deferred and only polls when work is pending', () => {
+  const resources = readCpp('src/webgpu/bindings_resources');
+  const runtime = read('src/runtime.cpp');
+  const mapStart = resources.indexOf('static js::JSValueHandle handleGpuBufferMapAsync');
+  const mapEnd = resources.indexOf('\njs::JSValueHandle handleGpuDeviceCreateBuffer', mapStart);
+  assert.ok(mapStart >= 0, 'GPUBuffer.mapAsync handler is missing');
+  assert.ok(mapEnd > mapStart, 'GPUBuffer.mapAsync handler boundary is missing');
+  const mapHandler = resources.slice(mapStart, mapEnd);
+
+  assert.match(
+    mapHandler,
+    /pendingBufferMapPromise\(state, requestId\)/u,
+    'mapAsync must return a deferred promise owned by the JS settlement map',
+  );
+  assert.doesNotMatch(
+    mapHandler,
+    /wgpuDevicePoll|wgpuDeviceTick|wgpuInstanceProcessEvents|wait_for\s*\(|while\s*\(/u,
+    'mapAsync must not block while polling the backend for completion',
+  );
+
+  const drainStart = resources.indexOf('void drainAsyncBufferMaps(BindingsState* state)');
+  const drainEnd = resources.indexOf('\nvoid shutdownAsyncBufferMaps', drainStart);
+  assert.ok(drainStart >= 0, 'buffer-map drain is missing');
+  assert.ok(drainEnd > drainStart, 'buffer-map drain boundary is missing');
+  const drain = resources.slice(drainStart, drainEnd);
+  assert.match(
+    drain,
+    /state->asyncBufferMaps\.pending\.empty\(\)\) return;/u,
+    'pollEvents must skip backend polling when there are no pending maps',
+  );
+  assert.match(
+    drain,
+    /pollBufferMapCallbacks\(state\)/u,
+    'pending map completion must be polled at the host settlement boundary',
+  );
+  assert.match(
+    runtime,
+    /webgpu::drainAsyncBufferMaps\(bindingsState_\);[\s\S]*webgpu::drainAsyncPipelineCompiles\(bindingsState_\);/u,
+    'buffer maps must settle from pollEvents on the game thread',
+  );
+});
+
+test('buffer-map promise ownership survives repeated device-facade installation', async () => {
+  const source = read('src/runtime-scripts/install-async-pipelines.js');
+  const context = {};
+  const install = runInNewContext(source.replace(/;\s*$/u, ''), context);
+  const device = {
+    createComputePipelineAsync: () => undefined,
+    createRenderPipelineAsync: () => undefined,
+    createBuffer: () => undefined,
+  };
+
+  assert.equal(install(device), true);
+  const pending = context.__tnBufferMapPending(17);
+  assert.equal(context.__tnBufferMapPendingCount(), 1);
+
+  assert.equal(install(device), true);
+  assert.equal(
+    context.__tnBufferMapPendingCount(),
+    1,
+    'reinstalling a native device facade must not replace the live resolver map',
+  );
+  assert.equal(context.__tnBufferMapSettle(17, true), true);
+  await pending;
+  assert.equal(context.__tnBufferMapPendingCount(), 0, 'settlement must release the resolver');
 });
 
 test('native AudioContext exposes the positional graph used by Three.js', () => {

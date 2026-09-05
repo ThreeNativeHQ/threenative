@@ -11,6 +11,7 @@ import {
   analyzeColdStartMarkers,
   analyzeDesktopLog,
   analyzePresentTicks,
+  analyzeSurfaceFormatMarkers,
   analyzeWorkerProof,
   inspectOverlayBuffer,
   inspectScreenshot,
@@ -52,7 +53,9 @@ const roots = [];
  * present, which is what guarantees the saved screenshot postdates startup readiness.
  */
 const CAPTURE_REFRESH = 'TN_CAPTURE_REFRESH_PRESENTS:1';
-const CLEAN_DESKTOP_LOG = `${READY_MARKER}\n${FIRST_FRAME_MARKER}\nRendered 300 frames in 9000ms\nTN_PRESENTS:301\n${CAPTURE_REFRESH}\n${HEALTHY_TICKS}\n${COLD_START_MARKERS}`;
+const SURFACE_FORMAT_MARKER =
+  'TN_SURFACE_FORMAT:{"native":"bgra8unorm-srgb","render":"bgra8unorm","bridge":true,"present":"fifo"}';
+const CLEAN_DESKTOP_LOG = `${READY_MARKER}\n${FIRST_FRAME_MARKER}\n${SURFACE_FORMAT_MARKER}\nRendered 300 frames in 9000ms\nTN_PRESENTS:301\n${CAPTURE_REFRESH}\n${HEALTHY_TICKS}\n${COLD_START_MARKERS}`;
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
@@ -78,6 +81,25 @@ test('desktop log requires both markers, exact frame completion, and clean error
   expect(analyzeDesktopLog(`${CLEAN_DESKTOP_LOG}\nWebGPU validation error`)).toContain(
     'WebGPU validation error',
   );
+});
+
+test('desktop format marker is required, parseable, and typed', () => {
+  expect(analyzeSurfaceFormatMarkers(SURFACE_FORMAT_MARKER)).toEqual({
+    failures: [],
+    markers: [
+      { bridge: true, native: 'bgra8unorm-srgb', present: 'fifo', render: 'bgra8unorm' },
+    ],
+  });
+  expect(analyzeDesktopLog(CLEAN_DESKTOP_LOG.replace(`${SURFACE_FORMAT_MARKER}\n`, ''))).toContain(
+    'missing TN_SURFACE_FORMAT marker',
+  );
+  expect(analyzeSurfaceFormatMarkers('TN_SURFACE_FORMAT:{not-json}').failures[0]).toMatch(
+    /^TN_SURFACE_FORMAT_MALFORMED:/u,
+  );
+  expect(
+    analyzeSurfaceFormatMarkers('TN_SURFACE_FORMAT:{"native":"bgra8unorm","bridge":"no"}')
+      .failures[0],
+  ).toMatch(/^TN_SURFACE_FORMAT_INVALID:/u);
 });
 
 // The capture gate drives frames of its own to guarantee the saved screenshot postdates startup

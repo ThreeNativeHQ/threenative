@@ -24,6 +24,11 @@ void destroyBindingsState(BindingsState*& state);
 void drainAsyncPipelineCompiles(BindingsState* state);
 void shutdownAsyncPipelineCompiles(BindingsState* state);
 
+// Buffer maps use the same main-thread settlement boundary. The backend callback may arrive from
+// a device thread, but only `pollEvents()` is allowed to enter the JavaScript engine.
+void drainAsyncBufferMaps(BindingsState* state);
+void shutdownAsyncBufferMaps(BindingsState* state);
+
 bool initBindings(
     BindingsState* state,
     js::Engine* engine,

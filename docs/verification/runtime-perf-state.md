@@ -1426,6 +1426,56 @@ This invalidates the green in `prd-189-core-frame-allocations-2026-08-22.md` for
 rested on GC-event counting. The claim that the fixed-step frame allocates nothing per frame is
 **not established**, and finding the remaining ~57 events' worth is unowned.
 
+### 1.4.2 Matched pixels: native vs Chrome — 2026-09-05 (blocked at preflight)
+
+**Status: UNVERIFIED.** This is the first PRD-329 Phase 0 attempt. The Pixel 8 was reachable, but
+the required device gate refused the run before either runtime launched: charging was `AC` instead
+of discharging and thermal status was `LIGHT` instead of `NONE`. No frame timing, drawing-buffer
+pair, SurfaceFlinger sample, slope, intercept or ownership verdict is recorded here. The older
+2400×1080-native versus ~864×303-Chrome comparison remains withdrawn.
+
+The pre-registered pair is one phone, one source commit, `renderer.resolutionScale` 1.0 and 0.55,
+`renderer.antialias: true`, `display.maxFps: 120`, and the same UI renderer. The four required rows
+are retained as empty observations so a later run cannot quietly turn a one-sided result into a
+parity claim:
+
+| Row | Scale | Antialias | Matched drawing buffer | Presented p50 / gpuMs | SurfaceFlinger | State |
+|---|---:|:---:|---:|---:|---:|---|
+| Chrome rung A | 1.0 | true | not captured | — | — | blocked before launch |
+| Native rung A | 1.0 | true | not captured | — | — | blocked before launch |
+| Chrome rung B | 0.55 | true | not captured | — | — | blocked before launch |
+| Native rung B | 0.55 | true | not captured | — | — | blocked before launch |
+
+The rule remains, quoted exactly: **native slope ≥ 1.3× Chrome's, or native intercept ≥ Chrome's + 3 ms at matched pixels, means a runtime-owned GPU term exists. Anything less closes the question as content-owned.** It was not evaluated because there are no two rungs. The deliberate reader-control swap and the deliberately mismatched DPR/physical pixel pair were not run for the same reason.
+
+The exact preflight command and observed result were:
+
+```sh
+node --input-type=module -e 'import {assertDeviceReady} from "./packages/runtime-native/scripts/device-preflight.mjs"; try { await assertDeviceReady("192.168.1.192:5555",{minBatteryPercent:0,requireDischarging:true,maxThermalStatus:"NONE",allowOverride:false,requireRefreshHz:120},{}); console.log("ready"); } catch (error) { console.error(error.code ?? error); console.error(JSON.stringify(error.details ?? null)); process.exitCode=1; }'
+```
+
+```text
+TN_DEVICE_PREFLIGHT_CONDITION_FAILED
+{"serial":"192.168.1.192:5555","failures":[{"condition":"charging","threshold":"discharging","observed":"AC"},{"condition":"thermal","threshold":"<= NONE","observed":"LIGHT"}]}
+```
+
+The runtime-side contract work is separate from this blocked measurement. `TN_SURFACE_FORMAT` is
+now emitted at startup, resize and republish configure paths and the desktop analyzer parses it;
+removing it fails with `missing TN_SURFACE_FORMAT marker`. The diagnostic
+`debug.threenative.linear_surface` / `THREENATIVE_LINEAR_SURFACE` switch remains default-off, and
+`MYSTRAL_WEBGPU_BACKEND=auto` remains the Android product default. The declared Dawn negative
+control was observed on 2026-09-05:
+
+```text
+node packages/runtime-native/scripts/download-deps.mjs --android --backend dawn
+Platform: linux-x86_64
+Error: TN_DAWN_ANDROID_ARCHIVE_MISSING: /home/joao/projects/threenative/threenative-engine/.worktrees/critical-prd329-20260905/packages/runtime-native/third_party/dawn-android/Dawn-d14ae3d97ad74100e9f382efef5e9c0872ddbeb2-android-arm64-v8a-Release.tar.gz; build Dawn d14ae3d97ad74100e9f382efef5e9c0872ddbeb2 for arm64-v8a and place the archive beside its extracted include/ and lib/ directories
+```
+
+The surface marker, sRGB bridge and Android backend contracts pass their focused tests, but the
+desktop native binary and the phone pair were not built in this attempt. Therefore no suspect has
+a measured `>=` or `< 2 ms` delta, and no product default changed.
+
 ### 1.5 Untried, named
 
 **Removed from this list 2026-08-28:** the panel-mode blind spot (now read and gateable by

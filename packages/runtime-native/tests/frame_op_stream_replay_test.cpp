@@ -4,6 +4,8 @@
 #include "../src/webgpu/bindings_state.h"
 
 #include <iostream>
+#include <chrono>
+#include <thread>
 #include <sstream>
 #include <string>
 
@@ -21,6 +23,18 @@ void expect(bool condition, const std::string& what) {
         std::cerr << "FAIL: " << what << std::endl;
         failures += 1;
     }
+}
+
+void awaitFlag(mystral::Runtime* runtime, mystral::js::Engine* engine, const char* flag) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < deadline) {
+        runtime->pollEvents();
+        engine->processMicrotasks();
+        mystral::js::JSValueGuard value(*engine, engine->getGlobalProperty(flag));
+        if (engine->toBoolean(value.get())) return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    expect(false, std::string("timed out awaiting ") + flag);
 }
 
 void expectMalformed(mystral::webgpu::BindingsState* state, const std::string& expression,
@@ -127,20 +141,36 @@ void runContract(bool disableStreamControl) {
 #endif
     expect(engine->evalScript(
         R"JS((async () => {
-          await __tnUploadDst.mapAsync(GPUMapMode.READ, 0, 16);
-          globalThis.__tnUploadReadback = Array.from(new Uint32Array(__tnUploadDst.getMappedRange(0, 16)));
-          __tnUploadDst.unmap();
+          try {
+            await __tnUploadDst.mapAsync(GPUMapMode.READ, 0, 16);
+            globalThis.__tnUploadReadback = Array.from(new Uint32Array(__tnUploadDst.getMappedRange(0, 16)));
+            __tnUploadDst.unmap();
+          } catch (error) {
+            globalThis.__tnUploadReadbackError = String(error);
+          } finally {
+            globalThis.__tnUploadReadbackDone = true;
+          }
         })())JS",
         "tn-upload-readback.js"),
         "upload readback requested");
-    for (int pump = 0; pump < 200; ++pump) {
+    // Metal can deliver a spontaneous Dawn map callback on the next run-loop turn. Yield between
+    // polls so this contract waits for the same backend completion it is asserting rather than
+    // exhausting a tight loop before the driver has had a chance to signal it.
+    for (int pump = 0; pump < 5000; ++pump) {
         engine->processMicrotasks();
-        if (!engine->isUndefined(engine->getGlobalProperty("__tnUploadReadback"))) break;
+        if (!engine->isUndefined(engine->getGlobalProperty("__tnUploadReadbackDone"))) break;
         runtime->pollEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    expect(engine->toBoolean(engine->evalScriptWithResult(
-        "JSON.stringify(__tnUploadReadback) === '[1,2,3,4]'", "tn-upload-readback-check.js")),
-        "writeBuffer payload was copied eagerly before source mutation");
+    expect(engine->toBoolean(engine->getGlobalProperty("__tnUploadReadbackDone")),
+           "upload readback promise settled");
+    expect(engine->isUndefined(engine->getGlobalProperty("__tnUploadReadbackError")),
+           "upload readback completed without an error");
+    if (!engine->isUndefined(engine->getGlobalProperty("__tnUploadReadback"))) {
+        expect(engine->toBoolean(engine->evalScriptWithResult(
+            "JSON.stringify(__tnUploadReadback) === '[1,2,3,4]'", "tn-upload-readback-check.js")),
+            "writeBuffer payload was copied eagerly before source mutation");
+    }
 
     // Same-frame readback. `queue.submit` is recorded, not executed, so the copy a game hands the
     // queue only reaches the GPU when the frame drains. `buffer.mapAsync` is the one call that
@@ -155,14 +185,14 @@ void runContract(bool disableStreamControl) {
           const device = globalThis.__tnDevice;
           const src = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
           const dst = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
-          requestAnimationFrame(() => {
+          requestAnimationFrame(async () => {
             device.queue.writeBuffer(src, 0, new Uint32Array([5, 6, 7, 8]));
             const encoder = device.createCommandEncoder();
             encoder.copyBufferToBuffer(src, 0, dst, 0, 16);
             device.queue.submit([encoder.finish()]);
-            // The host maps synchronously and hands back an already-resolved promise, so the read
-            // below is the same instant three.js reaches after its `await`.
-            dst.mapAsync(GPUMapMode.READ, 0, 16);
+            const mapping = dst.mapAsync(GPUMapMode.READ, 0, 16);
+            globalThis.__tnSameFrameMapState = dst.mapState;
+            await mapping;
             globalThis.__tnSameFrameReadback = Array.from(new Uint32Array(dst.getMappedRange(0, 16)));
             dst.destroy(); // three.js destroys instead of unmapping: the buffer stays mapped.
             globalThis.__tnSameFrameRan = true;
@@ -170,16 +200,22 @@ void runContract(bool disableStreamControl) {
         })())JS",
         "tn-same-frame-readback.js"),
         "same-frame readback script evaluated");
-    runtime->pollEvents();
+    awaitFlag(runtime.get(), engine, "__tnSameFrameRan");
     expect(engine->toBoolean(engine->getGlobalProperty("__tnSameFrameRan")),
            "same-frame readback ran inside a requestAnimationFrame callback");
+    expect(engine->toBoolean(engine->evalScriptWithResult(
+        "__tnSameFrameMapState === 'pending'", "tn-same-frame-map-state-check.js")),
+        std::string("mapAsync returns while the mapping is pending: ") +
+            engine->toString(engine->evalScriptWithResult(
+                "String(__tnSameFrameMapState)", "tn-same-frame-map-state-report.js")));
     expect(engine->toBoolean(engine->evalScriptWithResult(
         "JSON.stringify(__tnSameFrameReadback) === '[5,6,7,8]'", "tn-same-frame-check.js")),
         std::string("mapAsync sees work submitted earlier in the same frame: ") +
             engine->toString(engine->evalScriptWithResult(
                 "JSON.stringify(__tnSameFrameReadback)", "tn-same-frame-report.js")));
-    expect(state->profiling.frameOpStreamReplayCrossings - crossingsBeforeSameFrame == 2,
-           "mapAsync drains the recorded stream in its own crossing, ahead of the frame's");
+    runtime->pollEvents(); // The awaited continuation records destroy for the next drain.
+    expect(state->profiling.frameOpStreamReplayCrossings - crossingsBeforeSameFrame >= 2,
+           "mapAsync and the awaited destroy both drain the recorded stream");
     const std::vector<std::string> expectedSameFrameOrder = {"buffer.destroy"};
     if (state->profiling.frameOpStreamLastOrder != expectedSameFrameOrder) {
         std::cerr << "observed same-frame tail order:";
@@ -209,9 +245,12 @@ void runContract(bool disableStreamControl) {
               view: globalThis.__tnRenderView, loadOp: "clear", storeOp: "store",
               clearValue: [0, 0, 0, 1],
             }]});
-            dst.mapAsync(GPUMapMode.READ, 0, 16);
-            globalThis.__tnSplitReadback = Array.from(new Uint32Array(dst.getMappedRange(0, 16)));
-            dst.unmap();
+            const mapping = dst.mapAsync(GPUMapMode.READ, 0, 16);
+            mapping.then(() => {
+              globalThis.__tnSplitReadback = Array.from(new Uint32Array(dst.getMappedRange(0, 16)));
+              dst.unmap();
+              globalThis.__tnSplitReadDone = true;
+            });
             pass.end();
             device.queue.submit([second.finish()]);
             globalThis.__tnSplitRan = true;
@@ -222,6 +261,8 @@ void runContract(bool disableStreamControl) {
     runtime->pollEvents();
     expect(engine->toBoolean(engine->getGlobalProperty("__tnSplitRan")),
            "split-flush readback ran inside a requestAnimationFrame callback");
+    const auto splitTailOrder = state->profiling.frameOpStreamLastOrder;
+    awaitFlag(runtime.get(), engine, "__tnSplitReadDone");
     expect(engine->toBoolean(engine->evalScriptWithResult(
         "JSON.stringify(__tnSplitReadback) === '[9,10,11,12]'", "tn-split-check.js")),
         std::string("mapAsync flushes the submitted copy while an encoder is still open: ") +
@@ -229,14 +270,120 @@ void runContract(bool disableStreamControl) {
                 "JSON.stringify(__tnSplitReadback)", "tn-split-report.js")));
     const std::vector<std::string> expectedSplitTailOrder = {
         "createCommandEncoder", "beginRenderPass", "render.end", "finish", "submit"};
-    if (state->profiling.frameOpStreamLastOrder != expectedSplitTailOrder) {
+    if (splitTailOrder != expectedSplitTailOrder) {
         std::cerr << "observed split tail order:";
-        for (const auto& op : state->profiling.frameOpStreamLastOrder)
+        for (const auto& op : splitTailOrder)
             std::cerr << " " << op;
         std::cerr << std::endl;
     }
-    expect(state->profiling.frameOpStreamLastOrder == expectedSplitTailOrder,
+    expect(splitTailOrder == expectedSplitTailOrder,
            "the half-recorded encoder stayed behind and drained whole at the frame boundary");
+
+    // No pollEvents between request and inspection: the native registry, not a JS wrapper,
+    // must still own both requests. Cancellation must allow an immediate replacement map.
+    expect(engine->evalScript(R"JS((() => {
+      const make = () => __tnDevice.createBuffer({size:16, usage:GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST});
+      globalThis.__tnMapA = make(); globalThis.__tnMapB = make();
+      globalThis.__tnMapErrors = [];
+      const check = (ok, label) => { if (!ok) __tnMapErrors.push(label); };
+      const first = __tnMapA.mapAsync(1);
+      const second = __tnMapB.mapAsync(1);
+      globalThis.__tnConcurrentMaps = Promise.all([first, second]).then(async () => {
+        check(__tnMapA.mapState === 'mapped' && __tnMapB.mapState === 'mapped', 'concurrent mapped');
+        await __tnMapA.mapAsync(1).then(() => check(false, 'mapped request accepted'), () => {});
+        check(__tnMapA.mapState === 'mapped', 'mapped rejection changed state');
+        __tnMapA.unmap(); __tnMapB.unmap();
+        const cancelled = __tnMapA.mapAsync(1).then(() => check(false, 'unmap did not cancel'), () => {});
+        __tnMapA.unmap();
+        const replacement = __tnMapA.mapAsync(1);
+        await cancelled;
+        check(__tnMapA.mapState === 'pending', 'old cancellation changed replacement state');
+        await replacement;
+        check(__tnMapA.mapState === 'mapped', 'replacement not mapped');
+        __tnMapA.destroy();
+        check(__tnMapA.mapState === 'unmapped', 'destroy did not clear mapState');
+        const doomed = __tnMapB.mapAsync(1).then(() => check(false, 'destroy did not cancel'), () => {});
+        __tnMapB.destroy();
+        check(__tnMapB.mapState === 'unmapped', 'pending destroy state');
+        await doomed;
+        await __tnMapB.mapAsync(1).then(() => check(false, 'destroyed map accepted'), () => {});
+        check(__tnBufferMapPendingCount() === 0, 'unsettled maps');
+        globalThis.__tnMapLifecycleDone = true;
+      }).catch(e => { __tnMapErrors.push(String(e)); globalThis.__tnMapLifecycleDone = true; });
+      __tnMapA.mapAsync(1).then(() => check(false, 'duplicate accepted'), () => {
+        check(__tnMapA.mapState === 'pending', 'duplicate rejection changed pending state');
+      });
+    })())JS", "tn-map-lifecycle.js"), "map lifecycle script evaluated");
+    expect(state->asyncBufferMaps.pending.size() == 2,
+           "two native map requests remain deferred without polling");
+    for (const auto& entry : state->asyncBufferMaps.pending) {
+        const auto& info = state->registries.bufferRegistry.at(entry.second->bufferId);
+        expect(info.mapPending && !info.isMapped, "native map state stays pending until drain");
+    }
+    engine->processMicrotasks();
+    awaitFlag(runtime.get(), engine, "__tnMapLifecycleDone");
+    expect(engine->toBoolean(engine->evalScriptWithResult("__tnMapErrors.length === 0", "tn-map-check.js")),
+           "buffer map lifecycle: " + engine->toString(engine->evalScriptWithResult("JSON.stringify(__tnMapErrors)", "tn-map-errors.js")));
+
+    // Exercise a backend completion with an error, not just cancellation. The failed request must
+    // leave both pending maps empty so the same buffer can be mapped successfully immediately
+    // afterwards; otherwise a driver validation error turns into a permanent map-state leak.
+    expect(engine->evalScript(R"JS((() => {
+      globalThis.__tnMapFailure = __tnDevice.createBuffer({size:16, usage:GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST});
+      globalThis.__tnMapFailureErrors = [];
+      globalThis.__tnMapFailureDone = false;
+      (async () => {
+        const buffer = __tnMapFailure;
+        await buffer.mapAsync(1, 0, 15).then(
+          () => __tnMapFailureErrors.push('invalid map resolved'),
+          () => {
+            if (buffer.mapState !== 'unmapped') __tnMapFailureErrors.push('failed map state');
+          });
+        await buffer.mapAsync(1, 0, 16);
+        if (buffer.mapState !== 'mapped') __tnMapFailureErrors.push('reused map state');
+        buffer.unmap();
+        buffer.destroy();
+        globalThis.__tnMapFailureDone = true;
+      })().catch((error) => {
+        __tnMapFailureErrors.push(String(error));
+        globalThis.__tnMapFailureDone = true;
+      });
+    })())JS", "tn-map-failure.js"), "backend map failure requested");
+    awaitFlag(runtime.get(), engine, "__tnMapFailureDone");
+    expect(engine->toBoolean(engine->evalScriptWithResult(
+        "__tnMapFailureErrors.length === 0 && __tnBufferMapPendingCount() === 0",
+        "tn-map-failure-check.js")),
+           "backend map failures clear every promise: " +
+               engine->toString(engine->evalScriptWithResult(
+                   "JSON.stringify(__tnMapFailureErrors)", "tn-map-failure-errors.js")));
+    expect(state->asyncBufferMaps.pending.empty(),
+           "backend map failures clear every native pending request");
+
+    expect(engine->evalScript(R"JS((() => {
+      globalThis.__tnShutdownBuffer = __tnDevice.createBuffer({size:16, usage:GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST});
+      globalThis.__tnShutdownSettlements = 0;
+      __tnShutdownBuffer.mapAsync(1).then(
+        () => { __tnShutdownSettlements++; globalThis.__tnShutdownResult = 'resolved'; },
+        () => { __tnShutdownSettlements++; globalThis.__tnShutdownResult = __tnShutdownBuffer.mapState; });
+    })())JS", "tn-map-shutdown.js"), "shutdown map requested");
+    const auto shutdownRequest = state->asyncBufferMaps.pending.begin()->second;
+    mystral::webgpu::shutdownAsyncBufferMaps(state);
+    mystral::webgpu::shutdownAsyncBufferMaps(state); // idempotent, including late callbacks
+    engine->processMicrotasks();
+    expect(state->asyncBufferMaps.pending.empty(), "shutdown clears pending native maps");
+    expect(!state->registries.bufferRegistry.at(shutdownRequest->bufferId).mapPending,
+           "shutdown cancels the backend map and clears pending state");
+    expect(engine->toBoolean(engine->evalScriptWithResult(
+        "__tnShutdownResult === 'unmapped' && __tnShutdownSettlements === 1 && __tnBufferMapPendingCount() === 0",
+        "tn-shutdown-map-check.js")), "shutdown rejects each promise exactly once");
+    expect(engine->evalScript(R"JS(
+      __tnShutdownBuffer.mapAsync(1).then(
+        () => { globalThis.__tnAfterShutdown = false; },
+        () => { globalThis.__tnAfterShutdown = true; });
+    )JS", "tn-map-after-shutdown.js"), "map after shutdown requested");
+    engine->processMicrotasks();
+    expect(engine->toBoolean(engine->getGlobalProperty("__tnAfterShutdown")),
+           "shutdown refuses new map requests");
 
     state->profiling.frameOpStreamNativeCallObserver = observeFrameReplayBackendEntry;
     frameReplayBackendEntries = 0;

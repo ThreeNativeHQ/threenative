@@ -1319,6 +1319,7 @@ public:
         // PRD-327: pipeline compiles finish on a host pool and their promises settle here, for the
         // same reason and in the same segment — the compile ran on another thread, and only this
         // one may enter the engine.
+        webgpu::drainAsyncBufferMaps(bindingsState_);
         webgpu::drainAsyncPipelineCompiles(bindingsState_);
 
         // Process completed async HTTP requests (invoke their JS callbacks)

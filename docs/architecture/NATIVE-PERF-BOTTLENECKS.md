@@ -1,6 +1,6 @@
 # Native performance — where the frame time goes
 
-**Current as of 2026-09-02.** The budget below was measured before PRD-227 Change 1 landed; it is
+**Current as of 2026-09-05.** The budget below was measured before PRD-227 Change 1 landed; it is
 kept because the shares explain why the seam was attacked. **Since then the frame crosses once,
 desktop `bridgeNs` fell 9.31 → 0.81 ms, and the phone's frame rate did not move** — the frame on a
 real game is GPU-bound (720p: CPU chain 9.3 ms, GPU 18–19 ms; see
@@ -65,6 +65,14 @@ The device meter was audited against `dumpsys SurfaceFlinger --latency` and agre
 game truly runs at ~20 fps. **`dumpsys gfxinfo` reads ~5× flattering** because it meters the Skia
 view pipeline a `SurfaceView` game bypasses; do not quote it.
 
+**PRD-329 remains unverified.** The 2026-09-05 matched-pixel attempt reached the physical Pixel 8
+but the required preflight refused it while the phone was charging (`AC`) and thermally `LIGHT`.
+No Chrome/native drawing-buffer pair, SurfaceFlinger sample, slope, intercept or runtime/content
+verdict exists; the record is [runtime-perf-state §1.4.2](../verification/runtime-perf-state.md).
+The native contract now emits and gates `TN_SURFACE_FORMAT`, and the linear-surface and
+Dawn-on-Android controls are diagnostic-only until a cool, discharging device produces the
+pre-registered pair.
+
 ## The shape of the problem
 
 Removing the WebView removed the *packaging* tax, not the *execution* tax. JavaScript still owns
@@ -94,7 +102,7 @@ cross once (landed and accepted) — the design is in [NATIVE-RENDER-TRANSPORT](
 |---|---|---|---|
 | — | **The seam — was 22.3 ms of 37.7 on device.** Change 1 (the frame crosses once) landed and was accepted: desktop `bridgeNs` 9.31 → 0.81 ms, work −40 %; **device fps did not move** (20.39 → 20.02). Change 2 (fixed-shape wrappers) was executed and measured **worse than baseline** — the megamorphic-IC owner is three's node-material graph, which Chrome pays too | PRD-227, ledger §2.1 rows 12–13 | **Closed as a frame-rate lever.** The seam was real and is gone; the frame rate was never seam-bound. Do not re-open without a new device profile |
 | 🟡 | **Launch: 12–14 s of synchronous first-frame pipeline compilation** behind the loading screen (8,038 ms across 105 compiles on Bayview); `createRenderPipelineAsync` is the synchronous call in a resolved promise, so warm-up compiles nothing on native | [PRD-327](../PRDs/performance/critical/PRD-327-first-use-pipeline-compilation-leaves-the-main-loop.md) | **Mechanism landed 2026-09-03** (§5a): the async entry holds the main thread 0.27 ms of a 70 ms compile; Phase 4 names a late sync compile inside `TN_FRAME_HITCH` (`pipelineCompileMs/Calls`, read by `playtest perf`); desktop second-launch compile is 77 % of the first on three tiny pipelines — noise, not a decision. **The launch claim (≤ 8 s median) is still unmade**: the phone arm owes the device acceptance and the cache decision |
-| 🟡 | **The phone's GPU frame has never been compared to Chrome's at matched pixels** — every prior comparison mixed a 2400×1080 native buffer against ~864×303 CSS pixels | [PRD-329](../PRDs/performance/critical/PRD-329-the-native-gpu-frame-matches-chrome-at-matched-pixels.md) | Filed 2026-09-02; decides whether the runtime owns any of the GPU term before content LOD work starts |
+| 🟡 | **The phone's GPU frame has never been compared to Chrome's at matched pixels** — every prior comparison mixed a 2400×1080 native buffer against ~864×303 CSS pixels | [PRD-329](../PRDs/performance/critical/PRD-329-the-native-gpu-frame-matches-chrome-at-matched-pixels.md) | Filed 2026-09-02; the 2026-09-05 attempt was blocked by charging/thermal preflight; `TN_SURFACE_FORMAT` and the diagnostic arms are now instrumented, but the verdict still decides whether the runtime owns any GPU term |
 | 🟢 | **Per-object JS work in three.js.** ~11.3 µs of CPU per drawn object against Godot's ~5.3 µs, all of it inside three.js's WebGPU submission path — upstream, not framework plumbing | the game's `src/render/`: instancing, LOD, merged geometry. `SceneRenderProjection` (`packages/core/src/renderProjection.ts`) mirrors an authored scene into instanced draws without consuming it | Permanent lever. Submitting fewer objects is the only thing that has ever moved this term |
 | 🟢 | **Cold start: the bundle is parsed as source every launch.** Measured under V8 as of 2026-09-03 (PRD-328): the compile/execute markers now fire in V8, JSC and the desktop CLI, and `pnpm native:verify:desktop` fails when one goes missing. Desktop V8 13.1, `native-smoke`, five launches: parse+compile **51 ms (9.7 %)**, top-level execution 45 ms (8.6 %), launch 524 ms. The Pixel 8 process-cold median is compile **54.1 ms (10.4 %)** of 519 ms, with runtime creation at 1,635 ms (69.1 %) of the genuinely cold launch. (SWC transpiles only `.ts` sources in `module_system.cpp`; a packaged bundle is `.js` and never goes through it) | [PRD-328](../PRDs/done/PRD-328-launch-is-measured-on-the-engine-that-ships.md), `src/js/v8_engine.cpp`, `docs/verification/runtime-perf-state.md` §5b | Instrument landed. The pre-registered code-cache rule tripped on the phone's 10 % limb; [PRD-335](../PRDs/performance/PRD-335-the-bundle-is-not-parsed-as-source-twice.md) is filed and ranked below runtime creation. The native-smoke launch was provisional on AC and is not an fps claim |
 | 🔴 | **Record, replay and present run in series on one game thread.** `Worker` is a real native thread since PRD-250 (web + Linux desktop verified; mobile `UNVERIFIED`); what is missing is a render thread that replays frame N while JS records N+1, and a job system | `src/runtime.cpp`, `bindings_frame_stream.cpp` | Gated by the direction document: overlapping threads cannot beat an 18–19 ms GPU frame. File only after PRD-329's verdict and PRD-308's per-pass numbers |

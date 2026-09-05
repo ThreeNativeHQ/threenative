@@ -1,15 +1,24 @@
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 
 import { nativeDefinition } from "../../../test-support/native-definition.js";
 
+const WEBGPU_SOURCE_ROOT = fileURLToPath(new URL("../src/webgpu", import.meta.url));
+
 function presentationDefinitions() {
   return {
     configure: nativeDefinition("configureCanvasContext").text,
+    context: nativeDefinition("configureSurface").text,
     createTexture: nativeDefinition("createLinearPresentationTexture").text,
     format: nativeDefinition("linearSurfaceFormat").text,
+    init: nativeDefinition("initBindings", { root: WEBGPU_SOURCE_ROOT }).text,
+    linearRequested: nativeDefinition("linearSurfaceRequested").text,
+    marker: nativeDefinition("reportSurfaceFormatMarker").text,
     pipeline: nativeDefinition("ensureSrgbPresentationPipeline").text,
     present: nativeDefinition("presentPendingSurface").text,
+    republish: nativeDefinition("republishSurface").text,
+    selection: nativeDefinition("selectSurfaceFormat", { root: WEBGPU_SOURCE_ROOT }).text,
   };
 }
 
@@ -48,12 +57,43 @@ function assertSuccessfulPresentAccounting(definitions) {
   assert.ok(marker > success, "TN_SURFACE_FRAME must describe a successful present");
 }
 
+function assertSurfaceFormatMarker(definitions) {
+  assert.match(
+    definitions.marker,
+    /TN_SURFACE_FORMAT:\{[\s\S]*\}/u,
+    "the negotiated surface and render formats must be machine-readable",
+  );
+  assert.match(definitions.marker, /formatToString\(nativeFormat\)/u);
+  assert.match(definitions.marker, /formatToString\(renderFormat\)/u);
+  assert.match(definitions.init, /reportSurfaceFormatMarker\(/u);
+  assert.match(definitions.republish, /reportSurfaceFormatMarker\(/u);
+}
+
+function assertLinearSurfaceAblation(definitions) {
+  assert.match(definitions.linearRequested, /debug\.threenative\.linear_surface/u);
+  assert.match(definitions.linearRequested, /THREENATIVE_LINEAR_SURFACE/u);
+  assert.match(definitions.context, /linearSurfaceRequested\(\)/u);
+  assert.match(definitions.selection, /TN_LINEAR_SURFACE_UNSUPPORTED/u);
+}
+
 test("sRGB-only native surfaces present Three.js encoded output through a linear canvas", () => {
   assert.doesNotThrow(() => {
     const definitions = presentationDefinitions();
     assertPresentationBridge(definitions);
     assertSuccessfulPresentAccounting(definitions);
+    assertSurfaceFormatMarker(definitions);
+    assertLinearSurfaceAblation(definitions);
   });
+});
+
+test("surface marker contract fails closed when startup reporting is removed", () => {
+  const definitions = presentationDefinitions();
+  assert.throws(() =>
+    assertSurfaceFormatMarker({
+      ...definitions,
+      init: definitions.init.replace("reportSurfaceFormatMarker", "removedSurfaceFormatMarker"),
+    }),
+  );
 });
 
 test("presentation contract rejects removal of the inverse transfer", () => {

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 #include <mutex>
 #include <sstream>
@@ -136,46 +137,190 @@ static void recordBufferCreated(BindingsState* state, uint64_t size, uint32_t us
     bucket.first += 1;
     bucket.second += size;
 }
-#if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
-// Dawn buffer map callback (4 params)
-static void onBufferMapped(WGPUMapAsyncStatus status, WGPUStringView message, void* userdata1, void* userdata2) {
-    auto* data = (BufferMapData*)userdata1;
+static std::shared_ptr<BufferMapRequest> takeBufferMapRequest(void* userdata) {
+    auto* holder = static_cast<std::shared_ptr<BufferMapRequest>*>(userdata);
+    if (holder == nullptr) return {};
+    auto request = std::move(*holder);
+    delete holder;
+    return request;
+}
+
+static void completeBufferMap(
+    std::shared_ptr<BufferMapRequest> request,
+    WGPUBufferMapAsyncStatus_Compat status,
+    const char* message = nullptr,
+    size_t messageLength = 0) {
+    if (!request) return;
     {
-        std::lock_guard<std::mutex> lock(data->waitMutex);
-        data->status = status;
-        data->completed = true;
-        if (message.data && message.length > 0) {
-            data->errorMessage = std::string(message.data, message.length);
+        std::lock_guard<std::mutex> lock(request->waitMutex);
+        request->status = status;
+        if (message != nullptr && messageLength > 0) {
+            request->errorMessage.assign(message, messageLength);
         }
+        request->completed = true;
     }
-    data->waitCondition.notify_all();
+}
+
+#if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
+// Dawn buffer map callback (4 params). The callback never enters JavaScript; it only records the
+// result in a request that `pollEvents()` settles on the game thread.
+static void onBufferMapped(
+    WGPUMapAsyncStatus status, WGPUStringView message, void* userdata1, void* /*userdata2*/) {
+    const auto request = takeBufferMapRequest(userdata1);
+    const size_t messageLength = message.length == WGPU_STRLEN
+        ? (message.data == nullptr ? 0 : std::strlen(message.data))
+        : message.length;
+    completeBufferMap(request, status, message.data, messageLength);
 }
 #else
-// wgpu-native buffer map callback (2 params)
+// wgpu-native buffer map callback (2 params).
 static void onBufferMapped(WGPUBufferMapAsyncStatus status, void* userdata) {
-    auto* data = (BufferMapData*)userdata;
-    {
-        std::lock_guard<std::mutex> lock(data->waitMutex);
-        data->status = status;
-        data->completed = true;
-    }
-    data->waitCondition.notify_all();
+    completeBufferMap(takeBufferMapRequest(userdata), status);
 }
 #endif
 
-static bool bufferMapCompleted(BufferMapData& data) {
-    std::lock_guard<std::mutex> lock(data.waitMutex);
-    return data.completed;
+static js::JSValueHandle bufferMapSettler(BindingsState* state) {
+    return state->engine->getGlobalProperty("__tnBufferMapSettle");
 }
 
-static WGPUBufferMapAsyncStatus_Compat bufferMapStatus(BufferMapData& data) {
-    std::lock_guard<std::mutex> lock(data.waitMutex);
-    return data.status;
+static void settleBufferMapPromise(
+    BindingsState* state,
+    js::JSValueHandle settle,
+    const std::shared_ptr<BufferMapRequest>& request,
+    bool success,
+    const std::string& error) {
+    js::JSValueGuard thisArg(*state->engine, state->engine->newUndefined());
+    js::JSValueGuard id(
+        *state->engine, state->engine->newNumber(static_cast<double>(request->requestId)));
+    js::JSValueGuard result(*state->engine, state->engine->newBoolean(success));
+    js::JSValueGuard message(
+        *state->engine,
+        success ? state->engine->newUndefined() : state->engine->newString(error.c_str()));
+    js::JSValueGuard ignored(
+        *state->engine,
+        state->engine->call(settle, thisArg.get(), {id.get(), result.get(), message.get()}));
 }
 
-static std::string bufferMapError(BufferMapData& data) {
-    std::lock_guard<std::mutex> lock(data.waitMutex);
-    return data.errorMessage;
+static js::JSValueHandle pendingBufferMapPromise(
+    BindingsState* state, uint64_t requestId) {
+    js::JSValueGuard pending(*state->engine, state->engine->getGlobalProperty("__tnBufferMapPending"));
+    if (!pending || !state->engine->isFunction(pending.get())) {
+        state->engine->throwException(
+            "async buffer mapping is not installed (__tnBufferMapPending missing)");
+        return state->engine->newUndefined();
+    }
+    js::JSValueGuard thisArg(*state->engine, state->engine->newUndefined());
+    js::JSValueGuard id(
+        *state->engine, state->engine->newNumber(static_cast<double>(requestId)));
+    return state->engine->call(pending.get(), thisArg.get(), {id.get()});
+}
+
+static void pollBufferMapCallbacks(BindingsState* state) {
+#if defined(MYSTRAL_WEBGPU_WGPU)
+    if (state->device) wgpuDevicePoll(state->device, false, nullptr);
+#else
+    if (state->instance) wgpuInstanceProcessEvents(state->instance);
+    if (state->device) wgpuDeviceTick(state->device);
+#endif
+}
+
+static std::vector<std::shared_ptr<BufferMapRequest>> removeBufferMapRequests(
+    BindingsState* state, uint64_t bufferId) {
+    std::vector<std::shared_ptr<BufferMapRequest>> removed;
+    std::lock_guard<std::mutex> lock(state->asyncBufferMaps.mutex);
+    for (auto it = state->asyncBufferMaps.pending.begin();
+         it != state->asyncBufferMaps.pending.end();) {
+        if (it->second->bufferId != bufferId) {
+            ++it;
+            continue;
+        }
+        removed.push_back(it->second);
+        it = state->asyncBufferMaps.pending.erase(it);
+    }
+    return removed;
+}
+
+static void rejectBufferMapRequests(
+    BindingsState* state,
+    const std::vector<std::shared_ptr<BufferMapRequest>>& requests,
+    const char* error) {
+    if (requests.empty() || state == nullptr || state->engine == nullptr) return;
+    js::JSValueGuard settle(*state->engine, bufferMapSettler(state));
+    if (!settle || !state->engine->isFunction(settle.get())) return;
+    for (const auto& request : requests) {
+        settleBufferMapPromise(state, settle.get(), request, false, error);
+    }
+}
+
+void drainAsyncBufferMaps(BindingsState* state) {
+    if (state == nullptr || state->engine == nullptr) return;
+    {
+        std::lock_guard<std::mutex> lock(state->asyncBufferMaps.mutex);
+        if (state->asyncBufferMaps.pending.empty()) return;
+    }
+
+    js::JSValueGuard settle(*state->engine, bufferMapSettler(state));
+    if (!settle || !state->engine->isFunction(settle.get())) return;
+    pollBufferMapCallbacks(state);
+
+    std::vector<std::shared_ptr<BufferMapRequest>> completed;
+    {
+        std::lock_guard<std::mutex> lock(state->asyncBufferMaps.mutex);
+        for (auto it = state->asyncBufferMaps.pending.begin();
+             it != state->asyncBufferMaps.pending.end();) {
+            std::lock_guard<std::mutex> requestLock(it->second->waitMutex);
+            if (!it->second->completed) {
+                ++it;
+                continue;
+            }
+            completed.push_back(it->second);
+            it = state->asyncBufferMaps.pending.erase(it);
+        }
+    }
+
+    for (const auto& request : completed) {
+        WGPUBufferMapAsyncStatus_Compat status;
+        std::string error;
+        {
+            std::lock_guard<std::mutex> lock(request->waitMutex);
+            status = request->status;
+            error = request->errorMessage;
+        }
+        auto buffer = state->registries.bufferRegistry.find(request->bufferId);
+        const bool success = status == WGPUBufferMapAsyncStatus_Success_Compat &&
+                             buffer != state->registries.bufferRegistry.end();
+        if (buffer != state->registries.bufferRegistry.end()) {
+            buffer->second.mapPending = false;
+            if (success) {
+                buffer->second.isMapped = true;
+                buffer->second.mapMode = request->mode;
+            }
+        }
+        if (!success && error.empty()) error = "Buffer map failed";
+        settleBufferMapPromise(state, settle.get(), request, success, error);
+    }
+}
+
+void shutdownAsyncBufferMaps(BindingsState* state) {
+    if (state == nullptr) return;
+    std::vector<std::shared_ptr<BufferMapRequest>> pending;
+    {
+        std::lock_guard<std::mutex> lock(state->asyncBufferMaps.mutex);
+        state->asyncBufferMaps.stopping = true;
+        for (const auto& entry : state->asyncBufferMaps.pending) pending.push_back(entry.second);
+        state->asyncBufferMaps.pending.clear();
+    }
+    rejectBufferMapRequests(state, pending, "Buffer map cancelled during shutdown");
+    for (const auto& request : pending) {
+        auto buffer = state->registries.bufferRegistry.find(request->bufferId);
+        if (buffer != state->registries.bufferRegistry.end()) {
+            wgpuBufferUnmap(buffer->second.buffer);
+            buffer->second.mapPending = false;
+        }
+    }
+    // Deliver cancellation callbacks without waiting for GPU work. A late callback owns only
+    // its shared request, never the bindings state or the JavaScript engine.
+    pollBufferMapCallbacks(state);
 }
 
 /**
@@ -377,6 +522,9 @@ void releaseBufferRegistryEntry(BindingsState* state, uint64_t bufferId) {
     const auto it = state->registries.bufferRegistry.find(bufferId);
     if (it == state->registries.bufferRegistry.end())
         return;
+    const auto pendingMaps = removeBufferMapRequests(state, bufferId);
+    if (it->second.mapPending) it->second.mapPending = false;
+    rejectBufferMapRequests(state, pendingMaps, "Buffer was destroyed while mapping");
     const BufferInfo info = it->second;
     state->registries.bufferRegistry.erase(it);
     recordBufferDestroyed(state, info);
@@ -940,7 +1088,8 @@ static js::JSValueHandle handleGpuBufferDestroy(BindingsState* state, uint64_t b
                                     return state->engine->newUndefined();
 }
 
-static js::JSValueHandle handleGpuBufferUnmap(BindingsState* state, uint64_t bufferId, const std::vector<js::JSValueHandle>& args) {
+static js::JSValueHandle handleGpuBufferUnmap(
+    BindingsState* state, uint64_t bufferId, const std::vector<js::JSValueHandle>& args) {
                                     // Look up this specific buffer by its ID
                                     auto it = state->registries.bufferRegistry.find(bufferId);
                                     if (it == state->registries.bufferRegistry.end()) {
@@ -948,12 +1097,15 @@ static js::JSValueHandle handleGpuBufferUnmap(BindingsState* state, uint64_t buf
                                         return state->engine->newUndefined();
                                     }
                                     auto& bufferInfo = it->second;
-                                    if (bufferInfo.isMapped) {
+                                    const auto pending = removeBufferMapRequests(state, bufferId);
+                                    if (bufferInfo.isMapped || bufferInfo.mapPending) {
                                         wgpuBufferUnmap(bufferInfo.buffer);
                                         bufferInfo.isMapped = false;
+                                        bufferInfo.mapPending = false;
                                         bufferInfo.mappedData = nullptr;
                                         bufferInfo.mappedSize = 0;
                                     }
+                                    rejectBufferMapRequests(state, pending, "Buffer was unmapped while mapping");
                                     return state->engine->newUndefined();
 }
 
@@ -988,7 +1140,8 @@ static js::JSValueHandle handleGpuBufferGetMappedRange(BindingsState* state, uin
                                     return state->engine->newUndefined();
 }
 
-static js::JSValueHandle handleGpuBufferMapAsync(BindingsState* state, uint64_t bufferId, const std::vector<js::JSValueHandle>& args) {
+static js::JSValueHandle handleGpuBufferMapAsync(
+    BindingsState* state, uint64_t bufferId, const std::vector<js::JSValueHandle>& args) {
     // A map is a synchronization point with the queue: WebGPU completes it only after the work
     // already submitted. `queue.submit` is recorded rather than executed, so the copy a readback
     // just submitted is still sitting in the frame recorder — the map would report success over
@@ -996,107 +1149,83 @@ static js::JSValueHandle handleGpuBufferMapAsync(BindingsState* state, uint64_t 
     // ("used in submit while mapped"). Flush before looking the buffer up: the replay can retire
     // a deferred `buffer.destroy()` and invalidate the registry iterator.
     if (!flushRecordedFrameOps(state))
-        return state->engine->evalWithResult(
+        return state->engine->evalScriptWithResult(
             "Promise.reject(new Error('Buffer map failed'))", "mapAsync-flush-failed");
     auto it = state->registries.bufferRegistry.find(bufferId);
     if (it == state->registries.bufferRegistry.end()) {
         std::cerr << "[WebGPU] mapAsync: Buffer " << bufferId << " not found" << std::endl;
-        return state->engine->evalWithResult("Promise.reject(new Error('Buffer not found'))", "mapAsync-error");
+        return state->engine->evalScriptWithResult("Promise.reject(new Error('Buffer not found'))", "mapAsync-error");
     }
                                     auto& bufferInfo = it->second;
                                     // Already mapped (mappedAtCreation)?
                                     if (bufferInfo.isMapped) {
-                                        return state->engine->evalWithResult("Promise.resolve()", "mapAsync-already-mapped");
+                                        return state->engine->evalScriptWithResult(
+                                            "Promise.reject(new Error('Buffer already mapped'))", "mapAsync-already-mapped");
+                                    }
+                                    if (bufferInfo.mapPending) {
+                                        return state->engine->evalScriptWithResult(
+                                            "Promise.reject(new Error('Buffer map already pending'))",
+                                            "mapAsync-already-pending");
                                     }
                                     // Get mode (default to READ)
                                     WGPUMapMode mode = WGPUMapMode_Read;
                                     if (!args.empty()) {
-                                        uint32_t jsMode = (uint32_t)state->engine->toNumber(args[0]);
+                                        uint32_t jsMode =
+                                            (uint32_t)state->engine->toNumber(args[0]);
                                         // GPUMapMode.READ = 1, GPUMapMode.WRITE = 2
                                         if (jsMode == 2) mode = WGPUMapMode_Write;
                                     }
-                                    uint64_t offset = args.size() > 1 ? (uint64_t)state->engine->toNumber(args[1]) : 0;
-                                    uint64_t mapSize = args.size() > 2 ? (uint64_t)state->engine->toNumber(args[2]) : bufferInfo.size;
-                                    // Debug: Log buffer info
-                                    bool hasMapRead = (bufferInfo.usage & WGPUBufferUsage_MapRead) != 0;
-                                    (void)hasMapRead;  // Used for debug logging when enabled
-                                    // Ensure all pending GPU work is processed before attempting to map
-                                    // This is critical for buffers that were just used in a copy operation
-                                    for (int prePoll = 0; prePoll < 100; prePoll++) {
-#if defined(MYSTRAL_WEBGPU_WGPU)
-                                        wgpuDevicePoll(state->device, false, nullptr);
-#else
-                                        if (state->instance) {
-                                            wgpuInstanceProcessEvents(state->instance);
-                                        }
-                                        if (state->device) {
-                                            wgpuDeviceTick(state->device);
-                                        }
-#endif
-                                    }
-                                    // Synchronous mapping: use global callback + device poll
+                                    uint64_t offset = args.size() > 1
+                                        ? (uint64_t)state->engine->toNumber(args[1])
+                                        : 0;
+                                    uint64_t mapSize = args.size() > 2
+                                        ? (uint64_t)state->engine->toNumber(args[2])
+                                        : bufferInfo.size - offset;
+
+                                    // `queue.submit` is recorded rather than executed, so a map has
+                                    // to replay the clean prefix first. This is the only synchronous
+                                    // boundary left here; waiting for the GPU belongs to the callback
+                                    // and the next `pollEvents()` call.
+                                    flushUploadStaging(state);
+                                    const uint64_t requestId = state->asyncBufferMaps.nextRequestId++;
+                                    auto request = std::make_shared<BufferMapRequest>();
+                                    request->requestId = requestId;
+                                    request->bufferId = bufferId;
+                                    request->buffer = bufferInfo.buffer;
+                                    request->mode = mode;
+                                    request->offset = offset;
+                                    request->size = mapSize;
                                     {
-                                        std::lock_guard<std::mutex> lock(state->registries.bufferMapData.waitMutex);
-                                        state->registries.bufferMapData.completed = false;
-                                        state->registries.bufferMapData.status =
-                                            WGPUBufferMapAsyncStatus_Unknown_Compat;
-                                        state->registries.bufferMapData.errorMessage.clear();
+                                        std::lock_guard<std::mutex> lock(state->asyncBufferMaps.mutex);
+                                        if (state->asyncBufferMaps.stopping) {
+                                            return state->engine->evalScriptWithResult(
+                                                "Promise.reject(new Error('Buffer map cancelled'))",
+                                                "mapAsync-stopping");
+                                        }
+                                        state->asyncBufferMaps.pending.emplace(requestId, request);
+                                    }
+                                    bufferInfo.mapPending = true;
+                                    auto promise = pendingBufferMapPromise(state, requestId);
+                                    if (!promise.ptr || state->engine->hasException()) {
+                                        removeBufferMapRequests(state, bufferId);
+                                        bufferInfo.mapPending = false;
+                                        return promise;
                                     }
 #if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
-                                    // Dawn uses CallbackInfo struct with 4-param callback
-                                    // Use AllowSpontaneous mode so callback can be invoked at any time
                                     WGPUBufferMapCallbackInfo mapCallbackInfo = {};
                                     mapCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
                                     mapCallbackInfo.callback = onBufferMapped;
-                                    mapCallbackInfo.userdata1 = &state->registries.bufferMapData;
+                                    mapCallbackInfo.userdata1 =
+                                        new std::shared_ptr<BufferMapRequest>(request);
                                     mapCallbackInfo.userdata2 = nullptr;
-                                    flushUploadStaging(state);
-                                    wgpuBufferMapAsync(bufferInfo.buffer, mode, offset, mapSize, mapCallbackInfo);
+                                    wgpuBufferMapAsync(
+                                        bufferInfo.buffer, mode, offset, mapSize, mapCallbackInfo);
 #else
-                                    // wgpu-native uses separate callback and userdata
-                                    flushUploadStaging(state);
-                                    wgpuBufferMapAsync(bufferInfo.buffer, mode, offset, mapSize, onBufferMapped,
-                                                       &state->registries.bufferMapData);
+                                    wgpuBufferMapAsync(
+                                        bufferInfo.buffer, mode, offset, mapSize, onBufferMapped,
+                                        new std::shared_ptr<BufferMapRequest>(request));
 #endif
-                                    // Poll device until mapping completes
-                                    // Add small sleep to avoid busy-looping and let GPU work complete
-                                    int pollCount = 0;
-                                    while (!bufferMapCompleted(state->registries.bufferMapData) && pollCount < 10000) {
-#if defined(MYSTRAL_WEBGPU_WGPU)
-                                        wgpuDevicePoll(state->device, true, nullptr);
-#else
-                                        if (state->instance) {
-                                            wgpuInstanceProcessEvents(state->instance);
-                                        }
-                                        if (state->device) {
-                                            wgpuDeviceTick(state->device);
-                                        }
-#endif
-                                        // A timed condition wait avoids a fixed sleep while preserving
-                                        // the existing 100-iteration timeout budget.
-                                        if (pollCount % 100 == 0) {
-                                            std::unique_lock<std::mutex> lock(
-                                                state->registries.bufferMapData.waitMutex);
-                                            state->registries.bufferMapData.waitCondition.wait_for(
-                                                lock, std::chrono::milliseconds(1),
-                                                [&state]() { return state->registries.bufferMapData.completed; });
-                                        }
-                                        pollCount++;
-                                    }
-                                    const auto mapStatus = bufferMapStatus(state->registries.bufferMapData);
-                                    if (mapStatus == WGPUBufferMapAsyncStatus_Success_Compat) {
-                                        bufferInfo.isMapped = true;
-                                        bufferInfo.mapMode = mode;  // Store whether mapped for read or write
-                                        return state->engine->evalWithResult("Promise.resolve()", "mapAsync-success");
-                                    } else {
-                                        const std::string mapError = bufferMapError(state->registries.bufferMapData);
-                                        std::cerr << "[WebGPU] mapAsync: Failed with status " << mapStatus;
-                                        if (!mapError.empty()) {
-                                            std::cerr << " - " << mapError;
-                                        }
-                                        std::cerr << std::endl;
-                                        return state->engine->evalWithResult("Promise.reject(new Error('Buffer map failed'))", "mapAsync-failed");
-                                    }
+                                    return promise;
 }
 
 js::JSValueHandle handleGpuDeviceCreateBuffer(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
