@@ -742,3 +742,11 @@ line and reproduced the one finding with CI's pinned image and exact PR commit r
 An exact commit/file/rule/line fingerprint in `.gitleaksignore` then makes the same scan report
 **seven commits scanned; no leaks found**, exit0. No rule or file-wide exclusion was added, and
 no runtime code changed. Logs: `/tmp/prd349-gitleaks-{red,green}.log`.
+
+Squash safety: the historical fingerprint cannot cover the new squash commit. The fixture's
+cache version is therefore shortened to `v1`, preserving its stable version semantics without
+matching the credential heuristic. Scanning the old line through the same pinned scanner's
+stdin mode fails; the new line and the complete proposed net diff both pass. Receipt tests:
+**18 passed**, and targeted Biome check passes. Logs:
+`/tmp/prd349-squash-fixture-{red,green}.log`, `/tmp/prd349-squash-diff-scan.log`,
+`/tmp/prd349-ci-receipt-test.log`.

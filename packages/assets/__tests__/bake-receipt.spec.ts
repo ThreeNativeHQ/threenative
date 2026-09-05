@@ -140,7 +140,7 @@ describe("bake receipt", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     const fixturePass = {
       name: "recook-fixture",
-      cacheKey: "recook-fixture-v1",
+      cacheKey: "v1",
       apply: (input: Buffer) => ({
         auxiliaryOutputs: [
           {
