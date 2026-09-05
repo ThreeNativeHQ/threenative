@@ -4,7 +4,7 @@ Status: COMPLETE. C1-C4 are implemented, the approved duplicate cleanup is compl
 acceptance evidence and required gates are green. No runtime source was changed to hide a failure;
 the historical red controls below were restored immediately. No owner checkpoint remains.
 
-Source PRD: `docs/PRDs/agent-leverage/PRD-357-the-search-path-is-mostly-noise.md`
+Source PRD: `docs/PRDs/done/PRD-357-the-search-path-is-mostly-noise.md`
 
 Delivery branch: `prd-357-search-noise-delivery`
 

@@ -1,6 +1,6 @@
 # PRD-357 — The search path is mostly noise
 
-**Status:** PROPOSED — measured 2026-09-04 on `main` at `8df60c0c`, nothing executed
+**Status:** COMPLETE — C1–C4 implemented; A1–A6 evidence in [the verification record](../../verification/prd-357-search-noise.md).
 **Complexity:** 2 (ignore rules + one gate) + 2 (untracking with a spec-safety check) + 3 (103 MB of
 tracked duplicates) = **7 → HIGH mode**
 **Batch:** `docs/PRDs/agent-leverage/`
