@@ -1,0 +1,19 @@
+{
+  "name": "fps-friction-caused-by",
+  "schemaVersion": 1,
+  "subject": "enemy",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "steps": [{ "kind": "wait", "label": "crate-falls", "waitTicks": 180, "release": true }],
+  "assert": {
+    "causedBy": [
+      {
+        "cause": { "contact": { "entity": "crate", "kind": "trigger", "with": "landing-pad" } },
+        "effect": { "path": "state.crateLanding", "becomes": "landed" },
+        "neverBefore": true,
+        "withinTicks": 8
+      }
+    ]
+  }
+}

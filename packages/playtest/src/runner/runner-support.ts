@@ -266,6 +266,12 @@ export function buildReport(
       ...(afterSnapshot?.scene === undefined && beforeSnapshot?.scene === undefined
         ? {}
         : { scene: afterSnapshot?.scene ?? beforeSnapshot?.scene }),
+      // The node walk answers "where is it now", so the last sample wins for the same reason the
+      // room does. Never merged with the first: a node that has since been removed is gone, and
+      // reporting it from the earlier sample would assert against a scene that no longer exists.
+      ...(afterSnapshot?.sceneNodes === undefined && beforeSnapshot?.sceneNodes === undefined
+        ? {}
+        : { sceneNodes: afterSnapshot?.sceneNodes ?? beforeSnapshot?.sceneNodes }),
       ...(startup === undefined ? {} : { startup }),
       ...(beforeSnapshot?.gameplay === undefined
         && afterSnapshot?.gameplay === undefined

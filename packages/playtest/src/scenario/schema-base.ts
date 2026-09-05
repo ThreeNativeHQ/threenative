@@ -222,6 +222,94 @@ export interface IPlaytestSceneAssertion {
   minVisibleLights?: number;
 }
 
+/**
+ * Bounds on named nodes of the scene graph — the questions a screenshot gets taken for.
+ *
+ * `scene` bounds the room as a whole: is anything lit, does the fog clear the world. This bounds
+ * one object: is the crate where the game says it is, is it inside the camera's frustum, did its
+ * texture load, is the character's mesh actually visible once every ancestor's flag is taken into
+ * account. Each is a frame-destroying failure that leaves every count healthy.
+ *
+ * `select` is required and every other member is optional, but an assertion that sets only
+ * `select` throws at load: selecting nodes and bounding nothing is the vacuous pass this package
+ * refuses. Every bound fails closed — a run whose bridge reported no scene nodes has not reported
+ * a visible crate, it has reported nothing.
+ */
+export interface IPlaytestSceneNodesAssertion {
+  allowTrivial?: string;
+  /** Require every matched node to have at least one clip mounted, or none to. */
+  animated?: boolean;
+  /** Require every matched node's world bounds to intersect the active camera's frustum. */
+  inFrustum?: boolean;
+  /** Ceiling on how many nodes the selector may match. Zero asserts absence. */
+  maxCount?: number;
+  /** Floor on how many nodes the selector must match. Defaults to 1 when absent. */
+  minCount?: number;
+  /** Floor on the summed triangle count of every matched node. */
+  minTriangles?: number;
+  /** Which nodes to bound. A selector that matches fewer than `minCount` fails. */
+  select: IPlaytestSceneNodeSelectorSpec;
+  /** Require every bound texture slot on every matched node to carry pixels. */
+  texturesLoaded?: boolean;
+  /** Require every matched node to be visible with every ancestor visible too. */
+  visible?: boolean;
+}
+
+/**
+ * Which nodes an assertion is about. Every present field must match; an absent field does not
+ * filter. At least one field is required — a selector that filters nothing selects the whole
+ * scene graph and bounds nothing in particular.
+ */
+export interface IPlaytestSceneNodeSelectorSpec {
+  limit?: number;
+  name?: string;
+  nameContains?: string;
+  pathContains?: string;
+  type?: string;
+}
+
+/**
+ * "It happened **because** of that, and never before it."
+ *
+ * The one sentence a proof of a physics puzzle actually has to make, and the one this harness
+ * could not make. A run could already say *a contact happened* and *the state reads `won`*, and
+ * `atSteps` could order them at step boundaries — where a win arriving one tick after the contact
+ * and a win arriving 199 ticks later inside the same step are the same observation. That is the
+ * signature of a terminal state driven by a timer or a distance check that merely lands near a
+ * contact, and it is what a sealed proof exists to refuse.
+ *
+ * Both sides are tick-stamped by the producer. A run whose contacts or transitions carry no ticks
+ * fails closed and names which side was unstamped; it never falls back to step granularity, which
+ * is a different measurement wearing the same name.
+ */
+export interface IPlaytestCausedByAssertion {
+  allowTrivial?: string;
+  cause: IPlaytestCauseSpec;
+  effect: IPlaytestEffectSpec;
+  /**
+   * Fail when the effect is ever observed before the first matching cause. This is the frame-one
+   * fake win: a goal volume overlapping the floor reports `won` before anything touched it.
+   */
+  neverBefore?: boolean;
+  /** Ceiling on `effectTick - causeTick`. A win long after the contact was not caused by it. */
+  withinTicks?: number;
+}
+
+/** What must have happened first. */
+export interface IPlaytestCauseSpec {
+  contact?: { entity: string; kind?: string; with: string };
+  /** A published value reaching a given value, named the same way an effect is. */
+  transition?: IPlaytestEffectSpec;
+}
+
+/** The published value whose change is being explained. */
+export interface IPlaytestEffectSpec {
+  /** `states.<entity>` or `state.<field>`, exactly as the transition log reports it. */
+  path: string;
+  /** The value the path must reach. */
+  becomes: boolean | number | string;
+}
+
 export interface IPlaytestAnimationAssertion {
   advancedFrames?: number;
   allowTrivial?: string;
@@ -429,6 +517,8 @@ export interface IPlaytestScenarioAssertions {
   settled?: IPlaytestSettledAssertion[];
   signals?: IPlaytestSignalAssertion[];
   scene?: IPlaytestSceneAssertion;
+  causedBy?: IPlaytestCausedByAssertion[];
+  sceneNodes?: IPlaytestSceneNodesAssertion[];
   startup?: IPlaytestStartupAssertion;
   states?: IPlaytestStateAssertion[];
   tags?: IPlaytestTagCountAssertion[];
