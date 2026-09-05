@@ -59,7 +59,7 @@ jobs:
   web-reference:
     name: Commit-keyed web conformance reference
     if: >-
-      inputs.ios_only != true &&
+      inputs.ios_only == false &&
       (github.event_name != 'pull_request' ||
        contains(github.event.pull_request.labels.*.name, 'native'))
     runs-on: ubuntu-24.04

@@ -1020,16 +1020,14 @@ describe("CI pipeline structure", () => {
         .filter((line) => !/^\s*#/u.test(line))
         .join("\n");
     const producerCommands = commands(producer);
-    const parityEligibility = [
-      "if: >-",
-      "      inputs.ios_only != true &&",
+    const pullRequestEligibility = [
       "      (github.event_name != 'pull_request' ||",
       "       contains(github.event.pull_request.labels.*.name, 'native'))",
     ].join("\n");
 
     expect(producerCommands).toContain("--target web --out artifacts/conformance/web");
     expect(producer, "web reference is an orphan on unlabelled pull requests").toContain(
-      parityEligibility,
+      ["if: >-", "      inputs.ios_only == false &&", pullRequestEligibility].join("\n"),
     );
     expect(producer).toContain("actions/upload-artifact");
     expect(producer).toContain("native-web-reference-${{ github.sha }}");
@@ -1042,7 +1040,7 @@ describe("CI pipeline structure", () => {
     ] as const) {
       const consumer = commands(section);
       expect(section, `${name} eligibility drifted from the web producer`).toContain(
-        parityEligibility,
+        ["if: >-", "      inputs.ios_only != true &&", pullRequestEligibility].join("\n"),
       );
       expect(section, `${name} is not ordered behind the producer`).toContain(
         "needs: web-reference",
