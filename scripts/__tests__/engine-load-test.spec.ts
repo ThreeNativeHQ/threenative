@@ -464,6 +464,36 @@ describe("the performance baseline gate", () => {
     expect(checkPerformance(report({ arm: "tn-web" }), BASELINES)).toBeUndefined();
   });
 
+  it("rejects a missing baseline when the caller marks the lane required", () => {
+    expect(() =>
+      checkPerformance(report({ arm: "tn-web" }), {}, undefined, { required: true }),
+    ).toThrow(/TN_BENCH_BASELINE_MISSING/u);
+  });
+
+  it("rejects empty and cross-device evidence in required mode", () => {
+    const empty = {
+      "tn-android": {
+        evidence: "docs/verification/accepted.md",
+        rungs: {},
+        status: "accepted" as const,
+      },
+    };
+    expect(() =>
+      checkPerformance(androidReport(8.27, 8.34), empty, undefined, { required: true }),
+    ).toThrow(/TN_BENCH_BASELINE_EMPTY/u);
+    const otherDevice = {
+      "tn-android": {
+        evidence: "docs/verification/accepted.md",
+        identity: { device: "different-device" },
+        rungs: { "L2@4096": 8.27, "L3@16384": 8.34 },
+        status: "accepted" as const,
+      },
+    };
+    expect(() =>
+      checkPerformance(androidReport(8.27, 8.34), otherDevice, undefined, { required: true }),
+    ).toThrow(/TN_BENCH_BASELINE_IDENTITY_MISMATCH/u);
+  });
+
   it("refuses a negative tolerance instead of inverting the comparison", () => {
     expect(() => checkPerformance(androidReport(8.27, 8.34), BASELINES, -0.1)).toThrow(
       /TN_BENCH_BAD_TOLERANCE/u,

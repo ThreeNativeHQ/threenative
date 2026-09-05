@@ -15,6 +15,17 @@ export const ARMS = [
 export type Arm = (typeof ARMS)[number];
 export type RenderMode = "L1" | "L2" | "L3";
 export type BuildType = "release" | "debug";
+export type BenchExitCode = 1 | 2;
+
+export const REQUIRED_PLATFORM_LANES = [
+  "browser-webgpu",
+  "native-linux",
+  "native-windows-macos",
+  "native-android",
+  "native-ios",
+] as const;
+
+export type RequiredPlatformLane = (typeof REQUIRED_PLATFORM_LANES)[number];
 
 export interface IRunReportRung {
   drawCalls: number;
@@ -46,8 +57,27 @@ export interface IRunReport {
   display: { height: number; refreshHz: number; vsync: boolean; width: number };
   driver: { adapter: string; renderer: string };
   engine: { name: "threenative" | "godot"; version: string };
+  identity?: IPerformanceIdentity;
   provisional?: string[];
   rungs: IRunReportRung[];
+}
+
+/** Identity fields that make a timed result comparable to its accepted baseline. */
+export interface IPerformanceIdentity {
+  readonly architecture?: string;
+  readonly artifactHash?: string;
+  readonly browser?: string;
+  readonly device?: string;
+  readonly graphicsBackend?: string;
+  readonly gpu?: string;
+  readonly instrumentationRevision?: string;
+  readonly jsRuntime?: string;
+  readonly nativeBinaryHash?: string;
+  readonly operatingSystem?: string;
+  readonly presentMode?: string;
+  readonly resolution?: string;
+  readonly sourceSha?: string;
+  readonly workloadHash?: string;
 }
 
 export interface IRungSummary {
@@ -78,10 +108,15 @@ export interface IComparison {
   rightSummaries: IRungSummary[];
 }
 
-class BenchError extends Error {
-  constructor(code: string, detail: string) {
+export class BenchError extends Error {
+  readonly code: string;
+  readonly exitCode: BenchExitCode;
+
+  constructor(code: string, detail: string, exitCode: BenchExitCode = 2) {
     super(`${code}: ${detail}`);
     this.name = code;
+    this.code = code;
+    this.exitCode = exitCode;
   }
 }
 
@@ -182,6 +217,41 @@ function median(values: readonly number[]): number {
   return (((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2) as number;
 }
 
+function parseReportIdentity(value: unknown): IPerformanceIdentity | undefined {
+  if (value === undefined) return undefined;
+  const source = requireObject(value, "report.identity");
+  const fields: readonly (keyof IPerformanceIdentity)[] = [
+    "architecture",
+    "artifactHash",
+    "browser",
+    "device",
+    "graphicsBackend",
+    "gpu",
+    "instrumentationRevision",
+    "jsRuntime",
+    "nativeBinaryHash",
+    "operatingSystem",
+    "presentMode",
+    "resolution",
+    "sourceSha",
+    "workloadHash",
+  ];
+  const identity: Partial<Record<keyof IPerformanceIdentity, string>> = {};
+  for (const field of fields) {
+    const fieldValue = source[field];
+    if (fieldValue !== undefined) {
+      if (typeof fieldValue !== "string" || fieldValue.length === 0) {
+        throw new BenchError(
+          "TN_BENCH_BAD_SHAPE",
+          `report.identity.${field} must be a non-empty string`,
+        );
+      }
+      identity[field] = fieldValue;
+    }
+  }
+  return identity;
+}
+
 export function parseRunReport(value: unknown): IRunReport {
   const root = requireObject(value, "report");
   const arm = requireString(root, "arm", "report");
@@ -274,6 +344,7 @@ export function parseRunReport(value: unknown): IRunReport {
     driver: { adapter, renderer },
     ...(deviceCondition === undefined ? {} : { deviceCondition }),
     engine: { name: engineName, version: requireString(engine, "version", "report.engine") },
+    ...(root.identity === undefined ? {} : { identity: parseReportIdentity(root.identity) }),
     ...(provisional === undefined ? {} : { provisional }),
     rungs,
   };
@@ -351,10 +422,12 @@ export const PERFORMANCE_BASELINES: Readonly<Record<string, IPerformanceBaseline
   //
   // **Never quote these as performance figures.** They are a tripwire, not a measurement.
   "tn-android@emulator": {
+    status: "diagnostic",
     evidence: "docs/verification/prd-130-emulator-canary-2026-08-17.md",
     rungs: { "L2@4096": 75.17, "L2@16384": 204.08, "L3@4096": 48.03, "L3@16384": 65.76 },
   },
   "tn-android": {
+    status: "diagnostic",
     // docs/verification/prd-130-phase-6-2026-08-16.md — Pixel 8 `37251FDJH0037Z`, V8, vsync on at
     // 120 Hz. Every rung is at the frame interval, so these are ceilings on V8's real cost.
     evidence: "docs/verification/prd-130-phase-6-2026-08-16.md",
@@ -362,10 +435,313 @@ export const PERFORMANCE_BASELINES: Readonly<Record<string, IPerformanceBaseline
   },
 };
 
+export type PerformanceBaselineStatus = "accepted" | "diagnostic" | "unavailable";
+
+export interface IPerformanceBaselineIdentity extends IPerformanceIdentity {
+  readonly device: string;
+}
+
 export interface IPerformanceBaseline {
   readonly evidence: string;
   /** p50 milliseconds, keyed `<mode>@<objectCount>`. */
   readonly rungs: Readonly<Record<string, number>>;
+  /** Accepted baselines are eligible for required gates; old entries remain diagnostic by default. */
+  readonly status?: PerformanceBaselineStatus;
+  readonly reason?: string;
+  readonly lane?: string;
+  readonly workload?: string;
+  readonly device?: string;
+  readonly identity?: IPerformanceBaselineIdentity;
+}
+
+export interface IPerformanceLaneBaseline {
+  readonly status: PerformanceBaselineStatus;
+  readonly evidence?: string;
+  readonly provenance?: string;
+  readonly reason?: string;
+  readonly rungs?: Readonly<Record<string, number>>;
+  readonly identity?: IPerformanceBaselineIdentity;
+}
+
+export interface IPerformanceLane {
+  readonly id: string;
+  readonly platform: RequiredPlatformLane;
+  readonly arms: readonly Arm[];
+  readonly workload: string;
+  readonly requiredMetrics: readonly string[];
+  readonly producer: string;
+  readonly evidenceClass: string;
+  readonly baseline: IPerformanceLaneBaseline;
+}
+
+export interface IPerformanceLaneManifest {
+  readonly schemaVersion: 1;
+  readonly policyRevision: string;
+  readonly lanes: readonly IPerformanceLane[];
+}
+
+function parseStringArray(value: unknown, field: string, allowEmpty = false): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.some((entry) => typeof entry !== "string" || entry.length === 0)
+  ) {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `${field} must be an array of non-empty strings`,
+    );
+  }
+  if (!allowEmpty && value.length === 0) {
+    throw new BenchError("TN_BENCH_BAD_LANE_MANIFEST", `${field} must not be empty`);
+  }
+  return [...value];
+}
+
+function optionalString(
+  source: Record<string, unknown>,
+  key: string,
+  field: string,
+): string | undefined {
+  const value = source[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `${field}.${key} must be a non-empty string`,
+    );
+  }
+  return value;
+}
+
+function parseIdentity(
+  value: unknown,
+  field: string,
+  required: boolean,
+): IPerformanceBaselineIdentity | undefined {
+  if (value === undefined) {
+    if (required)
+      throw new BenchError(
+        "TN_BENCH_BAD_LANE_MANIFEST",
+        `${field} is required for an accepted baseline`,
+      );
+    return undefined;
+  }
+  const source = requireObject(value, field);
+  const device = optionalString(source, "device", field);
+  if (required && device === undefined) {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `${field}.device is required for an accepted baseline`,
+    );
+  }
+  const identity = {
+    architecture: optionalString(source, "architecture", field),
+    artifactHash: optionalString(source, "artifactHash", field),
+    browser: optionalString(source, "browser", field),
+    device: device ?? "",
+    graphicsBackend: optionalString(source, "graphicsBackend", field),
+    gpu: optionalString(source, "gpu", field),
+    instrumentationRevision: optionalString(source, "instrumentationRevision", field),
+    jsRuntime: optionalString(source, "jsRuntime", field),
+    nativeBinaryHash: optionalString(source, "nativeBinaryHash", field),
+    operatingSystem: optionalString(source, "operatingSystem", field),
+    presentMode: optionalString(source, "presentMode", field),
+    resolution: optionalString(source, "resolution", field),
+    sourceSha: optionalString(source, "sourceSha", field),
+    workloadHash: optionalString(source, "workloadHash", field),
+  };
+  if (required) {
+    const missing = [
+      "architecture",
+      "artifactHash",
+      "browser",
+      "graphicsBackend",
+      "gpu",
+      "instrumentationRevision",
+      "jsRuntime",
+      "operatingSystem",
+      "presentMode",
+      "resolution",
+      "sourceSha",
+      "workloadHash",
+    ].filter((key) => identity[key as keyof typeof identity] === undefined);
+    if (missing.length > 0) {
+      throw new BenchError(
+        "TN_BENCH_BAD_LANE_MANIFEST",
+        `${field} is missing identity fields: ${missing.join(", ")}`,
+      );
+    }
+  }
+  return identity as IPerformanceBaselineIdentity;
+}
+
+function parseLaneBaseline(value: unknown, field: string): IPerformanceLaneBaseline {
+  const source = requireObject(value, field);
+  const status = optionalString(source, "status", field);
+  if (status !== "accepted" && status !== "diagnostic" && status !== "unavailable") {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `${field}.status must be accepted, diagnostic, or unavailable`,
+    );
+  }
+  const reason = optionalString(source, "reason", field);
+  const evidence = optionalString(source, "evidence", field);
+  const provenance = optionalString(source, "provenance", field);
+  const rawRungs = source.rungs;
+  let rungs: Record<string, number> | undefined;
+  if (rawRungs !== undefined) {
+    const parsed = requireObject(rawRungs, `${field}.rungs`);
+    rungs = {};
+    for (const [rung, valueForRung] of Object.entries(parsed)) {
+      if (
+        rung.length === 0 ||
+        typeof valueForRung !== "number" ||
+        !Number.isFinite(valueForRung) ||
+        valueForRung <= 0
+      ) {
+        throw new BenchError(
+          "TN_BENCH_BAD_LANE_MANIFEST",
+          `${field}.rungs must contain finite positive numbers keyed by rung`,
+        );
+      }
+      rungs[rung] = valueForRung;
+    }
+  }
+  if (status === "unavailable") {
+    if (reason === undefined) {
+      throw new BenchError(
+        "TN_BENCH_BAD_LANE_MANIFEST",
+        `${field}.reason is required when unavailable`,
+      );
+    }
+    if (rungs !== undefined || evidence !== undefined || provenance !== undefined) {
+      throw new BenchError(
+        "TN_BENCH_BAD_LANE_MANIFEST",
+        `${field} unavailable baselines cannot carry accepted evidence or rung values`,
+      );
+    }
+    return { reason, status };
+  }
+  const evidencePath = evidence ?? provenance;
+  if (evidencePath === undefined) {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `${field} must name evidence or provenance when status is ${status}`,
+    );
+  }
+  if (rungs === undefined || Object.keys(rungs).length === 0) {
+    throw new BenchError("TN_BENCH_BAD_LANE_MANIFEST", `${field}.rungs must not be empty`);
+  }
+  const identity = parseIdentity(source.identity, `${field}.identity`, status === "accepted");
+  return {
+    evidence: evidencePath,
+    ...(provenance === undefined ? {} : { provenance }),
+    ...(reason === undefined ? {} : { reason }),
+    rungs,
+    ...(identity === undefined ? {} : { identity }),
+    status,
+  };
+}
+
+/** Parse the checked-in lane contract; missing observations are data, not an implicit pass. */
+export function parsePerformanceLaneManifest(value: unknown): IPerformanceLaneManifest {
+  const root = requireObject(value, "lane manifest");
+  if (root.schemaVersion !== 1) {
+    throw new BenchError("TN_BENCH_BAD_LANE_MANIFEST", "schemaVersion must be 1");
+  }
+  const policyRevision = requireString(root, "policyRevision", "lane manifest");
+  const rawLanes = root.lanes;
+  if (!Array.isArray(rawLanes) || rawLanes.length === 0) {
+    throw new BenchError("TN_BENCH_BAD_LANE_MANIFEST", "lanes must not be empty");
+  }
+  const seenIds = new Set<string>();
+  const seenPlatforms = new Set<string>();
+  const lanes = rawLanes.map((valueForLane, index) => {
+    const field = `lane manifest.lanes[${index}]`;
+    const source = requireObject(valueForLane, field);
+    const id = requireString(source, "id", field);
+    const platform = requireString(source, "platform", field);
+    if (!(REQUIRED_PLATFORM_LANES as readonly string[]).includes(platform)) {
+      throw new BenchError(
+        "TN_BENCH_BAD_LANE_MANIFEST",
+        `${field}.platform ${platform} is unknown`,
+      );
+    }
+    if (seenIds.has(id) || seenPlatforms.has(platform)) {
+      throw new BenchError("TN_BENCH_BAD_LANE_MANIFEST", `${field} duplicates lane id or platform`);
+    }
+    seenIds.add(id);
+    seenPlatforms.add(platform);
+    const arms = parseStringArray(source.arms, `${field}.arms`, true).map((arm) => {
+      if (!(ARMS as readonly string[]).includes(arm)) {
+        throw new BenchError(
+          "TN_BENCH_BAD_LANE_MANIFEST",
+          `${field}.arms contains unknown arm ${arm}`,
+        );
+      }
+      return arm as Arm;
+    });
+    return {
+      arms,
+      baseline: parseLaneBaseline(source.baseline, `${field}.baseline`),
+      evidenceClass: requireString(source, "evidenceClass", field),
+      id,
+      platform: platform as RequiredPlatformLane,
+      producer: requireString(source, "producer", field),
+      requiredMetrics: parseStringArray(source.requiredMetrics, `${field}.requiredMetrics`),
+      workload: requireString(source, "workload", field),
+    };
+  });
+  const missingPlatforms = REQUIRED_PLATFORM_LANES.filter(
+    (platform) => !seenPlatforms.has(platform),
+  );
+  if (missingPlatforms.length > 0) {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `missing required platform lanes: ${missingPlatforms.join(", ")}`,
+    );
+  }
+  return { lanes, policyRevision, schemaVersion: 1 };
+}
+
+export function laneForArm(
+  manifest: IPerformanceLaneManifest,
+  arm: Arm,
+): IPerformanceLane | undefined {
+  const matches = manifest.lanes.filter((lane) => lane.arms.includes(arm));
+  if (matches.length > 1) {
+    throw new BenchError(
+      "TN_BENCH_AMBIGUOUS_LANE",
+      `${arm} is assigned to multiple lanes: ${matches.map((lane) => lane.id).join(", ")}`,
+    );
+  }
+  return matches[0];
+}
+
+export function laneForId(
+  manifest: IPerformanceLaneManifest,
+  id: string,
+): IPerformanceLane | undefined {
+  return manifest.lanes.find((lane) => lane.id === id);
+}
+
+export function baselineForLane(lane: IPerformanceLane): IPerformanceBaseline | undefined {
+  if (lane.baseline.status !== "accepted") return undefined;
+  const evidence = lane.baseline.evidence ?? lane.baseline.provenance;
+  const rungs = lane.baseline.rungs;
+  if (evidence === undefined || rungs === undefined || lane.baseline.identity === undefined) {
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `${lane.id} accepted baseline is missing evidence, rungs, or identity`,
+    );
+  }
+  return {
+    evidence,
+    identity: lane.baseline.identity,
+    lane: lane.id,
+    rungs,
+    status: lane.baseline.status,
+    workload: lane.workload,
+  };
 }
 
 /**
@@ -393,6 +769,117 @@ export interface IPerformanceCheck {
   readonly tolerance: number;
 }
 
+export interface IPerformanceCheckOptions {
+  /** Required lanes fail with exit-code 2 when no accepted baseline is available. */
+  readonly required?: boolean;
+  /** Manifest lane identity expected by the caller. */
+  readonly laneId?: string;
+}
+
+function reportDeviceIdentity(report: IRunReport): string {
+  return report.deviceCondition?.serial ?? report.identity?.device ?? report.device.label;
+}
+
+function validateBaseline(
+  report: IRunReport,
+  baseline: IPerformanceBaseline,
+  options: IPerformanceCheckOptions,
+): void {
+  if (options.required && (baseline.status === "diagnostic" || baseline.status === "unavailable")) {
+    throw new BenchError(
+      "TN_BENCH_BASELINE_MISSING",
+      `${report.arm} has no accepted baseline${baseline.reason === undefined ? "" : `: ${baseline.reason}`}`,
+    );
+  }
+  if (
+    typeof baseline.evidence !== "string" ||
+    baseline.evidence.length === 0 ||
+    /TBD|UNVERIFIED|missing/i.test(baseline.evidence)
+  ) {
+    throw new BenchError(
+      "TN_BENCH_BASELINE_EVIDENCE_MISSING",
+      `${report.arm} baseline evidence is empty or not an accepted record: ${String(baseline.evidence)}`,
+    );
+  }
+  if (
+    typeof baseline.rungs !== "object" ||
+    baseline.rungs === null ||
+    Array.isArray(baseline.rungs)
+  ) {
+    throw new BenchError(
+      "TN_BENCH_BASELINE_EMPTY",
+      `${report.arm} baseline evidence has no rung map; an empty baseline cannot pass`,
+    );
+  }
+  const rungEntries = Object.entries(baseline.rungs);
+  if (rungEntries.length === 0) {
+    throw new BenchError(
+      "TN_BENCH_BASELINE_EMPTY",
+      `${report.arm} baseline evidence names no rungs; an empty baseline cannot pass`,
+    );
+  }
+  for (const [rung, value] of rungEntries) {
+    if (!/^L[123]@[1-9][0-9]*$/u.test(rung) || !Number.isFinite(value) || value <= 0) {
+      throw new BenchError(
+        "TN_BENCH_BASELINE_BAD_RUNG",
+        `${report.arm} baseline rung ${rung} must carry a finite positive timing`,
+      );
+    }
+  }
+  if (
+    options.laneId !== undefined &&
+    baseline.lane !== undefined &&
+    baseline.lane !== options.laneId
+  ) {
+    throw new BenchError(
+      "TN_BENCH_BASELINE_IDENTITY_MISMATCH",
+      `${report.arm} baseline belongs to lane ${baseline.lane}, requested ${options.laneId}`,
+    );
+  }
+  const identity = baseline.identity;
+  const expectedDevice = baseline.device ?? identity?.device;
+  if (expectedDevice !== undefined && expectedDevice !== reportDeviceIdentity(report)) {
+    throw new BenchError(
+      "TN_BENCH_BASELINE_IDENTITY_MISMATCH",
+      `${report.arm} baseline device ${expectedDevice} does not match run device ${reportDeviceIdentity(report)}`,
+    );
+  }
+  if (identity === undefined) return;
+  const reportIdentity = report.identity;
+  if (reportIdentity === undefined) {
+    if (options.required) {
+      throw new BenchError(
+        "TN_BENCH_BASELINE_IDENTITY_MISSING",
+        `${report.arm} required run has no source/artifact identity to compare with its baseline`,
+      );
+    }
+    return;
+  }
+  const identityFields: readonly (keyof IPerformanceIdentity)[] = [
+    "architecture",
+    "browser",
+    "graphicsBackend",
+    "gpu",
+    "instrumentationRevision",
+    "jsRuntime",
+    "nativeBinaryHash",
+    "operatingSystem",
+    "presentMode",
+    "resolution",
+    "workloadHash",
+  ];
+  for (const field of identityFields) {
+    const baselineValue = identity[field];
+    const reportValue = reportIdentity[field];
+    if (baselineValue !== undefined && reportValue !== baselineValue) {
+      throw new BenchError(
+        "TN_BENCH_BASELINE_IDENTITY_MISMATCH",
+        `${report.arm} baseline ${field} ${baselineValue} does not match run ${reportValue ?? "missing"}`,
+      );
+    }
+  }
+}
+
 /**
  * Compares a run against its arm's recorded baseline. Fails closed in every direction.
  *
@@ -406,6 +893,7 @@ export function checkPerformance(
   report: IRunReport,
   baselines: Readonly<Record<string, IPerformanceBaseline>> = PERFORMANCE_BASELINES,
   tolerance: number = PERFORMANCE_REGRESSION_TOLERANCE,
+  options: IPerformanceCheckOptions = {},
 ): IPerformanceCheck | undefined {
   // An emulator run is compared against the emulator baseline, never the phone's: the same arm on
   // software rendering is 8x slower for identical work, so crossing them would report a regression on
@@ -413,7 +901,16 @@ export function checkPerformance(
   const serial = report.deviceCondition?.serial ?? "";
   const key = /^emulator-/u.test(serial) ? `${report.arm}@emulator` : report.arm;
   const baseline = baselines[key];
-  if (baseline === undefined) return undefined;
+  if (baseline === undefined) {
+    if (options.required) {
+      throw new BenchError(
+        "TN_BENCH_BASELINE_MISSING",
+        `${report.arm} has no accepted baseline for requested lane${options.laneId === undefined ? "" : ` ${options.laneId}`}`,
+      );
+    }
+    return undefined;
+  }
+  validateBaseline(report, baseline, options);
   if (report.provisional !== undefined && report.provisional.length > 0) {
     throw new BenchError(
       "TN_BENCH_PROVISIONAL_BASELINE",

@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "policyRevision": "prd-358-v1",
+  "lanes": [
+    {
+      "id": "browser-webgpu",
+      "platform": "browser-webgpu",
+      "arms": ["tn-web"],
+      "workload": "platformer-production",
+      "requiredMetrics": ["drawCalls", "triangles", "frameP95Ms"],
+      "producer": "scripts/engine-load-test/cli.ts --arm tn-web",
+      "evidenceClass": "hosted-software-contract",
+      "baseline": {
+        "status": "unavailable",
+        "reason": "Hosted software timing is advisory until a pinned physical GPU baseline is calibrated."
+      }
+    },
+    {
+      "id": "native-linux",
+      "platform": "native-linux",
+      "arms": ["tn-desktop"],
+      "workload": "platformer-production",
+      "requiredMetrics": ["drawCalls", "triangles", "frameP95Ms", "phaseP95Ms"],
+      "producer": "packages/runtime-native/scripts/profile-production.mjs --target desktop",
+      "evidenceClass": "hosted-telemetry",
+      "baseline": {
+        "status": "unavailable",
+        "reason": "No calibrated dedicated Linux GPU baseline has been accepted."
+      }
+    },
+    {
+      "id": "native-windows-macos",
+      "platform": "native-windows-macos",
+      "arms": [],
+      "workload": "platformer-production",
+      "requiredMetrics": ["drawCalls", "triangles", "frameP95Ms", "phaseP95Ms"],
+      "producer": "packages/runtime-native/scripts/profile-production.mjs --target desktop",
+      "evidenceClass": "hosted-telemetry",
+      "baseline": {
+        "status": "unavailable",
+        "reason": "Windows and macOS GPU identities require independent provisioned baselines."
+      }
+    },
+    {
+      "id": "native-android",
+      "platform": "native-android",
+      "arms": ["tn-android"],
+      "workload": "platformer-production",
+      "requiredMetrics": [
+        "drawCalls",
+        "triangles",
+        "frameP95Ms",
+        "phaseP95Ms",
+        "startupP95Ms",
+        "memoryHighWaterMiB"
+      ],
+      "producer": "packages/runtime-native/scripts/profile-production.mjs --target android",
+      "evidenceClass": "physical-hardware-comparison",
+      "baseline": {
+        "status": "unavailable",
+        "reason": "Historical Android ladder numbers are diagnostic; ten-pair calibration is not accepted yet."
+      }
+    },
+    {
+      "id": "native-ios",
+      "platform": "native-ios",
+      "arms": [],
+      "workload": "platformer-production",
+      "requiredMetrics": [
+        "drawCalls",
+        "triangles",
+        "frameP95Ms",
+        "phaseP95Ms",
+        "startupP95Ms",
+        "memoryHighWaterMiB"
+      ],
+      "producer": "packages/runtime-native/scripts/profile-production.mjs --target ios",
+      "evidenceClass": "physical-hardware-comparison",
+      "baseline": {
+        "status": "unavailable",
+        "reason": "No signed physical iOS device baseline has been provisioned or calibrated."
+      }
+    }
+  ]
+}

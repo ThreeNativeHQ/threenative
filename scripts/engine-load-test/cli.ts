@@ -3,11 +3,19 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runPerformanceRegressionCli } from "../performance-regression/compare.js";
 import { driveBenchmarkPage, serveDirectory, startProcess, waitForUrl } from "./browser.js";
 import {
+  BenchError,
+  type IPerformanceBaseline,
+  type IPerformanceCheck,
   type IRunReport,
+  baselineForLane,
   checkPerformance,
   compare,
+  laneForArm,
+  laneForId,
+  parsePerformanceLaneManifest,
   parseRunReport,
   renderArmMarkdown,
   renderComparisonMarkdown,
@@ -21,6 +29,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 const artifactRoot = path.join(repoRoot, "artifacts/engine-load-test");
 const TN_PORT = 5199;
 const GODOT_PORT = 5198;
+const DEFAULT_LANE_MANIFEST = path.join(repoRoot, "scripts/performance-regression/lanes.json");
 
 interface ILadderOptions {
   frames: number;
@@ -105,86 +114,188 @@ async function loadArm(arm: string): Promise<IRunReport> {
   return parseRunReport(JSON.parse(await readFile(file, "utf8")));
 }
 
+function requiredBaselineMode(): boolean {
+  return (
+    process.argv.includes("--required-baseline") || process.argv.includes("--require-baseline")
+  );
+}
+
+async function readLaneManifest(file: string) {
+  try {
+    return parsePerformanceLaneManifest(JSON.parse(await readFile(file, "utf8")));
+  } catch (error) {
+    if (error instanceof BenchError) throw error;
+    throw new BenchError(
+      "TN_BENCH_BAD_LANE_MANIFEST",
+      `could not read or parse ${file}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function requiredBaseline(report: IRunReport): Promise<{
+  readonly baselines: Record<string, IPerformanceBaseline>;
+  readonly laneId: string;
+}> {
+  const manifestFile = flag("lanes") ?? DEFAULT_LANE_MANIFEST;
+  const manifest = await readLaneManifest(manifestFile);
+  const requestedLane = flag("lane");
+  const lane =
+    requestedLane === undefined
+      ? laneForArm(manifest, report.arm)
+      : laneForId(manifest, requestedLane);
+  if (lane === undefined) {
+    throw new BenchError(
+      "TN_BENCH_LANE_MISSING",
+      `no manifest lane is assigned to ${requestedLane ?? report.arm}; requested coverage cannot pass`,
+    );
+  }
+  if (!lane.arms.includes(report.arm)) {
+    throw new BenchError(
+      "TN_BENCH_LANE_IDENTITY_MISMATCH",
+      `requested lane ${lane.id} does not accept report arm ${report.arm}`,
+    );
+  }
+  const baseline = baselineForLane(lane);
+  if (baseline === undefined) return { baselines: {}, laneId: lane.id };
+  const key = report.deviceCondition?.serial.startsWith("emulator-")
+    ? `${report.arm}@emulator`
+    : report.arm;
+  return { baselines: { [key]: baseline }, laneId: lane.id };
+}
+
+async function runRequestedArm(arm: string, options: ILadderOptions): Promise<IRunReport> {
+  if (arm === "tn-web") return runTnWeb(options);
+  if (arm === "godot-web") return runGodotWeb(options);
+  if (arm === "tn-desktop") return parseRunReport(await runTnDesktop(repoRoot, options));
+  if (arm === "godot-desktop") return parseRunReport(await runGodotDesktop(repoRoot, options));
+  if (arm === "tn-android" || arm === "godot-android") {
+    return parseRunReport(
+      await runAndroidArm(repoRoot, arm, {
+        ...options,
+        allowEmulator: process.argv.includes("--allow-emulator"),
+        allowLowBattery: process.argv.includes("--allow-low-battery"),
+        timeoutMs: timeoutFor(options),
+      }),
+    );
+  }
+  throw new BenchError("TN_BENCH_BAD_ARM", `unknown arm ${arm}`);
+}
+
+async function checkArmPerformance(
+  report: IRunReport,
+  required: boolean,
+): Promise<IPerformanceCheck | undefined> {
+  if (!required) return checkPerformance(report);
+  const input = await requiredBaseline(report);
+  return checkPerformance(report, input.baselines, undefined, {
+    laneId: input.laneId,
+    required: true,
+  });
+}
+
+async function runArmCommand(arm: string, options: ILadderOptions): Promise<void> {
+  const report = await runRequestedArm(arm, options);
+  if (report.arm !== arm) {
+    throw new BenchError(
+      "TN_BENCH_ARM_MISMATCH",
+      `asked for ${arm}, the run reported ${report.arm}. Check the build's platform stamp.`,
+    );
+  }
+  const file = path.join(artifactRoot, `${flag("out") ?? arm}.json`);
+  await writeFile(file, `${JSON.stringify(report, null, 2)}\n`);
+  process.stdout.write(`${renderArmMarkdown(report)}\n\nwrote ${path.relative(repoRoot, file)}\n`);
+
+  const required = requiredBaselineMode();
+  if (process.argv.includes("--skip-baseline")) {
+    if (required) {
+      throw new BenchError(
+        "TN_BENCH_REQUIRED_BASELINE_SKIPPED",
+        "required mode cannot skip a baseline",
+      );
+    }
+    process.stderr.write("baseline check skipped by --skip-baseline\n");
+    return;
+  }
+  const check = await checkArmPerformance(report, required);
+  if (check === undefined) return;
+  process.stdout.write(`\n${renderPerformanceCheck(check)}\n`);
+  if (check.regressions.length > 0) {
+    throw new BenchError(
+      "TN_BENCH_PERFORMANCE_REGRESSION",
+      `${check.regressions.length} rung(s) slower than the ${check.arm} baseline.`,
+      1,
+    );
+  }
+}
+
+async function runRegressionCommand(): Promise<void> {
+  const result = await runPerformanceRegressionCli({
+    input: flag("input") ?? flag("report"),
+    output: flag("out"),
+    policy: flag("policy"),
+  });
+  process.stdout.write(`${result.markdown}\n`);
+  if (result.exitCode !== 0) process.exitCode = result.exitCode;
+}
+
+async function runReportCheckCommand(file: string): Promise<void> {
+  let report: IRunReport;
+  try {
+    report = parseRunReport(JSON.parse(await readFile(file, "utf8")));
+  } catch (error) {
+    if (error instanceof BenchError) throw error;
+    throw new BenchError(
+      "TN_BENCH_BAD_REPORT_INPUT",
+      `could not read or parse ${file}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const check = await checkArmPerformance(report, requiredBaselineMode());
+  if (check === undefined) return;
+  process.stdout.write(`${renderPerformanceCheck(check)}\n`);
+  if (check.regressions.length > 0) {
+    throw new BenchError(
+      "TN_BENCH_PERFORMANCE_REGRESSION",
+      `${check.regressions.length} rung(s) slower than the ${check.arm} baseline.`,
+      1,
+    );
+  }
+}
+
+async function runProductComparison(): Promise<void> {
+  const left = await loadArm(flag("left") ?? "tn-web");
+  const right = await loadArm(flag("right") ?? "godot-web");
+  const markdown = renderComparisonMarkdown(compare(left, right));
+  const out = flag("doc");
+  if (out !== undefined) await writeFile(path.join(repoRoot, out), `${markdown}\n`);
+  process.stdout.write(`${markdown}\n`);
+}
+
+function printUsage(): void {
+  process.stdout.write(
+    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--policy policy.json] [--out summary.json]\n",
+  );
+}
+
 async function main(): Promise<void> {
   await mkdir(artifactRoot, { recursive: true });
-  const options = ladderOptions();
+  if (process.argv.includes("--regression")) return runRegressionCommand();
+  const checkReport = flag("check-report");
+  if (checkReport !== undefined) return runReportCheckCommand(checkReport);
   const arm = flag("arm");
-
-  if (arm !== undefined) {
-    let report: IRunReport;
-    if (arm === "tn-web") report = await runTnWeb(options);
-    else if (arm === "godot-web") report = await runGodotWeb(options);
-    else if (arm === "tn-desktop") report = parseRunReport(await runTnDesktop(repoRoot, options));
-    else if (arm === "godot-desktop")
-      report = parseRunReport(await runGodotDesktop(repoRoot, options));
-    else if (arm === "tn-android" || arm === "godot-android") {
-      // The APK is built and installed separately; this drives the one already on the device and
-      // collects its report. `--allow-low-battery` marks the run provisional rather than refusing it.
-      report = parseRunReport(
-        await runAndroidArm(repoRoot, arm, {
-          ...options,
-          allowEmulator: process.argv.includes("--allow-emulator"),
-          allowLowBattery: process.argv.includes("--allow-low-battery"),
-          timeoutMs: timeoutFor(options),
-        }),
-      );
-    } else throw new Error(`TN_BENCH_BAD_ARM: ${arm}`);
-    // The report has to agree with the arm that was asked for. A build-time platform stamp that
-    // failed to substitute filed phone runs as `tn-desktop` and nothing noticed, so the mismatch is
-    // an error rather than a note: an artifact that misnames its own arm is worse than none.
-    if (report.arm !== arm) {
-      throw new Error(
-        `TN_BENCH_ARM_MISMATCH: asked for ${arm}, the run reported ${report.arm}. Check the build's platform stamp.`,
-      );
-    }
-    // `--out` names the artifact so a diagnostic run (a floor control, an extended ladder) cannot
-    // silently overwrite the ladder the published comparison is built from.
-    const file = path.join(artifactRoot, `${flag("out") ?? arm}.json`);
-    await writeFile(file, `${JSON.stringify(report, null, 2)}\n`);
-    process.stdout.write(
-      `${renderArmMarkdown(report)}\n\nwrote ${path.relative(repoRoot, file)}\n`,
-    );
-
-    // A benchmark that measures and never compares is a number nobody acts on. This is where a
-    // regression gets caught: the arm's recorded baseline is checked here, on the run that just
-    // happened, rather than by somebody reading two files a week later. Missing baseline for an arm
-    // is silence, not a pass; a missing *rung* throws inside checkPerformance.
-    //
-    // A provisional report throws rather than passing, which means a run under the condition gate's
-    // override cannot clear a bar. `--skip-baseline` exists for the deliberate diagnostic case — a
-    // floor control, a novsync probe — and says so in the output rather than being invisible.
-    if (process.argv.includes("--skip-baseline")) {
-      process.stderr.write("baseline check skipped by --skip-baseline\n");
-      return;
-    }
-    const check = checkPerformance(report);
-    if (check !== undefined) {
-      process.stdout.write(`\n${renderPerformanceCheck(check)}\n`);
-      if (check.regressions.length > 0) {
-        throw new Error(
-          `TN_BENCH_PERFORMANCE_REGRESSION: ${check.regressions.length} rung(s) slower than the ${check.arm} baseline.`,
-        );
-      }
-    }
-    return;
-  }
-
-  if (process.argv.includes("--compare")) {
-    const left = await loadArm(flag("left") ?? "tn-web");
-    const right = await loadArm(flag("right") ?? "godot-web");
-    const markdown = renderComparisonMarkdown(compare(left, right));
-    const out = flag("doc");
-    if (out !== undefined) await writeFile(path.join(repoRoot, out), `${markdown}\n`);
-    process.stdout.write(`${markdown}\n`);
-    return;
-  }
-
-  process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--out name] [--skip-baseline] [--allow-emulator] [--frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n",
-  );
+  if (arm !== undefined) return runArmCommand(arm, ladderOptions());
+  if (process.argv.includes("--compare")) return runProductComparison();
+  printUsage();
 }
 
 main().catch((error: unknown) => {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
+  process.exitCode =
+    error instanceof BenchError
+      ? error.exitCode
+      : error &&
+          typeof error === "object" &&
+          "exitCode" in error &&
+          (error.exitCode === 1 || error.exitCode === 2)
+        ? error.exitCode
+        : 1;
 });
