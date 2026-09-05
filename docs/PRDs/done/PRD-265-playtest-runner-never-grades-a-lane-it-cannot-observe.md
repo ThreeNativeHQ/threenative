@@ -4,10 +4,18 @@ prd_contract: v1
 
 # PRD-265 — the playtest runner never grades a lane it cannot observe
 
-**Status:** PROPOSED — filed 2026-08-29, measured at `84ca45b3`. Found by a test-gap sweep of
+**Status: DONE — 2026-09-04.** All three sites are guarded, each with the negative control its
+acceptance criterion names, in `packages/playtest/__tests__/unobservable-lane.spec.ts`. The
+reds, the greens, and the live desktop report that showed §1 before and after are in
+[`docs/verification/prd-265-unobservable-lanes-2026-09-04.md`](../../verification/prd-265-unobservable-lanes-2026-09-04.md).
+§1 is fixed in `resolveDiagnosticsPolicy`, which now takes the target the run executed on,
+rather than in the scenarios: the record explains why the first attempt — one that needed a
+`diagnostics` block on every device scenario — was a fix in the wrong place.
+
+Filed 2026-08-29, measured at `84ca45b3`. Found by a test-gap sweep of
 `packages/playtest` (fail-closed audit, four explorer passes); all three sites re-verified by hand
 at HEAD before filing. Not a scan item from
-[the 2026-08-23 tech-debt scan](./README.md) — the two fail-open holes that scan found
+[the 2026-08-23 tech-debt scan](../tech-debt-code-quality/README.md) — the two fail-open holes that scan found
 in the schema layer were closed by PRD-199 and PRD-204; these three are in the *runner semantics*
 layer, which that scan did not open.
 

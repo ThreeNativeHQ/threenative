@@ -14,7 +14,7 @@ import {
 import { createRequire } from "node:module";
 import path from "node:path";
 import { assertBudget, measureBudget, parseBudget } from "./budget.js";
-import type { IAssetBudget } from "./budget.js";
+import type { IAssetBudget, IAssetRuntimeDecoderCapabilities } from "./budget.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
 import { applyPasses } from "./pass-chain.js";
@@ -59,6 +59,7 @@ import type {
   IPassCostRow,
   ISimplifyRow,
   ISkippedCompressionRow,
+  ISkippedReportRow,
   ITextureSizeRow,
   PassCostStatus,
 } from "./report.js";
@@ -107,6 +108,8 @@ export interface IAssetAuxiliaryOutput {
 export interface IAssetPass {
   /** Deterministic settings that change output bytes; omitted for identity/default passes. */
   readonly cacheKey?: string;
+  /** True when this pass's emitted output requires a runtime decoder unavailable on mobile. */
+  readonly needsRuntimeDecoder?: boolean;
   readonly name: string;
   /**
    * JSON-serializable snapshot of every option that changes this pass's output. Part of the
@@ -246,10 +249,11 @@ export interface IAssetCompileResult {
   /** One cost row per pass, driver-measured; empty when no bake ran. */
   readonly passCosts: readonly IPassCostRow[];
   /**
-   * What each `assets.*: "none"` shipped uncompressed, per kind; empty when nothing opted out.
-   * Turning a convention off does not turn its measurement off.
+   * What built-in compression shipped uncompressed, plus caller-supplied decoder-dependent passes
+   * omitted for this target as `kind: "pass"` rows. Turning a convention off does not turn its
+   * measurement off.
    */
-  readonly skippedCompression: readonly ISkippedCompressionRow[];
+  readonly skippedCompression: readonly ISkippedReportRow[];
   readonly receipt?: IBakeReceipt;
   readonly report?: IAssetHealthReport;
   readonly skipped: number;
@@ -317,20 +321,23 @@ interface ICompileLayout {
   readonly exclude: readonly string[];
   /** True when the built-in pass registry is in play — a caller that supplied its own opted out of nothing. */
   readonly builtinRegistry: boolean;
-  /** False on a platform with no WebAssembly, where compressed output cannot be decoded at all. */
-  readonly decodesCompression: boolean;
   /** `assets.concurrency` from the game config, when it declared one. */
   readonly concurrency: number | undefined;
+  readonly runtimeDecoderCapabilities: IAssetRuntimeDecoderCapabilities;
   readonly outputRoot: string;
   /** The built-in registry's serialisable mirror; empty when the caller supplied passes. */
   readonly passSpecs: readonly PassSpec[];
+  /** Names of caller-supplied decoder-dependent passes omitted on a target without a decoder. */
+  readonly skippedPasses: readonly string[];
   readonly passes: readonly IAssetPass[];
   readonly sourceRoot: string;
   readonly targets: IAssetTargets;
-  /** True when the built-in model pass is part of `passes`. */
-  readonly modelsActive: boolean;
   /** True when the built-in KTX2 pass is part of `passes` (drives the transcoder copy). */
   readonly texturesActive: boolean;
+  /** Why the model's decoder-backed sub-passes were not emitted, if they were skipped. */
+  readonly modelCompressionReason: ISkippedCompressionRow["reason"] | undefined;
+  /** Why the standalone texture pass was not emitted, if it was skipped. */
+  readonly textureCompressionReason: ISkippedCompressionRow["reason"] | undefined;
 }
 
 interface IDirectoryScan {
@@ -936,13 +943,30 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     );
   }
   // Android and iOS have no WebAssembly and therefore no Basis transcoder and no Meshopt
-  // decoder, so the two compressing passes cannot ship there whatever the config says. The
-  // build names its target and the engine drops them for that bake only; every other target
-  // keeps its compression. See `IAssetCompileOptions.platform`.
-  const decodesCompression = options.platform !== "android" && options.platform !== "ios";
+  // decoder. The registry uses each pass's declaration below, so decoder-free work in the mixed
+  // model pass survives on those targets.
+  const runtimeDecoderCapabilities: IAssetRuntimeDecoderCapabilities = {
+    ktx2: options.platform !== "android" && options.platform !== "ios",
+    meshopt: options.platform !== "android" && options.platform !== "ios",
+  };
+  const runtimeDecoderAvailable =
+    runtimeDecoderCapabilities.ktx2 && runtimeDecoderCapabilities.meshopt;
   const audio = parseAudioConfig(config.audio);
-  const textures = decodesCompression ? parseTexturesConfig(config.textures) : undefined;
-  const models = decodesCompression ? parseModelsConfig(config.models) : undefined;
+  const configuredTextures = parseTexturesConfig(config.textures);
+  const configuredModels = parseModelsConfig(config.models);
+  const models =
+    configuredModels === undefined
+      ? undefined
+      : {
+          ...configuredModels,
+          ...(runtimeDecoderCapabilities.meshopt
+            ? {}
+            : {
+                passes: { ...(configuredModels.passes ?? {}), meshopt: false },
+              }),
+          ...(runtimeDecoderCapabilities.ktx2 ? {} : { textures: "none" as const }),
+        };
+  const textures = configuredTextures;
   const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
     ?.lightmap;
   // The built-in registry runs only when the caller did not replace it wholesale; each
@@ -951,62 +975,102 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   // passes cannot cross a worker boundary, so a compile that supplies any runs sequential.
   const builtinPasses: IAssetPass[] = [];
   const passSpecs: PassSpec[] = [];
+  const registerBuiltin = (pass: IAssetPass, spec: PassSpec): void => {
+    if (spec.needsRuntimeDecoder === true && !runtimeDecoderAvailable) return;
+    builtinPasses.push(pass);
+    passSpecs.push(spec);
+  };
   if (options.passes === undefined) {
     if (audio !== undefined) {
-      builtinPasses.push(audioPass(audio));
-      passSpecs.push({ kind: "audio", options: audio });
+      registerBuiltin(audioPass(audio), {
+        kind: "audio",
+        needsRuntimeDecoder: false,
+        options: audio,
+      });
     }
     if (textures !== undefined) {
-      builtinPasses.push(texturePass(textures));
-      passSpecs.push({ kind: "texture", options: textures });
+      registerBuiltin(texturePass(textures), {
+        kind: "texture",
+        needsRuntimeDecoder: true,
+        options: textures,
+      });
     }
     if (lightmap !== undefined) {
-      builtinPasses.push(lightmapPass(lightmap));
-      passSpecs.push({ kind: "lightmap", options: lightmap });
+      registerBuiltin(lightmapPass(lightmap), {
+        kind: "lightmap",
+        needsRuntimeDecoder: true,
+        options: lightmap,
+      });
     }
     // Ahead of `modelPass`: it converts the source into the GLB that pass then optimizes. A game
     // with no importable source pays one extension test per input.
-    builtinPasses.push(blenderImportPass());
-    passSpecs.push({ kind: "blender-import" });
+    registerBuiltin(blenderImportPass(), {
+      kind: "blender-import",
+      needsRuntimeDecoder: false,
+    });
     if (models !== undefined) {
-      builtinPasses.push(
-        modelPass({
-          ...models,
-          preserveLightmapUv: lightmap !== undefined,
-          // Bound to the output root so a second build finds last build's encodes on
-          // disk instead of paying for them again.
-          // The driver publishes every returned auxiliary output after journalling ownership.
-          // The store still remembers within this pass chain and reads last build's public cache.
-          sharedImages: models.sharedImages
-            ? createSharedImageStore(outputRoot, { writeThrough: false })
-            : undefined,
-        }),
-      );
-      passSpecs.push({
+      const modelOptions = runtimeDecoderCapabilities.meshopt
+        ? models
+        : { ...models, vertexLayout: "separate" as const };
+      const pass = modelPass({
+        ...modelOptions,
+        preserveLightmapUv: lightmap !== undefined,
+        // Bound to the output root so a second build finds last build's encodes on
+        // disk instead of paying for them again.
+        // The driver publishes every returned auxiliary output after journalling ownership.
+        // The store still remembers within this pass chain and reads last build's public cache.
+        sharedImages: models.sharedImages
+          ? createSharedImageStore(outputRoot, { writeThrough: false })
+          : undefined,
+      });
+      registerBuiltin(pass, {
         kind: "model",
+        needsRuntimeDecoder: pass.needsRuntimeDecoder ?? false,
         options: {
-          ...models,
+          ...modelOptions,
           preserveLightmapUv: lightmap !== undefined,
-          sharedImages: models.sharedImages,
+          sharedImages: modelOptions.sharedImages,
         },
       });
     }
   }
+  const suppliedPasses = options.passes ?? [];
+  const skippedPasses = suppliedPasses
+    .filter((pass) => pass.needsRuntimeDecoder === true && !runtimeDecoderAvailable)
+    .map((pass) => pass.name);
+  const customPasses = suppliedPasses.filter(
+    (pass) => pass.needsRuntimeDecoder !== true || runtimeDecoderAvailable,
+  );
   return {
     builtinRegistry: options.passes === undefined,
     exclude,
     concurrency: config.concurrency as number | undefined,
-    // A platform that cannot decode compression did not opt out of it, so it is not reported as
-    // an override the author should reconsider — the engine made that call, for this bake only.
-    decodesCompression,
-    modelsActive: models !== undefined && options.passes === undefined,
+    runtimeDecoderCapabilities,
+    modelCompressionReason:
+      options.passes !== undefined
+        ? undefined
+        : configuredModels === undefined
+          ? "config"
+          : runtimeDecoderAvailable
+            ? undefined
+            : "platform",
     outputRoot,
     passSpecs,
-    passes: [...builtinPasses, ...(options.passes ?? [])],
+    skippedPasses,
+    passes: [...builtinPasses, ...customPasses],
     sourceRoot,
     targets: config.targets === undefined ? {} : validateTargets(config.targets),
     budget: parseBudget(config.budget),
-    texturesActive: textures !== undefined && options.passes === undefined,
+    textureCompressionReason:
+      options.passes !== undefined
+        ? undefined
+        : configuredTextures === undefined
+          ? "config"
+          : runtimeDecoderCapabilities.ktx2
+            ? undefined
+            : "platform",
+    texturesActive:
+      textures !== undefined && options.passes === undefined && runtimeDecoderAvailable,
   };
 }
 
@@ -1588,7 +1652,7 @@ export async function compileAssets(
   if (!(await hasSourceDirectory(layout.sourceRoot))) {
     await removeStaleReceiptOutputs(layout.outputRoot, writtenBefore, new Set());
     for (const line of formatBudget(
-      await measureBudget({}, layout.outputRoot, layout.decodesCompression, layout.budget),
+      await measureBudget({}, layout.outputRoot, layout.runtimeDecoderCapabilities, layout.budget),
     ))
       console.log(line);
     await rm(manifestPath, { force: true });
@@ -1671,7 +1735,7 @@ export async function compileAssets(
   // held inputs last build drops its stale manifest here, restoring the no-manifest fallback.
   if (logicals.length === 0) {
     for (const line of formatBudget(
-      await measureBudget({}, layout.outputRoot, layout.decodesCompression, layout.budget),
+      await measureBudget({}, layout.outputRoot, layout.runtimeDecoderCapabilities, layout.budget),
     ))
       console.log(line);
     await removeStaleReceiptOutputs(layout.outputRoot, writtenBefore, new Set());
@@ -2010,7 +2074,7 @@ export async function compileAssets(
   const budgetReport = await measureBudget(
     entries,
     layout.outputRoot,
-    layout.decodesCompression,
+    layout.runtimeDecoderCapabilities,
     layout.budget,
     receiptOutputs,
   );
@@ -2056,14 +2120,18 @@ export async function compileAssets(
 function skippedCompressionRows(
   entries: Readonly<Record<string, IAssetManifestEntry>>,
   layout: ICompileLayout,
-): readonly ISkippedCompressionRow[] {
-  const rows: ISkippedCompressionRow[] = [];
-  const reason = layout.decodesCompression ? "config" : "platform";
-  for (const [kind, active] of [
-    ["model", layout.modelsActive],
-    ["texture", layout.texturesActive],
-  ] as const) {
-    if (active || !layout.builtinRegistry) continue;
+): readonly ISkippedReportRow[] {
+  const rows: ISkippedReportRow[] = layout.skippedPasses.map((pass) => ({
+    kind: "pass",
+    pass,
+    reason: "platform",
+  }));
+  const decisions = [
+    { kind: "model" as const, reason: layout.modelCompressionReason },
+    { kind: "texture" as const, reason: layout.textureCompressionReason },
+  ];
+  for (const { kind, reason } of decisions) {
+    if (reason === undefined || !layout.builtinRegistry) continue;
     let bytes = 0;
     let files = 0;
     for (const entry of Object.values(entries)) {

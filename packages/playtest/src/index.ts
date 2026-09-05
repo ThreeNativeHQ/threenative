@@ -114,6 +114,7 @@ export type {
   IPlaytestRuntimeDiagnosticsSample,
   IPlaytestSampleRequest,
   IPlaytestSceneObservation,
+  IPlaytestSetupConfirmation,
   IPlaytestSetupRequest,
   IPlaytestStartupObservation,
   IPlaytestStartupTimeline,

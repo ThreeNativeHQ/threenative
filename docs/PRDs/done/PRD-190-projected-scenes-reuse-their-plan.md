@@ -4,7 +4,11 @@ prd_contract: v1
 
 # PRD-190 — A projected scene reuses its plan instead of rebuilding it each frame
 
-**Status:** NOT STARTED
+**Status: DONE — 2026-09-04.** The status line was four commits behind: all three Integration
+Ledger rows shipped in `f7335878` (`perf(core): reuse projected scene workspace`) and every
+required test exists under the name below. Verified, with the three ledger mutations run as red
+controls and the one acceptance criterion that was *not* measured named honestly, in
+[`docs/verification/prd-190-projection-workspace-2026-09-04.md`](../../verification/prd-190-projection-workspace-2026-09-04.md).
 
 **Complexity:** +1 for 1–5 files, +2 for mutable reconciliation state = **3 → LOW mode**.
 Performance-sensitive manual verification is still required.
@@ -69,9 +73,9 @@ Record `docs/verification/prd-190-projection-workspace-<date>.md`.
 
 ## Acceptance Criteria
 
-- [ ] A stable 2,000-mesh projected scene performs no mesh-count-proportional JS allocation after
+- [x] A stable 2,000-mesh projected scene performs no mesh-count-proportional JS allocation after
       warmup.
-- [ ] The renderer receives the correct mirror in the same frame after each supported mutation.
-- [ ] Draw candidates and appearance are unchanged; no look parameter moves into package code.
-- [ ] The completed PRD-169 decline tests remain green without changing its 60-frame bound.
+- [x] The renderer receives the correct mirror in the same frame after each supported mutation.
+- [x] Draw candidates and appearance are unchanged; no look parameter moves into package code.
+- [x] The completed PRD-169 decline tests remain green without changing its 60-frame bound.
 

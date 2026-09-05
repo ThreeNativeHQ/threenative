@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-354 — an imported rig instances and poses correctly, once
 
 **Renumbered from PRD-324 on 2026-09-04.** The number collided with
-[`PRD-324 — the capability manifest cannot forget an export`](../agent-leverage/PRD-324-the-capability-manifest-cannot-forget-an-export.md),
+[`PRD-324 — the capability manifest cannot forget an export`](../astra-batch-2026-09-04/PRD-324-the-capability-manifest-cannot-forget-an-export.md),
 filed a day earlier on 2026-09-01. This PRD is the later claimant, so it moved. Evidence files and
 commit messages written before the rename still say "PRD-324" and mean this document —
 `docs/verification/PRD-324-phase1-phase2.md`, `PRD-324-second-consumer-census.md` and

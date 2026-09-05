@@ -158,7 +158,7 @@ export async function assertNativeAssetsCompatible(
     .map(([logical]) => logical);
   if (ktx2.length > 0) {
     throw new Error(
-      `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot ship compiled KTX2 textures (${namedAssets(ktx2)}). The mobile native runtime has no WebAssembly and therefore no Basis transcoder, so nothing in the bundle can decode them. Set assets.textures to "none" so native builds ship the source textures, or keep the compressed textures on the web target.`,
+      `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot ship compiled KTX2 textures (${namedAssets(ktx2)}). The mobile native runtime has no WebAssembly and therefore no Basis transcoder, so nothing in the bundle can decode them. Replace or transcode the authored KTX2 source for mobile, or exclude it from mobile builds; keep compressed textures on the web target.`,
     );
   }
   const compressedModels = rows
@@ -171,7 +171,7 @@ export async function assertNativeAssetsCompatible(
     .map(([logical]) => logical);
   if (compressedModels.length > 0) {
     throw new Error(
-      `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: ${target} cannot ship compressed model geometry (${namedAssets(compressedModels)}). The mobile native runtime has no WebAssembly and therefore no Meshopt or Draco decoder. Set assets.models to "none" so native builds ship uncompressed geometry, or keep the compressed models on the web target.`,
+      `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: ${target} cannot ship compressed model geometry (${namedAssets(compressedModels)}). The mobile native runtime has no WebAssembly and therefore no Meshopt or Draco decoder. Native compilation keeps shared images and decoder-free model rewrites while omitting Meshopt output; rebuild the native target, or keep compressed models on the web target.`,
     );
   }
 }

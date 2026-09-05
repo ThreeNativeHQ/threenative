@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -80,6 +81,107 @@ export function costCommentGaps(source: string): string[] {
   return gaps;
 }
 
+/**
+ * Where the shared span starts, and the function whose closing brace ends it.
+ *
+ * Structural anchors, not a line range and not a marker comment. A line range drifts the moment a
+ * doc comment above the type grows; a marker would put gate machinery into source whose first
+ * line promises the game "ordinary Three.js; ThreeNative does not read this file". The anchors
+ * below are the code itself.
+ */
+const CONTRACT_START = "export type QualityTier";
+const CONTRACT_FUNCTION = "export function resolveQualityTier";
+
+/**
+ * The span of `quality.ts` that must be byte-identical across every template: the tier type, the
+ * tier array, the narrower, and `resolveQualityTier`'s fail-closed body.
+ *
+ * It deliberately stops at that function's closing brace. Everything below is `high`, `medium`,
+ * `low` and `qualityPreset` — the game's look, which differs on purpose. A gate that hashed those
+ * too would freeze exactly the variation the framework exists to allow.
+ *
+ * Throws rather than returning `undefined`: a template whose contract cannot be delimited is a
+ * finding, never a silently skipped row.
+ */
+export function qualityContractSpan(source: string): string {
+  const start = source.indexOf(CONTRACT_START);
+  if (start === -1) {
+    throw new Error(`declares no \`${CONTRACT_START}\``);
+  }
+  const fn = source.indexOf(CONTRACT_FUNCTION, start);
+  if (fn === -1) {
+    throw new Error(`declares no \`${CONTRACT_FUNCTION}\` after \`${CONTRACT_START}\``);
+  }
+  // A top-level function body closes on a brace alone at column 0. A preset object closes on
+  // `};`, so this cannot run past the contract into the look below it.
+  const close = source.indexOf("\n}\n", fn);
+  if (close === -1) {
+    throw new Error(`\`${CONTRACT_FUNCTION}\` has no closing brace at column 0`);
+  }
+  const span = source.slice(start, close + 3);
+  const opens = (span.match(/\{/gu) ?? []).length;
+  const closes = (span.match(/\}/gu) ?? []).length;
+  if (opens !== closes) {
+    throw new Error(
+      `the tier contract span does not balance (${String(opens)} \`{\` against ${String(closes)} \`}\`)`,
+    );
+  }
+  return span;
+}
+
+/** Short, stable identity for a contract span. Long enough to name in a failure message. */
+export function contractSpanHash(span: string): string {
+  return createHash("sha256").update(span).digest("hex").slice(0, 12);
+}
+
+/**
+ * The property the span exists to protect.
+ *
+ * Hash agreement alone is not enough: eleven copies that all lost the throw agree with each other
+ * perfectly. This asserts the fail-closed behaviour itself, so the gate catches the drift that
+ * moves every copy at once.
+ */
+export function contractSpanThrows(span: string): boolean {
+  return /\bthrow new Error\(/u.test(span);
+}
+
+interface IContractSpan {
+  readonly template: string;
+  readonly hash: string;
+}
+
+/**
+ * Names every template whose contract span disagrees with the largest group.
+ *
+ * The largest group wins; a tie is broken by the alphabetically first template in it, so the
+ * message is the same on every machine.
+ */
+export function contractDriftFindings(
+  spans: readonly IContractSpan[],
+): readonly ITemplateQualityFinding[] {
+  const groups = new Map<string, string[]>();
+  for (const { hash, template } of spans) {
+    const members = groups.get(hash) ?? [];
+    members.push(template);
+    groups.set(hash, members);
+  }
+  if (groups.size <= 1) return [];
+  const ranked = [...groups.entries()].sort(
+    (a, b) => b[1].length - a[1].length || (a[1][0] ?? "").localeCompare(b[1][0] ?? ""),
+  );
+  const [majorityHash, majorityMembers] = ranked[0] ?? ["", []];
+  const findings: ITemplateQualityFinding[] = [];
+  for (const [hash, members] of ranked.slice(1)) {
+    for (const template of members) {
+      findings.push({
+        problem: `quality.ts's fail-closed tier contract drifted (${hash}) from the ${String(majorityMembers.length)} templates that agree (${majorityHash}, e.g. ${majorityMembers[0] ?? "?"})`,
+        template,
+      });
+    }
+  }
+  return findings;
+}
+
 export interface ITemplateQualityFinding {
   readonly template: string;
   readonly problem: string;
@@ -88,6 +190,8 @@ export interface ITemplateQualityFinding {
 export interface ITemplateQualityReport {
   readonly templates: readonly string[];
   readonly findings: readonly ITemplateQualityFinding[];
+  /** The contract hash every template agreed on, or `undefined` when they did not. */
+  readonly contractHash: string | undefined;
 }
 
 async function readOptional(file: string): Promise<string | undefined> {
@@ -108,6 +212,34 @@ function qualityProblems(source: string | undefined): string[] {
     problems.push(`quality.ts enables ${gap} with no measured cost beside it`);
   }
   return problems;
+}
+
+/**
+ * The fail-closed half of the switch: the shared span is delimitable, and it still throws.
+ *
+ * Records the span's hash into `spans` as a side effect so the caller can compare templates
+ * against each other. A template whose span cannot be read contributes no hash — it has already
+ * produced a finding, and inventing one would make it look like a drifter instead of a break.
+ */
+function contractProblems(
+  source: string | undefined,
+  template: string,
+  spans: IContractSpan[],
+): string[] {
+  if (source === undefined) return [];
+  let span: string;
+  try {
+    span = qualityContractSpan(source);
+  } catch (error) {
+    return [`quality.ts ${error instanceof Error ? error.message : String(error)}`];
+  }
+  spans.push({ hash: contractSpanHash(span), template });
+  if (!contractSpanThrows(span)) {
+    return [
+      "quality.ts's resolveQualityTier does not throw on an unknown tier — a silent fallback here looks exactly like a tier that turned out to have no effect",
+    ];
+  }
+  return [];
 }
 
 /** The switch is *reached*, the incumbent literals are gone, and the tier is reported. */
@@ -185,11 +317,14 @@ export async function checkTemplateQuality(root: string): Promise<ITemplateQuali
   const templatesDir = path.join(root, "packages", "create-threenative", "templates");
   const templates = await templateNames(templatesDir);
   const findings: ITemplateQualityFinding[] = [];
+  const spans: IContractSpan[] = [];
   for (const template of templates) {
     const render = path.join(templatesDir, template, "src", "render");
     const world = await readOptional(path.join(render, "worldEnvironment.ts"));
+    const quality = await readOptional(path.join(render, "quality.ts"));
     const problems = [
-      ...qualityProblems(await readOptional(path.join(render, "quality.ts"))),
+      ...qualityProblems(quality),
+      ...contractProblems(quality, template, spans),
       ...postprocessingProblems(await readOptional(path.join(render, "postprocessing.ts"))),
       ...docProblems(await readOptional(path.join(templatesDir, template, "AGENTS.md"))),
       ...(world === undefined
@@ -201,12 +336,18 @@ export async function checkTemplateQuality(root: string): Promise<ITemplateQuali
     ];
     for (const problem of problems) findings.push({ problem, template });
   }
-  return { findings, templates };
+  findings.push(...contractDriftFindings(spans));
+  const hashes = new Set(spans.map((span) => span.hash));
+  return {
+    contractHash: hashes.size === 1 ? [...hashes][0] : undefined,
+    findings,
+    templates,
+  };
 }
 
 export function formatTemplateQualityReport(report: ITemplateQualityReport): string {
   if (report.findings.length === 0) {
-    return `template quality: ${report.templates.length} templates ship src/render/quality.ts, read it, and document it`;
+    return `template quality: ${report.templates.length} templates ship src/render/quality.ts, read it, and document it; all agree on the fail-closed tier contract (${report.contractHash ?? "no span"})`;
   }
   const lines = [`TEMPLATE_QUALITY_INCOMPLETE: ${report.findings.length} problems`];
   for (const finding of report.findings) lines.push(`- ${finding.template}: ${finding.problem}`);

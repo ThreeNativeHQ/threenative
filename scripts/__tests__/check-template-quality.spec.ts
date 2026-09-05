@@ -5,16 +5,43 @@ import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   checkTemplateQuality,
+  contractDriftFindings,
+  contractSpanHash,
+  contractSpanThrows,
   costCommentGaps,
   eagerSurfaceNodes,
   formatTemplateQualityReport,
   presetLiteralsIn,
+  qualityContractSpan,
   templateNames,
 } from "../template-quality.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
+const CONTRACT = `export type QualityTier = "low" | "medium" | "high";
+
+const QUALITY_TIERS: readonly QualityTier[] = ["low", "medium", "high"];
+
+function isQualityTier(value: string): value is QualityTier {
+  return (QUALITY_TIERS as readonly string[]).includes(value);
+}
+
+export function resolveQualityTier(
+  request: { readonly mobile?: boolean; readonly tier?: string } = {},
+): QualityTier {
+  const requested = request.tier;
+  if (requested !== undefined) {
+    if (!isQualityTier(requested)) {
+      throw new Error(\`Unknown quality tier \${JSON.stringify(requested)}.\`);
+    }
+    return requested;
+  }
+  return request.mobile === true ? "low" : "high";
+}
+`;
+
 const QUALITY = `import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+${CONTRACT}
 const high: IWorldEnvironmentOptions = {
   // Bloom: ~4.6 ms.
   bloomEnabled: true,
@@ -68,6 +95,87 @@ describe("check-template-quality", () => {
     expect(formatTemplateQualityReport(report)).toMatch(/^template quality: /u);
     expect(report.findings).toEqual([]);
     expect(report.templates.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("should agree on one fail-closed tier contract across every shipped template", async () => {
+    const report = await checkTemplateQuality(repoRoot);
+    expect(report.findings).toEqual([]);
+    expect(report.contractHash).toMatch(/^[0-9a-f]{12}$/u);
+    expect(formatTemplateQualityReport(report)).toContain("all agree on the fail-closed tier");
+  });
+
+  it("should end the contract span at resolveQualityTier, not at the presets below it", () => {
+    const span = qualityContractSpan(QUALITY);
+    expect(span.startsWith("export type QualityTier")).toBe(true);
+    expect(span.trimEnd().endsWith("}")).toBe(true);
+    // The look lives below the span and must not be hashed, or the gate becomes a look freeze.
+    expect(span).not.toContain("bloomEnabled");
+    expect(span).not.toContain("IWorldEnvironmentOptions");
+  });
+
+  it("should hash a preset edit identically and a contract edit differently", () => {
+    const preset = qualityContractSpan(
+      QUALITY.replace("bloomEnabled: true", "bloomEnabled: false"),
+    );
+    expect(contractSpanHash(preset)).toBe(contractSpanHash(qualityContractSpan(QUALITY)));
+    const narrowed = qualityContractSpan(
+      QUALITY.replace(".includes(value)", ".includes(value.trim())"),
+    );
+    expect(contractSpanHash(narrowed)).not.toBe(contractSpanHash(qualityContractSpan(QUALITY)));
+  });
+
+  it("should fail closed when the contract span cannot be delimited", () => {
+    expect(() => qualityContractSpan("const x = 1;\n")).toThrow(
+      /declares no `export type QualityTier`/u,
+    );
+    expect(() => qualityContractSpan("export type QualityTier = string;\n")).toThrow(
+      /declares no `export function resolveQualityTier`/u,
+    );
+    expect(() =>
+      qualityContractSpan(
+        "export type QualityTier = string;\nexport function resolveQualityTier() {",
+      ),
+    ).toThrow(/no closing brace at column 0/u);
+  });
+
+  it("should see a lost throw even when every copy lost it together", async () => {
+    const lost = QUALITY.replace(/ {6}throw new Error\([^;]*\);/u, '      return "high";');
+    expect(lost).not.toContain("throw new Error");
+    expect(contractSpanThrows(qualityContractSpan(lost))).toBe(false);
+    const report = await checkTemplateQuality(await fixture({ quality: lost }));
+    expect(formatTemplateQualityReport(report)).toContain("does not throw on an unknown tier");
+  });
+
+  it("should name the drifting template and the group it left", () => {
+    expect(
+      contractDriftFindings([
+        { hash: "aaaaaaaaaaaa", template: "action-rpg" },
+        { hash: "aaaaaaaaaaaa", template: "shooter" },
+        { hash: "bbbbbbbbbbbb", template: "racing" },
+      ]),
+    ).toEqual([
+      {
+        problem:
+          "quality.ts's fail-closed tier contract drifted (bbbbbbbbbbbb) from the 2 templates that agree (aaaaaaaaaaaa, e.g. action-rpg)",
+        template: "racing",
+      },
+    ]);
+    expect(contractDriftFindings([{ hash: "aaaaaaaaaaaa", template: "only" }])).toEqual([]);
+  });
+
+  it("should gate only what this repository generates, never a sandbox game", async () => {
+    // AC4. The walk is rooted at packages/create-threenative/templates; a sibling copy of
+    // quality.ts outside it is another repository's file and contributes no hash.
+    const root = await fixture();
+    const outside = path.join(root, "sandbox", "wildwood", "src", "render");
+    await mkdir(outside, { recursive: true });
+    await writeFile(path.join(outside, "quality.ts"), QUALITY.replace("value)", "value.trim())"));
+    const report = await checkTemplateQuality(root);
+    expect(report.templates).toEqual(["demo"]);
+    expect(report.findings.map((finding) => finding.problem).join("\n")).not.toContain(
+      "tier contract drifted",
+    );
+    expect(report.contractHash).toBe(contractSpanHash(qualityContractSpan(QUALITY)));
   });
 
   it("should throw when it finds no templates at all", async () => {

@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status: OPEN — filed 2026-08-30 against `728f72e8`. Nothing below has been executed.** Part of
 the [decent-defaults batch](./ORIGIN-decent-defaults-2026-08-30.md). Depends on
-[PRD-278](./PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) for a chain that
+[PRD-278](../done/PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) for a chain that
 has pipelines to compile.
 
 **Goal: a scaffolded game's loading screen ends when the game is ready to run, not when the scene is

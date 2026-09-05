@@ -912,3 +912,59 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           fail-on-severity: moderate
+
+  # PRD-296 item 3. Three gates once sat behind a permanently red one and were skipped on every
+  # run this repository had ever produced; nobody had seen any of them fail because nobody had
+  # seen them run. The board looked like nine jobs of coverage and was six.
+  #
+  # A skipped job is invisible on the checks list in a way a red one is not — and the `main
+  # protection` ruleset makes that worse rather than better, because a skipped required check
+  # counts as satisfied. This job writes the verdicts into the run summary, names every job that
+  # did not run, and names the upstream that stopped it.
+  #
+  # It is the one job that may legitimately declare `needs:` on coverage jobs: publishing their
+  # verdict is its entire work, and `scripts/__tests__/ci-needs.spec.ts` recognises exactly that
+  # exemption through `toJSON(needs)`. It reports and never gates, so it is not a required check
+  # and cannot itself become something to route around.
+  run-summary:
+    needs:
+      - typecheck
+      - lint
+      - test
+      - test-unit
+      - test-native
+      - test-browser
+      - test-playtest
+      - golden-path-template
+      - template-nonvisual
+      - golden-path
+      - benchmark
+      - build
+      - budgets
+      - supply-chain
+    # `!cancelled()` and not `always()`, for the reason golden-path gives above: a cancelled run
+    # has nothing to report and its summary would only describe the cancellation.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Report every job's verdict, and why a skipped one never ran
+        env:
+          # `toJSON(needs)` is every upstream result at once. Passed through a file rather than an
+          # argument: it is multi-line JSON, and an expression interpolated into a `run:` line is
+          # shell source.
+          TN_CI_NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$TN_CI_NEEDS" > "$RUNNER_TEMP/needs.json"
+          pnpm tsx scripts/ci-run-summary.ts \
+            --workflow .github/workflows/ci.yml \
+            --results "$RUNNER_TEMP/needs.json" \
+            --reporter run-summary | tee -a "$GITHUB_STEP_SUMMARY"
