@@ -5,9 +5,7 @@
   "target": "web",
   "viewport": { "width": 1280, "height": 720 },
   "warmupFrames": 20,
-  "steps": [
-    { "kind": "wait", "label": "settle", "waitTicks": 60, "release": true }
-  ],
+  "steps": [{ "kind": "wait", "label": "settle", "waitTicks": 60, "release": true }],
   "assert": {
     "sceneNodes": [
       { "select": { "name": "floor" }, "visible": true, "inFrustum": true, "minTriangles": 12 },

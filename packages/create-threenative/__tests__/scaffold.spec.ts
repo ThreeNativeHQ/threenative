@@ -108,8 +108,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // refreshed genre kits.
 // Recomputed 2026-09-04 after merging PR #99: every scaffold gains the loading, trace, audio,
 // streaming, and alpha-antialiasing surfaces; starter also retains its authored coastal look.
-  // Recomputed 2026-09-04 for the sceneNodes assertion family: the generated assertion reference
-  // every scaffold ships now documents a 27th kind, so all ten trees move by that one file.
+// Recomputed 2026-09-04 for the sceneNodes assertion family: the generated assertion reference
+// every scaffold ships now documents a 27th kind, so all ten trees move by that one file.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-03 after merging PRD-346's MCP host configs into the authored painterly
   // starter. Every scaffold gains the Blender server wiring; starter also gains its bounded mix.
