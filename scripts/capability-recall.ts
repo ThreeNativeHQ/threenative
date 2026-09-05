@@ -537,7 +537,7 @@ export function measureRecall(
 ): IRecallMeasurement {
   const manifestExpectations = validateManifestExpectations(rows, manifestFile);
   const rowResults = rows.map((row): IRecallRowResult => {
-    let results: ReturnType<CapabilitySearcher>;
+    let results: readonly ICapabilitySearchResult[] | ICapabilitySearchResponse;
     try {
       results = searcher(row.query, manifestFile, row.scope);
     } catch (error) {
