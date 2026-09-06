@@ -442,7 +442,7 @@ def _fake_xcrun(tmp, fail=False):
             f.write("#!/bin/sh\n"
                     "case \"$*\" in\n"
                     "  *--show-sdk-path) echo /sdk ;;\n"
-                    "  *-f*) echo /sdk/bin/$NF ;;\n"
+                    "  *-f*) echo /sdk/bin/$4 ;;\n"
                     "  *) exit 1 ;;\n"
                     "esac\n")
     os.chmod(path, 0o755)
@@ -532,7 +532,12 @@ class TestTargetEnvApple(unittest.TestCase):
             self.assertEqual(sel["sdk"], "macosx")
             self.assertEqual(sel["arch"], "arm64")
             self.assertEqual(env["SDKROOT"], "/sdk")
-            self.assertTrue(env["CXX"].endswith("clang++ -arch arm64"))
+            self.assertEqual(env["CC"], "/sdk/bin/clang")
+            self.assertEqual(env["CXX"], "/sdk/bin/clang++")
+            self.assertIn("-arch arm64", env["CFLAGS"])
+            self.assertIn("-isysroot /sdk", env["CFLAGS"])
+            self.assertIn("-arch arm64", env["CXXFLAGS"])
+            self.assertIn("-isysroot /sdk", env["CXXFLAGS"])
 
 
 class TestTargetEnvAndroid(unittest.TestCase):
@@ -545,8 +550,11 @@ class TestTargetEnvAndroid(unittest.TestCase):
             f.write(f"Pkg.Revision = {rev}\n")
         if tools:
             for t in ("aarch64-linux-android21-clang",
+                      "aarch64-linux-android21-clang++",
                       "armv7a-linux-androideabi21-clang",
+                      "armv7a-linux-androideabi21-clang++",
                       "x86_64-linux-android21-clang",
+                      "x86_64-linux-android21-clang++",
                       "llvm-ar", "llvm-ranlib"):
                 _fake_tool(os.path.join(bindir, t))
         return ndk, bindir
@@ -572,10 +580,14 @@ class TestTargetEnvAndroid(unittest.TestCase):
             ndk, bindir = self._ndk(tmp)
             env = dict(os.environ, ANDROID_NDK_HOME=ndk)
             sel = b.prepare_target_env("android-armv7", env)
-            want = os.path.join(bindir, "armv7a-linux-androideabi21-clang")
+            suffix = ".cmd" if os.name == "nt" else ""
+            want = os.path.join(bindir, "armv7a-linux-androideabi21-clang" + suffix)
             self.assertEqual(sel["armv7a-linux-androideabi21-clang"], want)
             self.assertEqual(env["CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER"],
                              want)
+            self.assertEqual(env["CXX_armv7_linux_androideabi"],
+                             os.path.join(bindir,
+                                          "armv7a-linux-androideabi21-clang++" + suffix))
             self.assertEqual(env["CMAKE_ANDROID_ARCH_ABI"], "arm")
 
     def test_arm64_and_x64_vars(self):

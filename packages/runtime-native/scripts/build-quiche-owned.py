@@ -426,6 +426,21 @@ def _ndk_host_dir():
         sys.platform, "linux-x86_64")
 
 
+def _find_executable(directory, name):
+    """Resolve an NDK tool across POSIX names and Windows wrapper suffixes."""
+    found = shutil.which(name, path=directory)
+    if found:
+        return found
+    candidates = [name]
+    if os.name == "nt":
+        candidates.extend(name + suffix for suffix in (".cmd", ".exe", ".bat"))
+    for candidate in candidates:
+        path = os.path.join(directory, candidate)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
 def resolve_ndk_root(env=None):
     """Pinned NDK only: ANDROID_NDK_HOME/ROOT wins, else SDK/ndk/<pin>."""
     env = env if env is not None else os.environ
@@ -513,8 +528,21 @@ def prepare_target_env(target, env):
                 raise BuildError(f"TN_QUICHE_APPLE_TOOL_MISSING: {tool} "
                                  f"not in {sdk} SDK")
             selected[tool] = found
-        env["CC"] = f"{xcrun} --sdk {sdk} clang -arch {arch}"
-        env["CXX"] = f"{xcrun} --sdk {sdk} clang++ -arch {arch}"
+        try:
+            cxx = subprocess.check_output(
+                [xcrun, "--sdk", sdk, "-f", "clang++"],
+                text=True, env=env).strip()
+        except subprocess.CalledProcessError:
+            raise BuildError(f"TN_QUICHE_APPLE_TOOL_MISSING: clang++ "
+                             f"not in {sdk} SDK")
+        if not cxx:
+            raise BuildError(f"TN_QUICHE_APPLE_TOOL_MISSING: empty clang++ "
+                             f"path in {sdk} SDK")
+        apple_flags = f"-arch {arch} -isysroot {sdk_path}"
+        env["CC"] = selected["clang"]
+        env["CXX"] = cxx
+        for var in ("CFLAGS", "CXXFLAGS"):
+            env[var] = (env.get(var, "") + " " + apple_flags).strip()
         env["AR"] = selected["ar"]
         env["SDKROOT"] = sdk_path
         if deploy:
@@ -534,15 +562,21 @@ def prepare_target_env(target, env):
         driver = ("armv7a-linux-androideabi" if target == "android-armv7"
                   else triple) + ANDROID_API + "-clang"
         for name in (driver, "llvm-ar", "llvm-ranlib"):
-            path = os.path.join(bindir, name)
-            if not os.path.isfile(path) or not os.access(path, os.X_OK):
-                raise BuildError(f"TN_QUICHE_NDK_TOOL_MISSING: {path} absent; "
+            path = _find_executable(bindir, name)
+            if not path:
+                expected = os.path.join(bindir, name)
+                raise BuildError(f"TN_QUICHE_NDK_TOOL_MISSING: {expected} absent; "
                                  f"pinned NDK {ANDROID_NDK_PIN} must provide it")
             selected[name] = path
+        cxx = _find_executable(bindir, driver + "++")
+        if not cxx:
+            expected = os.path.join(bindir, driver + "++")
+            raise BuildError(f"TN_QUICHE_NDK_TOOL_MISSING: {expected} absent; "
+                             f"pinned NDK {ANDROID_NDK_PIN} must provide it")
         key = ("armv7_linux_androideabi" if target == "android-armv7"
                else triple.replace("-", "_"))
         env["CC_" + key] = selected[driver]
-        env["CXX_" + key] = selected[driver] + "++"
+        env["CXX_" + key] = cxx
         env["AR_" + key] = selected["llvm-ar"]
         env[f"CARGO_TARGET_{key.upper()}_LINKER"] = selected[driver]
         # quiche build.rs reads ANDROID_NDK_HOME from the process env
