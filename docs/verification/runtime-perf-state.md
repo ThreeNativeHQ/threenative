@@ -2817,6 +2817,60 @@ UNVERIFIED; scenario-generation tests do not claim those devices ran. Reports st
 | `pnpm budgets` | Exit 1: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit).` Unrelated index unchanged. |
 | `git diff --check` | Exit 0; no output. |
 
+### PRD-358 actionlint repair — 2026-09-05
+
+The performance summary step no longer calls `cancelled()` from step-level `env`, where GitHub
+Actions does not allow that function. It now derives `TN_PERF_CANCELLED` from the permitted
+`needs.hardware-pairs.result == 'cancelled'` value. The aggregation script still appends a
+required `BLOCKED` row for a cancelled matrix and the summary job remains `if: always()`; no
+collector, matrix row, artifact upload, or fail-closed status rule changed.
+
+Observed red before the repair:
+
+```text
+go run github.com/rhysd/actionlint/cmd/actionlint@latest .github/workflows/performance-regression.yml .github/workflows/ci.yml .github/workflows/native-platforms.yml
+.github/workflows/performance-regression.yml:224:34: calling function "cancelled" is not allowed here. "cancelled" is only available in "jobs.<job_id>.if", "jobs.<job_id>.steps.if".
+exit status 1
+```
+
+The focused structure test was also red before the repair:
+
+```text
+pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts -t 'permitted cancellation source'
+Test Files 1 failed (1)
+Tests 1 failed | 65 skipped (66)
+exit 1
+```
+
+After the minimal expression change, the focused test passed:
+
+```text
+pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts -t 'permitted cancellation source'
+Test Files 1 passed (1)
+Tests 1 passed | 65 skipped (66)
+exit 0
+```
+
+The complete relevant test pair passed:
+
+```text
+pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/performance-regression.spec.ts
+Test Files 2 passed (2)
+Tests 83 passed (83)
+exit 0
+```
+
+Final workflow validation passed with no output and exit 0:
+
+```text
+go run github.com/rhysd/actionlint/cmd/actionlint@latest .github/workflows/performance-regression.yml .github/workflows/ci.yml .github/workflows/native-platforms.yml
+```
+
+`git diff --check` also passed with no output and exit 0. Existing hardware rows remain
+UNVERIFIED/unprovisioned, and no baseline was promoted. The unrelated `pnpm budgets` blocker
+recorded above remains the stale `docs/benchmark/SCREENSHOT-RETENTION.md` index; it was not
+edited.
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,

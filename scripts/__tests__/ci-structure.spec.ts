@@ -1702,6 +1702,16 @@ describe("CI pipeline structure", () => {
     expect(performance).toContain("native-macos");
   });
 
+  it("uses a permitted cancellation source in the performance summary step", async () => {
+    const performance = await readFile(
+      path.join(repo, ".github/workflows/performance-regression.yml"),
+      "utf8",
+    );
+    const summary = requiredJob(performance, "performance-summary");
+    expect(summary).not.toContain("TN_PERF_CANCELLED: ${{ cancelled() }}");
+    expect(summary).toContain("TN_PERF_CANCELLED: ${{ needs.hardware-pairs.result == 'cancelled' }}");
+  });
+
   it("runs bounded native desktop and simulator collectors against built artifacts", async () => {
     const native = await readFile(
       path.join(repo, ".github/workflows/native-platforms.yml"),

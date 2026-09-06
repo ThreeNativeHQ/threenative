@@ -221,7 +221,7 @@ jobs:
       - name: Fill missing matrix rows and aggregate fail-closed evidence
         env:
           TN_PERF_EXPECTED_SHA: ${{ inputs.candidate_source_sha || github.sha }}
-          TN_PERF_CANCELLED: ${{ cancelled() }}
+          TN_PERF_CANCELLED: ${{ needs.hardware-pairs.result == 'cancelled' }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/performance-regression
