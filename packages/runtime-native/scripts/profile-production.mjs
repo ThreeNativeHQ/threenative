@@ -95,7 +95,7 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     prebuiltArtifact: undefined,
     physicalEvidence: undefined,
     profile: PRODUCTION_PROFILE,
-    renderSize: { height: 1080, width: 1920 },
+    renderSize: undefined,
     repetitions: 3,
     sourceSha: undefined,
     target: undefined,
@@ -249,6 +249,9 @@ function normalizeOptions(input = {}) {
   const target = input.target === 'desktop-web' ? 'web' : input.target;
   const profile = input.profile ?? PRODUCTION_PROFILE;
   const regression = profile === REGRESSION_PROFILE;
+  const defaultRenderSize = input.hostedSoftware === true && target === 'desktop'
+    ? { height: 720, width: 1280 }
+    : { height: 1080, width: 1920 };
   return {
     audioEvidence: input.audioEvidence,
     coldStarts: input.coldStarts ?? (regression ? REGRESSION_COLLECTION_PROFILE.coldStarts : 1),
@@ -260,7 +263,7 @@ function normalizeOptions(input = {}) {
     out: input.out ?? (regression ? '.runtime/prd358/regression' : '.runtime/prd064/production'),
     prebuiltArtifact: input.prebuiltArtifact === undefined ? undefined : resolve(input.prebuiltArtifact),
     physicalEvidence: input.physicalEvidence,
-    renderSize: renderSize ?? { height: 1080, width: 1920 },
+    renderSize: renderSize ?? defaultRenderSize,
     profile,
     repetitions: input.repetitions ?? (regression ? 1 : 3),
     sourceSha: input.sourceSha,

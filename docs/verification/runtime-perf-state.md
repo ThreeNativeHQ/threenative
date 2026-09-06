@@ -3229,8 +3229,13 @@ TN_QUALITY_TIER low mobile=false source=hosted-software
 The run retained one screenshot and complete startup/steady evidence with the local NVIDIA RTX
 2080 adapter. This proves profile propagation, the low smoke path, screenshot/mailbox transport,
 and fail-closed evidence collection; the advisory timing budget is not a physical performance
-baseline. The hosted Windows rerun is required before this repair can be called cross-platform
-CI evidence.
+baseline. Hosted run `34061495196` confirmed the tier change on Microsoft Basic D3D12
+(`TN_QUALITY_TIER low`) but still failed its 1920×1080 screenshot request: buffer mapping timed
+out and the host exited with `SIGSEGV`, leaving only `run-start`. The second red test showed that
+the hosted desktop profile's unrequested 1920×1080 default was the remaining input; it now selects
+the proven 1280×720 smoke surface, while an explicit `--render-size 1920x1080` remains honored.
+The next hosted Windows rerun is required before this repair can be called cross-platform CI
+evidence.
 
 ## 7. Harness status
 

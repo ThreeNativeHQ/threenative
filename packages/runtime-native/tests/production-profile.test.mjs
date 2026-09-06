@@ -612,6 +612,15 @@ test('accepted profile controls are parsed and execution receives every value', 
   assert.equal(parsed.profile, 'production');
   const hosted = parseProductionArgs(['--target', 'desktop', '--hosted-software']);
   assert.equal(hosted.hostedSoftware, true);
+  assert.deepEqual(hosted.renderSize, { height: 720, width: 1280 });
+  const hostedExplicit = parseProductionArgs([
+    '--target', 'desktop', '--hosted-software', '--render-size', '1920x1080',
+  ]);
+  assert.deepEqual(hostedExplicit.renderSize, { height: 1080, width: 1920 });
+  const hostedAndroid = parseProductionArgs([
+    '--target', 'android', '--device', 'emulator-5554', '--hosted-software',
+  ]);
+  assert.deepEqual(hostedAndroid.renderSize, { height: 1080, width: 1920 });
   const relativeArtifact = parseProductionArgs([
     '--target', 'desktop',
     '--prebuilt-artifact', 'build/tn-macos/mystral',
