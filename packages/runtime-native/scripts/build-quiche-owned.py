@@ -294,7 +294,11 @@ def validate_archive(target, lib_path, header_path):
                                       text=True, stderr=subprocess.DEVNULL)
         defined = defined_symbols_dumpbin(out)
     else:
-        out = subprocess.check_output([tool, "-g", lib_path],
+        nm_args = [tool, "-g"]
+        if target in APPLE_SDK:
+            nm_args.extend(("-arch", APPLE_SDK[target][1]))
+        nm_args.append(lib_path)
+        out = subprocess.check_output(nm_args,
                                       text=True, stderr=subprocess.DEVNULL)
         defined = defined_symbols_nm(out)
     for sym in REQUIRED_SYMBOLS:

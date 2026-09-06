@@ -580,14 +580,15 @@ class TestTargetEnvAndroid(unittest.TestCase):
             ndk, bindir = self._ndk(tmp)
             env = dict(os.environ, ANDROID_NDK_HOME=ndk)
             sel = b.prepare_target_env("android-armv7", env)
-            suffix = ".cmd" if os.name == "nt" else ""
-            want = os.path.join(bindir, "armv7a-linux-androideabi21-clang" + suffix)
+            want = b._find_executable(bindir, "armv7a-linux-androideabi21-clang")
+            self.assertIsNotNone(want)
             self.assertEqual(sel["armv7a-linux-androideabi21-clang"], want)
             self.assertEqual(env["CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER"],
                              want)
-            self.assertEqual(env["CXX_armv7_linux_androideabi"],
-                             os.path.join(bindir,
-                                          "armv7a-linux-androideabi21-clang++" + suffix))
+            self.assertEqual(
+                env["CXX_armv7_linux_androideabi"],
+                b._find_executable(bindir, "armv7a-linux-androideabi21-clang++"),
+            )
             self.assertEqual(env["CMAKE_ANDROID_ARCH_ABI"], "arm")
 
     def test_arm64_and_x64_vars(self):
