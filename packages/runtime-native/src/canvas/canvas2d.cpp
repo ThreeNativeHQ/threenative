@@ -41,6 +41,9 @@
 // Platform-specific font manager
 #if defined(__APPLE__)
 #include "include/ports/SkFontMgr_mac_ct.h"
+#elif defined(__ANDROID__)
+#include "include/ports/SkFontMgr_android.h"
+#include "include/ports/SkFontScanner_FreeType.h"
 #elif defined(_WIN32)
 #include "include/ports/SkFontMgr_directory.h"
 #else
@@ -228,7 +231,8 @@ bool CanvasGradient::addColorStop(float offset, const std::string& text) {
     SkColor skColor;
     const char* end = !parsed ? SkParse::FindNamedColor(text.c_str(), text.size(), &skColor) : nullptr;
     if (end && *end == '\0') {
-        color = {SkColorGetR(skColor), SkColorGetG(skColor), SkColorGetB(skColor), SkColorGetA(skColor)};
+        color = {static_cast<uint8_t>(SkColorGetR(skColor)), static_cast<uint8_t>(SkColorGetG(skColor)),
+                 static_cast<uint8_t>(SkColorGetB(skColor)), static_cast<uint8_t>(SkColorGetA(skColor))};
         parsed = true;
     }
 #endif
@@ -272,6 +276,8 @@ struct Canvas2DContext::Impl {
         // Initialize font manager (platform-specific)
 #if defined(__APPLE__)
         fontMgr = SkFontMgr_New_CoreText(nullptr);
+#elif defined(__ANDROID__)
+        fontMgr = SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
 #elif defined(__linux__) && !defined(__ANDROID__)
         fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
 #else

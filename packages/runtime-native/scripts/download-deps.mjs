@@ -1075,16 +1075,34 @@ async function main() {
   // skia-win-static: Static Skia+Dawn build from library-builder with /MT
   const windowsDeps = ['skia-win-static'];
 
-  // All available deps
+  // skia-android is a source build, not an archive download. Keep it reachable
+  // through --only, but out of --android and --all until a source tree is staged.
+  const sourceBuildDeps = ['skia-android'];
+
+  // Downloadable dependencies and the complete --only allowlist.
   const allDeps = [...new Set([...desktopDeps, ...iosDeps, ...androidDeps, ...windowsDeps])];
+  const availableDeps = [...new Set([...allDeps, ...sourceBuildDeps])];
 
   let depsToDownload;
   if (onlyIndex !== -1) {
     const depName = args[onlyIndex + 1];
-    if (!allDeps.includes(depName)) {
+    if (!availableDeps.includes(depName)) {
       console.error(`Unknown dependency: ${depName}`);
-      console.error(`Available: ${allDeps.join(', ')}`);
+      console.error(`Available: ${availableDeps.join(', ')}`);
       process.exit(1);
+    }
+    if (depName === 'skia-android') {
+      const { buildSkiaAndroidFromStagedSource } = await import('./build-skia-android.mjs');
+      const source = valueAfter(args, '--source');
+      const dest = valueAfter(args, '--dest');
+      const jobs = valueAfter(args, '--jobs');
+      await buildSkiaAndroidFromStagedSource({
+        ...(source ? { sourceRoot: source } : {}),
+        ...(dest ? { destDir: dest } : {}),
+        ...(jobs ? { jobs: Number(jobs) } : {}),
+      });
+      console.log('\n=== Summary ===\n  skia-android: OK');
+      return;
     }
     depsToDownload = [depName];
   } else if (args.includes('--ios')) {

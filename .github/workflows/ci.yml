@@ -356,6 +356,8 @@ jobs:
       # Only the suite that needs what the steps above built. `publint` and
       # `native:physics:parity` ride along inside that script, which is the package's whole gate.
       - run: pnpm --filter @threenative/runtime-native test
+        env:
+          TN_REQUIRE_ANDROID_CANVAS_SKIA_FIXTURE: "1"
 
   test-browser:
     runs-on: ubuntu-latest

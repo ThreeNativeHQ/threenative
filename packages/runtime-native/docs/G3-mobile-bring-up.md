@@ -4,6 +4,55 @@
 **State:** Android emulator and physical-orientation proof PASS; iOS has no execution
 evidence.
 
+## Android Canvas2D integration build — 2026-09-05
+
+The arm64 V8/wgpu-native runtime now compiles and links with `TN_ENABLE_CANVAS2D=ON`
+using source-built Skia and Android's system-font manager. The configure step selects
+the per-ABI Android archives rather than the host Linux x64 archive. Missing Android
+headers or any of the eight static archives fail configuration instead of disabling
+Canvas2D. Desktop and disabled-Canvas paths are unchanged.
+
+The real build exposed two additional defects: public Skia headers require the
+`modules/skcms` headers alongside `include/`, and named-color channel extraction needs
+explicit 8-bit casts under Android Clang. With the headers staged and casts applied,
+`cmake --build packages/runtime-native/build/tn-android --target mystral-runtime --parallel 2`
+completed all 363 remaining steps and exited 0. The resulting shared library is
+AArch64 with every LOAD segment aligned to 0x4000; SHA256 is
+`9e4368a9cd268b0bf3a90dd5b45c8e0cac56cb5248800b939255c12725cc762f`.
+Logs: `artifacts/android-skia-probe-20260905/runtime-{configure-integrated,build-integrated,build-headers,build-color-cast}.log`.
+
+The nine focused CMake/font tests passed using Android SDK CMake 3.22.1. Their
+cyclic-archive fixture fails without grouping, then builds and executes with the
+production link interface. This checks compatibility that a configure-only run on
+CMake 4 would miss. The required Linux CI job sets
+`TN_REQUIRE_ANDROID_CANVAS_SKIA_FIXTURE=1`, so missing fixture tools fail rather
+than skip. Other hosts do not pretend to exercise Linux archive linking.
+
+This is runtime build evidence, not device evidence or clean-checkout reconstruction
+proof. The build used locally staged dependencies. The dependency helper subsequently
+verified the pinned existing source tree, regenerated its GN graph, confirmed Ninja
+had no pending work, and staged all eight archives with a hash-bearing build receipt.
+A separate Android link probe using only the helper's staged headers/libraries passed
+with no undefined symbols. The supported downloader entry also passed:
+`node packages/runtime-native/scripts/download-deps.mjs --only skia-android --source artifacts/android-skia-probe-20260905 --dest artifacts/android-skia-probe-20260905/helper-download-stage`.
+These commands used the installed NDK and pinned GN on PATH. They do not fetch missing
+source trees; automatic fresh-checkout reconstruction remains open. Twenty helper tests
+passed, including missing receipts, changed archives, source pins and invalid tools.
+Logs: `helper-real-build.log`, `helper-stage-link.log`, and `helper-download-entry.log`
+under the same artifact directory. Shipping Android/iOS Canvas2D flags remain unchanged. No physical phone
+was connected, no APK was installed, and the prebuilt V8 library's separate 16 KB-page
+limitation is not resolved by aligning this runtime library.
+
+Integration gates: the full test command completed its build/package phases but initially
+failed the root temporary-directory guard on the new fixture. After switching that fixture
+to the shared cleanup helper, `pnpm gate:resume` verified the recorded worktree/HEAD and
+reran the failed unit phase: 4,299 passed, 4 skipped, exit 0. The 29 focused Android tests
+also passed together, and `pnpm typecheck` exited 0. Root lint still fails on eight existing
+`.linchpin` formatting errors; scoped checks exit 0 with downloader warnings. Evidence:
+`root-test.log`, `root-unit-resume.log`, `integrated-tests-green.log`, `root-typecheck.log`,
+and `root-lint.log` in the artifact directory above. A missing-CMake negative control
+exited 1 under the required CI flag (`required-tool-negative.log`).
+
 ## Android arrival evidence — 2026-08-08
 
 - QuickJS + wgpu-native launched on the x86_64 emulator and packaged both required ABIs.
