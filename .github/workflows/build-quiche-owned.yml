@@ -12,6 +12,7 @@ on:
       - packages/runtime-native/scripts/test-validate-quiche-release.py
       - packages/runtime-native/scripts/test-quiche-workflow.py
       - packages/runtime-native/patches/quiche-*.patch
+      - .gitattributes
       - .github/workflows/build-quiche-owned.yml
   push:
     tags:
@@ -25,6 +26,7 @@ on:
       - packages/runtime-native/scripts/test-validate-quiche-release.py
       - packages/runtime-native/scripts/test-quiche-workflow.py
       - packages/runtime-native/patches/quiche-*.patch
+      - .gitattributes
       - .github/workflows/build-quiche-owned.yml
 
 permissions:

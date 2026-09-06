@@ -10,6 +10,7 @@ Run: python3 test-quiche-workflow.py
 """
 import importlib.util
 import os
+import subprocess
 import unittest
 
 import yaml
@@ -94,6 +95,7 @@ def check_workflow(doc):
                 "packages/runtime-native/scripts/test-validate-quiche-release.py",  # noqa: E501
                 "packages/runtime-native/scripts/test-quiche-workflow.py",
                 "packages/runtime-native/patches/quiche-*.patch",
+                ".gitattributes",
                 ".github/workflows/build-quiche-owned.yml"):
             if required not in paths:
                 raise WorkflowCheckError(
@@ -263,9 +265,34 @@ def check_workflow(doc):
     return True
 
 
+def check_patch_line_endings():
+    """Patch hashes must see identical bytes on every checkout platform."""
+    attributes = os.path.join(REPO, ".gitattributes")
+    if not os.path.isfile(attributes):
+        raise WorkflowCheckError("missing .gitattributes patch byte rule")
+    with open(attributes, newline="") as f:
+        lines = {line.strip() for line in f if line.strip() and
+                 not line.lstrip().startswith("#")}
+    rule = "packages/runtime-native/patches/*.patch -text"
+    if rule not in lines:
+        raise WorkflowCheckError(".gitattributes must mark hashed patches -text")
+    for name in ("quiche-webtransport-ffi.patch", "quiche-ip-san.patch"):
+        rel = f"packages/runtime-native/patches/{name}"
+        result = subprocess.run(["git", "check-attr", "text", "--", rel],
+                                cwd=REPO, capture_output=True, text=True,
+                                check=False)
+        if result.returncode != 0 or not result.stdout.rstrip().endswith(
+                f"{rel}: text: unset"):
+            raise WorkflowCheckError(
+                f"git attributes do not keep {rel} byte-stable")
+
+
 class WorkflowTests(unittest.TestCase):
     def test_candidate_parses_and_checks_green(self):
         self.assertTrue(check_workflow(load_workflow()))
+
+    def test_hashed_patches_are_byte_stable(self):
+        check_patch_line_endings()
 
     def test_missing_tag_trigger_rejected(self):
         import copy

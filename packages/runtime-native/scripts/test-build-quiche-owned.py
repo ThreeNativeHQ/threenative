@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import unittest
 import zipfile
+from unittest import mock
 
 import importlib.util
 
@@ -266,6 +267,30 @@ class TestPristineSource(unittest.TestCase):
 
 
 class TestExactSymbols(unittest.TestCase):
+    def test_apple_archive_probe_uses_portable_nm_invocation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lib, inc = fixture_archive(tmp)
+            calls = []
+
+            def fake_check_output(args, **kwargs):
+                calls.append(args)
+                return ("0000000000000000 (__TEXT,__text) external "
+                        "_quiche_h3_config_set_additional_settings\n"
+                        "0000000000000000 (__TEXT,__text) external "
+                        "_quiche_connect\n"
+                        "0000000000000000 (__TEXT,__text) external "
+                        "_quiche_accept\n")
+
+            with mock.patch.object(b.shutil, "which",
+                                  side_effect=lambda name: "/usr/bin/nm"
+                                  if name == "nm" else None), \
+                    mock.patch.object(b.subprocess, "check_output",
+                                      side_effect=fake_check_output):
+                b.validate_archive("ios-arm64", lib,
+                                   os.path.join(inc, "quiche.h"))
+
+            self.assertEqual(calls, [["/usr/bin/nm", "-g", lib]])
+
     def test_undefined_only_rejected(self):
         defined = b.defined_symbols_nm(
             "                 U quiche_connect\n"

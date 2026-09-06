@@ -295,8 +295,9 @@ def validate_archive(target, lib_path, header_path):
         defined = defined_symbols_dumpbin(out)
     else:
         nm_args = [tool, "-g"]
-        if target in APPLE_SDK:
-            nm_args.extend(("-arch", APPLE_SDK[target][1]))
+        # Each Cargo invocation produces a target-specific archive.  Keep the
+        # probe to the portable `nm -g` contract: Apple's `-arch` archive
+        # filter rejects valid static archives on some Xcode runners.
         nm_args.append(lib_path)
         out = subprocess.check_output(nm_args,
                                       text=True, stderr=subprocess.DEVNULL)
