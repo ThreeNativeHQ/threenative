@@ -5027,9 +5027,9 @@
       "situations": ["NPC dialogue system", "write conversation choices for an NPC"]
     },
     {
-      "guidance": "The framework owns no network transport or multiplayer system. Add the networking library you choose with pnpm add <networking-library>, then write synchronization in your project's src/ and keep game state in ctx.state.",
+      "guidance": "The framework owns the optional authenticated transport seam at @threenative/core/net. Import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes, and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Write authoritative replication, snapshots, prediction, interpolation, and rejoin policy in your project's src/ and server code.",
       "id": "networked-multiplayer",
-      "situations": ["networked multiplayer", "multiplayer mode", "connect players online"]
+      "situations": ["authoritative replication", "client prediction"]
     }
   ],
   "version": 2

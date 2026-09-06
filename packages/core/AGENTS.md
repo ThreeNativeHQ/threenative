@@ -19,11 +19,17 @@ Clip conformance (`clipPoseError`, `clipTrackBindings`, `clipBoneCoverage`, `bon
 admitted the same way — see `CHARTER.md`'s "Pose conformance measurement is mechanism" and
 `docs/PRDs/done/PRD-314-a-broken-retarget-is-a-number-not-a-screenshot.md`. It measures and
 reports; it moves nothing and decides no appearance.
-Optional portable message transport is admitted by PRD-359 under the proposed `core/net`
-(`@threenative/core/net`) subpath. Until that export ships, do not document it as available. If
-exported, it owns only the browser/native transport seam — connection lifecycle, bounded queues,
-framing and delivery semantics. Gameplay serialization, authoritative simulation, snapshots,
-prediction, interpolation and replication remain game/server code.
+Optional portable message transport is admitted by PRD-359 at the `@threenative/core/net` subpath.
+`connect` opens authenticated HTTPS WebTransport only; credentials come from the game's identity
+flow, and there is no fallback transport. Defaults are a 10-second connect timeout, 65,536-byte
+reliable messages, a 1 MiB reliable queue, and 256 queued datagrams; the named per-connection
+overrides are `connectTimeoutMs`, `maxReliableMessageBytes`, `maxQueuedReliableBytes`, and
+`maxQueuedDatagrams`. Reliable overflow returns `false`; unreliable messages are bounded and may
+be dropped. The Go reference server is `packages/runtime-native/examples/webtransport/server`.
+Native support depends on the installed host bridge; iOS is unverified. Core owns only connection
+lifecycle, bounded queues, framing and delivery semantics. Gameplay serialization, authoritative
+simulation, snapshots, prediction, interpolation, replication and rejoin policy remain game/server
+code.
 
 ### World subpath
 

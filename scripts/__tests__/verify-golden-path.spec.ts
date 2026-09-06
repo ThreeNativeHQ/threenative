@@ -10,6 +10,7 @@ import {
   MCP_SURFACES,
   type TemplateStep,
   adoptPackedWorkspace,
+  assertEngineCapabilityDiscovery,
   assertGoldenPathSteps,
   assertMcpToolSurface,
   assertTemplateDependencies,
@@ -29,6 +30,60 @@ import {
 } from "../verify-golden-path.js";
 
 describe("golden path matrix", () => {
+  it("rejects a packed engine manifest without the networking capability", async () => {
+    const request = async (
+      method: string,
+      params: Record<string, unknown> = {},
+    ): Promise<unknown> => {
+      if (method !== "tools/call") return {};
+      const name = params.name;
+      const argumentsValue = params.arguments as Record<string, unknown> | undefined;
+      if (
+        name === "engine_search_capabilities" &&
+        argumentsValue?.situation ===
+          "exchange authenticated multiplayer messages over WebTransport"
+      ) {
+        return {
+          content: [
+            {
+              text: JSON.stringify({
+                guidance: "write networking in the game",
+                results: [],
+                verdict: "none",
+              }),
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            text: JSON.stringify({
+              guidance: "",
+              results: [
+                "AudioBus",
+                "FluidField2D",
+                "GPUParticles3D",
+                "GPUReadback",
+                "Heightfield",
+                "NavigationAgent3D",
+                "RigidBody3D",
+                "SoftBody3D",
+                "SpectralOcean",
+                "attachToBone",
+              ].map((symbol) => ({ matchedSituation: "requested mechanic", symbol })),
+              verdict: "matched",
+            }),
+          },
+        ],
+      };
+    };
+
+    await expect(assertEngineCapabilityDiscovery(request)).rejects.toThrow(
+      "missing portable networking transport",
+    );
+  });
+
   // PRD-346's revert check for the golden-path entry assumed a server-count assertion existed. It
   // did not: deleting the blender row from `MCP_SURFACES` left every test green, so the matrix
   // could quietly stop probing a server nobody would notice was unprobed. Derived from core's
