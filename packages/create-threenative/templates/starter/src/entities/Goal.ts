@@ -24,6 +24,8 @@ export interface IGoalMaterials {
   readonly floor: Material;
   /** The pole. The accent role, and the only warm thing on the far side. */
   readonly goal: Material;
+  /** The sandbar's beach rim and the flank below it. */
+  readonly shore: Material;
 }
 
 export class Goal {
@@ -65,7 +67,18 @@ export class Goal {
     });
     this.pennant.name = "finish-flag-cloth";
     this.mesh = this.pennant;
-    this.mesh.add(island, pole);
+    // A sand rim and a flank, so the far side is a sandbar and not a green rectangle floating on
+    // the water. Left bare it was the one piece of the coast with a hard cut edge and no shore,
+    // and it read as unfinished next to the main island's beach.
+    const rim = block(ISLAND.width + 0.7, 0.09, ISLAND.depth + 0.7, materials.shore, {
+      radius: 0.3,
+    });
+    rim.position.set(ISLAND.x, ISLAND.top - ISLAND.height - 0.02, ISLAND.z);
+    const flank = block(ISLAND.width + 0.35, 0.5, ISLAND.depth + 0.35, materials.shore, {
+      radius: 0.24,
+    });
+    flank.position.set(ISLAND.x, ISLAND.top - ISLAND.height - 0.3, ISLAND.z);
+    this.mesh.add(island, rim, flank, pole);
     ctx.add(this.mesh);
 
     this.#body = new RigidBody3D({

@@ -62,8 +62,10 @@ export const shooterUi = {
       primary: "WASD move · mouse look · click or F fires · right-click or Q aims · R reloads",
       restart: "restart",
       resume: "resume",
-      secondary:
-        "shift sprints · ctrl/C crouches · G projectile · E radius · V probe · H damage · X lethal · enter restarts",
+      // Player-facing verbs only. `G/E/V/H/X` drive the template's own proof scenarios and are
+      // still bound in `game.ts`; listing them here put five developer keys on the first screen a
+      // player ever sees, wrapped onto a second line under the real controls.
+      secondary: "shift sprints · ctrl/C crouches · enter restarts",
     },
     help: "shooter-menu__help",
     helpPrimary: "shooter-menu__help-primary",

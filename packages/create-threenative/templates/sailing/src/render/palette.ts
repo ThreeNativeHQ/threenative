@@ -1,11 +1,19 @@
 // Generated for you. These six roles are the sailing kit's editable visual vocabulary.
+// Open water at mid-morning. The values these replace put a pale cyan at the top of the sky dome
+// *and* used a near-cyan accent for the wave crests, so sea and sky met at the same value and the
+// frame photographed as one flat sheet with no horizon in it. Sea and sky have to disagree.
 export const palette = {
-  skyHigh: 0x75c9d8,
-  skyLow: 0x061b2b,
-  floor: 0x12384a,
-  player: 0xffd27a,
-  accent: 0x6fe8ff,
-  shadow: 0x0b2a3b,
+  /** Zenith. Properly blue, so the dome has somewhere to fall from. */
+  skyHigh: 0x2f6fae,
+  /** Horizon haze, and the fog colour. Where sea meets sky, this is the value. */
+  skyLow: 0xbcd6df,
+  /** Deep water in the troughs. */
+  floor: 0x0e3547,
+  /** The sun's own colour, used for the glint on the water. */
+  player: 0xffe6b8,
+  /** Crest water: green-lit shallow, not cyan. */
+  accent: 0x3f9aa4,
+  shadow: 0x143243,
 } as const;
 
 /** The kit's readable wave vocabulary; tune the sea here without touching the ship or rules. */

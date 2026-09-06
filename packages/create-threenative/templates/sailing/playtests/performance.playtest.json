@@ -1,22 +1,36 @@
 {
   "acceptanceId": "prd-236-performance-sailing",
-  "artifacts": { "screenshots": "after" },
+  "artifacts": {
+    "screenshots": "after"
+  },
   "assert": {
     "performance": {
-      "maxDrawCalls": 120,
+      "maxDrawCalls": 140,
       "maxFrameMsP95": 33,
-      "maxTriangles": 90000,
+      "maxTriangles": 120000,
       "minFps": 30
     }
   },
   "name": "production-performance",
   "schemaVersion": 1,
   "steps": [
-    { "kind": "input", "press": "ArrowUp", "holdTicks": 60, "release": true },
-    { "kind": "wait", "waitTicks": 600, "release": true }
+    {
+      "kind": "input",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 600,
+      "release": true
+    }
   ],
   "subject": "player",
   "target": "web",
-  "viewport": { "height": 1080, "width": 1920 },
+  "viewport": {
+    "height": 1080,
+    "width": 1920
+  },
   "warmupFrames": 60
 }

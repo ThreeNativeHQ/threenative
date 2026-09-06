@@ -75,9 +75,9 @@ const high: IWorldEnvironmentOptions = {
   // to be.
   bloomEnabled: true,
   bloomRadius: 0.5,
-  bloomStrength: 0.45,
-  bloomThreshold: 0.2,
-  exposure: 1.15,
+  bloomStrength: 0.3,
+  bloomThreshold: 0.62,
+  exposure: 1.02,
   // The two full-resolution denoise passes over the AO and GI terms: ~1.9 ms. Only worth running
   // when SSGI is on — its noise is what they clean up.
   denoiseEnabled: true,
@@ -120,9 +120,9 @@ const medium: IWorldEnvironmentOptions = {
   // to be.
   bloomEnabled: true,
   bloomRadius: 0.5,
-  bloomStrength: 0.45,
-  bloomThreshold: 0.2,
-  exposure: 1.15,
+  bloomStrength: 0.3,
+  bloomThreshold: 0.62,
+  exposure: 1.02,
   // Screen-space reflections: ~4.1 ms.
   ssrEnabled: true,
   // `SSRNode` defaults this to **1 world unit**, which on a scene this size reads as "reflections
@@ -150,9 +150,9 @@ const low: IWorldEnvironmentOptions = {
   // to be.
   bloomEnabled: true,
   bloomRadius: 0.5,
-  bloomStrength: 0.45,
-  bloomThreshold: 0.2,
-  exposure: 1.15,
+  bloomStrength: 0.3,
+  bloomThreshold: 0.62,
+  exposure: 1.02,
   tonemapMode: "aces",
 };
 

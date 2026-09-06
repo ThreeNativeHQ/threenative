@@ -1,8 +1,8 @@
 import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { Group, type Material, Mesh, Vector3 } from "three";
+import { Group, type Mesh, Vector3 } from "three";
 import { type IStarterConventions, preparePlayerConventions } from "../conventions.js";
-import { roundedBox } from "../render/shapes.js";
+import { type IHeroMaterials, hero } from "../render/shapes.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
@@ -42,11 +42,11 @@ export class Player {
 
   constructor(
     ctx: GameCtx,
-    material: Material,
+    materials: IHeroMaterials,
     spawn: { readonly x: number; readonly y: number; readonly z: number } = SPAWN,
   ) {
     this.mesh = new Group();
-    this.visual = new Mesh(roundedBox(0.6, 1, 0.6), material);
+    this.visual = hero(materials);
     this.visual.castShadow = true;
     this.mesh.add(this.visual);
     this.mesh.position.set(spawn.x, spawn.y, spawn.z);

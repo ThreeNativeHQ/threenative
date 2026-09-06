@@ -66,11 +66,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const state = ctx.state.getState();
     this.#player = ctx.entities.add(
       "player",
-      new Player(ctx, materials.player, {
-        x: Number.isFinite(state.playerX) ? state.playerX : Play.initialState.playerX,
-        y: 0.5,
-        z: 0,
-      }),
+      new Player(
+        ctx,
+        { accent: materials.heroAccent, body: materials.player, dark: materials.heroDark },
+        {
+          x: Number.isFinite(state.playerX) ? state.playerX : Play.initialState.playerX,
+          y: 0.5,
+          z: 0,
+        },
+      ),
     );
     const [texture, model] = await Promise.all([
       ctx.assets.texture("native-proof.png"),

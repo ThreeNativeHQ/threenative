@@ -10,7 +10,9 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): Direction
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
-  const key = new DirectionalLight(palette.accent, 3.2);
+  // Warm, but not the accent itself: keyed with the trim colour, the stone, the hero and the loot
+  // all took the same gold cast and the dungeon lost every distinction between them.
+  const key = new DirectionalLight(0xffe0b0, 2.6);
   key.name = "key-light";
   key.position.set(-8, 12, 6);
   key.castShadow = true;
@@ -25,11 +27,11 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): Direction
   key.shadow.normalBias = 0.04;
   scene.add(key);
 
-  const rim = new DirectionalLight(palette.player, 1.35);
+  const rim = new DirectionalLight(palette.player, 0.9);
   rim.name = "rim-light";
   rim.position.set(12, 6, -12);
   scene.add(rim);
-  scene.add(new AmbientLight(palette.skyHigh, 0.72));
+  scene.add(new AmbientLight(0x6a5a48, 1.5));
 
   return key;
 }

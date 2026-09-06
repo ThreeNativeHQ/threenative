@@ -15,14 +15,17 @@ export function setupSky(scene: Scene): void {
   const top = new Color(palette.skyHigh);
   const bottom = new Color(palette.skyLow);
   scene.background = top;
-  scene.fog = new Fog(bottom, 36, 150);
+  // Fog starts well past the trackside furniture. At the old `36` the grandstands on the far side
+  // of the circuit were already half dissolved, which is why the infield read as one flat wash
+  // instead of a place with things in it.
+  scene.fog = new Fog(bottom, 70, 230);
 
   // A vertical gradient, not a flat fill. This dome used to be one solid colour, and a blind score
   // of the first frame read it as exactly that: the sky sampled CEE6EA byte-identical at four
   // different heights.
   // Sky is most of the frame, so a flat one costs more than anything else here. Edit or delete
   // this — it is your file.
-  const radius = 120;
+  const radius = 260;
   const geometry = new SphereGeometry(radius, 24, 12);
   const positions = geometry.getAttribute("position");
   const colors = new Float32Array(positions.count * 3);

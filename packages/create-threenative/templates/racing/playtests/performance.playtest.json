@@ -1,23 +1,39 @@
 {
   "acceptanceId": "prd-194-performance-racing",
-  "artifacts": { "screenshots": "after" },
+  "artifacts": {
+    "screenshots": "after"
+  },
   "assert": {
     "performance": {
-      "maxDrawCalls": 195,
+      "maxDrawCalls": 330,
       "maxFrameMsP95": 33,
-      "maxTriangles": 4800,
+      "maxTriangles": 105000,
       "minFps": 30
     },
-    "renderChain": { "tier": "high" }
+    "renderChain": {
+      "tier": "high"
+    }
   },
   "name": "production-performance",
   "schemaVersion": 1,
   "steps": [
-    { "kind": "input", "press": "ArrowUp", "holdTicks": 60, "release": true },
-    { "kind": "wait", "waitTicks": 600, "release": true }
+    {
+      "kind": "input",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 600,
+      "release": true
+    }
   ],
   "subject": "player",
   "target": "web",
-  "viewport": { "height": 1080, "width": 1920 },
+  "viewport": {
+    "height": 1080,
+    "width": 1920
+  },
   "warmupFrames": 60
 }

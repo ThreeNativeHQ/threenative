@@ -39,7 +39,9 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     setupSky(ctx.scene);
-    ctx.scene.fog = new Fog(palette.skyLow, 30, 100);
+    // Fog to the horizon colour, and starting far enough out that the island is not eaten. At
+    // 30..100 against a dark navy the sea went to slate a boat-length away.
+    ctx.scene.fog = new Fog(palette.skyLow, 95, 330);
     const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer, ctx.scene, ctx.camera, { godraysLight: sun, mobile: isMobile() });
     const loading = createLoadingScreen(ctx);
@@ -52,7 +54,9 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
       : undefined;
 
     const field = new WaveField({ waves: SAILING_WAVES, domainWarp: SAILING_DOMAIN_WARP });
-    const water = new Mesh(new PlaneGeometry(80, 80, 96, 96), createWaterMaterial(field));
+    // 300 units of sea against a 340-unit sky dome: the water now runs out of sight into the fog
+    // instead of ending at a visible rectangular edge a few boat-lengths away.
+    const water = new Mesh(new PlaneGeometry(300, 300, 150, 150), createWaterMaterial(field));
     water.geometry.rotateX(-Math.PI / 2);
     water.receiveShadow = true;
     water.frustumCulled = false;
@@ -114,7 +118,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
         paused: state.paused,
         shipZ: ship.mesh.position.z,
         status,
-        submergedFraction: ship.buoyancy.submergedFraction,
+        submergedFraction: ship.immersion,
         uiReady: frameCtx.state.getState().uiReady,
         wind,
       });

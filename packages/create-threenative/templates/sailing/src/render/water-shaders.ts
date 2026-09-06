@@ -27,13 +27,13 @@ export function waterColourNode(height: Node<"float">, normal: Node<"vec3">): No
   // The crest tone is the accent held back to three quarters. At full strength every crest
   // saturates to white under the bloom and the sea goes back to being one flat value, which is
   // the failure this function exists to avoid.
-  const crest = color(palette.accent).mul(0.74);
+  const crest = color(palette.accent).mul(0.9);
   const base = mix(color(palette.floor), crest, smoothstep(-0.14, 0.2, height));
   const facing = normal.dot(SUN).clamp(0, 1);
   // A tight highlight on the faces turned into the sun. This is what turns a moving surface into
   // something the eye can read as moving.
-  const glint = facing.pow(26).mul(0.55);
+  const glint = facing.pow(30).mul(0.75);
   return base
-    .mul(mix(float(0.52), float(1), facing))
+    .mul(mix(float(0.46), float(1.04), facing))
     .add(color(palette.player).mul(glint)) as Node<"vec3">;
 }
