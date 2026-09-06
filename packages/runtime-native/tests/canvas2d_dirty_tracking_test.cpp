@@ -29,6 +29,23 @@ static void check(bool condition, const char* name) {
 }
 
 int main() {
+    Canvas2DContext stroke(64, 64);
+    stroke.setLineWidth(16);
+    stroke.setLineCap("round");
+    stroke.beginPath();
+    stroke.moveTo(16, 32);
+    stroke.lineTo(48, 32);
+    stroke.stroke();
+    check(stroke.getImageData(9, 32, 1, 1).data[3] > 200, "round cap extends beyond endpoint");
+    check(stroke.getImageData(9, 25, 1, 1).data[3] == 0, "round cap does not fill a square corner");
+    stroke.save();
+    stroke.setLineCap("square");
+    stroke.stroke();
+    check(stroke.getImageData(9, 25, 1, 1).data[3] > 200, "square cap fills its corner");
+    stroke.restore();
+    check(stroke.getLineCap() == "round", "restore restores cap state");
+    stroke.setLineCap("invalid");
+    check(stroke.getLineCap() == "round", "invalid cap preserves existing state");
     Canvas2DContext gradientCanvas(64, 16);
     const auto gradientId = gradientCanvas.createLinearGradient(0, 0, 64, 0);
     const auto gradient = gradientCanvas.getGradient(gradientId);

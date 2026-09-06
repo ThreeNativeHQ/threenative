@@ -7,6 +7,11 @@
   let textAlign = 'start';
   let textBaseline = 'alphabetic';
 
+  Object.defineProperty(ctx, 'lineCap', {
+    get: () => ctx.__nativeGetLineCap(),
+    set: (value) => ctx.__nativeSetLineCap(value),
+  });
+
   Object.defineProperty(ctx, 'fillStyle', {
     get: () => fillStyle,
     set: (value) => {

@@ -63,6 +63,20 @@ export function startScene(canvas, dimensions) {
     let rejectedStop = false;
     try { gradient.addColorStop(-1, "#ffffff"); } catch { rejectedStop = true; }
     assertCondition(rejectedStop, "gradient must reject an out-of-range stop");
+    textContext.strokeStyle = "#ffffff";
+    textContext.lineWidth = 16;
+    textContext.lineCap = "round";
+    textContext.beginPath();
+    textContext.moveTo(16, 48);
+    textContext.lineTo(48, 48);
+    textContext.stroke();
+    assertCondition(textContext.getImageData(9, 48, 1, 1).data[3] > 200, "Canvas2D round caps must extend beyond path endpoints");
+    textContext.save();
+    textContext.lineCap = "square";
+    textContext.restore();
+    assertCondition(textContext.lineCap === "round", "restoring state must restore the line cap getter");
+    textContext.lineCap = "invalid";
+    assertCondition(textContext.lineCap === "round", "invalid line caps must leave the current style unchanged");
     // Read back an actual canvas upload: CPU drawing checks alone miss a black
     // CanvasTexture when the native frame stream drops the external-image source.
     const device = await (await navigator.gpu.requestAdapter()).requestDevice();

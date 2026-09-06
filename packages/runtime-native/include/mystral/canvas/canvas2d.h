@@ -79,11 +79,13 @@ public:
     size_t createLinearGradient(float x0, float y0, float x1, float y1);
     std::shared_ptr<CanvasGradient> getGradient(size_t index) const;
     void setLineWidth(float width);
+    void setLineCap(const std::string& cap);
     void setGlobalAlpha(float alpha);
 
     std::string getFillStyle() const;
     std::string getStrokeStyle() const;
     float getLineWidth() const;
+    std::string getLineCap() const;
     float getGlobalAlpha() const;
 
     // ========================================================================

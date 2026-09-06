@@ -698,6 +698,16 @@ js::JSValueHandle createCanvas2DContext(
         })
     );
 
+    engine->setProperty(jsCtx, "__nativeSetLineCap",
+        engine->newFunction("__nativeSetLineCap", [engine, ctxPtr](void*, const std::vector<js::JSValueHandle>& args) {
+            if (!args.empty()) ctxPtr->setLineCap(engine->toString(args[0]));
+            return engine->newUndefined();
+        }));
+    engine->setProperty(jsCtx, "__nativeGetLineCap",
+        engine->newFunction("__nativeGetLineCap", [engine, ctxPtr](void*, const std::vector<js::JSValueHandle>&) {
+            return engine->newString(ctxPtr->getLineCap().c_str());
+        }));
+
     engine->setProperty(jsCtx, "__nativeSetGlobalAlpha",
         engine->newFunction("__nativeSetGlobalAlpha", [engine, ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
             if (ctxPtr && !args.empty()) {

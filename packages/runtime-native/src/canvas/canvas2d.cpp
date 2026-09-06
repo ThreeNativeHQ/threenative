@@ -212,6 +212,7 @@ struct Canvas2DState {
     std::shared_ptr<CanvasGradient> fillGradient;
     std::shared_ptr<CanvasGradient> strokeGradient;
     float lineWidth = 1.0f;
+    std::string lineCap = "butt";
     float globalAlpha = 1.0f;
     std::string font = "10px sans-serif";
     std::string textAlign = "start";
@@ -340,6 +341,8 @@ struct Canvas2DContext::Impl {
         paint.setAntiAlias(true);
         paint.setStyle(SkPaint::kStroke_Style);
         paint.setStrokeWidth(currentState.lineWidth);
+        paint.setStrokeCap(currentState.lineCap == "round" ? SkPaint::kRound_Cap :
+                           currentState.lineCap == "square" ? SkPaint::kSquare_Cap : SkPaint::kButt_Cap);
         Color c = parseColor(currentState.strokeStyle);
         paint.setColor(SkColorSetARGB(
             static_cast<uint8_t>(c.a * currentState.globalAlpha),
@@ -475,6 +478,14 @@ std::shared_ptr<CanvasGradient> Canvas2DContext::getGradient(size_t index) const
 
 void Canvas2DContext::setLineWidth(float width) {
     impl_->currentState.lineWidth = width;
+}
+
+void Canvas2DContext::setLineCap(const std::string& cap) {
+    if (cap == "butt" || cap == "round" || cap == "square") impl_->currentState.lineCap = cap;
+}
+
+std::string Canvas2DContext::getLineCap() const {
+    return impl_->currentState.lineCap;
 }
 
 void Canvas2DContext::setGlobalAlpha(float alpha) {
