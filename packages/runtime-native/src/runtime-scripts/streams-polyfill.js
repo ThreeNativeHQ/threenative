@@ -754,17 +754,21 @@
   if (typeof globalThis.TextDecoderStream === "undefined") {
     class TextDecoderStream {
       constructor(label = "utf-8", options = {}) {
-        this.encoding = label || "utf-8";
-        const decoder = new TextDecoder(this.encoding);
+        // Propagate the label and fatal/ignoreBOM options to the stateful
+        // fallback decoder so a split sequence survives chunk boundaries;
+        // unsupported labels reject here, matching the TextDecoder surface.
+        const decoder = new TextDecoder(label, options);
+        this.encoding = decoder.encoding;
+        this.fatal = decoder.fatal;
+        this.ignoreBOM = decoder.ignoreBOM;
         const stream = new globalThis.TransformStream({
           transform(chunk, controller) {
-            let bytes;
-            if (chunk instanceof Uint8Array) bytes = chunk;
-            else if (chunk instanceof ArrayBuffer) bytes = new Uint8Array(chunk);
-            else if (ArrayBuffer.isView(chunk)) bytes = new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-            else bytes = chunk;
-            const text = decoder.decode(bytes);
+            const text = decoder.decode(chunk, { stream: true });
             if (text) controller.enqueue(text);
+          },
+          flush(controller) {
+            const tail = decoder.decode(undefined, { stream: false });
+            if (tail) controller.enqueue(tail);
           },
         });
         this.readable = stream.readable;

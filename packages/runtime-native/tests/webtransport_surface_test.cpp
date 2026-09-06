@@ -222,6 +222,41 @@ constexpr const char* kScript = R"JS((() => {
     return passed;
   }));
 
+  // UTF-8 surface on the embedded/compiled path: the protocol rejects
+  // malformed handshake text portably, so whatever TextDecoder is installed
+  // (native on V8, fallback on QuickJS) must honor fatal, streaming splits,
+  // view offsets and honest label rejection.
+  pending.push((async () => {
+    const malformed = new Uint8Array([0xff, 0xfe]);
+    let fatalThrew = false;
+    try { new TextDecoder('utf-8', { fatal: true }).decode(malformed); }
+    catch (e) { fatalThrew = e instanceof TypeError; }
+    const replaced = new TextDecoder().decode(malformed);
+    const streaming = new TextDecoder();
+    const first = streaming.decode(new Uint8Array([0xc3]), { stream: true });
+    const second = streaming.decode(new Uint8Array([0xa9]));
+    const backing = new Uint8Array([0x00, 0x68, 0x69, 0x00]);
+    const offset = new TextDecoder().decode(new Uint8Array(backing.buffer, 1, 2));
+    let badLabel = false;
+    try { new TextDecoder('utf-16'); } catch (e) { badLabel = e instanceof RangeError; }
+    const utf8 = new TextDecoderStream('utf-8', { fatal: true });
+    const utf8Ok = utf8.encoding === 'utf-8' && utf8.fatal === true;
+    const splitWriter = utf8.writable.getWriter();
+    const splitReader = utf8.readable.getReader();
+    const splitRead = splitReader.read();
+    await splitWriter.write(new Uint8Array([0xe2, 0x82]));
+    const pendingBefore = await Promise.race(
+      [splitRead.then(() => 'settled'), Promise.resolve('pending')]);
+    await splitWriter.write(new Uint8Array([0xac]));
+    const splitValue = (await splitRead).value;
+    await splitWriter.close();
+    return fatalThrew && replaced === '��' && first === '' &&
+      second === 'é' && offset === 'hi' && badLabel && utf8Ok &&
+      pendingBefore === 'pending' && splitValue === '€';
+  })().then((utf8Ok) => {
+    ok.push(utf8Ok);
+  }));
+
   Promise.all(pending).then(async () => {
     // Exercise the installed adapter and both embedded engines. Only transport I/O
     // is substituted; resource observations still come from the native bridge.

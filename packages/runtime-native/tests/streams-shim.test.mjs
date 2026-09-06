@@ -209,6 +209,50 @@ test("TransformStream + text streams round-trip bytes back to text", async () =>
   assert.equal(guest(result), "ABCD");
 });
 
+test("TextDecoderStream propagates label/options and preserves split sequences", async () => {
+  const context = setupStreamsContext();
+  const result = await vm.runInContext(
+    `(async () => {
+      // split "€" (U+20AC: e2 82 ac) across two chunks must survive streaming state
+      const fatal = new TextDecoderStream("utf-8", { fatal: true });
+      const fatalWriter = fatal.writable.getWriter();
+      const fatalReader = fatal.readable.getReader();
+      const first = fatalReader.read();
+      await fatalWriter.write(new Uint8Array([0xe2, 0x82]));
+      const pendingBefore = await Promise.race([first.then(() => "settled"), Promise.resolve("pending")]);
+      await fatalWriter.write(new Uint8Array([0xac]));
+      const firstValue = await first;
+      await fatalWriter.close();
+      // fatal stream rejects malformed input instead of replacing
+      const bad = new TextDecoderStream("utf-8", { fatal: true });
+      const badWriter = bad.writable.getWriter();
+      const badReader = bad.readable.getReader();
+      badReader.read().catch(() => {});
+      badWriter.write(new Uint8Array([0xff])).catch(() => {});
+      const badSettled = await badWriter.closed.then(() => "resolved", () => "rejected");
+      let badLabel = null;
+      try { new TextDecoderStream("utf-16"); } catch (e) { badLabel = e instanceof RangeError ? "RangeError" : String(e && e.name); }
+      return {
+        encoding: fatal.encoding,
+        fatalFlag: fatal.fatal,
+        pendingBefore,
+        firstValue: firstValue.value,
+        badSettled,
+        badLabel,
+      };
+    })()`,
+    context,
+  );
+  assert.deepEqual(guest(result), {
+    encoding: "utf-8",
+    fatalFlag: true,
+    pendingBefore: "pending",
+    firstValue: "€",
+    badSettled: "rejected",
+    badLabel: "RangeError",
+  });
+});
+
 test("identity TransformStream passes chunks through untouched", async () => {
   const context = setupStreamsContext();
   const result = await vm.runInContext(

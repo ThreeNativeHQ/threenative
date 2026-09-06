@@ -276,6 +276,50 @@ test("http fetch surfaces status fields and unwraps a Request for the native bri
   );
 });
 
+test("fallback TextDecoder: fatal throws, nonfatal replaces, splits and offsets decode", () => {
+  const { context } = setupFetchContext();
+  const result = vm.runInContext(
+    `(() => {
+      const malformed = new Uint8Array([0xff, 0xfe]);
+      let fatalThrew = null;
+      try { new TextDecoder("utf-8", { fatal: true }).decode(malformed); }
+      catch (e) { fatalThrew = e instanceof TypeError ? e.name : String(e && e.name); }
+      const replaced = new TextDecoder().decode(malformed);
+      // valid split multibyte sequence across streaming chunks ("é" = U+00E9)
+      const streaming = new TextDecoder();
+      const first = streaming.decode(new Uint8Array([0xc3]), { stream: true });
+      const second = streaming.decode(new Uint8Array([0xa9]));
+      // ArrayBuffer views must honor byteOffset/byteLength
+      const backing = new Uint8Array([0x00, 0x68, 0x69, 0x00]);
+      const view = new Uint8Array(backing.buffer, 1, 2);
+      const offset = new TextDecoder().decode(view);
+      // unsupported encodings/options reject honestly
+      let badLabel = null;
+      try { new TextDecoder("utf-16"); } catch (e) { badLabel = e instanceof RangeError ? "RangeError" : String(e && e.name); }
+      let badOption = null;
+      try { new TextDecoder("utf-8", { fatal: true }).decode("nope"); } catch (e) { badOption = "threw"; }
+      return {
+        fatalThrew, replaced, first, second,
+        offset, badLabel, badOption,
+        fatalFlag: new TextDecoder("utf-8", { fatal: true }).fatal,
+        encoding: new TextDecoder().encoding,
+      };
+    })()`,
+    context,
+  );
+  assert.deepEqual(guest(result), {
+    fatalThrew: "TypeError",
+    replaced: "��",
+    first: "",
+    second: "é",
+    offset: "hi",
+    badLabel: "RangeError",
+    badOption: "threw",
+    fatalFlag: true,
+    encoding: "utf-8",
+  });
+});
+
 test("unsupported URL schemes reject instead of falling through to file reads", async () => {
   const { context } = setupFetchContext({
     __readFileAsync: () => { throw new Error("must not be reached"); },
