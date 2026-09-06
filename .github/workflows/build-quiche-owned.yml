@@ -98,6 +98,12 @@ jobs:
           arch: x64
           host_arch: x64
           vsversion: "2022"
+      - name: Install NASM (win-x64)
+        if: matrix.target == 'win-x64'
+        run: choco install nasm --version=2.16.3 --no-progress --yes
+      - name: Verify NASM (win-x64)
+        if: matrix.target == 'win-x64'
+        run: nasm -v
       # macOS/iOS Xcode: xcrun --sdk <macosx|iphoneos|iphonesimulator>
       # resolves clang/ar/ranlib; producer exports CC/AR/SDKROOT and
       # IPHONEOS_DEPLOYMENT_TARGET=14.0. Cross-target ip_san is

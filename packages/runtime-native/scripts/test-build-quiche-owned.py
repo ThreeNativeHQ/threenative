@@ -291,6 +291,36 @@ class TestExactSymbols(unittest.TestCase):
 
             self.assertEqual(calls, [["/usr/bin/nm", "-g", b.resolve(lib)]])
 
+    def test_apple_archive_probe_retries_target_arch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lib, inc = fixture_archive(tmp)
+            calls = []
+
+            def fake_check_output(args, **kwargs):
+                calls.append(args)
+                if len(calls) == 1:
+                    raise subprocess.CalledProcessError(1, args)
+                return ("0000000000000000 (__TEXT,__text) external "
+                        "_quiche_h3_config_set_additional_settings\n"
+                        "0000000000000000 (__TEXT,__text) external "
+                        "_quiche_connect\n"
+                        "0000000000000000 (__TEXT,__text) external "
+                        "_quiche_accept\n")
+
+            with mock.patch.object(b.shutil, "which",
+                                  side_effect=lambda name: "/usr/bin/nm"
+                                  if name == "nm" else None), \
+                    mock.patch.object(b.subprocess, "check_output",
+                                      side_effect=fake_check_output):
+                b.validate_archive("ios-arm64", lib,
+                                   os.path.join(inc, "quiche.h"))
+
+            normalized = b.resolve(lib)
+            self.assertEqual(calls, [
+                ["/usr/bin/nm", "-g", normalized],
+                ["/usr/bin/nm", "-g", "-arch", "arm64", normalized],
+            ])
+
     def test_undefined_only_rejected(self):
         defined = b.defined_symbols_nm(
             "                 U quiche_connect\n"

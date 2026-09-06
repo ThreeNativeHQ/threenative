@@ -170,6 +170,8 @@ def check_workflow(doc):
     for pin in ("1.96.0", "1.26.3", "3.12", "PyYAML==6.0.3", "cmake==4.4.2"):
         if pin not in full:
             raise WorkflowCheckError(f"missing pinned provision: {pin}")
+    if "choco install nasm --version=2.16.3" not in full:
+        raise WorkflowCheckError("missing pinned NASM provision")
     for provision in ("msvc-dev-cmd", "arch: x64", "matrix.sdk",
                       "xcrun --sdk", "setup-xcode",
                       "27.1.12297006", "r27b", "setup-ndk",
@@ -410,6 +412,16 @@ class WorkflowTests(unittest.TestCase):
         for step in doc["jobs"]["build"]["steps"]:
             if "run" in step:
                 step["run"] = step["run"].replace("cmake==4.4.2", "")
+        with self.assertRaises(WorkflowCheckError):
+            check_workflow(doc)
+
+    def test_missing_nasm_install_rejected(self):
+        import copy
+        doc = copy.deepcopy(load_workflow())
+        for step in doc["jobs"]["build"]["steps"]:
+            if "run" in step:
+                step["run"] = step["run"].replace(
+                    "choco install nasm --version=2.16.3 --no-progress --yes", "")
         with self.assertRaises(WorkflowCheckError):
             check_workflow(doc)
 

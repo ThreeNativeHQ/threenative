@@ -297,10 +297,20 @@ def validate_archive(target, lib_path, header_path):
         nm_args = [tool, "-g"]
         # Each Cargo invocation produces a target-specific archive.  Keep the
         # probe to the portable `nm -g` contract: Apple's `-arch` archive
-        # filter rejects valid static archives on some Xcode runners.
+        # filter rejects valid static archives on some Xcode runners.  If the
+        # host-default probe rejects a cross-target archive, retry with the
+        # requested architecture so the archive is still inspected.
         nm_args.append(lib_path)
-        out = subprocess.check_output(nm_args,
-                                      text=True, stderr=subprocess.DEVNULL)
+        try:
+            out = subprocess.check_output(
+                nm_args, text=True, stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            if target not in APPLE_SDK:
+                raise
+            arch_flag = "--arch" if os.path.basename(tool) == "llvm-nm" else "-arch"
+            target_nm_args = [tool, "-g", arch_flag, APPLE_SDK[target][1], lib_path]
+            out = subprocess.check_output(
+                target_nm_args, text=True, stderr=subprocess.DEVNULL)
         defined = defined_symbols_nm(out)
     for sym in REQUIRED_SYMBOLS:
         if sym not in defined:
