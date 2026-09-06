@@ -252,7 +252,7 @@ function normalizeOptions(input = {}) {
     duration: input.duration ?? (regression ? REGRESSION_COLLECTION_PROFILE.durationSeconds : 60),
     help: input.help,
     out: input.out ?? (regression ? '.runtime/prd358/regression' : '.runtime/prd064/production'),
-    prebuiltArtifact: input.prebuiltArtifact,
+    prebuiltArtifact: input.prebuiltArtifact === undefined ? undefined : resolve(input.prebuiltArtifact),
     physicalEvidence: input.physicalEvidence,
     renderSize: renderSize ?? { height: 1080, width: 1920 },
     profile,

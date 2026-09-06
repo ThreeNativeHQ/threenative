@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { afterEach, test } from 'vitest';
 import { PNG } from 'pngjs';
@@ -432,6 +432,14 @@ test('accepted profile controls are parsed and execution receives every value', 
   assert.equal(parsed.warmup, 3);
   assert.equal(parsed.repetitions, 4);
   assert.equal(parsed.profile, 'production');
+  const relativeArtifact = parseProductionArgs([
+    '--target', 'desktop',
+    '--prebuilt-artifact', 'build/tn-macos/mystral',
+  ]);
+  assert.equal(
+    relativeArtifact.prebuiltArtifact,
+    resolve('build/tn-macos/mystral'),
+  );
   const regression = parseProductionArgs(['--target', 'desktop', '--profile', 'regression']);
   assert.equal(regression.profile, 'regression');
   assert.equal(regression.duration, 30);
