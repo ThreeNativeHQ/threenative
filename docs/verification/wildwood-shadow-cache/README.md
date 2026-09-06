@@ -28,8 +28,21 @@ and scaffold patch files carry identical bytes; a regression test now enforces t
   installed/adopted. Its foliage assets have no virtual-geometry metadata and are below the bake
   threshold, so no speculative `ClusteredBatch` conversion was made.
 
-## Remaining verification
+## Final verification
 
-Installed-package A/B and the full repository test gate are still pending. Typecheck and
-tracked-file lint passed; unrestricted `pnpm lint` also inspected unrelated ignored `.linchpin`
-JSON files and reported eight formatting errors there.
+- Repository typecheck passed. Full test run: **391 files passed, 1 skipped; 4,283 tests passed,
+  4 skipped**. Lint was rerun after formatting the new receipt; eight unrelated ignored
+  `.linchpin` JSON formatting errors remain.
+- Installed-package timing captures and their limitations are in [performance.json](performance.json).
+  They do not establish a causal FPS percentage gain; the cache-work reduction above is verified.
+- Updated Wildwood web walking playtest passed: 1,035 frames, over 30 metres travelled, zero
+  diagnostics.
+- The contact-shading speckle reported against this work was a separate defect and is resolved in
+  [BUG-contact-noise-and-texture-blur.md](BUG-contact-noise-and-texture-blur.md): the GI gather was
+  rotating its sample noise every frame with no TRAA stage to average it. That report supersedes
+  [noise.md](noise.md), whose sharpening change the owner rejected. **The shadow-material cache
+  work on this page was never implicated in it and is untouched.**
+- The native Wildwood package rebuilt successfully, but its full-game render-chain playtest
+  failed with zero observed frames and a missing semantic bridge diagnostic. This does not
+  establish the underlying startup cause. Whole-game native verification remains open; the
+  selected engine shadow conformance case above is the passing native rendering proof.

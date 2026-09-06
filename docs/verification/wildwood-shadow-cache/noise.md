@@ -1,33 +1,50 @@
-# Wildwood ground-speckle diagnosis
+# Wildwood contact-shadow grain correction
 
-Captured 2026-09-05 from the deterministic spawn with no keyboard, mouse, or pointer-lock input.
-Every arm used the same 22-second settle, 1280x720 CSS and drawing buffer, DPR 1,
-`resolutionScale: 1` (`scaleSource: "auto"`), and the NVIDIA/Turing RTX 2080 adapter. Each run
-reported zero console errors and fixed pixels. The baseline stages were ambient occlusion, bloom,
-sharpen, SSGI (`ssgiQuality: "low"`), and vignette; denoise was enabled, exposure was `0.94`,
-ACES tonemapping was active, and SSR/god rays were disabled.
+**Superseded 2026-09-05 by [BUG-contact-noise-and-texture-blur.md](BUG-contact-noise-and-texture-blur.md),
+which names the cause.** Read that first. This page is kept for the attribution work it did record
+and for the two conclusions it got wrong, both of which are instructive.
 
-The GTAO and SSGI toggles were browser-only route rewrites of `quality.ts`; the file on disk and
-production render settings were unchanged. `TN_WORLD_ENVIRONMENT` confirmed each applied toggle.
+## What this page originally concluded, and why it was wrong
 
-The metric is `mean(abs(Laplacian)) / mean(luminance)` over fixed regions. Baseline-repeat / GTAO
-off / SSGI off ratios were:
+It reported the fix as "denoise GTAO before the colour multiply, and change RCAS sharpening from
+0.28 to 0.9". The owner rejected the second half on the matched screenshots: 0.9 hid the speckle by
+softening every ground and leaf texture in the game.
 
-| Region | Baseline repeat | GTAO off | SSGI off |
-| --- | ---: | ---: | ---: |
-| ground-mid | 0.707 | 0.702 | 0.556 |
-| ground-left | 0.762 | 0.697 | 0.612 |
-| ground-right | 0.759 | 0.777 | 0.626 |
-| fern-mid | 1.075 | 1.001 | 0.852 |
-| canopy | 1.234 | 1.075 | 0.984 |
+The actual cause was `SSGINode.useTemporalFiltering`, which ships `true` and, per three's own
+documentation on the property, *"requires the usage of `TRAANode`"*. Wildwood's chain has none, so
+the node rotated its sample pattern every frame and nothing ever averaged the result. Two errors
+followed from not knowing that:
 
-SSGI contributes to the rendered speckle signal: its ablation moved all five regions in the same
-direction. GTAO contributes darkening and changes the foliage/canopy signal, while the pointed
-ground region was at the repeat floor (≤0.009) and one ground region moved the wrong way.
+1. **"Aggressive sharpening amplified the residual high-frequency grain" identified an amplifier,
+   not a source.** It is true, and it is why turning sharpening down worked; it is also why turning
+   sharpening down was the wrong place to act. The grain was one term of one stage.
+2. **The matched captures were not matched.** Wind and dust are vertex programs driven by TSL
+   `time`, so two captures taken at two wall-clock instants hold two different sets of plants.
+   `noise-before.png` and `noise-after.png` in this directory differ in foliage pose as well as in
+   shading, and crop-level reading of them is unsound. The replacement harness pins `time`.
 
-This does not prove an exclusive or dominant cause. The normalized Laplacian is a contrast proxy,
-not brightness-independent noise: additive lighting can lower its ratio without removing texture
-frequencies. One settled frame per arm leaves shadow acne, sharpening, denoiser behavior, and
-temporal/moving-camera effects unresolved; no shadow-disable arm was run.
+The deeper reason no screenshot pair could have settled it: **two captures of the same build
+differed by 5.2/255 of mean luminance, against 7.5 between the arms being compared.** The
+comparison had no noise floor because no same-arm repeat was ever run, so 70% of what it was
+reading was its own churn — and that churn *was* the artifact.
 
-Evidence: [receipt](../../../artifacts/wildwood-performance/noise/receipt.md), [metric JSON](../../../artifacts/wildwood-performance/noise/noise-metric.json), [baseline](../../../artifacts/wildwood-performance/noise/a-baseline.json), [repeat](../../../artifacts/wildwood-performance/noise/a2-baseline-repeat.json), [GTAO ablation](../../../artifacts/wildwood-performance/noise/b-no-gtao.json), and [SSGI ablation](../../../artifacts/wildwood-performance/noise/c-no-ssgi.json).
+## What this page got right and still stands
+
+- Increasing SSGI sampling quality did not remove the artifact.
+- Increasing shadow normal bias did little, and disabling the sun's shadows left it visible. Shadow
+  mapping was correctly ruled out.
+- Earlier SSGI-off comparisons changed brightness and did not prove SSGI was the main source. That
+  caution was right: those arms are exposure-confounded and cannot attribute. What settled it was
+  temporal variance, which is brightness-independent.
+- Filtering the contact term genuinely helps and is kept — `GTAONode` defaults the same temporal
+  property to `false`, so its grain was static and spatially filterable all along. That is exactly
+  why filtering it helped and never closed the gap.
+
+## Regression protection
+
+The seven tests described here have been replaced by eleven, and the two mutation controls by five.
+The current set, its results, and the gates run are in the report linked at the top. Notably, the
+controls this page recorded — raw AO and changed sharpening — proved that the *pinned settings*
+were detected, not that the look was desirable. The suite now also pins the temporal-filtering
+setting on both gathers and asserts that no TRAA stage is requested, so adding one flags the test
+for revision rather than silently freezing today's answer.
