@@ -240,3 +240,33 @@ capacity retry integration, receive bounds, positive trusted TLS and other
 platforms remain open.
 
 Evidence: [Task 2b-signal](../../../docs/verification/prd-359-task2b-signal-2026-09-05.md).
+
+## PRD-359 native WebTransport stream integration — 2026-09-05
+
+Task 2b is committed as `2dc42fcc`. The JS adapter retries bounded native send
+admission, observes abort while waiting for capacity or FIN, keeps read/write
+shutdown independent, and grants receive credit from the readable queue. Native
+reads have per-tick work bounds, resume on idle sockets, reject foreign session
+headers and retain completed streams until their readable data drains. Local
+close settles outstanding operations and clears retained queues. Actual native
+and JS resource counters are exposed through `__wtResourceStats`; absent native
+observations fail instead of being counted as zero.
+
+Rebuilt Linux V8 and QuickJS wire/surface contracts passed 2/2 each. The final
+required Go/V8 suite passed 15/15, and a separate deterministic 65,536-byte echo
+compared every byte and read to FIN. Native negative controls failed after each
+of five safeguards was removed and passed after restoration. The full suite,
+typecheck and lint passed; the [Task 2b evidence](../../../docs/verification/prd-359-task2b-2026-09-05.md)
+records exact counts and review corrections. These runs use the explicit
+self-signed development fixture; positive trusted TLS remains unverified.
+
+Task 2b-proof completed the live queue checkpoint: all 17 required Go/Linux V8
+cases passed, including a stalled application reader followed by byte-exact 32 MiB
+delivery/FIN and 100 reconnects in one native process. Each reconnect exercised a
+datagram and bidirectional echo, then required all observed native/JS resources to
+return to zero. Removing receive credit made the pressure test fail; retaining a
+closed native session made the first reconnect fail. Source was restored and the
+final required suite, full repository suite, typecheck and lint passed. The
+[Task 2b-proof evidence](../../../docs/verification/prd-359-task2b-proof-2026-09-05.md)
+records exact observations. Task 2a/2b queue integration is accepted; no additional
+platform, trusted TLS or broader load/soak qualification is claimed here.

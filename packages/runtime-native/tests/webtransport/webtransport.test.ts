@@ -122,6 +122,7 @@ async function startServer(): Promise<boolean> {
 
 type ScriptOptions = {
   allowInsecurePeerVerification?: boolean;
+  timeoutMs?: number;
   // Lowers the datagram capacity the native side negotiates, so an oversize
   // rejection is provable against a small number instead of whatever this
   // machine's path happens to allow. A string passes the raw value through so a
@@ -151,7 +152,7 @@ async function runScript(
   }
   const { stdout, stderr } = await runCommand(runtimeBinary, ["run", path, "--headless"], {
     env,
-    timeoutMs: SCRIPT_TIMEOUT_MS,
+    timeoutMs: options.timeoutMs ?? SCRIPT_TIMEOUT_MS,
   });
   return `${stdout}\n${stderr}`;
 }
@@ -583,4 +584,194 @@ describe("WebTransport API", () => {
     );
     expect(out).toContain("PASS: bidi-pipe bidi-pipe");
   });
+
+  it("backpressures stalled receiver", async ({ skip }) => {
+    requireWebTransport(skip);
+    const out = await runScript(
+      "native-stalled-reader-probe.js",
+      `const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function main() {
+  const wt = new WebTransport("${SERVER_URL}");
+  await wt.ready;
+  const stream = await wt.createBidirectionalStream();
+  const writer = stream.writable.getWriter();
+  writer.closed.catch(() => {});
+  const total = 32 * 1024 * 1024;
+  let written = 0;
+  let done = false;
+  let error = null;
+  const produce = (async () => {
+    while (written < total) {
+      const bytes = new Uint8Array(65536);
+      for (let i = 0; i < bytes.length; i++) bytes[i] = (written + i) % 251;
+      await writer.write(bytes);
+      written += bytes.length;
+    }
+    await writer.close();
+    done = true;
+  })();
+  produce.catch((e) => {
+    error = e;
+  });
+  let previous = -1;
+  let stable = 0;
+  let pressure = null;
+  for (let tick = 0; tick < 100; tick++) {
+    await sleep(50);
+    if (error) throw error;
+    const stats = __wtResourceStats();
+    if (
+      stats.native.queuedReliableBytes > 1048576 ||
+      stats.js.queuedReliableBytes > 1048576 ||
+      stats.js.queuedReceiveBytes > 16384
+    )
+      throw new Error("queue limit " + JSON.stringify(stats));
+    stable = written === previous ? stable + 1 : 0;
+    previous = written;
+    if (
+      !done &&
+      written < total &&
+      stable >= 6 &&
+      stats.native.queuedReliableBytes > 0 &&
+      stats.js.queuedReliableBytes > 0 &&
+      stats.js.queuedReceiveBytes > 0
+    ) {
+      pressure = stats;
+      break;
+    }
+  }
+  if (!pressure || done || written >= total)
+    throw new Error("sender never demonstrated stalled-reader pressure; written=" + written);
+  console.log("PRESSURE written=" + written + " stats=" + JSON.stringify(pressure));
+  const reader = stream.readable.getReader();
+  let received = 0;
+  while (true) {
+    const { value, done: end } = await reader.read();
+    if (end) break;
+    for (let i = 0; i < value.length; i++) {
+      if (value[i] !== received % 251) throw new Error("mismatch " + received);
+      received++;
+    }
+  }
+  await produce;
+  if (received !== total) throw new Error("size " + received);
+  wt.close();
+  await wt.closed;
+  for (let tick = 0; tick < 100; tick++) {
+    await sleep(10);
+    const s = __wtResourceStats();
+    if (
+      s.native.sessions === 0 &&
+      s.native.streams === 0 &&
+      s.js.sessions === 0 &&
+      s.js.streams === 0
+    ) {
+      console.log("PASS: native 32MiB stalled reader exact echo and cleanup");
+      process.exit(0);
+      return;
+    }
+  }
+  throw new Error("cleanup failed " + JSON.stringify(__wtResourceStats()));
+}
+main().catch((e) => {
+  console.log("FAIL: " + e.message);
+  process.exit(1);
+});
+`,
+      { allowInsecurePeerVerification: true, timeoutMs: 90_000 },
+    );
+    expect(out).toContain("PASS: native 32MiB stalled reader exact echo and cleanup");
+    expect(out).toContain("PRESSURE written=");
+  }, 120_000);
+
+  it("releases 100 reconnects", async ({ skip }) => {
+    requireWebTransport(skip);
+    const out = await runScript(
+      "native-reconnect-probe.js",
+      `const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const nativeKeys = [
+  "sessions",
+  "streams",
+  "queuedReliableBytes",
+  "queuedDatagrams",
+  "queuedEvents",
+  "inFlightReceiveBytes",
+  "readCreditBytes",
+  "pendingHeaderBytes",
+];
+const jsKeys = [
+  "sessions",
+  "streams",
+  "queuedReliableBytes",
+  "queuedReliableOperations",
+  "queuedDatagramOperations",
+  "queuedDatagrams",
+  "queuedEvents",
+  "queuedReceiveBytes",
+];
+function isZero() {
+  const s = __wtResourceStats();
+  for (const [part, keys] of [
+    ["native", nativeKeys],
+    ["js", jsKeys],
+  ])
+    for (const key of keys) {
+      if (!Number.isFinite(s[part][key])) throw new Error("missingcounter " + part + "." + key);
+      if (s[part][key] !== 0) return false;
+    }
+  return true;
+}
+async function main() {
+  if (!isZero()) throw new Error("nonzero initialbaseline");
+  for (let cycle = 0; cycle < 100; cycle++) {
+    const wt = new WebTransport("${SERVER_URL}");
+    await wt.ready;
+    const dgramWriter = wt.datagrams.writable.getWriter();
+    dgramWriter.closed.catch(() => {});
+    const dgramReader = wt.datagrams.readable.getReader();
+    await dgramWriter.write(new Uint8Array([cycle]));
+    const echoed = await dgramReader.read();
+    if (echoed.done || echoed.value.length !== 1 || echoed.value[0] !== cycle)
+      throw new Error("datagram " + cycle);
+    const stream = await wt.createBidirectionalStream();
+    const writer = stream.writable.getWriter();
+    const reader = stream.readable.getReader();
+    const payload = new Uint8Array([cycle, 17, 29]);
+    await writer.write(payload);
+    await writer.close();
+    let received = 0;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      for (const byte of value) {
+        if (byte !== payload[received++]) throw new Error("stream " + cycle);
+      }
+    }
+    if (received !== 3) throw new Error("length " + cycle);
+    wt.close();
+    await wt.closed;
+    let clean = false;
+    for (let tick = 0; tick < 100; tick++) {
+      await sleep(10);
+      if (isZero()) {
+        clean = true;
+        break;
+      }
+    }
+    if (!clean) throw new Error("leak cycle " + cycle + " " + JSON.stringify(__wtResourceStats()));
+    if ((cycle + 1) % 20 === 0) console.log("CYCLES " + (cycle + 1));
+  }
+  console.log("PASS: native 100 reconnects active echo and zero resource baseline");
+  process.exit(0);
+}
+main().catch((e) => {
+  console.log("FAIL: " + e.message);
+  process.exit(1);
+});
+`,
+      { allowInsecurePeerVerification: true, timeoutMs: 90_000 },
+    );
+    expect(out).toContain("PASS: native 100 reconnects active echo and zero resource baseline");
+    expect(out).toContain("CYCLES 100");
+  }, 120_000);
 });
