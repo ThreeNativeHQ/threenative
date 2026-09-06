@@ -100,3 +100,26 @@ The final desktop rebuild completed (`wrap-desktop-build.log`), producing a 3,16
 The unchanged gameplay scenario passed all five assertions against this executable: world/UI ready, movement **26.4476 m**, odometer **26.7 m**, and zero game error diagnostics (`wrap-native-flow-console.log`). The inspected world capture is nonblank. The separate real OS input probe passed: heading **34 → 42°**, odometer **3.7 m**, SDL cursor state **1,0,1** (relative mode with relative cursor hidden), and startup ready with compilation settled (`wrap-native-os-input/profile.json`). Its inspected loading capture includes the corrected foreground seam.
 
 Performance is not certified. The real-display blank control measured 301 intervals in 5,009.5 ms (p50 16.7 ms, p95 16.8 ms), but the subsequent real-time game probe lost OS foreground before obtaining a clean 1,200-frame window and correctly failed (`display-control.log`, `native-realtime.json`). Its startup/compiling windows must not be quoted as steady-state FPS. The physical Android device is online, cool, and discharging, but at 39% battery, below the measurement preflight floor; no fresh Android execution is claimed. Android/iOS presets still disable Canvas2D, and iOS tooling is unavailable on this Linux machine (`wrap-device-doctor.log`). Those remain broader platform gaps, not passed checks.
+
+## Cooperative scheduling probe — remaining engine bottleneck
+
+A subsequent 75-second real-time run on private X11 reproduced `surface.compiling: true`
+in all three completed 300-frame windows (`compile-settle.log`). The process was deliberately
+terminated by the probe's timeout (exit 124), not by a runtime crash. This is diagnostic evidence,
+not presented-FPS evidence. Startup readiness's `compileSettled` observation above means its
+bounded warm-up gate completed; it does **not** prove that the underlying compile promise ended.
+
+The installed Three.js `Renderer.compileAsync` awaits `yieldToMain` between objects, and the
+native scheduler maps that yield to `setTimeout(0)`. The host executes timers once per render
+loop. A direct current-host probe confirms the coupling: **120 sequential no-op yields crossed
+119 animation frames**. With an empty frame callback they took 1.314 ms in the uncapped hidden
+window; with a controlled 8 ms main-thread workload per frame they took **957.291 ms**, still
+119 frames (`scheduler-probe.log`, `scheduler-probe-loaded.log`). Both bounded probes exit 124
+after printing their result; that exit is not a test pass. The loaded fixture is preserved as
+`scheduler-probe.js` in the same local artifact directory.
+
+The existing scheduler unit tests prove API installation and macrotask ordering, but run their
+timers on Node's event loop. They do not catch this native frame coupling. This identifies an
+engine scheduling bottleneck to address without game-specific workarounds. It does not yet prove
+that coupling alone explains Wildwood's entire pending compile, and no scheduling fix or new
+performance claim is included in this record.
