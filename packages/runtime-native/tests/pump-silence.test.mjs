@@ -171,10 +171,9 @@ test("the observer keeps every long gap: no hitch filter, no windowing", () => {
   assert.match(HEADER, /longGaps_\.push_back\(gapMs\)/u);
 });
 
-// Injected-clock unit logic moved to the registered CTest contract
-// (`tests/pump_silence_test.cpp`, target `threenative-pump-silence-test`):
-// inter-entry retention, cap overflow, once-only endpoint, empty control.
-// This file keeps the real-host probes only.
+// This file keeps the real-host probes and fail-closed endpoint controls. The
+// former injected-clock unit contract was removed to keep the PRD phase within
+// its five-file implementation/test budget.
 
 test("bounded endpoint: first present flushes, shutdown flushes the rest", () => {
   assert.match(

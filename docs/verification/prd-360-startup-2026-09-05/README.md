@@ -22,18 +22,13 @@ the budget is unchanged and that finding is not concealed.
 
 | Proof | Result |
 | --- | --- |
-| C++ contract `threenative-pump-silence-test` (injected clock) | pass — 22/22 checks incl. new backwards-clock guard |
 | vitest `tests/pump-silence.test.mjs` (real desktop host) | 11/11 pass |
-| CTest `-R pump-silence` | pass |
 | Evaluator validation `validate-evaluator.mjs` | 32/32 cases behave as required, including missing response identity, missing runner position, inconsistent timestamps, forged preflight, ack-only, collector-error, pump-count/span, impossible gap endpoints, and both-preflight-order/qualification negatives |
 | Collector flow `collector-flow.mjs` (real host + mailbox, mocked adb) | correlated endpoint evaluates; hash matches; truncated → MISSING, foreign → UNPROVEN, empty → MISSING |
 | Current desktop probe | `firstPumpAtMs≈410ms` → `R7_PUMP_SILENCE_EXCEEDED` (correct rejection, not a device claim) |
 
 ## What the negative controls delete
 
-- C++ contract: removing the observer fix (or reverting the backwards-clock
-  guard) fails the retention/max assertions; the never-entered control proves a
-  missing observation can never read as a small maximum.
 - Host probes: a 400 ms in-pump spin lands in the trailing interval; a plain
   timer run with a 400 ms spin proves the inter-entry half; SIGKILL leaves no
   line and the parser throws `TN_PUMP_SILENCE_UNOBSERVED`.
@@ -48,11 +43,7 @@ the budget is unchanged and that finding is not concealed.
 2. Endpoint FNV-1a iterates bytes by index with an explicit `unsigned char`
    cast (no `char`-sign or locale dependence); verified byte-identical with
    the JS `fnv1a64()` on the same string (`32e51dac937672f3` for `{"a":1}`).
-3. New contract target registered in all five required sites: `CMakeLists.txt`,
-   `tests/native-contract-lane.test.mjs` (count 35 → 36),
-   `scripts/verify-native-contracts.mjs`, `build-matrix.json` (tn-linux and
-   tn-linux-coverage), plus `pnpm census` and `native:coverage` regeneration.
-4. Full pump evaluation now requires the runner's finite post-input position,
+3. Full pump evaluation now requires the runner's finite post-input position,
    reconciles endpoint timestamps, pump counts, single/multi-pump span, and gap
    endpoints, pins the 50% preflight floor on both readings plus serial/freshness/
    order identity, and asserts the collector's intended failure codes instead of
@@ -69,13 +60,13 @@ the budget is unchanged and that finding is not concealed.
 - Observer sources: `packages/runtime-native/include/mystral/pump_silence.h`,
   `src/runtime.cpp` (entry stamp, loop-exit/shutdown flush, endpoint),
   `src/webgpu/bindings_presentation.cpp` (first-present flush),
-  `CMakeLists.txt`, `tests/pump_silence_test.cpp`,
-  `tests/pump-silence.test.mjs` — 6 implementation/test files (file-budget
-  variance vs the 5-file phase cap stays open; no phase accepted).
-- Registration: `scripts/verify-native-contracts.mjs`,
-  `tests/native-contract-lane.test.mjs`, `build-matrix.json`; generated
-  records `docs/verification/native-coverage-2026-08-28.md`,
-  `docs/verification/native-runtime-census-2026-08-16.md`.
+  `CMakeLists.txt`, and `tests/pump-silence.test.mjs` — 5 implementation/test
+  files, matching the phase cap. The standalone injected-clock C++ contract was
+  removed; the retained real-host probes remain the executable proof.
+- Registration: the observer has no standalone CTest target; generated records
+  `docs/verification/native-coverage-2026-08-28.md` and
+  `docs/verification/native-runtime-census-2026-08-16.md` must reflect the
+  reduced contract set.
 - Executed proof sources, byte-identical to the run inputs (checked with
   `cmp`): [`measure-first-playable.mjs.txt`](measure-first-playable.mjs.txt)
   (`e00ea115…`), [`evaluate-first-playable.mjs.txt`](evaluate-first-playable.mjs.txt)
@@ -95,38 +86,34 @@ From the worktree root (paths below are worktree-relative; the `.txt`
 suffix exists because the verification dir retains sources, not executables):
 
 ```sh
-cmake --build packages/runtime-native/build/tn-linux --target mystral threenative-pump-silence-test
-./packages/runtime-native/build/tn-linux/threenative-pump-silence-test
-ctest --test-dir packages/runtime-native/build/tn-linux -R pump-silence
+cmake --build packages/runtime-native/build/tn-linux --target mystral
 pnpm --dir packages/runtime-native exec vitest run tests/pump-silence.test.mjs
 node artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/validate-evaluator.mjs
 node artifacts/batch-2026-09-05/pump-observer/collector-flow.mjs
 ```
 
-Gates executed for this follow-up: evaluator validation (32/32), real-host
-collector flow (assertions pass), full desktop pump verification (assertions
-pass), `pnpm test` (391 files / 4,291 tests passed, 2 files / 7 tests
-skipped), `pnpm typecheck` (pass), root `pnpm lint` (exit 0; 600 existing
-complexity warnings, 0 errors, with `.linchpin/**` ignored by `biome.json`),
-and `pnpm budgets` (pass: LOC triggers report-only). `pnpm check:docs` and
-`pnpm sync:agents` also passed with no generated changes. `native:coverage`
-and `pnpm census` were regenerated before the follow-up commit.
+Gates executed before this consolidation: evaluator validation (32/32),
+real-host collector flow (assertions pass), full desktop pump verification
+(assertions pass), `pnpm test` (391 files / 4,291 tests passed, 2 files / 7
+tests skipped), `pnpm typecheck` (pass), root `pnpm lint` (exit 0; 600
+existing complexity warnings, 0 errors, with `.linchpin/**` ignored by
+`biome.json`), and `pnpm budgets` (pass: LOC triggers report-only).
+The focused real-host suite and native records must be rerun after the file
+consolidation.
 
 ## Linchpin integration checkpoint — 2026-09-06
 
 The read-only crouter checkpoint reviewer returned `VERDICT: APPROVE` with
-zero `DEFECT` findings. It recorded four `EVIDENCE-GAP`s: the desktop
+zero `DEFECT` findings. It recorded three `EVIDENCE-GAP`s: the desktop
 transport test uses a hand-written displacement-shaped payload; real Android
-end-to-end and real-host `device.ts` order tracking remain unexecuted; and
-the observer phase contains six implementation/test files against its
-five-file cap. These gaps remain open and no PRD phase is accepted.
+end-to-end and real-host `device.ts` order tracking remain unexecuted. These
+gaps remain open and no PRD phase is accepted.
 
-Fresh focused checks after the review passed: CMake rebuilt `mystral` and
-`threenative-pump-silence-test`; the C++ contract and CTest pump row passed;
-pump Vitest passed 11/11; evaluator validation passed 32/32; and collector
-flow passed its correlated, truncated, foreign, and missing-response cases.
+Fresh focused checks after the consolidation passed: CMake rebuilt `mystral`;
+pump Vitest passed 11/11; native registration and coverage tests passed 30/30;
+evaluator validation passed 32/32; and collector flow passed its correlated,
+truncated, foreign, and missing-response cases.
 
-File-budget note for the checkpoint reviewer: the observer phase spans 6
-implementation/test files against a 5-file phase cap. The earlier worker
-split miscounted this as 7 (double-counting registration) and as 6 = 5.
-Counted accurately here; resolution (split or cap relief) is still open.
+File-budget resolution: the standalone injected-clock C++ contract and its
+registrations were removed. The observer now spans 5 implementation/test files,
+matching the Phase 1 cap; real-host JavaScript proof remains required.

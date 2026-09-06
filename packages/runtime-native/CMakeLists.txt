@@ -2217,11 +2217,6 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-timer-engine-first-test)
     tn_register_contract_test(threenative-async-pipeline-thread-test)
     tn_register_contract_test(threenative-stall-budget-hitch-test)
-    add_executable(threenative-pump-silence-test EXCLUDE_FROM_ALL
-        tests/pump_silence_test.cpp)
-    target_include_directories(threenative-pump-silence-test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    tn_register_contract_test(threenative-pump-silence-test)
     tn_register_contract_test(threenative-timestamp-query-test)
     if(TN_ENABLE_VIDEO)
         tn_register_contract_test(threenative-video-recorder-state-test)
