@@ -13,15 +13,20 @@
 // provide a deterministic receive backlog and a deterministic hard send error.
 using RealDgramRecv = decltype(&quiche_conn_dgram_recv);
 using RealDgramSend = decltype(&quiche_conn_dgram_send);
+using RealStreamSend = decltype(&quiche_conn_stream_send);
 RealDgramRecv g_realDgramRecv = &quiche_conn_dgram_recv;
 RealDgramSend g_realDgramSend = &quiche_conn_dgram_send;
+RealStreamSend g_realStreamSend = &quiche_conn_stream_send;
 ssize_t testQuicheConnDgramRecv(quiche_conn*, uint8_t*, size_t);
 ssize_t testQuicheConnDgramSend(quiche_conn*, const uint8_t*, size_t);
+ssize_t testQuicheConnStreamSend(quiche_conn*, uint64_t, const uint8_t*, size_t, bool, uint64_t*);
 #define quiche_conn_dgram_recv testQuicheConnDgramRecv
 #define quiche_conn_dgram_send testQuicheConnDgramSend
+#define quiche_conn_stream_send testQuicheConnStreamSend
 #include "../src/webtransport/webtransport.cpp"
 #undef quiche_conn_dgram_recv
 #undef quiche_conn_dgram_send
+#undef quiche_conn_stream_send
 
 // The impl's helpers are members of mystral::webtransport (the anonymous
 // namespace nests inside it), and ::shutdown from <sys/socket.h> shares the
@@ -58,6 +63,19 @@ std::deque<std::vector<uint8_t>> g_receiveSeamQueue;
 quiche_conn* g_sendSeamConn = nullptr;
 ssize_t g_sendSeamResult = QUICHE_ERR_DONE;
 size_t g_sendSeamCalls = 0;
+
+struct StreamSendCall {
+    uint64_t streamId = 0;
+    std::vector<uint8_t> offered;
+    bool fin = false;
+    ssize_t result = QUICHE_ERR_DONE;
+};
+
+quiche_conn* g_streamSendSeamConn = nullptr;
+std::deque<ssize_t> g_streamSendResults;
+std::vector<StreamSendCall> g_streamSendCalls;
+std::vector<uint8_t> g_streamAcceptedBytes;
+uint64_t g_streamSendErrorCode = 0;
 
 std::vector<uint8_t> framedDatagram(uint16_t sequence) {
     std::vector<uint8_t> packet = encodeVarint(0);
@@ -156,6 +174,42 @@ ssize_t testQuicheConnDgramSend(quiche_conn* conn, const uint8_t* data, size_t l
         return g_sendSeamResult;
     }
     return g_realDgramSend(conn, data, len);
+}
+
+ssize_t testQuicheConnStreamSend(quiche_conn* conn, uint64_t streamId, const uint8_t* data,
+                                 size_t len, bool fin, uint64_t* errorCode) {
+    if (conn != g_streamSendSeamConn) {
+        return g_realStreamSend(conn, streamId, data, len, fin, errorCode);
+    }
+
+    const ssize_t result = g_streamSendResults.empty() ? QUICHE_ERR_DONE :
+        [&]() {
+            const ssize_t next = g_streamSendResults.front();
+            g_streamSendResults.pop_front();
+            return next;
+        }();
+    StreamSendCall call;
+    call.streamId = streamId;
+    call.fin = fin;
+    call.result = result;
+    if (data != nullptr && len > 0) call.offered.assign(data, data + len);
+    g_streamSendCalls.push_back(std::move(call));
+    if (result < 0) {
+        if (errorCode != nullptr) *errorCode = g_streamSendErrorCode;
+        return result;
+    }
+    const size_t accepted = static_cast<size_t>(result) < len ? static_cast<size_t>(result) : len;
+    if (accepted > 0) g_streamAcceptedBytes.insert(g_streamAcceptedBytes.end(), data, data + accepted);
+    return result;
+}
+
+void configureStreamSendSeam(quiche_conn* conn, std::deque<ssize_t> results,
+                             uint64_t errorCode = 0) {
+    g_streamSendSeamConn = conn;
+    g_streamSendResults = std::move(results);
+    g_streamSendCalls.clear();
+    g_streamAcceptedBytes.clear();
+    g_streamSendErrorCode = errorCode;
 }
 
 int main() {
@@ -618,6 +672,317 @@ int main() {
         check(r.hardErrors == 0 && r.lastError == 0, "a clear path reports no failure");
         check(queue.empty(), "a drained queue is empty");
         check(sentBytes == kDatagramQueueLimit - 1, "every queued datagram reached the sender");
+    }
+
+    // --- reliable stream send admission and pump. The seam drives the real
+    // quiche Session through Done/short-write/Done/resume, and records the
+    // bytes offered to quiche so this checks the production buffer rather than
+    // replaying a second implementation in the test.
+    {
+        init();
+        socket_t peerGuard = ::socket(AF_INET, SOCK_DGRAM, 0);
+        uint16_t peerPort = 0;
+        if (peerGuard != kInvalidSocket) {
+            sockaddr_in guardAddress{};
+            guardAddress.sin_family = AF_INET;
+            guardAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            guardAddress.sin_port = htons(0);
+            if (::bind(peerGuard, reinterpret_cast<const sockaddr*>(&guardAddress),
+                       sizeof(guardAddress)) == 0) {
+                socklen_t guardLength = sizeof(guardAddress);
+                if (::getsockname(peerGuard, reinterpret_cast<sockaddr*>(&guardAddress),
+                                  &guardLength) == 0) {
+                    peerPort = ntohs(guardAddress.sin_port);
+                }
+            }
+        }
+        check(peerGuard != kInvalidSocket && peerPort != 0,
+              "stream send regression owns an unused loopback peer port");
+        const uint32_t sessionId =
+            peerPort == 0 ? 0 : connectSession("https://127.0.0.1:" + std::to_string(peerPort) + "/");
+        Session* session = findSession(sessionId);
+        check(session != nullptr && session->conn != nullptr,
+              "stream send regression creates a real quiche session");
+        if (session != nullptr && session->conn != nullptr) {
+            session->wtReady = true;
+            session->connectStreamId = 0;
+            g_streamSendSeamConn = session->conn;
+
+            // Done, a one-byte short write, Done, then the remaining two bytes.
+            // The FIN is passed on each attempt but is sent only with the final
+            // accepted prefix.
+            configureStreamSendSeam(session->conn,
+                                    {QUICHE_ERR_DONE, 1, QUICHE_ERR_DONE, 2});
+            StreamState sequence;
+            sequence.isOutgoing = true;
+            sequence.outBuf = {'a', 'b', 'c'};
+            sequence.outFin = true;
+            pumpStream(session, 4, sequence);
+            check(sequence.outBuf == std::vector<uint8_t>{'a', 'b', 'c'} &&
+                      !sequence.finSent,
+                  "Done leaves a blocked stream buffer and FIN pending");
+            pumpStream(session, 4, sequence);
+            check(sequence.outBuf == std::vector<uint8_t>{'b', 'c'} &&
+                      !sequence.finSent,
+                  "a short stream write removes exactly its accepted prefix");
+            pumpStream(session, 4, sequence);
+            check(sequence.outBuf == std::vector<uint8_t>{'b', 'c'} &&
+                      !sequence.finSent,
+                  "a second Done preserves the remaining stream bytes");
+            pumpStream(session, 4, sequence);
+            check(sequence.outBuf.empty() && sequence.finSent,
+                  "the final accepted stream write sends FIN");
+            check(sequence.outBuf.capacity() == 0,
+                  "a fully drained stream releases its native buffer storage");
+            check(g_streamAcceptedBytes == std::vector<uint8_t>{'a', 'b', 'c'},
+                  "partial stream writes preserve exact accepted byte order");
+            check(g_streamSendCalls.size() == 4 && g_streamSendCalls.back().streamId == 4 &&
+                      g_streamSendCalls.back().offered == std::vector<uint8_t>{'b', 'c'} &&
+                      g_streamSendCalls.back().result == 2 && g_streamSendCalls.back().fin,
+                  "the final stream call carries the remaining bytes and FIN");
+            processEvents();
+            clearEvents();
+
+            // Positive partial writes without an intervening Done still free
+            // capacity and therefore wake a waiting writer once per session.
+            configureStreamSendSeam(session->conn, {1, 2});
+            StreamState partial;
+            partial.isOutgoing = true;
+            partial.outBuf = {'d', 'e', 'f'};
+            pumpStream(session, 5, partial);
+            check(partial.outBuf == std::vector<uint8_t>{'e', 'f'},
+                  "a positive partial write without Done removes its prefix");
+            check(g_streamAcceptedBytes == std::vector<uint8_t>{'d'},
+                  "a positive partial write records exactly its accepted byte");
+            size_t partialWritableEvents = 0;
+            for (std::queue<Event> pending = g_events; !pending.empty(); pending.pop()) {
+                if (pending.front().type == EventType::Writable) partialWritableEvents += 1;
+            }
+            check(partialWritableEvents == 1,
+                  "positive partial stream progress queues recovery before the buffer empties");
+            pumpStream(session, 5, partial);
+            check(partial.outBuf.empty() &&
+                      g_streamAcceptedBytes == std::vector<uint8_t>{'d', 'e', 'f'},
+                  "successive positive partial writes preserve byte order");
+            partialWritableEvents = 0;
+            for (std::queue<Event> pending = g_events; !pending.empty(); pending.pop()) {
+                if (pending.front().type == EventType::Writable) partialWritableEvents += 1;
+            }
+            check(partialWritableEvents == 1,
+                  "positive partial stream progress queues one recovery event");
+            processEvents();
+            clearEvents();
+
+            // Two streams share one 1 MiB native admission budget. A refused
+            // write must leave both the existing and incoming buffers intact.
+            constexpr size_t kExpectedStreamLimit = 1024 * 1024;
+            const std::vector<uint8_t> firstData(600 * 1024, 0x11);
+            const std::vector<uint8_t> secondData(424 * 1024, 0x22);
+            auto& first = session->streams[8];
+            first.isOutgoing = true;
+            auto& second = session->streams[12];
+            second.isOutgoing = true;
+            configureStreamSendSeam(session->conn, {QUICHE_ERR_DONE});
+            check(streamWrite(sessionId, 8, firstData.data(), firstData.size(), false) ==
+                      static_cast<int64_t>(firstData.size()),
+                  "a stream write under the session bound is accepted");
+            const std::vector<uint8_t> firstBeforeSaturation = first.outBuf;
+            check(first.outBuf == firstData && first.outBuf.size() < kExpectedStreamLimit,
+                  "the first stream keeps its admitted bytes while blocked");
+            check(streamWrite(sessionId, 12, secondData.data(), secondData.size(), false) ==
+                      static_cast<int64_t>(secondData.size()),
+                  "a second stream fills the session byte bound exactly");
+            check(first.outBuf == firstBeforeSaturation && second.outBuf == secondData &&
+                      first.outBuf.size() + second.outBuf.size() == kExpectedStreamLimit,
+                  "two streams retain exactly 1 MiB of admitted bytes");
+
+            const uint8_t overflowByte = 0x43;
+            const std::vector<uint8_t> secondBeforeOverflow = second.outBuf;
+            check(streamWrite(sessionId, 12, &overflowByte, 1, false) == -2,
+                  "a second stream refuses a byte beyond the session bound");
+            check(first.outBuf == firstBeforeSaturation && second.outBuf == secondBeforeOverflow,
+                  "a saturated write preserves both existing stream buffers");
+
+            const uint64_t nextBidiBeforeFullCreate = session->nextClientBidi;
+            check(createStream(sessionId, true) == -2,
+                  "a full session refuses a stream header before map insertion");
+            check(session->nextClientBidi == nextBidiBeforeFullCreate &&
+                      session->streams.find(nextBidiBeforeFullCreate) == session->streams.end(),
+                  "a refused stream header does not consume an id or buffer space");
+
+            auto& saturated = session->streams[16];
+            saturated.isOutgoing = true;
+            const uint8_t nextByte = 0x44;
+            check(streamWrite(sessionId, 16, &nextByte, 1, false) == -2,
+                  "the next byte is refused at the exact session bound");
+            check(saturated.outBuf.empty(), "the next byte leaves the refused stream unchanged");
+
+            // Pumping the first stream frees its bytes; the previously refused
+            // write can then be admitted without changing its byte order.
+            configureStreamSendSeam(session->conn,
+                                    {static_cast<ssize_t>(firstData.size())});
+            pumpStream(session, 8, first);
+            check(first.outBuf.empty(), "a successful pump frees the first stream buffer");
+            processEvents();
+            configureStreamSendSeam(session->conn, {QUICHE_ERR_DONE});
+            check(streamWrite(sessionId, 16, &nextByte, 1, false) == 1,
+                  "a previously saturated stream succeeds after capacity recovers");
+            check(saturated.outBuf == std::vector<uint8_t>{nextByte},
+                  "the recovered stream retains the retried byte");
+
+            // A stream whose initial WT header hits a quiche hard error is not
+            // a successfully created stream. Its consumed id must stay retired
+            // so a later retry cannot receive the failed stream's queued error.
+            session->nextClientBidi = 100;
+            const uint64_t nextBidiBeforeSendError = session->nextClientBidi;
+            clearEvents();
+            configureStreamSendSeam(session->conn, {-8}, 0x66);
+            check(createStream(sessionId, true) == -1,
+                  "a hard header send error refuses stream creation");
+            check(session->nextClientBidi == nextBidiBeforeSendError + 4 &&
+                      session->streams.find(nextBidiBeforeSendError) == session->streams.end(),
+                  "a failed header send keeps its consumed stream id retired");
+            bool sawHeaderStreamWriteError = false;
+            for (std::queue<Event> pending = g_events; !pending.empty(); pending.pop()) {
+                if (pending.front().type == EventType::StreamWriteError &&
+                    pending.front().streamId == static_cast<int64_t>(nextBidiBeforeSendError) &&
+                    pending.front().code == 0x66) {
+                    sawHeaderStreamWriteError = true;
+                }
+            }
+            check(sawHeaderStreamWriteError,
+                  "a failed header send carries the created stream id and peer code");
+            processEvents();
+            clearEvents();
+            configureStreamSendSeam(session->conn, {QUICHE_ERR_DONE});
+            check(createStream(sessionId, true) == static_cast<int64_t>(nextBidiBeforeSendError + 4),
+                  "the next stream uses the next fresh id after a failed header");
+
+            auto& oversizedTarget = session->streams[20];
+            oversizedTarget.isOutgoing = true;
+            const std::vector<uint8_t> oversized(kExpectedStreamLimit + 1, 0x33);
+            check(streamWrite(sessionId, 20, oversized.data(), oversized.size(), false) == -3,
+                  "an oversized single stream write is refused before admission");
+            check(oversizedTarget.outBuf.empty(),
+                  "an oversized write does not allocate into the buffer");
+
+            // Empty FIN is valid on an open write side, and closes admission for
+            // every subsequent write even if that FIN had not reached quiche.
+            const uint8_t emptyMarker = 0;
+            auto& emptyFin = session->streams[24];
+            emptyFin.isOutgoing = true;
+            check(streamWrite(sessionId, 24, &emptyMarker, 0, true) == 0,
+                  "an empty FIN is accepted on an open stream");
+            check(emptyFin.outFin && !emptyFin.finSent,
+                  "an empty FIN remains pending behind quiche");
+            check(streamWrite(sessionId, 24, &emptyMarker, 1, false) == -1,
+                  "a write after a requested FIN is refused");
+
+            auto& finished = session->streams[28];
+            finished.isOutgoing = true;
+            configureStreamSendSeam(session->conn, {1});
+            check(streamWrite(sessionId, 28, &emptyMarker, 1, true) == 1,
+                  "a final stream write reports its accepted byte count");
+            check(finished.finSent, "a fully accepted final write records FIN sent");
+            check(streamWrite(sessionId, 28, &emptyMarker, 1, false) == -1,
+                  "a write after FIN was sent is refused");
+            processEvents();
+            clearEvents();
+
+            auto& invalid = session->streams[32];
+            invalid.isOutgoing = true;
+            session->failed = true;
+            check(streamWrite(sessionId, 32, &emptyMarker, 1, false) == -1,
+                  "a write on a failed session is refused");
+            session->failed = false;
+            session->wantClose = true;
+            check(streamWrite(sessionId, 32, &emptyMarker, 1, false) == -1,
+                  "a write on a session requesting close is refused");
+            session->wantClose = false;
+
+            // A quiche stream reset/error is a reliable send failure. It must
+            // release the pending bytes, carry the peer error code, and leave
+            // the unrelated datagram-drop metric untouched.
+            auto& hardFailure = session->streams[36];
+            hardFailure.isOutgoing = true;
+            session->droppedDatagrams = 17;
+            clearEvents();
+            configureStreamSendSeam(session->conn, {-7}, 0x55);
+            check(streamWrite(sessionId, 36, &emptyMarker, 1, false) == -1,
+                  "a hard stream send error is not reported as a successful write");
+            check(hardFailure.sendError && hardFailure.outBuf.empty(),
+                  "a hard stream send error releases pending bytes");
+            check(hardFailure.outBuf.capacity() == 0,
+                  "a hard stream send error releases native buffer storage");
+            check(session->droppedDatagrams == 17,
+                  "a hard stream send error does not increment datagram drops");
+            bool sawStreamWriteError = false;
+            bool sawWritableAfterHardError = false;
+            for (std::queue<Event> pending = g_events; !pending.empty(); pending.pop()) {
+                const Event& event = pending.front();
+                if (event.type == EventType::StreamWriteError && event.streamId == 36 &&
+                    event.code == 0x55) {
+                    sawStreamWriteError = true;
+                }
+                if (event.type == EventType::Writable) sawWritableAfterHardError = true;
+            }
+            check(sawStreamWriteError,
+                  "a hard stream send error carries stream id and peer error code");
+            check(sawWritableAfterHardError,
+                  "a hard stream send error releases capacity to waiting writers");
+            processEvents();
+            clearEvents();
+
+            // A recovery notification is session-wide and coalesced across
+            // streams.
+            auto& writableA = session->streams[40];
+            writableA.isOutgoing = true;
+            writableA.outBuf = {0xa1};
+            auto& writableB = session->streams[44];
+            writableB.isOutgoing = true;
+            writableB.outBuf = {0xb2};
+            clearEvents();
+            configureStreamSendSeam(session->conn, {QUICHE_ERR_DONE});
+            pumpStream(session, 40, writableA);
+            pumpStream(session, 44, writableB);
+            clearEvents();
+            configureStreamSendSeam(session->conn, {1, 1});
+            pumpStream(session, 40, writableA);
+            pumpStream(session, 44, writableB);
+            size_t writableEvents = 0;
+            for (std::queue<Event> pending = g_events; !pending.empty(); pending.pop()) {
+                const Event& event = pending.front();
+                if (event.type == EventType::Writable && event.streamId == -1 &&
+                    event.code == 0 && event.data.empty() && event.message.empty()) {
+                    writableEvents += 1;
+                }
+            }
+            check(writableEvents == 1,
+                  "draining multiple streams queues one session-wide writable event");
+            processEvents();
+            clearEvents();
+            writableA.outBuf = {0xc3};
+            configureStreamSendSeam(session->conn, {QUICHE_ERR_DONE});
+            pumpStream(session, 40, writableA);
+            configureStreamSendSeam(session->conn, {1});
+            pumpStream(session, 40, writableA);
+            writableEvents = 0;
+            for (std::queue<Event> pending = g_events; !pending.empty(); pending.pop()) {
+                if (pending.front().type == EventType::Writable) writableEvents += 1;
+            }
+            check(writableEvents == 1,
+                  "processing a writable event clears coalescing for the next recovery");
+
+            // quiche's actual closed state is also an invalid write side.
+            quiche_conn_close(session->conn, true, 0, nullptr, 0);
+            check(streamWrite(sessionId, 32, &emptyMarker, 1, false) == -1,
+                  "a write on a closed session is refused");
+        }
+        g_streamSendSeamConn = nullptr;
+        g_streamSendResults.clear();
+        clearEvents();
+        if (peerGuard != kInvalidSocket) closeSocket(peerGuard);
+        shutdown();
     }
 
     // --- public lifecycle: idempotent init/shutdown, no sessions without a

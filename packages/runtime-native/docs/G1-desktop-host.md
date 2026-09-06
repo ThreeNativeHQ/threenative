@@ -194,3 +194,19 @@ checks pass 15/15 on Linux V8. Independent review passed after the close-orderin
 Typecheck, lint and the full test suite passed; this prerequisite row is accepted. Hard transport queue bounds remain Task 2b work; no Android,
 Windows, macOS or iOS execution is claimed here. Evidence:
 [Task 2b-streams](../../../docs/verification/prd-359-task2b-streams-2026-09-05.md).
+
+## PRD-359 native reliable send admission — 2026-09-05
+
+The Linux V8+Dawn host now bounds reliable stream admission at 1 MiB per session,
+preserves exact quiche partial-write progress and FIN ordering, releases drained
+buffer storage, and reports hard stream send failures through distinct
+`streamWriteError` events. A session-wide `writable` event is coalesced and reset
+when the existing event pump pops it. The wire regression drove a real quiche
+`Session` through Done, short-write, resume, saturation, oversized input, FIN,
+closed/failed states, and injected hard errors; its required negative mutations
+went red before restoration. The focused Linux V8 build and WebTransport ctests
+passed 2/2. The QuickJS build and contracts also passed 2/2; the coordinator
+ran the real Go/Linux V8 fixture, passing 15/15. This is the native send slice
+only; JavaScript stream integration and other platforms remain open.
+
+Evidence: [Task 2b-send](../../../docs/verification/prd-359-task2b-send-2026-09-05.md).

@@ -121,6 +121,15 @@ constexpr int kDatagramDropped = -3;
 // transport, this one is a transport failure the caller must not read as sent.
 constexpr int kDatagramSendFailed = -4;
 
+// __wtStreamWrite is a whole-write bridge: the current JS caller treats every
+// non-negative result as the complete write, so it must never expose quiche's
+// partial admission as a successful return. The queue bound is bytes across
+// all streams in one session, not a per-stream guess.
+constexpr size_t kStreamWriteQueueLimit = 1u * 1024u * 1024u;
+constexpr int64_t kStreamWriteInvalid = -1;
+constexpr int64_t kStreamWriteQueueFull = -2;
+constexpr int64_t kStreamWriteTooLarge = -3;
+
 bool isTruthyEnvironmentValue(const char* value) {
     return value != nullptr && std::string(value) == "1";
 }
@@ -336,6 +345,8 @@ enum class EventType {
     IncomingBidi, // streamId
     StreamData,   // streamId, data, fin
     StreamReset,  // streamId, code
+    StreamWriteError,  // streamId, code
+    Writable,      // session-wide capacity recovery; no additional payload
 };
 
 struct Event {
@@ -435,6 +446,7 @@ struct Session {
     // Set when the path refused a frame outright, so the next send answers
     // kDatagramSendFailed instead of reporting a queued write as accepted.
     bool datagramSendFailed = false;
+    bool writableEventQueued = false;
 
     ~Session() {
         if (sock != kInvalidSocket) closeSocket(sock);
@@ -856,6 +868,8 @@ void dispatchEvent(const Event& e) {
         case EventType::IncomingBidi: typeStr = "incomingBidi"; break;
         case EventType::StreamData: typeStr = "streamData"; break;
         case EventType::StreamReset: typeStr = "streamReset"; break;
+        case EventType::StreamWriteError: typeStr = "streamWriteError"; break;
+        case EventType::Writable: typeStr = "writable"; break;
     }
 
     std::vector<js::JSValueHandle> args;
@@ -883,6 +897,12 @@ void dispatchEvent(const Event& e) {
         case EventType::StreamReset:
             args.push_back(g_engine->newNumber(static_cast<double>(e.streamId)));
             args.push_back(g_engine->newNumber(static_cast<double>(e.code)));
+            break;
+        case EventType::StreamWriteError:
+            args.push_back(g_engine->newNumber(static_cast<double>(e.streamId)));
+            args.push_back(g_engine->newNumber(static_cast<double>(e.code)));
+            break;
+        case EventType::Writable:
             break;
         case EventType::Error:
         case EventType::Closed:
@@ -1095,6 +1115,36 @@ void failSession(Session* s, const std::string& message) {
     g_events.push({s->id, EventType::Error, -1, 0, false, {}, message});
 }
 
+void queueWritable(Session* s) {
+    if (s->writableEventQueued) return;
+    s->writableEventQueued = true;
+    g_events.push({s->id, EventType::Writable, -1, 0, false, {}, ""});
+}
+
+void releaseDrainedBuffer(StreamState& st) {
+    if (st.outBuf.empty()) {
+        std::vector<uint8_t>().swap(st.outBuf);
+        return;
+    }
+    if (st.outBuf.size() < st.outBuf.capacity() / 2) {
+        std::vector<uint8_t> compacted(st.outBuf.begin(), st.outBuf.end());
+        st.outBuf.swap(compacted);
+    }
+}
+
+size_t queuedStreamBytes(const Session* s) {
+    size_t total = 0;
+    for (const auto& [streamId, st] : s->streams) {
+        (void)streamId;
+        if (total > kStreamWriteQueueLimit ||
+            st.outBuf.size() > kStreamWriteQueueLimit - total) {
+            return kStreamWriteQueueLimit;
+        }
+        total += st.outBuf.size();
+    }
+    return total;
+}
+
 // Drains queued datagrams into quiche. Done means the send queue is momentarily
 // full and the rest wait for the next frame; any other error is a transport
 // failure that fails the session rather than being filed as backlog.
@@ -1155,13 +1205,24 @@ void pumpStream(Session* s, uint64_t streamId, StreamState& st) {
         return;  // no capacity right now; retry next frame
     }
     if (w < 0) {
+        const bool releasedBytes = !st.outBuf.empty();
         st.sendError = true;
+        std::vector<uint8_t>().swap(st.outBuf);
+        st.outFin = false;
+        g_events.push({s->id, EventType::StreamWriteError,
+                       static_cast<int64_t>(streamId), errCode, false, {},
+                       "Stream send failed: quiche error " + std::to_string(w)});
+        if (releasedBytes) queueWritable(s);
         std::cerr << "[WebTransport] stream " << streamId << " send error: " << w << std::endl;
         return;
     }
     st.outBuf.erase(st.outBuf.begin(), st.outBuf.begin() + w);
+    releaseDrainedBuffer(st);
     if (st.outBuf.empty() && st.outFin) {
         st.finSent = true;
+    }
+    if (w > 0) {
+        queueWritable(s);
     }
 }
 
@@ -1176,7 +1237,19 @@ void pumpStreamSends(Session* s) {
 // __wtCreateStream(id, bidi) -> streamId or -1.
 int64_t createStream(uint32_t id, bool bidi) {
     Session* s = findSession(id);
-    if (!s || !s->conn || !s->wtReady || s->connectStreamId < 0) return -1;
+    if (!s || !s->conn || !s->wtReady || s->connectStreamId < 0 || s->failed ||
+        s->wantClose || quiche_conn_is_closed(s->conn)) {
+        return kStreamWriteInvalid;
+    }
+
+    std::vector<uint8_t> header;
+    varintEncode(header, bidi ? WT_STREAM_BIDI_SIGNAL : WT_STREAM_UNI_SIGNAL);
+    varintEncode(header, static_cast<uint64_t>(s->connectStreamId));
+    const size_t queued = queuedStreamBytes(s);
+    if (header.size() > kStreamWriteQueueLimit || queued > kStreamWriteQueueLimit ||
+        header.size() > kStreamWriteQueueLimit - queued) {
+        return kStreamWriteQueueFull;
+    }
 
     uint64_t streamId = bidi ? s->nextClientBidi : s->nextClientUni;
     if (bidi) {
@@ -1192,28 +1265,45 @@ int64_t createStream(uint32_t id, bool bidi) {
     st.headerConsumed = true;  // inbound (bidi echo) on our stream is pure payload
 
     // The WT signal frame + session id must lead the stream.
-    varintEncode(st.outBuf, bidi ? WT_STREAM_BIDI_SIGNAL : WT_STREAM_UNI_SIGNAL);
-    varintEncode(st.outBuf, static_cast<uint64_t>(s->connectStreamId));
+    st.outBuf = std::move(header);
 
     pumpStream(s, streamId, st);
     flushEgress(s);
+    if (st.sendError) {
+        s->streams.erase(streamId);
+        // quiche has seen this stream id even though the local header failed;
+        // keep the allocator advanced so a queued error cannot target a future
+        // stream that accidentally reuses the id.
+        return kStreamWriteInvalid;
+    }
     return static_cast<int64_t>(streamId);
 }
 
-// __wtStreamWrite(id, streamId, data, fin) -> bytes accepted or -1.
+// __wtStreamWrite(id, streamId, data, fin) -> bytes accepted or a named negative status.
 int64_t streamWrite(uint32_t id, uint64_t streamId, const uint8_t* data, size_t len, bool fin) {
     Session* s = findSession(id);
-    if (!s || !s->conn) return -1;
+    if (!s || !s->conn || !s->wtReady || s->failed || s->wantClose ||
+        s->connectStreamId < 0 || quiche_conn_is_closed(s->conn)) {
+        return kStreamWriteInvalid;
+    }
     auto it = s->streams.find(streamId);
-    if (it == s->streams.end() || !it->second.isOutgoing) return -1;
+    if (it == s->streams.end() || !it->second.isOutgoing) return kStreamWriteInvalid;
     StreamState& st = it->second;
-    if (st.sendError) return -1;
+    if (st.sendError || st.outFin || st.finSent) return kStreamWriteInvalid;
+    if (len > 0 && data == nullptr) return kStreamWriteInvalid;
+    if (len > kStreamWriteQueueLimit) return kStreamWriteTooLarge;
 
-    st.outBuf.insert(st.outBuf.end(), data, data + len);
+    const size_t queued = queuedStreamBytes(s);
+    if (queued > kStreamWriteQueueLimit || len > kStreamWriteQueueLimit - queued) {
+        return kStreamWriteQueueFull;
+    }
+
+    if (len > 0) st.outBuf.insert(st.outBuf.end(), data, data + len);
     if (fin) st.outFin = true;
 
     pumpStream(s, streamId, st);
     flushEgress(s);
+    if (st.sendError) return kStreamWriteInvalid;
     return static_cast<int64_t>(len);
 }
 
@@ -1346,6 +1436,10 @@ void processEvents() {
     while (!g_events.empty()) {
         Event e = std::move(g_events.front());
         g_events.pop();
+        if (e.type == EventType::Writable) {
+            Session* s = findSession(e.sessionId);
+            if (s != nullptr) s->writableEventQueued = false;
+        }
         dispatchEvent(e);
     }
 
@@ -1454,9 +1548,14 @@ bool initBindings(js::Engine* engine) {
             if (args.size() < 4) return g_engine->newNumber(-1);
             uint32_t id = static_cast<uint32_t>(g_engine->toNumber(args[0]));
             uint64_t sid = static_cast<uint64_t>(g_engine->toNumber(args[1]));
-            auto bytes = argToBytes(g_engine, args[2]);
+            size_t byteLength = 0;
+            void* borrowedData = g_engine->getArrayBufferData(args[2], &byteLength);
+            if (byteLength > 0 && borrowedData == nullptr) {
+                return g_engine->newNumber(static_cast<double>(kStreamWriteInvalid));
+            }
             bool fin = g_engine->toBoolean(args[3]);
-            int64_t w = streamWrite(id, sid, bytes.data(), bytes.size(), fin);
+            int64_t w = streamWrite(id, sid, static_cast<const uint8_t*>(borrowedData),
+                                    byteLength, fin);
             return g_engine->newNumber(static_cast<double>(w));
         }));
 
