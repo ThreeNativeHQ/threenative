@@ -18,3 +18,9 @@ The prelude unit is collected by root `pnpm test`. The conformance case is alrea
 Local detailed evidence: `artifacts/wildwood-native-profile-20260905/` (`probe-before.log`, `probe-green.log`, `probe-green.png`, and `conformance/report.json`). These local artifacts are not a claim of browser, Android, or iOS execution.
 
 Wildwood scene quality, pointer capture, UI attachment, and steady-state performance are separate checks and are not established by this canvas regression.
+
+## Linux loading-status glyphs
+
+The Linux Skia Canvas2D path initialized an empty font manager. The native probe measured `PREPARING TERRAIN` at **0 pixels wide**, explaining the absent loading-status text. Linux desktop now uses Fontconfig with Skia's FreeType scanner; other platform branches are unchanged.
+
+The existing native Canvas2D test now checks both a nonzero text width and visible rasterized glyph pixels. Its rebuilt executable passed all checks. The same `90-document-window-stubs` case now also measures text through the document-created canvas path actually used by Wildwood, and passed on a private X display (**1 pass, 0 fail, 92 unselected/blocked**). An initial diagnostic incorrectly exercised `OffscreenCanvas`, whose stub is a different path; that failed diagnostic is retained in `font-conformance/`, not counted as a passing gate. Corrected evidence is in `font-conformance-fixed/` and `font-green.log`.

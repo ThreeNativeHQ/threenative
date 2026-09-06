@@ -41,6 +41,7 @@
 #include "include/ports/SkFontMgr_directory.h"
 #else
 #include "include/ports/SkFontMgr_fontconfig.h"
+#include "include/ports/SkFontScanner_FreeType.h"
 #endif
 #endif
 
@@ -235,6 +236,8 @@ struct Canvas2DContext::Impl {
         // Initialize font manager (platform-specific)
 #if defined(__APPLE__)
         fontMgr = SkFontMgr_New_CoreText(nullptr);
+#elif defined(__linux__) && !defined(__ANDROID__)
+        fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
 #else
         fontMgr = SkFontMgr::RefEmpty();  // Fallback
 #endif

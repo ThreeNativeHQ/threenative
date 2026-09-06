@@ -30,6 +30,22 @@ static void check(bool condition, const char* name) {
 
 int main() {
     Canvas2DContext canvas(64, 64);
+#if defined(__linux__) && !defined(__ANDROID__)
+    canvas.setFont("17px monospace");
+    check(canvas.measureText("PREPARING TERRAIN").width > 20.0f,
+          "Linux loading text resolves real glyphs instead of an empty font manager");
+    Canvas2DContext text(256, 32);
+    text.setFont("17px monospace");
+    text.setFillStyle("#ffffff");
+    text.setTextBaseline("top");
+    text.fillText("PREPARING TERRAIN", 0, 0);
+    const auto pixels = text.getImageData(0, 0, 256, 32);
+    int ink = 0;
+    for (size_t i = 3; i < pixels.data.size(); i += 4) {
+        if (pixels.data[i] != 0) ++ink;
+    }
+    check(ink > 20, "Linux loading text rasterizes visible pixels");
+#endif
 
     // A fresh context has never been composited: its first upload is required, and
     // peeking at the flag must not consume it.

@@ -20,6 +20,12 @@ export function startScene(canvas, dimensions) {
     assertCondition(createdCanvas !== null, "createElement('canvas') must return a canvas stub");
     createdCanvas.width = 440;
     createdCanvas.height = 64;
+    const textContext = createdCanvas.getContext("2d");
+    textContext.font = "17px monospace";
+    assertCondition(
+      textContext.measureText("PREPARING TERRAIN").width > 20,
+      "Canvas2D must resolve real glyphs for loading text",
+    );
     assertCondition(createdCanvas !== rendererCanvas, "text and renderer canvases must be distinct");
     assertCondition(rendererCanvas !== canvas, "created canvas must not alias the host canvas");
     assertCondition(
