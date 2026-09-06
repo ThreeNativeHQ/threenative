@@ -142,6 +142,11 @@ test('desktop child receives the transport mailbox root and writes a raw post-pr
   assert.match(source, /const driver = createDesktopDriver\(artifactPath, project, options, mailboxRoot\)/u);
 });
 
+test('production desktop mailbox uses atomic request writes', () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  assert.match(source, /const mailbox = new runner\.LocalDeviceMailbox\(\);/u);
+});
+
 afterEach(() => {
   for (const path of temporary.splice(0)) rmSync(path, { force: true, recursive: true });
 });

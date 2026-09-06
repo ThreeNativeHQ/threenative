@@ -595,11 +595,7 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
   const requestPath = join(mailboxRoot, 'tn-playtest-request.json');
   const responsePath = join(mailboxRoot, 'tn-playtest-response.json');
   const runner = await import(pathToFileURL(modulePath).href);
-  const mailbox = {
-    read: async (path) => readFile(path, 'utf8').catch((error) => error?.code === 'ENOENT' ? undefined : Promise.reject(error)),
-    remove: async (path) => rm(path, { force: true }).catch(() => undefined),
-    write: async (path, contents) => writeFile(path, contents, 'utf8'),
-  };
+  const mailbox = new runner.LocalDeviceMailbox();
   const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath });
   const driver = createDesktopDriver(artifactPath, project, options, mailboxRoot);
   const transport = {
