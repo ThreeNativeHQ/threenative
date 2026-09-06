@@ -596,7 +596,8 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
   const responsePath = join(mailboxRoot, 'tn-playtest-response.json');
   const runner = await import(pathToFileURL(modulePath).href);
   const mailbox = new runner.LocalDeviceMailbox();
-  const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath });
+  const timeoutMs = 30_000;
+  const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath }, timeoutMs);
   const driver = createDesktopDriver(artifactPath, project, options, mailboxRoot);
   const transport = {
     capabilities: innerTransport.capabilities,
@@ -615,7 +616,7 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
     projectPath: project,
     scenarioPath: relative(project, scenarioPath),
     target: 'android',
-    timeoutMs: 30_000,
+    timeoutMs,
     trace: false,
     url: 'http://127.0.0.1:41777',
   };

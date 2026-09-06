@@ -875,6 +875,13 @@ test('desktop screenshot evidence uses the host post-present mailbox protocol', 
   assert.match(runtime, /tn-playtest-screenshot-request\.txt/u);
 });
 
+test('desktop production profiling forwards its 30-second operation timeout to the mailbox transport', () => {
+  const profile = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  assert.match(profile, /new runner\.DeviceMailboxTransport\(mailbox, \{ request: requestPath, response: responsePath \}, timeoutMs\)/u);
+  assert.match(profile, /const timeoutMs = 30_000;/u);
+  assert.match(profile, /target: 'android',\n {4}timeoutMs,/u);
+});
+
 test('playtest assertion failure cannot become a clean production run', () => {
   const frame = new PNG({ height: 2, width: 2 });
   frame.data.fill(255);
