@@ -80,12 +80,10 @@ After changing bounds, field, or resolution, run three fixed seeds and require t
 
 ## Quality and proof
 
-`src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`;
-override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
+`src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
 the source. The bridge flushes about 100 ms; keep state human-readable and frame feedback in Three.js.
 The starter's painterly look is generated source (`outline.ts`, `kuwahara.ts`, `watercolor.ts`) reached by `worldEnvironment.ts`; `quality.ts` owns tier, radius, resolution, and strength; `TN_RENDER_CHAIN` names each independently, and a missing stage observation is a failure.
-`input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. A scenario
-with no assertions or missing observations fails; open a real capture after visual changes.
+`input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. A scenario with no assertions or missing observations fails; open a real capture after visual changes.
 
 ## One shadow for a big outdoor level
 When one directional light must shadow a whole valley and a 2048² map smudges, set `sun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] })` from `@threenative/core`: camera-centred, texel-snapped clip levels, cached until the window moves and shared through Three's shadow slot. Bias, normal bias, intensity, radius, blur samples, map type and filter stay on `sun.shadow`; map sizes come from the options. For movers call `trackCaster(object)` — tracking or untracking refreshes the cached levels once, then movement draws a per-level mover map every frame without invalidating them; call `invalidateAll()` when static geometry changes. `TN_VIRTUAL_SHADOW` reports rendered, mover-map and cached-level work.
@@ -94,21 +92,5 @@ When one directional light must shadow a whole valley and a 2048² map smudges, 
 
 The performance skill carries `TN_FRAME_BUDGET`, platform targets, and the `display.maxFps` rule.
 Long recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/trace-a-slow-frame.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
-
 ## Optional multiplayer transport
-
-If this game needs online play, import `connect` from `@threenative/core/net`; this is opt-in, so
-the offline game remains transport-free. Use an HTTPS URL and a nonempty credential issued by the
-game's identity flow. The Go reference server is
-`packages/runtime-native/examples/webtransport/server`.
-
-The named per-connection limits are `connectTimeoutMs`, `maxReliableMessageBytes`,
-`maxQueuedReliableBytes`, and `maxQueuedDatagrams`; defaults are 10 seconds, 65,536 bytes, 1 MiB,
-and 256 datagrams. `reliable-ordered` channels use ordered reliable delivery and `send` returns
-`false` when their bounded queue cannot admit a message. `unreliable` datagrams are bounded and
-may be dropped; do not add application ACK or retransmission logic to them.
-
-There is no fallback transport. If WebTransport or the native host bridge is unsupported,
-`connect` rejects with `TN_NET_UNAVAILABLE`; surface that unsupported state instead of silently
-changing protocols. Core owns the connection seam, not serialization, authoritative replication,
-prediction, interpolation, snapshots, or rejoin policy; keep those in this game's `src/` and server.
+For online play only, import `connect` from `@threenative/core/net` with an HTTPS URL and nonempty identity credential; configure `connectTimeoutMs`, `maxReliableMessageBytes`, `maxQueuedReliableBytes`, and `maxQueuedDatagrams` (10s/65,536/1 MiB/256), use `reliable-ordered` for ordered reliable messages and bounded `unreliable` datagrams that may drop, and keep serialization, replication, prediction, interpolation, snapshots and rejoin in this game's `src/` and server. There is no fallback: unsupported WebTransport/native rejects with `TN_NET_UNAVAILABLE`; reference Go server: `packages/runtime-native/examples/webtransport/server`.

@@ -90,21 +90,5 @@ supposed to be touching. Two loading conventions come from `@threenative/core`, 
 Open a capture after visual changes. A scenario with no assertions or missing observations fails.
 
 Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/trace-a-slow-frame.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.
-
 ## Optional multiplayer transport
-
-If this game needs online play, import `connect` from `@threenative/core/net`; this is opt-in, so
-the offline game remains transport-free. Use an HTTPS URL and a nonempty credential issued by the
-game's identity flow. The Go reference server is
-`packages/runtime-native/examples/webtransport/server`.
-
-The named per-connection limits are `connectTimeoutMs`, `maxReliableMessageBytes`,
-`maxQueuedReliableBytes`, and `maxQueuedDatagrams`; defaults are 10 seconds, 65,536 bytes, 1 MiB,
-and 256 datagrams. `reliable-ordered` channels use ordered reliable delivery and `send` returns
-`false` when their bounded queue cannot admit a message. `unreliable` datagrams are bounded and
-may be dropped; do not add application ACK or retransmission logic to them.
-
-There is no fallback transport. If WebTransport or the native host bridge is unsupported,
-`connect` rejects with `TN_NET_UNAVAILABLE`; surface that unsupported state instead of silently
-changing protocols. Core owns the connection seam, not serialization, authoritative replication,
-prediction, interpolation, snapshots, or rejoin policy; keep those in this game's `src/` and server.
+For online play only, import `connect` from `@threenative/core/net` with an HTTPS URL and nonempty identity credential; configure `connectTimeoutMs`, `maxReliableMessageBytes`, `maxQueuedReliableBytes`, and `maxQueuedDatagrams` (10s/65,536/1 MiB/256), use `reliable-ordered` for ordered reliable messages and bounded `unreliable` datagrams that may drop, and keep serialization, replication, prediction, interpolation, snapshots and rejoin in this game's `src/` and server. There is no fallback: unsupported WebTransport/native rejects with `TN_NET_UNAVAILABLE`; reference Go server: `packages/runtime-native/examples/webtransport/server`.
