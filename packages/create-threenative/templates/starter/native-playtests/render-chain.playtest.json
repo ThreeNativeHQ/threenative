@@ -9,6 +9,24 @@
   "assert": {
     "components": [
       {
+        "entity": "scenery.flora",
+        "component": "floraPlants",
+        "gte": 2,
+        "allowTrivial": "The live flora stand reports its counts from the final attached arrays on native; bare ground carries no such entity."
+      },
+      {
+        "entity": "scenery.flora",
+        "component": "leafInstances",
+        "gte": 10,
+        "allowTrivial": "The live flora stand reports foliage instances from the final attached arrays on native."
+      },
+      {
+        "entity": "scenery.flora",
+        "component": "tipDisplacement",
+        "gte": 0.01,
+        "allowTrivial": "The live flora stand sways its tips under game-owned wind strength on native."
+      },
+      {
         "entity": "scenery.ridge",
         "component": "state",
         "equals": "refined",
