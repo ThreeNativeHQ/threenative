@@ -23,8 +23,8 @@ function implementedRows() {
 
 const RUNTIME_SCRIPT_HASHES = {
   'storage-polyfill.js': '7e03f256b0e11b5370bf86ccb5ae286be221080a1baa8339efe2aa570dd3c25d',
-  'fetch-polyfill.js': '0b9f8553897fa012e5eb2a754f9f36e3178d8a1bc1de4645dbeac0a2545a45e5',
-  'streams-polyfill.js': '7a5665317d6649275a6fd26e26789e5fc3014b427c051d7692cd2b26e76b08f3',
+  'fetch-polyfill.js': '534120ac25207a5b95b874b0e1800a902c9efbfb1845c6aab9a40b449cc8455b',
+  'streams-polyfill.js': 'b57569ac2079bc5864eb7c8aefef6b03321acad8b6f6364b3de714e2bee64d83',
   'url-worker-polyfill.js': 'fb709b56f527c82cc7ba4d2c3430a6f17c81e0550f736d145819b25463811af3',
   'create-element-setup.js': '3891c716e3e7b8801f45306b50c5c8c5990042276524fbaac745b157389d1bee',
   'event-constructors-setup.js': '3e7f592806866915e7d4fecd051bb5268542cefb79324efc8e15c9bc73978a11',
