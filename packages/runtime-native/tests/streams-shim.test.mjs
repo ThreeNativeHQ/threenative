@@ -542,6 +542,203 @@ test("WritableStream replaces fulfilled ready with a rejection after controller 
   assert.equal(await vm.runInContext(probe, setupStreamsContext()), "sink failed");
 });
 
+test("WritableStream exposes a stable abort signal and follows terminal abort ordering", async () => {
+  const probe = `(async () => {
+    let controller;
+    const events = [];
+    const sinkFailure = new Error("sink abort failed");
+    const stream = new WritableStream({
+      start(c) { controller = c; },
+      abort() { events.push("abort"); return Promise.reject(sinkFailure); },
+    });
+    const writer = stream.getWriter();
+    writer.closed.catch(() => {});
+    const reason = { tag: "requested" };
+    const signal = controller.signal;
+    const hasSignal = !!signal && typeof signal.addEventListener === "function";
+    if (hasSignal) signal.addEventListener("abort", () => events.push("signal"));
+    const firstAbort = await writer.abort(reason).then(
+      () => "resolved",
+      (error) => error === sinkFailure ? "sink-abort-failed" : "other-error",
+    );
+    const closed = await writer.closed.then(
+      () => "resolved",
+      (error) => error === reason ? "reason" : "other-error",
+    );
+    const secondAbort = await writer.abort({ tag: "second" }).then(
+      () => "resolved",
+      () => "rejected",
+    );
+    return {
+      hasSignal,
+      stable: hasSignal && signal === controller.signal,
+      aborted: hasSignal && signal.aborted,
+      reasonSame: hasSignal && signal.reason === reason,
+      firstAbort, closed, secondAbort, events,
+    };
+  })()`;
+  const expected = {
+    hasSignal: true,
+    stable: true,
+    aborted: true,
+    reasonSame: true,
+    firstAbort: "sink-abort-failed",
+    closed: "reason",
+    secondAbort: "resolved",
+    events: ["signal", "abort"],
+  };
+  assert.deepEqual(guest(await vm.runInNewContext(probe, { WritableStream })), expected);
+  assert.deepEqual(guest(await vm.runInContext(probe, setupStreamsContext())), expected);
+});
+
+test("WritableStream abort signal rejects a held write before abort waits for it", async () => {
+  const probe = `(async () => {
+    let controller;
+    let settleWrite;
+    const events = [];
+    const stream = new WritableStream({
+      start(c) { controller = c; },
+      write() {
+        events.push("write");
+        return new Promise((resolve, reject) => {
+          settleWrite = reject;
+          if (controller.signal) controller.signal.addEventListener("abort", () => {
+            events.push("signal");
+            reject(controller.signal.reason);
+          });
+        });
+      },
+      abort(reason) { events.push("abort:" + reason.tag); },
+    });
+    const writer = stream.getWriter();
+    writer.closed.catch(() => {});
+    const reason = { tag: "stop" };
+    let writeState = "pending";
+    const writing = writer.write("held").then(
+      () => { writeState = "resolved"; return "resolved"; },
+      (error) => { writeState = error === reason ? "reason" : "other-error"; return writeState; },
+    );
+    await Promise.resolve(); await Promise.resolve();
+    const aborting = writer.abort(reason).then(() => "resolved", () => "rejected");
+    const eventsAtAbortCall = events.slice();
+    for (let checkpoint = 0; checkpoint < 6; checkpoint += 1) await Promise.resolve();
+    const observedBeforeRelease = {
+      events: eventsAtAbortCall,
+      aborted: !!controller.signal && controller.signal.aborted,
+      reasonSame: !!controller.signal && controller.signal.reason === reason,
+      writeSettled: writeState !== "pending",
+    };
+    if (writeState === "pending" && settleWrite) settleWrite(reason);
+    const result = await writing;
+    const abortResult = await aborting;
+    const closed = await writer.closed.then(
+      () => "resolved",
+      (error) => error === reason ? "reason" : "other-error",
+    );
+    return { observedBeforeRelease, result, abortResult, closed, events };
+  })()`;
+  const expected = {
+    observedBeforeRelease: {
+      events: ["write", "signal"],
+      aborted: true,
+      reasonSame: true,
+      writeSettled: true,
+    },
+    result: "reason",
+    abortResult: "resolved",
+    closed: "reason",
+    events: ["write", "signal", "abort:stop"],
+  };
+  assert.deepEqual(guest(await vm.runInNewContext(probe, { WritableStream })), expected);
+  assert.deepEqual(guest(await vm.runInContext(probe, setupStreamsContext())), expected);
+});
+
+test("WritableStream abort re-reads state after a synchronous signal listener errors it", async () => {
+  // Chromium reference: artifacts/networking-359/task2b-integration-decisions.md
+  // records abort/closed as listener-error, one signal event, and no sink.abort.
+  const probe = `(async () => {
+    let controller;
+    let releaseStart;
+    const startHeld = new Promise((resolve) => { releaseStart = resolve; });
+    const listenerError = new Error("listener-error");
+    const events = [];
+    const stream = new WritableStream({
+      start(c) {
+        controller = c;
+        if (c.signal) {
+          c.signal.addEventListener("abort", () => {
+            events.push("signal");
+            c.error(listenerError);
+          });
+        }
+        return startHeld;
+      },
+      abort() { events.push("sink-abort"); },
+    });
+    const writer = stream.getWriter();
+    writer.closed.catch(() => {});
+    const aborting = writer.abort("requested").then(
+      () => "resolved",
+      (error) => error === listenerError ? "listener-error" : "other-error",
+    );
+    const signalState = {
+      events: events.slice(),
+      aborted: !!controller.signal && controller.signal.aborted,
+      reason: controller.signal && controller.signal.reason,
+    };
+    releaseStart();
+    const abort = await aborting;
+    const closed = await writer.closed.then(
+      () => "resolved",
+      (error) => error === listenerError ? "listener-error" : "other-error",
+    );
+    return { abort, closed, signalReason: signalState.reason, events };
+  })()`;
+  const expected = {
+    abort: "listener-error",
+    closed: "listener-error",
+    signalReason: "requested",
+    events: ["signal"],
+  };
+  assert.deepEqual(guest(await vm.runInContext(probe, setupStreamsContext())), expected);
+});
+
+test("WritableStream abort on closed or errored streams is already settled", async () => {
+  const probe = `(async () => {
+    let closedController;
+    const closed = new WritableStream({ start(c) { closedController = c; } });
+    const closedWriter = closed.getWriter();
+    await closedWriter.close();
+    const afterClose = await closedWriter.abort("after-close").then(() => "resolved", () => "rejected");
+
+    let erroredController;
+    const stored = new Error("stored");
+    const errored = new WritableStream({ start(c) { erroredController = c; } });
+    const erroredWriter = errored.getWriter();
+    erroredWriter.closed.catch(() => {});
+    erroredController.error(stored);
+    await erroredWriter.closed.catch(() => {});
+    const afterError = await erroredWriter.abort("after-error").then(
+      () => "resolved",
+      (error) => error === stored ? "stored" : "rejected",
+    );
+    return {
+      closedSignalAborted: closedController.signal ? closedController.signal.aborted : false,
+      afterClose,
+      erroredSignalAborted: erroredController.signal ? erroredController.signal.aborted : false,
+      afterError,
+    };
+  })()`;
+  const expected = {
+    closedSignalAborted: false,
+    afterClose: "resolved",
+    erroredSignalAborted: false,
+    afterError: "resolved",
+  };
+  assert.deepEqual(guest(await vm.runInNewContext(probe, { WritableStream })), expected);
+  assert.deepEqual(guest(await vm.runInContext(probe, setupStreamsContext())), expected);
+});
+
 for (const phase of ["start", "write"]) {
   test(`WritableStream abort waits for pending ${phase} and preserves in-flight completion`, async () => {
     const probe = `(async () => {

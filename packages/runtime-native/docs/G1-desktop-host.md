@@ -210,3 +210,33 @@ ran the real Go/Linux V8 fixture, passing 15/15. This is the native send slice
 only; JavaScript stream integration and other platforms remain open.
 
 Evidence: [Task 2b-send](../../../docs/verification/prd-359-task2b-send-2026-09-05.md).
+
+## PRD-359 writable controller abort signal — 2026-09-05
+
+The installed writable-stream shim now exposes a stable
+`WritableStreamDefaultController.signal` backed by the host's existing
+`AbortController`. `writer.abort(reason)` signals synchronously before it waits
+for a held sink start or write, preserves the signal's first reason, and re-reads stream
+state after signal listeners run. A listener that calls `controller.error()` can
+therefore settle the stream without an extra `sink.abort()` call. Terminal
+closed/errored streams resolve a later abort, while a pending abort remains
+coalesced until its active operation settles.
+
+The focused shim tests pass 23/23, the bootstrap hash/loader contract passes
+29 tests with 2 existing skips, and the compiled Linux V8 WebTransport surface
+and wire contracts pass 2/2. Rebuilt Linux QuickJS contracts also pass 2/2,
+with the source hash unchanged across the build. The surface test holds a native writable operation,
+aborts it, and awaits write rejection plus `closed` settlement; it does not use a
+constant probe. A no-signal mutation failed 3 tests and was restored. The
+recorded Chromium 151 reference for synchronous `controller.error()` during
+abort reports `abort='listener-error'`, `closed='listener-error'`, one signal
+event, and no sink abort; Node 20's crash for that reentrant case is not used as
+passing evidence. The explicit native 64 KiB echo probe also passed with exact
+bytes and FIN after this build. The required existing Go/native fixture suite
+also passed 15/15 after the build. Typecheck, lint and the full suite passed;
+the evidence records an initial timestamp-test failure and passing rebuilt replay.
+This is the signal prerequisite only; native
+capacity retry integration, receive bounds, positive trusted TLS and other
+platforms remain open.
+
+Evidence: [Task 2b-signal](../../../docs/verification/prd-359-task2b-signal-2026-09-05.md).

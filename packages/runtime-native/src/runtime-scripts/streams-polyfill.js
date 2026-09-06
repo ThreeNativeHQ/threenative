@@ -355,6 +355,10 @@
     class WritableStreamDefaultController {
       constructor(stream) {
         this._stream = stream;
+        this._abortController = new AbortController();
+      }
+      get signal() {
+        return this._abortController.signal;
       }
       error(reason) {
         this._stream._error(reason);
@@ -558,14 +562,17 @@
         return this._closePromise;
       }
       _abort(reason) {
-        if (this._abortPromise) return this._abortPromise;
         if (this._state === "closed" || this._state === "errored") return Promise.resolve();
-        const wasErroring = this._state === "erroring";
+        this._controller._abortController.abort(reason);
+        const state = this._state;
+        if (state === "closed" || state === "errored") return Promise.resolve();
+        if (this._abortPromise) return this._abortPromise;
+        const wasErroring = state === "erroring";
         this._abortPromise = new Promise((resolve, reject) => {
-          this._pendingAbort = { reason, wasErroring, resolve, reject };
+          this._pendingAbort = { reason: wasErroring ? undefined : reason, wasErroring, resolve, reject };
         });
         this._abortPromise.catch(noop);
-        this._error(reason);
+        if (!wasErroring) this._error(reason);
         this._finishError();
         return this._abortPromise;
       }

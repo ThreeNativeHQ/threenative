@@ -160,10 +160,60 @@ constexpr const char* kScript = R"JS((() => {
     await writer.close();
     streamVerdicts.push('write-pending=' + readyWasPending);
     streamVerdicts.push('write-ready=' + readyRecovered);
+
+    // The transport sink uses this lifecycle signal to cancel a capacity wait.
+    // Hold a real write, abort it, and observe the signal before releasing the
+    // fallback resolver so this remains an asynchronous native-surface check.
+    let signalController;
+    let releaseSignalWrite = () => {};
+    const signalEvents = [];
+    const signalReason = { tag: 'surface-abort' };
+    const signalWritable = new WritableStream({
+      start(controller) { signalController = controller; },
+      write(_chunk, controller) {
+        return new Promise((resolve, reject) => {
+          releaseSignalWrite = resolve;
+          if (!controller.signal) return;
+          controller.signal.addEventListener('abort', () => {
+            signalEvents.push('signal');
+            reject(controller.signal.reason);
+          });
+        });
+      },
+      abort() { signalEvents.push('abort'); },
+    });
+    const signalWriter = signalWritable.getWriter();
+    signalWriter.closed.catch(() => {});
+    const signalWritePromise = signalWriter.write(new Uint8Array(1)).then(
+      () => 'resolved',
+      (error) => error === signalReason ? 'reason' : 'other',
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    const signalAbortPromise = signalWriter.abort(signalReason).then(() => 'resolved', () => 'rejected');
+    const signalEventsAtAbortCall = signalEvents.slice();
+    const signalSync = !!signalController.signal &&
+      signalController.signal.aborted &&
+      signalController.signal.reason === signalReason &&
+      signalEventsAtAbortCall.includes('signal');
+    releaseSignalWrite();
+    const signalWriteResult = await signalWritePromise;
+    const signalAbortResult = await signalAbortPromise;
+    const signalClosedResult = await signalWriter.closed.then(
+      () => 'resolved',
+      (error) => error === signalReason ? 'reason' : 'other',
+    );
+    streamVerdicts.push('signal-sync=' + signalSync);
+    streamVerdicts.push('signal-write=' + signalWriteResult);
+    streamVerdicts.push('signal-abort=' + signalAbortResult);
+    streamVerdicts.push('signal-closed=' + signalClosedResult);
+    streamVerdicts.push('signal-events=' + signalEvents.join('|'));
     return streamVerdicts.every((value) =>
       ['read-initial=2', 'read-pressure=0', 'read-pending=true',
        'read-value=1', 'read-done=true', 'write-pending=true',
-       'write-ready=true'].includes(value));
+       'write-ready=true', 'signal-sync=true', 'signal-write=reason',
+       'signal-abort=resolved', 'signal-closed=reason',
+       'signal-events=signal|abort'].includes(value));
   })().then((passed) => {
     if (!passed) console.log('stream surface: ' + streamVerdicts.join(' '));
     return passed;
@@ -178,14 +228,19 @@ constexpr const char* kScript = R"JS((() => {
         verdicts.includes('closed-session=REJECTED') &&
         verdicts.includes('queue-drop=RESOLVED') &&
         verdicts.includes('send-failed=REJECTED');
-      const streamOk = streamVerdicts.length === 7 &&
+      const streamOk = streamVerdicts.length === 12 &&
         streamVerdicts.includes('read-initial=2') &&
         streamVerdicts.includes('read-pressure=0') &&
         streamVerdicts.includes('read-pending=true') &&
         streamVerdicts.includes('read-value=1') &&
         streamVerdicts.includes('read-done=true') &&
         streamVerdicts.includes('write-pending=true') &&
-        streamVerdicts.includes('write-ready=true');
+        streamVerdicts.includes('write-ready=true') &&
+        streamVerdicts.includes('signal-sync=true') &&
+        streamVerdicts.includes('signal-write=reason') &&
+        streamVerdicts.includes('signal-abort=resolved') &&
+        streamVerdicts.includes('signal-closed=reason') &&
+        streamVerdicts.includes('signal-events=signal|abort');
       if (!datagramOk) console.log('datagram surface: ' + verdicts.join(' '));
       if (!streamOk) console.log('stream surface: ' + streamVerdicts.join(' '));
       process.exit(ok.every(Boolean) && allRejected && datagramOk && streamOk ? 42 : 1);
