@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { chmod, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -58,6 +58,34 @@ await writeFile(path.join(out, "assets", "game.js"), "export const game = true;\
 }
 
 describe("threenative build", () => {
+  it('does not allow the mutation "audio worker pool remains referenced after build completion"', async () => {
+    const root = await makeTempDir("threenative-build-exit-");
+    roots.push(root);
+    const { target } = await createProject(
+      { install: false, target: "game", template: "starter" },
+      root,
+    );
+    await installDeterministicVite(target);
+    const cli = path.resolve("packages/create-threenative/dist/threenative.js");
+
+    const result = await new Promise<{ code: number | null; timedOut: boolean }>((resolve) => {
+      const child = spawn(process.execPath, [cli, "build"], {
+        cwd: target,
+        stdio: "ignore",
+      });
+      const timeout = setTimeout(() => {
+        child.kill("SIGKILL");
+        resolve({ code: null, timedOut: true });
+      }, 5_000);
+      child.once("exit", (code) => {
+        clearTimeout(timeout);
+        resolve({ code, timedOut: false });
+      });
+    });
+
+    expect(result).toEqual({ code: 0, timedOut: false });
+  }, 10_000);
+
   it("resolves every declared brand input through the live packaging-config caller", async () => {
     const config = {
       app: {
