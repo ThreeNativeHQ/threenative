@@ -91,6 +91,51 @@ test('starter desktop screenshot requires the rendered cyan proof asset', () => 
   assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 128);
 });
 
+// Builds a frame of one flat body colour with `cyanPixels` of one asset colour laid over it, so a
+// single predicate change can be read against both at once. Shaded like `starterFrame` so the
+// unrendered-frame floor never fires.
+function gradedFrame({ asset, body, cyanPixels }) {
+  const png = new PNG({ height: 64, width: 64 });
+  for (let index = 0; index < 64 * 64; index += 1) {
+    const offset = index * 4;
+    const source = index < cyanPixels ? asset : body;
+    // A drift of a few levels per pixel keeps the colour count above the unrendered floor without
+    // moving any channel far enough to cross a ratio in the predicate under test.
+    png.data[offset] = Math.min(255, source[0] + (index % 7));
+    png.data[offset + 1] = Math.min(255, source[1] + (index % 5));
+    png.data[offset + 2] = Math.min(255, source[2] + (index % 3));
+    png.data[offset + 3] = 255;
+  }
+  return png;
+}
+
+test('the cyan proof asset is counted after the world is graded darker', () => {
+  // The reason the predicate stopped being a brightness threshold. `blue > 150 && green > 140`
+  // asked the frame to be bright, so a kit that graded its world down failed a gate about whether
+  // an asset is *present* — 75 counted pixels against a floor of 100 on a real painterly capture.
+  // A graded proof asset at 30,120,140 fails that old test on both channels and is plainly cyan.
+  const directory = makeTempDirSync('starter-graded-test-');
+  const path = join(directory, 'frame.png');
+  writeFileSync(
+    path,
+    PNG.sync.write(gradedFrame({ asset: [30, 120, 140], body: [18, 30, 44], cyanPixels: 400 })),
+  );
+  assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 400);
+});
+
+test('a graded world with no proof asset in it still fails closed', () => {
+  // The other half of that trade, and the half a looser predicate can lose. The painterly
+  // background the predicate was widened for sits around blue 50-60; a frame that is nothing but
+  // that background has no asset in it and must not report one, however many pixels it has.
+  const directory = makeTempDirSync('starter-graded-empty-test-');
+  const path = join(directory, 'frame.png');
+  writeFileSync(
+    path,
+    PNG.sync.write(gradedFrame({ asset: [35, 55, 58], body: [35, 55, 58], cyanPixels: 0 })),
+  );
+  assert.throws(() => inspectStarterScreenshot(path), /TN_NATIVE_STARTER_ASSET_NOT_VISIBLE/);
+});
+
 test('a frame that was never drawn is named as the capture, not a missing asset', () => {
   // The Linux starter lane failed intermittently with TN_NATIVE_STARTER_ASSET_NOT_VISIBLE while its
   // own log carried TN_NATIVE_STARTER_ASSETS_LOADED and "Rendered 300 frames". The capture held
