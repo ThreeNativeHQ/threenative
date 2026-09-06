@@ -218,7 +218,9 @@ class TestPristineSource(unittest.TestCase):
             with open(os.path.join(sub, "evil.c"), "w") as f:
                 f.write("evil\n")
             subprocess.check_call(["git", "-C", sub, "add", "-A"])
-            subprocess.check_call(["git", "-C", sub, "commit", "-qm", "evil"])
+            subprocess.check_call(["git", "-C", sub, "-c", "user.name=t",
+                                   "-c", "user.email=t@t", "commit", "-qm",
+                                   "evil"])
             with self.assertRaisesRegex(mod.BuildError, "TN_QUICHE_(BORINGSSL|SOURCE_DIRTY)"):
                 mod.verify_source(repo)
 
@@ -415,9 +417,36 @@ class TestIpSanContract(unittest.TestCase):
 
 def _fake_tool(path):
     import stat
+    if os.name == "nt":
+        path += ".cmd"
     with open(path, "w") as f:
-        f.write("#!/bin/sh\nexit 0\n")
+        f.write("@echo off\r\nexit /b 0\r\n" if os.name == "nt"
+                else "#!/bin/sh\nexit 0\n")
     os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP)
+
+
+def _fake_xcrun(tmp, fail=False):
+    path = os.path.join(tmp, "xcrun" + (".cmd" if os.name == "nt" else ""))
+    with open(path, "w") as f:
+        if os.name == "nt":
+            f.write("@echo off\r\n")
+            if fail:
+                f.write("exit /b 1\r\n")
+            else:
+                f.write('if "%~3"=="--show-sdk-path" echo /sdk\r\n'
+                        'if "%~3"=="-f" echo /sdk/bin/%~4\r\n'
+                        "exit /b 0\r\n")
+        elif fail:
+            f.write("#!/bin/sh\nexit 1\n")
+        else:
+            f.write("#!/bin/sh\n"
+                    "case \"$*\" in\n"
+                    "  *--show-sdk-path) echo /sdk ;;\n"
+                    "  *-f*) echo /sdk/bin/$NF ;;\n"
+                    "  *) exit 1 ;;\n"
+                    "esac\n")
+    os.chmod(path, 0o755)
+    return path
 
 
 class TestTargetEnvPins(unittest.TestCase):
@@ -489,10 +518,7 @@ class TestTargetEnvApple(unittest.TestCase):
 
     def test_wrong_sdk_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
-            xc = os.path.join(tmp, "xcrun")
-            with open(xc, "w") as f:
-                f.write("#!/bin/sh\nexit 1\n")
-            os.chmod(xc, 0o755)
+            _fake_xcrun(tmp, fail=True)
             with self.assertRaises(b.BuildError) as ctx:
                 b.prepare_target_env("mac-arm64",
                                      dict(os.environ, PATH=tmp))
@@ -500,15 +526,7 @@ class TestTargetEnvApple(unittest.TestCase):
 
     def test_sdk_and_cxx_are_bound_to_selected_arch(self):
         with tempfile.TemporaryDirectory() as tmp:
-            xc = os.path.join(tmp, "xcrun")
-            with open(xc, "w") as f:
-                f.write("#!/bin/sh\n"
-                        "case \"$*\" in\n"
-                        "  *--show-sdk-path) echo /sdk ;;\n"
-                        "  *-f*) echo /sdk/bin/$NF ;;\n"
-                        "  *) exit 1 ;;\n"
-                        "esac\n")
-            os.chmod(xc, 0o755)
+            _fake_xcrun(tmp)
             env = dict(os.environ, PATH=tmp)
             sel = b.prepare_target_env("mac-arm64", env)
             self.assertEqual(sel["sdk"], "macosx")

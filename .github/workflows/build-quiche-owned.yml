@@ -119,11 +119,17 @@ jobs:
       # CMAKE_ANDROID_NDK and CMAKE_ANDROID_ARCH_ABI.
       - name: Set up Android NDK r27 (android-*)
         if: startsWith(matrix.target, 'android-')
+        id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: 27.1.12297006
+          # nttld/setup-ndk consumes the Android release archive name;
+          # the builder verifies its exact Pkg.Revision below.
+          ndk-version: r27b
+          add-to-path: false
       - name: Probe NDK drivers (android-*)
         if: startsWith(matrix.target, 'android-')
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           test -f "$ANDROID_NDK_HOME/source.properties"
           grep "Pkg.Revision = 27.1.12297006" "$ANDROID_NDK_HOME/source.properties"
@@ -145,6 +151,7 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/quiche-target
           IPHONEOS_DEPLOYMENT_TARGET: "14.0"
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: >-
           python3 engine/packages/runtime-native/scripts/build-quiche-owned.py
           ${{ matrix.target }}

@@ -170,12 +170,22 @@ def check_workflow(doc):
             raise WorkflowCheckError(f"missing pinned provision: {pin}")
     for provision in ("msvc-dev-cmd", "arch: x64", "matrix.sdk",
                       "xcrun --sdk", "setup-xcode",
-                      "27.1.12297006", "setup-ndk",
+                      "27.1.12297006", "r27b", "setup-ndk",
                       "armv7a-linux-androideabi21-clang",
                       "IPHONEOS_DEPLOYMENT_TARGET"):
         if provision not in full:
             raise WorkflowCheckError(
                 f"missing explicit platform provision: {provision}")
+    ndk = next((s for s in steps
+                if "nttld/setup-ndk" in str(s.get("uses", ""))), None)
+    if ndk is None or ndk.get("id") != "setup-ndk" \
+            or ndk.get("with", {}).get("ndk-version") != "r27b" \
+            or ndk.get("with", {}).get("add-to-path") not in (False, "false"):
+        raise WorkflowCheckError(
+            "setup-ndk must use r27b without PATH-only discovery")
+    if "steps.setup-ndk.outputs.ndk-path" not in full:
+        raise WorkflowCheckError(
+            "Android probe/build must consume the pinned setup-ndk output")
     if "skipped, never passed" not in WORKFLOW_TEXT:
         raise WorkflowCheckError(
             "workflow must not claim local cross-target runtime qualification")
