@@ -353,3 +353,9 @@ is retained in [the repair evidence](../../../docs/verification/prd-359-task1b-w
 Linux V8 and QuickJS wire/surface tests pass 2/2 each; required live V8 tests pass 33/33.
 A clang-cl preprocessor control fails before the guard and passes with it. No local
 Windows SDK was available, so corrected Windows compilation remains a CI requirement.
+
+The wire-test translation unit imports quiche before the implementation; it now
+defines NOMINMAX at its own first include as well. CI first proved the production
+repair, then exposed this independent test-header boundary. Corrected Windows
+wire-test compilation is pending CI, with local V8 and preprocessing evidence in
+the same Windows verification record.

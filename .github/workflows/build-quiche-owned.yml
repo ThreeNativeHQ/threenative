@@ -1,0 +1,137 @@
+name: Build owned quiche dependency
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - packages/runtime-native/scripts/build-quiche-owned.py
+      - packages/runtime-native/scripts/test-build-quiche-owned.py
+      - packages/runtime-native/scripts/validate-quiche-release.py
+      - packages/runtime-native/scripts/test-validate-quiche-release.py
+      - packages/runtime-native/scripts/test-quiche-workflow.py
+      - packages/runtime-native/patches/quiche-*.patch
+      - .github/workflows/build-quiche-owned.yml
+  push:
+    tags:
+      - quiche-owned-v1
+    branches:
+      - main
+    paths:
+      - packages/runtime-native/scripts/build-quiche-owned.py
+      - packages/runtime-native/scripts/test-build-quiche-owned.py
+      - packages/runtime-native/scripts/validate-quiche-release.py
+      - packages/runtime-native/scripts/test-validate-quiche-release.py
+      - packages/runtime-native/scripts/test-quiche-workflow.py
+      - packages/runtime-native/patches/quiche-*.patch
+      - .github/workflows/build-quiche-owned.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x64 only. win/mac/android/ios recipes are a separate row.
+          - target: linux-x64
+            os: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - name: Check out engine
+        uses: actions/checkout@v7
+        with:
+          path: engine
+      - name: Check out pinned quiche upstream
+        uses: actions/checkout@v7
+        with:
+          repository: cloudflare/quiche
+          ref: 020a43a0a5eed76f57dd3ce5012149aa576c594d
+          submodules: recursive
+          path: quiche-upstream
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install pinned CMake and workflow test dependency
+        run: python -m pip install "cmake==4.4.2" "PyYAML==6.0.3"
+      - name: Set up Rust 1.96.0
+        uses: dtolnay/rust-toolchain@1.96.0
+      - name: Set up Go 1.26.3
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.3"
+      - name: Validate release tag before build
+        run: >-
+          python3 engine/packages/runtime-native/scripts/build-quiche-owned.py
+          --check-release-tag quiche-owned-v1
+      - name: Run builder self-tests
+        run: python3 engine/packages/runtime-native/scripts/test-build-quiche-owned.py
+      - name: Run release-gate tests
+        run: python3 engine/packages/runtime-native/scripts/test-validate-quiche-release.py
+      - name: Run workflow-shape tests
+        run: python3 engine/packages/runtime-native/scripts/test-quiche-workflow.py
+      - name: Build owned linux-x64 archive (ip_san inside)
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/quiche-target
+        run: >-
+          python3 engine/packages/runtime-native/scripts/build-quiche-owned.py
+          linux-x64
+          --source-dir quiche-upstream
+          --patch-dir engine/packages/runtime-native/patches
+          --out dist-quiche/linux-x64
+          --release-tag quiche-owned-v1 -j 4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quiche-owned-linux-x64
+          path: |
+            dist-quiche/linux-x64/quiche-0.24.6-tn1-linux-x64.zip
+            dist-quiche/linux-x64/manifest-linux-x64.json
+          if-no-files-found: error
+
+  publish:
+    # Fail-closed 9-target gate: exact tag only; validator requires ALL 9
+    # targets. Linux-only CI exits 1 naming the missing targets.
+    if: github.ref == 'refs/tags/quiche-owned-v1'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: engine
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: quiche-owned-*
+          path: dist-quiche
+      - name: Validate release tag before publish
+        run: >-
+          python3 engine/packages/runtime-native/scripts/build-quiche-owned.py
+          --check-release-tag "${GITHUB_REF_NAME}"
+      - name: Fail closed until all 9 targets verify
+        run: >-
+          python3 engine/packages/runtime-native/scripts/validate-quiche-release.py
+          --dist dist-quiche --tag "${GITHUB_REF_NAME}"
+          --builder engine/packages/runtime-native/scripts/build-quiche-owned.py
+          --emit validated-assets.txt
+      - name: Publish immutable dependency release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t ASSETS < validated-assets.txt
+          test "${#ASSETS[@]}" -eq 18
+          for f in "${ASSETS[@]}"; do test -s "$f"; done
+          gh release create "${{ github.ref_name }}" "${ASSETS[@]}" \
+            --repo "${{ github.repository }}" \
+            --verify-tag --title "Owned quiche ${{ github.ref_name }}" \
+            --generate-notes

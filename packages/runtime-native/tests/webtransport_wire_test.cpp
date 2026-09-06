@@ -6,6 +6,12 @@
 // and cannot drift to a copy. It links quiche (the included TU requires it)
 // and must NOT link mystral-runtime, which already defines the same TU.
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX  // This test imports quiche before the implementation TU.
+#endif
+#endif
+
 #include <quiche.h>
 
 // Rename only the two quiche DATAGRAM calls in this test translation unit. The
