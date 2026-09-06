@@ -167,6 +167,20 @@ Stop at the first condition that applies, and record which one in the ledger:
 
 Never stop because the result is "pretty good" or a round count was reached.
 
+## Efficient monitoring and handoffs
+
+Use fresh minimal contexts for builders and the blind judge; on Codex set
+`fork_turns: "none"`. Inline the required sandbox method, brief, ownership and firewall rules,
+not the coordinator transcript, other arm or prior verdict. Preserve every sealed proof,
+negative-control check and required human judgment.
+
+For long builds/gates, keep complete logs on disk and use completion notifications or waits
+up to 60 seconds. Inspect `pnpm gate:status` and changed log tails; use `pnpm gate:doctor` for
+stale/blocked state before rerunning. A poll with unchanged state does not warrant rereading
+the skills, source tree or full ledger. Record command, revision, exit status and artifact;
+do not claim success from a log-tail command. Reuse proof only for the same inputs and lane;
+changed source, environment or sealed inputs require new proof.
+
 ## Running for days
 
 The loop survives context resets because nothing lives in the conversation:
