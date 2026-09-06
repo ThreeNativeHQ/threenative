@@ -25,7 +25,7 @@ the budget is unchanged and that finding is not concealed.
 | C++ contract `threenative-pump-silence-test` (injected clock) | pass — 22/22 checks incl. new backwards-clock guard |
 | vitest `tests/pump-silence.test.mjs` (real desktop host) | 11/11 pass |
 | CTest `-R pump-silence` | pass |
-| Evaluator validation `validate-evaluator.mjs` | 29/29 cases behave as required, including missing response identity, missing runner position, inconsistent timestamps, forged preflight, ack-only, collector-error, pump-count/span, and preflight-order negatives |
+| Evaluator validation `validate-evaluator.mjs` | 32/32 cases behave as required, including missing response identity, missing runner position, inconsistent timestamps, forged preflight, ack-only, collector-error, pump-count/span, impossible gap endpoints, and both-preflight-order/qualification negatives |
 | Collector flow `collector-flow.mjs` (real host + mailbox, mocked adb) | correlated endpoint evaluates; hash matches; truncated → MISSING, foreign → UNPROVEN, empty → MISSING |
 | Current desktop probe | `firstPumpAtMs≈410ms` → `R7_PUMP_SILENCE_EXCEEDED` (correct rejection, not a device claim) |
 
@@ -53,9 +53,10 @@ the budget is unchanged and that finding is not concealed.
    `scripts/verify-native-contracts.mjs`, `build-matrix.json` (tn-linux and
    tn-linux-coverage), plus `pnpm census` and `native:coverage` regeneration.
 4. Full pump evaluation now requires the runner's finite post-input position,
-   reconciles endpoint timestamps, pump counts, and single/multi-pump span,
-   pins the 50% preflight floor and serial/freshness/order identity, and asserts
-   the collector's intended failure codes instead of merely printing them.
+   reconciles endpoint timestamps, pump counts, single/multi-pump span, and gap
+   endpoints, pins the 50% preflight floor on both readings plus serial/freshness/
+   order identity, and asserts the collector's intended failure codes instead of
+   merely printing them.
 
 ## Provenance
 
@@ -78,8 +79,8 @@ the budget is unchanged and that finding is not concealed.
 - Executed proof sources, byte-identical to the run inputs (checked with
   `cmp`): [`measure-first-playable.mjs.txt`](measure-first-playable.mjs.txt)
   (`3256a881…`), [`evaluate-first-playable.mjs.txt`](evaluate-first-playable.mjs.txt)
-  (`40dbf12d…`), [`validate-evaluator.mjs.txt`](validate-evaluator.mjs.txt)
-  (`db5c73d8…`), [`collector-flow.mjs.txt`](collector-flow.mjs.txt)
+  (`f11f91de…`), [`validate-evaluator.mjs.txt`](validate-evaluator.mjs.txt)
+  (`141b51db…`), [`collector-flow.mjs.txt`](collector-flow.mjs.txt)
   (`8d50b896…`). Live originals remain under
   `artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/` and
   `artifacts/batch-2026-09-05/pump-observer/` (git-ignored).
@@ -102,7 +103,7 @@ node artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/valida
 node artifacts/batch-2026-09-05/pump-observer/collector-flow.mjs
 ```
 
-Gates executed for this follow-up: evaluator validation (29/29), real-host
+Gates executed for this follow-up: evaluator validation (32/32), real-host
 collector flow (assertions pass), full desktop pump verification (assertions
 pass), `pnpm test` (391 files / 4,289 tests passed, 2 files / 7 tests
 skipped), `pnpm typecheck` (pass), in-scope Biome checks (pass; root

@@ -226,6 +226,30 @@ const cases = [
   {
     expect: 'fail',
     mustFail: ['R7_PUMP_SILENCE'],
+    mustFailCode: 'R7_PUMP_SILENCE_MALFORMED',
+    name: 'maximum-gap endpoint cannot extend beyond the last pump',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ maxGapAtMs: 899, maxGapMs: 14 }),
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    mustFailCode: 'R7_PUMP_SILENCE_MALFORMED',
+    name: 'negative first-pump timestamp fails observed pump',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ firstPumpAtMs: -1, maxGapMs: 16 }),
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
     mustFailCode: 'R7_PUMP_CORRELATION_UNPROVEN',
     name: 'caller payload cannot override runner position',
     input: {
@@ -493,6 +517,32 @@ const cases = [
             thermalStatusCode: 0,
             screenOn: true,
             provisional: [],
+          },
+        }),
+      }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    mustFailCode: 'R0B_PREFLIGHT_UNQUALIFIED',
+    name: 'before-install preflight must itself be qualified',
+    input: {
+      bound: bound({
+        preflight: qualifiedPreflight({
+          beforeInstall: {
+            phase: 'before-install',
+            recordedAt: '2026-09-06T10:00:00.000Z',
+            serial: 'MOCKSERIAL',
+            batteryPercent: 1,
+            charging: true,
+            chargingSource: 'USB',
+            thermalStatus: 'SEVERE',
+            thermalStatusCode: 3,
+            screenOn: false,
+            provisional: ['battery', 'charging', 'thermal', 'screen'],
           },
         }),
       }),

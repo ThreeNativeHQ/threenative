@@ -82,6 +82,17 @@ export function fnv1a64(text) {
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const vector = (value) => Array.isArray(value) && value.length === 3 && value.every(finite) ? value : undefined;
+const isQualifiedPreflightReading = (reading) => isRecord(reading)
+  && Number.isInteger(reading.batteryPercent)
+  && reading.batteryPercent >= MINIMUM_BATTERY_PERCENT
+  && reading.batteryPercent <= 100
+  && reading.charging === false
+  && reading.chargingSource === 'NONE'
+  && reading.thermalStatus === 'NONE'
+  && reading.thermalStatusCode === 0
+  && reading.screenOn === true
+  && Array.isArray(reading.provisional)
+  && reading.provisional.length === 0;
 
 function responseObservation(value, entity) {
   if (!isRecord(value)) return undefined;
@@ -199,6 +210,9 @@ export function evaluatePumpEndpoint({
     return fail('R7_PUMP_SILENCE_MALFORMED', { pump });
   }
   if (stamps.some((value) => value < 0 && value !== -1)
+    || pump.firstPumpAtMs < 0
+    || pump.lastPumpAtMs < 0
+    || pump.atMs < 0
     || pump.maxGapMs < 0
     || pump.trailingGapMs <= 0
     || pump.droppedLongGaps === undefined
@@ -231,6 +245,7 @@ export function evaluatePumpEndpoint({
     const pumpSpan = pump.lastPumpAtMs - pump.firstPumpAtMs;
     const roundingAllowance = PUMP_TIMESTAMP_TOLERANCE_MS * pumpCount;
     if (!(pump.maxGapMs > 0 && pump.maxGapAtMs >= pump.firstPumpAtMs && pump.maxGapAtMs < pump.lastPumpAtMs)
+      || pump.maxGapAtMs + pump.maxGapMs > pump.lastPumpAtMs + PUMP_TIMESTAMP_TOLERANCE_MS
       || pumpSpan + PUMP_TIMESTAMP_TOLERANCE_MS < pump.maxGapMs
       || pumpSpan > (pumpCount - 1) * pump.maxGapMs + roundingAllowance) {
       return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'pump count, span, and maximum gap are inconsistent', pump });
@@ -444,14 +459,8 @@ export async function evaluateFirstPlayable(input) {
     && preflight?.minimumBatteryPercent === MINIMUM_BATTERY_PERCENT
     && preflight?.required?.charging === 'discharging'
     && preflight?.required?.thermal === 'NONE'
-    && Number.isInteger(batteryPercent)
-    && batteryPercent >= MINIMUM_BATTERY_PERCENT
-    && batteryPercent <= 100
-    && beforeLaunch.charging === false
-    && beforeLaunch.thermalStatus === 'NONE'
-    && beforeLaunch.screenOn === true
-    && Array.isArray(beforeLaunch.provisional)
-    && beforeLaunch.provisional.length === 0;
+    && isQualifiedPreflightReading(beforeInstall)
+    && isQualifiedPreflightReading(beforeLaunch);
   check(
     'R0B_PREFLIGHT',
     qualified === true,
