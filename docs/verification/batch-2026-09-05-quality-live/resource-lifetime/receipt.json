@@ -1,0 +1,124 @@
+{
+  "date": "2026-09-05",
+  "target": "browser-webgpu",
+  "hardware": {
+    "adapter": {
+      "vendor": "nvidia",
+      "architecture": "turing",
+      "description": ""
+    },
+    "canvas": "640x360",
+    "framesPerDecision": 10
+  },
+  "input": {
+    "windows": "synthetic",
+    "gpuMsDecisions": [40, 40, 1, 1],
+    "gpuAgeFrames": 1,
+    "frames": 60,
+    "fps": 60,
+    "presentedP95": 16.7,
+    "frameP95": 5.5,
+    "limitation": "This proves resource transitions under synthetic windows; it does not prove measured adaptive load, phone performance, or native coverage."
+  },
+  "greenCycles": [
+    {
+      "cycle": 1,
+      "samples": [
+        {
+          "step": "high-start",
+          "textures": 26,
+          "drawCalls": 25
+        },
+        {
+          "step": "medium",
+          "textures": 26,
+          "drawCalls": 25
+        },
+        {
+          "step": "low",
+          "textures": 16,
+          "drawCalls": 16
+        },
+        {
+          "step": "medium",
+          "textures": 26,
+          "drawCalls": 25
+        },
+        {
+          "step": "high",
+          "textures": 26,
+          "drawCalls": 25
+        }
+      ]
+    },
+    {
+      "cycle": 2,
+      "samples": [
+        {
+          "step": "high-start",
+          "textures": 26,
+          "drawCalls": 25
+        },
+        {
+          "step": "medium",
+          "textures": 26,
+          "drawCalls": 25
+        },
+        {
+          "step": "low",
+          "textures": 16,
+          "drawCalls": 16
+        },
+        {
+          "step": "medium",
+          "textures": 26,
+          "drawCalls": 25
+        },
+        {
+          "step": "high",
+          "textures": 26,
+          "drawCalls": 25
+        }
+      ]
+    }
+  ],
+  "assertions": {
+    "positiveTextureAndDrawCounts": true,
+    "bloomPresentEverySample": true,
+    "droppedStages": [],
+    "repeatTextureCountsDoNotGrow": true
+  },
+  "negativeControl": {
+    "source": "packages/create-threenative/templates/starter/src/render/postprocessing.ts",
+    "anchor": {
+      "function": "apply",
+      "source": "    disposeGraph?.();",
+      "offset": 2338
+    },
+    "removedOffset": 2338,
+    "occurrencesBefore": 2,
+    "occurrencesAfter": 1,
+    "finalControllerDisposalRetained": true,
+    "samples": {
+      "cycle1HighStartTextures": 26,
+      "cycle2HighStartTextures": 34,
+      "cycle2HighTextures": 42,
+      "drawCalls": {
+        "highAndMedium": 25,
+        "low": 16
+      }
+    }
+  },
+  "exitSequence": {
+    "negativeBundle": 0,
+    "negativeBrowser": 1,
+    "restoredBundle": 0,
+    "restoredBrowser": 0
+  },
+  "sourceSha256": {
+    "quality-resource-lifecycle-probe.mjs": "6297ad1a2258e3a01500c5aa8299a70ccb4b603dfd7f3a357a042b8298b36899",
+    "quality-resource-lifecycle-browser.mjs": "c544ad51c887c1e20a53b216e9c126712e1b60245c894827016f5a722b17f125",
+    "quality-resource-lifecycle-negative-build.mjs": "6ab96188ba8a6f5e4833b0e8c5ac2a58320e34a1a83cbf128c7195d07cd180bb",
+    "starter-postprocessing.ts": "38e8127cba56e32941853c3babfd15b56758c2fd5fc5b88c79309704a4a43c52"
+  }
+}

@@ -2,10 +2,27 @@
   "name": "native-render-chain",
   "target": "desktop",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 2,
-  "steps": [{ "label": "ridge-refined", "waitTicks": 600 }],
-  "artifacts": { "screenshots": "after" },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "move-and-start-refinement",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "label": "ridge-refined",
+      "waitTicks": 600
+    }
+  ],
+  "artifacts": {
+    "screenshots": "after"
+  },
   "assert": {
     "components": [
       {
@@ -49,6 +66,16 @@
         "allowTrivial": "The final-array topology report is a held invariant for the attached native ridge."
       }
     ],
-    "renderChain": { "tier": "high" }
+    "renderChain": {
+      "tier": "high"
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "odometer",
+        "gte": 1,
+        "changed": true
+      }
+    ]
   }
 }

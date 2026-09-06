@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { float, rtt } from "three/tsl";
 import { describe, expect, it, vi } from "vitest";
 import { buildImplicitSurface } from "../templates/starter/src/render/implicitSurface.js";
 import { createKuwaharaStage } from "../templates/starter/src/render/kuwahara.js";
@@ -88,7 +89,8 @@ describe("starter visual floor", () => {
     expect(quality).toContain("kuwaharaEnabled: false");
     expect(quality).toContain("watercolorEnabled: false");
     expect(kuwahara).toContain("HalfFloatType");
-    expect(kuwahara).toContain("renderTarget.dispose");
+    expect(kuwahara).toContain("scope.own");
+    expect(kuwahara).toContain("scope.dispose");
     expect(watercolor).not.toMatch(/ACES|toneMapping/iu);
   });
 
@@ -157,6 +159,42 @@ describe("starter visual floor", () => {
     expect(() => createWatercolorStage({ strength: 0 }).build(undefined)).toThrow(
       /watercolor input is missing/u,
     );
+  });
+
+  it("should dispose owned RTT targets and materials without touching shared inputs", async () => {
+    const { createTextureScope } = await import(
+      "../templates/starter/src/render/textureLifetime.js"
+    );
+    const scope = createTextureScope();
+    expect(() => scope.own({ isRTTNode: true })).toThrow(/disposable RTTNode/u);
+    const generated = scope.texture(float(1));
+    const explicit = rtt(float(1));
+    scope.own(explicit);
+    scope.own(explicit);
+    scope.own(generated);
+    const external = rtt(float(1));
+    expect(scope.texture(external)).toBe(external);
+    const nodes = [generated, explicit, external] as unknown as Array<{
+      renderTarget: { dispose: () => void };
+      _quadMesh: { geometry: { dispose: () => void }; material: { dispose: () => void } };
+    }>;
+    const spies = nodes.map((node) => ({
+      target: vi.spyOn(node.renderTarget, "dispose"),
+      material: vi.spyOn(node._quadMesh.material, "dispose"),
+      geometry: vi.spyOn(node._quadMesh.geometry, "dispose"),
+    }));
+
+    scope.dispose();
+    for (const { target, material, geometry } of spies.slice(0, 2)) {
+      expect(target).toHaveBeenCalledOnce();
+      expect(material).toHaveBeenCalledOnce();
+      expect(geometry).not.toHaveBeenCalled();
+    }
+    expect(spies[2]?.target).not.toHaveBeenCalled();
+    expect(spies[2]?.material).not.toHaveBeenCalled();
+    scope.dispose();
+    expect(spies[0]?.target).toHaveBeenCalledOnce();
+    expect(spies[1]?.material).toHaveBeenCalledOnce();
   });
 
   it("should remove debug materials and wire live shadows", async () => {

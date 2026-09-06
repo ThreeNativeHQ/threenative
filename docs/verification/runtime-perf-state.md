@@ -2574,3 +2574,32 @@ UNVERIFIED: physical FPS, new baselines/noise limits, actual regression CI enfor
 Linux/Windows/macOS runs, physical Android workload, iOS simulator/physical workload, startup and
 soak measurements. No GPU workload was launched during this discovery. Full typecheck/lint/test
 were not run for this planning-only change; the four focused test files above were executed.
+
+
+## Starter measured-load calibration — 2026-09-05
+
+PRD-362's scaffolded starter used a build-only stress fixture: resolution scale 1, a 2560×1440
+buffer, 30-frame reports, and existing high/medium Kuwahara radius 9 at full resolution. The
+configured budget remained 60 FPS. A fixture hook restored both presets after observing low.
+Measurements came from the real FrameBudget callback; no synthetic GPU times were supplied.
+
+On headed NVIDIA/Turing WebGPU, the policy stepped high→medium→low but did not recover within
+120 seconds. Two windows contained fresh GPU overload; other observations had GPU age six or
+more renderer frames and correctly named the presented fallback. Low GPU cost fell, but this
+was not sufficient to establish fresh recovery. The uncapped performance-browser flags instead
+produced GPU ages in the hundreds and no eligible fresh-overload window. Headless Chromium
+selected Google/SwiftShader and failed the hardware check before measuring. Three attempts
+failed; no policy threshold was relaxed and no desktop FPS verdict is inferred.
+
+The first two harnesses used fixed-step input, which suppressed subsequent live updates. The
+harness was then corrected to real key holds and stronger startup, visibility, freshness and
+recovery assertions; only its syntax check has run. The supported browser runner has no cadence
+cap: `webgpu` selects hardware flags, performance mode removes pacing, and web `display.maxFps`
+sets the scaler's budget rather than capping RAF. The assumption that this Xvfb/browser recipe
+can provide suitable fresh timing for the recovery proof remains unresolved.
+
+Native resource tests separately used synthetic windows and are not performance measurements.
+Physical-phone 120-second browser/native floors, actual-load recovery and pinned-load behavior
+remain UNVERIFIED. Exact local logs, build hashes, mutation results and commands are linked from
+the [batch ledger](batch-2026-09-05-execution.md). No phone default is claimed from these desktop
+observations.

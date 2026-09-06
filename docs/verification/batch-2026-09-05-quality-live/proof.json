@@ -1,0 +1,118 @@
+{
+  "restored": {
+    "pass": true,
+    "diagnostics": [],
+    "quality": {
+      "stages": {
+        "before": ["bloom", "outline", "kuwahara", "watercolor"],
+        "after": ["bloom", "outline", "kuwahara", "watercolor"]
+      },
+      "dropped": {
+        "before": [],
+        "after": []
+      },
+      "tier": {
+        "before": "high",
+        "after": "high"
+      },
+      "source": {
+        "before": "auto",
+        "after": "auto"
+      },
+      "changed": {
+        "before": false,
+        "after": false
+      },
+      "reason": {
+        "before": "steady",
+        "after": "steady"
+      },
+      "budgetMs": {
+        "before": 16.666666666666668,
+        "after": 16.666666666666668
+      },
+      "meter": {
+        "before": "presented",
+        "after": "presented"
+      },
+      "fallback": {
+        "before": "gpu-stale",
+        "after": "gpu-stale"
+      },
+      "gpuMs": {
+        "before": 1.33,
+        "after": 1.33
+      },
+      "cpuMs": {
+        "before": 6.5,
+        "after": 6.5
+      },
+      "costMs": {
+        "before": 66.7,
+        "after": 66.7
+      },
+      "window": {
+        "before": 3,
+        "after": 3
+      }
+    },
+    "movementDelta": [-5.364418029785156e-5, -0.00010406970977783203, -1.9999894339940738],
+    "startup": {
+      "phase": "ready",
+      "progress": 1,
+      "compileSettled": true,
+      "timeline": {
+        "loadStartedMs": 409.19999998807907,
+        "enteredMs": 554,
+        "compileSettledMs": 2523.5,
+        "frameworkReadyMs": 3098.3999999910593,
+        "readyMs": 3098.3999999910593
+      },
+      "rule": "sustained-frames"
+    }
+  },
+  "missingCallback": {
+    "pass": false,
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_COMPONENT_ASSERTION_FAILED",
+        "message": "Component 'window' on entity 'quality' did not satisfy the assertion.",
+        "observedRuntimePath": "observations.json/components/quality/window",
+        "severity": "error",
+        "suggestion": "Expected {\"component\":\"window\",\"entity\":\"quality\",\"allowTrivial\":\"This observation must exist after 900 presented startup frames; movement separately proves input remains live.\",\"gte\":1}, observed before=undefined after=undefined. Check the owning script and runtime component synchronization."
+      }
+    ],
+    "quality": {
+      "tier": {
+        "before": "high",
+        "after": "high"
+      },
+      "source": {
+        "before": "auto",
+        "after": "auto"
+      },
+      "stages": {
+        "before": ["bloom", "outline", "kuwahara", "watercolor"],
+        "after": ["bloom", "outline", "kuwahara", "watercolor"]
+      },
+      "dropped": {
+        "before": [],
+        "after": []
+      }
+    },
+    "movementDelta": [-5.364418029785156e-5, -0.00010406970977783203, -1.9999894339940738],
+    "startup": {
+      "phase": "ready",
+      "progress": 1,
+      "compileSettled": true,
+      "timeline": {
+        "loadStartedMs": 386.70000000298023,
+        "enteredMs": 516,
+        "compileSettledMs": 2669.0999999940395,
+        "frameworkReadyMs": 3279.4000000059605,
+        "readyMs": 3279.5
+      },
+      "rule": "sustained-frames"
+    }
+  }
+}

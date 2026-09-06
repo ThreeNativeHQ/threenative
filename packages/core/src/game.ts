@@ -1088,6 +1088,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // resolution it is not drawing at. The window carries it in both pinned and auto
             // modes: turning the convention off does not turn its measurement off.
             readGpuMs: () => renderer.gpuFrameMs(),
+            readGpuAgeFrames: () => renderer.gpuFrameAge?.(),
             readSurface: () => {
               observeCompilation();
               return {

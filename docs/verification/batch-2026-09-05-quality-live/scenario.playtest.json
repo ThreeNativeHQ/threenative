@@ -1,0 +1,62 @@
+{
+  "name": "starter-quality-live-window",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 900,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "move",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "solver-applied",
+      "waitTicks": 2,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "odometer",
+        "gte": 1,
+        "changed": true
+      }
+    ],
+    "visibility": [
+      {
+        "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the odometer assertion.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ],
+    "components": [
+      {
+        "entity": "quality",
+        "component": "window",
+        "gte": 1,
+        "allowTrivial": "This observation must exist after 900 presented startup frames; movement separately proves input remains live."
+      }
+    ]
+  }
+}
