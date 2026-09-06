@@ -55,6 +55,25 @@ function records(buffer) {
 }
 
 describe("packed frame op stream", () => {
+  it("eagerly snapshots a Canvas2D source before later drawing changes its pixels", () => {
+    const { queue, drain } = harness();
+    const pixels = new Uint8ClampedArray([19, 39, 28, 255, 230, 217, 183, 255]);
+    const canvas = { width: 2, height: 1, getContext(type) {
+      expect(type).toBe("2d");
+      return { getImageData(x, y, width, height) {
+        expect([x, y, width, height]).toEqual([0, 0, 2, 1]);
+        return { data: pixels };
+      } };
+    } };
+    queue.copyExternalImageToTexture({ source: canvas, flipY: true }, { texture: { _textureId: 41 } }, [2, 1, 1]);
+    pixels.fill(0);
+    const frame = drain();
+    const { view, result } = records(frame);
+    expect(result).toHaveLength(1);
+    expect(result[0].opcode).toBe(31);
+    expect(view.getUint32(result[0].cursor + 24, true)).toBe(1);
+    expect(Array.from(new Uint8Array(frame, result[0].cursor + 68, 8))).toEqual([19, 39, 28, 255, 230, 217, 183, 255]);
+  });
   // PRD-229 Phase 5. This used to slice bindings.cpp by indexOf; once PRD-230 moves the definition
   // out of that file indexOf returns -1, the slice is empty, and the assertion passes on nothing.
   // Looking the definition up by symbol survives the move and still reds on the regression.

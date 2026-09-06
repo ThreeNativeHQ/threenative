@@ -10,6 +10,7 @@
 #include <cmath>
 #include <regex>
 #include <stack>
+#include <algorithm>
 
 // M_PI is not defined by default on Windows MSVC
 #ifndef M_PI
@@ -33,6 +34,8 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkImage.h"
+#include "include/effects/SkGradient.h"
+#include "include/utils/SkParse.h"
 
 // Platform-specific font manager
 #if defined(__APPLE__)
@@ -56,16 +59,23 @@ struct Color {
     uint8_t r = 0, g = 0, b = 0, a = 255;
 };
 
-static Color parseColor(const std::string& colorStr) {
+static Color parseColor(const std::string& colorStr, bool* valid = nullptr) {
     Color color;
+    if (valid) *valid = true;
 
     if (colorStr.empty()) {
+        if (valid) *valid = false;
         return color;
     }
 
     // Handle hex colors: #RGB, #RGBA, #RRGGBB, #RRGGBBAA
     if (colorStr[0] == '#') {
         std::string hex = colorStr.substr(1);
+        if ((hex.size() != 3 && hex.size() != 4 && hex.size() != 6 && hex.size() != 8) ||
+            hex.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
+            if (valid) *valid = false;
+            return color;
+        }
         if (hex.length() == 3) {
             // #RGB -> #RRGGBB
             color.r = std::stoi(std::string(2, hex[0]), nullptr, 16);
@@ -140,6 +150,7 @@ static Color parseColor(const std::string& colorStr) {
     else if (colorStr == "green") { color.r = 0; color.g = 128; color.b = 0; }
     else if (colorStr == "blue") { color.r = 0; color.g = 0; color.b = 255; }
     else if (colorStr == "transparent") { color.r = 0; color.g = 0; color.b = 0; color.a = 0; }
+    else if (valid) *valid = false;
 
     return color;
 }
@@ -197,12 +208,35 @@ static FontInfo parseFont(const std::string& fontStr) {
 struct Canvas2DState {
     std::string fillStyle = "#000000";
     std::string strokeStyle = "#000000";
+    std::shared_ptr<CanvasGradient> fillGradient;
+    std::shared_ptr<CanvasGradient> strokeGradient;
     float lineWidth = 1.0f;
     float globalAlpha = 1.0f;
     std::string font = "10px sans-serif";
     std::string textAlign = "start";
     std::string textBaseline = "alphabetic";
 };
+
+bool CanvasGradient::addColorStop(float offset, const std::string& text) {
+    if (!std::isfinite(offset) || offset < 0 || offset > 1) return false;
+    bool parsed = false;
+    Color color;
+    try { color = parseColor(text, &parsed); } catch (...) { return false; }
+#if defined(MYSTRAL_HAS_SKIA)
+    SkColor skColor;
+    const char* end = !parsed ? SkParse::FindNamedColor(text.c_str(), text.size(), &skColor) : nullptr;
+    if (end && *end == '\0') {
+        color = {SkColorGetR(skColor), SkColorGetG(skColor), SkColorGetB(skColor), SkColorGetA(skColor)};
+        parsed = true;
+    }
+#endif
+    if (!parsed) return false;
+    const uint32_t rgba = (uint32_t(color.a) << 24) | (uint32_t(color.r) << 16) |
+                          (uint32_t(color.g) << 8) | color.b;
+    stops.push_back({offset, rgba});
+    std::stable_sort(stops.begin(), stops.end(), [](const Stop& a, const Stop& b) { return a.offset < b.offset; });
+    return true;
+}
 
 // ============================================================================
 // Implementation
@@ -263,6 +297,30 @@ struct Canvas2DContext::Impl {
         }
     }
 
+    void applyGradient(SkPaint& paint, const std::shared_ptr<CanvasGradient>& gradient) {
+        if (!gradient) return;
+        if (gradient->stops.empty() || (gradient->x0 == gradient->x1 && gradient->y0 == gradient->y1)) {
+            paint.setColor(SK_ColorTRANSPARENT);
+            return;
+        }
+        std::vector<SkColor4f> colors;
+        std::vector<SkScalar> offsets;
+        for (const auto& stop : gradient->stops) {
+            colors.push_back(SkColor4f::FromColor(stop.color));
+            offsets.push_back(stop.offset);
+        }
+        if (colors.size() == 1) {
+            colors.push_back(colors.front());
+            offsets = {0, 1};
+        }
+        const SkPoint points[] = {{gradient->x0, gradient->y0}, {gradient->x1, gradient->y1}};
+        paint.setColor(SK_ColorWHITE);
+        paint.setAlphaf(currentState.globalAlpha);
+        const SkGradient::Colors stops({colors.data(), colors.size()},
+                                       {offsets.data(), offsets.size()}, SkTileMode::kClamp);
+        paint.setShader(SkShaders::LinearGradient(points, SkGradient(stops, {})));
+    }
+
     SkPaint makeFillPaint() {
         SkPaint paint;
         paint.setAntiAlias(true);
@@ -272,6 +330,7 @@ struct Canvas2DContext::Impl {
             static_cast<uint8_t>(c.a * currentState.globalAlpha),
             c.r, c.g, c.b
         ));
+        applyGradient(paint, currentState.fillGradient);
         return paint;
     }
 
@@ -285,6 +344,7 @@ struct Canvas2DContext::Impl {
             static_cast<uint8_t>(c.a * currentState.globalAlpha),
             c.r, c.g, c.b
         ));
+        applyGradient(paint, currentState.strokeGradient);
         return paint;
     }
 
@@ -379,10 +439,25 @@ void Canvas2DContext::restore() {
 // Fill and Stroke Styles
 void Canvas2DContext::setFillStyle(const std::string& color) {
     impl_->currentState.fillStyle = color;
+    impl_->currentState.fillGradient.reset();
 }
 
 void Canvas2DContext::setStrokeStyle(const std::string& color) {
     impl_->currentState.strokeStyle = color;
+    impl_->currentState.strokeGradient.reset();
+}
+
+void Canvas2DContext::setGradient(bool stroke, std::shared_ptr<CanvasGradient> gradient) {
+    (stroke ? impl_->currentState.strokeGradient : impl_->currentState.fillGradient) = std::move(gradient);
+}
+
+size_t Canvas2DContext::createLinearGradient(float x0, float y0, float x1, float y1) {
+    gradients_.push_back(std::make_shared<CanvasGradient>(CanvasGradient{x0, y0, x1, y1, {}}));
+    return gradients_.size() - 1;
+}
+
+std::shared_ptr<CanvasGradient> Canvas2DContext::getGradient(size_t index) const {
+    return index < gradients_.size() ? gradients_[index] : nullptr;
 }
 
 void Canvas2DContext::setLineWidth(float width) {

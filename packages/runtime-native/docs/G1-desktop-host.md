@@ -197,3 +197,5 @@ and [shared browser/native image](../../../docs/verification/wildwood-shadow-cac
 ## Canvas2D procedural-art regression (2026-09-05)
 
 The existing Canvas2D graphics backend now supports rotated elliptical arcs. Native pixel assertions cover the long and short axes and counterclockwise sweep; JS conformance also checks rejection of negative radii. This is drawing support on the existing canvas object, not a wider DOM UI stub. The bounded desktop case passed (1 pass, 0 fail, 92 unselected). Full game artwork parity remains open pending gradients. Evidence: `docs/verification/native-canvas-presentation-2026-09-05.md` and local `artifacts/wildwood-native-profile-20260905/ellipse-*`.
+
+Follow-up: linear gradients and the frame-stream Canvas2D upload path now pass native pixel checks, including GPU readback (1 selected case passed, 92 unselected). The original Wildwood preload renders without a baked-image workaround. Fresh matched desktop/browser captures still differ in font styling and stroke caps; full-game startup/performance and other platforms remain unverified. Details and red/green artifacts are recorded in the same verification document.

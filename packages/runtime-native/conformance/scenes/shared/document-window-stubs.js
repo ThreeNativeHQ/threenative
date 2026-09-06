@@ -5,7 +5,7 @@ export function startScene(canvas, dimensions) {
   rendererCanvas.width = dimensions.width;
   rendererCanvas.height = dimensions.height;
   document.body.appendChild(rendererCanvas);
-  return startBehaviorScene(rendererCanvas, dimensions, "document-window-stubs", () => {
+  return startBehaviorScene(rendererCanvas, dimensions, "document-window-stubs", async () => {
     assertCondition(window === globalThis, "window must alias the global object");
     assertCondition(window.document === document, "window.document must alias document");
     assertCondition(
@@ -41,6 +41,42 @@ export function startScene(canvas, dimensions) {
       rejectedRadius = true;
     }
     assertCondition(rejectedRadius, "ellipse must reject a negative radius");
+    assertCondition(typeof textContext.createLinearGradient === "function", "Canvas2D must draw procedural gradients");
+    textContext.clearRect(0, 0, 64, 64);
+    const gradient = textContext.createLinearGradient(0, 0, 64, 0);
+    gradient.addColorStop(0, "#ff0000");
+    gradient.addColorStop(1, "#0000ff");
+    textContext.fillStyle = gradient;
+    textContext.fillRect(0, 0, 64, 16);
+    let gradientPixels = textContext.getImageData(0, 0, 64, 16).data;
+    assertCondition(gradientPixels[0] > 240 && gradientPixels[63 * 4 + 2] > 240, "gradient must preserve endpoint colors");
+    assertCondition(gradientPixels[32 * 4] > 115 && gradientPixels[32 * 4 + 2] > 115, "gradient must interpolate its middle");
+    gradient.addColorStop(0.5, "#00ff00");
+    textContext.fillRect(0, 0, 64, 16);
+    gradientPixels = textContext.getImageData(0, 0, 64, 16).data;
+    assertCondition(gradientPixels[32 * 4 + 1] > 240, "assigned gradients must observe later color stops");
+    const secondContext = document.createElement("canvas").getContext("2d");
+    secondContext.fillStyle = gradient;
+    secondContext.fillRect(0, 0, 64, 16);
+    assertCondition(secondContext.getImageData(32, 0, 1, 1).data[1] > 240, "gradients must work on another canvas");
+    let rejectedStop = false;
+    try { gradient.addColorStop(-1, "#ffffff"); } catch { rejectedStop = true; }
+    assertCondition(rejectedStop, "gradient must reject an out-of-range stop");
+    // Read back an actual canvas upload: CPU drawing checks alone miss a black
+    // CanvasTexture when the native frame stream drops the external-image source.
+    const device = await (await navigator.gpu.requestAdapter()).requestDevice();
+    const uploaded = device.createTexture({ size: [64, 16], format: "rgba8unorm", usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT });
+    const readback = device.createBuffer({ size: 256 * 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    device.queue.copyExternalImageToTexture({ source: createdCanvas }, { texture: uploaded }, [64, 16]);
+    const encoder = device.createCommandEncoder();
+    encoder.copyTextureToBuffer({ texture: uploaded }, { buffer: readback, bytesPerRow: 256 }, [64, 16]);
+    device.queue.submit([encoder.finish()]);
+    await readback.mapAsync(GPUMapMode.READ);
+    const uploadedPixels = new Uint8Array(readback.getMappedRange());
+    assertCondition(uploadedPixels[0] > 240 && uploadedPixels[32 * 4 + 1] > 240, "Canvas2D pixels must reach the GPU texture");
+    readback.unmap();
+    readback.destroy();
+    uploaded.destroy();
     assertCondition(createdCanvas !== rendererCanvas, "text and renderer canvases must be distinct");
     assertCondition(rendererCanvas !== canvas, "created canvas must not alias the host canvas");
     assertCondition(

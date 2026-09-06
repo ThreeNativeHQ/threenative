@@ -29,6 +29,27 @@ static void check(bool condition, const char* name) {
 }
 
 int main() {
+    Canvas2DContext gradientCanvas(64, 16);
+    const auto gradientId = gradientCanvas.createLinearGradient(0, 0, 64, 0);
+    const auto gradient = gradientCanvas.getGradient(gradientId);
+    check(gradient->addColorStop(1, "#0000ff"), "gradient accepts blue endpoint");
+    check(gradient->addColorStop(0, "#ff0000"), "gradient sorts out-of-order endpoints");
+    check(!gradient->addColorStop(-1, "#ffffff"), "gradient rejects negative offsets");
+    check(!gradient->addColorStop(0.5f, "rgb(invalid)"), "gradient rejects malformed functional colors");
+    gradientCanvas.setGradient(false, gradient);
+    gradientCanvas.fillRect(0, 0, 64, 16);
+    auto gradientPixels = gradientCanvas.getImageData(0, 0, 64, 16).data;
+    check(gradientPixels[0] > 240 && gradientPixels[63 * 4 + 2] > 240, "gradient preserves both endpoints");
+    check(gradientPixels[32 * 4] > 115 && gradientPixels[32 * 4 + 2] > 115, "gradient interpolates middle colors");
+    gradient->addColorStop(0.5f, "#00ff00");
+    gradientCanvas.fillRect(0, 0, 64, 16);
+    gradientPixels = gradientCanvas.getImageData(0, 0, 64, 16).data;
+    check(gradientPixels[32 * 4 + 1] > 240, "assigned gradient observes added stops");
+    gradientCanvas.setFillStyle("#ffffff");
+    gradientCanvas.fillRect(0, 0, 64, 16);
+    gradientPixels = gradientCanvas.getImageData(0, 0, 64, 16).data;
+    check(gradientPixels[0] == 255 && gradientPixels[1] == 255 && gradientPixels[2] == 255,
+          "a solid fill clears the previous gradient");
     Canvas2DContext ellipse(64, 64);
     ellipse.consumeDirtyPixels();
     ellipse.setFillStyle("#ff0000");
