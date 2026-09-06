@@ -412,6 +412,34 @@ describe("net", () => {
     }
   });
 
+  it("does not replay actions on reconnect", async () => {
+    const first = await connect("https://example.test/game", validOptions());
+    const firstTransport = FakeWebTransport.instances[0];
+    expect(first.send(2, new Uint8Array([7, 8, 9]))).toBe(true);
+    await first.close();
+
+    const reopened = await connect("https://example.test/game", validOptions());
+    const secondTransport = FakeWebTransport.instances[1];
+    try {
+      const frames = decodeFrames(concat(secondTransport?.streams[1]?.written ?? []));
+      expect(frames).toHaveLength(1);
+      expect(frames[0]).toMatchObject({ kind: 3, channel: 2, payload: new Uint8Array(0) });
+      expect(firstTransport?.streams[1]?.written.length).toBeGreaterThan(0);
+    } finally {
+      await reopened.close();
+    }
+  });
+
+  it("releases readers after a server restart", async () => {
+    const connection = await connect("https://example.test/game", validOptions());
+    const transport = FakeWebTransport.instances[0];
+    transport?.simulateDrop("server restarted");
+    await tick();
+    expect(connection.poll()).toMatchObject({ disconnected: true, reason: "server restarted" });
+    expect(transport?.streams.every((stream) => !stream.readable.locked)).toBe(true);
+    expect(transport?.datagrams.readable.locked).toBe(false);
+  });
+
   it("offline import opens no transport", async () => {
     const holder = globalThis as Record<string, unknown>;
     const saved = holder.WebTransport;

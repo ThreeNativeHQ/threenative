@@ -375,6 +375,7 @@ Owner clarified on 2026-09-05 that authoring discovery specifically means the en
 - Task 5a: [example configuration and operator controls](../../verification/prd-359-task5a-2026-09-06.md); disabled and enabled bundles passed, the enabled endpoint/issuer were embedded without credentials, and an invalid HTTP endpoint failed during Vite config loading.
 - Task 4c boundaries: [small public client entry point and native-global audit](../../verification/prd-359-task4c-boundaries-2026-09-06.md); the controlled missing-module mutation failed typecheck, then the 7 API tests, packed offline import, package build, publint, and shim audit passed.
 - Task 5b: [authoritative server simulation and two-client gameplay proof](../../verification/prd-359-task5b-2026-09-06.md); the controlled server-motion regression failed, deterministic server and package tests passed, and two native clients observed peer motion plus accepted actions.
+- Task 6b lifecycle slice: [disconnect cleanup and no-replay proof](../../verification/prd-359-task6b-lifecycle-2026-09-06.md); the new tests first failed on locked readers, then passed after unexpected-close cleanup and fresh rejoin-state coverage. The required live loss/suspend qualification remains open.
 
 The existing real-stdio harness is `packages/create-threenative/__tests__/scaffold-mcp.spec.ts`;
 it currently exercises initialize, tool listing and search, while detail is covered only by

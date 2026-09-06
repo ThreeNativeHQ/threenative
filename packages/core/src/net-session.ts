@@ -187,6 +187,7 @@ function createConnection(established: IEstablished): INetworkConnection {
   let disconnectReason: string | null = null;
   let disconnectReported = false;
   let closePromise: Promise<void> | undefined;
+  let releasePromise: Promise<void> | undefined;
   let droppedDatagrams = 0;
   let queuedReliableBytes = 0;
   let queuedReliableBytesReceived = 0;
@@ -209,6 +210,7 @@ function createConnection(established: IEstablished): INetworkConnection {
     if (state === "closed") return;
     state = "closed";
     disconnectReason = reason;
+    void releaseAll();
   };
 
   const closedReason = (result: unknown): string | null => {
@@ -272,8 +274,11 @@ function createConnection(established: IEstablished): INetworkConnection {
     })();
   };
 
+  let datagramReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+
   const pumpDatagrams = (): void => {
     const reader = established.transport.datagrams.readable.getReader();
+    datagramReader = reader;
     void (async () => {
       try {
         for (;;) {
@@ -283,6 +288,7 @@ function createConnection(established: IEstablished): INetworkConnection {
             } catch {
               /* already released */
             }
+            datagramReader = undefined;
             return;
           }
           const read = await reader.read();
@@ -353,28 +359,46 @@ function createConnection(established: IEstablished): INetworkConnection {
     });
   };
 
-  const releaseAll = async (): Promise<void> => {
-    for (const reader of established.readers) {
+  async function releaseAll(): Promise<void> {
+    if (releasePromise !== undefined) return releasePromise;
+    releasePromise = (async () => {
+      for (const reader of established.readers) {
+        try {
+          await reader.cancel(new Error("TN_NET_CLOSED: connection closed"));
+        } catch {
+          /* best effort */
+        }
+        reader.release();
+      }
+      if (datagramReader !== undefined) {
+        try {
+          await datagramReader.cancel(new Error("TN_NET_CLOSED: connection closed"));
+        } catch {
+          /* best effort */
+        }
+        try {
+          datagramReader.releaseLock();
+        } catch {
+          /* best effort */
+        }
+        datagramReader = undefined;
+      } else {
+        try {
+          await established.transport.datagrams.readable.cancel(
+            new Error("TN_NET_CLOSED: connection closed"),
+          );
+        } catch {
+          /* best effort */
+        }
+      }
       try {
-        await reader.cancel(new Error("TN_NET_CLOSED: connection closed"));
+        established.transport.close();
       } catch {
         /* best effort */
       }
-      reader.release();
-    }
-    try {
-      established.transport.datagrams.readable
-        .cancel(new Error("TN_NET_CLOSED: connection closed"))
-        .catch(() => {});
-    } catch {
-      /* best effort */
-    }
-    try {
-      established.transport.close();
-    } catch {
-      /* best effort */
-    }
-  };
+    })();
+    return releasePromise;
+  }
 
   return {
     send(channel: number, data: Uint8Array): boolean {

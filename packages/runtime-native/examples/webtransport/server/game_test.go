@@ -92,6 +92,26 @@ func TestActionDeduplication(t *testing.T) {
 	}
 }
 
+func TestRejoinStartsFresh(t *testing.T) {
+	simulation := NewGameSimulation(time.Unix(0, 0))
+	if err := simulation.Join(testReady("player-a")); err != nil {
+		t.Fatalf("first join: %v", err)
+	}
+	simulation.ApplyInput("player-a", gameplayInput{Tick: 10, X: 1, Z: 0})
+	simulation.ApplyAction("player-a", gameplayAction{ID: 7})
+	simulation.Leave("player-a")
+	if err := simulation.Join(testReady("player-a")); err != nil {
+		t.Fatalf("rejoin: %v", err)
+	}
+	player := simulation.players["player-a"]
+	if player == nil {
+		t.Fatalf("rejoined player missing")
+	}
+	if player.HasInput || player.HasAction || player.X != 0 || player.Z != 0 {
+		t.Fatalf("rejoin reused stale state: %+v", player)
+	}
+}
+
 func TestInvalidGameplayPayload(t *testing.T) {
 	simulation := NewGameSimulation(time.Unix(0, 0))
 	if err := simulation.Join(testReady("player-a")); err != nil {
