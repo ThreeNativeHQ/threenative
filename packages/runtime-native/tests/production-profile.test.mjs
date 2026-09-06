@@ -88,6 +88,37 @@ test('desktop cleanup tolerates a child process group that already exited', asyn
   await assert.doesNotReject(() => driver.stop());
 });
 
+test('desktop cleanup observes a Windows child that exits synchronously when killed', async () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.pid = 123;
+  child.kill = () => {
+    child.exitCode = 0;
+    child.emit('exit', 0, null);
+  };
+  const context = {
+    join,
+    process: { env: {}, platform: 'win32' },
+    spawn: () => {
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    },
+    writeFile: async () => undefined,
+    rename: async () => undefined,
+    nonBlankPng: async () => true,
+    DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
+  };
+  runInNewContext(driverSource, context);
+  const driver = context.createDesktopDriver('/fixture/mystral.exe', '/fixture/scaffold', { renderSize: { height: 900, width: 1600 } }, '/fixture/mailbox');
+  await driver.launch();
+  await assert.doesNotReject(() => Promise.race([
+    driver.stop(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('desktop stop timed out')), 100)),
+  ]));
+});
+
 test('native report retention redacts unsafe host console paths without dropping safe evidence', () => {
   const report = safeReport({
     assertionResults: [{ id: 'diagnostics', pass: false }],
