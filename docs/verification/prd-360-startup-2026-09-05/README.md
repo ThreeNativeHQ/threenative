@@ -106,12 +106,25 @@ node artifacts/batch-2026-09-05/pump-observer/collector-flow.mjs
 Gates executed for this follow-up: evaluator validation (32/32), real-host
 collector flow (assertions pass), full desktop pump verification (assertions
 pass), `pnpm test` (391 files / 4,291 tests passed, 2 files / 7 tests
-skipped), `pnpm typecheck` (pass), in-scope Biome checks (pass; root
-`pnpm lint` still reports pre-existing `noExcessiveCognitiveComplexity`
-findings in unrelated examples plus ignored `.linchpin` JSON result files —
-untouched), and `pnpm budgets` (pass: LOC triggers report-only).
-`native:coverage` and `pnpm census` were regenerated before the follow-up
-commit.
+skipped), `pnpm typecheck` (pass), root `pnpm lint` (exit 0; 600 existing
+complexity warnings, 0 errors, with `.linchpin/**` ignored by `biome.json`),
+and `pnpm budgets` (pass: LOC triggers report-only). `pnpm check:docs` and
+`pnpm sync:agents` also passed with no generated changes. `native:coverage`
+and `pnpm census` were regenerated before the follow-up commit.
+
+## Linchpin integration checkpoint — 2026-09-06
+
+The read-only crouter checkpoint reviewer returned `VERDICT: APPROVE` with
+zero `DEFECT` findings. It recorded four `EVIDENCE-GAP`s: the desktop
+transport test uses a hand-written displacement-shaped payload; real Android
+end-to-end and real-host `device.ts` order tracking remain unexecuted; and
+the observer phase contains six implementation/test files against its
+five-file cap. These gaps remain open and no PRD phase is accepted.
+
+Fresh focused checks after the review passed: CMake rebuilt `mystral` and
+`threenative-pump-silence-test`; the C++ contract and CTest pump row passed;
+pump Vitest passed 11/11; evaluator validation passed 32/32; and collector
+flow passed its correlated, truncated, foreign, and missing-response cases.
 
 File-budget note for the checkpoint reviewer: the observer phase spans 6
 implementation/test files against a 5-file phase cap. The earlier worker
