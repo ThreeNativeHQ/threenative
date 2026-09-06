@@ -703,7 +703,7 @@ FNV-1a iterated `char` bytes (sign-dependent). Both fixed with contract coverage
 byte-identical with JS `fnv1a64()`. The new contract target was registered in all five required
 sites (CMakeLists, contract-lane count 35 → 36, verify-native-contracts, build-matrix tn-linux +
 tn-linux-coverage, census + coverage regen). Proof: C++ contract 22/22, vitest pump 11/11, CTest
-pump pass, evaluator 17/17, collector flow (real host + mailbox, mocked adb only) correlated with
+pump pass, evaluator 32/32, collector flow (real host + mailbox, mocked adb only) correlated with
 hash match; current desktop probe correctly rejects (`firstPumpAtMs≈410ms` exceeds 250 ms).
 Integrated host `b5af03ff…` supersedes `6f5263e0…`. Executed proof sources retained
 byte-identically under `docs/verification/prd-360-startup-2026-09-05/`. Full Android end-to-end
