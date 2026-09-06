@@ -15,8 +15,16 @@ const RENDER_EXTENSIONS = new Set([".css", ".js", ".jsx", ".ts", ".tsx"]);
 // `SpectralOcean` is the shape: it inverse-transforms cascaded wave spectra on the GPU into a
 // displacement buffer, and the game builds every visible thing that reads it.
 //
+// One qualification, stated rather than buried: `SpectralOcean`'s spectrum is not overridable.
+// `phillipsEnergy` is the only spectral shape it will produce, so a game wanting JONSWAP or a
+// stylised non-physical swell has to edit package code — and the rule names *curve* among the
+// things that must come from the game. Everything around it is the game's: the options carry no
+// defaults at all and the constructor throws on each missing number. This is admitted on the same
+// footing as Rapier owning its solver, and it is the reason the test below says "the appearance"
+// and not "every parameter".
+//
 // Adding a name here needs the same proof: the game must be able to change the appearance
-// completely without editing package code. A symbol that picks a material, a colour or a curve
+// without editing package code. A symbol that picks a material, a colour or a timing curve
 // belongs in `src/render/` as generated source instead.
 const RENDER_PORTABLE_CORE_SYMBOLS: ReadonlySet<string> = new Set([
   "ISpectralOceanCascade",
@@ -26,7 +34,7 @@ const RENDER_PORTABLE_CORE_SYMBOLS: ReadonlySet<string> = new Set([
 ]);
 
 const FRAMEWORK_IMPORT =
-  /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']@threenative\/([^"']+)["'];?/gsu;
+  /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']@threenative\/([^"']+)["'];?/gu;
 
 function importedNames(clause: string): readonly string[] {
   return clause

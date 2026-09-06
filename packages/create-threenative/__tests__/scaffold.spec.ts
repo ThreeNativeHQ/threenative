@@ -303,7 +303,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "e844ade0d73c8ea123db220ebe3e2535577e03f2c556025e92facccd24094f14",
+  sailing: "9bf6351028a3545245433e3d16499a7688f0e5e366fa3991548d88c666b39f3f",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -327,6 +327,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `threenative-blender`, which `pnpm sync:mcp` writes into all seven host configs of every
   // template, and the shared `finding-assets.md` reference gained the downloaded-.fbx loop.
   // All ten trees moved; no template source did.
+  // Recomputed 2026-09-06, third move, sailing only: a review of the compressed water section
+  // found one dropped clause (a basic material cannot agree with the hull floating on it), one
+  // weakened mechanism (samples averaging into a mean sea level), and one new sentence that was
+  // simply wrong — the CPU height query does not read the cascade buffers, it reads a grid the
+  // cascades are summed onto. All three are restored, so the sailing instructions move again.
   // Recomputed 2026-09-06, second move: the starter's `hero()` and `IHeroMaterials` left
   // `src/render/shapes.ts` for their own `src/render/hero.ts`, which puts the toolkit file back
   // under the 200-line smell cap `looks.spec.ts` enforces on generated render source. The starter
