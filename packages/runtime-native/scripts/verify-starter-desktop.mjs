@@ -14,6 +14,10 @@ const UNRENDERED_FRAME_COLOR_FLOOR = 64;
 // 64x64. Below this the frame is a fixture, not a capture.
 const UNRENDERED_FRAME_MIN_PIXELS = 4096;
 const ASSET_PIXEL_FLOOR = 100;
+// The real proof texture is 16x16 and can be checkerboarded into disconnected pixels after
+// rasterization. A proof region may occupy up to a quarter of a rendered frame; a wash that
+// reaches almost every part of the frame must not count as localized evidence.
+const MAX_ASSET_BOUNDS_FRACTION = 0.25;
 
 function isCyanAssetPixel(data, offset) {
   const red = data[offset];
@@ -29,55 +33,25 @@ function isCyanAssetPixel(data, offset) {
   );
 }
 
-function enqueueCyanNeighbor(mask, visited, queue, tail, neighbor) {
-  if (mask[neighbor] === 0 || visited[neighbor] !== 0) return tail;
-  visited[neighbor] = 1;
-  queue[tail] = neighbor;
-  return tail + 1;
-}
-
-function measureCyanRegion(mask, width, height, start, visited, queue) {
-  let head = 0;
-  let tail = 1;
-  let count = 0;
+function hasLocalizedCyanRegion(mask, width, height) {
+  let cyanPixels = 0;
   let minX = width;
   let maxX = -1;
   let minY = height;
   let maxY = -1;
-  queue[0] = start;
-  visited[start] = 1;
-  while (head < tail) {
-    const index = queue[head];
-    head += 1;
+  for (let index = 0; index < mask.length; index += 1) {
+    if (mask[index] === 0) continue;
     const x = index % width;
     const y = Math.floor(index / width);
-    count += 1;
+    cyanPixels += 1;
     minX = Math.min(minX, x);
     maxX = Math.max(maxX, x);
     minY = Math.min(minY, y);
     maxY = Math.max(maxY, y);
-    if (x > 0) tail = enqueueCyanNeighbor(mask, visited, queue, tail, index - 1);
-    if (x + 1 < width) tail = enqueueCyanNeighbor(mask, visited, queue, tail, index + 1);
-    if (y > 0) tail = enqueueCyanNeighbor(mask, visited, queue, tail, index - width);
-    if (y + 1 < height) tail = enqueueCyanNeighbor(mask, visited, queue, tail, index + width);
   }
-  return { count, maxX, maxY, minX, minY };
-}
-
-function hasLocalizedCyanRegion(mask, width, height) {
-  const visited = new Uint8Array(mask.length);
-  const queue = new Uint32Array(mask.length);
-  for (let start = 0; start < mask.length; start += 1) {
-    if (mask[start] === 0 || visited[start] !== 0) continue;
-    const region = measureCyanRegion(mask, width, height, start, visited, queue);
-    const touchesEveryEdge =
-      region.minX === 0 &&
-      region.maxX === width - 1 &&
-      region.minY === 0 &&
-      region.maxY === height - 1;
-    if (region.count >= ASSET_PIXEL_FLOOR && !touchesEveryEdge) return true;
-  }
-  return false;
+  if (cyanPixels < ASSET_PIXEL_FLOOR) return false;
+  const boundsArea = (maxX - minX + 1) * (maxY - minY + 1);
+  return boundsArea <= width * height * MAX_ASSET_BOUNDS_FRACTION;
 }
 
 export function inspectStarterScreenshot(path) {

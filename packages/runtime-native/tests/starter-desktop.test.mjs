@@ -91,6 +91,34 @@ test('starter desktop screenshot requires the rendered cyan proof asset', () => 
   assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 128);
 });
 
+test('the packaged checkerboard proof remains accepted in a capture-sized frame', () => {
+  const directory = makeTempDirSync('starter-checkerboard-test-');
+  const path = join(directory, 'frame.png');
+  const proof = PNG.sync.read(
+    readFileSync(new URL('../../create-threenative/templates/starter/assets/native-proof.png', import.meta.url)),
+  );
+  const png = new PNG({ height: 128, width: 128 });
+  for (let y = 0; y < png.height; y += 1) {
+    for (let x = 0; x < png.width; x += 1) {
+      const offset = (y * png.width + x) * 4;
+      const index = y * png.width + x;
+      png.data[offset] = index % 80;
+      png.data[offset + 1] = 20 + (index % 30);
+      png.data[offset + 2] = 50 + (index % 40);
+      png.data[offset + 3] = 255;
+    }
+  }
+  for (let y = 0; y < proof.height; y += 1) {
+    for (let x = 0; x < proof.width; x += 1) {
+      const source = (y * proof.width + x) * 4;
+      const target = ((y + 56) * png.width + x + 56) * 4;
+      png.data.set(proof.data.subarray(source, source + 4), target);
+    }
+  }
+  writeFileSync(path, PNG.sync.write(png));
+  assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 128);
+});
+
 test('a blue-grey background alone is not the cyan proof asset', () => {
   const directory = makeTempDirSync('starter-background-only-test-');
   const path = join(directory, 'frame.png');
@@ -128,6 +156,32 @@ test('a darker localized proof asset remains accepted in a capture-sized frame',
   }
   writeFileSync(path, PNG.sync.write(png));
   assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 256);
+});
+
+test('a fragmented near-edge cyan wash is not asset evidence', () => {
+  const directory = makeTempDirSync('starter-wash-test-');
+  const path = join(directory, 'frame.png');
+  const png = new PNG({ height: 128, width: 128 });
+  for (let y = 0; y < png.height; y += 1) {
+    for (let x = 0; x < png.width; x += 1) {
+      const offset = (y * png.width + x) * 4;
+      const index = y * png.width + x;
+      png.data[offset] = index % 40;
+      png.data[offset + 1] = 20 + (index % 30);
+      png.data[offset + 2] = 50 + (index % 40);
+      png.data[offset + 3] = 255;
+    }
+  }
+  for (let y = 1; y < png.height - 1; y += 3) {
+    for (let x = 1; x < png.width - 1; x += 1) {
+      const offset = (y * png.width + x) * 4;
+      png.data[offset] = 20;
+      png.data[offset + 1] = 220;
+      png.data[offset + 2] = 240;
+    }
+  }
+  writeFileSync(path, PNG.sync.write(png));
+  assert.throws(() => inspectStarterScreenshot(path), /TN_NATIVE_STARTER_ASSET_NOT_VISIBLE/);
 });
 
 test('a frame that was never drawn is named as the capture, not a missing asset', () => {
