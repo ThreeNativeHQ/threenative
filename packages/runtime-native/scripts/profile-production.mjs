@@ -90,6 +90,7 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     control: undefined,
     device: undefined,
     duration: 60,
+    hostedSoftware: false,
     out: '.runtime/prd064/production',
     prebuiltArtifact: undefined,
     physicalEvidence: undefined,
@@ -110,6 +111,7 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     else if (flag === '--control') { explicit.add('control'); options.control = nextValue(argv, ++index, flag); }
     else if (flag === '--device') { explicit.add('device'); options.device = nextValue(argv, ++index, flag); }
     else if (flag === '--duration') { explicit.add('duration'); options.duration = positiveNumber(nextValue(argv, ++index, flag), flag); }
+    else if (flag === '--hosted-software') { options.hostedSoftware = true; }
     else if (flag === '--out') { explicit.add('out'); options.out = nextValue(argv, ++index, flag); }
     else if (flag === '--prebuilt-artifact') { explicit.add('prebuiltArtifact'); options.prebuiltArtifact = nextValue(argv, ++index, flag); }
     else if (flag === '--physical-evidence') { explicit.add('physicalEvidence'); options.physicalEvidence = nextValue(argv, ++index, flag); }
@@ -160,6 +162,9 @@ export function validateProductionOptions(input) {
   }
   if (physicalTargets.has(options.target) && options.device === undefined) {
     throw new ProductionEvidenceError('TN_PROD_DEVICE_REQUIRED', `Target '${options.target}' requires --device.`);
+  }
+  if (options.hostedSoftware && (physicalTargets.has(options.target) || options.target === 'fixture')) {
+    throw new ProductionEvidenceError('TN_PROD_HOSTED_SOFTWARE_UNSUPPORTED', 'Hosted-software evaluation is only valid for non-physical platform probes.');
   }
   if (options.target === 'desktop-pair' && options.control === 'slow-native') return options;
   if (options.control === 'slow-native' && options.target !== 'desktop-pair') {
@@ -250,6 +255,7 @@ function normalizeOptions(input = {}) {
     control: input.control,
     device: input.device,
     duration: input.duration ?? (regression ? REGRESSION_COLLECTION_PROFILE.durationSeconds : 60),
+    hostedSoftware: input.hostedSoftware === true,
     help: input.help,
     out: input.out ?? (regression ? '.runtime/prd358/regression' : '.runtime/prd064/production'),
     prebuiltArtifact: input.prebuiltArtifact === undefined ? undefined : resolve(input.prebuiltArtifact),
@@ -1171,6 +1177,7 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
       coldStarts: options.coldStarts,
       ...(options.control === undefined ? {} : { control: options.control }),
       deviceSelected: options.device !== undefined,
+      ...(options.hostedSoftware ? { performanceEvaluation: 'advisory' } : {}),
       profile: options.profile,
       ...(regression ? { readiness } : {}),
       renderSize: `${options.renderSize.width}x${options.renderSize.height}`,
@@ -1526,6 +1533,7 @@ function profileCommand(options) {
     `--warmup ${options.warmup}`,
     `--repetitions ${options.repetitions}`,
     ...(options.device === undefined ? [] : ['--device <selected>']),
+    ...(options.hostedSoftware ? ['--hosted-software'] : []),
     ...(options.prebuiltArtifact === undefined ? [] : ['--prebuilt-artifact <existing-build>']),
   ].join(' ');
 }

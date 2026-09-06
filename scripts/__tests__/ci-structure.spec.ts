@@ -1715,10 +1715,12 @@ describe("CI pipeline structure", () => {
   });
 
   it("runs bounded native desktop and simulator collectors against built artifacts", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const native = await readFile(
       path.join(repo, ".github/workflows/native-platforms.yml"),
       "utf8",
     );
+    expect(requiredJob(ci, "test-native")).toContain("--hosted-software");
     const desktopStart = native.indexOf(
       "Collect bounded desktop performance evidence from the built runtime",
     );
@@ -1729,6 +1731,7 @@ describe("CI pipeline structure", () => {
     expect(desktop).toContain("--duration 1");
     expect(desktop).toContain("--cold-starts 1");
     expect(desktop).toContain("--repetitions 1");
+    expect(desktop).toContain("--hosted-software");
     expect(desktop).toContain("collector_status=FAIL");
     expect(desktop).toContain("build/tn-windows/mystral.exe");
     expect(desktop).toContain("build/tn-macos/mystral");
@@ -1745,6 +1748,7 @@ describe("CI pipeline structure", () => {
     expect(simulator).toContain("--device ios-simulator");
     expect(simulator).toContain('--prebuilt-artifact "$app"');
     expect(simulator).toContain("--duration 1");
+    expect(simulator).toContain("--hosted-software");
     expect(simulator).toContain("--cold-starts 1");
     expect(simulator).toContain('provenance":"simulator"');
     expect(simulator).toContain('status":"UNVERIFIED"');

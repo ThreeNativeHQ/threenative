@@ -336,6 +336,7 @@ jobs:
             node packages/runtime-native/scripts/profile-production.mjs \
               --profile production --target android --device emulator-5554 \
               --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
+              --hosted-software \
               --prebuilt-artifact "$apk" \
               --out packages/runtime-native/artifacts/performance-contract/android-emulator
             status=$?
@@ -520,7 +521,7 @@ jobs:
           if [ -x "$binary" ]; then
             node packages/runtime-native/scripts/profile-production.mjs \
               --profile production --target desktop --duration 1 --cold-starts 1 \
-              --repetitions 1 --warmup 1 --prebuilt-artifact "$binary" \
+              --repetitions 1 --warmup 1 --hosted-software --prebuilt-artifact "$binary" \
               --out packages/runtime-native/artifacts/performance-contract/desktop-parity
             status=$?
           else
@@ -676,7 +677,7 @@ jobs:
           if [ -f "$artifact" ]; then
             node packages/runtime-native/scripts/profile-production.mjs \
               --profile production --target desktop --duration 1 --cold-starts 1 \
-              --warmup 1 --repetitions 1 --prebuilt-artifact "$artifact" \
+              --warmup 1 --repetitions 1 --hosted-software --prebuilt-artifact "$artifact" \
               --out "packages/runtime-native/artifacts/performance-contract/${{ matrix.platform }}"
             status=$?
           else
@@ -980,6 +981,7 @@ jobs:
             node packages/runtime-native/scripts/profile-production.mjs \
               --profile production --target ios --device ios-simulator \
               --duration 1 --cold-starts 1 --warmup 1 --repetitions 1 \
+              --hosted-software \
               --prebuilt-artifact "$app" --out "$root"
             status=$?
           else

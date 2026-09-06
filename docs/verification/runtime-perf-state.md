@@ -3144,6 +3144,49 @@ reported Windows, macOS and iOS simulator as `BLOCKED`, with the physical rows `
 the optional parity/emulator rows `SKIPPED`. These are evidence dispositions, not platform
 performance claims.
 
+### PRD-358 hosted software evaluation repair — 2026-09-06
+
+GitHub-hosted native collectors run without a calibrated physical GPU. They now pass
+`--hosted-software`, which records `execution.performanceEvaluation: "advisory"`. Lifecycle,
+playtest, startup collection and evidence integrity remain blocking checks; frame, draw-call,
+triangle, memory and startup budget observations remain in the manifest and move to
+`advisoryCodes` when they cannot be treated as a physical performance claim. The default path
+and physical targets remain strict, and the hosted mode cannot be selected for a physical target
+or a fixture control.
+
+The focused tests passed:
+
+```text
+pnpm exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t "hosted software|accepted profile controls|production evidence uses nearest-rank"
+Test Files 1 passed (1)
+Tests 3 passed | 32 skipped (35)
+exit 0
+
+pnpm exec vitest run --config vitest.config.ts scripts/__tests__/ci-structure.spec.ts -t "bounded native desktop and simulator collectors"
+Test Files 1 passed (1)
+Tests 1 passed | 65 skipped (66)
+exit 0
+```
+
+The built Linux host completed the same bounded collector locally with `DISPLAY` unset:
+
+```text
+timeout 90s node packages/runtime-native/scripts/profile-production.mjs --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 --hosted-software --prebuilt-artifact packages/runtime-native/build/tn-linux/mystral --out artifacts/prd358-hosted-software-repro-1788661250
+status PASS
+exitCode 0
+codes []
+advisoryCodes ["TN_PROD_PERFORMANCE_BUDGET"]
+performanceEvaluation "advisory"
+meanFps 27.894704622219916
+p95FrameMs 117.862060546875
+p99FrameMs 210.113525390625
+startupMs 4602
+runWindows [{"durationSeconds":9.858501953125,"sampleCount":275}]
+```
+
+This proves the hosted smoke contract and complete artifact retention. It does not promote a
+baseline or certify physical desktop, Android or iOS performance.
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,

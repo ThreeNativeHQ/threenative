@@ -244,6 +244,25 @@ test('complete current evidence is the only PASS state', () => {
   assert.deepEqual(result.codes, []);
 });
 
+test('hosted software keeps timing failures advisory while preserving measured budgets', () => {
+  const result = evaluateProductionEvidence(completeEvidence({
+    execution: { performanceEvaluation: 'advisory' },
+    metrics: {
+      ...completeEvidence().metrics,
+      frameIntervalsMs: [40, 40, 40],
+      intervals: [
+        { frameMs: 40, sequence: 1, timestampMs: 1_000 },
+        { frameMs: 40, sequence: 2, timestampMs: 1_040 },
+        { frameMs: 40, sequence: 3, timestampMs: 1_080 },
+      ],
+    },
+  }));
+  assert.equal(result.status, 'PASS');
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(result.codes, []);
+  assert.deepEqual(result.advisoryCodes, ['TN_PROD_PERFORMANCE_BUDGET']);
+});
+
 function regressionEvidence(overrides = {}) {
   const count = 1_800;
   const frameMs = 1_000 / 60;
@@ -464,6 +483,8 @@ test('accepted profile controls are parsed and execution receives every value', 
   assert.equal(parsed.warmup, 3);
   assert.equal(parsed.repetitions, 4);
   assert.equal(parsed.profile, 'production');
+  const hosted = parseProductionArgs(['--target', 'desktop', '--hosted-software']);
+  assert.equal(hosted.hostedSoftware, true);
   const relativeArtifact = parseProductionArgs([
     '--target', 'desktop',
     '--prebuilt-artifact', 'build/tn-macos/mystral',
@@ -482,6 +503,10 @@ test('accepted profile controls are parsed and execution receives every value', 
   assert.throws(
     () => parseProductionArgs(['--target', 'web', '--device', 'emulator-5554']),
     (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_DEVICE_UNSUPPORTED',
+  );
+  assert.throws(
+    () => parseProductionArgs(['--target', 'android-physical', '--device', 'pixel', '--hosted-software']),
+    (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_HOSTED_SOFTWARE_UNSUPPORTED',
   );
 });
 

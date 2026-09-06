@@ -137,6 +137,7 @@ export function regressionCollectionCodes(input) {
 export function evaluateProductionEvidence(input, options = {}) {
   validateProductionEvidence(input);
   const codes = new Set(input.codes ?? []);
+  const advisoryCodes = new Set(input.advisoryCodes ?? []);
   const markers = new Set(markerNames(input.markers));
   const diagnosticCodes = new Set([
     'TN_PROD_ANDROID_ANR',
@@ -158,7 +159,11 @@ export function evaluateProductionEvidence(input, options = {}) {
   }
   if (input.source.dirty === true && input.source.diffSha === undefined) codes.add('TN_PROD_SOURCE_DIFF_MISSING');
   const frameBudget = evaluateFrameBudget(input.metrics ?? {}, input.budget ?? {});
-  for (const code of frameBudget.failures) codes.add(code);
+  const advisoryTiming = input.execution?.performanceEvaluation === 'advisory';
+  for (const code of frameBudget.failures) {
+    if (advisoryTiming) advisoryCodes.add(code);
+    else codes.add(code);
+  }
   for (const code of regressionCollectionCodes(input)) codes.add(code);
   if (input.metrics?.thermal?.complete === false || input.metrics?.battery?.complete === false) codes.add('TN_PROD_RESOURCE_SAMPLES_INCOMPLETE');
   if (input.metrics?.thermal?.severeSeconds >= 60) codes.add('TN_PROD_THERMAL_BUDGET');
@@ -166,7 +171,10 @@ export function evaluateProductionEvidence(input, options = {}) {
   const startupP95 = input.metrics?.startupP95Ms
     ?? nearestRank(input.metrics?.startupSamplesMs, 0.95)
     ?? input.metrics?.startupMs;
-  if (input.budget?.maxStartupMs !== undefined && (startupP95 === undefined || startupP95 > input.budget.maxStartupMs)) codes.add('TN_PROD_STARTUP_BUDGET');
+  if (input.budget?.maxStartupMs !== undefined && (startupP95 === undefined || startupP95 > input.budget.maxStartupMs)) {
+    if (advisoryTiming) advisoryCodes.add('TN_PROD_STARTUP_BUDGET');
+    else codes.add('TN_PROD_STARTUP_BUDGET');
+  }
   const memory = input.metrics?.memory;
   if (memory !== undefined) {
     const firstMedian = memory.first15MedianBytes;
@@ -222,6 +230,7 @@ export function evaluateProductionEvidence(input, options = {}) {
   const status = blockedCodes.length > 0 ? 'BLOCKED' : failureCodes.length > 0 ? 'FAIL' : 'PASS';
   return {
     ...input,
+    ...(advisoryCodes.size === 0 ? {} : { advisoryCodes: [...advisoryCodes] }),
     codes: [...codes],
     metrics: {
       ...input.metrics,
@@ -282,6 +291,9 @@ export function validateProductionEvidence(value) {
   if (!isRecord(value.metrics) || !isRecord(value.budget)) throw new ProductionEvidenceError('TN_PROD_EVIDENCE_INVALID', 'Evidence metrics and budget must be objects.');
   if (value.diagnosticArtifacts !== undefined && !Array.isArray(value.diagnosticArtifacts)) {
     throw new ProductionEvidenceError('TN_PROD_EVIDENCE_INVALID', 'Evidence diagnosticArtifacts must be an array when present.');
+  }
+  if (value.advisoryCodes !== undefined && (!Array.isArray(value.advisoryCodes) || value.advisoryCodes.some((code) => typeof code !== 'string' || code.length === 0))) {
+    throw new ProductionEvidenceError('TN_PROD_EVIDENCE_INVALID', 'Evidence advisoryCodes must be a string array when present.');
   }
   assertPrivacySafe(value);
 }
