@@ -268,6 +268,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       loading.update();
       elapsed += dt;
       waves.setTime(elapsed);
+      scenery.flora.wind.update(elapsed);
       // Restart resets the store before clearing entities and scheduled callbacks.
       if (frameCtx.input.justPressed("restart")) {
         frameCtx.state.set(Play.initialState);

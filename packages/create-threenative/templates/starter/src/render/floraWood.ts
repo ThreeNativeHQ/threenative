@@ -4,6 +4,12 @@
 import { BufferAttribute, BufferGeometry } from "three";
 import type { IFloraStandSample } from "./floraSample.js";
 
+/**
+ * Count boundary edges (edges used by exactly one triangle) from the final
+ * attached index array. Closed tubes stitched ring-to-ring report the open
+ * ring ends honestly — callers must not label this zero without reading it.
+ */
+
 const RADIAL_SEGMENTS = 5;
 
 export function buildWoodGeometry(sample: IFloraStandSample): BufferGeometry {
@@ -47,8 +53,11 @@ function emitTube(
   const dy = segment.tipY - segment.y;
   const dz = segment.tipZ - segment.z;
   const length = Math.hypot(dx, dy, dz) || 1;
-  let ux = -dz / length;
-  let uz = dx / length;
+  // Stable perpendicular: near-vertical segments (the common trunk case)
+  // use the X axis as reference, others use the XZ projection.
+  const vertical = Math.abs(dy) / length > 0.9;
+  let ux = vertical ? 1 : -dz / length;
+  let uz = vertical ? 0 : dx / length;
   const ulen = Math.hypot(ux, uz) || 1;
   ux /= ulen;
   uz /= ulen;
@@ -96,4 +105,34 @@ function emitTubeIndex(indices: Uint32Array, index: number, base: number): numbe
     cursor += 6;
   }
   return cursor;
+}
+
+export function auditWoodTopology(indices: Uint32Array | number[]): {
+  boundaryEdges: number;
+  degenerateTriangles: number;
+} {
+  const edgeUse = new Map<number, number>();
+  // Key ordered vertex pairs into one number without string allocation.
+  const key = (a: number, b: number): number => (a < b ? a * 1_000_000 + b : b * 1_000_000 + a);
+  let degenerateTriangles = 0;
+  for (let face = 0; face + 2 < indices.length; face += 3) {
+    const a = indices[face] as number;
+    const b = indices[face + 1] as number;
+    const c = indices[face + 2] as number;
+    if (a === b || b === c || a === c) {
+      degenerateTriangles += 1;
+      continue;
+    }
+    for (const [u, v] of [
+      [a, b],
+      [b, c],
+      [c, a],
+    ] as const) {
+      const k = key(u, v);
+      edgeUse.set(k, (edgeUse.get(k) ?? 0) + 1);
+    }
+  }
+  let boundaryEdges = 0;
+  for (const uses of edgeUse.values()) if (uses === 1) boundaryEdges += 1;
+  return { boundaryEdges, degenerateTriangles };
 }

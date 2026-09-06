@@ -27,29 +27,45 @@ export function growBranch(
 ): void {
   const branchAngle = 0.45 + state.canopy() * 0.3;
   const trunkSegments = 2 + Math.floor(state.canopy() * 2);
-  const queue: Array<{ depth: number; parent: number; x: number; y: number; z: number }> = [
-    { depth: 0, parent: -1, x: ox, y: 0, z: oz },
+  const queue: Array<{
+    depth: number;
+    parent: number;
+    x: number;
+    y: number;
+    z: number;
+    direction: number;
+    radius: number;
+  }> = [
+    {
+      depth: 0,
+      parent: -1,
+      x: ox,
+      y: 0,
+      z: oz,
+      direction: state.canopy() * Math.PI * 2,
+      radius: size.baseRadius,
+    },
   ];
-  let direction = state.canopy() * Math.PI * 2;
-  let radius = size.baseRadius;
   while (queue.length > 0 && state.segments.length < state.budgets.maxSegments) {
     const node = queue.shift();
     if (node === undefined) break;
     const length = (size.height / (trunkSegments + 2)) * (0.8 + state.canopy() * 0.4);
     const spread = state.canopy() * branchAngle;
-    direction += (state.canopy() - 0.5) * 0.6;
+    // Per-node derivation: each branch continues from its own parent's
+    // direction and radius, so forks thin independently (pipe model).
+    const direction = node.direction + (state.canopy() - 0.5) * 0.6;
     const droop = Math.min(Math.PI / 2, state.droopBase * (1 + node.depth * 0.3));
     const tipX = node.x + Math.sin(direction + spread) * length * 0.5 + size.leanX * length;
     const tipZ = node.z + Math.cos(direction + spread) * length * 0.5 + size.leanZ * length;
     const tipY = node.y + Math.cos(droop) * length;
-    const tipRadius = Math.max(0.012, radius * 0.7);
+    const tipRadius = Math.max(0.012, node.radius * 0.7);
     const index = state.segments.length;
     state.segments.push({
       bend: droop,
       depth: node.depth,
       parent: node.parent,
       plant,
-      radius,
+      radius: node.radius,
       tipRadius,
       tipX,
       tipY,
@@ -58,10 +74,25 @@ export function growBranch(
       y: node.y,
       z: node.z,
     });
-    radius = tipRadius;
     if (node.depth >= 2) continue;
-    queue.push({ depth: node.depth + 1, parent: index, x: tipX, y: tipY, z: tipZ });
+    queue.push({
+      depth: node.depth + 1,
+      parent: index,
+      x: tipX,
+      y: tipY,
+      z: tipZ,
+      direction,
+      radius: tipRadius,
+    });
     if (node.depth === 0 && state.segments.length + queue.length < state.budgets.maxSegments)
-      queue.push({ depth: 1, parent: index, x: tipX, y: tipY, z: tipZ });
+      queue.push({
+        depth: 1,
+        parent: index,
+        x: tipX,
+        y: tipY,
+        z: tipZ,
+        direction,
+        radius: tipRadius,
+      });
   }
 }

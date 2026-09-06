@@ -112,7 +112,10 @@ export function growFloraStand(
     const x = bounds.minX + canopy() * spanX;
     const z = bounds.minZ + canopy() * spanZ;
     const height = baseHeight * (0.75 + canopy() * 0.5);
-    const baseRadius = Math.max(0.03, girthPhysics * (0.8 + canopy() * 0.4));
+    // Seed never sets thickness: girth is physics only. Individuals vary by
+    // height (which is seeded) through the allometric coupling, not by a
+    // per-plant radius draw — so no RNG draw is consumed here at all.
+    const baseRadius = Math.max(0.03, girthPhysics * (0.72 + height * 0.12));
     const lean = (0.5 - envelope.sunAngle) * 0.24;
     const leanX = lean + (canopy() - 0.5) * 0.1;
     const leanZ = (canopy() - 0.5) * 0.1;

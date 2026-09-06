@@ -17,7 +17,7 @@ import type { IFloraStandSample } from "./floraField.js";
 import type { IFloraBounds, IFloraBudgets, IFloraEnvelope, IFloraReport } from "./floraSample.js";
 import { createLeafSprite } from "./floraSprite.js";
 import { type IFloraWindController, attachFloraWind } from "./floraWind.js";
-import { buildWoodGeometry } from "./floraWood.js";
+import { auditWoodTopology, buildWoodGeometry } from "./floraWood.js";
 
 export interface IFloraStandOptions {
   readonly envelope: IFloraEnvelope;
@@ -89,8 +89,9 @@ export function createFloraStand(options: IFloraStandOptions): IFloraStandContro
   let detached = 0;
   for (const leaf of sample.leaves)
     if (leaf.segment < 0 || leaf.segment >= sample.segments.length) detached += 1;
+  const audit = auditWoodTopology(woodIndices);
   const report: IFloraReport = {
-    boundaryEdges: 0,
+    boundaryEdges: audit.boundaryEdges,
     buildMs,
     detachedLeaves: detached,
     indexHash,
@@ -101,8 +102,11 @@ export function createFloraStand(options: IFloraStandOptions): IFloraStandContro
     woodVertices: positions.length / 3,
   };
   if (detached > 0) throw new Error("TN_FLORA_TOPOLOGY_INVALID: detached leaves.");
+  if (audit.degenerateTriangles > 0)
+    throw new Error("TN_FLORA_TOPOLOGY_INVALID: degenerate wood triangles.");
   return {
     debug: () => ({
+      boundaryEdges: report.boundaryEdges,
       floraPlants: sample.plants.length,
       indexHash,
       leafInstances: sample.leaves.length,

@@ -4,6 +4,8 @@ import { CanvasTexture } from "three";
 
 /** Layered ellipses along veins, with cut vein lines. White: tint via material. */
 export function createLeafSprite(size = 128): CanvasTexture {
+  if (typeof document === "undefined" || typeof document.createElement !== "function")
+    throw new Error("TN_FLORA_SPRITE_FAILED: document canvas is unavailable on this target.");
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
