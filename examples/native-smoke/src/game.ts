@@ -289,6 +289,7 @@ class NativeSmoke extends Scene<ISmokeState> {
     networkActionAcks: 0,
     networkConnected: false,
     networkError: "",
+    networkLocalObserved: false,
     networkPeerId: "",
     networkPeerObserved: false,
     networkProtocolErrors: 0,
@@ -494,7 +495,7 @@ class NativeSmoke extends Scene<ISmokeState> {
       // renderer compilation overlap the worker and proves startup latency instead of continuity.
       networkingGame.update(frameCtx.state);
       const networkState = frameCtx.state.getState();
-      networkLocalPlayer.visible = networkState.networkLocalX !== undefined;
+      networkLocalPlayer.visible = networkState.networkLocalObserved;
       if (networkLocalPlayer.visible) {
         networkLocalPlayer.position.set(
           networkState.networkLocalX ?? 0,

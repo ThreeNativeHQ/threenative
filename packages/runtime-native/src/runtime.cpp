@@ -2056,6 +2056,26 @@ private:
     bool setupFetch() {
         if (!jsEngine_) return false;
 
+        auto readHttpHeaders = [this](js::JSValueHandle optionsObject, http::HttpOptions& options) {
+            const auto headers = jsEngine_->getProperty(optionsObject, "headers");
+            if (jsEngine_->isUndefined(headers) || jsEngine_->isNull(headers) ||
+                !jsEngine_->isObject(headers))
+                return;
+            const auto forEach = jsEngine_->getProperty(headers, "forEach");
+            if (!jsEngine_->isFunction(forEach)) return;
+            const auto callback = jsEngine_->newFunction(
+                "__httpHeader",
+                [this, &options](void*, const std::vector<js::JSValueHandle>& headerArgs) {
+                    if (headerArgs.size() >= 2) {
+                        const auto name = jsEngine_->toString(headerArgs[1]);
+                        if (!name.empty()) options.headers[name] = jsEngine_->toString(headerArgs[0]);
+                    }
+                    return jsEngine_->newUndefined();
+                });
+            jsEngine_->call(forEach, headers, {callback});
+            jsEngine_->freeHandle(callback);
+        };
+
         // Native file reading function - uses SDL on Android for asset access
         jsEngine_->setGlobalProperty("__readFileSync",
             jsEngine_->newFunction("__readFileSync", [this](void* ctx, const std::vector<js::JSValueHandle>& args) {
@@ -2165,7 +2185,7 @@ private:
 
         // Native HTTP request function
         jsEngine_->setGlobalProperty("__httpRequest",
-            jsEngine_->newFunction("__httpRequest", [this](void* ctx, const std::vector<js::JSValueHandle>& args) {
+            jsEngine_->newFunction("__httpRequest", [this, readHttpHeaders](void* ctx, const std::vector<js::JSValueHandle>& args) {
                 if (args.empty()) {
                     return jsEngine_->newNull();
                 }
@@ -2184,11 +2204,7 @@ private:
                         method = jsEngine_->toString(methodVal);
                     }
 
-                    auto headersVal = jsEngine_->getProperty(optObj, "headers");
-                    if (!jsEngine_->isUndefined(headersVal)) {
-                        // Get header keys - this is simplified, real impl would iterate
-                        // For now, just handle common headers
-                    }
+                    readHttpHeaders(optObj, options);
 
                     auto bodyVal = jsEngine_->getProperty(optObj, "body");
                     if (!jsEngine_->isUndefined(bodyVal)) {
@@ -2239,7 +2255,7 @@ private:
         // Async HTTP request function - uses libuv for non-blocking I/O
         // Takes (url, options, callback) where callback receives the result object
         jsEngine_->setGlobalProperty("__httpRequestAsync",
-            jsEngine_->newFunction("__httpRequestAsync", [this](void* ctx, const std::vector<js::JSValueHandle>& args) {
+            jsEngine_->newFunction("__httpRequestAsync", [this, readHttpHeaders](void* ctx, const std::vector<js::JSValueHandle>& args) {
                 if (args.size() < 3) {
                     std::cerr << "[HTTP Async] Missing arguments (need url, options, callback)" << std::endl;
                     return jsEngine_->newUndefined();
@@ -2258,6 +2274,8 @@ private:
                     if (!jsEngine_->isUndefined(methodVal)) {
                         method = jsEngine_->toString(methodVal);
                     }
+
+                    readHttpHeaders(optObj, options);
 
                     auto bodyVal = jsEngine_->getProperty(optObj, "body");
                     if (!jsEngine_->isUndefined(bodyVal)) {

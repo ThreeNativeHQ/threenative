@@ -513,9 +513,13 @@ async function fetch(input, options = {}) {
   // Check URL type
   if (url.startsWith("http://") || url.startsWith("https://")) {
     // HTTP/HTTPS request via async libcurl + libuv (non-blocking)
+    const nativeOptions = { ...(options || {}) };
+    if (nativeOptions.headers !== undefined && !(nativeOptions.headers instanceof Headers)) {
+      nativeOptions.headers = new Headers(nativeOptions.headers);
+    }
     return new Promise((resolve, reject) => {
       if (signal) signal.addEventListener("abort", () => reject(abortError()));
-      __httpRequestAsync(url, options, (result) => {
+      __httpRequestAsync(url, nativeOptions, (result) => {
         if (result.error) {
           reject(new Error(`Fetch error: ${result.error}`));
         } else {

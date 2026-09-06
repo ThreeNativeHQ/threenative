@@ -249,7 +249,11 @@ test("http fetch surfaces status fields and unwraps a Request for the native bri
   const seen = [];
   const { context } = setupFetchContext({
     __httpRequestAsync: (url, options, callback) => {
-      seen.push({ url, method: options.method });
+      seen.push({
+        headers: options.headers?.entries ? Array.from(options.headers.entries()) : null,
+        method: options.method,
+        url,
+      });
       if (url.includes("down")) callback({ error: "connection refused" });
       else callback({ ok: true, status: 200, url, data: new ArrayBuffer(4) });
     },
@@ -257,6 +261,12 @@ test("http fetch surfaces status fields and unwraps a Request for the native bri
 
   const response = await vm.runInContext(`fetch("https://cdn.example/ship.glb")`, context);
   assert.equal(response.ok, true);
+  await vm.runInContext(
+    `fetch("https://cdn.example/auth", {
+      method: "POST", headers: { Authorization: "Bearer token" }, body: "{}",
+    })`,
+    context,
+  );
   assert.equal(response.status, 200);
 
   // Three.js r168+ passes a Request object, not a URL string.
@@ -265,9 +275,10 @@ test("http fetch surfaces status fields and unwraps a Request for the native bri
     context,
   );
   assert.equal(viaRequest.status, 200);
-  assert.deepEqual(seen.slice(0, 2), [
-    { url: "https://cdn.example/ship.glb", method: undefined },
-    { url: "https://cdn.example/tracks.glb", method: "GET" },
+  assert.deepEqual(guest(seen.slice(0, 3)), [
+    { headers: null, url: "https://cdn.example/ship.glb" },
+    { headers: [["authorization", "Bearer token"]], method: "POST", url: "https://cdn.example/auth" },
+    { headers: [], method: "GET", url: "https://cdn.example/tracks.glb" },
   ]);
 
   await assert.rejects(

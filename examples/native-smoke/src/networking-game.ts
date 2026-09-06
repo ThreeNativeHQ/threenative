@@ -22,6 +22,7 @@ export interface INetworkingState extends Record<string, unknown> {
   networkMetricsReady?: boolean;
   networkUnmatchedActionAcks?: number;
   networkLastActionId?: number;
+  networkLocalObserved: boolean;
   networkLocalX?: number;
   networkLocalZ?: number;
   networkPeerId?: string;
@@ -374,8 +375,8 @@ export function observeSnapshot<TState extends INetworkingState>(
   }
   patch(store, {
     networkLastActionId: snapshot.player.lastActionId,
-    networkLocalX: local?.x,
-    networkLocalZ: local?.z,
+    ...(local === undefined ? {} : { networkLocalX: local.x, networkLocalZ: local.z }),
+    networkLocalObserved: local !== undefined,
     networkPeerId: remote?.id ?? "",
     networkPeerObserved: remote !== undefined,
     networkRemoteDistance: positions.remoteDistance,
@@ -774,8 +775,7 @@ export function createNetworkingGame<TState extends INetworkingState>(
     patch(store, {
       networkConnected: false,
       networkError: "",
-      networkLocalX: undefined,
-      networkLocalZ: undefined,
+      networkLocalObserved: false,
       networkReconnects: retry
         ? (current.networkReconnects ?? 0) + 1
         : (current.networkReconnects ?? 0),

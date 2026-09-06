@@ -35,6 +35,7 @@ function createStore(): { state: INetworkingState; store: Parameters<typeof obse
   const state: INetworkingState = {
     networkConnected: false,
     networkError: "",
+    networkLocalObserved: false,
     networkRetry: 0,
     networkSessionId: "",
     networkStatus: "connected",
@@ -71,8 +72,9 @@ describe("native-smoke networking snapshot publication", () => {
 
     expect(state.networkLocalX).toBeUndefined();
     expect(state.networkLocalZ).toBeUndefined();
-    expect(state.networkLocalX !== undefined).toBe(false);
+    expect(state.networkLocalObserved).toBe(false);
     expect(state.networkPeerObserved).toBe(true);
+    expect(Object.values(state)).not.toContain(undefined);
 
     observeSnapshot(
       store,
@@ -84,7 +86,7 @@ describe("native-smoke networking snapshot publication", () => {
 
     expect(state.networkLocalX).toBe(2);
     expect(state.networkLocalZ).toBe(4);
-    expect(state.networkLocalX !== undefined).toBe(true);
+    expect(state.networkLocalObserved).toBe(true);
   });
 
   it("clears the published local render position before a retry snapshot arrives", async () => {
@@ -157,8 +159,7 @@ describe("native-smoke networking snapshot publication", () => {
         expect(state.networkRetry).toBe(1);
       });
 
-      expect(state.networkLocalX).toBeUndefined();
-      expect(state.networkLocalZ).toBeUndefined();
+      expect(state.networkLocalObserved).toBe(false);
     } finally {
       game.exit();
     }

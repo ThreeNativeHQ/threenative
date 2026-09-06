@@ -15,6 +15,7 @@
 #include <queue>
 #include <mutex>
 #include <cstring>
+#include <cstdlib>
 
 // Only compile the full implementation when both libuv and curl are available
 #if defined(MYSTRAL_HAS_LIBUV) && !defined(MYSTRAL_HTTP_FOUNDATION) && !defined(MYSTRAL_HTTP_ANDROID)
@@ -501,6 +502,10 @@ void AsyncHttpClient::request(const std::string& method,
     // SSL
     curl_easy_setopt(easy, CURLOPT_SSL_VERIFYPEER, options.verifySSL ? 1L : 0L);
     curl_easy_setopt(easy, CURLOPT_SSL_VERIFYHOST, options.verifySSL ? 2L : 0L);
+    const char* trustFile = std::getenv("SSL_CERT_FILE");
+    if (trustFile != nullptr && trustFile[0] != '\0') {
+        curl_easy_setopt(easy, CURLOPT_CAINFO, trustFile);
+    }
 
     // Custom headers
     for (const auto& [key, value] : options.headers) {
