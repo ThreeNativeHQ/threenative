@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "test": "pnpm run build && node scripts/verify-bundle.mjs",
+    "test": "pnpm run build && node scripts/verify-bundle.mjs && pnpm --dir ../.. exec vitest run --config examples/native-smoke/vitest.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

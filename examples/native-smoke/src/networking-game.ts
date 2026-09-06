@@ -53,7 +53,7 @@ interface IIssuedCredential {
   readonly expiresAt: string;
 }
 
-interface INetworkSnapshot {
+export interface INetworkSnapshot {
   readonly tick: number;
   readonly serverMonoMs: number;
   readonly player: {
@@ -253,7 +253,7 @@ function patch<TState extends INetworkingState>(
   store.flush();
 }
 
-interface IObservedPositions {
+export interface IObservedPositions {
   local: { x: number; z: number } | undefined;
   remote: { id: string; x: number; z: number } | undefined;
   remoteDistance: number;
@@ -267,7 +267,7 @@ function reportProtocolError<TState extends INetworkingState>(
   patch(store, { networkProtocolErrors: (state.networkProtocolErrors ?? 0) + 1 });
 }
 
-function observeSnapshot<TState extends INetworkingState>(
+export function observeSnapshot<TState extends INetworkingState>(
   store: INetworkingStore<TState>,
   config: INetworkingConfig,
   snapshot: INetworkSnapshot,
@@ -297,8 +297,8 @@ function observeSnapshot<TState extends INetworkingState>(
   const remote = positions.remote;
   patch(store, {
     networkLastActionId: snapshot.player.lastActionId,
-    networkLocalX: local?.x ?? 0,
-    networkLocalZ: local?.z ?? 0,
+    networkLocalX: local?.x,
+    networkLocalZ: local?.z,
     networkPeerId: remote?.id ?? "",
     networkPeerObserved: remote !== undefined,
     networkRemoteDistance: positions.remoteDistance,
