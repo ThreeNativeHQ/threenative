@@ -21,7 +21,8 @@ export function startScene(canvas, dimensions) {
     createdCanvas.width = 440;
     createdCanvas.height = 64;
     const textContext = createdCanvas.getContext("2d");
-    textContext.font = "17px monospace";
+    textContext.font = "600 17px ui-monospace, monospace";
+    assertCondition(Math.abs(textContext.measureText("iiii").width - textContext.measureText("WWWW").width) < 0.1, "CSS monospace fallback must preserve equal glyph advances");
     assertCondition(
       textContext.measureText("PREPARING TERRAIN").width > 20,
       "Canvas2D must resolve real glyphs for loading text",

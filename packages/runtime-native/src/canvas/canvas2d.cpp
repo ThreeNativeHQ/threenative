@@ -11,6 +11,7 @@
 #include <regex>
 #include <stack>
 #include <algorithm>
+#include <sstream>
 
 // M_PI is not defined by default on Windows MSVC
 #ifndef M_PI
@@ -162,7 +163,7 @@ static Color parseColor(const std::string& colorStr, bool* valid = nullptr) {
 struct FontInfo {
     float size = 16.0f;
     std::string family = "sans-serif";
-    bool bold = false;
+    int weight = 400;
     bool italic = false;
 };
 
@@ -180,7 +181,7 @@ static FontInfo parseFont(const std::string& fontStr) {
         }
         if (match[2].matched) {
             std::string weight = match[2];
-            info.bold = (weight == "bold" || std::stoi(weight) >= 700);
+            info.weight = weight == "bold" ? 700 : weight == "normal" ? 400 : std::stoi(weight);
         }
         info.size = std::stof(match[3]);
         std::string unit = match[4];
@@ -351,13 +352,25 @@ struct Canvas2DContext::Impl {
     void updateFont() {
         FontInfo fi = parseFont(currentState.font);
         SkFontStyle style = SkFontStyle(
-            fi.bold ? SkFontStyle::kBold_Weight : SkFontStyle::kNormal_Weight,
+            fi.weight,
             SkFontStyle::kNormal_Width,
             fi.italic ? SkFontStyle::kItalic_Slant : SkFontStyle::kUpright_Slant
         );
 
         if (fontMgr) {
-            currentTypeface = fontMgr->matchFamilyStyle(fi.family.c_str(), style);
+            currentTypeface.reset();
+            std::istringstream families(fi.family);
+            std::string family;
+            while (std::getline(families, family, ',')) {
+                const auto first = family.find_first_not_of(" \t\"'");
+                if (first == std::string::npos) continue;
+                family = family.substr(first, family.find_last_not_of(" \t\"'") - first + 1);
+                if (family == "ui-monospace") family = "monospace";
+                else if (family == "ui-serif") family = "serif";
+                else if (family == "ui-sans-serif" || family == "system-ui") family = "sans-serif";
+                currentTypeface = fontMgr->matchFamilyStyle(family.c_str(), style);
+                if (currentTypeface) break;
+            }
             if (!currentTypeface) {
                 currentTypeface = fontMgr->matchFamilyStyle("sans-serif", style);
             }

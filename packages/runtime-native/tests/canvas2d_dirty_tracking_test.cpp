@@ -72,6 +72,9 @@ int main() {
     check(ellipsePixels[(40 * 64 + 40) * 4 + 3] == 0, "counterclockwise partial ellipse leaves the short arc empty");
     Canvas2DContext canvas(64, 64);
 #if defined(__linux__) && !defined(__ANDROID__)
+    canvas.setFont("600 17px ui-monospace, monospace");
+    check(std::abs(canvas.measureText("iiii").width - canvas.measureText("WWWW").width) < 0.1f,
+          "CSS ui-monospace fallback preserves equal glyph advances");
     canvas.setFont("17px monospace");
     check(canvas.measureText("PREPARING TERRAIN").width > 20.0f,
           "Linux loading text resolves real glyphs instead of an empty font manager");
