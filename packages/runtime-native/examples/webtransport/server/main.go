@@ -51,6 +51,11 @@ const (
 	// echoPath is transport conformance only. It never allocates game state.
 	echoPath = "/echo"
 
+	// gamePath is the authenticated application endpoint. It routes through
+	// the protocol adapter; without a credential validator (task 4d) the
+	// adapter stays fail-closed and rejects every handshake.
+	gamePath = "/game"
+
 	// SIGTERM stops acceptance, closes live sessions and exits inside this budget.
 	shutdownTimeout = 5 * time.Second
 
@@ -243,12 +248,41 @@ func run(opts *options) error {
 		go serveEcho(session)
 	})
 
+	// gameConfig is intentionally validator-free until task 4d: the adapter
+	// rejects every handshake with ErrUnavailable and allocates no game
+	// state. There is no unauthenticated public game endpoint.
+	gameConfig := Config{
+		ApplicationProtocol: "threenative-smoke/1",
+		Channels: []Channel{
+			{ID: channelInput, Delivery: DeliveryUnreliable},
+			{ID: channelState, Delivery: DeliveryUnreliable},
+			{ID: channelActions, Delivery: DeliveryReliable},
+			{ID: channelClock, Delivery: DeliveryReliable},
+		},
+		Limits: defaultLimits(),
+	}
+	mux.HandleFunc(gamePath, func(w http.ResponseWriter, r *http.Request) {
+		session, err := server.Upgrade(w, r)
+		if err != nil {
+			log.Printf("game: upgrade rejected: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		// Upgrade keeps the session alive past this handler, so the
+		// handshake runs beside it.
+		go func() {
+			if _, err := ServeGame(session.Context(), session, gameConfig); err != nil {
+				log.Printf("game: handshake rejected: %v", err)
+			}
+		}()
+	})
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(packetConn) }()
-	fmt.Printf("LISTENING udp=%s path=%s\n", packetConn.LocalAddr(), echoPath)
+	fmt.Printf("LISTENING udp=%s path=%s,%s\n", packetConn.LocalAddr(), echoPath, gamePath)
 
 	select {
 	case err := <-served:
