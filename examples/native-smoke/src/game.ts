@@ -436,12 +436,12 @@ class NativeSmoke extends Scene<ISmokeState> {
     const networkLocalPlayer = ctx.add(
       new Mesh(new BoxGeometry(0.32, 0.32, 0.32), new MeshBasicMaterial({ color: 0x44ffcc })),
     );
-    networkLocalPlayer.visible = false;
+    networkLocalPlayer.visible = false; // engine-override: hide until an authoritative local snapshot exists
     ctx.entities.add("network-local-player", networkLocalPlayer);
     const networkRemotePlayer = ctx.add(
       new Mesh(new BoxGeometry(0.32, 0.32, 0.32), new MeshBasicMaterial({ color: 0xff4488 })),
     );
-    networkRemotePlayer.visible = false;
+    networkRemotePlayer.visible = false; // engine-override: hide until a peer snapshot is observed
     ctx.entities.add("network-remote-player", networkRemotePlayer);
     const queued = ctx.entities.add("queue-free-smoke", { dispose: () => undefined });
     ctx.entities.queueFree(queued);
