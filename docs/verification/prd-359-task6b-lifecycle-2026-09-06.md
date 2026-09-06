@@ -47,5 +47,19 @@ Tests 9 passed (9)
 
 ## Remaining qualification
 
-The live authenticated 30-second loss/suspend and 100-cycle gameplay/resource
+The shared `@threenative/core/net` client was also driven against the real
+authenticated Go fixture with `MYSTRAL_WEBTRANSPORT_INSECURE=1` for this local
+self-signed development server. The server was stopped after the first join,
+the client waited 30 seconds with no server, and a fresh server was started
+before the client requested a new one-time admin token and joined again:
+
+```text
+CONNECTED:1:cffb555f5c8cb2583afeb36f34ba53f4
+DISCONNECTED:transport closed
+CONNECTED:2:9d5d4e6488aaefa0a953cd206b0995b3
+PASS: authenticated rejoin sessions=2 acks=2 snapshots=180
+```
+
+This is live loss/rejoin evidence, not trusted-TLS qualification. The
+authenticated 100-cycle gameplay/resource-baseline and native suspend/resume
 proof is still required before checking task 6b in `EXECUTION.md`.
