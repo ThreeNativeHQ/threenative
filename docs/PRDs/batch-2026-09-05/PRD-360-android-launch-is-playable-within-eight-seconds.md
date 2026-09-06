@@ -88,8 +88,9 @@ displacement-correlated `TN_PUMP_ENDPOINT` on mailbox `respond()`. Desktop proof
 (C++ contract 22/22, vitest 11/11, CTest pass, evaluator 32/32, collector flow
 with mocked adb only) is retained with byte-identical proof sources in
 [prd-360-startup-2026-09-05](../../verification/prd-360-startup-2026-09-05/README.md)
-(host `b5af03ff…`). Full Android end-to-end is unexecuted; the built candidate
-APK `403bd10c…` predates the observer. No phase accepted; no device claim.
+(host `50144dc9…`). Full Android end-to-end is unexecuted; the rebuilt candidate
+APK `20da12fa…` has not been run on a device. The earlier `403bd10c…` candidate
+predates the observer. No phase accepted; no device claim.
 
 ## Acceptance and checkpoint protocol
 

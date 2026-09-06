@@ -18,7 +18,7 @@ or absent endpoint evidence fails closed. Desktop trivial-bundle bring-up shows
 process-to-first-pump ≈ 300–410 ms, already above the 250 ms device budget;
 the budget is unchanged and that finding is not concealed.
 
-## Result (final integrated host `b5af03ff…`, contract binary `601113fd…`)
+## Result (current integrated host `50144dc9…`, contract binary `601113fd…`)
 
 | Proof | Result |
 | --- | --- |
@@ -60,10 +60,10 @@ the budget is unchanged and that finding is not concealed.
 
 ## Provenance
 
-- Host binary: `b5af03ffaa0aeb4da2d2c235d905be0b8b71dcda46bdcfc0201b1be9e987d3c9`
+- Host binary: `50144dc9a22ecacaa6f5c764f043297818a3b77c2894f6696a6e6938a5e7d8b9`
   (`packages/runtime-native/build/tn-linux/mystral`), rebuilt from the
-  integrated sources in this commit. Earlier identities (`6f5263e0…`,
-  `b61f168d…`) are superseded — do not cite them for this code.
+  integrated working-tree sources. Earlier identities (`b5af03ff…`,
+  `6f5263e0…`, `b61f168d…`) are superseded — do not cite them for this code.
 - Contract binary:
   `601113fd9eefca607d721cc0142112189cccd87a2d265871e1878df1ba2d51f1`.
 - Observer sources: `packages/runtime-native/include/mystral/pump_silence.h`,
@@ -78,16 +78,16 @@ the budget is unchanged and that finding is not concealed.
   `docs/verification/native-runtime-census-2026-08-16.md`.
 - Executed proof sources, byte-identical to the run inputs (checked with
   `cmp`): [`measure-first-playable.mjs.txt`](measure-first-playable.mjs.txt)
-  (`3256a881…`), [`evaluate-first-playable.mjs.txt`](evaluate-first-playable.mjs.txt)
-  (`f11f91de…`), [`validate-evaluator.mjs.txt`](validate-evaluator.mjs.txt)
-  (`141b51db…`), [`collector-flow.mjs.txt`](collector-flow.mjs.txt)
-  (`8d50b896…`). Live originals remain under
+  (`e00ea115…`), [`evaluate-first-playable.mjs.txt`](evaluate-first-playable.mjs.txt)
+  (`0fe197612…`), [`validate-evaluator.mjs.txt`](validate-evaluator.mjs.txt)
+  (`53ff52b…`), [`collector-flow.mjs.txt`](collector-flow.mjs.txt)
+  (`0536c90c…`). Live originals remain under
   `artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/` and
   `artifacts/batch-2026-09-05/pump-observer/` (git-ignored).
 - Full Android end-to-end (real device, real adb) is **unexecuted** — the
-  collector flow mocks only the adb transport adapter. The already-built
-  candidate APK `403bd10c…` predates the observer and cannot emit the
-  endpoint. A new Android candidate must be rebuilt from this code.
+  collector flow mocks only the adb transport adapter. Candidate APK
+  `20da12fa…` was rebuilt from this reviewed code, but no device run is
+  claimed; the earlier `403bd10c…` candidate predates the observer.
 
 ## Reproducing
 
@@ -105,7 +105,7 @@ node artifacts/batch-2026-09-05/pump-observer/collector-flow.mjs
 
 Gates executed for this follow-up: evaluator validation (32/32), real-host
 collector flow (assertions pass), full desktop pump verification (assertions
-pass), `pnpm test` (391 files / 4,289 tests passed, 2 files / 7 tests
+pass), `pnpm test` (391 files / 4,291 tests passed, 2 files / 7 tests
 skipped), `pnpm typecheck` (pass), in-scope Biome checks (pass; root
 `pnpm lint` still reports pre-existing `noExcessiveCognitiveComplexity`
 findings in unrelated examples plus ignored `.linchpin` JSON result files —

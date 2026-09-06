@@ -3860,6 +3860,25 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
+      "signature": "export function viewportPresentationObserved( override: string | undefined, expected: string | undefined, physical: { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics",
+        "verify that an Android device presented the requested viewport",
+        "accept the physical panel size when `wm size` omits its override line"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
+      "symbol": "viewportPresentationObserved"
+    },
+    {
+      "aliases": [],
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
       "signature": "export function viewportRestoreCommands(): string[][] { … }",
       "situations": [
         "run a scenario on an Android emulator or device",

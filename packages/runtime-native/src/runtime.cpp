@@ -3435,6 +3435,12 @@ private:
                 output.close();
                 std::remove(path.c_str());
                 const bool stored = std::rename(temporary.c_str(), path.c_str()) == 0;
+                const std::string requestId = args.size() >= 3 ? jsEngine_->toString(args[2]) : "";
+                const std::string requestMethod = args.size() >= 4 ? jsEngine_->toString(args[3]) : "";
+                const double requestOrder = args.size() >= 5 ? jsEngine_->toNumber(args[4]) : -1.0;
+                const bool hasRequestOrder = std::isfinite(requestOrder)
+                    && requestOrder >= 1.0
+                    && std::floor(requestOrder) == requestOrder;
                 // PRD-360 full endpoint (option (a)): a non-consuming pump snapshot
                 // stamped on the launch clock at the moment the game reports —
                 // not when input was dispatched. Reads the existing mailbox path
@@ -3462,11 +3468,17 @@ private:
                 std::cout << "TN_PUMP_ENDPOINT:{\"path\":\"" << path << "\",\"stored\":"
                           << (stored ? "true" : "false") << ",\"payloadHash\":\""
                           << endpointHash.str() << "\",\"bytes\":" << payload.size()
+                          << ",\"requestId\":\"" << requestId << "\",\"requestMethod\":\""
+                          << requestMethod << "\",\"requestOrder\":"
+                          << (hasRequestOrder ? std::to_string(static_cast<unsigned long long>(requestOrder)) : "-1")
                           << ",\"pump\":" << snapshot << "}" << std::endl;
                 LOGI("TN_PUMP_ENDPOINT:{\"path\":\"%s\",\"stored\":%s,\"payloadHash\":\"%s\","
-                     "\"bytes\":%zu,\"pump\":%s}",
+                     "\"bytes\":%zu,\"requestId\":\"%s\",\"requestMethod\":\"%s\","
+                     "\"requestOrder\":%s,\"pump\":%s}",
                      path.c_str(), stored ? "true" : "false", endpointHash.str().c_str(),
-                     payload.size(), snapshot.c_str());
+                     payload.size(), requestId.c_str(), requestMethod.c_str(),
+                     hasRequestOrder ? std::to_string(static_cast<unsigned long long>(requestOrder)).c_str() : "-1",
+                     snapshot.c_str());
                 return jsEngine_->newBoolean(stored);
             })
         );

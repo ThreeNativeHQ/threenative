@@ -6,6 +6,7 @@ import {
   androidMailboxPaths,
   DeviceBridgeTransport,
   DeviceMailboxTransport,
+  type IDeviceResponseObservation,
   type IDeviceMailbox,
   validateDeviceEndpoint,
 } from "../src/runner/deviceTransport.js";
@@ -66,6 +67,30 @@ test("Android mailbox transport consumes the native ready handshake and correlat
     await expect(transport.call<{ ok: boolean }>("sample", { entities: ["player"] }))
       .resolves.toEqual({ ok: true });
     expect(mailbox.requests).toEqual([{ entities: ["player"] }]);
+  } finally {
+    await transport.close();
+  }
+});
+
+test("Android mailbox transport observes the raw response before consuming it", async () => {
+  const paths = androidMailboxPaths("com.example.game", "/observed-device-files");
+  const mailbox = new FakeMailbox(paths);
+  const transport = new DeviceMailboxTransport(mailbox, paths);
+  const observations: IDeviceResponseObservation[] = [];
+  transport.setResponseObserver((observation) => observations.push(observation));
+  await transport.start();
+  try {
+    await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));
+    await expect(transport.waitForBridge(1_000)).resolves.toBe(true);
+    await expect(transport.call<{ ok: boolean }>("sample", { entities: ["player"] }))
+      .resolves.toEqual({ ok: true });
+    expect(observations).toEqual([{
+      body: JSON.stringify({ id: "1", result: { ok: true } }),
+      method: "sample",
+      order: 1,
+      requestId: "1",
+    }]);
+    expect(mailbox.files.has(paths.response)).toBe(false);
   } finally {
     await transport.close();
   }

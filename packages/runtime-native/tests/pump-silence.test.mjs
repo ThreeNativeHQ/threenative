@@ -145,7 +145,7 @@ function runMailboxRespond({ stallBeforeRespondMs = 0 } = {}) {
       "  n += 1;",
       "  if (n === 3) {",
       `    ${spin}`,
-      `    __THREENATIVE_NATIVE__.playtest.respond(${JSON.stringify(res)}, JSON.stringify({ id: "sample-1", result: { entities: { player: { position: [0.41, -0.02, -0.46] } } } }));`,
+      `    __THREENATIVE_NATIVE__.playtest.respond(${JSON.stringify(res)}, JSON.stringify({ id: "sample-1", result: { entities: { player: { position: [0.41, -0.02, -0.46] } } } }), "sample-1", "sample", 1);`,
       "  }",
       "  if (n >= 5) { clearInterval(id); process.exit(0); }",
       "}, 50);",

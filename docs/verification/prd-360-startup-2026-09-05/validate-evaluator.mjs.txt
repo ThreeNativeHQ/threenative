@@ -98,6 +98,13 @@ const movementResponseBody = JSON.stringify({
   result: { entities: [{ id: 'player', transform: { position: [0.41, -0.02, -0.46] } }] },
 });
 const movementPayload = { entity: 'player', position: [0.41, -0.02, -0.46] };
+const validResponseObservation = {
+  inputOrder: 2,
+  method: 'sample',
+  order: 4,
+  postInput: true,
+  requestId: 'sample-1',
+};
 const pumpEndpoint = ({ body = movementResponseBody, ...overrides } = {}) => `TN_PUMP_ENDPOINT:${JSON.stringify({
   bytes: Buffer.byteLength(body, 'utf8'),
   path: '/run/res',
@@ -114,6 +121,9 @@ const pumpEndpoint = ({ body = movementResponseBody, ...overrides } = {}) => `TN
     longGaps: overrides.longGaps ?? [],
     droppedLongGaps: overrides.droppedLongGaps ?? 0,
   },
+  requestId: overrides.requestId ?? validResponseObservation.requestId,
+  requestMethod: overrides.requestMethod ?? validResponseObservation.method,
+  requestOrder: overrides.requestOrder ?? validResponseObservation.order,
   stored: true,
 })}`;
 
@@ -555,12 +565,16 @@ const cases = [
 let failures = 0;
 process.stdout.write('evaluator/harness validation only — not game or device proof\n\n');
 for (const testCase of cases) {
+  const effectiveBody = Object.prototype.hasOwnProperty.call(testCase.input, 'movementResponseBody')
+    ? testCase.input.movementResponseBody
+    : movementResponseBody;
   const result = await evaluateFirstPlayable({
     framePng: WORLD_FRAME,
     hostLog: pumpEndpoint(),
     movementPayload,
     movementResponseBody,
     movementResponsePath: '/run/res',
+    movementResponseObservation: effectiveBody === undefined ? undefined : validResponseObservation,
     ...testCase.input,
   });
   const failed = result.checks.filter(({ pass }) => !pass).map(({ id }) => id);

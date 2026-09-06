@@ -15,7 +15,7 @@ const res = join(root, "response.json");
 const b = join(dir, "g.js");
 writeFileSync(b, [`globalThis.TN_PLAYTEST_MAILBOX=${JSON.stringify({ request: join(root, "request.json"), response: res })};`,
   "let n=0;const id=setInterval(()=>{n+=1;",
-  `if(n===3){__THREENATIVE_NATIVE__.playtest.respond(${JSON.stringify(res)},JSON.stringify({id:"s",result:{entities:{player:{position:[0.41,-0.02,-0.46]}}}}));}`,
+  `if(n===3){__THREENATIVE_NATIVE__.playtest.respond(${JSON.stringify(res)},JSON.stringify({id:"s",result:{entities:{player:{position:[0.41,-0.02,-0.46]}}}}),"s","sample",1);}`,
   "if(n>=5){clearInterval(id);process.exit(0);}},50);"].join("\n"));
 // fake adb: `adb -s X logcat ...` replays the host log lines
 const fakeAdb = join(dir, "adb");
@@ -34,7 +34,7 @@ const hostLog = Buffer.concat(chunks).toString("utf8");
 const { evaluatePumpEndpoint, fnv1a64 } = await import(join(W, "artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/evaluate-first-playable.mjs"));
 const body = (await import("node:fs")).readFileSync(res, "utf8");
 const movementPayload = { entity: "player", position: [0.41, -0.02, -0.46] };
-const v = evaluatePumpEndpoint({ hostLog, movementPayload, movementResponsePath: res, movementResponseBody: body });
+const v = evaluatePumpEndpoint({ hostLog, movementPayload, movementResponsePath: res, movementResponseBody: body, movementResponseObservation: { inputOrder: 0, method: "sample", order: 1, postInput: true, requestId: "s" } });
 assert.equal(v.detail?.path, res, JSON.stringify(v));
 assert.ok(v.pass || v.code === "R7_PUMP_SILENCE_EXCEEDED");
 assert.ok(v.detail.pumpCount >= 1);
@@ -45,14 +45,14 @@ console.log("hash-match:", hashMatches ? "yes" : "no");
 // failure paths on the same real log:
 // late: truncate before the endpoint line
 const cutAt = hostLog.indexOf("TN_PUMP_ENDPOINT");
-const truncated = evaluatePumpEndpoint({ hostLog: hostLog.slice(0, cutAt), movementPayload, movementResponsePath: res, movementResponseBody: body });
+const truncated = evaluatePumpEndpoint({ hostLog: hostLog.slice(0, cutAt), movementPayload, movementResponsePath: res, movementResponseBody: body, movementResponseObservation: { inputOrder: 0, method: "sample", order: 1, postInput: true, requestId: "s" } });
 assert.equal(truncated.code, "R7_PUMP_SILENCE_MISSING");
 console.log("truncated:", truncated.code);
 // foreign response: same path, different bytes
-const foreign = evaluatePumpEndpoint({ hostLog, movementPayload, movementResponsePath: res, movementResponseBody: body + " " });
+const foreign = evaluatePumpEndpoint({ hostLog, movementPayload, movementResponsePath: res, movementResponseBody: body + " ", movementResponseObservation: { inputOrder: 0, method: "sample", order: 1, postInput: true, requestId: "s" } });
 assert.equal(foreign.code, "R7_PUMP_CORRELATION_UNPROVEN");
 console.log("foreign:", foreign.code);
 // missing collector output
-const missing = evaluatePumpEndpoint({ hostLog: "", movementPayload, movementResponsePath: res, movementResponseBody: body });
+const missing = evaluatePumpEndpoint({ hostLog: "", movementPayload, movementResponsePath: res, movementResponseBody: body, movementResponseObservation: { inputOrder: 0, method: "sample", order: 1, postInput: true, requestId: "s" } });
 assert.equal(missing.code, "R7_PUMP_SILENCE_MISSING");
 console.log("missing:", missing.code);

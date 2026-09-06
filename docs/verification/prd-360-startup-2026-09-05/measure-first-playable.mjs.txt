@@ -12,7 +12,7 @@
 // Nothing here decides whether a run passed: it records what happened and hands it to
 // evaluate-first-playable.mjs.
 import { execFileSync, spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +30,7 @@ const ACTIVITY = 'com.threenative.runtime.MystralActivity';
 const ARMS = {
   candidate: {
     apk: join(here, '..', 'bayview-candidate.apk'),
-    sha256: '403bd10c297f91f40202b322d57bc9c3d4291b1f2c9c9a958c1c8b3c5f9053af',
+    sha256: '20da12fa4901041b9a03c6214b69f25170b3d4ca7670cb9babeeb6daacb3723c',
   },
   frozen: {
     apk: undefined, // resolved from the recovery manifest's sourceApk
@@ -42,7 +42,7 @@ const usage = () => {
   process.stderr.write(
     'usage: measure-first-playable.mjs --arm <frozen|candidate> --device <serial>\n'
     + '                                 --out <run-dir> [--max-wall-ms <ms>] [--timeout <ms>]\n'
-    + '                                 [--skip-install] [--dry-run]\n'
+    + '                                 [--skip-install] [--dry-run] [--allow-device-condition]\n'
     + '  --out is required: each attempt writes its own run directory (e.g. runs/candidate/a),\n'
     + '  and an existing directory is never overwritten.\n'
     + '  --dry-run never contacts a device.\n',
@@ -71,6 +71,7 @@ const outDirFlag = flag('--out');
 if (outDirFlag === undefined) usage();
 const outDir = resolve(outDirFlag);
 const dryRun = has('--dry-run');
+const allowDeviceCondition = has('--allow-device-condition');
 
 // The frozen arm's APK is whatever the recovery manifest recorded, hashed here rather than pinned
 // to a literal, so this never claims an identity it did not read.
@@ -107,11 +108,72 @@ const adbRun = (...rest) => {
   return execFileSync(adb, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim();
 };
 
+const responsePosition = (body, entity) => {
+  try {
+    const parsed = JSON.parse(body);
+    const entities = parsed?.result?.entities;
+    const entry = Array.isArray(entities)
+      ? entities.find((candidate) => candidate?.id === entity)
+      : entities?.[entity];
+    const position = entry?.transform?.position ?? entry?.position;
+    return Array.isArray(position) && position.length === 3 && position.every((value) => Number.isFinite(value))
+      ? position
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const samePosition = (left, right) => Array.isArray(left) && Array.isArray(right)
+  && left.length === 3 && right.length === 3
+  && left.every((value, index) => Math.abs(value - right[index]) <= 1e-6);
+
+const selectMovementResponse = (metadata, report) => {
+  if (!metadata || !Array.isArray(metadata.observations)) {
+    throw new Error('device-response-observations.json is missing or malformed');
+  }
+  const entity = report?.entity ?? 'player';
+  const position = report?.after?.position;
+  if (!Array.isArray(position)) throw new Error('runner report has no final movement position');
+  const inputOrders = metadata.observations
+    .filter((observation) => typeof observation?.method === 'string' && observation.method.startsWith('input.'))
+    .map((observation) => observation.order)
+    .filter((order) => Number.isInteger(order));
+  const inputOrder = inputOrders.length === 0 ? 0 : Math.max(...inputOrders);
+  const candidates = metadata.observations.filter((observation) =>
+    observation?.method === 'sample'
+    && Number.isInteger(observation.order)
+    && observation.order > inputOrder
+    && typeof observation.requestId === 'string'
+    && observation.requestId.length > 0
+    && typeof observation.body === 'string'
+    && samePosition(responsePosition(observation.body, entity), position));
+  const selected = candidates.at(-1);
+  if (selected === undefined) {
+    throw new Error('no post-input sample response matches the runner movement position');
+  }
+  return {
+    body: selected.body,
+    observation: {
+      inputOrder,
+      method: selected.method,
+      order: selected.order,
+      postInput: selected.order > inputOrder,
+      requestId: selected.requestId,
+      runId,
+    },
+  };
+};
+
 // The local file must be the file this arm claims before anything is installed from it.
 const localSha256 = createHash('sha256').update(readFileSync(apk)).digest('hex');
 if (localSha256 !== expectedSha256) {
   throw new Error(`${arm} APK at ${apk} hashes ${localSha256}, expected ${expectedSha256}`);
 }
+
+const runId = randomUUID();
+const mailboxRoot = `/sdcard/Android/data/${PACKAGE_NAME}/files/tn-playtest-${runId}`;
+const movementResponseDevicePath = `${mailboxRoot}/tn-playtest-response.json`;
 
 const runnerArgs = [
   runnerCli,
@@ -121,20 +183,22 @@ const runnerArgs = [
   '--package', PACKAGE_NAME,
   '--activity', ACTIVITY,
   '--artifacts', outDir,
+  '--mailbox-root', mailboxRoot,
   '--timeout', String(operationTimeoutMs),
 ];
 
-// Fail closed before any performance launch: the device must be qualified (physical, online,
-// battery >= 50%, discharging, thermal NONE, screen on) — the same gate the native lanes use —
-// and the readings are recorded in bound.json. The gate runs twice: once before the install
-// (whose heating must not leave a stale pass) and again immediately before the timed launch,
-// so the recorded preflight is the one the timed interval actually started under.
+// Fail closed before any performance launch by default: the device must be qualified (physical,
+// online, battery >= 50%, discharging, thermal NONE, screen on) — the same gate the native lanes
+// use — and the readings are recorded in bound.json. An explicit diagnostic override can collect
+// provisional evidence, but the evaluator must reject it as non-acceptance evidence. The gate runs
+// twice: once before the install (whose heating must not leave a stale pass) and again immediately
+// before the timed launch, so the recorded preflight is the one the timed interval started under.
 const adbShell = (args) => execFileSync(adb, ['-s', serial, ...args], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }).trim();
 const qualifyDevice = async (phase) => {
   const reading = await assertDeviceReady(
     serial,
     {
-      allowOverride: false,
+      allowOverride: allowDeviceCondition,
       maxThermalStatus: 'NONE',
       minBatteryPercent: MINIMUM_BATTERY_PERCENT,
       requireDischarging: true,
@@ -243,10 +307,28 @@ const t1Ns = process.hrtime.bigint();
 // stop (force-stop, crash, SIGKILL) yields no endpoint line and fails R7.
 let collectorError = undefined;
 let collectorStoppedEarly = false;
+let outerCleanupError = undefined;
 if (collector !== undefined) {
   collectorStoppedEarly = collector.child.exitCode !== null || collector.child.signalCode !== null;
   await collector.stop();
   collectorError = collector.error?.message ?? undefined;
+}
+if (timedOut) {
+  const cleanupErrors = [];
+  for (const args of [
+    ['shell', 'am', 'force-stop', PACKAGE_NAME],
+    ['shell', 'wm', 'user-rotation', 'free'],
+    ['shell', 'wm', 'size', 'reset'],
+    ['shell', 'wm', 'density', 'reset'],
+    ['reverse', '--remove-all'],
+  ]) {
+    try {
+      adbRun(...args);
+    } catch (error) {
+      cleanupErrors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  if (cleanupErrors.length > 0) outerCleanupError = cleanupErrors.join('; ');
 }
 const hostLog = collector?.text() ?? '';
 
@@ -265,16 +347,26 @@ try {
   // No report is a failure the evaluator must see, not something to paper over.
   writeFileSync(join(outDir, 'report.json'), `${JSON.stringify({ pass: false, parseError: true }, null, 2)}\n`);
 }
-// The movement response is the step result the runner sampled AFTER input —
-// the actual measured displacement, not a manually labelled payload. Bound
-// by the runner's own mailbox paths: the response file the device transport
-// read for the movement sample. Captured from the device even on failure;
-// a missing file fails evaluation downstream.
-const movementResponseDevicePath = `/sdcard/Android/data/${PACKAGE_NAME}/files/tn-playtest-response.json`;
+// The movement response is the exact raw mailbox response the runner sampled
+// after input. DeviceMailboxTransport records it before consuming the device
+// file; reading the fixed path after runner exit is too late because the
+// transport deliberately removes it after every response.
 let movementResponseBody = undefined;
 let movementResponseError = undefined;
+let movementResponseObservation = undefined;
 try {
-  movementResponseBody = adbRun('shell', 'cat', movementResponseDevicePath);
+  const responseMetadata = JSON.parse(readFileSync(
+    join(outDir, 'device-response-observations.json'),
+    'utf8',
+  ));
+  if (responseMetadata.responsePath !== movementResponseDevicePath) {
+    throw new Error(
+      `runner response path ${String(responseMetadata.responsePath)} does not match ${movementResponseDevicePath}`,
+    );
+  }
+  const selected = selectMovementResponse(responseMetadata, report);
+  movementResponseBody = selected.body;
+  movementResponseObservation = selected.observation;
   writeFileSync(join(outDir, 'movement-response.json'), movementResponseBody);
 } catch (error) {
   movementResponseError = error instanceof Error ? error.message : String(error);
@@ -282,8 +374,11 @@ try {
 writeFileSync(join(outDir, 'pump-endpoint.json'), `${JSON.stringify({
   collectorError: collectorError ?? null,
   collectorStoppedEarly,
+  cleanupError: outerCleanupError,
   movementResponseDevicePath,
   movementResponseError: movementResponseError ?? null,
+  movementResponseObservation,
+  runId,
   responsePath: movementResponseDevicePath,
 }, null, 2)}\n`);
 
@@ -298,10 +393,12 @@ const bound = {
   expectedSha256,
   installedSha256,
   localSha256,
+  mailboxRoot,
   packageName: PACKAGE_NAME,
   preflight: {
     minimumBatteryPercent: MINIMUM_BATTERY_PERCENT,
     required: { charging: 'discharging', thermal: 'NONE' },
+    allowDeviceCondition,
     beforeInstall: preflightBeforeInstall,
     beforeLaunch: preflightBeforeLaunch,
   },
@@ -310,6 +407,7 @@ const bound = {
   runnerCliSha256: runnerBuild,
   runnerExitCode: timedOut ? -1 : code,
   runnerTimedOut: timedOut,
+  runId,
   scenarioPath: scenario,
   serial,
   t0Ns: String(t0Ns),

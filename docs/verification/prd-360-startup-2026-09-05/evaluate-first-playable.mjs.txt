@@ -134,7 +134,9 @@ export function evaluatePumpEndpoint({
   movementPayload = undefined,
   collectorError = undefined,
   collectorStoppedEarly = false,
+  cleanupError = undefined,
   movementResponseError = undefined,
+  movementResponseObservation = undefined,
   metadataError = undefined,
   maxGapMs = PUMP_SILENCE_GAP_BUDGET_MS,
 } = {}) {
@@ -151,6 +153,9 @@ export function evaluatePumpEndpoint({
   if (collectorStoppedEarly === true) {
     return fail('R7_PUMP_COLLECTOR_STOPPED_EARLY', { collectorStoppedEarly: true });
   }
+  if (cleanupError !== undefined && cleanupError !== null && cleanupError !== '') {
+    return fail('R7_PUMP_CLEANUP_FAILED', { error: String(cleanupError) });
+  }
   if (movementResponseError !== undefined && movementResponseError !== null && movementResponseError !== '') {
     return fail('R7_PUMP_RESPONSE_READ_FAILED', { error: String(movementResponseError) });
   }
@@ -159,6 +164,26 @@ export function evaluatePumpEndpoint({
   }
   if (typeof movementResponseBody !== 'string' || movementResponseBody.length === 0) {
     return fail('R7_PUMP_CORRELATION_UNPROVEN', { reason: 'movement response body is required' });
+  }
+  if (!isRecord(movementResponseObservation)) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', { reason: 'response request/order provenance is required' });
+  }
+  const responseObservationValid = movementResponseObservation.method === 'sample'
+    && typeof movementResponseObservation.requestId === 'string'
+    && movementResponseObservation.requestId.length > 0
+    && Number.isInteger(movementResponseObservation.order)
+    && movementResponseObservation.order > 0
+    && Number.isInteger(movementResponseObservation.inputOrder)
+    && movementResponseObservation.inputOrder >= 0
+    && movementResponseObservation.order > movementResponseObservation.inputOrder
+    && movementResponseObservation.postInput !== false
+    && (movementResponseObservation.runId === undefined
+      || (typeof movementResponseObservation.runId === 'string' && movementResponseObservation.runId.length > 0));
+  if (!responseObservationValid) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', {
+      reason: 'response is not a finite post-input sample with request identity and order',
+      responseObservation: movementResponseObservation,
+    });
   }
   const lines = hostLog.split('\n').filter((entry) => entry.includes('TN_PUMP_ENDPOINT:'));
   if (lines.length === 0) {
@@ -197,6 +222,19 @@ export function evaluatePumpEndpoint({
       gotBytes: endpoint.bytes ?? null,
       gotHash: endpoint.payloadHash ?? null,
       reason: 'endpoint does not match the response bytes read back',
+    });
+  }
+  if (endpoint.requestId !== movementResponseObservation.requestId
+    || endpoint.requestMethod !== movementResponseObservation.method
+    || endpoint.requestOrder !== movementResponseObservation.order) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', {
+      expectedRequestId: movementResponseObservation.requestId,
+      expectedRequestMethod: movementResponseObservation.method,
+      expectedRequestOrder: movementResponseObservation.order,
+      gotRequestId: endpoint.requestId ?? null,
+      gotRequestMethod: endpoint.requestMethod ?? null,
+      gotRequestOrder: endpoint.requestOrder ?? null,
+      reason: 'endpoint request identity/order does not match the captured post-input response',
     });
   }
   const pump = endpoint.pump;
@@ -542,11 +580,13 @@ export async function evaluateFirstPlayable(input) {
     : evaluatePumpEndpoint({
       collectorError: input.collectorError,
       collectorStoppedEarly: input.collectorStoppedEarly,
+      cleanupError: input.cleanupError,
       hostLog,
       maxGapMs: maxPumpGapMs,
       metadataError: input.metadataError,
       movementResponseBody: input.movementResponseBody,
       movementResponseError: input.movementResponseError,
+      movementResponseObservation: input.movementResponseObservation,
       movementResponsePath: input.movementResponsePath,
       movementPayload: {
         entity: report?.entity,
@@ -598,14 +638,18 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   let movementResponsePath;
   let collectorError;
   let collectorStoppedEarly = false;
+  let cleanupError;
   let movementResponseError;
+  let movementResponseObservation;
   let metadataError;
   try {
     const pumpMeta = readJson(join(armDir, 'pump-endpoint.json'));
     collectorError = pumpMeta.collectorError ?? undefined;
     collectorStoppedEarly = pumpMeta.collectorStoppedEarly === true;
+    cleanupError = pumpMeta.cleanupError ?? undefined;
     movementResponsePath = pumpMeta.responsePath ?? undefined;
     movementResponseError = pumpMeta.movementResponseError ?? undefined;
+    movementResponseObservation = pumpMeta.movementResponseObservation ?? undefined;
     if (movementResponseError === undefined) {
       movementResponseBody = readFileSync(join(armDir, 'movement-response.json'), 'utf8');
     }
@@ -616,11 +660,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     bound,
     collectorError,
     collectorStoppedEarly,
+    cleanupError,
     framePng,
     hostLog,
     metadataError,
     movementResponseBody,
     movementResponseError,
+    movementResponseObservation,
     movementResponsePath,
     pumpScope,
     report,

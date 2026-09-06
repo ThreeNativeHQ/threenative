@@ -672,7 +672,7 @@ Fresh gates on this base, in this worktree, logged under
 | --- | ---: | --- |
 | `pnpm typecheck` | 0 | all packages and examples |
 | `pnpm lint` | 0 | 599 warnings, 1,975 files checked |
-| `pnpm test` | 0 | root suite 391 files passed, 2 skipped; 4,289 tests passed, 7 skipped |
+| `pnpm test` | 0 | root suite 391 files passed, 2 skipped; 4,291 tests passed, 7 skipped |
 | `pnpm budgets` | 0 | after the census/coverage restore |
 | `pnpm exec tsx scripts/generate-retention-index.ts --check` | 0 | index fresh |
 | `pnpm sync:agents --check` | 0 | 19 CLAUDE.md mirrors in sync |
@@ -705,6 +705,6 @@ sites (CMakeLists, contract-lane count 35 → 36, verify-native-contracts, build
 tn-linux-coverage, census + coverage regen). Proof: C++ contract 22/22, vitest pump 11/11, CTest
 pump pass, evaluator 32/32, collector flow (real host + mailbox, mocked adb only) correlated with
 hash match; current desktop probe correctly rejects (`firstPumpAtMs≈410ms` exceeds 250 ms).
-Integrated host `b5af03ff…` supersedes `6f5263e0…`. Executed proof sources retained
+Integrated host `50144dc9…` supersedes `b5af03ff…` and `6f5263e0…`. Executed proof sources retained
 byte-identically under `docs/verification/prd-360-startup-2026-09-05/`. Full Android end-to-end
 remains unexecuted; file-budget variance (6 files vs 5 cap) stays open. No phase accepted.
