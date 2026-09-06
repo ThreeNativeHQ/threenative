@@ -639,20 +639,26 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
       frameSeriesFromReport(report),
     );
   } catch (error) {
-    await driver.stop();
-    return desktopFailureRun(error, await driver.captureConsole(), performance.now() - started);
+    let cleanupError;
+    try {
+      await driver.stop();
+    } catch (error) {
+      cleanupError = error;
+    }
+    return desktopFailureRun(error, await driver.captureConsole(), performance.now() - started, cleanupError);
   }
 }
 
-export function desktopFailureRun(error, consoleOutput, elapsedMs) {
+export function desktopFailureRun(error, consoleOutput, elapsedMs, cleanupError = undefined) {
   const retain = (value, fallback) => {
     try { return sanitizeManifest(value); } catch { return fallback; }
   };
+  const diagnostic = cleanupError?.diagnostic ?? error?.diagnostic;
   return {
     elapsedMs, status: 2, screenshot: undefined, series: undefined,
     report: {
       pass: false, target: 'desktop', assertionResults: [],
-      diagnostics: [retain(error?.diagnostic ?? {
+      diagnostics: [retain(diagnostic ?? {
         code: 'TN_PROD_PLAYTEST_FAILED', severity: 'error',
         message: error instanceof Error ? error.message : String(error),
       }, { code: 'TN_PROD_REDACTION', severity: 'error', message: 'Unsafe native error details withheld.' })],
@@ -670,6 +676,7 @@ export function profileConfigPath(project, configPath = undefined) {
 function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
   let child;
   let output = '';
+  let stopping;
   const screenshotRequestPath = join(mailboxRoot, 'tn-playtest-screenshot-request.txt');
   return {
     captureConsole: async () => output.split(/\r?\n/u).filter(Boolean).map((text) => ({ text, type: /\b(?:Error|FAILED|FATAL)\b/u.test(text) ? 'error' : 'log' })),
@@ -698,18 +705,50 @@ function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
       throw new Error('TN_PROD_NATIVE_SCREENSHOT_UNAVAILABLE');
     },
     stop: async () => {
-      if (child === undefined || child.exitCode !== null) return;
-      const exited = new Promise((resolve) => child.once('exit', resolve));
-      if (process.platform === 'win32') child.kill();
-      else {
-        try {
-          process.kill(-child.pid, 'SIGTERM');
-        } catch (error) {
-          if (error?.code !== 'ESRCH') throw error;
-          return;
-        }
-      }
-      await exited;
+      if (stopping !== undefined) return stopping;
+      stopping = (async () => {
+        if (child === undefined || child.exitCode !== null || child.signalCode !== null) return;
+        const cleanupTimeoutMs = options.desktopCleanupTimeoutMs ?? 2_000;
+        const waitForExit = new Promise((resolve, reject) => {
+          let timer;
+          let settled = false;
+          const finish = (exited) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            child.off('exit', onExit);
+            resolve(exited);
+          };
+          const onExit = () => finish(true);
+          child.once('exit', onExit);
+          timer = setTimeout(() => finish(false), cleanupTimeoutMs);
+          try {
+            if (process.platform === 'win32') child.kill();
+            else process.kill(-child.pid, 'SIGTERM');
+          } catch (error) {
+            if (error?.code === 'ESRCH') finish(true);
+            else {
+              settled = true;
+              clearTimeout(timer);
+              child.off('exit', onExit);
+              reject(error);
+            }
+          }
+          if (child.exitCode !== null || child.signalCode !== null) finish(true);
+        });
+        if (await waitForExit || child.exitCode !== null || child.signalCode !== null) return;
+        const diagnostic = {
+          code: 'TN_PROD_DESKTOP_CLEANUP_TIMEOUT',
+          message: `Desktop cleanup phase 'desktop-stop' did not observe the process exit within ${cleanupTimeoutMs}ms; process was observed alive.`,
+          observedAlive: true,
+          observedExited: false,
+          phase: 'desktop-stop',
+          processState: 'alive',
+          severity: 'error',
+        };
+        throw Object.assign(new Error(diagnostic.message), { diagnostic });
+      })();
+      return stopping;
     },
     writeFile: async (path, contents) => writeFile(path, contents, 'utf8'),
   };

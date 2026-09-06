@@ -73,6 +73,7 @@ test('desktop cleanup tolerates a child process group that already exited', asyn
     spawn: () => {
       const child = new EventEmitter();
       child.exitCode = null;
+      child.signalCode = null;
       child.pid = 123;
       queueMicrotask(() => child.emit('spawn'));
       return child;
@@ -81,6 +82,8 @@ test('desktop cleanup tolerates a child process group that already exited', asyn
     rename: async () => undefined,
     nonBlankPng: async () => true,
     DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
+    clearTimeout,
+    setTimeout,
   };
   runInNewContext(driverSource, context);
   const driver = context.createDesktopDriver('/fixture/mystral', '/fixture/scaffold', { renderSize: { height: 900, width: 1600 } }, '/fixture/mailbox');
@@ -93,6 +96,7 @@ test('desktop cleanup observes a Windows child that exits synchronously when kil
   const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
   const child = new EventEmitter();
   child.exitCode = null;
+  child.signalCode = null;
   child.pid = 123;
   child.kill = () => {
     child.exitCode = 0;
@@ -109,6 +113,8 @@ test('desktop cleanup observes a Windows child that exits synchronously when kil
     rename: async () => undefined,
     nonBlankPng: async () => true,
     DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
+    clearTimeout,
+    setTimeout,
   };
   runInNewContext(driverSource, context);
   const driver = context.createDesktopDriver('/fixture/mystral.exe', '/fixture/scaffold', { renderSize: { height: 900, width: 1600 } }, '/fixture/mailbox');
@@ -117,6 +123,61 @@ test('desktop cleanup observes a Windows child that exits synchronously when kil
     driver.stop(),
     new Promise((_, reject) => setTimeout(() => reject(new Error('desktop stop timed out')), 100)),
   ]));
+});
+
+test('desktop cleanup does not wait forever when a Windows kill emits no exit event', async () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = null;
+  child.pid = 123;
+  child.kill = () => undefined;
+  const context = {
+    join,
+    process: { env: {}, platform: 'win32' },
+    spawn: () => {
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    },
+    writeFile: async () => undefined,
+    rename: async () => undefined,
+    nonBlankPng: async () => true,
+    DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
+    clearTimeout,
+    setTimeout,
+  };
+  runInNewContext(driverSource, context);
+  const driver = context.createDesktopDriver('/fixture/mystral.exe', '/fixture/scaffold', {
+    desktopCleanupTimeoutMs: 25,
+    renderSize: { height: 900, width: 1600 },
+  }, '/fixture/mailbox');
+  await driver.launch();
+  await assert.rejects(driver.stop(), (error) => {
+    assert.equal(error.diagnostic.code, 'TN_PROD_DESKTOP_CLEANUP_TIMEOUT');
+    assert.equal(error.diagnostic.phase, 'desktop-stop');
+    assert.equal(error.diagnostic.processState, 'alive');
+    assert.equal(error.diagnostic.observedAlive, true);
+    assert.equal(error.diagnostic.observedExited, false);
+    return true;
+  });
+});
+
+test('desktop cleanup diagnostics survive conversion to a failed production run', () => {
+  const cleanupDiagnostic = {
+    code: 'TN_PROD_DESKTOP_CLEANUP_TIMEOUT',
+    message: 'Desktop cleanup phase stopped observing an alive process.',
+    observedAlive: true,
+    observedExited: false,
+    phase: 'desktop-stop',
+    processState: 'alive',
+    severity: 'error',
+  };
+  const cleanupError = Object.assign(new Error(cleanupDiagnostic.message), { diagnostic: cleanupDiagnostic });
+  const run = desktopFailureRun(new Error('playtest failed'), [], 123, cleanupError);
+  assert.deepEqual(run.report.diagnostics, [cleanupDiagnostic]);
+  assert.equal(run.status, 2);
+  assert.equal(run.report.pass, false);
 });
 
 test('native report retention redacts unsafe host console paths without dropping safe evidence', () => {
