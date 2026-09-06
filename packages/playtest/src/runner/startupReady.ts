@@ -45,6 +45,22 @@ export interface IWaitForStartupReadyOptions {
    * that catches it: `before 1, after 3`, with no process holding the directories.
    */
   readonly aborted?: () => boolean;
+  /**
+   * Whether the process under test is still running, when the caller can tell.
+   *
+   * A bridge that stops answering has two causes with different owners: a launch that is slow to
+   * compile, and a host that is no longer there. `pollStartup` cannot separate them — both look
+   * like an operation timeout — so without this the wait treats a crash as "still loading" and
+   * spends its whole deadline before blaming the game's loading gate. PR #122's hosted Windows
+   * collector is what that reads like: three minutes of silence reported as
+   * `Application startup stayed 'unreadable, the bridge kept timing out' for 180000ms`, with no
+   * mention of the runtime that had exited seconds in.
+   *
+   * Only `false` ends the wait. A driver that cannot answer returns `undefined` and the wait is
+   * left exactly as it was, because inferring a crash from an unreadable probe would be the
+   * implicit fallback the rest of this file refuses to have.
+   */
+  readonly hostAlive?: () => Promise<boolean | undefined>;
   readonly now?: () => number;
   readonly timeoutMs?: number;
 }
@@ -81,9 +97,13 @@ export async function waitForStartupReady(
     options.acceptCompileSettled === true && observation.compileSettled === true;
   const aborted = options.aborted ?? (() => false);
   if (aborted()) throw abortedDuringStartup();
+  const hostAlive = options.hostAlive ?? (async () => undefined);
   let observed = await pollStartup(bridge);
   while (observed === BUSY || (observed.phase !== "ready" && !settled(observed))) {
     if (aborted()) throw abortedDuringStartup();
+    // Only an unreadable bridge asks the question: a host that answers is running by definition,
+    // and probing a live one every pump would charge each poll for a process lookup.
+    if (observed === BUSY && (await hostAlive()) === false) throw hostExitedDuringStartup();
     if (now() >= deadline) {
       throw new PlaytestBridgeError(playtestDiagnostic(
         "TN_PLAYTEST_STARTUP_NOT_READY",
@@ -109,6 +129,18 @@ function abortedDuringStartup(): PlaytestBridgeError {
     "TN_PLAYTEST_STARTUP_ABORTED",
     "The run was torn down while waiting for application startup.",
     "Nothing to fix in the scenario: this is the shutdown path, and the wait yields to it so the browser and its profile are released immediately.",
+  ));
+}
+
+/**
+ * The process is gone, so no amount of further waiting can produce a reading. Say that, rather
+ * than letting the deadline expire and name the game's loading gate for a fault it does not have.
+ */
+function hostExitedDuringStartup(): PlaytestBridgeError {
+  return new PlaytestBridgeError(playtestDiagnostic(
+    "TN_PLAYTEST_STARTUP_HOST_EXITED",
+    "The application exited while the run was waiting for its startup to become readable.",
+    "Read the console tail this report carries: the process died during launch, so fix the first native or JavaScript error rather than the scenario's startup wait.",
   ));
 }
 

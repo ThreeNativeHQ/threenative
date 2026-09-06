@@ -548,6 +548,7 @@ async function runNativeScenario(project, target, scenarioPath, artifactDirector
     : (await readPrebuiltWorkload(options.prebuiltArtifact, target, options)).appId;
   const config = {
     android: { activity: 'com.threenative.runtime.MystralActivity', packageName: appId },
+    allowSoftwareAdapter: options.hostedSoftware,
     artifactDirectory,
     device: options.device,
     headless: true,
@@ -612,6 +613,7 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
     waitForBridge: innerTransport.waitForBridge.bind(innerTransport),
   };
   const config = {
+    allowSoftwareAdapter: options.hostedSoftware,
     artifactDirectory,
     headless: true,
     projectPath: project,

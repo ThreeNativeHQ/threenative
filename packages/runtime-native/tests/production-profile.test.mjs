@@ -263,6 +263,11 @@ test('hosted software keeps timing failures advisory while preserving measured b
   assert.deepEqual(result.advisoryCodes, ['TN_PROD_PERFORMANCE_BUDGET']);
 });
 
+test('hosted native collection allows software-adapter startup settlement', () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  assert.equal((source.match(/allowSoftwareAdapter: options\.hostedSoftware/gu) ?? []).length, 2);
+});
+
 function regressionEvidence(overrides = {}) {
   const count = 1_800;
   const frameMs = 1_000 / 60;
