@@ -1893,6 +1893,30 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the URL must use HTTPS and the credential is supplied by the game's identity flow; this API never issues credentials",
+        "channels, message sizes, and queues are validated before WebTransport opens, and reliable overflow returns false",
+        "native qualification depends on the installed host WebTransport bridge; iOS remains unverified"
+      ],
+      "example": "const connection = await connect(\"https://game.example/game\", { applicationProtocol: \"my-game/1\", credential, channels: [{ id: 1, delivery: \"unreliable\" }] });",
+      "importPath": "@threenative/core/net",
+      "kind": "function",
+      "overrides": [
+        "connectTimeoutMs, maxReliableMessageBytes, maxQueuedReliableBytes, and maxQueuedDatagrams are named per-connection limits"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function connect(url: string, options: INetworkOptions): Promise<INetworkConnection> { … }",
+      "situations": [
+        "connect two game clients over the portable WebTransport seam",
+        "send ordered actions and bounded unreliable state messages between game clients",
+        "exchange multiplayer messages without putting replication or gameplay in the engine"
+      ],
+      "summary": "Open a bounded, authenticated WebTransport message channel shared by browser and native games.",
+      "supersedes": [],
+      "symbol": "connect"
+    },
+    {
+      "aliases": [],
       "constraints": ["install once in the game's plugin list"],
       "example": "const game = defineGame({ plugins: [playtest()] });",
       "importPath": "@threenative/core/playtest",

@@ -8,6 +8,7 @@ import {
   isTouchscreenAvailable,
   isWeb,
 } from "@threenative/core";
+import { type INetworkConnection, type INetworkOptions, connect } from "@threenative/core/net";
 import { playtest } from "@threenative/core/playtest";
 import {
   BoxGeometry,
@@ -245,10 +246,63 @@ function requireRuntimeCanvas(): HTMLCanvasElement {
 const runtimeCanvas = requireRuntimeCanvas();
 runtimeCanvas.style.touchAction = "none";
 
+// Task 5a replaces this with the injected, validated proof configuration. Keeping it undefined
+// here makes the default smoke game exercise no network while retaining the complete lifecycle.
+const NETWORK_PROOF_CONFIG: { url: string; options: INetworkOptions } | undefined = undefined;
+
 class NativeSmoke extends Scene<ISmokeState> {
   #profileFirstFrameAt: number | undefined;
   #profileFrames = 0;
   #workerProof: IWorkerProof | undefined;
+  #networkProof: INetworkConnection | undefined;
+  #networkProofStarting: Promise<void> | undefined;
+  #networkProofFailed = false;
+  #networkProofClosed = false;
+
+  /**
+   * Internal opt-in networking proof, initially disabled: connects, polls from
+   * the existing returned frame-update callback and closes in scene exit.
+   * Later configuration work enables it; the default smoke game opens no socket.
+   */
+  #pollNetworkProof(): void {
+    if (this.#networkProof === undefined || this.#networkProofFailed) return;
+    const batch = this.#networkProof.poll();
+    if (batch.messages.length > 0) console.info(`TN_SMOKE_NET_MESSAGES:${batch.messages.length}`);
+    if (batch.disconnected) {
+      this.#networkProofFailed = true;
+      void this.#networkProof.close().catch(() => undefined);
+    }
+  }
+
+  #maybeStartNetworkProof(): void {
+    if (
+      NETWORK_PROOF_CONFIG === undefined ||
+      this.#networkProof !== undefined ||
+      this.#networkProofStarting !== undefined ||
+      this.#networkProofFailed ||
+      this.#networkProofClosed
+    )
+      return;
+    this.#networkProofStarting = connect(NETWORK_PROOF_CONFIG.url, NETWORK_PROOF_CONFIG.options)
+      .then((connection) => {
+        if (this.#networkProofClosed) return connection.close();
+        this.#networkProof = connection;
+      })
+      .catch(() => {
+        this.#networkProofFailed = true;
+      })
+      .finally(() => {
+        this.#networkProofStarting = undefined;
+      });
+  }
+
+  #closeNetworkProof(): void {
+    this.#networkProofClosed = true;
+    const proof = this.#networkProof;
+    this.#networkProof = undefined;
+    if (proof === undefined) return;
+    void proof.close().catch(() => undefined);
+  }
   static override readonly initialState: ISmokeState = {
     airborne: false,
     currentPointers: 0,
@@ -456,6 +510,8 @@ class NativeSmoke extends Scene<ISmokeState> {
     return (frameCtx: ICtx<ISmokeState>, dt: number) => {
       // Start after the renderer has reached steady frames. Starting during enter() lets native
       // renderer compilation overlap the worker and proves startup latency instead of continuity.
+      this.#maybeStartNetworkProof();
+      this.#pollNetworkProof();
       this.#startWorkerProofIfReady(ctx);
       cube.rotation.x += dt * 0.5;
       cube.rotation.y += dt;
@@ -489,6 +545,10 @@ class NativeSmoke extends Scene<ISmokeState> {
       if (status.frames === 1) console.info("TN_NATIVE_SMOKE_FIRST_FRAME");
       if (status.frames === 300) console.info("TN_NATIVE_SMOKE_300_FRAMES:300");
     };
+  }
+
+  override exit(): void {
+    this.#closeNetworkProof();
   }
 
   override render(): void {
