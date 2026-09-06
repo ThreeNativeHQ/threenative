@@ -343,6 +343,36 @@ class TestExactSymbols(unittest.TestCase):
                 ["/usr/bin/nm", "-g", "-arch", "arm64", normalized],
             ])
 
+    def test_llvm_nm_uses_joined_macho_arch_option(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lib, inc = fixture_archive(tmp)
+            calls = []
+
+            def fake_check_output(args, **kwargs):
+                calls.append(args)
+                if len(calls) == 1:
+                    raise subprocess.CalledProcessError(1, args)
+                return ("0000000000000000 (__TEXT,__text) external "
+                        "_quiche_h3_config_set_additional_settings\n"
+                        "0000000000000000 (__TEXT,__text) external "
+                        "_quiche_connect\n"
+                        "0000000000000000 (__TEXT,__text) external "
+                        "_quiche_accept\n")
+
+            with mock.patch.object(b.shutil, "which",
+                                  side_effect=lambda name: "/usr/bin/llvm-nm"
+                                  if name == "llvm-nm" else None), \
+                    mock.patch.object(b.subprocess, "check_output",
+                                      side_effect=fake_check_output):
+                b.validate_archive("ios-arm64", lib,
+                                   os.path.join(inc, "quiche.h"))
+
+            normalized = b.resolve(lib)
+            self.assertEqual(calls, [
+                ["/usr/bin/llvm-nm", "-g", normalized],
+                ["/usr/bin/llvm-nm", "-g", "--arch=arm64", normalized],
+            ])
+
     def test_undefined_only_rejected(self):
         defined = b.defined_symbols_nm(
             "                 U quiche_connect\n"
@@ -490,6 +520,13 @@ class TestIpSanContract(unittest.TestCase):
                                             host=host)
                 self.assertEqual(result["status"], "skipped")
                 self.assertNotEqual(result.get("status"), "passed")
+
+
+class TestHostTriple(unittest.TestCase):
+    def test_windows_host_triple_does_not_require_os_uname(self):
+        with mock.patch.object(b.platform, "system", return_value="Windows"), \
+                mock.patch.object(b.platform, "machine", return_value="AMD64"):
+            self.assertEqual(b.host_triple(), "x86_64-pc-windows-msvc")
 
 
 def _fake_tool(path):

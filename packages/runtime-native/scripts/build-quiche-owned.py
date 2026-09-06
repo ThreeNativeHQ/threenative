@@ -18,6 +18,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -308,8 +309,11 @@ def validate_archive(target, lib_path, header_path, nm_path=None):
         except subprocess.CalledProcessError:
             if target not in APPLE_SDK:
                 raise
-            arch_flag = "--arch" if os.path.basename(tool) == "llvm-nm" else "-arch"
-            target_nm_args = [tool, "-g", arch_flag, APPLE_SDK[target][1], lib_path]
+            if os.path.basename(tool) == "llvm-nm":
+                arch_args = [f"--arch={APPLE_SDK[target][1]}"]
+            else:
+                arch_args = ["-arch", APPLE_SDK[target][1]]
+            target_nm_args = [tool, "-g", *arch_args, lib_path]
             out = subprocess.check_output(
                 target_nm_args, text=True, stderr=subprocess.DEVNULL)
         defined = defined_symbols_nm(out)
@@ -431,9 +435,14 @@ def toolchain_info():
 
 
 def host_triple():
-    machine = {"x86_64": "x86_64", "aarch64": "aarch64"}.get(os.uname().machine, "x86_64")
-    system = {"Linux": "unknown-linux-gnu", "Darwin": "apple-darwin"}.get(
-        os.uname().sysname, "unknown-linux-gnu")
+    machine_name = platform.machine().lower()
+    machine = {"x86_64": "x86_64", "amd64": "x86_64",
+               "aarch64": "aarch64", "arm64": "aarch64"}.get(machine_name)
+    system = {"Linux": "unknown-linux-gnu", "Darwin": "apple-darwin",
+              "Windows": "pc-windows-msvc"}.get(platform.system())
+    if machine is None or system is None:
+        raise BuildError(f"TN_QUICHE_HOST_UNSUPPORTED: {platform.system()} / "
+                         f"{platform.machine()}")
     return f"{machine}-{system}"
 
 
