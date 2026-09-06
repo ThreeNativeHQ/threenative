@@ -302,6 +302,12 @@ def validate_archive(target, lib_path, header_path, nm_path=None):
         # filter rejects valid static archives on some Xcode runners.  If the
         # host-default probe rejects a cross-target archive, retry with the
         # requested architecture so the archive is still inspected.
+        if target in APPLE_SDK and os.path.basename(tool) == "llvm-nm":
+            # Rust static libraries may carry compiler-version-specific LLVM
+            # bitcode beside their native Mach-O symbols.  Xcode's llvm-nm
+            # reader can reject that bitcode even though the object symbols
+            # are valid for the target; this validation only needs the latter.
+            nm_args.append("--no-llvm-bc")
         nm_args.append(lib_path)
         try:
             out = subprocess.check_output(
@@ -311,6 +317,7 @@ def validate_archive(target, lib_path, header_path, nm_path=None):
                 raise
             if os.path.basename(tool) == "llvm-nm":
                 arch_args = [f"--arch={APPLE_SDK[target][1]}"]
+                arch_args.insert(0, "--no-llvm-bc")
             else:
                 arch_args = ["-arch", APPLE_SDK[target][1]]
             target_nm_args = [tool, "-g", *arch_args, lib_path]

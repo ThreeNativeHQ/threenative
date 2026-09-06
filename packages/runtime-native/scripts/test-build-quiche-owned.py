@@ -287,7 +287,8 @@ class TestExactSymbols(unittest.TestCase):
                                    os.path.join(inc, "quiche.h"),
                                    nm_path="/usr/bin/llvm-nm")
 
-            self.assertEqual(calls, [["/usr/bin/llvm-nm", "-g", b.resolve(lib)]])
+            self.assertEqual(calls, [["/usr/bin/llvm-nm", "-g", "--no-llvm-bc",
+                                     b.resolve(lib)]])
 
     def test_apple_archive_probe_uses_portable_nm_invocation(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -369,8 +370,8 @@ class TestExactSymbols(unittest.TestCase):
 
             normalized = b.resolve(lib)
             self.assertEqual(calls, [
-                ["/usr/bin/llvm-nm", "-g", normalized],
-                ["/usr/bin/llvm-nm", "-g", "--arch=arm64", normalized],
+                ["/usr/bin/llvm-nm", "-g", "--no-llvm-bc", normalized],
+                ["/usr/bin/llvm-nm", "-g", "--no-llvm-bc", "--arch=arm64", normalized],
             ])
 
     def test_undefined_only_rejected(self):
