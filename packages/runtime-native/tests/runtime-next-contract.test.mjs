@@ -9,8 +9,8 @@ import { test } from 'vitest';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
-test('native cooperative yields avoid frame coupling without starving frames or timers', () => {
-  const executable = join(root, 'build/tn-linux/mystral');
+test.each(['tn-linux', 'tn-linux-quickjs'])('native cooperative yields avoid frame coupling without starving frames or timers (%s)', (build) => {
+  const executable = join(root, 'build', build, 'mystral');
   assert.ok(existsSync(executable), 'Build the native host before running its scheduler contract');
   const output = execFileSync(executable, [
     'run', join(root, 'tests/fixtures/scheduler-yield.js'), '--no-sdl',

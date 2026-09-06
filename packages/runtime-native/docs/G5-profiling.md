@@ -135,3 +135,9 @@ Changed-file Biome checks are clean. Root `pnpm lint` still exits 1 on eight pre
 `.linchpin` formatting errors, which were left untouched. Logs: `scheduler-native-flow-console.log`,
 `scheduler-root-tests.log`, `scheduler-typecheck.log`, `scheduler-scoped-lint.log`, and
 `scheduler-lint.log` in the artifact directory above.
+
+The same fixture subsequently passed on the rebuilt Linux QuickJS host: zero crossed frames
+for 120 empty yields, and 24 frames/timer callbacks during sustained work (exit 0,
+`scheduler-quickjs-contract.log`). The required native test now executes both host variants;
+the existing QuickJS CI build additionally builds `mystral`. This extends JS-engine coverage,
+not platform coverage: physical Android and iOS/JSC remain unexecuted for this change.
