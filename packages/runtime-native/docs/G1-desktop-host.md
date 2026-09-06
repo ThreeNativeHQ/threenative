@@ -270,3 +270,22 @@ final required suite, full repository suite, typecheck and lint passed. The
 [Task 2b-proof evidence](../../../docs/verification/prd-359-task2b-proof-2026-09-05.md)
 records exact observations. Task 2a/2b queue integration is accepted; no additional
 platform, trusted TLS or broader load/soak qualification is claimed here.
+
+## PRD-359 asynchronous DNS — 2026-09-06
+
+Linux V8 and QuickJS wire/surface contracts pass 2/2 each, including actual
+animation callbacks during a delayed lookup and cancellation before worker
+completion. The Go/Linux V8 required suite passes 23/23: OS hostname lookup,
+delayed lookup, close before completion, IPv6, candidate fallback and malformed
+fixture controls join the existing queue/reconnect cases. Removing fallback or
+validation makes the corresponding live case fail. Numeric IPv4 and IPv6 each
+also returned exact 64 KiB stream bytes plus FIN.
+
+The resolver uses two process-lifetime workers with 64-job admission and up to
+16 address candidates under one 30-second connection deadline. Session, socket,
+quiche and JS access stay on the game thread. Active OS getaddrinfo calls cannot
+be interrupted; cancelled results are discarded, and pool state remains owned
+through process teardown. Two permanently stuck OS lookups prevent subsequent
+hostname resolution but do not freeze game frames. These Linux proofs do not
+qualify other platforms or trusted TLS. Final repository-gate acceptance is
+recorded in [Task 2c evidence](../../../docs/verification/prd-359-task2c-2026-09-05.md).

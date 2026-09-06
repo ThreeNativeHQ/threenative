@@ -23,6 +23,9 @@ constexpr const char* kScript = R"JS((() => {
   ok.push(__wtConnect() === 0);
   ok.push(__wtConnect('') === 0);
   ok.push(__wtConnect('http://example.com:4433/') === 0);
+  ok.push(__wtConnect('https://[localhost]:4433/') === 0);
+  ok.push(__wtConnect('https://[127.0.0.1]:4433/') === 0);
+  ok.push(__wtConnect('https://[::1]:4433junk/') === 0);
 
   const bad = [
     'not-a-url',
@@ -305,6 +308,65 @@ int main() {
         std::cerr << "could not create headless native runtime\n";
         return 1;
     }
+
+    mystral::webtransport::setResolverDelayForTesting(500);
+    const auto resolveStart = std::chrono::steady_clock::now();
+    const bool scheduledDns = runtime->evalScript(R"JS((() => {
+      globalThis.dnsProbe = { frames: 0, ready: 'pending', closed: 'pending', stop: false };
+      const probe = globalThis.dnsProbe;
+      probe.transport = new WebTransport('https://localhost:9/echo');
+      probe.transport.ready.then(() => { probe.ready = 'resolved'; }, () => { probe.ready = 'rejected'; });
+      probe.transport.closed.then(() => { probe.closed = 'resolved'; }, () => { probe.closed = 'rejected'; });
+      requestAnimationFrame(function frame() {
+        ++probe.frames;
+        if (!probe.stop) requestAnimationFrame(frame);
+      });
+    })())JS", "webtransport_delayed_dns.js");
+    const auto resolveElapsed = std::chrono::steady_clock::now() - resolveStart;
+    mystral::webtransport::setResolverDelayForTesting(0);
+    if (!scheduledDns || resolveElapsed >= std::chrono::milliseconds(200)) {
+        std::cerr << "delayed DNS blocked connection setup on the game thread\n";
+        return 1;
+    }
+    // Drive actual animation callbacks while the resolver worker is still delayed.
+    const auto frameDeadline = resolveStart + std::chrono::milliseconds(100);
+    do {
+        if (!runtime->pollEvents()) return 1;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    } while (std::chrono::steady_clock::now() < frameDeadline);
+    if (mystral::webtransport::activeResolutionsForTesting() != 1 ||
+        !runtime->evalScript(R"JS((() => {
+          if (dnsProbe.frames < 3 || dnsProbe.ready !== 'pending' || dnsProbe.closed !== 'pending') {
+            throw new Error('frames did not progress during pending DNS: ' + JSON.stringify(dnsProbe));
+          }
+          dnsProbe.transport.close();
+        })())JS", "webtransport_dns_frames.js")) {
+        std::cerr << "renders while DNS is delayed failed\n";
+        return 1;
+    }
+    if (!runtime->pollEvents() || mystral::webtransport::hasActiveSessions()) {
+        std::cerr << "close during DNS retained an active session\n";
+        return 1;
+    }
+    // The worker owns its result after close; wait for that actual worker to finish.
+    const auto completionDeadline = resolveStart + std::chrono::seconds(2);
+    while (mystral::webtransport::activeResolutionsForTesting() != 0 &&
+           std::chrono::steady_clock::now() < completionDeadline) {
+        if (!runtime->pollEvents()) return 1;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (!runtime->pollEvents() || mystral::webtransport::activeResolutionsForTesting() != 0 ||
+        mystral::webtransport::hasActiveSessions() ||
+        !runtime->evalScript(R"JS((() => {
+          dnsProbe.stop = true;
+          if (dnsProbe.ready !== 'rejected' || dnsProbe.closed !== 'rejected') {
+            throw new Error('late DNS completion changed closed promises');
+          }
+        })())JS", "webtransport_dns_cancel.js")) {
+        std::cerr << "ignores DNS result after close failed\n";
+        return 1;
+    }
+    std::cout << "renders while DNS is delayed: passed; ignores DNS result after close: passed\n";
 
     if (!runtime->evalScript(kScript, "webtransport_surface_test.js")) {
         std::cerr << "could not schedule webtransport surface contract\n";

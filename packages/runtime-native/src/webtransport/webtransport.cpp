@@ -20,6 +20,9 @@
 #include <quiche.h>
 
 #include <algorithm>
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <cmath>
 #include <cerrno>
 #include <chrono>
@@ -33,6 +36,7 @@
 #include <random>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -402,6 +406,25 @@ struct StreamState {
 // Session
 // ---------------------------------------------------------------------------
 
+struct ResolvedPeer {
+    sockaddr_storage address{};
+    socklen_t length = 0;
+};
+
+struct Resolution {
+    std::string host;
+    int port = 0;
+    unsigned delayMs = 0;
+    bool useTestAddresses = false;
+    uint64_t epoch = 0;
+    std::atomic<bool> done{false};
+    std::atomic<bool> cancelled{false};
+    std::vector<ResolvedPeer> candidates;
+};
+
+void cancelResolution(const std::shared_ptr<Resolution>& job);
+uint64_t g_resolverEpoch = 1;
+
 struct Session {
     uint32_t id = 0;
 
@@ -424,6 +447,11 @@ struct Session {
     std::string host;
     int port = 0;
     std::string path;
+    std::shared_ptr<Resolution> resolution;
+    std::vector<ResolvedPeer> candidates;
+    size_t nextCandidate = 0;
+    std::chrono::steady_clock::time_point connectDeadline{};
+    std::chrono::steady_clock::time_point candidateDeadline{};
 
     bool established = false;  // QUIC handshake complete
     bool h3Created = false;
@@ -465,6 +493,7 @@ struct Session {
     uint64_t lastReadStreamId = 0;
 
     ~Session() {
+        cancelResolution(resolution);
         if (sock != kInvalidSocket) closeSocket(sock);
         if (h3) quiche_h3_conn_free(h3);
         if (conn) quiche_conn_free(conn);
@@ -582,20 +611,163 @@ void pumpSocket(Session* s) {
 // Address resolution
 // ---------------------------------------------------------------------------
 
-bool resolvePeer(const std::string& host, int port, struct sockaddr_storage* out,
-                 socklen_t* outLen) {
-    struct addrinfo hints{};
+unsigned g_resolverDelayMs = 0;
+constexpr size_t kResolverJobLimit = 64;
+constexpr size_t kResolverCandidateLimit = 16;
+
+bool numericPeer(const std::string& host, int port, ResolvedPeer& peer) {
+    auto* ipv4 = reinterpret_cast<sockaddr_in*>(&peer.address);
+    if (inet_pton(AF_INET, host.c_str(), &ipv4->sin_addr) == 1) {
+        ipv4->sin_family = AF_INET;
+        ipv4->sin_port = htons(static_cast<uint16_t>(port));
+        peer.length = sizeof(sockaddr_in);
+        return true;
+    }
+    auto* ipv6 = reinterpret_cast<sockaddr_in6*>(&peer.address);
+    if (inet_pton(AF_INET6, host.c_str(), &ipv6->sin6_addr) == 1) {
+        ipv6->sin6_family = AF_INET6;
+        ipv6->sin6_port = htons(static_cast<uint16_t>(port));
+        peer.length = sizeof(sockaddr_in6);
+        return true;
+    }
+    return false;
+}
+
+std::vector<ResolvedPeer> resolveAddresses(const std::string& host, int port) {
+    addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
-    struct addrinfo* res = nullptr;
-    std::string portStr = std::to_string(port);
-    if (getaddrinfo(host.c_str(), portStr.c_str(), &hints, &res) != 0 || !res) {
-        return false;
+    addrinfo* addresses = nullptr;
+    const std::string service = std::to_string(port);
+    if (getaddrinfo(host.c_str(), service.c_str(), &hints, &addresses) != 0) return {};
+    std::vector<ResolvedPeer> result;
+    for (auto* item = addresses; item && result.size() < kResolverCandidateLimit;
+         item = item->ai_next) {
+        if ((item->ai_family != AF_INET && item->ai_family != AF_INET6) ||
+            item->ai_addrlen > sizeof(sockaddr_storage)) continue;
+        ResolvedPeer peer;
+        std::memcpy(&peer.address, item->ai_addr, item->ai_addrlen);
+        peer.length = static_cast<socklen_t>(item->ai_addrlen);
+        result.push_back(peer);
     }
-    std::memcpy(out, res->ai_addr, res->ai_addrlen);
-    *outLen = static_cast<socklen_t>(res->ai_addrlen);
-    freeaddrinfo(res);
+    if (addresses) freeaddrinfo(addresses);
+    return result;
+}
+
+// Process-only fixture controls cannot redirect an ordinary game hostname. Values
+// are validated and copied on the main thread before the bounded job is admitted.
+bool readResolverTestOptions(Resolution& job) {
+    if (job.host != "networking-test.invalid") return true;
+    if (const char* delay = std::getenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS")) {
+        const std::string value(delay);
+        if (value.empty() || value.size() > 4) return false;
+        unsigned milliseconds = 0;
+        for (char digit : value) {
+            if (digit < '0' || digit > '9') return false;
+            milliseconds = milliseconds * 10 + static_cast<unsigned>(digit - '0');
+        }
+        if (milliseconds > 2000) return false;
+        job.delayMs = milliseconds;
+    }
+    if (const char* addresses = std::getenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES")) {
+        const std::string value(addresses);
+        if (value.empty() || value.size() > 1024) return false;
+        size_t start = 0;
+        for (;;) {
+            const auto end = value.find(',', start);
+            ResolvedPeer peer;
+            if (job.candidates.size() >= kResolverCandidateLimit ||
+                !numericPeer(value.substr(start, end == std::string::npos ? end : end - start),
+                             job.port, peer)) return false;
+            job.candidates.push_back(peer);
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+        job.useTestAddresses = true;
+    }
     return true;
+}
+
+struct ResolverPool {
+    std::mutex mutex;
+    std::condition_variable ready;
+    std::deque<std::shared_ptr<Resolution>> queued;
+    size_t active = 0;
+    size_t workers = 0;
+};
+
+std::shared_ptr<ResolverPool> resolverPool() {
+    // Workers retain this heap state for the process lifetime. In particular, a
+    // Runtime destructor never joins an uncancellable OS getaddrinfo operation.
+    // The handle itself is immortal too: global Session destruction may still
+    // cancel a job after other function-static objects have been destroyed.
+    static const auto* pool = new std::shared_ptr<ResolverPool>(std::make_shared<ResolverPool>());
+    return *pool;
+}
+
+void resolverWorker(const std::shared_ptr<ResolverPool>& pool) {
+#ifdef _WIN32
+    // Keep Winsock alive independently of any Runtime that may close mid-lookup.
+    WSADATA workerWsa{};
+    const bool available = WSAStartup(MAKEWORD(2, 2), &workerWsa) == 0;
+#else
+    const bool available = true;
+#endif
+    for (;;) {
+        std::shared_ptr<Resolution> job;
+        {
+            std::unique_lock lock(pool->mutex);
+            pool->ready.wait(lock, [&] { return !pool->queued.empty(); });
+            job = std::move(pool->queued.front());
+            pool->queued.pop_front();
+            ++pool->active;
+        }
+        if (!job->cancelled.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(job->delayMs));
+            if (!job->useTestAddresses && available && !job->cancelled.load()) {
+                auto candidates = resolveAddresses(job->host, job->port);
+                if (!job->cancelled.load()) job->candidates = std::move(candidates);
+            }
+        }
+        job->done.store(true, std::memory_order_release);
+        {
+            std::lock_guard lock(pool->mutex);
+            --pool->active;
+        }
+    }
+}
+
+std::shared_ptr<Resolution> startResolution(const std::string& host, int port) {
+    auto job = std::make_shared<Resolution>();
+    job->host = host;
+    job->port = port;
+    job->delayMs = g_resolverDelayMs;
+    job->epoch = g_resolverEpoch;
+    if (!readResolverTestOptions(*job)) return nullptr;
+    auto pool = resolverPool();
+    std::lock_guard lock(pool->mutex);
+    if (pool->queued.size() + pool->active >= kResolverJobLimit) return nullptr;
+    while (pool->workers < 2) {
+        try {
+            std::thread([pool] { resolverWorker(pool); }).detach();
+            ++pool->workers;
+        } catch (const std::system_error&) {
+            if (pool->workers == 0) return nullptr;
+            break;
+        }
+    }
+    pool->queued.push_back(job);
+    pool->ready.notify_one();
+    return job;
+}
+
+void cancelResolution(const std::shared_ptr<Resolution>& job) {
+    if (!job) return;
+    job->cancelled.store(true);
+    auto pool = resolverPool();
+    std::lock_guard lock(pool->mutex);
+    pool->queued.erase(std::remove(pool->queued.begin(), pool->queued.end(), job),
+                       pool->queued.end());
 }
 
 // ---------------------------------------------------------------------------
@@ -603,7 +775,9 @@ bool resolvePeer(const std::string& host, int port, struct sockaddr_storage* out
 // ---------------------------------------------------------------------------
 
 void sendConnectRequest(Session* s) {
-    std::string authority = s->host + ":" + std::to_string(s->port);
+    const std::string authorityHost = s->host.find(':') == std::string::npos
+        ? s->host : "[" + s->host + "]";
+    std::string authority = authorityHost + ":" + std::to_string(s->port);
     std::string path = s->path.empty() ? "/" : s->path;
     std::string origin = "https://" + authority;
 
@@ -992,8 +1166,18 @@ bool parseUrl(const std::string& url, std::string& host, int& port, std::string&
     size_t colon = authority.rfind(':');
     if (colon == std::string::npos) return false;  // WebTransport requires explicit port
     host = authority.substr(0, colon);
+    if (!host.empty() && host.front() == '[') {
+        if (host.size() < 3 || host.back() != ']') return false;
+        host = host.substr(1, host.size() - 2);
+        in6_addr literal{};
+        if (inet_pton(AF_INET6, host.c_str(), &literal) != 1) return false;
+    } else if (host.find(':') != std::string::npos) {
+        return false;
+    }
+    const std::string portText = authority.substr(colon + 1);
+    if (portText.empty() || portText.find_first_not_of("0123456789") != std::string::npos) return false;
     try {
-        port = std::stoi(authority.substr(colon + 1));
+        port = std::stoi(portText);
     } catch (...) {
         return false;
     }
@@ -1037,36 +1221,33 @@ socket_t createUdpSocket(Session* s) {
     return fd;
 }
 
-// __wtConnect(url) -> sessionId (>=1) or 0 on immediate failure.
-uint32_t connectSession(const std::string& url) {
-    std::string host;
-    int port = 0;
-    std::string path;
-    if (!parseUrl(url, host, port, path)) {
-        return 0;
-    }
+void resetCandidate(Session* s) {
+    if (s->sock != kInvalidSocket) closeSocket(s->sock);
+    if (s->h3) quiche_h3_conn_free(s->h3);
+    if (s->conn) quiche_conn_free(s->conn);
+    if (s->h3config) quiche_h3_config_free(s->h3config);
+    if (s->config) quiche_config_free(s->config);
+    s->sock = kInvalidSocket;
+    s->h3 = nullptr;
+    s->conn = nullptr;
+    s->h3config = nullptr;
+    s->config = nullptr;
+    s->hasTimeout = false;
+    s->established = false;
+    s->h3Created = false;
+    s->connectStreamId = -1;
+}
 
-    auto sess = std::make_unique<Session>();
-    Session* s = sess.get();
-    s->id = g_nextSessionId++;
-    s->host = host;
-    s->port = port;
-    s->path = path;
-
-    if (!resolvePeer(host, port, &s->peer, &s->peerLen)) {
-        std::cerr << "[WebTransport] DNS resolution failed for " << host << std::endl;
-        return 0;
-    }
-
+bool openCandidate(Session* s) {
     s->sock = createUdpSocket(s);
     if (s->sock == kInvalidSocket) {
         std::cerr << "[WebTransport] failed to create UDP socket" << std::endl;
-        return 0;
+        return false;
     }
 
     // quiche config.
     s->config = quiche_config_new(QUICHE_PROTOCOL_VERSION);
-    if (!s->config) return 0;
+    if (!s->config) return false;
     static const uint8_t alpn[] = "\x02h3";  // length-prefixed "h3"
     quiche_config_set_application_protos(s->config, alpn, sizeof(alpn) - 1);
     quiche_config_set_max_idle_timeout(s->config, 30000);
@@ -1104,7 +1285,7 @@ uint32_t connectSession(const std::string& url) {
 
     // h3 config with extended CONNECT + WebTransport SETTINGS.
     s->h3config = quiche_h3_config_new();
-    if (!s->h3config) return 0;
+    if (!s->h3config) return false;
     quiche_h3_config_enable_extended_connect(s->h3config, true);
     const uint64_t wtSettings[] = {
         SETTINGS_WT_MAX_SESSIONS, 1,
@@ -1118,18 +1299,64 @@ uint32_t connectSession(const std::string& url) {
     for (auto& b : scid) b = static_cast<uint8_t>(rd());
 
     s->conn = quiche_connect(
-        host.c_str(), scid, sizeof(scid),
+        s->host.c_str(), scid, sizeof(scid),
         reinterpret_cast<struct sockaddr*>(&s->local), s->localLen,
         reinterpret_cast<struct sockaddr*>(&s->peer), s->peerLen, s->config);
     if (!s->conn) {
         std::cerr << "[WebTransport] quiche_connect failed" << std::endl;
-        return 0;
+        return false;
     }
 
     flushEgress(s);  // send the initial QUIC handshake packet(s)
 
-    uint32_t id = s->id;
-    g_sessions[id] = std::move(sess);
+    return true;
+}
+
+bool tryNextCandidate(Session* s) {
+    while (s->nextCandidate < s->candidates.size()) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= s->connectDeadline) return false;
+        resetCandidate(s);
+        const size_t remaining = s->candidates.size() - s->nextCandidate;
+        const auto& peer = s->candidates[s->nextCandidate++];
+        s->peer = peer.address;
+        s->peerLen = peer.length;
+        if (!openCandidate(s)) continue;
+        auto budget = (s->connectDeadline - now) / static_cast<int64_t>(remaining);
+        // Give an unreachable candidate an initial QUIC retry, then try the
+        // next address. The last address retains the original remaining budget.
+        if (remaining > 1 && s->hasTimeout) {
+            budget = std::min(budget, 2 * (s->timeoutAt - now));
+        }
+        s->candidateDeadline = now + budget;
+        return true;
+    }
+    return false;
+}
+
+// Numeric endpoints keep their immediate path; hostname resolution owns no JS
+// or Session pointer and is observed only by the main-thread poll below.
+uint32_t connectSession(const std::string& url) {
+    std::string host, path;
+    int port = 0;
+    if (!parseUrl(url, host, port, path) || host.size() > 253) return 0;
+    auto session = std::make_unique<Session>();
+    auto* s = session.get();
+    s->id = g_nextSessionId++;
+    s->host = host;
+    s->port = port;
+    s->path = path;
+    s->connectDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    ResolvedPeer numeric;
+    if (g_resolverDelayMs == 0 && numericPeer(host, port, numeric)) {
+        s->candidates.push_back(numeric);
+        if (!tryNextCandidate(s)) return 0;
+    } else {
+        s->resolution = startResolution(host, port);
+        if (!s->resolution) return 0;
+    }
+    const uint32_t id = s->id;
+    g_sessions[id] = std::move(session);
     return id;
 }
 
@@ -1437,7 +1664,36 @@ void processEvents() {
             toTeardown.push_back(id);
             continue;
         }
-        if (!s->conn) continue;
+        const auto now = std::chrono::steady_clock::now();
+        if (!s->reportedReady && now >= s->connectDeadline) {
+            failSession(s, "WebTransport connection deadline expired");
+        }
+        if (s->resolution && !s->failed) {
+            auto job = s->resolution;
+            if (!job->done.load(std::memory_order_acquire)) continue;
+            if (job->cancelled.load() || job->epoch != g_resolverEpoch) {
+                failSession(s, "WebTransport DNS result was cancelled");
+            } else {
+                s->candidates = std::move(job->candidates);
+                if (!tryNextCandidate(s)) failSession(s, "WebTransport DNS or endpoint connection failed");
+            }
+            s->resolution.reset();
+        }
+        if (!s->conn || s->failed) {
+            if (s->failed && !s->reportedClosed) {
+                s->reportedClosed = true;
+                g_events.push({id, EventType::Closed, -1, 0, false, {}, "WebTransport connection failed"});
+                toTeardown.push_back(id);
+            }
+            continue;
+        }
+        if (!s->established && now >= s->candidateDeadline &&
+            s->nextCandidate < s->candidates.size()) {
+            if (!tryNextCandidate(s)) {
+                failSession(s, "WebTransport endpoint candidates exhausted");
+                continue;
+            }
+        }
 
         // One receive budget per pass over this session, spent by however many
         // pumpSocket() reads happen below. This is the only place it resets.
@@ -1447,6 +1703,12 @@ void processEvents() {
 
         // Drain inbound UDP, feed quiche, read the data plane, and fire timers.
         pumpSocket(s);
+        if (!s->established && quiche_conn_is_closed(s->conn) &&
+            s->nextCandidate < s->candidates.size() &&
+            std::chrono::steady_clock::now() < s->connectDeadline) {
+            if (!tryNextCandidate(s)) failSession(s, "WebTransport endpoint candidates exhausted");
+            continue;
+        }
 
         // QUIC handshake completion.
         if (!s->established && quiche_conn_is_established(s->conn)) {
@@ -1579,6 +1841,16 @@ bool hasActiveSessions() {
     return !g_sessions.empty();
 }
 
+unsigned activeResolutionsForTesting() {
+    auto pool = resolverPool();
+    std::lock_guard lock(pool->mutex);
+    return static_cast<unsigned>(pool->active);
+}
+
+void setResolverDelayForTesting(unsigned milliseconds) {
+    g_resolverDelayMs = milliseconds;
+}
+
 void init() {
 #ifdef _WIN32
     WSADATA wsaData;
@@ -1592,6 +1864,7 @@ void init() {
 }
 
 void shutdown() {
+    ++g_resolverEpoch;
     for (auto& [id, sessPtr] : g_sessions) {
         Session* s = sessPtr.get();
         if (s->conn && !quiche_conn_is_closed(s->conn)) {
@@ -1765,6 +2038,8 @@ namespace mystral {
 namespace webtransport {
 
 void init() {}
+void setResolverDelayForTesting(unsigned) {}
+unsigned activeResolutionsForTesting() { return 0; }
 void shutdown() {}
 void processEvents() {}
 bool hasActiveSessions() { return false; }

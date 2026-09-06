@@ -46,10 +46,25 @@ const SERVER_EXECUTABLE = join(
 );
 const TEST_DIR = join(runtimeRoot, ".test-tmp/webtransport");
 const SERVER_LISTEN = "127.0.0.1:4433";
+const SERVER_PORT = 4433;
 const SERVER_URL = `https://${SERVER_LISTEN}/echo`;
+const DNS_TEST_HOST = "networking-test.invalid";
+const DNS_TEST_URL = `https://${DNS_TEST_HOST}:${SERVER_PORT}/echo`;
 // The server serves only /echo, so this path exercises the constructor and nothing else.
 const PROBE_URL = `https://${SERVER_LISTEN}/probe`;
 const REQUIRE_LIVE_FIXTURE = process.env.TN_REQUIRE_LIVE_WEBTRANSPORT_FIXTURE === "1";
+const INVALID_DNS_CASES = [
+  { label: "delay-negative", dnsDelayMs: "-1", dnsAddresses: "127.0.0.1" },
+  { label: "delay-junk", dnsDelayMs: "junk", dnsAddresses: "127.0.0.1" },
+  { label: "delay-too-large", dnsDelayMs: "2001", dnsAddresses: "127.0.0.1" },
+  { label: "address-nonnumeric", dnsDelayMs: "0", dnsAddresses: "not-an-ip" },
+  { label: "address-trailing-comma", dnsDelayMs: "0", dnsAddresses: "127.0.0.1," },
+  {
+    label: "address-too-many",
+    dnsDelayMs: "0",
+    dnsAddresses: Array.from({ length: 17 }, (_, index) => `192.0.2.${index + 1}`).join(","),
+  },
+] as const;
 // A cold `go build` compiles quic-go and its dependencies, which is far longer than
 // vitest's default 10s hook budget.
 const FIXTURE_SETUP_TIMEOUT_MS = 300_000;
@@ -120,8 +135,86 @@ async function startServer(): Promise<boolean> {
   });
 }
 
+type EphemeralServer = {
+  child: ChildProcess;
+  ready: Promise<string>;
+};
+
+function spawnIpv6Server(): EphemeralServer {
+  const child = spawn(SERVER_EXECUTABLE, ["--listen", "[::1]:0", "--dev-self-signed"], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  const ready = new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const finish = (address?: string, error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (error) reject(error);
+      else if (address) resolve(address);
+      else reject(new Error("IPv6 WebTransport fixture did not report an address"));
+    };
+    const timeout = setTimeout(() => {
+      finish(
+        undefined,
+        new Error(
+          `IPv6 WebTransport fixture readiness timed out; stdout=${stdout} stderr=${stderr}`,
+        ),
+      );
+    }, 15_000);
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
+      const match = /LISTENING udp=(\[::1\]:\d+)/u.exec(stdout);
+      if (match?.[1]) finish(match[1]);
+    });
+    child.stderr?.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once("error", (error) => {
+      finish(undefined, new Error(`IPv6 WebTransport fixture failed to start: ${error.message}`));
+    });
+    child.once("exit", (code, signal) => {
+      if (!settled) {
+        finish(
+          undefined,
+          new Error(
+            `IPv6 WebTransport fixture exited before readiness (code=${code}, signal=${signal}); ` +
+              `stdout=${stdout} stderr=${stderr}`,
+          ),
+        );
+      }
+    });
+  });
+  return { child, ready };
+}
+
+async function stopOwnedServer(child: ChildProcess): Promise<void> {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("IPv6 WebTransport fixture did not stop within 5 seconds"));
+    }, 5_000);
+    child.once("close", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.kill("SIGTERM");
+  });
+}
+
 type ScriptOptions = {
   allowInsecurePeerVerification?: boolean;
+  dnsAddresses?: string;
+  dnsDelayMs?: number | string;
   timeoutMs?: number;
   // Lowers the datagram capacity the native side negotiates, so an oversize
   // rejection is provable against a small number instead of whatever this
@@ -150,15 +243,37 @@ async function runScript(
   } else {
     Reflect.deleteProperty(env, "MYSTRAL_WEBTRANSPORT_MAX_DATAGRAM");
   }
-  const { stdout, stderr } = await runCommand(runtimeBinary, ["run", path, "--headless"], {
-    env,
-    timeoutMs: options.timeoutMs ?? SCRIPT_TIMEOUT_MS,
-  });
-  return `${stdout}\n${stderr}`;
+  if (options.dnsDelayMs !== undefined) {
+    env.MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS = String(options.dnsDelayMs);
+  } else {
+    Reflect.deleteProperty(env, "MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS");
+  }
+  if (options.dnsAddresses !== undefined) {
+    env.MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES = options.dnsAddresses;
+  } else {
+    Reflect.deleteProperty(env, "MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES");
+  }
+  const { exitCode, stdout, stderr } = await runCommand(
+    runtimeBinary,
+    ["run", path, "--headless"],
+    {
+      env,
+      timeoutMs: options.timeoutMs ?? SCRIPT_TIMEOUT_MS,
+    },
+  );
+  const output = `${stdout}\n${stderr}`;
+  if (exitCode !== 0) {
+    throw new Error(`WebTransport runtime script ${name} exited with ${exitCode}:\n${output}`);
+  }
+  return output;
 }
 
-async function runTrustedScript(name: string, source: string): Promise<string> {
-  return runScript(name, source, { allowInsecurePeerVerification: true });
+async function runTrustedScript(
+  name: string,
+  source: string,
+  options: Omit<ScriptOptions, "allowInsecurePeerVerification"> = {},
+): Promise<string> {
+  return runScript(name, source, { ...options, allowInsecurePeerVerification: true });
 }
 
 function requireWebTransport(skip: (note?: string) => never): void {
@@ -178,14 +293,22 @@ describe("WebTransport API", () => {
 
     // Feature-detect WebTransport support: the global exists in all builds, but a
     // connection only initiates when quiche is compiled in.
-    const probe = await runScript(
-      "wt-probe.js",
-      `console.log('WT_GLOBAL:' + (typeof WebTransport));
+    let probe: string;
+    try {
+      probe = await runScript(
+        "wt-probe.js",
+        `console.log('WT_GLOBAL:' + (typeof WebTransport));
        const wt = new WebTransport('${PROBE_URL}');
        wt.ready.then(() => {}).catch(() => {});
        console.log('WT_CONSTRUCT_OK');
        process.exit(0);`,
-    );
+      );
+    } catch (error) {
+      failClosed(
+        `native runtime prerequisite failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
     if (!probe.includes("WT_CONSTRUCT_OK")) {
       failClosed("requires a runtime built with WebTransport/quiche support");
       return;
@@ -774,4 +897,344 @@ main().catch((e) => {
     expect(out).toContain("PASS: native 100 reconnects active echo and zero resource baseline");
     expect(out).toContain("CYCLES 100");
   }, 120_000);
+
+  it("resolves localhost through the OS resolver", async ({ skip }) => {
+    requireWebTransport(skip);
+    const out = await runTrustedScript(
+      "wt-dns-system.js",
+      `async function main() {
+        const wt = new WebTransport('https://localhost:${SERVER_PORT}/echo');
+        wt.closed.catch(() => {});
+        await wt.ready;
+        const writer = wt.datagrams.writable.getWriter();
+        const reader = wt.datagrams.readable.getReader();
+        await writer.write(new Uint8Array([23, 59]));
+        const { value, done } = await reader.read();
+        if (done || value.length !== 2 || value[0] !== 23 || value[1] !== 59)
+          throw new Error('OS resolver echo mismatch');
+        reader.releaseLock();
+        writer.releaseLock();
+        wt.close();
+        await wt.closed;
+        console.log('PASS: OS resolver exact echo');
+      }
+      main().then(() => process.exit(0)).catch((error) => {
+        console.log('FAIL: ' + error.message);
+        process.exit(1);
+      });`,
+    );
+    expect(out).toContain("PASS: OS resolver exact echo");
+  }, 30_000);
+
+  it("renders while DNS is delayed", async ({ skip }) => {
+    requireWebTransport(skip);
+    const out = await runTrustedScript(
+      "wt-dns-delayed.js",
+      `const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function main() {
+  let wt = null;
+  let running = true;
+  let frames = 0;
+  try {
+    const frame = () => {
+      if (!running) return;
+      frames++;
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+    wt = new WebTransport("${DNS_TEST_URL}");
+    wt.closed.catch(() => {});
+    let readySettled = false;
+    const ready = wt.ready.then(
+      () => { readySettled = true; return true; },
+      () => { readySettled = true; return false; },
+    );
+    await sleep(100);
+    if (readySettled) throw new Error("ready settled during the delayed DNS window");
+    if (frames < 2) throw new Error("requestAnimationFrame stalled; frames=" + frames);
+    if (!(await ready)) throw new Error("delayed DNS connection was rejected");
+    const payload = new Uint8Array([3, 1, 4, 1, 5, 9]);
+    const writer = wt.datagrams.writable.getWriter();
+    const reader = wt.datagrams.readable.getReader();
+    await writer.write(payload);
+    const echoed = await reader.read();
+    if (
+      echoed.done ||
+      !echoed.value ||
+      echoed.value.length !== payload.length ||
+      echoed.value.some((byte, index) => byte !== payload[index])
+    ) {
+      throw new Error("delayed DNS datagram mismatch");
+    }
+    reader.releaseLock();
+    writer.releaseLock();
+    wt.close();
+    if (!(await wt.closed.then(() => true, () => false)))
+      throw new Error("delayed DNS session closed with an error");
+    console.log("PASS: renders while DNS is delayed frames=" + frames);
+  } finally {
+    running = false;
+    if (wt) {
+      try { wt.close(); } catch (_) {}
+      await wt.closed.catch(() => {});
+    }
+  }
+}
+main().then(() => process.exit(0)).catch((error) => {
+  console.log("FAIL: " + (error && error.message ? error.message : error));
+  process.exit(1);
+});
+`,
+      { dnsAddresses: "127.0.0.1", dnsDelayMs: 500 },
+    );
+    expect(out).toContain("PASS: renders while DNS is delayed frames=");
+  }, 30_000);
+
+  it("ignores DNS result after close", async ({ skip }) => {
+    requireWebTransport(skip);
+    const out = await runTrustedScript(
+      "wt-dns-close.js",
+      `const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const nativeKeys = [
+  "sessions", "streams", "queuedReliableBytes", "queuedDatagrams", "queuedEvents",
+  "inFlightReceiveBytes", "readCreditBytes", "pendingHeaderBytes",
+];
+const jsKeys = [
+  "sessions", "streams", "queuedReliableBytes", "queuedReliableOperations",
+  "queuedDatagramOperations", "queuedDatagrams", "queuedEvents", "queuedReceiveBytes",
+  "incomingDatagramDrops",
+];
+function resourceStats() {
+  const stats = __wtResourceStats();
+  if (!stats || stats.nativeAvailable !== true || !stats.native || !stats.js)
+    throw new Error("native/js WebTransport resource stats are unavailable");
+  for (const [part, keys] of [[stats.native, nativeKeys], [stats.js, jsKeys]]) {
+    for (const key of keys) {
+      if (!Number.isFinite(part[key])) throw new Error("missing resource stat " + key);
+      if (Number(part[key]) < 0) throw new Error("negative resource stat " + key);
+    }
+  }
+  return stats;
+}
+function isZero(stats) {
+  return [
+    [stats.native, nativeKeys],
+    [stats.js, jsKeys],
+  ].every(([part, keys]) => keys.every((key) => Number(part[key]) === 0));
+}
+async function main() {
+  let wt = null;
+  try {
+    wt = new WebTransport("${DNS_TEST_URL}");
+    wt.closed.catch(() => {});
+    let readyState = "pending";
+    let closedState = "pending";
+    const ready = wt.ready.then(
+      () => { readyState = "fulfilled"; },
+      () => { readyState = "rejected"; },
+    );
+    const closed = wt.closed.then(
+      () => { closedState = "fulfilled"; },
+      () => { closedState = "rejected"; },
+    );
+    await sleep(100);
+    if (readyState !== "pending") throw new Error("ready settled before close");
+    wt.close();
+    // Wait beyond the injected 500 ms lookup, even when local close settles
+    // immediately. Early cleanup alone cannot prove a late result is discarded.
+    await sleep(700);
+    const last = resourceStats();
+    if (readyState === "rejected" && closedState === "rejected" && isZero(last)) {
+      console.log("PASS: ignores DNS result after close");
+      return;
+    }
+    throw new Error(
+      "late DNS result was not discarded: ready=" + readyState +
+        " closed=" + closedState + " stats=" + JSON.stringify(last),
+    );
+  } finally {
+    if (wt) {
+      try { wt.close(); } catch (_) {}
+      await wt.closed.catch(() => {});
+    }
+  }
+}
+main().then(() => process.exit(0)).catch((error) => {
+  console.log("FAIL: " + (error && error.message ? error.message : error));
+  process.exit(1);
+});
+`,
+      { dnsAddresses: "127.0.0.1", dnsDelayMs: 500 },
+    );
+    expect(out).toContain("PASS: ignores DNS result after close");
+  }, 30_000);
+
+  it("tries second resolved address", async ({ skip }) => {
+    requireWebTransport(skip);
+    const fallback = await runTrustedScript(
+      "wt-dns-fallback-ipv4.js",
+      `async function main() {
+  let wt = null;
+  try {
+    wt = new WebTransport("${DNS_TEST_URL}");
+    wt.closed.catch(() => {});
+    await wt.ready;
+    const payload = new Uint8Array([8, 6, 7, 5, 3, 0, 9]);
+    const writer = wt.datagrams.writable.getWriter();
+    const reader = wt.datagrams.readable.getReader();
+    await writer.write(payload);
+    const echoed = await reader.read();
+    if (
+      echoed.done ||
+      !echoed.value ||
+      echoed.value.length !== payload.length ||
+      echoed.value.some((byte, index) => byte !== payload[index])
+    ) {
+      throw new Error("second resolved IPv4 address echo mismatch");
+    }
+    reader.releaseLock();
+    writer.releaseLock();
+    wt.close();
+    if (!(await wt.closed.then(() => true, () => false)))
+      throw new Error("fallback session closed with an error");
+    console.log("PASS: tries second resolved address IPv4 echo");
+  } finally {
+    if (wt) {
+      try { wt.close(); } catch (_) {}
+      await wt.closed.catch(() => {});
+    }
+  }
+}
+main().then(() => process.exit(0)).catch((error) => {
+  console.log("FAIL: " + (error && error.message ? error.message : error));
+  process.exit(1);
+});
+`,
+      { dnsAddresses: "::1,127.0.0.1" },
+    );
+    expect(fallback).toContain("PASS: tries second resolved address IPv4 echo");
+  }, 30_000);
+
+  it("echoes through a numeric IPv6 address", async ({ skip }) => {
+    requireWebTransport(skip);
+    const ipv6Fixture = spawnIpv6Server();
+    try {
+      let address: string;
+      try {
+        address = await ipv6Fixture.ready;
+      } catch (error) {
+        const reason = `requires an IPv6 WebTransport fixture: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+        if (REQUIRE_LIVE_FIXTURE) throw new Error(reason);
+        skip(reason);
+        return;
+      }
+      const ipv6 = await runTrustedScript(
+        "wt-dns-ipv6.js",
+        `async function main() {
+  let wt = null;
+  try {
+    wt = new WebTransport("https://${address}/echo");
+    wt.closed.catch(() => {});
+    await wt.ready;
+    const payload = new Uint8Array([2, 7, 1, 8, 2, 8]);
+    const writer = wt.datagrams.writable.getWriter();
+    const reader = wt.datagrams.readable.getReader();
+    await writer.write(payload);
+    const echoed = await reader.read();
+    if (
+      echoed.done ||
+      !echoed.value ||
+      echoed.value.length !== payload.length ||
+      echoed.value.some((byte, index) => byte !== payload[index])
+    ) {
+      throw new Error("numeric IPv6 echo mismatch");
+    }
+    reader.releaseLock();
+    writer.releaseLock();
+    wt.close();
+    if (!(await wt.closed.then(() => true, () => false)))
+      throw new Error("numeric IPv6 session closed with an error");
+    console.log("PASS: numeric IPv6 echo");
+  } finally {
+    if (wt) {
+      try { wt.close(); } catch (_) {}
+      await wt.closed.catch(() => {});
+    }
+  }
+}
+main().then(() => process.exit(0)).catch((error) => {
+  console.log("FAIL: " + (error && error.message ? error.message : error));
+  process.exit(1);
+});
+`,
+        {},
+      );
+      expect(ipv6).toContain("PASS: numeric IPv6 echo");
+    } finally {
+      await stopOwnedServer(ipv6Fixture.child);
+    }
+  }, 45_000);
+
+  it("rejects malformed resolver environment", async ({ skip }) => {
+    requireWebTransport(skip);
+    const results = await Promise.all(
+      INVALID_DNS_CASES.map(async (testCase) => {
+        const out = await runTrustedScript(
+          `wt-dns-invalid-${testCase.label}.js`,
+          `const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function main() {
+  let wt = null;
+  try {
+    const admitted = __wtConnect("${DNS_TEST_URL}");
+    if (admitted !== 0) {
+      __wtClose(admitted);
+      throw new Error("malformed resolver configuration was admitted");
+    }
+    wt = new WebTransport("${DNS_TEST_URL}");
+    wt.closed.catch(() => {});
+    let readyState = "pending";
+    let closedState = "pending";
+    const ready = wt.ready.then(
+      () => { readyState = "fulfilled"; },
+      () => { readyState = "rejected"; },
+    );
+    const closed = wt.closed.then(
+      () => { closedState = "fulfilled"; },
+      () => { closedState = "rejected"; },
+    );
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline && (readyState === "pending" || closedState === "pending"))
+      await sleep(10);
+    if (readyState !== "rejected" || closedState !== "rejected") {
+      throw new Error("malformed resolver was accepted: ready=" + readyState + " closed=" + closedState);
+    }
+    await Promise.all([ready, closed]);
+    console.log("PASS: malformed resolver ${testCase.label}");
+  } finally {
+    if (wt) {
+      try { wt.close(); } catch (_) {}
+      await wt.closed.catch(() => {});
+    }
+  }
+}
+main().then(() => process.exit(0)).catch((error) => {
+  console.log("FAIL: " + (error && error.message ? error.message : error));
+  process.exit(1);
+});
+`,
+          {
+            dnsAddresses: testCase.dnsAddresses,
+            dnsDelayMs: testCase.dnsDelayMs,
+            timeoutMs: 5_000,
+          },
+        );
+        return { label: testCase.label, out };
+      }),
+    );
+    for (const result of results) {
+      expect(result.out, result.label).toContain(`PASS: malformed resolver ${result.label}`);
+    }
+  }, 30_000);
 });
