@@ -11,6 +11,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  renameSync,
   readFileSync,
   readdirSync,
   statSync,
@@ -24,6 +25,8 @@ const packageRoot = join(here, "..");
 
 export const SKIA_COMMIT = "f2bc5d570a269a5541475e122c4d4c405a314b2a";
 export const GN_COMMIT = "4f6a76b64b8279e98004f541f8e136307efe5e01";
+export const GN_INITIAL_TAG_OBJECT = "f0be552ab5313bb64a75c9365af22155d979949f";
+export const GN_INITIAL_COMMIT = "95374957437b818e9addc26c83340b27a1b38202";
 export const NDK_VERSION = "27.1.12297006";
 export const SUPPORTED_ARCHES = Object.freeze(["arm64"]);
 export const REQUIRED_ARCHIVES = Object.freeze([
@@ -44,6 +47,9 @@ export const DEP_PINS = Object.freeze({
   zlib: "646b7f569718921d7d4b5b8e22572ff6c76f2596",
 });
 export const BUILD_RECEIPT = ".threenative-skia-android.json";
+export const SOURCE_RECEIPT = ".threenative-skia-source.json";
+export const SOURCE_GIT_TIMEOUT_MS = 120_000;
+export const SOURCE_BOOTSTRAP_TIMEOUT_MS = 900_000;
 
 const DEP_PATHS = Object.freeze({
   expat: ["skia", "third_party", "externals", "expat"],
@@ -52,6 +58,41 @@ const DEP_PATHS = Object.freeze({
   wuffs: ["skia", "third_party", "externals", "wuffs"],
   zlib: ["skia", "third_party", "externals", "zlib"],
 });
+
+export const SOURCE_REPOSITORIES = Object.freeze([
+  { name: "skia", path: ["skia"], remote: "https://github.com/google/skia.git", commit: SKIA_COMMIT },
+  { name: "gn", path: ["gn-src"], remote: "https://gn.googlesource.com/gn", commit: GN_COMMIT },
+  {
+    name: "expat",
+    path: DEP_PATHS.expat,
+    remote: "https://chromium.googlesource.com/external/github.com/libexpat/libexpat.git",
+    commit: DEP_PINS.expat,
+  },
+  {
+    name: "freetype",
+    path: DEP_PATHS.freetype,
+    remote: "https://chromium.googlesource.com/chromium/src/third_party/freetype2.git",
+    commit: DEP_PINS.freetype,
+  },
+  {
+    name: "libpng",
+    path: DEP_PATHS.libpng,
+    remote: "https://skia.googlesource.com/third_party/libpng.git",
+    commit: DEP_PINS.libpng,
+  },
+  {
+    name: "wuffs",
+    path: DEP_PATHS.wuffs,
+    remote: "https://skia.googlesource.com/external/github.com/google/wuffs-mirror-release-c.git",
+    commit: DEP_PINS.wuffs,
+  },
+  {
+    name: "zlib",
+    path: DEP_PATHS.zlib,
+    remote: "https://chromium.googlesource.com/chromium/src/third_party/zlib",
+    commit: DEP_PINS.zlib,
+  },
+]);
 
 function isDirectory(path) {
   try {
@@ -142,14 +183,34 @@ function resolveExecutable(options, name, searchPaths) {
   throw new Error(`${code}: ${path ?? fallback}`);
 }
 
-// Validate NDK + Ninja + GN. Never falls back silently when an explicit path is invalid.
+function resolvePython(options = {}) {
+  if (optionProvided(options, "pythonPath")) {
+    if (isExecutableFile(options.pythonPath)) return resolve(options.pythonPath);
+    throw new Error(`TN_PYTHON_INVALID: ${options.pythonPath}`);
+  }
+  const pathEntries = options.pathEntries ?? (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+  const python = findOnPath(process.platform === "win32" ? "python" : "python3", pathEntries) ?? findOnPath("python", pathEntries);
+  if (python) return python;
+  throw new Error("TN_PYTHON_MISSING: python3 not on PATH");
+}
+
+function resolveHostCxx(pathEntries) {
+  const names = process.platform === "win32" ? ["cl"] : ["c++", "g++", "clang++"];
+  const compiler = names.map((name) => findOnPath(name, pathEntries)).find(Boolean);
+  if (compiler) return compiler;
+  throw new Error("TN_HOST_CXX_MISSING: GN bootstrap requires a host C++ compiler");
+}
+
+// Validate NDK + Ninja, and GN when requested. Never falls back silently when an explicit path is invalid.
 export function resolveBuildTools(options = {}) {
   const androidHome = options.androidHome ?? process.env.ANDROID_HOME ?? process.env.ANDROID_SDK_ROOT ?? null;
   const ndkPath = resolveNdk(options, androidHome);
   const pathEntries = options.pathEntries ?? (process.env.PATH ?? "").split(delimiter).filter(Boolean);
   const ninjaPath = resolveExecutable(options, "ninja", [join(packageRoot, ".runtime", "tools-venv", "bin"), ...pathEntries]);
+  const hostCxxPath = resolveHostCxx(pathEntries);
+  if (options.requireGn === false) return { ndkPath, ninjaPath, hostCxxPath };
   const gnPath = resolveExecutable(options, "gn", pathEntries);
-  return { ndkPath, ninjaPath, gnPath };
+  return { ndkPath, ninjaPath, gnPath, hostCxxPath };
 }
 
 // Proven probe args minus android_ndk_version, skia_use_gpu, skia_enable_sksl.
@@ -326,6 +387,220 @@ export function verifySourcePins(sourceRoot, options = {}) {
   return { skiaCommit, gnCommit, dependencies };
 }
 
+function gitOutput(runGit, args) {
+  return String(runGit(args, { encoding: "utf8", timeout: SOURCE_GIT_TIMEOUT_MS }) ?? "").trim();
+}
+
+function isGitRepository(runGit, repository) {
+  try {
+    return resolve(gitOutput(runGit, ["-C", repository, "rev-parse", "--show-toplevel"])) === resolve(repository);
+  } catch {
+    return false;
+  }
+}
+
+function gitStatus(runGit, repository) {
+  return gitOutput(runGit, ["-C", repository, "status", "--porcelain", "--untracked-files=all"]);
+}
+
+function gitRemote(runGit, repository) {
+  try {
+    return gitOutput(runGit, ["-C", repository, "remote", "get-url", "origin"]);
+  } catch {
+    return null;
+  }
+}
+
+function gitHeadOrNull(runGit, repository) {
+  try {
+    return gitOutput(runGit, ["-C", repository, "rev-parse", "HEAD"]);
+  } catch {
+    return null;
+  }
+}
+
+function initializeRepository(runGit, repository, source) {
+  mkdirSync(repository, { recursive: true });
+  runGit(["init", repository], { timeout: SOURCE_GIT_TIMEOUT_MS });
+  runGit(["-C", repository, "remote", "add", "origin", source.remote], { timeout: SOURCE_GIT_TIMEOUT_MS });
+}
+
+function gitTryOutput(runGit, args) {
+  try {
+    return gitOutput(runGit, args);
+  } catch {
+    return null;
+  }
+}
+
+function ensureGnHistory(runGit, repository) {
+  let tagObject = gitTryOutput(runGit, ["-C", repository, "rev-parse", "refs/tags/initial-commit"]) ?? null;
+  let tagCommit = gitTryOutput(runGit, ["-C", repository, "rev-parse", "refs/tags/initial-commit^{}"]) ?? null;
+  if ((tagObject && tagObject !== GN_INITIAL_TAG_OBJECT) || (tagCommit && tagCommit !== GN_INITIAL_COMMIT)) {
+    throw new Error(`TN_SKIA_ANDROID_GN_TAG: initial-commit resolves to ${tagCommit}, expected ${GN_INITIAL_COMMIT}`);
+  }
+  if (gitTryOutput(runGit, ["-C", repository, "describe", "HEAD", "--abbrev=12", "--match", "initial-commit"])?.startsWith("initial-commit-")) return;
+  if (gitTryOutput(runGit, ["-C", repository, "rev-parse", "--is-shallow-repository"]) === "true") {
+    runGit(["-C", repository, "fetch", "--no-tags", "--unshallow", "origin", GN_COMMIT], { timeout: SOURCE_GIT_TIMEOUT_MS });
+  }
+  if (!tagCommit) {
+    runGit(["-C", repository, "fetch", "--no-tags", "origin", "refs/tags/initial-commit:refs/tags/initial-commit"], {
+      timeout: SOURCE_GIT_TIMEOUT_MS,
+    });
+    tagObject = gitTryOutput(runGit, ["-C", repository, "rev-parse", "refs/tags/initial-commit"]) ?? null;
+    tagCommit = gitTryOutput(runGit, ["-C", repository, "rev-parse", "refs/tags/initial-commit^{}"]) ?? null;
+  }
+  if (tagObject !== GN_INITIAL_TAG_OBJECT || tagCommit !== GN_INITIAL_COMMIT || !gitTryOutput(runGit, ["-C", repository, "describe", "HEAD", "--abbrev=12", "--match", "initial-commit"])?.startsWith("initial-commit-")) {
+    throw new Error(`TN_SKIA_ANDROID_GN_TAG: ${repository} lacks the pinned initial-commit ancestry`);
+  }
+}
+
+function fetchPinnedRepository(runGit, repository, source) {
+  runGit(["-C", repository, "fetch", "--no-tags", ...(source.name === "gn" ? [] : ["--depth=1"]), "origin", source.commit], {
+    timeout: SOURCE_GIT_TIMEOUT_MS,
+  });
+  runGit(["-C", repository, "checkout", "--detach", source.commit], { timeout: SOURCE_GIT_TIMEOUT_MS });
+  if (source.name === "gn") ensureGnHistory(runGit, repository);
+}
+
+function ensurePinnedRepository(runGit, root, source, { repair } = {}) {
+  const repository = join(root, ...source.path);
+  if (!isDirectory(repository)) {
+    if (!repair) throw new Error(`TN_SKIA_ANDROID_SOURCE_INCOMPLETE: missing ${source.name} at ${repository}`);
+    initializeRepository(runGit, repository, source);
+    fetchPinnedRepository(runGit, repository, source);
+    return;
+  }
+  if (!isGitRepository(runGit, repository)) {
+    throw new Error(`TN_SKIA_ANDROID_SOURCE_PARTIAL: ${repository} is not a Git repository; refusing to replace it`);
+  }
+  if (gitStatus(runGit, repository)) {
+    throw new Error(`TN_SKIA_ANDROID_SOURCE_DIRTY: ${repository} has uncommitted changes; refusing to clean it`);
+  }
+  const remote = gitRemote(runGit, repository);
+  if (remote && remote !== source.remote) {
+    throw new Error(`TN_SKIA_ANDROID_SOURCE_REMOTE: ${source.name} origin is ${remote}, expected ${source.remote}`);
+  }
+  if (!remote) {
+    if (!repair) throw new Error(`TN_SKIA_ANDROID_SOURCE_REMOTE: ${source.name} has no origin; refusing to mutate the existing source`);
+    runGit(["-C", repository, "remote", "add", "origin", source.remote], { timeout: SOURCE_GIT_TIMEOUT_MS });
+  }
+  const head = gitHeadOrNull(runGit, repository);
+  if (head === source.commit) {
+    if (source.name === "gn") ensureGnHistory(runGit, repository);
+    return;
+  }
+  if (head && head !== source.commit) {
+    throw new Error(`TN_SKIA_ANDROID_SOURCE_HEAD: ${source.name} HEAD is ${head}, expected ${source.commit}`);
+  }
+  if (!repair) {
+    throw new Error(`TN_SKIA_ANDROID_SOURCE_HEAD: ${source.name} HEAD is ${head ?? "missing"}, expected ${source.commit}`);
+  }
+  fetchPinnedRepository(runGit, repository, source);
+}
+
+function sourceReceipt(complete = true) {
+  return {
+    version: 1,
+    complete,
+    repositories: SOURCE_REPOSITORIES.map(({ name, path, remote, commit }) => ({ name, path, remote, commit })),
+  };
+}
+
+function validateSourceReceipt(root) {
+  const receiptPath = join(root, SOURCE_RECEIPT);
+  let receipt;
+  try {
+    receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+  } catch (error) {
+    throw new Error(`TN_SKIA_ANDROID_SOURCE_STAGING_INVALID: cannot parse ${receiptPath}`, { cause: error });
+  }
+  const expected = sourceReceipt();
+  if (receipt?.version !== expected.version || typeof receipt.complete !== "boolean" || !Array.isArray(receipt.repositories) || receipt.repositories.length !== expected.repositories.length) {
+    throw new Error(`TN_SKIA_ANDROID_SOURCE_STAGING_INVALID: ownership marker ${receiptPath} is not for this pinned source set`);
+  }
+  for (let index = 0; index < expected.repositories.length; index += 1) {
+    const actual = receipt.repositories[index];
+    const pinned = expected.repositories[index];
+    if (actual?.name !== pinned.name || actual?.remote !== pinned.remote || actual?.commit !== pinned.commit || JSON.stringify(actual?.path) !== JSON.stringify(pinned.path)) {
+      throw new Error(`TN_SKIA_ANDROID_SOURCE_STAGING_INVALID: ownership marker ${receiptPath} has a pin mismatch`);
+    }
+  }
+}
+
+function verifyPinnedSourceTree(runGit, root) {
+  for (const repository of SOURCE_REPOSITORIES) ensurePinnedRepository(runGit, root, repository, { repair: false });
+}
+
+function bootstrapGn({ sourceRoot, gnOutDir, ninjaPath, pythonPath, jobs, runCommand }) {
+  const gnSource = join(sourceRoot, "gn-src");
+  const outDir = resolve(gnOutDir);
+  const gnPath = join(outDir, process.platform === "win32" ? "gn.exe" : "gn");
+  mkdirSync(outDir, { recursive: true });
+  runCommand(pythonPath, ["build/gen.py", "--out-path", outDir], {
+    cwd: gnSource,
+    timeout: SOURCE_BOOTSTRAP_TIMEOUT_MS,
+  });
+  runCommand(ninjaPath, ["-C", outDir, "-j", String(jobs), "gn"], {
+    cwd: gnSource,
+    timeout: SOURCE_BOOTSTRAP_TIMEOUT_MS,
+  });
+  if (!isExecutableFile(gnPath)) {
+    throw new Error(`TN_SKIA_ANDROID_GN_BOOTSTRAP: expected generated GN at ${gnPath}`);
+  }
+  return gnPath;
+}
+
+function provisionExistingSource({ source, gnOutDir, ninjaPath, pythonPath, jobs, runGit, runCommand }) {
+  verifyPinnedSourceTree(runGit, source);
+  return {
+    sourceRoot: source,
+    gnPath: bootstrapGn({ sourceRoot: source, gnOutDir, ninjaPath, pythonPath, jobs, runCommand }),
+  };
+}
+
+// Provision exact source pins into an owned sibling staging root, then atomically rename it.
+// Existing user trees are only inspected; they are never cleaned, reset, or replaced.
+export function provisionSkiaAndroidSource({
+  sourceRoot = join(packageRoot, ".runtime", "skia-android-source"),
+  gnOutDir = join(packageRoot, ".runtime", "skia-android-gn", GN_COMMIT),
+  ninjaPath,
+  pythonPath,
+  jobs = 2,
+  pathEntries,
+  runGit = (args, options) => execFileSync("git", args, { ...options, encoding: "utf8" }),
+  runCommand = (command, args, options) => execFileSync(command, args, { stdio: "inherit", ...options }),
+} = {}) {
+  const source = resolve(sourceRoot);
+  if (!Number.isInteger(jobs) || jobs < 1) throw new Error(`TN_SKIA_ANDROID_JOBS: expected a positive integer, received ${jobs}`);
+  const resolvedNinja = ninjaPath ?? resolveBuildTools({ requireGn: false, pathEntries }).ninjaPath;
+  if (!isExecutableFile(resolvedNinja)) throw new Error(`TN_NINJA_INVALID: ${resolvedNinja}`);
+  const resolvedPython = pythonPath ?? resolvePython({ pathEntries });
+  if (!isExecutableFile(resolvedPython)) throw new Error(`TN_PYTHON_INVALID: ${resolvedPython}`);
+  resolveHostCxx(pathEntries ?? (process.env.PATH ?? "").split(delimiter).filter(Boolean));
+
+  if (isDirectory(source)) {
+    return provisionExistingSource({ source, gnOutDir, ninjaPath: resolvedNinja, pythonPath: resolvedPython, jobs, runGit, runCommand });
+  }
+  if (existsSync(source)) throw new Error(`TN_SKIA_ANDROID_SOURCE_PARTIAL: ${source} is not a directory; refusing to replace it`);
+
+  const staging = `${source}.staging`;
+  if (existsSync(staging) && !isDirectory(staging)) {
+    throw new Error(`TN_SKIA_ANDROID_SOURCE_PARTIAL: ${staging} is not a directory; refusing to replace it`);
+  }
+  if (existsSync(staging)) validateSourceReceipt(staging);
+  else {
+    mkdirSync(staging, { recursive: true });
+    writeFileSync(join(staging, SOURCE_RECEIPT), `${JSON.stringify(sourceReceipt(false), null, 2)}\n`);
+  }
+  for (const repository of SOURCE_REPOSITORIES) ensurePinnedRepository(runGit, staging, repository, { repair: true });
+  const gnPath = bootstrapGn({ sourceRoot: staging, gnOutDir, ninjaPath: resolvedNinja, pythonPath: resolvedPython, jobs, runCommand });
+  writeFileSync(join(staging, SOURCE_RECEIPT), `${JSON.stringify(sourceReceipt(), null, 2)}\n`);
+  if (existsSync(source)) throw new Error(`TN_SKIA_ANDROID_SOURCE_RACE: source appeared while provisioning; staging preserved at ${staging}`);
+  renameSync(staging, source);
+  return { sourceRoot: source, gnPath };
+}
+
 function copyTree(from, to) {
   mkdirSync(to, { recursive: true });
   for (const entry of readdirSync(from)) {
@@ -376,21 +651,41 @@ export function buildSkiaAndroid({ sourceRoot, tools, arch = "arm64", jobs = 2, 
   return verifySkiaAndroidCache(root, { arch });
 }
 
-// --only skia-android entry point for download-deps.mjs. No source fetch is attempted.
-export async function buildSkiaAndroidFromStagedSource({ sourceRoot, destDir, jobs = 2 } = {}) {
-  const source = resolve(sourceRoot ?? join(packageRoot, ".skia-android-src"));
+// --only skia-android entry point for download-deps.mjs. Missing source is provisioned from exact pins.
+export async function buildSkiaAndroidFromStagedSource({
+  sourceRoot,
+  destDir,
+  jobs = 2,
+  tools,
+  gnOutDir,
+  pythonPath,
+  pathEntries,
+  runGit,
+  runCommand,
+  buildRun,
+} = {}) {
+  const source = resolve(sourceRoot ?? join(packageRoot, ".runtime", "skia-android-source"));
   const dest = resolve(destDir ?? join(packageRoot, "third_party", "skia-android", "build"));
-  if (!isDirectory(join(source, "skia")) || !isDirectory(join(source, "gn-src"))) {
-    throw new Error(`TN_SKIA_ANDROID_SOURCE_MISSING: stage Skia at ${join(source, "skia")} and GN at ${join(source, "gn-src")}; no network fetch is attempted`);
-  }
-  const tools = resolveBuildTools();
+  const sourceGit = runGit ?? ((args, options) => execFileSync("git", args, { ...options, encoding: "utf8" }));
   try {
     verifySkiaAndroidCache(source);
+    verifyPinnedSourceTree(sourceGit, source);
     console.log(`skia-android cache hit at ${skiaOutDir(source)}`);
   } catch (error) {
     if (!String(error?.message ?? error).includes("TN_SKIA_ANDROID_CACHE_INCOMPLETE")) throw error;
+    const resolvedTools = tools ?? resolveBuildTools({ requireGn: false, pathEntries });
+    const provisioned = provisionSkiaAndroidSource({
+      sourceRoot: source,
+      gnOutDir,
+      ninjaPath: resolvedTools.ninjaPath,
+      pythonPath,
+      pathEntries,
+      ...(runGit ? { runGit } : {}),
+      ...(runCommand ? { runCommand } : {}),
+      jobs,
+    });
     console.log("skia-android cache incomplete; rebuilding the bounded archive set");
-    buildSkiaAndroid({ sourceRoot: source, tools, jobs });
+    buildSkiaAndroid({ sourceRoot: source, tools: { ...resolvedTools, gnPath: provisioned.gnPath }, jobs, run: buildRun });
   }
   const staged = stageSkiaAndroid({ sourceRoot: source, destDir: dest });
   console.log(`Staged ${staged.archives.length} archives to ${staged.libDir}`);
@@ -407,7 +702,7 @@ function valueAfter(args, flag) {
 
 async function main() {
   const args = process.argv.slice(2);
-  const source = valueAfter(args, "--source") ?? join(packageRoot, ".skia-android-src");
+  const source = valueAfter(args, "--source") ?? join(packageRoot, ".runtime", "skia-android-source");
   const dest = valueAfter(args, "--dest") ?? join(packageRoot, "third_party", "skia-android", "build");
   const jobsValue = valueAfter(args, "--jobs");
   await buildSkiaAndroidFromStagedSource({

@@ -1075,8 +1075,8 @@ async function main() {
   // skia-win-static: Static Skia+Dawn build from library-builder with /MT
   const windowsDeps = ['skia-win-static'];
 
-  // skia-android is a source build, not an archive download. Keep it reachable
-  // through --only, but out of --android and --all until a source tree is staged.
+  // skia-android is a bounded source build, not an archive download. Keep it reachable
+  // through --only, but out of --android and --all until Android proof is complete.
   const sourceBuildDeps = ['skia-android'];
 
   // Downloadable dependencies and the complete --only allowlist.

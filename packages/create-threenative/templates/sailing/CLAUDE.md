@@ -1,12 +1,10 @@
-<!-- Generated mirror of AGENTS.md. Do not edit; edit AGENTS.md. -->
-
 # AGENTS.md — __PROJECT_NAME__ sailing
 
 Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit `AGENTS.md`.
 
 ## Ownership
 
-ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns ship handling, `WaveField`, `Buoyancy3D`, course order, HUD,
+ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns ship handling, the sea's look and tuning, `Buoyancy3D`, course order, HUD,
 water, and look; `src/game.ts` is portable and React mounts from `src/main.ts`.
 
 ## Start every change
@@ -51,16 +49,28 @@ pnpm test:native
 ```
 
 `Ship.ts` uses `RigidBody3D` plus `Buoyancy3D`; apply forces before fixed-step simulation.
-The same field shades the sea as displaces it. `src/render/water-material.ts` feeds
-`WaveField.heightNode()` and `normalNode()` into `waterColourNode`, so crests, troughs and the
-sun's glint all come from the wave sum rather than from a texture. Hand that colour function a
-constant and the surface still moves and the picture stops changing: the sea photographs as one
-flat sheet. Prefer `normalNode()` over differencing the height — the field differentiates its own
-wave sum, and a differenced normal repeats wherever the sampling grid does.
 
-`WaveField.sample(x, z, time)` drives both hull measurements and packed water displacement. Tune
-wave constants in `src/render/palette.ts`, hull points in `src/entities/Ship.ts`, and course order
-in `src/scenes/Sailing.ts`. The single React HUD reads published state; keep
+The sea is `SpectralOcean`, added with `ctx.add` so the compute registry runs its passes. It draws
+nothing: `src/render/ocean.ts` owns the mesh, the material and every colour, and it is the only
+file to edit for the look of the water. The same cascade buffers the vertex stage reads are the
+ones the CPU height query is copied from, so the hull floats on the surface that is drawn — if
+those two came from different fields the ship would ride water nothing renders and every assertion
+here would still be green.
+
+Three things about that field are load-bearing:
+
+- **The material is lit.** `MeshStandardNodeMaterial`, not `MeshBasicNodeMaterial`. A basic
+  material takes no lights, so the sun on the water has to be faked with a `pow()` term and the
+  sea cannot agree with the hull floating on it.
+- **Feed `normalNode` a view-space normal.** It overrides `normalView`; hand it a world-space
+  vector and the sun's reflection becomes a column of glare that follows the camera.
+- **The CPU height is a throttled copy, and it is coarse.** `readbackResolution` over the largest
+  `patchSize` is the spacing between height samples; make that spacing wider than the waves and
+  the ship sits at a smoothed mean sea level, hanging over its own troughs. It is also `undefined`
+  until the first copy lands, which `Ship.ts` handles by falling back to mean sea level.
+
+Tune the sea state in `src/render/ocean.ts`, hull points in `src/entities/Ship.ts`, and course
+order in `src/scenes/Sailing.ts`. The single React HUD reads published state; keep
 `playtests/survives.playtest.json` as smoke proof and native scenarios honest.
 
 On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), `src/render/touch-controls.ts`

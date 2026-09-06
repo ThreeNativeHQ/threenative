@@ -126,6 +126,12 @@ function loftHull(input: readonly IHullStation[]): BufferGeometry {
 /**
  * Bow at -Z, stern at +Z, y = 0 at the design waterline.
  *
+ * **Freeboard is the number that matters here.** The rails used to sit 0.46 above the waterline
+ * against a 0.66 draught, which after normalising to the template's 4.6 m convention is 29 cm of
+ * hull showing and 41 cm submerged — the ship photographed as though it were sinking, decks awash,
+ * and no amount of buoyancy tuning could raise it because the hull genuinely was that shape. The
+ * rails now stand about twice the draught, which is what a caravel looks like.
+ *
  * The waterline matters beyond looks: `Ship.ts` writes `Buoyancy3D` hull points against this
  * origin, so moving y = 0 here silently changes how the ship floats.
  *
@@ -133,15 +139,15 @@ function loftHull(input: readonly IHullStation[]): BufferGeometry {
  * `halfBeam` and so is the plan: a fine entry, full amidships, drawn in to a narrow transom.
  */
 const HULL_STATIONS: readonly IHullStation[] = [
-  { halfBeam: 0.1, keel: -0.34, rail: 0.78, tumblehome: 0.95, z: -3.2 },
-  { halfBeam: 0.34, keel: -0.5, rail: 0.66, tumblehome: 0.88, z: -2.6 },
-  { halfBeam: 0.66, keel: -0.6, rail: 0.55, tumblehome: 0.84, z: -1.8 },
-  { halfBeam: 0.86, keel: -0.65, rail: 0.48, tumblehome: 0.82, z: -0.8 },
-  { halfBeam: 0.94, keel: -0.66, rail: 0.46, tumblehome: 0.82, z: 0.2 },
-  { halfBeam: 0.91, keel: -0.63, rail: 0.5, tumblehome: 0.83, z: 1.2 },
-  { halfBeam: 0.78, keel: -0.55, rail: 0.66, tumblehome: 0.85, z: 2.1 },
-  { halfBeam: 0.62, keel: -0.44, rail: 0.84, tumblehome: 0.9, z: 2.8 },
-  { halfBeam: 0.5, keel: -0.3, rail: 0.9, tumblehome: 0.96, z: 3.2 },
+  { halfBeam: 0.1, keel: -0.4, rail: 1.16, tumblehome: 0.95, z: -3.2 },
+  { halfBeam: 0.34, keel: -0.56, rail: 1.02, tumblehome: 0.88, z: -2.6 },
+  { halfBeam: 0.66, keel: -0.66, rail: 0.89, tumblehome: 0.84, z: -1.8 },
+  { halfBeam: 0.86, keel: -0.72, rail: 0.82, tumblehome: 0.82, z: -0.8 },
+  { halfBeam: 0.94, keel: -0.73, rail: 0.8, tumblehome: 0.82, z: 0.2 },
+  { halfBeam: 0.91, keel: -0.7, rail: 0.84, tumblehome: 0.83, z: 1.2 },
+  { halfBeam: 0.78, keel: -0.61, rail: 1, tumblehome: 0.85, z: 2.1 },
+  { halfBeam: 0.62, keel: -0.5, rail: 1.18, tumblehome: 0.9, z: 2.8 },
+  { halfBeam: 0.5, keel: -0.36, rail: 1.24, tumblehome: 0.96, z: 3.2 },
 ];
 
 /** Rail height at a station, for hanging the wale and the gunwale on the same curve. */
@@ -346,43 +352,117 @@ export function createShipModel(materials: ISailingMaterials): Group {
     }
   }
 
-  // Sterncastle: a raised deck aft with a rail around it, and the beakhead forward.
-  const castle = piece(new BoxGeometry(1.06, 0.62, 1.5), materials.hull);
-  castle.position.set(0, 0.92, 2.4);
+  // Sterncastle: a raised deck aft, and the things that stand on it.
+  //
+  // It used to be a box, a deck plate and two rails — an empty tray at the back of the ship, which
+  // is the one part of a caravel the chase camera looks straight into. A quarterdeck carries a
+  // lantern, a binnacle, a helm, a companionway and stowage, and each of those is three boxes.
+  const castle = piece(new BoxGeometry(1.12, 0.78, 1.7), materials.hull);
+  castle.position.set(0, 1.32, 2.4);
   rigid.add(castle);
-  const castleDeck = piece(new BoxGeometry(1.14, 0.07, 1.58), materials.deck);
-  castleDeck.position.set(0, 1.26, 2.4);
+  const castleDeck = piece(new BoxGeometry(1.2, 0.08, 1.78), materials.deck);
+  castleDeck.position.set(0, 1.75, 2.4);
   rigid.add(castleDeck);
-  for (const side of [-1, 1]) {
-    const rail = piece(new BoxGeometry(0.07, 0.22, 1.58), materials.trim);
-    rail.position.set(side * 0.55, 1.4, 2.4);
-    rigid.add(rail);
-    const window = piece(new BoxGeometry(0.04, 0.16, 0.22), materials.trim);
-    window.position.set(side * 0.54, 0.98, 2.8);
+
+  // A balustered rail around the quarterdeck rather than two slabs: the gaps are the read.
+  for (const [x, z, along] of [
+    [-0.58, 2.4, true],
+    [0.58, 2.4, true],
+    [0, 3.24, false],
+  ] as const) {
+    const cap = piece(
+      along ? new BoxGeometry(0.08, 0.08, 1.78) : new BoxGeometry(1.24, 0.08, 0.08),
+      materials.trim,
+    );
+    cap.position.set(x, 2.12, z);
+    rigid.add(cap);
+    const count = along ? 7 : 5;
+    for (let index = 0; index < count; index += 1) {
+      const t = index / (count - 1);
+      const baluster = piece(new BoxGeometry(0.06, 0.3, 0.06), materials.trim);
+      baluster.position.set(
+        along ? x : MathUtils.lerp(-0.56, 0.56, t),
+        1.94,
+        along ? MathUtils.lerp(1.56, 3.24, t) : z,
+      );
+      rigid.add(baluster);
+    }
+  }
+
+  // Quarter windows in the transom, and a wale across it.
+  for (const x of [-0.34, 0, 0.34]) {
+    const window = piece(new BoxGeometry(0.24, 0.28, 0.06), materials.trim);
+    window.position.set(x, 1.36, 3.28);
     rigid.add(window);
   }
-  const transomRail = piece(new BoxGeometry(1.16, 0.22, 0.07), materials.trim);
-  transomRail.position.set(0, 1.4, 3.15);
-  rigid.add(transomRail);
+  const transomWale = piece(new BoxGeometry(1.18, 0.09, 0.07), materials.trim);
+  transomWale.position.set(0, 1.66, 3.28);
+  rigid.add(transomWale);
+
+  // The stern lantern on the taffrail — the single most recognisable thing on the back of a ship.
+  const lanternPost = piece(new CylinderGeometry(0.035, 0.045, 0.34, 6), materials.spar);
+  lanternPost.position.set(0, 2.28, 3.2);
+  rigid.add(lanternPost);
+  const lantern = piece(new CylinderGeometry(0.11, 0.14, 0.24, 6), materials.trim);
+  lantern.position.set(0, 2.56, 3.2);
+  rigid.add(lantern);
+  const lanternCap = piece(new ConeGeometry(0.16, 0.14, 6), materials.trim);
+  lanternCap.position.set(0, 2.74, 3.2);
+  rigid.add(lanternCap);
+
+  // Binnacle and whipstaff, where the helmsman stands.
+  const binnacle = piece(new BoxGeometry(0.3, 0.34, 0.26), materials.deck);
+  binnacle.position.set(0, 1.96, 2.62);
+  rigid.add(binnacle);
+  const whipstaff = piece(new CylinderGeometry(0.035, 0.045, 0.8, 6), materials.spar);
+  whipstaff.rotation.x = -0.22;
+  whipstaff.position.set(0, 2.14, 2.16);
+  rigid.add(whipstaff);
+
+  // A companionway down off the quarterdeck, and stowage in the waist.
+  const companion = piece(new BoxGeometry(0.5, 0.26, 0.36), materials.deck);
+  companion.position.set(0, 1.9, 1.68);
+  rigid.add(companion);
+  const companionRoof = piece(new BoxGeometry(0.56, 0.06, 0.42), materials.trim);
+  companionRoof.position.set(0, 2.05, 1.68);
+  rigid.add(companionRoof);
+  const hatch = piece(new BoxGeometry(0.56, 0.1, 0.6), materials.deck);
+  hatch.position.set(0, railAt(-0.6) + 0.06, -0.6);
+  rigid.add(hatch);
+  const hatchRim = piece(new BoxGeometry(0.64, 0.06, 0.68), materials.trim);
+  hatchRim.position.set(0, railAt(-0.6) + 0.13, -0.6);
+  rigid.add(hatchRim);
+  for (const [x, z] of [
+    [-0.42, 0.9],
+    [0.42, 0.86],
+    [-0.36, -1.3],
+  ] as const) {
+    const barrel = piece(new CylinderGeometry(0.17, 0.15, 0.36, 8), materials.spar);
+    barrel.position.set(x, railAt(z) + 0.2, z);
+    rigid.add(barrel);
+    const band = piece(new CylinderGeometry(0.18, 0.18, 0.05, 8), materials.trim);
+    band.position.set(x, railAt(z) + 0.2, z);
+    rigid.add(band);
+  }
 
   const beak = piece(new ConeGeometry(0.2, 0.9, 6), materials.hull);
   beak.rotation.x = -Math.PI / 2;
-  beak.position.set(0, 0.16, -3.5);
+  beak.position.set(0, 0.42, -3.5);
   rigid.add(beak);
 
   // Bowsprit, raked up over the beakhead.
   const bowsprit = piece(new CylinderGeometry(0.03, 0.05, 2.1, 6), materials.spar);
   bowsprit.rotation.x = Math.PI / 2 - 0.38;
-  bowsprit.position.set(0, 0.98, -3.5);
+  bowsprit.position.set(0, 1.36, -3.5);
   rigid.add(bowsprit);
 
   // Rudder and tiller, hung on the transom.
-  const rudder = piece(new BoxGeometry(0.07, 0.86, 0.34), materials.hull);
-  rudder.position.set(0, -0.24, 3.34);
+  const rudder = piece(new BoxGeometry(0.08, 1.02, 0.3), materials.hull);
+  rudder.position.set(0, -0.02, 3.26);
   rigid.add(rudder);
   const tiller = piece(new CylinderGeometry(0.025, 0.025, 0.7, 5), materials.spar);
   tiller.rotation.x = Math.PI / 2 - 0.25;
-  tiller.position.set(0, 1.42, 2.9);
+  tiller.position.set(0, 2.0, 2.72);
   rigid.add(tiller);
 
   // The rig: two square courses of falling size and a raked lateen on the mizzen.
@@ -390,9 +470,9 @@ export function createShipModel(materials: ISailingMaterials): Group {
     mast(materials, rigid, {
       height: 3.2,
       sail: belliedSail(1.5, 1.35, 0.4),
-      sailY: 2.45,
+      sailY: 2.8,
       yardWidth: 1.7,
-      yardY: 3.15,
+      yardY: 3.5,
       z: -1.55,
     }),
   );
@@ -400,36 +480,36 @@ export function createShipModel(materials: ISailingMaterials): Group {
     mast(materials, rigid, {
       height: 4.3,
       sail: belliedSail(1.85, 1.8, 0.5),
-      sailY: 3.05,
+      sailY: 3.4,
       yardWidth: 2.1,
-      yardY: 3.98,
+      yardY: 4.33,
       z: 0.1,
     }),
   );
 
   // Crow's nest on the main.
   const nest = piece(new CylinderGeometry(0.26, 0.2, 0.24, 9), materials.deck);
-  nest.position.set(0, 4.16, 0.1);
+  nest.position.set(0, 4.51, 0.1);
   rigid.add(nest);
 
   // Mizzen: a lateen yard raked steeply, with a triangular sail hung from it.
   const mizzen = piece(new CylinderGeometry(0.03, 0.045, 2.4, 6), materials.spar);
-  mizzen.position.set(0, 1.9, 1.9);
+  mizzen.position.set(0, 2.45, 1.9);
   rigid.add(mizzen);
   const lateenYard = piece(new CylinderGeometry(0.025, 0.025, 3.1, 5), materials.spar);
   lateenYard.rotation.x = 0.85;
-  lateenYard.position.set(0, 2.5, 1.9);
+  lateenYard.position.set(0, 3.05, 1.9);
   rigid.add(lateenYard);
   const lateen = piece(belliedSail(1.15, 2.3, 0.3, 0.12), materials.sail);
   lateen.rotation.x = 0.85;
   lateen.rotation.y = Math.PI / 2;
-  lateen.position.set(0.1, 2.4, 1.95);
+  lateen.position.set(0.1, 2.95, 1.95);
   lateen.name = "lateen";
   ship.add(lateen);
 
   // Pennant at the main truck: the one part of the silhouette that is meant to be seen moving.
   const pennant = piece(belliedSail(0.62, 0.2, 0.05, 0.25), materials.trim, false);
-  pennant.position.set(0.34, 4.6, 0.1);
+  pennant.position.set(0.34, 4.95, 0.1);
   pennant.name = "pennant";
   ship.add(pennant);
 
