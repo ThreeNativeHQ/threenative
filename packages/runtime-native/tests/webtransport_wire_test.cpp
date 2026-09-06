@@ -14,12 +14,36 @@
 using RealDgramRecv = decltype(&quiche_conn_dgram_recv);
 using RealDgramSend = decltype(&quiche_conn_dgram_send);
 using RealStreamSend = decltype(&quiche_conn_stream_send);
+using RealIsClosed = decltype(&quiche_conn_is_closed);
+using RealStreamShutdown = decltype(&quiche_conn_stream_shutdown);
+using RealStreamRecv = decltype(&quiche_conn_stream_recv);
+using RealReadable = decltype(&quiche_conn_readable);
+using RealIterNext = decltype(&quiche_stream_iter_next);
+using RealIterFree = decltype(&quiche_stream_iter_free);
 RealDgramRecv g_realDgramRecv = &quiche_conn_dgram_recv;
 RealDgramSend g_realDgramSend = &quiche_conn_dgram_send;
 RealStreamSend g_realStreamSend = &quiche_conn_stream_send;
+RealIsClosed g_realIsClosed = &quiche_conn_is_closed;
+RealStreamShutdown g_realStreamShutdown = &quiche_conn_stream_shutdown;
+RealStreamRecv g_realStreamRecv = &quiche_conn_stream_recv;
+RealReadable g_realReadable = &quiche_conn_readable;
+RealIterNext g_realIterNext = &quiche_stream_iter_next;
+RealIterFree g_realIterFree = &quiche_stream_iter_free;
 ssize_t testQuicheConnDgramRecv(quiche_conn*, uint8_t*, size_t);
 ssize_t testQuicheConnDgramSend(quiche_conn*, const uint8_t*, size_t);
 ssize_t testQuicheConnStreamSend(quiche_conn*, uint64_t, const uint8_t*, size_t, bool, uint64_t*);
+bool testQuicheConnIsClosed(const quiche_conn*);
+int testQuicheConnStreamShutdown(quiche_conn*, uint64_t, enum quiche_shutdown, uint64_t);
+ssize_t testQuicheConnStreamRecv(quiche_conn*, uint64_t, uint8_t*, size_t, bool*, uint64_t*);
+quiche_stream_iter* testQuicheConnReadable(const quiche_conn*);
+bool testQuicheStreamIterNext(quiche_stream_iter*, uint64_t*);
+void testQuicheStreamIterFree(quiche_stream_iter*);
+#define quiche_conn_is_closed testQuicheConnIsClosed
+#define quiche_conn_stream_shutdown testQuicheConnStreamShutdown
+#define quiche_conn_stream_recv testQuicheConnStreamRecv
+#define quiche_conn_readable testQuicheConnReadable
+#define quiche_stream_iter_next testQuicheStreamIterNext
+#define quiche_stream_iter_free testQuicheStreamIterFree
 #define quiche_conn_dgram_recv testQuicheConnDgramRecv
 #define quiche_conn_dgram_send testQuicheConnDgramSend
 #define quiche_conn_stream_send testQuicheConnStreamSend
@@ -27,6 +51,12 @@ ssize_t testQuicheConnStreamSend(quiche_conn*, uint64_t, const uint8_t*, size_t,
 #undef quiche_conn_dgram_recv
 #undef quiche_conn_dgram_send
 #undef quiche_conn_stream_send
+#undef quiche_conn_is_closed
+#undef quiche_conn_stream_shutdown
+#undef quiche_conn_stream_recv
+#undef quiche_conn_readable
+#undef quiche_stream_iter_next
+#undef quiche_stream_iter_free
 
 // The impl's helpers are members of mystral::webtransport (the anonymous
 // namespace nests inside it), and ::shutdown from <sys/socket.h> shares the
@@ -76,6 +106,20 @@ std::deque<ssize_t> g_streamSendResults;
 std::vector<StreamSendCall> g_streamSendCalls;
 std::vector<uint8_t> g_streamAcceptedBytes;
 uint64_t g_streamSendErrorCode = 0;
+struct StreamReceiveStep {
+    std::vector<uint8_t> bytes;
+    bool fin = false;
+    ssize_t status = 0;
+};
+quiche_conn* g_streamReceiveConn = nullptr;
+quiche_conn* g_forceNotClosedConn = nullptr;
+std::map<uint64_t, std::deque<StreamReceiveStep>> g_streamReceiveQueues;
+size_t g_streamReceivedBytes = 0;
+std::vector<std::pair<uint64_t, enum quiche_shutdown>> g_streamShutdownCalls;
+std::set<uint64_t> g_readShutdownIds;
+std::set<uint64_t> g_writeShutdownIds;
+struct TestReadableIterator { std::vector<uint64_t> ids; size_t cursor = 0; };
+std::set<quiche_stream_iter*> g_testReadableIterators;
 
 std::vector<uint8_t> framedDatagram(uint16_t sequence) {
     std::vector<uint8_t> packet = encodeVarint(0);
@@ -178,6 +222,10 @@ ssize_t testQuicheConnDgramSend(quiche_conn* conn, const uint8_t* data, size_t l
 
 ssize_t testQuicheConnStreamSend(quiche_conn* conn, uint64_t streamId, const uint8_t* data,
                                  size_t len, bool fin, uint64_t* errorCode) {
+    if (conn == g_streamReceiveConn && g_writeShutdownIds.count(streamId)) {
+        if (errorCode) *errorCode = 0x78;
+        return QUICHE_ERR_STREAM_STOPPED;
+    }
     if (conn != g_streamSendSeamConn) {
         return g_realStreamSend(conn, streamId, data, len, fin, errorCode);
     }
@@ -210,6 +258,66 @@ void configureStreamSendSeam(quiche_conn* conn, std::deque<ssize_t> results,
     g_streamSendCalls.clear();
     g_streamAcceptedBytes.clear();
     g_streamSendErrorCode = errorCode;
+}
+
+bool testQuicheConnIsClosed(const quiche_conn* conn) {
+    return conn == g_forceNotClosedConn ? false : g_realIsClosed(conn);
+}
+
+int testQuicheConnStreamShutdown(quiche_conn* conn, uint64_t id, enum quiche_shutdown direction,
+                                  uint64_t code) {
+    if (conn != g_streamReceiveConn) return g_realStreamShutdown(conn, id, direction, code);
+    g_streamShutdownCalls.emplace_back(id, direction);
+    if (direction == QUICHE_SHUTDOWN_READ) g_readShutdownIds.insert(id);
+    if (direction == QUICHE_SHUTDOWN_WRITE) g_writeShutdownIds.insert(id);
+    return 0;
+}
+
+ssize_t testQuicheConnStreamRecv(quiche_conn* conn, uint64_t id, uint8_t* out,
+                                 size_t capacity, bool* fin, uint64_t* errorCode) {
+    if (conn != g_streamReceiveConn) return g_realStreamRecv(conn, id, out, capacity, fin, errorCode);
+    *fin = false;
+    *errorCode = 0;
+    if (g_readShutdownIds.count(id)) return QUICHE_ERR_INVALID_STREAM_STATE;
+    auto& queue = g_streamReceiveQueues[id];
+    if (queue.empty()) return QUICHE_ERR_DONE;
+    auto& next = queue.front();
+    if (next.status < 0) {
+        const ssize_t status = next.status;
+        queue.pop_front();
+        return status;
+    }
+    const size_t count = std::min(capacity, next.bytes.size());
+    if (count == 0 && !next.bytes.empty()) return QUICHE_ERR_DONE;
+    if (count > 0) std::memcpy(out, next.bytes.data(), count);
+    next.bytes.erase(next.bytes.begin(), next.bytes.begin() + count);
+    g_streamReceivedBytes += count;
+    if (next.bytes.empty()) { *fin = next.fin; queue.pop_front(); }
+    return static_cast<ssize_t>(count);
+}
+
+quiche_stream_iter* testQuicheConnReadable(const quiche_conn* conn) {
+    if (conn != g_streamReceiveConn) return g_realReadable(conn);
+    auto* iterator = new TestReadableIterator;
+    for (const auto& [id, queue] : g_streamReceiveQueues) {
+        if (!queue.empty()) iterator->ids.push_back(id);
+    }
+    auto* opaque = reinterpret_cast<quiche_stream_iter*>(iterator);
+    g_testReadableIterators.insert(opaque);
+    return opaque;
+}
+
+bool testQuicheStreamIterNext(quiche_stream_iter* opaque, uint64_t* id) {
+    if (!g_testReadableIterators.count(opaque)) return g_realIterNext(opaque, id);
+    auto* iterator = reinterpret_cast<TestReadableIterator*>(opaque);
+    if (iterator->cursor == iterator->ids.size()) return false;
+    *id = iterator->ids[iterator->cursor++];
+    return true;
+}
+
+void testQuicheStreamIterFree(quiche_stream_iter* opaque) {
+    if (!g_testReadableIterators.erase(opaque)) { g_realIterFree(opaque); return; }
+    delete reinterpret_cast<TestReadableIterator*>(opaque);
 }
 
 int main() {
@@ -251,17 +359,19 @@ int main() {
     check(!isTruthyEnvironmentValue("true"), "env value \"true\" falsy");
     check(!isTruthyEnvironmentValue("on"), "env value \"on\" falsy");
 
-    // --- stream-header state machine. The Session* parameter is not touched
-    // by the header logic, so nullptr documents exactly that. The signal
+    // --- stream-header state machine. The header must name its owning
+    // CONNECT session. The signal
     // constants are 2-byte varints on the wire, so fixtures are built with
     // varintEncode rather than raw first bytes.
     {
+        Session headerSession;
+        headerSession.connectStreamId = 7;
         // Client-initiated bidirectional WT stream: signal + session id 7.
         std::vector<uint8_t> bidi = encodeVarint(WT_STREAM_BIDI_SIGNAL);
         bidi.push_back(0x07);
         bidi.push_back('x');
         StreamState st = makeStream(false, bidi);
-        check(consumeStreamHeader(nullptr, 99, st), "bidi WT header consumed");
+        check(consumeStreamHeader(&headerSession, 99, st), "bidi WT header consumed");
         check(st.headerConsumed && !st.isH3Owned && st.pending == std::vector<uint8_t>{'x'},
               "bidi WT header stripped, payload preserved");
 
@@ -271,7 +381,7 @@ int main() {
         uni.push_back('h');
         uni.push_back('i');
         StreamState uniSt = makeStream(true, uni);
-        check(consumeStreamHeader(nullptr, 99, uniSt), "uni WT header consumed");
+        check(consumeStreamHeader(&headerSession, 99, uniSt), "uni WT header consumed");
         check(uniSt.headerConsumed && !uniSt.isH3Owned &&
                   uniSt.pending == std::vector<uint8_t>{'h', 'i'},
               "uni WT header stripped, payload preserved");
@@ -280,25 +390,25 @@ int main() {
         for (uint64_t type : {H3_CONTROL_STREAM_TYPE, H3_PUSH_STREAM_TYPE,
                               H3_QPACK_ENCODER_STREAM_TYPE, H3_QPACK_DECODER_STREAM_TYPE}) {
             StreamState h3 = makeStream(true, {static_cast<uint8_t>(type), 0xaa, 0xbb});
-            check(consumeStreamHeader(nullptr, 99, h3), "h3-owned stream consumed");
+            check(consumeStreamHeader(&headerSession, 99, h3), "h3-owned stream consumed");
             check(h3.isH3Owned && h3.headerConsumed && h3.pending.empty(),
                   "h3-owned stream drained");
         }
 
         // Unknown unidirectional stream type — ignored, not treated as WT.
         StreamState unknownUni = makeStream(true, {0x09, 0xaa});
-        check(consumeStreamHeader(nullptr, 99, unknownUni), "unknown uni stream consumed");
+        check(consumeStreamHeader(&headerSession, 99, unknownUni), "unknown uni stream consumed");
         check(unknownUni.isH3Owned && unknownUni.headerConsumed && unknownUni.pending.empty(),
               "unknown uni stream drained");
 
         // Bidirectional stream without the WT signal — ignored.
         StreamState foreignBidi = makeStream(false, {0x00, 0xaa});
-        check(consumeStreamHeader(nullptr, 99, foreignBidi), "non-WT bidi stream consumed");
+        check(consumeStreamHeader(&headerSession, 99, foreignBidi), "non-WT bidi stream consumed");
         check(foreignBidi.isH3Owned && foreignBidi.headerConsumed, "non-WT bidi stream drained");
 
         // Truncated signal varint: need more bytes, nothing consumed.
         StreamState shortSignal = makeStream(true, {0x80, 0x00});  // declares 4 bytes, has 2
-        check(!consumeStreamHeader(nullptr, 99, shortSignal), "truncated signal refused");
+        check(!consumeStreamHeader(&headerSession, 99, shortSignal), "truncated signal refused");
         check(!shortSignal.headerConsumed && shortSignal.pending.size() == 2,
               "truncated signal left pending untouched");
 
@@ -306,15 +416,34 @@ int main() {
         std::vector<uint8_t> shortSessionBytes = encodeVarint(WT_STREAM_UNI_SIGNAL);
         shortSessionBytes.push_back(0x40);  // session id varint declares 2, none follow
         StreamState shortSession = makeStream(true, shortSessionBytes);
-        check(!consumeStreamHeader(nullptr, 99, shortSession), "truncated session id refused");
+        check(!consumeStreamHeader(&headerSession, 99, shortSession), "truncated session id refused");
         check(!shortSession.headerConsumed && shortSession.pending.size() == shortSessionBytes.size(),
               "truncated session id left pending untouched");
 
         // Idempotent: an already-consumed stream is a no-op even with no bytes.
         StreamState consumed = makeStream(false, {});
         consumed.headerConsumed = true;
-        check(consumeStreamHeader(nullptr, 99, consumed), "already-consumed stream is a no-op");
+        check(consumeStreamHeader(&headerSession, 99, consumed), "already-consumed stream is a no-op");
     }
+
+    // A stream belonging to another CONNECT session must never be admitted as
+    // this session's payload, even when its WT signal and varints are valid.
+    {
+        Session session;
+        session.connectStreamId = 8;
+        for (bool isUni : {false, true}) {
+            std::vector<uint8_t> header = encodeVarint(
+                isUni ? WT_STREAM_UNI_SIGNAL : WT_STREAM_BIDI_SIGNAL);
+            varintEncode(header, 12);
+            header.push_back(0x5a);
+            StreamState foreign = makeStream(isUni, header);
+            const bool accepted = consumeStreamHeader(&session, isUni ? 3 : 1, foreign);
+            check(!accepted && !foreign.headerConsumed && session.failed,
+                  "a wrong-session WT header is refused before payload admission");
+        }
+    }
+
+    clearEvents();
 
     // --- URL parsing: https only, explicit bounded port, non-empty host.
     {
@@ -973,10 +1102,229 @@ int main() {
             check(writableEvents == 1,
                   "processing a writable event clears coalescing for the next recovery");
 
+            // A readable existing bidi stream starts without application credit.
+            // The sender's bytes must remain in quiche until a JS reader grants it.
+            clearEvents();
+            g_streamReceiveConn = session->conn;
+            auto& readBlocked = session->streams[80];
+            readBlocked.isOutgoing = true;
+            readBlocked.headerConsumed = true;
+            g_streamReceiveQueues[80].push_back({{'a','b','c','d','e','f','g','h'}, false, 0});
+            g_streamReceivedBytes = 0;
+            readStream(session, 80);
+            check(g_streamReceivedBytes == 0,
+                  "a stream without application credit leaves payload in quiche");
+            bool leakedPayload = false;
+            for (auto pending = g_events; !pending.empty(); pending.pop()) {
+                if (pending.front().type == EventType::StreamData && !pending.front().data.empty())
+                    leakedPayload = true;
+            }
+            check(!leakedPayload, "a stream without credit emits no payload event");
+            check(streamReadCredit(sessionId, 80, 4) == 0,
+                  "the application grants four bytes through the native credit path");
+            pumpSocket(session);
+            check(g_streamReceivedBytes == 4 && readBlocked.inFlightReadBytes == 4,
+                  "an idle socket drains exactly the granted payload bytes");
+            std::vector<uint8_t> firstRead;
+            for (auto pending = g_events; !pending.empty(); pending.pop()) {
+                if (pending.front().type == EventType::StreamData)
+                    firstRead.insert(firstRead.end(), pending.front().data.begin(), pending.front().data.end());
+            }
+            check(firstRead == std::vector<uint8_t>{'a','b','c','d'},
+                  "the first read grant preserves the exact payload prefix");
+            check(streamReadCredit(sessionId, 80, 4) == 0 && readBlocked.readCredit == 0,
+                  "a refreshed desired size subtracts already queued native events");
+            pumpSocket(session);
+            check(g_streamReceivedBytes == 4,
+                  "queued in-flight bytes cannot be granted twice before dispatch");
+            processEvents();
+            check(readBlocked.inFlightReadBytes == 0,
+                  "production event dispatch releases its in-flight byte accounting");
+            check(streamReadCredit(sessionId, 80, 4) == 0,
+                  "a resumed reader can grant new capacity after event dispatch");
+            pumpSocket(session);
+            check(g_streamReceivedBytes == 8,
+                  "fresh credit resumes the remaining bytes without a new UDP packet");
+            std::vector<uint8_t> finalRead;
+            for (auto pending = g_events; !pending.empty(); pending.pop()) {
+                if (pending.front().type == EventType::StreamData)
+                    finalRead.insert(finalRead.end(), pending.front().data.begin(), pending.front().data.end());
+            }
+            check(finalRead == std::vector<uint8_t>{'e','f','g','h'},
+                  "resumed reads preserve the exact unread suffix");
+            check(g_testReadableIterators.empty(), "bounded receive frees every readable iterator");
+            processEvents();
+            // The existing bridge is called by WritableStream.abort: its
+            // default direction must stop writing while the bidi reply still works.
+            g_streamShutdownCalls.clear();
+            g_readShutdownIds.clear();
+            g_writeShutdownIds.clear();
+            streamShutdown(sessionId, 80, 0x77);
+            check(g_streamShutdownCalls.size() == 1 &&
+                      g_streamShutdownCalls[0].second == QUICHE_SHUTDOWN_WRITE,
+                  "writer abort shuts down only the write direction");
+            g_streamReceiveQueues[80].push_back({{'r'}, false, 0});
+            check(streamReadCredit(sessionId, 80, 1) == 0,
+                  "the bidi reply still accepts credit after writer abort");
+            const size_t beforeReply = g_streamReceivedBytes;
+            readStream(session, 80);
+            check(g_streamReceivedBytes == beforeReply + 1,
+                  "the opposite bidi read direction still receives after writer abort");
+            processEvents();
+            g_streamShutdownCalls.clear();
+            g_readShutdownIds.clear();
+            g_writeShutdownIds.clear();
+            auto& readCancelled = session->streams[84];
+            readCancelled.isOutgoing = true;
+            readCancelled.headerConsumed = true;
+            streamShutdown(sessionId, 84, 0x78, QUICHE_SHUTDOWN_READ);
+            check(g_streamShutdownCalls.size() == 1 &&
+                      g_streamShutdownCalls[0].second == QUICHE_SHUTDOWN_READ,
+                  "reader cancellation shuts down only the read direction");
+            configureStreamSendSeam(session->conn, {1});
+            const uint8_t replyByte = 0x79;
+            check(streamWrite(sessionId, 84, &replyByte, 1, false) == 1 &&
+                      g_streamAcceptedBytes == std::vector<uint8_t>{replyByte},
+                  "the opposite bidi write direction still sends after reader cancellation");
+            processEvents();
+            g_streamShutdownCalls.clear();
+            g_readShutdownIds.clear();
+            g_writeShutdownIds.clear();
+
+            // A completed incoming stream stays counted until its JS reader drains
+            // the final payload and explicitly releases the read half.
+            std::vector<uint8_t> incomingHeader = encodeVarint(WT_STREAM_UNI_SIGNAL);
+            varintEncode(incomingHeader, 0);
+            incomingHeader.insert(incomingHeader.end(), {'u','n','i'});
+            g_streamReceiveQueues[83].push_back({incomingHeader, true, 0});
+            readStream(session, 83);
+            check(session->streams.count(83) == 1 && !session->streams.at(83).finDelivered,
+                  "an incoming stream announces before consuming uncredited payload");
+            check(streamReadCredit(sessionId, 83, 3) == 0,
+                  "an announced incoming stream accepts measured read capacity");
+            readStream(session, 83);
+            check(session->streams.at(83).finDelivered,
+                  "incoming FIN is recorded after its final credited payload");
+            processEvents();
+            check(session->streams.count(83) == 1,
+                  "FIN and event dispatch do not free an undrained application stream");
+            check(streamReleaseRead(sessionId, 83) == 0,
+                  "a drained application stream releases its completed native read half");
+            processEvents();
+            check(session->streams.count(83) == 0,
+                  "a fully released incoming uni stream returns its native slot");
+            // Per-tick byte limits aggregate across streams, rather than being
+            // restarted for each stream or each idle-socket read pass.
+            g_streamReceiveQueues.clear();
+            for (uint64_t index = 0; index < 32; ++index) {
+                const uint64_t id = 400 + index * 4;
+                auto& stream = session->streams[id];
+                stream.isOutgoing = true;
+                stream.headerConsumed = true;
+                g_streamReceiveQueues[id].push_back({std::vector<uint8_t>(16 * 1024, index), false, 0});
+                check(streamReadCredit(sessionId, id, 16 * 1024) == 0,
+                      "each independent stream reserves its measured receive capacity");
+            }
+            g_streamReceivedBytes = 0;
+            processEvents();
+            check(g_streamReceivedBytes == 256 * 1024 && session->streamReadBytesThisTick == 256 * 1024,
+                  "one poll admits at most 256 KiB across all reliable streams");
+            processEvents();
+            check(g_streamReceivedBytes == 512 * 1024,
+                  "the following poll fairly drains streams left by the byte budget");
+
+            // Tiny chunks are bounded by work/event count even though their total
+            // bytes are much smaller than the receive byte allowance.
+            g_streamReceiveQueues.clear();
+            auto& tiny = session->streams[600];
+            tiny.isOutgoing = true;
+            tiny.headerConsumed = true;
+            check(streamReadCredit(sessionId, 600, 1024) == 0,
+                  "the tiny-chunk stream reserves its read capacity");
+            for (size_t index = 0; index < 300; ++index)
+                g_streamReceiveQueues[600].push_back({{static_cast<uint8_t>(index)}, false, 0});
+            session->streamReadCallsThisTick = 0;
+            session->streamReadBytesThisTick = 0;
+            g_streamReceivedBytes = 0;
+            readStream(session, 600);
+            size_t tinyEvents = 0;
+            for (auto pending = g_events; !pending.empty(); pending.pop())
+                if (pending.front().type == EventType::StreamData && pending.front().streamId == 600) ++tinyEvents;
+            check(g_streamReceivedBytes == 256 && tinyEvents == 256,
+                  "tiny chunks cannot exceed 256 reliable receive operations in a tick");
+            readStream(session, 600);
+            check(g_streamReceivedBytes == 256,
+                  "another reader call cannot reset the per-tick operation budget");
+            processEvents();
+            check(g_streamReceivedBytes == 300,
+                  "the next tick resumes tiny chunks without losing the unread suffix");
+
+            while (session->streams.size() < 64) {
+                const int64_t id = createStream(sessionId, true);
+                check(id >= 0, "stream slots below the hard count limit remain available");
+                if (id < 0) break;
+            }
+            const size_t fullStreamCount = session->streams.size();
+            check(fullStreamCount == 64 && createStream(sessionId, true) == -2 &&
+                      session->streams.size() == fullStreamCount,
+                  "stream-count saturation refuses before allocating another stream");
+            g_streamReceiveConn = nullptr;
+            g_streamReceiveQueues.clear();
+            clearEvents();
+
+            // Drive split foreign headers through the real idle socket/readable
+            // iteration path. Neither the partial header nor foreign payload may
+            // announce a stream to the application.
+            for (bool isUni : {false, true}) {
+                const uint32_t foreignId = connectSession("https://127.0.0.1:" + std::to_string(peerPort) + "/");
+                Session* foreignSession = findSession(foreignId);
+                check(foreignSession && foreignSession->conn, "the foreign-header fixture owns a real session");
+                if (!foreignSession || !foreignSession->conn) continue;
+                foreignSession->wtReady = true;
+                foreignSession->connectStreamId = 0;
+                g_streamReceiveConn = foreignSession->conn;
+                const uint64_t streamId = isUni ? 3 : 1;
+                auto signal = encodeVarint(isUni ? WT_STREAM_UNI_SIGNAL : WT_STREAM_BIDI_SIGNAL);
+                g_streamReceiveQueues[streamId].push_back({{signal[0]}, false, 0});
+                g_streamReceiveQueues[streamId].push_back({{}, false, QUICHE_ERR_DONE});
+                std::vector<uint8_t> rest(signal.begin() + 1, signal.end());
+                varintEncode(rest, 4);
+                rest.insert(rest.end(), {'w','r','o','n','g'});
+                g_streamReceiveQueues[streamId].push_back({rest, true, 0});
+                pumpSocket(foreignSession);
+                check(!foreignSession->failed && foreignSession->streams.count(streamId) == 1 &&
+                          !foreignSession->streams.at(streamId).announced &&
+                          foreignSession->streams.at(streamId).pending.size() == 1,
+                      "a split WT signal stays pending without an incoming-stream announcement");
+                pumpSocket(foreignSession);
+                bool admittedForeign = false;
+                for (auto pending = g_events; !pending.empty(); pending.pop()) {
+                    const auto& event = pending.front();
+                    if (event.sessionId == foreignId &&
+                        (event.type == EventType::IncomingBidi || event.type == EventType::IncomingUni ||
+                         event.type == EventType::StreamData)) admittedForeign = true;
+                }
+                check(foreignSession->failed && !admittedForeign,
+                      "a completed foreign-session header fails before any application event");
+                g_streamReceiveConn = nullptr;
+                g_streamReceiveQueues.clear();
+                processEvents();
+                check(findSession(foreignId) == nullptr,
+                      "a foreign-session protocol failure releases its native session");
+            }
+
             // quiche's actual closed state is also an invalid write side.
             quiche_conn_close(session->conn, true, 0, nullptr, 0);
             check(streamWrite(sessionId, 32, &emptyMarker, 1, false) == -1,
                   "a write on a closed session is refused");
+            // Simulate a peer that never finishes the QUIC close exchange.
+            // Local close must release its session without that acknowledgment.
+            g_forceNotClosedConn = session->conn;
+            closeSession(sessionId, 0, "local close");
+            processEvents();
+            check(findSession(sessionId) == nullptr,
+                  "local close releases the session without peer acknowledgment");
+            g_forceNotClosedConn = nullptr;
         }
         g_streamSendSeamConn = nullptr;
         g_streamSendResults.clear();

@@ -219,7 +219,51 @@ constexpr const char* kScript = R"JS((() => {
     return passed;
   }));
 
-  Promise.all(pending).then(() => {
+  Promise.all(pending).then(async () => {
+    // Exercise the installed adapter and both embedded engines. Only transport I/O
+    // is substituted; resource observations still come from the native bridge.
+    const saved = {
+      __wtConnect, __wtCreateStream, __wtStreamWrite,
+      __wtStreamReadCredit, __wtStreamReleaseRead, __wtStreamShutdown,
+    };
+    const shutdowns = [];
+    try {
+      globalThis.__wtConnect = () => 5151;
+      globalThis.__wtCreateStream = () => 4;
+      globalThis.__wtStreamWrite = (_id, _sid, bytes) => bytes.byteLength;
+      globalThis.__wtStreamReadCredit = () => 0;
+      globalThis.__wtStreamReleaseRead = () => 0;
+      globalThis.__wtStreamShutdown = (_id, sid, _code, direction) => {
+        shutdowns.push(sid + ':' + direction);
+        return 0;
+      };
+      const transport = new WebTransport('https://127.0.0.1:4433/echo');
+      __wtDispatch(5151, 'ready', 1200);
+      const stream = await transport.createBidirectionalStream();
+      const writer = stream.writable.getWriter();
+      writer.closed.catch(() => {});
+      const close = writer.close().then(() => 'resolved', error => error);
+      await Promise.resolve();
+      await Promise.resolve();
+      const abort = writer.abort('stop-fin').then(() => 'resolved', error => error);
+      ok.push(await close === 'stop-fin');
+      ok.push(await abort === 'stop-fin');
+      ok.push(shutdowns.join(',') === '4:1');
+      const incoming = transport.incomingBidirectionalStreams.getReader();
+      __wtDispatch(5151, 'incomingBidi', 20);
+      __wtDispatch(5151, 'incomingBidi', 24);
+      const accepted = (await incoming.read()).value;
+      await incoming.cancel('stop-accepting');
+      ok.push(shutdowns.join(',') === '4:1,24:0,24:1');
+      await accepted.writable.getWriter().write(new Uint8Array([7]));
+      __wtDispatch(5151, 'closed', 'local', 9);
+      ok.push((await transport.closed).closeCode === 9);
+      ok.push(transport._state.streams.size === 0);
+      const observed = __wtResourceStats();
+      ok.push(observed.native.sessions === 0 && observed.native.streams === 0);
+    } finally {
+      for (const key of Object.keys(saved)) globalThis[key] = saved[key];
+    }
     setTimeout(() => {
       const allRejected = settled.every((m) => m.endsWith('REJECTED'));
       const datagramOk =

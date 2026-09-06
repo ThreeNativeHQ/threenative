@@ -19,6 +19,8 @@
 
 #include <quiche.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cerrno>
 #include <chrono>
 #include <cstring>
@@ -97,7 +99,12 @@ constexpr uint64_t SETTINGS_WEBTRANSPORT_MAX_SESSIONS_DRAFT = 0x2b603742;  // dr
 constexpr uint64_t SETTINGS_WT_MAX_SESSIONS = 0xc671706a;                  // draft-07+ WT_MAX_SESSIONS
 
 constexpr size_t MAX_DATAGRAM_SIZE = 1350;
-constexpr size_t STREAM_READ_CHUNK = 64 * 1024;
+constexpr size_t STREAM_READ_CHUNK = 16 * 1024;
+constexpr size_t kStreamLimit = 64;
+constexpr size_t kStreamReadCreditLimit = 16 * 1024;
+constexpr size_t kStreamReadBytesPerTick = 256 * 1024;
+constexpr size_t kStreamReadCallsPerTick = 256;
+constexpr size_t kSocketReadsPerTick = 64;
 constexpr const char* kInsecurePeerVerificationEnv = "MYSTRAL_WEBTRANSPORT_INSECURE";
 // Lowers the negotiated datagram capacity so a test can prove an oversize
 // refusal against a small number instead of whatever the current path allows.
@@ -346,6 +353,7 @@ enum class EventType {
     StreamData,   // streamId, data, fin
     StreamReset,  // streamId, code
     StreamWriteError,  // streamId, code
+    StreamWriteClosed, // streamId: all buffered bytes and FIN were sent
     Writable,      // session-wide capacity recovery; no additional payload
 };
 
@@ -374,6 +382,9 @@ struct StreamState {
     bool isH3Owned = false;   // server control/qpack stream — drain & ignore
     bool announced = false;   // IncomingUni/IncomingBidi already emitted
     bool finDelivered = false;
+    bool readReleased = false;
+    size_t readCredit = 0;
+    size_t inFlightReadBytes = 0;
     std::vector<uint8_t> pending;  // inbound bytes awaiting header parse
 
     // Outbound buffering. quiche's stream_send can return Done when the
@@ -421,6 +432,8 @@ struct Session {
     bool reportedClosed = false;
     bool failed = false;
     bool wantClose = false;    // teardown requested
+    uint64_t closeCode = 0;
+    std::string closeReason;
 
     int64_t connectStreamId = -1;
 
@@ -447,6 +460,9 @@ struct Session {
     // kDatagramSendFailed instead of reporting a queued write as accepted.
     bool datagramSendFailed = false;
     bool writableEventQueued = false;
+    size_t streamReadBytesThisTick = 0;
+    size_t streamReadCallsThisTick = 0;
+    uint64_t lastReadStreamId = 0;
 
     ~Session() {
         if (sock != kInvalidSocket) closeSocket(sock);
@@ -472,6 +488,7 @@ Session* findSession(uint32_t id) {
 // Forward declarations (definitions appear later in this file).
 void readDatagrams(Session* s);
 void readStreams(Session* s);
+void failSession(Session* s, const std::string& message);
 
 // Re-arm the QUIC timeout deadline based on quiche's schedule. Driven on the
 // per-frame poll loop in pumpSocket(); no libuv timer involved.
@@ -520,7 +537,7 @@ void pumpSocket(Session* s) {
     if (!s->conn || s->sock == kInvalidSocket) return;
 
     static thread_local std::vector<uint8_t> rbuf(65536);
-    while (true) {
+    for (size_t packet = 0; packet < kSocketReadsPerTick && !s->failed && !s->wantClose; ++packet) {
         struct sockaddr_storage from{};
         socklen_t fromLen = sizeof(from);
         auto n = ::recvfrom(s->sock, reinterpret_cast<char*>(rbuf.data()),
@@ -549,8 +566,9 @@ void pumpSocket(Session* s) {
     // quiche can retain DATAGRAM frames after the socket has no new UDP packet.
     // Drain once per poll pass so that backlog makes progress on an idle socket,
     // while the session's shared per-tick read budget still caps repeated calls.
-    if (s->wtReady && !s->failed) {
+    if (s->wtReady && !s->failed && !s->wantClose) {
         readDatagrams(s);
+        readStreams(s);
     }
 
     // Drive QUIC timers off a monotonic clock instead of a libuv timer.
@@ -723,126 +741,156 @@ bool consumeStreamHeader(Session* s, uint64_t streamId, StreamState& st) {
     size_t n2 = varintDecode(p + n1, avail - n1, &sessionId);
     if (n2 == 0) return false;  // need more bytes
 
+    // This connection owns one CONNECT session. A foreign session header must
+    // never lend its payload this session's receive credit or JS stream identity.
+    if (!s || s->connectStreamId < 0 ||
+        sessionId != static_cast<uint64_t>(s->connectStreamId)) {
+        if (s) failSession(s, "WebTransport stream names a different session");
+        return false;
+    }
+
     // Strip signal + session id; remainder is payload.
     st.pending.erase(st.pending.begin(), st.pending.begin() + n1 + n2);
     st.headerConsumed = true;
     return true;
 }
 
+// Header reads stop at each varint boundary, so no payload is consumed before
+// the application has a readable and has granted its measured queue capacity.
+size_t streamHeaderBytesNeeded(const StreamState& st) {
+    if (st.pending.empty()) return 1;
+    const size_t first = size_t{1} << (st.pending[0] >> 6);
+    if (st.pending.size() < first) return first - st.pending.size();
+    if (st.pending.size() == first) return 1;
+    const size_t second = size_t{1} << (st.pending[first] >> 6);
+    return first + second - st.pending.size();
+}
+
+int streamReadCredit(uint32_t id, uint64_t streamId, size_t desiredBytes) {
+    Session* s = findSession(id);
+    if (!s || s->failed || s->wantClose) return -1;
+    auto it = s->streams.find(streamId);
+    if (it == s->streams.end() || it->second.readReleased) return -1;
+    StreamState& st = it->second;
+    const size_t desired = std::min(desiredBytes, kStreamReadCreditLimit);
+    st.readCredit = desired > st.inFlightReadBytes ? desired - st.inFlightReadBytes : 0;
+    return 0;
+}
+
 void readStream(Session* s, uint64_t streamId) {
-    if (streamId == static_cast<uint64_t>(s->connectStreamId)) {
-        // The CONNECT request stream carries no WT payload; drain it. A FIN here
-        // means the server ended the session.
-        static uint8_t scratch[STREAM_READ_CHUNK];
+    if (!s->conn || s->failed || s->wantClose) return;
+    const bool connect = streamId == static_cast<uint64_t>(s->connectStreamId);
+    auto found = s->streams.find(streamId);
+    if (!connect && found == s->streams.end()) {
+        if (s->streams.size() >= kStreamLimit) {
+            failSession(s, "WebTransport incoming stream limit exceeded");
+            return;
+        }
+        found = s->streams.emplace(streamId, StreamState{}).first;
+        auto& st = found->second;
+        st.serverInitiated = (streamId & 1) != 0;
+        st.isUni = (streamId & 2) != 0;
+        st.headerConsumed = !st.serverInitiated;
+        st.isOutgoing = !st.isUni;
+    }
+    StreamState* st = connect ? nullptr : &found->second;
+    if (st && (st->finDelivered || st->readReleased)) return;
+    uint8_t scratch[STREAM_READ_CHUNK];
+    while (!s->failed && s->streamReadCallsThisTick < kStreamReadCallsPerTick &&
+           s->streamReadBytesThisTick < kStreamReadBytesPerTick) {
+        if (st && !st->headerConsumed && !st->pending.empty()) {
+            consumeStreamHeader(s, streamId, *st);
+            if (s->failed) return;
+        }
+        if (st && st->headerConsumed && !st->isH3Owned &&
+            st->serverInitiated && !st->announced) {
+            g_events.push({s->id, st->isUni ? EventType::IncomingUni : EventType::IncomingBidi,
+                           static_cast<int64_t>(streamId), 0, false, {}, ""});
+            st->announced = true;
+        }
+        const bool header = st && !st->headerConsumed;
+        const bool ignored = connect || (st && st->isH3Owned);
+        size_t capacity = header ? streamHeaderBytesNeeded(*st) :
+            ignored ? sizeof(scratch) : std::min(st->readCredit, sizeof(scratch));
+        capacity = std::min(capacity, kStreamReadBytesPerTick - s->streamReadBytesThisTick);
         bool fin = false;
-        uint64_t errCode = 0;
-        while (true) {
-            ssize_t r = quiche_conn_stream_recv(s->conn, streamId, scratch, sizeof(scratch),
-                                                &fin, &errCode);
-            if (r <= 0) break;
-        }
-        return;
-    }
-
-    auto& st = s->streams[streamId];
-    if (!st.announced && s->streams[streamId].pending.empty() && !st.headerConsumed) {
-        // First time we see this stream id: classify it.
-        st.serverInitiated = (streamId & 0x1) != 0;
-        st.isUni = (streamId & 0x2) != 0;
-        // Client-initiated streams (we created them and wrote the signal) carry
-        // pure payload on the read side; no header to strip.
-        if (!st.serverInitiated) st.headerConsumed = true;
-    }
-
-    static uint8_t scratch[STREAM_READ_CHUNK];
-    bool fin = false;
-    uint64_t errCode = 0;
-    bool sawFin = false;
-    while (true) {
-        fin = false;
-        ssize_t r = quiche_conn_stream_recv(s->conn, streamId, scratch, sizeof(scratch),
-                                            &fin, &errCode);
-        if (r == QUICHE_ERR_DONE) break;
-        if (r == QUICHE_ERR_INVALID_STREAM_STATE) {
-            // The stream was collected by quiche. If we already buffered its data
-            // (e.g. it arrived complete with FIN), fall through to deliver it;
-            // otherwise it is a stale readable entry for an h3-internal stream.
-            if (st.pending.empty() && !sawFin) {
-                s->streams.erase(streamId);
-                return;
+        uint64_t errorCode = 0;
+        ++s->streamReadCallsThisTick;
+        const ssize_t received = quiche_conn_stream_recv(s->conn, streamId, scratch,
+                                                         capacity, &fin, &errorCode);
+        if (received == QUICHE_ERR_DONE) return;
+        if (received < 0) {
+            if (connect) { failSession(s, "WebTransport CONNECT stream reset"); return; }
+            if (!st->isH3Owned) {
+                g_events.push({s->id, EventType::StreamReset, static_cast<int64_t>(streamId),
+                               errorCode, false, {}, ""});
             }
-            break;
-        }
-        if (r < 0) {
-            // Stream reset/stopped by the peer.
-            Event e;
-            e.sessionId = s->id;
-            e.type = EventType::StreamReset;
-            e.streamId = static_cast<int64_t>(streamId);
-            e.code = errCode;
-            g_events.push(std::move(e));
-            s->streams.erase(streamId);
+            st->readCredit = 0;
+            st->readReleased = true;
+            std::vector<uint8_t>().swap(st->pending);
             return;
         }
-        if (r > 0) st.pending.insert(st.pending.end(), scratch, scratch + r);
-        if (fin) sawFin = true;
-        if (r == 0) break;
-    }
-
-    // For server-initiated streams, parse the WT signal before emitting anything.
-    if (st.serverInitiated && !st.headerConsumed) {
-        if (!consumeStreamHeader(s, streamId, st)) {
-            return;  // need more bytes for the header
+        const size_t count = static_cast<size_t>(received);
+        s->streamReadBytesThisTick += count;
+        if (connect) {
+            if (fin) { s->wantClose = true; return; }
+        } else if (header) {
+            st->pending.insert(st->pending.end(), scratch, scratch + count);
+            const bool parsed = consumeStreamHeader(s, streamId, *st);
+            if (s->failed) return;
+            if (st->isH3Owned) st->isOutgoing = false;
+            if (fin && !parsed) { failSession(s, "Truncated WebTransport stream header"); return; }
+            if (parsed && !st->isH3Owned && !st->announced) {
+                g_events.push({s->id, st->isUni ? EventType::IncomingUni : EventType::IncomingBidi,
+                               static_cast<int64_t>(streamId), 0, false, {}, ""});
+                st->announced = true;
+            }
+        } else if (!ignored && (count > 0 || fin)) {
+            st->readCredit -= count;
+            st->inFlightReadBytes += count;
+            Event event{s->id, EventType::StreamData, static_cast<int64_t>(streamId),
+                        0, fin, {}, ""};
+            event.data.assign(scratch, scratch + count);
+            g_events.push(std::move(event));
         }
-        if (st.isH3Owned) {
-            // Drain & ignore h3 control/qpack data.
+        if (st && fin) {
+            st->finDelivered = true;
+            if (st->isH3Owned) st->readReleased = true;
+            // A header-only stream still needs its empty FIN delivered to JS.
+            if (header && !st->isH3Owned) {
+                g_events.push({s->id, EventType::StreamData, static_cast<int64_t>(streamId),
+                               0, true, {}, ""});
+            }
             return;
         }
-    }
-
-    // Announce a newly-arrived server stream to JS once.
-    if (st.serverInitiated && !st.isH3Owned && !st.announced) {
-        Event e;
-        e.sessionId = s->id;
-        e.type = st.isUni ? EventType::IncomingUni : EventType::IncomingBidi;
-        e.streamId = static_cast<int64_t>(streamId);
-        g_events.push(std::move(e));
-        st.announced = true;
-    }
-
-    // Emit payload (and/or fin) to JS.
-    if (!st.pending.empty() || (sawFin && !st.finDelivered)) {
-        Event e;
-        e.sessionId = s->id;
-        e.type = EventType::StreamData;
-        e.streamId = static_cast<int64_t>(streamId);
-        e.data.swap(st.pending);
-        e.fin = sawFin;
-        g_events.push(std::move(e));
-        if (sawFin) st.finDelivered = true;
-    }
-
-    if (sawFin) {
-        // Keep client-initiated bidi streams around until both directions done;
-        // for read-completed streams we can drop tracking.
-        if (st.isUni || st.serverInitiated) {
-            s->streams.erase(streamId);
-        }
+        if (received == 0) return;
     }
 }
 
 void readStreams(Session* s) {
-    if (!s->conn) return;
-    quiche_stream_iter* it = quiche_conn_readable(s->conn);
-    if (!it) return;
-    uint64_t streamId = 0;
+    if (!s->conn || s->failed || s->wantClose ||
+        s->streamReadCallsThisTick >= kStreamReadCallsPerTick ||
+        s->streamReadBytesThisTick >= kStreamReadBytesPerTick) return;
+    quiche_stream_iter* iterator = quiche_conn_readable(s->conn);
+    if (!iterator) return;
+    uint64_t id = 0;
     std::vector<uint64_t> ids;
-    while (quiche_stream_iter_next(it, &streamId)) {
-        ids.push_back(streamId);
+    while (quiche_stream_iter_next(iterator, &id)) {
+        if (ids.size() >= kStreamLimit + 1) {
+            failSession(s, "WebTransport readable stream limit exceeded");
+            break;
+        }
+        ids.push_back(id);
     }
-    quiche_stream_iter_free(it);
-    for (uint64_t id : ids) {
+    quiche_stream_iter_free(iterator);
+    std::sort(ids.begin(), ids.end());
+    const size_t first = std::upper_bound(ids.begin(), ids.end(), s->lastReadStreamId) - ids.begin();
+    for (size_t offset = 0; offset < ids.size(); ++offset) {
+        if (s->streamReadCallsThisTick >= kStreamReadCallsPerTick ||
+            s->streamReadBytesThisTick >= kStreamReadBytesPerTick || s->failed) break;
+        id = ids[(first + offset) % ids.size()];
         readStream(s, id);
+        s->lastReadStreamId = id;
     }
 }
 
@@ -869,6 +917,7 @@ void dispatchEvent(const Event& e) {
         case EventType::StreamData: typeStr = "streamData"; break;
         case EventType::StreamReset: typeStr = "streamReset"; break;
         case EventType::StreamWriteError: typeStr = "streamWriteError"; break;
+        case EventType::StreamWriteClosed: typeStr = "streamWriteClosed"; break;
         case EventType::Writable: typeStr = "writable"; break;
     }
 
@@ -902,17 +951,25 @@ void dispatchEvent(const Event& e) {
             args.push_back(g_engine->newNumber(static_cast<double>(e.streamId)));
             args.push_back(g_engine->newNumber(static_cast<double>(e.code)));
             break;
+        case EventType::StreamWriteClosed:
+            args.push_back(g_engine->newNumber(static_cast<double>(e.streamId)));
+            break;
         case EventType::Writable:
             break;
         case EventType::Error:
+            args.push_back(g_engine->newString(e.message.c_str()));
+            break;
         case EventType::Closed:
             args.push_back(g_engine->newString(e.message.c_str()));
+            args.push_back(g_engine->newNumber(static_cast<double>(e.code)));
             break;
         default:
             break;
     }
 
-    g_engine->call(g_dispatch, g_engine->newUndefined(), args);
+    js::JSValueGuard receiver(*g_engine, g_engine->newUndefined());
+    js::JSValueGuard result(*g_engine, g_engine->call(g_dispatch, receiver.get(), args));
+    for (auto argument : args) g_engine->freeHandle(argument);
     if (g_engine->hasException()) {
         std::cerr << "[WebTransport] dispatch threw: " << g_engine->getException() << std::endl;
     }
@@ -1015,12 +1072,14 @@ uint32_t connectSession(const std::string& url) {
     quiche_config_set_max_idle_timeout(s->config, 30000);
     quiche_config_set_max_recv_udp_payload_size(s->config, MAX_DATAGRAM_SIZE);
     quiche_config_set_max_send_udp_payload_size(s->config, MAX_DATAGRAM_SIZE);
-    quiche_config_set_initial_max_data(s->config, 10 * 1024 * 1024);
-    quiche_config_set_initial_max_stream_data_bidi_local(s->config, 1 * 1024 * 1024);
-    quiche_config_set_initial_max_stream_data_bidi_remote(s->config, 1 * 1024 * 1024);
-    quiche_config_set_initial_max_stream_data_uni(s->config, 1 * 1024 * 1024);
-    quiche_config_set_initial_max_streams_bidi(s->config, 100);
-    quiche_config_set_initial_max_streams_uni(s->config, 100);
+    quiche_config_set_initial_max_data(s->config, 1024 * 1024);
+    quiche_config_set_max_connection_window(s->config, 1024 * 1024);
+    quiche_config_set_max_stream_window(s->config, 64 * 1024);
+    quiche_config_set_initial_max_stream_data_bidi_local(s->config, 64 * 1024);
+    quiche_config_set_initial_max_stream_data_bidi_remote(s->config, 64 * 1024);
+    quiche_config_set_initial_max_stream_data_uni(s->config, 64 * 1024);
+    quiche_config_set_initial_max_streams_bidi(s->config, kStreamLimit);
+    quiche_config_set_initial_max_streams_uni(s->config, kStreamLimit);
     quiche_config_set_disable_active_migration(s->config, true);
     const char* insecurePeerVerificationValue = std::getenv(kInsecurePeerVerificationEnv);
     const bool allowInsecurePeerVerification =
@@ -1082,6 +1141,8 @@ void closeSession(uint32_t id, uint64_t code, const std::string& reason) {
                           reinterpret_cast<const uint8_t*>(reason.data()), reason.size());
         flushEgress(s);
     }
+    s->closeCode = code;
+    s->closeReason = reason;
     s->wantClose = true;
 }
 
@@ -1116,7 +1177,7 @@ void failSession(Session* s, const std::string& message) {
 }
 
 void queueWritable(Session* s) {
-    if (s->writableEventQueued) return;
+    if (s->writableEventQueued || s->failed || s->wantClose || s->reportedClosed) return;
     s->writableEventQueued = true;
     g_events.push({s->id, EventType::Writable, -1, 0, false, {}, ""});
 }
@@ -1220,6 +1281,8 @@ void pumpStream(Session* s, uint64_t streamId, StreamState& st) {
     releaseDrainedBuffer(st);
     if (st.outBuf.empty() && st.outFin) {
         st.finSent = true;
+        g_events.push({s->id, EventType::StreamWriteClosed,
+                       static_cast<int64_t>(streamId), 0, false, {}, ""});
     }
     if (w > 0) {
         queueWritable(s);
@@ -1251,6 +1314,7 @@ int64_t createStream(uint32_t id, bool bidi) {
         return kStreamWriteQueueFull;
     }
 
+    if (s->streams.size() >= kStreamLimit) return kStreamWriteQueueFull;
     uint64_t streamId = bidi ? s->nextClientBidi : s->nextClientUni;
     if (bidi) {
         s->nextClientBidi += 4;
@@ -1260,6 +1324,8 @@ int64_t createStream(uint32_t id, bool bidi) {
 
     auto& st = s->streams[streamId];
     st.isOutgoing = true;
+    st.isUni = !bidi;
+    st.readReleased = !bidi;
     st.serverInitiated = false;
     st.isUni = !bidi;
     st.headerConsumed = true;  // inbound (bidi echo) on our stream is pure payload
@@ -1307,12 +1373,49 @@ int64_t streamWrite(uint32_t id, uint64_t streamId, const uint8_t* data, size_t 
     return static_cast<int64_t>(len);
 }
 
-void streamShutdown(uint32_t id, uint64_t streamId, uint64_t code) {
+void streamShutdown(uint32_t id, uint64_t streamId, uint64_t code,
+                    enum quiche_shutdown direction = QUICHE_SHUTDOWN_WRITE) {
     Session* s = findSession(id);
     if (!s || !s->conn) return;
-    quiche_conn_stream_shutdown(s->conn, streamId, QUICHE_SHUTDOWN_WRITE, code);
-    quiche_conn_stream_shutdown(s->conn, streamId, QUICHE_SHUTDOWN_READ, code);
+    auto it = s->streams.find(streamId);
+    if (it == s->streams.end()) return;
+    auto& st = it->second;
+    if (direction == QUICHE_SHUTDOWN_READ) {
+        st.readReleased = true;
+        st.readCredit = 0;
+        std::vector<uint8_t>().swap(st.pending);
+    } else {
+        const bool releasedBytes = !st.outBuf.empty();
+        st.sendError = true;
+        st.outFin = false;
+        std::vector<uint8_t>().swap(st.outBuf);
+        if (releasedBytes) queueWritable(s);
+    }
+    quiche_conn_stream_shutdown(s->conn, streamId, direction, code);
     flushEgress(s);
+}
+
+int streamReleaseRead(uint32_t id, uint64_t streamId) {
+    Session* s = findSession(id);
+    if (!s) return -1;
+    auto it = s->streams.find(streamId);
+    if (it == s->streams.end() || !it->second.finDelivered) return -1;
+    it->second.readReleased = true;
+    it->second.readCredit = 0;
+    return 0;
+}
+
+void releaseCompletedStreams(Session* s) {
+    bool released = false;
+    for (auto it = s->streams.begin(); it != s->streams.end();) {
+        const auto& st = it->second;
+        if (st.readReleased && st.inFlightReadBytes == 0 &&
+            (!st.isOutgoing || st.finSent || st.sendError)) {
+            it = s->streams.erase(it);
+            released = true;
+        } else ++it;
+    }
+    if (released) queueWritable(s);
 }
 
 }  // namespace
@@ -1326,11 +1429,21 @@ void processEvents() {
     std::vector<uint32_t> toTeardown;
     for (auto& [id, sessPtr] : g_sessions) {
         Session* s = sessPtr.get();
+        if (s->wantClose) {
+            if (!s->reportedClosed) {
+                s->reportedClosed = true;
+                g_events.push({id, EventType::Closed, -1, s->closeCode, false, {}, s->closeReason});
+            }
+            toTeardown.push_back(id);
+            continue;
+        }
         if (!s->conn) continue;
 
         // One receive budget per pass over this session, spent by however many
         // pumpSocket() reads happen below. This is the only place it resets.
         s->datagramReadsThisTick = 0;
+        s->streamReadBytesThisTick = 0;
+        s->streamReadCallsThisTick = 0;
 
         // Drain inbound UDP, feed quiche, read the data plane, and fire timers.
         pumpSocket(s);
@@ -1404,7 +1517,7 @@ void processEvents() {
         }
 
         // Connection-level closure / failure detection.
-        if (quiche_conn_is_closed(s->conn)) {
+        if (s->wantClose || quiche_conn_is_closed(s->conn)) {
             if (!s->reportedClosed) {
                 s->reportedClosed = true;
                 bool isApp = false;
@@ -1436,12 +1549,24 @@ void processEvents() {
     while (!g_events.empty()) {
         Event e = std::move(g_events.front());
         g_events.pop();
+        if (e.type == EventType::StreamData) {
+            Session* s = findSession(e.sessionId);
+            if (s) {
+                auto it = s->streams.find(static_cast<uint64_t>(e.streamId));
+                if (it != s->streams.end()) {
+                    auto& pending = it->second.inFlightReadBytes;
+                    pending -= std::min(pending, e.data.size());
+                }
+            }
+        }
         if (e.type == EventType::Writable) {
             Session* s = findSession(e.sessionId);
             if (s != nullptr) s->writableEventQueued = false;
         }
         dispatchEvent(e);
     }
+
+    for (auto& [id, session] : g_sessions) releaseCompletedStreams(session.get());
 
     // Free finished sessions (Session dtor closes the socket and frees quiche
     // objects). Safe here: we are no longer iterating g_sessions.
@@ -1488,21 +1613,6 @@ void shutdown() {
 // JS bindings
 // ---------------------------------------------------------------------------
 
-namespace {
-
-// Extracts bytes from a Uint8Array / ArrayBuffer argument.
-std::vector<uint8_t> argToBytes(js::Engine* eng, js::JSValueHandle v) {
-    std::vector<uint8_t> out;
-    size_t size = 0;
-    void* data = eng->getArrayBufferData(v, &size);
-    if (data && size > 0) {
-        out.assign(static_cast<uint8_t*>(data), static_cast<uint8_t*>(data) + size);
-    }
-    return out;
-}
-
-}  // namespace
-
 bool initBindings(js::Engine* engine) {
     g_engine = engine;
 
@@ -1529,8 +1639,10 @@ bool initBindings(js::Engine* engine) {
         engine->newFunction("__wtSendDatagram", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
             if (args.size() < 2) return g_engine->newNumber(-1);
             uint32_t id = static_cast<uint32_t>(g_engine->toNumber(args[0]));
-            auto bytes = argToBytes(g_engine, args[1]);
-            int r = sendDatagram(id, bytes.data(), bytes.size());
+            size_t length = 0;
+            auto* bytes = static_cast<const uint8_t*>(g_engine->getArrayBufferData(args[1], &length));
+            if (length > 0 && !bytes) return g_engine->newNumber(kDatagramInvalidSession);
+            int r = sendDatagram(id, bytes, length);
             return g_engine->newNumber(r);
         }));
 
@@ -1559,13 +1671,61 @@ bool initBindings(js::Engine* engine) {
             return g_engine->newNumber(static_cast<double>(w));
         }));
 
+    engine->setGlobalProperty("__wtNativeStats",
+        engine->newFunction("__wtNativeStats", [](void*, const std::vector<js::JSValueHandle>&) {
+            size_t streams = 0, queuedBytes = 0, queuedDatagrams = 0;
+            size_t inFlight = 0, credit = 0, headers = 0;
+            for (const auto& [id, session] : g_sessions) {
+                streams += session->streams.size();
+                queuedDatagrams += session->outgoingDatagrams.size();
+                for (const auto& [streamId, stream] : session->streams) {
+                    queuedBytes += stream.outBuf.size();
+                    inFlight += stream.inFlightReadBytes;
+                    credit += stream.readCredit;
+                    headers += stream.pending.size();
+                }
+            }
+            auto result = g_engine->newObject();
+            for (const auto& field : std::initializer_list<std::pair<const char*, size_t>>{
+                    {"sessions", g_sessions.size()}, {"streams", streams},
+                    {"queuedReliableBytes", queuedBytes}, {"queuedDatagrams", queuedDatagrams},
+                    {"queuedEvents", g_events.size()}, {"inFlightReceiveBytes", inFlight},
+                    {"readCreditBytes", credit}, {"pendingHeaderBytes", headers}}) {
+                js::JSValueGuard value(*g_engine, g_engine->newNumber(static_cast<double>(field.second)));
+                g_engine->setProperty(result, field.first, value.get());
+            }
+            return result;
+        }));
+
+    engine->setGlobalProperty("__wtStreamReadCredit",
+        engine->newFunction("__wtStreamReadCredit", [](void*, const std::vector<js::JSValueHandle>& args) {
+            if (args.size() < 3) return g_engine->newNumber(-1);
+            const double desired = g_engine->toNumber(args[2]);
+            if (!std::isfinite(desired) || desired < 0 || std::floor(desired) != desired)
+                return g_engine->newNumber(-1);
+            const int status = streamReadCredit(static_cast<uint32_t>(g_engine->toNumber(args[0])),
+                static_cast<uint64_t>(g_engine->toNumber(args[1])),
+                static_cast<size_t>(std::min(desired, static_cast<double>(kStreamReadCreditLimit))));
+            return g_engine->newNumber(status);
+        }));
+
+    engine->setGlobalProperty("__wtStreamReleaseRead",
+        engine->newFunction("__wtStreamReleaseRead", [](void*, const std::vector<js::JSValueHandle>& args) {
+            if (args.size() < 2) return g_engine->newNumber(-1);
+            return g_engine->newNumber(streamReleaseRead(
+                static_cast<uint32_t>(g_engine->toNumber(args[0])),
+                static_cast<uint64_t>(g_engine->toNumber(args[1]))));
+        }));
+
     engine->setGlobalProperty("__wtStreamShutdown",
         engine->newFunction("__wtStreamShutdown", [](void* ctx, const std::vector<js::JSValueHandle>& args) {
             if (args.size() >= 2) {
                 uint32_t id = static_cast<uint32_t>(g_engine->toNumber(args[0]));
                 uint64_t sid = static_cast<uint64_t>(g_engine->toNumber(args[1]));
                 uint64_t code = args.size() >= 3 ? static_cast<uint64_t>(g_engine->toNumber(args[2])) : 0;
-                streamShutdown(id, sid, code);
+                const double direction = args.size() >= 4 ? g_engine->toNumber(args[3]) : 1;
+                if (direction != 0 && direction != 1) return g_engine->newNumber(-1);
+                streamShutdown(id, sid, code, direction == 0 ? QUICHE_SHUTDOWN_READ : QUICHE_SHUTDOWN_WRITE);
             }
             return g_engine->newUndefined();
         }));
