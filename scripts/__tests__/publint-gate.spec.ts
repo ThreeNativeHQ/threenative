@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
 type PackageManifest = {
   name?: unknown;
@@ -40,11 +41,27 @@ function hasPublintGate(script: string): boolean {
   return publintCommandPattern.test(commands.at(-1) ?? "");
 }
 
+// Everything a workspace package is not. `.runtime/` holds the Skia and wgpu sources
+// `pnpm native:build` downloads, and those vendor dozens of their own manifests — a machine that
+// has built the native host once would otherwise fail this gate on Google's package.json files.
+// `build/`, `dist/` and `third_party/` are the same shape: real directories, not our packages.
+const NON_WORKSPACE_DIRECTORIES: ReadonlySet<string> = new Set([
+  "build",
+  "dist",
+  "node_modules",
+  "third_party",
+]);
+
+function isWorkspaceDirectory(name: string): boolean {
+  return !name.startsWith(".") && !NON_WORKSPACE_DIRECTORIES.has(name);
+}
+
 function findPackageManifests(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true })
     .flatMap((entry) => {
       const path = join(directory, entry.name);
-      if (entry.isDirectory()) return findPackageManifests(path);
+      if (entry.isDirectory())
+        return isWorkspaceDirectory(entry.name) ? findPackageManifests(path) : [];
       return entry.isFile() && entry.name === "package.json" ? [path] : [];
     })
     .sort();
@@ -65,6 +82,29 @@ describe("publint package gate", () => {
       });
 
     expect(missing, `Packages missing publint in scripts.test: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("walks workspace packages only, not downloaded or built trees", () => {
+    const root = makeTempDirSync("threenative-publint-walk-");
+    for (const directory of [
+      ".runtime/skia/tools",
+      "build/vendor",
+      "dist",
+      "node_modules/three",
+      "core/src",
+    ])
+      mkdirSync(join(root, directory), { recursive: true });
+    for (const file of [
+      ".runtime/skia/package.json",
+      ".runtime/skia/tools/package.json",
+      "build/vendor/package.json",
+      "dist/package.json",
+      "node_modules/three/package.json",
+      "core/package.json",
+    ])
+      writeFileSync(join(root, file), '{"name":"x"}\n');
+
+    expect(findPackageManifests(root)).toEqual([join(root, "core/package.json")]);
   });
 
   it("requires an executable publint command rather than a text mention", () => {

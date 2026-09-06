@@ -2,7 +2,7 @@ import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { Group, type Mesh, Vector3 } from "three";
 import { type IStarterConventions, preparePlayerConventions } from "../conventions.js";
-import { type IHeroMaterials, hero } from "../render/shapes.js";
+import { type IHeroMaterials, hero } from "../render/hero.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 

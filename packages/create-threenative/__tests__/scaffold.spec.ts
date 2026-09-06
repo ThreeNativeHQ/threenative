@@ -282,7 +282,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "64af5e55c408c62416a0a60dd57b012770e183125f365fcc0a6572ca586d87b4",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "38868c0f1acf71ae116095b1b674c21d7b2cd651f5bee602ee2a99cd2640fe17",
+  starter: "139461c14e209d82d83ab09fc11559ea030418ebd1d839022268a026eee27f55",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -327,6 +327,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `threenative-blender`, which `pnpm sync:mcp` writes into all seven host configs of every
   // template, and the shared `finding-assets.md` reference gained the downloaded-.fbx loop.
   // All ten trees moved; no template source did.
+  // Recomputed 2026-09-06, second move: the starter's `hero()` and `IHeroMaterials` left
+  // `src/render/shapes.ts` for their own `src/render/hero.ts`, which puts the toolkit file back
+  // under the 200-line smell cap `looks.spec.ts` enforces on generated render source. The starter
+  // tree alone moves; `Player.ts` follows the import.
   // Recomputed 2026-09-06 for the local-main sync repair. Sailing's water became `SpectralOcean`,
   // moving `src/render/ocean.ts`, `src/scenes/Sailing.ts` and an AGENTS.md rewritten under the
   // 100-line cap; defense's `src/render/shapes.ts` gained two `Mesh[]` annotations that let the
