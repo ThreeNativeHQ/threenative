@@ -73,10 +73,15 @@ describe("threenative build", () => {
         cwd: target,
         stdio: "ignore",
       });
+      // Deliberately generous, and not a performance budget. What separates the defect from a
+      // healthy build is exit versus never-exit: a live worker pool holds the event loop open
+      // forever, so any ceiling catches it, while a slow runner is still a build that finishes.
+      // The first version of this test used five seconds and went red on CI at 3.9s locally --
+      // it was timing the build, not asking whether the process let go.
       const timeout = setTimeout(() => {
         child.kill("SIGKILL");
         resolve({ code: null, timedOut: true });
-      }, 5_000);
+      }, 60_000);
       child.once("exit", (code) => {
         clearTimeout(timeout);
         resolve({ code, timedOut: false });
@@ -84,7 +89,7 @@ describe("threenative build", () => {
     });
 
     expect(result).toEqual({ code: 0, timedOut: false });
-  }, 10_000);
+  }, 90_000);
 
   it("resolves every declared brand input through the live packaging-config caller", async () => {
     const config = {
