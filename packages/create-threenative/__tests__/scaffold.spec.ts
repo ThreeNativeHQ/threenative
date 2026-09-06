@@ -279,7 +279,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // plus scenery+Play wiring, flora playtest assertions, and AGENTS.md recipe).
   // Recomputed again after review: per-node BFS radii, seed-free baseRadius,
   // computed wood audit, live wind wiring, unexported helper, tighter AGENTS.
-  starter: "0f1c1b6c0f48ce7ce7bcf19fa304e8e5e28e912cbb086386675f94a1bf200fc0",
+  starter: "52fd163937a37cb960d45b093c014ad018a09d642531b1b7ed0cf080558e6b0f", // sprite as DataTexture (no document)
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
