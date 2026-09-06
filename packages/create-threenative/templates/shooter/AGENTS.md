@@ -94,3 +94,21 @@ Recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs
 
 On a touch-primary device, `src/render/touch-controls.ts` adds a movement stick, a look stick, and
 fire, aim, reload and crouch pads; the stick pushed to its rim sprints. Keyboard is the fallback.
+
+## Optional multiplayer transport
+
+If this game needs online play, import `connect` from `@threenative/core/net`; this is opt-in, so
+the offline game remains transport-free. Use an HTTPS URL and a nonempty credential issued by the
+game's identity flow. The Go reference server is
+`packages/runtime-native/examples/webtransport/server`.
+
+The named per-connection limits are `connectTimeoutMs`, `maxReliableMessageBytes`,
+`maxQueuedReliableBytes`, and `maxQueuedDatagrams`; defaults are 10 seconds, 65,536 bytes, 1 MiB,
+and 256 datagrams. `reliable-ordered` channels use ordered reliable delivery and `send` returns
+`false` when their bounded queue cannot admit a message. `unreliable` datagrams are bounded and
+may be dropped; do not add application ACK or retransmission logic to them.
+
+There is no fallback transport. If WebTransport or the native host bridge is unsupported,
+`connect` rejects with `TN_NET_UNAVAILABLE`; surface that unsupported state instead of silently
+changing protocols. Core owns the connection seam, not serialization, authoritative replication,
+prediction, interpolation, snapshots, or rejoin policy; keep those in this game's `src/` and server.
