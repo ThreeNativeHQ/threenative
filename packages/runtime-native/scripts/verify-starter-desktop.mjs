@@ -13,11 +13,78 @@ const ASSET_MARKER = 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb';
 const UNRENDERED_FRAME_COLOR_FLOOR = 64;
 // 64x64. Below this the frame is a fixture, not a capture.
 const UNRENDERED_FRAME_MIN_PIXELS = 4096;
+const ASSET_PIXEL_FLOOR = 100;
+
+function isCyanAssetPixel(data, offset) {
+  const red = data[offset];
+  const green = data[offset + 1];
+  const blue = data[offset + 2];
+  const alpha = data[offset + 3];
+  return (
+    alpha > 0 &&
+    blue > 100 &&
+    blue > red * 1.4 &&
+    green > red * 1.25 &&
+    green > blue * 0.75
+  );
+}
+
+function enqueueCyanNeighbor(mask, visited, queue, tail, neighbor) {
+  if (mask[neighbor] === 0 || visited[neighbor] !== 0) return tail;
+  visited[neighbor] = 1;
+  queue[tail] = neighbor;
+  return tail + 1;
+}
+
+function measureCyanRegion(mask, width, height, start, visited, queue) {
+  let head = 0;
+  let tail = 1;
+  let count = 0;
+  let minX = width;
+  let maxX = -1;
+  let minY = height;
+  let maxY = -1;
+  queue[0] = start;
+  visited[start] = 1;
+  while (head < tail) {
+    const index = queue[head];
+    head += 1;
+    const x = index % width;
+    const y = Math.floor(index / width);
+    count += 1;
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+    if (x > 0) tail = enqueueCyanNeighbor(mask, visited, queue, tail, index - 1);
+    if (x + 1 < width) tail = enqueueCyanNeighbor(mask, visited, queue, tail, index + 1);
+    if (y > 0) tail = enqueueCyanNeighbor(mask, visited, queue, tail, index - width);
+    if (y + 1 < height) tail = enqueueCyanNeighbor(mask, visited, queue, tail, index + width);
+  }
+  return { count, maxX, maxY, minX, minY };
+}
+
+function hasLocalizedCyanRegion(mask, width, height) {
+  const visited = new Uint8Array(mask.length);
+  const queue = new Uint32Array(mask.length);
+  for (let start = 0; start < mask.length; start += 1) {
+    if (mask[start] === 0 || visited[start] !== 0) continue;
+    const region = measureCyanRegion(mask, width, height, start, visited, queue);
+    const touchesEveryEdge =
+      region.minX === 0 &&
+      region.maxX === width - 1 &&
+      region.minY === 0 &&
+      region.maxY === height - 1;
+    if (region.count >= ASSET_PIXEL_FLOOR && !touchesEveryEdge) return true;
+  }
+  return false;
+}
 
 export function inspectStarterScreenshot(path) {
   if (!existsSync(path)) throw new Error(`TN_NATIVE_STARTER_SCREENSHOT_MISSING: ${path}`);
   const png = PNG.sync.read(readFileSync(path));
   const colors = new Set();
+  const cyanMask = new Uint8Array(png.width * png.height);
   let cyanAssetPixels = 0;
   for (let index = 0; index < png.data.length; index += 4) {
     const red = png.data[index];
@@ -25,7 +92,10 @@ export function inspectStarterScreenshot(path) {
     const blue = png.data[index + 2];
     const alpha = png.data[index + 3];
     colors.add(`${red},${green},${blue},${alpha}`);
-    if (alpha > 0 && blue > 150 && green > 140 && blue > red * 1.4) cyanAssetPixels += 1;
+    if (isCyanAssetPixel(png.data, index)) {
+      cyanMask[index / 4] = 1;
+      cyanAssetPixels += 1;
+    }
   }
   if (colors.size < 2) throw new Error('TN_NATIVE_STARTER_SCREENSHOT_BLANK: one-color frame.');
   // A one-colour guard is too weak to catch the capture this gate actually loses. A rendered
@@ -39,11 +109,13 @@ export function inspectStarterScreenshot(path) {
   const rendered = png.width * png.height >= UNRENDERED_FRAME_MIN_PIXELS;
   if (rendered && colors.size < UNRENDERED_FRAME_COLOR_FLOOR) {
     throw new Error(
-      `TN_NATIVE_STARTER_FRAME_NOT_RENDERED: only ${colors.size} distinct colours in ${png.width}x${png.height}. ` +
-        'The run log may still show every marker: this is the capture, not the scene.',
+        `TN_NATIVE_STARTER_FRAME_NOT_RENDERED: only ${colors.size} distinct colours in ${png.width}x${png.height}. The run log may still show every marker: this is the capture, not the scene.`,
     );
   }
-  if (cyanAssetPixels < 100) {
+  const hasAssetEvidence =
+    cyanAssetPixels >= ASSET_PIXEL_FLOOR &&
+    (!rendered || hasLocalizedCyanRegion(cyanMask, png.width, png.height));
+  if (!hasAssetEvidence) {
     throw new Error(`TN_NATIVE_STARTER_ASSET_NOT_VISIBLE: found ${cyanAssetPixels} cyan proof pixels in a frame of ${colors.size} colours.`);
   }
   return { colors: colors.size, cyanAssetPixels, height: png.height, width: png.width };

@@ -91,6 +91,45 @@ test('starter desktop screenshot requires the rendered cyan proof asset', () => 
   assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 128);
 });
 
+test('a blue-grey background alone is not the cyan proof asset', () => {
+  const directory = makeTempDirSync('starter-background-only-test-');
+  const path = join(directory, 'frame.png');
+  const png = new PNG({ height: 256, width: 256 });
+  for (let index = 0; index < 256 * 256; index += 1) {
+    const offset = index * 4;
+    png.data[offset] = 40 + (index % 20);
+    png.data[offset + 1] = 90 + (Math.floor(index / 20) % 10);
+    png.data[offset + 2] = 110;
+    png.data[offset + 3] = 255;
+  }
+  writeFileSync(path, PNG.sync.write(png));
+  assert.throws(() => inspectStarterScreenshot(path), /TN_NATIVE_STARTER_ASSET_NOT_VISIBLE/);
+});
+
+test('a darker localized proof asset remains accepted in a capture-sized frame', () => {
+  const directory = makeTempDirSync('starter-dark-asset-test-');
+  const path = join(directory, 'frame.png');
+  const png = new PNG({ height: 128, width: 128 });
+  for (let y = 0; y < 128; y += 1) {
+    for (let x = 0; x < 128; x += 1) {
+      const offset = (y * 128 + x) * 4;
+      if (x < 16 && y < 16) {
+        png.data[offset] = 11;
+        png.data[offset + 1] = 118;
+        png.data[offset + 2] = 128;
+      } else {
+        const index = y * 128 + x;
+        png.data[offset] = index % 40;
+        png.data[offset + 1] = 25 + (index % 12);
+        png.data[offset + 2] = 50 + (index % 11);
+      }
+      png.data[offset + 3] = 255;
+    }
+  }
+  writeFileSync(path, PNG.sync.write(png));
+  assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 256);
+});
+
 test('a frame that was never drawn is named as the capture, not a missing asset', () => {
   // The Linux starter lane failed intermittently with TN_NATIVE_STARTER_ASSET_NOT_VISIBLE while its
   // own log carried TN_NATIVE_STARTER_ASSETS_LOADED and "Rendered 300 frames". The capture held
