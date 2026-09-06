@@ -99,7 +99,8 @@ def make_target(dist_root, target, tag=None, lib_bytes=None,
     staged_inc = os.path.join(d, "include", "quiche.h")
     archive = BUILDER.package_archive(target, lib, staged_inc, d)
     manifest = BUILDER.write_manifest(target, lib, staged_inc, d,
-                                      TOOLCHAIN_GOOD,
+                                      dict(TOOLCHAIN_GOOD,
+                                           target_inputs=target_inputs(target)),
                                       archive_path=archive)
     if tag is not None:
         rewrite_manifest(manifest,
@@ -111,6 +112,31 @@ def make_target(dist_root, target, tag=None, lib_bytes=None,
         os.remove(p)
     shutil.rmtree(inc)
     return d
+
+
+def target_inputs(target):
+    result = {"rust_target": BUILDER.SUPPORTED_TARGETS[target]}
+    if target == "win-x64":
+        result.update({"cl": "/msvc/cl.exe", "link": "/msvc/link.exe",
+                       "lib": "/msvc/lib.exe", "INCLUDE": "set", "LIB": "set",
+                       "crt": "/MT,+crt-static"})
+    elif target in BUILDER.APPLE_SDK:
+        sdk, arch, deployment = BUILDER.APPLE_SDK[target]
+        result.update({"xcrun": "/usr/bin/xcrun", "sdk": sdk,
+                       "sdk_path": "/sdk", "arch": arch,
+                       "clang": "/usr/bin/clang", "ar": "/usr/bin/ar",
+                       "ranlib": "/usr/bin/ranlib"})
+        if deployment is not None:
+            result["deployment_target"] = deployment
+    elif target in BUILDER.ANDROID_ARCH:
+        triple, _ = BUILDER.ANDROID_ARCH[target]
+        driver = ("armv7a-linux-androideabi" if target == "android-armv7"
+                  else triple) + BUILDER.ANDROID_API + "-clang"
+        result.update({"ndk": f"/ndk/{BUILDER.ANDROID_NDK_PIN}",
+                       "api": BUILDER.ANDROID_API, driver: f"/ndk/bin/{driver}",
+                       "llvm-ar": "/ndk/bin/llvm-ar",
+                       "llvm-ranlib": "/ndk/bin/llvm-ranlib"})
+    return result
 
 
 def mutate_all(dist_root, targets, mutate):
@@ -315,6 +341,44 @@ class ReleaseGateTests(unittest.TestCase):
             with self.assertRaises(VALIDATOR.ReleaseError) as ctx:
                 VALIDATOR.validate(tmp, BUILDER, tag="quiche-owned-v1")
             self.assertIn("patches", str(ctx.exception))
+
+    def test_missing_target_inputs_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for t in NINE:
+                make_target(tmp, t)
+            rewrite_manifest(
+                os.path.join(tmp, "quiche-owned-linux-x64",
+                             "manifest-linux-x64.json"),
+                lambda m: m["toolchain"].pop("target_inputs"))
+            with self.assertRaises(VALIDATOR.ReleaseError) as ctx:
+                VALIDATOR.validate(tmp, BUILDER, tag="quiche-owned-v1")
+            self.assertIn("target_inputs", str(ctx.exception))
+
+    def test_target_inputs_pin_mismatch_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for t in NINE:
+                make_target(tmp, t)
+            rewrite_manifest(
+                os.path.join(tmp, "quiche-owned-android-arm64",
+                             "manifest-android-arm64.json"),
+                lambda m: m["toolchain"]["target_inputs"].__setitem__(
+                    "api", "22"))
+            with self.assertRaises(VALIDATOR.ReleaseError) as ctx:
+                VALIDATOR.validate(tmp, BUILDER, tag="quiche-owned-v1")
+            self.assertIn("NDK/API", str(ctx.exception))
+
+    def test_unexpected_target_input_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for t in NINE:
+                make_target(tmp, t)
+            rewrite_manifest(
+                os.path.join(tmp, "quiche-owned-linux-x64",
+                             "manifest-linux-x64.json"),
+                lambda m: m["toolchain"]["target_inputs"].__setitem__(
+                    "unexpected", "metadata"))
+            with self.assertRaises(VALIDATOR.ReleaseError) as ctx:
+                VALIDATOR.validate(tmp, BUILDER, tag="quiche-owned-v1")
+            self.assertIn("target_inputs keys", str(ctx.exception))
 
     def test_emit_file_lists_all_18(self):
         with tempfile.TemporaryDirectory() as tmp:

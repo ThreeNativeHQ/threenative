@@ -334,6 +334,8 @@ def write_manifest(target, lib_path, header_path, out_dir, toolchain, archive_pa
     out_dir = resolve(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     check_toolchain(toolchain)
+    toolchain = dict(toolchain)
+    toolchain.setdefault("target_inputs", {"rust_target": rust_target(target)})
     lib_name = "quiche.lib" if target.startswith("win-") else "libquiche.a"
     manifest = {
         "artifact_revision": ARTIFACT_REVISION,

@@ -96,6 +96,58 @@ def _hex(value, length, what):
             f"TN_QUICHE_RELEASE_MALFORMED: {what} is not hex: {value!r}")
 
 
+def check_target_inputs(inputs, man_path, target, builder):
+    """Validate the producer-selected toolchain inputs for this target.
+
+    The paths identify what the producer actually selected; they do not make
+    a cross-compile a runtime qualification. Exact keys keep a release from
+    smuggling arbitrary metadata into the manifest.
+    """
+    if not isinstance(inputs, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) and v
+            for k, v in inputs.items()):
+        raise ReleaseError(
+            f"TN_QUICHE_RELEASE_MALFORMED: {man_path} target_inputs must be "
+            "a non-empty-string mapping")
+    expected = {"rust_target"}
+    if target == "win-x64":
+        expected |= {"cl", "link", "lib", "INCLUDE", "LIB", "crt"}
+        if inputs.get("crt") != "/MT,+crt-static":
+            raise ReleaseError(
+                f"TN_QUICHE_RELEASE_CRT: {man_path} Windows target must use /MT")
+    elif target in builder.APPLE_SDK:
+        sdk, arch, deployment = builder.APPLE_SDK[target]
+        expected |= {"xcrun", "sdk", "sdk_path", "arch", "clang", "ar", "ranlib"}
+        if deployment is not None:
+            expected.add("deployment_target")
+        if inputs.get("sdk") != sdk or inputs.get("arch") != arch:
+            raise ReleaseError(
+                f"TN_QUICHE_RELEASE_TARGET_INPUTS: {man_path} Apple SDK/arch "
+                f"does not match {target}")
+        if deployment is not None and inputs.get("deployment_target") != deployment:
+            raise ReleaseError(
+                f"TN_QUICHE_RELEASE_TARGET_INPUTS: {man_path} deployment target "
+                f"does not match {target}")
+    elif target in builder.ANDROID_ARCH:
+        triple, _ = builder.ANDROID_ARCH[target]
+        driver = ("armv7a-linux-androideabi" if target == "android-armv7"
+                  else triple) + builder.ANDROID_API + "-clang"
+        expected |= {"ndk", "api", driver, "llvm-ar", "llvm-ranlib"}
+        if inputs.get("api") != builder.ANDROID_API or \
+                builder.ANDROID_NDK_PIN not in inputs.get("ndk", ""):
+            raise ReleaseError(
+                f"TN_QUICHE_RELEASE_TARGET_INPUTS: {man_path} Android "
+                "NDK/API does not match producer pins")
+    if set(inputs) != expected:
+        raise ReleaseError(
+            f"TN_QUICHE_RELEASE_MALFORMED: {man_path} target_inputs keys "
+            f"{sorted(inputs)} expected {sorted(expected)}")
+    if inputs.get("rust_target") != builder.SUPPORTED_TARGETS[target]:
+        raise ReleaseError(
+            f"TN_QUICHE_RELEASE_MISMATCH: {man_path} target_inputs rust_target "
+            f"does not match {target}")
+
+
 def check_manifest_shape(m, man_path, target, builder):
     """Exact key set, JSON types, hex formats, and per-target identity."""
     if set(m) != set(REQUIRED_TYPES):
@@ -131,15 +183,20 @@ def check_manifest_shape(m, man_path, target, builder):
             f"{sorted([layout['lib_name'], 'quiche.h'])}")
     for name, digest in m["artifacts"].items():
         _hex(digest, 64, f"{man_path} artifacts[{name}]")
-    if set(m["toolchain"]) != {"rustc", "cargo", "cmake", "go"} or \
-            not all(isinstance(v, str) for v in m["toolchain"].values()):
+    toolchain = m["toolchain"]
+    if set(toolchain) != {"rustc", "cargo", "cmake", "go", "target_inputs"} \
+            or not all(isinstance(toolchain[k], str)
+                       for k in ("rustc", "cargo", "cmake", "go")):
         raise ReleaseError(
             f"TN_QUICHE_RELEASE_MALFORMED: {man_path} toolchain must map "
-            f"rustc/cargo/cmake/go to version strings")
+            f"rustc/cargo/cmake/go to version strings and include exact "
+            "target_inputs")
     try:
-        builder.check_toolchain(m["toolchain"])
+        builder.check_toolchain({k: toolchain[k]
+                                 for k in ("rustc", "cargo", "cmake", "go")})
     except Exception as e:
         raise ReleaseError(f"TN_QUICHE_RELEASE_TOOLCHAIN: {man_path}: {e}")
+    check_target_inputs(toolchain["target_inputs"], man_path, target, builder)
     if m["target"] != target:
         raise ReleaseError(
             f"TN_QUICHE_RELEASE_MISMATCH: {man_path} targets "
