@@ -405,3 +405,5 @@ requirement; no cross-platform/browser qualification is implied by this row.
 
 Task 1b-fixture evidence: [portable executable and expired-certificate fixtures](../../verification/prd-359-task1b-fixture-2026-09-06.md).
 The separate [scratch-linked IP-SAN host proof](../../verification/prd-359-ip-san-host-2026-09-06.md) passes Linux/V8 trusted numeric IPv4/IPv6 with the prepared source patch; the installed dependency remains unchanged and Task 1b stays open through owned artifact integration.
+
+Task 1b browser evidence: [Linux Chrome private-CA certificate fixtures](../../verification/prd-359-task1b-browser-2026-09-06.md) pass real bytes and TLS negatives with per-endpoint controls. IPv6 transport is proved through a DNS name mapped to the actual IPv6 listener; direct numeric IPv6 private-root allowlisting remains an explicit failed browser diagnostic. This evidence does not close dependency distribution or any unexecuted browser/platform lane.
