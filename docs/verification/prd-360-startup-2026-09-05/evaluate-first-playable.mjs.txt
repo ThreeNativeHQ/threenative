@@ -77,16 +77,74 @@ export function fnv1a64(text) {
   return hash.toString(16).padStart(16, '0');
 }
 
+const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const vector = (value) => Array.isArray(value) && value.length === 3 && value.every(finite) ? value : undefined;
+
+function responseObservation(value, entity) {
+  if (!isRecord(value)) return undefined;
+  const payload = isRecord(value.result) ? value.result : value;
+  const entities = payload.entities;
+  if (Array.isArray(entities)) {
+    const entry = entities.find((candidate) => isRecord(candidate) && candidate.id === entity);
+    if (!isRecord(entry)) return undefined;
+    return { entity, position: vector(entry.transform?.position ?? entry.position) };
+  }
+  if (isRecord(entities)) {
+    const entry = entities[entity];
+    if (!isRecord(entry)) return undefined;
+    return { entity, position: vector(entry.transform?.position ?? entry.position) };
+  }
+  return undefined;
+}
+
+function expectedObservation(value, entity) {
+  if (!isRecord(value)) return { entity, position: undefined };
+  const direct = vector(value.position);
+  if (direct !== undefined) return { entity: value.entity ?? entity, position: direct };
+  if (isRecord(value.after)) {
+    const after = vector(value.after.position);
+    if (after !== undefined) return { entity: value.entity ?? entity, position: after };
+  }
+  return responseObservation(value, entity) ?? { entity, position: undefined };
+}
+
+function sameVector(left, right) {
+  return left !== undefined && right !== undefined
+    && left.every((value, index) => Math.abs(value - right[index]) <= 1e-6);
+}
+
 export function evaluatePumpEndpoint({
   hostLog,
   movementResponsePath = undefined,
   movementResponseBody = undefined,
   movementPayload = undefined,
+  collectorError = undefined,
+  collectorStoppedEarly = false,
+  movementResponseError = undefined,
+  metadataError = undefined,
   maxGapMs = PUMP_SILENCE_GAP_BUDGET_MS,
 } = {}) {
   const fail = (code, detail) => ({ code, detail, id: 'R7_PUMP_SILENCE', pass: false });
   if (typeof hostLog !== 'string' || hostLog.length === 0) {
     return fail('R7_PUMP_SILENCE_MISSING', { reason: 'no host log supplied' });
+  }
+  if (metadataError !== undefined && metadataError !== null) {
+    return fail('R7_PUMP_METADATA_MISSING', { error: String(metadataError) });
+  }
+  if (collectorError !== undefined && collectorError !== null && collectorError !== '') {
+    return fail('R7_PUMP_COLLECTOR_FAILED', { error: String(collectorError) });
+  }
+  if (collectorStoppedEarly === true) {
+    return fail('R7_PUMP_COLLECTOR_STOPPED_EARLY', { collectorStoppedEarly: true });
+  }
+  if (movementResponseError !== undefined && movementResponseError !== null && movementResponseError !== '') {
+    return fail('R7_PUMP_RESPONSE_READ_FAILED', { error: String(movementResponseError) });
+  }
+  if (typeof movementResponsePath !== 'string' || movementResponsePath.length === 0) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', { reason: 'movement response path is required' });
+  }
+  if (typeof movementResponseBody !== 'string' || movementResponseBody.length === 0) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', { reason: 'movement response body is required' });
   }
   const lines = hostLog.split('\n').filter((entry) => entry.includes('TN_PUMP_ENDPOINT:'));
   if (lines.length === 0) {
@@ -100,6 +158,9 @@ export function evaluatePumpEndpoint({
     } catch (error) {
       return fail('R7_PUMP_SILENCE_MALFORMED', { reason: error instanceof Error ? error.message : String(error) });
     }
+    if (!isRecord(parsed)) {
+      return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'endpoint is not an object' });
+    }
     if (movementResponsePath !== undefined && parsed.path !== movementResponsePath) continue;
     endpoint = parsed;
   }
@@ -109,21 +170,20 @@ export function evaluatePumpEndpoint({
   if (endpoint.stored !== true) {
     return fail('R7_PUMP_SILENCE_UNOBSERVED', { stored: endpoint.stored ?? null });
   }
-  // Exact-bytes binding: the endpoint's hash and length must match the
-  // response body the coordinator read back. A reused or foreign response
-  // with the right path but different bytes fails here.
-  if (movementResponseBody !== undefined) {
-    const body = String(movementResponseBody);
-    if (endpoint.bytes !== Buffer.byteLength(body, 'utf8')
-      || String(endpoint.payloadHash ?? '').toLowerCase() !== fnv1a64(body)) {
-      return fail('R7_PUMP_CORRELATION_UNPROVEN', {
-        expectedBytes: Buffer.byteLength(body, 'utf8'),
-        expectedHash: fnv1a64(body),
-        gotBytes: endpoint.bytes ?? null,
-        gotHash: endpoint.payloadHash ?? null,
-        reason: 'endpoint does not match the response bytes read back',
-      });
-    }
+  // Exact-bytes binding: the endpoint's hash and length must match the response body
+  // the coordinator read back. A reused or foreign response with the right path but
+  // different bytes fails here; identity is mandatory in full acceptance mode.
+  const body = movementResponseBody;
+  const expectedBytes = Buffer.byteLength(body, 'utf8');
+  const expectedHash = fnv1a64(body);
+  if (endpoint.bytes !== expectedBytes || String(endpoint.payloadHash ?? '').toLowerCase() !== expectedHash) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', {
+      expectedBytes,
+      expectedHash,
+      gotBytes: endpoint.bytes ?? null,
+      gotHash: endpoint.payloadHash ?? null,
+      reason: 'endpoint does not match the response bytes read back',
+    });
   }
   const pump = endpoint.pump;
   if (pump?.observed !== true) {
@@ -141,17 +201,32 @@ export function evaluatePumpEndpoint({
   if (!(pump.atMs > pump.lastPumpAtMs)) {
     return fail('R7_PUMP_CORRELATION_STALE', { atMs: pump.atMs, lastPumpAtMs: pump.lastPumpAtMs });
   }
-  // Displacement shape: the read-back body must carry the observation the
-  // report claims (position or movementDelta), so a bare ack can never pass
-  // as movement proof.
-  const shapeSource = movementResponseBody ?? movementPayload;
-  if (shapeSource !== undefined) {
-    const text = shapeSource !== null && typeof shapeSource === 'object'
-      ? JSON.stringify(shapeSource)
-      : String(shapeSource);
-    if (!text.includes('position') && !text.includes('movementDelta') && !text.includes('player')) {
-      return fail('R7_PUMP_CORRELATION_UNPROVEN', { reason: 'response body carries no displacement observation' });
-    }
+  // Displacement shape: the read-back body must parse as the actual device
+  // response and carry a finite position for the named entity. A bare ack or
+  // a string containing "player" is not movement proof.
+  let parsedResponse;
+  try {
+    parsedResponse = JSON.parse(body);
+  } catch (error) {
+    return fail('R7_PUMP_CORRELATION_MALFORMED', { reason: error instanceof Error ? error.message : String(error) });
+  }
+  const expectedEntity = movementPayload?.entity ?? 'player';
+  const observed = responseObservation(parsedResponse, expectedEntity);
+  if (observed?.position === undefined) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', {
+      entity: expectedEntity,
+      reason: 'response body carries no finite position observation for the named entity',
+    });
+  }
+  const expected = expectedObservation(movementPayload, expectedEntity);
+  if (expected.entity !== expectedEntity || (expected.position !== undefined && !sameVector(observed.position, expected.position))) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', {
+      expectedEntity,
+      expectedPosition: expected.position ?? null,
+      observedEntity: observed.entity,
+      observedPosition: observed.position,
+      reason: 'response position does not match the runner movement observation',
+    });
   }
   const gaps = [pump.maxGapMs, pump.trailingGapMs, ...(Array.isArray(pump.longGaps) ? pump.longGaps : [])];
   if (!gaps.every(finite)) {
@@ -390,11 +465,18 @@ export async function evaluateFirstPlayable(input) {
   const pump = pumpScope === 'movement-only'
     ? evaluatePumpSilence({ hostLog, maxGapMs: maxPumpGapMs })
     : evaluatePumpEndpoint({
+      collectorError: input.collectorError,
+      collectorStoppedEarly: input.collectorStoppedEarly,
       hostLog,
       maxGapMs: maxPumpGapMs,
-      movementPayload: input.movementPayload ?? report?.movementDelta ?? undefined,
+      metadataError: input.metadataError,
       movementResponseBody: input.movementResponseBody,
+      movementResponseError: input.movementResponseError,
       movementResponsePath: input.movementResponsePath,
+      movementPayload: input.movementPayload ?? {
+        entity: report?.entity,
+        position: report?.after?.position,
+      },
     });
   checks.push(pump);
 
@@ -439,18 +521,31 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
   let movementResponseBody;
   let movementResponsePath;
+  let collectorError;
+  let collectorStoppedEarly = false;
+  let movementResponseError;
+  let metadataError;
   try {
     const pumpMeta = readJson(join(armDir, 'pump-endpoint.json'));
+    collectorError = pumpMeta.collectorError ?? undefined;
+    collectorStoppedEarly = pumpMeta.collectorStoppedEarly === true;
     movementResponsePath = pumpMeta.responsePath ?? undefined;
-    movementResponseBody = readFileSync(join(armDir, 'movement-response.json'), 'utf8');
-  } catch {
-    movementResponseBody = undefined;
+    movementResponseError = pumpMeta.movementResponseError ?? undefined;
+    if (movementResponseError === undefined) {
+      movementResponseBody = readFileSync(join(armDir, 'movement-response.json'), 'utf8');
+    }
+  } catch (error) {
+    metadataError = error instanceof Error ? error.message : String(error);
   }
   const result = await evaluateFirstPlayable({
     bound,
+    collectorError,
+    collectorStoppedEarly,
     framePng,
     hostLog,
+    metadataError,
     movementResponseBody,
+    movementResponseError,
     movementResponsePath,
     pumpScope,
     report,

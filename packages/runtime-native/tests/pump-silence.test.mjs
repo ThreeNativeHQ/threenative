@@ -8,10 +8,10 @@
 
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const RUNTIME_SRC = readFileSync(join(ROOT, "src", "runtime.cpp"), "utf8");
@@ -39,7 +39,7 @@ function findBinary() {
 // `plain`: `run` without `--screenshot`, so the main-loop-exit endpoint fires
 // (a never-presenting run proves the shutdown flush).
 function runHost(bundlePath, mode = "screenshot") {
-  const dir = mkdtempSync(join(tmpdir(), "tn-pump-"));
+  const dir = makeTempDirSync("tn-pump-");
   const shot = join(dir, "shot.png");
   const xvfb = join(ROOT, "..", "..", "scripts", "xvfb.sh");
   const args =
@@ -60,24 +60,49 @@ function runHost(bundlePath, mode = "screenshot") {
 function runHostKill(bundleJs) {
   // SIGKILL mid-run: no graceful exit is possible, so no endpoint line can
   // exist. The harness must treat the missing line as failure, never a pass.
-  const dir = mkdtempSync(join(tmpdir(), "tn-pump-kill-"));
+  const dir = makeTempDirSync("tn-pump-kill-");
   const bundle = join(dir, "game.js");
+  const hostPidFile = join(dir, "host.pid");
   writeFileSync(bundle, bundleJs);
   const xvfb = join(ROOT, "..", "..", "scripts", "xvfb.sh");
   return new Promise((resolve) => {
     const chunks = [];
-    const child = spawn(xvfb, ["env", "SDL_VIDEODRIVER=x11", findBinary(), "run", bundle], {
-      cwd: dir,
-    });
+    const controller = 'printf "%s\\n" "$$" > "$1"; shift; exec "$@"';
+    const child = spawn(
+      xvfb,
+      [
+        "env",
+        "SDL_VIDEODRIVER=x11",
+        "sh",
+        "-c",
+        controller,
+        "tn-pump-kill",
+        hostPidFile,
+        findBinary(),
+        "run",
+        bundle,
+      ],
+      { cwd: dir },
+    );
     child.stdout.on("data", (chunk) => chunks.push(chunk));
     child.stderr.on("data", (chunk) => chunks.push(chunk));
-    setTimeout(() => child.kill("SIGKILL"), 3000);
-    setTimeout(() => {
+
+    const killHost = () => {
       try {
-        child.kill("SIGKILL");
+        const hostPid = Number(readFileSync(hostPidFile, "utf8"));
+        if (!Number.isInteger(hostPid) || hostPid <= 0) throw new Error("invalid host pid");
+        process.kill(hostPid, "SIGKILL");
+        return true;
       } catch {
-        /* already dead */
+        return false;
       }
+    };
+
+    setTimeout(() => {
+      if (!killHost()) child.kill("SIGTERM");
+    }, 3000);
+    setTimeout(() => {
+      killHost();
       resolve(Buffer.concat(chunks).toString("utf8"));
     }, 6000);
   });
@@ -102,7 +127,7 @@ function endpointSnapshots(log) {
 // displacement-shaped payload, like device.ts dispatch() after sampling.
 // Returns the host log plus the response path for coordinator correlation.
 function runMailboxRespond({ stallBeforeRespondMs = 0 } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "tn-pump-ep-"));
+  const dir = makeTempDirSync("tn-pump-ep-");
   const root = join(dir, "mbox");
   mkdirSync(root, { recursive: true });
   const res = join(root, "response.json");
@@ -192,7 +217,7 @@ test("real host: a deliberate 400ms stall is retained, not filtered", () => {
   // The spin runs INSIDE a pump iteration (timers segment). Screenshot mode
   // presents on pump 1, so it lands in the trailing interval; the plain-mode
   // timer run below proves the inter-entry half.
-  const dir = mkdtempSync(join(tmpdir(), "tn-pump-stall-"));
+  const dir = makeTempDirSync("tn-pump-stall-");
   const stalled = join(dir, "stall.js");
   const smokeSrc = readFileSync(SMOKE, "utf8");
   writeFileSync(
@@ -215,7 +240,7 @@ test("real host: multi-pump inter-entry >250ms gap is retained", () => {
   // Plain `run` (no screenshot gate): a 50 ms timer keeps pumps coming, a
   // 400 ms spin at tick 6 forces a genuine inter-entry gap. Proves retention
   // independently of rAF/presentation — no frame callback is registered.
-  const dir = mkdtempSync(join(tmpdir(), "tn-pump-multi-"));
+  const dir = makeTempDirSync("tn-pump-multi-");
   const bundle = join(dir, "game.js");
   writeFileSync(
     bundle,
@@ -236,7 +261,7 @@ test("real host: multi-pump inter-entry >250ms gap is retained", () => {
 test("real host: shutdown without a present still flushes", () => {
   // A timer-only run never presents, so the first-frame endpoint never fires;
   // the main-loop-exit flush is the bounded endpoint. Missing line fails.
-  const dir = mkdtempSync(join(tmpdir(), "tn-pump-noflip-"));
+  const dir = makeTempDirSync("tn-pump-noflip-");
   const bundle = join(dir, "game.js");
   writeFileSync(
     bundle,

@@ -5,7 +5,7 @@
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { evaluateFirstPlayable } from './evaluate-first-playable.mjs';
+import { evaluateFirstPlayable, fnv1a64 } from './evaluate-first-playable.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..', '..', '..', '..');
@@ -86,12 +86,29 @@ const report = (overrides = {}) => ({
   ...overrides,
 });
 
-const pumpEndpoint = (overrides = {}) => 'TN_PUMP_ENDPOINT:{"path":"/run/res","stored":true,"pump":'
-  + '{"observed":true,"pumpCount":60,"firstPumpAtMs":120.0,"lastPumpAtMs":900.0,'
-  + `"maxGapMs":${overrides.maxGapMs ?? 12.0},"maxGapAtMs":400.0,`
-  + `"trailingGapMs":${overrides.trailingGapMs ?? 8.0},"atMs":950.0,`
-  + '"longGaps":[],"droppedLongGaps":0}}';
-const movementPayload = { entities: { player: { position: [0.41, -0.02, -0.46] } } };
+const movementResponseBody = JSON.stringify({
+  id: 'sample-1',
+  result: { entities: [{ id: 'player', transform: { position: [0.41, -0.02, -0.46] } }] },
+});
+const movementPayload = { entity: 'player', position: [0.41, -0.02, -0.46] };
+const pumpEndpoint = ({ body = movementResponseBody, ...overrides } = {}) => `TN_PUMP_ENDPOINT:${JSON.stringify({
+  bytes: Buffer.byteLength(body, 'utf8'),
+  path: '/run/res',
+  payloadHash: fnv1a64(body),
+  pump: {
+    observed: true,
+    pumpCount: 60,
+    firstPumpAtMs: 120.0,
+    lastPumpAtMs: 900.0,
+    maxGapMs: overrides.maxGapMs ?? 12.0,
+    maxGapAtMs: 400.0,
+    trailingGapMs: overrides.trailingGapMs ?? 8.0,
+    atMs: 950.0,
+    longGaps: [],
+    droppedLongGaps: 0,
+  },
+  stored: true,
+})}`;
 
 const cases = [
   {
@@ -103,6 +120,48 @@ const cases = [
       framePng: WORLD_FRAME,
       hostLog: pumpEndpoint(),
       movementPayload,
+      movementResponseBody,
+      movementResponsePath: '/run/res',
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'missing response identity fails full pump acceptance',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint(),
+      movementPayload,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'ack containing player is not a displacement observation',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ body: '{"ack":"player"}' }),
+      movementPayload,
+      movementResponseBody: '{"ack":"player"}',
+      movementResponsePath: '/run/res',
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'collector read failure fails full pump acceptance',
+    input: {
+      bound: bound(),
+      collectorError: 'adb logcat exited',
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint(),
+      movementPayload,
+      movementResponseBody,
       movementResponsePath: '/run/res',
       report: report(),
     },

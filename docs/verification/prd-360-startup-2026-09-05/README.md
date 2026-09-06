@@ -25,7 +25,7 @@ the budget is unchanged and that finding is not concealed.
 | C++ contract `threenative-pump-silence-test` (injected clock) | pass — 22/22 checks incl. new backwards-clock guard |
 | vitest `tests/pump-silence.test.mjs` (real desktop host) | 11/11 pass |
 | CTest `-R pump-silence` | pass |
-| Evaluator validation `validate-evaluator.mjs` | 17/17 cases behave as required |
+| Evaluator validation `validate-evaluator.mjs` | 20/20 cases behave as required, including missing response identity, ack-only, and collector-error negatives |
 | Collector flow `collector-flow.mjs` (real host + mailbox, mocked adb) | correlated endpoint evaluates; hash matches; truncated → MISSING, foreign → UNPROVEN, empty → MISSING |
 | Current desktop probe | `firstPumpAtMs≈410ms` → `R7_PUMP_SILENCE_EXCEEDED` (correct rejection, not a device claim) |
 
@@ -74,8 +74,8 @@ the budget is unchanged and that finding is not concealed.
 - Executed proof sources, byte-identical to the run inputs (checked with
   `cmp`): [`measure-first-playable.mjs.txt`](measure-first-playable.mjs.txt)
   (`3256a881…`), [`evaluate-first-playable.mjs.txt`](evaluate-first-playable.mjs.txt)
-  (`c0a5ffcf…`), [`validate-evaluator.mjs.txt`](validate-evaluator.mjs.txt)
-  (`578ae469…`), [`collector-flow.mjs.txt`](collector-flow.mjs.txt)
+  (`98ef6bb4…`), [`validate-evaluator.mjs.txt`](validate-evaluator.mjs.txt)
+  (`41b24ae8…`), [`collector-flow.mjs.txt`](collector-flow.mjs.txt)
   (`36f57119…`). Live originals remain under
   `artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/` and
   `artifacts/batch-2026-09-05/pump-observer/` (git-ignored).
