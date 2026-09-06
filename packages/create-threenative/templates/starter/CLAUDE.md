@@ -79,12 +79,9 @@ therefore keep the previous clip's pose, and `boneContact` reports in metres whe
 `src/render/rockRidge.ts` owns the granite field, seed, bounds, ridge material handoff, and quality choice; `src/render/implicitSurface.ts` is the local renderer-independent extractor and final-array topology audit. A fused mass is one implicit field; separate debris may be instanced.
 After changing bounds, field, or resolution, run three fixed seeds and require the audit to report zero boundary edges, degenerate triangles, and winding conflicts with positive signed volume. Never hide holes with `DoubleSide` or a normal map.
 `Play.enter` attaches Preview immediately, then the classic Worker refinement swaps atomically; do not add a main-thread showcase fallback.
-
 ## Flora authoring
-Plantings come from one envelope plus seed in `src/render/floraStand.ts` — the shape/look owner. New individuals reroll the seed; new kinds change the envelope. `src/render/floraField.ts` is local generated source (envelope→graph→proportion→foliage, no three.js); `src/render/floraMesh.ts` attaches one merged wood mesh plus one instanced foliage mesh; `src/render/floraWind.ts` owns sway. Density budgets live in `floraStand.ts` beside the seed. Never reorder RNG draws — draw order is documented in `floraField.ts` and every seed's stand changes shape if it moves. Never hide holes with `DoubleSide`. After changing envelope, bounds, or density, re-check the determinism hashes (`scenery.flora` debug: `positionHash`, `indexHash`) and look at the fixed starter camera across three seeds.
-
+Plantings come from one envelope plus seed in `src/render/floraStand.ts`. `floraField.ts` grows them (no three.js); `floraMesh.ts` attaches wood plus foliage; `floraWind.ts` owns sway. Never reorder RNG draws. Never hide holes with `DoubleSide`; after changing the recipe, re-check hashes and the fixed camera.
 ## Quality and proof
-
 `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`;
 override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
 the source. The bridge flushes about 100 ms; keep state human-readable and frame feedback in Three.js.

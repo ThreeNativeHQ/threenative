@@ -3,7 +3,7 @@
 // before any geometry is grown.
 import type { IFloraBounds, IFloraBudgets, IFloraEnvelope } from "./floraSample.js";
 
-export function finiteFlora(value: number, field: string): number {
+function finiteFlora(value: number, field: string): number {
   if (!Number.isFinite(value)) throw new Error(`TN_FLORA_ENVELOPE_INVALID: ${field} not finite.`);
   return value;
 }

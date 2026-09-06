@@ -274,7 +274,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "e3464e241b0badaa140f9ce27b83c2c46e3885f0260d72eb521db00929ed1629",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "c352f88ca201eca0320f3924155ace77a854a26c7f5f78c09c3b16a2bed03bfc",
+  // Recomputed 2026-09-06 for PRD-363: starter grows a deterministic flora stand
+  // (generated floraField/skeleton/foliage/validate/sample/wood/sprite/mesh/stand/wind
+  // plus scenery+Play wiring, flora playtest assertions, and AGENTS.md recipe).
+  starter: "44ab312886baf950b44cc3d7b57cafdd5accc762559459cf77b383e5489c17f7",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
