@@ -695,7 +695,14 @@ function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
     stop: async () => {
       if (child === undefined || child.exitCode !== null) return;
       if (process.platform === 'win32') child.kill();
-      else process.kill(-child.pid, 'SIGTERM');
+      else {
+        try {
+          process.kill(-child.pid, 'SIGTERM');
+        } catch (error) {
+          if (error?.code !== 'ESRCH') throw error;
+          return;
+        }
+      }
       await new Promise((resolve) => child.once('exit', resolve));
     },
     writeFile: async (path, contents) => writeFile(path, contents, 'utf8'),

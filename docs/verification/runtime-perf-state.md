@@ -3057,6 +3057,93 @@ claimed.
 
 `git diff --check` passed with no output and exit 0 after this update.
 
+### PRD-358 prebuilt artifact path repair — 2026-09-06
+
+The production collector changes its working directory to the generated scaffold before it
+launches a supplied native host. Relative `--prebuilt-artifact` values therefore resolved against
+the temporary project and produced `ENOENT` on hosted macOS and Windows jobs. `normalizeOptions`
+now resolves that input at the CLI boundary, while the existing receipt and binary hash checks stay
+in place.
+
+The focused regression was red before the repair:
+
+```text
+pnpm exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t "accepted profile controls"
+Test Files 1 failed (1)
+Tests 1 failed | 32 skipped (33)
+Expected: "/home/.../build/tn-macos/mystral"
+Received: "build/tn-macos/mystral"
+exit 1
+```
+
+The same focused command passed after the repair:
+
+```text
+pnpm exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t "accepted profile controls"
+Test Files 1 passed (1)
+Tests 1 passed | 32 skipped (33)
+exit 0
+```
+
+The complete production-profile suite then passed with 33 tests. The full root test retry passed
+with 390 files passed and 2 skipped, and 4,304 tests passed and 7 skipped. The lane remains clean
+at `91cfbc34`; the hosted CI run for that commit still timed out the Linux collector at its
+declared 45-second bound and retained its collector status artifact. The native-platform run was
+still completing its Windows and iOS jobs when this record was written; its completed macOS job
+was from the pre-repair execution window. No physical performance baseline or platform claim is
+promoted by this repair.
+
+The same command with a relative prebuilt path was also executed locally with `DISPLAY` unset;
+the collector completed through the post-present mailbox and retained startup and steady reports:
+
+```text
+timeout 60s node packages/runtime-native/scripts/profile-production.mjs --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 --prebuilt-artifact packages/runtime-native/build/tn-linux/mystral --out artifacts/prd358-relative-path-repair
+{"status":"FAIL","exitCode":1,"codes":["TN_PROD_PERFORMANCE_BUDGET"],"runWindows":[{"durationSeconds":7.403327880859375,"sampleCount":315}],"startupMs":3735,"p95FrameMs":81.957763671875,"p99FrameMs":152.314697265625,"meanFps":42.5484329573466,"artifactCount":4}
+```
+
+The result is an honest production budget failure with complete reports, rather than a path or
+missing-evidence failure. This workstation result is diagnostic only; it does not promote a
+baseline or certify a hosted or physical lane.
+
+### PRD-358 native cleanup repair — 2026-09-06
+
+The hosted macOS collector reached the corrected absolute artifact path, but a runner failure
+after the child exited caused cleanup to call `process.kill` on a gone process group. The resulting
+`ESRCH` escaped before `desktopFailureRun` could retain the failed report. Cleanup now treats only
+that already-exited condition as complete and still propagates other signals.
+
+The hosted macOS run `34003845012` exposed the failure:
+
+```text
+{"codes":["TN_PROD_EVIDENCE_INVALID"],"message":"kill ESRCH","status":"BLOCKED","exitCode":2}
+```
+
+The focused regression was red before the repair:
+
+```text
+pnpm exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t "desktop cleanup tolerates"
+Test Files 1 failed (1)
+Tests 1 failed | 33 skipped (34)
+exit 1
+```
+
+It passed after the repair:
+
+```text
+pnpm exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t "desktop cleanup tolerates"
+Test Files 1 passed (1)
+Tests 1 passed | 33 skipped (34)
+exit 0
+```
+
+The complete production-profile suite passed with 34 tests. The same hosted run retained a
+Windows production manifest with `TN_PROD_RENDER_SAMPLES_INCOMPLETE`,
+`TN_PROD_STARTUP_SAMPLES_INCOMPLETE`, `TN_PROD_PLAYTEST_FAILED`, and zero samples; iOS remained
+an advisory simulator row without a retained production manifest. The native coverage summary
+reported Windows, macOS and iOS simulator as `BLOCKED`, with the physical rows `UNVERIFIED` and
+the optional parity/emulator rows `SKIPPED`. These are evidence dispositions, not platform
+performance claims.
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,

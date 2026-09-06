@@ -56,6 +56,38 @@ test('desktop runner exceptions retain failed evidence rather than disappearing'
   assert.match(source, /return desktopFailureRun\(error, await driver.captureConsole\(\),/u);
 });
 
+test('desktop cleanup tolerates a child process group that already exited', async () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const context = {
+    join,
+    process: {
+      env: { DISPLAY: ':fixture' },
+      kill: () => {
+        const error = new Error('process group already exited');
+        error.code = 'ESRCH';
+        throw error;
+      },
+      platform: 'linux',
+    },
+    spawn: () => {
+      const child = new EventEmitter();
+      child.exitCode = null;
+      child.pid = 123;
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    },
+    writeFile: async () => undefined,
+    rename: async () => undefined,
+    nonBlankPng: async () => true,
+    DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
+  };
+  runInNewContext(driverSource, context);
+  const driver = context.createDesktopDriver('/fixture/mystral', '/fixture/scaffold', { renderSize: { height: 900, width: 1600 } }, '/fixture/mailbox');
+  await driver.launch();
+  await assert.doesNotReject(() => driver.stop());
+});
+
 test('native report retention redacts unsafe host console paths without dropping safe evidence', () => {
   const report = safeReport({
     assertionResults: [{ id: 'diagnostics', pass: false }],
