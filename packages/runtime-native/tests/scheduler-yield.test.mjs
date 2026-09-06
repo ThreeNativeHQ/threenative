@@ -46,7 +46,7 @@ function install(scope = {}) {
   // The installer closes over `globalThis`, so it is evaluated with the fake scope bound to that
   // name rather than the real one — otherwise the test would shim the test runner.
   const factory = new Function("globalThis", `return (${installerSource()});`)(scope);
-  const ok = factory();
+  const ok = factory((callback) => setTimeout(callback, 0));
   return { scope, ok };
 }
 

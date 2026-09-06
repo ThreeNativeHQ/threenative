@@ -104,3 +104,34 @@ deleted on 2026-08-21 — PRD-152's `SceneRenderProjection` is the shipping mech
 never rewrites the authored graph, so this stall no longer exists to measure. The numbers
 below are kept as the record of the session that measured them.) Keeping indices instead of
 expanding to non-indexed geometry was tried and **measured worse** (2,658 ms), and reverted.
+## Cooperative compile scheduling — Linux, 2026-09-05
+
+The host now queues `scheduler.yield()` continuations separately from frame-coupled timers.
+It drains them with microtask checkpoints, bounded to 2 ms or 1,024 tasks per loop, then
+returns to input, timers and presentation. Shutdown and reload release queued callback handles;
+queued work also keeps no-SDL execution alive. No new public global or game option is introduced.
+The time slice is cooperative: one synchronous callback or a self-replenishing microtask chain
+cannot be preempted by this queue, just as it cannot be preempted by the existing timer loop.
+
+The real-host contract in `tests/fixtures/scheduler-yield.js`, executed by the existing required
+Linux `tests/runtime-next-contract.test.mjs` lane, failed before the change: 120 empty yields
+crossed 120 frames. After rebuilding, they crossed zero frames; a controlled 50 ms workload
+still allowed 25 animation callbacks and 25 timer callbacks. The native tests passed 37 cases
+with 2 skips. This supplements the Node-hosted shim tests, which could not observe native
+timer/frame coupling.
+
+The freshly rebuilt Wildwood executable then ran for 75 seconds on private X11. Its third
+300-frame window no longer reported compilation, at resolution scale 1; before this change,
+all three completed windows reported compilation. This is not a presented-FPS result, and
+the bounded warm-up still reported an abandoned scene compile during startup. No Android,
+iOS, macOS or Windows execution is claimed for this change. Raw logs are under
+`artifacts/wildwood-native-profile-20260905/scheduler-{native-green,suite,wildwood}.log`;
+the broader evidence is in `docs/verification/native-canvas-presentation-2026-09-05.md`.
+
+The rebuilt Wildwood passed all five native gameplay assertions (world/UI ready, movement
+26.4476 m, odometer 26.7 m, zero game error diagnostics); its world screenshot was inspected.
+Full `pnpm test` exited 0 with 4,299 passed / 4 skipped tests, and `pnpm typecheck` exited 0.
+Changed-file Biome checks are clean. Root `pnpm lint` still exits 1 on eight pre-existing
+`.linchpin` formatting errors, which were left untouched. Logs: `scheduler-native-flow-console.log`,
+`scheduler-root-tests.log`, `scheduler-typecheck.log`, `scheduler-scoped-lint.log`, and
+`scheduler-lint.log` in the artifact directory above.

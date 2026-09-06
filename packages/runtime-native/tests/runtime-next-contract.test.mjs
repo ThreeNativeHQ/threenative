@@ -9,6 +9,15 @@ import { test } from 'vitest';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
+test('native cooperative yields avoid frame coupling without starving frames or timers', () => {
+  const executable = join(root, 'build/tn-linux/mystral');
+  assert.ok(existsSync(executable), 'Build the native host before running its scheduler contract');
+  const output = execFileSync(executable, [
+    'run', join(root, 'tests/fixtures/scheduler-yield.js'), '--no-sdl',
+  ], { encoding: 'utf8', timeout: 30_000 });
+  assert.match(output, /TN_SCHEDULER_CONTRACT:/u);
+});
+
 test('Canvas2D raster and upload-dirtiness contracts execute in the native test lane', () => {
   const executable = join(root, 'build/tn-linux/threenative-canvas2d-dirty-test');
   assert.ok(existsSync(executable),
