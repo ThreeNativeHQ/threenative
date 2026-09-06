@@ -193,3 +193,7 @@ receipt proves rendering, not startup readiness or performance. No Android/iOS r
 
 [Machine-readable receipt](../../../docs/verification/wildwood-shadow-cache/native-conformance.json)
 and [shared browser/native image](../../../docs/verification/wildwood-shadow-cache/shadow-materials.png).
+
+## Canvas2D procedural-art regression (2026-09-05)
+
+The existing Canvas2D graphics backend now supports rotated elliptical arcs. Native pixel assertions cover the long and short axes and counterclockwise sweep; JS conformance also checks rejection of negative radii. This is drawing support on the existing canvas object, not a wider DOM UI stub. The bounded desktop case passed (1 pass, 0 fail, 92 unselected). Full game artwork parity remains open pending gradients. Evidence: `docs/verification/native-canvas-presentation-2026-09-05.md` and local `artifacts/wildwood-native-profile-20260905/ellipse-*`.

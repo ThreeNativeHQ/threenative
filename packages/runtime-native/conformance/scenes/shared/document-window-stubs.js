@@ -26,6 +26,21 @@ export function startScene(canvas, dimensions) {
       textContext.measureText("PREPARING TERRAIN").width > 20,
       "Canvas2D must resolve real glyphs for loading text",
     );
+    assertCondition(typeof textContext.ellipse === "function", "Canvas2D must draw procedural ellipses");
+    textContext.fillStyle = "#ff0000";
+    textContext.beginPath();
+    textContext.ellipse(32, 32, 20, 8, Math.PI / 2, 0, Math.PI * 2);
+    textContext.fill();
+    const ellipsePixels = textContext.getImageData(0, 0, 64, 64).data;
+    assertCondition(ellipsePixels[(16 * 64 + 32) * 4] > 240, "rotated ellipse must cover its long axis");
+    assertCondition(ellipsePixels[(32 * 64 + 16) * 4 + 3] === 0, "ellipse must preserve its short axis");
+    let rejectedRadius = false;
+    try {
+      textContext.ellipse(0, 0, -1, 8, 0, 0, 1);
+    } catch {
+      rejectedRadius = true;
+    }
+    assertCondition(rejectedRadius, "ellipse must reject a negative radius");
     assertCondition(createdCanvas !== rendererCanvas, "text and renderer canvases must be distinct");
     assertCondition(rendererCanvas !== canvas, "created canvas must not alias the host canvas");
     assertCondition(

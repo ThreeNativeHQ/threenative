@@ -649,6 +649,39 @@ void Canvas2DContext::arcTo(float x1, float y1, float x2, float y2, float radius
 #endif
 }
 
+void Canvas2DContext::ellipse(float x, float y, float radiusX, float radiusY, float rotation,
+                              float startAngle, float endAngle, bool counterclockwise) {
+#if defined(MYSTRAL_HAS_SKIA)
+    for (float value : {x, y, radiusX, radiusY, rotation, startAngle, endAngle}) {
+        if (!std::isfinite(value)) return;
+    }
+    if (radiusX < 0 || radiusY < 0) return; // The JS boundary throws IndexSizeError.
+    constexpr float tau = 2.0f * M_PI;
+    float sweep = endAngle - startAngle;
+    if (!counterclockwise && sweep >= tau) sweep = tau;
+    else if (counterclockwise && -sweep >= tau) sweep = -tau;
+    else {
+        sweep = std::fmod(sweep, tau);
+        if (!counterclockwise && sweep < 0) sweep += tau;
+        if (counterclockwise && sweep > 0) sweep -= tau;
+    }
+
+    // Build a unit arc then transform it into the rotated ellipse. Two half arcs
+    // preserve the full-circle endpoint (Skia arcTo treats a 360-degree sweep as zero).
+    const float start = std::fmod(startAngle, tau) * 180.0f / M_PI;
+    const float halfSweep = sweep * 90.0f / M_PI;
+    const SkRect unit = SkRect::MakeLTRB(-1, -1, 1, 1);
+    SkPathBuilder arc;
+    arc.moveTo(std::cos(startAngle), std::sin(startAngle));
+    arc.arcTo(unit, start, halfSweep, false);
+    arc.arcTo(unit, start + halfSweep, halfSweep, false);
+    SkMatrix matrix;
+    matrix.setAll(radiusX * std::cos(rotation), -radiusY * std::sin(rotation), x,
+                  radiusX * std::sin(rotation), radiusY * std::cos(rotation), y, 0, 0, 1);
+    impl_->pathBuilder.addPath(arc.snapshot(), matrix, SkPath::kExtend_AddPathMode);
+#endif
+}
+
 void Canvas2DContext::rect(float x, float y, float width, float height) {
 #if defined(MYSTRAL_HAS_SKIA)
     impl_->pathBuilder.addRect(SkRect::MakeXYWH(x, y, width, height));

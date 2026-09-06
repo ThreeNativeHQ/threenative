@@ -29,6 +29,26 @@ static void check(bool condition, const char* name) {
 }
 
 int main() {
+    Canvas2DContext ellipse(64, 64);
+    ellipse.consumeDirtyPixels();
+    ellipse.setFillStyle("#ff0000");
+    ellipse.beginPath();
+    ellipse.ellipse(32, 32, 20, 8, 1.57079632679f, 0, 6.28318530718f);
+    check(!ellipse.hasDirtyPixels(), "ellipse path construction does not upload pixels");
+    ellipse.fill();
+    check(ellipse.consumeDirtyPixels(), "ellipse fill requires an upload");
+    auto ellipsePixels = ellipse.getImageData(0, 0, 64, 64).data;
+    check(ellipsePixels[(16 * 64 + 32) * 4] > 240, "rotated ellipse fills its long axis");
+    check(ellipsePixels[(32 * 64 + 16) * 4 + 3] == 0, "rotated ellipse preserves its short axis");
+    ellipse.clearRect(0, 0, 64, 64);
+    ellipse.beginPath();
+    ellipse.ellipse(32, 32, 20, 20, 0, 0, 1.57079632679f, true);
+    ellipse.lineTo(32, 32);
+    ellipse.closePath();
+    ellipse.fill();
+    ellipsePixels = ellipse.getImageData(0, 0, 64, 64).data;
+    check(ellipsePixels[(24 * 64 + 24) * 4] > 240, "counterclockwise partial ellipse follows the long arc");
+    check(ellipsePixels[(40 * 64 + 40) * 4 + 3] == 0, "counterclockwise partial ellipse leaves the short arc empty");
     Canvas2DContext canvas(64, 64);
 #if defined(__linux__) && !defined(__ANDROID__)
     canvas.setFont("17px monospace");

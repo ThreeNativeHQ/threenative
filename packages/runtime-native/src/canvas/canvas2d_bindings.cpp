@@ -11,6 +11,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <cmath>
 
 namespace mystral {
 namespace canvas {
@@ -335,6 +336,26 @@ js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ct
                     static_cast<float>(engine->toNumber(args[4])),
                     ccw
                 );
+            }
+            return engine->newUndefined();
+        })
+    );
+
+    // ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle, counterclockwise)
+    engine->setProperty(jsCtx, "ellipse",
+        engine->newFunction("ellipse", [engine, capturedCtx](void*, const std::vector<js::JSValueHandle>& args) {
+            if (capturedCtx && args.size() >= 7) {
+                float values[7];
+                for (size_t i = 0; i < 7; ++i) {
+                    values[i] = static_cast<float>(engine->toNumber(args[i]));
+                    if (!std::isfinite(values[i])) return engine->newUndefined();
+                }
+                if (values[2] < 0 || values[3] < 0) {
+                    engine->throwException("IndexSizeError: ellipse radii must be non-negative");
+                    return engine->newUndefined();
+                }
+                capturedCtx->ellipse(values[0], values[1], values[2], values[3], values[4],
+                                     values[5], values[6], args.size() > 7 && engine->toBoolean(args[7]));
             }
             return engine->newUndefined();
         })
