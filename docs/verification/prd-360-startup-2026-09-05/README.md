@@ -120,14 +120,12 @@ and retention-index regeneration:
 
 ## Linchpin integration checkpoint — 2026-09-06
 
-The fresh read-only crouter checkpoint review found concrete handoff-document
-defects before this correction: stale `FOLLOWUP.md` file-count wording, an
-overbroad claim that gates were merely "rerun" without a result table, and
-missing in-tree hash-command output. Those findings are corrected above. The
-review confirmed the observer spans exactly four implementation/test files,
-below the five-file cap. Physical Android, the hand-written desktop transport
-payload boundary, and real-host `device.ts` order tracking remain evidence
-gaps; no PRD phase is accepted.
+The final read-only crouter checkpoint review returned `VERDICT: APPROVE` with
+no blocking defects. It confirmed that the current head, gate results, hashes,
+and handoff documents agree; the observer spans exactly four implementation/test
+files, below the five-file cap. Physical Android, the hand-written desktop
+transport payload boundary, and real-host `device.ts` order tracking remain
+evidence gaps; no PRD phase is accepted.
 
 Fresh focused checks after the consolidation passed: CMake rebuilt `mystral`;
 the pump, native-registration, and native-coverage Vitest files passed 41/41;
