@@ -147,3 +147,21 @@ func TestInvalidGameplayPayload(t *testing.T) {
 		t.Fatalf("snapshot player = %q", snapshot.Player.ID)
 	}
 }
+
+func TestClockProbeReplyCarriesAReceiveAndSendSample(t *testing.T) {
+	probe := gameplayClockProbe{ProbeID: 7, ClientSentMs: 11.5}
+	payload, err := encodeClockReply(probe, 20.25, 20.5)
+	if err != nil {
+		t.Fatalf("encode clock reply: %v", err)
+	}
+	var reply gameplayClockReply
+	if err := json.Unmarshal(payload, &reply); err != nil {
+		t.Fatalf("decode clock reply: %v", err)
+	}
+	if reply.ProbeID != probe.ProbeID || reply.ClientSentMs != probe.ClientSentMs {
+		t.Fatalf("probe identity = %+v, want id=%d client=%v", reply, probe.ProbeID, probe.ClientSentMs)
+	}
+	if reply.ServerReceivedMs > reply.ServerSentMs {
+		t.Fatalf("server receive time %v is after send time %v", reply.ServerReceivedMs, reply.ServerSentMs)
+	}
+}

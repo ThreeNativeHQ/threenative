@@ -12,8 +12,15 @@ export type NetworkingStatus = "disabled" | "connecting" | "connected" | "discon
 
 export interface INetworkingState extends Record<string, unknown> {
   networkActionAcks?: number;
+  networkActionAckLatencyMs?: number;
+  networkAppliedStateAgeMs?: number;
   networkConnected: boolean;
+  networkClockOffsetMs?: number;
+  networkClockUncertaintyMs?: number;
   networkError: string;
+  networkJsNetworkingCpuMs?: number;
+  networkMetricsReady?: boolean;
+  networkUnmatchedActionAcks?: number;
   networkLastActionId?: number;
   networkLocalX?: number;
   networkLocalZ?: number;
@@ -69,11 +76,43 @@ interface IActionReply {
   readonly accepted: boolean;
 }
 
+interface IClockReply {
+  readonly probeId: number;
+  readonly clientSentMs: number;
+  readonly serverReceivedMs: number;
+  readonly serverSentMs: number;
+}
+
+interface IClockProbe {
+  readonly rttMs: number;
+  readonly offsetMs: number;
+  readonly uncertaintyMs: number;
+  readonly receivedAtMs: number;
+}
+
+interface INetworkingMetricSamples {
+  readonly appliedStateAgeMs: number[];
+  readonly actionAckLatencyMs: number[];
+  connectedAtMs: number | undefined;
+  collectionStartedAtMs: number | undefined;
+  lastSampleAtMs: number | undefined;
+  nextActionAtMs: number | undefined;
+  nextClockProbeAtMs: number | undefined;
+  nextHeartbeatAtMs: number | undefined;
+  readonly jsNetworkingCpuMs: number[];
+  unmatchedActionAckCount: number;
+  readonly clockProbes: IClockProbe[];
+  readonly pendingActions: Map<number, number>;
+  readonly pendingClockProbes: Map<number, number>;
+}
+
 const NETWORK_SESSION_ASSET = "networking-session.json";
 const APPLICATION_PROTOCOL = "threenative-smoke/1";
 const INPUT_TICKS_PER_SECOND = 60;
 const INPUT_DURATION_TICKS = INPUT_TICKS_PER_SECOND * 2;
-const HEARTBEAT_INTERVAL_TICKS = INPUT_TICKS_PER_SECOND;
+const MAX_METRIC_SAMPLES = 10_000;
+const METRIC_SCHEMA_VERSION = 2;
+const METRIC_WARMUP_MS = 10_000;
 const PEER_SILENCE_TIMEOUT_MS = 500;
 const CHANNELS = [
   { id: 1, delivery: "unreliable" },
@@ -234,6 +273,26 @@ function parseActionReply(data: Uint8Array): IActionReply {
   };
 }
 
+function parseClockReply(data: Uint8Array): IClockReply {
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(data));
+  } catch {
+    throw new Error("TN_NETWORK_PROTOCOL: clock reply is not valid JSON");
+  }
+  const record = exactRecord(
+    value,
+    ["clientSentMs", "probeId", "serverReceivedMs", "serverSentMs"],
+    "clock reply",
+  );
+  return {
+    clientSentMs: finiteNumber(record.clientSentMs, "clock client send time"),
+    probeId: safeNonNegativeInteger(record.probeId, "clock probe id"),
+    serverReceivedMs: finiteNumber(record.serverReceivedMs, "clock server receive time"),
+    serverSentMs: finiteNumber(record.serverSentMs, "clock server send time"),
+  };
+}
+
 function encodeGameplay(value: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(value));
 }
@@ -273,6 +332,7 @@ export function observeSnapshot<TState extends INetworkingState>(
   snapshot: INetworkSnapshot,
   lastSnapshotTick: Map<string, number>,
   positions: IObservedPositions,
+  metrics?: INetworkingMetricSamples,
 ): void {
   const previousTick = lastSnapshotTick.get(snapshot.player.id);
   if (previousTick !== undefined && snapshot.tick <= previousTick) return;
@@ -295,6 +355,23 @@ export function observeSnapshot<TState extends INetworkingState>(
   }
   const local = positions.local;
   const remote = positions.remote;
+  if (metrics !== undefined) {
+    const nowMs = performance.now();
+    const probe = bestClockProbe(metrics, nowMs);
+    if (probe !== undefined) {
+      const estimateMs = nowMs + probe.offsetMs - snapshot.serverMonoMs;
+      const upperBoundMs = Math.max(0, estimateMs + probe.uncertaintyMs);
+      if (Number.isFinite(upperBoundMs)) {
+        appendMeasuredSample(metrics, metrics.appliedStateAgeMs, upperBoundMs, nowMs);
+        patch(store, {
+          networkAppliedStateAgeMs: upperBoundMs,
+          networkClockOffsetMs: probe.offsetMs,
+          networkClockUncertaintyMs: probe.uncertaintyMs,
+          networkMetricsReady: true,
+        });
+      }
+    }
+  }
   patch(store, {
     networkLastActionId: snapshot.player.lastActionId,
     networkLocalX: local?.x,
@@ -312,12 +389,102 @@ function observeActionReply<TState extends INetworkingState>(
   store: INetworkingStore<TState>,
   reply: IActionReply,
   lastActionId: { value: number },
+  metrics: INetworkingMetricSamples,
 ): void {
-  if (reply.id <= lastActionId.value) return;
-  lastActionId.value = reply.id;
+  const sentAtMs = metrics.pendingActions.get(reply.id);
+  metrics.pendingActions.delete(reply.id);
+  if (sentAtMs === undefined) {
+    metrics.unmatchedActionAckCount += 1;
+    patch(store, {
+      networkUnmatchedActionAcks: metrics.unmatchedActionAckCount,
+    });
+    return;
+  }
+  lastActionId.value = Math.max(lastActionId.value, reply.id);
   if (!reply.accepted) return;
+  const nowMs = performance.now();
+  const latencyMs = nowMs - sentAtMs;
+  if (!Number.isFinite(latencyMs) || latencyMs < 0) return;
+  if (!appendMeasuredSample(metrics, metrics.actionAckLatencyMs, latencyMs, nowMs)) return;
   const state = store.getState();
-  patch(store, { networkActionAcks: (state.networkActionAcks ?? 0) + 1 });
+  patch(store, {
+    networkActionAckLatencyMs: latencyMs,
+    networkActionAcks: (state.networkActionAcks ?? 0) + 1,
+  });
+}
+
+function appendSample<T>(samples: T[], value: T): void {
+  samples.push(value);
+  if (samples.length > MAX_METRIC_SAMPLES) samples.shift();
+}
+
+function metricCollectionActive(metrics: INetworkingMetricSamples, nowMs: number): boolean {
+  if (metrics.connectedAtMs === undefined) return false;
+  if (metrics.collectionStartedAtMs === undefined) {
+    if (nowMs - metrics.connectedAtMs < METRIC_WARMUP_MS) return false;
+    metrics.collectionStartedAtMs = nowMs;
+  }
+  metrics.lastSampleAtMs = nowMs;
+  return true;
+}
+
+function appendMeasuredSample<T>(
+  metrics: INetworkingMetricSamples,
+  samples: T[],
+  value: T,
+  nowMs: number,
+): boolean {
+  if (!metricCollectionActive(metrics, nowMs)) return false;
+  appendSample(samples, value);
+  return true;
+}
+
+function bestClockProbe(metrics: INetworkingMetricSamples, nowMs: number): IClockProbe | undefined {
+  const recent = metrics.clockProbes.filter((probe) => nowMs - probe.receivedAtMs <= 10_000);
+  return recent.reduce<IClockProbe | undefined>(
+    (best, probe) => (best === undefined || probe.rttMs < best.rttMs ? probe : best),
+    undefined,
+  );
+}
+
+function observeClockReply<TState extends INetworkingState>(
+  store: INetworkingStore<TState>,
+  reply: IClockReply,
+  metrics: INetworkingMetricSamples,
+): void {
+  const sentAtMs = metrics.pendingClockProbes.get(reply.probeId);
+  metrics.pendingClockProbes.delete(reply.probeId);
+  if (sentAtMs === undefined || Math.abs(reply.clientSentMs - sentAtMs) > 0.001) return;
+  const clientReceivedMs = performance.now();
+  const rttMs =
+    clientReceivedMs - reply.clientSentMs - (reply.serverSentMs - reply.serverReceivedMs);
+  const uncertaintyMs = rttMs / 2;
+  const offsetMs =
+    (reply.serverReceivedMs - reply.clientSentMs + reply.serverSentMs - clientReceivedMs) / 2;
+  if (
+    !Number.isFinite(rttMs) ||
+    !Number.isFinite(offsetMs) ||
+    !Number.isFinite(uncertaintyMs) ||
+    rttMs < 0 ||
+    uncertaintyMs < 0
+  )
+    return;
+  appendMeasuredSample(
+    metrics,
+    metrics.clockProbes,
+    {
+      rttMs,
+      offsetMs,
+      uncertaintyMs,
+      receivedAtMs: clientReceivedMs,
+    },
+    clientReceivedMs,
+  );
+  patch(store, {
+    networkClockOffsetMs: offsetMs,
+    networkClockUncertaintyMs: uncertaintyMs,
+    networkMetricsReady: true,
+  });
 }
 
 function consumeMessages<TState extends INetworkingState>(
@@ -327,13 +494,23 @@ function consumeMessages<TState extends INetworkingState>(
   lastSnapshotTick: Map<string, number>,
   positions: IObservedPositions,
   lastActionId: { value: number },
+  metrics: INetworkingMetricSamples,
 ): void {
   for (const message of messages) {
     try {
       if (message.channel === 2) {
-        observeSnapshot(store, config, parseSnapshot(message.data), lastSnapshotTick, positions);
+        observeSnapshot(
+          store,
+          config,
+          parseSnapshot(message.data),
+          lastSnapshotTick,
+          positions,
+          metrics,
+        );
       } else if (message.channel === 3) {
-        observeActionReply(store, parseActionReply(message.data), lastActionId);
+        observeActionReply(store, parseActionReply(message.data), lastActionId, metrics);
+      } else if (message.channel === 4) {
+        observeClockReply(store, parseClockReply(message.data), metrics);
       }
     } catch {
       reportProtocolError(store);
@@ -341,22 +518,85 @@ function consumeMessages<TState extends INetworkingState>(
   }
 }
 
+function sendAction(
+  connection: INetworkConnection,
+  nextActionId: number,
+  metrics: INetworkingMetricSamples,
+): number {
+  const sentAtMs = performance.now();
+  if (!connection.send(3, encodeGameplay({ id: nextActionId })))
+    throw new Error("TN_NETWORK_QUEUE_FULL: action could not be queued");
+  metrics.pendingActions.set(nextActionId, sentAtMs);
+  return nextActionId + 1;
+}
+
 function sendGameplay(
   connection: INetworkConnection,
   playerId: string,
   inputTick: number,
   nextActionId: number,
-  sendAction: boolean,
+  shouldSendAction: boolean,
+  metrics: INetworkingMetricSamples,
 ): number {
   const axes = playerAxes(playerId);
   connection.send(1, encodeGameplay({ tick: inputTick, x: axes.x, z: axes.z }));
-  if (!sendAction) return nextActionId;
-  connection.send(3, encodeGameplay({ id: nextActionId }));
-  return nextActionId + 1;
+  if (!shouldSendAction || !metricCollectionActive(metrics, performance.now())) return nextActionId;
+  return sendAction(connection, nextActionId, metrics);
 }
 
 function sendHeartbeat(connection: INetworkConnection, inputTick: number): void {
   connection.send(1, encodeGameplay({ tick: inputTick, x: 0, z: 0 }));
+}
+
+function sendMeasuredGameplay<TState extends INetworkingState>(
+  store: INetworkingStore<TState>,
+  connection: INetworkConnection,
+  nextInputTick: number,
+  nextActionId: number,
+  metrics: INetworkingMetricSamples,
+): { inputTick: number; nextActionId: number } {
+  const nowMs = performance.now();
+  if (metrics.nextHeartbeatAtMs === undefined) metrics.nextHeartbeatAtMs = nowMs;
+  const heartbeatDue = nowMs >= metrics.nextHeartbeatAtMs;
+  if (heartbeatDue) metrics.nextHeartbeatAtMs = nowMs + 1_000;
+  try {
+    if (heartbeatDue) sendHeartbeat(connection, nextInputTick);
+    if (!metricCollectionActive(metrics, nowMs)) return { inputTick: nextInputTick, nextActionId };
+    if (metrics.nextActionAtMs === undefined) metrics.nextActionAtMs = nowMs;
+    if (nowMs < metrics.nextActionAtMs) return { inputTick: nextInputTick, nextActionId };
+    const actionId = sendAction(connection, nextActionId, metrics);
+    metrics.nextActionAtMs = nowMs + 500;
+    return { inputTick: nextInputTick, nextActionId: actionId };
+  } catch {
+    reportProtocolError(store);
+    return { inputTick: nextInputTick, nextActionId };
+  }
+}
+
+function sendInputGameplay<TState extends INetworkingState>(
+  store: INetworkingStore<TState>,
+  connection: INetworkConnection,
+  config: INetworkingConfig,
+  inputTick: number,
+  nextActionId: number,
+  metrics: INetworkingMetricSamples,
+): { inputTick: number; nextActionId: number } {
+  try {
+    return {
+      inputTick: inputTick + 1,
+      nextActionId: sendGameplay(
+        connection,
+        config.playerId ?? "player",
+        inputTick + 1,
+        nextActionId,
+        false,
+        metrics,
+      ),
+    };
+  } catch {
+    reportProtocolError(store);
+    return { inputTick: inputTick + 1, nextActionId };
+  }
 }
 
 function sendScheduledGameplay<TState extends INetworkingState>(
@@ -365,34 +605,103 @@ function sendScheduledGameplay<TState extends INetworkingState>(
   config: INetworkingConfig,
   inputTick: number,
   nextActionId: number,
+  metrics: INetworkingMetricSamples,
 ): { inputTick: number; nextActionId: number } {
-  const nextInputTick = inputTick + 1;
   if (inputTick >= INPUT_DURATION_TICKS) {
-    if (nextInputTick % HEARTBEAT_INTERVAL_TICKS !== 0)
-      return { inputTick: nextInputTick, nextActionId };
-    try {
-      sendHeartbeat(connection, nextInputTick);
-    } catch {
-      reportProtocolError(store);
-    }
-    return { inputTick: nextInputTick, nextActionId };
+    return sendMeasuredGameplay(store, connection, inputTick + 1, nextActionId, metrics);
   }
   if (store.getState().networkPeerObserved !== true) return { inputTick, nextActionId };
+  return sendInputGameplay(store, connection, config, inputTick, nextActionId, metrics);
+}
+
+function metricsSignature(metrics: INetworkingMetricSamples): string {
+  return [
+    metrics.actionAckLatencyMs.length,
+    metrics.appliedStateAgeMs.length,
+    metrics.clockProbes.length,
+    metrics.jsNetworkingCpuMs.length,
+  ].join(":");
+}
+
+function shouldEmitMetrics(metrics: INetworkingMetricSamples, force: boolean): boolean {
+  if (force) return true;
+  if (metrics.collectionStartedAtMs === undefined || metrics.lastSampleAtMs === undefined)
+    return false;
+  return metrics.actionAckLatencyMs.length > 0 || metrics.appliedStateAgeMs.length > 0;
+}
+
+function metricsPayload(metrics: INetworkingMetricSamples): Record<string, unknown> {
+  const collectionDurationMs =
+    metrics.collectionStartedAtMs === undefined || metrics.lastSampleAtMs === undefined
+      ? 0
+      : Math.max(0, metrics.lastSampleAtMs - metrics.collectionStartedAtMs);
+  const warmupMs =
+    metrics.connectedAtMs === undefined || metrics.collectionStartedAtMs === undefined
+      ? 0
+      : Math.max(0, metrics.collectionStartedAtMs - metrics.connectedAtMs);
+  return {
+    actionAckLatencyMs: metrics.actionAckLatencyMs,
+    appliedStateAgeMs: metrics.appliedStateAgeMs,
+    clockProbes: metrics.clockProbes.map(({ receivedAtMs: _receivedAtMs, ...probe }) => probe),
+    collectionDurationMs,
+    jsNetworkingCpuMs: metrics.jsNetworkingCpuMs,
+    schemaVersion: METRIC_SCHEMA_VERSION,
+    unmatchedActionAckCount: metrics.unmatchedActionAckCount,
+    warmupMs,
+  };
+}
+
+function expireSilentPeer<TState extends INetworkingState>(
+  store: INetworkingStore<TState>,
+  positions: IObservedPositions,
+): void {
+  if (
+    positions.remote === undefined ||
+    positions.peerLastSeenAtMs === undefined ||
+    performance.now() - positions.peerLastSeenAtMs < PEER_SILENCE_TIMEOUT_MS
+  )
+    return;
+  positions.remote = undefined;
+  positions.peerLastSeenAtMs = undefined;
+  patch(store, {
+    networkPeerId: "",
+    networkPeerObserved: false,
+    networkRemoteX: 0,
+    networkRemoteZ: 0,
+  });
+}
+
+function sendClockProbe<TState extends INetworkingState>(
+  store: INetworkingStore<TState>,
+  connection: INetworkConnection,
+  metrics: INetworkingMetricSamples,
+  nextClockProbeId: number,
+): number {
+  const nowMs = performance.now();
+  if (!metricCollectionActive(metrics, nowMs)) return nextClockProbeId;
+  if (metrics.nextClockProbeAtMs === undefined) metrics.nextClockProbeAtMs = nowMs;
+  if (nowMs < metrics.nextClockProbeAtMs) return nextClockProbeId;
+  metrics.nextClockProbeAtMs = nowMs + 500;
+  const probeId = nextClockProbeId;
+  const clientSentMs = performance.now();
   try {
-    return {
-      inputTick: nextInputTick,
-      nextActionId: sendGameplay(
-        connection,
-        config.playerId ?? "player",
-        nextInputTick,
-        nextActionId,
-        nextInputTick === 1,
-      ),
-    };
+    if (connection.send(4, encodeGameplay({ clientSentMs, probeId })))
+      metrics.pendingClockProbes.set(probeId, clientSentMs);
   } catch {
     reportProtocolError(store);
-    return { inputTick: nextInputTick, nextActionId };
   }
+  return probeId + 1;
+}
+
+function recordNetworkingPoll<TState extends INetworkingState>(
+  store: INetworkingStore<TState>,
+  metrics: INetworkingMetricSamples,
+  startedAtMs: number,
+): void {
+  const finishedAtMs = performance.now();
+  const elapsedMs = finishedAtMs - startedAtMs;
+  appendMeasuredSample(metrics, metrics.jsNetworkingCpuMs, elapsedMs, finishedAtMs);
+  patch(store, { networkJsNetworkingCpuMs: elapsedMs });
 }
 
 export function createNetworkingGame<TState extends INetworkingState>(
@@ -405,6 +714,8 @@ export function createNetworkingGame<TState extends INetworkingState>(
   let retryRequested = false;
   let inputTick = 0;
   let nextActionId = 1;
+  let nextClockProbeId = 1;
+  let lastMetricsSampleSignature: string | undefined;
   const lastActionId = { value: 0 };
   const positions: IObservedPositions = {
     local: undefined,
@@ -413,6 +724,47 @@ export function createNetworkingGame<TState extends INetworkingState>(
     peerLastSeenAtMs: undefined,
   };
   let lastSnapshotTick = new Map<string, number>();
+  const metrics: INetworkingMetricSamples = {
+    actionAckLatencyMs: [],
+    appliedStateAgeMs: [],
+    connectedAtMs: undefined,
+    collectionStartedAtMs: undefined,
+    lastSampleAtMs: undefined,
+    nextActionAtMs: undefined,
+    nextClockProbeAtMs: undefined,
+    nextHeartbeatAtMs: undefined,
+    clockProbes: [],
+    jsNetworkingCpuMs: [],
+    pendingActions: new Map(),
+    pendingClockProbes: new Map(),
+    unmatchedActionAckCount: 0,
+  };
+
+  const resetMetrics = (): void => {
+    metrics.actionAckLatencyMs.length = 0;
+    metrics.appliedStateAgeMs.length = 0;
+    metrics.connectedAtMs = undefined;
+    metrics.collectionStartedAtMs = undefined;
+    metrics.lastSampleAtMs = undefined;
+    metrics.nextActionAtMs = undefined;
+    metrics.nextClockProbeAtMs = undefined;
+    metrics.nextHeartbeatAtMs = undefined;
+    metrics.clockProbes.length = 0;
+    metrics.jsNetworkingCpuMs.length = 0;
+    metrics.unmatchedActionAckCount = 0;
+    metrics.pendingActions.clear();
+    metrics.pendingClockProbes.clear();
+    nextClockProbeId = 1;
+    lastMetricsSampleSignature = undefined;
+  };
+
+  const emitMetrics = (force = false): void => {
+    const signature = metricsSignature(metrics);
+    if (!shouldEmitMetrics(metrics, force) || (!force && lastMetricsSampleSignature === signature))
+      return;
+    lastMetricsSampleSignature = signature;
+    console.log(`TN_NETWORK_METRICS:${JSON.stringify(metricsPayload(metrics))}`);
+  };
 
   const start = (store: INetworkingStore<TState>, retry: boolean): void => {
     if (!config.enabled || connecting !== undefined || !closed) return;
@@ -431,6 +783,8 @@ export function createNetworkingGame<TState extends INetworkingState>(
       networkSessionId: "",
       networkStatus: "connecting",
       networkProtocolErrors: 0,
+      networkMetricsReady: false,
+      networkUnmatchedActionAcks: 0,
     });
     inputTick = 0;
     nextActionId = 1;
@@ -457,6 +811,7 @@ export function createNetworkingGame<TState extends INetworkingState>(
           return;
         }
         connection = opened;
+        metrics.connectedAtMs = performance.now();
         patch(store, {
           networkConnected: true,
           networkError: "",
@@ -478,8 +833,44 @@ export function createNetworkingGame<TState extends INetworkingState>(
       });
   };
 
+  const pollConnection = (store: INetworkingStore<TState>, active: INetworkConnection): void => {
+    const networkStartedAtMs = performance.now();
+    const batch = active.poll();
+    consumeMessages(
+      store,
+      batch.messages,
+      config,
+      lastSnapshotTick,
+      positions,
+      lastActionId,
+      metrics,
+    );
+    expireSilentPeer(store, positions);
+    if (batch.disconnected) {
+      connection = undefined;
+      closed = true;
+      patch(store, {
+        networkConnected: false,
+        networkError: batch.reason ?? publicFailure(),
+        networkSessionId: "",
+        networkStatus: "disconnected",
+      });
+      void active.close();
+      recordNetworkingPoll(store, metrics, networkStartedAtMs);
+      emitMetrics();
+      return;
+    }
+    const schedule = sendScheduledGameplay(store, active, config, inputTick, nextActionId, metrics);
+    inputTick = schedule.inputTick;
+    nextActionId = schedule.nextActionId;
+    nextClockProbeId = sendClockProbe(store, active, metrics, nextClockProbeId);
+    recordNetworkingPoll(store, metrics, networkStartedAtMs);
+    emitMetrics();
+  };
+
   return {
     enter(store) {
+      resetMetrics();
       closed = true;
       retryRequested = false;
       if (!config.enabled) {
@@ -500,41 +891,12 @@ export function createNetworkingGame<TState extends INetworkingState>(
         connection = undefined;
         if (previous !== undefined) void previous.close();
         closed = true;
+        resetMetrics();
         start(store, true);
       }
       const active = connection;
       if (active === undefined) return;
-      const batch = active.poll();
-      consumeMessages(store, batch.messages, config, lastSnapshotTick, positions, lastActionId);
-      if (
-        positions.remote !== undefined &&
-        positions.peerLastSeenAtMs !== undefined &&
-        performance.now() - positions.peerLastSeenAtMs >= PEER_SILENCE_TIMEOUT_MS
-      ) {
-        positions.remote = undefined;
-        positions.peerLastSeenAtMs = undefined;
-        patch(store, {
-          networkPeerId: "",
-          networkPeerObserved: false,
-          networkRemoteX: 0,
-          networkRemoteZ: 0,
-        });
-      }
-      if (batch.disconnected) {
-        connection = undefined;
-        closed = true;
-        patch(store, {
-          networkConnected: false,
-          networkError: batch.reason ?? publicFailure(),
-          networkSessionId: "",
-          networkStatus: "disconnected",
-        });
-        void active.close();
-        return;
-      }
-      const schedule = sendScheduledGameplay(store, active, config, inputTick, nextActionId);
-      inputTick = schedule.inputTick;
-      nextActionId = schedule.nextActionId;
+      pollConnection(store, active);
     },
     retry() {
       retryRequested = true;
@@ -546,6 +908,7 @@ export function createNetworkingGame<TState extends INetworkingState>(
       const active = connection;
       connection = undefined;
       if (active !== undefined) void active.close();
+      emitMetrics(true);
     },
   };
 }

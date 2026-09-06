@@ -390,36 +390,41 @@ function finite(value, name) {
   return value;
 }
 
+function appendNetworkingCpuReport(line, name, frames, samples) {
+  const prefix = "TN_HOST_GAP:";
+  const marker = line.indexOf(prefix);
+  if (marker === -1) return;
+  let report;
+  try {
+    report = JSON.parse(line.slice(marker + prefix.length));
+  } catch (error) {
+    throw new Error(
+      `${name} emitted malformed TN_HOST_GAP JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!Number.isSafeInteger(report?.frames) || report.frames <= 0)
+    throw new Error(`${name} TN_HOST_GAP report has an invalid frame count`);
+  if (!Array.isArray(report.samples) || report.samples.length !== report.frames)
+    throw new Error(`${name} TN_HOST_GAP sample count does not match frames`);
+  for (const sample of report.samples) appendNetworkingCpuSample(sample, name, frames, samples);
+}
+
+function appendNetworkingCpuSample(sample, name, frames, samples) {
+  if (!Number.isSafeInteger(sample?.frame) || sample.frame <= 0)
+    throw new Error(`${name} TN_HOST_GAP sample has an invalid frame identity`);
+  if (frames.has(sample.frame))
+    throw new Error(`${name} TN_HOST_GAP has a duplicate frame ${sample.frame}`);
+  const webtransportMs = finite(sample.webtransportMs, `${name}.webtransportMs`);
+  if (webtransportMs < 0) throw new Error(`${name}.webtransportMs cannot be negative`);
+  frames.add(sample.frame);
+  samples.push({ frame: sample.frame, webtransportMs });
+}
+
 export function parseNetworkingCpuSamples(log, name = "native") {
   const samples = [];
   const frames = new Set();
-  const prefix = "TN_HOST_GAP:";
-  for (const line of String(log).split(/\r?\n/u)) {
-    const marker = line.indexOf(prefix);
-    if (marker === -1) continue;
-    let report;
-    try {
-      report = JSON.parse(line.slice(marker + prefix.length));
-    } catch (error) {
-      throw new Error(
-        `${name} emitted malformed TN_HOST_GAP JSON: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-    if (!Number.isSafeInteger(report?.frames) || report.frames <= 0)
-      throw new Error(`${name} TN_HOST_GAP report has an invalid frame count`);
-    if (!Array.isArray(report.samples) || report.samples.length !== report.frames)
-      throw new Error(`${name} TN_HOST_GAP sample count does not match frames`);
-    for (const sample of report.samples) {
-      if (!Number.isSafeInteger(sample?.frame) || sample.frame <= 0)
-        throw new Error(`${name} TN_HOST_GAP sample has an invalid frame identity`);
-      if (frames.has(sample.frame))
-        throw new Error(`${name} TN_HOST_GAP has a duplicate frame ${sample.frame}`);
-      const webtransportMs = finite(sample.webtransportMs, `${name}.webtransportMs`);
-      if (webtransportMs < 0) throw new Error(`${name}.webtransportMs cannot be negative`);
-      frames.add(sample.frame);
-      samples.push({ frame: sample.frame, webtransportMs });
-    }
-  }
+  for (const line of String(log).split(/\r?\n/u))
+    appendNetworkingCpuReport(line, name, frames, samples);
   if (samples.length === 0) throw new Error(`${name} did not emit frame-keyed TN_HOST_GAP samples`);
   return samples;
 }
@@ -431,6 +436,155 @@ function summarizeNetworkingCpu(samples) {
     maxMs: values[values.length - 1],
     p95Ms: values[p95Index],
     sampleCount: values.length,
+  };
+}
+
+export function summarizeCombinedNetworkingCpu(jsSamples, nativeSamples, name = "client") {
+  if (!Array.isArray(jsSamples) || jsSamples.length === 0)
+    throw new Error(`${name} has no JS networking CPU samples`);
+  if (!Array.isArray(nativeSamples) || nativeSamples.length === 0)
+    throw new Error(`${name} has no native networking CPU samples`);
+  const nativeMaximum = Math.max(...nativeSamples.map((sample) => sample.webtransportMs));
+  const values =
+    jsSamples.length === nativeSamples.length
+      ? jsSamples.map((sample, index) => sample + nativeSamples[index].webtransportMs)
+      : jsSamples.map((sample) => sample + nativeMaximum);
+  return summarizeSamples(values, `${name} combined networking CPU`);
+}
+
+function nearestRank(values, quantile) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * quantile) - 1));
+  return sorted[index];
+}
+
+function summarizeSamples(values, name) {
+  if (values.length === 0) throw new Error(`${name} has no samples`);
+  return {
+    maxMs: Math.max(...values),
+    p50Ms: nearestRank(values, 0.5),
+    p95Ms: nearestRank(values, 0.95),
+    p99Ms: nearestRank(values, 0.99),
+    sampleCount: values.length,
+  };
+}
+
+function metricNumberArray(value, name) {
+  if (!Array.isArray(value) || !value.every((sample) => typeof sample === "number"))
+    throw new Error(`${name} must be a number array`);
+  const samples = value.map((sample) => finite(sample, `${name} sample`));
+  if (samples.some((sample) => sample < 0)) throw new Error(`${name} cannot contain negatives`);
+  return samples;
+}
+
+function metricNonNegativeInteger(value, name) {
+  if (!Number.isSafeInteger(value) || value < 0)
+    throw new Error(`${name} must be a non-negative safe integer`);
+  return value;
+}
+
+export function parseNetworkingMetrics(log, name = "client") {
+  const prefix = "TN_NETWORK_METRICS:";
+  const matches = String(log)
+    .split(/\r?\n/u)
+    .filter((line) => line.includes(prefix))
+    .map((line) => line.slice(line.indexOf(prefix) + prefix.length).trim());
+  if (matches.length === 0) throw new Error(`${name} did not emit TN_NETWORK_METRICS`);
+  let value;
+  try {
+    value = JSON.parse(matches[matches.length - 1]);
+  } catch (error) {
+    throw new Error(
+      `${name} emitted malformed TN_NETWORK_METRICS JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new Error(`${name} metrics must be an object`);
+  const keys = Object.keys(value).sort().join(",");
+  if (
+    keys !==
+    "actionAckLatencyMs,appliedStateAgeMs,clockProbes,collectionDurationMs,jsNetworkingCpuMs,schemaVersion,unmatchedActionAckCount,warmupMs"
+  )
+    throw new Error(`${name} metrics have unexpected keys`);
+  if (value.schemaVersion !== 2) throw new Error(`${name} metrics schema version is unsupported`);
+  const warmupMs = finite(value.warmupMs, `${name}.warmupMs`);
+  const collectionDurationMs = finite(value.collectionDurationMs, `${name}.collectionDurationMs`);
+  if (warmupMs < 0 || collectionDurationMs < 0)
+    throw new Error(`${name} measurement durations cannot be negative`);
+  const unmatchedActionAckCount = metricNonNegativeInteger(
+    value.unmatchedActionAckCount,
+    `${name}.unmatchedActionAckCount`,
+  );
+  const clockProbes = value.clockProbes;
+  if (!Array.isArray(clockProbes)) throw new Error(`${name}.clockProbes must be an array`);
+  const parsedClockProbes = clockProbes.map((probe, index) => {
+    if (probe === null || typeof probe !== "object" || Array.isArray(probe))
+      throw new Error(`${name}.clockProbes[${index}] must be an object`);
+    const probeKeys = Object.keys(probe).sort().join(",");
+    if (probeKeys !== "offsetMs,rttMs,uncertaintyMs")
+      throw new Error(`${name}.clockProbes[${index}] has unexpected keys`);
+    const rttMs = finite(probe.rttMs, `${name}.clockProbes[${index}].rttMs`);
+    const offsetMs = finite(probe.offsetMs, `${name}.clockProbes[${index}].offsetMs`);
+    const uncertaintyMs = finite(
+      probe.uncertaintyMs,
+      `${name}.clockProbes[${index}].uncertaintyMs`,
+    );
+    if (rttMs < 0 || uncertaintyMs < 0)
+      throw new Error(`${name}.clockProbes[${index}] contains a negative value`);
+    return { rttMs, offsetMs, uncertaintyMs };
+  });
+  return {
+    schemaVersion: 2,
+    appliedStateAgeMs: metricNumberArray(value.appliedStateAgeMs, `${name}.appliedStateAgeMs`),
+    actionAckLatencyMs: metricNumberArray(value.actionAckLatencyMs, `${name}.actionAckLatencyMs`),
+    collectionDurationMs,
+    jsNetworkingCpuMs: metricNumberArray(value.jsNetworkingCpuMs, `${name}.jsNetworkingCpuMs`),
+    clockProbes: parsedClockProbes,
+    unmatchedActionAckCount,
+    warmupMs,
+  };
+}
+
+export function summarizeNetworkingMetrics(metrics, profile) {
+  if (metrics.appliedStateAgeMs.length === 0 || metrics.clockProbes.length === 0)
+    throw new Error("missing applied-state or clock samples");
+  const actionAckLatencyMs = summarizeSamples(metrics.actionAckLatencyMs, "action acknowledgement");
+  const jsNetworkingCpuMs = summarizeSamples(metrics.jsNetworkingCpuMs, "JS networking CPU");
+  const appliedStateAgeMs = summarizeSamples(metrics.appliedStateAgeMs, "applied-state age");
+  if (metrics.actionAckLatencyMs.length < 100)
+    throw new Error(
+      `action acknowledgement has ${metrics.actionAckLatencyMs.length} samples; need at least 100 action samples`,
+    );
+  if (metrics.warmupMs < 10_000)
+    throw new Error(`warmup lasted only ${metrics.warmupMs}ms; need 10000ms`);
+  if (metrics.collectionDurationMs < 60_000)
+    throw new Error(`collection lasted only ${metrics.collectionDurationMs}ms; need 60000ms`);
+  if (metrics.unmatchedActionAckCount !== 0)
+    throw new Error(`unmatched action acknowledgements: ${metrics.unmatchedActionAckCount}`);
+  const minimumRttProbe = [...metrics.clockProbes].sort(
+    (left, right) => left.rttMs - right.rttMs,
+  )[0];
+  const maxUncertaintyMs = Math.max(...metrics.clockProbes.map((probe) => probe.uncertaintyMs));
+  if (minimumRttProbe.uncertaintyMs > 100)
+    throw new Error(`clock uncertainty ${minimumRttProbe.uncertaintyMs}ms exceeds 100ms`);
+  const ageLimitMs = /impaired/iu.test(profile) ? 350 : 150;
+  if (appliedStateAgeMs.p95Ms > ageLimitMs)
+    throw new Error(`applied-state age p95 ${appliedStateAgeMs.p95Ms}ms exceeds ${ageLimitMs}ms`);
+  if (actionAckLatencyMs.p99Ms > 2_000)
+    throw new Error(`action acknowledgement p99 ${actionAckLatencyMs.p99Ms}ms exceeds 2000ms`);
+  if (jsNetworkingCpuMs.p95Ms > 1)
+    throw new Error(`JS networking CPU p95 ${jsNetworkingCpuMs.p95Ms}ms exceeds 1ms`);
+  return {
+    actionAckLatencyMs,
+    appliedStateAgeMs,
+    clock: {
+      maxUncertaintyMs,
+      minimumRttMs: minimumRttProbe.rttMs,
+      offsetMs: minimumRttProbe.offsetMs,
+      sampleCount: metrics.clockProbes.length,
+      selectedUncertaintyMs: minimumRttProbe.uncertaintyMs,
+    },
+    jsNetworkingCpuMs,
   };
 }
 
@@ -450,12 +604,25 @@ function clientObservation(report, client) {
       reportResource(report, "networkProtocolErrors"),
       `${client}.networkProtocolErrors`,
     ),
+    unmatchedActionAcks: finite(
+      reportResource(report, "networkUnmatchedActionAcks"),
+      `${client}.networkUnmatchedActionAcks`,
+    ),
     remoteDistance: finite(
       reportResource(report, "networkRemoteDistance"),
       `${client}.networkRemoteDistance`,
     ),
     sessionId,
   };
+}
+
+function requireWholeFrameBudget(report, name) {
+  const results = Array.isArray(report?.assertionResults) ? report.assertionResults : [];
+  const hasPassing = (id) => results.some((result) => result?.id === id && result.pass === true);
+  if (!hasPassing("performance.samples"))
+    throw new Error(`${name} did not provide passing whole-frame performance samples`);
+  if (!hasPassing("performance.maxFrameMsP95"))
+    throw new Error(`${name} did not enforce a whole-frame p95 budget`);
 }
 
 export function countEvaluatedAssertions(reports) {
@@ -815,6 +982,24 @@ async function startClient(
   return { browserProcessMarker, configPath, processState };
 }
 
+async function collectClientConsole(root, label, secrets) {
+  const consolePath = join(root, label, "console.json");
+  if (!existsSync(consolePath)) return { consoleOutput: "", consoleArtifact: undefined };
+  const consoleText = await readFile(consolePath, "utf8");
+  let consoleOutput = consoleText;
+  try {
+    const entries = JSON.parse(consoleText);
+    if (Array.isArray(entries))
+      consoleOutput = entries.map((entry) => String(entry?.text ?? "")).join("\n");
+  } catch {
+    // Keep the raw console output when the browser stopped while writing the file.
+  }
+  return {
+    consoleArtifact: await writeArtifact(root, `${label}.console.json`, consoleText, secrets),
+    consoleOutput,
+  };
+}
+
 async function collectClient(config, client, label, root, secrets, started) {
   const { configPath, processState } = started;
   try {
@@ -840,9 +1025,16 @@ async function collectClient(config, client, label, root, secrets, started) {
       processState.stderr,
       secrets,
     );
+    const { consoleArtifact, consoleOutput } = await collectClientConsole(root, label, secrets);
     return {
-      artifacts: [stdoutArtifact, stderrArtifact],
+      artifacts: [
+        stdoutArtifact,
+        stderrArtifact,
+        ...(consoleArtifact === undefined ? [] : [consoleArtifact]),
+      ],
       browserProcessMarker: started.browserProcessMarker,
+      metricArtifactSha256: consoleArtifact?.sha256 ?? stdoutArtifact.sha256,
+      metricOutput: `${processState.stdout}\n${processState.stderr}\n${consoleOutput}`,
       exitCode,
       processState,
       ...(report === undefined ? {} : { report }),
@@ -1123,37 +1315,42 @@ async function runPartnerLossControl(config, artifactRoot, secrets, tokens, serv
   };
 }
 
-function validateProofReports(config, subject, partner, server) {
-  if (subject.report === undefined || partner.report === undefined) {
-    throw new Error(
-      subject.reportError ??
-        partner.reportError ??
-        "one or both playtest clients timed out or did not produce a report",
-    );
-  }
-  const assertionCount = countEvaluatedAssertions([subject.report, partner.report]);
-  assertPass(subject.report, "subject");
-  assertPass(partner.report, "partner");
-  const subjectObservation = clientObservation(subject.report, {
-    peerId: config.partner.playerId,
-  });
-  const partnerObservation = clientObservation(partner.report, {
-    peerId: config.subject.playerId,
-  });
-  if (subjectObservation.sessionId === partnerObservation.sessionId)
-    throw new Error("subject and partner reused one session identity");
-  const players = serverPlayers(`${server.stdout}\n${server.stderr}`);
-  if (players.length === 0)
-    throw new Error("server log contains no authenticated player identities");
-  const expectedPlayers = [config.subject.playerId, config.partner.playerId].sort().join(",");
-  if (players.join(",") !== expectedPlayers)
-    throw new Error(`server log identities ${players.join(",")} do not match both clients`);
-  const metrics = {
-    maxObservedRemoteDistance: Math.max(
-      subjectObservation.remoteDistance,
-      partnerObservation.remoteDistance,
-    ),
+function clientMetricArtifact(client, name) {
+  return client.artifacts.find((artifact) => artifact.kind === `${name}.stdout.log`)?.sha256;
+}
+
+function collectClientMetricSummaries(config, subject, partner) {
+  const subjectSamples = parseNetworkingMetrics(subject.metricOutput, "subject");
+  const partnerSamples = parseNetworkingMetrics(partner.metricOutput, "partner");
+  const summaries = {
+    subject: summarizeNetworkingMetrics(subjectSamples, config.profile),
+    partner: summarizeNetworkingMetrics(partnerSamples, config.profile),
   };
+  if (config.profile !== "local") {
+    for (const [label, samples] of [
+      ["subject", subjectSamples],
+      ["partner", partnerSamples],
+    ]) {
+      if (samples.actionAckLatencyMs.length < 100)
+        throw new Error(
+          `${label} emitted ${samples.actionAckLatencyMs.length} action samples; need at least 100`,
+        );
+    }
+  }
+  const rawSampleArtifacts = {
+    partner: partner.metricArtifactSha256 ?? clientMetricArtifact(partner, "partner"),
+    subject: subject.metricArtifactSha256 ?? clientMetricArtifact(subject, "subject"),
+  };
+  if (rawSampleArtifacts.subject === undefined || rawSampleArtifacts.partner === undefined)
+    throw new Error("networking metric artifacts are missing stdout hashes");
+  return {
+    rawSampleArtifacts,
+    samples: { partner: partnerSamples, subject: subjectSamples },
+    summaries,
+  };
+}
+
+function attachNetworkingCpuMetrics(config, metrics, subject, partner, clientMetrics) {
   if (config.buildHashes.nativeBinaryHash !== null) {
     const subjectSamples = parseNetworkingCpuSamples(
       `${subject.processState.stdout}\n${subject.processState.stderr}`,
@@ -1167,7 +1364,92 @@ function validateProofReports(config, subject, partner, server) {
       partner: summarizeNetworkingCpu(partnerSamples),
       subject: summarizeNetworkingCpu(subjectSamples),
     };
+    for (const [label, jsSummary, nativeSummary, jsSamples, nativeSamples] of [
+      [
+        "subject",
+        clientMetrics.summaries.subject.jsNetworkingCpuMs,
+        metrics.nativeNetworkingCpu.subject,
+        clientMetrics.samples.subject.jsNetworkingCpuMs,
+        subjectSamples,
+      ],
+      [
+        "partner",
+        clientMetrics.summaries.partner.jsNetworkingCpuMs,
+        metrics.nativeNetworkingCpu.partner,
+        clientMetrics.samples.partner.jsNetworkingCpuMs,
+        partnerSamples,
+      ],
+    ]) {
+      const combined = summarizeCombinedNetworkingCpu(jsSamples, nativeSamples, label);
+      const totalP95Ms = combined.p95Ms;
+      if (totalP95Ms > 1)
+        throw new Error(`${label} networking CPU p95 ${totalP95Ms}ms exceeds 1ms`);
+      metrics.networking[label].nativeNetworkingCpuP95Ms = nativeSummary.p95Ms;
+      metrics.networking[label].totalNetworkingCpuP95Ms = totalP95Ms;
+    }
+    return;
   }
+  for (const [label, summary] of [
+    ["subject", clientMetrics.summaries.subject],
+    ["partner", clientMetrics.summaries.partner],
+  ]) {
+    if (summary.jsNetworkingCpuMs.p95Ms > 1)
+      throw new Error(
+        `${label} JS networking CPU p95 ${summary.jsNetworkingCpuMs.p95Ms}ms exceeds 1ms`,
+      );
+    metrics.networking[label].totalNetworkingCpuP95Ms = summary.jsNetworkingCpuMs.p95Ms;
+  }
+}
+
+function validateProofReports(config, subject, partner, server) {
+  if (subject.report === undefined || partner.report === undefined) {
+    throw new Error(
+      subject.reportError ??
+        partner.reportError ??
+        "one or both playtest clients timed out or did not produce a report",
+    );
+  }
+  const assertionCount = countEvaluatedAssertions([subject.report, partner.report]);
+  assertPass(subject.report, "subject");
+  assertPass(partner.report, "partner");
+  requireWholeFrameBudget(subject.report, "subject");
+  requireWholeFrameBudget(partner.report, "partner");
+  const subjectObservation = clientObservation(subject.report, {
+    peerId: config.partner.playerId,
+  });
+  const partnerObservation = clientObservation(partner.report, {
+    peerId: config.subject.playerId,
+  });
+  if (subjectObservation.sessionId === partnerObservation.sessionId)
+    throw new Error("subject and partner reused one session identity");
+  for (const [label, observation] of [
+    ["subject", subjectObservation],
+    ["partner", partnerObservation],
+  ]) {
+    if (observation.unmatchedActionAcks !== 0)
+      throw new Error(
+        `${label} reported ${observation.unmatchedActionAcks} unmatched action acknowledgements`,
+      );
+  }
+  const players = serverPlayers(`${server.stdout}\n${server.stderr}`);
+  if (players.length === 0)
+    throw new Error("server log contains no authenticated player identities");
+  const expectedPlayers = [config.subject.playerId, config.partner.playerId].sort().join(",");
+  if (players.join(",") !== expectedPlayers)
+    throw new Error(`server log identities ${players.join(",")} do not match both clients`);
+  const metrics = {
+    maxObservedRemoteDistance: Math.max(
+      subjectObservation.remoteDistance,
+      partnerObservation.remoteDistance,
+    ),
+  };
+  const clientMetrics = collectClientMetricSummaries(config, subject, partner);
+  metrics.networking = {
+    partner: clientMetrics.summaries.partner,
+    rawSampleArtifacts: clientMetrics.rawSampleArtifacts,
+    subject: clientMetrics.summaries.subject,
+  };
+  attachNetworkingCpuMetrics(config, metrics, subject, partner, clientMetrics);
   return {
     assertionCount,
     observations: { partner: partnerObservation, subject: subjectObservation },

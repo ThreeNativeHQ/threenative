@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-const { countEvaluatedAssertions, parseNetworkingCpuSamples, validateNetworkingProofConfig } =
-  await import(
-    // @ts-expect-error The executable JavaScript module is the row's runtime boundary; its behavior is tested here.
-    "../run-networking-proof.mjs"
-  );
+const {
+  countEvaluatedAssertions,
+  parseNetworkingCpuSamples,
+  parseNetworkingMetrics,
+  summarizeCombinedNetworkingCpu,
+  summarizeNetworkingMetrics,
+  validateNetworkingProofConfig,
+} = await import(
+  // @ts-expect-error The executable JavaScript module is the row's runtime boundary; its behavior is tested here.
+  "../run-networking-proof.mjs"
+);
 
 const hashes = {
   clientBundleHash: "a".repeat(64),
@@ -97,5 +103,127 @@ describe("networking proof contract", () => {
     expect(() =>
       countEvaluatedAssertions([{ assertionResults: [] }, { assertionResults: [] }]),
     ).toThrow(/zero assertions/u);
+  });
+
+  it("parses real clock, age, action, and JS CPU samples", () => {
+    const log =
+      'TN_NETWORK_METRICS:{"schemaVersion":2,"appliedStateAgeMs":[10,20,30],"actionAckLatencyMs":[4,8,12],"collectionDurationMs":60000,"clockProbes":[{"rttMs":4,"offsetMs":2,"uncertaintyMs":2}],"jsNetworkingCpuMs":[0.1,0.2,0.3],"unmatchedActionAckCount":0,"warmupMs":10000}';
+    expect(parseNetworkingMetrics(log, "subject")).toEqual({
+      schemaVersion: 2,
+      appliedStateAgeMs: [10, 20, 30],
+      actionAckLatencyMs: [4, 8, 12],
+      collectionDurationMs: 60000,
+      jsNetworkingCpuMs: [0.1, 0.2, 0.3],
+      clockProbes: [{ rttMs: 4, offsetMs: 2, uncertaintyMs: 2 }],
+      unmatchedActionAckCount: 0,
+      warmupMs: 10000,
+    });
+  });
+
+  it("summarizes samples with nearest-rank percentiles and rejects missing clocks", () => {
+    const summary = summarizeNetworkingMetrics(
+      {
+        schemaVersion: 2,
+        appliedStateAgeMs: Array.from({ length: 100 }, () => 10),
+        actionAckLatencyMs: Array.from({ length: 100 }, () => 4),
+        collectionDurationMs: 60000,
+        jsNetworkingCpuMs: Array.from({ length: 100 }, () => 0.1),
+        clockProbes: [{ rttMs: 4, offsetMs: 2, uncertaintyMs: 2 }],
+        unmatchedActionAckCount: 0,
+        warmupMs: 10000,
+      },
+      "clean-lan",
+    );
+    expect(summary.appliedStateAgeMs.p95Ms).toBe(10);
+    expect(summary.actionAckLatencyMs.p99Ms).toBe(4);
+    expect(summary.jsNetworkingCpuMs.p95Ms).toBe(0.1);
+    expect(summary.clock.maxUncertaintyMs).toBe(2);
+    expect(() =>
+      summarizeNetworkingMetrics(
+        {
+          schemaVersion: 2,
+          appliedStateAgeMs: [],
+          actionAckLatencyMs: [1],
+          jsNetworkingCpuMs: [0.1],
+          clockProbes: [],
+          collectionDurationMs: 60000,
+          unmatchedActionAckCount: 0,
+          warmupMs: 10000,
+        },
+        "clean-lan",
+      ),
+    ).toThrow(/missing applied-state or clock samples/u);
+  });
+
+  it("rejects injected 500ms snapshot age and 5ms polling CPU", () => {
+    const base = {
+      schemaVersion: 2,
+      appliedStateAgeMs: Array.from({ length: 100 }, () => 500),
+      actionAckLatencyMs: Array.from({ length: 100 }, () => 10),
+      collectionDurationMs: 60000,
+      jsNetworkingCpuMs: [0.5],
+      clockProbes: [{ rttMs: 4, offsetMs: 2, uncertaintyMs: 2 }],
+      unmatchedActionAckCount: 0,
+      warmupMs: 10000,
+    };
+    expect(() => summarizeNetworkingMetrics(base, "clean-lan")).toThrow(/age p95/u);
+    expect(() =>
+      summarizeNetworkingMetrics(
+        {
+          ...base,
+          appliedStateAgeMs: Array.from({ length: 100 }, () => 10),
+          jsNetworkingCpuMs: [5],
+        },
+        "clean-lan",
+      ),
+    ).toThrow(/CPU p95/u);
+    expect(() =>
+      summarizeNetworkingMetrics(
+        { ...base, appliedStateAgeMs: Array.from({ length: 100 }, () => 400) },
+        "impaired",
+      ),
+    ).toThrow(/age p95/u);
+  });
+
+  it("rejects incomplete workload windows and unmatched acknowledgements", () => {
+    const base = {
+      schemaVersion: 2,
+      appliedStateAgeMs: Array.from({ length: 100 }, () => 10),
+      actionAckLatencyMs: Array.from({ length: 100 }, () => 10),
+      collectionDurationMs: 60000,
+      jsNetworkingCpuMs: Array.from({ length: 100 }, () => 0.1),
+      clockProbes: [{ rttMs: 4, offsetMs: 2, uncertaintyMs: 2 }],
+      unmatchedActionAckCount: 0,
+      warmupMs: 10000,
+    };
+    expect(() =>
+      summarizeNetworkingMetrics({ ...base, actionAckLatencyMs: [10] }, "local"),
+    ).toThrow(/at least 100 action/u);
+    expect(() => summarizeNetworkingMetrics({ ...base, warmupMs: 9999 }, "clean-lan")).toThrow(
+      /warmup/u,
+    );
+    expect(() =>
+      summarizeNetworkingMetrics({ ...base, collectionDurationMs: 59999 }, "clean-lan"),
+    ).toThrow(/collection/u);
+    expect(() =>
+      summarizeNetworkingMetrics({ ...base, unmatchedActionAckCount: 1 }, "clean-lan"),
+    ).toThrow(/unmatched/u);
+  });
+
+  it("uses paired CPU samples when aligned and a conservative native maximum otherwise", () => {
+    expect(
+      summarizeCombinedNetworkingCpu(
+        [0.2, 0.8],
+        [
+          { frame: 1, webtransportMs: 0.2 },
+          { frame: 2, webtransportMs: 0.8 },
+        ],
+        "subject",
+      ).p95Ms,
+    ).toBe(1.6);
+    expect(
+      summarizeCombinedNetworkingCpu([0.2, 0.8], [{ frame: 1, webtransportMs: 0.8 }], "subject")
+        .p95Ms,
+    ).toBe(1.6);
   });
 });
