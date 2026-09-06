@@ -415,14 +415,12 @@ export function parseNetworkingCpuSamples(log, name = "native") {
       if (frames.has(sample.frame))
         throw new Error(`${name} TN_HOST_GAP has a duplicate frame ${sample.frame}`);
       const webtransportMs = finite(sample.webtransportMs, `${name}.webtransportMs`);
-      if (webtransportMs < 0)
-        throw new Error(`${name}.webtransportMs cannot be negative`);
+      if (webtransportMs < 0) throw new Error(`${name}.webtransportMs cannot be negative`);
       frames.add(sample.frame);
       samples.push({ frame: sample.frame, webtransportMs });
     }
   }
-  if (samples.length === 0)
-    throw new Error(`${name} did not emit frame-keyed TN_HOST_GAP samples`);
+  if (samples.length === 0) throw new Error(`${name} did not emit frame-keyed TN_HOST_GAP samples`);
   return samples;
 }
 

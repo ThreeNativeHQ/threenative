@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-const {
-  countEvaluatedAssertions,
-  parseNetworkingCpuSamples,
-  validateNetworkingProofConfig,
-} = await import(
-  // @ts-expect-error The executable JavaScript module is the row's runtime boundary; its behavior is tested here.
-  "../run-networking-proof.mjs"
-);
+const { countEvaluatedAssertions, parseNetworkingCpuSamples, validateNetworkingProofConfig } =
+  await import(
+    // @ts-expect-error The executable JavaScript module is the row's runtime boundary; its behavior is tested here.
+    "../run-networking-proof.mjs"
+  );
 
 const hashes = {
   clientBundleHash: "a".repeat(64),
