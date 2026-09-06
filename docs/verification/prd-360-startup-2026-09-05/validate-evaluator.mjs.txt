@@ -71,19 +71,26 @@ const bound = (overrides = {}) => {
     expectedSha256: '403bd10c297f91f40202b322d57bc9c3d4291b1f2c9c9a958c1c8b3c5f9053af',
     installedSha256: '403bd10c297f91f40202b322d57bc9c3d4291b1f2c9c9a958c1c8b3c5f9053af',
     preflight: qualifiedPreflight(overrides.preflight ?? {}),
+    recordedAt: overrides.recordedAt ?? '2026-09-06T10:02:00.000Z',
     runnerExitCode: 0,
+    serial: 'MOCKSERIAL',
     t0Ns: String(start),
     t1Ns: String(start + BigInt(nanos(elapsedMs))),
     ...overrides,
   };
 };
 const report = (overrides = {}) => ({
+  after: { position: [0.41, -0.02, -0.46] },
   distance: 0.62,
   entity: 'player',
   movementDelta: [0.41, -0.02, -0.46],
   pass: true,
   target: 'android',
   ...overrides,
+});
+const foreignPositionBody = JSON.stringify({
+  id: 'sample-foreign',
+  result: { entities: [{ id: 'player', transform: { position: [99, 0, 99] } }] },
 });
 
 const movementResponseBody = JSON.stringify({
@@ -96,16 +103,16 @@ const pumpEndpoint = ({ body = movementResponseBody, ...overrides } = {}) => `TN
   path: '/run/res',
   payloadHash: fnv1a64(body),
   pump: {
-    observed: true,
-    pumpCount: 60,
-    firstPumpAtMs: 120.0,
-    lastPumpAtMs: 900.0,
+    observed: overrides.observed ?? true,
+    pumpCount: overrides.pumpCount ?? 60,
+    firstPumpAtMs: overrides.firstPumpAtMs ?? 120.0,
+    lastPumpAtMs: overrides.lastPumpAtMs ?? 900.0,
     maxGapMs: overrides.maxGapMs ?? 12.0,
-    maxGapAtMs: 400.0,
-    trailingGapMs: overrides.trailingGapMs ?? 8.0,
-    atMs: 950.0,
-    longGaps: [],
-    droppedLongGaps: 0,
+    maxGapAtMs: overrides.maxGapAtMs ?? 400.0,
+    trailingGapMs: overrides.trailingGapMs ?? 50.0,
+    atMs: overrides.atMs ?? 950.0,
+    longGaps: overrides.longGaps ?? [],
+    droppedLongGaps: overrides.droppedLongGaps ?? 0,
   },
   stored: true,
 })}`;
@@ -129,11 +136,14 @@ const cases = [
     expect: 'fail',
     mustFail: ['R7_PUMP_SILENCE'],
     name: 'missing response identity fails full pump acceptance',
+    mustFailCode: 'R7_PUMP_CORRELATION_UNPROVEN',
     input: {
       bound: bound(),
       framePng: WORLD_FRAME,
       hostLog: pumpEndpoint(),
       movementPayload,
+      movementResponseBody: undefined,
+      movementResponsePath: undefined,
       report: report(),
     },
   },
@@ -141,6 +151,7 @@ const cases = [
     expect: 'fail',
     mustFail: ['R7_PUMP_SILENCE'],
     name: 'ack containing player is not a displacement observation',
+    mustFailCode: 'R7_PUMP_CORRELATION_UNPROVEN',
     input: {
       bound: bound(),
       framePng: WORLD_FRAME,
@@ -154,7 +165,46 @@ const cases = [
   {
     expect: 'fail',
     mustFail: ['R7_PUMP_SILENCE'],
+    name: 'missing runner position fails endpoint correlation',
+    mustFailCode: 'R7_PUMP_CORRELATION_UNPROVEN',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ body: foreignPositionBody }),
+      movementPayload: undefined,
+      movementResponseBody: foreignPositionBody,
+      report: (() => { const value = report(); delete value.after; return value; })(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'inconsistent trailing timestamp fails pump',
+    mustFailCode: 'R7_PUMP_SILENCE_MALFORMED',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ atMs: 1900, trailingGapMs: 1 }),
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'zero-pump endpoint fails pump',
+    mustFailCode: 'R7_PUMP_SILENCE_MALFORMED',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ atMs: 0, firstPumpAtMs: -1, lastPumpAtMs: -1, maxGapAtMs: -1, trailingGapMs: -1, pumpCount: 0 }),
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
     name: 'collector read failure fails full pump acceptance',
+    mustFailCode: 'R7_PUMP_COLLECTOR_FAILED',
     input: {
       bound: bound(),
       collectorError: 'adb logcat exited',
@@ -170,6 +220,7 @@ const cases = [
     expect: 'fail',
     mustFail: ['R7_PUMP_SILENCE'],
     name: 'frozen APK with no endpoint fails pump while movement stands',
+    mustFailCode: 'R7_PUMP_SILENCE_MISSING',
     input: {
       bound: bound(),
       framePng: WORLD_FRAME,
@@ -183,10 +234,11 @@ const cases = [
     expect: 'fail',
     mustFail: ['R7_PUMP_SILENCE'],
     name: 'trailing stall through the endpoint fails pump',
+    mustFailCode: 'R7_PUMP_SILENCE_EXCEEDED',
     input: {
       bound: bound(),
       framePng: WORLD_FRAME,
-      hostLog: pumpEndpoint({ trailingGapMs: 399.6 }),
+      hostLog: pumpEndpoint({ atMs: 1299.6, trailingGapMs: 399.6 }),
       movementPayload,
       movementResponsePath: '/run/res',
       report: report(),
@@ -196,6 +248,7 @@ const cases = [
     expect: 'fail',
     mustFail: ['R7_PUMP_SILENCE'],
     name: 'wrong-path endpoint fails correlation',
+    mustFailCode: 'R7_PUMP_CORRELATION_WRONG_PATH',
     input: {
       bound: bound(),
       framePng: WORLD_FRAME,
@@ -332,22 +385,58 @@ const cases = [
       report: report(),
     },
   },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'forged battery threshold and invalid timestamp fail preflight',
+    mustFailCode: 'R0B_PREFLIGHT_UNQUALIFIED',
+    input: {
+      bound: bound({
+        preflight: qualifiedPreflight({
+          beforeLaunch: {
+            phase: 'before-launch',
+            recordedAt: 'invalid',
+            serial: 'MOCKSERIAL',
+            batteryPercent: 2,
+            charging: false,
+            chargingSource: 'NONE',
+            thermalStatus: 'NONE',
+            thermalStatusCode: 0,
+            screenOn: true,
+            provisional: [],
+          },
+          minimumBatteryPercent: 1,
+        }),
+      }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
 ];
 
 let failures = 0;
 process.stdout.write('evaluator/harness validation only — not game or device proof\n\n');
 for (const testCase of cases) {
-  const result = await evaluateFirstPlayable(testCase.input);
+  const result = await evaluateFirstPlayable({
+    framePng: WORLD_FRAME,
+    hostLog: pumpEndpoint(),
+    movementPayload,
+    movementResponseBody,
+    movementResponsePath: '/run/res',
+    ...testCase.input,
+  });
   const failed = result.checks.filter(({ pass }) => !pass).map(({ id }) => id);
+  const failedCodes = result.checks.filter(({ pass }) => !pass).map(({ code }) => code);
   const verdictOk = result.verdict === testCase.expect;
   const rulesOk = testCase.mustFail.every((id) => failed.includes(id))
-    && (testCase.expect !== 'pass' || failed.length === 0);
+    && failed.length === testCase.mustFail.length
+    && (testCase.mustFailCode === undefined || failedCodes.includes(testCase.mustFailCode));
   if (!verdictOk || !rulesOk) failures += 1;
   process.stdout.write(
     `${verdictOk && rulesOk ? 'GREEN' : 'RED  '} ${testCase.name}\n`
     + `        verdict=${result.verdict} (expected ${testCase.expect})`
     + ` boundMs=${result.boundMs} admissible=${result.admissible}\n`
-    + `        failedChecks=[${failed.join(', ')}] required=[${testCase.mustFail.join(', ')}]\n`,
+    + `        failedChecks=[${failed.join(', ')}] codes=[${failedCodes.join(', ')}] required=[${testCase.mustFail.join(', ')}]\n`,
   );
 }
 process.stdout.write(`\n${cases.length - failures}/${cases.length} cases behaved as required\n`);

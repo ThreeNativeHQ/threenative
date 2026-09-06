@@ -17,7 +17,10 @@ const capturePath = join(repoRoot, 'packages', 'playtest', 'dist', 'capture.js')
 
 export const CRITERION_MS = 8000;
 export const MIN_HORIZONTAL_METRES = 0.25;
+export const MINIMUM_BATTERY_PERCENT = 50;
 const SHA256 = /^[0-9a-f]{64}$/;
+const PUMP_TIMESTAMP_TOLERANCE_MS = 0.01;
+const PREFLIGHT_MAX_AGE_MS = 5 * 60 * 1000;
 
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
 
@@ -189,17 +192,43 @@ export function evaluatePumpEndpoint({
   if (pump?.observed !== true) {
     return fail('R7_PUMP_SILENCE_UNOBSERVED', { observed: pump?.observed ?? null });
   }
+  const pumpCount = pump.pumpCount;
   const stamps = [pump.firstPumpAtMs, pump.lastPumpAtMs, pump.maxGapMs, pump.maxGapAtMs, pump.trailingGapMs, pump.atMs];
-  if (!stamps.every(finite)) {
+  const longGaps = Array.isArray(pump.longGaps) ? pump.longGaps : undefined;
+  if (!Number.isInteger(pumpCount) || pumpCount < 1 || longGaps === undefined || !stamps.every(finite)) {
     return fail('R7_PUMP_SILENCE_MALFORMED', { pump });
   }
-  if (stamps.some((value) => value < 0 && value !== -1)) {
+  if (stamps.some((value) => value < 0 && value !== -1)
+    || pump.maxGapMs < 0
+    || pump.trailingGapMs <= 0
+    || pump.droppedLongGaps === undefined
+    || !Number.isInteger(pump.droppedLongGaps)
+    || pump.droppedLongGaps < 0
+    || !longGaps.every((gap) => finite(gap) && gap >= 0)) {
     return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'negative timestamp', pump });
   }
   // Stale endpoint: stamped at or before the last pump entry, so the trailing
   // interval it claims cannot cover the displacement report.
-  if (!(pump.atMs > pump.lastPumpAtMs)) {
+  if (!(pump.firstPumpAtMs <= pump.lastPumpAtMs && pump.atMs > pump.lastPumpAtMs)) {
     return fail('R7_PUMP_CORRELATION_STALE', { atMs: pump.atMs, lastPumpAtMs: pump.lastPumpAtMs });
+  }
+  if (Math.abs(pump.trailingGapMs - (pump.atMs - pump.lastPumpAtMs)) > PUMP_TIMESTAMP_TOLERANCE_MS) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', {
+      atMs: pump.atMs,
+      lastPumpAtMs: pump.lastPumpAtMs,
+      trailingGapMs: pump.trailingGapMs,
+      reason: 'trailing gap does not match endpoint and last-pump timestamps',
+    });
+  }
+  if (pumpCount === 1) {
+    if (Math.abs(pump.maxGapMs) > PUMP_TIMESTAMP_TOLERANCE_MS || pump.maxGapAtMs !== -1) {
+      return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'single pump has an inter-entry gap', pump });
+    }
+  } else if (!(pump.maxGapMs > 0 && pump.maxGapAtMs >= pump.firstPumpAtMs && pump.maxGapAtMs < pump.lastPumpAtMs)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'multi-pump maximum gap is not anchored', pump });
+  }
+  if (longGaps.some((gap) => gap > pump.maxGapMs + PUMP_TIMESTAMP_TOLERANCE_MS)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'retained gap exceeds reported maximum', pump });
   }
   // Displacement shape: the read-back body must parse as the actual device
   // response and carry a finite position for the named entity. A bare ack or
@@ -219,7 +248,11 @@ export function evaluatePumpEndpoint({
     });
   }
   const expected = expectedObservation(movementPayload, expectedEntity);
-  if (expected.entity !== expectedEntity || (expected.position !== undefined && !sameVector(observed.position, expected.position))) {
+  if (typeof expectedEntity !== 'string'
+    || expectedEntity.length === 0
+    || expected.entity !== expectedEntity
+    || expected.position === undefined
+    || !sameVector(observed.position, expected.position)) {
     return fail('R7_PUMP_CORRELATION_UNPROVEN', {
       expectedEntity,
       expectedPosition: expected.position ?? null,
@@ -228,16 +261,14 @@ export function evaluatePumpEndpoint({
       reason: 'response position does not match the runner movement observation',
     });
   }
-  const gaps = [pump.maxGapMs, pump.trailingGapMs, ...(Array.isArray(pump.longGaps) ? pump.longGaps : [])];
-  if (!gaps.every(finite)) {
-    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'non-finite gap', pump });
-  }
   const worst = Math.max(pump.maxGapMs, pump.trailingGapMs);
   if (pump.firstPumpAtMs > maxGapMs || worst > maxGapMs) {
     return fail('R7_PUMP_SILENCE_EXCEEDED', {
       atMs: pump.atMs,
       firstPumpAtMs: pump.firstPumpAtMs,
       maxGapMs: pump.maxGapMs,
+      path: endpoint.path,
+      pumpCount: pump.pumpCount,
       thresholdMs: maxGapMs,
       trailingGapMs: pump.trailingGapMs,
     });
@@ -377,15 +408,32 @@ export async function evaluateFirstPlayable(input) {
   // overridden, or unqualified readings fail; a gate is a gate, not a doctor existence probe.
   const preflight = bound?.preflight;
   const beforeLaunch = preflight?.beforeLaunch;
+  const preflightRecordedMs = typeof beforeLaunch?.recordedAt === 'string'
+    ? Date.parse(beforeLaunch.recordedAt)
+    : Number.NaN;
+  const boundRecordedMs = typeof bound?.recordedAt === 'string' ? Date.parse(bound.recordedAt) : Number.NaN;
+  const batteryPercent = beforeLaunch?.batteryPercent;
   const qualified =
     beforeLaunch !== undefined && beforeLaunch !== null
     && beforeLaunch.phase === 'before-launch'
-    && typeof beforeLaunch.recordedAt === 'string'
-    && Number(beforeLaunch.batteryPercent) >= Number(preflight?.minimumBatteryPercent ?? MINIMUM_BATTERY_PERCENT)
+    && typeof bound?.serial === 'string'
+    && bound.serial.length > 0
+    && beforeLaunch.serial === bound.serial
+    && Number.isFinite(preflightRecordedMs)
+    && Number.isFinite(boundRecordedMs)
+    && preflightRecordedMs <= boundRecordedMs
+    && boundRecordedMs - preflightRecordedMs <= PREFLIGHT_MAX_AGE_MS
+    && preflight?.minimumBatteryPercent === MINIMUM_BATTERY_PERCENT
+    && preflight?.required?.charging === 'discharging'
+    && preflight?.required?.thermal === 'NONE'
+    && Number.isInteger(batteryPercent)
+    && batteryPercent >= MINIMUM_BATTERY_PERCENT
+    && batteryPercent <= 100
     && beforeLaunch.charging === false
     && beforeLaunch.thermalStatus === 'NONE'
     && beforeLaunch.screenOn === true
-    && (!Array.isArray(beforeLaunch.provisional) || beforeLaunch.provisional.length === 0);
+    && Array.isArray(beforeLaunch.provisional)
+    && beforeLaunch.provisional.length === 0;
   check(
     'R0B_PREFLIGHT',
     qualified === true,

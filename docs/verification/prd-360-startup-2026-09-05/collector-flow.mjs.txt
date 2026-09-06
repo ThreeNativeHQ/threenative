@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,14 +33,26 @@ await new Promise((res2) => child.on("close", res2));
 const hostLog = Buffer.concat(chunks).toString("utf8");
 const { evaluatePumpEndpoint, fnv1a64 } = await import(join(W, "artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/evaluate-first-playable.mjs"));
 const body = (await import("node:fs")).readFileSync(res, "utf8");
-const v = evaluatePumpEndpoint({ hostLog, movementResponsePath: res, movementResponseBody: body });
+const movementPayload = { entity: "player", position: [0.41, -0.02, -0.46] };
+const v = evaluatePumpEndpoint({ hostLog, movementPayload, movementResponsePath: res, movementResponseBody: body });
+assert.equal(v.detail?.path, res, JSON.stringify(v));
+assert.ok(v.pass || v.code === "R7_PUMP_SILENCE_EXCEEDED");
+assert.ok(v.detail.pumpCount >= 1);
 console.log("collector-e2e:", v.pass ? "PASS" : v.code, JSON.stringify(v.detail).slice(0,150));
-console.log("hash-match:", hostLog.includes(fnv1a64(body)) ? "yes" : "no");
+const hashMatches = hostLog.includes(fnv1a64(body));
+assert.equal(hashMatches, true);
+console.log("hash-match:", hashMatches ? "yes" : "no");
 // failure paths on the same real log:
 // late: truncate before the endpoint line
 const cutAt = hostLog.indexOf("TN_PUMP_ENDPOINT");
-console.log("truncated:", evaluatePumpEndpoint({ hostLog: hostLog.slice(0, cutAt), movementResponsePath: res, movementResponseBody: body }).code);
+const truncated = evaluatePumpEndpoint({ hostLog: hostLog.slice(0, cutAt), movementPayload, movementResponsePath: res, movementResponseBody: body });
+assert.equal(truncated.code, "R7_PUMP_SILENCE_MISSING");
+console.log("truncated:", truncated.code);
 // foreign response: same path, different bytes
-console.log("foreign:", evaluatePumpEndpoint({ hostLog, movementResponsePath: res, movementResponseBody: body + " " }).code);
+const foreign = evaluatePumpEndpoint({ hostLog, movementPayload, movementResponsePath: res, movementResponseBody: body + " " });
+assert.equal(foreign.code, "R7_PUMP_CORRELATION_UNPROVEN");
+console.log("foreign:", foreign.code);
 // missing collector output
-console.log("missing:", evaluatePumpEndpoint({ hostLog: "", movementResponsePath: res, movementResponseBody: body }).code);
+const missing = evaluatePumpEndpoint({ hostLog: "", movementPayload, movementResponsePath: res, movementResponseBody: body });
+assert.equal(missing.code, "R7_PUMP_SILENCE_MISSING");
+console.log("missing:", missing.code);

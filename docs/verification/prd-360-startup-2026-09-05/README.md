@@ -25,7 +25,7 @@ the budget is unchanged and that finding is not concealed.
 | C++ contract `threenative-pump-silence-test` (injected clock) | pass — 22/22 checks incl. new backwards-clock guard |
 | vitest `tests/pump-silence.test.mjs` (real desktop host) | 11/11 pass |
 | CTest `-R pump-silence` | pass |
-| Evaluator validation `validate-evaluator.mjs` | 20/20 cases behave as required, including missing response identity, ack-only, and collector-error negatives |
+| Evaluator validation `validate-evaluator.mjs` | 24/24 cases behave as required, including missing response identity, missing runner position, inconsistent timestamps, forged preflight, ack-only, and collector-error negatives |
 | Collector flow `collector-flow.mjs` (real host + mailbox, mocked adb) | correlated endpoint evaluates; hash matches; truncated → MISSING, foreign → UNPROVEN, empty → MISSING |
 | Current desktop probe | `firstPumpAtMs≈410ms` → `R7_PUMP_SILENCE_EXCEEDED` (correct rejection, not a device claim) |
 
@@ -52,6 +52,10 @@ the budget is unchanged and that finding is not concealed.
    `tests/native-contract-lane.test.mjs` (count 35 → 36),
    `scripts/verify-native-contracts.mjs`, `build-matrix.json` (tn-linux and
    tn-linux-coverage), plus `pnpm census` and `native:coverage` regeneration.
+4. Full pump evaluation now requires the runner's finite post-input position,
+   reconciles endpoint timestamps and pump counts, pins the 50% preflight floor
+   and serial/freshness identity, and asserts the collector's intended failure
+   codes instead of merely printing them.
 
 ## Provenance
 
@@ -74,9 +78,9 @@ the budget is unchanged and that finding is not concealed.
 - Executed proof sources, byte-identical to the run inputs (checked with
   `cmp`): [`measure-first-playable.mjs.txt`](measure-first-playable.mjs.txt)
   (`3256a881…`), [`evaluate-first-playable.mjs.txt`](evaluate-first-playable.mjs.txt)
-  (`98ef6bb4…`), [`validate-evaluator.mjs.txt`](validate-evaluator.mjs.txt)
-  (`41b24ae8…`), [`collector-flow.mjs.txt`](collector-flow.mjs.txt)
-  (`36f57119…`). Live originals remain under
+  (`fb09f6a4…`), [`validate-evaluator.mjs.txt`](validate-evaluator.mjs.txt)
+  (`d9202a41…`), [`collector-flow.mjs.txt`](collector-flow.mjs.txt)
+  (`8d50b896…`). Live originals remain under
   `artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/` and
   `artifacts/batch-2026-09-05/pump-observer/` (git-ignored).
 - Full Android end-to-end (real device, real adb) is **unexecuted** — the
@@ -98,12 +102,15 @@ node artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/valida
 node artifacts/batch-2026-09-05/pump-observer/collector-flow.mjs
 ```
 
-Gates executed for this commit: `pnpm typecheck` (pass), in-scope Biome
-checks (pass; root `pnpm lint` still reports pre-existing
-`noExcessiveCognitiveComplexity` findings in unrelated examples plus an
-empty git-ignored `.linchpin/crouter-retry-result.json` — untouched),
-`pnpm budgets` (pass: LOC triggers report-only), `native:coverage` digest
-regenerated, `pnpm census` regenerated.
+Gates executed for this follow-up: evaluator validation (24/24), real-host
+collector flow (assertions pass), full desktop pump verification (assertions
+pass), `pnpm test` (391 files / 4,289 tests passed, 2 files / 7 tests
+skipped), `pnpm typecheck` (pass), in-scope Biome checks (pass; root
+`pnpm lint` still reports pre-existing `noExcessiveCognitiveComplexity`
+findings in unrelated examples plus ignored `.linchpin` JSON result files —
+untouched), and `pnpm budgets` (pass: LOC triggers report-only).
+`native:coverage` and `pnpm census` were regenerated before the follow-up
+commit.
 
 File-budget note for the checkpoint reviewer: the observer phase spans 6
 implementation/test files against a 5-file phase cap. The earlier worker
