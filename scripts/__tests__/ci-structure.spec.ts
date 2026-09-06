@@ -1709,7 +1709,9 @@ describe("CI pipeline structure", () => {
     );
     const summary = requiredJob(performance, "performance-summary");
     expect(summary).not.toContain("TN_PERF_CANCELLED: ${{ cancelled() }}");
-    expect(summary).toContain("TN_PERF_CANCELLED: ${{ needs.hardware-pairs.result == 'cancelled' }}");
+    expect(summary).toContain(
+      "TN_PERF_CANCELLED: ${{ needs.hardware-pairs.result == 'cancelled' }}",
+    );
   });
 
   it("runs bounded native desktop and simulator collectors against built artifacts", async () => {
