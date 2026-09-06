@@ -390,6 +390,52 @@ function finite(value, name) {
   return value;
 }
 
+export function parseNetworkingCpuSamples(log, name = "native") {
+  const samples = [];
+  const frames = new Set();
+  const prefix = "TN_HOST_GAP:";
+  for (const line of String(log).split(/\r?\n/u)) {
+    const marker = line.indexOf(prefix);
+    if (marker === -1) continue;
+    let report;
+    try {
+      report = JSON.parse(line.slice(marker + prefix.length));
+    } catch (error) {
+      throw new Error(
+        `${name} emitted malformed TN_HOST_GAP JSON: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (!Number.isSafeInteger(report?.frames) || report.frames <= 0)
+      throw new Error(`${name} TN_HOST_GAP report has an invalid frame count`);
+    if (!Array.isArray(report.samples) || report.samples.length !== report.frames)
+      throw new Error(`${name} TN_HOST_GAP sample count does not match frames`);
+    for (const sample of report.samples) {
+      if (!Number.isSafeInteger(sample?.frame) || sample.frame <= 0)
+        throw new Error(`${name} TN_HOST_GAP sample has an invalid frame identity`);
+      if (frames.has(sample.frame))
+        throw new Error(`${name} TN_HOST_GAP has a duplicate frame ${sample.frame}`);
+      const webtransportMs = finite(sample.webtransportMs, `${name}.webtransportMs`);
+      if (webtransportMs < 0)
+        throw new Error(`${name}.webtransportMs cannot be negative`);
+      frames.add(sample.frame);
+      samples.push({ frame: sample.frame, webtransportMs });
+    }
+  }
+  if (samples.length === 0)
+    throw new Error(`${name} did not emit frame-keyed TN_HOST_GAP samples`);
+  return samples;
+}
+
+function summarizeNetworkingCpu(samples) {
+  const values = samples.map((sample) => sample.webtransportMs).sort((a, b) => a - b);
+  const p95Index = Math.max(0, Math.ceil(values.length * 0.95) - 1);
+  return {
+    maxMs: values[values.length - 1],
+    p95Ms: values[p95Index],
+    sampleCount: values.length,
+  };
+}
+
 function clientObservation(report, client) {
   const sessionId = reportResource(report, "networkSessionId");
   const peerId = reportResource(report, "networkPeerId");
@@ -1104,18 +1150,33 @@ function validateProofReports(config, subject, partner, server) {
   const expectedPlayers = [config.subject.playerId, config.partner.playerId].sort().join(",");
   if (players.join(",") !== expectedPlayers)
     throw new Error(`server log identities ${players.join(",")} do not match both clients`);
+  const metrics = {
+    maxObservedRemoteDistance: Math.max(
+      subjectObservation.remoteDistance,
+      partnerObservation.remoteDistance,
+    ),
+  };
+  if (config.buildHashes.nativeBinaryHash !== null) {
+    const subjectSamples = parseNetworkingCpuSamples(
+      `${subject.processState.stdout}\n${subject.processState.stderr}`,
+      "subject",
+    );
+    const partnerSamples = parseNetworkingCpuSamples(
+      `${partner.processState.stdout}\n${partner.processState.stderr}`,
+      "partner",
+    );
+    metrics.nativeNetworkingCpu = {
+      partner: summarizeNetworkingCpu(partnerSamples),
+      subject: summarizeNetworkingCpu(subjectSamples),
+    };
+  }
   return {
     assertionCount,
     observations: { partner: partnerObservation, subject: subjectObservation },
     partnerSessionId: partnerObservation.sessionId,
     serverObservedPlayerIds: players,
     subjectSessionId: subjectObservation.sessionId,
-    metrics: {
-      maxObservedRemoteDistance: Math.max(
-        subjectObservation.remoteDistance,
-        partnerObservation.remoteDistance,
-      ),
-    },
+    metrics,
   };
 }
 

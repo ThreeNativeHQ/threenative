@@ -23,6 +23,17 @@ function functionBody(source, signature) {
 function assertHostGapPeriodRecording(source) {
   assert.match(source, /struct\s+Sample\s*\{[\s\S]*uint64_t\s+periodMicros\s*=\s*0;/u);
   assert.doesNotMatch(source, /std::vector\s*<\s*uint64_t\s*>\s+periodMicros_/u);
+  assert.match(source, /kWebTransport\s*,/u);
+  assert.match(source, /"webtransport"/u);
+  assert.match(source, /uint64_t\s+frameId\s*=\s*0;/u);
+  assert.match(source, /\\"samples\\":\[\s*[\s\S]*\\"frame\\"/u);
+  assert.match(source, /sample\.micros\[kWebTransport\]/u);
+
+  const poll = functionBody(source, "bool pollEvents() override");
+  assert.match(
+    poll,
+    /hostGapMeter_\.end\(HostGapMeter::kIo\);[\s\S]*?hostGapMeter_\.begin\(HostGapMeter::kWebTransport\);[\s\S]*?webtransport::processEvents\(\);[\s\S]*?hostGapMeter_\.end\(HostGapMeter::kWebTransport\);/u,
+  );
 
   const noteRafBegin = functionBody(source, "void noteRafBegin()");
   const closeFrame = functionBody(source, "void closeFrame()");

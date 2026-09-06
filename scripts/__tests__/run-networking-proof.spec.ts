@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-const { countEvaluatedAssertions, validateNetworkingProofConfig } = await import(
+const {
+  countEvaluatedAssertions,
+  parseNetworkingCpuSamples,
+  validateNetworkingProofConfig,
+} = await import(
   // @ts-expect-error The executable JavaScript module is the row's runtime boundary; its behavior is tested here.
   "../run-networking-proof.mjs"
 );
@@ -42,6 +46,30 @@ function config(overrides: Record<string, unknown> = {}): Record<string, unknown
 }
 
 describe("networking proof contract", () => {
+  it("parses frame-keyed native transport samples", () => {
+    const log =
+      'TN_HOST_GAP:{"frames":2,"samples":[{"frame":11,"webtransportMs":0.25},{"frame":12,"webtransportMs":0.5}]}';
+    expect(parseNetworkingCpuSamples(log, "subject")).toEqual([
+      { frame: 11, webtransportMs: 0.25 },
+      { frame: 12, webtransportMs: 0.5 },
+    ]);
+  });
+
+  it("rejects missing or duplicated frame samples", () => {
+    expect(() =>
+      parseNetworkingCpuSamples(
+        'TN_HOST_GAP:{"frames":2,"samples":[{"frame":11,"webtransportMs":0.25}]}',
+        "subject",
+      ),
+    ).toThrow(/sample count/u);
+    expect(() =>
+      parseNetworkingCpuSamples(
+        'TN_HOST_GAP:{"frames":2,"samples":[{"frame":11,"webtransportMs":0.25},{"frame":11,"webtransportMs":0.5}]}',
+        "subject",
+      ),
+    ).toThrow(/duplicate frame/u);
+  });
+
   it("rejects a missing server", () => {
     const value = config();
     value.server = undefined;
