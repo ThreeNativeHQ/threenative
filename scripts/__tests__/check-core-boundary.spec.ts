@@ -79,40 +79,77 @@ describe("core boundary gate", () => {
     ]);
   });
 
-  it("allows a render file to import a simulation that draws nothing", async () => {
-    const root = await fixtureRoot();
-    await writeFile(path.join(root, "packages/core/src/entities.ts"), "export const ok = true;\n");
-    await writeFile(
-      path.join(root, "packages/create-threenative/templates/starter/src/render/lighting.ts"),
+  // The waiver in `check-core-boundary.ts` lets a template's `src/render/` import named
+  // mechanism-only symbols from `@threenative/core`. It has to fail closed on every other shape
+  // an import can take, or "narrow allowlist" is just a hole with a comment over it. Each row
+  // says what the gate must decide, and the reason it is not obvious from the allowlist alone.
+  const waiverCases: ReadonlyArray<readonly [string, string, "allow" | "reject"]> = [
+    ["a plain named import", 'import { SpectralOcean } from "@threenative/core";\n', "allow"],
+    [
+      "a type and a value together",
       'import { type ISpectralOceanOptions, SpectralOcean } from "@threenative/core";\n',
-    );
-
-    await expect(checkCoreBoundary(root)).resolves.toEqual([]);
-  });
-
-  it("fails when a render file takes a look-owning symbol alongside an allowed simulation", async () => {
-    const root = await fixtureRoot();
-    await writeFile(path.join(root, "packages/core/src/entities.ts"), "export const ok = true;\n");
-    await writeFile(
-      path.join(root, "packages/create-threenative/templates/starter/src/render/lighting.ts"),
+      "allow",
+    ],
+    [
+      "the same import wrapped over lines by the formatter",
+      'import {\n  type ISpectralOceanOptions,\n  SpectralOcean,\n} from "@threenative/core";\n',
+      "allow",
+    ],
+    ["single quotes", "import { SpectralOcean } from '@threenative/core';\n", "allow"],
+    ["no trailing semicolon", 'import { SpectralOcean } from "@threenative/core"\n', "allow"],
+    [
+      "an allowed symbol renamed at the import",
+      'import { SpectralOcean as Sea } from "@threenative/core";\n',
+      "allow",
+    ],
+    ["a look-owning symbol", 'import { defineGame } from "@threenative/core";\n', "reject"],
+    [
+      "a look-owning symbol smuggled beside an allowed one",
       'import { defineGame, SpectralOcean } from "@threenative/core";\n',
-    );
-
-    await expect(checkCoreBoundary(root)).resolves.toEqual([
-      expect.stringContaining("starter/src/render/lighting.ts imports @threenative/"),
-    ]);
-  });
-
-  it("fails when an allowed simulation name is taken from a package other than core", async () => {
-    const root = await fixtureRoot();
-    await writeFile(path.join(root, "packages/core/src/entities.ts"), "export const ok = true;\n");
-    await writeFile(
-      path.join(root, "packages/create-threenative/templates/starter/src/render/lighting.ts"),
+      "reject",
+    ],
+    [
+      "a look-owning symbol renamed to hide it",
+      'import { defineGame as go } from "@threenative/core";\n',
+      "reject",
+    ],
+    [
+      "an allowed name taken from another package",
       'import { SpectralOcean } from "@threenative/physics";\n',
-    );
+      "reject",
+    ],
+    [
+      "an allowed name taken from a core subpath",
+      'import { SpectralOcean } from "@threenative/core/ocean";\n',
+      "reject",
+    ],
+    ["a namespace import", 'import * as core from "@threenative/core";\n', "reject"],
+    ["a default import", 'import core from "@threenative/core";\n', "reject"],
+    ["a side-effect import", 'import "@threenative/core";\n', "reject"],
+    ["a re-export", 'export { SpectralOcean } from "@threenative/core";\n', "reject"],
+    ["a dynamic import", 'const m = await import("@threenative/core");\n', "reject"],
+    ["an empty brace clause", 'import {} from "@threenative/core";\n', "reject"],
+    ["the package named in a string", 'export const which = "@threenative/core";\n', "reject"],
+    ["the package named in a comment", "// see @threenative/core for the simulation\n", "reject"],
+  ];
 
-    await expect(checkCoreBoundary(root)).resolves.toEqual([
-      expect.stringContaining("starter/src/render/lighting.ts imports @threenative/"),
-    ]);
-  });
+  for (const [name, source, expected] of waiverCases) {
+    it(`${expected === "allow" ? "allows" : "rejects"} ${name} in generated render source`, async () => {
+      const root = await fixtureRoot();
+      await writeFile(
+        path.join(root, "packages/core/src/entities.ts"),
+        "export const ok = true;\n",
+      );
+      await writeFile(
+        path.join(root, "packages/create-threenative/templates/starter/src/render/lighting.ts"),
+        source,
+      );
+
+      const findings = await checkCoreBoundary(root);
+      expect(
+        findings.some((finding) => finding.includes("imports @threenative/")),
+        `${name}: ${findings.join(" | ") || "(no findings)"}`,
+      ).toBe(expected === "reject");
+    });
+  }
 });
