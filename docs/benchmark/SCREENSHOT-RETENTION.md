@@ -14,9 +14,9 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
 | `docs/benchmark` | 1583 | 109397932 | 0 |
-| `docs/verification` | 603 | 48686105 | 23 |
+| `docs/verification` | 604 | 48688214 | 24 |
 
-**23 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
+**24 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories
 
@@ -54,6 +54,7 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/prd-359-task2b-send-2026-09-05.md` | 11167 |
 | `docs/verification/prd-359-task2b-signal-2026-09-05.md` | 9709 |
 | `docs/verification/prd-359-task4a-2026-09-06.md` | 1890 |
+| `docs/verification/prd-359-task7clock-7native-2026-09-06.md` | 2109 |
 | `docs/verification/prd278-followup-2026-08-30.md` | 8810 |
 | `docs/verification/starter-blank-canvas-2026-08-30-scene-under-xvfb.png` | 515630 |
 | `docs/verification/starter-blank-canvas-2026-08-30.png` | 13318 |

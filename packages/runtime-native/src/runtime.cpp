@@ -1342,6 +1342,25 @@ public:
         // out of the generic I/O sample so proof can charge the actual transport work separately.
         hostGapMeter_.end(HostGapMeter::kIo);
         hostGapMeter_.begin(HostGapMeter::kWebTransport);
+        // The proof lane can inject a bounded delay into this exact measured segment. It is an
+        // environment-only seam, never read by game code, and lets the CPU budget prove that a
+        // slow native transport pass cannot be hidden inside the broader I/O sample.
+        if (const char* delay = std::getenv("TN_NETWORKING_TEST_PROCESS_EVENTS_DELAY_MS")) {
+            const std::string value(delay);
+            if (value.size() <= 4 && !value.empty()) {
+                unsigned milliseconds = 0;
+                bool valid = true;
+                for (char digit : value) {
+                    if (digit < '0' || digit > '9') {
+                        valid = false;
+                        break;
+                    }
+                    milliseconds = milliseconds * 10 + static_cast<unsigned>(digit - '0');
+                }
+                if (valid && milliseconds <= 1000)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
+            }
+        }
         webtransport::processEvents();
         hostGapMeter_.end(HostGapMeter::kWebTransport);
 

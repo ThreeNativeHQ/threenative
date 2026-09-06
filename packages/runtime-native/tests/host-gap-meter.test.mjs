@@ -34,6 +34,11 @@ function assertHostGapPeriodRecording(source) {
     poll,
     /hostGapMeter_\.end\(HostGapMeter::kIo\);[\s\S]*?hostGapMeter_\.begin\(HostGapMeter::kWebTransport\);[\s\S]*?webtransport::processEvents\(\);[\s\S]*?hostGapMeter_\.end\(HostGapMeter::kWebTransport\);/u,
   );
+  assert.match(poll, /TN_NETWORKING_TEST_PROCESS_EVENTS_DELAY_MS/u);
+  assert.match(
+    poll,
+    /TN_NETWORKING_TEST_PROCESS_EVENTS_DELAY_MS[\s\S]*?sleep_for\(std::chrono::milliseconds\(milliseconds\)\)/u,
+  );
 
   const noteRafBegin = functionBody(source, "void noteRafBegin()");
   const closeFrame = functionBody(source, "void closeFrame()");

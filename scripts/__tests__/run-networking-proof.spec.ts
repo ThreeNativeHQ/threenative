@@ -225,5 +225,13 @@ describe("networking proof contract", () => {
       summarizeCombinedNetworkingCpu([0.2, 0.8], [{ frame: 1, webtransportMs: 0.8 }], "subject")
         .p95Ms,
     ).toBe(1.6);
+    const delayedNative = parseNetworkingCpuSamples(
+      'TN_HOST_GAP:{"frames":1,"samples":[{"frame":1,"webtransportMs":5}]}',
+      "subject",
+    );
+    expect(summarizeCombinedNetworkingCpu([0.1], delayedNative, "subject").p95Ms).toBe(5.1);
+    expect(summarizeCombinedNetworkingCpu([0.1], delayedNative, "subject").p95Ms).toBeGreaterThan(
+      1,
+    );
   });
 });

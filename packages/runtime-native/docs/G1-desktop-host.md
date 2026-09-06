@@ -241,6 +241,20 @@ platforms remain open.
 
 Evidence: [Task 2b-signal](../../../docs/verification/prd-359-task2b-signal-2026-09-05.md).
 
+## PRD-359 monotonic networking measurements — 2026-09-06
+
+Native `performance.now()` is measured from a runtime-relative
+`std::chrono::steady_clock` origin. The host-gap meter gives
+`webtransport::processEvents()` its own frame-keyed `webtransport` segment,
+separate from generic I/O, so the networking proof can charge the actual
+transport pass rather than a larger surrounding interval.
+
+The Linux coverage host passed the timer source contract and both compiled
+timer-delivery contracts. With the bounded test seam
+`TN_NETWORKING_TEST_PROCESS_EVENTS_DELAY_MS=5`, the parser observed 2,100
+unique frame samples at p95 `5.060 ms`, above the networking budget. This is a
+test control only; it is not enabled for normal games.
+
 ## PRD-359 native WebTransport stream integration — 2026-09-05
 
 Task 2b is committed as `2dc42fcc`. The JS adapter retries bounded native send
