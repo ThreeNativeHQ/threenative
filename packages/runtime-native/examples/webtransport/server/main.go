@@ -288,6 +288,11 @@ func run(opts *options) error {
 		}
 	}()
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	simulation := NewGameSimulation(time.Now())
+	go simulation.Run(ctx)
+
 	gameConfig := Config{
 		ApplicationProtocol: "threenative-smoke/1",
 		Channels: []Channel{
@@ -309,14 +314,17 @@ func run(opts *options) error {
 		// Upgrade keeps the session alive past this handler, so the
 		// handshake runs beside it.
 		go func() {
-			if _, err := ServeGame(session.Context(), session, gameConfig); err != nil {
+			ready, err := ServeGame(session.Context(), session, gameConfig)
+			if err != nil {
 				log.Printf("game: handshake rejected: %v", err)
+				return
+			}
+			if err := ServeReferenceGame(session.Context(), ready, simulation); err != nil &&
+				session.Context().Err() == nil && !errors.Is(err, context.Canceled) {
+				log.Printf("game: player session ended: %v", err)
 			}
 		}()
 	})
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(packetConn) }()

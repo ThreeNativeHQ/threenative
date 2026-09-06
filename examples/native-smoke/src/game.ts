@@ -433,6 +433,16 @@ class NativeSmoke extends Scene<ISmokeState> {
     );
     player.position.set(-1, 0, 0);
     ctx.entities.add("multitouch-player", player);
+    const networkLocalPlayer = ctx.add(
+      new Mesh(new BoxGeometry(0.32, 0.32, 0.32), new MeshBasicMaterial({ color: 0x44ffcc })),
+    );
+    networkLocalPlayer.visible = false;
+    ctx.entities.add("network-local-player", networkLocalPlayer);
+    const networkRemotePlayer = ctx.add(
+      new Mesh(new BoxGeometry(0.32, 0.32, 0.32), new MeshBasicMaterial({ color: 0xff4488 })),
+    );
+    networkRemotePlayer.visible = false;
+    ctx.entities.add("network-remote-player", networkRemotePlayer);
     const queued = ctx.entities.add("queue-free-smoke", { dispose: () => undefined });
     ctx.entities.queueFree(queued);
     const sharedGeometry = new BoxGeometry(0.08, 0.08, 0.08);
@@ -483,6 +493,23 @@ class NativeSmoke extends Scene<ISmokeState> {
       // Start after the renderer has reached steady frames. Starting during enter() lets native
       // renderer compilation overlap the worker and proves startup latency instead of continuity.
       networkingGame.update(frameCtx.state);
+      const networkState = frameCtx.state.getState();
+      networkLocalPlayer.visible = networkState.networkLocalX !== undefined;
+      if (networkLocalPlayer.visible) {
+        networkLocalPlayer.position.set(
+          networkState.networkLocalX ?? 0,
+          0,
+          networkState.networkLocalZ ?? 0,
+        );
+      }
+      networkRemotePlayer.visible = networkState.networkPeerObserved === true;
+      if (networkRemotePlayer.visible) {
+        networkRemotePlayer.position.set(
+          networkState.networkRemoteX ?? 0,
+          0,
+          networkState.networkRemoteZ ?? 0,
+        );
+      }
       this.#startWorkerProofIfReady(ctx);
       cube.rotation.x += dt * 0.5;
       cube.rotation.y += dt;

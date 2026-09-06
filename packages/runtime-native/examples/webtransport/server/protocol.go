@@ -22,7 +22,10 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"slices"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/quic-go/webtransport-go"
@@ -146,10 +149,356 @@ type Config struct {
 // negotiated limits, the session ID sent in WELCOME, and the live session for
 // per-channel DATA exchange. No game state is allocated before Ready exists.
 type Ready struct {
-	Session   *webtransport.Session
-	Limits    Limits
-	SessionID string
-	Channels  []Channel
+	Session         *webtransport.Session
+	Limits          Limits
+	SessionID       string
+	Channels        []Channel
+	PlayerID        string
+	ReliableStreams map[uint16]*webtransport.Stream
+}
+
+const (
+	simulationStep      = time.Second / 60
+	snapshotEveryTicks  = 3
+	playerSpeedUnitsSec = 3.0
+)
+
+type gameplayInput struct {
+	Tick uint64
+	X    float64
+	Z    float64
+}
+
+type gameplayAction struct {
+	ID uint64
+}
+
+type gameplayClockProbe struct {
+	ProbeID      uint64
+	ClientSentMs float64
+}
+
+type gameplaySnapshot struct {
+	Tick         uint64  `json:"tick"`
+	ServerMonoMs float64 `json:"serverMonoMs"`
+	Player       struct {
+		ID           string  `json:"id"`
+		X            float64 `json:"x"`
+		Z            float64 `json:"z"`
+		LastActionID uint64  `json:"lastActionId"`
+	} `json:"player"`
+}
+
+type gameplayActionReply struct {
+	ID       uint64 `json:"id"`
+	Accepted bool   `json:"accepted"`
+}
+
+type gameplayClockReply struct {
+	ProbeID          uint64  `json:"probeId"`
+	ClientSentMs     float64 `json:"clientSentMs"`
+	ServerReceivedMs float64 `json:"serverReceivedMs"`
+	ServerSentMs     float64 `json:"serverSentMs"`
+}
+
+func clampAxis(value float64) float64 {
+	return math.Max(-1, math.Min(1, value))
+}
+
+func decodeGameplayObject(payload []byte, keys ...string) (map[string]json.RawMessage, error) {
+	if !validUTF8(payload) {
+		return nil, fmt.Errorf("gameplay payload is not valid UTF-8")
+	}
+	if err := rejectDuplicateKeys(payload); err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	var object map[string]json.RawMessage
+	if err := decoder.Decode(&object); err != nil || object == nil {
+		return nil, fmt.Errorf("gameplay payload is not a JSON object")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, fmt.Errorf("gameplay payload has trailing JSON")
+	}
+	wanted := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		wanted[key] = true
+	}
+	if len(object) != len(wanted) {
+		return nil, fmt.Errorf("gameplay payload has unexpected keys")
+	}
+	for key := range object {
+		if !wanted[key] {
+			return nil, fmt.Errorf("gameplay payload has unexpected key %q", key)
+		}
+	}
+	for _, key := range keys {
+		if _, ok := object[key]; !ok {
+			return nil, fmt.Errorf("gameplay payload is missing key %q", key)
+		}
+	}
+	return object, nil
+}
+
+func decodeGameplayNumber(raw json.RawMessage) (json.Number, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return "", err
+	}
+	if number, ok := value.(json.Number); ok {
+		return number, nil
+	}
+	return "", fmt.Errorf("value is not a JSON number")
+}
+
+func decodeGameplayFloat(raw json.RawMessage) (float64, error) {
+	number, err := decodeGameplayNumber(raw)
+	if err != nil {
+		return 0, err
+	}
+	value, err := strconv.ParseFloat(number.String(), 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, fmt.Errorf("value is not finite")
+	}
+	return value, nil
+}
+
+func parseGameplayInput(payload []byte) (gameplayInput, error) {
+	object, err := decodeGameplayObject(payload, "tick", "x", "z")
+	if err != nil {
+		return gameplayInput{}, err
+	}
+	tick, err := jsonNumberUintFromRaw(object["tick"])
+	if err != nil {
+		return gameplayInput{}, fmt.Errorf("input tick is invalid")
+	}
+	x, err := decodeGameplayFloat(object["x"])
+	if err != nil {
+		return gameplayInput{}, fmt.Errorf("input x is invalid")
+	}
+	z, err := decodeGameplayFloat(object["z"])
+	if err != nil {
+		return gameplayInput{}, fmt.Errorf("input z is invalid")
+	}
+	return gameplayInput{Tick: tick, X: clampAxis(x), Z: clampAxis(z)}, nil
+}
+
+func parseGameplayAction(payload []byte) (gameplayAction, error) {
+	object, err := decodeGameplayObject(payload, "id")
+	if err != nil {
+		return gameplayAction{}, err
+	}
+	id, err := jsonNumberUintFromRaw(object["id"])
+	if err != nil {
+		return gameplayAction{}, fmt.Errorf("action id is invalid")
+	}
+	return gameplayAction{ID: id}, nil
+}
+
+func parseGameplayClockProbe(payload []byte) (gameplayClockProbe, error) {
+	object, err := decodeGameplayObject(payload, "probeId", "clientSentMs")
+	if err != nil {
+		return gameplayClockProbe{}, err
+	}
+	probeID, err := jsonNumberUintFromRaw(object["probeId"])
+	if err != nil {
+		return gameplayClockProbe{}, fmt.Errorf("probe id is invalid")
+	}
+	clientSentMs, err := decodeGameplayFloat(object["clientSentMs"])
+	if err != nil {
+		return gameplayClockProbe{}, fmt.Errorf("client sent time is invalid")
+	}
+	return gameplayClockProbe{ProbeID: probeID, ClientSentMs: clientSentMs}, nil
+}
+
+func jsonNumberUintFromRaw(raw json.RawMessage) (uint64, error) {
+	number, err := decodeGameplayNumber(raw)
+	if err != nil {
+		return 0, err
+	}
+	return jsonNumberUint(number)
+}
+
+type gamePlayerState struct {
+	ID            string
+	X             float64
+	Z             float64
+	InputX        float64
+	InputZ        float64
+	LastInputTick uint64
+	HasInput      bool
+	LastActionID  uint64
+	HasAction     bool
+}
+
+type gameParticipant struct {
+	Ready  *Ready
+	Player *gamePlayerState
+}
+
+type snapshotPacket struct {
+	Payload    []byte
+	Recipients []*Ready
+}
+
+// GameSimulation is the small authoritative reference simulation. It owns
+// player positions and tick ordering; transport sessions only carry validated
+// inputs, snapshots and action acknowledgements.
+type GameSimulation struct {
+	mu           sync.Mutex
+	startedAt    time.Time
+	tick         uint64
+	players      map[string]*gamePlayerState
+	participants map[string]*gameParticipant
+}
+
+func NewGameSimulation(startedAt time.Time) *GameSimulation {
+	if startedAt.IsZero() {
+		startedAt = time.Now()
+	}
+	return &GameSimulation{
+		startedAt:    startedAt,
+		players:      make(map[string]*gamePlayerState),
+		participants: make(map[string]*gameParticipant),
+	}
+}
+
+func (s *GameSimulation) Join(ready *Ready) error {
+	if ready == nil || !validPlayerID.MatchString(ready.PlayerID) {
+		return fmt.Errorf("invalid player identity")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.players[ready.PlayerID]; exists {
+		return fmt.Errorf("player %q is already connected", ready.PlayerID)
+	}
+	player := &gamePlayerState{ID: ready.PlayerID}
+	s.players[ready.PlayerID] = player
+	s.participants[ready.PlayerID] = &gameParticipant{Ready: ready, Player: player}
+	return nil
+}
+
+func (s *GameSimulation) Leave(playerID string) {
+	s.mu.Lock()
+	delete(s.players, playerID)
+	delete(s.participants, playerID)
+	s.mu.Unlock()
+}
+
+func (s *GameSimulation) ApplyInput(playerID string, input gameplayInput) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	player := s.players[playerID]
+	if player == nil || (player.HasInput && input.Tick <= player.LastInputTick) {
+		return false
+	}
+	player.InputX = input.X
+	player.InputZ = input.Z
+	player.LastInputTick = input.Tick
+	player.HasInput = true
+	return true
+}
+
+func (s *GameSimulation) ApplyAction(playerID string, action gameplayAction) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	player := s.players[playerID]
+	if player == nil || (player.HasAction && action.ID <= player.LastActionID) {
+		return false
+	}
+	player.LastActionID = action.ID
+	player.HasAction = true
+	return true
+}
+
+func (s *GameSimulation) Step() []snapshotPacket {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tick++
+	for _, player := range s.players {
+		player.X += player.InputX * playerSpeedUnitsSec / 60
+		player.Z += player.InputZ * playerSpeedUnitsSec / 60
+	}
+	if s.tick%snapshotEveryTicks != 0 {
+		return nil
+	}
+	recipients := make([]*Ready, 0, len(s.participants))
+	for _, participant := range s.participants {
+		recipients = append(recipients, participant.Ready)
+	}
+	packets := make([]snapshotPacket, 0, len(s.players))
+	for _, player := range s.players {
+		payload, err := encodeGameplaySnapshot(s.tick, s.serverMonoMsLocked(), player)
+		if err != nil {
+			continue
+		}
+		packets = append(packets, snapshotPacket{Payload: payload, Recipients: recipients})
+	}
+	return packets
+}
+
+func (s *GameSimulation) serverMonoMsLocked() float64 {
+	return time.Since(s.startedAt).Seconds() * 1000
+}
+
+func (s *GameSimulation) ServerMonoMs() float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.serverMonoMsLocked()
+}
+
+func (s *GameSimulation) Tick() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tick
+}
+
+func (s *GameSimulation) Run(ctx context.Context) {
+	ticker := time.NewTicker(simulationStep)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			packets := s.Step()
+			for _, packet := range packets {
+				frame := EncodeFrame(kindData, channelState, packet.Payload)
+				for _, recipient := range packet.Recipients {
+					// quic-go applies the negotiated peer datagram limit in
+					// SendDatagram; a snapshot is never split or reassembled.
+					_ = recipient.Session.SendDatagram(frame)
+				}
+			}
+		}
+	}
+}
+
+func encodeGameplaySnapshot(tick uint64, serverMonoMs float64, player *gamePlayerState) ([]byte, error) {
+	var snapshot gameplaySnapshot
+	snapshot.Tick = tick
+	snapshot.ServerMonoMs = serverMonoMs
+	snapshot.Player.ID = player.ID
+	snapshot.Player.X = player.X
+	snapshot.Player.Z = player.Z
+	snapshot.Player.LastActionID = player.LastActionID
+	return json.Marshal(snapshot)
+}
+
+func encodeActionReply(action gameplayAction, accepted bool) ([]byte, error) {
+	return json.Marshal(gameplayActionReply{ID: action.ID, Accepted: accepted})
+}
+
+func encodeClockReply(probe gameplayClockProbe, received, sent float64) ([]byte, error) {
+	return json.Marshal(gameplayClockReply{
+		ProbeID:          probe.ProbeID,
+		ClientSentMs:     probe.ClientSentMs,
+		ServerReceivedMs: received,
+		ServerSentMs:     sent,
+	})
 }
 
 // validate checks the configured protocol, channel map and limits.
@@ -858,7 +1207,8 @@ func ServeGame(ctx context.Context, session *webtransport.Session, cfg Config) (
 		_ = session.CloseWithError(closeAuthentication, "HELLO rejected")
 		return nil, fmt.Errorf("%w: %v", ErrAuthentication, err)
 	}
-	if _, _, ok := cfg.Validator.ValidateCredential(credential); !ok {
+	_, playerID, ok := cfg.Validator.ValidateCredential(credential)
+	if !ok || !validPlayerID.MatchString(playerID) {
 		_ = session.CloseWithError(closeAuthentication, "HELLO rejected")
 		return nil, ErrAuthentication
 	}
@@ -872,6 +1222,7 @@ func ServeGame(ctx context.Context, session *webtransport.Session, cfg Config) (
 	}
 
 	binder := NewBinder(cfg.Channels)
+	reliableStreams := make(map[uint16]*webtransport.Stream)
 	for _, ch := range slices.Sorted(maps.Keys(binder.channels)) {
 		if binder.channels[ch] != DeliveryReliable {
 			binder.bound[ch] = true // Unreliable channels need no stream.
@@ -898,8 +1249,152 @@ func ServeGame(ctx context.Context, session *webtransport.Session, cfg Config) (
 		if _, err := writeFull(ctx, bindStream, EncodeFrame(kindBound, ch, nil)); err != nil {
 			return nil, fmt.Errorf("writing BOUND for channel %d: %w", ch, err)
 		}
+		reliableStreams[ch] = bindStream
 	}
-	return &Ready{Session: session, Limits: limits, SessionID: sessionID, Channels: cfg.Channels}, nil
+	return &Ready{
+		Session:         session,
+		Limits:          limits,
+		SessionID:       sessionID,
+		Channels:        cfg.Channels,
+		PlayerID:        playerID,
+		ReliableStreams: reliableStreams,
+	}, nil
+}
+
+type gameplayEvent struct {
+	channel uint16
+	stream  *webtransport.Stream
+	payload []byte
+}
+
+// ServeReferenceGame consumes validated transport frames for one player. The
+// simulation tick itself runs once from main through GameSimulation.Run, so a
+// second connected client cannot accidentally make the authoritative clock run
+// twice as fast.
+func ServeReferenceGame(ctx context.Context, ready *Ready, simulation *GameSimulation) error {
+	if ready == nil || simulation == nil {
+		return fmt.Errorf("reference game needs a ready session and simulation")
+	}
+	if err := simulation.Join(ready); err != nil {
+		_ = ready.Session.CloseWithError(closeAuthentication, "player unavailable")
+		return err
+	}
+	defer simulation.Leave(ready.PlayerID)
+	gameCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events := make(chan gameplayEvent, 64)
+	errs := make(chan error, len(ready.ReliableStreams)+1)
+	for channel, stream := range ready.ReliableStreams {
+		go receiveGameplayStream(gameCtx, stream, channel, events, errs)
+	}
+	go receiveGameplayDatagrams(gameCtx, ready.Session, events, errs)
+	for {
+		select {
+		case <-gameCtx.Done():
+			return gameCtx.Err()
+		case err := <-errs:
+			if err == nil {
+				return nil
+			}
+			return err
+		case event := <-events:
+			switch event.channel {
+			case channelInput:
+				input, err := parseGameplayInput(event.payload)
+				if err == nil {
+					simulation.ApplyInput(ready.PlayerID, input)
+				}
+			case channelActions:
+				action, err := parseGameplayAction(event.payload)
+				if err != nil {
+					continue
+				}
+				accepted := simulation.ApplyAction(ready.PlayerID, action)
+				payload, err := encodeActionReply(action, accepted)
+				if err != nil {
+					return err
+				}
+				if _, err := writeFull(gameCtx, event.stream, EncodeFrame(kindData, channelActions, payload)); err != nil {
+					return fmt.Errorf("writing action acknowledgement: %w", err)
+				}
+			case channelClock:
+				probe, err := parseGameplayClockProbe(event.payload)
+				if err != nil {
+					continue
+				}
+				received := simulation.ServerMonoMs()
+				payload, err := encodeClockReply(probe, received, simulation.ServerMonoMs())
+				if err != nil {
+					return err
+				}
+				if _, err := writeFull(gameCtx, event.stream, EncodeFrame(kindData, channelClock, payload)); err != nil {
+					return fmt.Errorf("writing clock reply: %w", err)
+				}
+			}
+		}
+	}
+}
+
+func receiveGameplayDatagrams(
+	ctx context.Context,
+	session *webtransport.Session,
+	events chan<- gameplayEvent,
+	errs chan<- error,
+) {
+	for {
+		payload, err := session.ReceiveDatagram(ctx)
+		if err != nil {
+			errs <- err
+			return
+		}
+		frame, err := DecodeDatagram(payload)
+		if err != nil || frame.Channel != channelInput {
+			continue
+		}
+		select {
+		case events <- gameplayEvent{channel: frame.Channel, payload: frame.Payload}:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func receiveGameplayStream(
+	ctx context.Context,
+	stream *webtransport.Stream,
+	channel uint16,
+	events chan<- gameplayEvent,
+	errs chan<- error,
+) {
+	decoder := NewDecoder(1 << 20)
+	buffer := make([]byte, 32*1024)
+	for {
+		read, err := stream.Read(buffer)
+		if read > 0 {
+			frames, decodeErr := decoder.Feed(buffer[:read])
+			if decodeErr != nil {
+				errs <- decodeErr
+				return
+			}
+			for _, frame := range frames {
+				if frame.Kind != kindData || frame.Channel != channel {
+					errs <- fmt.Errorf("gameplay stream %d carried an invalid frame", channel)
+					return
+				}
+				select {
+				case events <- gameplayEvent{channel: channel, stream: stream, payload: frame.Payload}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+		if err != nil {
+			if ctx.Err() == nil {
+				errs <- err
+			}
+			return
+		}
+	}
 }
 
 // readControlFrame reads exactly one frame from a control/binding stream: the

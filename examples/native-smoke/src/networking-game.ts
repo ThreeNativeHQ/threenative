@@ -11,11 +11,23 @@ export interface INetworkingConfig {
 export type NetworkingStatus = "disabled" | "connecting" | "connected" | "disconnected";
 
 export interface INetworkingState extends Record<string, unknown> {
+  networkActionAcks?: number;
   networkConnected: boolean;
   networkError: string;
+  networkLastActionId?: number;
+  networkLocalX?: number;
+  networkLocalZ?: number;
+  networkPeerId?: string;
+  networkPeerObserved?: boolean;
+  networkProtocolErrors?: number;
+  networkReconnects?: number;
+  networkRemoteDistance?: number;
+  networkRemoteX?: number;
+  networkRemoteZ?: number;
   networkRetry: number;
   networkSessionId: string;
   networkStatus: NetworkingStatus;
+  networkServerTick?: number;
 }
 
 interface INetworkingStore<TState extends INetworkingState> {
@@ -39,6 +51,22 @@ interface IStagedGrant {
 interface IIssuedCredential {
   readonly credential: string;
   readonly expiresAt: string;
+}
+
+interface INetworkSnapshot {
+  readonly tick: number;
+  readonly serverMonoMs: number;
+  readonly player: {
+    readonly id: string;
+    readonly x: number;
+    readonly z: number;
+    readonly lastActionId: number;
+  };
+}
+
+interface IActionReply {
+  readonly id: number;
+  readonly accepted: boolean;
 }
 
 const NETWORK_SESSION_ASSET = "networking-session.json";
@@ -138,12 +166,182 @@ function publicFailure(): string {
   return "network connection failed; press Retry";
 }
 
+function exactRecord(
+  value: unknown,
+  keys: readonly string[],
+  name: string,
+): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new Error(`TN_NETWORK_PROTOCOL: ${name} must be an object`);
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).sort().join(",") !== [...keys].sort().join(","))
+    throw new Error(`TN_NETWORK_PROTOCOL: ${name} has unexpected keys`);
+  return record;
+}
+
+function safeNonNegativeInteger(value: unknown, name: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
+    throw new Error(`TN_NETWORK_PROTOCOL: ${name} is invalid`);
+  return value;
+}
+
+function finiteNumber(value: unknown, name: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value))
+    throw new Error(`TN_NETWORK_PROTOCOL: ${name} is invalid`);
+  return value;
+}
+
+function parseSnapshot(data: Uint8Array): INetworkSnapshot {
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(data));
+  } catch {
+    throw new Error("TN_NETWORK_PROTOCOL: snapshot is not valid JSON");
+  }
+  const record = exactRecord(value, ["player", "serverMonoMs", "tick"], "snapshot");
+  const player = exactRecord(record.player, ["id", "lastActionId", "x", "z"], "snapshot player");
+  if (typeof player.id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/u.test(player.id))
+    throw new Error("TN_NETWORK_PROTOCOL: snapshot player id is invalid");
+  return {
+    tick: safeNonNegativeInteger(record.tick, "snapshot tick"),
+    serverMonoMs: finiteNumber(record.serverMonoMs, "snapshot server time"),
+    player: {
+      id: player.id,
+      lastActionId: safeNonNegativeInteger(player.lastActionId, "snapshot action id"),
+      x: finiteNumber(player.x, "snapshot x"),
+      z: finiteNumber(player.z, "snapshot z"),
+    },
+  };
+}
+
+function parseActionReply(data: Uint8Array): IActionReply {
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(data));
+  } catch {
+    throw new Error("TN_NETWORK_PROTOCOL: action acknowledgement is not valid JSON");
+  }
+  const record = exactRecord(value, ["accepted", "id"], "action acknowledgement");
+  if (typeof record.accepted !== "boolean")
+    throw new Error("TN_NETWORK_PROTOCOL: action acknowledgement accepted is invalid");
+  return {
+    id: safeNonNegativeInteger(record.id, "action acknowledgement id"),
+    accepted: record.accepted,
+  };
+}
+
+function encodeGameplay(value: unknown): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(value));
+}
+
+function playerAxes(playerId: string): { x: number; z: number } {
+  let checksum = 0;
+  for (let index = 0; index < playerId.length; index += 1)
+    checksum = (checksum + playerId.charCodeAt(index)) % 2;
+  return checksum === 0 ? { x: 1, z: 0 } : { x: 0, z: 1 };
+}
+
 function patch<TState extends INetworkingState>(
   store: INetworkingStore<TState>,
   values: Partial<INetworkingState>,
 ): void {
   store.set(values as Partial<TState>);
   store.flush();
+}
+
+interface IObservedPositions {
+  local: { x: number; z: number } | undefined;
+  remote: { id: string; x: number; z: number } | undefined;
+}
+
+function reportProtocolError<TState extends INetworkingState>(
+  store: INetworkingStore<TState>,
+): void {
+  const state = store.getState();
+  patch(store, { networkProtocolErrors: (state.networkProtocolErrors ?? 0) + 1 });
+}
+
+function observeSnapshot<TState extends INetworkingState>(
+  store: INetworkingStore<TState>,
+  config: INetworkingConfig,
+  snapshot: INetworkSnapshot,
+  lastSnapshotTick: Map<string, number>,
+  positions: IObservedPositions,
+): void {
+  const previousTick = lastSnapshotTick.get(snapshot.player.id);
+  if (previousTick !== undefined && snapshot.tick <= previousTick) return;
+  lastSnapshotTick.set(snapshot.player.id, snapshot.tick);
+  if (snapshot.player.id === config.playerId) {
+    positions.local = { x: snapshot.player.x, z: snapshot.player.z };
+  } else if (positions.remote === undefined || positions.remote.id === snapshot.player.id) {
+    positions.remote = {
+      id: snapshot.player.id,
+      x: snapshot.player.x,
+      z: snapshot.player.z,
+    };
+  }
+  const local = positions.local;
+  const remote = positions.remote;
+  patch(store, {
+    networkLastActionId: snapshot.player.lastActionId,
+    networkLocalX: local?.x ?? 0,
+    networkLocalZ: local?.z ?? 0,
+    networkPeerId: remote?.id ?? "",
+    networkPeerObserved: remote !== undefined,
+    networkRemoteDistance:
+      local === undefined || remote === undefined
+        ? 0
+        : Math.hypot(remote.x - local.x, remote.z - local.z),
+    networkRemoteX: remote?.x ?? 0,
+    networkRemoteZ: remote?.z ?? 0,
+    networkServerTick: snapshot.tick,
+  });
+}
+
+function observeActionReply<TState extends INetworkingState>(
+  store: INetworkingStore<TState>,
+  reply: IActionReply,
+  lastActionId: { value: number },
+): void {
+  if (reply.id <= lastActionId.value) return;
+  lastActionId.value = reply.id;
+  if (!reply.accepted) return;
+  const state = store.getState();
+  patch(store, { networkActionAcks: (state.networkActionAcks ?? 0) + 1 });
+}
+
+function consumeMessages<TState extends INetworkingState>(
+  store: INetworkingStore<TState>,
+  messages: readonly { channel: number; data: Uint8Array }[],
+  config: INetworkingConfig,
+  lastSnapshotTick: Map<string, number>,
+  positions: IObservedPositions,
+  lastActionId: { value: number },
+): void {
+  for (const message of messages) {
+    try {
+      if (message.channel === 2) {
+        observeSnapshot(store, config, parseSnapshot(message.data), lastSnapshotTick, positions);
+      } else if (message.channel === 3) {
+        observeActionReply(store, parseActionReply(message.data), lastActionId);
+      }
+    } catch {
+      reportProtocolError(store);
+    }
+  }
+}
+
+function sendGameplay(
+  connection: INetworkConnection,
+  playerId: string,
+  inputTick: number,
+  nextActionId: number,
+): number {
+  const axes = playerAxes(playerId);
+  connection.send(1, encodeGameplay({ tick: inputTick, x: axes.x, z: axes.z }));
+  if (inputTick !== 1 && inputTick % 30 !== 0) return nextActionId;
+  connection.send(3, encodeGameplay({ id: nextActionId }));
+  return nextActionId + 1;
 }
 
 export function createNetworkingGame<TState extends INetworkingState>(
@@ -154,6 +352,11 @@ export function createNetworkingGame<TState extends INetworkingState>(
   let generation = 0;
   let closed = true;
   let retryRequested = false;
+  let inputTick = 0;
+  let nextActionId = 1;
+  const lastActionId = { value: 0 };
+  const positions: IObservedPositions = { local: undefined, remote: undefined };
+  let lastSnapshotTick = new Map<string, number>();
 
   const start = (store: INetworkingStore<TState>, retry: boolean): void => {
     if (!config.enabled || connecting !== undefined || !closed) return;
@@ -166,7 +369,14 @@ export function createNetworkingGame<TState extends INetworkingState>(
       networkRetry: retry ? current.networkRetry + 1 : current.networkRetry,
       networkSessionId: "",
       networkStatus: "connecting",
+      networkProtocolErrors: 0,
     });
+    inputTick = 0;
+    nextActionId = 1;
+    lastActionId.value = 0;
+    lastSnapshotTick = new Map();
+    positions.local = undefined;
+    positions.remote = undefined;
     const work = issueCredential(config).then((credential) => {
       if (run !== generation || closed || config.endpoint === undefined)
         throw new Error("TN_NETWORK_AUTH: connection was canceled");
@@ -232,6 +442,13 @@ export function createNetworkingGame<TState extends INetworkingState>(
       const active = connection;
       if (active === undefined) return;
       const batch = active.poll();
+      consumeMessages(store, batch.messages, config, lastSnapshotTick, positions, lastActionId);
+      inputTick += 1;
+      try {
+        nextActionId = sendGameplay(active, config.playerId ?? "player", inputTick, nextActionId);
+      } catch {
+        reportProtocolError(store);
+      }
       if (!batch.disconnected) return;
       connection = undefined;
       closed = true;
