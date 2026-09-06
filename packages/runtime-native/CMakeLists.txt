@@ -135,6 +135,7 @@ option(TN_ENABLE_CANVAS2D "Enable Canvas2D/Skia compatibility surface" ON)
 option(TN_ENABLE_VIDEO "Enable video capture/encoding surfaces" OFF)
 option(TN_ENABLE_RAYTRACING "Enable optional ray tracing backends" OFF)
 option(TN_ENABLE_WEBTRANSPORT "Enable WebTransport/QUIC support when dependencies exist" ON)
+option(TN_REQUIRE_WEBTRANSPORT "Require WebTransport dependencies during configure" OFF)
 option(TN_ENABLE_NATIVE_GLTF "Enable deprecated native C++ GLTF path (must remain OFF; use Three.js GLTFLoader)" OFF)
 option(TN_ENABLE_DRACO "Enable native Draco decoder when dependencies exist" OFF)
 option(TN_ENABLE_DEBUG_SERVER "Enable debug-server control surface" OFF)
@@ -277,6 +278,13 @@ message(STATUS "WebGPU: Dawn=${MYSTRAL_USE_DAWN} wgpu=${MYSTRAL_USE_WGPU}")
 set(THIRD_PARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 set(THREENATIVE_DAWN_ANDROID_ROOT "${THIRD_PARTY_DIR}/dawn-android" CACHE PATH
     "Extracted Dawn Android arm64 spike root containing include/ and lib/")
+
+if(TN_REQUIRE_WEBTRANSPORT AND NOT TN_ENABLE_WEBTRANSPORT)
+    message(FATAL_ERROR
+        "TN_WEBTRANSPORT_REQUIRED: WebTransport is disabled for platform '${MYSTRAL_PLATFORM}'. "
+        "Expected quiche artifacts under '${THIRD_PARTY_DIR}'; enable "
+        "TN_ENABLE_WEBTRANSPORT.")
+endif()
 
 # SDL3 - Build from source as static library for single-binary distribution
 set(SDL3_DIR ${THIRD_PARTY_DIR}/sdl3)
@@ -1204,9 +1212,20 @@ if(MYSTRAL_USE_QUICHE)
         message(STATUS "Found quiche: ${QUICHE_LIB_PATH}")
         message(STATUS "quiche includes: ${QUICHE_INCLUDE_DIR}")
     else()
+        if(TN_REQUIRE_WEBTRANSPORT)
+            message(FATAL_ERROR
+                "TN_WEBTRANSPORT_REQUIRED: quiche artifact is missing for platform "
+                "'${MYSTRAL_PLATFORM}'. Expected library '${QUICHE_LIB_PATH}' and header "
+                "'${QUICHE_INCLUDE_DIR}/quiche.h'. Run the dependency download for this target.")
+        endif()
         message(STATUS "quiche not found at ${QUICHE_LIB_PATH} - WebTransport disabled (stub).")
         message(STATUS "  Run 'node scripts/download-deps.mjs --only quiche' (desktop) or '--ios' / '--android' (mobile) to enable.")
     endif()
+elseif(TN_REQUIRE_WEBTRANSPORT)
+    message(FATAL_ERROR
+        "TN_WEBTRANSPORT_REQUIRED: quiche is disabled for platform '${MYSTRAL_PLATFORM}'. "
+        "Expected quiche artifacts under '${THIRD_PARTY_DIR}' for this target; enable MYSTRAL_USE_QUICHE and "
+        "TN_ENABLE_WEBTRANSPORT.")
 endif()
 
 # Ray Tracing (optional - hardware RT via DXR/Vulkan/Metal)
