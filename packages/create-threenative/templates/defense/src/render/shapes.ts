@@ -182,7 +182,7 @@ export function attacker(): Group {
   dome.position.y = 0.78;
   const eye = new Mesh(new SphereGeometry(0.11, 8, 6), materials.hostile);
   eye.position.set(0, 0.72, -0.38);
-  const parts = [hull, dome, eye];
+  const parts: Mesh[] = [hull, dome, eye];
   for (const [x, z] of [
     [-1, -1],
     [1, -1],
@@ -229,7 +229,7 @@ export function base(): Group {
   const cap = new Mesh(new SphereGeometry(0.5, 10, 6), materials.accent);
   cap.scale.y = 0.7;
   cap.position.y = 1.6;
-  const parts = [plinth, collar, core, cap];
+  const parts: Mesh[] = [plinth, collar, core, cap];
   for (let index = 0; index < 3; index += 1) {
     const angle = (index / 3) * Math.PI * 2;
     const pylon = new Mesh(new BoxGeometry(0.2, 1.5, 0.2), materials.plating);

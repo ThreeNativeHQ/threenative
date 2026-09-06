@@ -279,7 +279,11 @@ describe("generated template ordinary-frame runtime cost", () => {
       const ctx = gameContext(physics.physics);
       const player = new starter.Player(
         ctx as never,
-        new MeshBasicMaterial(),
+        {
+          accent: new MeshBasicMaterial(),
+          body: new MeshBasicMaterial(),
+          dark: new MeshBasicMaterial(),
+        },
         new Vector3(-2, 0.5, 0),
       );
       expect(

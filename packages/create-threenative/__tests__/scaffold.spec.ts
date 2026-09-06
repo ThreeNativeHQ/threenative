@@ -270,19 +270,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // config now carries `window.maximized`, so all ten scaffold trees move by that source byte.
   // Recomputed 2026-09-05 for the generated pointer-capture and desktop-mode authoring contract
   // in every template's AGENTS.md/CLAUDE.md pair; values are from the current Received block.
-  "action-rpg": "f99ea6dc754d913929527a7b59b920aced01852903c4394225f061d730812549",
-  defense: "1bb399e483bbe8ee4cb98dd93132a75dafb05e5e10a19cf820bb2147a767dfe3",
+  "action-rpg": "2c8fa92ff0f00735c935ee38fa18dd01303064a6f4d19d7d1ac29995b7604cab",
+  defense: "36a467d8e9f0e790d264725af733b6c44d498c4ce97acb1bb7a88ff626737091",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "f2388fccc10d838dcb63ebaa573ea4f1873093d180e8c13b66f61c3e5b268b6b",
-  platformer: "ef72019b97316ac292b19ec5902229d1de9bab573486994e492bf8b90fad0e79",
+  minimal: "dfb6fe115e33363827c9c42f58cfa03f016177c0ae553f1a3f07b186081eb61c",
+  platformer: "ae91c6ea42b70dde1ab4ec2823c28a5cc2faf302065034b4037d5325cb63d535",
   runner: "2267903ab4bdd04be723a6363916804a5e623bfce2b56594939e16c2a82e3e59",
   puzzle: "8d60559bc70c1e6ed4e8a778184d3ceac9240020ec5d4dbd6b2d9254dbe31bb1",
-  racing: "9599ecc154ed694b64ec4f518c344830c2dee6c40f349656e7fb342a4f78b846",
-  shooter: "853ccca17326bdbc92284909534c7a2e23b62bb2103a9055d79c69794865861c",
+  racing: "d59025b065e2cdbee303d48e95431da89105b76301871c3ae9ac75bc06fb382d",
+  shooter: "64af5e55c408c62416a0a60dd57b012770e183125f365fcc0a6572ca586d87b4",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "8b98ca80688bb4accc321543ddbb199637cf8b2b9816bc6c3b4f2e10123c57c2",
+  starter: "38868c0f1acf71ae116095b1b674c21d7b2cd651f5bee602ee2a99cd2640fe17",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -303,7 +303,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "b91306442f3e5ceba4f816e7b227d2517167ae1634e5f2b31cf38db89ad95a3d",
+  sailing: "e844ade0d73c8ea123db220ebe3e2535577e03f2c556025e92facccd24094f14",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -327,6 +327,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `threenative-blender`, which `pnpm sync:mcp` writes into all seven host configs of every
   // template, and the shared `finding-assets.md` reference gained the downloaded-.fbx loop.
   // All ten trees moved; no template source did.
+  // Recomputed 2026-09-06 for the local-main sync repair. Sailing's water became `SpectralOcean`,
+  // moving `src/render/ocean.ts`, `src/scenes/Sailing.ts` and an AGENTS.md rewritten under the
+  // 100-line cap; defense's `src/render/shapes.ts` gained two `Mesh[]` annotations that let the
+  // template typecheck again; Biome reformatted the two sailing sources. Eight trees move on the
+  // shared agent-doc and manifest bytes those edits touch. Puzzle and runner do not move.
 };
 
 const GENERATED_SCAFFOLD_METADATA =

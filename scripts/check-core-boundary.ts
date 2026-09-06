@@ -8,6 +8,54 @@ const BANNED_ENTITY_TOKENS = /\b(?:archetype|createQuery|defineComponent|System|
 const CORE_SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
 const RENDER_EXTENSIONS = new Set([".css", ".js", ".jsx", ".ts", ".tsx"]);
 
+// A template's `src/render/` stays portable: it must not reach into the framework for anything
+// that decides how the game looks. These names are the exception, and they are an exception on a
+// principle, not on a case — each one runs a simulation and draws nothing, so the mesh, the
+// material, the colours and the tessellation are still the game's own decisions in its own file.
+// `SpectralOcean` is the shape: it inverse-transforms cascaded wave spectra on the GPU into a
+// displacement buffer, and the game builds every visible thing that reads it.
+//
+// Adding a name here needs the same proof: the game must be able to change the appearance
+// completely without editing package code. A symbol that picks a material, a colour or a curve
+// belongs in `src/render/` as generated source instead.
+const RENDER_PORTABLE_CORE_SYMBOLS: ReadonlySet<string> = new Set([
+  "ISpectralOceanCascade",
+  "ISpectralOceanHeight",
+  "ISpectralOceanOptions",
+  "SpectralOcean",
+]);
+
+const FRAMEWORK_IMPORT =
+  /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']@threenative\/([^"']+)["'];?/gsu;
+
+function importedNames(clause: string): readonly string[] {
+  return clause
+    .split(",")
+    .map(
+      (entry) =>
+        entry
+          .trim()
+          .replace(/^type\s+/u, "")
+          .split(/\s+as\s+/u)[0]
+          ?.trim() ?? "",
+    )
+    .filter((name) => name.length > 0);
+}
+
+/**
+ * Removes every framework import a render file is allowed to make. Whatever `@threenative/` text
+ * survives is a portability violation — a wildcard import, a dynamic one, a package other than
+ * core, or a named symbol that is not on the list above.
+ */
+function withoutPortableImports(source: string): string {
+  return source.replaceAll(FRAMEWORK_IMPORT, (statement, clause: string, specifier: string) => {
+    if (specifier !== "core") return statement;
+    const names = importedNames(clause);
+    if (names.length === 0) return statement;
+    return names.every((name) => RENDER_PORTABLE_CORE_SYMBOLS.has(name)) ? "" : statement;
+  });
+}
+
 async function filesUnder(directory: string): Promise<readonly string[]> {
   const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
   const files: string[] = [];
@@ -74,7 +122,7 @@ async function checkScaffoldHygiene(root: string): Promise<string[]> {
     const renderRoot = path.join(templateRootPath, "src/render");
     for (const file of await filesUnder(renderRoot)) {
       if (!RENDER_EXTENSIONS.has(path.extname(file))) continue;
-      const source = await readFile(file, "utf8");
+      const source = withoutPortableImports(await readFile(file, "utf8"));
       if (source.includes("@threenative/")) {
         findings.push(
           `${relative(root, file)} imports @threenative/; render source must stay portable`,

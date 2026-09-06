@@ -12,12 +12,12 @@ import { followShip, setupCamera } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
+import { createOcean, createWaterMesh } from "../render/ocean.js";
 import { palette } from "../render/palette.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createBuoy, createIsland } from "../render/props.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
-import { createOcean, createWaterMesh } from "../render/ocean.js";
 import type { GameState } from "../state.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
@@ -103,7 +103,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
       }
 
       elapsed += deltaTime;
-        const wind = Math.max(0, 1 - elapsed / 45);
+      const wind = Math.max(0, 1 - elapsed / 45);
       if (status === "sailing") advanceSailing(frameCtx, deltaTime, wind);
 
       const state = frameCtx.state.getState();

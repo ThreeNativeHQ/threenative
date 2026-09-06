@@ -11,6 +11,8 @@
       "build/**",
       ".worktrees/**",
       ".claude/worktrees/**",
+      ".linchpin/**",
+      ".tnshots/**",
       ".mcp.json",
       "**/.cursor/mcp.json",
       "**/.vscode/mcp.json",

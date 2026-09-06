@@ -78,4 +78,41 @@ describe("core boundary gate", () => {
       expect.stringContaining("starter/src/render/lighting.ts imports @threenative/"),
     ]);
   });
+
+  it("allows a render file to import a simulation that draws nothing", async () => {
+    const root = await fixtureRoot();
+    await writeFile(path.join(root, "packages/core/src/entities.ts"), "export const ok = true;\n");
+    await writeFile(
+      path.join(root, "packages/create-threenative/templates/starter/src/render/lighting.ts"),
+      'import { type ISpectralOceanOptions, SpectralOcean } from "@threenative/core";\n',
+    );
+
+    await expect(checkCoreBoundary(root)).resolves.toEqual([]);
+  });
+
+  it("fails when a render file takes a look-owning symbol alongside an allowed simulation", async () => {
+    const root = await fixtureRoot();
+    await writeFile(path.join(root, "packages/core/src/entities.ts"), "export const ok = true;\n");
+    await writeFile(
+      path.join(root, "packages/create-threenative/templates/starter/src/render/lighting.ts"),
+      'import { defineGame, SpectralOcean } from "@threenative/core";\n',
+    );
+
+    await expect(checkCoreBoundary(root)).resolves.toEqual([
+      expect.stringContaining("starter/src/render/lighting.ts imports @threenative/"),
+    ]);
+  });
+
+  it("fails when an allowed simulation name is taken from a package other than core", async () => {
+    const root = await fixtureRoot();
+    await writeFile(path.join(root, "packages/core/src/entities.ts"), "export const ok = true;\n");
+    await writeFile(
+      path.join(root, "packages/create-threenative/templates/starter/src/render/lighting.ts"),
+      'import { SpectralOcean } from "@threenative/physics";\n',
+    );
+
+    await expect(checkCoreBoundary(root)).resolves.toEqual([
+      expect.stringContaining("starter/src/render/lighting.ts imports @threenative/"),
+    ]);
+  });
 });

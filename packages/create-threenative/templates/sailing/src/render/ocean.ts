@@ -120,7 +120,12 @@ function displacementAt(ocean: SpectralOcean, x: Node<"float">, z: Node<"float">
  * every assertion in this template would still be green.
  */
 export function createWaterMesh(ocean: SpectralOcean): Mesh {
-  const geometry = new PlaneGeometry(SURFACE.size, SURFACE.size, SURFACE.segments, SURFACE.segments);
+  const geometry = new PlaneGeometry(
+    SURFACE.size,
+    SURFACE.size,
+    SURFACE.segments,
+    SURFACE.segments,
+  );
   geometry.rotateX(-Math.PI / 2);
 
   // Standard, not basic. This is the whole reason the sea now has a sun on it rather than a
@@ -153,11 +158,7 @@ export function createWaterMesh(ocean: SpectralOcean): Mesh {
   // world's: the sun's reflection stopped being a place on the sea and became a column of glare
   // pointing at the camera, sliding across the water as the ship turned.
   material.normalNode = transformNormalToView(
-    vec3(
-      west.y.sub(east.y).div(twice),
-      float(1),
-      south.y.sub(north.y).div(twice),
-    ).normalize(),
+    vec3(west.y.sub(east.y).div(twice), float(1), south.y.sub(north.y).div(twice)).normalize(),
   );
 
   // Colour by height: deep in the troughs, lit water on the shoulders, foam on the crests. The

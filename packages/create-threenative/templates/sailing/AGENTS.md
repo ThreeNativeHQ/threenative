@@ -50,24 +50,9 @@ pnpm test:native
 
 `Ship.ts` uses `RigidBody3D` plus `Buoyancy3D`; apply forces before fixed-step simulation.
 
-The sea is `SpectralOcean`, added with `ctx.add` so the compute registry runs its passes. It draws
-nothing: `src/render/ocean.ts` owns the mesh, the material and every colour, and it is the only
-file to edit for the look of the water. The same cascade buffers the vertex stage reads are the
-ones the CPU height query is copied from, so the hull floats on the surface that is drawn — if
-those two came from different fields the ship would ride water nothing renders and every assertion
-here would still be green.
+The sea is `SpectralOcean`, added with `ctx.add` so the compute registry runs its passes. It draws nothing: `src/render/ocean.ts` owns the mesh, the material and every colour, and is the only file to edit for the water's look. The vertex stage and the CPU height query read the same cascade buffers, so the hull floats on the surface that is drawn; two fields would leave the ship riding water nothing renders, every assertion still green.
 
-Three things about that field are load-bearing:
-
-- **The material is lit.** `MeshStandardNodeMaterial`, not `MeshBasicNodeMaterial`. A basic
-  material takes no lights, so the sun on the water has to be faked with a `pow()` term and the
-  sea cannot agree with the hull floating on it.
-- **Feed `normalNode` a view-space normal.** It overrides `normalView`; hand it a world-space
-  vector and the sun's reflection becomes a column of glare that follows the camera.
-- **The CPU height is a throttled copy, and it is coarse.** `readbackResolution` over the largest
-  `patchSize` is the spacing between height samples; make that spacing wider than the waves and
-  the ship sits at a smoothed mean sea level, hanging over its own troughs. It is also `undefined`
-  until the first copy lands, which `Ship.ts` handles by falling back to mean sea level.
+Three details are load-bearing. The material is `MeshStandardNodeMaterial`: a basic one takes no lights, so the sun has to be faked with a `pow()` term. `normalNode` overrides `normalView`, so feed it a view-space normal or the reflection becomes a column of glare that follows the camera. And the CPU height is a coarse throttled copy — `readbackResolution` over the largest `patchSize` is the sample spacing, wider than the waves means the ship hangs over its own troughs, and it is `undefined` until the first copy lands, which `Ship.ts` handles by falling back to mean sea level.
 
 Tune the sea state in `src/render/ocean.ts`, hull points in `src/entities/Ship.ts`, and course
 order in `src/scenes/Sailing.ts`. The single React HUD reads published state; keep
