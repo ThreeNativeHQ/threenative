@@ -154,6 +154,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     this.#scenery = scenery;
     ctx.add(scenery.object);
     ctx.entities.add("scenery.ridge", scenery);
+    ctx.entities.add("scenery.flora", scenery.flora);
     // Two sentinels, both read by seed.playtest as an out-of-range value rather than as a
     // transition: state.levelX starts at -99, so a level that never builds stays out of range,
     // and seededLevelX becomes 2 if this draw did not advance ctx.random — which is what happens

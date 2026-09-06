@@ -1,6 +1,8 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { growFloraStand } from "../templates/starter/src/render/floraField.js";
+import { FLORA_BOUNDS, FLORA_BUDGETS, FLORA_ENVELOPE, FLORA_SEED } from "../templates/starter/src/render/floraStand.js";
 import { buildImplicitSurface } from "../templates/starter/src/render/implicitSurface.js";
 import { createKuwaharaStage } from "../templates/starter/src/render/kuwahara.js";
 import { qualityPreset } from "../templates/starter/src/render/quality.js";
@@ -677,6 +679,109 @@ describe("starter visual floor", () => {
     expect(main).toContain("app.prepend(canvas)");
     const css = await readFile(path.join(minimal, "src/style.css"), "utf8");
     expect(css).toContain("#app canvas");
+  });
+
+  it("should grow one bounded stand from the starter envelope", () => {
+    // Red: disable the outer bound (minX >= maxX) throws TN_FLORA_BOUNDS_INVALID.
+    const stand = growFloraStand(FLORA_ENVELOPE, FLORA_SEED, FLORA_BOUNDS, FLORA_BUDGETS);
+    expect(stand.plants.length).toBeGreaterThan(1);
+    expect(stand.plants.length).toBeLessThanOrEqual(FLORA_BUDGETS.maxPlants);
+    expect(stand.segments.length).toBeLessThanOrEqual(FLORA_BUDGETS.maxSegments);
+    expect(stand.leaves.length).toBeLessThanOrEqual(FLORA_BUDGETS.maxLeaves);
+    expect(stand.segments.length).toBeGreaterThan(0);
+    expect(stand.leaves.length).toBeGreaterThan(0);
+    // Parents precede children; single origin per plant (trunk bases at depth 0).
+    stand.segments.forEach((segment, index) => {
+      expect(segment.parent).toBeLessThan(index);
+    });
+    for (const leaf of stand.leaves) {
+      expect(leaf.segment).toBeGreaterThanOrEqual(0);
+      expect(leaf.segment).toBeLessThan(stand.segments.length);
+    }
+    // Determinism: same envelope+seed is byte-identical; one seed input differs.
+    const same = growFloraStand(FLORA_ENVELOPE, FLORA_SEED, FLORA_BOUNDS, FLORA_BUDGETS);
+    expect(JSON.stringify(same)).toBe(JSON.stringify(stand));
+    const rerolled = growFloraStand(FLORA_ENVELOPE, FLORA_SEED + 1, FLORA_BOUNDS, FLORA_BUDGETS);
+    expect(JSON.stringify(rerolled)).not.toBe(JSON.stringify(stand));
+  });
+
+  it("should reject malformed or empty flora fields", () => {
+    // Red: returning empty arrays instead of throwing keeps these green-free.
+    expect(() =>
+      growFloraStand({ ...FLORA_ENVELOPE, light: Number.NaN }, FLORA_SEED, FLORA_BOUNDS, FLORA_BUDGETS),
+    ).toThrow("TN_FLORA_ENVELOPE_INVALID");
+    expect(() =>
+      growFloraStand(FLORA_ENVELOPE, 1.5, FLORA_BOUNDS, FLORA_BUDGETS),
+    ).toThrow("TN_FLORA_SEED_INVALID");
+    expect(() =>
+      growFloraStand(FLORA_ENVELOPE, FLORA_SEED, { ...FLORA_BOUNDS, minX: 1, maxX: 1 }, FLORA_BUDGETS),
+    ).toThrow("TN_FLORA_BOUNDS_INVALID");
+    expect(() =>
+      growFloraStand(FLORA_ENVELOPE, FLORA_SEED, FLORA_BOUNDS, { ...FLORA_BUDGETS, maxPlants: 0 }),
+    ).toThrow("TN_FLORA_BUDGET_INVALID");
+  });
+
+  it("should keep the stand game-owned with seed-free thickness", async () => {
+    // Red: add a core import or colour literal to floraField.ts, or derive a
+    // radius from a seed draw, and this fails.
+    const [field, mesh, wind, stand, scenery, play] = await Promise.all([
+      ...["floraField.ts", "floraMesh.ts", "floraWind.ts", "floraStand.ts", "scenery.ts"].map(
+        (file) => readFile(path.join(starter, "src/render", file), "utf8"),
+      ),
+      readFile(path.join(starter, "src/scenes/Play.ts"), "utf8"),
+    ]);
+    expect(`${field}\n${mesh}\n${wind}`).not.toContain("@threenative/");
+    expect(`${field}\n${mesh}\n${wind}`).not.toContain("Math.random(");
+    expect(field).not.toMatch(/#(?:[\da-f]{6}|[\da-f]{3})\b|0x[0-9a-f]{6}\b/iu);
+    expect(field).not.toContain("onBeforeCompile");
+    expect(`${mesh}\n${wind}`).not.toContain("onBeforeCompile");
+    // Seed never sets thickness: reroll the seed at a fixed envelope and the
+    // base radii must come from physics (same girth factor), while topology
+    // (positions) varies.
+    const first = growFloraStand(FLORA_ENVELOPE, FLORA_SEED, FLORA_BOUNDS, FLORA_BUDGETS);
+    const second = growFloraStand(FLORA_ENVELOPE, FLORA_SEED + 7, FLORA_BOUNDS, FLORA_BUDGETS);
+    const radii = (stand_: typeof first): number[] => stand_.plants.map((plant) => plant.baseRadius);
+    expect(radii(first).length).toBe(radii(second).length);
+    for (let index = 0; index < radii(first).length; index += 1)
+      expect(Math.abs((radii(first)[index] as number) - (radii(second)[index] as number))).toBeLessThan(0.05);
+    expect(JSON.stringify(first.segments)).not.toBe(JSON.stringify(second.segments));
+    // Live caller: the pre-existing Play.enter → createScenery path attaches flora.
+    expect(scenery).toContain("createFloraStand");
+    expect(play).toContain("scenery.flora");
+    expect(stand).toContain("FLORA_SEED");
+  });
+
+  it("should sway tips with wind and freeze exactly at zero", async () => {
+    // Red: set strength to zero and the sway-present floor fails; inject a
+    // constant offset at zero and the sway-absent assertion fails.
+    const { attachFloraWind } = await import("../templates/starter/src/render/floraWind.js");
+    const { default: THREE } = await import("three");
+    void THREE;
+    const stand = growFloraStand(FLORA_ENVELOPE, FLORA_SEED, FLORA_BOUNDS, FLORA_BUDGETS);
+    const fakeFoliage = {
+      instanceMatrix: { needsUpdate: false },
+      setMatrixAt: () => {},
+    };
+    const windy = attachFloraWind(fakeFoliage as never, stand, 0.25);
+    expect(windy.sampleTipDisplacement(1.25)).toBeGreaterThan(0.01);
+    const calm = attachFloraWind(fakeFoliage as never, stand, 0);
+    expect(calm.sampleTipDisplacement(1.25)).toBe(0);
+    expect(calm.sampleTipDisplacement(9.75)).toBe(0);
+    expect(() => attachFloraWind(fakeFoliage as never, stand, Number.NaN)).toThrow(
+      "TN_FLORA_WIND_INVALID",
+    );
+  });
+
+  it("should tell the game's agent where the flora recipe lives", async () => {
+    // Red: delete the flora paragraph from AGENTS.md and this fails.
+    const [instructions, mirror] = await Promise.all([
+      readFile(path.join(starter, "AGENTS.md"), "utf8"),
+      readFile(path.join(starter, "CLAUDE.md"), "utf8"),
+    ]);
+    expect(instructions).toContain("floraStand.ts");
+    expect(instructions).toContain("floraField.ts");
+    expect(instructions).toContain("Never reorder RNG draws");
+    expect(mirror).toContain("floraStand.ts");
   });
 });
 
