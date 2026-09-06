@@ -277,7 +277,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-06 for PRD-363: starter grows a deterministic flora stand
   // (generated floraField/skeleton/foliage/validate/sample/wood/sprite/mesh/stand/wind
   // plus scenery+Play wiring, flora playtest assertions, and AGENTS.md recipe).
-  starter: "44ab312886baf950b44cc3d7b57cafdd5accc762559459cf77b383e5489c17f7",
+  // Recomputed again after review: per-node BFS radii, seed-free baseRadius,
+  // computed wood audit, live wind wiring, unexported helper, tighter AGENTS.
+  starter: "0f1c1b6c0f48ce7ce7bcf19fa304e8e5e28e912cbb086386675f94a1bf200fc0",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
