@@ -422,6 +422,8 @@ export function createNetworkingGame<TState extends INetworkingState>(
     patch(store, {
       networkConnected: false,
       networkError: "",
+      networkLocalX: undefined,
+      networkLocalZ: undefined,
       networkReconnects: retry
         ? (current.networkReconnects ?? 0) + 1
         : (current.networkReconnects ?? 0),
