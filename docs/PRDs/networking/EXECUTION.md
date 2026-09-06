@@ -91,8 +91,9 @@ row is E in later rows. Check a row only after its required evidence and review 
 | [ ] | **8b. Recall and core instructions.** E `scripts/fixtures/capability-recall/corpus.json`, `scripts/fixtures/capability-recall/budget.json`, `scripts/__tests__/capability-recall.spec.ts`, `C/AGENTS.md`, `C/CLAUDE.md` | Update multiplayer transport queries to owned capability while retaining out-of-scope queries. Document actual subpath, defaults/overrides, no fallback, Go server and iOS unverified status. Regenerate mirror. | `pnpm caps:recall`; named recall test; sync:agents check. Old blanket answer must fail new positive query. |
 | [ ] | **8c. Real-process MCP discovery.** E `packages/create-threenative/__tests__/scaffold-mcp.spec.ts`, `scripts/verify-golden-path.ts`, `scripts/__tests__/verify-golden-path.spec.ts` | Extend the existing spawned MCP harness with concrete multiplayer search and same-process capability detail; validate the installed networking import, constraints and overrides. Reuse the existing harness rather than adding a second MCP client. Its workspace symlinks are test setup, not cold-package evidence. The packed golden path must exercise the same search/detail and import the discovered export from installed dist. | Named networking discovery test must fail when networking metadata is removed. Execute search/detail from the packed core MCP launcher in the S3 sandbox, then build/import the discovered export from installed dist. Record tarball hashes and reject workspace/source/symlink resolution in that cold proof. |
 
-Template instructions are five final rows, each owns four existing files: both AGENTS.md
-and its generated CLAUDE.md for the named two templates. Execute pairs in this order:
+Template instructions are five final rows, each owns five existing files: both AGENTS.md and its
+generated CLAUDE.md for the named two templates, plus the shared template contract regression
+`packages/create-threenative/__tests__/template.spec.ts`. Execute pairs in this order:
 `action-rpg/defense`, `minimal/platformer`, `puzzle/racing`, `runner/sailing`,
 `shooter/starter`, under `packages/create-threenative/templates/`. Each source edit
 documents optional `core/net`, Go reference example, queue overrides, delivery guarantees
@@ -433,3 +434,4 @@ Task 1b-quiche-ci local evidence: [integrated workflow and release checks](../..
 Task 8a local evidence: [published discovery metadata](../../verification/prd-359-task8a-2026-09-06.md); the generated manifests and MCP search regression are green, pending independent review.
 Task 8b local evidence: [recall and core instructions](../../verification/prd-359-task8b-2026-09-06.md); the 60-row recall gate and generated mirror are green, pending independent review.
 Task 8c local evidence: [real-process MCP discovery](../../verification/prd-359-task8c-2026-09-06.md); spawned template probes and the packed golden-path search/detail/import are green, pending independent review and the required external networking sandbox.
+Template pair `action-rpg/defense` local evidence: [optional transport instructions](../../verification/prd-359-template-action-defense-2026-09-06.md); generated mirrors are green while the shared all-template regression remains open for the other pairs.

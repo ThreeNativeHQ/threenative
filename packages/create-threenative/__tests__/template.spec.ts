@@ -192,6 +192,30 @@ async function linkScaffoldBuildDependencies(target: string): Promise<void> {
 }
 
 describe("template contracts", () => {
+  it("documents the optional multiplayer transport contract in every template", async () => {
+    const required = [
+      "@threenative/core/net",
+      "connect",
+      "HTTPS",
+      "credential",
+      "connectTimeoutMs",
+      "maxReliableMessageBytes",
+      "maxQueuedReliableBytes",
+      "maxQueuedDatagrams",
+      "reliable-ordered",
+      "unreliable",
+      "no fallback",
+      "TN_NET_UNAVAILABLE",
+      "packages/runtime-native/examples/webtransport/server",
+    ] as const;
+    for (const template of await templateNames()) {
+      const source = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      for (const phrase of required) {
+        expect(source, `${template}/AGENTS.md missing ${phrase}`).toContain(phrase);
+      }
+    }
+  });
+
   it("requires every discovered template to ship a bounded performance scenario", async () => {
     const names = await templateNames();
     // A floor, not a pin: a kit that ships tomorrow must be covered without editing this number,
