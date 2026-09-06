@@ -3,6 +3,72 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
+interface IViteNetworkingConfig {
+  enabled: boolean;
+  endpoint?: string;
+  issuerUrl?: string;
+  room?: string;
+  playerId?: string;
+}
+
+const NETWORKING_CONFIG_KEYS = new Set(["enabled", "endpoint", "issuerUrl", "room", "playerId"]);
+
+function networkingString(value: unknown, name: string): string {
+  if (typeof value !== "string" || value.trim().length === 0)
+    throw new Error(`THREENATIVE_NETWORKING_CONFIG: ${name} must be a nonempty string`);
+  return value;
+}
+
+function networkingUrl(value: unknown, name: string): string {
+  const text = networkingString(value, name);
+  let parsed: URL;
+  try {
+    parsed = new URL(text);
+  } catch {
+    throw new Error(`THREENATIVE_NETWORKING_CONFIG: ${name} must be an HTTPS URL`);
+  }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.hash)
+    throw new Error(
+      `THREENATIVE_NETWORKING_CONFIG: ${name} must be an HTTPS URL without credentials or a fragment`,
+    );
+  return parsed.toString();
+}
+
+function readNetworkingConfig(): IViteNetworkingConfig {
+  const declaredPath = process.env.THREENATIVE_NETWORKING_CONFIG?.trim();
+  if (declaredPath === undefined || declaredPath === "") return { enabled: false };
+  const path = resolve(declaredPath);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `THREENATIVE_NETWORKING_CONFIG: cannot read ${path}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new Error(`THREENATIVE_NETWORKING_CONFIG: ${path} must contain an object`);
+  const record = parsed as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (!NETWORKING_CONFIG_KEYS.has(key))
+      throw new Error(`THREENATIVE_NETWORKING_CONFIG: unknown key '${key}'`);
+  }
+  if (typeof record.enabled !== "boolean")
+    throw new Error("THREENATIVE_NETWORKING_CONFIG: enabled must be boolean");
+  if (!record.enabled) return { enabled: false };
+  return {
+    enabled: true,
+    endpoint: networkingUrl(record.endpoint, "endpoint"),
+    issuerUrl: networkingUrl(record.issuerUrl, "issuerUrl"),
+    playerId: networkingString(record.playerId, "playerId"),
+    room: networkingString(record.room, "room"),
+  };
+}
+
+const networkingConfig = readNetworkingConfig();
+
 function integerSetting(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === "") return fallback;
@@ -102,6 +168,7 @@ export default defineConfig({
     ),
     __TN_CONTINUOUS_COLLISION_PROOF__: JSON.stringify(continuousCollisionProof),
     __TN_LOADING_PROOF__: JSON.stringify(loadingProof),
+    __TN_NETWORKING_CONFIG__: JSON.stringify(networkingConfig),
     __TN_PLAYTEST_ENABLED__: JSON.stringify(process.env.THREENATIVE_PLAYTEST_BRIDGE !== "disabled"),
     __TN_RUNTIME__: JSON.stringify(nativeBackend ? "native" : "web"),
   },
