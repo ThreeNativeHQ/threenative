@@ -123,3 +123,22 @@ timers on Node's event loop. They do not catch this native frame coupling. This 
 engine scheduling bottleneck to address without game-specific workarounds. It does not yet prove
 that coupling alone explains Wildwood's entire pending compile, and no scheduling fix or new
 performance claim is included in this record.
+
+## Subsequent Android dependency and visual-capture probes
+
+Scheduler fixes and later Linux evidence are recorded in `packages/runtime-native/docs/G5-profiling.md`.
+The Android Skia source probe subsequently produced an arm64 `libskia.a` (18,977,932 bytes)
+with font support. A raster/text shared-library link probe passed `--no-undefined`; NDK
+`llvm-readelf` reports AArch64 and 0x4000 alignment for every LOAD segment. Source pin,
+options and logs live under `artifacts/android-skia-probe-20260905/`. This establishes build/link
+feasibility only: shipping dependency reconstruction, Android font-manager wiring and physical
+device execution remain open. ADB was unreachable; no mobile-ready claim follows from this link.
+
+The equal-buffer visual comparison is **not accepted as parity proof**. Browser capture includes
+the HUD; native GPU readback excludes it and shows visibly noisier foliage. Temporal states differ.
+See `artifacts/wildwood-quality-parity-20260905/parent-review.md`. Three private-compositor capture
+attempts did not produce a usable game screenshot: initial tool failure, success exit without a
+file, and a hardened retry failing on a missing complete PNG. An empty private-X11 control did save
+a PNG. The assumption that this private KWin/Spectacle lane captures the composed game is doubtful;
+further blind retries stopped. These capture failures do not prove the game's presented window is
+black. Full HUD/scene parity and real-display steady-state FPS remain unverified.
