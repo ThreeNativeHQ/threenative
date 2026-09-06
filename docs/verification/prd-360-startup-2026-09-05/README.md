@@ -18,7 +18,7 @@ or absent endpoint evidence fails closed. Desktop trivial-bundle bring-up shows
 process-to-first-pump ≈ 300–410 ms, already above the 250 ms device budget;
 the budget is unchanged and that finding is not concealed.
 
-## Result (current integrated host `50144dc9…`, contract binary `601113fd…`)
+## Result (current integrated host `50144dc9…`)
 
 | Proof | Result |
 | --- | --- |
@@ -55,18 +55,19 @@ the budget is unchanged and that finding is not concealed.
   (`packages/runtime-native/build/tn-linux/mystral`), rebuilt from the
   integrated working-tree sources. Earlier identities (`b5af03ff…`,
   `6f5263e0…`, `b61f168d…`) are superseded — do not cite them for this code.
-- Contract binary:
-  `601113fd9eefca607d721cc0142112189cccd87a2d265871e1878df1ba2d51f1`.
 - Observer sources: `packages/runtime-native/include/mystral/pump_silence.h`,
   `src/runtime.cpp` (entry stamp, loop-exit/shutdown flush, endpoint),
-  `src/webgpu/bindings_presentation.cpp` (first-present flush),
-  `CMakeLists.txt`, and `tests/pump-silence.test.mjs` — 5 implementation/test
-  files, matching the phase cap. The standalone injected-clock C++ contract was
-  removed; the retained real-host probes remain the executable proof.
-- Registration: the observer has no standalone CTest target; generated records
-  `docs/verification/native-coverage-2026-08-28.md` and
-  `docs/verification/native-runtime-census-2026-08-16.md` must reflect the
-  reduced contract set.
+  `src/webgpu/bindings_presentation.cpp` (first-present flush), and
+  `tests/pump-silence.test.mjs` — 4 implementation/test files, below the
+  five-file phase cap. The standalone injected-clock C++ contract was removed;
+  the retained real-host probes remain the executable proof.
+- Registration: the observer has no standalone CTest target. The supported
+  `native:coverage` workflow regenerated
+  `docs/verification/native-coverage-2026-08-28.md` with source digest
+  `sha256:65ef2bdc3e5fd068a03c175c332f439eb9d848249ad01286f1aa8bc6ee82b0d6`,
+  and `pnpm census` regenerated
+  `docs/verification/native-runtime-census-2026-08-16.md` for the reduced
+  contract set.
 - Executed proof sources, byte-identical to the run inputs (checked with
   `cmp`): [`measure-first-playable.mjs.txt`](measure-first-playable.mjs.txt)
   (`e00ea115…`), [`evaluate-first-playable.mjs.txt`](evaluate-first-playable.mjs.txt)
@@ -80,6 +81,14 @@ the budget is unchanged and that finding is not concealed.
   `20da12fa…` was rebuilt from this reviewed code, but no device run is
   claimed; the earlier `403bd10c…` candidate predates the observer.
 
+The recorded identity command was:
+
+```text
+$ sha256sum packages/runtime-native/build/tn-linux/mystral packages/runtime-native/android/app/build/outputs/apk/debug/app-debug.apk
+50144dc9a22ecacaa6f5c764f043297818a3b77c2894f6696a6e6938a5e7d8b9  packages/runtime-native/build/tn-linux/mystral
+20da12fa4901041b9a03c6214b69f25170b3d4ca7670cb9babeeb6daacb3723c  packages/runtime-native/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
 ## Reproducing
 
 From the worktree root (paths below are worktree-relative; the `.txt`
@@ -92,28 +101,39 @@ node artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/valida
 node artifacts/batch-2026-09-05/pump-observer/collector-flow.mjs
 ```
 
-Gates executed before this consolidation: evaluator validation (32/32),
-real-host collector flow (assertions pass), full desktop pump verification
-(assertions pass), `pnpm test` (391 files / 4,291 tests passed, 2 files / 7
-tests skipped), `pnpm typecheck` (pass), root `pnpm lint` (exit 0; 600
-existing complexity warnings, 0 errors, with `.linchpin/**` ignored by
-`biome.json`), and `pnpm budgets` (pass: LOC triggers report-only).
-The focused real-host suite and native records must be rerun after the file
-consolidation.
+Current integrated verification, all rerun after this documentation correction
+and retention-index regeneration:
+
+| Command | Result |
+| --- | --- |
+| `cmake --build packages/runtime-native/build/tn-linux --target mystral` | exit 0 |
+| Four focused runtime-native Vitest files | 41/41 tests passed |
+| `validate-evaluator.mjs` | 32/32 cases passed |
+| `collector-flow.mjs` | correlated, truncated, foreign, and missing-response cases passed |
+| `@threenative/runtime-native native:coverage` | exit 0; digest above |
+| `pnpm typecheck` | exit 0 |
+| `pnpm lint` | exit 0; 600 warnings, 0 errors |
+| `pnpm test` | 391 files passed, 2 skipped; 4,291 tests passed, 7 skipped |
+| `pnpm budgets` | exit 0 |
+| `pnpm check:docs` | exit 0; 1,480 links checked |
+| `pnpm sync:agents` | exit 0; 19 mirrors already synchronized |
 
 ## Linchpin integration checkpoint — 2026-09-06
 
-The read-only crouter checkpoint reviewer returned `VERDICT: APPROVE` with
-zero `DEFECT` findings. It recorded three `EVIDENCE-GAP`s: the desktop
-transport test uses a hand-written displacement-shaped payload; real Android
-end-to-end and real-host `device.ts` order tracking remain unexecuted. These
-gaps remain open and no PRD phase is accepted.
+The fresh read-only crouter checkpoint review found concrete handoff-document
+defects before this correction: stale `FOLLOWUP.md` file-count wording, an
+overbroad claim that gates were merely "rerun" without a result table, and
+missing in-tree hash-command output. Those findings are corrected above. The
+review confirmed the observer spans exactly four implementation/test files,
+below the five-file cap. Physical Android, the hand-written desktop transport
+payload boundary, and real-host `device.ts` order tracking remain evidence
+gaps; no PRD phase is accepted.
 
 Fresh focused checks after the consolidation passed: CMake rebuilt `mystral`;
-pump Vitest passed 11/11; native registration and coverage tests passed 30/30;
+the pump, native-registration, and native-coverage Vitest files passed 41/41;
 evaluator validation passed 32/32; and collector flow passed its correlated,
 truncated, foreign, and missing-response cases.
 
 File-budget resolution: the standalone injected-clock C++ contract and its
-registrations were removed. The observer now spans 5 implementation/test files,
-matching the Phase 1 cap; real-host JavaScript proof remains required.
+registrations were removed. The observer now spans 4 implementation/test files,
+below the Phase 1 cap of 5; real-host JavaScript proof remains required.
