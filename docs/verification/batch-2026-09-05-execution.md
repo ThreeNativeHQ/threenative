@@ -694,3 +694,17 @@ Nothing in this reconciliation closes a platform gate. The phone was not launche
 read-only check was 37% battery, discharging, 34.5 °C, below the 50% measurement gate. PRD-360's
 startup target, PRD-361's shared character preparation, and PRD-362's device acceptance all
 remain open, and no delivery PRD is accepted.
+
+## Pump-silence observer integration — 2026-09-05
+
+Final review of the uncommitted pump-observer work found and fixed two issues: non-positive
+inter-entry gaps (backwards clock step) could move the maximum/retained list, and the endpoint
+FNV-1a iterated `char` bytes (sign-dependent). Both fixed with contract coverage; hash verified
+byte-identical with JS `fnv1a64()`. The new contract target was registered in all five required
+sites (CMakeLists, contract-lane count 35 → 36, verify-native-contracts, build-matrix tn-linux +
+tn-linux-coverage, census + coverage regen). Proof: C++ contract 22/22, vitest pump 11/11, CTest
+pump pass, evaluator 17/17, collector flow (real host + mailbox, mocked adb only) correlated with
+hash match; current desktop probe correctly rejects (`firstPumpAtMs≈410ms` exceeds 250 ms).
+Integrated host `b5af03ff…` supersedes `6f5263e0…`. Executed proof sources retained
+byte-identically under `docs/verification/prd-360-startup-2026-09-05/`. Full Android end-to-end
+remains unexecuted; file-budget variance (6 files vs 5 cap) stays open. No phase accepted.

@@ -150,6 +150,9 @@ export const executionContracts = {
   "threenative-timestamp-query-test": {
     invocations: [{ args: [], passLine: "native timestamp-query bindings contract passed" }],
   },
+  "threenative-pump-silence-test": {
+    invocations: [{ args: [], passLine: "pump-silence contract passed" }],
+  },
   // The rg11b10ufloat-renderable bindings. Needs no display: a raw Dawn oracle is compared
   // against the JS feature surfaces and a render pass into the format must leave the device
   // alive — the pass that was the pre-fix device loss behind three's SSGI target.

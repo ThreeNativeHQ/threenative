@@ -1,0 +1,460 @@
+#!/usr/bin/env node
+// Decide whether one arm's launch-to-first-playable run is admissible evidence, and whether its
+// bound meets the criterion. Fail closed: a missing observation is a failure, never a skip.
+//
+// The bound this evaluates is a coordinator-clock UPPER BOUND. t0 is stamped before the runner is
+// spawned (the runner force-stops and launches the app itself, inside driver.prepare); t1 is
+// stamped after the runner exits having reported measured displacement. It therefore includes adb,
+// mailbox transport and runner process startup, and is never smaller than the game's own latency.
+// <= criterionMs proves the criterion. > criterionMs does not isolate game latency.
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(here, '..', '..', '..', '..');
+const capturePath = join(repoRoot, 'packages', 'playtest', 'dist', 'capture.js');
+
+export const CRITERION_MS = 8000;
+export const MIN_HORIZONTAL_METRES = 0.25;
+const SHA256 = /^[0-9a-f]{64}$/;
+
+const finite = (value) => typeof value === 'number' && Number.isFinite(value);
+
+/**
+ * The harness's own blank-frame guard, loaded from the built playtest package rather than
+ * reimplemented. Kept injectable so the evaluator's own validation can drive it with real PNG
+ * bytes it encoded itself.
+ */
+export async function defaultFrameInspector() {
+  const { assertCaptureNotBlank, inspectFrame } = await import(capturePath);
+  return (png, label) => {
+    const stats = inspectFrame(png);
+    assertCaptureNotBlank(png, label);
+    return stats;
+  };
+}
+
+// PRD-360 pump-silence consumer (R7). Parses one TN_PUMP_SILENCE line out of a
+// host log (logcat on device, stdout on desktop) and fails closed on every
+// absence: no line, observed:false, or a frozen-APK log that predates the
+// observer reads as pump UNKNOWN, never as a pass. The valid first-movement
+// bound is retained as its own result — an unknown pump does not revoke it.
+//
+// Criterion coverage: process->first-pump (firstPumpAtMs), every inter-entry
+// gap (global maxGapMs, not the bounded longGaps array alone), and the
+// trailing gap to the endpoint (trailingGapMs). A run killed before the
+// endpoint (SIGKILL, force-stop flush loss) has no line and fails here, which
+// distinguishes a genuine good measurement from an absent flush.
+// Non-finite, negative, or malformed timestamps fail. All clocks are
+// launch-relative coldStartNowMs(); no new global was needed.
+// Threading: the observer assumes poll/present/flush share one thread.
+export const PUMP_SILENCE_GAP_BUDGET_MS = 250;
+
+// Full-acceptance pump contract, option (a): the endpoint is the actual
+// displacement-correlated response, not first-present. The host stamps one
+// TN_PUMP_ENDPOINT line per mailbox respond() on the launch clock, carrying
+// the path, stored flag, a 64-bit FNV-1a content tag (payloadHash) and byte
+// count of the exact bytes written, plus the non-consuming pump snapshot.
+// The coordinator requires the LAST endpoint whose path matches the movement
+// response file AND whose hash/bytes match the exact bytes it read back from
+// that file. A first-present TN_PUMP_SILENCE line alone, an endpoint for an
+// unrelated path, a reused response (hash mismatch), a response before
+// movement, or a stale endpoint (atMs at or before the last pump entry) all
+// fail. Frozen/403bd10c APKs emit no endpoint: unobserved, never a pass.
+//
+// payloadHash is a linkage tag, not a cryptographic identity: recomputed by
+// fnv1a64() below over the same bytes, it binds the endpoint to the response
+// the coordinator actually holds rather than to any payload merely labelled
+// displacement in a fixture.
+export function fnv1a64(text) {
+  let hash = 1469598103934665603n;
+  const bytes = Buffer.from(String(text), 'utf8');
+  for (const byte of bytes) {
+    hash ^= BigInt(byte);
+    hash = (hash * 1099511628211n) & 0xffffffffffffffffn;
+  }
+  return hash.toString(16).padStart(16, '0');
+}
+
+export function evaluatePumpEndpoint({
+  hostLog,
+  movementResponsePath = undefined,
+  movementResponseBody = undefined,
+  movementPayload = undefined,
+  maxGapMs = PUMP_SILENCE_GAP_BUDGET_MS,
+} = {}) {
+  const fail = (code, detail) => ({ code, detail, id: 'R7_PUMP_SILENCE', pass: false });
+  if (typeof hostLog !== 'string' || hostLog.length === 0) {
+    return fail('R7_PUMP_SILENCE_MISSING', { reason: 'no host log supplied' });
+  }
+  const lines = hostLog.split('\n').filter((entry) => entry.includes('TN_PUMP_ENDPOINT:'));
+  if (lines.length === 0) {
+    return fail('R7_PUMP_SILENCE_MISSING', { reason: 'no TN_PUMP_ENDPOINT line in host log' });
+  }
+  let endpoint;
+  for (const line of lines) {
+    let parsed;
+    try {
+      parsed = JSON.parse(line.slice(line.indexOf('{')));
+    } catch (error) {
+      return fail('R7_PUMP_SILENCE_MALFORMED', { reason: error instanceof Error ? error.message : String(error) });
+    }
+    if (movementResponsePath !== undefined && parsed.path !== movementResponsePath) continue;
+    endpoint = parsed;
+  }
+  if (endpoint === undefined) {
+    return fail('R7_PUMP_CORRELATION_WRONG_PATH', { expectedPath: movementResponsePath ?? null });
+  }
+  if (endpoint.stored !== true) {
+    return fail('R7_PUMP_SILENCE_UNOBSERVED', { stored: endpoint.stored ?? null });
+  }
+  // Exact-bytes binding: the endpoint's hash and length must match the
+  // response body the coordinator read back. A reused or foreign response
+  // with the right path but different bytes fails here.
+  if (movementResponseBody !== undefined) {
+    const body = String(movementResponseBody);
+    if (endpoint.bytes !== Buffer.byteLength(body, 'utf8')
+      || String(endpoint.payloadHash ?? '').toLowerCase() !== fnv1a64(body)) {
+      return fail('R7_PUMP_CORRELATION_UNPROVEN', {
+        expectedBytes: Buffer.byteLength(body, 'utf8'),
+        expectedHash: fnv1a64(body),
+        gotBytes: endpoint.bytes ?? null,
+        gotHash: endpoint.payloadHash ?? null,
+        reason: 'endpoint does not match the response bytes read back',
+      });
+    }
+  }
+  const pump = endpoint.pump;
+  if (pump?.observed !== true) {
+    return fail('R7_PUMP_SILENCE_UNOBSERVED', { observed: pump?.observed ?? null });
+  }
+  const stamps = [pump.firstPumpAtMs, pump.lastPumpAtMs, pump.maxGapMs, pump.maxGapAtMs, pump.trailingGapMs, pump.atMs];
+  if (!stamps.every(finite)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { pump });
+  }
+  if (stamps.some((value) => value < 0 && value !== -1)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'negative timestamp', pump });
+  }
+  // Stale endpoint: stamped at or before the last pump entry, so the trailing
+  // interval it claims cannot cover the displacement report.
+  if (!(pump.atMs > pump.lastPumpAtMs)) {
+    return fail('R7_PUMP_CORRELATION_STALE', { atMs: pump.atMs, lastPumpAtMs: pump.lastPumpAtMs });
+  }
+  // Displacement shape: the read-back body must carry the observation the
+  // report claims (position or movementDelta), so a bare ack can never pass
+  // as movement proof.
+  const shapeSource = movementResponseBody ?? movementPayload;
+  if (shapeSource !== undefined) {
+    const text = shapeSource !== null && typeof shapeSource === 'object'
+      ? JSON.stringify(shapeSource)
+      : String(shapeSource);
+    if (!text.includes('position') && !text.includes('movementDelta') && !text.includes('player')) {
+      return fail('R7_PUMP_CORRELATION_UNPROVEN', { reason: 'response body carries no displacement observation' });
+    }
+  }
+  const gaps = [pump.maxGapMs, pump.trailingGapMs, ...(Array.isArray(pump.longGaps) ? pump.longGaps : [])];
+  if (!gaps.every(finite)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'non-finite gap', pump });
+  }
+  const worst = Math.max(pump.maxGapMs, pump.trailingGapMs);
+  if (pump.firstPumpAtMs > maxGapMs || worst > maxGapMs) {
+    return fail('R7_PUMP_SILENCE_EXCEEDED', {
+      atMs: pump.atMs,
+      firstPumpAtMs: pump.firstPumpAtMs,
+      maxGapMs: pump.maxGapMs,
+      thresholdMs: maxGapMs,
+      trailingGapMs: pump.trailingGapMs,
+    });
+  }
+  return {
+    code: null,
+    detail: {
+      atMs: pump.atMs,
+      firstPumpAtMs: pump.firstPumpAtMs,
+      maxGapMs: pump.maxGapMs,
+      path: endpoint.path,
+      pumpCount: pump.pumpCount,
+      trailingGapMs: pump.trailingGapMs,
+    },
+    id: 'R7_PUMP_SILENCE',
+    pass: true,
+  };
+}
+
+// Legacy launch-scope entry point: first-present/shutdown line only. Kept for
+// movement-only diagnostics; NEVER presented as PRD-360 acceptance, which
+// requires evaluatePumpEndpoint above.
+export function evaluatePumpSilence({ hostLog, maxGapMs = PUMP_SILENCE_GAP_BUDGET_MS } = {}) {
+  const fail = (code, detail) => ({ code, detail, id: 'R7_PUMP_SILENCE', pass: false, scope: 'movement-only' });
+  if (typeof hostLog !== 'string' || hostLog.length === 0) {
+    return fail('R7_PUMP_SILENCE_MISSING', { reason: 'no host log supplied' });
+  }
+  const line = hostLog.split('\n').find((entry) => entry.includes('TN_PUMP_SILENCE:'));
+  if (line === undefined) {
+    // Frozen APKs (and the 403bd10c candidate) predate the observer: unknown, not good.
+    return fail('R7_PUMP_SILENCE_MISSING', { reason: 'no TN_PUMP_SILENCE line in host log' });
+  }
+  let payload;
+  try {
+    payload = JSON.parse(line.slice(line.indexOf('{')));
+  } catch (error) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: error instanceof Error ? error.message : String(error) });
+  }
+  const stamps = [payload.firstPumpAtMs, payload.lastPumpAtMs, payload.maxGapMs, payload.maxGapAtMs, payload.trailingGapMs];
+  if (payload.observed !== true) {
+    return fail('R7_PUMP_SILENCE_UNOBSERVED', { observed: payload.observed ?? null });
+  }
+  if (!stamps.every(finite)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { payload });
+  }
+  if (stamps.some((value) => value < 0 && value !== -1)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'negative timestamp', payload });
+  }
+  const gaps = [payload.maxGapMs, payload.trailingGapMs, ...(Array.isArray(payload.longGaps) ? payload.longGaps : [])];
+  if (!gaps.every(finite)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'non-finite gap', payload });
+  }
+  const worst = Math.max(payload.maxGapMs, payload.trailingGapMs);
+  if (payload.firstPumpAtMs > maxGapMs || worst > maxGapMs) {
+    return fail('R7_PUMP_SILENCE_EXCEEDED', {
+      firstPumpAtMs: payload.firstPumpAtMs,
+      maxGapMs: payload.maxGapMs,
+      thresholdMs: maxGapMs,
+      trailingGapMs: payload.trailingGapMs,
+    });
+  }
+  return {
+    code: null,
+    detail: {
+      firstPumpAtMs: payload.firstPumpAtMs,
+      maxGapMs: payload.maxGapMs,
+      pumpCount: payload.pumpCount,
+      scope: 'movement-only: launch window only, not PRD-360 acceptance',
+      trailingGapMs: payload.trailingGapMs,
+    },
+    id: 'R7_PUMP_SILENCE',
+    pass: true,
+  };
+}
+
+export async function evaluateFirstPlayable(input) {
+  const {
+    bound,
+    report,
+    framePng,
+    hostLog,
+    maxPumpGapMs = PUMP_SILENCE_GAP_BUDGET_MS,
+    criterionMs = CRITERION_MS,
+    minHorizontalMetres = MIN_HORIZONTAL_METRES,
+    inspect,
+  } = input;
+  const checks = [];
+  const check = (id, pass, code, detail) => {
+    checks.push({ code: pass ? null : code, detail, id, pass });
+    return pass;
+  };
+
+  // R1 — which build actually ran. Two arms that cannot each prove which APK the device was
+  // running are one arm measured twice.
+  const installed = bound?.installedSha256;
+  const expected = bound?.expectedSha256;
+  check(
+    'R1_ARM_IDENTITY',
+    typeof installed === 'string' && SHA256.test(installed)
+      && typeof expected === 'string' && SHA256.test(expected)
+      && installed === expected,
+    'R1_ARM_IDENTITY_UNPROVEN',
+    { arm: bound?.arm ?? null, expected: expected ?? null, installed: installed ?? null },
+  );
+
+  // R2 — the clock. A bound assembled from two unrelated epochs, or marked synthetic, is not
+  // evidence of elapsed time.
+  const t0 = typeof bound?.t0Ns === 'string' && /^\d+$/.test(bound.t0Ns) ? BigInt(bound.t0Ns) : undefined;
+  const t1 = typeof bound?.t1Ns === 'string' && /^\d+$/.test(bound.t1Ns) ? BigInt(bound.t1Ns) : undefined;
+  const derivedMs = t0 === undefined || t1 === undefined || t1 <= t0
+    ? undefined
+    : Number(t1 - t0) / 1e6;
+  const boundMs = bound?.boundMs;
+  check(
+    'R2_CLOCK',
+    bound?.clockSource === 'process.hrtime.bigint'
+      && bound?.synthetic !== true
+      && derivedMs !== undefined
+      && finite(boundMs)
+      && Math.abs(boundMs - derivedMs) < 1,
+    'R2_CLOCK_UNSOUND',
+    { boundMs: finite(boundMs) ? boundMs : null, clockSource: bound?.clockSource ?? null, derivedMs: derivedMs ?? null, synthetic: bound?.synthetic === true },
+  );
+
+  // R0 — explicit Android report target. A browser (or desktop) report under a copied bound
+  // proves nothing about the device lane, which this measurement is.
+  check(
+    'R0_ANDROID_TARGET',
+    report?.target === 'android',
+    'R0_WRONG_TARGET',
+    { target: report?.target ?? null },
+  );
+
+  // R0b — recorded device qualification. The launch must carry a before-launch preflight reading
+  // from the assertDeviceReady gate (battery >= 50%, discharging, thermal NONE, screen on) that
+  // is fresh — taken after the install, not before it. Missing, stale (before-install only),
+  // overridden, or unqualified readings fail; a gate is a gate, not a doctor existence probe.
+  const preflight = bound?.preflight;
+  const beforeLaunch = preflight?.beforeLaunch;
+  const qualified =
+    beforeLaunch !== undefined && beforeLaunch !== null
+    && beforeLaunch.phase === 'before-launch'
+    && typeof beforeLaunch.recordedAt === 'string'
+    && Number(beforeLaunch.batteryPercent) >= Number(preflight?.minimumBatteryPercent ?? MINIMUM_BATTERY_PERCENT)
+    && beforeLaunch.charging === false
+    && beforeLaunch.thermalStatus === 'NONE'
+    && beforeLaunch.screenOn === true
+    && (!Array.isArray(beforeLaunch.provisional) || beforeLaunch.provisional.length === 0);
+  check(
+    'R0B_PREFLIGHT',
+    qualified === true,
+    beforeLaunch === undefined || beforeLaunch === null
+      ? 'R0B_PREFLIGHT_MISSING'
+      : 'R0B_PREFLIGHT_UNQUALIFIED',
+    {
+      beforeInstallPhase: preflight?.beforeInstall?.phase ?? null,
+      beforeLaunchPhase: beforeLaunch?.phase ?? null,
+      batteryPercent: beforeLaunch?.batteryPercent ?? null,
+      charging: beforeLaunch?.charging ?? null,
+      provisional: beforeLaunch?.provisional ?? null,
+      recordedAt: beforeLaunch?.recordedAt ?? null,
+      required: preflight?.required ?? null,
+      screenOn: beforeLaunch?.screenOn ?? null,
+      thermalStatus: beforeLaunch?.thermalStatus ?? null,
+    },
+  );
+
+  // R3 — the runner itself. A non-zero exit or a failed report is not a slow pass.
+  check(
+    'R3_RUNNER',
+    bound?.runnerExitCode === 0 && report?.pass === true,
+    'R3_RUNNER_FAILED',
+    { diagnostics: (report?.diagnostics ?? []).map((entry) => entry?.code ?? null), exitCode: bound?.runnerExitCode ?? null, pass: report?.pass ?? null },
+  );
+
+  // R4 — real measured displacement of the named entity, horizontal so that a spawn settling under
+  // gravity cannot be mistaken for a response to the key. Dispatching input and observing nothing
+  // fails here; so does an absent or non-numeric position.
+  const delta = report?.movementDelta;
+  const vector = Array.isArray(delta) && delta.length === 3 && delta.every(finite) ? delta : undefined;
+  const horizontal = vector === undefined ? undefined : Math.hypot(vector[0], vector[2]);
+  check(
+    'R4_MOVEMENT',
+    report?.entity === 'player'
+      && vector !== undefined
+      && finite(report?.distance)
+      && horizontal >= minHorizontalMetres,
+    vector === undefined ? 'R4_POSITION_MISSING' : 'R4_NO_INPUT_DRIVEN_DISPLACEMENT',
+    { distance: finite(report?.distance) ? report.distance : null, entity: report?.entity ?? null, horizontal: horizontal ?? null, minHorizontalMetres, movementDelta: vector ?? null },
+  );
+
+  // R5 — a visible world in the frame captured at the input step, judged by the harness's own
+  // blank-frame guard. Bridge reachability and a ready phase are not pixels.
+  let frame = { pass: false, reason: 'no frame supplied' };
+  if (framePng === undefined || framePng === null) {
+    frame = { pass: false, reason: 'step screenshot missing' };
+  } else {
+    const inspector = inspect ?? (await defaultFrameInspector());
+    try {
+      frame = { pass: true, stats: inspector(framePng, 'first-input') };
+    } catch (error) {
+      frame = { pass: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  check('R5_VISIBLE_WORLD', frame.pass, 'R5_NO_VISIBLE_WORLD', frame);
+
+  // R6 — the criterion. Reported as its own check so an admissible run that is simply slow is
+  // distinguishable from an inadmissible one.
+  const withinCriterion = finite(boundMs) && derivedMs !== undefined && boundMs <= criterionMs;
+  check('R6_BOUND', withinCriterion, 'R6_BOUND_EXCEEDED', {
+    boundMs: finite(boundMs) ? boundMs : null,
+    criterionMs,
+    meaning: withinCriterion
+      ? 'upper bound including adb, transport and runner startup; the criterion is proven'
+      : 'a bound above the criterion does not isolate game latency and proves nothing about it',
+  });
+
+  // R7 — pump silence, FULL acceptance (option (a)). Required by default:
+  // the endpoint is the displacement-correlated mailbox response, never
+  // first-present alone. scope:'movement-only' selects the launch-window
+  // diagnostic explicitly and is never PRD-360 acceptance. A frozen-APK run
+  // has no endpoint and fails R7 while R4 (real displacement) can still pass
+  // — unknown pump, valid movement; the movement upper bound stays truthful.
+  const pumpScope = input.pumpScope ?? 'full';
+  const pump = pumpScope === 'movement-only'
+    ? evaluatePumpSilence({ hostLog, maxGapMs: maxPumpGapMs })
+    : evaluatePumpEndpoint({
+      hostLog,
+      maxGapMs: maxPumpGapMs,
+      movementPayload: input.movementPayload ?? report?.movementDelta ?? undefined,
+      movementResponseBody: input.movementResponseBody,
+      movementResponsePath: input.movementResponsePath,
+    });
+  checks.push(pump);
+
+  const admissible = checks.filter(({ id }) => id !== 'R6_BOUND').every(({ pass }) => pass);
+  return {
+    admissible,
+    arm: bound?.arm ?? null,
+    boundMs: finite(boundMs) ? boundMs : null,
+    checks,
+    criterionMs,
+    pump,
+    verdict: admissible && withinCriterion ? 'pass' : 'fail',
+  };
+}
+
+const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const armDir = process.argv[2];
+  if (armDir === undefined) {
+    process.stderr.write('usage: evaluate-first-playable.mjs <arm-artifact-directory>\n');
+    process.exit(2);
+  }
+  const bound = readJson(join(armDir, 'bound.json'));
+  const report = readJson(join(armDir, 'report.json'));
+  let framePng;
+  try {
+    framePng = readFileSync(join(armDir, 'first-input.png'));
+  } catch {
+    framePng = undefined;
+  }
+  // The default CLI path is FULL acceptance: host log, movement response path
+  // and body come from the run directory measure-first-playable.mjs wrote, so
+  // a future device invocation needs no manual assembly. scope:movement-only
+  // is an explicit opt-out flag, never the default.
+  const pumpScope = process.argv.includes('--pump-scope=movement-only') ? 'movement-only' : 'full';
+  let hostLog;
+  try {
+    hostLog = readFileSync(join(armDir, 'host.log'), 'utf8');
+  } catch {
+    hostLog = undefined;
+  }
+  let movementResponseBody;
+  let movementResponsePath;
+  try {
+    const pumpMeta = readJson(join(armDir, 'pump-endpoint.json'));
+    movementResponsePath = pumpMeta.responsePath ?? undefined;
+    movementResponseBody = readFileSync(join(armDir, 'movement-response.json'), 'utf8');
+  } catch {
+    movementResponseBody = undefined;
+  }
+  const result = await evaluateFirstPlayable({
+    bound,
+    framePng,
+    hostLog,
+    movementResponseBody,
+    movementResponsePath,
+    pumpScope,
+    report,
+  });
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  process.exit(result.verdict === 'pass' ? 0 : 1);
+}

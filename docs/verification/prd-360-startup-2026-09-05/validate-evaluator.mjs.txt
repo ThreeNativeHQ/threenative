@@ -1,0 +1,295 @@
+#!/usr/bin/env node
+// Evaluator/harness validation ONLY. Nothing here touches a phone, an APK or the game: it drives
+// the evaluator with observation streams built in this file and asserts the verdict it must reach.
+// A green run says the evaluator's rules fire; it says nothing about Bayview's startup.
+import { createRequire } from 'node:module';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { evaluateFirstPlayable } from './evaluate-first-playable.mjs';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(here, '..', '..', '..', '..');
+const require = createRequire(join(repoRoot, 'packages', 'playtest', 'package.json'));
+const { PNG } = require('pngjs');
+
+/** A real PNG, encoded with the same library inspectFrame decodes with. */
+function png(width, height, colour) {
+  const image = new PNG({ height, width });
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const [red, green, blue] = colour(x, y);
+      image.data[offset] = red;
+      image.data[offset + 1] = green;
+      image.data[offset + 2] = blue;
+      image.data[offset + 3] = 255;
+    }
+  }
+  return PNG.sync.write(image);
+}
+
+const BLANK_FRAME = png(64, 36, () => [0, 0, 0]);
+const WORLD_FRAME = png(64, 36, (x, y) => [(x * 4) % 256, (y * 7) % 256, ((x + y) * 3) % 256]);
+
+const nanos = (ms) => String(BigInt(Math.round(ms * 1e6)));
+const qualifiedPreflight = (overrides = {}) => ({
+  minimumBatteryPercent: 50,
+  required: { charging: 'discharging', thermal: 'NONE' },
+  beforeInstall: {
+    phase: 'before-install',
+    recordedAt: '2026-09-06T10:00:00.000Z',
+    serial: 'MOCKSERIAL',
+    batteryPercent: 71,
+    charging: false,
+    chargingSource: 'NONE',
+    thermalStatus: 'NONE',
+    thermalStatusCode: 0,
+    screenOn: true,
+    provisional: [],
+  },
+  beforeLaunch: {
+    phase: 'before-launch',
+    recordedAt: '2026-09-06T10:01:00.000Z',
+    serial: 'MOCKSERIAL',
+    batteryPercent: 70,
+    charging: false,
+    chargingSource: 'NONE',
+    thermalStatus: 'NONE',
+    thermalStatusCode: 0,
+    screenOn: true,
+    provisional: [],
+  },
+  ...overrides,
+});
+const bound = (overrides = {}) => {
+  const elapsedMs = overrides.elapsedMs ?? 4200;
+  const start = 1_000_000_000_000n;
+  return {
+    arm: 'candidate',
+    boundMs: elapsedMs,
+    clockSource: 'process.hrtime.bigint',
+    expectedSha256: '403bd10c297f91f40202b322d57bc9c3d4291b1f2c9c9a958c1c8b3c5f9053af',
+    installedSha256: '403bd10c297f91f40202b322d57bc9c3d4291b1f2c9c9a958c1c8b3c5f9053af',
+    preflight: qualifiedPreflight(overrides.preflight ?? {}),
+    runnerExitCode: 0,
+    t0Ns: String(start),
+    t1Ns: String(start + BigInt(nanos(elapsedMs))),
+    ...overrides,
+  };
+};
+const report = (overrides = {}) => ({
+  distance: 0.62,
+  entity: 'player',
+  movementDelta: [0.41, -0.02, -0.46],
+  pass: true,
+  target: 'android',
+  ...overrides,
+});
+
+const pumpEndpoint = (overrides = {}) => 'TN_PUMP_ENDPOINT:{"path":"/run/res","stored":true,"pump":'
+  + '{"observed":true,"pumpCount":60,"firstPumpAtMs":120.0,"lastPumpAtMs":900.0,'
+  + `"maxGapMs":${overrides.maxGapMs ?? 12.0},"maxGapAtMs":400.0,`
+  + `"trailingGapMs":${overrides.trailingGapMs ?? 8.0},"atMs":950.0,`
+  + '"longGaps":[],"droppedLongGaps":0}}';
+const movementPayload = { entities: { player: { position: [0.41, -0.02, -0.46] } } };
+
+const cases = [
+  {
+    expect: 'pass',
+    mustFail: [],
+    name: 'bounded valid movement may pass',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint(),
+      movementPayload,
+      movementResponsePath: '/run/res',
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'frozen APK with no endpoint fails pump while movement stands',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: 'TN_COLD_START:{"segment":"first_frame","atMs":531.0}\n',
+      movementPayload,
+      movementResponsePath: '/run/res',
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'trailing stall through the endpoint fails pump',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ trailingGapMs: 399.6 }),
+      movementPayload,
+      movementResponsePath: '/run/res',
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'wrong-path endpoint fails correlation',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint(),
+      movementPayload,
+      movementResponsePath: '/run/other',
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R6_BOUND'],
+    name: 'late displacement fails the 8s criterion',
+    input: { bound: bound({ elapsedMs: 11_400 }), framePng: WORLD_FRAME, report: report() },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R4_MOVEMENT'],
+    name: 'dispatch-only, no displacement, fails',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      report: report({ distance: 0.0004, movementDelta: [0, -0.0004, 0] }),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R4_MOVEMENT'],
+    name: 'absent or invalid position fails',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      report: report({ distance: Number.NaN, movementDelta: undefined }),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R5_VISIBLE_WORLD'],
+    name: 'no visible world fails',
+    input: { bound: bound(), framePng: BLANK_FRAME, report: report() },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R1_ARM_IDENTITY'],
+    name: 'unproven arm identity fails',
+    input: {
+      bound: bound({ installedSha256: 'f'.repeat(64) }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R2_CLOCK'],
+    name: 'synthetic or inconsistent clock fails',
+    input: {
+      bound: bound({ boundMs: 900, synthetic: true }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R3_RUNNER'],
+    name: 'failed runner is not a slow pass',
+    input: {
+      bound: bound({ runnerExitCode: 1 }),
+      framePng: WORLD_FRAME,
+      report: report({ diagnostics: [{ code: 'TN_PLAYTEST_BRIDGE_MISSING' }], pass: false }),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0_ANDROID_TARGET'],
+    name: 'copied browser report fails the target rule',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      report: report({ target: 'browser' }),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'missing preflight fails',
+    input: {
+      bound: (() => { const b = bound(); delete b.preflight; return b; })(),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'stale before-install-only preflight fails',
+    input: {
+      bound: (() => {
+        const b = bound();
+        b.preflight = qualifiedPreflight({ beforeLaunch: undefined });
+        delete b.preflight.beforeLaunch;
+        return b;
+      })(),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'low-battery preflight fails (29% < 50%)',
+    input: {
+      bound: bound({ preflight: qualifiedPreflight({ beforeLaunch: { phase: 'before-launch', recordedAt: '2026-09-06T10:01:00.000Z', serial: 'MOCKSERIAL', batteryPercent: 29, charging: false, chargingSource: 'NONE', thermalStatus: 'NONE', thermalStatusCode: 0, screenOn: true, provisional: [] } }) }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'hot-device preflight fails (MODERATE > NONE)',
+    input: {
+      bound: bound({ preflight: qualifiedPreflight({ beforeLaunch: { phase: 'before-launch', recordedAt: '2026-09-06T10:01:00.000Z', serial: 'MOCKSERIAL', batteryPercent: 70, charging: false, chargingSource: 'NONE', thermalStatus: 'MODERATE', thermalStatusCode: 2, screenOn: true, provisional: [] } }) }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'charging-device preflight fails (cable on)',
+    input: {
+      bound: bound({ preflight: qualifiedPreflight({ beforeLaunch: { phase: 'before-launch', recordedAt: '2026-09-06T10:01:00.000Z', serial: 'MOCKSERIAL', batteryPercent: 70, charging: true, chargingSource: 'USB', thermalStatus: 'NONE', thermalStatusCode: 0, screenOn: true, provisional: [] } }) }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+];
+
+let failures = 0;
+process.stdout.write('evaluator/harness validation only — not game or device proof\n\n');
+for (const testCase of cases) {
+  const result = await evaluateFirstPlayable(testCase.input);
+  const failed = result.checks.filter(({ pass }) => !pass).map(({ id }) => id);
+  const verdictOk = result.verdict === testCase.expect;
+  const rulesOk = testCase.mustFail.every((id) => failed.includes(id))
+    && (testCase.expect !== 'pass' || failed.length === 0);
+  if (!verdictOk || !rulesOk) failures += 1;
+  process.stdout.write(
+    `${verdictOk && rulesOk ? 'GREEN' : 'RED  '} ${testCase.name}\n`
+    + `        verdict=${result.verdict} (expected ${testCase.expect})`
+    + ` boundMs=${result.boundMs} admissible=${result.admissible}\n`
+    + `        failedChecks=[${failed.join(', ')}] required=[${testCase.mustFail.join(', ')}]\n`,
+  );
+}
+process.stdout.write(`\n${cases.length - failures}/${cases.length} cases behaved as required\n`);
+process.exit(failures === 0 ? 0 : 1);

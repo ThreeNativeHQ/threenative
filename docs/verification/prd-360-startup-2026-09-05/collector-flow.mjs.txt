@@ -1,0 +1,45 @@
+import { spawn } from "node:child_process";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+// Mirror the wrapper's collector against the REAL desktop host: fake-adb
+// answers `logcat -v brief ...` the way the device lane would, streaming the
+// host's own stdout. Only the adb transport adapter is mocked; the host,
+// mailbox respond(), and endpoint bytes are real.
+const W = "/home/joao/projects/threenative/threenative-engine/.worktrees/batch-2026-09-05";
+const BIN = join(W, "packages/runtime-native/build/tn-linux/mystral");
+const dir = mkdtempSync(join(tmpdir(), "tn-coll-"));
+const root = join(dir, "mbox"); mkdirSync(root, { recursive: true });
+const res = join(root, "response.json");
+const b = join(dir, "g.js");
+writeFileSync(b, [`globalThis.TN_PLAYTEST_MAILBOX=${JSON.stringify({ request: join(root, "request.json"), response: res })};`,
+  "let n=0;const id=setInterval(()=>{n+=1;",
+  `if(n===3){__THREENATIVE_NATIVE__.playtest.respond(${JSON.stringify(res)},JSON.stringify({id:"s",result:{entities:{player:{position:[0.41,-0.02,-0.46]}}}}));}`,
+  "if(n>=5){clearInterval(id);process.exit(0);}},50);"].join("\n"));
+// fake adb: `adb -s X logcat ...` replays the host log lines
+const fakeAdb = join(dir, "adb");
+writeFileSync(fakeAdb, `#!/bin/sh\nif [ "$3" = "logcat" ]; then cat "${dir}/hoststream.log"; else exit 1; fi\n`);
+(await import("node:fs")).chmodSync(fakeAdb, 0o755);
+// 1) run the real host, capture its log to hoststream
+const { spawnSync } = await import("node:child_process");
+const r = spawnSync("sh", [join(W, "scripts/xvfb.sh"), "env", "SDL_VIDEODRIVER=x11", BIN, "run", b], { cwd: dir, encoding: "utf8", timeout: 60000 });
+writeFileSync(join(dir, "hoststream.log"), `${r.stdout ?? ""}\n${r.stderr ?? ""}`);
+// 2) collector shape from the wrapper, pointed at fake adb
+const child = spawn(fakeAdb, ["-s", "MOCK", "logcat", "-v", "brief"], { stdio: ["ignore", "pipe", "pipe"] });
+const chunks = [];
+child.stdout.on("data", (c) => chunks.push(c));
+await new Promise((res2) => child.on("close", res2));
+const hostLog = Buffer.concat(chunks).toString("utf8");
+const { evaluatePumpEndpoint, fnv1a64 } = await import(join(W, "artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/evaluate-first-playable.mjs"));
+const body = (await import("node:fs")).readFileSync(res, "utf8");
+const v = evaluatePumpEndpoint({ hostLog, movementResponsePath: res, movementResponseBody: body });
+console.log("collector-e2e:", v.pass ? "PASS" : v.code, JSON.stringify(v.detail).slice(0,150));
+console.log("hash-match:", hostLog.includes(fnv1a64(body)) ? "yes" : "no");
+// failure paths on the same real log:
+// late: truncate before the endpoint line
+const cutAt = hostLog.indexOf("TN_PUMP_ENDPOINT");
+console.log("truncated:", evaluatePumpEndpoint({ hostLog: hostLog.slice(0, cutAt), movementResponsePath: res, movementResponseBody: body }).code);
+// foreign response: same path, different bytes
+console.log("foreign:", evaluatePumpEndpoint({ hostLog, movementResponsePath: res, movementResponseBody: body + " " }).code);
+// missing collector output
+console.log("missing:", evaluatePumpEndpoint({ hostLog: "", movementResponsePath: res, movementResponseBody: body }).code);
