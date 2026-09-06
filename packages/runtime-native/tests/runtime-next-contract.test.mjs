@@ -9,6 +9,14 @@ import { test } from 'vitest';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
+test('Canvas2D raster and upload-dirtiness contracts execute in the native test lane', () => {
+  const executable = join(root, 'build/tn-linux/threenative-canvas2d-dirty-test');
+  assert.ok(existsSync(executable),
+    `${executable} is not built. Run: cmake --build build/tn-linux --target threenative-canvas2d-dirty-test`);
+  const output = execFileSync(executable, { encoding: 'utf8', timeout: 30_000 });
+  assert.match(output, /canvas2d dirty tracking passed/u);
+});
+
 function read(path) {
   return readFileSync(join(root, path), 'utf8');
 }

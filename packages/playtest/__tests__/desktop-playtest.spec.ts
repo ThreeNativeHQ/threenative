@@ -49,6 +49,34 @@ test("desktop CLI routing selects the shared desktop runner", async () => {
   expect(calls).toEqual(["/native/game"]);
 });
 
+test.each([
+  { stream: "stderr", text: 'Gtk-Message: 19:38:01.131: Failed to load module "appmenu-gtk-module"', type: "log" },
+  { stream: "stderr", text: "MESA-EGL: warning: DRI3 error: Could not get DRI3 device", type: "warning" },
+  { stream: "stderr", text: "** (wildwood:4179462): WARNING **: 19:38:01.260: AT-SPI: Could not obtain desktop path or name", type: "warning" },
+  { stream: "stderr", text: "Warning: startup gate never opened within 30s; capturing anyway.", type: "warning" },
+  { stream: "stderr", text: "MESA-EGL: error: context creation failed", type: "error" },
+  { stream: "stderr", text: "GPU validation error: warning branch has invalid bindings", type: "error" },
+  { stream: "stderr", text: "unclassified native failure", type: "error" },
+  { stream: "stdout", text: "[error] Native game startup failed", type: "error" },
+  { stream: "stdout", text: "[info] Native game ready", type: "log" },
+])("desktop console preserves explicit severity from $stream: $text", async ({ stream, text, type }) => {
+  const root = await makeTempDir("playtest-desktop-severity-");
+  const driver = new DesktopPlaytestDriver({
+    executable: process.execPath,
+    mailboxRoot: root,
+    args: ["-e", 'process[process.argv[1]].write(process.argv[2] + "\\n" + process.argv[2]);', stream, text],
+  });
+  try {
+    await driver.prepare("unused");
+    await expect.poll(() => driver.isAlive()).toBe(false);
+    // Both newline-delimited and trailing partial output retain the complete observation.
+    expect(await driver.captureConsole()).toEqual([{ text, type }, { text, type }]);
+  } finally {
+    await driver.stop();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test.skipIf(process.platform === "win32")("desktop process and mailbox lifecycle leaves no child behind", async () => {
   const root = await makeTempDir("playtest-desktop-driver-");
   const executable = join(root, "native-test.mjs");

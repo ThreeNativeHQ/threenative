@@ -13,7 +13,7 @@ The prelude regression failed with `a text canvas must not alias the presentatio
 
 The strengthened `90-document-window-stubs` conformance case renders through a newly created canvas while sizing an independent text canvas. Its executed desktop report contains **1 pass, 0 fail, 92 blocked**: only the selected case was run; this is not a full parity result. The inspected output contains the expected green card and blue ring.
 
-The prelude unit is collected by root `pnpm test`. The conformance case is already selected by the existing native desktop-parity CI lane; no new advisory-only workflow is needed to exercise it.
+The prelude unit is collected by root `pnpm test`. The conformance case is already selected by the existing native desktop-parity CI lane, which is advisory and requires the `native` label on pull requests. Selection does not make that execution a required merge gate.
 
 Local detailed evidence: `artifacts/wildwood-native-profile-20260905/` (`probe-before.log`, `probe-green.log`, `probe-green.png`, and `conformance/report.json`). These local artifacts are not a claim of browser, Android, or iOS execution.
 
@@ -52,3 +52,35 @@ Red: the C++ test failed `CSS ui-monospace fallback preserves equal glyph advanc
 Native previously ignored `lineCap`, leaving the game's round trail end square. The existing Canvas2D state now forwards butt/round/square caps to Skia; its getter reads native state so save/restore and invalid assignments behave consistently. Red: the actual host reported `Canvas2D round caps must extend beyond path endpoints` (`line-cap-red-detail.log`). Green: C++ pixels distinguish round and square corners; JS conformance covers round pixels, state restoration, invalid assignments and the existing GPU upload readback (`line-cap-green/report.json`: 1 pass, 0 fail, 92 unselected).
 
 The inspected `preload-native-final.png` and fresh browser `preload-web.png` both render the original game source at 1280×720 and 70% progress. Mean absolute RGB difference is **3.653/255**; **0.8813%** of pixels differ by more than 16 in any RGB channel. This is close visual agreement, not bit-identical rasterization. No baked artwork or game-specific native codec override remains. Full-game startup/input, performance and non-Linux targets still require separate execution.
+
+## Refreshed-package integration checks
+
+Wildwood installed fresh core, CLI and native-runtime tarballs suffixed `input-window-20260905-191431`. The installed core contains the automatic canvas-click capture for relative-pointer bindings. `pnpm typecheck` exited 0 (`final-typecheck.log`); `pnpm test` exited 0 with **392 passed / 1 skipped files, 4,288 passed / 4 skipped tests** (`final-unit-tests.log`). `pnpm lint` failed on eight unrelated `.linchpin` JSON formatting errors (`final-lint.log`); it is not a green gate.
+
+The actual Linux host executed conformance row `86-pointer-keyboard-events`, including the core `InputMap` automatic click capture: **1 pass, 0 fail, 92 unselected/blocked**, no GPU validation errors, and an inspected nonblank screenshot (`fresh-input-conformance/report.json`). This uses synthetic event dispatch and a cached browser reference; it does not replace the pending real OS input test of the freshly packaged game. The diagnostic profile now requires world/startup readiness and verifies both OS mouse turning and OS keyboard movement. Wildwood's full desktop packaging was still compiling assets when these checks were recorded.
+
+## Full packaged desktop flow
+
+The serialized `pnpm build:desktop` completed successfully (`fresh-default-package.log`). The executable's first 127,600,224 bytes match the rebuilt native host exactly (`cmp` exited 0). The isolated Xvfb/KWin OS-input probe exited 0: startup/world/UI reported ready, heading changed **34 → 42 degrees**, and W increased the odometer **0 → 5.1 metres** (`fresh-native-e2e/profile.json`). The original preload is upright and readable; the world screenshot was inspected. This run did not independently remeasure SDL cursor visibility.
+
+The unchanged `wildwood-flow.playtest.json` initially failed diagnostics despite moving 26.4 metres: the desktop driver classified every stderr line as an error, including explicitly labelled GTK/EGL warnings. It also classified native `[error]` stdout as ordinary logs. Real child-process tests reproduced both mistakes (**5 failed, 16 passed**, `desktop-severity-red.log`), then passed (**21 tests**, `desktop-severity-green.log`). The driver now honors explicit severity, retains all lines, and keeps unclassified stderr as errors. Package build/typecheck passed.
+
+The rebuilt harness reran the same packaged game and unchanged scenario with all **5 assertions passing**, distance **26.4476 metres**, odometer **26.7 metres**, world/UI ready, and zero error diagnostics (`fresh-native-flow-green-console.log`). Its `console.json` retains **7 warnings and 2,548 log entries**. Private-display frame rates are not performance evidence. Full-scene web parity, real-display steady-state performance, touch input and non-Linux execution remain open; the earlier full repository gate results predate this harness change.
+
+## Touch-safe automatic mouse capture
+
+The automatic click handler also requested pointer lock for touch and pen clicks. Two behavioral tests reproduced the unwanted request (**2 failed, 5 passed**, `touch-capture-red.log`). The handler now ignores explicitly non-mouse pointer types while retaining legacy mouse events without a pointer type. Both regression cases also verify that a subsequent mouse click still captures. All **7 tests passed** (`touch-capture-green.log`).
+
+A Chromium probe generated a real touchscreen tap followed by a mouse click, using the current core source and the browser's actual pointer-lock implementation. The tap produced `pointerType: touch`, **0 lock requests**, and no capture; the mouse click produced **1 request** and successful capture, with no page errors (`touch-capture-browser.log`). This is browser touch emulation, not Android/iOS device evidence. Older compatibility mouse events without pointer metadata remain unverified on touch devices. The packaged Wildwood executable predates this guard and must be refreshed before attributing this behavior to that executable.
+
+The real-desktop KWin/Spectacle capture (`real-desktop-presentation/world-compositor.png`) also shows the forest, rather than the black backdrop observed with private-display X11 root capture. This establishes world presentation in that captured run; it does not establish HUD composition or steady-state performance.
+
+The current source subsequently passed native row `86-pointer-keyboard-events`, now rejecting synthetic touch/pen clicks before capturing a mouse click: **1 pass, 0 fail, 92 unselected**, no GPU validation errors, inspected nonblank capture (`touch-input-conformance/report.json`). This row is included by the existing desktop-parity CI command, without a new workflow. The browser reference used for pixel comparison is cached; the separate Chromium input probe above supplies fresh browser interaction evidence.
+
+After these changes, the full `pnpm test` process exited 0: **392 passed / 1 skipped files, 4,299 passed / 4 skipped tests**, followed by successful package checks (`post-input-tests.log`). Lint still exits 1 on eight unrelated `.linchpin` formatting errors (`post-input-lint.log`). A concurrent typecheck failed while the test command rebuilt declarations; the serialized rerun exited 0 (`post-input-typecheck-serial.log`).
+
+## Blocking Linux Canvas2D regression gate
+
+An Opus medium read-only CI audit found that the required Linux native test job built the Canvas2D contract executable but did not execute it. The desktop verification matrix executes it on macOS/Windows, where the Linux font assertions are compiled out. `runtime-next-contract.test.mjs` now executes the existing binary in the Linux native suite, requires its success marker, rejects a nonzero process exit, and fails closed when it is missing. No workflow or new runner is needed.
+
+Red: temporarily withholding the built executable made the selected test fail with the missing-build instruction (`canvas-ci-missing-red.log`); the binary was restored immediately. Green: the restored real executable passed (`canvas-ci-green.log`), followed by the runtime-next/frame-stream suites (`canvas-ci-suite.log`). The C++ pixel assertions themselves retain their earlier defect-specific red/green receipts above. These checks do not turn the advisory GPU conformance lane into a required gate, or establish mobile Canvas2D support.
