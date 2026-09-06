@@ -40,6 +40,30 @@
     },
     "components": [
       {
+        "allowTrivial": "The live flora stand reports its counts from the final attached arrays; bare ground carries no such entity.",
+        "entity": "scenery.flora",
+        "component": "floraPlants",
+        "gte": 2
+      },
+      {
+        "allowTrivial": "The live flora stand reports foliage instances from the final attached arrays.",
+        "entity": "scenery.flora",
+        "component": "leafInstances",
+        "gte": 10
+      },
+      {
+        "allowTrivial": "The live flora stand reports wood triangles from the final attached arrays.",
+        "entity": "scenery.flora",
+        "component": "woodTriangles",
+        "gte": 100
+      },
+      {
+        "allowTrivial": "The live flora stand sways its tips under game-owned wind strength.",
+        "entity": "scenery.flora",
+        "component": "tipDisplacement",
+        "gte": 0.01
+      },
+      {
         "entity": "scenery.ridge",
         "component": "state",
         "equals": "refined",

@@ -2,7 +2,12 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { growFloraStand } from "../templates/starter/src/render/floraField.js";
-import { FLORA_BOUNDS, FLORA_BUDGETS, FLORA_ENVELOPE, FLORA_SEED } from "../templates/starter/src/render/floraStand.js";
+import {
+  FLORA_BOUNDS,
+  FLORA_BUDGETS,
+  FLORA_ENVELOPE,
+  FLORA_SEED,
+} from "../templates/starter/src/render/floraStand.js";
 import { buildImplicitSurface } from "../templates/starter/src/render/implicitSurface.js";
 import { createKuwaharaStage } from "../templates/starter/src/render/kuwahara.js";
 import { qualityPreset } from "../templates/starter/src/render/quality.js";
@@ -417,6 +422,21 @@ describe("starter visual floor", () => {
           equals: 0,
           path: "boundaryEdges",
         }),
+        expect.objectContaining({
+          component: "floraPlants",
+          entity: "scenery.flora",
+          gte: 2,
+        }),
+        expect.objectContaining({
+          component: "leafInstances",
+          entity: "scenery.flora",
+          gte: 10,
+        }),
+        expect.objectContaining({
+          component: "tipDisplacement",
+          entity: "scenery.flora",
+          gte: 0.01,
+        }),
       ]),
     );
   });
@@ -708,13 +728,23 @@ describe("starter visual floor", () => {
   it("should reject malformed or empty flora fields", () => {
     // Red: returning empty arrays instead of throwing keeps these green-free.
     expect(() =>
-      growFloraStand({ ...FLORA_ENVELOPE, light: Number.NaN }, FLORA_SEED, FLORA_BOUNDS, FLORA_BUDGETS),
+      growFloraStand(
+        { ...FLORA_ENVELOPE, light: Number.NaN },
+        FLORA_SEED,
+        FLORA_BOUNDS,
+        FLORA_BUDGETS,
+      ),
     ).toThrow("TN_FLORA_ENVELOPE_INVALID");
+    expect(() => growFloraStand(FLORA_ENVELOPE, 1.5, FLORA_BOUNDS, FLORA_BUDGETS)).toThrow(
+      "TN_FLORA_SEED_INVALID",
+    );
     expect(() =>
-      growFloraStand(FLORA_ENVELOPE, 1.5, FLORA_BOUNDS, FLORA_BUDGETS),
-    ).toThrow("TN_FLORA_SEED_INVALID");
-    expect(() =>
-      growFloraStand(FLORA_ENVELOPE, FLORA_SEED, { ...FLORA_BOUNDS, minX: 1, maxX: 1 }, FLORA_BUDGETS),
+      growFloraStand(
+        FLORA_ENVELOPE,
+        FLORA_SEED,
+        { ...FLORA_BOUNDS, minX: 1, maxX: 1 },
+        FLORA_BUDGETS,
+      ),
     ).toThrow("TN_FLORA_BOUNDS_INVALID");
     expect(() =>
       growFloraStand(FLORA_ENVELOPE, FLORA_SEED, FLORA_BOUNDS, { ...FLORA_BUDGETS, maxPlants: 0 }),
@@ -740,10 +770,13 @@ describe("starter visual floor", () => {
     // (positions) varies.
     const first = growFloraStand(FLORA_ENVELOPE, FLORA_SEED, FLORA_BOUNDS, FLORA_BUDGETS);
     const second = growFloraStand(FLORA_ENVELOPE, FLORA_SEED + 7, FLORA_BOUNDS, FLORA_BUDGETS);
-    const radii = (stand_: typeof first): number[] => stand_.plants.map((plant) => plant.baseRadius);
+    const radii = (stand_: typeof first): number[] =>
+      stand_.plants.map((plant) => plant.baseRadius);
     expect(radii(first).length).toBe(radii(second).length);
     for (let index = 0; index < radii(first).length; index += 1)
-      expect(Math.abs((radii(first)[index] as number) - (radii(second)[index] as number))).toBeLessThan(0.05);
+      expect(
+        Math.abs((radii(first)[index] as number) - (radii(second)[index] as number)),
+      ).toBeLessThan(0.05);
     expect(JSON.stringify(first.segments)).not.toBe(JSON.stringify(second.segments));
     // Live caller: the pre-existing Play.enter → createScenery path attaches flora.
     expect(scenery).toContain("createFloraStand");
