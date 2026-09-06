@@ -401,6 +401,188 @@ class TestIpSanContract(unittest.TestCase):
                                     host="x86_64-unknown-linux-gnu")
         self.assertEqual(result["status"], "skipped")
 
+    def test_all_cross_targets_report_skipped_never_passed(self):
+        host = "x86_64-unknown-linux-gnu"
+        for target in ["win-x64", "mac-arm64", "mac-x86_64",
+                       "android-arm64", "android-armv7", "android-x64",
+                       "ios-arm64", "ios-sim-x64"]:
+            with self.subTest(target=target):
+                result = b.run_ip_san_tests("/nonexistent-src", target,
+                                            host=host)
+                self.assertEqual(result["status"], "skipped")
+                self.assertNotEqual(result.get("status"), "passed")
+
+
+def _fake_tool(path):
+    import stat
+    with open(path, "w") as f:
+        f.write("#!/bin/sh\nexit 0\n")
+    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP)
+
+
+class TestTargetEnvPins(unittest.TestCase):
+    def test_platform_pins(self):
+        self.assertEqual(b.ANDROID_NDK_PIN, "27.1.12297006")
+        self.assertEqual(b.ANDROID_API, "21")
+        self.assertEqual(b.ANDROID_ARCH["android-armv7"][0],
+                         "armv7-linux-androideabi")
+        self.assertEqual(b.APPLE_SDK["ios-arm64"],
+                         ("iphoneos", "arm64", "14.0"))
+        self.assertEqual(b.APPLE_SDK["ios-sim-x64"],
+                         ("iphonesimulator", "x86_64", "14.0"))
+
+
+class TestTargetEnvWin(unittest.TestCase):
+    def test_missing_cl_fails(self):
+        with self.assertRaises(b.BuildError) as ctx:
+            b.prepare_target_env("win-x64", dict(os.environ, PATH="/nonexistent"))
+        self.assertIn("TN_QUICHE_MSVC_MISSING", str(ctx.exception))
+
+    def test_missing_sdk_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for t in ("cl", "link", "lib"):
+                _fake_tool(os.path.join(tmp, t))
+            env = dict(os.environ, PATH=tmp)
+            env.pop("INCLUDE", None)
+            env.pop("LIB", None)
+            with self.assertRaises(b.BuildError) as ctx:
+                b.prepare_target_env("win-x64", env)
+            self.assertIn("TN_QUICHE_MSVC_SDK", str(ctx.exception))
+
+    def test_dynamic_crt_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for t in ("cl", "link", "lib"):
+                _fake_tool(os.path.join(tmp, t))
+            env = dict(os.environ, PATH=tmp, INCLUDE="x", LIB="y", CL="/MD")
+            with self.assertRaises(b.BuildError) as ctx:
+                b.prepare_target_env("win-x64", env)
+            self.assertIn("TN_QUICHE_MSVC_CRT", str(ctx.exception))
+
+    def test_debug_crt_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for t in ("cl", "link", "lib"):
+                _fake_tool(os.path.join(tmp, t))
+            env = dict(os.environ, PATH=tmp, INCLUDE="x", LIB="y",
+                       RUSTFLAGS="/MTd")
+            with self.assertRaises(b.BuildError) as ctx:
+                b.prepare_target_env("win-x64", env)
+            self.assertIn("TN_QUICHE_MSVC_CRT", str(ctx.exception))
+
+    def test_static_crt_selected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for t in ("cl", "link", "lib"):
+                _fake_tool(os.path.join(tmp, t))
+            env = dict(os.environ, PATH=tmp, INCLUDE="x", LIB="y")
+            sel = b.prepare_target_env("win-x64", env)
+            self.assertEqual(sel["crt"], "/MT,+crt-static")
+            self.assertIn("+crt-static", env["RUSTFLAGS"])
+            self.assertIn("/MT", env["CFLAGS"])
+            self.assertIn("/MT", env["CXXFLAGS"])
+
+
+class TestTargetEnvApple(unittest.TestCase):
+    def test_missing_xcrun_fails(self):
+        with self.assertRaises(b.BuildError) as ctx:
+            b.prepare_target_env("mac-arm64",
+                                 dict(os.environ, PATH="/nonexistent"))
+        self.assertIn("TN_QUICHE_XCRUN_MISSING", str(ctx.exception))
+
+    def test_wrong_sdk_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            xc = os.path.join(tmp, "xcrun")
+            with open(xc, "w") as f:
+                f.write("#!/bin/sh\nexit 1\n")
+            os.chmod(xc, 0o755)
+            with self.assertRaises(b.BuildError) as ctx:
+                b.prepare_target_env("mac-arm64",
+                                     dict(os.environ, PATH=tmp))
+            self.assertIn("TN_QUICHE_SDK_MISSING", str(ctx.exception))
+
+    def test_sdk_and_cxx_are_bound_to_selected_arch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            xc = os.path.join(tmp, "xcrun")
+            with open(xc, "w") as f:
+                f.write("#!/bin/sh\n"
+                        "case \"$*\" in\n"
+                        "  *--show-sdk-path) echo /sdk ;;\n"
+                        "  *-f*) echo /sdk/bin/$NF ;;\n"
+                        "  *) exit 1 ;;\n"
+                        "esac\n")
+            os.chmod(xc, 0o755)
+            env = dict(os.environ, PATH=tmp)
+            sel = b.prepare_target_env("mac-arm64", env)
+            self.assertEqual(sel["sdk"], "macosx")
+            self.assertEqual(sel["arch"], "arm64")
+            self.assertEqual(env["SDKROOT"], "/sdk")
+            self.assertTrue(env["CXX"].endswith("clang++ -arch arm64"))
+
+
+class TestTargetEnvAndroid(unittest.TestCase):
+    def _ndk(self, tmp, rev="27.1.12297006", tools=True):
+        ndk = os.path.join(tmp, "ndk")
+        bindir = os.path.join(ndk, "toolchains", "llvm", "prebuilt",
+                              b._ndk_host_dir(), "bin")
+        os.makedirs(bindir)
+        with open(os.path.join(ndk, "source.properties"), "w") as f:
+            f.write(f"Pkg.Revision = {rev}\n")
+        if tools:
+            for t in ("aarch64-linux-android21-clang",
+                      "armv7a-linux-androideabi21-clang",
+                      "x86_64-linux-android21-clang",
+                      "llvm-ar", "llvm-ranlib"):
+                _fake_tool(os.path.join(bindir, t))
+        return ndk, bindir
+
+    def test_missing_ndk_fails(self):
+        env = dict(os.environ, ANDROID_NDK_HOME="/nonexistent-ndk",
+                   ANDROID_NDK_ROOT="", ANDROID_HOME="/none",
+                   ANDROID_SDK_ROOT="")
+        with self.assertRaises(b.BuildError) as ctx:
+            b.prepare_target_env("android-arm64", env)
+        self.assertIn("TN_QUICHE_NDK_MISSING", str(ctx.exception))
+
+    def test_wrong_pin_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ndk, _ = self._ndk(tmp, rev="26.1.10909125")
+            with self.assertRaises(b.BuildError) as ctx:
+                b.prepare_target_env("android-arm64",
+                                     dict(os.environ, ANDROID_NDK_HOME=ndk))
+            self.assertIn("TN_QUICHE_NDK_MISMATCH", str(ctx.exception))
+
+    def test_armv7_driver_bound(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ndk, bindir = self._ndk(tmp)
+            env = dict(os.environ, ANDROID_NDK_HOME=ndk)
+            sel = b.prepare_target_env("android-armv7", env)
+            want = os.path.join(bindir, "armv7a-linux-androideabi21-clang")
+            self.assertEqual(sel["armv7a-linux-androideabi21-clang"], want)
+            self.assertEqual(env["CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER"],
+                             want)
+            self.assertEqual(env["CMAKE_ANDROID_ARCH_ABI"], "arm")
+
+    def test_arm64_and_x64_vars(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ndk, _ = self._ndk(tmp)
+            env = dict(os.environ, ANDROID_NDK_HOME=ndk)
+            b.prepare_target_env("android-arm64", env)
+            self.assertIn("aarch64-linux-android21-clang",
+                          env["CC_aarch64_linux_android"])
+            env2 = dict(os.environ, ANDROID_NDK_HOME=ndk)
+            b.prepare_target_env("android-x64", env2)
+            self.assertEqual(env2["CMAKE_ANDROID_ARCH_ABI"], "x86_64")
+
+    def test_missing_driver_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ndk, _ = self._ndk(tmp, tools=False)
+            with self.assertRaises(b.BuildError) as ctx:
+                b.prepare_target_env("android-arm64",
+                                     dict(os.environ, ANDROID_NDK_HOME=ndk))
+            self.assertIn("TN_QUICHE_NDK_TOOL_MISSING", str(ctx.exception))
+
+    def test_linux_passthrough(self):
+        sel = b.prepare_target_env("linux-x64", dict(os.environ))
+        self.assertEqual(sel["rust_target"], "x86_64-unknown-linux-gnu")
+
 
 class TestOuterCwdPatchFlow(unittest.TestCase):
     def test_apply_from_outer_cwd_with_sibling_patch_dir(self):

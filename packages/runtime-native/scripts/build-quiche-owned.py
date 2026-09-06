@@ -67,6 +67,25 @@ SUPPORTED_TARGETS = {
 }
 
 
+# Pin contract: never change these here. Root owns accepted source/pins.
+ANDROID_NDK_PIN = "27.1.12297006"
+ANDROID_API = "21"
+ANDROID_ARCH = {
+    "android-arm64": ("aarch64-linux-android", "aarch64"),
+    "android-armv7": ("armv7-linux-androideabi", "arm"),
+    "android-x64": ("x86_64-linux-android", "x86_64"),
+}
+APPLE_SDK = {
+    "mac-arm64": ("macosx", "arm64", None),
+    "mac-x86_64": ("macosx", "x86_64", None),
+    "ios-arm64": ("iphoneos", "arm64", "14.0"),
+    "ios-sim-x64": ("iphonesimulator", "x86_64", "14.0"),
+}
+# MSVC CRT contract for BoringSSL: static CRT; dynamic (/MD) mislinks it.
+MSVC_REQUIRED_FLAGS = ("/MT",)
+MSVC_FORBIDDEN_FLAGS = ("/MD", "/MDd", "/MTd", "/LD", "/LDd")
+
+
 class BuildError(Exception):
     pass
 
@@ -400,6 +419,139 @@ def host_triple():
     return f"{machine}-{system}"
 
 
+def _ndk_host_dir():
+    return {"darwin": "darwin-x86_64", "win32": "windows-x86_64"}.get(
+        sys.platform, "linux-x86_64")
+
+
+def resolve_ndk_root(env=None):
+    """Pinned NDK only: ANDROID_NDK_HOME/ROOT wins, else SDK/ndk/<pin>."""
+    env = env if env is not None else os.environ
+    for key in ("ANDROID_NDK_HOME", "ANDROID_NDK_ROOT"):
+        if env.get(key):
+            return env[key]
+    sdk = env.get("ANDROID_HOME") or env.get("ANDROID_SDK_ROOT") \
+        or os.path.join(os.path.expanduser("~"), "Android", "Sdk")
+    return os.path.join(sdk, "ndk", ANDROID_NDK_PIN)
+
+
+def check_ndk_pin(ndk_root):
+    props = os.path.join(ndk_root, "source.properties")
+    try:
+        with open(props) as f:
+            text = f.read()
+    except OSError:
+        raise BuildError(f"TN_QUICHE_NDK_MISSING: no NDK at {ndk_root} "
+                         f"(need r27 pin {ANDROID_NDK_PIN})")
+    m = re.search(r"Pkg\.Revision\s*=\s*(\S+)", text)
+    if not m or m.group(1) != ANDROID_NDK_PIN:
+        raise BuildError(f"TN_QUICHE_NDK_MISMATCH: {ndk_root} revision "
+                         f"{m.group(1) if m else '?'} != pinned {ANDROID_NDK_PIN}")
+
+
+def prepare_target_env(target, env):
+    """Validate per-target tools, bind compiler/linker env, return the
+    selected inputs for the manifest. Raises (never warns) when missing."""
+    rust_t = rust_target(target)
+    selected = {"rust_target": rust_t}
+    if target == "linux-x64":
+        return selected
+    if target == "win-x64":
+        for tool in ("cl", "link", "lib"):
+            found = shutil.which(tool, path=env.get("PATH", os.defpath))
+            if not found:
+                raise BuildError(f"TN_QUICHE_MSVC_MISSING: {tool} not on PATH; "
+                                 f"run inside VsDevCmd -arch=x64 -host_arch=x64")
+            selected[tool] = found
+        for var in ("INCLUDE", "LIB"):
+            if not env.get(var):
+                raise BuildError(f"TN_QUICHE_MSVC_SDK: {var} unset; "
+                                 f"VsDevCmd did not export the Windows SDK")
+            selected[var] = "set"
+        flags = " ".join(env.get(v, "") for v in
+                         ("CL", "CFLAGS", "CXXFLAGS", "_CL_", "RUSTFLAGS"))
+        for bad in MSVC_FORBIDDEN_FLAGS:
+            if re.search(rf"(?:^|\s){re.escape(bad)}(?:\s|$)", flags):
+                raise BuildError(f"TN_QUICHE_MSVC_CRT: {bad} selects dynamic/debug "
+                                 f"CRT; BoringSSL needs static release /MT")
+        env["RUSTFLAGS"] = (env.get("RUSTFLAGS", "") +
+                            " -C target-feature=+crt-static").strip()
+        # cmake-rs forwards CFLAGS/CXXFLAGS to BoringSSL's CMake configure.
+        # Set /MT explicitly so its C and C++ objects use the same static CRT
+        # as Rust; rejecting /MD alone would otherwise leave the default
+        # runtime selection to the generator.
+        required_crt = " ".join(MSVC_REQUIRED_FLAGS)
+        for var in ("CFLAGS", "CXXFLAGS"):
+            env[var] = (env.get(var, "") + f" {required_crt}").strip()
+        selected["crt"] = f"{required_crt},+crt-static"
+        return selected
+    if target in APPLE_SDK:
+        sdk, arch, deploy = APPLE_SDK[target]
+        xcrun = shutil.which("xcrun", path=env.get("PATH", os.defpath))
+        if not xcrun:
+            raise BuildError(f"TN_QUICHE_XCRUN_MISSING: xcrun absent; "
+                             f"{target} needs Xcode with the {sdk} SDK")
+        selected["xcrun"] = xcrun
+        try:
+            sdk_path = subprocess.check_output(
+                [xcrun, "--sdk", sdk, "--show-sdk-path"],
+                text=True, env=env).strip()
+        except subprocess.CalledProcessError:
+            raise BuildError(f"TN_QUICHE_SDK_MISSING: `xcrun --sdk {sdk}` "
+                             f"failed; install that SDK")
+        if not sdk_path:
+            raise BuildError(f"TN_QUICHE_SDK_MISSING: empty path for {sdk}")
+        selected.update({"sdk": sdk, "sdk_path": sdk_path, "arch": arch})
+        for tool in ("clang", "ar", "ranlib"):
+            try:
+                found = subprocess.check_output(
+                    [xcrun, "--sdk", sdk, "-f", tool],
+                    text=True, env=env).strip()
+            except subprocess.CalledProcessError:
+                raise BuildError(f"TN_QUICHE_APPLE_TOOL_MISSING: {tool} "
+                                 f"not in {sdk} SDK")
+            selected[tool] = found
+        env["CC"] = f"{xcrun} --sdk {sdk} clang -arch {arch}"
+        env["CXX"] = f"{xcrun} --sdk {sdk} clang++ -arch {arch}"
+        env["AR"] = selected["ar"]
+        env["SDKROOT"] = sdk_path
+        if deploy:
+            env["IPHONEOS_DEPLOYMENT_TARGET"] = deploy
+            selected["deployment_target"] = deploy
+        elif env.get("MACOSX_DEPLOYMENT_TARGET"):
+            selected["deployment_target"] = env["MACOSX_DEPLOYMENT_TARGET"]
+        return selected
+    if target in ANDROID_ARCH:
+        triple, abi = ANDROID_ARCH[target]
+        ndk = resolve_ndk_root(env)
+        check_ndk_pin(ndk)
+        selected["ndk"] = ndk
+        selected["api"] = ANDROID_API
+        bindir = os.path.join(ndk, "toolchains", "llvm", "prebuilt",
+                              _ndk_host_dir(), "bin")
+        driver = ("armv7a-linux-androideabi" if target == "android-armv7"
+                  else triple) + ANDROID_API + "-clang"
+        for name in (driver, "llvm-ar", "llvm-ranlib"):
+            path = os.path.join(bindir, name)
+            if not os.path.isfile(path) or not os.access(path, os.X_OK):
+                raise BuildError(f"TN_QUICHE_NDK_TOOL_MISSING: {path} absent; "
+                                 f"pinned NDK {ANDROID_NDK_PIN} must provide it")
+            selected[name] = path
+        key = ("armv7_linux_androideabi" if target == "android-armv7"
+               else triple.replace("-", "_"))
+        env["CC_" + key] = selected[driver]
+        env["CXX_" + key] = selected[driver] + "++"
+        env["AR_" + key] = selected["llvm-ar"]
+        env[f"CARGO_TARGET_{key.upper()}_LINKER"] = selected[driver]
+        # quiche build.rs reads ANDROID_NDK_HOME from the process env
+        # directly (not a target-var), so export the pinned root itself.
+        env["ANDROID_NDK_HOME"] = ndk
+        env["CMAKE_ANDROID_NDK"] = ndk
+        env["CMAKE_ANDROID_ARCH_ABI"] = abi
+        return selected
+    raise BuildError(f"TN_QUICHE_TARGET_UNSUPPORTED: {target}")
+
+
 def run_ip_san_tests(src_dir, target, host=None, run_tests=True):
     """Six-case ip_san integration suite. Host target: run for real (proves the
     IP-verifier branch). Cross targets: compile only (not runnable here) and
@@ -447,11 +599,12 @@ def build(target, src_dir, patch_dir, out_dir, jobs=4, run_tests=True,
     env = os.environ.copy()
     env["CARGO_BUILD_JOBS"] = str(jobs)
     env["CARGO_TARGET_DIR"] = target_abs
-    if target.startswith("win-"):
-        env["RUSTFLAGS"] = (env.get("RUSTFLAGS", "") + " -C target-feature=+crt-static").strip()
+    selected = prepare_target_env(target, env)  # fail closed before cargo
     subprocess.check_call(["cargo", "build", "--target", rust_t,
                            "--package", "quiche", "--features", "ffi", "--release"],
                           cwd=src_dir, env=env)
+    info = dict(info)
+    info["target_inputs"] = selected  # type: ignore[typeddict-unknown-key]
     # IP-SAN proof runs INSIDE this single invocation (workflow calls once).
     ip_san = run_ip_san_tests(src_dir, target, run_tests=run_tests)
     lib_name = "quiche.lib" if target.startswith("win-") else "libquiche.a"

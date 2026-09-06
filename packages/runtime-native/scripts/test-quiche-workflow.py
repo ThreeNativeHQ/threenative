@@ -43,6 +43,8 @@ def _workflow_path():
 
 
 WORKFLOW = _workflow_path()
+with open(WORKFLOW) as _f:
+    WORKFLOW_TEXT = _f.read()
 
 
 def _load_builder():
@@ -101,6 +103,32 @@ def check_workflow(doc):
     steps = build.get("steps", [])
     if not steps:
         raise WorkflowCheckError("build job has no steps")
+    matrix = (((build.get("strategy") or {}).get("matrix") or {}).get("include")
+              or [])
+    expected_targets = {"linux-x64": ("ubuntu", None),
+                        "win-x64": ("windows", None),
+                        "mac-arm64": ("macos", "macosx"),
+                        "mac-x86_64": ("macos", "macosx"),
+                        "android-arm64": ("ubuntu", None),
+                        "android-armv7": ("ubuntu", None),
+                        "android-x64": ("ubuntu", None),
+                        "ios-arm64": ("macos", "iphoneos"),
+                        "ios-sim-x64": ("macos", "iphonesimulator")}
+    found = {row.get("target"): (str(row.get("os", "")), row.get("sdk")) for row in matrix
+             if isinstance(row, dict)}
+    for target, (os_prefix, sdk) in expected_targets.items():
+        if target not in found:
+            raise WorkflowCheckError(f"matrix misses target {target}")
+        actual_os, actual_sdk = found[target]
+        if not actual_os.startswith(os_prefix):
+            raise WorkflowCheckError(
+                f"matrix target {target} runs on unsuitable os {actual_os!r}")
+        if actual_sdk != sdk:
+            raise WorkflowCheckError(
+                f"matrix target {target} selects sdk {actual_sdk!r}, expected {sdk!r}")
+    if "runs-on" not in str(build.get("runs-on", "")) \
+            and "matrix.os" not in str(build.get("runs-on", "")):
+        raise WorkflowCheckError("build must run on matrix.os")
 
     def text(step):
         with_s = step.get("with", "")
@@ -140,6 +168,17 @@ def check_workflow(doc):
     for pin in ("1.96.0", "1.26.3", "3.12", "PyYAML==6.0.3", "cmake==4.4.2"):
         if pin not in full:
             raise WorkflowCheckError(f"missing pinned provision: {pin}")
+    for provision in ("msvc-dev-cmd", "arch: x64", "matrix.sdk",
+                      "xcrun --sdk", "setup-xcode",
+                      "27.1.12297006", "setup-ndk",
+                      "armv7a-linux-androideabi21-clang",
+                      "IPHONEOS_DEPLOYMENT_TARGET"):
+        if provision not in full:
+            raise WorkflowCheckError(
+                f"missing explicit platform provision: {provision}")
+    if "skipped, never passed" not in WORKFLOW_TEXT:
+        raise WorkflowCheckError(
+            "workflow must not claim local cross-target runtime qualification")
     if "CARGO_TARGET_DIR" not in full:
         raise WorkflowCheckError("external CARGO_TARGET_DIR not set")
     build_run = "\n".join(
@@ -149,6 +188,12 @@ def check_workflow(doc):
     build_idx = next((i for i, r in enumerate(run_texts)
                       if "build-quiche-owned.py" in r and "--source-dir" in r),
                      None)
+    build_run_text = run_texts[build_idx] if build_idx is not None else ""
+    if "matrix.target" not in build_run_text:
+        raise WorkflowCheckError("build step must consume matrix.target")
+    if any(hard in build_run_text for hard in
+           ("linux-x64\n", " linux-x64 ", "linux-x64\n ")):
+        raise WorkflowCheckError("build step must not hardcode linux-x64")
     for required, label in (
             ("test-build-quiche-owned.py", "builder self-tests"),
             ("test-validate-quiche-release.py", "release-gate tests"),
@@ -163,9 +208,12 @@ def check_workflow(doc):
                if "upload-artifact" in str(s.get("uses", ""))), None)
     if up is None:
         raise WorkflowCheckError("missing artifact upload")
+    up_name = str(up.get("with", {}).get("name", ""))
     up_path = str(up.get("with", {}).get("path", ""))
     if ".zip" not in up_path or "manifest-" not in up_path:
         raise WorkflowCheckError("upload must name ZIP + manifest")
+    if "matrix.target" not in up_name or "matrix.target" not in up_path:
+        raise WorkflowCheckError("upload must be one ZIP+manifest per matrix target")
     for banned in ("libquiche.a", "quiche-target", "cargo-target"):
         if banned in up_path:
             raise WorkflowCheckError(
@@ -298,6 +346,26 @@ class WorkflowTests(unittest.TestCase):
                 self.assertEqual(
                     proc.returncode, 0,
                     f"{label}/{name} from {cwd}:\n{proc.stderr[-2000:]}")
+
+    def test_nine_target_matrix_entries(self):
+        import copy
+        doc = copy.deepcopy(load_workflow())
+        rows = doc["jobs"]["build"]["strategy"]["matrix"]["include"]
+        self.assertEqual(len(rows), 9)
+        doc["jobs"]["build"]["strategy"]["matrix"]["include"] = [
+            r for r in rows if r.get("target") != "android-armv7"]
+        with self.assertRaises(WorkflowCheckError):
+            check_workflow(doc)
+
+    def test_missing_platform_provisioning_rejected(self):
+        import copy
+        doc = copy.deepcopy(load_workflow())
+        for step in doc["jobs"]["build"]["steps"]:
+            if "run" in step:
+                step["run"] = step["run"].replace(
+                    "armv7a-linux-androideabi21-clang", "")
+        with self.assertRaises(WorkflowCheckError):
+            check_workflow(doc)
 
     def test_missing_cmake_install_rejected(self):
         import copy

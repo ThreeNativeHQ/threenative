@@ -40,9 +40,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux x64 only. win/mac/android/ios recipes are a separate row.
           - target: linux-x64
             os: ubuntu-24.04
+          - target: win-x64
+            os: windows-2022
+          - target: mac-arm64
+            os: macos-15
+            sdk: macosx
+          - target: mac-x86_64
+            os: macos-13
+            sdk: macosx
+          - target: android-arm64
+            os: ubuntu-24.04
+          - target: android-armv7
+            os: ubuntu-24.04
+          - target: android-x64
+            os: ubuntu-24.04
+          - target: ios-arm64
+            os: macos-15
+            sdk: iphoneos
+          - target: ios-sim-x64
+            os: macos-15
+            sdk: iphonesimulator
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -68,6 +87,50 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version: "1.26.3"
+      # Windows MSVC: VsDevCmd -arch=x64 -host_arch=x64 puts cl/link/lib
+      # on PATH and exports INCLUDE+LIB; producer refuses /MD* and /MTd.
+      - name: Set up MSVC dev shell via VsDevCmd (win-x64)
+        if: matrix.target == 'win-x64'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+          host_arch: x64
+          vsversion: "2022"
+      # macOS/iOS Xcode: xcrun --sdk <macosx|iphoneos|iphonesimulator>
+      # resolves clang/ar/ranlib; producer exports CC/AR/SDKROOT and
+      # IPHONEOS_DEPLOYMENT_TARGET=14.0. Cross-target ip_san is
+      # compile+package evidence only (skipped, never passed).
+      - name: Select Xcode (macOS/iOS)
+        if: startsWith(matrix.target, 'mac-') || startsWith(matrix.target, 'ios-')
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Probe Apple SDKs (macOS/iOS)
+        if: startsWith(matrix.target, 'mac-') || startsWith(matrix.target, 'ios-')
+        env:
+          APPLE_SDK: ${{ matrix.sdk }}
+        run: |
+          test -n "$APPLE_SDK"
+          xcrun --sdk "$APPLE_SDK" --show-sdk-path
+          xcrun --sdk "$APPLE_SDK" -f clang
+          xcrun --sdk "$APPLE_SDK" -f ar
+      # Android NDK r27 pin 27.1.12297006, API 21. Producer reads
+      # ANDROID_NDK_HOME, binds CC_<triple>/CARGO_TARGET_<TRIPLE>_LINKER,
+      # CMAKE_ANDROID_NDK and CMAKE_ANDROID_ARCH_ABI.
+      - name: Set up Android NDK r27 (android-*)
+        if: startsWith(matrix.target, 'android-')
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: 27.1.12297006
+      - name: Probe NDK drivers (android-*)
+        if: startsWith(matrix.target, 'android-')
+        run: |
+          test -f "$ANDROID_NDK_HOME/source.properties"
+          grep "Pkg.Revision = 27.1.12297006" "$ANDROID_NDK_HOME/source.properties"
+          ls "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt"/*/bin/aarch64-linux-android21-clang
+          ls "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt"/*/bin/armv7a-linux-androideabi21-clang
+          ls "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt"/*/bin/x86_64-linux-android21-clang
+          ls "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt"/*/bin/llvm-ar
       - name: Validate release tag before build
         run: >-
           python3 engine/packages/runtime-native/scripts/build-quiche-owned.py
@@ -78,27 +141,28 @@ jobs:
         run: python3 engine/packages/runtime-native/scripts/test-validate-quiche-release.py
       - name: Run workflow-shape tests
         run: python3 engine/packages/runtime-native/scripts/test-quiche-workflow.py
-      - name: Build owned linux-x64 archive (ip_san inside)
+      - name: Build owned ${{ matrix.target }} archive (ip_san inside)
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/quiche-target
+          IPHONEOS_DEPLOYMENT_TARGET: "14.0"
         run: >-
           python3 engine/packages/runtime-native/scripts/build-quiche-owned.py
-          linux-x64
+          ${{ matrix.target }}
           --source-dir quiche-upstream
           --patch-dir engine/packages/runtime-native/patches
-          --out dist-quiche/linux-x64
+          --out dist-quiche/${{ matrix.target }}
           --release-tag quiche-owned-v1 -j 4
       - uses: actions/upload-artifact@v4
         with:
-          name: quiche-owned-linux-x64
+          name: quiche-owned-${{ matrix.target }}
           path: |
-            dist-quiche/linux-x64/quiche-0.24.6-tn1-linux-x64.zip
-            dist-quiche/linux-x64/manifest-linux-x64.json
+            dist-quiche/${{ matrix.target }}/quiche-0.24.6-tn1-${{ matrix.target }}.zip
+            dist-quiche/${{ matrix.target }}/manifest-${{ matrix.target }}.json
           if-no-files-found: error
 
   publish:
     # Fail-closed 9-target gate: exact tag only; validator requires ALL 9
-    # targets. Linux-only CI exits 1 naming the missing targets.
+    # targets. Partial CI exits 1 naming the missing targets.
     if: github.ref == 'refs/tags/quiche-owned-v1'
     needs: build
     runs-on: ubuntu-24.04
