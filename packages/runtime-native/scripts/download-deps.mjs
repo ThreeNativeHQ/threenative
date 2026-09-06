@@ -1075,8 +1075,13 @@ async function main() {
   // skia-win-static: Static Skia+Dawn build from library-builder with /MT
   const windowsDeps = ['skia-win-static'];
 
+  // skia-android is a source build, not an archive download: it is reachable
+  // only via --only until the parent verifies the staged-tree flow. It stays
+  // out of the --android list so the default lane is unchanged.
+  const sourceBuildDeps = ['skia-android'];
+
   // All available deps
-  const allDeps = [...new Set([...desktopDeps, ...iosDeps, ...androidDeps, ...windowsDeps])];
+  const allDeps = [...new Set([...desktopDeps, ...iosDeps, ...androidDeps, ...windowsDeps, ...sourceBuildDeps])];
 
   let depsToDownload;
   if (onlyIndex !== -1) {
@@ -1085,6 +1090,15 @@ async function main() {
       console.error(`Unknown dependency: ${depName}`);
       console.error(`Available: ${allDeps.join(', ')}`);
       process.exit(1);
+    }
+    if (depName === 'skia-android') {
+      const { buildSkiaAndroidFromStagedSource } = await import('./build-skia-android.mjs');
+      const sourceIndex = args.indexOf('--source');
+      const source = sourceIndex !== -1 ? args[sourceIndex + 1] : undefined;
+      const ok = await buildSkiaAndroidFromStagedSource(source ? { sourceRoot: source } : {});
+      if (!ok) throw new Error('Dependency download failed: skia-android');
+      console.log('\n=== Summary ===\n  skia-android: OK');
+      return;
     }
     depsToDownload = [depName];
   } else if (args.includes('--ios')) {
