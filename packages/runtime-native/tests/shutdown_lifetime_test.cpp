@@ -14,9 +14,11 @@
 
 #include "mystral/fs/file_watcher.h"
 #include "mystral/http/async_http_client.h"
+#include "mystral/http/http_client.h"
 #include "mystral/runtime.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -108,6 +110,17 @@ std::unique_ptr<Runtime> createRuntime() {
 }
 
 int runHttpMode() {
+    // Exercise the explicit CAINFO path in both HTTP clients. The URL only needs to reach
+    // curl_easy_perform; this probe intentionally does not depend on an external server.
+#ifdef _WIN32
+    _putenv_s("SSL_CERT_FILE", "native-coverage-trust.pem");
+#else
+    ::setenv("SSL_CERT_FILE", "native-coverage-trust.pem", 1);
+#endif
+    mystral::http::HttpOptions syncOptions;
+    syncOptions.timeout = 1;
+    (void)mystral::http::getHttpClient().get("http://127.0.0.1:1/", syncOptions);
+
     const int port = startHangingListener();
     if (port <= 0) {
         std::cerr << "FAILED: could not start local hanging listener\n";
