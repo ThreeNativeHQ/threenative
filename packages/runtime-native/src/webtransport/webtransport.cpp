@@ -17,6 +17,12 @@
 #include "mystral/js/engine.h"
 #include "runtime_scripts.h"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX  // quiche.h includes Winsock, which otherwise defines min()/max()
+#endif
+#endif
+
 #include <quiche.h>
 
 #include <algorithm>

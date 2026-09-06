@@ -344,3 +344,12 @@ A separate scratch-linked Linux/V8 host with the prepared quiche IP-SAN patch pa
 verified numeric IPv4 and IPv6 64 KiB byte/FIN echoes. The installed library is unchanged;
 this is not shipped dependency qualification. See
 [local host evidence](../../../docs/verification/prd-359-ip-san-host-2026-09-06.md).
+
+## PRD-359 Windows header boundary — 2026-09-06
+
+Windows CI exposed Winsock min/max macros through quiche.h before NOMINMAX was defined.
+The WebTransport translation unit now establishes that guard first. The MSVC failure
+is retained in [the repair evidence](../../../docs/verification/prd-359-task1b-win32-2026-09-06.md).
+Linux V8 and QuickJS wire/surface tests pass 2/2 each; required live V8 tests pass 33/33.
+A clang-cl preprocessor control fails before the guard and passes with it. No local
+Windows SDK was available, so corrected Windows compilation remains a CI requirement.
