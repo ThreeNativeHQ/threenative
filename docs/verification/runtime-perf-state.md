@@ -3273,8 +3273,24 @@ startupMs 3528; sampleCount 275; codes []
 ```
 
 This proves the callback lifetime fix on the local Dawn host and retains startup, steady-frame,
-and screenshot evidence. It does not certify Windows; the hosted Windows rerun must pass the
-production collector and screenshot before this repair becomes cross-platform CI evidence.
+and screenshot evidence. Hosted run
+[`34064759191`](https://github.com/ThreeNativeHQ/threenative/actions/runs/34064759191) then
+passed the Windows and macOS desktop jobs, the iOS simulator/no-Xcode consumer job, the
+scaffolded Linux starter job, and the final native collector-evidence coverage job. The retained
+`native-desktop-Windows` artifact records:
+
+```text
+collector-status: PASS; collectorExitCode: 0; provenance: hosted-software
+production markers: run-start, first-workload-frame, clean-end
+native report: pass true; rendered frames 300; screenshot 1280x720
+production evidence: status PASS; exitCode 0; startupMs 289; sampleCount 270
+```
+
+The hosted production evidence carries the expected advisory
+`TN_PROD_PERFORMANCE_BUDGET` code because hosted software rendering is not a physical
+performance baseline; lifecycle, screenshot, and artifact-retention checks passed. This closes
+the cross-platform CI evidence gap for the callback-lifetime repair without claiming physical
+Windows performance.
 
 ## 7. Harness status
 
