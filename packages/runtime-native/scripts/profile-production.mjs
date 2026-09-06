@@ -775,11 +775,14 @@ function spawnNative(artifactPath, project, options, mailboxRoot) {
 
 export async function installNativeProfileEntry(project, target, options) {
   const entryPath = join(project, 'src/profile-native-entry.ts');
+  const profileMarkerPath = join(project, 'src/profile-native-profile.ts');
   const mailboxRoot = '.runtime-mailbox';
+  const profileMarker = `Object.assign(globalThis, { __THREENATIVE_PROFILE__: Object.freeze({ hostedSoftware: ${options.hostedSoftware === true} }) });\n`;
   const mailbox = target === 'desktop'
     ? `globalThis.TN_PLAYTEST_MAILBOX = ${JSON.stringify({ request: join(mailboxRoot, 'tn-playtest-request.json'), response: join(mailboxRoot, 'tn-playtest-response.json') })};\n`
     : '';
-  const source = `import game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options))}\n${mailbox}export default game;\n`;
+  const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options))}\n${mailbox}export default game;\n`;
+  await writeFile(profileMarkerPath, profileMarker);
   await writeFile(entryPath, source);
   await setNativeProfileEntry(project, 'src/profile-native-entry.ts', target);
 }

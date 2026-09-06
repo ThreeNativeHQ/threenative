@@ -3187,6 +3187,51 @@ runWindows [{"durationSeconds":9.858501953125,"sampleCount":275}]
 This proves the hosted smoke contract and complete artifact retention. It does not promote a
 baseline or certify physical desktop, Android or iOS performance.
 
+### PRD-358 hosted software render-tier repair — 2026-09-06
+
+The hosted Windows collector reached the game, but Microsoft Basic software D3D12 could not
+compile the platformer's high-quality SSGI/SSR chain. FXC returned `E_FAIL`, the native host
+reported invalid command buffers, and the collector retained neither a screenshot nor the
+startup/steady markers. The profile now writes an executable `__THREENATIVE_PROFILE__` marker
+before importing the game. The platformer generated source uses the existing `low` quality preset
+only when that marker says `hostedSoftware: true` and no explicit tier override is present;
+ordinary desktop runs remain `high`, and `TN_QUALITY_TIER` reports the source.
+
+The regression test was red before the marker existed:
+
+```text
+packages/runtime-native/tests/production-profile.test.mjs
+  generated native profile exposes hosted software only to the profile entry
+  ENOENT: src/profile-native-profile.ts
+```
+
+It passed after the repair. The focused production-profile suite passed 42/42, the platformer
+template and quality checks passed 26/26, and the scaffold hash check passed 1/1 after updating
+the expected platformer tree hash.
+
+The local production collector then completed the hosted profile with a built native host:
+
+```text
+timeout 150s node packages/runtime-native/scripts/profile-production.mjs --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 --hosted-software --prebuilt-artifact packages/runtime-native/build/tn-linux/mystral --out artifacts/prd358-hosted-software-profile-marker
+status PASS
+exitCode 0
+codes []
+advisoryCodes ["TN_PROD_PERFORMANCE_BUDGET"]
+markers run-start, first-workload-frame, clean-end
+startupMs 3487
+p95FrameMs 66.39
+p99FrameMs 94.29
+meanFps 50.14
+sampleCount 250
+TN_QUALITY_TIER low mobile=false source=hosted-software
+```
+
+The run retained one screenshot and complete startup/steady evidence with the local NVIDIA RTX
+2080 adapter. This proves profile propagation, the low smoke path, screenshot/mailbox transport,
+and fail-closed evidence collection; the advisory timing budget is not a physical performance
+baseline. The hosted Windows rerun is required before this repair can be called cross-platform
+CI evidence.
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,

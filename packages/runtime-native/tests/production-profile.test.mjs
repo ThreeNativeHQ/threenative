@@ -455,6 +455,31 @@ test('generated native mailbox declaration is executable and independent of scaf
   assert.doesNotMatch(source, /tn-production-screenshot-request\.json|tnProductionScreenshotRequestPath|captureScreenshot|playtest\?\.receive/u);
 });
 
+test('generated native profile exposes hosted software only to the profile entry', async () => {
+  const hostedProject = makeTempDirSync('tn-profile-hosted-software-');
+  const normalProject = makeTempDirSync('tn-profile-normal-software-');
+  temporary.push(hostedProject, normalProject);
+  for (const project of [hostedProject, normalProject]) {
+    mkdirSync(join(project, 'src'));
+    writeFileSync(join(project, 'package.json'), '{}');
+    writeFileSync(join(project, 'threenative.config.ts'), 'export default { nativeEntry: "src/game.ts" };');
+  }
+
+  await installNativeProfileEntry(hostedProject, 'desktop', { hostedSoftware: true, warmup: 1 });
+  await installNativeProfileEntry(normalProject, 'desktop', { hostedSoftware: false, warmup: 1 });
+
+  const hostedEntry = readFileSync(join(hostedProject, 'src/profile-native-entry.ts'), 'utf8');
+  const hostedMarker = readFileSync(join(hostedProject, 'src/profile-native-profile.ts'), 'utf8');
+  const normalMarker = readFileSync(join(normalProject, 'src/profile-native-profile.ts'), 'utf8');
+  assert.match(hostedEntry, /import "\.\/profile-native-profile\.js";/u);
+  const hostedContext = {};
+  const normalContext = {};
+  runInNewContext(hostedMarker, hostedContext);
+  runInNewContext(normalMarker, normalContext);
+  assert.equal(hostedContext.__THREENATIVE_PROFILE__.hostedSoftware, true);
+  assert.equal(normalContext.__THREENATIVE_PROFILE__.hostedSoftware, false);
+});
+
 test('desktop profiling switches web UI to native while mobile profiling preserves web UI', async () => {
   const desktopProject = makeTempDirSync('tn-profile-desktop-ui-');
   const mobileProject = makeTempDirSync('tn-profile-mobile-ui-');

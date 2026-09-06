@@ -262,12 +262,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
+  // Recomputed 2026-09-06 for PRD-358: platformer production profiles expose an explicit hosted
+  // software smoke tier while ordinary desktop runs retain the high look.
   "action-rpg": "01dc987fd2625ef537ffe1effc65eb71947804a851f072565f6dbf5afd8e85c7",
   defense: "9169a9e82d308a694ef63d7551683723d90ca7f52481116db0e23d0822bf8850",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
   minimal: "a88129930facd05353536293e09f0d3bfa7b29fc6d6cfa3226fb982efc38788c",
-  platformer: "caf43405e912b480cc67915c88102985380a1ea673437c2037d5ae7ada441764",
+  platformer: "5cace4e500298ab91ac61e692e440685de74b2c15b3c5629289c998b5f10d278",
   runner: "f00775702fe9194ddb2da0513aebef439906d09ed54b4045c5b37642dcc58a8b",
   puzzle: "84a286786a6f99747c509f7b92cfeda28593172b5c85ca2d32d405ddf5ee078e",
   racing: "341bc8294c4e15841bfaf02d9db6e2f84b380feb09437f21e5e3ad273540d8c9",
