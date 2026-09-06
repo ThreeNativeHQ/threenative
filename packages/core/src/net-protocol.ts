@@ -279,8 +279,7 @@ export function asBytes(chunk: unknown): Uint8Array<ArrayBuffer> {
 
 /** Incremental stream-frame reader used for handshake and reliable channels. */
 export class FrameReader {
-  // biome-ignore lint/suspicious/noExplicitAny: stream chunk generics vary by lib.
-  #reader: any;
+  #reader: ReadableStreamDefaultReader<Uint8Array>;
   #buffer: Uint8Array = new Uint8Array(0);
   #limit: number;
   #released = false;

@@ -26,6 +26,7 @@ import {
   type IPlaytestBridgeClient,
 } from "./bridgeClient.js";
 import { waitForStartupReady } from "./startupReady.js";
+import { waitForResource } from "./wait-for-resource.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import { DeviceMetricsRecorder } from "./deviceMetrics.js";
 import {
@@ -277,69 +278,95 @@ async function runDevicePlaytestInternal(
           framebufferCoverage = unreadableCoverageObservation(error);
         }
       }
-      if (step.kind === "click") {
-        await executeDeviceClickStep(target, bridge, step, scenario.viewport);
-      }
-      if (step.pointerPosition !== undefined) {
-        const previousPointerButtons = pointerButtons;
-        pointerButtons = step.pointerPosition.buttons ?? pointerButtons;
-        await transport.call("input.pointer", {
-          buttons: pointerButtons,
-          type: pointerButtons === 0 ? "move" : previousPointerButtons === 0 ? "down" : "move",
-          x: step.pointerPosition.x * scenario.viewport.width,
-          y: step.pointerPosition.y * scenario.viewport.height,
-        });
-      }
-      if (step.pointers !== undefined) {
-        await setDevicePointers(target, transport, step.pointers, scenario.viewport);
-        pointerCount = step.pointers.length;
-      }
       const pressed = step.press;
-      if (typeof pressed === "string") {
-        if (!heldKeys.has(pressed)) {
-          await transport.call("input.keyDown", { key: pressed });
-          await sendAndroidTextInput(target, pressed);
-          heldKeys.add(pressed);
-        }
-      } else if (pressed !== undefined) {
-        for (const key of [...heldKeys]) {
-          if (!pressed.includes(key)) {
-            await transport.call("input.keyUp", { key });
-            heldKeys.delete(key);
-          }
-        }
-        for (const key of pressed) {
-          if (!heldKeys.has(key)) {
-            await transport.call("input.keyDown", { key });
-            await sendAndroidTextInput(target, key);
-            heldKeys.add(key);
-          }
-        }
-      }
-      const inputDriven = playtestStepDrivesMovement(
-        step,
-        heldKeys.size > 0 || pointerButtons !== 0 || pointerCount > 0,
-      );
       const movementBefore = capturesAnonymousMovement ? movementCursor : undefined;
-      const frames = Math.max(
-        1,
-        playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step),
-        (step.holdFrames ?? 0) + (step.waitFrames ?? 0),
-      );
-      if (coverageRecordingStarted) {
-        for (let frame = 0; frame < frames; frame += 1) {
-          await bridge.advance(1);
-          await delay(100);
+      let afterInput: IPlaytestObservationSnapshot;
+      let afterStep: IPlaytestObservationSnapshot;
+      let inputDriven = false;
+      if (step.waitForResource !== undefined) {
+        const wait = step.waitForResource;
+        const timeoutMs = step.timeoutMs;
+        if (timeoutMs === undefined) {
+          throw new PlaytestBridgeError(playtestDiagnostic(
+            "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+            `Resource wait for '${wait.id}.${wait.path}' has no timeout.`,
+            "Validate the scenario with timeoutMs as a positive integer no greater than 120000.",
+          ));
         }
+        const attachedBridge = bridge;
+        afterInput = await waitForResource({
+          advance: () => attachedBridge.advance(1),
+          id: wait.id,
+          path: wait.path,
+          predicate: wait,
+          sample: () => attachedBridge.sample(sampleRequest),
+          signal: target.abortSignal,
+          timeoutMs,
+        });
+        afterStep = afterInput;
       } else {
-        await bridge.advance(frames);
+        if (step.kind === "click") {
+          await executeDeviceClickStep(target, bridge, step, scenario.viewport);
+        }
+        if (step.pointerPosition !== undefined) {
+          const previousPointerButtons = pointerButtons;
+          pointerButtons = step.pointerPosition.buttons ?? pointerButtons;
+          await transport.call("input.pointer", {
+            buttons: pointerButtons,
+            type: pointerButtons === 0 ? "move" : previousPointerButtons === 0 ? "down" : "move",
+            x: step.pointerPosition.x * scenario.viewport.width,
+            y: step.pointerPosition.y * scenario.viewport.height,
+          });
+        }
+        if (step.pointers !== undefined) {
+          await setDevicePointers(target, transport, step.pointers, scenario.viewport);
+          pointerCount = step.pointers.length;
+        }
+        if (typeof pressed === "string") {
+          if (!heldKeys.has(pressed)) {
+            await transport.call("input.keyDown", { key: pressed });
+            await sendAndroidTextInput(target, pressed);
+            heldKeys.add(pressed);
+          }
+        } else if (pressed !== undefined) {
+          for (const key of [...heldKeys]) {
+            if (!pressed.includes(key)) {
+              await transport.call("input.keyUp", { key });
+              heldKeys.delete(key);
+            }
+          }
+          for (const key of pressed) {
+            if (!heldKeys.has(key)) {
+              await transport.call("input.keyDown", { key });
+              await sendAndroidTextInput(target, key);
+              heldKeys.add(key);
+            }
+          }
+        }
+        inputDriven = playtestStepDrivesMovement(
+          step,
+          heldKeys.size > 0 || pointerButtons !== 0 || pointerCount > 0,
+        );
+        const frames = Math.max(
+          1,
+          playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step),
+          (step.holdFrames ?? 0) + (step.waitFrames ?? 0),
+        );
+        if (coverageRecordingStarted) {
+          for (let frame = 0; frame < frames; frame += 1) {
+            await bridge.advance(1);
+            await delay(100);
+          }
+        } else {
+          await bridge.advance(frames);
+        }
+        afterInput = await bridge.sample(sampleRequest);
+        afterStep = afterInput;
       }
-      const afterInput = await bridge.sample(sampleRequest);
       appendPosition(pathPositions, afterInput, pathEntity);
       if (movementBefore !== undefined) {
         movementSamples.push({ after: afterInput, before: movementBefore, inputDriven });
       }
-      let afterStep = afterInput;
       if (step.label !== undefined) {
         const snapshot = await bridge.sample({ ...sampleRequest, label: step.label });
         const signals = bridge.description.capabilities.includes("runtime.events")

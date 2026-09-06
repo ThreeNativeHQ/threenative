@@ -325,36 +325,45 @@ function createConnection(established: IEstablished): INetworkConnection {
     if (flushScheduled) return;
     flushScheduled = true;
     void Promise.resolve().then(async () => {
-      flushScheduled = false;
-      if (state !== "connected") return;
-      while (pendingDatagrams.length > 0) {
+      try {
         if (state !== "connected") return;
-        const next = pendingDatagrams.shift();
-        if (next === undefined) return;
-        try {
-          await writeAll(
-            established.transport.datagrams.writable,
-            encodeFrame(KIND_DATA, next.channel, next.bytes),
-          );
-        } catch {
-          markDisconnected("transport error");
-          return;
-        }
-      }
-      for (const [channelId, queue] of pendingReliable) {
-        while (queue.length > 0) {
+        while (pendingDatagrams.length > 0) {
           if (state !== "connected") return;
-          const writer = established.reliableWriters.get(channelId);
-          const next = queue.shift();
-          if (writer === undefined || next === undefined) break;
+          const next = pendingDatagrams.shift();
+          if (next === undefined) return;
           try {
-            await writeAll(writer, encodeFrame(KIND_DATA, channelId, next));
-            queuedReliableBytes -= next.length;
+            await writeAll(
+              established.transport.datagrams.writable,
+              encodeFrame(KIND_DATA, next.channel, next.bytes),
+            );
           } catch {
             markDisconnected("transport error");
             return;
           }
         }
+        for (const [channelId, queue] of pendingReliable) {
+          while (queue.length > 0) {
+            if (state !== "connected") return;
+            const writer = established.reliableWriters.get(channelId);
+            const next = queue.shift();
+            if (writer === undefined || next === undefined) break;
+            try {
+              await writeAll(writer, encodeFrame(KIND_DATA, channelId, next));
+              queuedReliableBytes -= next.length;
+            } catch {
+              markDisconnected("transport error");
+              return;
+            }
+          }
+        }
+      } finally {
+        flushScheduled = false;
+        if (
+          state === "connected" &&
+          (pendingDatagrams.length > 0 ||
+            [...pendingReliable.values()].some((queue) => queue.length > 0))
+        )
+          flushQueues();
       }
     });
   };

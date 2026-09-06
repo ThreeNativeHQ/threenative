@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 import {
   discoverNativeTestTargets,
@@ -172,7 +172,7 @@ function writeWebtransportFixture(directory, { selection = cmake, withQuicheArti
 function configureWebtransportFixture({ defines, withQuicheArtifacts }) {
   const probe = spawnSync("cmake", ["--version"], { encoding: "utf8", timeout: 30_000 });
   assert.equal(probe.status, 0, "cmake must be available for the configure regression");
-  const scope = mkdtempSync(join(tmpdir(), "tn-webtransport-required-"));
+  const scope = makeTempDirSync("tn-webtransport-required-");
   try {
     writeWebtransportFixture(scope, { withQuicheArtifacts });
     const result = spawnSync("cmake", ["-S", scope, "-B", join(scope, "build"), ...defines], {
@@ -242,7 +242,7 @@ test("required WebTransport configure fails closed when quiche is absent", () =>
     webtransportFixtureSource(neutered).includes("TN_REQUIRE_WEBTRANSPORT"),
     "the mutation control must keep the sliced decision text",
   );
-  const neuteredScope = mkdtempSync(join(tmpdir(), "tn-webtransport-neutered-"));
+  const neuteredScope = makeTempDirSync("tn-webtransport-neutered-");
   try {
     writeWebtransportFixture(neuteredScope, { selection: neutered, withQuicheArtifacts: false });
     const neuteredMissing = spawnSync(

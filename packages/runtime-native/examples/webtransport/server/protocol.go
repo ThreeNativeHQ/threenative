@@ -158,9 +158,10 @@ type Ready struct {
 }
 
 const (
-	simulationStep      = time.Second / 60
-	snapshotEveryTicks  = 3
-	playerSpeedUnitsSec = 3.0
+	simulationStep          = time.Second / 60
+	snapshotEveryTicks      = 3
+	playerSpeedUnitsSec     = 3.0
+	gameplayActivityTimeout = 2 * time.Second
 )
 
 type gameplayInput struct {
@@ -1288,16 +1289,24 @@ func ServeReferenceGame(ctx context.Context, ready *Ready, simulation *GameSimul
 		go receiveGameplayStream(gameCtx, stream, channel, events, errs)
 	}
 	go receiveGameplayDatagrams(gameCtx, ready.Session, events, errs)
+	activityTicker := time.NewTicker(100 * time.Millisecond)
+	defer activityTicker.Stop()
+	lastActivity := time.Now()
 	for {
 		select {
 		case <-gameCtx.Done():
 			return gameCtx.Err()
+		case <-activityTicker.C:
+			if time.Since(lastActivity) >= gameplayActivityTimeout {
+				return fmt.Errorf("gameplay session inactive for %s", gameplayActivityTimeout)
+			}
 		case err := <-errs:
 			if err == nil {
 				return nil
 			}
 			return err
 		case event := <-events:
+			lastActivity = time.Now()
 			switch event.channel {
 			case channelInput:
 				input, err := parseGameplayInput(event.payload)

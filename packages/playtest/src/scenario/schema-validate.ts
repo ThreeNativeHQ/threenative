@@ -2,7 +2,7 @@ import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
 import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
-import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion } from "./schema-base.js";
+import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
 export const PLAYTEST_ROOT_KEYS = [
   "acceptanceId",
   "artifacts",
@@ -345,7 +345,6 @@ export function validateSetupEntity(value: unknown, scenarioPath: string, index:
 
 /** Keys one step accepts; exported for the documentation-drift gate alongside {@link PLAYTEST_ROOT_KEYS}. */
 export const PLAYTEST_STEP_KEYS = [
-
   "at",
   "holdFrames",
   "holdTicks",
@@ -359,17 +358,54 @@ export const PLAYTEST_STEP_KEYS = [
   "release",
   "screenshot",
   "target",
+  "timeoutMs",
   "waitFrames",
+  "waitForResource",
   "waitTicks",
   "wheel",
   "window",
 ] as const;
+
+const MAX_RESOURCE_WAIT_TIMEOUT_MS = 120_000;
 
 export function validateStep(value: unknown, scenarioPath: string, index: number): IPlaytestStep {
   if (!isRecord(value)) {
     throw invalidStep(scenarioPath, `Scenario step ${index} must be a JSON object.`);
   }
   rejectUnknownKeys(value, PLAYTEST_STEP_KEYS, scenarioPath, `steps[${index}]`);
+  const waitForResource = value.waitForResource === undefined
+    ? undefined
+    : validateResourceWait(value.waitForResource, scenarioPath, index);
+  const timeoutMs = positiveInteger(value.timeoutMs);
+  if (waitForResource === undefined) {
+    if (value.timeoutMs !== undefined) {
+      throw invalidStep(scenarioPath, `Scenario step ${index} timeoutMs belongs to waitForResource.`);
+    }
+  } else {
+    if (timeoutMs === undefined || timeoutMs > MAX_RESOURCE_WAIT_TIMEOUT_MS) {
+      throw invalidStep(scenarioPath, `Scenario step ${index} timeoutMs must be a positive integer no greater than ${MAX_RESOURCE_WAIT_TIMEOUT_MS}.`);
+    }
+    for (const forbidden of [
+      "at",
+      "holdFrames",
+      "holdTicks",
+      "kind",
+      "overlayMessage",
+      "pitch",
+      "pointerPosition",
+      "pointers",
+      "press",
+      "target",
+      "waitFrames",
+      "waitTicks",
+      "wheel",
+      "window",
+    ] as const) {
+      if (value[forbidden] !== undefined) {
+        throw invalidStep(scenarioPath, `Scenario step ${index} waitForResource cannot mix with ${forbidden}.`);
+      }
+    }
+  }
   const press = typeof value.press === "string" && value.press.length > 0
     ? value.press
     : Array.isArray(value.press)
@@ -543,7 +579,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   if (value.window !== undefined && window === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} window must define minimize, restore, or resize with positive width and height.`);
   }
-  if (at === undefined && press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && wheel === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined) {
+  if (at === undefined && press === undefined && overlayMessage === undefined && pointerPosition === undefined && pointers === undefined && wheel === undefined && window === undefined && waitFrames === undefined && waitTicks === undefined && target === undefined && waitForResource === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} must define click at, press, overlayMessage, pointerPosition, pointers, wheel, window, aimAt target, or waitFrames/waitTicks.`);
   }
   if (value.holdFrames !== undefined && holdFrames === undefined) {
@@ -584,11 +620,47 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
     release: typeof value.release === "boolean" ? value.release : true,
     ...(target === undefined ? {} : { target }),
     ...(screenshot === undefined ? {} : { screenshot }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
     ...(waitFrames === undefined ? {} : { waitFrames }),
+    ...(waitForResource === undefined ? {} : { waitForResource }),
     ...(waitTicks === undefined ? {} : { waitTicks }),
     ...(wheel === undefined ? {} : { wheel }),
     ...(window === undefined ? {} : { window }),
   };
+}
+
+function validateResourceWait(value: unknown, scenarioPath: string, index: number): IPlaytestResourceWait {
+  const objectPath = `steps[${index}].waitForResource`;
+  if (!isRecord(value)) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} waitForResource must be an object.`);
+  }
+  rejectUnknownKeys(value, ["equals", "gte", "id", "lte", "path"], scenarioPath, objectPath);
+  const hasEquals = hasKey(value, "equals");
+  const hasGte = hasKey(value, "gte");
+  const hasLte = hasKey(value, "lte");
+  if (Number(hasEquals) + Number(hasGte) + Number(hasLte) !== 1) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} waitForResource must define exactly one of equals, gte, or lte.`);
+  }
+  const gte = hasGte ? optionalNumber(value, "gte", scenarioPath, objectPath) : undefined;
+  const lte = hasLte ? optionalNumber(value, "lte", scenarioPath, objectPath) : undefined;
+  if (hasGte && gte === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} waitForResource.gte must be a finite number.`);
+  }
+  if (hasLte && lte === undefined) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} waitForResource.lte must be a finite number.`);
+  }
+  const id = requireString(value, "id", scenarioPath, objectPath);
+  const path = requireString(value, "path", scenarioPath, objectPath);
+  if (path.split(".").some((part) => part.length === 0)) {
+    throw invalidStep(scenarioPath, `Scenario step ${index} waitForResource.path must be a non-empty dot path.`);
+  }
+  return {
+    ...(hasEquals ? { equals: value.equals } : {}),
+    ...(gte === undefined ? {} : { gte }),
+    id,
+    ...(lte === undefined ? {} : { lte }),
+    path,
+  } as IPlaytestResourceWait;
 }
 
 function validateClickTarget(value: unknown, scenarioPath: string, index: number): IPlaytestStep["at"] | undefined {

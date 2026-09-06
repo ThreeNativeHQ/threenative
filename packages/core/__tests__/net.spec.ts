@@ -34,7 +34,7 @@ interface IFakePipe {
   enqueue: (chunk: Uint8Array) => void;
 }
 
-function makePipe(onWrite?: (chunk: Uint8Array) => void): IFakePipe {
+function makePipe(onWrite?: (chunk: Uint8Array) => void | Promise<void>): IFakePipe {
   let controller!: ReadableStreamDefaultController<Uint8Array>;
   const readable = new ReadableStream<Uint8Array>({
     start(startController) {
@@ -86,6 +86,7 @@ const SESSION_ID = "0123456789abcdef0123456789abcdef";
 class FakeWebTransport {
   static instances: FakeWebTransport[] = [];
   static holdReady = false;
+  static reliableWriteBarrier: { promise: Promise<void>; started: () => void } | undefined;
 
   readonly url: string;
   readonly ready: Promise<void>;
@@ -109,7 +110,18 @@ class FakeWebTransport {
     readable: ReadableStream<Uint8Array>;
     writable: WritableStream<Uint8Array>;
   } {
-    const pipe = makePipe((chunk) => this.#onClientBytes(pipe, chunk));
+    const streamIndex = this.streams.length;
+    const pipe = makePipe(async (chunk) => {
+      if (streamIndex === 1 && pipe.written.length === 2) {
+        const barrier = FakeWebTransport.reliableWriteBarrier;
+        FakeWebTransport.reliableWriteBarrier = undefined;
+        if (barrier !== undefined) {
+          barrier.started();
+          await barrier.promise;
+        }
+      }
+      this.#onClientBytes(pipe, chunk);
+    });
     this.streams.push(pipe);
     return { readable: pipe.readable, writable: pipe.writable };
   }
@@ -181,6 +193,7 @@ const tick = (ms = 20): Promise<void> => new Promise((resolve) => setTimeout(res
 beforeEach(() => {
   FakeWebTransport.instances = [];
   FakeWebTransport.holdReady = false;
+  FakeWebTransport.reliableWriteBarrier = undefined;
   (globalThis as Record<string, unknown>).WebTransport = FakeWebTransport;
 });
 
@@ -366,6 +379,32 @@ describe("net", () => {
       expect(payloads).toContainEqual([2]);
       expect(payloads).toContainEqual([3]);
       expect(payloads).not.toContainEqual([1]);
+    } finally {
+      await connection.close();
+    }
+  });
+
+  it("serializes concurrent reliable writes", async () => {
+    let releaseFirstWrite!: () => void;
+    let firstWriteStarted!: () => void;
+    const firstWrite = new Promise<void>((resolve) => {
+      releaseFirstWrite = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      firstWriteStarted = resolve;
+    });
+    FakeWebTransport.reliableWriteBarrier = { promise: firstWrite, started: firstWriteStarted };
+    const connection = await connect("https://example.test/game", validOptions());
+    try {
+      const transport = FakeWebTransport.instances[0];
+      expect(connection.send(2, new Uint8Array([1]))).toBe(true);
+      await started;
+      expect(connection.send(2, new Uint8Array([2]))).toBe(true);
+      releaseFirstWrite();
+      await tick();
+      expect(connection.poll()).toMatchObject({ disconnected: false, reason: null });
+      const frames = decodeFrames(concat(transport?.streams[1]?.written ?? []));
+      expect(frames.slice(1).map((frame) => Array.from(frame.payload))).toEqual([[1], [2]]);
     } finally {
       await connection.close();
     }

@@ -1,17 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 const { createNetworkingIssuer, networkingSessionFile, validateIssuerConfig } = await import(
   // @ts-expect-error The executable JavaScript module is the row's runtime boundary; its behavior is tested here.
   "../networking-issuer.mjs"
 );
-
-const cleanup = [] as Array<() => Promise<void> | void>;
-
-afterEach(async () => {
-  while (cleanup.length > 0) await cleanup.pop()?.();
-});
 
 function config(assetDir: string) {
   return {
@@ -27,7 +21,7 @@ function config(assetDir: string) {
 
 describe("networking issuer", () => {
   it("rejects missing grant", async () => {
-    const issuer = createNetworkingIssuer(config(mkdtempSync(join(tmpdir(), "tn-issuer-"))), {
+    const issuer = createNetworkingIssuer(config(makeTempDirSync("tn-issuer-")), {
       fetchImpl: async () => new Response("unexpected", { status: 500 }),
     });
     const response = await issuer.requestToken({
@@ -39,7 +33,7 @@ describe("networking issuer", () => {
   });
 
   it("rejects expired grant", async () => {
-    const assetDir = mkdtempSync(join(tmpdir(), "tn-issuer-"));
+    const assetDir = makeTempDirSync("tn-issuer-");
     let now = Date.now();
     const issuer = createNetworkingIssuer(config(assetDir), {
       now: () => now,
@@ -57,7 +51,7 @@ describe("networking issuer", () => {
   });
 
   it("rejects wrong player", async () => {
-    const assetDir = mkdtempSync(join(tmpdir(), "tn-issuer-"));
+    const assetDir = makeTempDirSync("tn-issuer-");
     const issuer = createNetworkingIssuer(config(assetDir), {
       fetchImpl: async () => new Response("unexpected", { status: 500 }),
     });
@@ -73,7 +67,7 @@ describe("networking issuer", () => {
   });
 
   it("redacts credentials", async () => {
-    const assetDir = mkdtempSync(join(tmpdir(), "tn-issuer-"));
+    const assetDir = makeTempDirSync("tn-issuer-");
     const grantCredential = "grant-secret-that-must-not-be-logged";
     const joinCredential = "join-secret-from-admin";
     const issuer = createNetworkingIssuer(config(assetDir), {
@@ -110,7 +104,7 @@ describe("networking issuer", () => {
   });
 
   it("cleans staged grants", async () => {
-    const assetDir = mkdtempSync(join(tmpdir(), "tn-issuer-"));
+    const assetDir = makeTempDirSync("tn-issuer-");
     const issuer = createNetworkingIssuer(config(assetDir));
     issuer.stageGrant("alpha");
     expect(existsSync(join(assetDir, networkingSessionFile))).toBe(true);

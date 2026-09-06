@@ -244,6 +244,12 @@ func run(opts *options) error {
 		QUICConfig: &quic.Config{
 			EnableDatagrams:                  true,
 			EnableStreamResetPartialDelivery: true,
+			// The reference game must remove an abruptly dead player promptly enough for
+			// the live peer-loss proof to observe the simulation membership change.
+			MaxIdleTimeout: 5 * time.Second,
+			// Keep an otherwise idle surviving subject transport alive during that proof;
+			// a killed peer stops acknowledging these packets and still reaches the idle timeout.
+			KeepAlivePeriod: 2 * time.Second,
 		},
 	}
 	webtransport.ConfigureHTTP3Server(h3)
@@ -319,9 +325,10 @@ func run(opts *options) error {
 				log.Printf("game: handshake rejected: %v", err)
 				return
 			}
+			log.Printf("game: player connected player=%s session=%s", ready.PlayerID, ready.SessionID)
 			if err := ServeReferenceGame(session.Context(), ready, simulation); err != nil &&
 				session.Context().Err() == nil && !errors.Is(err, context.Canceled) {
-				log.Printf("game: player session ended: %v", err)
+				log.Printf("game: player session ended player=%s session=%s: %v", ready.PlayerID, ready.SessionID, err)
 			}
 		}()
 	})

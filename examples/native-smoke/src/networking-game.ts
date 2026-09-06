@@ -71,6 +71,10 @@ interface IActionReply {
 
 const NETWORK_SESSION_ASSET = "networking-session.json";
 const APPLICATION_PROTOCOL = "threenative-smoke/1";
+const INPUT_TICKS_PER_SECOND = 60;
+const INPUT_DURATION_TICKS = INPUT_TICKS_PER_SECOND * 2;
+const HEARTBEAT_INTERVAL_TICKS = INPUT_TICKS_PER_SECOND;
+const PEER_SILENCE_TIMEOUT_MS = 500;
 const CHANNELS = [
   { id: 1, delivery: "unreliable" },
   { id: 2, delivery: "unreliable" },
@@ -252,6 +256,8 @@ function patch<TState extends INetworkingState>(
 interface IObservedPositions {
   local: { x: number; z: number } | undefined;
   remote: { id: string; x: number; z: number } | undefined;
+  remoteDistance: number;
+  peerLastSeenAtMs: number | undefined;
 }
 
 function reportProtocolError<TState extends INetworkingState>(
@@ -273,12 +279,19 @@ function observeSnapshot<TState extends INetworkingState>(
   lastSnapshotTick.set(snapshot.player.id, snapshot.tick);
   if (snapshot.player.id === config.playerId) {
     positions.local = { x: snapshot.player.x, z: snapshot.player.z };
-  } else if (positions.remote === undefined || positions.remote.id === snapshot.player.id) {
+  } else {
+    if (positions.remote?.id === snapshot.player.id) {
+      positions.remoteDistance += Math.hypot(
+        snapshot.player.x - positions.remote.x,
+        snapshot.player.z - positions.remote.z,
+      );
+    }
     positions.remote = {
       id: snapshot.player.id,
       x: snapshot.player.x,
       z: snapshot.player.z,
     };
+    positions.peerLastSeenAtMs = performance.now();
   }
   const local = positions.local;
   const remote = positions.remote;
@@ -288,10 +301,7 @@ function observeSnapshot<TState extends INetworkingState>(
     networkLocalZ: local?.z ?? 0,
     networkPeerId: remote?.id ?? "",
     networkPeerObserved: remote !== undefined,
-    networkRemoteDistance:
-      local === undefined || remote === undefined
-        ? 0
-        : Math.hypot(remote.x - local.x, remote.z - local.z),
+    networkRemoteDistance: positions.remoteDistance,
     networkRemoteX: remote?.x ?? 0,
     networkRemoteZ: remote?.z ?? 0,
     networkServerTick: snapshot.tick,
@@ -336,12 +346,53 @@ function sendGameplay(
   playerId: string,
   inputTick: number,
   nextActionId: number,
+  sendAction: boolean,
 ): number {
   const axes = playerAxes(playerId);
   connection.send(1, encodeGameplay({ tick: inputTick, x: axes.x, z: axes.z }));
-  if (inputTick !== 1 && inputTick % 30 !== 0) return nextActionId;
+  if (!sendAction) return nextActionId;
   connection.send(3, encodeGameplay({ id: nextActionId }));
   return nextActionId + 1;
+}
+
+function sendHeartbeat(connection: INetworkConnection, inputTick: number): void {
+  connection.send(1, encodeGameplay({ tick: inputTick, x: 0, z: 0 }));
+}
+
+function sendScheduledGameplay<TState extends INetworkingState>(
+  store: INetworkingStore<TState>,
+  connection: INetworkConnection,
+  config: INetworkingConfig,
+  inputTick: number,
+  nextActionId: number,
+): { inputTick: number; nextActionId: number } {
+  const nextInputTick = inputTick + 1;
+  if (inputTick >= INPUT_DURATION_TICKS) {
+    if (nextInputTick % HEARTBEAT_INTERVAL_TICKS !== 0)
+      return { inputTick: nextInputTick, nextActionId };
+    try {
+      sendHeartbeat(connection, nextInputTick);
+    } catch {
+      reportProtocolError(store);
+    }
+    return { inputTick: nextInputTick, nextActionId };
+  }
+  if (store.getState().networkPeerObserved !== true) return { inputTick, nextActionId };
+  try {
+    return {
+      inputTick: nextInputTick,
+      nextActionId: sendGameplay(
+        connection,
+        config.playerId ?? "player",
+        nextInputTick,
+        nextActionId,
+        nextInputTick === 1,
+      ),
+    };
+  } catch {
+    reportProtocolError(store);
+    return { inputTick: nextInputTick, nextActionId };
+  }
 }
 
 export function createNetworkingGame<TState extends INetworkingState>(
@@ -355,7 +406,12 @@ export function createNetworkingGame<TState extends INetworkingState>(
   let inputTick = 0;
   let nextActionId = 1;
   const lastActionId = { value: 0 };
-  const positions: IObservedPositions = { local: undefined, remote: undefined };
+  const positions: IObservedPositions = {
+    local: undefined,
+    remote: undefined,
+    remoteDistance: 0,
+    peerLastSeenAtMs: undefined,
+  };
   let lastSnapshotTick = new Map<string, number>();
 
   const start = (store: INetworkingStore<TState>, retry: boolean): void => {
@@ -380,6 +436,8 @@ export function createNetworkingGame<TState extends INetworkingState>(
     lastSnapshotTick = new Map();
     positions.local = undefined;
     positions.remote = undefined;
+    positions.remoteDistance = 0;
+    positions.peerLastSeenAtMs = undefined;
     const work = issueCredential(config).then((credential) => {
       if (run !== generation || closed || config.endpoint === undefined)
         throw new Error("TN_NETWORK_AUTH: connection was canceled");
@@ -446,22 +504,35 @@ export function createNetworkingGame<TState extends INetworkingState>(
       if (active === undefined) return;
       const batch = active.poll();
       consumeMessages(store, batch.messages, config, lastSnapshotTick, positions, lastActionId);
-      inputTick += 1;
-      try {
-        nextActionId = sendGameplay(active, config.playerId ?? "player", inputTick, nextActionId);
-      } catch {
-        reportProtocolError(store);
+      if (
+        positions.remote !== undefined &&
+        positions.peerLastSeenAtMs !== undefined &&
+        performance.now() - positions.peerLastSeenAtMs >= PEER_SILENCE_TIMEOUT_MS
+      ) {
+        positions.remote = undefined;
+        positions.peerLastSeenAtMs = undefined;
+        patch(store, {
+          networkPeerId: "",
+          networkPeerObserved: false,
+          networkRemoteX: 0,
+          networkRemoteZ: 0,
+        });
       }
-      if (!batch.disconnected) return;
-      connection = undefined;
-      closed = true;
-      patch(store, {
-        networkConnected: false,
-        networkError: publicFailure(),
-        networkSessionId: "",
-        networkStatus: "disconnected",
-      });
-      void active.close();
+      if (batch.disconnected) {
+        connection = undefined;
+        closed = true;
+        patch(store, {
+          networkConnected: false,
+          networkError: batch.reason ?? publicFailure(),
+          networkSessionId: "",
+          networkStatus: "disconnected",
+        });
+        void active.close();
+        return;
+      }
+      const schedule = sendScheduledGameplay(store, active, config, inputTick, nextActionId);
+      inputTick = schedule.inputTick;
+      nextActionId = schedule.nextActionId;
     },
     retry() {
       retryRequested = true;

@@ -25,6 +25,16 @@ async function loadScenarioWithAssertions(assertions: unknown) {
   return loadPlaytestScenario(directory, "scenario.json");
 }
 
+async function loadScenarioWithSteps(steps: unknown[]) {
+  const directory = await makeTempDir("playtest-wait-resource-");
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    name: "wait-resource",
+    schemaVersion: 1,
+    steps,
+  }));
+  return loadPlaytestScenario(directory, "scenario.json");
+}
+
 test("schema version 1 parser preserves a valid semantic scenario", async () => {
   const directory = await makeTempDir("playtest-core-");
   const scenario = {
@@ -105,6 +115,55 @@ test("scenario parser accepts a browser wheel step", async () => {
   expect(parsed.steps).toEqual([
     { release: true, waitTicks: 4, wheel: { deltaY: -160 } },
   ]);
+});
+
+test("scenario parser accepts a bounded waitForResource step", async () => {
+  const step = {
+    timeoutMs: 10_000,
+    waitForResource: { equals: true, id: "state", path: "networkConnected" },
+  };
+
+  const parsed = await loadScenarioWithSteps([step]);
+
+  expect(parsed.steps).toEqual([{ ...step, release: true }]);
+});
+
+test.each([
+  ["missing timeout", { waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
+  ["zero timeout", { timeoutMs: 0, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
+  ["timeout above maximum", { timeoutMs: 120_001, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
+])("scenario parser rejects a waitForResource step with %s", async (_label, step) => {
+  await expect(loadScenarioWithSteps([step])).rejects.toMatchObject({
+    diagnostic: { message: expect.stringMatching(/timeoutMs.*positive integer.*120000|timeoutMs.*120000/u) },
+  });
+});
+
+test.each([
+  ["missing path", { equals: true, id: "state" }],
+  ["empty path", { equals: true, id: "state", path: "" }],
+  ["empty path segment", { equals: true, id: "state", path: "network..connected" }],
+  ["missing predicate", { id: "state", path: "networkConnected" }],
+  ["multiple predicates", { equals: true, gte: 1, id: "state", path: "networkConnected" }],
+  ["wrong numeric predicate type", { gte: "1", id: "state", path: "networkConnected" }],
+  ["unknown predicate key", { equals: true, id: "state", path: "networkConnected", textIncludes: "true" }],
+])("scenario parser rejects a malformed waitForResource %s", async (_label, waitForResource) => {
+  await expect(loadScenarioWithSteps([{ timeoutMs: 10_000, waitForResource }])).rejects.toMatchObject({
+    diagnostic: { code: expect.stringMatching(/^TN_PLAYTEST_SCENARIO_(?:INVALID|STEP_INVALID)$/u) },
+  });
+});
+
+test.each([
+  ["input", { kind: "input", press: "KeyW" }],
+  ["holdTicks", { holdTicks: 1 }],
+  ["waitTicks", { waitTicks: 1 }],
+])("scenario parser rejects waitForResource mixed with %s", async (_label, mixedStep) => {
+  await expect(loadScenarioWithSteps([{
+    ...mixedStep,
+    timeoutMs: 10_000,
+    waitForResource: { equals: true, id: "state", path: "networkConnected" },
+  }])).rejects.toMatchObject({
+    diagnostic: { code: expect.stringMatching(/^TN_PLAYTEST_SCENARIO_(?:INVALID|STEP_INVALID)$/u) },
+  });
 });
 
 test.each([
