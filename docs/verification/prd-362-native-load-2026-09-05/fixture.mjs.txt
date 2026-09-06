@@ -1,0 +1,171 @@
+import { createRequire } from "node:module";
+import { existsSync, realpathSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const variants = new Set(["normal", "pinned", "negative"]);
+
+const qualityStressAppend = `
+let __TN_QUALITY_STRESS_ENDED = false;
+const __TN_QUALITY_STRESS_HIGH_ORIGINAL = { ...qualityPreset("high") };
+const __TN_QUALITY_STRESS_MEDIUM_ORIGINAL = { ...qualityPreset("medium") };
+Object.assign(qualityPreset("high"), { kuwaharaRadius: 9, kuwaharaResolutionScale: 1 });
+Object.assign(qualityPreset("medium"), { kuwaharaRadius: 9, kuwaharaResolutionScale: 1 });
+(globalThis as { __TN_QUALITY_STRESS_END__?: () => void }).__TN_QUALITY_STRESS_END__ = () => {
+  if (__TN_QUALITY_STRESS_ENDED) return;
+  __TN_QUALITY_STRESS_ENDED = true;
+  Object.assign(qualityPreset("high"), __TN_QUALITY_STRESS_HIGH_ORIGINAL);
+  Object.assign(qualityPreset("medium"), __TN_QUALITY_STRESS_MEDIUM_ORIGINAL);
+  console.info("TN_QUALITY_STRESS_END:" + Date.now());
+};
+`;
+
+function validateGame(gameArg, variant) {
+  if (typeof gameArg !== "string" || !isAbsolute(gameArg) || !variants.has(variant))
+    throw new Error(
+      "usage: node build-starter-quality-load.mjs <absolute-game-path> <normal|pinned|negative>",
+    );
+  const game = resolve(gameArg);
+  const packageJson = resolve(game, "package.json");
+  if (!existsSync(packageJson)) throw new Error(`game package.json not found: ${packageJson}`);
+  return game;
+}
+
+function cleanId(id) {
+  const plain = id.split("?", 1)[0];
+  return plain.startsWith("file://") ? fileURLToPath(plain) : plain;
+}
+
+export function createQualityLoadPlugin(gameArg, variant, options = {}) {
+  if (options === null || typeof options !== "object" || (options.endOnLow !== undefined && typeof options.endOnLow !== "boolean")) throw new Error("endOnLow must be boolean");
+  const endOnLow = options.endOnLow ? '  if (tier === "low") (globalThis as { __TN_QUALITY_STRESS_END__?: () => void }).__TN_QUALITY_STRESS_END__?.();\n' : "";
+  const game = validateGame(gameArg, variant);
+  const pathOf = (name) => resolve(game, name);
+  const targets = {
+    config: pathOf("threenative.config.ts"),
+    game: pathOf("src/game.ts"),
+    quality: pathOf("src/render/quality.ts"),
+    play: pathOf("src/scenes/Play.ts"),
+    adaptiveQuality: pathOf("src/render/adaptiveQuality.ts"),
+  };
+  const expected = new Set([targets.config, targets.game, targets.quality]);
+  if (variant === "pinned") expected.add(targets.play);
+  if (variant === "negative") expected.add(targets.adaptiveQuality);
+  const transformed = new Set();
+  const reports = [];
+
+  function replaceExact(source, target, anchor, replacement, label) {
+    const count = source.split(anchor).length - 1;
+    if (count !== 1)
+      throw new Error(
+        `${label} in ${relative(game, target)} expected exactly one match, received ${count}`,
+      );
+    reports.push({ file: relative(game, target), label, matchCount: count });
+    return source.replace(anchor, replacement);
+  }
+
+  const plugin = {
+    name: "starter-quality-load-stress-fixture",
+    apply: "build",
+    enforce: "pre",
+    transform(source, id) {
+      const target = cleanId(id);
+      if (!expected.has(target)) return undefined;
+      if (transformed.has(target))
+        throw new Error(`duplicate transform target: ${relative(game, target)}`);
+      let code = source;
+      if (target === targets.config) {
+        code = replaceExact(
+          code,
+          target,
+          'resolutionScale: "auto",',
+          "resolutionScale: 1,",
+          "resolutionScale stress override",
+        );
+      } else if (target === targets.game) {
+        code = replaceExact(
+          code,
+          target,
+          "  frameBudget: { onWindow: (window) => observeQualityWindow(window) },",
+          "  frameBudget: { onWindow: (window) => observeQualityWindow(window), reportEvery: 30 },",
+          "frameBudget reportEvery",
+        );
+      } else if (target === targets.quality) {
+        code = replaceExact(
+          code,
+          target,
+          "  }\n  return preset;\n}\n",
+          `  }\n${endOnLow}  return preset;\n}\n${qualityStressAppend}`,
+          "quality stress fixture append",
+        );
+      } else if (target === targets.play) {
+        code = replaceExact(
+          code,
+          target,
+          "        mobile: isMobile(),",
+          '        mobile: isMobile(),\n        tier: "high",',
+          "pinned high tier",
+        );
+      } else if (target === targets.adaptiveQuality) {
+        code = replaceExact(
+          code,
+          target,
+          '      if (pinned) return report("pinned");',
+          '      if (pinned) return report("pinned");\n      return report("platform-only");',
+          "negative platform-only policy",
+        );
+      }
+      transformed.add(target);
+      return { code, map: null };
+    },
+    buildEnd(error) {
+      if (error !== undefined) return;
+      const missing = [...expected].filter((target) => !transformed.has(target));
+      if (missing.length > 0)
+        throw new Error(
+          `quality-load fixture did not transform: ${missing.map((target) => relative(game, target)).join(", ")}`,
+        );
+      if (reports.length !== expected.size)
+        throw new Error(
+          `quality-load fixture expected ${expected.size} reports, received ${reports.length}`,
+        );
+    },
+    reports,
+  };
+  return plugin;
+}
+
+async function runCli(args) {
+  const [gameArg, variant, ...extra] = args;
+  if (extra.length > 0)
+    throw new Error(
+      "usage: node build-starter-quality-load.mjs <absolute-game-path> <normal|pinned|negative>",
+    );
+  const game = validateGame(gameArg, variant);
+  const gameRequire = createRequire(resolve(game, "package.json"));
+  const vite = gameRequire(gameRequire.resolve("vite"));
+  const plugin = createQualityLoadPlugin(game, variant);
+  const output = resolve(game, `dist-quality-load-${variant}`);
+  await vite.build({
+    root: game,
+    configFile: resolve(game, "vite.config.ts"),
+    plugins: [plugin],
+    build: {
+      emptyOutDir: true,
+      outDir: output,
+    },
+  });
+  console.log(JSON.stringify({ game, variant, output, transformed: plugin.reports }, null, 2));
+}
+
+function isDirectEntry() {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  try {
+    return realpathSync(resolve(entry)) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectEntry()) await runCli(process.argv.slice(2));

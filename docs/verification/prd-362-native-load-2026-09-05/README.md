@@ -58,20 +58,26 @@ windows with the CPU under budget, so its exit 1 is the deleted decision and not
 
 ## Reproducing
 
-The executed runner is `artifacts/batch-2026-09-05/starter-quality-load-native.mjs` — sha256
+The executed runner is tracked here as [`runner.mjs.txt`](runner.mjs.txt) — byte-identical to
+`artifacts/batch-2026-09-05/starter-quality-load-native.mjs`, sha256
 `86ad1b39af8a3c606590c2eaeb1f554dd6cae1265b0dfce39fbbaa787b866b1b`, the `runnerSha256` in all three
-receipts — kept local because `artifacts/` is gitignored. It is invoked from the repository root:
+receipts. (The `.txt` suffix keeps the repo-wide formatter/linter for shipped source from rewriting
+verbatim evidence bytes; strip it to run.) It is invoked from the repository root:
 
 ```sh
-node --import tsx artifacts/batch-2026-09-05/starter-quality-load-native.mjs <absolute game path> <normal|pinned|negative> 1920 1080
+cp docs/verification/prd-362-native-load-2026-09-05/runner.mjs.txt /tmp/quality-runner.mjs
+node --import tsx /tmp/quality-runner.mjs <absolute game path> <normal|pinned|negative> 1920 1080
 ```
 
-It reads the packaged executable from, and writes its receipt and captures to,
-`artifacts/batch-2026-09-05/` — a gitignored path, which is why the receipts and captures are copied
-here rather than linked there.
+Path dependency, stated honestly: the runner imports `../../packages/playtest/src/runner/desktop.ts`
+and reads the packaged executable from `artifacts/batch-2026-09-05/`, resolving both relative to
+its own location — so a copy runs only from a path exactly two levels below the repo root (as
+`/tmp/quality-runner.mjs` is not). It writes its receipt and captures to `artifacts/batch-2026-09-05/`,
+a gitignored path, which is why the receipts and captures are copied here rather than linked there.
 
 To rebuild a variant: register `createQualityLoadPlugin(<game>, <variant>, { endOnLow: true })` from
-the fixture factory `artifacts/batch-2026-09-05/build-starter-quality-load.mjs` as the first Vite
+the fixture factory [`fixture.mjs.txt`](fixture.mjs.txt) — byte-identical to
+`artifacts/batch-2026-09-05/build-starter-quality-load.mjs` — as the first Vite
 plugin of the game, set the desktop window to 1920×1080, point `THREENATIVE_RUNTIME_BINARY` at the
 built host, run the game's `build:desktop`, and copy the output directory — the executable **and**
 its sibling `ui/` — next to the runner. The transform factory fails closed if any anchor it

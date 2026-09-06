@@ -10,10 +10,11 @@
       "reuseJustification": "source tree byte-identical to origin/main, so the Release host corresponds to this base"
     },
     "runner": {
-      "path": "artifacts/batch-2026-09-05/starter-quality-load-native.mjs",
+      "trackedCopy": "docs/verification/prd-362-native-load-2026-09-05/runner.mjs.txt",
+      "localPath": "artifacts/batch-2026-09-05/starter-quality-load-native.mjs",
       "sha256": "86ad1b39af8a3c606590c2eaeb1f554dd6cae1265b0dfce39fbbaa787b866b1b",
-      "tracked": false,
-      "retentionReason": "the verbatim file trips repo-wide biome format/lint rules written for shipped source; its hash is the runnerSha256 inside all three receipts"
+      "byteIdentical": true,
+      "retentionNote": "tracked with a .txt suffix so repo-wide biome format/lint for shipped source does not rewrite verbatim evidence bytes; strip the suffix to run, from a path two levels below the repo root"
     },
     "gamePolicySource": {
       "path": "src/render/adaptiveQuality.ts",
@@ -45,9 +46,11 @@
       "note": "rebuilt from the restored configs; the negative fixture binary ccd0f21e no longer occupies the ordinary output path"
     },
     "fixtureFactory": {
-      "path": "artifacts/batch-2026-09-05/build-starter-quality-load.mjs",
-      "tracked": false,
-      "retentionReason": "same as the runner; the receipts' build.transformReport lists every applied transform label"
+      "trackedCopy": "docs/verification/prd-362-native-load-2026-09-05/fixture.mjs.txt",
+      "localPath": "artifacts/batch-2026-09-05/build-starter-quality-load.mjs",
+      "sha256": "7e385a70d0dc974aea761785004a730f3567062cbd0f0e06a4f87615c22a98b9",
+      "byteIdentical": true,
+      "retentionNote": "same as the runner; the receipts' build.transformReport lists every applied transform label"
     }
   },
   "variants": {
