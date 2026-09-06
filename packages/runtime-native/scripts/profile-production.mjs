@@ -730,20 +730,28 @@ export async function installNativeProfileEntry(project, target, options) {
   const screenshotRequestPath = target === 'desktop' ? join(mailboxRoot, 'tn-production-screenshot-request.json') : undefined;
   const source = `import game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), screenshotRequestPath)}\n${mailbox}export default game;\n`;
   await writeFile(entryPath, source);
-  await setNativeProfileEntry(project, 'src/profile-native-entry.ts');
+  await setNativeProfileEntry(project, 'src/profile-native-entry.ts', target);
 }
 
-export async function setNativeProfileEntry(project, entry) {
+export async function setNativeProfileEntry(project, entry, target) {
   const configPath = join(project, 'threenative.config.ts');
   const packagePath = join(project, 'package.json');
   const config = await readFile(configPath, 'utf8').catch(() => undefined);
   if (config !== undefined) {
-    const rendered = config.replace(
+    const withEntry = config.replace(
       /^(\s*nativeEntry\s*:\s*)["'][^"']*["'](,?.*)$/mu,
       `$1"${entry}"$2`,
     );
+    const rendered = target === 'desktop'
+      ? withEntry.replace(
+          /(\bui\s*:\s*\{\s*renderer\s*:\s*)["'][^"']*["']/mu,
+          `$1"native"`,
+        )
+      : withEntry;
     if (rendered !== config) {
       await writeFile(configPath, rendered);
+    }
+    if (withEntry !== config) {
       const packageJson = JSON.parse(await readFile(packagePath, 'utf8'));
       if (packageJson.threenative?.nativeEntry !== undefined) {
         delete packageJson.threenative.nativeEntry;

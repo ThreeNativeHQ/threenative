@@ -278,6 +278,26 @@ test('generated native mailbox declaration is executable and independent of scaf
   assert.equal(context.TN_PLAYTEST_MAILBOX.request, '.runtime-mailbox/tn-playtest-request.json');
 });
 
+test('desktop profiling switches web UI to native while mobile profiling preserves web UI', async () => {
+  const desktopProject = makeTempDirSync('tn-profile-desktop-ui-');
+  const mobileProject = makeTempDirSync('tn-profile-mobile-ui-');
+  temporary.push(desktopProject, mobileProject);
+  for (const project of [desktopProject, mobileProject]) {
+    mkdirSync(join(project, 'src'));
+    writeFileSync(join(project, 'package.json'), '{}');
+    writeFileSync(
+      join(project, 'threenative.config.ts'),
+      'export default { nativeEntry: "src/game.ts", ui: { renderer: "web" } };\n',
+    );
+  }
+
+  await installNativeProfileEntry(desktopProject, 'desktop', { warmup: 1 });
+  await installNativeProfileEntry(mobileProject, 'android', { warmup: 1 });
+
+  assert.match(readFileSync(join(desktopProject, 'threenative.config.ts'), 'utf8'), /ui: \{ renderer: "native" \}/u);
+  assert.match(readFileSync(join(mobileProject, 'threenative.config.ts'), 'utf8'), /ui: \{ renderer: "web" \}/u);
+});
+
 test('physical regression evidence blocks a thermally confounded device result', () => {
   const base = regressionEvidence();
   const result = evaluateProductionEvidence({

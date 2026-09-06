@@ -2871,6 +2871,85 @@ UNVERIFIED/unprovisioned, and no baseline was promoted. The unrelated `pnpm budg
 recorded above remains the stale `docs/benchmark/SCREENSHOT-RETENTION.md` index; it was not
 edited.
 
+### PRD-358 hosted native UI renderer follow-up — 2026-09-05
+
+`installNativeProfileEntry` now passes the selected target into the temporary project config
+writer. Desktop profiling changes the temporary project's `ui.renderer` from `web` to `native`
+before the native build; mobile targets preserve `web`, and web collection does not use this
+native entry installer. This fixes the harness configuration rather than changing workflow status
+handling or accepting missing evidence.
+
+The focused regression was red before the change:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'desktop profiling switches'
+Test Files 1 failed (1)
+Tests 1 failed | 31 skipped (32)
+exit 1
+```
+
+The same focused test passed after the change:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'desktop profiling switches'
+Test Files 1 passed (1)
+Tests 1 passed | 31 skipped (32)
+exit 0
+```
+
+The complete native production-profile suite passed:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs
+Test Files 1 passed (1)
+Tests 32 passed (32)
+exit 0
+```
+
+The existing performance-regression and CI structure suites passed:
+
+```text
+pnpm exec vitest run scripts/__tests__/performance-regression.spec.ts scripts/__tests__/ci-structure.spec.ts
+Test Files 2 passed (2)
+Tests 83 passed (83)
+exit 0
+```
+
+Repository lint passed with its existing warnings:
+
+```text
+pnpm lint
+Checked 1962 files in 789ms. No fixes applied.
+Found 611 warnings.
+exit 0
+```
+
+The exact bounded Linux command was attempted against the existing executable
+`packages/runtime-native/build/tn-linux/mystral` and a fresh output directory:
+
+```text
+timeout 45s node packages/runtime-native/scripts/profile-production.mjs --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 --prebuilt-artifact "$PWD/packages/runtime-native/build/tn-linux/mystral" --out artifacts/prd358-hosted-linux-ui-native-followup
+exit 2
+```
+
+Retained local manifest `artifacts/prd358-hosted-linux-ui-native-followup/production-evidence.json`
+reports the following exact result:
+
+```json
+{"status":"BLOCKED","exitCode":2,"codes":["TN_PROD_RENDER_SAMPLES_INCOMPLETE","TN_PROD_STARTUP_SAMPLES_INCOMPLETE","TN_PROD_PLAYTEST_FAILED","TN_PROD_MARKER_MISSING","TN_PROD_PERFORMANCE_BUDGET","TN_PROD_STARTUP_BUDGET"],"runWindows":[{"durationSeconds":0,"sampleCount":0}]}
+```
+
+Both retained launches reached the desktop mailbox and runtime-ready markers and emitted frame
+sample lines. The steady report `production-playtest-desktop-1` carries diagnostic
+`TN_PROD_NATIVE_SCREENSHOT_UNAVAILABLE`; the startup report `production-startup-desktop-1` carries
+`Unexpected device response id 'invalid'.` The host therefore remains unable to render the
+required screenshot/evidence and the collector correctly remains `BLOCKED`, not `PASS`. The two
+raw reports remain local-only under the output directory. No native C++ changed, so the previously
+built Linux executable was reused; no physical Android/iOS execution or baseline promotion is
+claimed.
+
+`git diff --check` passed with no output and exit 0 after the documentation update.
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,
