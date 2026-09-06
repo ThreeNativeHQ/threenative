@@ -107,7 +107,7 @@ const pumpEndpoint = ({ body = movementResponseBody, ...overrides } = {}) => `TN
     pumpCount: overrides.pumpCount ?? 60,
     firstPumpAtMs: overrides.firstPumpAtMs ?? 120.0,
     lastPumpAtMs: overrides.lastPumpAtMs ?? 900.0,
-    maxGapMs: overrides.maxGapMs ?? 12.0,
+    maxGapMs: overrides.maxGapMs ?? 14.0,
     maxGapAtMs: overrides.maxGapAtMs ?? 400.0,
     trailingGapMs: overrides.trailingGapMs ?? 50.0,
     atMs: overrides.atMs ?? 950.0,
@@ -129,6 +129,17 @@ const cases = [
       movementPayload,
       movementResponseBody,
       movementResponsePath: '/run/res',
+      report: report(),
+    },
+  },
+  {
+    expect: 'pass',
+    mustFail: [],
+    name: 'single-pump timestamps may pass when internally consistent',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ atMs: 150, firstPumpAtMs: 100, lastPumpAtMs: 100, maxGapMs: 0, maxGapAtMs: -1, trailingGapMs: 50, pumpCount: 1 }),
       report: report(),
     },
   },
@@ -198,6 +209,31 @@ const cases = [
       framePng: WORLD_FRAME,
       hostLog: pumpEndpoint({ atMs: 0, firstPumpAtMs: -1, lastPumpAtMs: -1, maxGapAtMs: -1, trailingGapMs: -1, pumpCount: 0 }),
       report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    mustFailCode: 'R7_PUMP_SILENCE_MALFORMED',
+    name: 'pump count and span mismatch fails pump',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ pumpCount: 2 }),
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    mustFailCode: 'R7_PUMP_CORRELATION_UNPROVEN',
+    name: 'caller payload cannot override runner position',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint(),
+      movementPayload,
+      report: report({ after: { position: [99, 0, 99] } }),
     },
   },
   {
@@ -388,14 +424,14 @@ const cases = [
   {
     expect: 'fail',
     mustFail: ['R0B_PREFLIGHT'],
-    name: 'forged battery threshold and invalid timestamp fail preflight',
+    name: 'forged battery threshold cannot lower the qualification floor',
     mustFailCode: 'R0B_PREFLIGHT_UNQUALIFIED',
     input: {
       bound: bound({
         preflight: qualifiedPreflight({
           beforeLaunch: {
             phase: 'before-launch',
-            recordedAt: 'invalid',
+            recordedAt: '2026-09-06T10:01:00.000Z',
             serial: 'MOCKSERIAL',
             batteryPercent: 2,
             charging: false,
@@ -406,6 +442,58 @@ const cases = [
             provisional: [],
           },
           minimumBatteryPercent: 1,
+        }),
+      }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'invalid preflight timestamp fails qualification',
+    mustFailCode: 'R0B_PREFLIGHT_UNQUALIFIED',
+    input: {
+      bound: bound({
+        preflight: qualifiedPreflight({
+          beforeLaunch: {
+            phase: 'before-launch',
+            recordedAt: 'invalid',
+            serial: 'MOCKSERIAL',
+            batteryPercent: 70,
+            charging: false,
+            chargingSource: 'NONE',
+            thermalStatus: 'NONE',
+            thermalStatusCode: 0,
+            screenOn: true,
+            provisional: [],
+          },
+        }),
+      }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'before-launch preflight must follow before-install',
+    mustFailCode: 'R0B_PREFLIGHT_UNQUALIFIED',
+    input: {
+      bound: bound({
+        preflight: qualifiedPreflight({
+          beforeLaunch: {
+            phase: 'before-launch',
+            recordedAt: '2026-09-06T09:59:00.000Z',
+            serial: 'MOCKSERIAL',
+            batteryPercent: 70,
+            charging: false,
+            chargingSource: 'NONE',
+            thermalStatus: 'NONE',
+            thermalStatusCode: 0,
+            screenOn: true,
+            provisional: [],
+          },
         }),
       }),
       framePng: WORLD_FRAME,

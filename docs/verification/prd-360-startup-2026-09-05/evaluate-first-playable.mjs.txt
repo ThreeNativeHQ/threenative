@@ -224,8 +224,17 @@ export function evaluatePumpEndpoint({
     if (Math.abs(pump.maxGapMs) > PUMP_TIMESTAMP_TOLERANCE_MS || pump.maxGapAtMs !== -1) {
       return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'single pump has an inter-entry gap', pump });
     }
-  } else if (!(pump.maxGapMs > 0 && pump.maxGapAtMs >= pump.firstPumpAtMs && pump.maxGapAtMs < pump.lastPumpAtMs)) {
-    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'multi-pump maximum gap is not anchored', pump });
+    if (Math.abs(pump.lastPumpAtMs - pump.firstPumpAtMs) > PUMP_TIMESTAMP_TOLERANCE_MS) {
+      return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'single pump spans multiple timestamps', pump });
+    }
+  } else {
+    const pumpSpan = pump.lastPumpAtMs - pump.firstPumpAtMs;
+    const roundingAllowance = PUMP_TIMESTAMP_TOLERANCE_MS * pumpCount;
+    if (!(pump.maxGapMs > 0 && pump.maxGapAtMs >= pump.firstPumpAtMs && pump.maxGapAtMs < pump.lastPumpAtMs)
+      || pumpSpan + PUMP_TIMESTAMP_TOLERANCE_MS < pump.maxGapMs
+      || pumpSpan > (pumpCount - 1) * pump.maxGapMs + roundingAllowance) {
+      return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'pump count, span, and maximum gap are inconsistent', pump });
+    }
   }
   if (longGaps.some((gap) => gap > pump.maxGapMs + PUMP_TIMESTAMP_TOLERANCE_MS)) {
     return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'retained gap exceeds reported maximum', pump });
@@ -407,7 +416,11 @@ export async function evaluateFirstPlayable(input) {
   // is fresh — taken after the install, not before it. Missing, stale (before-install only),
   // overridden, or unqualified readings fail; a gate is a gate, not a doctor existence probe.
   const preflight = bound?.preflight;
+  const beforeInstall = preflight?.beforeInstall;
   const beforeLaunch = preflight?.beforeLaunch;
+  const beforeInstallRecordedMs = typeof beforeInstall?.recordedAt === 'string'
+    ? Date.parse(beforeInstall.recordedAt)
+    : Number.NaN;
   const preflightRecordedMs = typeof beforeLaunch?.recordedAt === 'string'
     ? Date.parse(beforeLaunch.recordedAt)
     : Number.NaN;
@@ -416,11 +429,16 @@ export async function evaluateFirstPlayable(input) {
   const qualified =
     beforeLaunch !== undefined && beforeLaunch !== null
     && beforeLaunch.phase === 'before-launch'
+    && beforeInstall?.phase === 'before-install'
     && typeof bound?.serial === 'string'
     && bound.serial.length > 0
+    && beforeInstall.serial === bound.serial
     && beforeLaunch.serial === bound.serial
+    && Number.isFinite(beforeInstallRecordedMs)
     && Number.isFinite(preflightRecordedMs)
     && Number.isFinite(boundRecordedMs)
+    && beforeInstallRecordedMs <= preflightRecordedMs
+    && preflightRecordedMs - beforeInstallRecordedMs <= PREFLIGHT_MAX_AGE_MS
     && preflightRecordedMs <= boundRecordedMs
     && boundRecordedMs - preflightRecordedMs <= PREFLIGHT_MAX_AGE_MS
     && preflight?.minimumBatteryPercent === MINIMUM_BATTERY_PERCENT
@@ -521,7 +539,7 @@ export async function evaluateFirstPlayable(input) {
       movementResponseBody: input.movementResponseBody,
       movementResponseError: input.movementResponseError,
       movementResponsePath: input.movementResponsePath,
-      movementPayload: input.movementPayload ?? {
+      movementPayload: {
         entity: report?.entity,
         position: report?.after?.position,
       },
