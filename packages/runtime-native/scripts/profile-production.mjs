@@ -587,7 +587,6 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
   await removeMailbox(mailboxRoot);
   const requestPath = join(mailboxRoot, 'tn-playtest-request.json');
   const responsePath = join(mailboxRoot, 'tn-playtest-response.json');
-  const screenshotRequestPath = join(mailboxRoot, 'tn-production-screenshot-request.json');
   const runner = await import(pathToFileURL(modulePath).href);
   const mailbox = {
     read: async (path) => readFile(path, 'utf8').catch((error) => error?.code === 'ENOENT' ? undefined : Promise.reject(error)),
@@ -595,7 +594,7 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
     write: async (path, contents) => writeFile(path, contents, 'utf8'),
   };
   const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath });
-  const driver = createDesktopDriver(artifactPath, project, options, screenshotRequestPath, mailboxRoot);
+  const driver = createDesktopDriver(artifactPath, project, options, mailboxRoot);
   const transport = {
     capabilities: innerTransport.capabilities,
     call: innerTransport.call.bind(innerTransport),
@@ -663,9 +662,10 @@ export function profileConfigPath(project, configPath = undefined) {
   return configPath ?? join(project, '.threenative', 'build', 'config.json');
 }
 
-function createDesktopDriver(artifactPath, project, options, screenshotRequestPath, mailboxRoot) {
+function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
   let child;
   let output = '';
+  const screenshotRequestPath = join(mailboxRoot, 'tn-playtest-screenshot-request.txt');
   return {
     captureConsole: async () => output.split(/\r?\n/u).filter(Boolean).map((text) => ({ text, type: /\b(?:Error|FAILED|FATAL)\b/u.test(text) ? 'error' : 'log' })),
     isAlive: async () => child !== undefined && child.exitCode === null,
@@ -683,7 +683,7 @@ function createDesktopDriver(artifactPath, project, options, screenshotRequestPa
     removeFile: async (path) => rm(path, { force: true }).catch(() => undefined),
     screenshot: async (path) => {
       const temporary = `${screenshotRequestPath}.tmp`;
-      await writeFile(temporary, JSON.stringify({ path }), 'utf8');
+      await writeFile(temporary, path, 'utf8');
       await rename(temporary, screenshotRequestPath);
       const deadline = Date.now() + DESKTOP_SCREENSHOT_TIMEOUT_MS;
       while (Date.now() < deadline) {
@@ -727,8 +727,7 @@ export async function installNativeProfileEntry(project, target, options) {
   const mailbox = target === 'desktop'
     ? `globalThis.TN_PLAYTEST_MAILBOX = ${JSON.stringify({ request: join(mailboxRoot, 'tn-playtest-request.json'), response: join(mailboxRoot, 'tn-playtest-response.json') })};\n`
     : '';
-  const screenshotRequestPath = target === 'desktop' ? join(mailboxRoot, 'tn-production-screenshot-request.json') : undefined;
-  const source = `import game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), screenshotRequestPath)}\n${mailbox}export default game;\n`;
+  const source = `import game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options))}\n${mailbox}export default game;\n`;
   await writeFile(entryPath, source);
   await setNativeProfileEntry(project, 'src/profile-native-entry.ts', target);
 }
@@ -787,11 +786,10 @@ const tnProductionReadPerformance = () => {
 `;
 }
 
-export function nativeFrameInstrumentation(control, warmupFrames = 0, screenshotRequestPath = undefined) {
+export function nativeFrameInstrumentation(control, warmupFrames = 0) {
   return `
 const tnProductionControl = ${JSON.stringify(control ?? '')};
 const tnProductionWarmupFrames = ${Math.max(0, Math.floor(warmupFrames))};
-const tnProductionScreenshotRequestPath = ${JSON.stringify(screenshotRequestPath)};
 const tnProductionRequestAnimationFrame = globalThis.requestAnimationFrame;
 if (typeof tnProductionRequestAnimationFrame !== "function") {
   throw new Error("TN_PROD_NATIVE_RAF_UNAVAILABLE: native host did not provide requestAnimationFrame.");
@@ -833,20 +831,6 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
     if (tnProductionSamples.length >= ${NATIVE_FRAME_SAMPLE_BATCH_SIZE}) {
       console.log("TN_PROD_FRAME_SAMPLES:" + JSON.stringify(tnProductionSamples));
       tnProductionSamples = [];
-    }
-  }
-  if (tnProductionScreenshotRequestPath !== undefined) {
-    const nativeHost = globalThis.__THREENATIVE_NATIVE__;
-    const receive = nativeHost?.playtest?.receive;
-    const capture = nativeHost?.captureScreenshot;
-    if (typeof receive === "function" && typeof capture === "function") {
-      const request = receive(tnProductionScreenshotRequestPath);
-      if (typeof request === "string") {
-        try {
-          const payload = JSON.parse(request);
-          if (typeof payload.path === "string") capture(payload.path);
-        } catch {}
-      }
     }
   }
   if (!inWarmup && tnProductionControl === "slow-native" && tnProductionSlowFramesRemaining > 0) {
@@ -1012,8 +996,10 @@ async function normalizeRun(
   };
 }
 
-function safeReport(report) {
-  return {
+const REPORT_REDACTION_MESSAGE = 'TN_PROD_REDACTION: unsafe native report detail withheld.';
+
+export function safeReport(report) {
+  const safe = {
     assertionResults: report.assertionResults,
     diagnostics: report.diagnostics,
     observations: report.observations,
@@ -1021,6 +1007,35 @@ function safeReport(report) {
     scenario: report.scenario,
     target: report.target,
   };
+  try {
+    return sanitizeManifest(safe);
+  } catch {
+    return sanitizeReportValue(safe);
+  }
+}
+
+function sanitizeReportValue(value) {
+  if (value === undefined || value === null) return value;
+  if (Array.isArray(value)) return value.map((nested) => sanitizeReportValue(nested));
+  if (typeof value === 'object') {
+    const sanitized = {};
+    for (const [key, nested] of Object.entries(value)) {
+      const candidate = sanitizeReportValue(nested);
+      try {
+        const checked = sanitizeManifest({ [key]: candidate });
+        sanitized[key] = checked[key];
+      } catch {
+        // Privacy-sensitive fields are omitted from retained diagnostics; the verdict and safe
+        // observations remain available for a fail-closed report.
+      }
+    }
+    return sanitized;
+  }
+  try {
+    return sanitizeManifest(value);
+  } catch {
+    return REPORT_REDACTION_MESSAGE;
+  }
 }
 
 function parsePlaytestReport(stdout) {
@@ -1805,7 +1820,7 @@ async function removeMailbox(root) {
   await Promise.all([
     rm(join(root, 'tn-playtest-request.json'), { force: true }),
     rm(join(root, 'tn-playtest-response.json'), { force: true }),
-    rm(join(root, 'tn-production-screenshot-request.json'), { force: true }),
+    rm(join(root, 'tn-playtest-screenshot-request.txt'), { force: true }),
   ]);
 }
 

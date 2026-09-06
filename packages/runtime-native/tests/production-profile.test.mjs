@@ -30,6 +30,7 @@ import {
   profileConfigPath,
   postWarmupFrameSamples,
   runProductionProfile,
+  safeReport,
   setNativeProfileEntry,
   webFrameInstrumentation,
   writeRunScenarios,
@@ -55,12 +56,31 @@ test('desktop runner exceptions retain failed evidence rather than disappearing'
   assert.match(source, /return desktopFailureRun\(error, await driver.captureConsole\(\),/u);
 });
 
-test('desktop child receives the transport mailbox root without changing the screenshot path', async () => {
+test('native report retention redacts unsafe host console paths without dropping safe evidence', () => {
+  const report = safeReport({
+    assertionResults: [{ id: 'diagnostics', pass: false }],
+    diagnostics: [],
+    observations: {
+      console: [
+        { text: '/home/operator/.local/share/mystral/storage/platformer.json', type: 'log' },
+        { text: 'TN_NATIVE_SMOKE_READY:webgpu', type: 'log' },
+      ],
+      network: [],
+    },
+    pass: false,
+    scenario: 'production-startup',
+    target: 'desktop',
+  });
+  assert.match(report.observations.console[0].text, /TN_PROD_REDACTION/u);
+  assert.equal(report.observations.console[1].text, 'TN_NATIVE_SMOKE_READY:webgpu');
+});
+
+test('desktop child receives the transport mailbox root and writes a raw post-present screenshot request', async () => {
   const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
   const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
   const project = '/fixture/scaffold';
   const mailboxRoot = join(project, '.runtime-mailbox');
-  const screenshotRequestPath = join(mailboxRoot, 'tn-production-screenshot-request.json');
+  const screenshotRequestPath = join(mailboxRoot, 'tn-playtest-screenshot-request.txt');
   let childOptions;
   const writes = [];
   const context = {
@@ -72,19 +92,22 @@ test('desktop child receives the transport mailbox root without changing the scr
       queueMicrotask(() => child.emit('spawn'));
       return child;
     },
-    writeFile: async (path) => writes.push(path),
-    rename: async (_from, to) => writes.push(to),
+    writeFile: async (path, contents) => writes.push({ contents, path }),
+    rename: async (from, to) => writes.push({ from, to }),
     nonBlankPng: async () => true,
     DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
   };
   runInNewContext(driverSource, context);
-  const driver = context.createDesktopDriver('/fixture/mystral', project, { renderSize: { width: 1920, height: 1080 } }, screenshotRequestPath, mailboxRoot);
+  const driver = context.createDesktopDriver('/fixture/mystral', project, { renderSize: { width: 1920, height: 1080 } }, mailboxRoot);
   await driver.launch();
   assert.equal(childOptions.env.TN_PLAYTEST_MAILBOX_ROOT, mailboxRoot);
   assert.equal(childOptions.cwd, project);
   await driver.screenshot('/fixture/capture.png');
-  assert.deepEqual(writes, [`${screenshotRequestPath}.tmp`, screenshotRequestPath]);
-  assert.match(source, /const driver = createDesktopDriver\(artifactPath, project, options, screenshotRequestPath, mailboxRoot\)/u);
+  assert.deepEqual(writes, [
+    { contents: '/fixture/capture.png', path: `${screenshotRequestPath}.tmp` },
+    { from: `${screenshotRequestPath}.tmp`, to: screenshotRequestPath },
+  ]);
+  assert.match(source, /const driver = createDesktopDriver\(artifactPath, project, options, mailboxRoot\)/u);
 });
 
 afterEach(() => {
@@ -276,6 +299,7 @@ test('generated native mailbox declaration is executable and independent of scaf
   const context = {};
   runInNewContext(declaration, context);
   assert.equal(context.TN_PLAYTEST_MAILBOX.request, '.runtime-mailbox/tn-playtest-request.json');
+  assert.doesNotMatch(source, /tn-production-screenshot-request\.json|tnProductionScreenshotRequestPath|captureScreenshot|playtest\?\.receive/u);
 });
 
 test('desktop profiling switches web UI to native while mobile profiling preserves web UI', async () => {
@@ -763,14 +787,17 @@ test('slow-path control is bounded and returns the intended exit-1 budget failur
   assert.deepEqual(result.codes, ['TN_PROD_PERFORMANCE_BUDGET']);
 });
 
-test('desktop screenshot evidence is associated with the timed native process', () => {
+test('desktop screenshot evidence uses the host post-present mailbox protocol', () => {
   const profile = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
   const runtime = readFileSync(new URL('../src/runtime.cpp', import.meta.url), 'utf8');
   assert.doesNotMatch(profile, /runNativeScreenshot/u);
   assert.doesNotMatch(profile, /spawnNative\([^\n]+,\s*true\)/u);
-  assert.match(profile, /screenshotRequestPath/u);
+  assert.match(profile, /tn-playtest-screenshot-request\.txt/u);
+  assert.match(profile, /writeFile\(temporary, path, 'utf8'\)/u);
+  assert.match(profile, /rm\(join\(root, 'tn-playtest-screenshot-request\.txt'\), \{ force: true \}\)/u);
   assert.match(profile, /screenshot: async \(path\)/u);
-  assert.match(runtime, /captureScreenshot/u);
+  assert.doesNotMatch(profile, /tn-production-screenshot-request\.json|nativeHost\?\.playtest\?\.receive|captureScreenshot/u);
+  assert.match(runtime, /tn-playtest-screenshot-request\.txt/u);
 });
 
 test('playtest assertion failure cannot become a clean production run', () => {

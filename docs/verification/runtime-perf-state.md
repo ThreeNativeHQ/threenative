@@ -2950,6 +2950,113 @@ claimed.
 
 `git diff --check` passed with no output and exit 0 after the documentation update.
 
+### PRD-358 hosted screenshot transport follow-up — 2026-09-05
+
+The production desktop driver now uses the existing native post-present mailbox protocol. It writes
+the requested output path as raw UTF-8 to `tn-playtest-screenshot-request.txt.tmp`, atomically
+renames it to `tn-playtest-screenshot-request.txt`, and removes the `.txt` request during mailbox
+cleanup. The generated native entry no longer injects the obsolete JSON request path or calls
+`__THREENATIVE_NATIVE__.playtest.receive`/`captureScreenshot`. The native C++ host was not changed.
+
+Focused transport tests were red before the harness change:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'post-present|generated native mailbox'
+Test Files 1 failed (1)
+Tests 3 failed | 29 skipped (32)
+exit 1
+```
+
+After the transport change they passed:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'post-present|generated native mailbox'
+Test Files 1 passed (1)
+Tests 3 passed | 29 skipped (32)
+exit 0
+```
+
+The focused report-retention test was initially red because `safeReport` did not yet exist:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'native report retention'
+TypeError: safeReport is not a function
+Test Files 1 failed (1)
+Tests 1 failed | 32 skipped (33)
+exit 1
+```
+
+The combined focused tests passed after the retention guard was added:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'native report retention|post-present|generated native mailbox'
+Test Files 1 passed (1)
+Tests 4 passed | 29 skipped (33)
+exit 0
+```
+
+The full native production-profile suite passed:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs
+Test Files 1 passed (1)
+Tests 33 passed (33)
+exit 0
+```
+
+The existing performance-regression and CI structure suites passed:
+
+```text
+pnpm exec vitest run scripts/__tests__/performance-regression.spec.ts scripts/__tests__/ci-structure.spec.ts
+Test Files 2 passed (2)
+Tests 83 passed (83)
+exit 0
+```
+
+Repository lint passed with its unchanged warnings:
+
+```text
+pnpm lint
+Checked 1962 files in 836ms. No fixes applied.
+Found 611 warnings.
+exit 0
+```
+
+The first post-present bounded Linux run reached native screenshot handling but could not retain
+its manifest because the native host's `/home/.../localStorage` console line was exposed in a raw
+report. It exited 2 with this exact structured error:
+
+```json
+{"codes":["TN_PROD_REDACTION"],"message":"Absolute workstation path or authorization material at $.rawArtifacts[1].content rejected before retention.","status":"BLOCKED","exitCode":2}
+```
+
+The report-retention fix redacts only unsafe host-detail strings and preserves safe console and
+diagnostic observations. The exact bounded Linux command was then rerun with the existing
+prebuilt executable and a fresh output directory:
+
+```text
+timeout 45s node packages/runtime-native/scripts/profile-production.mjs --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 --prebuilt-artifact "$PWD/packages/runtime-native/build/tn-linux/mystral" --out artifacts/prd358-hosted-linux-screenshot-post-present-3
+exit 1
+```
+
+Retained local manifest:
+`artifacts/prd358-hosted-linux-screenshot-post-present-3/production-evidence.json`.
+Its exact summary is:
+
+```json
+{"status":"FAIL","exitCode":1,"codes":["TN_PROD_PERFORMANCE_BUDGET"],"runWindows":[{"durationSeconds":2.81466845703125,"sampleCount":375}],"sampleCount":375,"p95FrameMs":21.38525390625,"p99FrameMs":47.129638671875,"meanFps":133.23061160657207,"oneSecondFps":[164,99],"artifactCount":4}
+```
+
+The manifest retains four artifacts: steady screenshot/report and startup screenshot/report. Both
+reports have `pass: true`, no diagnostics, bridge-ready and `TN_NATIVE_SMOKE_READY:webgpu` console
+markers, and frame samples (75 steady sample lines, 78 startup sample lines). The host therefore
+gets past the old screenshot transport failure; this run is a real performance `FAIL` because its
+p99/one-second result breaches the declared budget, not a screenshot or missing-evidence `PASS`.
+Raw evidence remains local only. No physical Android/iOS execution or baseline promotion is
+claimed.
+
+`git diff --check` passed with no output and exit 0 after this update.
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,
