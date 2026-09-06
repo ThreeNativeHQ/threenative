@@ -93,7 +93,10 @@ function failClosed(reason: string): void {
   }
 }
 
-async function startServer(): Promise<boolean> {
+// Returns the reason the fixture executable is unusable, or null. Every describe that
+// spawns a fixture calls this: `go build` is cached, and a block that is run on its own
+// must not depend on another block's hook having built the server first.
+function buildServerExecutable(): string | null {
   console.log("Building WebTransport echo server (go build)...");
   const build = spawnSync("go", ["build", "-o", SERVER_EXECUTABLE, "."], {
     cwd: SERVER_DIR,
@@ -101,11 +104,18 @@ async function startServer(): Promise<boolean> {
     timeout: 120_000,
   });
   if (build.status !== 0) {
-    unavailableReason = `requires a buildable Go WebTransport echo server in ${SERVER_DIR}: ${build.stderr}`;
-    return false;
+    return `requires a buildable Go WebTransport echo server in ${SERVER_DIR}: ${build.stderr}`;
   }
   if (!existsSync(SERVER_EXECUTABLE)) {
-    unavailableReason = `requires the built echo-server executable (${SERVER_EXECUTABLE})`;
+    return `requires the built echo-server executable (${SERVER_EXECUTABLE})`;
+  }
+  return null;
+}
+
+async function startServer(): Promise<boolean> {
+  const buildFailure = buildServerExecutable();
+  if (buildFailure) {
+    unavailableReason = buildFailure;
     return false;
   }
   serverProc = spawn(SERVER_EXECUTABLE, ["--listen", SERVER_LISTEN, "--dev-self-signed"], {
@@ -140,8 +150,12 @@ type EphemeralServer = {
   ready: Promise<string>;
 };
 
-function spawnIpv6Server(): EphemeralServer {
-  const child = spawn(SERVER_EXECUTABLE, ["--listen", "[::1]:0", "--dev-self-signed"], {
+function spawnFixtureServer(
+  label: string,
+  args: readonly string[],
+  addressPattern: RegExp,
+): EphemeralServer {
+  const child = spawn(SERVER_EXECUTABLE, [...args], {
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";
@@ -154,13 +168,13 @@ function spawnIpv6Server(): EphemeralServer {
       clearTimeout(timeout);
       if (error) reject(error);
       else if (address) resolve(address);
-      else reject(new Error("IPv6 WebTransport fixture did not report an address"));
+      else reject(new Error(`${label} WebTransport fixture did not report an address`));
     };
     const timeout = setTimeout(() => {
       finish(
         undefined,
         new Error(
-          `IPv6 WebTransport fixture readiness timed out; stdout=${stdout} stderr=${stderr}`,
+          `${label} WebTransport fixture readiness timed out; stdout=${stdout} stderr=${stderr}`,
         ),
       );
     }, 15_000);
@@ -168,21 +182,24 @@ function spawnIpv6Server(): EphemeralServer {
     child.stderr?.setEncoding("utf8");
     child.stdout?.on("data", (chunk: string) => {
       stdout += chunk;
-      const match = /LISTENING udp=(\[::1\]:\d+)/u.exec(stdout);
+      const match = addressPattern.exec(stdout);
       if (match?.[1]) finish(match[1]);
     });
     child.stderr?.on("data", (chunk: string) => {
       stderr += chunk;
     });
     child.once("error", (error) => {
-      finish(undefined, new Error(`IPv6 WebTransport fixture failed to start: ${error.message}`));
+      finish(
+        undefined,
+        new Error(`${label} WebTransport fixture failed to start: ${error.message}`),
+      );
     });
     child.once("exit", (code, signal) => {
       if (!settled) {
         finish(
           undefined,
           new Error(
-            `IPv6 WebTransport fixture exited before readiness (code=${code}, signal=${signal}); ` +
+            `${label} WebTransport fixture exited before readiness (code=${code}, signal=${signal}); ` +
               `stdout=${stdout} stderr=${stderr}`,
           ),
         );
@@ -190,6 +207,14 @@ function spawnIpv6Server(): EphemeralServer {
     });
   });
   return { child, ready };
+}
+
+function spawnIpv6Server(): EphemeralServer {
+  return spawnFixtureServer(
+    "IPv6",
+    ["--listen", "[::1]:0", "--dev-self-signed"],
+    /LISTENING udp=(\[::1\]:\d+)/u,
+  );
 }
 
 async function stopOwnedServer(child: ChildProcess): Promise<void> {
@@ -221,6 +246,10 @@ type ScriptOptions = {
   // machine's path happens to allow. A string passes the raw value through so a
   // malformed clamp can be proven to fail closed; `""` sets the variable empty.
   maxDatagramBytes?: number | string;
+  // Explicit process-local trust anchors for this child only. Left unset the
+  // variable is removed from the child environment, so an operator's ambient
+  // SSL_CERT_FILE cannot silently change what any other case here proves.
+  trustFile?: string;
 };
 
 // Runs a JS script under the mystral runtime (headless) and returns combined output.
@@ -252,6 +281,11 @@ async function runScript(
     env.MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES = options.dnsAddresses;
   } else {
     Reflect.deleteProperty(env, "MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES");
+  }
+  if (options.trustFile !== undefined) {
+    env.SSL_CERT_FILE = options.trustFile;
+  } else {
+    Reflect.deleteProperty(env, "SSL_CERT_FILE");
   }
   const { exitCode, stdout, stderr } = await runCommand(
     runtimeBinary,
@@ -1236,5 +1270,274 @@ main().then(() => process.exit(0)).catch((error) => {
     for (const result of results) {
       expect(result.out, result.label).toContain(`PASS: malformed resolver ${result.label}`);
     }
+  }, 30_000);
+});
+
+// Verified trust is its own fixture, deliberately separate from the development
+// self-signed cases above: those prove the insecure override still works and is
+// still required, this block proves a real certificate is accepted with peer
+// verification on and no override anywhere. The certificate is minted per run into
+// the untracked test directory and removed afterwards; the private key never leaves
+// it and is never printed. No machine trust store is touched.
+const TRUST_DIR = join(TEST_DIR, "trust");
+const TRUST_CERT = join(TRUST_DIR, "trusted-cert.pem");
+const TRUST_KEY = join(TRUST_DIR, "trusted-key.pem");
+const TRUST_ABSENT = join(TRUST_DIR, "absent-cert.pem");
+const TRUST_MALFORMED = join(TRUST_DIR, "malformed-cert.pem");
+const TRUST_DIAGNOSTIC = "could not be loaded as trusted CA certificates";
+
+let trustUnavailableReason: string | null = null;
+let trustServer: ChildProcess | null = null;
+let untrustedServer: ChildProcess | null = null;
+let trustAuthority = "";
+let untrustedAuthority = "";
+const namedAuthority = (authority: string): string =>
+  `localhost:${authority.slice(authority.lastIndexOf(":") + 1)}`;
+
+// The certificate names localhost and 127.0.0.1. Measured on 2026-09-06: this quiche
+// build refuses an IP-literal authority even when the certificate carries the matching
+// IP SAN and is the loaded trust anchor, while the same certificate and anchor verify
+// through the DNS name — so trust cases address the fixture by name, and the separate
+// IP-literal name-check limitation is Task 1b's certificate/hostname fixture work, not
+// something this row papers over.
+function mintTrustFixture(): string | null {
+  mkdirSync(TRUST_DIR, { recursive: true });
+  const openssl = spawnSync(
+    "openssl",
+    [
+      "req",
+      "-x509",
+      "-newkey",
+      "ec",
+      "-pkeyopt",
+      "ec_paramgen_curve:P-256",
+      "-nodes",
+      "-keyout",
+      TRUST_KEY,
+      "-out",
+      TRUST_CERT,
+      "-days",
+      "2",
+      "-subj",
+      "/CN=threenative-networking-fixture",
+      "-addext",
+      "subjectAltName=DNS:localhost,IP:127.0.0.1",
+    ],
+    { encoding: "utf8", timeout: 30_000 },
+  );
+  if (openssl.status !== 0) {
+    // stderr is not echoed: it is openssl's, and this path runs beside key material.
+    return `requires an openssl that can mint the trust fixture (exit ${openssl.status})`;
+  }
+  if (!existsSync(TRUST_CERT) || !existsSync(TRUST_KEY)) return "requires a minted trust fixture";
+  writeFileSync(TRUST_MALFORMED, "not a certificate\n");
+  rmSync(TRUST_ABSENT, { force: true });
+  return null;
+}
+
+function requireTrustFixture(skip: (note?: string) => never): void {
+  requireWebTransport(skip);
+  if (!trustUnavailableReason) return;
+  failClosed(trustUnavailableReason);
+  skip(trustUnavailableReason);
+}
+
+// One datagram round trip against `url`, asserting the echoed bytes rather than
+// `ready` alone: an endpoint that accepts a connection and answers nothing is not
+// a reachable endpoint.
+const datagramEchoSource = (url: string, label: string): string => `async function main() {
+  const wt = new WebTransport('${url}');
+  wt.closed.catch(() => {});
+  await wt.ready;
+  const payload = new Uint8Array([9, 5, 3, 1]);
+  const writer = wt.datagrams.writable.getWriter();
+  const reader = wt.datagrams.readable.getReader();
+  await writer.write(payload);
+  const echoed = await reader.read();
+  if (echoed.done || !echoed.value || echoed.value.length !== payload.length ||
+      echoed.value.some((byte, index) => byte !== payload[index])) {
+    throw new Error('echo mismatch');
+  }
+  reader.releaseLock();
+  writer.releaseLock();
+  wt.close();
+  await wt.closed.catch(() => {});
+  console.log('PASS: ${label}');
+}
+main().then(() => process.exit(0)).catch((error) => {
+  console.log('FAIL: ' + (error && error.message ? error.message : error));
+  process.exit(1);
+});
+`;
+
+// A connection that must not establish: `ready` resolving is the failure.
+const rejectionSource = (url: string, acceptedNote: string): string => `async function main() {
+  const wt = new WebTransport('${url}');
+  wt.closed.catch(() => {});
+  try { await wt.ready; console.log('FAIL: ${acceptedNote}'); }
+  catch (e) { console.log('PASS: rejected ' + e.message); }
+  process.exit(0);
+}
+main();
+`;
+
+// The exact-endpoint reachability control a secure negative needs. Deliberately
+// insecure — MYSTRAL_WEBTRANSPORT_INSECURE=1 through the existing runTrustedScript
+// helper — and never used by the trusted positive, which runs with verification on
+// and no override. It proves the identical URL, DNS mapping and listening peer
+// complete a byte-exact echo, so the rejection that follows is TLS refusing this
+// endpoint rather than a dead port, an unresolved name or a fixture that died.
+async function expectInsecureEchoReachable(
+  name: string,
+  url: string,
+  options: Omit<ScriptOptions, "allowInsecurePeerVerification"> = {},
+): Promise<void> {
+  const out = await runTrustedScript(name, datagramEchoSource(url, "endpoint reachable"), {
+    timeoutMs: 15_000,
+    ...options,
+  });
+  expect(out).toContain("PASS: endpoint reachable");
+  // The control is only a control if it really ran without verification.
+  expect(out).toContain("TLS peer verification disabled");
+}
+
+describe("WebTransport verified certificate trust", () => {
+  beforeAll(async () => {
+    if (unavailableReason) {
+      trustUnavailableReason = unavailableReason;
+      return;
+    }
+    trustUnavailableReason = buildServerExecutable() ?? mintTrustFixture();
+    if (trustUnavailableReason) {
+      failClosed(trustUnavailableReason);
+      return;
+    }
+    const fixture = spawnFixtureServer(
+      "verified-trust",
+      ["--listen", "127.0.0.1:0", "--cert", TRUST_CERT, "--key", TRUST_KEY],
+      /LISTENING udp=(127\.0\.0\.1:\d+)/u,
+    );
+    trustServer = fixture.child;
+    // A second live peer, presenting the development self-signed certificate the
+    // fixture CA above does not sign. The untrusted negative has to be refused by
+    // verification, not by there being nothing to connect to.
+    const untrusted = spawnFixtureServer(
+      "untrusted-peer",
+      ["--listen", "127.0.0.1:0", "--dev-self-signed"],
+      /LISTENING udp=(127\.0\.0\.1:\d+)/u,
+    );
+    untrustedServer = untrusted.child;
+    try {
+      trustAuthority = await fixture.ready;
+      untrustedAuthority = await untrusted.ready;
+    } catch (error) {
+      trustUnavailableReason = `requires a verified-certificate WebTransport fixture: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+      failClosed(trustUnavailableReason);
+    }
+  }, FIXTURE_SETUP_TIMEOUT_MS);
+
+  afterAll(async () => {
+    try {
+      const results = await Promise.allSettled(
+        [trustServer, untrustedServer].filter((child) => child !== null).map(stopOwnedServer),
+      );
+      const failures = results.filter((result) => result.status === "rejected");
+      if (failures.length > 0) {
+        throw new AggregateError(
+          failures.map((result) => result.reason),
+          "TLS fixture shutdown failed",
+        );
+      }
+    } finally {
+      trustServer = null;
+      untrustedServer = null;
+      rmSync(TRUST_DIR, { force: true, recursive: true });
+    }
+  });
+
+  it("accepts a trusted certificate without the development override", async ({ skip }) => {
+    requireTrustFixture(skip);
+    const out = await runScript(
+      "wt-trust-accepted.js",
+      datagramEchoSource(
+        `https://${namedAuthority(trustAuthority)}/echo`,
+        "trusted certificate accepted",
+      ),
+      { trustFile: TRUST_CERT },
+    );
+    expect(out).toContain("PASS: trusted certificate accepted");
+    // The positive case must be a real verification, not a bypass.
+    expect(out).toContain("TLS peer verification mode: verify-peer");
+    expect(out).not.toContain("TLS peer verification disabled");
+    expect(out).not.toContain("MYSTRAL_WEBTRANSPORT_INSECURE=1");
+  }, 30_000);
+
+  it("rejects a trusted certificate presented for the wrong hostname", async ({ skip }) => {
+    requireTrustFixture(skip);
+    const port = trustAuthority.slice(trustAuthority.lastIndexOf(":") + 1);
+    const url = `https://${DNS_TEST_HOST}:${port}/echo`;
+    // Same URL, same DNS mapping, verification off: bytes come back.
+    await expectInsecureEchoReachable("wt-trust-wrong-hostname-control.js", url, {
+      trustFile: TRUST_CERT,
+      dnsAddresses: "127.0.0.1",
+    });
+    const out = await runScript(
+      "wt-trust-wrong-hostname.js",
+      rejectionSource(url, "accepted the wrong hostname"),
+      { trustFile: TRUST_CERT, dnsAddresses: "127.0.0.1", timeoutMs: 15_000 },
+    );
+    expect(out).toContain("PASS: rejected");
+    // The anchor is loaded and verification is on: the name is the only thing wrong.
+    expect(out).toContain("TLS peer verification mode: verify-peer");
+    expect(out).not.toContain(TRUST_DIAGNOSTIC);
+    expect(out).not.toContain("TLS peer verification disabled");
+  }, 45_000);
+
+  it("rejects an untrusted certificate while an explicit trust file is set", async ({ skip }) => {
+    requireTrustFixture(skip);
+    const url = `https://${namedAuthority(untrustedAuthority)}/echo`;
+    // Same URL, same peer, verification off: bytes come back.
+    await expectInsecureEchoReachable("wt-trust-untrusted-control.js", url, {
+      trustFile: TRUST_CERT,
+    });
+    const out = await runScript(
+      "wt-trust-untrusted-peer.js",
+      rejectionSource(url, "accepted an untrusted certificate"),
+      { trustFile: TRUST_CERT, timeoutMs: 15_000 },
+    );
+    expect(out).toContain("PASS: rejected");
+    expect(out).toContain("TLS peer verification mode: verify-peer");
+    expect(out).not.toContain("TLS peer verification disabled");
+  }, 45_000);
+
+  it("refuses an unreadable trust file", async ({ skip }) => {
+    requireTrustFixture(skip);
+    const out = await runScript(
+      "wt-trust-unreadable.js",
+      rejectionSource(
+        `https://${namedAuthority(trustAuthority)}/echo`,
+        "connected with an unreadable trust file",
+      ),
+      { trustFile: TRUST_ABSENT, timeoutMs: 15_000 },
+    );
+    expect(out).toContain("PASS: rejected");
+    expect(out).toContain(TRUST_DIAGNOSTIC);
+    expect(out).toContain(TRUST_ABSENT);
+  }, 30_000);
+
+  it("refuses a malformed trust file", async ({ skip }) => {
+    requireTrustFixture(skip);
+    const out = await runScript(
+      "wt-trust-malformed.js",
+      rejectionSource(
+        `https://${namedAuthority(trustAuthority)}/echo`,
+        "connected with a malformed trust file",
+      ),
+      { trustFile: TRUST_MALFORMED, timeoutMs: 15_000 },
+    );
+    expect(out).toContain("PASS: rejected");
+    expect(out).toContain(TRUST_DIAGNOSTIC);
   }, 30_000);
 });

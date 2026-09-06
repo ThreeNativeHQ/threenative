@@ -115,6 +115,13 @@ constexpr const char* kInsecurePeerVerificationEnv = "MYSTRAL_WEBTRANSPORT_INSEC
 // It only ever lowers: a value above the negotiated capacity is ignored.
 constexpr const char* kMaxDatagramEnv = "MYSTRAL_WEBTRANSPORT_MAX_DATAGRAM";
 
+// Operator-supplied, process-local trust anchor file. The packaged quiche did not
+// pick this up through its own default verify paths
+// (docs/verification/prd-359-tls-preflight-2026-09-05.md), so it is loaded
+// explicitly below. It names anchors this process trusts; it never decides
+// *whether* the peer is verified, and verify-peer stays on either way.
+constexpr const char* kPeerTrustFileEnv = "SSL_CERT_FILE";
+
 // Outgoing datagrams waiting for capacity, per session. PROTOCOL.md's default
 // of 256 queued datagrams per direction; past it the oldest waiting datagram is
 // discarded to admit the newest, which is what unreliable delivery is for.
@@ -143,6 +150,30 @@ constexpr int64_t kStreamWriteTooLarge = -3;
 
 bool isTruthyEnvironmentValue(const char* value) {
     return value != nullptr && std::string(value) == "1";
+}
+
+// Applies an explicit process-local trust anchor file to `config`. A trust input
+// that was supplied and cannot be used is refused rather than quietly falling back
+// to whatever else this machine trusts, which would let a misconfigured deployment
+// look verified. Nothing supplied means nothing changes: no load call is made and
+// quiche keeps its own default verify paths. Whether a loaded file adds to those
+// defaults or replaces them is not measured here, so nothing depends on it.
+bool applyPeerTrust(quiche_config* config, const char* rawPath, std::string* error) {
+    if (rawPath == nullptr) return true;
+    const std::string path(rawPath);
+    if (path.empty()) {
+        *error = std::string(kPeerTrustFileEnv) +
+                 " is set but empty; refusing to guess a trust source";
+        return false;
+    }
+    const int rc = quiche_config_load_verify_locations_from_file(config, path.c_str());
+    if (rc != 0) {
+        *error = std::string(kPeerTrustFileEnv) + "=" + path +
+                 " could not be loaded as trusted CA certificates (quiche error " +
+                 std::to_string(rc) + ")";
+        return false;
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -459,6 +490,9 @@ struct Session {
     bool reportedReady = false;
     bool reportedClosed = false;
     bool failed = false;
+    // An unusable trust input fails every candidate identically, so candidate
+    // iteration stops on it instead of repeating one diagnostic per address.
+    bool trustFailed = false;
     bool wantClose = false;    // teardown requested
     uint64_t closeCode = 0;
     std::string closeReason;
@@ -1276,6 +1310,12 @@ bool openCandidate(Session* s) {
     }
     // Certificate hashes are not implemented yet, so verification remains the secure default.
     quiche_config_verify_peer(s->config, !allowInsecurePeerVerification);
+    std::string trustError;
+    if (!applyPeerTrust(s->config, std::getenv(kPeerTrustFileEnv), &trustError)) {
+        std::cerr << "[WebTransport] " << trustError << std::endl;
+        s->trustFailed = true;
+        return false;
+    }
     // Disable GREASE: quiche would otherwise open an extra unidirectional stream
     // with a reserved type and then close it. That stream consumes the first WT
     // unidirectional stream id, so reusing it later fails (the id is "collected").
@@ -1321,7 +1361,12 @@ bool tryNextCandidate(Session* s) {
         const auto& peer = s->candidates[s->nextCandidate++];
         s->peer = peer.address;
         s->peerLen = peer.length;
-        if (!openCandidate(s)) continue;
+        if (!openCandidate(s)) {
+            // A refused trust input is a configuration failure, not an
+            // unreachable address: the next candidate would fail the same way.
+            if (s->trustFailed) return false;
+            continue;
+        }
         auto budget = (s->connectDeadline - now) / static_cast<int64_t>(remaining);
         // Give an unreachable candidate an initial QUIC retry, then try the
         // next address. The last address retains the original remaining budget.

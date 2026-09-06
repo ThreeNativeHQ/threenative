@@ -289,3 +289,40 @@ through process teardown. Two permanently stuck OS lookups prevent subsequent
 hostname resolution but do not freeze game frames. These Linux proofs do not
 qualify other platforms or trusted TLS. Final repository-gate acceptance is
 recorded in [Task 2c evidence](../../../docs/verification/prd-359-task2c-2026-09-05.md).
+
+## PRD-359 process-local certificate trust — 2026-09-06
+
+Linux V8 and QuickJS wire/surface contracts pass 2/2 each. An explicit
+`SSL_CERT_FILE` is loaded through the packaged
+`quiche_config_load_verify_locations_from_file` after the existing peer-verification
+decision, so the variable names *which* anchors are trusted and never *whether* the
+peer is verified. Unset leaves quiche's own default verify paths untouched; an empty
+value, an unreadable path and a file that is not certificates each abort the candidate,
+stop candidate iteration and reject establishment with a named stderr diagnostic.
+
+The Go/Linux V8 required suite passes 28/28. Five of those are new: a real trusted
+certificate accepted with `verify-peer` on and no development override anywhere, a
+trusted certificate refused for the wrong hostname, an untrusted peer refused while a
+trust file is set, and unreadable and malformed trust files refused. Replacing the
+load helper's body with `return true` makes the native wire contract fail five named
+checks; the pre-existing development self-signed cases are unchanged and set no
+`SSL_CERT_FILE`.
+
+Each secure negative is preceded by a development-mode control against the identical
+URL, DNS mapping and listening peer: it asserts a byte-exact datagram echo with
+`MYSTRAL_WEBTRANSPORT_INSECURE=1`, so the rejection that follows is TLS refusing that
+endpoint rather than a dead port or an unresolved name. The controls are explicitly
+insecure and are not used by the trusted positive. Temporarily forcing
+`quiche_config_verify_peer` false makes both negatives fail — `FAIL: accepted the wrong
+hostname` and `FAIL: accepted an untrusted certificate`, exit 1 each — while the controls
+still pass; the source was restored to an identical hash and the rebuilt binaries hash
+identically to the recorded ones.
+
+Measured and not accepted as final: an IP-literal authority is refused by this quiche
+build even when the loaded anchor carries the matching `IP Address` SAN, while the same
+certificate and anchor verify through `localhost`. That is server-name checking, not
+trust loading, and it is carried into Task 1b as a blocking requirement with the
+certificate/hostname fixture work. These Linux proofs qualify no
+other platform, no browser, and do not claim the loaded file replaces quiche's default
+roots. The [Task 1b-trust evidence](../../../docs/verification/prd-359-task1b-trust-2026-09-06.md)
+records the exact commands, exits and binary hashes.

@@ -359,6 +359,47 @@ int main() {
     check(!isTruthyEnvironmentValue("true"), "env value \"true\" falsy");
     check(!isTruthyEnvironmentValue("on"), "env value \"on\" falsy");
 
+    // --- explicit process-local trust input. A supplied file that cannot be used
+    // is refused; nothing supplied leaves quiche's own verify paths alone. This
+    // block deliberately carries no certificate and no key: the positive load is
+    // proven live against the real fixture server in
+    // tests/webtransport/webtransport.test.ts.
+    {
+        quiche_config* trustConfig = quiche_config_new(QUICHE_PROTOCOL_VERSION);
+        check(trustConfig != nullptr, "trust-input config allocated");
+        std::string trustError;
+
+        check(applyPeerTrust(trustConfig, nullptr, &trustError) && trustError.empty(),
+              "unset trust file keeps quiche default verify paths");
+
+        trustError.clear();
+        check(!applyPeerTrust(trustConfig, "", &trustError),
+              "empty trust file value refused");
+        check(trustError.find("SSL_CERT_FILE") != std::string::npos,
+              "empty trust file diagnostic names the variable");
+
+        trustError.clear();
+        const char* missingTrust = "/nonexistent/threenative-trust-absent.pem";
+        check(!applyPeerTrust(trustConfig, missingTrust, &trustError),
+              "unreadable trust file refused");
+        check(trustError.find(missingTrust) != std::string::npos,
+              "unreadable trust file diagnostic names the path");
+
+        trustError.clear();
+        const char* malformedTrust = "webtransport-trust-malformed.pem";
+        std::FILE* malformed = std::fopen(malformedTrust, "wb");
+        check(malformed != nullptr, "malformed trust fixture written");
+        if (malformed) {
+            std::fputs("not a certificate\n", malformed);
+            std::fclose(malformed);
+            check(!applyPeerTrust(trustConfig, malformedTrust, &trustError),
+                  "malformed trust file refused");
+            std::remove(malformedTrust);
+        }
+
+        quiche_config_free(trustConfig);
+    }
+
     // --- stream-header state machine. The header must name its owning
     // CONNECT session. The signal
     // constants are 2-byte varints on the wire, so fixtures are built with
