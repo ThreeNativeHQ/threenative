@@ -14,9 +14,9 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
 | `docs/benchmark` | 1583 | 109397932 | 0 |
-| `docs/verification` | 561 | 48496483 | 20 |
+| `docs/verification` | 565 | 48505686 | 24 |
 
-**20 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
+**24 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories
 
@@ -51,6 +51,10 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/night-batch-2026-08-26-step0-2026-08-27.md` | 4442 |
 | `docs/verification/prd-219-menu-flow-merged-tree-2026-08-27.md` | 3525 |
 | `docs/verification/prd-243-starter-pixel-after-2026-08-30.png` | 171532 |
+| `docs/verification/prd-363-flora-admission-2026-09-06.md` | 3790 |
+| `docs/verification/prd-363-flora-authoring-2026-09-06.md` | 992 |
+| `docs/verification/prd-363-flora-cross-target-2026-09-06.md` | 2481 |
+| `docs/verification/prd-363-flora-wind-2026-09-06.md` | 1940 |
 | `docs/verification/prd278-followup-2026-08-30.md` | 8810 |
 | `docs/verification/starter-blank-canvas-2026-08-30-scene-under-xvfb.png` | 515630 |
 | `docs/verification/starter-blank-canvas-2026-08-30.png` | 13318 |
