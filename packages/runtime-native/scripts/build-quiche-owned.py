@@ -277,7 +277,7 @@ def pick_inspector(nm_path=None, llvm_nm_path=None, dumpbin_path=None,
                      "required to validate symbols")
 
 
-def validate_archive(target, lib_path, header_path):
+def validate_archive(target, lib_path, header_path, nm_path=None):
     """Required symbols DEFINED in the archive + required export in the header."""
     lib_path = resolve(lib_path)
     header_path = resolve(header_path)
@@ -286,7 +286,8 @@ def validate_archive(target, lib_path, header_path):
     if not os.path.isfile(header_path):
         raise BuildError(f"TN_QUICHE_HEADER_MISSING: {header_path}")
     kind, tool = pick_inspector(
-        nm_path=shutil.which("nm"), llvm_nm_path=shutil.which("llvm-nm"),
+        nm_path=nm_path or shutil.which("nm"),
+        llvm_nm_path=shutil.which("llvm-nm"),
         dumpbin_path=shutil.which("dumpbin"),
         lib_suffix=Path(lib_path).suffix)
     if kind == "dumpbin":
@@ -661,7 +662,19 @@ def build(target, src_dir, patch_dir, out_dir, jobs=4, run_tests=True,
     lib_name = "quiche.lib" if target.startswith("win-") else "libquiche.a"
     built = os.path.join(target_abs, rust_t, "release", lib_name)
     header = os.path.join(src_dir, "quiche", "include", "quiche.h")
-    validate_archive(target, built, header)
+    archive_nm = None
+    if target in APPLE_SDK:
+        try:
+            archive_nm = subprocess.check_output(
+                [selected["xcrun"], "--sdk", selected["sdk"], "-f", "llvm-nm"],
+                text=True, env=env).strip()
+        except subprocess.CalledProcessError:
+            raise BuildError(f"TN_QUICHE_APPLE_TOOL_MISSING: llvm-nm "
+                             f"not in {selected['sdk']} SDK")
+        if not archive_nm:
+            raise BuildError(f"TN_QUICHE_APPLE_TOOL_MISSING: empty llvm-nm "
+                             f"path in {selected['sdk']} SDK")
+    validate_archive(target, built, header, nm_path=archive_nm)
     out = resolve(out_dir)
     os.makedirs(os.path.join(out, "include"), exist_ok=True)
     staged_lib = os.path.join(out, lib_name)

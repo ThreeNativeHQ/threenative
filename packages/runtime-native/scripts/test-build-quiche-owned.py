@@ -267,6 +267,28 @@ class TestPristineSource(unittest.TestCase):
 
 
 class TestExactSymbols(unittest.TestCase):
+    def test_explicit_archive_inspector_is_used(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lib, inc = fixture_archive(tmp)
+            calls = []
+
+            def fake_check_output(args, **kwargs):
+                calls.append(args)
+                return ("0000000000000000 (__TEXT,__text) external "
+                        "_quiche_h3_config_set_additional_settings\n"
+                        "0000000000000000 (__TEXT,__text) external "
+                        "_quiche_connect\n"
+                        "0000000000000000 (__TEXT,__text) external "
+                        "_quiche_accept\n")
+
+            with mock.patch.object(b.subprocess, "check_output",
+                                  side_effect=fake_check_output):
+                b.validate_archive("ios-arm64", lib,
+                                   os.path.join(inc, "quiche.h"),
+                                   nm_path="/usr/bin/llvm-nm")
+
+            self.assertEqual(calls, [["/usr/bin/llvm-nm", "-g", b.resolve(lib)]])
+
     def test_apple_archive_probe_uses_portable_nm_invocation(self):
         with tempfile.TemporaryDirectory() as tmp:
             lib, inc = fixture_archive(tmp)

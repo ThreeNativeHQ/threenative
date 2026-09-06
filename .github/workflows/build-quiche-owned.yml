@@ -127,6 +127,7 @@ jobs:
           xcrun --sdk "$APPLE_SDK" --show-sdk-path
           xcrun --sdk "$APPLE_SDK" -f clang
           xcrun --sdk "$APPLE_SDK" -f ar
+          xcrun --sdk "$APPLE_SDK" -f llvm-nm
       # Android NDK r27 pin 27.1.12297006, API 21. Producer reads
       # ANDROID_NDK_HOME, binds CC_<triple>/CARGO_TARGET_<TRIPLE>_LINKER,
       # CMAKE_ANDROID_NDK and CMAKE_ANDROID_ARCH_ABI.
