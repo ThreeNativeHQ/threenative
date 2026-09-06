@@ -264,12 +264,9 @@ async function bundleProject(project, entryPoint, outputPath, target) {
 const nativeElements = new Map();
 const nativeGetElementById = document.getElementById.bind(document);
 const nativeQuerySelector = document.querySelector.bind(document);
-const nativeCreateElement = document.createElement.bind(document);
 document.getElementById = (id) => nativeElements.get(id) ?? nativeGetElementById(id);
 document.querySelector = (selector) =>
   selector.startsWith("#") ? nativeElements.get(selector.slice(1)) ?? null : nativeQuerySelector(selector);
-document.createElement = (tag) =>
-  String(tag).toLowerCase() === "canvas" ? globalThis.canvas : nativeCreateElement(tag);
 for (const id of ["app", "root"]) {
   if (nativeGetElementById(id) == null) {
     const element = document.createElement("div");

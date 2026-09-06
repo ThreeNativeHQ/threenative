@@ -25,7 +25,7 @@ function assertResizeAttachmentContract(definitions) {
   );
   assert.match(
     definitions.currentTextureHandler,
-    /syncSurfaceSizeToCanvas\(state, state->engine->getGlobalProperty\("canvas"\)\)[\s\S]*?texture = getCurrentSwapchainTexture\(state\)/u,
+    /getProperty\(canvasContext, "canvas"\)[\s\S]*?syncSurfaceSizeToCanvas\(state, canvas\)[\s\S]*?texture = getCurrentSwapchainTexture\(state\)/u,
     "the shared canvas binding must synchronize before it obtains the color attachment",
   );
   assert.match(
@@ -47,7 +47,7 @@ test("native canvas resize keeps surface color and depth attachments the same si
 test("native surface acquisition cannot bypass canvas resize propagation", () => {
   const definitions = resizeAttachmentDefinitions();
   definitions.currentTextureHandler = definitions.currentTextureHandler.replace(
-    'syncSurfaceSizeToCanvas(state, state->engine->getGlobalProperty("canvas"))',
+    'syncSurfaceSizeToCanvas(state, canvas)',
     "resize synchronization removed",
   );
   assert.throws(() => assertResizeAttachmentContract(definitions));
