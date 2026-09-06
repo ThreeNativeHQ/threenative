@@ -12,3 +12,4 @@ Charter itself can state the current rule without carrying its own diff history.
 | 2026-08-24 (PRD-217) | §6b | One UI layer — the same React DOM, Tailwind, CSS and SVG on every target, through the platform's own browser-class renderer. The quad renderer becomes the opt-in. The old rule assumed embedding a browser meant shipping one; a measured Pixel 8 run showed the platform composites its own for free. |
 | 2026-08-31 (PRD-314) | §5b | Pose conformance measurement is named as mechanism, on the same footing as the tracer and instancing entries. |
 | 2026-09-02 | all | Condensed. Rationale that had been restated across sections is stated once; open work and known limitations move to [`CURRENT-CHALLENGES.md`](../CURRENT-CHALLENGES.md). No rule changed. |
+| 2026-09-05 | §1 | Added the out-of-the-box principle: ordinary games work without configuration pain, and configuration remains an escape hatch rather than a prerequisite. |
