@@ -3237,6 +3237,45 @@ the proven 1280×720 smoke surface, while an explicit `--render-size 1920x1080` 
 The next hosted Windows rerun is required before this repair can be called cross-platform CI
 evidence.
 
+### PRD-358 hosted screenshot callback lifetime repair — 2026-09-06
+
+The hosted Windows 1280x720 rerun reached the screenshot request but timed out while mapping the
+readback buffer, then exited with `SIGSEGV`. The native screenshot path passed stack-local
+`BufferMapData` to an asynchronous Dawn callback; when the timeout returned, a late callback could
+write through that expired pointer. The fix gives each callback a heap-owned `shared_ptr` holder,
+uses Dawn's `AllowSpontaneous` callback mode, waits against a five-second wall-clock deadline,
+and unmaps the buffer on timeout. This follows the already-shipped async `GPUBuffer.mapAsync`
+ownership pattern in `bindings_resources.cpp`.
+
+Red/green evidence:
+
+```text
+before fix: production-profile.test.mjs 42 passed, 1 failed
+after fix:  production-profile.test.mjs 43 passed
+```
+
+The rebuilt Linux Dawn host and focused native gate both passed:
+
+```text
+cmake --build packages/runtime-native/build/tn-linux --target mystral -j2       PASS
+ctest --test-dir packages/runtime-native/build/tn-linux -R screenshot-capture-gate \
+  --output-on-failure                                                        PASS (1/1)
+```
+
+The local hosted-software collector then completed at the same 1280x720 smoke size:
+
+```text
+pnpm --filter @threenative/runtime-native profile:production -- --target desktop \
+  --render-size 1280x720 --cold-starts 1 --warmup 1 --repetitions 1 --hosted-software \
+  --prebuilt-artifact build/tn-linux/mystral --out /tmp/prd358-local-screenshot-fix-2
+status PASS; exitCode 0; markers run-start, first-workload-frame, clean-end
+startupMs 3528; sampleCount 275; codes []
+```
+
+This proves the callback lifetime fix on the local Dawn host and retains startup, steady-frame,
+and screenshot evidence. It does not certify Windows; the hosted Windows rerun must pass the
+production collector and screenshot before this repair becomes cross-platform CI evidence.
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,

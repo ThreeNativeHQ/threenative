@@ -1001,6 +1001,14 @@ test('desktop screenshot evidence uses the host post-present mailbox protocol', 
   assert.match(runtime, /tn-playtest-screenshot-request\.txt/u);
 });
 
+test('native screenshot mapping keeps asynchronous callback state alive after a timeout', () => {
+  const context = readFileSync(new URL('../src/webgpu/context.cpp', import.meta.url), 'utf8');
+  assert.match(context, /using BufferMapDataPtr = std::shared_ptr<BufferMapData>/u);
+  assert.match(context, /new BufferMapDataPtr\(mapData\)/u);
+  assert.match(context, /WGPUCallbackMode_AllowSpontaneous/u);
+  assert.doesNotMatch(context, /userdata1 = &mapData/u);
+});
+
 test('desktop production profiling forwards its 30-second operation timeout to the mailbox transport', () => {
   const profile = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
   assert.match(profile, /new runner\.DeviceMailboxTransport\(mailbox, \{ request: requestPath, response: responsePath \}, timeoutMs\)/u);
