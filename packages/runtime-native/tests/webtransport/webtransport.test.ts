@@ -30,6 +30,7 @@
 
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { request as httpsRequest } from "node:https";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -156,6 +157,8 @@ async function startServer(): Promise<boolean> {
 
 type EphemeralServer = {
   child: ChildProcess;
+  getStderr: () => string;
+  getStdout: () => string;
   ready: Promise<string>;
 };
 
@@ -215,7 +218,7 @@ function spawnFixtureServer(
       }
     });
   });
-  return { child, ready };
+  return { child, getStderr: () => stderr, getStdout: () => stdout, ready };
 }
 
 function spawnIpv6Server(): EphemeralServer {
@@ -247,6 +250,7 @@ async function stopOwnedServer(child: ChildProcess): Promise<void> {
 
 type ScriptOptions = {
   allowInsecurePeerVerification?: boolean;
+  cwd?: string;
   dnsAddresses?: string;
   dnsDelayMs?: number | string;
   timeoutMs?: number;
@@ -300,6 +304,7 @@ async function runScript(
     runtimeBinary,
     ["run", path, "--headless"],
     {
+      cwd: options.cwd,
       env,
       timeoutMs: options.timeoutMs ?? SCRIPT_TIMEOUT_MS,
     },
@@ -1300,8 +1305,94 @@ let trustServer: ChildProcess | null = null;
 let untrustedServer: ChildProcess | null = null;
 let trustAuthority = "";
 let untrustedAuthority = "";
+let issuerProc: ChildProcess | null = null;
+let issuerAuthority = "";
+let issuerStdout = "";
+let issuerStderr = "";
+let trustServerOutput = (): string => "";
+let trustServerError = (): string => "";
 const namedAuthority = (authority: string): string =>
   `localhost:${authority.slice(authority.lastIndexOf(":") + 1)}`;
+const ISSUER_SCRIPT = resolve(runtimeRoot, "../../scripts/networking-issuer.mjs");
+const ISSUER_ASSET_DIR = TEST_DIR;
+const ISSUER_CONFIG = join(TRUST_DIR, "issuer-config.json");
+
+async function startNetworkingIssuer(adminAuthority: string): Promise<string> {
+  writeFileSync(
+    ISSUER_CONFIG,
+    JSON.stringify({
+      adminUrl: `http://${adminAuthority}`,
+      allowedOrigins: ["https://localhost:5173"],
+      bind: "127.0.0.1:0",
+      certPath: TRUST_CERT,
+      clients: [{ assetDir: ISSUER_ASSET_DIR, playerId: "alpha" }],
+      keyPath: TRUST_KEY,
+      room: "networking-proof",
+    }),
+  );
+  issuerProc = spawn(process.execPath, [ISSUER_SCRIPT, "--config", ISSUER_CONFIG], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  issuerStdout = "";
+  issuerStderr = "";
+  return new Promise((resolveAddress, rejectAddress) => {
+    const timeout = setTimeout(() => {
+      rejectAddress(
+        new Error(`networking issuer readiness timed out; stdout=${stdout} stderr=${stderr}`),
+      );
+    }, 15_000);
+    issuerProc?.stdout?.setEncoding("utf8");
+    issuerProc?.stderr?.setEncoding("utf8");
+    issuerProc?.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
+      issuerStdout += chunk;
+      const match = /ISSUER_LISTENING https=(https:\/\/[^\s]+)/u.exec(stdout);
+      if (match?.[1]) {
+        clearTimeout(timeout);
+        resolveAddress(match[1]);
+      }
+    });
+    issuerProc?.stderr?.on("data", (chunk: string) => {
+      stderr += chunk;
+      issuerStderr += chunk;
+    });
+    issuerProc?.once("error", (error) => {
+      clearTimeout(timeout);
+      rejectAddress(error);
+    });
+    issuerProc?.once("exit", (code, signal) => {
+      if (code !== null || signal !== null) {
+        clearTimeout(timeout);
+        rejectAddress(
+          new Error(`networking issuer exited before readiness (code=${code}, signal=${signal})`),
+        );
+      }
+    });
+  });
+}
+
+async function stopNetworkingIssuer(): Promise<void> {
+  const child = issuerProc;
+  issuerProc = null;
+  if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise<void>((resolveStop, rejectStop) => {
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      rejectStop(new Error("networking issuer did not stop within 5 seconds"));
+    }, 5_000);
+    child.once("close", () => {
+      clearTimeout(timeout);
+      resolveStop();
+    });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      rejectStop(error);
+    });
+    child.kill("SIGTERM");
+  });
+}
 
 // The certificate names localhost and 127.0.0.1. Measured on 2026-09-06: this quiche
 // build refuses an IP-literal authority even when the certificate carries the matching
@@ -1390,6 +1481,120 @@ const rejectionSource = (url: string, acceptedNote: string): string => `async fu
 main();
 `;
 
+const networkingJoinSource = (
+  gameUrl: string,
+  credentialAsset: string,
+): string => `async function main() {
+  const issued = await (await fetch('${credentialAsset}')).json();
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const frame = (kind, channel, payload) => {
+    const bytes = new Uint8Array(8 + payload.length);
+    const view = new DataView(bytes.buffer);
+    bytes[0] = 1;
+    bytes[1] = kind;
+    view.setUint16(2, channel);
+    view.setUint32(4, payload.length);
+    bytes.set(payload, 8);
+    return bytes;
+  };
+  const readFrame = async (reader) => {
+    const result = await reader.read();
+    if (result.done || !result.value || result.value.length < 8) throw new Error('short application frame');
+    const view = new DataView(result.value.buffer, result.value.byteOffset, result.value.byteLength);
+    const length = view.getUint32(4);
+    if (length + 8 !== result.value.length) throw new Error('bad application frame length');
+    return { kind: result.value[1], channel: view.getUint16(2), payload: result.value.slice(8) };
+  };
+  const transport = new WebTransport('${gameUrl}');
+  transport.closed.catch(() => {});
+  try {
+    await transport.ready;
+    const control = await transport.createBidirectionalStream();
+    const controlWriter = control.writable.getWriter();
+    const controlReader = control.readable.getReader();
+    await controlWriter.write(frame(1, 0, encoder.encode(JSON.stringify({
+      applicationProtocol: 'threenative-smoke/1',
+      credential: issued.credential,
+      channels: [
+        { id: 1, delivery: 'unreliable' },
+        { id: 2, delivery: 'unreliable' },
+        { id: 3, delivery: 'reliable-ordered' },
+        { id: 4, delivery: 'reliable-ordered' },
+      ],
+      maxReliableMessageBytes: 65536,
+      maxQueuedReliableBytes: 1048576,
+      maxQueuedDatagrams: 256,
+    }))));
+    const welcome = await readFrame(controlReader);
+    if (welcome.kind !== 2 || welcome.channel !== 0) throw new Error('invalid WELCOME');
+    const welcomeJson = JSON.parse(decoder.decode(welcome.payload));
+    if (typeof welcomeJson.sessionId !== 'string' || welcomeJson.sessionId.length !== 32) throw new Error('missing session id');
+    for (const channel of [3, 4]) {
+      const stream = await transport.createBidirectionalStream();
+      const writer = stream.writable.getWriter();
+      const reader = stream.readable.getReader();
+      await writer.write(frame(3, channel, new Uint8Array()));
+      const bound = await readFrame(reader);
+      if (bound.kind !== 4 || bound.channel !== channel) throw new Error('invalid BOUND');
+      reader.releaseLock();
+      writer.releaseLock();
+    }
+    console.log('PASS: authenticated /game join ' + welcomeJson.sessionId);
+  } finally {
+    transport.close();
+    await transport.closed.catch(() => {});
+  }
+}
+main().then(() => process.exit(0)).catch((error) => {
+  console.log('FAIL: ' + (error && error.message ? error.message : error));
+  process.exit(1);
+});
+`;
+
+async function requestIssuerToken(
+  issuerUrl: string,
+): Promise<{ credential: string; expiresAt: string }> {
+  const staged = JSON.parse(readFileSync(join(TEST_DIR, "networking-session.json"), "utf8"));
+  return new Promise((resolveToken, rejectToken) => {
+    const request = httpsRequest(
+      new URL("/token", issuerUrl),
+      {
+        ca: readFileSync(TRUST_CERT),
+        headers: {
+          Authorization: `Bearer ${staged.issuerAuthorization}`,
+          Origin: "https://localhost:5173",
+        },
+        method: "POST",
+      },
+      (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        response.on("end", () => {
+          if (response.statusCode !== 200) {
+            rejectToken(new Error(`issuer returned HTTP ${response.statusCode}`));
+            return;
+          }
+          try {
+            const issued = JSON.parse(body);
+            if (typeof issued.credential !== "string" || typeof issued.expiresAt !== "string") {
+              throw new Error("issuer returned malformed token");
+            }
+            resolveToken(issued);
+          } catch (error) {
+            rejectToken(error);
+          }
+        });
+      },
+    );
+    request.on("error", rejectToken);
+    request.end();
+  });
+}
+
 // The exact-endpoint reachability control a secure negative needs. Deliberately
 // insecure — MYSTRAL_WEBTRANSPORT_INSECURE=1 through the existing runTrustedScript
 // helper — and never used by the trusted positive, which runs with verification on
@@ -1427,6 +1632,8 @@ describe("WebTransport verified certificate trust", () => {
       /LISTENING udp=(127\.0\.0\.1:\d+)/u,
     );
     trustServer = fixture.child;
+    trustServerOutput = fixture.getStdout;
+    trustServerError = fixture.getStderr;
     // A second live peer, presenting the development self-signed certificate the
     // fixture CA above does not sign. The untrusted negative has to be refused by
     // verification, not by there being nothing to connect to.
@@ -1439,6 +1646,10 @@ describe("WebTransport verified certificate trust", () => {
     try {
       trustAuthority = await fixture.ready;
       untrustedAuthority = await untrusted.ready;
+      const adminMatch = /admin=(127\.0\.0\.1:\d+)/u.exec(trustServerOutput());
+      if (!adminMatch?.[1])
+        throw new Error("verified fixture did not report its loopback admin address");
+      issuerAuthority = await startNetworkingIssuer(adminMatch[1]);
     } catch (error) {
       trustUnavailableReason = `requires a verified-certificate WebTransport fixture: ${
         error instanceof Error ? error.message : String(error)
@@ -1449,6 +1660,7 @@ describe("WebTransport verified certificate trust", () => {
 
   afterAll(async () => {
     try {
+      await stopNetworkingIssuer();
       const results = await Promise.allSettled(
         [trustServer, untrustedServer].filter((child) => child !== null).map(stopOwnedServer),
       );
@@ -1462,6 +1674,8 @@ describe("WebTransport verified certificate trust", () => {
     } finally {
       trustServer = null;
       untrustedServer = null;
+      trustServerOutput = (): string => "";
+      trustServerError = (): string => "";
       rmSync(TRUST_DIR, { force: true, recursive: true });
     }
   });
@@ -1482,6 +1696,33 @@ describe("WebTransport verified certificate trust", () => {
     expect(out).not.toContain("TLS peer verification disabled");
     expect(out).not.toContain("MYSTRAL_WEBTRANSPORT_INSECURE=1");
   }, 30_000);
+
+  it("joins authenticated /game through a staged runtime grant", async ({ skip }) => {
+    requireTrustFixture(skip);
+    const gameUrl = `https://${namedAuthority(trustAuthority)}/game`;
+    const issuerUrl = issuerAuthority.replace("127.0.0.1", "localhost");
+    const credentialAsset = join(TEST_DIR, "networking-join.json");
+    let out: string;
+    try {
+      const issued = await requestIssuerToken(issuerUrl);
+      writeFileSync(credentialAsset, JSON.stringify(issued));
+      out = await runScript(
+        "wt-networking-authenticated.js",
+        networkingJoinSource(gameUrl, "networking-join.json"),
+        { cwd: TEST_DIR, trustFile: TRUST_CERT, timeoutMs: 30_000 },
+      );
+    } catch (error) {
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}\nissuer stdout=${issuerStdout} stderr=${issuerStderr}\n` +
+          `game server stdout=${trustServerOutput()} stderr=${trustServerError()}`,
+      );
+    } finally {
+      rmSync(credentialAsset, { force: true });
+    }
+    expect(out).toContain("PASS: authenticated /game join");
+    expect(out).not.toContain("grant-secret");
+    expect(out).not.toContain("credential=");
+  }, 45_000);
 
   it("rejects a trusted certificate presented for the wrong hostname", async ({ skip }) => {
     requireTrustFixture(skip);

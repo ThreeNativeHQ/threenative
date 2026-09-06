@@ -801,10 +801,15 @@ func ServeGame(ctx context.Context, session *webtransport.Session, cfg Config) (
 	}
 	// No server-created application streams in v1: a second client stream
 	// before the handshake finishes is malformed. Watch for it while HELLO
-	// is in flight and fail the handshake if one arrives.
-	extraStream := make(chan struct{}, 1)
+	// is in flight and fail the handshake if one arrives. The probe context is
+	// canceled and joined before WELCOME is written; otherwise the stream
+	// watcher can steal the first post-WELCOME BIND stream.
+	extraStream := make(chan struct{}, 2)
+	probeCtx, cancelProbe := context.WithCancel(ctx)
+	probeDone := make(chan struct{}, 2)
 	go func() {
-		probe, err := session.AcceptStream(ctx)
+		defer func() { probeDone <- struct{}{} }()
+		probe, err := session.AcceptStream(probeCtx)
 		if err == nil && probe != nil {
 			select {
 			case extraStream <- struct{}{}:
@@ -816,7 +821,8 @@ func ServeGame(ctx context.Context, session *webtransport.Session, cfg Config) (
 	}()
 	// No unidirectional application streams in v1 either.
 	go func() {
-		uni, err := session.AcceptUniStream(ctx)
+		defer func() { probeDone <- struct{}{} }()
+		uni, err := session.AcceptUniStream(probeCtx)
 		if err == nil && uni != nil {
 			select {
 			case extraStream <- struct{}{}:
@@ -829,6 +835,9 @@ func ServeGame(ctx context.Context, session *webtransport.Session, cfg Config) (
 	// HELLO is bounded by its own 4096-byte cap, not by the negotiated
 	// message limit (negotiation has not happened yet when it arrives).
 	hello, err := readControlFrame(ctx, control, maxHelloLen)
+	cancelProbe()
+	<-probeDone
+	<-probeDone
 	select {
 	case <-extraStream:
 		_ = session.CloseWithError(closeMalformed, "unexpected stream during handshake")
