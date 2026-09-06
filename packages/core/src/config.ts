@@ -160,6 +160,8 @@ export interface IThreeNativeConfig {
     readonly title?: string;
     readonly width?: number;
     readonly height?: number;
+    /** Start maximized on desktop when `display.fullscreen` is false. */
+    readonly maximized?: boolean;
     readonly resizable?: boolean;
   };
   readonly assets?: {

@@ -119,6 +119,7 @@ export default {
     title: "Fox",
     width: 1280,
     height: 720,
+    maximized: false,            // start maximized when fullscreen is false
     resizable: true,
   },
   nativeEntry: "src/game.ts",
@@ -234,7 +235,11 @@ downscale is not worth the dependency.
 
 ### Phase 4 — desktop window
 
-- `package-desktop.mjs` and the runtime honour `window.title`, `width`, `height`, `resizable`.
+- `package-desktop.mjs` and the runtime honour `window.title`, `width`, `height`, `maximized`, and
+  `resizable`; `maximized` is ignored when `display.fullscreen` is true.
+- Desktop fullscreen is borderless at the desktop resolution; `window.width` and `window.height`
+  apply to windowed launches. Use the runtime's `--windowed` flag to inspect the configured size
+  without changing a game's fullscreen default.
 - `pnpm native:verify:desktop` asserts the created window matches the declared values.
 
 ### Phase 5 — prove it on the device

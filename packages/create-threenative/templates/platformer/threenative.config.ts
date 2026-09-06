@@ -19,6 +19,7 @@ const config: IThreeNativeConfig = {
     title: "__PROJECT_NAME__", // Desktop window title.
     width: 1280,
     height: 720,
+    maximized: false,
     resizable: true,
   },
   bootSplash: {

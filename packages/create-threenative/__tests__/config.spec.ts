@@ -166,7 +166,13 @@ describe("threenative.config.ts", () => {
       `export default {
         app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
         display: { orientation: "portrait", fullscreen: false, keepScreenOn: true, maxFps: 120 },
-        window: { title: "Fox Desktop", width: 1024, height: 576, resizable: false },
+        window: {
+          title: "Fox Desktop",
+          width: 1024,
+          height: 576,
+          maximized: true,
+          resizable: false,
+        },
         nativeEntry: "src/game.ts",
         renderer: { preferWebGPU: false },
       };`,
@@ -175,7 +181,13 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).resolves.toEqual({
       app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
       display: { orientation: "portrait", fullscreen: false, keepScreenOn: true, maxFps: 120 },
-      window: { title: "Fox Desktop", width: 1024, height: 576, resizable: false },
+      window: {
+        title: "Fox Desktop",
+        width: 1024,
+        height: 576,
+        maximized: true,
+        resizable: false,
+      },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: false },
       ui: { renderer: "native" },
@@ -210,7 +222,7 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).resolves.toMatchObject({
       app: { id: "com.threenative.foxgame", name: "fox-game", version: "0.1.13", build: 1 },
       display: { orientation: "landscape", fullscreen: true, keepScreenOn: false, maxFps: 60 },
-      window: { title: "fox-game", width: 1280, height: 720, resizable: true },
+      window: { title: "fox-game", width: 1280, height: 720, maximized: false, resizable: true },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: true },
       ui: { renderer: "native" },
@@ -787,6 +799,12 @@ describe("threenative.config.ts", () => {
     const root = await project();
     await config(root, 'export default { window: { resizable: "yes" } };');
     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_WINDOW_RESIZABLE_INVALID/u);
+  });
+
+  it("rejects an invalid maximized value with the named code", async () => {
+    const root = await project();
+    await config(root, 'export default { window: { maximized: "yes" } };');
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_WINDOW_MAXIMIZED_INVALID/u);
   });
 
   it("rejects an invalid renderer value with the named code", async () => {

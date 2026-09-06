@@ -170,7 +170,8 @@ template game export into the core renderer.
 
 The Android and iOS packager contract tests render the same declared id, name, version, build,
 orientation, fullscreen, keep-screen-on, window and icon fields; the desktop staging test
-embeds the window contract for the native host. The Android runtime sources no longer contain
+embeds the window contract, including its maximized startup mode, for the native host. The
+Android runtime sources no longer contain
 the former framework application id or launcher label.
 
 The config-driven identity/icon side-by-side install on physical serial `37251FDJH0037Z` is

@@ -394,7 +394,14 @@ public:
         }
 
         // Initialize SDL3 window
-        if (!platform::createWindow(config_.title, width_, height_, config_.fullscreen, config_.resizable)) {
+        if (!platform::createWindow(
+                config_.title,
+                width_,
+                height_,
+                config_.fullscreen,
+                config_.resizable,
+                config_.maximized
+            )) {
             std::cerr << "[Mystral] Failed to create window" << std::endl;
             return false;
         }

@@ -91,7 +91,7 @@ describe("threenative build", () => {
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: true },
       ui: { renderer: "native" as const },
-      window: { height: 720, resizable: true, title: "Brand Game", width: 1280 },
+      window: { height: 720, maximized: false, resizable: true, title: "Brand Game", width: 1280 },
     };
 
     const root = await makeTempDir("threenative-brand-build-");
