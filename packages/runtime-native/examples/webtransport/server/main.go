@@ -1,11 +1,11 @@
 // Command tn-network-server is the PRD-359 reference WebTransport server.
 //
-// This task restores the transport-conformance half of it: /echo returns every
-// datagram, bidirectional stream and unidirectional stream exactly as it arrived,
-// which is what the native runtime's quiche client and a real browser are measured
-// against. /echo carries no authentication and no application protocol; the
-// authenticated /game endpoint, its loopback token issuer and the --admin-listen
-// and --room flags that configure them arrive with the tasks that give them meaning.
+// /echo is transport conformance only: it returns every datagram,
+// bidirectional stream and unidirectional stream exactly as it arrived, which
+// is what the native runtime's quiche client and a real browser are measured
+// against. /echo carries no authentication and no application protocol; /game
+// is the authenticated application endpoint, gated by the loopback token
+// issuer (POST /token on --admin-listen) and the --room it validates against.
 //
 // Two clients drive it:
 //   - packages/runtime-native/tests/webtransport/webtransport.test.ts, which builds
@@ -91,6 +91,8 @@ type options struct {
 	keyPath       string
 	devSelfSigned bool
 	allowOrigins  []string
+	adminListen   string
+	room          string
 }
 
 // originList collects a repeatable --allow-origin, normalizing each value as it is
@@ -122,6 +124,9 @@ func parseOptions(args []string) (*options, error) {
 		"explicit alternative to --cert/--key, echo probes only")
 	fs.Var(&origins, "allow-origin",
 		"repeatable; exact normalized scheme/host/port a browser may connect from")
+	fs.StringVar(&opts.adminListen, "admin-listen", "127.0.0.1:0",
+		"loopback-only HTTP token issuer bind address as host:port")
+	fs.StringVar(&opts.room, "room", "networking-proof", "served room /game validates tokens against")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -155,6 +160,15 @@ func (o *options) validate() error {
 			"verified mode requires --cert and --key; pass --dev-self-signed for echo probes instead")
 	case suppliedKeyPair && (o.certPath == "" || o.keyPath == ""):
 		return errors.New("--cert and --key must be supplied together")
+	}
+	if o.adminListen == "" {
+		return errors.New("--admin-listen must name a loopback host:port, for example 127.0.0.1:0")
+	}
+	if !isLoopbackListen(o.adminListen) {
+		return fmt.Errorf("--admin-listen %q must bind loopback only", o.adminListen)
+	}
+	if o.room == "" || len(o.room) > 64 {
+		return errors.New("--room must be 1-64 characters")
 	}
 	return nil
 }
@@ -248,9 +262,32 @@ func run(opts *options) error {
 		go serveEcho(session)
 	})
 
-	// gameConfig is intentionally validator-free until task 4d: the adapter
-	// rejects every handshake with ErrUnavailable and allocates no game
-	// state. There is no unauthenticated public game endpoint.
+	// The token store backs both the loopback admin issuer and /game HELLO
+	// validation. /game compares the token's bound room to --room before
+	// atomic one-time consumption, and allocates no game state before that.
+	store := newTokenStore(time.Now)
+	adminListener, err := net.Listen("tcp", opts.adminListen)
+	if err != nil {
+		return fmt.Errorf("binding admin %s: %w", opts.adminListen, err)
+	}
+	// Refuse a non-loopback resolved address even if the listen string
+	// passed validation textually: the issuer must stay loopback-only.
+	if addr, ok := adminListener.Addr().(*net.TCPAddr); !ok || !addr.IP.IsLoopback() {
+		adminListener.Close()
+		return fmt.Errorf("admin listener %s is not loopback-only", adminListener.Addr())
+	}
+	adminMux := http.NewServeMux()
+	adminMux.HandleFunc("/token", store.serveToken)
+	adminServer := &http.Server{
+		Handler:           adminMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		if err := adminServer.Serve(adminListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("admin: serving failed: %v", err)
+		}
+	}()
+
 	gameConfig := Config{
 		ApplicationProtocol: "threenative-smoke/1",
 		Channels: []Channel{
@@ -259,7 +296,8 @@ func run(opts *options) error {
 			{ID: channelActions, Delivery: DeliveryReliable},
 			{ID: channelClock, Delivery: DeliveryReliable},
 		},
-		Limits: defaultLimits(),
+		Limits:    defaultLimits(),
+		Validator: store.validator(opts.room),
 	}
 	mux.HandleFunc(gamePath, func(w http.ResponseWriter, r *http.Request) {
 		session, err := server.Upgrade(w, r)
@@ -282,7 +320,8 @@ func run(opts *options) error {
 
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(packetConn) }()
-	fmt.Printf("LISTENING udp=%s path=%s,%s\n", packetConn.LocalAddr(), echoPath, gamePath)
+	fmt.Printf("LISTENING udp=%s admin=%s room=%s path=%s,%s\n",
+		packetConn.LocalAddr(), adminListener.Addr(), opts.room, echoPath, gamePath)
 
 	select {
 	case err := <-served:
@@ -295,12 +334,30 @@ func run(opts *options) error {
 
 	closed := make(chan error, 1)
 	go func() { closed <- server.Close() }()
+	adminClosed := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		adminClosed <- adminServer.Shutdown(ctx)
+	}()
 	timer := time.NewTimer(shutdownTimeout)
 	defer timer.Stop()
+	var serveErr error
 	select {
 	case err := <-closed:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("shutting down: %w", err)
+			serveErr = fmt.Errorf("shutting down: %w", err)
+		}
+	case <-timer.C:
+		return fmt.Errorf("shutdown exceeded %s", shutdownTimeout)
+	}
+	select {
+	case err := <-adminClosed:
+		if serveErr != nil {
+			return serveErr
+		}
+		if err != nil {
+			return fmt.Errorf("shutting down admin: %w", err)
 		}
 		return nil
 	case <-timer.C:

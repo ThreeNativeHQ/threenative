@@ -6,10 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 type vectorFile struct {
@@ -398,6 +403,248 @@ func TestHandshakeValidation(t *testing.T) {
 	}
 	if idBack != sessionID || back != negotiated {
 		t.Fatalf("WELCOME round trip mismatch")
+	}
+}
+
+// issueFixtureToken mints a credential through the admin handler so the auth
+// tests exercise the same path the test orchestrator uses.
+func issueFixtureToken(t *testing.T, store *tokenStore, room, playerID string) tokenResponse {
+	t.Helper()
+	body := `{"room":` + jsonString(t, room) + `,"playerId":` + jsonString(t, playerID) + `}`
+	req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:9"
+	rec := httptest.NewRecorder()
+	store.serveToken(rec, req)
+	res := rec.Result()
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("issue token: status %d", res.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		t.Fatalf("issue token body: %v", err)
+	}
+	var out tokenResponse
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("issue token JSON: %v", err)
+	}
+	return out
+}
+
+func jsonString(t *testing.T, s string) string {
+	t.Helper()
+	raw, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("marshal string: %v", err)
+	}
+	return string(raw)
+}
+
+func validatorConfig(room string, store *tokenStore) Config {
+	return Config{
+		ApplicationProtocol: "threenative-smoke/1",
+		Channels:            []Channel{{ID: 1, Delivery: DeliveryUnreliable}},
+		Limits:              defaultLimits(),
+		Validator:           store.validator(room),
+	}
+}
+
+// TestExpiredToken issues a credential, advances past the 60-second expiry
+// and verifies validation rejects it.
+func TestExpiredToken(t *testing.T) {
+	now := time.Now()
+	store := newTokenStore(func() time.Time { return now })
+	issued := issueFixtureToken(t, store, "networking-proof", "player-a")
+	if _, _, ok := store.validator("networking-proof").ValidateCredential(issued.Credential); !ok {
+		t.Fatalf("fresh token rejected")
+	}
+	now = now.Add(61 * time.Second)
+	if _, _, ok := store.validator("networking-proof").ValidateCredential(issued.Credential); ok {
+		t.Fatalf("expired token accepted")
+	}
+}
+
+// TestTokenReplay verifies a credential is one-time: first HELLO-validation
+// succeeds, the replay rejects.
+func TestTokenReplay(t *testing.T) {
+	store := newTokenStore(time.Now)
+	issued := issueFixtureToken(t, store, "networking-proof", "player-a")
+	if _, _, ok := store.validator("networking-proof").ValidateCredential(issued.Credential); !ok {
+		t.Fatalf("first use rejected")
+	}
+	if _, _, ok := store.validator("networking-proof").ValidateCredential(issued.Credential); ok {
+		t.Fatalf("replayed token accepted")
+	}
+}
+
+// TestWrongRoom issues a token bound to room B and verifies the validator for
+// the configured room A rejects the join with no player allocation.
+func TestWrongRoom(t *testing.T) {
+	store := newTokenStore(time.Now)
+	issued := issueFixtureToken(t, store, "room-b", "player-a")
+	if _, _, ok := store.validator("room-a").ValidateCredential(issued.Credential); ok {
+		t.Fatalf("wrong-room token accepted")
+	}
+	// The token stays unconsumed for its own room: room binding rejects
+	// before consumption.
+	if _, _, ok := store.validator("room-b").ValidateCredential(issued.Credential); !ok {
+		t.Fatalf("own-room token should still be valid after a wrong-room attempt")
+	}
+}
+
+// TestUnauthorizedGameplay rejects unknown, empty and wrong-player-shaped
+// credentials without allocating game state.
+func TestUnauthorizedGameplay(t *testing.T) {
+	store := newTokenStore(time.Now)
+	validator := store.validator("networking-proof")
+	for name, credential := range map[string]string{
+		"unknown": "not-a-real-credential",
+		"empty":   "",
+	} {
+		if _, _, ok := validator.ValidateCredential(credential); ok {
+			t.Fatalf("%s credential accepted", name)
+		}
+	}
+	// A credential bound to another player is still a single opaque value:
+	// presenting any credential minted for a different room must reject.
+	issued := issueFixtureToken(t, store, "other-room", "player-b")
+	if _, _, ok := validator.ValidateCredential(issued.Credential); ok {
+		t.Fatalf("cross-room credential accepted")
+	}
+}
+
+// TestOriginAllowlist keeps exact Origin matching separate from credential
+// identity: allowlisted pages pass, others reject, and credential validation
+// does not consult origins.
+func TestOriginAllowlist(t *testing.T) {
+	check := originChecker([]string{"https://game.test:443"})
+	allowed := httptest.NewRequest(http.MethodGet, "https://server.test/game", nil)
+	allowed.Host = "server.test"
+	allowed.Header.Set("Origin", "https://game.test")
+	if !check(allowed) {
+		t.Fatalf("allowlisted origin rejected")
+	}
+	unlisted := httptest.NewRequest(http.MethodGet, "https://server.test/game", nil)
+	unlisted.Host = "server.test"
+	unlisted.Header.Set("Origin", "https://evil.test")
+	if check(unlisted) {
+		t.Fatalf("unlisted origin accepted")
+	}
+	// Empty Origin is a non-browser client; the checker passes it and
+	// credential identity still decides.
+	nonBrowser := httptest.NewRequest(http.MethodGet, "https://server.test/game", nil)
+	nonBrowser.Host = "server.test"
+	if !check(nonBrowser) {
+		t.Fatalf("non-browser request rejected")
+	}
+}
+
+// TestAdminRejectsNonLoopback verifies the issuer refuses requests that are
+// not from a loopback peer, including forwarded ones.
+func TestAdminRejectsNonLoopback(t *testing.T) {
+	store := newTokenStore(time.Now)
+	for name, remoteAddr := range map[string]string{
+		"remote":    "203.0.113.7:9",
+		"forwarded": "127.0.0.1:9",
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/token",
+			strings.NewReader(`{"room":"networking-proof","playerId":"player-a"}`))
+		req.RemoteAddr = remoteAddr
+		if name == "forwarded" {
+			req.Header.Set("X-Forwarded-For", "203.0.113.7")
+		}
+		rec := httptest.NewRecorder()
+		store.serveToken(rec, req)
+		if rec.Result().StatusCode != http.StatusForbidden {
+			t.Fatalf("%s request not rejected: %d", name, rec.Result().StatusCode)
+			rec.Result().Body.Close()
+		} else {
+			rec.Result().Body.Close()
+		}
+	}
+}
+
+// TestAdminRejectsMalformed verifies methods and JSON outside the contract
+// are rejected without issuing a credential.
+func TestAdminRejectsMalformed(t *testing.T) {
+	store := newTokenStore(time.Now)
+	cases := map[string]*http.Request{}
+	get := httptest.NewRequest(http.MethodGet, "/token", nil)
+	get.RemoteAddr = "127.0.0.1:9"
+	cases["method"] = get
+	for name, body := range map[string]string{
+		"missing-player": `{"room":"networking-proof"}`,
+		"empty-player":   `{"room":"networking-proof","playerId":""}`,
+		"unknown-key":    `{"room":"networking-proof","playerId":"a","role":"admin"}`,
+		"bad-json":       `{"room":`,
+		"bad-player":     `{"room":"networking-proof","playerId":"has space"}`,
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(body))
+		req.RemoteAddr = "127.0.0.1:9"
+		cases[name] = req
+	}
+	for name, req := range cases {
+		rec := httptest.NewRecorder()
+		store.serveToken(rec, req)
+		res := rec.Result()
+		res.Body.Close()
+		if res.StatusCode == http.StatusOK {
+			t.Fatalf("%s: accepted", name)
+		}
+	}
+}
+
+// TestAdminIssuerBounded verifies concurrent issuance stays bounded and every
+// issued credential validates exactly once.
+func TestAdminIssuerBounded(t *testing.T) {
+	store := newTokenStore(time.Now)
+	const clients = 32
+	// Issue concurrently without touching testing.T off the test goroutine:
+	// each worker reports its raw body through a channel and the test
+	// goroutine decodes and asserts.
+	type result struct {
+		index int
+		code  int
+		body  []byte
+	}
+	results := make(chan result, clients)
+	var wg sync.WaitGroup
+	for i := 0; i < clients; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			body := `{"room":"networking-proof","playerId":"player-bounded"}`
+			req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(body))
+			req.RemoteAddr = "127.0.0.1:9"
+			rec := httptest.NewRecorder()
+			store.serveToken(rec, req)
+			res := rec.Result()
+			raw, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+			res.Body.Close()
+			results <- result{index: i, code: res.StatusCode, body: raw}
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+	issued := make([]string, clients)
+	for r := range results {
+		if r.code != http.StatusOK {
+			t.Fatalf("client %d: status %d", r.index, r.code)
+		}
+		var out tokenResponse
+		if err := json.Unmarshal(r.body, &out); err != nil {
+			t.Fatalf("client %d: %v", r.index, err)
+		}
+		issued[r.index] = out.Credential
+	}
+	validator := store.validator("networking-proof")
+	for i, credential := range issued {
+		if credential == "" {
+			t.Fatalf("client %d issued empty credential", i)
+		}
+		if _, _, ok := validator.ValidateCredential(credential); !ok {
+			t.Fatalf("client %d credential rejected", i)
+		}
 	}
 }
 

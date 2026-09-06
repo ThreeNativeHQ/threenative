@@ -116,17 +116,20 @@ func defaultLimits() Limits {
 }
 
 // CredentialValidator decides whether a presented credential may join. It
-// receives the credential from HELLO and reports acceptance; a nil validator
-// (the default) rejects everything. Task 4d injects the token validator.
+// receives the credential from HELLO and reports room/player identity plus
+// acceptance; a nil validator (the default) rejects everything. The result
+// never carries the credential itself.
 type CredentialValidator interface {
-	ValidateCredential(credential string) bool
+	ValidateCredential(credential string) (room string, playerID string, ok bool)
 }
 
 // CredentialValidatorFunc adapts a function to CredentialValidator.
-type CredentialValidatorFunc func(credential string) bool
+type CredentialValidatorFunc func(credential string) (string, string, bool)
 
 // ValidateCredential implements CredentialValidator.
-func (f CredentialValidatorFunc) ValidateCredential(credential string) bool { return f(credential) }
+func (f CredentialValidatorFunc) ValidateCredential(credential string) (string, string, bool) {
+	return f(credential)
+}
 
 // Config describes one /game endpoint. ApplicationProtocol must match the
 // client's HELLO exactly; Channels is the exact channel map both sides use.
@@ -846,7 +849,7 @@ func ServeGame(ctx context.Context, session *webtransport.Session, cfg Config) (
 		_ = session.CloseWithError(closeAuthentication, "HELLO rejected")
 		return nil, fmt.Errorf("%w: %v", ErrAuthentication, err)
 	}
-	if !cfg.Validator.ValidateCredential(credential) {
+	if _, _, ok := cfg.Validator.ValidateCredential(credential); !ok {
 		_ = session.CloseWithError(closeAuthentication, "HELLO rejected")
 		return nil, ErrAuthentication
 	}
