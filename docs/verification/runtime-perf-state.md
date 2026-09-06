@@ -2603,3 +2603,16 @@ Physical-phone 120-second browser/native floors, actual-load recovery and pinned
 remain UNVERIFIED. Exact local logs, build hashes, mutation results and commands are linked from
 the [batch ledger](batch-2026-09-05-execution.md). No phone default is claimed from these desktop
 observations.
+
+## Native controlled-load rerun timing notes — 2026-09-05
+
+The native reruns behind the [committed evidence](prd-362-native-load-2026-09-05/README.md) ran a
+1920x1080 buffer under a private Xvfb, paid the Kuwahara radius-9 fixture load on the high and
+medium presets only, and read GPU cost on every eligible window at age one frame. Their absolute
+costs are unstable between runs at a fixed tier and buffer — the three passing normal runs at the
+same configuration span several-fold — and one earlier normal rerun under a different Xvfb screen
+setting oscillated instead of recovering. Both the differing setting and the differing timings are
+observed; no causal link is claimed and the cause of the variation is unidentified. Frame rate on
+this lane is dominated by Xvfb present behaviour and carries no meaning; the controller's only
+input is GPU cost. None of this is a hardware performance claim, and no production threshold was
+changed for it.

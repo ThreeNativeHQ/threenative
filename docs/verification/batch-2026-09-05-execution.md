@@ -569,7 +569,8 @@ Three native harness attempts failed, all exit 1, before load acceptance:
 3. Removing its network assertion still left the handshake requiring `browser.network`.
    Evidence: `quality-load-native-normal-proof/`; its receipt has `pass:false` and no console
    errors. Retries stopped. The doubtful assumption is that this web scenario is a suitable
-   native handshake after removing only that assertion.
+   native handshake after removing only that assertion. That receipt was later superseded in
+   place by the rerun below and is no longer retained.
 
 The harness now counts distinct GPU windows, checks all observed buffer dimensions, requires
 five fresh high-tier headroom windows for recovery, and captures output after owned-process
@@ -678,12 +679,16 @@ Fresh gates on this base, in this worktree, logged under
 
 The earlier typecheck/lint/test/budgets and the hardware browser scenario in this ledger were run
 **before** this base cleanup and are not claimed as final-base platform verification. The
-2026-09-05 native measured-load runs stay local and uncommitted under
-`artifacts/batch-2026-09-05/` (`quality-load-native-normal-proof/receipt.json`, runner
-`86ad1b39…`, executable `2fcc4c37…`; `quality-load-native-pinned-proof/receipt.json`, executable
-`b45f632c…`). They were produced on the pre-cleanup tree, so they are retained as lane evidence
-only. Packaged fixtures under `artifacts/batch-2026-09-05/*-package/` are build outputs, not
-source checkouts.
+2026-09-05 native measured-load runs were taken on the pre-cleanup tree and are retained as
+lane evidence only under `artifacts/batch-2026-09-05/`; `2fcc4c37…` and `b45f632c…` below are the
+pre-cleanup executables, recorded for continuity because those receipts were since overwritten.
+The same three proofs were rerun against the reconciled PR base, and the rerun evidence is
+committed immutably at [`docs/verification/prd-362-native-load-2026-09-05/`](prd-362-native-load-2026-09-05/README.md):
+`normal` exit 0, tier sequence `high,medium,low,medium,high`, executable `79cda4ba…`;
+`pinned` exit 0, executable `f78bbb68…`; `negative` intended exit 1, executable `ccd0f21e…`;
+runner `86ad1b39…` in all three receipts, `[WebGPU] Adapter: NVIDIA GeForce RTX 2080`,
+`[WebGPU] Backend: Vulkan`, zero console and teardown errors. Packaged fixtures under
+`artifacts/batch-2026-09-05/*-package/` are build outputs, not source checkouts.
 
 Nothing in this reconciliation closes a platform gate. The phone was not launched: its last
 read-only check was 37% battery, discharging, 34.5 °C, below the 50% measurement gate. PRD-360's
