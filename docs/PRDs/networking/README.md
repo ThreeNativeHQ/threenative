@@ -9,7 +9,7 @@ Deferred iOS results remain explicitly unverified, never passed.
 
 | PRD | Status | Outcome |
 | --- | --- | --- |
-| [PRD-359 — portable multiplayer transport](./PRD-359-portable-multiplayer-transport.md) | IN PROGRESS — Tasks 0/1a/1a-close/2a/2b-streams/2b-send/2b-signal/2b/2b-proof/2c/1b-trust passed; verified desktop/browser interoperability next | Players on browser, Windows, macOS, Linux, Android and iOS share a server using the same game source |
+| [PRD-359 — portable multiplayer transport](./PRD-359-portable-multiplayer-transport.md) | IN PROGRESS — Tasks 0/1a/1a-close/2a/2b-streams/2b-send/2b-signal/2b/2b-proof/2c/1b-trust/1b-fixture passed; verified desktop/browser interoperability next | Players on browser, Windows, macOS, Linux, Android and iOS share a server using the same game source |
 
 The existing native implementation is incomplete evidence, not a release-ready transport.
 The PRD records the exploration, alternatives, bounded implementation slices and release matrix.

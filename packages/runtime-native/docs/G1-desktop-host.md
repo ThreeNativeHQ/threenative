@@ -326,3 +326,21 @@ certificate/hostname fixture work. These Linux proofs qualify no
 other platform, no browser, and do not claim the loaded file replaces quiche's default
 roots. The [Task 1b-trust evidence](../../../docs/verification/prd-359-task1b-trust-2026-09-06.md)
 records the exact commands, exits and binary hashes.
+
+## PRD-359 executable and expiry fixtures — 2026-09-06
+
+Native test suites accept `TN_NATIVE_RUNTIME_EXECUTABLE`; unset uses the shipped desktop
+preset, while a blank override fails explicitly. Required WebTransport runs name a missing
+executable instead of silently selecting the default. Linux execution passed; macOS and
+Windows path resolution is tested, but those platforms have not executed this fixture.
+
+The live fixture verifies rejection of an expired certificate after an exact-endpoint
+insecure echo control, and accepts a current certificate under the same isolated CA.
+Portable OpenSSL CA date options leave the system clock and trust stores unchanged.
+The corrected live suite passes 33/33; full test, typecheck and lint pass. See
+[fixture evidence](../../../docs/verification/prd-359-task1b-fixture-2026-09-06.md).
+
+A separate scratch-linked Linux/V8 host with the prepared quiche IP-SAN patch passes
+verified numeric IPv4 and IPv6 64 KiB byte/FIN echoes. The installed library is unchanged;
+this is not shipped dependency qualification. See
+[local host evidence](../../../docs/verification/prd-359-ip-san-host-2026-09-06.md).

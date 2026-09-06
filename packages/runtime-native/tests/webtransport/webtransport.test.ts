@@ -29,10 +29,19 @@
  */
 
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { runCommand, runtimeBinary, runtimeRoot } from "../runtime-test-utils.js";
+import {
+  RUNTIME_EXECUTABLE_ENV,
+  desktopBuildPreset,
+  resolveRuntimeBinary,
+  runCommand,
+  runtimeBinary,
+  runtimeRoot,
+} from "../runtime-test-utils.js";
 
 // The echo server lives with the runnable example so users can verify
 // WebTransport themselves (see examples/webtransport/client.html).
@@ -1540,4 +1549,403 @@ describe("WebTransport verified certificate trust", () => {
     expect(out).toContain("PASS: rejected");
     expect(out).toContain(TRUST_DIAGNOSTIC);
   }, 30_000);
+});
+
+// Expiry is its own fixture because it is the one TLS failure a live peer cannot show by being
+// wrong about anything else: the chain, the hostname and the trust anchor all have to be right,
+// and only the leaf's dates may be in the past. Both leaves below are minted per run under one
+// per-run CA, into the untracked test directory, and removed afterwards. No system clock is
+// touched: the dates are written into the certificates themselves.
+const EXPIRY_DIR = join(TEST_DIR, "expiry");
+const EXPIRY_CA_CERT = join(EXPIRY_DIR, "expiry-ca-cert.pem");
+const EXPIRY_CA_KEY = join(EXPIRY_DIR, "expiry-ca-key.pem");
+const EXPIRED_CHAIN = join(EXPIRY_DIR, "expired-chain.pem");
+const EXPIRED_KEY = join(EXPIRY_DIR, "expired-key.pem");
+const CURRENT_CHAIN = join(EXPIRY_DIR, "current-chain.pem");
+const CURRENT_KEY = join(EXPIRY_DIR, "current-key.pem");
+const EXPIRY_CA_CONFIG = join(EXPIRY_DIR, "expiry-ca.cnf");
+const EXPIRY_CA_DATABASE = join(EXPIRY_DIR, "index.txt");
+const EXPIRY_CA_SERIAL = join(EXPIRY_DIR, "serial");
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+let expiryUnavailableReason: string | null = null;
+let expiredServer: ChildProcess | null = null;
+let currentServer: ChildProcess | null = null;
+let expiredAuthority = "";
+let currentAuthority = "";
+
+// ASN.1 GeneralizedTime: YYYYMMDDHHMMSSZ, which is the ISO string without its separators.
+const asn1Time = (offsetMs: number): string =>
+  new Date(Date.now() + offsetMs).toISOString().replace(/[-:T]|\.\d{3}/gu, "");
+
+function openssl(args: readonly string[]): string | null {
+  const result = spawnSync("openssl", [...args], { encoding: "utf8", timeout: 30_000 });
+  // stderr is openssl's and this runs beside key material, so only the exit status is reported.
+  return result.status === 0 ? null : `openssl ${args[0]} failed (exit ${result.status})`;
+}
+
+// The per-run signing authority `openssl ca` needs: its own config, database and serial file,
+// all inside the untracked fixture directory, so no shared OpenSSL state is read or written.
+// Paths go in with forward slashes because an OpenSSL config reads a backslash as an escape and
+// a Windows path is full of them.
+function writeAuthorityConfig(): void {
+  const dir = EXPIRY_DIR.replaceAll("\\", "/");
+  writeFileSync(
+    EXPIRY_CA_CONFIG,
+    [
+      "[ca]",
+      "default_ca = fixture_ca",
+      "",
+      "[fixture_ca]",
+      `dir = ${dir}`,
+      "database = $dir/index.txt",
+      "serial = $dir/serial",
+      "new_certs_dir = $dir",
+      "certificate = $dir/expiry-ca-cert.pem",
+      "private_key = $dir/expiry-ca-key.pem",
+      "default_md = sha256",
+      "policy = fixture_policy",
+      "email_in_dn = no",
+      "unique_subject = no",
+      "",
+      "[fixture_policy]",
+      "commonName = supplied",
+      "countryName = optional",
+      "stateOrProvinceName = optional",
+      "localityName = optional",
+      "organizationName = optional",
+      "organizationalUnitName = optional",
+      "emailAddress = optional",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(EXPIRY_CA_DATABASE, "");
+  // Both leaves are CN=localhost on purpose, and that is exactly what `openssl ca` refuses under
+  // its default unique-subject rule.
+  writeFileSync(`${EXPIRY_CA_DATABASE}.attr`, "unique_subject = no\n");
+  writeFileSync(EXPIRY_CA_SERIAL, "01\n");
+}
+
+// One leaf under the run's CA, with exactly the notBefore/notAfter it is asked for. Everything
+// else relevant to identity and trust — subject, SAN, key usage, issuer — matches between
+// the leaves. Each leaf has its own key and serial; date mutation separately proves the rejection.
+function mintLeaf(
+  label: string,
+  notBefore: string,
+  notAfter: string,
+  chainPath: string,
+  keyPath: string,
+): string | null {
+  const csr = join(EXPIRY_DIR, `${label}.csr`);
+  const cert = join(EXPIRY_DIR, `${label}-cert.pem`);
+  const extensions = join(EXPIRY_DIR, `${label}-ext.cnf`);
+  writeFileSync(
+    extensions,
+    "basicConstraints=critical,CA:FALSE\n" +
+      "keyUsage=critical,digitalSignature,keyEncipherment\n" +
+      "extendedKeyUsage=serverAuth\n" +
+      "subjectAltName=DNS:localhost,IP:127.0.0.1\n",
+  );
+  const request = openssl([
+    "req",
+    "-new",
+    "-newkey",
+    "ec",
+    "-pkeyopt",
+    "ec_paramgen_curve:P-256",
+    "-nodes",
+    "-keyout",
+    keyPath,
+    "-out",
+    csr,
+    "-subj",
+    "/CN=localhost",
+  ]);
+  if (request) return request;
+  // `openssl ca -startdate/-enddate` is the long-standing spelling — present in OpenSSL 1.x, in
+  // 3.x and in the LibreSSL that ships as macOS's `openssl` — so a stock Ubuntu, macOS or Windows
+  // host can mint a past certificate. `openssl x509 -not_before` would have required 3.5+.
+  const sign = openssl([
+    "ca",
+    "-batch",
+    "-notext",
+    "-config",
+    EXPIRY_CA_CONFIG,
+    "-startdate",
+    notBefore,
+    "-enddate",
+    notAfter,
+    "-extfile",
+    extensions,
+    "-in",
+    csr,
+    "-out",
+    cert,
+  ]);
+  if (sign) return sign;
+  writeFileSync(chainPath, readFileSync(cert, "utf8") + readFileSync(EXPIRY_CA_CERT, "utf8"));
+  return null;
+}
+
+// The validity window openssl actually wrote, read back from the file the fixture serves.
+// A certificate this suite calls expired has to be expired in its own bytes: minting it from a
+// computed offset and never checking would let a bad offset turn some other TLS fault into a
+// green "expired" case.
+function certificateWindow(path: string): { notAfter: number; notBefore: number } | null {
+  const read = spawnSync("openssl", ["x509", "-in", path, "-noout", "-startdate", "-enddate"], {
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  if (read.status !== 0) return null;
+  const notBefore = Date.parse(/notBefore=(.+)/u.exec(read.stdout)?.[1]?.trim() ?? "");
+  const notAfter = Date.parse(/notAfter=(.+)/u.exec(read.stdout)?.[1]?.trim() ?? "");
+  if (!Number.isFinite(notBefore) || !Number.isFinite(notAfter)) return null;
+  return { notAfter, notBefore };
+}
+
+function mintExpiryFixture(): string | null {
+  mkdirSync(EXPIRY_DIR, { recursive: true });
+  const authority = openssl([
+    "req",
+    "-x509",
+    "-newkey",
+    "ec",
+    "-pkeyopt",
+    "ec_paramgen_curve:P-256",
+    "-nodes",
+    "-keyout",
+    EXPIRY_CA_KEY,
+    "-out",
+    EXPIRY_CA_CERT,
+    "-days",
+    "2",
+    "-subj",
+    "/CN=threenative-networking-expiry-ca",
+    "-addext",
+    "basicConstraints=critical,CA:TRUE,pathlen:0",
+    "-addext",
+    "keyUsage=critical,keyCertSign,cRLSign",
+  ]);
+  if (authority) return `requires an openssl that can mint the expiry CA: ${authority}`;
+  writeAuthorityConfig();
+  const expired = mintLeaf(
+    "expired",
+    asn1Time(-30 * DAY_MS),
+    asn1Time(-DAY_MS),
+    EXPIRED_CHAIN,
+    EXPIRED_KEY,
+  );
+  if (expired) return `requires a mintable expired certificate: ${expired}`;
+  const current = mintLeaf(
+    "current",
+    asn1Time(-DAY_MS),
+    asn1Time(2 * DAY_MS),
+    CURRENT_CHAIN,
+    CURRENT_KEY,
+  );
+  if (current) return `requires a mintable valid-date certificate: ${current}`;
+  const expiredWindow = certificateWindow(EXPIRED_CHAIN);
+  const currentWindow = certificateWindow(CURRENT_CHAIN);
+  if (!expiredWindow || !currentWindow) return "requires readable expiry fixture certificates";
+  const now = Date.now();
+  if (expiredWindow.notAfter >= now) {
+    return `requires an expired fixture certificate (notAfter ${new Date(expiredWindow.notAfter).toISOString()})`;
+  }
+  if (currentWindow.notAfter <= now || currentWindow.notBefore > now) {
+    return `requires a currently valid control certificate (notAfter ${new Date(currentWindow.notAfter).toISOString()})`;
+  }
+  console.log(
+    `Expiry fixture: expired leaf ${new Date(expiredWindow.notBefore).toISOString()}..` +
+      `${new Date(expiredWindow.notAfter).toISOString()}, control leaf ` +
+      `${new Date(currentWindow.notBefore).toISOString()}..` +
+      `${new Date(currentWindow.notAfter).toISOString()}, now ${new Date(now).toISOString()}`,
+  );
+  return null;
+}
+
+function requireExpiryFixture(skip: (note?: string) => never): void {
+  requireWebTransport(skip);
+  if (!expiryUnavailableReason) return;
+  failClosed(expiryUnavailableReason);
+  skip(expiryUnavailableReason);
+}
+
+describe("WebTransport expired certificate rejection", () => {
+  beforeAll(async () => {
+    if (unavailableReason) {
+      expiryUnavailableReason = unavailableReason;
+      return;
+    }
+    expiryUnavailableReason = buildServerExecutable() ?? mintExpiryFixture();
+    if (expiryUnavailableReason) {
+      failClosed(expiryUnavailableReason);
+      return;
+    }
+    const expired = spawnFixtureServer(
+      "expired-certificate",
+      ["--listen", "127.0.0.1:0", "--cert", EXPIRED_CHAIN, "--key", EXPIRED_KEY],
+      /LISTENING udp=(127\.0\.0\.1:\d+)/u,
+    );
+    expiredServer = expired.child;
+    // Both leaves use the same CA, subject, SAN and server flags; each has its own key and serial.
+    const current = spawnFixtureServer(
+      "current-certificate",
+      ["--listen", "127.0.0.1:0", "--cert", CURRENT_CHAIN, "--key", CURRENT_KEY],
+      /LISTENING udp=(127\.0\.0\.1:\d+)/u,
+    );
+    currentServer = current.child;
+    try {
+      expiredAuthority = await expired.ready;
+      currentAuthority = await current.ready;
+    } catch (error) {
+      expiryUnavailableReason = `requires an expired-certificate WebTransport fixture: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+      failClosed(expiryUnavailableReason);
+    }
+  }, FIXTURE_SETUP_TIMEOUT_MS);
+
+  afterAll(async () => {
+    try {
+      const results = await Promise.allSettled(
+        [expiredServer, currentServer].filter((child) => child !== null).map(stopOwnedServer),
+      );
+      const failures = results.filter((result) => result.status === "rejected");
+      if (failures.length > 0) {
+        throw new AggregateError(
+          failures.map((result) => result.reason),
+          "expiry fixture shutdown failed",
+        );
+      }
+    } finally {
+      expiredServer = null;
+      currentServer = null;
+      rmSync(EXPIRY_DIR, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects an expired certificate", async ({ skip }) => {
+    requireExpiryFixture(skip);
+    const url = `https://${namedAuthority(expiredAuthority)}/echo`;
+    // Same URL, same peer, same expired certificate, verification off: bytes come back, so the
+    // rejection below is TLS refusing this certificate rather than a dead port or a dead fixture.
+    await expectInsecureEchoReachable("wt-expired-control.js", url, {
+      trustFile: EXPIRY_CA_CERT,
+    });
+    const out = await runScript(
+      "wt-expired-certificate.js",
+      rejectionSource(url, "accepted an expired certificate"),
+      { trustFile: EXPIRY_CA_CERT, timeoutMs: 15_000 },
+    );
+    expect(out).toContain("PASS: rejected");
+    // The anchor loaded and verification is on; the date-mutation control proves expiry rejection.
+    expect(out).toContain("TLS peer verification mode: verify-peer");
+    expect(out).not.toContain(TRUST_DIAGNOSTIC);
+    expect(out).not.toContain("TLS peer verification disabled");
+  }, 45_000);
+
+  it("accepts the same authority's certificate with valid dates", async ({ skip }) => {
+    requireExpiryFixture(skip);
+    // The isolation control for the case above: same CA, same trust file, same hostname, same
+    // server implementation, verification on and no override. Its byte echo proves that this CA
+    // and hostname can authenticate; the separate date mutation checks the expiry rejection.
+    const out = await runScript(
+      "wt-current-certificate.js",
+      datagramEchoSource(
+        `https://${namedAuthority(currentAuthority)}/echo`,
+        "valid-date certificate accepted",
+      ),
+      { trustFile: EXPIRY_CA_CERT },
+    );
+    expect(out).toContain("PASS: valid-date certificate accepted");
+    expect(out).toContain("TLS peer verification mode: verify-peer");
+    expect(out).not.toContain("TLS peer verification disabled");
+    expect(out).not.toContain("MYSTRAL_WEBTRANSPORT_INSECURE=1");
+  }, 45_000);
+});
+
+// Which executable the live suite drives is its own contract, and it needs no GPU, no Go
+// toolchain and no built runtime: this block stays collected and runs in the default lane
+// while every block above it skips. The suite hardcoded `build/tn-linux/mystral`, so a macOS
+// or Windows desktop could not run it at all and no operator could point it at a runtime
+// built anywhere else.
+// Vitest's own JS entry, resolved the way the rest of the repo resolves an installed package
+// (`packages/playtest/src/runner/doctor.ts`). `node_modules/.bin/vitest` is a shell shim with a
+// `.cmd` sibling on Windows, which `spawn` without a shell cannot execute; `process.execPath` plus
+// this path runs the same CLI on every desktop host.
+function resolveVitestCli(): string {
+  const require = createRequire(import.meta.url);
+  const manifestPath = require.resolve("vitest/package.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { bin?: { vitest?: string } };
+  const entry = manifest.bin?.vitest;
+  if (!entry) throw new Error(`vitest package at ${manifestPath} declares no vitest bin`);
+  return join(dirname(manifestPath), entry);
+}
+
+describe("native runtime executable resolution", () => {
+  it("honors an explicit executable override over this host's default build", () => {
+    const override = join(tmpdir(), "tn-explicit-runtime", "mystral");
+    expect(resolveRuntimeBinary({ [RUNTIME_EXECUTABLE_ENV]: override })).toBe(override);
+    // A relative override is the operator's path, resolved from where they typed it.
+    expect(resolveRuntimeBinary({ [RUNTIME_EXECUTABLE_ENV]: "build/other/mystral" })).toBe(
+      resolve(process.cwd(), "build/other/mystral"),
+    );
+    // Set-but-blank fails closed naming the variable, rather than quietly running the default
+    // build and reporting an override that never happened.
+    expect(() => resolveRuntimeBinary({ [RUNTIME_EXECUTABLE_ENV]: "  " })).toThrow(
+      RUNTIME_EXECUTABLE_ENV,
+    );
+    // The default every other suite in this package already depends on is unchanged.
+    expect(runtimeBinary).toBe(resolveRuntimeBinary(process.env));
+  });
+
+  it("defaults to each desktop host's shipped build preset", () => {
+    expect(desktopBuildPreset("linux")).toBe("tn-linux");
+    expect(desktopBuildPreset("darwin")).toBe("tn-macos");
+    expect(desktopBuildPreset("win32")).toBe("tn-windows");
+    expect(resolveRuntimeBinary({}, "linux")).toBe(
+      join(runtimeRoot, "build", "tn-linux", "mystral"),
+    );
+    expect(resolveRuntimeBinary({}, "darwin")).toBe(
+      join(runtimeRoot, "build", "tn-macos", "mystral"),
+    );
+    expect(resolveRuntimeBinary({}, "win32")).toBe(
+      join(runtimeRoot, "build", "tn-windows", "mystral.exe"),
+    );
+  });
+
+  // A required run whose executable is missing has to fail naming the path it looked for, in
+  // a real process rather than by reading this file's source. The nested run is filtered to
+  // one existing test name, so it can never re-enter this block.
+  it("fails a required run naming a missing overridden executable", async () => {
+    const absent = join(tmpdir(), "tn-absent-native-runtime", "mystral");
+    expect(existsSync(absent)).toBe(false);
+    const vitestCli = resolveVitestCli();
+    expect(existsSync(vitestCli)).toBe(true);
+    const { exitCode, stdout, stderr } = await runCommand(
+      process.execPath,
+      [
+        vitestCli,
+        "run",
+        "--config",
+        "vitest.config.ts",
+        "tests/webtransport/webtransport.test.ts",
+        "--testNamePattern",
+        "connects and the ready promise fulfills",
+      ],
+      {
+        cwd: runtimeRoot,
+        env: {
+          ...process.env,
+          TN_NATIVE_RUNTIME_EXECUTABLE: absent,
+          TN_REQUIRE_LIVE_WEBTRANSPORT_FIXTURE: "1",
+        },
+        timeoutMs: 300_000,
+      },
+    );
+    const output = `${stdout}\n${stderr}`;
+    expect(exitCode, output.slice(-4000)).not.toBe(0);
+    expect(output).toContain(absent);
+    expect(output).toContain("built native runtime");
+  }, 330_000);
 });
