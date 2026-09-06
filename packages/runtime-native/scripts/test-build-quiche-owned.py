@@ -289,7 +289,7 @@ class TestExactSymbols(unittest.TestCase):
                 b.validate_archive("ios-arm64", lib,
                                    os.path.join(inc, "quiche.h"))
 
-            self.assertEqual(calls, [["/usr/bin/nm", "-g", lib]])
+            self.assertEqual(calls, [["/usr/bin/nm", "-g", b.resolve(lib)]])
 
     def test_undefined_only_rejected(self):
         defined = b.defined_symbols_nm(
