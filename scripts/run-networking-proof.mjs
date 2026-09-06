@@ -933,6 +933,11 @@ function browserTarget(client) {
   return targetIndex === -1 || client.args[targetIndex + 1] === "browser";
 }
 
+export function addBrowserProcessMarker(args, marker) {
+  if (marker === undefined || args.includes("--browser-recipe")) return [...args];
+  return [...args, "--browser-arg", `--user-agent=${marker}`];
+}
+
 async function startClient(
   config,
   client,
@@ -965,17 +970,16 @@ async function startClient(
   const clientArgs =
     scenarioPath === undefined ? client.args : replaceScenarioArgument(client.args, scenarioPath);
   const args = commandArgs(config.playtest.args, tokens).concat(commandArgs(clientArgs, tokens));
-  if (browserProcessMarker !== undefined) {
-    args.push("--browser-arg", `--user-agent=${browserProcessMarker}`);
-  }
-  if (!args.includes("--artifacts")) args.push("--artifacts", artifactDir);
+  const clientPlaytestArgs = addBrowserProcessMarker(args, browserProcessMarker);
+  if (!clientPlaytestArgs.includes("--artifacts"))
+    clientPlaytestArgs.push("--artifacts", artifactDir);
   const env = Object.fromEntries([
     ...Object.entries(config.server.env),
     ...Object.entries(client.env),
     ["SSL_CERT_FILE", config.certificates.certPath],
     ["THREENATIVE_NETWORKING_CONFIG", configPath],
   ]);
-  const processState = spawnOwned(client.command ?? config.playtest.command, args, {
+  const processState = spawnOwned(client.command ?? config.playtest.command, clientPlaytestArgs, {
     cwd: client.cwd ?? config.playtest.cwd,
     env,
   });

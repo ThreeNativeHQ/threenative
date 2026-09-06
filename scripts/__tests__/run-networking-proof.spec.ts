@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 const {
   countEvaluatedAssertions,
+  addBrowserProcessMarker,
   parseNetworkingCpuSamples,
   parseNetworkingMetrics,
   summarizeCombinedNetworkingCpu,
@@ -49,6 +50,21 @@ function config(overrides: Record<string, unknown> = {}): Record<string, unknown
 }
 
 describe("networking proof contract", () => {
+  it("does not combine a browser recipe with the mutually exclusive marker flag", () => {
+    expect(addBrowserProcessMarker(["--browser-recipe", "webgpu"], "subject-marker")).toEqual([
+      "--browser-recipe",
+      "webgpu",
+    ]);
+    expect(
+      addBrowserProcessMarker(["--browser-arg", "--enable-unsafe-webgpu"], "subject-marker"),
+    ).toEqual([
+      "--browser-arg",
+      "--enable-unsafe-webgpu",
+      "--browser-arg",
+      "--user-agent=subject-marker",
+    ]);
+  });
+
   it("parses frame-keyed native transport samples", () => {
     const log =
       'TN_HOST_GAP:{"frames":2,"samples":[{"frame":11,"webtransportMs":0.25},{"frame":12,"webtransportMs":0.5}]}';
