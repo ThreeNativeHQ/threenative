@@ -788,8 +788,6 @@ describe("starter visual floor", () => {
     // Red: set strength to zero and the sway-present floor fails; inject a
     // constant offset at zero and the sway-absent assertion fails.
     const { attachFloraWind } = await import("../templates/starter/src/render/floraWind.js");
-    const { default: THREE } = await import("three");
-    void THREE;
     const stand = growFloraStand(FLORA_ENVELOPE, FLORA_SEED, FLORA_BOUNDS, FLORA_BUDGETS);
     const fakeFoliage = {
       instanceMatrix: { needsUpdate: false },
