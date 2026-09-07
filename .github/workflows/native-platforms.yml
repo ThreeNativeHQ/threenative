@@ -219,6 +219,13 @@ jobs:
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
             packages/runtime-native/artifacts/conformance/web "downloaded web reference"
       - name: Install Android build prerequisites
+        env:
+          # `stb` is three single headers pulled fresh from raw.githubusercontent.com on every run
+          # — the third-party cache above covers the archives, not these. Unauthenticated, they
+          # share the runner pool's egress IP and its rate limit: on 2026-09-07 they returned 429
+          # and took the whole lane down before the emulator booted. The token lifts the limit;
+          # download-deps.mjs retries the 429 that still gets through.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006"
           # build-native-physics.mjs cross-compiles the Rust physics crate for both ABIs
@@ -278,10 +285,14 @@ jobs:
           # overwriting the web reference this lane had just captured and then comparing the
           # emulator against the wreckage. Keep the invocation on one line; `sh -c` keeps the
           # `||` tolerance for exit 2 (rows blocked by this machine) on that same line.
+          # The logcat dump rides this same folded line on purpose. `android-emulator-runner` tears
+          # the emulator down when `script` returns, so a later step has no device to read: the
+          # buffer has to be captured here, before the exit test that decides this step's status.
           script: >-
             node packages/runtime-native/conformance/run-conformance.mjs --target android
             --device emulator-5554 --reference artifacts/conformance/web
-            --out artifacts/conformance/android; status=$?; test "$status" -eq 0 -o "$status" -eq 2
+            --out artifacts/conformance/android; status=$?; adb logcat -d >
+            "$RUNNER_TEMP/emulator-logcat.txt" 2>&1 || true; test "$status" -eq 0 -o "$status" -eq 2
       - name: Verify captured parity ledger
         if: always()
         run: |
@@ -350,6 +361,74 @@ jobs:
             > packages/runtime-native/artifacts/performance-contract/android-emulator/collector-status.json
           node packages/runtime-native/scripts/production-evidence.mjs \
             > packages/runtime-native/artifacts/performance-contract/android-emulator/collector-contract.json
+      # PRD-360 structural check. This proves the observer EMITS on a real Android build and that
+      # the tracked evaluator parses a real logcat — the one half of the launch measurement that
+      # was previously exercised only on desktop and against a mocked adb transport.
+      #
+      # It deliberately does NOT judge the 8s or 250ms budgets. This lane is x86_64 SwiftShader on
+      # `-accel auto`, has booted in 474s without KVM, and the evaluator's own 50% battery preflight
+      # is meaningless on an emulator. A budget verdict from here would be a manufactured result, so
+      # the timings are recorded UNVERIFIED and only the marker's presence and shape can fail.
+      - name: Assert PRD-360 pump observer emits on Android (structural, non-timing)
+        if: always()
+        run: |
+          node --input-type=module - <<'NODE'
+          import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+          import { pathToFileURL } from "node:url";
+
+          const logPath = join(process.env.RUNNER_TEMP, "emulator-logcat.txt");
+          // Reached on always(), so it runs when an earlier step failed and no emulator ever
+          // booted. Name that cause rather than burying it in an ENOENT stack.
+          let hostLog;
+          try {
+            hostLog = readFileSync(logPath, "utf8");
+          } catch (error) {
+            if (error?.code !== "ENOENT") throw error;
+            throw new Error(
+              `TN_PUMP_ANDROID_LOGCAT_MISSING: ${logPath} was never written, so the emulator lane ` +
+                "did not run. Read the first failing step in this job, not this one.",
+            );
+          }
+
+          // The evaluator is tracked as retained source beside its proof; import the same bytes the
+          // desktop suite imports rather than restating its rules here.
+          const source = "docs/verification/prd-360-startup-2026-09-05/evaluate-first-playable.mjs.txt";
+          const staged = join(process.env.RUNNER_TEMP, "evaluate-first-playable.mjs");
+          copyFileSync(source, staged);
+          const { evaluatePumpSilence } = await import(pathToFileURL(staged).href);
+
+          // Infinity retires the budget branch, leaving presence, JSON shape, observed:true and
+          // finite non-negative stamps as the only things that can fail here.
+          const result = evaluatePumpSilence({ hostLog, maxGapMs: Number.POSITIVE_INFINITY });
+
+          const outDir = "packages/runtime-native/artifacts/performance-contract/android-emulator";
+          mkdirSync(outDir, { recursive: true });
+          writeFileSync(
+            join(outDir, "pump-silence-structural.json"),
+            `${JSON.stringify(
+              {
+                claim: "observer emits and parses on Android; timings are NOT a PRD-360 verdict",
+                code: result.code,
+                detail: result.detail ?? null,
+                pass: result.pass,
+                provenance: "android-emulator",
+                sourceSha: process.env.GITHUB_SHA,
+                status: "UNVERIFIED",
+              },
+              null,
+              2,
+            )}\n`,
+          );
+
+          if (!result.pass) {
+            throw new Error(
+              `TN_PUMP_ANDROID_STRUCTURAL_FAILED: ${result.code} ` +
+                `${JSON.stringify(result.detail ?? null)}`,
+            );
+          }
+          console.log(`TN_PUMP_ANDROID_STRUCTURAL_OK ${JSON.stringify(result.detail)}`);
+          NODE
       - uses: actions/upload-artifact@v7
         if: always()
         with:
