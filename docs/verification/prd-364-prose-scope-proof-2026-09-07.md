@@ -18,24 +18,23 @@ The scope job reports `selection=prose` and the reason `all 1 changed path(s) ar
 under docs/PRDs or docs/verification`. The CI workflow executes only scope, lint, supply-chain,
 golden-path and run-summary. The native workflow executes only its scope job; compilation, parity,
 starter artifact and collector coverage jobs are skipped. The lint prose lane runs `pnpm check:docs`
-and six focused suites; run 1 reported 123 tests passed.
+and six focused suites; each run reported 123 tests passed.
 
 | Run | Head | CI run | Native run | CI API result | Native API result |
 |---|---|---|---|---|---|
 | 1 | `96d5b61cbf942fd42212558564bc6e762a641131` | [34091533460](https://github.com/ThreeNativeHQ/threenative/actions/runs/34091533460) | [34091533511](https://github.com/ThreeNativeHQ/threenative/actions/runs/34091533511) | PASS; 5 executed, 12 skipped of 17 job records; 2m56s | PASS; 1 executed, 7 skipped of 8 job records; 25s |
-| 2 | pending | pending | pending | pending | pending |
+| 2 | `71ac4c3364111d6160be7cb97692aae0b525a5ba` | [34091983547](https://github.com/ThreeNativeHQ/threenative/actions/runs/34091983547) | [34091983285](https://github.com/ThreeNativeHQ/threenative/actions/runs/34091983285) | PASS; 5 executed, 12 skipped of 17 job records; 2m34s | PASS; 1 executed, 7 skipped of 8 job records; 12s |
 | 3 | pending | pending | pending | pending | pending |
 
-Run 1's CI job API returned these records:
+Run 1 and run 2 returned the same CI job topology. Executed records were `Change scope`, `lint`,
+`supply-chain`, `golden-path`, and `run-summary`. Skipped records were `build`, `test`, `typecheck`,
+`test-browser`, `test-native`, `test-playtest`, `template-nonvisual`, `budgets`,
+`golden-path-template`, `performance-contracts`, `test-unit`, and `benchmark`.
 
-| Executed | Skipped |
-|---|---|
-| Change scope; lint; supply-chain; golden-path; run-summary | build; test; typecheck; test-browser; test-native; test-playtest; template-nonvisual; budgets; golden-path-template; performance-contracts; test-unit; benchmark |
-
-Run 1's native job API returned `Change scope` as successful and skipped `Commit-keyed web
+Run 1 and run 2 returned the same native topology: `Change scope` passed, while `Commit-keyed web
 conformance reference`, `Scaffolded starter desktop artifact`, `${{ matrix.platform }} desktop
 core`, `iOS simulator runtime and no-Xcode consumer handoff`, `Android emulator visual parity`,
-`Desktop web/native parity`, and `Native collector evidence coverage`.
+`Desktop web/native parity`, and `Native collector evidence coverage` were skipped.
 
 The first attempted prose run, [CI 34089387209](https://github.com/ThreeNativeHQ/threenative/actions/runs/34089387209),
 correctly skipped the expensive board but failed its summary because it still required the skipped
