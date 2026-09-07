@@ -307,7 +307,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-07 for sailing's fixed-step ocean clock: the scene now advances
   // `SpectralOcean` before its registered compute passes run, which makes its existing moving-water
   // playtest prove a time-varying field.
-  sailing: "b314706763951171b7e58f0f09c7ef3c8c0eafa9d05793ef688d83eb0fc7328c",
+  // Recomputed 2026-09-06: the sailing hull rides the swell from a scene-frame visual update
+  // instead of from gameplay `update`, so the ocean no longer moves under a frozen boat once
+  // the course is won or the wind runs out. Only the sailing tree moves.
+  // Recomputed again the same day: sailing gains the post-terminal float scenario on web and
+  // the native float scenario, and its `test:native` script runs the whole native-playtests
+  // glob instead of naming the smoke scenario alone.
+  // Recomputed 2026-09-06 on the rebase onto origin/main de93a0d9, which already carried the
+  // ocean-clock and sampled-waterline work through #129. Measured from the rebased tree; the
+  // two earlier values on this branch are pre-rebase and only this one is authoritative.
+  // Recomputed 2026-09-07 on the merge with origin/main 6e1ce0c2 (#125 networking). The
+  // previous value was measured before that merge; every other template hash in this table
+  // was unchanged by it, which is what says the merge touched only the sailing tree.
+  sailing: "2c42201e05ef149575c231d704e024e88e124c1dc920ca286945b30c0b92982b",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

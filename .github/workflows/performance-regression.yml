@@ -133,10 +133,57 @@ jobs:
         env:
           BASELINE_INPUT: ${{ inputs.baseline_source_sha }}
           CANDIDATE_INPUT: ${{ inputs.candidate_source_sha }}
+          TN_PERF_LANE: ${{ matrix.lane }}
+          TN_PERF_RESOURCE_READY: ${{ matrix.physical != true || vars.TN_PERF_PHYSICAL_PROVISIONED == 'true' }}
+          TN_PERF_RESULT_KEY: ${{ matrix.result_key }}
         run: |
           set -euo pipefail
-          baseline_sha="${BASELINE_INPUT:-$GITHUB_SHA}"
           candidate_sha="${CANDIDATE_INPUT:-$GITHUB_SHA}"
+          if [ "$TN_PERF_RESOURCE_READY" != "true" ]; then
+            exit 0
+          fi
+          baseline_metadata="$(
+            node --input-type=module <<'NODE'
+            import { readFile } from "node:fs/promises";
+            const manifest = JSON.parse(await readFile("scripts/performance-regression/lanes.json", "utf8"));
+            const lane = manifest.lanes.find((candidate) => candidate.id === process.env.TN_PERF_LANE);
+            if (lane === undefined) {
+              throw new Error(`lane ${process.env.TN_PERF_LANE} is not declared by scripts/performance-regression/lanes.json`);
+            }
+            process.stdout.write(JSON.stringify({
+              reason: lane.baseline?.reason ?? `lane baseline is ${lane.baseline?.status ?? "missing"}`,
+              sourceSha: lane.baseline?.identity?.sourceSha ?? "",
+              status: lane.baseline?.status ?? "missing",
+            }));
+          NODE
+          )"
+          baseline_status="$(node --input-type=module -e 'process.stdout.write(JSON.parse(process.argv[1]).status)' "$baseline_metadata")"
+          baseline_from_manifest="$(node --input-type=module -e 'process.stdout.write(JSON.parse(process.argv[1]).sourceSha)' "$baseline_metadata")"
+          baseline_reason="$(node --input-type=module -e 'process.stdout.write(JSON.parse(process.argv[1]).reason)' "$baseline_metadata")"
+          baseline_sha="${BASELINE_INPUT:-$baseline_from_manifest}"
+          if [ "$baseline_status" != "accepted" ] || [ -z "$baseline_sha" ]; then
+            export BASELINE_REASON="$baseline_reason"
+            export BASELINE_STATUS="$baseline_status"
+            export CANDIDATE_SOURCE_SHA="$candidate_sha"
+            mkdir -p artifacts/performance-regression
+            node --input-type=module <<'NODE'
+            import { writeFile } from "node:fs/promises";
+            const result = {
+              candidateSourceSha: process.env.CANDIDATE_SOURCE_SHA,
+              lane: process.env.TN_PERF_LANE,
+              reason: `lane baseline is ${process.env.BASELINE_STATUS}; ${process.env.BASELINE_REASON}; no collector ran`,
+              resultKey: process.env.TN_PERF_RESULT_KEY,
+              status: "UNVERIFIED",
+            };
+            await writeFile(
+              `artifacts/performance-regression/${process.env.TN_PERF_RESULT_KEY}.json`,
+              `${JSON.stringify(result, null, 2)}\n`,
+            );
+          NODE
+            echo "TN_PERF_BASELINE_AVAILABLE=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "TN_PERF_BASELINE_AVAILABLE=true" >> "$GITHUB_ENV"
           git fetch --no-tags origin "$baseline_sha" "$candidate_sha"
           mkdir -p "$GITHUB_WORKSPACE/.worktrees"
           baseline_worktree="$GITHUB_WORKSPACE/.worktrees/performance-baseline-${{ matrix.result_key }}"
@@ -161,6 +208,9 @@ jobs:
           if [ "$TN_PERF_SELECTED" != "true" ] || [ "$TN_PERF_RESOURCE_READY" != "true" ]; then
             mkdir -p artifacts/performance-regression
             node --input-type=module -e 'import {writeFile} from "node:fs/promises"; await writeFile(`artifacts/performance-regression/${process.env.TN_PERF_RESULT_KEY}.json`, JSON.stringify({lane:process.env.TN_PERF_LANE,status:process.env.TN_PERF_SELECTED === "true" ? "UNVERIFIED" : "SKIPPED",reason:"platform not selected or physical resource unprovisioned; no collector ran"}));'
+            exit 0
+          fi
+          if [ "${TN_PERF_BASELINE_AVAILABLE:-true}" != "true" ]; then
             exit 0
           fi
           args=(
