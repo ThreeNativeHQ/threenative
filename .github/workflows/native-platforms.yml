@@ -445,19 +445,6 @@ jobs:
           const outDir = "packages/runtime-native/artifacts/performance-contract/android-emulator";
           mkdirSync(outDir, { recursive: true });
 
-          // The captured buffer is published whatever the verdict, and that is the point. When
-          // conformance fails the step below records BLOCKED and asserts nothing about the
-          // observer — but the log it just read is the only evidence that says whether the markers
-          // reached Android logcat at all, which is still unproven. Discarding it on a red run is
-          // exactly the mistake `web-reference` was making: the one artifact that answers the
-          // question was published only by the runs that did not need to answer it.
-          for (const name of ["emulator-logcat.txt", "emulator-logcat.err", "conformance-status.txt"]) {
-            try {
-              copyFileSync(join(temp, name), join(outDir, name));
-            } catch (error) {
-              if (error?.code !== "ENOENT") throw error;
-            }
-          }
           const record = (payload) =>
             writeFileSync(
               join(outDir, "pump-silence-structural.json"),
@@ -476,6 +463,36 @@ jobs:
             throw new Error(
               `TN_PUMP_ANDROID_LOGCAT_MISSING: ${logPath} was never written, so the emulator lane ` +
                 "did not run. Read the first failing step in this job, not this one.",
+            );
+          }
+
+          // Evidence is published whatever the verdict, and that is the point: when conformance
+          // fails, the step below records BLOCKED and asserts nothing about the observer, but the
+          // log it just read is the only thing that says whether the markers reached Android
+          // logcat at all — still unproven. Discarding it on a red run is exactly the mistake
+          // `web-reference` was making, publishing the answer only from runs that did not need it.
+          //
+          // What is published is the marker lines, not the buffer. `adb logcat -d` returns the
+          // default set including `system`, ~1,500 lines of unrelated framework chatter per run,
+          // and the open question needs three greps of it. Publishing the whole buffer widens the
+          // distribution surface for no added answer. The parser still reads the full capture from
+          // RUNNER_TEMP; only the artifact is narrowed.
+          const markerLines = hostLog.split("\n")
+            .filter((line) => line.includes("TN_PUMP_SILENCE:") || line.includes("TN_PUMP_ENDPOINT:"));
+          writeFileSync(
+            join(outDir, "pump-markers.log"),
+            `# TN_PUMP_* lines from adb logcat -d. Device output, filtered; not the full buffer.\n${
+              markerLines.join("\n")
+            }\n`,
+          );
+          // Named for what it is: adb's own stderr on the host, not device output. Empty on a
+          // healthy run; on a failed one it carries host error text under an artifact whose name
+          // otherwise implies the emulator produced it.
+          const adbStderr = read("emulator-logcat.err");
+          if (adbStderr !== null) {
+            writeFileSync(
+              join(outDir, "adb-host-stderr.txt"),
+              `# adb stderr on the RUNNER, not emulator output.\n${adbStderr}`,
             );
           }
 
