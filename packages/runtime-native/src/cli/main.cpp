@@ -1132,7 +1132,12 @@ static bool attachUiOverlayIfConfigured(const CLIOptions& opts, mystral::Runtime
                       << uiRoot.string() << " is not a directory." << std::endl;
             return false;
         }
-        return mystral::platform::attachDesktopUiOverlay(uiRoot.string());
+        // Deliberately not returned. Every false this can produce is a property of the machine,
+        // not of the game — no display, no compositing manager, a window the X server does not
+        // own, and in any build without TN_ENABLE_UI_OVERLAY it is false always. The overlay
+        // already says which on stdout as TN_UI_OVERLAY, and a game that cannot have its HUD
+        // composited still runs. Returning it here made main's startup gate exit 1 instead.
+        mystral::platform::attachDesktopUiOverlay(uiRoot.string());
     }
     return true;
 }
