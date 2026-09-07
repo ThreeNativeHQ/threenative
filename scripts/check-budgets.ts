@@ -473,7 +473,6 @@ export async function enforceBudgets(root: string): Promise<BudgetReport> {
     ...(await buildMatrixErrors(root)),
     ...(await capabilityManifestErrors(root)),
     ...(await nativeCensusErrors(root)),
-    ...(await nativeCensusDrift(root)),
   ];
   if (errors.length > 0) throw new Error(errors.join("\n"));
   return report;

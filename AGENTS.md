@@ -108,7 +108,8 @@ result claims a platform it did not execute. The native contract lives in
 ## Commands
 
 ```sh
-pnpm typecheck && pnpm lint && pnpm test   # all three before calling a change done
+pnpm typecheck && pnpm lint && pnpm test   # executable, config, generated-contract or unknown changes
+pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/evidence-budget.spec.ts scripts/__tests__/evidence-citations.spec.ts scripts/__tests__/sync-agent-docs.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts  # strict prose-only lane
 pnpm test:playtest                         # playtests against the in-repo example fixture
 pnpm test:templates                        # playtests against each scaffolded template
 pnpm budgets                               # hard invariants fail; LOC triggers only report
@@ -134,7 +135,13 @@ pnpm native:build                          # opt-in; downloads deps, compiles th
 pnpm native:verify:desktop                 # 300 native frames + a non-blank screenshot
 ```
 
-CI runs `typecheck`, `lint`, `build`, `budgets`, `supply-chain`, `test`, `test-browser`,
+The pre-push hook runs the bounded `pnpm ci:fast` drift board; it does not run whole-workspace
+typecheck or budgets and never proves runtime correctness. Use `pnpm ci:local` for full local
+verification. A pull request whose complete merge-base diff is only inert Markdown under
+`docs/PRDs/` or `docs/verification/`, excluding agent mirrors and executable Markdown inputs, uses
+the strict prose-only command above and skips compilation, browser/playtest, native and game-matrix
+jobs. Any other diff, plus main, nightly, release and manual invocations, runs the full board. CI
+runs `typecheck`, `lint`, `build`, `budgets`, `supply-chain`, `test`, `test-browser`,
 `test-playtest`, the `golden-path` matrix, and the main/nightly `template-nonvisual` matrix;
 `native-platforms.yml` adds advisory Android, `desktop-parity`, desktop, starter-linux, and iOS
 evidence. **Prove it locally before you push** — CI is the slow lane and a red there costs more than

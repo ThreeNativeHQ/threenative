@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -201,7 +201,226 @@ function matrixTemplates(section: string): readonly string[] {
 // template on disk must appear in the workflow's matrix.
 const expectedTemplates = allTemplates();
 
+interface IScopeFixture {
+  readonly base: string;
+  readonly git: (args: readonly string[]) => string;
+  readonly root: string;
+}
+
+function isolatedGitEnvironment(): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  for (const variable of [
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_NAMESPACE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_WORK_TREE",
+  ]) {
+    delete environment[variable];
+  }
+  return environment;
+}
+
+async function scopeFixture(): Promise<IScopeFixture> {
+  const root = await makeTempDir("threenative-ci-scope-");
+  const git = (args: readonly string[]): string => {
+    const result = spawnSync("git", [...args], {
+      cwd: root,
+      encoding: "utf8",
+      env: isolatedGitEnvironment(),
+    });
+    if (result.status !== 0) {
+      throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
+    }
+    return result.stdout.trim();
+  };
+  git(["init", "--quiet"]);
+  git(["config", "user.email", "ci-scope@example.invalid"]);
+  git(["config", "user.name", "CI scope test"]);
+  await mkdir(path.join(root, "docs/PRDs"), { recursive: true });
+  await writeFile(path.join(root, "docs/PRDs/inert.md"), "# Inert planning prose\n");
+  git(["add", "-A"]);
+  git(["commit", "--quiet", "-m", "base"]);
+  return { base: git(["rev-parse", "HEAD"]), git, root };
+}
+
+async function commitScopeChange(
+  fixture: IScopeFixture,
+  relative: string,
+  contents: string,
+  message: string,
+): Promise<string> {
+  await mkdir(path.dirname(path.join(fixture.root, relative)), { recursive: true });
+  await writeFile(path.join(fixture.root, relative), contents);
+  fixture.git(["add", "-A"]);
+  fixture.git(["commit", "--quiet", "-m", message]);
+  return fixture.git(["rev-parse", "HEAD"]);
+}
+
+function classifyScope(root: string, base: string, head: string): Record<string, unknown> {
+  const result = spawnSync(
+    process.execPath,
+    [
+      path.join(repo, "scripts/ci-change-scope.mjs"),
+      "--root",
+      root,
+      "--event-name",
+      "pull_request",
+      "--base",
+      base,
+      "--head",
+      head,
+      "--format",
+      "json",
+    ],
+    { encoding: "utf8", env: isolatedGitEnvironment() },
+  );
+  expect(result.status, result.stderr).toBe(0);
+  return JSON.parse(result.stdout) as Record<string, unknown>;
+}
+
 describe("CI pipeline structure", () => {
+  it("uses one fail-closed scope decision before expensive CI and native jobs", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const scope = requiredJob(ci, "scope");
+    expect(scope).toContain("scripts/ci-change-scope.mjs");
+    expect(scope).toContain("fetch-depth: 0");
+    expect(scope).toContain("scope: ${{ steps.classify.outputs.scope }}");
+    expect(scope).toContain("selection: ${{ steps.classify.outputs.selection }}");
+    expect(scope).toContain("reason: ${{ steps.classify.outputs.reason }}");
+    expect(scope).not.toContain("pnpm install");
+
+    for (const name of [
+      "typecheck",
+      "test",
+      "test-unit",
+      "test-native",
+      "test-browser",
+      "test-playtest",
+      "golden-path-template",
+      "template-nonvisual",
+      "benchmark",
+      "build",
+      "budgets",
+      "performance-contracts",
+    ]) {
+      const job = requiredJob(ci, name);
+      expect(job, `${name} does not wait for scope`).toContain("scope");
+      expect(job, `${name} does not select the full board explicitly`).toContain(
+        "needs.scope.outputs.selection != 'prose'",
+      );
+    }
+
+    const lint = requiredJob(ci, "lint");
+    expect(lint).toContain("needs: scope");
+    expect(lint).toContain("Run the prose-only documentation and evidence gates");
+    expect(lint).toContain("pnpm check:docs");
+    expect(lint).toContain("scripts/__tests__/evidence-citations.spec.ts");
+    expect(lint).toContain("scripts/__tests__/ci-needs.spec.ts");
+    expect(lint).not.toContain("pnpm test:browser");
+    expect(lint).not.toContain("native:build");
+
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const nativeScope = requiredJob(native, "scope");
+    expect(nativeScope).toContain("scripts/ci-change-scope.mjs");
+    expect(nativeScope).toContain("scope: ${{ steps.classify.outputs.scope }}");
+    expect(nativeScope).not.toContain("pnpm install");
+    for (const name of [
+      "web-reference",
+      "android-emulator-parity",
+      "desktop-parity",
+      "desktop",
+      "starter-linux",
+      "ios-simulator",
+    ]) {
+      expect(requiredJob(native, name), `${name} does not use shared scope`).toContain("scope");
+      expect(requiredJob(native, name), `${name} has no prose exemption`).toContain(
+        "needs.scope.outputs.selection != 'prose'",
+      );
+    }
+    const performanceCoverage = requiredJob(native, "performance-coverage");
+    expect(performanceCoverage).toContain("needs.scope.outputs.selection != 'prose'");
+    const triggers = triggerSection(native);
+    expect(triggers).toContain("workflow_dispatch:");
+    expect(triggers).toContain("workflow_call:");
+    expect(triggers).toContain("ios_only:");
+    expect(triggers).toContain("schedule:");
+  });
+
+  it("classifies scratch Git histories from the complete merge-base diff", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const proseHead = await commitScopeChange(
+        fixture,
+        "docs/PRDs/inert.md",
+        "# Updated planning prose\n",
+        "prose",
+      );
+      expect(classifyScope(fixture.root, fixture.base, proseHead)).toMatchObject({
+        scope: "prose",
+        selection: "prose",
+      });
+
+      fixture.git(["mv", "docs/PRDs/inert.md", "docs/PRDs/renamed.md"]);
+      fixture.git(["commit", "--quiet", "-m", "rename"]);
+      const renamedHead = fixture.git(["rev-parse", "HEAD"]);
+      expect(classifyScope(fixture.root, proseHead, renamedHead)).toMatchObject({
+        scope: "prose",
+        selection: "prose",
+      });
+
+      fixture.git(["rm", "--quiet", "docs/PRDs/renamed.md"]);
+      fixture.git(["commit", "--quiet", "-m", "delete"]);
+      const deletedHead = fixture.git(["rev-parse", "HEAD"]);
+      expect(classifyScope(fixture.root, renamedHead, deletedHead)).toMatchObject({
+        scope: "prose",
+        selection: "prose",
+      });
+      expect(classifyScope(fixture.root, fixture.base, deletedHead)).toMatchObject({
+        scope: "prose",
+        selection: "prose",
+      });
+
+      const consumedHead = await commitScopeChange(
+        fixture,
+        "docs/verification/round-99.md",
+        "# Round ledger\n",
+        "consumed Markdown",
+      );
+      expect(classifyScope(fixture.root, deletedHead, consumedHead)).toMatchObject({
+        scope: "full",
+        selection: "full",
+      });
+
+      const mixedHead = await commitScopeChange(
+        fixture,
+        "packages/core/src/change.ts",
+        "export const changed = true;\n",
+        "mixed core change",
+      );
+      expect(classifyScope(fixture.root, deletedHead, mixedHead)).toMatchObject({
+        scope: "full",
+        selection: "full",
+      });
+
+      expect(classifyScope(fixture.root, "missing-base", mixedHead)).toMatchObject({
+        scope: "full",
+        selection: "full",
+      });
+      expect(classifyScope(fixture.root, mixedHead, mixedHead)).toMatchObject({
+        scope: "full",
+        selection: "full",
+      });
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
   it("syncs capability artifacts on relevant commits and rejects stale manifests in CI", async () => {
     const packageJson = JSON.parse(await readFile(path.join(repo, "package.json"), "utf8")) as {
       scripts: Record<string, string>;
@@ -213,7 +432,7 @@ describe("CI pipeline structure", () => {
     expect(packageJson.scripts["capabilities:check"]).toContain(
       "build-capability-manifest.ts --check",
     );
-    expect(packageJson.scripts.budgets).toContain("pnpm capabilities:check");
+    expect(packageJson.scripts.budgets).not.toContain("pnpm capabilities:check");
     expect(hook).toContain("git diff --cached --name-only");
     expect(hook).toContain("packages/[^/]+/(src/.*|package\\.json)");
     expect(hook).toContain("pnpm capabilities:sync");
@@ -630,9 +849,12 @@ describe("CI pipeline structure", () => {
   it("PR CI reviews dependencies and scans changed commits for leaked secrets", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const supplyChain = requiredJob(ci, "supply-chain");
-    // Runs on pushes too since 2026-09-01 (owner call): a skipped job on main read as a pass.
+    // Secret scanning remains on prose-only PRs: Markdown can contain credentials even when it
+    // does not alter executable behavior.
+    expect(supplyChain).toContain("needs: scope");
+    expect(supplyChain).not.toContain("needs.scope.outputs.selection != 'prose'");
     expect(supplyChain).toContain(
-      "if: github.event_name == 'pull_request' || github.event_name == 'push'",
+      "(github.event_name == 'pull_request' || github.event_name == 'push')",
     );
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
     // ...but the dependency diff itself stays pull_request-only: it needs a base ref and a head
@@ -1164,7 +1386,12 @@ describe("CI pipeline structure", () => {
 
     expect(producerCommands).toContain("--target web --out artifacts/conformance/web");
     expect(producer, "web reference is an orphan on unlabelled pull requests").toContain(
-      ["if: >-", "      inputs.ios_only == false &&", pullRequestEligibility].join("\n"),
+      [
+        "if: >-",
+        "      needs.scope.outputs.selection != 'prose' &&",
+        "      inputs.ios_only == false &&",
+        pullRequestEligibility,
+      ].join("\n"),
     );
     expect(producer).toContain("actions/upload-artifact");
     expect(producer).toContain("native-web-reference-${{ github.sha }}");
@@ -1177,10 +1404,15 @@ describe("CI pipeline structure", () => {
     ] as const) {
       const consumer = commands(section);
       expect(section, `${name} eligibility drifted from the web producer`).toContain(
-        ["if: >-", "      inputs.ios_only != true &&", pullRequestEligibility].join("\n"),
+        [
+          "if: >-",
+          "      needs.scope.outputs.selection != 'prose' &&",
+          "      inputs.ios_only != true &&",
+          pullRequestEligibility,
+        ].join("\n"),
       );
       expect(section, `${name} is not ordered behind the producer`).toContain(
-        "needs: web-reference",
+        "needs: [scope, web-reference]",
       );
       expect(section, `${name} does not download the commit-keyed reference`).toContain(
         "actions/download-artifact",
@@ -1475,13 +1707,15 @@ describe("CI pipeline structure", () => {
     // the ruleset waiting on a context nothing would ever report. This job is that context.
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const aggregate = requiredJob(ci, "golden-path");
-    expect(aggregate).toContain("needs: golden-path-template");
+    expect(aggregate).toContain("needs: [scope, golden-path-template]");
     expect(aggregate).not.toContain("strategy:");
     // Without this, a failed matrix leaves the job skipped, and a skipped required check counts as
     // satisfied — the ruleset would pass on exactly the runs it exists to stop. `always()` is the
     // wrong spelling: it also fires when the run was cancelled, where the matrix result is
     // `cancelled` and this job then reported failure on a run nobody had broken.
     expect(aggregate).toContain("if: ${{ !cancelled() }}");
+    expect(aggregate).toContain('echo "golden-path templates: not applicable (prose-only change)"');
+    expect(aggregate).toContain("needs.scope.outputs.selection");
     expect(aggregate).not.toMatch(/if: always\(\)/u);
     expect(aggregate).toContain("needs.golden-path-template.result");
     expect(aggregate).toMatch(/test "\$result" = "success"/u);

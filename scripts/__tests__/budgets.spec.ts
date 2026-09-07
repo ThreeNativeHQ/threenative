@@ -1,14 +1,17 @@
 import { execFile } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
+import * as capabilityManifest from "../build-capability-manifest.js";
 import {
   budgetErrors,
   budgetTriggers,
+  capabilityManifestErrors,
   collectBudgets,
   enforceBudgets,
+  measureNativeCensusAreas,
   nativeCensusDrift,
 } from "../check-budgets";
 
@@ -32,6 +35,44 @@ async function nativeFixture(root: string): Promise<void> {
   await mkdir(directory, { recursive: true });
   await writeFile(path.join(directory, "runtime.cpp"), "owned");
   await writeFile(path.join(directory, "CMakeLists.txt"), "owned");
+}
+
+async function capabilityFixture(root: string): Promise<void> {
+  const packageRoot = path.join(root, "packages", "core");
+  await mkdir(path.join(packageRoot, "src"), { recursive: true });
+  await writeFile(
+    path.join(packageRoot, "package.json"),
+    JSON.stringify({
+      exports: { ".": { import: "./dist/index.js", types: "./dist/index.d.ts" } },
+      name: "@threenative/core",
+    }),
+  );
+  await writeFile(
+    path.join(packageRoot, "src", "index.ts"),
+    [
+      "/**",
+      " * A fixture capability.",
+      " * @situation test a documented capability",
+      " * @example const capability = new FixtureCapability();",
+      " */",
+      "export class FixtureCapability {}",
+      "",
+    ].join("\n"),
+  );
+  await capabilityManifest.writeCapabilityManifest(root);
+  await nativeFixture(root);
+  for (const file of ["CMakeLists.txt", "CMakePresets.json", "build-matrix.json"]) {
+    await writeFile(
+      path.join(root, "packages", "runtime-native", file),
+      await readFile(path.join(process.cwd(), "packages", "runtime-native", file), "utf8"),
+    );
+  }
+  const measurement = await measureNativeCensusAreas(root);
+  await writeNativeCensus(
+    root,
+    [...measurement.areas.entries()].map(([area, lines]) => [`\`${area}\``, lines] as const),
+    measurement.total,
+  );
 }
 
 async function writeNativeCensus(
@@ -369,7 +410,7 @@ describe("budget gate", () => {
     expect(await nativeCensusDrift(root)).toEqual([]);
   });
 
-  it("fails budgets when census line drift exceeds the recorded tolerance", async () => {
+  it("reports census line drift without failing budgets", async () => {
     const root = await fixtureRoot();
     await nativeFixture(root);
     await writeNativeCensus(
@@ -382,12 +423,40 @@ describe("budget gate", () => {
     );
     await writeFile(
       path.join(root, "packages", "runtime-native", "runtime.cpp"),
-      "owned\nmore\nmore\nmore\nmore\nmore\nmore\n",
+      "owned\nmore\nmore\nmore\nmore\nmore\n",
     );
 
-    await expect(enforceBudgets(root)).rejects.toThrow(
-      /native census drift: runtime\.cpp recorded 1, measured 8.*exceeds tolerance/u,
-    );
+    await expect(enforceBudgets(root)).resolves.toMatchObject({ nativeRuntimeLoc: 8 });
+    expect(await nativeCensusDrift(root)).toEqual([
+      expect.stringMatching(
+        /native census drift: runtime\.cpp recorded 1, measured 7.*exceeds tolerance/u,
+      ),
+    ]);
+  });
+
+  it("should reject stale capabilities when budgets run", async () => {
+    const root = await fixtureRoot();
+    await capabilityFixture(root);
+    const manifestPath = path.join(root, "packages/create-threenative/capabilities.json");
+    await writeFile(manifestPath, `${await readFile(manifestPath, "utf8")}\n`);
+
+    await expect(enforceBudgets(root)).rejects.toThrow(/Capability manifest is stale/u);
+  });
+
+  it("should check the capability manifest once when the root budget chain runs", async () => {
+    const root = await fixtureRoot();
+    await capabilityFixture(root);
+    const check = vi.spyOn(capabilityManifest, "checkCapabilityManifest");
+    const packageJson = JSON.parse(
+      await readFile(path.join(process.cwd(), "package.json"), "utf8"),
+    ) as {
+      scripts?: { budgets?: string };
+    };
+
+    await expect(enforceBudgets(root)).resolves.toMatchObject({ prdFiles: 0 });
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(packageJson.scripts?.budgets).not.toContain("pnpm capabilities:check");
+    check.mockRestore();
   });
 
   it("should pass fixtures that carry no census record at all", async () => {
