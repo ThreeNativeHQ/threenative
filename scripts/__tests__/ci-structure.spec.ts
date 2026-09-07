@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -225,7 +224,7 @@ function isolatedGitEnvironment(): NodeJS.ProcessEnv {
 }
 
 async function scopeFixture(): Promise<IScopeFixture> {
-  const root = await mkdtemp(path.join(tmpdir(), "threenative-ci-scope-"));
+  const root = await makeTempDir("threenative-ci-scope-");
   const git = (args: readonly string[]): string => {
     const result = spawnSync("git", [...args], {
       cwd: root,
