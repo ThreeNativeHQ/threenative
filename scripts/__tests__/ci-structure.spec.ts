@@ -352,6 +352,22 @@ describe("CI pipeline structure", () => {
     expect(triggers).toContain("schedule:");
   });
 
+  it("does not require skipped performance lanes on a prose-only run", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const summary = requiredJob(ci, "run-summary");
+    const performance = summary.slice(
+      summary.indexOf("Report the performance contract through the shared comparison summary"),
+    );
+    expect(performance).toContain("TN_CI_SCOPE: ${{ needs.scope.outputs.selection }}");
+    expect(performance).toContain('required_lanes=""');
+    expect(performance).toContain('if [ "$TN_CI_SCOPE" != prose ]; then');
+    expect(performance).toContain('required_lanes="performance-contracts,native-linux-contract"');
+    expect(performance).toContain('--required-lanes "$required_lanes"');
+    expect(performance).not.toContain(
+      "--required-lanes performance-contracts,native-linux-contract",
+    );
+  });
+
   it("classifies scratch Git histories from the complete merge-base diff", async () => {
     const fixture = await scopeFixture();
     try {
