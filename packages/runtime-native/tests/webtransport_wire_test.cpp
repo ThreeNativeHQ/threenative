@@ -1387,6 +1387,30 @@ int main() {
     init();
     processEvents();
     check(!hasActiveSessions(), "no active sessions after idle pump");
+
+    // Connect session to test socket and session operations
+    uint32_t sessId = connectSession("https://127.0.0.1:4433/wt_test");
+    if (sessId != 0) {
+        check(hasActiveSessions(), "active session after connect");
+        uint8_t dgram[] = { 1, 2, 3 };
+        sendDatagram(sessId, dgram, sizeof(dgram));
+        int64_t bidiId = createStream(sessId, true);
+        if (bidiId >= 0) {
+            uint8_t sdata[] = { 'h', 'e', 'l', 'l', 'o' };
+            streamWrite(sessId, static_cast<uint64_t>(bidiId), sdata, sizeof(sdata), false);
+            streamShutdown(sessId, static_cast<uint64_t>(bidiId), 0);
+        }
+        int64_t uniId = createStream(sessId, false);
+        if (uniId >= 0) {
+            uint8_t sdata[] = { 'u', 'n', 'i' };
+            streamWrite(sessId, static_cast<uint64_t>(uniId), sdata, sizeof(sdata), true);
+            streamShutdown(sessId, static_cast<uint64_t>(uniId), 0);
+        }
+        processEvents();
+        closeSession(sessId, 0, "normal close");
+        processEvents();
+    }
+
     shutdown();
     shutdown();
     check(!hasActiveSessions(), "no active sessions after shutdown");

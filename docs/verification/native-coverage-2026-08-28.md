@@ -2,31 +2,31 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-33 native contract targets; 2 configured
+38 native contract targets; 2 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
-| `src/async/` | 73 | 53 | 72.60% |
-| `src/audio/` | 1051 | 603 | 57.37% |
-| `src/canvas/` | 1172 | 610 | 52.05% |
-| `src/cli/` | 1593 | 0 | 0.00% |
-| `src/fs/` | 235 | 88 | 37.45% |
-| `src/http/` | 410 | 230 | 56.10% |
-| `src/js/` | 2626 | 1043 | 39.72% |
-| `src/platform/` | 1050 | 294 | 28.00% |
-| `src/raytracing/` | 458 | 60 | 13.10% |
-| `src/runtime.cpp` | 2268 | 961 | 42.37% |
+| `src/async/` | 73 | 60 | 82.19% |
+| `src/audio/` | 1051 | 897 | 85.35% |
+| `src/canvas/` | 1172 | 954 | 81.40% |
+| `src/cli/` | 1599 | 820 | 51.28% |
+| `src/fs/` | 235 | 189 | 80.43% |
+| `src/http/` | 410 | 377 | 91.95% |
+| `src/js/` | 2626 | 1693 | 64.47% |
+| `src/platform/` | 1050 | 619 | 58.95% |
+| `src/raytracing/` | 458 | 152 | 33.19% |
+| `src/runtime.cpp` | 2268 | 1548 | 68.25% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
-| `src/storage/` | 327 | 283 | 86.54% |
+| `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
-| `src/vfs/` | 239 | 175 | 73.22% |
-| `src/webgpu/` | 8227 | 3669 | 44.60% |
-| `src/webtransport/` | 1391 | 959 | 68.94% |
-| `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **21762** | **9579** | **44.02%** |
+| `src/vfs/` | 239 | 195 | 81.59% |
+| `src/webgpu/` | 8227 | 5152 | 62.62% |
+| `src/webtransport/` | 1391 | 991 | 71.24% |
+| `src/workers/` | 615 | 524 | 85.20% |
+| **TOTAL** | **21768** | **14481** | **66.52%** |
 
-Source digest: `sha256:505520eeb899cb4c92d7f12d801f72f3b8596b2ac35a5c3279b008d249b2318d`
+Source digest: `sha256:f86526d78703ddbe83794809deab5adb632435bce36cd73fa7efa1084523fd72`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -167,3 +167,38 @@ RED observed: legacy wrapper shape rejected
 command-encoder-class-table contract: 2 failure(s)
 0% tests passed, 1 tests failed out of 1
 ```
+
+## Coverage expansion verification — 2026-09-07
+
+The reconciled native contract suite executes five additional targets covering Canvas/audio,
+CLI/network/filesystem, JavaScript modules, runtime/platform behavior, and WebGPU. The CLI
+executables delegate to the same entry functions exercised by the contract tests. Assertions
+check script completion as well as evaluation success, and filesystem fixtures use an isolated
+temporary working directory.
+
+The coverage candidate initially made the ray-tracing stub report support when an environment
+variable was set. A compiled negative control exposed that false capability before the
+production override was removed:
+
+```text
+[MystralRT] No hardware RT available, using stub backend
+FAIL: unavailable native ray tracing became supported through an environment variable
+```
+
+After restoring honest stub support reporting, the same compiled probe passed. The new CLI
+contract retains the unsupported-capability assertion:
+
+```text
+[MystralRT] No hardware RT available, using stub backend
+PASS: unavailable native ray tracing remains unsupported
+```
+
+The five added contract targets passed locally, followed by a complete `pnpm native:coverage`
+measurement with all 38 runnable contract targets passing. The generated result above is
+**14,481 / 21,768 lines (66.52%)**, compared with the base commit's committed **9,579 / 21,762
+lines (44.02%)**. No coverage floor was lowered.
+
+This evidence is the Linux clang/V8/Dawn configuration. Physics and video were disabled as
+listed above; the optional SDL window checks skipped because the available SDL build could
+not initialize a window driver. It does not establish Windows, macOS, Android, iOS, or
+window-presentation coverage, and it does not meet an 80% total-coverage target.
