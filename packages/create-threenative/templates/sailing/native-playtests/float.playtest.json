@@ -1,0 +1,58 @@
+{
+  "name": "sailing-hull-floats-native",
+  "schemaVersion": 1,
+  "target": "desktop",
+  "warmupFrames": 40,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "swell",
+      "waitTicks": 240,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "The desktop host logs a window-branding notice at error level for a project without an embedded icon; that is host noise, not game behaviour.",
+      "noNetworkErrors": false,
+      "networkErrorsOptOutReason": "The desktop mailbox transport has no CDP network observer, so the browser-only network policy cannot be asserted here, and the web scenario playtests/float.playtest.json retains that check.",
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "oceanSteps",
+        "gte": 200,
+        "changed": true,
+        "allowTrivial": "The ocean's compute passes must actually dispatch: a SpectralOcean whose process() never runs holds whatever the warmup left in its cascade buffers, and the water is then a still photograph that every other assertion here passes on."
+      },
+      {
+        "entity": "player",
+        "component": "seaHeight",
+        "changed": true,
+        "allowTrivial": "The sea under the hull must move: a spectral ocean whose compute passes never dispatch reads back the same height every frame, and every other assertion here still passes on a frozen sheet of water."
+      },
+      {
+        "entity": "player",
+        "component": "floatGap",
+        "gte": -0.08,
+        "lte": 0.08,
+        "allowTrivial": "The drawn hull's design waterline sits on the sea surface; a hull riding above its own water is the failure this row exists to catch."
+      },
+      {
+        "entity": "player",
+        "component": "readbackStaleFrames",
+        "gte": 0,
+        "allowTrivial": "A negative age means the GPU height copy never landed, so nothing downstream of it can be trusted."
+      }
+    ]
+  }
+}
