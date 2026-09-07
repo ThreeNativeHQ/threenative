@@ -81,6 +81,60 @@ today needs an APK built from current `main`, which is blocked on the runtime-na
 recorded in the PRD — the published package ships no C++, so a sandbox build cannot carry current
 engine changes at all.
 
+## The candidate arm was built and does not start — 2026-09-07
+
+To judge current `main` rather than the 2026-08-30 baseline, Bayview was rebuilt against the live
+engine and installed on the same Pixel 8. Getting there cleared three walls worth recording:
+
+1. A consumer install cannot build the native host — the published `runtime-native` ships no C++.
+   The packager's own escape hatch is `THREENATIVE_RUNTIME_SOURCE=<path to packages/runtime-native>`,
+   and its error message names it. That alone is not enough: `packageAndroid` also requires
+   `third_party/sdl3-android/SDL3-3.2.30.aar`, so `download-deps.mjs --android` must have run
+   against the same checkout.
+2. With both satisfied the Gradle build succeeds. The resulting APK
+   (`1cebbd4e…`, `com.threenative.bayview`, arm64-v8a + x86_64) carries `TN_PUMP_SILENCE` in
+   `libmystral-runtime.so`, which is what proves it is current engine rather than a prebuilt.
+3. The asset preflight rejects six models for interleaved buffer views. Converting them with
+   `gltf-transform cp --vertex-layout separate` makes the preflight pass on its own terms.
+
+**The build does not start.** On the device it reaches `execute_complete` at ~792 ms, never emits
+`first_frame`, and spins with `presents: 0` across ~2.1 million frames until the playtest times out
+with `TN_PLAYTEST_OPERATION_TIMEOUT`. Direct launch names the cause:
+
+```text
+TN_NATIVE_START_FAILED:TN_ASSETS_UNRESOLVED: 'assets/enemy-terrorist.glb' could not be
+loaded from 2 candidate url(s)
+Uncaught TypeError: Cannot read properties of null (reading 'useState')
+```
+
+The first build attempted — pristine source, no model conversion, preflight skipped — showed the
+same `presents: 0`, so the asset conversion is **not** the cause and this is not an artefact of the
+rebuild procedure.
+
+Three reference forms were tried in the game source and all fail identically:
+
+| `ctx.assets.model(...)` argument | Runtime resolves to | Result |
+| --- | --- | --- |
+| `assets/enemy-terrorist.glb` (as shipped, 2026-08-30) | `game/assets/enemy-terrorist.glb` | unresolved |
+| `assets/models/enemy-terrorist.glb` | `game/assets/models/enemy-terrorist.glb` | unresolved |
+| `models/enemy-terrorist.glb` — **the exact manifest key** | `game/models/enemy-terrorist.glb` | unresolved |
+
+Both APKs ship `assets/game/assets.manifest.json` keyed on `models/enemy-terrorist.glb` with
+`output: models/enemy-terrorist.<hash>.glb`, and both stage that hashed file. The runtime asks for
+the **unhashed** name in every case, so the manifest's logical-to-output mapping is not being
+applied. The game declares `assets: { models: "none" }`, which disables the pipeline, and the
+2026-08-30 binary resolves these references anyway while a current-engine binary does not.
+
+That is where this stops: it is engine-side asset resolution, not a path typo in the game, and
+isolating it is a separate piece of work from PRD-360. Both APKs stage the same content-hashed models under `assets/game/models/`;
+neither ships the unhashed `assets/enemy-terrorist.glb` the running game asks for, yet the
+2026-08-30 binary resolves it and a current-engine binary does not.
+
+**So the candidate arm has no number, and the reason is a compatibility break rather than a
+measurement problem: this game's 2026-08-30 source does not run on current `main`.** Whether the
+startup work meets the 8-second criterion is still unmeasured, and isolating that break is the next
+piece of work. It is recorded here rather than guessed at.
+
 ## Subject and device
 
 | | |
