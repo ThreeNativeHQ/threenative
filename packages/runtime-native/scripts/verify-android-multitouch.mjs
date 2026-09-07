@@ -47,14 +47,14 @@ export function parseArgs(argv) {
   return options;
 }
 
-class ReportingAndroidDriver {
+export class ReportingAndroidDriver {
   constructor(driver) {
     this.driver = driver;
     this.injections = [];
     this.livenessChecks = [];
   }
   captureConsole() { return this.driver.captureConsole(); }
-  prepare(endpoint, mailboxRoot) { return this.driver.prepare(endpoint, mailboxRoot); }
+  prepare(endpoint, mailboxRoot, viewport) { return this.driver.prepare(endpoint, mailboxRoot, viewport); }
   readFile(path) { return this.driver.readFile(path); }
   removeFile(path) { return this.driver.removeFile(path); }
   screenshot(path) { return this.driver.screenshot(path); }
