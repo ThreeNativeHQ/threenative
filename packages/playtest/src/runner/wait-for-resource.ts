@@ -64,10 +64,20 @@ export async function waitForResource(options: IWaitForResourceOptions): Promise
         `resources.${options.id}.${options.path}`,
       );
     }
-    if (pathValuePass(assertion, value)) return snapshot;
-
+    // Elapsed time is read before the predicate is accepted. Returning on a passing value
+    // first meant an observation that arrived after the budget still passed, so a step
+    // asking for a transition "within 32 ms" was satisfied by one that took 100 — a wait
+    // that cannot fail late is not a bounded wait.
     const elapsedMs = now() - startedAt;
     const remainingMs = options.timeoutMs - elapsedMs;
+    if (pathValuePass(assertion, value)) {
+      if (remainingMs >= 0) return snapshot;
+      throw waitFailure(
+        `Resource wait for '${options.id}.${options.path}' timed out after ${Math.max(0, Math.round(elapsedMs))} ms; predicate ${json(options.predicate)} was satisfied only after the ${options.timeoutMs} ms budget, so the transition is slower than this step allows.`,
+        "Increase timeoutMs only when the transition is expected to take longer; otherwise fix the producer or resource path.",
+        options.id,
+      );
+    }
     if (remainingMs <= 0) {
       throw waitFailure(
         `Resource wait for '${options.id}.${options.path}' timed out after ${Math.max(0, Math.round(elapsedMs))} ms; predicate ${json(options.predicate)}, last observation ${json(value)}.`,

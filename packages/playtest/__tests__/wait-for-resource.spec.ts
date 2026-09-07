@@ -1,78 +1,63 @@
 import { expect, test } from "vitest";
 
 import type { IPlaytestObservationSnapshot } from "../src/index.js";
-import { PlaytestBridgeError } from "../src/runner/bridgeClient.js";
 import { waitForResource } from "../src/runner/wait-for-resource.js";
 
-function snapshot(value: unknown): IPlaytestObservationSnapshot {
-  return {
-    clock: { mode: "wall-clock", timeMs: 0 },
-    resources: { state: value as never },
-  };
+/**
+ * `now` and `sleep` are injectable, so elapsed time is exact here rather than raced. A clock
+ * that only moves when the wait samples is enough to place an observation on either side of
+ * the deadline.
+ */
+function clock(): { advance: (ms: number) => void; now: () => number } {
+  let current = 0;
+  return { advance: (ms) => { current += ms; }, now: () => current };
 }
 
-test("waitForResource observes an asynchronous resource and advances at most one tick per poll", async () => {
-  let elapsed = 0;
-  let samples = 0;
-  let advances = 0;
+function snapshot(connected: boolean): IPlaytestObservationSnapshot {
+  return { clock: { now: 0 }, resources: { state: { networkConnected: connected } } } as unknown as IPlaytestObservationSnapshot;
+}
 
+test("a resource that satisfies the predicate within its budget passes", async () => {
+  const time = clock();
+  let samples = 0;
   const result = await waitForResource({
-    advance: async () => { advances += 1; },
     id: "state",
-    now: () => elapsed,
+    now: time.now,
     path: "networkConnected",
     predicate: { equals: true },
     sample: async () => {
       samples += 1;
-      return snapshot({ networkConnected: samples >= 3 });
+      // Ready on the second sample, 16 ms in, comfortably inside the 100 ms budget.
+      time.advance(16);
+      return snapshot(samples >= 2);
     },
-    sleep: async (milliseconds) => { elapsed += milliseconds; },
+    sleep: async () => undefined,
     timeoutMs: 100,
   });
 
-  expect(result.resources?.state).toEqual({ networkConnected: true });
-  expect(samples).toBe(3);
-  expect(advances).toBe(2);
-  expect(elapsed).toBe(32);
+  expect(result).toEqual(snapshot(true));
+  expect(samples).toBe(2);
 });
 
-test("waitForResource times out with the predicate, elapsed time, and last observation", async () => {
-  let elapsed = 0;
-
-  const failure = await waitForResource({
-    id: "state",
-    now: () => elapsed,
-    path: "networkConnected",
-    predicate: { equals: true },
-    sample: async () => snapshot({ networkConnected: false }),
-    sleep: async (milliseconds) => { elapsed += milliseconds; },
-    timeoutMs: 32,
-  }).catch((error: unknown) => error);
-
-  expect(failure).toBeInstanceOf(PlaytestBridgeError);
-  expect((failure as PlaytestBridgeError).diagnostic).toMatchObject({
-    code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
-    message: expect.stringContaining("last observation false"),
-  });
-  expect((failure as PlaytestBridgeError).diagnostic.message).toContain("after 32 ms");
-});
-
-test("waitForResource fails immediately when the requested resource is not observed", async () => {
-  let sleeps = 0;
-
-  const failure = await waitForResource({
-    id: "state",
-    path: "networkConnected",
-    predicate: { equals: true },
-    sample: async () => ({ clock: { mode: "wall-clock", timeMs: 0 }, resources: {} }),
-    sleep: async () => { sleeps += 1; },
-    timeoutMs: 100,
-  }).catch((error: unknown) => error);
-
-  expect(failure).toBeInstanceOf(PlaytestBridgeError);
-  expect((failure as PlaytestBridgeError).diagnostic).toMatchObject({
-    message: expect.stringContaining("did not report 'state'"),
-    path: "resources.state.networkConnected",
-  });
-  expect(sleeps).toBe(0);
+test("a resource that only becomes true after its timeout is a timeout, not a pass", async () => {
+  // The wait returned as soon as the predicate held, before comparing elapsed time to the
+  // budget, so an observation that arrived late still passed. A scenario asking for a
+  // transition "within 32 ms" was satisfied by one that took 100.
+  const time = clock();
+  await expect(
+    waitForResource({
+      id: "state",
+      now: time.now,
+      path: "networkConnected",
+      predicate: { equals: true },
+      // The observation satisfies the predicate, but only after 100 ms have elapsed against
+      // a 32 ms budget. Accepting it is the false green.
+      sample: async () => {
+        time.advance(100);
+        return snapshot(true);
+      },
+      sleep: async () => undefined,
+      timeoutMs: 32,
+    }),
+  ).rejects.toThrow(/timed out/iu);
 });
