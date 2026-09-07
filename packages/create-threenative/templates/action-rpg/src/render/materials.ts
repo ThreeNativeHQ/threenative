@@ -29,6 +29,17 @@ export function createMaterials() {
       metalness: 0.26,
       roughness: 0.72,
     }),
+    stoneDark: new MeshStandardMaterial({
+      color: 0x333d4c,
+      metalness: 0.24,
+      roughness: 0.78,
+    }),
+    flame: new MeshStandardMaterial({
+      color: 0xffb552,
+      emissive: 0xffb552,
+      emissiveIntensity: 2.2,
+      roughness: 0.9,
+    }),
     trim: new MeshStandardMaterial({
       color: palette.accent,
       emissive: palette.accent,

@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-355 — the reinvention gate sees one capability in fifty, and never sees a user's game
 
-**Status: PROPOSED, 2026-09-04.** Filed into
-[`astra-batch-2026-09-04`](./README.md), measured at `dae30759`.
+**Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/` from the
+[`ASTRA-BATCH-2026-09-04` provenance index](../ASTRA-BATCH-2026-09-04.md), measured at `dae30759`.
 
 **Complexity:** +3 for 10+ files, +2 for a new shipped module (the detector leaves `scripts/`),
 +2 for multi-package (`create-threenative`, `engine-mcp`, `playtest`, `scripts/`) = **7 → HIGH
@@ -95,12 +95,12 @@ with the five rules that currently work.
 
 **Overlap check.** Every open PRD surveyed 2026-09-04.
 
-- **PRD-324** (now beside this file; HIGH, unassigned) — *the manifest cannot forget an export*. Its
+- **PRD-324** ([`authoring/PRD-324`](../authoring/PRD-324-the-capability-manifest-cannot-forget-an-export.md); HIGH, unassigned) — *the manifest cannot forget an export*. Its
   authoring-side gate is the natural host for §2's tag-coverage check, and `@supersedes` becomes a
   droppable tag the moment this PRD makes it load-bearing. **Land 324 first or in parallel.**
-- **PRD-297 / PRD-298 / PRD-300 / PRD-301** (now beside this file) — the pull lane. Orthogonal by
+- **PRD-297 / PRD-298 / PRD-300 / PRD-301** (all in `authoring/`) — the pull lane. Orthogonal by
   construction: they improve what a search returns, this improves what happens when no search runs.
-- **PRD-325** (now beside this file) — three seams three games hand-wrote. Each seam it lands is a
+- **PRD-325** ([`feature-mining/PRD-325`](../feature-mining/PRD-325-three-games-hand-wrote-the-same-three-seams.md)) — three seams three games hand-wrote. Each seam it lands is a
   capability this detector must then be able to see; the two PRDs are each other's acceptance test.
   Neither blocks the other.
 - **PRD-186 §110, §481** and **PRD-276 §149** already cite this detector as the thing that will

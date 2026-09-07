@@ -14,7 +14,11 @@ import { palette } from "./palette.js";
 
 export function setupSky(scene: Scene): void {
   const radius = 90;
-  const geometry = new SphereGeometry(radius, 4, 3);
+  // 4 x 3 segments is an eight-triangle blob, and a vertical gradient painted into its vertices
+  // interpolates across faces that span sixty degrees of sky: the frame showed a black wedge cut
+  // straight across the middle of the arena and green corners, both of which read as broken
+  // geometry rather than as a sky. 16 x 8 is 256 triangles and the gradient is smooth.
+  const geometry = new SphereGeometry(radius, 16, 8);
   const positions = geometry.getAttribute("position");
   const colors = new Float32Array(positions.count * 3);
   const high = new Color(palette.skyHigh);

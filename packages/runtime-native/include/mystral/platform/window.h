@@ -10,7 +10,14 @@ namespace platform {
  * Initialize SDL and create window. A packaged .threenative/app-icon.png is applied to the live
  * SDL window after creation; raw executables report the compositor fallback when it is unavailable.
  */
-bool createWindow(const char* title, int width, int height, bool fullscreen, bool resizable);
+bool createWindow(
+    const char* title,
+    int width,
+    int height,
+    bool fullscreen,
+    bool resizable,
+    bool maximized = false
+);
 
 /**
  * Destroy window and cleanup SDL

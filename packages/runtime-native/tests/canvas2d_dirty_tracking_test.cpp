@@ -29,7 +29,84 @@ static void check(bool condition, const char* name) {
 }
 
 int main() {
+    Canvas2DContext stroke(64, 64);
+    stroke.setLineWidth(16);
+    stroke.setLineCap("round");
+    stroke.beginPath();
+    stroke.moveTo(16, 32);
+    stroke.lineTo(48, 32);
+    stroke.stroke();
+    check(stroke.getImageData(9, 32, 1, 1).data[3] > 200, "round cap extends beyond endpoint");
+    check(stroke.getImageData(9, 25, 1, 1).data[3] == 0, "round cap does not fill a square corner");
+    stroke.save();
+    stroke.setLineCap("square");
+    stroke.stroke();
+    check(stroke.getImageData(9, 25, 1, 1).data[3] > 200, "square cap fills its corner");
+    stroke.restore();
+    check(stroke.getLineCap() == "round", "restore restores cap state");
+    stroke.setLineCap("invalid");
+    check(stroke.getLineCap() == "round", "invalid cap preserves existing state");
+    Canvas2DContext gradientCanvas(64, 16);
+    const auto gradientId = gradientCanvas.createLinearGradient(0, 0, 64, 0);
+    const auto gradient = gradientCanvas.getGradient(gradientId);
+    check(gradient->addColorStop(1, "#0000ff"), "gradient accepts blue endpoint");
+    check(gradient->addColorStop(0, "#ff0000"), "gradient sorts out-of-order endpoints");
+    check(!gradient->addColorStop(-1, "#ffffff"), "gradient rejects negative offsets");
+    check(!gradient->addColorStop(0.5f, "rgb(invalid)"), "gradient rejects malformed functional colors");
+    gradientCanvas.setGradient(false, gradient);
+    gradientCanvas.fillRect(0, 0, 64, 16);
+    auto gradientPixels = gradientCanvas.getImageData(0, 0, 64, 16).data;
+    check(gradientPixels[0] > 240 && gradientPixels[63 * 4 + 2] > 240, "gradient preserves both endpoints");
+    check(gradientPixels[32 * 4] > 115 && gradientPixels[32 * 4 + 2] > 115, "gradient interpolates middle colors");
+    gradient->addColorStop(0.5f, "#00ff00");
+    gradientCanvas.fillRect(0, 0, 64, 16);
+    gradientPixels = gradientCanvas.getImageData(0, 0, 64, 16).data;
+    check(gradientPixels[32 * 4 + 1] > 240, "assigned gradient observes added stops");
+    gradientCanvas.setFillStyle("#ffffff");
+    gradientCanvas.fillRect(0, 0, 64, 16);
+    gradientPixels = gradientCanvas.getImageData(0, 0, 64, 16).data;
+    check(gradientPixels[0] == 255 && gradientPixels[1] == 255 && gradientPixels[2] == 255,
+          "a solid fill clears the previous gradient");
+    Canvas2DContext ellipse(64, 64);
+    ellipse.consumeDirtyPixels();
+    ellipse.setFillStyle("#ff0000");
+    ellipse.beginPath();
+    ellipse.ellipse(32, 32, 20, 8, 1.57079632679f, 0, 6.28318530718f);
+    check(!ellipse.hasDirtyPixels(), "ellipse path construction does not upload pixels");
+    ellipse.fill();
+    check(ellipse.consumeDirtyPixels(), "ellipse fill requires an upload");
+    auto ellipsePixels = ellipse.getImageData(0, 0, 64, 64).data;
+    check(ellipsePixels[(16 * 64 + 32) * 4] > 240, "rotated ellipse fills its long axis");
+    check(ellipsePixels[(32 * 64 + 16) * 4 + 3] == 0, "rotated ellipse preserves its short axis");
+    ellipse.clearRect(0, 0, 64, 64);
+    ellipse.beginPath();
+    ellipse.ellipse(32, 32, 20, 20, 0, 0, 1.57079632679f, true);
+    ellipse.lineTo(32, 32);
+    ellipse.closePath();
+    ellipse.fill();
+    ellipsePixels = ellipse.getImageData(0, 0, 64, 64).data;
+    check(ellipsePixels[(24 * 64 + 24) * 4] > 240, "counterclockwise partial ellipse follows the long arc");
+    check(ellipsePixels[(40 * 64 + 40) * 4 + 3] == 0, "counterclockwise partial ellipse leaves the short arc empty");
     Canvas2DContext canvas(64, 64);
+#if defined(__linux__) && !defined(__ANDROID__)
+    canvas.setFont("600 17px ui-monospace, monospace");
+    check(std::abs(canvas.measureText("iiii").width - canvas.measureText("WWWW").width) < 0.1f,
+          "CSS ui-monospace fallback preserves equal glyph advances");
+    canvas.setFont("17px monospace");
+    check(canvas.measureText("PREPARING TERRAIN").width > 20.0f,
+          "Linux loading text resolves real glyphs instead of an empty font manager");
+    Canvas2DContext text(256, 32);
+    text.setFont("17px monospace");
+    text.setFillStyle("#ffffff");
+    text.setTextBaseline("top");
+    text.fillText("PREPARING TERRAIN", 0, 0);
+    const auto pixels = text.getImageData(0, 0, 256, 32);
+    int ink = 0;
+    for (size_t i = 3; i < pixels.data.size(); i += 4) {
+        if (pixels.data[i] != 0) ++ink;
+    }
+    check(ink > 20, "Linux loading text rasterizes visible pixels");
+#endif
 
     // A fresh context has never been composited: its first upload is required, and
     // peeking at the flag must not consume it.

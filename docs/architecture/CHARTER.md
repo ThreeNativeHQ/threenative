@@ -57,6 +57,13 @@ floor, a weapon stays in the hand that holds it, an agent walks around a wall, o
 metre — **the engine ships it working, on, and discoverable, before any game asks.** The game's
 agent should reach that behaviour by doing nothing.
 
+### Things just work out of the box
+
+**Avoid configuration pain.** Ordinary games must reach a working, good-looking result by doing
+nothing beyond scaffolding and running the project. Defaults are measured and correct for the
+ordinary case; configuration is an escape hatch for intentional variation, never a prerequisite
+for a usable game.
+
 **Every convention carries a range, not a mandate.** Each one ships with:
 
 1. **A default that is correct for the ordinary case** — on, with no option passed.

@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-354 — the manifest never names an import a scaffolded game cannot resolve
 
-**Status: PROPOSED, 2026-09-04.** Filed into
-[`astra-batch-2026-09-04`](./README.md), measured at `dae30759`.
+**Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/` from the
+[`ASTRA-BATCH-2026-09-04` provenance index](../ASTRA-BATCH-2026-09-04.md), measured at `dae30759`.
 
 **Complexity:** +3 for 10+ files (ten templates, the generator, the scaffolder, the reference
 doc, the gate and its spec), +2 for multi-package (`create-threenative`, `engine-mcp`,
@@ -65,13 +65,13 @@ spending it.
 
 **Overlap check.** Every open PRD was surveyed on 2026-09-04.
 
-- **PRD-301** (now beside this file) — *manifest covers every shipped package*. The exact inverse: 301 adds
+- **PRD-301** ([`authoring/PRD-301`](../authoring/PRD-301-manifest-covers-every-shipped-package.md)) — *manifest covers every shipped package*. The exact inverse: 301 adds
   packages the manifest omits, this adds a resolvability contract to what it already names. **Both
   edit `scripts/build-capability-manifest.ts`; land them in one commit** or the second rebases onto
   a generator that no longer matches its Phase 0 measurement.
-- **PRD-324** (now beside this file) — *the manifest cannot forget an export*. Authoring-side drift,
+- **PRD-324** ([`authoring/PRD-324`](../authoring/PRD-324-the-capability-manifest-cannot-forget-an-export.md)) — *the manifest cannot forget an export*. Authoring-side drift,
   not consumer-side resolvability. Complementary; its gate is the natural host for §2's check.
-- **PRD-297 / PRD-298 / PRD-300** (now beside this file) — recall quality. Orthogonal: all three are about
+- **PRD-297 / PRD-298 / PRD-300** (all in `authoring/`) — recall quality. Orthogonal: all three are about
   whether the right entry is *returned*, this is about whether a returned entry *works*.
 - **PRD-185** (`package-naming/`) — naming law. Touches the same package list and must not be
   resolved by renaming; if it lands first, re-run §1's table before pasting a red.

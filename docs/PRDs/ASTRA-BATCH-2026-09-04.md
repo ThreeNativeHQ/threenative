@@ -1,7 +1,8 @@
-# astra-batch-2026-09-04 — the framework stops depending on the agent to search
+# astra-batch-2026-09-04 — provenance index for the capability-discovery work
 
-**Status: OPEN — filed 2026-09-04 against `dae30759`. Nothing in this batch has been executed.**
-**Assignee: astra.** Nine PRDs — three filed here, six pulled in from four other folders.
+**Status: REHOMED — the nine PRDs were filed into their owning categories on 2026-09-05.**
+This file preserves the batch's evidence, dependency order and scope decisions; the links below
+point to the categorized PRDs.
 
 Every gate in this batch runs on this machine with **no device, no browser session and no human in
 the loop**. That is deliberate: it is what makes a batch handable to an agent overnight, and it is
@@ -104,35 +105,34 @@ that lesson as a gate, not as a caution.
 
 | PRD | One line | Complexity | Depends on |
 |---|---|---|---|
-| [PRD-354](./PRD-354-the-manifest-never-names-an-import-a-game-cannot-resolve.md) | The manifest cannot advertise an import a scaffolded game cannot resolve — 27 entries today | 5 → MEDIUM | — |
-| [PRD-355](./PRD-355-the-reinvention-gate-sees-one-capability-in-fifty.md) | The reinvention gate reaches the engine it guards, and reaches a user's game | 7 → HIGH | 354 |
-| [PRD-356](./PRD-356-reinvention-is-a-scored-row-in-the-paired-sweep.md) | "Did the framework stop a rewrite" becomes a number in the round ledger | 6 → HIGH | 355 |
+| [PRD-354](./agent-leverage/PRD-354-the-manifest-never-names-an-import-a-game-cannot-resolve.md) | The manifest cannot advertise an import a scaffolded game cannot resolve — 27 entries today | 5 → MEDIUM | — |
+| [PRD-355](./agent-leverage/PRD-355-the-reinvention-gate-sees-one-capability-in-fifty.md) | The reinvention gate reaches the engine it guards, and reaches a user's game | 7 → HIGH | 354 |
+| [PRD-356](./agent-leverage/PRD-356-reinvention-is-a-scored-row-in-the-paired-sweep.md) | "Did the framework stop a rewrite" becomes a number in the round ledger | 6 → HIGH | 355 |
 
-And these six, **pulled into this folder on 2026-09-04** by owner instruction. `docs/PRDs/AGENTS.md`
-says `OPEN` / `PROPOSED` PRDs stay in their owning batch; the owner moved them, so the rule is
-satisfied by this folder *becoming* their owning batch rather than by leaving them behind. The
-"came from" column is their provenance, not a place to look for them.
+And these six, **pulled into the batch on 2026-09-04** by owner instruction, are listed here for
+provenance. They now live in the categories that own their subject; the "came from" column records
+where each PRD was filed before the batch was assembled.
 
 | # | PRD | Came from | State | Why it is in the run order |
 |---|---|---|---|---|
-| 1 | [PRD-297 — recall is a measured number](./PRD-297-capability-recall-is-a-measured-number.md) | `authoring/` | OPEN | The pull-side instrument. PRD-356's score is meaningless beside an unmeasured recall. Half a day. |
-| 2 | [PRD-298 — search fails closed](./PRD-298-capability-search-fails-closed.md) | `authoring/` | OPEN | Eight wrong answers is a live defect. Removes harm rather than adding reach. |
-| 3 | [PRD-301 — every shipped package is in the manifest](./PRD-301-manifest-covers-every-shipped-package.md) | `authoring/` | OPEN | The inverse of PRD-354: 354 removes entries a game cannot use, 301 adds packages the manifest omits. Run them together or they will fight over the same generator. |
-| 4 | [PRD-324 — the manifest cannot forget an export](./PRD-324-the-capability-manifest-cannot-forget-an-export.md) | `agent-leverage/` | PROPOSED, HIGH | The authoring-side gate. PRD-355 Phase 3 makes `@supersedes` a first-class tag; without 324 the tag can go missing between two `budgets` runs exactly as an export can. |
-| 5 | [PRD-300 — one capability, many phrasings](./PRD-300-capability-vocabulary-expansion.md) | `authoring/` | OPEN | Runs after 298 so new hits are thresholded rather than added to the noise. |
-| 6 | [PRD-325 — three games hand-wrote the same three seams](./PRD-325-three-games-hand-wrote-the-same-three-seams.md) | `feature-mining/` | PROPOSED, HIGH | The supply side. Each seam it lands is a capability PRD-355 must then be able to see — the two PRDs are each other's acceptance test. |
+| 1 | [PRD-297 — recall is a measured number](./authoring/PRD-297-capability-recall-is-a-measured-number.md) | `authoring/` | OPEN | The pull-side instrument. PRD-356's score is meaningless beside an unmeasured recall. Half a day. |
+| 2 | [PRD-298 — search fails closed](./authoring/PRD-298-capability-search-fails-closed.md) | `authoring/` | OPEN | Eight wrong answers is a live defect. Removes harm rather than adding reach. |
+| 3 | [PRD-301 — every shipped package is in the manifest](./authoring/PRD-301-manifest-covers-every-shipped-package.md) | `authoring/` | OPEN | The inverse of PRD-354: 354 removes entries a game cannot use, 301 adds packages the manifest omits. Run them together or they will fight over the same generator. |
+| 4 | [PRD-324 — the manifest cannot forget an export](./authoring/PRD-324-the-capability-manifest-cannot-forget-an-export.md) | `authoring/` | PROPOSED, HIGH | The authoring-side gate. PRD-355 Phase 3 makes `@supersedes` a first-class tag; without 324 the tag can go missing between two `budgets` runs exactly as an export can. |
+| 5 | [PRD-300 — one capability, many phrasings](./authoring/PRD-300-capability-vocabulary-expansion.md) | `authoring/` | OPEN | Runs after 298 so new hits are thresholded rather than added to the noise. |
+| 6 | [PRD-325 — three games hand-wrote the same three seams](./feature-mining/PRD-325-three-games-hand-wrote-the-same-three-seams.md) | `feature-mining/` | PROPOSED, HIGH | The supply side. Each seam it lands is a capability PRD-355 must then be able to see — the two PRDs are each other's acceptance test. |
 
 **Two PRDs were deliberately left where they were.**
 
-- [PRD-299 — request decomposition](../authoring/PRD-299-request-decomposition-index.md) stays in
+- [PRD-299 — request decomposition](authoring/PRD-299-request-decomposition-index.md) stays in
   `authoring/`. It is the fifth member of the discoverability origin batch and the only one still
   **waiting on an owner ruling**, because it sits nearest the charter's closed door on preset and
   genre systems. A batch handed to an agent must not contain work blocked on a person; astra would
   either stall on it or make the ruling itself, and that ruling is not astra's to make.
-- [`authoring/ORIGIN-authoring-discoverability-2026-08-31.md`](../authoring/ORIGIN-authoring-discoverability-2026-08-31.md)
+- [`authoring/ORIGIN-authoring-discoverability-2026-08-31.md`](authoring/ORIGIN-authoring-discoverability-2026-08-31.md)
   stays as the origin record for 297/298/300/301 — its sequencing argument, its closed-door
-  boundary and its sealed-corpus ruling still bind those four PRDs here, and it now links to this
-  folder. **Read it before starting any of them.**
+  boundary and its sealed-corpus ruling still bind those four PRDs. **Read it before starting any
+  of them.**
 
 ## Run order
 
@@ -157,21 +157,15 @@ PRD-356 is last because it is the only PRD here that can report a *movement*: it
 detector widened (355) and the recall number defined (297) before its arms mean anything.
 
 **Start with PRD-297.** It is half a day, it is the hard dependency of four other files here, and
-until it exists nothing in this batch can paste a before-number. If astra reads one file before
+until it exists nothing in this batch can paste a before-number. If an agent reads one file before
 starting, make it `authoring/ORIGIN-authoring-discoverability-2026-08-31.md`, which is the origin
-argument for the four PRDs pulled out of it.
+argument for the four authoring PRDs listed here.
 
-## Closing this batch
+## Filing after reorganization
 
-Per `docs/PRDs/AGENTS.md`, a dated batch folder moves whole — `git mv docs/PRDs/astra-batch-2026-09-04/
-docs/PRDs/done/astra-batch-2026-09-04/` in the commit that closes the last PRD — and never while
-any member is `PARTIAL`. A PRD that finishes ahead of its siblings gets archived on its own. A PRD
-that **declines** is closed with its decline condition cited and stays in the folder until the
-batch closes; three declines is a legitimate outcome for this batch and `done/batch-2026-09-01`
-is the precedent — that batch killed three of seven extraction proposals by their own Phase 0
-checks and counted it as the result it was designed to allow.
-
-Replace this README's status line with the outcome table when it closes.
+The PRDs now remain in their owning categories while this file serves as the historical batch
+index. A completed PRD moves to `docs/PRDs/done/` under the normal retention rule; a declined PRD
+keeps its decline evidence with the category that owned it.
 
 ## The rule that governs PRD-355, stated once for the whole batch
 

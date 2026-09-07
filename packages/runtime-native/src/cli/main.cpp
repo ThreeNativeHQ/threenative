@@ -422,6 +422,9 @@ RUN OPTIONS:
     --width <n>           Window width (default: 1280)
     --height <n>          Window height (default: 720)
     --title <str>         Window title (default: "Mystral")
+    --windowed            Start a normal window at the configured size
+    --maximized           Start maximized (implies windowed)
+    --fullscreen           Start fullscreen (overrides the embedded config)
     --headless            Run with hidden window (background mode)
     --no-sdl              Run without SDL (headless GPU, no window system required)
     --watch, -w           Watch mode: reload script on file changes
@@ -529,6 +532,9 @@ struct CLIOptions {
     int height = 720;
     std::string title = "ThreeNative";
     std::string iconPath;
+    bool fullscreen = false;
+    bool maximized = false;
+    bool windowModeOverride = false;
     bool resizable = true;
     bool showHelp = false;
     bool showVersion = false;
@@ -592,6 +598,10 @@ static void applyEmbeddedConfig(CLIOptions& opts) {
     const double height = extractJsonNumber(config, "height", opts.height);
     if (width > 0) opts.width = static_cast<int>(width);
     if (height > 0) opts.height = static_cast<int>(height);
+    if (!opts.windowModeOverride) {
+        opts.fullscreen = extractJsonBool(config, "fullscreen", opts.fullscreen);
+        opts.maximized = extractJsonBool(config, "maximized", opts.maximized);
+    }
     opts.resizable = extractJsonBool(config, "resizable", opts.resizable);
     const double maxFps = extractJsonNumber(config, "maxFps", opts.maxFps);
     if (maxFps >= 0 && maxFps <= 1000 && std::floor(maxFps) == maxFps) {
@@ -619,6 +629,18 @@ CLIOptions parseArgs(int argc, char* argv[]) {
             opts.height = std::stoi(argv[++i]);
         } else if (arg == "--title" && i + 1 < argc) {
             opts.title = argv[++i];
+        } else if (arg == "--windowed") {
+            opts.fullscreen = false;
+            opts.maximized = false;
+            opts.windowModeOverride = true;
+        } else if (arg == "--maximized") {
+            opts.fullscreen = false;
+            opts.maximized = true;
+            opts.windowModeOverride = true;
+        } else if (arg == "--fullscreen") {
+            opts.fullscreen = true;
+            opts.maximized = false;
+            opts.windowModeOverride = true;
         } else if ((arg == "--include" || arg == "--assets") && i + 1 < argc) {
             opts.assetDirs.push_back(argv[++i]);
         } else if ((arg == "--output" || arg == "--out" || arg == "-o") && i + 1 < argc) {
@@ -1042,6 +1064,15 @@ static void printRunBanner(const CLIOptions& opts, bool screenshotMode, bool vid
 }
 
 static std::unique_ptr<mystral::Runtime> createConfiguredRuntime(const CLIOptions& opts) {
+#if defined(__linux__) && TN_ENABLE_UI_OVERLAY
+    if (!opts.uiRoot.empty()) {
+        // The web overlay attaches to an X11 surface, also on Wayland via XWayland.
+        // Select both backends before SDL/GTK initialization and worker creation; a desktop
+        // session's GDK_BACKEND=wayland must not leave the game's requested HUD unattached.
+        SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "x11", SDL_HINT_OVERRIDE);
+        setenv("GDK_BACKEND", "x11", 1);
+    }
+#endif
     // Check for debug mode via environment variable
     bool debugMode = opts.debug;
     const char* debugEnv = std::getenv("MYSTRAL_DEBUG");
@@ -1054,6 +1085,8 @@ static std::unique_ptr<mystral::Runtime> createConfiguredRuntime(const CLIOption
     config.width = opts.width;
     config.height = opts.height;
     config.title = opts.title.c_str();
+    config.fullscreen = opts.fullscreen;
+    config.maximized = opts.maximized;
     config.resizable = opts.resizable;
     config.noSdl = opts.noSdl;
     config.watch = opts.watch;
@@ -1099,6 +1132,11 @@ static bool attachUiOverlayIfConfigured(const CLIOptions& opts, mystral::Runtime
                       << uiRoot.string() << " is not a directory." << std::endl;
             return false;
         }
+        // Deliberately not returned. Every false this can produce is a property of the machine,
+        // not of the game — no display, no compositing manager, a window the X server does not
+        // own, and in any build without TN_ENABLE_UI_OVERLAY it is false always. The overlay
+        // already says which on stdout as TN_UI_OVERLAY, and a game that cannot have its HUD
+        // composited still runs. Returning it here made main's startup gate exit 1 instead.
         mystral::platform::attachDesktopUiOverlay(uiRoot.string());
     }
     return true;

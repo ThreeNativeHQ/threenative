@@ -52,6 +52,9 @@ describe("CLI Basic", () => {
     expect(stdout).toContain("--width");
     expect(stdout).toContain("--height");
     expect(stdout).toContain("--title");
+    expect(stdout).toContain("--windowed");
+    expect(stdout).toContain("--maximized");
+    expect(stdout).toContain("--fullscreen");
     expect(stdout).toContain("--headless");
     expect(stdout).toContain("--screenshot");
     expect(stdout).toContain("--frames");

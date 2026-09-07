@@ -9,6 +9,13 @@ export const floorMaterial = new MeshStandardMaterial({
   metalness: 0.12,
 });
 
+/** The player's visor and boots: the one warm note against a cool morning. */
+export const accentMaterial = new MeshStandardMaterial({
+  color: palette.accent,
+  roughness: 0.6,
+  metalness: 0.05,
+});
+
 export const defaultMaterial = new MeshStandardMaterial({
   color: palette.player,
   roughness: 0.52,

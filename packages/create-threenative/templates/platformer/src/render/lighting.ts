@@ -15,9 +15,12 @@ type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 export function setupLighting(scene: Scene, renderer: ShadowRenderer): DirectionalLight {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
-  scene.add(new HemisphereLight(palette.skyHigh, palette.shadow, 1.4));
+  scene.add(new HemisphereLight(palette.skyLow, palette.ground, 0.5));
 
-  const key = new DirectionalLight(palette.accent, 3.2);
+  // Warm white, not the accent. Keyed with a saturated yellow, the grass, the character and the
+  // stone all took the same cast and the palette collapsed towards one pale band — the same
+  // failure the fog note in `sky.ts` describes, arriving through the light instead.
+  const key = new DirectionalLight(0xfff2d8, 2.1);
   key.position.set(5, 8, 4);
   key.castShadow = true;
   // 1024² is one quarter of a 2048² map's texel storage and fill work. The
@@ -34,10 +37,10 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): Direction
   key.shadow.normalBias = 0.04;
   scene.add(key);
 
-  const rim = new DirectionalLight(palette.skyLow, 0.9);
+  const rim = new DirectionalLight(palette.skyLow, 0.45);
   rim.position.set(-5, 4, -7);
   scene.add(rim);
-  scene.add(new AmbientLight(palette.shadow, 0.24));
+  scene.add(new AmbientLight(palette.skyLow, 0.42));
 
   return key;
 }

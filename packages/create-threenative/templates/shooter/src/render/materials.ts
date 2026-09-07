@@ -4,7 +4,9 @@ import { palette } from "./palette.js";
 
 export function createMaterials() {
   return {
-    arena: new MeshStandardMaterial({ color: palette.arena, metalness: 0.35, roughness: 0.62 }),
+    // Matte. At 0.35 metalness the deck became a mirror under the screen-space reflection stage
+    // once the walls were shaded correctly, and the arena read as a polished showroom floor.
+    arena: new MeshStandardMaterial({ color: palette.arena, metalness: 0.06, roughness: 0.82 }),
     accent: new MeshStandardMaterial({
       color: palette.accent,
       emissive: palette.accent,
@@ -15,7 +17,7 @@ export function createMaterials() {
     hostile: new MeshStandardMaterial({
       color: palette.hostile,
       emissive: palette.hostile,
-      emissiveIntensity: 0.7,
+      emissiveIntensity: 0.3,
       metalness: 0.1,
       roughness: 0.3,
     }),
@@ -26,7 +28,10 @@ export function createMaterials() {
       metalness: 0.35,
       roughness: 0.34,
     }),
-    shadow: new MeshStandardMaterial({ color: 0x18242f, metalness: 0.5, roughness: 0.7 }),
+    /** The arena's boundary walls and the drones' dark plating. Lifted twice now: at 0x18242f and
+     * again at 0x263646 the four walls photographed as one black band straight across the middle
+     * of the frame, which is exactly the height the targets stand at. */
+    shadow: new MeshStandardMaterial({ color: 0x334659, metalness: 0.1, roughness: 0.8 }),
     // The weapon is the largest thing on screen in first person, so it gets its own three
     // materials rather than borrowing the arena's. Parkerised steel, moulded polymer, and the
     // lit dot in the sight.
@@ -56,8 +61,15 @@ export function createMaterials() {
       metalness: 0.05,
       roughness: 0.8,
     }),
+    /** Inset floor panels: one step off the arena tone, so the deck has a surface rather than a
+     * colour. Cheaper and quieter than a painted grid. */
+    floorPanel: new MeshStandardMaterial({
+      color: 0x2e4257,
+      metalness: 0.06,
+      roughness: 0.84,
+    }),
     /** Waist-high crates and pillars. A mid tone, so a box reads as a box and not as its lit lip. */
-    cover: new MeshStandardMaterial({ color: 0x36485a, metalness: 0.3, roughness: 0.66 }),
+    cover: new MeshStandardMaterial({ color: 0x3d5266, metalness: 0.08, roughness: 0.78 }),
     sight: new MeshStandardMaterial({
       color: palette.hostile,
       emissive: palette.hostile,
@@ -67,7 +79,7 @@ export function createMaterials() {
     }),
     // Cover edges. Same accent hue as `trim`, a fraction of its emissive: a waist-high crate lit
     // like a HUD element photographs as a glowing platform rather than something to hide behind.
-    edge: new MeshStandardMaterial({ color: 0x6b6141, metalness: 0.35, roughness: 0.6 }),
+    edge: new MeshStandardMaterial({ color: 0x9a8b55, metalness: 0.35, roughness: 0.6 }),
     trim: new MeshStandardMaterial({
       color: palette.accent,
       emissive: palette.accent,

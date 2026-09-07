@@ -934,42 +934,11 @@ static js::JSValueHandle configureCanvasContext(
 
 static js::JSValueHandle getCurrentCanvasTexture(
     BindingsState* state,
-    const std::vector<js::JSValueHandle>&,
-    bool offscreen) {
-    if (offscreen) {
-        const WGPUTexture previousCurrentTexture = state->presentation.currentTexture;
-        const uint64_t previousSurfaceTextureId = state->presentation.currentSurfaceTextureId;
-        WGPUTexture texture = getCurrentSwapchainTexture(state);
-        if (!texture) {
-            state->engine->throwException("Failed to get current texture");
-            return state->engine->newUndefined();
-        }
-
-        state->presentation.currentTexture = texture;
-        const uint64_t textureId = state->registries.nextTextureId++;
-        TextureInfo textureInfo;
-        textureInfo.texture = texture;
-        textureInfo.format = state->presentation.surfaceFormat;
-        textureInfo.width = state->presentation.canvasWidth;
-        textureInfo.height = state->presentation.canvasHeight;
-        textureInfo.ownsTexture = false;
-        state->registries.textureRegistry[textureId] = textureInfo;
-        state->engine->suspendFrameTracking();
-        auto jsTexture = createTextureWrapper(state, texture, textureId, state->presentation.canvasWidth,
-                                              state->presentation.canvasHeight,
-                                              formatToString(state->presentation.surfaceFormat), true);
-        state->engine->resumeFrameTracking();
-        if (state->engine->isUndefined(jsTexture) && state->engine->hasException()) {
-            state->presentation.currentTexture = previousCurrentTexture;
-            state->presentation.currentSurfaceTextureId = previousSurfaceTextureId;
-            if (state->surface && texture && texture != previousCurrentTexture) {
-                wgpuTextureRelease(texture);
-            }
-        }
-        return jsTexture;
-    }
-
-    if (!syncSurfaceSizeToCanvas(state, state->engine->getGlobalProperty("canvas"))) {
+    js::JSValueHandle canvasContext) {
+    // Created HTML canvases share the host's presentation surface. They need the same
+    // acquisition/view bookkeeping as the main canvas or endFrame never presents them.
+    const auto canvas = state->engine->getProperty(canvasContext, "canvas");
+    if (!syncSurfaceSizeToCanvas(state, canvas)) {
         state->engine->throwException("Canvas dimensions must be positive integer pixels");
         return state->engine->newUndefined();
     }
@@ -1015,8 +984,8 @@ static BindingHandler makeUnconfigureCanvasContextHandler(bool offscreen) {
 }
 
 static BindingHandler makeCurrentTextureCanvasContextHandler(bool offscreen) {
-    return [offscreen](BindingsState* state, BindingDestination, const std::vector<js::JSValueHandle>& args) {
-        return getCurrentCanvasTexture(state, args, offscreen);
+    return [](BindingsState* state, BindingDestination destination, const std::vector<js::JSValueHandle>&) {
+        return getCurrentCanvasTexture(state, destination);
     };
 }
 
@@ -1024,13 +993,19 @@ static bool installCanvasContextBindings(
     BindingsState* state,
     js::JSValueHandle canvasContext,
     bool offscreen) {
+    // getCurrentTexture reads its owning canvas on later frames. Keep the destination
+    // handle alive alongside its callbacks, as for the created canvas element itself.
+    protectBindingHandle(state, canvasContext);
     if (!installBindingTable(state->engine, state, bindingTable({
         {"GPUCanvasContext", "configure", 1, "configure requires a descriptor", &configureCanvasContext, canvasContext},
         {"GPUCanvasContext", "unconfigure", 0, nullptr,
          makeUnconfigureCanvasContextHandler(offscreen), canvasContext},
         {"GPUCanvasContext", "getCurrentTexture", 0, nullptr,
          makeCurrentTextureCanvasContextHandler(offscreen), canvasContext},
-    }))) return false;
+    }))) {
+        unprotectBindingHandle(state, canvasContext);
+        return false;
+    }
     return true;
 }
 

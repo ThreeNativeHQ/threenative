@@ -129,10 +129,16 @@ export class Level extends Scene<GameState, IPhysicsContext> {
       ctx.entities.add(id, pickup);
     };
     const followCamera = (target: Vector3, dt: number): void => {
-      const desired = cameraAnchor.set(target.x, target.y + 4.4, target.z + 8.5);
+      // The eye stays **below** the one-way platform, which sits at y = 2.6 directly over the
+      // spawn because `oneway.playtest.json` jumps straight up from there and lands on it. At the
+      // old +4.4 the camera looked down onto that slab and the character it is standing under, so
+      // the opening frame was a green rectangle with the player hidden behind it; raising the
+      // camera further only made it worse. Under the slab, the level reads and the platform
+      // overhead reads as an overhang, which is what it is.
+      const desired = cameraAnchor.set(target.x + 1.4, target.y + 1.75, target.z + 10.6);
       if (dt >= 1) camera.position.copy(desired);
       else camera.position.lerp(desired, 1 - Math.exp(-dt / 0.18));
-      camera.lookAt(target.x, target.y + 0.9, target.z);
+      camera.lookAt(target.x + 2.2, target.y + 0.35, target.z - 0.4);
     };
     addPickup(new Vector3(2, 1.05, 0));
     addPickup(new Vector3(3.2, 1.05, 0));

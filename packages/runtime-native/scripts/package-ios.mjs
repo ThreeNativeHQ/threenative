@@ -25,7 +25,7 @@ export const NATIVE_ORIENTATIONS = ['landscape', 'portrait', 'sensor'];
 export const DEFAULT_IOS_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.13', build: 1 },
   display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 60 },
-  window: { title: 'ThreeNative', width: 1280, height: 720, resizable: true },
+  window: { title: 'ThreeNative', width: 1280, height: 720, maximized: false, resizable: true },
 };
 const BINARY_PLIST_MAGIC = Buffer.from('bplist00', 'ascii');
 const IOS_ORIENTATIONS = {

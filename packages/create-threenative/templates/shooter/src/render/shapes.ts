@@ -1,5 +1,6 @@
 // Generated for you. All arena silhouettes and gameplay visuals start here.
 import {
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   ClampToEdgeWrapping,
@@ -17,6 +18,7 @@ import {
   UnsignedByteType,
 } from "three";
 
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { ReturnTypeOfMaterials } from "./types.js";
 
 const roundedCache = new Map<string, BufferGeometry>();
@@ -225,19 +227,65 @@ function compactBox(width: number, height: number, depth: number): BufferGeometr
   return geometry;
 }
 
-function roundedBox(
-  width: number,
-  height: number,
-  depth: number,
-  radius = 0.12,
-  segments = 1,
-): BufferGeometry {
-  const key = `${width},${height},${depth},${radius},${segments}`;
+/**
+ * A box with **face** normals, cached by size.
+ *
+ * `compactBox` above shares eight vertices between all six faces and derives each normal by
+ * normalising the vertex position. That is fine for something roughly cubic, and wrong for
+ * anything long and thin: for the arena's 22 x 4.2 x 0.4 back wall every normal comes out pointing
+ * along +/-X, so the inner face is shaded as though it faced sideways and an overhead key misses
+ * it completely. The wall rendered as a black band straight across the middle of the frame at
+ * exactly the height the targets stand — and no palette or light change could lift it, because the
+ * surface was not facing the light.
+ *
+ * A `BoxGeometry` has twenty-four vertices and the **same twelve triangles**, so this costs
+ * nothing against the triangle budget. `compactBox` stays for the flat trim strips and decals,
+ * where the geometry really is a thin quad and the shading does not matter.
+ */
+function roundedBox(width: number, height: number, depth: number): BufferGeometry {
+  const key = `${width},${height},${depth}`;
   const cached = roundedCache.get(key);
   if (cached !== undefined) return cached;
-  const geometry = compactBox(width, height, depth);
+  const geometry = new BoxGeometry(width, height, depth);
   roundedCache.set(key, geometry);
   return geometry;
+}
+
+/**
+ * Bake a group of rigid meshes down to one mesh per material.
+ *
+ * The arena's floor panels, its skirting and each drone are all static relative to their parent,
+ * and authored one mesh at a time they cost one draw each. With five hostiles on the field that
+ * put `production-performance` at five hundred draws. Merging keeps every material separate and
+ * separately editable and costs no triangles at all.
+ */
+function bakeByMaterial(parts: readonly Mesh[], root: Group): void {
+  const byMaterial = new Map<Material, Mesh[]>();
+  for (const mesh of parts) {
+    const bucket = byMaterial.get(mesh.material as Material);
+    if (bucket === undefined) byMaterial.set(mesh.material as Material, [mesh]);
+    else bucket.push(mesh);
+  }
+  for (const [material, meshes] of byMaterial) {
+    const geometry = mergeGeometries(
+      meshes.map((mesh) => {
+        mesh.updateMatrix();
+        const placed = mesh.geometry.clone().applyMatrix4(mesh.matrix);
+        const cloned = placed.index === null ? placed : placed.toNonIndexed();
+        for (const name of Object.keys(cloned.attributes)) {
+          if (name !== "position") cloned.deleteAttribute(name);
+        }
+        return cloned;
+      }),
+      false,
+    );
+    if (geometry === null) throw new Error("mergeGeometries returned null baking a visual.");
+    geometry.computeVertexNormals();
+    const merged = new Mesh(geometry, material);
+    merged.castShadow = meshes[0]?.castShadow ?? true;
+    merged.receiveShadow = true;
+    root.add(merged);
+  }
 }
 
 function shadowed(mesh: Mesh, cast = true): Mesh {
@@ -253,6 +301,9 @@ function block(width: number, height: number, depth: number, material: Material)
 export function createArena(materials: ShooterMaterials) {
   const group = new Group();
   group.name = "arena";
+  // Everything static and non-interactive: floor panels, skirting, boundary lines, cover lips.
+  // Baked into one mesh per material at the end of this function.
+  const decoration: Mesh[] = [];
   const floor = block(22, 0.4, 24, materials.arena);
   floor.name = "arena-floor";
   floor.position.set(0, -0.2, -1);
@@ -269,6 +320,16 @@ export function createArena(materials: ShooterMaterials) {
     wall.name = `arena-wall-${index}`;
     wall.position.set(position[0], position[1], position[2]);
     group.add(wall);
+    // A lit skirting strip where the wall meets the deck. Without one the join is the darkest
+    // value in the arena and reads as a black band cut across the middle of the frame, which is
+    // exactly where the targets stand.
+    const skirting = new Mesh(
+      compactBox(width < 1 ? width + 0.12 : width, 0.14, depth < 1 ? depth + 0.12 : depth),
+      materials.trim,
+    );
+    skirting.position.set(position[0], 0.12, position[2]);
+    skirting.castShadow = false;
+    decoration.push(skirting);
     return wall;
   });
   // Cover. An arena with a flat floor is a shooting gallery: these are what turns "walk forward
@@ -291,23 +352,37 @@ export function createArena(materials: ShooterMaterials) {
     lip.position.set(position[0], height + 0.02, position[2]);
     lip.castShadow = false;
     lip.receiveShadow = false;
-    group.add(lip);
+    decoration.push(lip);
     return crate;
   });
-  for (let x = -9; x <= 9; x += 3) {
-    const strip = new Mesh(compactBox(0.035, 0.012, 22), materials.trim);
-    strip.position.set(x, 0.012, -1);
-    strip.castShadow = false;
-    strip.receiveShadow = false;
-    group.add(strip);
+  // Floor panels, then a boundary line. A full accent grid every three metres across the whole
+  // floor is what shipped, and it photographed as a debug overlay switched on by mistake: bright
+  // yellow rules over everything, drawing the eye away from the targets standing on them.
+  for (let x = -8; x <= 8; x += 5.4) {
+    for (let z = -11; z <= 9; z += 5) {
+      const panel = new Mesh(compactBox(4.9, 0.02, 4.5), materials.floorPanel);
+      panel.position.set(x, 0.011, z);
+      panel.castShadow = false;
+      panel.receiveShadow = true;
+      decoration.push(panel);
+    }
   }
-  for (let z = -12; z <= 9; z += 3) {
-    const strip = new Mesh(compactBox(21, 0.012, 0.035), materials.trim);
-    strip.position.set(0, 0.014, z);
-    strip.castShadow = false;
-    strip.receiveShadow = false;
-    group.add(strip);
+  for (const [width, depth, z] of [
+    [21.4, 0.06, -12.6],
+    [21.4, 0.06, 10.6],
+  ] as const) {
+    const line = new Mesh(compactBox(width, 0.014, depth), materials.trim);
+    line.position.set(0, 0.02, z);
+    line.castShadow = false;
+    decoration.push(line);
   }
+  for (const side of [-1, 1]) {
+    const line = new Mesh(compactBox(0.06, 0.014, 23.2), materials.trim);
+    line.position.set(side * 10.6, 0.02, -1);
+    line.castShadow = false;
+    decoration.push(line);
+  }
+  bakeByMaterial(decoration, group);
   return { cover, floor, group, walls };
 }
 
@@ -425,42 +500,123 @@ export function createLegsVisual(materials: ShooterMaterials): Group {
   return group;
 }
 
+/**
+ * The hostile: a hovering combat drone.
+ *
+ * What shipped here was a 1.2 x 1.8 box in hostile pink with two thin bars crossed over it, and
+ * the first frame read exactly like that — a sheet of pink card with a plus drawn on it, in
+ * triplicate. A drone made of nine boxes is barely more geometry (this template's `compactBox` is
+ * twelve triangles) and it has a front, a top and a silhouette, which is what tells the player
+ * which way a thing is facing and whether they have hit it.
+ *
+ * The collision box in `Target.ts` is unchanged at 1.2 x 1.8 x 1: this fills that volume rather
+ * than redefining it.
+ */
 export function createTargetVisual(materials: ShooterMaterials): Group {
   const group = new Group();
   group.name = "target-visual";
   // Keep a non-zero parent rotation in the stock scene so the nameplate demonstrates world-space
   // billboarding instead of accidentally passing only in the unparented case.
   group.rotation.y = 0.22;
-  const body = block(1.2, 1.8, 1, materials.hostile);
-  body.position.y = 0.9;
-  group.add(body);
-  const ring = new Mesh(compactBox(1.4, 0.08, 0.08), materials.trim);
-  ring.position.y = 0.9;
-  ring.castShadow = true;
-  group.add(ring);
-  const crossbar = new Mesh(compactBox(0.08, 0.08, 1.4), materials.trim);
-  crossbar.position.y = 0.9;
-  crossbar.castShadow = true;
-  group.add(crossbar);
+  const parts: Mesh[] = [];
+
+  // Core: a chest that tapers to a narrower waist, so the thing has a top and a bottom.
+  const chest = block(0.94, 0.72, 0.62, materials.hostile);
+  chest.position.y = 1.24;
+  parts.push(chest);
+  const waist = block(0.6, 0.44, 0.46, materials.shadow);
+  waist.position.y = 0.78;
+  parts.push(waist);
+  const skirt = block(0.78, 0.26, 0.56, materials.hostile);
+  skirt.position.y = 0.5;
+  parts.push(skirt);
+
+  // Head and the single lit eye: the read that says which way it is looking.
+  const head = block(0.4, 0.3, 0.34, materials.shadow);
+  head.position.y = 1.72;
+  parts.push(head);
+  const eye = new Mesh(compactBox(0.26, 0.09, 0.06), materials.sight);
+  eye.position.set(0, 1.74, -0.2);
+  eye.castShadow = false;
+  parts.push(eye);
+
+  // Shoulder pods, canted outward. Most of the silhouette at range comes from these.
+  for (const side of [-1, 1]) {
+    const pod = block(0.28, 0.34, 0.46, materials.shadow);
+    pod.position.set(side * 0.62, 1.32, 0);
+    pod.rotation.z = side * -0.22;
+    parts.push(pod);
+    const muzzle = new Mesh(compactBox(0.1, 0.1, 0.34), materials.trim);
+    muzzle.position.set(side * 0.66, 1.28, -0.34);
+    muzzle.castShadow = false;
+    parts.push(muzzle);
+    // Trailing legs. A hovering thing with nothing below it reads as a floating box.
+    const leg = block(0.1, 0.5, 0.12, materials.shadow);
+    leg.position.set(side * 0.24, 0.2, 0.06);
+    leg.rotation.x = -0.24;
+    parts.push(leg);
+  }
+
+  // A lit band around the chest, so a hit registers against something bright.
+  const band = new Mesh(compactBox(0.98, 0.07, 0.66), materials.trim);
+  band.position.y = 1.44;
+  band.castShadow = false;
+  parts.push(band);
+
+  bakeByMaterial(parts, group);
   const nameplate = createTargetNameplate();
-  nameplate.position.y = 2.05;
+  nameplate.position.y = 2.2;
   group.add(nameplate);
   return group;
 }
 
+/**
+ * The friendly: a hovering escort drone.
+ *
+ * `Play.ts` places this at y = 1 — it is a *drone*, and it hovers. Authored as an upright figure
+ * it read as a teal fencepost standing in mid-air right down the player's sightline, which is the
+ * worst possible shape for the one object in the arena they must not shoot. Wider than it is tall,
+ * with a lit ring, it reads as friendly kit at a glance.
+ *
+ * It stays narrow across the beam: it has to stand in the player's line of fire for the
+ * friendly-layer proof to mean anything, and at 0.9 m across that put a cyan wall two metres in
+ * front of the eye.
+ */
 export function createFriendlyVisual(materials: ShooterMaterials): Group {
   const group = new Group();
-  // Slim on purpose. It has to stand in the player's line of fire for the friendly-layer proof to
-  // mean anything, and at 0.9 m across that put a cyan wall two metres in front of the eye.
-  const body = block(0.34, 1.5, 0.34, materials.player);
-  body.position.y = 0.75;
-  group.add(body);
-  const collar = new Mesh(compactBox(0.5, 0.06, 0.5), materials.trim);
-  collar.position.y = 1.2;
-  group.add(collar);
-  const antenna = new Mesh(new CylinderGeometry(0.03, 0.03, 0.5, 6), materials.trim);
-  antenna.position.y = 1.72;
-  group.add(antenna);
+  const parts: Mesh[] = [];
+  const hull = block(0.42, 0.24, 0.36, materials.player);
+  parts.push(hull);
+  const belly = block(0.26, 0.16, 0.22, materials.shadow);
+  belly.position.y = -0.18;
+  parts.push(belly);
+  const visor = new Mesh(compactBox(0.3, 0.08, 0.05), materials.trim);
+  visor.position.set(0, 0.02, -0.2);
+  visor.castShadow = false;
+  parts.push(visor);
+  // Four rotor arms and a lit ring, so it reads as a drone and not as a floating brick.
+  for (const [x, z] of [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ] as const) {
+    const arm = block(0.2, 0.05, 0.2, materials.shadow);
+    arm.position.set(x * 0.26, 0.06, z * 0.24);
+    parts.push(arm);
+    const rotor = new Mesh(compactBox(0.3, 0.02, 0.3), materials.player);
+    rotor.position.set(x * 0.34, 0.12, z * 0.3);
+    rotor.castShadow = false;
+    parts.push(rotor);
+  }
+  const ring = new Mesh(compactBox(0.56, 0.03, 0.5), materials.trim);
+  ring.position.y = -0.12;
+  ring.castShadow = false;
+  parts.push(ring);
+  const beacon = new Mesh(new CylinderGeometry(0.02, 0.02, 0.22, 5), materials.trim);
+  beacon.position.y = 0.22;
+  parts.push(beacon);
+  bakeByMaterial(parts, group);
   return group;
 }
 

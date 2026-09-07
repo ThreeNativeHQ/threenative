@@ -164,17 +164,30 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
     const lines = text.split(/\r?\n/u);
     this.pendingOutput[stream] = lines.pop() ?? "";
     for (const line of lines) {
-      if (line.length > 0) this.consoleEntries.push({ text: line, type: stream === "stderr" ? "error" : "log" });
+      if (line.length > 0) this.consoleEntries.push({ text: line, type: desktopConsoleType(stream, line) });
     }
   }
 
   private flushOutput(stream: "stderr" | "stdout"): void {
     const line = this.pendingOutput[stream];
     if (line.length > 0) {
-      this.consoleEntries.push({ text: line, type: stream === "stderr" ? "error" : "log" });
+      this.consoleEntries.push({ text: line, type: desktopConsoleType(stream, line) });
       this.pendingOutput[stream] = "";
     }
   }
+}
+
+function desktopConsoleType(stream: "stderr" | "stdout", line: string): string {
+  const text = line.trimStart();
+  // A stream is not a severity: native console.error can use stdout, while GLib/EGL
+  // send explicitly labelled warnings to stderr. Keep every line and fail closed on
+  // unclassified stderr instead of dropping platform diagnostics to make a run pass.
+  if (/^(?:\[error\]|(?:error|fatal):)/iu.test(text)) return "error";
+  if (/^(?:\[warn(?:ing)?\]|warning:|MESA-EGL:\s*warning:|\*\* \([^)]*\): WARNING \*\*:)/iu.test(text)) {
+    return "warning";
+  }
+  if (/^Gtk-Message:/u.test(text)) return "log";
+  return stream === "stderr" ? "error" : "log";
 }
 
 function terminateProcess(child: ChildProcess, signal: "SIGKILL" | "SIGTERM"): void {

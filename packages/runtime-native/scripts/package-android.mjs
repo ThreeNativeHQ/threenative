@@ -156,7 +156,7 @@ function androidPaths(root = runtimeRoot) {
 export const DEFAULT_ANDROID_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.0', build: 1 },
   display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 60, backgroundMode: 'pause' },
-  window: { title: 'ThreeNative', width: 1280, height: 720, resizable: true },
+  window: { title: 'ThreeNative', width: 1280, height: 720, maximized: false, resizable: true },
   // `native` is PRD-216's CanvasLayer renderer: no WebView, no CSS, no second process. A game
   // that never states a renderer therefore ships no overlay, which is what acceptance criterion 5
   // asks for. Templates state `web` explicitly.

@@ -1,0 +1,84 @@
+{
+  "patchSha256": "93cf92dd81fc3274bb1998529d3802c45a83449cbb5520b352caf75e4443b717",
+  "conclusion": "Redundant material-cache work is removed. These packaged timing captures do not establish a causal wall-time speedup.",
+  "limitations": [
+    "Timing drift exceeded the comparison criterion.",
+    "Walking warmup left the stationary cameras at different positions.",
+    "The first control stationary phase had fewer than 1000 frames.",
+    "Candidate recorded two depth sample-count validation errors; a later fresh candidate visual baseline recorded zero."
+  ],
+  "arms": {
+    "candidate": {
+      "pinnedVerified": true,
+      "cleanForeground": true,
+      "meetsDurationFloor": true,
+      "guardSha256": "f7287a872275cf2b5ebc1ddfb560f7cb4b063b63a2a560132b0742d12748904d",
+      "consoleErrorCount": 2,
+      "phases": {
+        "stationary": {
+          "frames": 1988,
+          "elapsedMs": 34040.5,
+          "renderP50WindowsMs": [8, 9, 8.5, 8.9, 11.4],
+          "renderP50MeanMs": 9.16,
+          "driftFraction": 0.129,
+          "steady": false,
+          "cameraPosition": [1.0138391256332397, 6.083604335784912, 0.7663469314575195]
+        },
+        "route": {
+          "frames": 2735,
+          "elapsedMs": 46017.5,
+          "renderP50WindowsMs": [11.3, 9.3, 7.1, 8.6, 8.7, 8.9, 7.3, 7.3, 7],
+          "renderP50MeanMs": 8.389,
+          "driftFraction": 0.136,
+          "steady": false,
+          "cameraPosition": [1.0151718854904175, 6.083614349365234, 0.7684800028800964]
+        }
+      }
+    },
+    "control": {
+      "pinnedVerified": true,
+      "cleanForeground": true,
+      "meetsDurationFloor": false,
+      "guardSha256": "f7287a872275cf2b5ebc1ddfb560f7cb4b063b63a2a560132b0742d12748904d",
+      "consoleErrorCount": 0,
+      "phases": {
+        "stationary": {
+          "frames": 945,
+          "elapsedMs": 34120.7,
+          "renderP50WindowsMs": [25.4, 22.3],
+          "renderP50MeanMs": 23.85,
+          "driftFraction": 0.122,
+          "steady": false,
+          "cameraPosition": [-1.5906400680541992, 5.680150032043457, -6.844263553619385]
+        },
+        "route": {
+          "frames": 2161,
+          "elapsedMs": 46016.5,
+          "renderP50WindowsMs": [18.8, 16.7, 15.1, 14.9, 13.1, 9.6],
+          "renderP50MeanMs": 14.7,
+          "driftFraction": 0.257,
+          "steady": false,
+          "cameraPosition": [-1.5797322988510132, 5.679609775543213, -6.84010648727417]
+        }
+      }
+    },
+    "control-stationary60": {
+      "pinnedVerified": true,
+      "cleanForeground": true,
+      "meetsDurationFloor": true,
+      "guardSha256": "f7287a872275cf2b5ebc1ddfb560f7cb4b063b63a2a560132b0742d12748904d",
+      "consoleErrorCount": 0,
+      "phases": {
+        "stationary": {
+          "frames": 3532,
+          "elapsedMs": 60028.6,
+          "renderP50WindowsMs": [7.9, 8.1, 8.5, 8.6, 8.5, 8.6, 8.2, 8.4, 8.5, 13.8, 9.5],
+          "renderP50MeanMs": 8.964,
+          "driftFraction": 0.142,
+          "steady": false,
+          "cameraPosition": [1.401618242263794, 6.0800395011901855, -0.8699871897697449]
+        }
+      }
+    }
+  }
+}

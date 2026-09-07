@@ -25,7 +25,7 @@ const runtimeRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 export const DEFAULT_DESKTOP_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.0', build: 1 },
   display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 60 },
-  window: { title: 'ThreeNative', width: 1280, height: 720, resizable: true },
+  window: { title: 'ThreeNative', width: 1280, height: 720, maximized: false, resizable: true },
 };
 
 function readConfig(configPath) {

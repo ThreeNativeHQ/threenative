@@ -6,8 +6,7 @@ Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit 
 
 ## Ownership
 
-ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the
-state bridge. This repository owns gameplay and every visible choice in `src/render/`, `src/entities/`,
+ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns gameplay and every visible choice in `src/render/`, `src/entities/`,
 `src/scenes/`, and `src/ui/`; `src/game.ts` is portable and React mounts from `src/main.ts`.
 
 ## Start every change
@@ -62,9 +61,10 @@ On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), local `src
 ## Portable authoring contracts
 
 Leave `assets` absent: the cook selects target-decodable passes, with `models.sharedImages: true` deduplicating images. `sharedImages: false` embeds duplicate copies; `models: "none"` / `textures: "none"` skip those passes and report uncooked bytes. Android/iOS currently skip compression and model dedupe. `assets.exclude` defaults to `[]`; source-relative globs (for example `["unused/**"]`) omit matching files and report saved bytes. `assets.budget` accepts `{ uncooked?: number | "none", total?: number | "none" }`, default `{ uncooked: 64_000_000, total: "none" }`: only bytes left uncooked where cooking was possible count toward `uncooked`. A number sets that ceiling; `"none"` disables both gates. Either disabled gate still reports bytes. Automatic texture cooking retains unaligned source images unchanged and reports `block-size`; those bytes still count toward the uncooked budget. An explicit compression codec override must satisfy four-pixel block alignment; `codec: "none"` opts out. Cooking never silently resizes an image to fix alignment.
+
+Relative look capture: a binding with `pointerRelative: true` captures the canvas on click by default; set `captureOnClick: false` and call `ctx.input.captureMouse()` from your own gesture to opt out. Desktop mode precedence is CLI (`--windowed`, `--maximized`, `--fullscreen`) over `display.fullscreen` over `window.maximized`; with both false, `window.width`/`height` size the normal window.
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable; generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
-React never touches the scene graph. Native UI reads published state and sends intents; mark every touch target `data-tn-interactive`. Rigged assets: put a `.glb` in `assets/`, await
-`ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity.
+React never touches the scene graph. Native UI reads published state and sends intents; mark every touch target `data-tn-interactive`. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity.
 `ctx.goto(name)` rebuilds without resetting game state; from a frame function `goto` and then
 `return`; `ctx.state.set({ /* copy this game's initial-state shape */ })` is a partial patch.
 `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's state. Seeded

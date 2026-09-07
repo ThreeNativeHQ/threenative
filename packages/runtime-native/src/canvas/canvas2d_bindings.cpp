@@ -11,6 +11,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <cmath>
 
 namespace mystral {
 namespace canvas {
@@ -340,6 +341,26 @@ js::JSValueHandle createCanvas2DJSObject(js::Engine* engine, Canvas2DContext* ct
         })
     );
 
+    // ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle, counterclockwise)
+    engine->setProperty(jsCtx, "ellipse",
+        engine->newFunction("ellipse", [engine, capturedCtx](void*, const std::vector<js::JSValueHandle>& args) {
+            if (capturedCtx && args.size() >= 7) {
+                float values[7];
+                for (size_t i = 0; i < 7; ++i) {
+                    values[i] = static_cast<float>(engine->toNumber(args[i]));
+                    if (!std::isfinite(values[i])) return engine->newUndefined();
+                }
+                if (values[2] < 0 || values[3] < 0) {
+                    engine->throwException("IndexSizeError: ellipse radii must be non-negative");
+                    return engine->newUndefined();
+                }
+                capturedCtx->ellipse(values[0], values[1], values[2], values[3], values[4],
+                                     values[5], values[6], args.size() > 7 && engine->toBoolean(args[7]));
+            }
+            return engine->newUndefined();
+        })
+    );
+
     // fill()
     engine->setProperty(jsCtx, "fill",
         engine->newFunction("fill", [engine, capturedCtx](void* c, const std::vector<js::JSValueHandle>& args) {
@@ -601,24 +622,70 @@ js::JSValueHandle createCanvas2DContext(
     auto jsCtx = createCanvas2DJSObject(engine, ctxPtr);
 
     // Transfer native lifetime to the WebGPU binding state that owns the JS handle.
+    const size_t contextIndex = ownedContexts.size();
     ownedContexts.push_back(std::move(nativeCtx));
+    // IDs resolve only through this runtime's owned contexts; JS never supplies a
+    // native pointer. Gradients can be shared across canvases and mutated after assignment.
+    engine->setProperty(jsCtx, "createLinearGradient",
+        engine->newFunction("createLinearGradient", [engine, ctxPtr, contextIndex](void*, const std::vector<js::JSValueHandle>& args) {
+            if (args.size() < 4) {
+                engine->throwException("TypeError: createLinearGradient requires four coordinates");
+                return engine->newUndefined();
+            }
+            float points[4];
+            for (size_t i = 0; i < 4; ++i) {
+                points[i] = static_cast<float>(engine->toNumber(args[i]));
+                if (!std::isfinite(points[i])) {
+                    engine->throwException("NotSupportedError: gradient coordinates must be finite");
+                    return engine->newUndefined();
+                }
+            }
+            const auto index = ctxPtr->createLinearGradient(points[0], points[1], points[2], points[3]);
+            auto gradient = ctxPtr->getGradient(index);
+            auto result = engine->newObject();
+            engine->setProperty(result, "__tnGradientContext", engine->newNumber(contextIndex));
+            engine->setProperty(result, "__tnGradientIndex", engine->newNumber(index));
+            engine->setProperty(result, "addColorStop", engine->newFunction("addColorStop",
+                [engine, gradient](void*, const std::vector<js::JSValueHandle>& stopArgs) {
+                    if (stopArgs.size() < 2) {
+                        engine->throwException("TypeError: addColorStop requires offset and color");
+                        return engine->newUndefined();
+                    }
+                    const float offset = static_cast<float>(engine->toNumber(stopArgs[0]));
+                    if (!std::isfinite(offset) || offset < 0 || offset > 1) {
+                        engine->throwException("IndexSizeError: gradient offset must be between 0 and 1");
+                    } else if (!gradient->addColorStop(offset, engine->toString(stopArgs[1]))) {
+                        engine->throwException("SyntaxError: invalid gradient color");
+                    }
+                    return engine->newUndefined();
+                }));
+            return result;
+        }));
+    const auto setStyle = [engine, ctxPtr, &ownedContexts](bool stroke, const std::vector<js::JSValueHandle>& args) {
+        if (args.empty()) return engine->newUndefined();
+        if (engine->isObject(args[0])) {
+            const double owner = engine->toNumber(engine->getProperty(args[0], "__tnGradientContext"));
+            const double index = engine->toNumber(engine->getProperty(args[0], "__tnGradientIndex"));
+            if (std::isfinite(owner) && owner >= 0 && owner < ownedContexts.size() && std::floor(owner) == owner &&
+                std::isfinite(index) && index >= 0 && index < 4294967296.0 && std::floor(index) == index) {
+                auto gradient = ownedContexts[static_cast<size_t>(owner)]->getGradient(static_cast<size_t>(index));
+                if (gradient) ctxPtr->setGradient(stroke, std::move(gradient));
+            }
+        } else if (stroke) ctxPtr->setStrokeStyle(engine->toString(args[0]));
+        else ctxPtr->setFillStyle(engine->toString(args[0]));
+        return engine->newUndefined();
+    };
     // Add native setter methods that capture the context pointer
     // These are called by the property interceptors below
     engine->setProperty(jsCtx, "__nativeSetFillStyle",
-        engine->newFunction("__nativeSetFillStyle", [engine, ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
-            if (ctxPtr && !args.empty()) {
-                ctxPtr->setFillStyle(engine->toString(args[0]));
-            }
-            return engine->newUndefined();
+        engine->newFunction("__nativeSetFillStyle", [setStyle](void*, const std::vector<js::JSValueHandle>& args) {
+            return setStyle(false, args);
         })
     );
 
     engine->setProperty(jsCtx, "__nativeSetStrokeStyle",
-        engine->newFunction("__nativeSetStrokeStyle", [engine, ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {
-            if (ctxPtr && !args.empty()) {
-                ctxPtr->setStrokeStyle(engine->toString(args[0]));
-            }
-            return engine->newUndefined();
+        engine->newFunction("__nativeSetStrokeStyle", [setStyle](void*, const std::vector<js::JSValueHandle>& args) {
+            return setStyle(true, args);
         })
     );
 
@@ -630,6 +697,16 @@ js::JSValueHandle createCanvas2DContext(
             return engine->newUndefined();
         })
     );
+
+    engine->setProperty(jsCtx, "__nativeSetLineCap",
+        engine->newFunction("__nativeSetLineCap", [engine, ctxPtr](void*, const std::vector<js::JSValueHandle>& args) {
+            if (!args.empty()) ctxPtr->setLineCap(engine->toString(args[0]));
+            return engine->newUndefined();
+        }));
+    engine->setProperty(jsCtx, "__nativeGetLineCap",
+        engine->newFunction("__nativeGetLineCap", [engine, ctxPtr](void*, const std::vector<js::JSValueHandle>&) {
+            return engine->newString(ctxPtr->getLineCap().c_str());
+        }));
 
     engine->setProperty(jsCtx, "__nativeSetGlobalAlpha",
         engine->newFunction("__nativeSetGlobalAlpha", [engine, ctxPtr](void* c, const std::vector<js::JSValueHandle>& args) {

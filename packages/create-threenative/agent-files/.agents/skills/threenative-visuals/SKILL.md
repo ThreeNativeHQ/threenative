@@ -1,6 +1,6 @@
 ---
 name: threenative-visuals
-description: Capture, inspect, and budget the player-visible look of a ThreeNative game.
+description: Capture, inspect, and budget the player-visible look of a ThreeNative game. Use when a player-visible feature needs a real capture before it is called done, when matching a reference image, or when tuning lighting, probe volumes, or resolution scale.
 ---
 
 # Budget real time for the look

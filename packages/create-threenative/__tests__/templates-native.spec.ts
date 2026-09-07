@@ -247,7 +247,7 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
     expect(resolved).toMatchObject({
       app: { id: "com.threenative.entryproof", name: "entry-proof" },
       display: { orientation: "landscape", fullscreen: true, keepScreenOn: false },
-      window: { title: "entry-proof", width: 1280, height: 720, resizable: true },
+      window: { title: "entry-proof", width: 1280, height: 720, maximized: false, resizable: true },
       renderer: { preferWebGPU: true },
     });
   });

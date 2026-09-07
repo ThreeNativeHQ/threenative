@@ -396,7 +396,14 @@ public:
         }
 
         // Initialize SDL3 window
-        if (!platform::createWindow(config_.title, width_, height_, config_.fullscreen, config_.resizable)) {
+        if (!platform::createWindow(
+                config_.title,
+                width_,
+                height_,
+                config_.fullscreen,
+                config_.resizable,
+                config_.maximized
+            )) {
             std::cerr << "[Mystral] Failed to create window" << std::endl;
             return false;
         }
@@ -798,6 +805,8 @@ public:
         }
         rafCallbacks_.clear();
 
+        clearSchedulerCallbacks();
+
         // Unprotect all timer callbacks before clearing
 #ifndef MYSTRAL_USE_LIBUV_TIMERS
         if (jsEngine_) {
@@ -918,6 +927,7 @@ public:
 
 private:
     void clearAllTimers() {
+        clearSchedulerCallbacks();
 #ifdef MYSTRAL_USE_LIBUV_TIMERS
         // Stop and clean up all libuv timers
         for (auto& [id, ctx] : uvTimers_) {
@@ -1039,7 +1049,7 @@ public:
 
             // In no-SDL (headless) mode, exit when there's no more work to do
             if (config_.noSdl) {
-                bool hasWork = !rafCallbacks_.empty() || hasActiveTimers() ||
+                bool hasWork = !rafCallbacks_.empty() || !schedulerCallbacks_.empty() || hasActiveTimers() ||
                                webtransport::hasActiveSessions();
                 if (!hasWork) {
                     idleFrames++;
@@ -1380,6 +1390,7 @@ public:
         // Process microtask queue for promises
         hostGapMeter_.begin(HostGapMeter::kMicrotasks);
         processMicrotasks();
+        executeSchedulerCallbacks();
         hostGapMeter_.end(HostGapMeter::kMicrotasks);
 
         // A deliberate fault, after startup, only when a proof harness asked for one. This is the
@@ -2748,6 +2759,28 @@ private:
         jsEngine_->processMicrotasks();
     }
 
+    void clearSchedulerCallbacks() {
+        while (!schedulerCallbacks_.empty()) {
+            if (jsEngine_) jsEngine_->freeHandle(schedulerCallbacks_.front());
+            schedulerCallbacks_.pop();
+        }
+    }
+
+    void executeSchedulerCallbacks() {
+        // Tasks may enqueue their next continuation at the microtask checkpoint. Let cheap
+        // chains advance without presenting a frame per task, but bound both time and count
+        // so an unending chain cannot starve the next input/timer/render iteration.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2);
+        for (int count = 0; running_ && count < 1024 && !schedulerCallbacks_.empty(); ++count) {
+            auto callback = schedulerCallbacks_.front();
+            schedulerCallbacks_.pop();
+            jsEngine_->call(callback, jsEngine_->newUndefined(), {});
+            jsEngine_->freeHandle(callback);
+            processMicrotasks();
+            if (std::chrono::steady_clock::now() >= deadline) break;
+        }
+    }
+
     RuntimeConfig config_;
     bool running_;
     int exitCode_ = 0;  // Exit code set by process.exit()
@@ -2769,6 +2802,7 @@ private:
     };
     std::vector<RAFCallback> rafCallbacks_;
     int nextRafId_ = 1;
+    std::queue<js::JSValueHandle> schedulerCallbacks_;
 
     // setTimeout/setInterval state
 #ifdef MYSTRAL_USE_LIBUV_TIMERS
@@ -3181,18 +3215,19 @@ private:
         // shader cost one fully rendered frame** -- measured at 50 ms and up during play on a
         // Pixel 8, paid per node, which is what a player feels when a new material first appears.
         //
-        // A macrotask is the honest implementation: `scheduler.yield()` yields to the event loop,
-        // and on this runtime one `setTimeout(0)` is exactly one loop iteration, resolving at the
-        // top of it rather than a whole frame later inside the animation-frame phase. It is not a
-        // microtask, because a yield that never lets the loop run would defeat the reason three
-        // calls it.
+        // A dedicated task queue avoids the frame-coupled timer queue. Its bounded drain keeps
+        // microtask checkpoints between continuations without starving input or presentation.
         //
         // Installed only if absent, so a host or polyfill that already provides the real
         // scheduler API keeps it.
         {
             auto installer = evalRuntimeScriptWithResult(
                 *jsEngine_, "scheduler-yield", "scheduler-yield.js");
-            auto installed = jsEngine_->call(installer, jsEngine_->newUndefined(), {});
+            auto enqueue = jsEngine_->newFunction("enqueueYield", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (!args.empty()) schedulerCallbacks_.push(jsEngine_->retainHandle(args[0]));
+                return jsEngine_->newUndefined();
+            });
+            auto installed = jsEngine_->call(installer, jsEngine_->newUndefined(), {enqueue});
             // Fail loudly rather than let three quietly go back to a frame per node build.
             if (!jsEngine_->toBoolean(installed)) {
                 std::cerr << "[Mystral] failed to install scheduler.yield" << std::endl;

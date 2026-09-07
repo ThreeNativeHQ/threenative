@@ -336,6 +336,8 @@ interface ICompileLayout {
   readonly texturesActive: boolean;
   /** Why the model's decoder-backed sub-passes were not emitted, if they were skipped. */
   readonly modelCompressionReason: ISkippedCompressionRow["reason"] | undefined;
+  /** The model decoder-backed sub-passes that were enabled before the target filtered them. */
+  readonly modelCompressionDecoders: readonly ("meshopt" | "KTX2")[];
   /** Why the standalone texture pass was not emitted, if it was skipped. */
   readonly textureCompressionReason: ISkippedCompressionRow["reason"] | undefined;
 }
@@ -954,6 +956,13 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   const audio = parseAudioConfig(config.audio);
   const configuredTextures = parseTexturesConfig(config.textures);
   const configuredModels = parseModelsConfig(config.models);
+  const modelCompressionDecoders: readonly ("meshopt" | "KTX2")[] =
+    configuredModels === undefined
+      ? []
+      : [
+          (configuredModels.passes?.meshopt ?? true) ? "meshopt" : undefined,
+          configuredModels.textures === "none" ? undefined : "KTX2",
+        ].filter((decoder): decoder is "meshopt" | "KTX2" => decoder !== undefined);
   const models =
     configuredModels === undefined
       ? undefined
@@ -1051,9 +1060,12 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
         ? undefined
         : configuredModels === undefined
           ? "config"
-          : runtimeDecoderAvailable
+          : modelCompressionDecoders.length === 0
             ? undefined
-            : "platform",
+            : runtimeDecoderAvailable
+              ? undefined
+              : "platform",
+    modelCompressionDecoders,
     outputRoot,
     passSpecs,
     skippedPasses,
@@ -2139,7 +2151,13 @@ function skippedCompressionRows(
       bytes += entry.bytes;
       files += 1;
     }
-    rows.push({ bytes, files, kind, reason });
+    rows.push({
+      bytes,
+      files,
+      kind,
+      ...(kind === "model" ? { decoders: layout.modelCompressionDecoders } : {}),
+      reason,
+    });
   }
   return rows;
 }

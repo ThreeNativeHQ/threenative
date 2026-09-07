@@ -43,6 +43,13 @@ struct ImageData {
     std::vector<uint8_t> data;  // RGBA pixels
 };
 
+struct CanvasGradient {
+    float x0, y0, x1, y1;
+    struct Stop { float offset; uint32_t color; };
+    std::vector<Stop> stops;
+    bool addColorStop(float offset, const std::string& color);
+};
+
 /**
  * Canvas2DContext - CanvasRenderingContext2D implementation
  *
@@ -68,12 +75,17 @@ public:
     // ========================================================================
     void setFillStyle(const std::string& color);
     void setStrokeStyle(const std::string& color);
+    void setGradient(bool stroke, std::shared_ptr<CanvasGradient> gradient);
+    size_t createLinearGradient(float x0, float y0, float x1, float y1);
+    std::shared_ptr<CanvasGradient> getGradient(size_t index) const;
     void setLineWidth(float width);
+    void setLineCap(const std::string& cap);
     void setGlobalAlpha(float alpha);
 
     std::string getFillStyle() const;
     std::string getStrokeStyle() const;
     float getLineWidth() const;
+    std::string getLineCap() const;
     float getGlobalAlpha() const;
 
     // ========================================================================
@@ -108,6 +120,8 @@ public:
     void quadraticCurveTo(float cpx, float cpy, float x, float y);
     void bezierCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y);
     void arc(float x, float y, float radius, float startAngle, float endAngle, bool counterclockwise = false);
+    void ellipse(float x, float y, float radiusX, float radiusY, float rotation,
+                 float startAngle, float endAngle, bool counterclockwise = false);
     void arcTo(float x1, float y1, float x2, float y2, float radius);
     void rect(float x, float y, float width, float height);
 
@@ -160,6 +174,7 @@ private:
     int width_;
     int height_;
     bool dirtyPixels_ = true;
+    std::vector<std::shared_ptr<CanvasGradient>> gradients_;
 
     // Rasterizing operations call this; not exposed so callers cannot force uploads.
     void markDirty() { dirtyPixels_ = true; }

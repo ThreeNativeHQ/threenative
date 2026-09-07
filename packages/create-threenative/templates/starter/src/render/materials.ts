@@ -9,6 +9,14 @@ export function createMaterials() {
     floor: new MeshStandardMaterial({ color: palette.floor, roughness: 0.9, metalness: 0 }),
     player: new MeshStandardMaterial({ color: palette.player, roughness: 0.48, metalness: 0.04 }),
     crate: new MeshStandardMaterial({ color: palette.crate, roughness: 0.76, metalness: 0 }),
+    /** The hero's hat, scarf and boots: the one warm accent on a cool coast. */
+    heroAccent: new MeshStandardMaterial({
+      color: palette.crate,
+      roughness: 0.6,
+      metalness: 0.02,
+    }),
+    /** The hero's pack, gloves, legs and visor. Reads as leather at this size. */
+    heroDark: new MeshStandardMaterial({ color: 0x4a4038, roughness: 0.8, metalness: 0.02 }),
     // The flagpole only. The island under it is `floor`, so the far side reads as more of
     // the same ground and the gap between them stays legible as a gap.
     goal: new MeshStandardMaterial({ color: palette.accent, roughness: 0.45, metalness: 0.04 }),
@@ -27,6 +35,8 @@ export function createMaterials() {
       metalness: 0,
     }),
     sand: new MeshStandardMaterial({ color: palette.accent, roughness: 0.96, metalness: 0 }),
+    /** The far sandbar's beach rim: the same sand as the main island's shore. */
+    shore: new MeshStandardMaterial({ color: palette.accent, roughness: 0.96, metalness: 0 }),
     shoreline: new MeshStandardMaterial({ color: palette.player, roughness: 0.9, metalness: 0 }),
   };
 }

@@ -18,6 +18,8 @@ struct RuntimeConfig {
     int height = 600;
     const char* title = "ThreeNative Game";
     bool fullscreen = false;
+    // Start maximized when windowed; fullscreen remains authoritative when both are configured.
+    bool maximized = false;
     bool vsync = true;
     bool resizable = true;
     bool noSdl = false;  // Run without SDL (headless GPU mode, no window)

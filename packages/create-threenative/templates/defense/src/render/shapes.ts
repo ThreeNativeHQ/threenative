@@ -2,12 +2,14 @@ import {
   BoxGeometry,
   CylinderGeometry,
   Group,
+  type Material,
   Mesh,
   MeshStandardMaterial,
   type Object3D,
   SphereGeometry,
   TorusGeometry,
 } from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { createMaterials } from "./materials.js";
 import { palette } from "./palette.js";
 
@@ -17,6 +19,79 @@ export function board(width = 28, depth = 20): Mesh {
   mesh.receiveShadow = true;
   mesh.name = "build-ground";
   return mesh;
+}
+
+/**
+ * Everything around the board: a plinth under it, terrain out to the horizon, and hills.
+ *
+ * The board used to hang unsupported in the sky colour. A tower-defence board is a *place* — the
+ * route comes from somewhere and leads somewhere — and with nothing around it the frame read as a
+ * UI mock-up of a board rather than a sector being defended.
+ */
+export function surrounds(width = 28, depth = 20): Group {
+  const materials = createMaterials();
+  const group = new Group();
+  group.name = "surrounds";
+  // Eighteen hills, a plinth, a rim and a ground plate are one draw each unless they are baked
+  // down; nothing here ever moves.
+  const parts: Mesh[] = [];
+
+  const plinth = new Mesh(new BoxGeometry(width + 2.4, 1.1, depth + 2.4), materials.terrain);
+  plinth.position.y = -0.75;
+  plinth.receiveShadow = true;
+  parts.push(plinth);
+  const rim = new Mesh(new BoxGeometry(width + 3.4, 0.32, depth + 3.4), materials.plating);
+  rim.position.y = -1.25;
+  rim.receiveShadow = true;
+  parts.push(rim);
+
+  const ground = new Mesh(new BoxGeometry(150, 1, 150), materials.terrain);
+  ground.position.y = -1.9;
+  ground.receiveShadow = true;
+  parts.push(ground);
+
+  // Hills on the horizon. Seeded, so two captures of the same build frame the same skyline.
+  let seed = 7734;
+  const jitter = (): number => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  for (let index = 0; index < 18; index += 1) {
+    const angle = (index / 18) * Math.PI * 2 + jitter() * 0.2;
+    const distance = 54 + jitter() * 30;
+    const radius = 12 + jitter() * 16;
+    const hill = new Mesh(new SphereGeometry(radius, 10, 6), materials.distant);
+    hill.position.set(Math.cos(angle) * distance, -radius * 0.62 - 1.4, Math.sin(angle) * distance);
+    hill.scale.y = 0.5 + jitter() * 0.35;
+    parts.push(hill);
+  }
+
+  const byMaterial = new Map<Material, Mesh[]>();
+  for (const mesh of parts) {
+    const bucket = byMaterial.get(mesh.material as Material);
+    if (bucket === undefined) byMaterial.set(mesh.material as Material, [mesh]);
+    else bucket.push(mesh);
+  }
+  for (const [material, meshes] of byMaterial) {
+    const geometry = mergeGeometries(
+      meshes.map((mesh) => {
+        mesh.updateMatrix();
+        const placed = mesh.geometry.clone().applyMatrix4(mesh.matrix);
+        const cloned = placed.index === null ? placed : placed.toNonIndexed();
+        for (const name of Object.keys(cloned.attributes)) {
+          if (name !== "position") cloned.deleteAttribute(name);
+        }
+        return cloned;
+      }),
+      false,
+    );
+    if (geometry === null) throw new Error("mergeGeometries returned null baking the surrounds.");
+    geometry.computeVertexNormals();
+    const merged = new Mesh(geometry, material);
+    merged.receiveShadow = true;
+    group.add(merged);
+  }
+  return group;
 }
 
 export function buildTiles(width = 28, depth = 20, size = 2): Group {
@@ -70,31 +145,58 @@ export function routeSegment(length: number, width: number): Object3D {
   return group;
 }
 
+/** A turret: a plinth, an armoured column, a rotating head and a barrel that points somewhere. */
 export function tower(): Group {
   const materials = createMaterials();
   const group = new Group();
-  const base = new Mesh(new CylinderGeometry(0.78, 0.92, 0.22, 8), materials.shadow);
-  base.position.y = 0.12;
-  const body = new Mesh(new CylinderGeometry(0.52, 0.62, 0.86, 8), materials.tower);
-  body.position.y = 0.61;
-  const head = new Mesh(new BoxGeometry(0.8, 0.22, 0.8), materials.accent);
-  head.position.y = 1.12;
-  for (const mesh of [base, body, head]) mesh.castShadow = mesh.receiveShadow = true;
-  group.add(base, body, head);
+  const plinth = new Mesh(new CylinderGeometry(0.82, 0.96, 0.24, 8), materials.plating);
+  plinth.position.y = 0.12;
+  const column = new Mesh(new CylinderGeometry(0.46, 0.6, 0.8, 8), materials.plating);
+  column.position.y = 0.62;
+  const collar = new Mesh(new TorusGeometry(0.5, 0.07, 6, 12), materials.accent);
+  collar.rotation.x = Math.PI / 2;
+  collar.position.y = 1.02;
+  const head = new Mesh(new BoxGeometry(0.72, 0.36, 0.86), materials.tower);
+  head.position.y = 1.2;
+  // A barrel is the whole read: without one a tower is a bollard.
+  const barrel = new Mesh(new CylinderGeometry(0.11, 0.13, 0.9, 7), materials.plating);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 1.24, -0.6);
+  const muzzle = new Mesh(new CylinderGeometry(0.16, 0.16, 0.16, 7), materials.accent);
+  muzzle.rotation.x = Math.PI / 2;
+  muzzle.position.set(0, 1.24, -1.02);
+  const parts = [plinth, column, collar, head, barrel, muzzle];
+  for (const mesh of parts) mesh.castShadow = mesh.receiveShadow = true;
+  group.add(...parts);
   return group;
 }
 
+/** A walker: a hull, a lit eye and four legs. A sphere with a dot on it had no facing at all. */
 export function attacker(): Group {
   const materials = createMaterials();
   const group = new Group();
-  const body = new Mesh(new SphereGeometry(0.42, 12, 8), materials.attacker);
-  body.scale.y = 0.86;
-  body.position.y = 0.55;
-  body.castShadow = true;
-  const core = new Mesh(new SphereGeometry(0.14, 10, 6), materials.accent);
-  core.position.set(0, 0.58, -0.34);
-  core.castShadow = true;
-  group.add(body, core);
+  const hull = new Mesh(new BoxGeometry(0.6, 0.34, 0.74), materials.attacker);
+  hull.position.y = 0.62;
+  const dome = new Mesh(new SphereGeometry(0.26, 10, 6), materials.attacker);
+  dome.scale.y = 0.7;
+  dome.position.y = 0.78;
+  const eye = new Mesh(new SphereGeometry(0.11, 8, 6), materials.hostile);
+  eye.position.set(0, 0.72, -0.38);
+  const parts: Mesh[] = [hull, dome, eye];
+  for (const [x, z] of [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ] as const) {
+    const leg = new Mesh(new CylinderGeometry(0.05, 0.04, 0.5, 5), materials.plating);
+    leg.position.set(x * 0.26, 0.27, z * 0.28);
+    leg.rotation.z = x * 0.22;
+    leg.rotation.x = z * -0.16;
+    parts.push(leg);
+  }
+  for (const mesh of parts) mesh.castShadow = true;
+  group.add(...parts);
   return group;
 }
 
@@ -113,15 +215,32 @@ export function commander(): Group {
   return group;
 }
 
+/** The thing being defended: a plinth, a shielded core and three pylons around it. */
 export function base(): Group {
   const materials = createMaterials();
   const group = new Group();
-  const plinth = new Mesh(new CylinderGeometry(1.4, 1.6, 0.24, 8), materials.shadow);
-  plinth.position.y = 0.12;
-  const beacon = new Mesh(new CylinderGeometry(0.74, 0.92, 1.2, 8), materials.accent);
-  beacon.position.y = 0.72;
-  plinth.castShadow = plinth.receiveShadow = true;
-  beacon.castShadow = beacon.receiveShadow = true;
-  group.add(plinth, beacon);
+  const plinth = new Mesh(new CylinderGeometry(1.5, 1.7, 0.3, 8), materials.plating);
+  plinth.position.y = 0.15;
+  const collar = new Mesh(new TorusGeometry(1.2, 0.1, 6, 16), materials.accent);
+  collar.rotation.x = Math.PI / 2;
+  collar.position.y = 0.34;
+  const core = new Mesh(new CylinderGeometry(0.5, 0.78, 1.3, 6), materials.accent);
+  core.position.y = 0.95;
+  const cap = new Mesh(new SphereGeometry(0.5, 10, 6), materials.accent);
+  cap.scale.y = 0.7;
+  cap.position.y = 1.6;
+  const parts: Mesh[] = [plinth, collar, core, cap];
+  for (let index = 0; index < 3; index += 1) {
+    const angle = (index / 3) * Math.PI * 2;
+    const pylon = new Mesh(new BoxGeometry(0.2, 1.5, 0.2), materials.plating);
+    pylon.position.set(Math.cos(angle) * 1.25, 0.75, Math.sin(angle) * 1.25);
+    pylon.rotation.y = angle;
+    parts.push(pylon);
+    const tip = new Mesh(new SphereGeometry(0.15, 8, 5), materials.accent);
+    tip.position.set(Math.cos(angle) * 1.25, 1.58, Math.sin(angle) * 1.25);
+    parts.push(tip);
+  }
+  for (const mesh of parts) mesh.castShadow = mesh.receiveShadow = true;
+  group.add(...parts);
   return group;
 }

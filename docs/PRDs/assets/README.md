@@ -19,12 +19,12 @@ flowchart LR
 | PRD | Wins | Depends on |
 |---|---|---|
 | **[349 — the cook is on by default](../done/PRD-349-the-cook-is-on-by-default.md)** | DONE: Wildwood 304.92 → 51.33 MB, Quarry 29.89 → 4.57 MB; iOS waived | — |
-| **[350 — the platform gate knows which passes need a decoder](./PRD-350-the-platform-gate-knows-which-passes-need-a-decoder.md)** | **PARTIAL:** Android cooked run and Wildwood 92.04 MB runtime load-set pass; raw/cooked identity, web/desktop byte identity and negative-control observations remain `UNVERIFIED` | 349 |
+| **[350 — the platform gate knows which passes need a decoder](../done/PRD-350-the-platform-gate-knows-which-passes-need-a-decoder.md)** | **DONE:** Android raw/cooked Pixel 8 frames are byte-identical; Wildwood runtime load-set is 92.04 MB; web/desktop outputs match byte-for-byte; the shared-image negative control is observed red | 349 |
 | **[351 — compression never looks worse than a floor](PRD-351-compression-never-looks-worse-than-a-floor.md)** | Quality floor + measured import-resolution comparison | 349, delivered |
 | **352 — Unreal ingest is first-party** | **zero shipped bytes** — removes an external repo from the ingest path | none |
 
-**Execute 350 next.** 349 is delivered; 351 can proceed independently of 350, and 352 remains an
-independent ingest change. Read each PRD's preflight before implementation.
+350 is delivered. 349 and 351 are delivered; 352 remains an independent ingest change. Read each
+PRD's preflight before implementation.
 
 ## Delivered baseline for execution
 
@@ -97,7 +97,7 @@ original proposal; the delivered baseline above governs execution. Full record:
 
 | Question | Owner |
 |---|---|
-| Quarry raw/cooked identical-frame proof on Android | 350 user verification; the cooked Pixel 8 run passed, but raw/cooked identity remains `UNVERIFIED` |
+| Quarry raw/cooked identical-frame proof on Android | **DONE** in PRD-350's final Pixel 8 evidence; raw and cooked checkpoints are byte-identical |
 | whether wildwood can build for Android *at all* today | ANSWERED by 350 Phase 1: Android build passes; runtime load-set is 92.04 MB |
 | Master-source availability, quality metrics and RDO on the owned encoder | 351 preflight; do not infer these from the old spike |
 | Real-pack availability and first-party ingest into the canonical cook | 352 preflight and integration gates |

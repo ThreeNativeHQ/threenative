@@ -9,6 +9,23 @@ import { test } from 'vitest';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
+test.each(['tn-linux', 'tn-linux-quickjs'])('native cooperative yields avoid frame coupling without starving frames or timers (%s)', (build) => {
+  const executable = join(root, 'build', build, 'mystral');
+  assert.ok(existsSync(executable), 'Build the native host before running its scheduler contract');
+  const output = execFileSync(executable, [
+    'run', join(root, 'tests/fixtures/scheduler-yield.js'), '--no-sdl',
+  ], { encoding: 'utf8', timeout: 30_000 });
+  assert.match(output, /TN_SCHEDULER_CONTRACT:/u);
+});
+
+test('Canvas2D raster and upload-dirtiness contracts execute in the native test lane', () => {
+  const executable = join(root, 'build/tn-linux/threenative-canvas2d-dirty-test');
+  assert.ok(existsSync(executable),
+    `${executable} is not built. Run: cmake --build build/tn-linux --target threenative-canvas2d-dirty-test`);
+  const output = execFileSync(executable, { encoding: 'utf8', timeout: 30_000 });
+  assert.match(output, /canvas2d dirty tracking passed/u);
+});
+
 function read(path) {
   return readFileSync(join(root, path), 'utf8');
 }
@@ -38,7 +55,7 @@ const RUNTIME_SCRIPT_HASHES = {
   'audio-source-properties.js': 'e631cdd093d660c0ada6f9cf23e0627a2bd1f16d22d8c003c52d7f86419d29ef',
   'audio-gain-param.js': 'd12e77670eaafe552e90d9fcc78a95d51f872922880bb95b8d51e1bad23b9723',
   'audio-panner-properties.js': '347b79924b271915fce4259f5cd1ca48ce334d59d76b18730014bd1670cf1cea',
-  'canvas2d-properties.js': '66b10cf8e30522db4a75b1b9ff922b3acbc611971fd2e644a265d09c9ba9258c',
+  'canvas2d-properties.js': '90614cfd7e7c44c885e7bd719b5404ed544adee78b4b2758d4e6e494feeb0e71',
 };
 
 const RUNTIME_SCRIPT_LOADERS = {

@@ -1,6 +1,6 @@
 ---
 name: prd-creator
-description: Turn a ThreeNative game idea or change into an approved game plan and implementation tasks before authoring code.
+description: Turn a ThreeNative game idea or change into an approved game plan and implementation tasks before authoring code. Use after threenative-capabilities has recorded a capability or no-match for every mechanic, and before any game source is written.
 ---
 
 # ThreeNative game PRD

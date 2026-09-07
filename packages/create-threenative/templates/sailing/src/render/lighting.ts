@@ -13,10 +13,15 @@ type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 export function setupLighting(scene: Scene, renderer: ShadowRenderer): DirectionalLight {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
-  scene.add(new HemisphereLight(palette.skyHigh, palette.shadow, 1.8));
+  // The ground term is a muted sea blue, not the trough colour. Bounced at full saturation it
+  // painted the ship's shadow side the same teal as the water and the hull stopped reading as
+  // timber at all.
+  scene.add(new HemisphereLight(palette.skyLow, 0x3d6274, 1.05));
 
-  const key = new DirectionalLight(palette.player, 3.2);
-  key.position.set(6, 10, 4);
+  // Near-white, not the accent. A strongly tinted key contaminates the canvas, the timber and the
+  // sea at once, and no per-material tweak can pull them back apart.
+  const key = new DirectionalLight(0xfff4e0, 2.9);
+  key.position.set(9, 13, 5);
   key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
   key.shadow.camera.near = 0.5;
@@ -28,9 +33,9 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): Direction
   key.shadow.normalBias = 0.04;
   scene.add(key);
 
-  const rim = new DirectionalLight(palette.accent, 1.1);
+  const rim = new DirectionalLight(palette.skyLow, 0.7);
   rim.position.set(-8, 4, -10);
   scene.add(rim);
-  scene.add(new AmbientLight(palette.shadow, 0.3));
+  scene.add(new AmbientLight(palette.shadow, 0.5));
   return key;
 }

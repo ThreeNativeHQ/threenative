@@ -1,7 +1,7 @@
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { type Object3D, Vector3 } from "three";
 import { GROUND_LAYER, ROUTE_LAYER } from "../physics.js";
-import { base, board, routeSegment } from "../render/shapes.js";
+import { base, board, routeSegment, surrounds } from "../render/shapes.js";
 
 export const ROUTE_POINTS = [
   new Vector3(-11, 0, -6),
@@ -46,6 +46,7 @@ export class RouteBoard {
 
   constructor(ctx: IRouteContext) {
     this.surface = board();
+    ctx.add(surrounds());
     ctx.add(this.surface);
     this.#bodies.push(
       new RigidBody3D({
