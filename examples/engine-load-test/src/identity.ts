@@ -84,6 +84,7 @@ const DECLARATION_PREFIX_KEYWORDS = new Set(["abstract", "declare", "default", "
 
 interface IIdentityContext {
   readonly checkoutPrefix?: string;
+  readonly viteDependencyTokens?: ReadonlySet<string>;
 }
 
 interface IReferenceParts {
@@ -150,6 +151,19 @@ function localViteHost(hostname: string): boolean {
   );
 }
 
+interface ILocalReferenceParts {
+  readonly hash: string;
+  readonly path: string;
+  readonly query: string;
+}
+
+function splitReferenceSuffix(suffix: string): Pick<ILocalReferenceParts, "hash" | "query"> {
+  const hashIndex = suffix.indexOf("#");
+  return hashIndex === -1
+    ? { hash: "", query: suffix }
+    : { hash: suffix.slice(hashIndex), query: suffix.slice(0, hashIndex) };
+}
+
 function recognizedViteModulePath(path: string): boolean {
   return (
     RECOGNIZED_VITE_MODULE_PATHS.some((prefix) => path.startsWith(prefix)) ||
@@ -158,9 +172,52 @@ function recognizedViteModulePath(path: string): boolean {
   );
 }
 
+function localReferenceParts(reference: string): ILocalReferenceParts | undefined {
+  const raw = splitReference(reference);
+  try {
+    const url = new URL(reference);
+    if (!localViteHost(url.hostname)) return undefined;
+    return { hash: url.hash, path: url.pathname, query: url.search };
+  } catch {
+    const suffix = splitReferenceSuffix(raw.suffix);
+    return { ...suffix, path: raw.path };
+  }
+}
+
+function isViteOptimizedDependencyPath(path: string): boolean {
+  return path.startsWith("/node_modules/.vite/deps/");
+}
+
+function observedViteDependencyToken(reference: string): string | undefined {
+  const parts = localReferenceParts(reference);
+  if (
+    parts === undefined ||
+    !isViteOptimizedDependencyPath(parts.path) ||
+    !/^\?v=[0-9a-f]+$/iu.test(parts.query)
+  ) {
+    return undefined;
+  }
+  return `${parts.path}${parts.query}`;
+}
+
+function canonicalizeObservedViteDependencyReference(
+  reference: string,
+  context: IIdentityContext,
+): string | undefined {
+  const parts = localReferenceParts(reference);
+  const token = observedViteDependencyToken(reference);
+  if (parts === undefined || token === undefined || !context.viteDependencyTokens?.has(token)) {
+    return undefined;
+  }
+  return `${parts.path}${parts.hash}`;
+}
+
 function createIdentityContext(entries: readonly IModuleGraphEntry[]): IIdentityContext {
   const checkoutPrefixes = new Set<string>();
+  const viteDependencyTokens = new Set<string>();
   for (const entry of entries) {
+    const viteDependencyToken = observedViteDependencyToken(entry.url);
+    if (viteDependencyToken !== undefined) viteDependencyTokens.add(viteDependencyToken);
     const reference = splitReference(entry.url);
     let url: URL | undefined;
     try {
@@ -178,6 +235,7 @@ function createIdentityContext(entries: readonly IModuleGraphEntry[]): IIdentity
   }
   return {
     checkoutPrefix: checkoutPrefixes.size === 1 ? [...checkoutPrefixes][0] : undefined,
+    viteDependencyTokens,
   };
 }
 
@@ -197,6 +255,8 @@ function canonicalCheckoutPath(
 
 function canonicalizeModuleReference(reference: string, context: IIdentityContext): string {
   if (reference.startsWith("data:")) return reference;
+  const viteReference = canonicalizeObservedViteDependencyReference(reference, context);
+  if (viteReference !== undefined) return viteReference;
   const raw = splitReference(reference);
   const relativePath = canonicalCheckoutPath(raw.path, context.checkoutPrefix);
   if (relativePath !== undefined) return `${relativePath}${raw.suffix}`;
@@ -362,6 +422,34 @@ function decodeModuleSpecifier(value: string): string {
     index += 1;
   }
   return decoded;
+}
+
+function encodeModuleSpecifier(value: string, quote: string): string {
+  let encoded = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index] ?? "";
+    const code = value.charCodeAt(index);
+    if (character === "\\") {
+      encoded += "\\\\";
+    } else if (character === quote) {
+      encoded += `\\${quote}`;
+    } else if (quote === "`" && character === "$" && value[index + 1] === "{") {
+      encoded += "\\$";
+    } else if (character === "\n") {
+      encoded += "\\n";
+    } else if (character === "\r") {
+      encoded += "\\r";
+    } else if (character === "\u2028") {
+      encoded += "\\u2028";
+    } else if (character === "\u2029") {
+      encoded += "\\u2029";
+    } else if (code < 0x20 || code === 0x7f) {
+      encoded += `\\u${code.toString(16).padStart(4, "0")}`;
+    } else {
+      encoded += character;
+    }
+  }
+  return encoded;
 }
 
 function isIdentifierStart(code: number): boolean {
@@ -1445,7 +1533,10 @@ function scanModuleSourceString(
     state.moduleReferences.add(value);
     const canonical = canonicalizeModuleReference(value, context);
     if (canonical !== rawValue) {
-      state.chunks.push(source.slice(state.outputStart, start + 1), canonical);
+      state.chunks.push(
+        source.slice(state.outputStart, start + 1),
+        encodeModuleSpecifier(canonical, source[start] ?? '"'),
+      );
       state.outputStart = end;
     }
   }
@@ -1468,7 +1559,11 @@ function scanModuleSourceIdentifier(
   const end = skipIdentifier(source, start);
   const word = source.slice(start, end);
   const propertyName = isPropertyNameToken(source, end, state.scanner);
-  if (!propertyName && word === "import") {
+  const objectMethodName =
+    word === "import" &&
+    insideObjectLiteral(state.scanner) &&
+    source.charCodeAt(skipTrivia(source, end)) === 40;
+  if (!propertyName && !objectMethodName && word === "import") {
     const callStart = skipTrivia(source, end);
     if (source.charCodeAt(callStart) === 40) {
       const argumentStart = skipTrivia(source, callStart + 1);
@@ -1594,7 +1689,10 @@ function scanModuleSourceTemplate(
         state.moduleReferences.add(value);
         const canonical = canonicalizeModuleReference(value, context);
         if (canonical !== rawValue) {
-          state.chunks.push(source.slice(state.outputStart, start + 1), canonical);
+          state.chunks.push(
+            source.slice(state.outputStart, start + 1),
+            encodeModuleSpecifier(canonical, "`"),
+          );
           state.outputStart = index;
         }
       }

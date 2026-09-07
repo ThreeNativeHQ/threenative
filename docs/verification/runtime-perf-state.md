@@ -170,6 +170,35 @@ The corrected probe now reports static template and decoded escaped references, 
 and unescaped module graphs hash equally, and computed imports fail closed. No platform or hardware
 performance result is claimed.
 
+### Astra follow-up — Vite transport and escaped-literal closure — 2026-09-07
+
+The independent review of the module-specifier repair found two blockers. Vite's optimized
+dependency URLs carry a checkout-specific `?v=<hash>` transport token; retaining it made otherwise
+identical workload graphs differ between worktrees. The decoder also inserted a decoded quote
+directly into source, so one valid import containing an escaped quote could canonicalize to the
+source of two imports.
+
+Observed Vite dependency tokens are now removed only from `/node_modules/.vite/deps/` references
+whose exact `?v=<hex>` token is present in the observed graph. Other query parameters remain part of
+identity. Canonical module references are re-escaped for their original string or template literal,
+including quotes, backslashes, line breaks, backticks, and `${...}` sequences. Object methods named
+`import` remain ordinary syntax rather than being rejected as computed imports.
+
+Red/green evidence:
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts -t 'extracts static template|canonicalizes observed Vite'
+Tests 2 failed | 92 skipped (94)  # before the Astra follow-up
+Tests 2 passed | 92 skipped (94)  # after the Astra follow-up
+
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts
+Tests 94 passed (94)
+```
+
+The corrected two-root graph probe gives equal artifact and workload hashes for differing observed
+Vite cache tokens, while a meaningful extra query remains different. The escaped-quote collision
+now remains different. No platform or hardware performance result is claimed.
+
 ---
 
 ## Android: the GPU meter reports on a Pixel 8 — 2026-09-01

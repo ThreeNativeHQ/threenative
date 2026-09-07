@@ -139,13 +139,59 @@ describe("engine load test workload", () => {
         /TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:computed module specifier/u,
       );
     }
+    expect(extractModuleSpecifiers("const obj = { import(value) { return value; } };")).toEqual([]);
 
     const module = (value: string): IModuleGraphEntry => ({
       bytes: new TextEncoder().encode(value),
       url: "http://127.0.0.1:5199/@fs/repo/examples/engine-load-test/src/game.ts",
     });
+    const escapedQuote = String.raw`import "./a\"; import \"./b";`;
+    expect(extractModuleSpecifiers(escapedQuote)).toEqual(['./a"; import "./b']);
+    expect(await hashServedModuleGraph([module(escapedQuote)])).not.toBe(
+      await hashServedModuleGraph([module('import "./a"; import "./b";')]),
+    );
     expect(await hashServedModuleGraph([module('import("./escaped\\u002ejs");')])).toBe(
       await hashServedModuleGraph([module('import("./escaped.js");')]),
+    );
+  });
+
+  it("canonicalizes observed Vite dependency cache tokens without dropping meaningful queries", async () => {
+    const module = (url: string, source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url,
+    });
+    const graph = (token: string, query = `?v=${token}`): IModuleGraphEntry[] => [
+      module(
+        "http://127.0.0.1:5199/src/game.ts",
+        `import "/node_modules/.vite/deps/three_webgpu.js${query}";`,
+      ),
+      module("http://127.0.0.1:5199/src/workload.ts", "export const count = 16384;"),
+      module(
+        `http://127.0.0.1:5199/node_modules/.vite/deps/three_webgpu.js${query}`,
+        "export const implementation = true;",
+      ),
+    ];
+    const baseline = graph("11111111");
+    const candidate = graph("22222222");
+    const configuration = { frames: 1_800, ladder: [16_384], modes: ["L2", "L3"] };
+    expect(await hashServedModuleGraph(candidate)).toBe(await hashServedModuleGraph(baseline));
+    expect(
+      await hashWorkloadModuleGraph(
+        candidate.filter(isBenchmarkWorkloadModule),
+        configuration,
+        candidate,
+      ),
+    ).toBe(
+      await hashWorkloadModuleGraph(
+        baseline.filter(isBenchmarkWorkloadModule),
+        configuration,
+        baseline,
+      ),
+    );
+
+    const meaningfulQuery = graph("11111111", "?v=11111111&raw");
+    expect(await hashServedModuleGraph(meaningfulQuery)).not.toBe(
+      await hashServedModuleGraph(baseline),
     );
   });
 
