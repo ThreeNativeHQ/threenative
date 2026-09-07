@@ -1,0 +1,75 @@
+{
+  "name": "sailing-hull-floats-after-the-run-ends",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 2900,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle-after-the-run-ends",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "swell-after-the-run-ends",
+      "waitTicks": 240,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "status",
+        "equals": "lost",
+        "throughoutSteps": true,
+        "allowTrivial": "Held on purpose, and the reason this scenario exists. The wind runs out at 45 s with no input, so the long warmup ends the run before the baseline is taken: the harness reports this row as already satisfied, which is the proof that every sample below is observed after gameplay stopped. A run that were still sailing here would be measuring the case playtests/float.playtest.json already covers."
+      },
+      {
+        "id": "state",
+        "path": "wind",
+        "lte": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "The other half of the same precondition: the wind is spent before the first observation and cannot come back, so no step below can re-enter the sailing branch and quietly restore the updates this scenario is checking for."
+      }
+    ],
+    "components": [
+      {
+        "entity": "player",
+        "component": "seaHeight",
+        "changed": true,
+        "allowTrivial": "The finding. The ship samples the swell only when its visual update runs; while that update lived inside gameplay it stopped the moment the run ended, and this height froze at whatever wave the boat died on. Every sample here is post-terminal, so a seaHeight that no longer moves is the freeze itself rather than a still ocean."
+      },
+      {
+        "entity": "player",
+        "component": "oceanSteps",
+        "gte": 200,
+        "changed": true,
+        "allowTrivial": "The sea must still be simulating after the run is over. Without this row a frozen hull on a frozen ocean would satisfy floatGap, and the scenario would report green on a still photograph."
+      },
+      {
+        "entity": "player",
+        "component": "floatGap",
+        "gte": -0.08,
+        "lte": 0.08,
+        "allowTrivial": "The drawn hull's design waterline still sits on the sea after the run is over; a finished game that leaves the boat hanging off its own surface is the visible half of the same defect."
+      },
+      {
+        "entity": "player",
+        "component": "readbackStaleFrames",
+        "gte": 0,
+        "allowTrivial": "A negative age means the GPU height copy never landed, so nothing downstream of it can be trusted."
+      }
+    ]
+  }
+}

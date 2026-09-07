@@ -155,6 +155,21 @@ function requiredJob(source: string, name: string): string {
   return section;
 }
 
+function workflowRunScript(source: string, stepName: string): string {
+  const stepStart = source.indexOf(`      - name: ${stepName}`);
+  if (stepStart < 0) throw new Error(`workflow step ${stepName} was not found.`);
+  const runStart = source.indexOf("        run: |\n", stepStart);
+  if (runStart < 0) throw new Error(`workflow step ${stepName} did not contain a run block.`);
+  const bodyStart = runStart + "        run: |\n".length;
+  const bodyEnd = source.indexOf("\n      - ", bodyStart);
+  if (bodyEnd < 0) throw new Error(`workflow step ${stepName} did not have a following step.`);
+  return source
+    .slice(bodyStart, bodyEnd)
+    .split("\n")
+    .map((line) => (line.startsWith("          ") ? line.slice(10) : line))
+    .join("\n");
+}
+
 function occurrences(source: string, pattern: RegExp): number {
   return [...source.matchAll(pattern)].length;
 }
@@ -1395,19 +1410,33 @@ describe("CI pipeline structure", () => {
         .filter((line) => !/^\s*#/u.test(line))
         .join("\n");
     const producerCommands = commands(producer);
-    const pullRequestEligibility = [
-      "      (github.event_name != 'pull_request' ||",
-      "       contains(github.event.pull_request.labels.*.name, 'native'))",
-    ].join("\n");
+    const labelGate = "contains(github.event.pull_request.labels.*.name, 'native')";
+    // Every eligibility assertion below reads the comment-stripped section. A comment that merely
+    // quotes the label gate — the ones explaining why this leg no longer carries it do exactly
+    // that — would otherwise satisfy a `toContain` or trip a `not.toContain` without any condition
+    // changing.
+    const androidCommands = commands(android);
 
     expect(producerCommands).toContain("--target web --out artifacts/conformance/web");
-    expect(producer, "web reference is an orphan on unlabelled pull requests").toContain(
+    // Pinned as one exact condition, not a direction. The invariant is that the producer is never
+    // gated more tightly than its most permissive consumer, or that consumer runs on a pull request
+    // with no reference to compare against — but asserting only that leaves room for the producer
+    // to acquire some *other* narrowing condition (a branch test, an actor test) unnoticed. Since
+    // 2026-09-06 `android-emulator-parity` carries no label gate, so this is the whole condition
+    // the producer may carry.
+    expect(producerCommands, "web reference is an orphan on unlabelled pull requests").toContain(
       [
         "if: >-",
         "      needs.scope.outputs.selection != 'prose' &&",
-        "      inputs.ios_only == false &&",
-        pullRequestEligibility,
+        "      inputs.ios_only == false",
       ].join("\n"),
+    );
+    expect(
+      androidCommands,
+      "the Android leg regained a gate the producer does not carry",
+    ).not.toContain(labelGate);
+    expect(producerCommands, "producer is gated more tightly than its consumer").not.toContain(
+      labelGate,
     );
     expect(producer).toContain("actions/upload-artifact");
     expect(producer).toContain("native-web-reference-${{ github.sha }}");
@@ -1419,14 +1448,30 @@ describe("CI pipeline structure", () => {
       ["desktop", desktop],
     ] as const) {
       const consumer = commands(section);
-      expect(section, `${name} eligibility drifted from the web producer`).toContain(
+      // Both consumers share the scope and dispatch conditions; they differ only in the label,
+      // which `desktop-parity` still carries and `android-emulator-parity` shed on 2026-09-06.
+      // Matched against the comment-stripped section for the reason given above the producer's
+      // assertion: the comments here quote the very gate being asserted absent.
+      expect(consumer, `${name} eligibility drifted from the web producer`).toContain(
         [
           "if: >-",
           "      needs.scope.outputs.selection != 'prose' &&",
-          "      inputs.ios_only != true &&",
-          pullRequestEligibility,
+          "      inputs.ios_only != true",
         ].join("\n"),
       );
+      if (name === "desktop") {
+        expect(consumer, `${name} lost the label gate it is meant to keep`).toContain(
+          [
+            "      (github.event_name != 'pull_request' ||",
+            "       contains(github.event.pull_request.labels.*.name, 'native'))",
+          ].join("\n"),
+        );
+      } else {
+        expect(
+          consumer,
+          `${name} regained a label gate the web producer does not carry`,
+        ).not.toContain(labelGate);
+      }
       expect(section, `${name} is not ordered behind the producer`).toContain(
         "needs: [scope, web-reference]",
       );
@@ -1552,26 +1597,37 @@ describe("CI pipeline structure", () => {
     // main the lane cancelled itself before finishing anyway (owner call: run everything,
     // everywhere, and let a red be a red).
     //
-    // Two legs are gated again as of 2026-09-03, and the reason is a measurement the earlier call
-    // did not have. `desktop-parity` costs 3173s and `android-emulator-parity` 1858s: together 84
-    // of the ~130 runner-minutes this workflow spends per pull request, against ~60 for all of
-    // CI, on one shared pool. On run 33782776626 CI took 457s while its longest job was 332s —
-    // the difference is its own 26 jobs queueing against slots these two legs were holding.
+    // Two legs were gated again as of 2026-09-03, and the reason was a measurement the earlier
+    // call did not have. `desktop-parity` costs 3173s and `android-emulator-parity` 1858s:
+    // together 84 of the ~130 runner-minutes this workflow spends per pull request, against ~60
+    // for all of CI, on one shared pool. On run 33782776626 CI took 457s while its longest job was
+    // 332s — the difference is its own 26 jobs queueing against slots these two legs were holding.
     //
-    // What the earlier call was protecting is intact: both still run on every push to main, every
-    // night, and on any PR labelled `native`, so nothing reaches a release unproven. What changed
-    // is that they no longer sit in front of the checks people actually wait on — and both are
-    // advisory rather than required, both are red on main today, and both report 30-53 minutes
-    // after a PR opens, which is after it has been read.
+    // `android-emulator-parity` is ungated again as of 2026-09-06, and only that leg. The cost
+    // measurement above still stands, but the clause carrying it was "both are red on main today":
+    // minutes spent on a leg that cannot produce a result are what made the trade lopsided. That
+    // leg was red for a reason unrelated to any pull request's diff — `stb` is fetched fresh from
+    // raw.githubusercontent.com on every run, unauthenticated, and returned 429 on run
+    // 34078916876, so `Install Android build prerequisites` exited 1 and the emulator never
+    // booted. With the fetch retried and authenticated the leg produces a result, and a reporting
+    // advisory leg is worth its 31 runner-minutes where an always-red one was not.
     //
-    // Every other leg keeps the old rule. The only other condition any leg may carry is the manual
-    // `ios_only` dispatch toggle.
+    // `desktop-parity` stays gated: it is the larger half of those 84 minutes and nothing has made
+    // it green.
+    //
+    // Every other leg keeps the old rule. The only other conditions any leg may carry are the
+    // manual `ios_only` dispatch toggle and the prose-only `scope` skip.
     const native = await readFile(
       path.join(repo, ".github/workflows/native-platforms.yml"),
       "utf8",
     );
-    const gated = ["android-emulator-parity", "desktop-parity"] as const;
-    const ungated = ["desktop", "ios-simulator", "starter-linux"] as const;
+    const gated = ["desktop-parity"] as const;
+    const ungated = [
+      "android-emulator-parity",
+      "desktop",
+      "ios-simulator",
+      "starter-linux",
+    ] as const;
 
     for (const name of ungated) {
       const job = requiredJob(native, name);
@@ -1939,6 +1995,63 @@ describe("CI pipeline structure", () => {
     expect(performance).toContain("release-soak");
     expect(performance).toContain("pnpm native:qualify:physical");
     expect(performance).toContain("7200000");
+  });
+
+  it("reports a scheduled missing baseline before fetching or checking out source", async () => {
+    const performance = await readFile(
+      path.join(repo, ".github/workflows/performance-regression.yml"),
+      "utf8",
+    );
+    const directory = await makeTempDir("performance-scheduled-baseline-");
+    const manifestDirectory = path.join(directory, "scripts/performance-regression");
+    const artifactDirectory = path.join(directory, "artifacts/performance-regression");
+    const binDirectory = path.join(directory, "bin");
+    await mkdir(manifestDirectory, { recursive: true });
+    await mkdir(binDirectory, { recursive: true });
+    await writeFile(
+      path.join(manifestDirectory, "lanes.json"),
+      await readFile(path.join(repo, "scripts/performance-regression/lanes.json"), "utf8"),
+    );
+    const gitLog = path.join(directory, "git.log");
+    await writeFile(
+      path.join(binDirectory, "git"),
+      '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$TEST_GIT_LOG"\n',
+      { mode: 0o755 },
+    );
+    const envFile = path.join(directory, "github.env");
+    const script = workflowRunScript(
+      performance,
+      "Prepare isolated source checkouts inside the repository worktree",
+    ).replaceAll("${{ matrix.result_key }}", "browser-webgpu");
+    const result = spawnSync("bash", ["-e", "-u", "-o", "pipefail", "-c", script], {
+      cwd: directory,
+      env: {
+        ...process.env,
+        BASELINE_INPUT: "",
+        CANDIDATE_INPUT: "",
+        GITHUB_ENV: envFile,
+        GITHUB_EVENT_NAME: "schedule",
+        GITHUB_SHA: "candidate-sha",
+        GITHUB_WORKSPACE: directory,
+        PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+        TEST_GIT_LOG: gitLog,
+        TN_PERF_LANE: "browser-webgpu",
+        TN_PERF_RESOURCE_READY: "true",
+        TN_PERF_RESULT_KEY: "browser-webgpu",
+      },
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(await readFile(gitLog, "utf8").catch(() => "")).toBe("");
+    expect(
+      JSON.parse(await readFile(path.join(artifactDirectory, "browser-webgpu.json"), "utf8")),
+    ).toMatchObject({
+      candidateSourceSha: "candidate-sha",
+      lane: "browser-webgpu",
+      resultKey: "browser-webgpu",
+      status: "UNVERIFIED",
+    });
+    expect(await readFile(envFile, "utf8")).toContain("TN_PERF_BASELINE_AVAILABLE=false");
   });
 
   it("maps every performance matrix row to its declared platform runner and unique result key", async () => {

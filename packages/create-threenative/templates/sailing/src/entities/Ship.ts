@@ -126,7 +126,6 @@ export class Ship {
       z: velocity.z + (targetZ - velocity.z) * blend,
     };
     this.#heading += move.x * deltaTime * 0.35;
-    this.#rideTheSwell(deltaTime);
   }
 
   /**
@@ -134,8 +133,13 @@ export class Ship {
    *
    * Two samples a boat-length apart give the pitch, two across the beam give the roll. Both are
    * eased rather than snapped, so the ship lags the water the way a hull with mass does.
+   *
+   * This is drawing, not gameplay, so the scene calls it every frame rather than from `update`.
+   * While it lived inside `update` it stopped the moment the run ended — the ocean went on moving
+   * under a hull that had frozen mid-wave, and the boat read as welded to a sheet of water that
+   * was still visibly rolling past it. Winning the course was the most likely way to see it.
    */
-  #rideTheSwell(deltaTime: number): void {
+  updateVisual(deltaTime: number): void {
     if (this.#capsized) return;
     const { x, z } = this.mesh.position;
     // `SpectralOcean` has no closed form, so its CPU height is a throttled copy of what the GPU
@@ -176,7 +180,9 @@ export class Ship {
     const blend = Math.min(1, Math.max(0, deltaTime) * 3.2);
     this.visual.position.x = this.mesh.position.x;
     this.visual.position.z = this.mesh.position.z;
-    // The design waterline sits on the water. Copying the body's y instead put the hull wherever
+    // The design waterline sits on the sampled water. The copy can be many frames old while the
+    // GPU FFT is busy, so easing this axis would invent a second lag and let the hull drift beyond
+    // its own sampled surface between readbacks. Copying the body's y instead put the hull wherever
     // the buoyancy solver happened to have pushed it that frame — which, with no angular damping
     // to settle it, was rarely the same place twice and often most of a hull below the surface.
     this.visual.position.y = hereHeight;

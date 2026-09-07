@@ -1,11 +1,19 @@
 import { assertCondition, startBehaviorScene } from "./scene-support.js";
 
 export function startScene(canvas, dimensions) {
-  const rendererCanvas = document.createElement("canvas");
-  rendererCanvas.width = dimensions.width;
-  rendererCanvas.height = dimensions.height;
-  document.body.appendChild(rendererCanvas);
-  return startBehaviorScene(rendererCanvas, dimensions, "document-window-stubs", async () => {
+  // The scene renders into the host canvas, because that is the one the harness screenshots
+  // (`captureBrowserCanvas` takes `#c`). Rendering into a canvas created here instead left `#c`
+  // without a frame, and the row failed as `capture is uniform: expected more than one RGBA color`
+  // on every runner while every assertion below still passed.
+  //
+  // `detachedCanvas` keeps what that indirection was there to prove: `createElement` plus
+  // `appendChild` produce a real, independent canvas, and sizing it does not disturb the renderer's
+  // own canvas. It is asserted against, never rendered into.
+  const detachedCanvas = document.createElement("canvas");
+  detachedCanvas.width = dimensions.width;
+  detachedCanvas.height = dimensions.height;
+  document.body.appendChild(detachedCanvas);
+  return startBehaviorScene(canvas, dimensions, "document-window-stubs", async () => {
     assertCondition(window === globalThis, "window must alias the global object");
     assertCondition(window.document === document, "window.document must alias document");
     assertCondition(
@@ -92,10 +100,10 @@ export function startScene(canvas, dimensions) {
     readback.unmap();
     readback.destroy();
     uploaded.destroy();
-    assertCondition(createdCanvas !== rendererCanvas, "text and renderer canvases must be distinct");
-    assertCondition(rendererCanvas !== canvas, "created canvas must not alias the host canvas");
+    assertCondition(createdCanvas !== detachedCanvas, "text and detached canvases must be distinct");
+    assertCondition(detachedCanvas !== canvas, "created canvas must not alias the host canvas");
     assertCondition(
-      rendererCanvas.width === dimensions.width && rendererCanvas.height === dimensions.height,
+      canvas.width === dimensions.width && canvas.height === dimensions.height,
       "text canvas sizing must not resize the renderer",
     );
     assertCondition(typeof canvas.getContext === "function", "host canvas.getContext must exist");
