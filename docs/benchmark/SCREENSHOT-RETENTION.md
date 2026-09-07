@@ -14,9 +14,9 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
 | `docs/benchmark` | 1583 | 109397932 | 0 |
-| `docs/verification` | 662 | 56128496 | 35 |
+| `docs/verification` | 665 | 56146529 | 38 |
 
-**35 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
+**38 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories
 
@@ -62,6 +62,9 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/prd-360-device-2026-09-07/evaluation-a.json` | 2930 |
 | `docs/verification/prd-360-device-2026-09-07/evaluation-b.json` | 2930 |
 | `docs/verification/prd-360-device-2026-09-07/evaluation-c.json` | 2932 |
+| `docs/verification/prd-360-device-2026-09-07/qualified-a.json` | 2898 |
+| `docs/verification/prd-360-device-2026-09-07/qualified-b.json` | 2897 |
+| `docs/verification/prd-360-device-2026-09-07/qualified-c.json` | 2897 |
 | `docs/verification/prd-361-character-setup-2026-09-06.md` | 16728 |
 | `docs/verification/prd-362-execution-2026-09-07.md` | 7694 |
 | `docs/verification/prd278-followup-2026-08-30.md` | 8810 |
