@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-360 — Android launch is playable within eight seconds
 
-**Status:** PARTIAL — measured on hardware 2026-09-07 and the criterion is **unmet**. Three cold launches of the preserved baseline on a physical Pixel 8 give a preflight-qualified median launch-to-first-playable bound of 49,788.7 ms against the 8,000 ms criterion, with the player moving 2.147 m and a visible world proved. The device blocker that filed this under `requires-physical-device` is resolved, so it returns to its batch. What remains is implementation, not evidence: a build that reaches the criterion, and an observer-carrying artifact for the pump-silence bullet. Evidence: [prd-360-device-2026-09-07](../../verification/prd-360-device-2026-09-07/README.md).
+**Status:** PARTIAL — the baseline is measured and decomposed; the criterion is unmet by the 2026-08-30 build and **unmeasured on current `main`**. Three preflight-qualified cold launches on a physical Pixel 8 give a 49,788.7 ms median bound, but the probe shows that is mostly harness: the game's own cold start is ~15 s, of which **8.3 s is 103 synchronous pipeline compiles** and 4.5 s is unattributed residual, with ~0.6 s of real init and a healthy p50 16.3 ms frame period once running. The measured APK predates both startup fixes (`0d0565fc` 2026-09-03, `befc1094` 2026-09-04), so this characterises the problem rather than judging the fix. Evidence: [prd-360-device-2026-09-07](../../verification/prd-360-device-2026-09-07/README.md).
 **Priority:** 1 — start today, September 5, 2026.
 **Complexity:** 2 (6–10 files) + 2 (async startup) + 2 (core/native) = 6 → MEDIUM mode.
 **Estimate:** 6–10 engineering hours plus native build/device time.

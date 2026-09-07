@@ -29,6 +29,58 @@ not modified.
 
 The section below records the earlier, **superseded** set taken while the device was still plugged.
 
+## Where the time actually goes — probe, 2026-09-07
+
+The 49.8 s bound is not the game's startup. Decomposed from `host.log` (`TN_COLD_START`,
+`TN_STALL_SEGMENTS`, `TN_HOST_GAP`), consistent across all three qualified runs:
+
+| Phase | Cost |
+| --- | ---: |
+| process → `game_eval_begin` (assets, UI overlay, runtime, V8 snapshot) | **~0.6 s** |
+| `game_eval_begin` → `first_frame` | **~14.1 s** |
+| `first_frame` → last playtest command (280 `compile`/`execute` cycles out to 39.5 s) | **~25 s** |
+| teardown, 698 KB screenshot pull, sampling | **~10 s** |
+
+**The game's own cold start is ~15 s, not 50 s.** The remaining ~35 s is harness traffic — which is
+why the evaluator warns that a bound above the criterion "does not isolate game latency". Once
+running, the frame period is p50 **16.3 ms** (~61 fps), so this is a startup problem only.
+
+Inside the ~14.1 s stall, per `TN_STALL_SEGMENTS` (run a / b / c):
+
+| Segment | Cost | Calls |
+| --- | ---: | ---: |
+| **`pipelineCompile`** | **8,079 / 8,296 / 8,385 ms** | **103** |
+| `shaderCompile` | 354 / 348 / 352 ms | 141 |
+| `bufferUpload` | 124 / 124 / — ms | 1,415 |
+| `textureUpload` | 96 / 99 / — ms | 74 |
+| attributed | 8,654 ms (`attributedShare` 0.660) | |
+| **residual, unattributed** | **4,450 / 4,457 / 4,594 ms** | |
+
+So one launch is roughly: 0.6 s of real init, 8.3 s of **103 synchronous pipeline compiles**, 0.35 s
+of shader compiles, and **4.5 s that nothing currently attributes**. Two thirds of the stall is
+named; a third is not, and naming it needs instrumentation that does not exist yet.
+
+## The measured APK predates the fix — read the number as a baseline, not a verdict
+
+The subject's source tree is `prd259-bayview-current-20260830`, dated **2026-08-30**. The startup
+work landed after it:
+
+| Commit | Date | What |
+| --- | --- | --- |
+| `0d0565fc` | 2026-09-03 | PRD-327 Phase 2 — the automatic startup warm-up default, `packages/core/src/game.ts` |
+| `befc1094` | 2026-09-04 | `perf(core): startup holds the player's wait` |
+
+Bayview does call `defineGame`, so on a current engine it would inherit the automatic warm-up whose
+comment reads *"A game with this unset still warms up."* This APK is four to five days older than
+that, which is consistent with what the log shows: 103 pipelines compiling synchronously on the
+first frame because nothing warmed them.
+
+**This measurement therefore characterises the problem PRD-360 was opened against, measured properly
+for the first time. It is not evidence about current `main`.** Deciding whether the criterion is met
+today needs an APK built from current `main`, which is blocked on the runtime-native prebuilt release
+recorded in the PRD — the published package ships no C++, so a sandbox build cannot carry current
+engine changes at all.
+
 ## Subject and device
 
 | | |
