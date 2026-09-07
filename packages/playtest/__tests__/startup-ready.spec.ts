@@ -277,3 +277,66 @@ test("yields to teardown instead of polling to its own deadline", async () => {
   ).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_ABORTED" } });
   expect(polls).toBeLessThanOrEqual(2);
 });
+
+// A host that has exited is a crash, not a slow launch. Folding its bridge timeouts into "still
+// loading" spent the whole 180s deadline and then blamed the game's loading gate: PR #122's
+// hosted Windows collector reported `Application startup stayed 'unreadable, the bridge kept
+// timing out' for 180000ms` with no word about the process that was no longer there.
+test("a host that exited during startup is named as a crash, not a slow loading gate", async () => {
+  let clock = 0;
+  const timeout = new PlaytestBridgeError(
+    playtestDiagnostic("TN_PLAYTEST_OPERATION_TIMEOUT", "Bridge operation 'ready' exceeded 5000ms.", "x"),
+  );
+  let pumped = 0;
+  await expect(
+    waitForStartupReady({
+      bridge: {
+        description: { capabilities: ["runtime.startup"] },
+        readiness: () => Promise.reject(timeout),
+      },
+      hostAlive: async () => false,
+      now: () => clock,
+      pump: async () => {
+        clock += 100;
+        pumped += 1;
+      },
+      timeoutMs: 600_000,
+    }),
+  ).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_HOST_EXITED" } });
+  // Named on the first unreadable poll, not after the deadline it would otherwise have burned.
+  expect(pumped).toBe(0);
+});
+
+test("a host that is alive keeps the wait on its deadline", async () => {
+  let clock = 0;
+  const timeout = new PlaytestBridgeError(
+    playtestDiagnostic("TN_PLAYTEST_OPERATION_TIMEOUT", "Bridge operation 'ready' exceeded 5000ms.", "x"),
+  );
+  await expect(
+    waitForStartupReady({
+      bridge: {
+        description: { capabilities: ["runtime.startup"] },
+        readiness: () => Promise.reject(timeout),
+      },
+      hostAlive: async () => true,
+      now: () => clock,
+      pump: async () => {
+        clock += 100;
+      },
+      timeoutMs: 250,
+    }),
+  ).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+});
+
+// A driver that cannot answer must not manufacture a crash: an undefined reading leaves the
+// wait exactly as it was.
+test("an unreadable liveness probe never invents a crash", async () => {
+  const bridge = source(["runtime.startup"], [collapsing, ready]);
+  await expect(
+    waitForStartupReady({
+      bridge,
+      hostAlive: async () => undefined,
+      pump: async () => undefined,
+    }),
+  ).resolves.toEqual({ rule: "sustained-frames", startup: ready });
+});

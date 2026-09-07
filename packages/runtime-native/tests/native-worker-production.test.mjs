@@ -37,6 +37,10 @@ const registryCpp = readFileSync(
   fileURLToPath(new URL("../src/workers/worker_registry.cpp", import.meta.url)),
   "utf8",
 );
+const v8Cpp = readFileSync(
+  fileURLToPath(new URL("../src/js/v8_engine.cpp", import.meta.url)),
+  "utf8",
+);
 const polyfillJs = extractEmbeddedJs(readRuntimeCpp(), "urlPolyfill");
 
 function setupWorkerContext(natives = {}) {
@@ -496,6 +500,17 @@ test("should drain a stopped worker before reaping it, and join every worker on 
   // singleton, so a shutdown that closed it permanently would break every Runtime after the
   // first. Proven behaviourally by the packed registryReopensForASecondRuntime contract.
   expect(registryCpp).toContain("void WorkerRegistry::open()");
+});
+
+test("should retire each V8 worker task runner before disposing its isolate", () => {
+  const destructorStart = v8Cpp.indexOf("~V8Engine() override {");
+  expect(destructorStart).toBeGreaterThanOrEqual(0);
+
+  const notifyAt = v8Cpp.indexOf("v8::platform::NotifyIsolateShutdown", destructorStart);
+  const disposeAt = v8Cpp.indexOf("isolate_->Dispose()", destructorStart);
+  expect(notifyAt).toBeGreaterThan(destructorStart);
+  expect(disposeAt).toBeGreaterThan(notifyAt);
+  expect(v8Cpp.slice(notifyAt, disposeAt)).toContain("g_platform.get(), isolate_");
 });
 
 // ---------------------------------------------------------------------------
