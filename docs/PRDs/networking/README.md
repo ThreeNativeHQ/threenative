@@ -9,14 +9,14 @@ Deferred iOS results remain explicitly unverified, never passed.
 
 | PRD | Status | Outcome |
 | --- | --- | --- |
-| [PRD-359 — portable multiplayer transport](./PRD-359-portable-multiplayer-transport.md) | IN PROGRESS — Tasks 0/1a/1a-close/2a/2b-streams/2b-send/2b-signal/2b/2b-proof/2c/1b-trust/1b-fixture passed; verified desktop/browser interoperability next | Players on browser, Windows, macOS, Linux, Android and iOS share a server using the same game source |
+| [PRD-359 — portable multiplayer transport](./PRD-359-portable-multiplayer-transport.md) | IN PROGRESS — 32 of 40 execution rows accepted; the eight open rows all need an owned nine-target quiche distribution or qualification hardware | Players on browser, Windows, macOS, Linux, Android and iOS share a server using the same game source |
 
 The existing native implementation is incomplete evidence, not a release-ready transport.
 The PRD records the exploration, alternatives, bounded implementation slices and release matrix.
 Renet2 remains an alternative if the interoperability spike invalidates this direction.
-The Go fixture passes the earlier Chromium byte echo proof and 28 native tests, including asynchronous DNS, IPv4/IPv6, real stalled-reader pressure and 100 reconnects in one native process; failed-handshake readiness is repaired. Process-local trusted-hostname TLS is proven on Linux; verified numeric-IP connections and the full platform matrix remain incomplete.
+The Go fixture passes the earlier Chromium byte echo proof and the native suite, including asynchronous DNS, IPv4/IPv6, real stalled-reader pressure and 100 reconnects in one native process; failed-handshake readiness is repaired. Process-local trusted-hostname TLS is proven on Linux; verified numeric-IP connections and the full platform matrix remain incomplete.
 
-Follow [EXECUTION.md](./EXECUTION.md); Task 2c DNS is next. Native stream strategy/lifecycle proof passed on Linux V8 and QuickJS. The Task 2a/2b queue-bound checkpoint is accepted after live pressure and reconnect proof.
+Follow [EXECUTION.md](./EXECUTION.md), whose header names the eight open rows. The portable client, Go protocol, authoritative simulation and the whole authoring/discovery group have passed. What is left is the owned nine-target quiche distribution and the qualification lanes that need physical Android, macOS, Windows and the Safari/Firefox/Edge browser matrix.
 The exact API, byte format and backend contract are in [PROTOCOL.md](./PROTOCOL.md).
 
 **Selected architecture:** one protocol and conformance suite, thin language adapters.

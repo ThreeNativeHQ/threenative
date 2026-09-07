@@ -120,6 +120,38 @@ jobs:
             --required-lanes "$TN_PERF_REQUIRED_DESKTOP" \
             --expected-sha "$GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
 
+  networking-matrix:
+    name: Networking qualification matrix
+    needs: [android-emulator-parity, desktop-parity, desktop, ios-simulator]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        if: always()
+        continue-on-error: true
+        with:
+          pattern: native-*
+          path: artifacts/networking-matrix
+      # PRD-359 Task 7b. This job is the networking release verdict, so it stays red
+      # until Task 7c actually runs the qualification lanes and their evidence lands
+      # here. An advisory green would be exactly the false claim the row forbids.
+      - name: Verify networking qualification matrix
+        if: always()
+        run: |
+          mkdir -p artifacts/networking-matrix
+          node scripts/verify-networking-matrix.mjs \
+            --manifest docs/PRDs/networking/qualification-lanes.json \
+            --results artifacts/networking-matrix 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "${PIPESTATUS[0]}"
+
   android-emulator-parity:
     name: Android emulator visual parity
     needs: web-reference
