@@ -49,6 +49,28 @@
       "expires": "2026-12-31",
       "target": "desktop",
       "row": "90-multitouch-input"
+    },
+    {
+      "id": "android-canvas2d-document-window-stubs",
+      "title": "Android Canvas2D document-window-stubs assertions",
+      "category": "runtime",
+      "status": "excluded",
+      "reason": "The Android preset keeps TN_ENABLE_CANVAS2D=OFF; this row's ellipse, gradient, stroke, and canvas-upload assertions require the Skia-backed Canvas2D surface.",
+      "owner": "runtime-native",
+      "expires": "2026-12-31",
+      "target": "android",
+      "row": "90-document-window-stubs"
+    },
+    {
+      "id": "android-hardware-canvas2d-document-window-stubs",
+      "title": "Android hardware Canvas2D document-window-stubs assertions",
+      "category": "runtime",
+      "status": "excluded",
+      "reason": "The Android preset keeps TN_ENABLE_CANVAS2D=OFF; this row's ellipse, gradient, stroke, and canvas-upload assertions require the Skia-backed Canvas2D surface.",
+      "owner": "runtime-native",
+      "expires": "2026-12-31",
+      "target": "android-hardware",
+      "row": "90-document-window-stubs"
     }
   ],
   "tests": [

@@ -232,7 +232,7 @@ evidence.** The harness already ships a negative control — `?corruptAnimalForw
 | 3 | Clip binding audit that **fails closed** | `→impl` | Rejects an audit nothing calls — the exact way defect 3 shipped | Point a spec at a clip name the file lacks; construction must throw, not warn |
 | 4 | The pose fix from §2 | `→impl` | — | The bone-length check from row 1 goes red on the pre-fix build |
 | 5 | Wildwood rewritten onto the surface, its copy deleted | `Animal.ts` | Rejects two live implementations | Delete the core export; Wildwood fails to build |
-| 6 | A second, unrelated consumer | a template or example `→impl` | Rejects a one-consumer abstraction | Only one caller at final review fails this PRD |
+| 6 | A second, unrelated consumer | HQ's Worker/Visitor in sandbox (`threenative-hq`), per AC2 and PRD-324 census | Rejects a one-consumer abstraction | Only one caller at final review fails this PRD |
 | 7 | Capability manifest entries | `capabilities.json` via `pnpm build` | Rejects an export no plain-words search finds | Search "put an animated character in the scene"; a miss fails |
 
 ```mermaid

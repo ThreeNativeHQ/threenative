@@ -677,6 +677,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // Absent means on, exactly as `textures` reads it.
       const virtualOptions = options.virtual === "none" ? undefined : (options.virtual ?? {});
       const geometryActive =
+        options.vertexLayout !== undefined ||
         Object.values(enabled).some(Boolean) ||
         options.simplify !== undefined ||
         virtualOptions !== undefined;

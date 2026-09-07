@@ -8,10 +8,12 @@ import {
   Vector3,
   type VectorKeyframeTrack,
 } from "three";
+import { clipTrackBindings } from "./clip-audit.js";
 
 export interface IAnimationPlayerOptions {
   readonly clips: readonly AnimationClip[];
   readonly root: Object3D;
+  readonly requiredClips?: readonly string[] | Readonly<Record<string, string>>;
   /**
    * Match a travelling clip's playback rate to the ground the body actually covers.
    *
@@ -220,6 +222,7 @@ type AnimationMode = "loop" | "once";
 
 export class AnimationPlayer {
   readonly mixer: AnimationMixer;
+  readonly root: Object3D;
   #actions = new Map<string, AnimationAction>();
   #current: string | undefined;
   #mode: AnimationMode = "loop";
@@ -244,6 +247,8 @@ export class AnimationPlayer {
   };
 
   constructor(options: IAnimationPlayerOptions) {
+    const owner = new.target.name || "AnimationPlayer";
+    this.root = options.root;
     this.mixer = new AnimationMixer(options.root);
     this.#strideSync = options.strideSync ?? true;
     this.#strideRoot = options.strideRoot ?? options.root;
@@ -261,6 +266,17 @@ export class AnimationPlayer {
         throw new Error(`Animation clip '${clip.name}' could not create an action.`);
       this.#actions.set(clip.name, action);
       this.#clips.set(clip.name, clip);
+    }
+    for (const name of requiredClipNames(options.requiredClips)) {
+      const clip = this.#clips.get(name);
+      if (clip === undefined)
+        throw new Error(
+          `${owner}: missing required clip '${name}'. Available clips: ${options.clips.map((item) => `'${item.name}'`).join(", ") || "(none)"}.`,
+        );
+      if (clipTrackBindings(options.root, clip).bound === 0)
+        throw new Error(
+          `${owner}: clip '${name}' binds 0 tracks to '${options.root.name || options.root.type}'.`,
+        );
     }
     this.mixer.addEventListener("finished", ({ action }) => {
       if (action === this.#actions.get(this.#current ?? "")) this.#finished = true;
@@ -545,3 +561,11 @@ export class AnimationPlayer {
 /** Reused so a per-frame stride read costs no allocation. See PRD-189. */
 const scratchWorld = new Vector3();
 const scratchScale = new Vector3();
+
+function requiredClipNames(value: IAnimationPlayerOptions["requiredClips"]): readonly string[] {
+  if (value === undefined) return [];
+  const names = Array.isArray(value) ? value : Object.values(value);
+  if (!names.every((name): name is string => typeof name === "string" && name.length > 0))
+    throw new Error("AnimationPlayer: requiredClips must contain non-empty strings.");
+  return names;
+}

@@ -1018,9 +1018,13 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       needsRuntimeDecoder: false,
     });
     if (models !== undefined) {
-      const modelOptions = runtimeDecoderCapabilities.meshopt
-        ? models
-        : { ...models, vertexLayout: "separate" as const };
+      // Every native host uses WebGPU's stricter vertex-input path, including desktop where the
+      // runtime does carry Meshopt. Keep the browser's interleaved default, but make every native
+      // model pass emit separate attribute buffers before the packager's fail-closed preflight.
+      const modelOptions =
+        options.platform === undefined || options.platform === "web"
+          ? models
+          : { ...models, vertexLayout: "separate" as const };
       const pass = modelPass({
         ...modelOptions,
         preserveLightmapUv: lightmap !== undefined,
