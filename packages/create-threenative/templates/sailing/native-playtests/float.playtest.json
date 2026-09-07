@@ -2,6 +2,10 @@
   "name": "sailing-hull-floats-native",
   "schemaVersion": 1,
   "target": "desktop",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 40,
   "subject": "player",
   "steps": [
@@ -19,13 +23,6 @@
     }
   ],
   "assert": {
-    "diagnostics": {
-      "noConsoleErrors": false,
-      "consoleErrorsOptOutReason": "The desktop host logs a window-branding notice at error level for a project without an embedded icon; that is host noise, not game behaviour.",
-      "noNetworkErrors": false,
-      "networkErrorsOptOutReason": "The desktop mailbox transport has no CDP network observer, so the browser-only network policy cannot be asserted here, and the web scenario playtests/float.playtest.json retains that check.",
-      "runtimeReady": true
-    },
     "components": [
       {
         "entity": "player",
