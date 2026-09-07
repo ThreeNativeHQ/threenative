@@ -205,6 +205,18 @@ jobs:
       # these were simply never added. Keys are content-addressed where a lockfile exists and
       # pinned to the versions this workflow installs where one does not, so a version bump
       # misses rather than serving a stale toolchain.
+      # This leg was the only compiling native job without it — desktop-parity, desktop and
+      # starter-linux all restore the same path under the same key. Its absence is why the lane
+      # re-fetched every Android dependency on every run, including stb's three single headers from
+      # raw.githubusercontent.com, which returned 429 on run 34078916876 and took the whole lane
+      # down before the emulator booted. On a warm cache `download-deps.mjs` finds the headers
+      # already present and skips the fetch entirely, so the failure mode cannot recur; the retry
+      # added alongside this covers the cold-cache run that still has to reach the network.
+      - name: Restore native third-party dependencies
+        uses: actions/cache@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
       - name: Restore the Android SDK packages
         uses: actions/cache@v4
         with:
@@ -252,13 +264,6 @@ jobs:
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
             packages/runtime-native/artifacts/conformance/web "downloaded web reference"
       - name: Install Android build prerequisites
-        env:
-          # `stb` is three single headers pulled fresh from raw.githubusercontent.com on every run
-          # — the third-party cache above covers the archives, not these. Unauthenticated, they
-          # share the runner pool's egress IP and its rate limit: on 2026-09-07 they returned 429
-          # and took the whole lane down before the emulator booted. The token lifts the limit;
-          # download-deps.mjs retries the 429 that still gets through.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006"
           # build-native-physics.mjs cross-compiles the Rust physics crate for both ABIs
@@ -321,11 +326,20 @@ jobs:
           # The logcat dump rides this same folded line on purpose. `android-emulator-runner` tears
           # the emulator down when `script` returns, so a later step has no device to read: the
           # buffer has to be captured here, before the exit test that decides this step's status.
+          #
+          # adb's stderr goes to its own file rather than into the log. Folded into the capture it
+          # would make "device offline" indistinguishable from "the observer emitted nothing": the
+          # log would be non-empty, carry no marker, and the next step would blame the observer.
+          # The conformance status is recorded for the same reason — exit 2 means rows were
+          # blocked and the app may never have launched, which is not an observer failure.
           script: >-
             node packages/runtime-native/conformance/run-conformance.mjs --target android
             --device emulator-5554 --reference artifacts/conformance/web
-            --out artifacts/conformance/android; status=$?; adb logcat -d >
-            "$RUNNER_TEMP/emulator-logcat.txt" 2>&1 || true; test "$status" -eq 0 -o "$status" -eq 2
+            --out artifacts/conformance/android; status=$?; echo "$status" >
+            "$RUNNER_TEMP/conformance-status.txt"; adb logcat -d >
+            "$RUNNER_TEMP/emulator-logcat.txt" 2> "$RUNNER_TEMP/emulator-logcat.err" || echo
+            TN_ADB_LOGCAT_FAILED >> "$RUNNER_TEMP/emulator-logcat.err";
+            test "$status" -eq 0 -o "$status" -eq 2
       - name: Verify captured parity ledger
         if: always()
         run: |
@@ -410,18 +424,63 @@ jobs:
           import { join } from "node:path";
           import { pathToFileURL } from "node:url";
 
-          const logPath = join(process.env.RUNNER_TEMP, "emulator-logcat.txt");
+          const temp = process.env.RUNNER_TEMP;
+          const logPath = join(temp, "emulator-logcat.txt");
+          const read = (name) => {
+            try {
+              return readFileSync(join(temp, name), "utf8");
+            } catch (error) {
+              if (error?.code === "ENOENT") return null;
+              throw error;
+            }
+          };
+
+          const outDir = "packages/runtime-native/artifacts/performance-contract/android-emulator";
+          mkdirSync(outDir, { recursive: true });
+          const record = (payload) =>
+            writeFileSync(
+              join(outDir, "pump-silence-structural.json"),
+              `${JSON.stringify(
+                { provenance: "android-emulator", sourceSha: process.env.GITHUB_SHA, ...payload },
+                null,
+                2,
+              )}\n`,
+            );
+
           // Reached on always(), so it runs when an earlier step failed and no emulator ever
           // booted. Name that cause rather than burying it in an ENOENT stack.
-          let hostLog;
-          try {
-            hostLog = readFileSync(logPath, "utf8");
-          } catch (error) {
-            if (error?.code !== "ENOENT") throw error;
+          const hostLog = read("emulator-logcat.txt");
+          const conformanceStatus = read("conformance-status.txt");
+          if (hostLog === null || conformanceStatus === null) {
             throw new Error(
               `TN_PUMP_ANDROID_LOGCAT_MISSING: ${logPath} was never written, so the emulator lane ` +
                 "did not run. Read the first failing step in this job, not this one.",
             );
+          }
+
+          // adb's own failure is not the observer's. A dead or offline device leaves a log that is
+          // present, empty of markers, and would otherwise read as "the observer emitted nothing".
+          const adbErrors = (read("emulator-logcat.err") ?? "").trim();
+          if (adbErrors.includes("TN_ADB_LOGCAT_FAILED") || adbErrors.length > 0) {
+            record({ claim: "adb could not read the buffer", pass: false, status: "BLOCKED" });
+            throw new Error(`TN_PUMP_ANDROID_ADB_FAILED: ${adbErrors.slice(0, 500)}`);
+          }
+
+          // The lane deliberately accepts conformance exit 2 — rows blocked by this machine, where
+          // the app may never have launched. Absent markers then say nothing about the observer,
+          // so this records BLOCKED rather than manufacturing a red against it.
+          if (conformanceStatus.trim() !== "0") {
+            record({
+              claim: "conformance did not fully execute; observer emission not assessed",
+              conformanceStatus: conformanceStatus.trim(),
+              pass: false,
+              status: "BLOCKED",
+            });
+            console.log(
+              `TN_PUMP_ANDROID_BLOCKED conformance exited ${conformanceStatus.trim()}; ` +
+                "the app may never have launched, so the observer is not judged here.",
+            );
+            process.exit(0);
           }
 
           // The evaluator is tracked as retained source beside its proof; import the same bytes the
@@ -435,24 +494,13 @@ jobs:
           // finite non-negative stamps as the only things that can fail here.
           const result = evaluatePumpSilence({ hostLog, maxGapMs: Number.POSITIVE_INFINITY });
 
-          const outDir = "packages/runtime-native/artifacts/performance-contract/android-emulator";
-          mkdirSync(outDir, { recursive: true });
-          writeFileSync(
-            join(outDir, "pump-silence-structural.json"),
-            `${JSON.stringify(
-              {
-                claim: "observer emits and parses on Android; timings are NOT a PRD-360 verdict",
-                code: result.code,
-                detail: result.detail ?? null,
-                pass: result.pass,
-                provenance: "android-emulator",
-                sourceSha: process.env.GITHUB_SHA,
-                status: "UNVERIFIED",
-              },
-              null,
-              2,
-            )}\n`,
-          );
+          record({
+            claim: "observer emits and parses on Android; timings are NOT a PRD-360 verdict",
+            code: result.code,
+            detail: result.detail ?? null,
+            pass: result.pass,
+            status: "UNVERIFIED",
+          });
 
           if (!result.pass) {
             throw new Error(

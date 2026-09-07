@@ -605,59 +605,70 @@ function verifyAndRecordWgpuInstallation(name, destDir, expectedVersion) {
 // exited 1, the emulator never booted, and the two steps after it reported a missing report and a
 // BLOCKED collector. One transient status must not read as a missing dependency.
 const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
-const GITHUB_HOSTS = new Set([
-  'api.github.com',
-  'codeload.github.com',
-  'github.com',
-  'objects.githubusercontent.com',
-  'raw.githubusercontent.com',
-]);
+
+// One retry may never outlast the job that is waiting for it. A server is free to answer
+// `Retry-After: 600`, and four of those inside `android-emulator-parity` (timeout-minutes: 45)
+// would sleep past the job's own ceiling and report as an emulator hang rather than a rate limit.
+const MAX_RETRY_DELAY_MS = 30_000;
 
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** The token lifts the unauthenticated limit, and only GitHub is ever allowed to see it. */
-function authorizationFor(url, token) {
-  if (!token) return undefined;
-  try {
-    return GITHUB_HOSTS.has(new URL(url).hostname) ? `Bearer ${token}` : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** `Retry-After` in seconds when the server names one, else exponential backoff from 1s. */
+/**
+ * `Retry-After` in seconds when the server names one, else exponential backoff from 1s; capped
+ * either way. A malformed, non-positive or HTTP-date value falls through to the backoff.
+ */
 function retryDelayMs(response, attempt) {
   const header = Number(response?.headers?.get?.('retry-after'));
-  if (Number.isFinite(header) && header > 0) return header * 1000;
-  return 1000 * 2 ** attempt;
+  const requested = Number.isFinite(header) && header > 0 ? header * 1000 : 1000 * 2 ** attempt;
+  return Math.min(requested, MAX_RETRY_DELAY_MS);
 }
 
+// No Authorization header is ever attached here, and that is deliberate rather than an omission.
+// raw.githubusercontent.com gates on the header instead of ignoring it: measured 2026-09-07 against
+// nothings/stb, an anonymous GET returns 200 while the same GET carrying a bearer token the host
+// cannot validate for that repository returns 404. `secrets.GITHUB_TOKEN` is scoped to this
+// repository and has no grant on the upstreams this script fetches, so sending it would convert a
+// retryable 429 into the one status this function refuses to retry, failing first-try and reading
+// as a deleted upstream file. The cache restore in the workflow is what removes the fetch; this
+// retry only has to survive the cold-cache run.
 export async function downloadFile(url, destPath, options = {}) {
-  const {
-    fetchImpl = fetch,
-    sleep = defaultSleep,
-    retries = 4,
-    token = process.env.GITHUB_TOKEN,
-  } = options;
+  const { fetchImpl = fetch, sleep = defaultSleep, retries = 4 } = options;
 
   console.log(`Downloading: ${url}`);
 
-  const authorization = authorizationFor(url, token);
-  const init = { redirect: 'follow', headers: authorization ? { Authorization: authorization } : {} };
+  const init = { redirect: 'follow' };
 
   let response;
   for (let attempt = 0; ; attempt += 1) {
-    response = await fetchImpl(url, init);
-    if (response.ok) break;
-    // A 404 is the answer, not a transient failure: retrying it only delays a real error.
-    if (!TRANSIENT_STATUSES.has(response.status) || attempt >= retries) {
-      throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
+    let failure;
+    try {
+      response = await fetchImpl(url, init);
+    } catch (error) {
+      // A rate limit is not the only way this leg loses the network. `fetch` throws rather than
+      // answering on ECONNRESET, a DNS failure or a dropped TLS handshake, and a retry that
+      // survives only HTTP statuses would give up on exactly the flakiness it exists to absorb.
+      if (attempt >= retries) throw error;
+      failure = error;
     }
-    const delay = retryDelayMs(response, attempt);
+
+    if (!failure) {
+      if (response.ok) break;
+      // A 404 is the answer, not a transient failure: retrying it only delays a real error.
+      if (!TRANSIENT_STATUSES.has(response.status) || attempt >= retries) {
+        throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
+      }
+    }
+
+    const delay = retryDelayMs(failure ? undefined : response, attempt);
+    const reason = failure
+      ? `${failure.code ?? failure.name ?? 'network error'}`
+      : `${response.status} ${response.statusText}`;
     console.log(
-      `  ${response.status} ${response.statusText} — retrying in ${delay}ms ` +
-        `(attempt ${attempt + 2} of ${retries + 1})`,
+      `  ${reason} — retrying in ${delay}ms (attempt ${attempt + 2} of ${retries + 1})`,
     );
+    // The rejected response's body is never read; release it rather than holding the connection
+    // open until GC across every retry.
+    if (!failure) await response.body?.cancel?.().catch(() => {});
     await sleep(delay);
   }
 

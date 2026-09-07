@@ -101,15 +101,27 @@ emulator" was skipped, "Verify captured parity ledger" failed with TN_PARITY_AND
 and "Collect bounded Android performance evidence from the emulator build" reported success while
 writing status BLOCKED, because it runs under `set +e`.
 
-The cause: `stb` is three single headers fetched fresh from raw.githubusercontent.com every run,
-outside the third-party cache, unauthenticated, sharing the hosted runner pool's egress IP and rate
-limit. `downloadFile` in `packages/runtime-native/scripts/download-deps.mjs` had no retry and sent
-no token. **The fix:** it now retries 429/500/502/503/504 with exponential backoff from 1000 ms,
-honours `Retry-After`, never retries a non-transient status such as 404, and sends
-`Authorization: Bearer $GITHUB_TOKEN` only to GitHub hosts. Proof is
-`packages/runtime-native/tests/download-retry.test.mjs`, 5 cases: red before the fix (5 failed),
-green after (5 passed). Mutation control: removing 429 from `TRANSIENT_STATUSES` reproduces the
-exact CI error `Failed to download: 429` and fails 3 of the 5 cases; restoring it returns 5 passed.
+The cause is a missing cache, not a missing token. `android-emulator-parity` was the only
+compiling native leg without a `packages/runtime-native/third_party` cache restore — `desktop-parity`,
+`desktop` and `starter-linux` all have one under the same key — so it re-fetched every Android
+dependency on every run, `stb` included. `download-deps.mjs` skips `stb` outright when the three
+headers are already on disk, so restoring that cache removes the fetch that failed.
+
+**The fix:** the cache restore is added to this leg, and `downloadFile` now retries
+429/500/502/503/504 with exponential backoff from 1000 ms, capped at 30 s, honouring `Retry-After`
+and never retrying a non-transient status such as 404. The retry only has to survive the
+cold-cache run that still reaches the network. Proof is
+`packages/runtime-native/tests/download-retry.test.mjs`, 6 cases: red before the fix (5 failed),
+green after (6 passed). Mutation control: removing 429 from `TRANSIENT_STATUSES` reproduces the
+exact CI error `Failed to download: 429` and fails 3 cases; restoring it returns green.
+
+**No `Authorization` header is sent, deliberately.** An earlier revision of this work passed
+`secrets.GITHUB_TOKEN` to the fetch on the assumption that it lifts the anonymous rate limit.
+Measured against `nothings/stb` on 2026-09-07, it does the opposite: an anonymous GET returns
+`200`, while the same GET carrying a bearer token the host cannot validate for that repository
+returns `404` — the one status the retry refuses to retry. A repo-scoped token has no grant on
+these upstreams, so sending it would have converted a recoverable 429 into a hard first-try
+failure worded as a deleted upstream file. The test now pins the header's absence.
 
 A new CI step, "Assert PRD-360 pump observer emits on Android (structural, non-timing)", captures
 logcat inside the emulator-runner script (the action tears the emulator down when its script
@@ -120,6 +132,12 @@ with `maxGapMs` set to `Infinity`, so only the marker's presence, JSON shape, `o
 finite non-negative timestamps can fail; the timings are recorded with status UNVERIFIED, because the
 lane is x86_64 SwiftShader on `-accel auto`, has booted in 474 seconds without KVM, and the
 evaluator's own 50% battery preflight has no meaning on an emulator.
+
+The step distinguishes what it cannot judge from what it can. adb's stderr is captured to its own
+file and the conformance exit status is recorded beside the log, because a dead device or a lane
+that exited 2 (rows blocked, the app possibly never launched) both leave a marker-free log that
+would otherwise read as "the observer emitted nothing". Those cases record `BLOCKED` or
+`TN_PUMP_ANDROID_ADB_FAILED`; only a fully executed run with no marker fails against the observer.
 
 At the time of writing this step had not yet executed on a real emulator run, so whether the
 observer's markers actually appear in Android logcat is unproven; the step fails closed if they do

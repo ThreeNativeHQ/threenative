@@ -1380,23 +1380,33 @@ describe("CI pipeline structure", () => {
         .join("\n");
     const producerCommands = commands(producer);
     const labelGate = "contains(github.event.pull_request.labels.*.name, 'native')";
+    // Every eligibility assertion below reads the comment-stripped section. A comment that merely
+    // quotes the label gate — the ones explaining why this leg no longer carries it do exactly
+    // that — would otherwise satisfy a `toContain` or trip a `not.toContain` without any condition
+    // changing.
+    const androidCommands = commands(android);
 
     expect(producerCommands).toContain("--target web --out artifacts/conformance/web");
-    // The invariant is a direction, not a literal: the producer must be at least as permissive as
-    // its most permissive consumer, or that consumer runs on a pull request with no reference to
-    // compare against. Since 2026-09-06 `android-emulator-parity` carries no label gate, so the
-    // producer may not carry one either; when both consumers were gated it did. Pinning the exact
-    // string here is what made this test fail for the right reason and the wrong cause.
-    expect(producer, "web reference is an orphan on unlabelled pull requests").toContain(
-      ["if: >-", "      needs.scope.outputs.selection != 'prose' &&"].join("\n"),
+    // Pinned as one exact condition, not a direction. The invariant is that the producer is never
+    // gated more tightly than its most permissive consumer, or that consumer runs on a pull request
+    // with no reference to compare against — but asserting only that leaves room for the producer
+    // to acquire some *other* narrowing condition (a branch test, an actor test) unnoticed. Since
+    // 2026-09-06 `android-emulator-parity` carries no label gate, so this is the whole condition
+    // the producer may carry.
+    expect(producerCommands, "web reference is an orphan on unlabelled pull requests").toContain(
+      [
+        "if: >-",
+        "      needs.scope.outputs.selection != 'prose' &&",
+        "      inputs.ios_only == false",
+      ].join("\n"),
     );
-    expect(producer).toContain("inputs.ios_only == false");
-    if (!android.includes(labelGate)) {
-      expect(
-        producer,
-        "producer is gated more tightly than the Android leg that needs it",
-      ).not.toContain(labelGate);
-    }
+    expect(
+      androidCommands,
+      "the Android leg regained a gate the producer does not carry",
+    ).not.toContain(labelGate);
+    expect(producerCommands, "producer is gated more tightly than its consumer").not.toContain(
+      labelGate,
+    );
     expect(producer).toContain("actions/upload-artifact");
     expect(producer).toContain("native-web-reference-${{ github.sha }}");
     expect(producer).toContain("if-no-files-found: error");
@@ -1409,7 +1419,9 @@ describe("CI pipeline structure", () => {
       const consumer = commands(section);
       // Both consumers share the scope and dispatch conditions; they differ only in the label,
       // which `desktop-parity` still carries and `android-emulator-parity` shed on 2026-09-06.
-      expect(section, `${name} eligibility drifted from the web producer`).toContain(
+      // Matched against the comment-stripped section for the reason given above the producer's
+      // assertion: the comments here quote the very gate being asserted absent.
+      expect(consumer, `${name} eligibility drifted from the web producer`).toContain(
         [
           "if: >-",
           "      needs.scope.outputs.selection != 'prose' &&",
@@ -1417,7 +1429,7 @@ describe("CI pipeline structure", () => {
         ].join("\n"),
       );
       if (name === "desktop") {
-        expect(section, `${name} lost the label gate it is meant to keep`).toContain(
+        expect(consumer, `${name} lost the label gate it is meant to keep`).toContain(
           [
             "      (github.event_name != 'pull_request' ||",
             "       contains(github.event.pull_request.labels.*.name, 'native'))",
@@ -1425,7 +1437,7 @@ describe("CI pipeline structure", () => {
         );
       } else {
         expect(
-          section,
+          consumer,
           `${name} regained a label gate the web producer does not carry`,
         ).not.toContain(labelGate);
       }
