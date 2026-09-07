@@ -6,7 +6,7 @@
 
 ## 1. Summary
 
-Shipped `SkeletalMesh3D` (and `prepareSkeletalMesh`) in `@threenative/core` to solve the four traps every character setup repeated:
+Shipped `SkeletalMesh3D` in `@threenative/core` to solve the four traps every character setup repeated. The class extends `AnimationPlayer`, so the prepared rig and its playback state are one object; there is no separate `prepareSkeletalMesh` export:
 1. **Skeleton-safe cloning:** uses Three.js `SkeletonUtils.clone` so cloned skinned meshes do not share bone instances with the source or sibling instances.
 2. **Skin-aware normalisation:** scales character rigs using `normaliseToMetres` which measures rendered skin vertices rather than bind-pose bounding boxes.
 3. **Fail-closed clip validation:** verifies requested/required clips at load time against the clip map and enforces that each required clip binds tracks to the rig, eliminating silent bind-pose mannequin traps.
@@ -20,7 +20,7 @@ Replaced private repeated plumbing in two independent live consumers:
 
 | Consumer | File | Line Anchor | Replaced Plumbing |
 |---|---|---|---|
-| Wildwood Animal | `sandbox/wildwood/src/entities/animals/Animal.ts` | `:146-154` | Removed inline `cloneSkeleton`, `normaliseToMetres`, manual `AnimationPlayer` |
+| Wildwood Animal | `sandbox/wildwood/src/entities/animals/Animal.ts` | `:148-154` | Removed inline `cloneSkeleton`, `normaliseToMetres`, manual `AnimationPlayer` |
 | HQ Worker | `sandbox/threenative-hq/src/office/Worker.ts` | `:68-74` | Removed inline `cloneSkinned`, `normaliseToMetres`, manual `AnimationPlayer` |
 | HQ Visitor | `sandbox/threenative-hq/src/office/Visitor.ts` | `:74-80` | Removed inline `cloneSkinned`, `normaliseToMetres`, manual `AnimationPlayer` |
 
@@ -35,10 +35,29 @@ Error: Cannot find module '../src/skeletal-mesh.js' imported from packages/core/
 ### Green: After `SkeletalMesh3D` implementation
 ```
  RUN  v4.1.10 threenative-engine
- ✓ packages/core/__tests__/animation.spec.ts (29 tests) 28ms
- Test Files  1 passed (1)
-      Tests  29 passed (29)
+ ✓ packages/core/__tests__/animation.spec.ts (31 tests) 37ms
+ ✓ packages/core/__tests__/playtest-stride.spec.ts (3 tests) 37ms
+ Test Files  2 passed (2)
+      Tests  34 passed (34)
 ```
+
+### Red: real consumer export negative control — 2026-09-07
+
+The installed staged package was left unchanged while each consumer import was temporarily
+renamed to `SkeletalMesh3D_missing_export`. Both real consumer typechecks failed with TypeScript's
+missing-export diagnostic, proving that the consumers depend on the package surface rather than a
+local copy:
+
+```text
+HQ_EXIT=2
+src/office/Visitor.ts(2,17): error TS2305: Module '"@threenative/core"' has no exported member 'SkeletalMesh3D_missing_export'.
+src/office/Worker.ts(1,10): error TS2305: Module '"@threenative/core"' has no exported member 'SkeletalMesh3D_missing_export'.
+WILDWOOD_EXIT=2
+src/entities/animals/Animal.ts(2,3): error TS2305: Module '"@threenative/core"' has no exported member 'SkeletalMesh3D_missing_export'.
+```
+
+The temporary edits were restored immediately; the consumer worktree retained only its seven
+intended changes.
 
 ## 4. Negative Controls
 
@@ -78,16 +97,18 @@ character.play("idle");
 ## 6. LOC Ratchet
 
 `pnpm tsx scripts/count-loc.ts` passed:
-- `touch controls LOC: 1385 across 8 authored copies`
-- `cloth feature LOC: framework 46, hand-written 761`
-- Net framework growth within limits; shared preparation eliminates duplicated setup across consumers.
+- `skeletal-mesh.ts`: 68 authored lines; it composes existing cloning, scale, clip-audit, and `AnimationPlayer` mechanisms.
+- `touch controls LOC: 1385 across 8 authored copies; hypothetical shared export 305; duplicated 1080`.
+- `cloth feature LOC: framework 46, hand-written 761 (713 implementation + 48 callers), 94.0% smaller`.
 
 ## 7. Consumer browser proofs — 2026-09-07
 
 The sandbox worktree was installed from the staged `@threenative/core` and `@threenative/playtest`
-tarballs. The ignored FAB output packs were mounted temporarily for the browser run and are not
-part of the consumer commit. Every browser invocation used `tools/capture-lock.sh`,
-`--browser-recipe webgpu`, and `--headed`.
+tarballs. The core tarball was
+`threenative-core-0.3.0-prd361-animplayer-30ccd2a867db.tgz`, SHA-256
+`30ccd2a867dbb9083d643b54dc86a628c83baade6fab0cdefbb88b5c6ba35edb`. The ignored FAB output
+packs were mounted temporarily for the browser run and are not part of the consumer commit.
+Every browser invocation used `tools/capture-lock.sh`, `--browser-recipe webgpu`, and `--headed`.
 
 Wildwood passed `pnpm typecheck`, `pnpm test:render` (15 tests), `pnpm test:audio` (191 checks),
 and `pnpm build`. These five committed scenarios each exited 0 against the built preview:
@@ -119,7 +140,8 @@ playtests/office-poses.playtest.json     pass=true  sit/stand transitions and cl
 
 The live office lane was skipped because no bridge was listening on `127.0.0.1:7373`; it remains
 unverified by design. The fixture lane is the deterministic proof of the refactored Worker and
-Visitor setup.
+Visitor setup. The observed FAB packs contained 163 manifest entries for Wildwood and 25 for HQ;
+the temporary mounts were removed after the run.
 
 ## 8. Runner timeout regression — 2026-09-07
 
@@ -141,3 +163,33 @@ Tests  67 passed (67)
 
 The package gates also passed sequentially: `@threenative/playtest` typecheck, build, orphan
 cleanup, and strict publint.
+
+## 9. Native host evidence — 2026-09-07
+
+The native host gate ran in the engine worktree with V8 and Dawn WebGPU on Linux:
+
+```text
+pnpm native:build                         passed; V8 + Dawn configured and linked
+SDL_AUDIODRIVER=dummy pnpm native:verify:desktop
+desktop core gate passed: 300 frames, 1280x720, artifacts/desktop-core-2026-09-07.png
+desktop physics actuation bindings proof passed
+desktop physics playtest proof passed: 14 assertions
+desktop physics query proof passed
+native contract lane passed: 35 of 35 targets
+desktop loading playtest proof passed: 913920 startup loading pixels, 0 settled loading pixels
+```
+
+The retained native artifacts are under `packages/runtime-native/artifacts/` in the verification
+worktree and are ignored by the package boundary. This proves the desktop host and its loading
+contract; it does not claim that the two sandbox games executed in the native host.
+
+## 10. Platform status and checkpoint review
+
+- **Browser:** Wildwood and HQ fixture lanes passed on NVIDIA Turing WebGPU. HQ live office was skipped because its bridge was unavailable.
+- **Desktop native:** passed the build, 300-frame core capture, physics, lifecycle, contract, and loading gates above.
+- **Android:** unverified for this change.
+- **iOS simulator and physical devices:** unverified for this change.
+
+Checkpoint review confirmed the delivery matches the PRD boundaries: the framework owns safe rig
+instancing and measured preparation, game code still owns source repair, tint, movement, and
+appearance, and both independent consumers instantiate the exported class from the staged package.
