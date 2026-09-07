@@ -159,32 +159,22 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/pnpm
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # Only networking lane results, never the conformance artifacts the platform jobs
-      # upload as native-*: the aggregator validates every JSON it finds under this path,
-      # so pointing it at a foreign artifact would fail the gate on the wrong evidence.
-      # Task 7c's proof runner publishes these; until then no artifact matches and the
-      # directory stays empty, which is the honest state.
+      # The aggregator is plain Node with no dependencies, so this job needs no pnpm
+      # install and no toolchain setup. Its own suite already runs in CI's test-unit
+      # shards; re-running it here would only duplicate that work.
       - uses: actions/download-artifact@v7
         if: always()
         continue-on-error: true
         with:
+          # Networking lane results only. The platform jobs upload conformance artifacts
+          # as native-*, and the aggregator validates every JSON under this path, so that
+          # pattern would fail the gate on foreign evidence. Task 7c publishes these.
           pattern: networking-lane-*
           path: artifacts/networking-matrix
-      # PRD-359 Task 7b. Ordinary CI cannot execute the qualification lanes, so this job
-      # proves the gate rather than the platforms: the aggregator's own suite must pass,
-      # and the aggregator must report UNQUALIFIED over whatever evidence this run has.
-      # It never claims a platform. The moment any lane result appears in the artifacts,
-      # every required row is enforced and a partial set fails — so a green here cannot be
-      # mistaken for qualification, which is what the execution row forbids.
-      - name: Prove the aggregator is fail-closed
-        if: always()
-        run: pnpm exec vitest run scripts/__tests__/networking-matrix.spec.ts
+      # With no lane evidence this reports UNQUALIFIED and exits 0: ordinary CI cannot run
+      # the lanes, so their absence is not a failure and no platform is claimed. One lane
+      # result is enough to enforce every required row, so a partial set still fails, and
+      # the release path passes --require-evidence to make an empty set fail too.
       - name: Report the networking qualification verdict
         if: always()
         run: |
@@ -193,9 +183,6 @@ jobs:
             --manifest docs/PRDs/networking/qualification-lanes.json \
             --results artifacts/networking-matrix 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
-      # The release verdict is the same aggregator with --require-evidence, where an empty
-      # evidence set is a failure instead of an honest "nothing ran". Task 7c wires the tag
-      # path to this once real lane evidence exists.
 
   android-emulator-parity:
     name: Android emulator visual parity
