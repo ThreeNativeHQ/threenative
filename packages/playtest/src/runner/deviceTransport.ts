@@ -193,7 +193,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     await this.mailbox.remove(this.paths.response);
   }
 
-  async call<T>(method: string, argument?: unknown): Promise<T> {
+  async call<T>(method: string, argument?: unknown, timeoutMs = this.operationTimeoutMs): Promise<T> {
     if (this.closed) throw new Error("Device mailbox transport is closed.");
     if (!this.connected) throw new Error("Device mailbox bridge is not connected.");
     if (argument !== undefined) assertBounded(argument);
@@ -205,7 +205,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
       id,
       method,
     } satisfies IPlaytestDeviceRequest));
-    const response = await this.waitForResponse(id, method, order);
+    const response = await this.waitForResponse(id, method, order, timeoutMs);
     if (response.error !== undefined) throw new Error(response.error.message);
     return response.result as T;
   }
@@ -233,8 +233,13 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     return false;
   }
 
-  private async waitForResponse(id: string, method: string, order: number): Promise<IPlaytestDeviceResponse> {
-    const deadline = Date.now() + this.operationTimeoutMs;
+  private async waitForResponse(
+    id: string,
+    method: string,
+    order: number,
+    timeoutMs: number,
+  ): Promise<IPlaytestDeviceResponse> {
+    const deadline = Date.now() + timeoutMs;
     while (!this.closed && Date.now() < deadline) {
       const raw = await this.mailbox.read(this.paths.response);
       if (raw !== undefined) {
@@ -248,7 +253,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     }
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_OPERATION_TIMEOUT",
-      `Device mailbox operation '${id}' exceeded ${this.operationTimeoutMs}ms.`,
+      `Device mailbox operation '${id}' exceeded ${timeoutMs}ms.`,
       "Confirm the app is running and its native mailbox is polling the configured files.",
     ));
   }

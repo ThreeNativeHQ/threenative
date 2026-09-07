@@ -3,8 +3,16 @@ import path from "node:path";
 import { PerspectiveCamera, Vector2, Vector3 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { Checkpoints } from "../templates/platformer/src/level/Checkpoints.js";
+import { setupPost } from "../templates/platformer/src/render/postprocessing.js";
 import { TouchControls } from "../templates/platformer/src/render/touch-controls.js";
 import { touchControlPoint } from "../templates/platformer/src/render/touch-layout.js";
+import { WorldEnvironment } from "../templates/platformer/src/render/worldEnvironment.js";
+
+vi.mock("../templates/platformer/src/render/worldEnvironment.js", () => ({
+  WorldEnvironment: vi.fn().mockImplementation(function WorldEnvironmentMock() {
+    return { apply: vi.fn() };
+  }),
+}));
 
 type Target = Parameters<Checkpoints["hurt"]>[0];
 
@@ -32,6 +40,37 @@ const feel = {
 } as unknown as ConstructorParameters<typeof Checkpoints>[2];
 
 describe("platformer checkpoints", () => {
+  it("uses the existing low look only for hosted software profiles", () => {
+    const globals = globalThis as typeof globalThis & {
+      __THREENATIVE_PROFILE__?: { hostedSoftware?: boolean };
+    };
+    const renderer = { raw: {} } as Parameters<typeof setupPost>[0];
+    const scene = {} as Parameters<typeof setupPost>[1];
+    const camera = {} as Parameters<typeof setupPost>[2];
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.clearAllMocks();
+
+    globals.__THREENATIVE_PROFILE__ = { hostedSoftware: true };
+    setupPost(renderer, scene, camera, { mobile: false });
+    expect(info).toHaveBeenLastCalledWith(
+      "TN_QUALITY_TIER low mobile=false source=hosted-software",
+    );
+
+    setupPost(renderer, scene, camera, { mobile: false, tier: "high" });
+    expect(info).toHaveBeenLastCalledWith("TN_QUALITY_TIER high mobile=false source=override");
+    expect(WorldEnvironment).toHaveBeenNthCalledWith(
+      1,
+      expect.not.objectContaining({ ssgiEnabled: true, ssrEnabled: true }),
+    );
+    expect(WorldEnvironment).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ ssgiEnabled: true, ssrEnabled: true }),
+    );
+
+    globals.__THREENATIVE_PROFILE__ = undefined;
+    info.mockRestore();
+  });
+
   it("rejects an empty checkpoint list", () => {
     expect(() => new Checkpoints(checkpoints([]), 3, feel)).toThrow("at least one checkpoint");
   });

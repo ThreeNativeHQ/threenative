@@ -70,9 +70,11 @@ is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it 
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
 `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`;
-override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
-the source. Keep state values human-readable; the bridge flushes about 100 ms and per-frame feel
-stays in scene-owned Three.js.
+override with `setupPost(..., { tier: "low" })`. The native production collector's explicit
+`--hosted-software` profile selects the existing `low` preset only when no tier override is passed;
+`TN_QUALITY_TIER` reports `source=hosted-software`. That smoke tier is not physical performance
+evidence and does not change an ordinary desktop run. Unknown tiers throw. Keep state values
+human-readable; the bridge flushes about 100 ms and per-frame feel stays in scene-owned Three.js.
 
 When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
 retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's

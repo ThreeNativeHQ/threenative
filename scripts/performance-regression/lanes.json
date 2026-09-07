@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "policyRevision": "prd-358-v1",
+  "promotionPolicy": {
+    "accuracyRuns": 20,
+    "baselineRegeneration": "separate-reviewed-change",
+    "calibrationStatus": "unverified",
+    "calibrationPairs": 10,
+    "ciCostRuns": 20,
+    "maxIncrementalRunnerMinutes": 6,
+    "maxQueueSeconds": 120,
+    "minimumCalibrationSessions": 3,
+    "requiredCheckPromotion": "maintainer-review"
+  },
+  "lanes": [
+    {
+      "id": "browser-webgpu",
+      "platform": "browser-webgpu",
+      "arms": ["tn-web"],
+      "workload": "platformer-production",
+      "requiredMetrics": ["drawCalls", "triangles", "frameP95Ms"],
+      "producer": "packages/runtime-native/scripts/profile-production.mjs --target web --profile regression",
+      "evidenceClass": "hosted-software-contract",
+      "provisioning": "hosted-software",
+      "required": false,
+      "baseline": {
+        "status": "unavailable",
+        "reason": "Hosted software timing is advisory until a pinned physical GPU baseline is calibrated."
+      }
+    },
+    {
+      "id": "native-linux",
+      "platform": "native-linux",
+      "arms": ["tn-desktop"],
+      "workload": "platformer-production",
+      "requiredMetrics": ["drawCalls", "triangles", "frameP95Ms", "phaseP95Ms"],
+      "producer": "packages/runtime-native/scripts/profile-production.mjs --target desktop",
+      "evidenceClass": "hosted-telemetry",
+      "deviceResource": "linux-gpu-performance-runner",
+      "provisioning": "unprovisioned",
+      "required": false,
+      "baseline": {
+        "status": "unavailable",
+        "reason": "No calibrated dedicated Linux GPU baseline has been accepted."
+      }
+    },
+    {
+      "id": "native-windows-macos",
+      "platform": "native-windows-macos",
+      "arms": [],
+      "workload": "platformer-production",
+      "requiredMetrics": ["drawCalls", "triangles", "frameP95Ms", "phaseP95Ms"],
+      "producer": "packages/runtime-native/scripts/profile-production.mjs --target desktop",
+      "evidenceClass": "hosted-telemetry",
+      "deviceResource": "windows-or-macos-gpu-performance-runner",
+      "provisioning": "unprovisioned",
+      "required": false,
+      "baseline": {
+        "status": "unavailable",
+        "reason": "Windows and macOS GPU identities require independent provisioned baselines."
+      }
+    },
+    {
+      "id": "native-android",
+      "platform": "native-android",
+      "arms": ["tn-android"],
+      "workload": "platformer-production",
+      "requiredMetrics": [
+        "drawCalls",
+        "triangles",
+        "frameP95Ms",
+        "phaseP95Ms",
+        "startupP95Ms",
+        "memoryHighWaterMiB"
+      ],
+      "producer": "packages/runtime-native/scripts/profile-production.mjs --target android",
+      "evidenceClass": "physical-hardware-comparison",
+      "deviceResource": "android-physical-performance-device",
+      "provisioning": "unprovisioned",
+      "required": false,
+      "baseline": {
+        "status": "unavailable",
+        "reason": "Historical Android ladder numbers are diagnostic; ten-pair calibration is not accepted yet."
+      }
+    },
+    {
+      "id": "browser-moving-ladder",
+      "platform": "browser-webgpu",
+      "arms": ["tn-web"],
+      "workload": "moving-l2-l3-16384",
+      "requiredMetrics": [
+        "frameP95Ms.L2",
+        "frameP95Ms.L3",
+        "drawCalls.L2",
+        "drawCalls.L3",
+        "triangles.L2",
+        "triangles.L3"
+      ],
+      "producer": "scripts/engine-load-test/cli.ts --arm tn-web --modes L2,L3 --ladder 16384 --repeats 1 --frames 1800",
+      "evidenceClass": "physical-hardware-throughput",
+      "provisioning": "unprovisioned",
+      "required": false,
+      "baseline": {
+        "status": "unavailable",
+        "reason": "Moving ladder throughput needs its own observed hardware identity and approved baseline; platformer timings cannot substitute."
+      }
+    },
+    {
+      "id": "native-ios",
+      "platform": "native-ios",
+      "arms": [],
+      "workload": "platformer-production",
+      "requiredMetrics": [
+        "drawCalls",
+        "triangles",
+        "frameP95Ms",
+        "phaseP95Ms",
+        "startupP95Ms",
+        "memoryHighWaterMiB"
+      ],
+      "producer": "packages/runtime-native/scripts/profile-production.mjs --target ios",
+      "evidenceClass": "physical-hardware-comparison",
+      "deviceResource": "ios-physical-performance-device",
+      "provisioning": "unprovisioned",
+      "required": false,
+      "baseline": {
+        "status": "unavailable",
+        "reason": "No signed physical iOS device baseline has been provisioned or calibrated."
+      }
+    }
+  ]
+}

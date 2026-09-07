@@ -2462,6 +2462,836 @@ The final result is 10.4× on identical source.
 
 ---
 
+## PRD-358 cross-platform performance regression CI — repair round 1 (2026-09-05)
+
+Policy revision `prd-358-v1` is implemented and committed in the lane branch. No performance
+baseline was promoted: the manifest remains `calibrationStatus: unverified`, every physical lane
+is unprovisioned, and the hosted browser lane has no accepted baseline. The comparison exit
+contract is PASS=0, regression FAIL=1, and invalid or missing required evidence BLOCKED=2. Raw
+artifacts are configured for 14 days on success and 30 days on failure.
+
+### Executed evidence
+
+The following commands were run in this worktree:
+
+| Command | Result |
+|---|---|
+| `pnpm install --frozen-lockfile` | PASS |
+| `pnpm native:build` | PASS; pinned Linux CMake 4.4.3/Ninja 1.13.2 build completed 403/403 and produced `mystral` and `mystral-tools` |
+| `cmake --build packages/runtime-native/build/tn-linux --target threenative-crash-handler-policy-test threenative-timestamp-query-test threenative-rg11b10-renderable-test --parallel` | PASS; the three on-demand V8 contract targets built |
+| `cmake --preset tn-linux -B build/tn-linux-quickjs -DCMAKE_MAKE_PROGRAM=/home/joao/projects/threenative/threenative-engine/.worktrees/prd-358-cross-platform-performance-regression-ci/packages/runtime-native/.runtime/tools-venv/bin/ninja -DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF` | PASS; documented QuickJS matrix directory configured |
+| `cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test threenative-rg11b10-renderable-test --parallel` | PASS; the two QuickJS contract targets built 403/403 |
+| `pnpm typecheck` | PASS |
+| `pnpm test` | PASS; 390 files passed, 2 skipped; 4,290 tests passed, 7 skipped |
+| `pnpm test:playtest` | PASS; framework movement/camera, Abyss axis/zoom, navigation, and streaming scenarios passed with the WebGPU recipe |
+| `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/engine-load-test.spec.ts scripts/__tests__/performance-regression.spec.ts scripts/__tests__/temp-dir-guard.spec.ts` | PASS; 4 files, 109 tests |
+| `pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs` | PASS; 1 file, 23 tests |
+| `pnpm lint` | PASS; the repository-wide run reports 609 warnings and no errors, including complexity warnings in existing examples and the new helpers |
+| `pnpm budgets` | BLOCKED by the pre-existing stale retention index: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit)`; no benchmark evidence changed in this lane, so the record was not edited |
+| `git diff --check` | PASS |
+
+The required-baseline negative control also ran:
+
+```text
+pnpm --silent bench:engines --check-report /tmp/tn-required-report.json --required-baseline
+TN_BENCH_BASELINE_MISSING: tn-web has no accepted baseline for requested lane browser-webgpu
+CLI_EXIT=2
+```
+
+The reviewer controls were red before their guards were restored (5 failed, 49 passed): missing
+or stale baseline provenance, distinct native binary identities, seven attempts, repeated initial
+order, and omitted manifest metrics. The restored run passed all five controls (54/54). The
+additional per-launch regression-window and maximum-invalid-pair controls were also run red then
+green; the final focused run above is 109/109.
+
+### Platform evidence disposition
+
+These rows are deliberately explicit. A local Linux build and emulator/simulator contract check
+are not a physical-device pair and do not substitute for one. No row below claims a timed
+cross-platform comparison ran.
+
+| Row | Provisioning | Status | Evidence disposition |
+|---|---|---|---|
+| `browser-webgpu` | hosted software | UNVERIFIED | No accepted calibrated baseline; the required-baseline control correctly returned BLOCKED/exit 2. |
+| `native-linux` | unprovisioned physical GPU | UNVERIFIED | The Linux native binary built locally, but no dedicated leased GPU pair was provisioned. If promoted to required, missing hardware evidence is BLOCKED/exit 2. |
+| `native-windows-macos` | unprovisioned | UNVERIFIED | No Windows or macOS runner was available in this Linux worktree. |
+| `native-android` | unprovisioned physical device | UNVERIFIED | No physical Android device pair was run; emulator evidence cannot satisfy this row. |
+| `native-ios` | unprovisioned physical device | UNVERIFIED | No Apple hardware or `xcrun` environment was available; no simulator was counted as physical iOS. |
+| `android-emulator` | simulator/emulator | UNVERIFIED | Advisory collector hook only; no physical-device claim. |
+| `ios-simulator` | simulator | UNVERIFIED | Advisory collector hook only; no physical-device claim. |
+
+Calibration and cost promotion remain separate from baseline regeneration: the manifest records
+10 calibration pairs across at least 3 sessions, 20 accuracy runs, and 20 CI-cost runs as required
+evidence, with `maintainer-review` for required-check promotion and
+`separate-reviewed-change` for baseline regeneration. Those samples were not claimed as
+executed by this Linux lane.
+
+### PRD-358 integration ledger evidence
+
+The planned call sites are now live non-test callers:
+
+| Ledger row | Actual caller |
+|---|---|
+| Required baseline validation | [`scripts/engine-load-test/cli.ts:192`](../../scripts/engine-load-test/cli.ts#L192) calls `requiredBaseline`; [`scripts/engine-load-test/report.ts:1016`](../../scripts/engine-load-test/report.ts#L1016) compares source and artifact identity. |
+| Lane policy and paired comparison | [`scripts/engine-load-test/cli.ts:235`](../../scripts/engine-load-test/cli.ts#L235) invokes the comparison CLI; [`scripts/performance-regression/run.ts:612`](../../scripts/performance-regression/run.ts#L612) evaluates paired evidence. |
+| Reusable workload collection | [`scripts/engine-load-test/cli.ts:280`](../../scripts/engine-load-test/cli.ts#L280) invokes [`packages/runtime-native/scripts/profile-production.mjs:174`](../../packages/runtime-native/scripts/profile-production.mjs#L174). |
+| Hosted probes and hardware workflow | [`.github/workflows/ci.yml:808`](../../.github/workflows/ci.yml#L808) runs the bounded contract; [`.github/workflows/native-platforms.yml:298`](../../.github/workflows/native-platforms.yml#L298) and [`:483`](../../.github/workflows/native-platforms.yml#L483) invoke native collectors. |
+| Evidence summary and baseline approval | [`.github/workflows/ci.yml:1034`](../../.github/workflows/ci.yml#L1034) and [`.github/workflows/performance-regression.yml:165`](../../.github/workflows/performance-regression.yml#L165) invoke the summary; [`.github/workflows/performance-regression.yml:184`](../../.github/workflows/performance-regression.yml#L184) keeps promotion policy separate. |
+
+## PRD-358 cross-platform performance regression CI — repair round 2 (2026-09-05)
+
+Repair round 2 is committed after the five blocking defects were reproduced and repaired. Required
+baseline validation now requires candidate provenance without requiring it to equal the accepted
+baseline; native paired arms retain independent binary hashes; comparison accepts exactly three
+alternating valid pairs and at most one invalid replacement; selected-lane manifest metrics cannot
+be omitted; and physical collector inputs are propagated or fail closed. No baseline was promoted.
+
+### Repair-round evidence
+
+The focused red run was captured before the repair guards were restored:
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts scripts/__tests__/ci-structure.spec.ts
+Test Files 2 failed (2)
+Tests 5 failed, 91 passed (96)
+```
+
+Those failures covered fresh candidate provenance, platform workflow mapping, physical collector
+arguments and missing-input handling, and startup evidence conversion. The final focused run is:
+
+```text
+pnpm exec vitest run scripts/__tests__/performance-regression.spec.ts scripts/__tests__/engine-load-test.spec.ts scripts/__tests__/ci-structure.spec.ts
+Test Files 3 passed (3)
+Tests 115 passed (115)
+EXIT_CODE=0
+```
+
+The relevant runtime-native production-profile tests are also green:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs
+Test Files 1 passed (1)
+Tests 23 passed (23)
+EXIT_CODE=0
+```
+
+The required repository gates were run after the repair:
+
+| Command | Exact result |
+|---|---|
+| `pnpm typecheck` | PASS; workspace root and all 28 participating packages completed; exit 0 |
+| `pnpm lint` | PASS; `Checked 1962 files`; `Found 609 warnings`; no errors; exit 0 |
+| `pnpm test` | PASS; 391 files passed, 1 skipped; 4,300 tests passed, 4 skipped; exit 0 |
+| `pnpm budgets` | BLOCKED; `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit)`; exit 1. This is the unchanged repository blocker and was not edited. |
+| `pnpm test:playtest` | PASS; framework movement/camera, axis/zoom, navigation, and streaming scenarios passed with the WebGPU recipe; exit 0 |
+| `git diff --check` | PASS; exit 0 |
+| `yq eval '.' .github/workflows/performance-regression.yml >/dev/null` | PASS; YAML parsed |
+| `yq eval '.' .github/workflows/native-platforms.yml >/dev/null` | PASS; YAML parsed |
+
+The physical Android and iOS rows were not executed from this Linux checkout. The workflow keeps
+their configured self-hosted labels visible, but the manifest remains `provisioning:
+unprovisioned`, with no selected device or physical-evidence file. The runner returns explicit
+`UNVERIFIED` for advisory rows or `BLOCKED`/exit 2 when required; it never invokes a physical
+collector without both inputs. The existing iOS simulator row is explicitly simulator
+`UNVERIFIED`, not physical iOS. Windows/macOS hosted collector steps are configured against their
+job-built binaries but were not executed locally and remain unverified evidence.
+
+| Row | Local/declared state | Result claimed by this record |
+|---|---|---|
+| `browser-webgpu` | Hosted software hook; no accepted calibrated baseline | UNVERIFIED |
+| `native-linux` | Linux binary build exists; no dedicated leased GPU pair | UNVERIFIED |
+| `native-windows` / `native-macos` | Separate pinned runner rows; no local runner execution | UNVERIFIED |
+| `native-android` | Self-hosted physical label declared; device/evidence unavailable | UNVERIFIED; required mode is BLOCKED/2 |
+| `native-ios` | Self-hosted physical label declared; signed phone/evidence unavailable | UNVERIFIED; required mode is BLOCKED/2 |
+| `android-emulator` | Advisory emulator collector only | UNVERIFIED |
+| `ios-simulator` | Real simulator `.app` collector hook with simulator provenance | UNVERIFIED |
+
+### Repair-round integration ledger updates
+
+These are live non-test callers in the repaired tree:
+
+| Ledger row | Actual caller and contract |
+|---|---|
+| Required baseline validation | [`scripts/engine-load-test/cli.ts:192`](../../scripts/engine-load-test/cli.ts#L192) calls required validation; [`scripts/engine-load-test/report.ts:1018`](../../scripts/engine-load-test/report.ts#L1018) requires candidate provenance and `:1029` compares stable execution identity. |
+| Lane policy and paired comparison | [`scripts/engine-load-test/cli.ts:235`](../../scripts/engine-load-test/cli.ts#L235) invokes the comparator; [`scripts/performance-regression/run.ts:711`](../../scripts/performance-regression/run.ts#L711) evaluates the six collected arms with manifest metrics. |
+| Reusable workload collection | [`scripts/engine-load-test/cli.ts:280`](../../scripts/engine-load-test/cli.ts#L280) forwards the bounded collection contract to [`packages/runtime-native/scripts/profile-production.mjs`](../../packages/runtime-native/scripts/profile-production.mjs); the collector writes the shared evidence contract. |
+| Hosted probes and hardware workflow | [`.github/workflows/ci.yml:831`](../../.github/workflows/ci.yml#L831), [`.github/workflows/native-platforms.yml:646`](../../.github/workflows/native-platforms.yml#L646), and [`.github/workflows/native-platforms.yml:949`](../../.github/workflows/native-platforms.yml#L949) invoke real bounded collectors; [`.github/workflows/performance-regression.yml:61`](../../.github/workflows/performance-regression.yml#L61) maps each result key to its runner. |
+| Evidence summary and baseline approval | [`.github/workflows/ci.yml:847`](../../.github/workflows/ci.yml#L847), [`.github/workflows/ci.yml:1043`](../../.github/workflows/ci.yml#L1043), and [`.github/workflows/performance-regression.yml:275`](../../.github/workflows/performance-regression.yml#L275) use the shared summary; [`.github/workflows/performance-regression.yml:283`](../../.github/workflows/performance-regression.yml#L283) checks calibration/cost policy while [`:395`](../../.github/workflows/performance-regression.yml#L395) keeps baseline regeneration separate. |
+
+Calibration remains unverified and promotion remains maintainer-owned. The 20-run accuracy and
+20-run CI-cost requirements remain encoded in the manifest; this repair made no baseline or
+required-check promotion.
+
+---
+
+### PRD-358 final-audit repair — 2026-09-05
+
+This repair does not accept a baseline, promote a required check, or claim physical Android/iOS
+execution. The source PRD remains unchanged. Hardware calibration and the 20-run accuracy/cost
+promotion evidence remain UNVERIFIED.
+
+The scheduled matrix now uses runner-aware dispatch and explicit Bash, with hosted reporting for
+unprovisioned physical resources. Desktop collection rebuilds the instrumented game bundle while
+reusing the supplied native host. Mobile prebuilt collection requires a matching, hash-verified
+production workload receipt and packaged app identity; existing conformance applications without
+that receipt are BLOCKED, not interchangeable production workloads. Regression collection has
+five startup launches and one steady observation per arm, three alternating pairs, and a shared
+15-minute collection deadline. Pooled steady windows are rejected.
+
+Promoted conversion rejects missing/unknown/synthetic hardware identity; each baseline observation
+must match its approved lane identity. Candidate build provenance may differ. Browser production
+and the moving L2/L3 ladder now have separate manifest workloads and comparison consumers. Both
+remain unprovisioned until actual hardware identity and accepted baselines exist. Required
+SKIPPED/UNVERIFIED coverage cannot yield PASS, and hosted aggregation reads collector artifacts,
+not a synthetic job-success row.
+
+Observed red/green commands and output (local logs are temporary, not checked-in frame archives):
+
+| Command | Observed result |
+|---|---|
+| `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts` before fixes | `Test Files 1 failed (1)`; `Tests 4 failed / 59 passed (63)`; exit 1. Identity, approved-baseline, required coverage, and workflow assertions rejected the old implementation. |
+| `pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs` before fixes | `Test Files 1 failed (1)`; `Tests 4 failed / 22 passed (26)`; exit 1. Bounded launch and prebuilt workload tests rejected the old contract. |
+| Same native command, additional negative controls | Pooled valid windows: received `PASS`, expected `BLOCKED` before guard. Source `minFps` test: `1 failed / 27 passed (28)` before mapping the existing playtest FPS bound. |
+| `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/performance-regression.spec.ts scripts/__tests__/engine-load-test.spec.ts scripts/__tests__/ci-needs.spec.ts` after fixes | `Test Files 4 passed (4)`; `Tests 134 passed (134)`; exit 0. |
+| Native command above after fixes | `Test Files 1 passed (1)`; `Tests 28 passed (28)`; exit 0. |
+| `pnpm test` (final complete run) | Exit 0; root `Test Files 391 passed / 1 skipped (392)`, `Tests 4306 passed / 4 skipped (4310)`; native `100 passed` files, `722 passed / 34 skipped` tests, plus `29 passed` physics-parity tests. |
+| `pnpm typecheck` (serial retry after the build completed) | Exit 0; all workspace checks completed, ending `examples/abyss-framework typecheck: Done`. |
+| `pnpm lint` | Exit 0; `Checked 1962 files`; `Found 611 warnings.` No fixes applied by the gate. |
+| `pnpm test:playtest` | Exit 0; framework movement, camera, axis, zoom, navigation and streaming scenarios passed. This is not physical-device performance evidence. |
+| `pnpm budgets` | Exit 1: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit).` Unrelated index left unchanged. |
+| `yq eval '.' .github/workflows/ci.yml`, same command for `native-platforms.yml` and `performance-regression.yml` | Each exit 0. YAML parsing only; no hosted execution or actionlint claim. |
+| `git diff --check` | Exit 0, no output. |
+
+The executed bounded desktop probe was:
+
+```sh
+node packages/runtime-native/scripts/profile-production.mjs --profile production \
+  --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
+  --prebuilt-artifact "$PWD/packages/runtime-native/build/tn-linux/mystral" \
+  --out artifacts/prd358-final-audit-desktop
+```
+
+Final observed output: `"status": "BLOCKED"`, `"exitCode": 2`; one steady window with
+`durationSeconds: 0` and `sampleCount: 0`. Codes: `TN_PROD_RENDER_SAMPLES_INCOMPLETE`,
+`TN_PROD_STARTUP_SAMPLES_INCOMPLETE`, `TN_PROD_PLAYTEST_FAILED`, `TN_PROD_MARKER_MISSING`,
+`TN_PROD_PERFORMANCE_BUDGET`, `TN_PROD_STARTUP_BUDGET`. Evidence is retained locally at
+`artifacts/prd358-final-audit-desktop/production-evidence.json`, including hashes and dirty-source
+identity. It is not a throughput, readiness or startup pass. Earlier executions exposed a malformed
+generated mailbox declaration (fixed and VM-tested) and unsupported existing `minFps` bounds
+(fixed and tested). An intervening build reported missing playtest peer exports while another
+gate rebuilt distributions; the serial retry got past that build. A concurrent typecheck similarly
+reported TS7016 missing playtest declarations during `pnpm test`'s rebuild; this is recorded as a
+setup collision, not dismissed as a passing check.
+
+Current non-test integration callers supersede the historical line references above:
+
+| Ledger contract | Live caller |
+|---|---|
+| Approved baseline binding and paired comparison | `scripts/performance-regression/run.ts:811` validates the collected baseline before adding the pair and evaluating the manifest metrics. |
+| Reusable prebuilt workload | `packages/runtime-native/scripts/profile-production.mjs:470` invokes the instrumented desktop build or mobile receipt verification. |
+| Hosted native collector | `.github/workflows/ci.yml:363`, `.github/workflows/native-platforms.yml:677`, and `.github/workflows/native-platforms.yml:980` invoke bounded collectors. |
+| Real artifact coverage | `.github/workflows/ci.yml:1065` and `.github/workflows/native-platforms.yml:116` invoke artifact-backed coverage aggregation. |
+| Scheduled hardware dispatch and summary | `.github/workflows/performance-regression.yml:61` selects the runner; `:292` aggregates every expected execution key, including separate Windows/macOS and browser-ladder rows. |
+
+Physical Android/iOS, Windows/macOS, simulator/emulator execution, calibrated browser/Linux
+throughput, and GitHub-hosted workflow execution remain UNVERIFIED from this checkout. YAML
+parsing and structure tests do not claim those platforms ran. Missing promoted evidence remains
+BLOCKED/2; regression FAIL remains 1 and a fully evidenced PASS remains 0.
+
+### PRD-358 desktop mailbox repair — 2026-09-05
+
+The collector now passes the exact `project/.runtime-mailbox` root from
+`runDesktopBridgeScenario()` through `createDesktopDriver()` and `spawnNative()` into
+`TN_PLAYTEST_MAILBOX_ROOT`. It overrides a stale inherited root and leaves the screenshot request
+path unchanged. This is a collector plumbing repair, not a game, baseline, or threshold change.
+The debugging-strategies skill guided the isolated child-environment reproduction.
+
+Observed red: with the implementation still at `e00e8614`, running
+`pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'desktop child receives'`
+exited 1: `Test Files 1 failed (1)`; `Tests 1 failed / 28 skipped (29)`.
+The assertion expected `/fixture/scaffold/.runtime-mailbox` but received
+`/wrong/inherited/root`. After the repair, the full production-profile command without `-t`
+exited 0: `Test Files 1 passed (1)`; `Tests 29 passed (29)`. The test executes the actual driver
+and spawn functions with an observed child-environment stub; it also verifies the screenshot
+request/rename paths and the live mailbox argument wiring.
+
+`pnpm native:build` exited 0, including dependency checks, native physics/UI preparation,
+`tn-linux` CMake configure and native executable linking. The executed probe was:
+
+```sh
+node packages/runtime-native/scripts/profile-production.mjs --profile production \
+  --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
+  --prebuilt-artifact "$PWD/packages/runtime-native/build/tn-linux/mystral" \
+  --out artifacts/prd358-mailbox-desktop
+```
+
+It retained `artifacts/prd358-mailbox-desktop/production-evidence.json` and a startup playtest
+report at `artifacts/prd358-mailbox-desktop/artifacts/c85491d9bc7d657b71f9577cbd77eb35a56134bca445a4272cb94768456d6fec`.
+The probe still exited 2 (`BLOCKED`): the startup report now reports
+`TN_PLAYTEST_CAPABILITY_MISSING` for `browser.network`, not `TN_PLAYTEST_BRIDGE_MISSING`.
+The existing connection path in `packages/playtest/src/runner/bridgeClient.ts:207` only reaches
+this capability validation after successful mailbox connection, `describe`, protocol validation,
+and `ready`. Thus the retained failure demonstrates the repaired handshake; it does not establish
+complete workload readiness or performance. The steady launch did not retain a successful report;
+the aggregate has one zero-duration/zero-sample window. No assertion was removed or weakened to
+accept this evidence. Missing render/startup samples, markers and budget evidence remain BLOCKED.
+
+Reports remain local only. Physical Android/iOS execution, performance calibration, hardware
+promotion and baseline regeneration are not claimed by this repair. The source PRD is untouched.
+
+| Executed gate | Exact result |
+|---|---|
+| `pnpm typecheck` | Exit 0; workspace checks completed, ending `examples/abyss-framework typecheck: Done`. |
+| `pnpm test` | Exit 0; root `Test Files 391 passed / 1 skipped (392)`, `Tests 4306 passed / 4 skipped (4310)`; native `100 passed` files, `723 passed / 34 skipped (757)` tests, plus `29 passed` physics-parity tests. |
+| `pnpm test:playtest` | Exit 0; the repository's real example playtest command completed with its private Xvfb display. This is browser correctness evidence, not physical performance proof. |
+| `pnpm lint` | Exit 0; `Checked 1962 files`; `Found 611 warnings.` No fixes applied. |
+| `pnpm budgets` | Exit 1: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit).` Unrelated retention index unchanged. |
+| `git diff --check` | Exit 0; no output. |
+
+### PRD-358 native diagnostics policy repair — 2026-09-05
+
+The generated native startup and steady scenarios explicitly set `noNetworkErrors: false`
+with `networkErrorsOptOutReason: "Native mailbox transports have no browser network observer;
+console and runtime diagnostics remain required."` The browser scenarios are unchanged and
+still require `browser.network`. Native `noConsoleErrors`, `noRuntimeDiagnostics` and
+`runtimeReady` remain true; runner capability validation and workload budgets are unchanged.
+The debugging-strategies skill guided the browser/native policy split test.
+
+Observed red against `2327df9a`:
+`pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'native scenarios explicitly'`
+exited 1 (`1 failed / 29 skipped (30)`), with native `noNetworkErrors` received `undefined`,
+expected `false`. After the fix, the full production-profile command without `-t` passed 30 tests.
+The test loads both native scenarios through the real playtest schema for desktop/Android/iOS,
+checks the non-empty opt-out reason, preserves console/runtime checks, and verifies that only
+browser scenarios require the network capability. These are scenario tests, not mobile execution.
+
+The first live rerun exited 2 but revealed that the existing collector catch discarded both
+runner exceptions and their console output. The collector now retains them as failed JSON
+reports with status 2, never as successful samples. The focused `-t 'desktop runner exceptions'`
+test first exited 1 with the helper absent; the final full production-profile run exited 0:
+`Test Files 1 passed (1)`; `Tests 31 passed (31)`. No runner or native runtime code was changed.
+
+A retention retry correctly hit `TN_PROD_REDACTION` because child console output contained
+absolute workstation paths. The collector now uses the existing `sanitizeManifest` guard for
+each retained entry and replaces unsafe entries with explicit redaction notices, without relaxing
+the guard. Its privacy assertion was observed red (`1 failed / 30 skipped (31)`, unsafe path
+still present) and then green in the full 31-test production-profile run.
+
+The final live command was:
+
+```sh
+node packages/runtime-native/scripts/profile-production.mjs --profile production \
+  --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
+  --prebuilt-artifact "$PWD/packages/runtime-native/build/tn-linux/mystral" \
+  --out artifacts/prd358-native-diagnostics-safe
+```
+
+The native binary was reused from the successful `pnpm native:build` in the preceding mailbox
+repair; this change does not alter C++. The collector rebuilt its instrumented platformer bundle.
+Earlier executions of the same command used output directories
+`artifacts/prd358-native-diagnostics-desktop` (discarded exceptions) and
+`artifacts/prd358-native-diagnostics-retained` (privacy rejection). All three exited 2.
+
+Final retained manifest: `artifacts/prd358-native-diagnostics-safe/production-evidence.json`.
+Both real launches passed the bridge/capability setup and reached screenshot capture. Both report
+`TN_PROD_NATIVE_SCREENSHOT_UNAVAILABLE`, with console evidence
+`[Mystral] Desktop playtest mailbox configured` and `[info] TN_NATIVE_SMOKE_READY:webgpu`.
+Neither reports the old `browser.network` or missing-bridge failure. Local JSON evidence:
+
+| Launch | Path relative to `artifacts/prd358-native-diagnostics-safe/` |
+|---|---|
+| Steady | `artifacts/e4fb3a06d61a7681e315dd614c0c0458ad09134391373fcb0705fb1cf9f9933a` |
+| Startup | `artifacts/e953d4cb0d3c8be6bb46153f477e9a0df5d048c5c5f2b49be40d2ce672b40c72` |
+
+Final verdict remains `BLOCKED`, exit 2, not valid performance evidence. One failed steady window
+records duration 0 seconds and sample count 0. No screenshot requirement, runtime assertion,
+timing threshold, baseline or promotion policy was weakened. Physical Android/iOS execution is
+UNVERIFIED; scenario-generation tests do not claim those devices ran. Reports stay local only.
+
+| Executed gate | Exact result |
+|---|---|
+| `pnpm typecheck` | Exit 0; all workspace checks completed, ending `examples/abyss-framework typecheck: Done`. |
+| `pnpm test` | Exit 0; root `391 passed / 1 skipped` files and `4306 passed / 4 skipped (4310)` tests; native `100 passed` files and `725 passed / 34 skipped (759)` tests, plus `29 passed` physics-parity tests. The later privacy normalization was additionally verified by the full 31-test production-profile rerun. |
+| `pnpm test:playtest` | Exit 0; repository example playtests passed, ending with `streaming-sliced-attach-and-parallel-load` reporting `pass: true`. Browser correctness only, not native screenshot or physical performance proof. |
+| `pnpm lint` | Exit 0; `Checked 1962 files`; `Found 611 warnings.` No fixes applied. |
+| `pnpm budgets` | Exit 1: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit).` Unrelated index unchanged. |
+| `git diff --check` | Exit 0; no output. |
+
+### PRD-358 actionlint repair — 2026-09-05
+
+The performance summary step no longer calls `cancelled()` from step-level `env`, where GitHub
+Actions does not allow that function. It now derives `TN_PERF_CANCELLED` from the permitted
+`needs.hardware-pairs.result == 'cancelled'` value. The aggregation script still appends a
+required `BLOCKED` row for a cancelled matrix and the summary job remains `if: always()`; no
+collector, matrix row, artifact upload, or fail-closed status rule changed.
+
+Observed red before the repair:
+
+```text
+go run github.com/rhysd/actionlint/cmd/actionlint@latest .github/workflows/performance-regression.yml .github/workflows/ci.yml .github/workflows/native-platforms.yml
+.github/workflows/performance-regression.yml:224:34: calling function "cancelled" is not allowed here. "cancelled" is only available in "jobs.<job_id>.if", "jobs.<job_id>.steps.if".
+exit status 1
+```
+
+The focused structure test was also red before the repair:
+
+```text
+pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts -t 'permitted cancellation source'
+Test Files 1 failed (1)
+Tests 1 failed | 65 skipped (66)
+exit 1
+```
+
+After the minimal expression change, the focused test passed:
+
+```text
+pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts -t 'permitted cancellation source'
+Test Files 1 passed (1)
+Tests 1 passed | 65 skipped (66)
+exit 0
+```
+
+The complete relevant test pair passed:
+
+```text
+pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/performance-regression.spec.ts
+Test Files 2 passed (2)
+Tests 83 passed (83)
+exit 0
+```
+
+Final workflow validation passed with no output and exit 0:
+
+```text
+go run github.com/rhysd/actionlint/cmd/actionlint@latest .github/workflows/performance-regression.yml .github/workflows/ci.yml .github/workflows/native-platforms.yml
+```
+
+`git diff --check` also passed with no output and exit 0. Existing hardware rows remain
+UNVERIFIED/unprovisioned, and no baseline was promoted. The unrelated `pnpm budgets` blocker
+recorded above remains the stale `docs/benchmark/SCREENSHOT-RETENTION.md` index; it was not
+edited.
+
+### PRD-358 hosted native UI renderer follow-up — 2026-09-05
+
+`installNativeProfileEntry` now passes the selected target into the temporary project config
+writer. Desktop profiling changes the temporary project's `ui.renderer` from `web` to `native`
+before the native build; mobile targets preserve `web`, and web collection does not use this
+native entry installer. This fixes the harness configuration rather than changing workflow status
+handling or accepting missing evidence.
+
+The focused regression was red before the change:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'desktop profiling switches'
+Test Files 1 failed (1)
+Tests 1 failed | 31 skipped (32)
+exit 1
+```
+
+The same focused test passed after the change:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'desktop profiling switches'
+Test Files 1 passed (1)
+Tests 1 passed | 31 skipped (32)
+exit 0
+```
+
+The complete native production-profile suite passed:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs
+Test Files 1 passed (1)
+Tests 32 passed (32)
+exit 0
+```
+
+The existing performance-regression and CI structure suites passed:
+
+```text
+pnpm exec vitest run scripts/__tests__/performance-regression.spec.ts scripts/__tests__/ci-structure.spec.ts
+Test Files 2 passed (2)
+Tests 83 passed (83)
+exit 0
+```
+
+Repository lint passed with its existing warnings:
+
+```text
+pnpm lint
+Checked 1962 files in 789ms. No fixes applied.
+Found 611 warnings.
+exit 0
+```
+
+The exact bounded Linux command was attempted against the existing executable
+`packages/runtime-native/build/tn-linux/mystral` and a fresh output directory:
+
+```text
+timeout 45s node packages/runtime-native/scripts/profile-production.mjs --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 --prebuilt-artifact "$PWD/packages/runtime-native/build/tn-linux/mystral" --out artifacts/prd358-hosted-linux-ui-native-followup
+exit 2
+```
+
+Retained local manifest `artifacts/prd358-hosted-linux-ui-native-followup/production-evidence.json`
+reports the following exact result:
+
+```json
+{"status":"BLOCKED","exitCode":2,"codes":["TN_PROD_RENDER_SAMPLES_INCOMPLETE","TN_PROD_STARTUP_SAMPLES_INCOMPLETE","TN_PROD_PLAYTEST_FAILED","TN_PROD_MARKER_MISSING","TN_PROD_PERFORMANCE_BUDGET","TN_PROD_STARTUP_BUDGET"],"runWindows":[{"durationSeconds":0,"sampleCount":0}]}
+```
+
+Both retained launches reached the desktop mailbox and runtime-ready markers and emitted frame
+sample lines. The steady report `production-playtest-desktop-1` carries diagnostic
+`TN_PROD_NATIVE_SCREENSHOT_UNAVAILABLE`; the startup report `production-startup-desktop-1` carries
+`Unexpected device response id 'invalid'.` The host therefore remains unable to render the
+required screenshot/evidence and the collector correctly remains `BLOCKED`, not `PASS`. The two
+raw reports remain local-only under the output directory. No native C++ changed, so the previously
+built Linux executable was reused; no physical Android/iOS execution or baseline promotion is
+claimed.
+
+`git diff --check` passed with no output and exit 0 after the documentation update.
+
+### PRD-358 hosted screenshot transport follow-up — 2026-09-05
+
+The production desktop driver now uses the existing native post-present mailbox protocol. It writes
+the requested output path as raw UTF-8 to `tn-playtest-screenshot-request.txt.tmp`, atomically
+renames it to `tn-playtest-screenshot-request.txt`, and removes the `.txt` request during mailbox
+cleanup. The generated native entry no longer injects the obsolete JSON request path or calls
+`__THREENATIVE_NATIVE__.playtest.receive`/`captureScreenshot`. The native C++ host was not changed.
+
+Focused transport tests were red before the harness change:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'post-present|generated native mailbox'
+Test Files 1 failed (1)
+Tests 3 failed | 29 skipped (32)
+exit 1
+```
+
+After the transport change they passed:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'post-present|generated native mailbox'
+Test Files 1 passed (1)
+Tests 3 passed | 29 skipped (32)
+exit 0
+```
+
+The focused report-retention test was initially red because `safeReport` did not yet exist:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'native report retention'
+TypeError: safeReport is not a function
+Test Files 1 failed (1)
+Tests 1 failed | 32 skipped (33)
+exit 1
+```
+
+The combined focused tests passed after the retention guard was added:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t 'native report retention|post-present|generated native mailbox'
+Test Files 1 passed (1)
+Tests 4 passed | 29 skipped (33)
+exit 0
+```
+
+The full native production-profile suite passed:
+
+```text
+pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts tests/production-profile.test.mjs
+Test Files 1 passed (1)
+Tests 33 passed (33)
+exit 0
+```
+
+The existing performance-regression and CI structure suites passed:
+
+```text
+pnpm exec vitest run scripts/__tests__/performance-regression.spec.ts scripts/__tests__/ci-structure.spec.ts
+Test Files 2 passed (2)
+Tests 83 passed (83)
+exit 0
+```
+
+Repository lint passed with its unchanged warnings:
+
+```text
+pnpm lint
+Checked 1962 files in 836ms. No fixes applied.
+Found 611 warnings.
+exit 0
+```
+
+The first post-present bounded Linux run reached native screenshot handling but could not retain
+its manifest because the native host's `/home/.../localStorage` console line was exposed in a raw
+report. It exited 2 with this exact structured error:
+
+```json
+{"codes":["TN_PROD_REDACTION"],"message":"Absolute workstation path or authorization material at $.rawArtifacts[1].content rejected before retention.","status":"BLOCKED","exitCode":2}
+```
+
+The report-retention fix redacts only unsafe host-detail strings and preserves safe console and
+diagnostic observations. The exact bounded Linux command was then rerun with the existing
+prebuilt executable and a fresh output directory:
+
+```text
+timeout 45s node packages/runtime-native/scripts/profile-production.mjs --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 --prebuilt-artifact "$PWD/packages/runtime-native/build/tn-linux/mystral" --out artifacts/prd358-hosted-linux-screenshot-post-present-3
+exit 1
+```
+
+Retained local manifest:
+`artifacts/prd358-hosted-linux-screenshot-post-present-3/production-evidence.json`.
+Its exact summary is:
+
+```json
+{"status":"FAIL","exitCode":1,"codes":["TN_PROD_PERFORMANCE_BUDGET"],"runWindows":[{"durationSeconds":2.81466845703125,"sampleCount":375}],"sampleCount":375,"p95FrameMs":21.38525390625,"p99FrameMs":47.129638671875,"meanFps":133.23061160657207,"oneSecondFps":[164,99],"artifactCount":4}
+```
+
+The manifest retains four artifacts: steady screenshot/report and startup screenshot/report. Both
+reports have `pass: true`, no diagnostics, bridge-ready and `TN_NATIVE_SMOKE_READY:webgpu` console
+markers, and frame samples (75 steady sample lines, 78 startup sample lines). The host therefore
+gets past the old screenshot transport failure; this run is a real performance `FAIL` because its
+p99/one-second result breaches the declared budget, not a screenshot or missing-evidence `PASS`.
+Raw evidence remains local only. No physical Android/iOS execution or baseline promotion is
+claimed.
+
+`git diff --check` passed with no output and exit 0 after this update.
+
+### PRD-358 prebuilt artifact path repair — 2026-09-06
+
+The production collector changes its working directory to the generated scaffold before it
+launches a supplied native host. Relative `--prebuilt-artifact` values therefore resolved against
+the temporary project and produced `ENOENT` on hosted macOS and Windows jobs. `normalizeOptions`
+now resolves that input at the CLI boundary, while the existing receipt and binary hash checks stay
+in place.
+
+The focused regression was red before the repair:
+
+```text
+pnpm exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t "accepted profile controls"
+Test Files 1 failed (1)
+Tests 1 failed | 32 skipped (33)
+Expected: "/home/.../build/tn-macos/mystral"
+Received: "build/tn-macos/mystral"
+exit 1
+```
+
+The same focused command passed after the repair:
+
+```text
+pnpm exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t "accepted profile controls"
+Test Files 1 passed (1)
+Tests 1 passed | 32 skipped (33)
+exit 0
+```
+
+The complete production-profile suite then passed with 33 tests. The full root test retry passed
+with 390 files passed and 2 skipped, and 4,304 tests passed and 7 skipped. The lane remains clean
+at `91cfbc34`; the hosted CI run for that commit still timed out the Linux collector at its
+declared 45-second bound and retained its collector status artifact. The native-platform run was
+still completing its Windows and iOS jobs when this record was written; its completed macOS job
+was from the pre-repair execution window. No physical performance baseline or platform claim is
+promoted by this repair.
+
+The same command with a relative prebuilt path was also executed locally with `DISPLAY` unset;
+the collector completed through the post-present mailbox and retained startup and steady reports:
+
+```text
+timeout 60s node packages/runtime-native/scripts/profile-production.mjs --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 --prebuilt-artifact packages/runtime-native/build/tn-linux/mystral --out artifacts/prd358-relative-path-repair
+{"status":"FAIL","exitCode":1,"codes":["TN_PROD_PERFORMANCE_BUDGET"],"runWindows":[{"durationSeconds":7.403327880859375,"sampleCount":315}],"startupMs":3735,"p95FrameMs":81.957763671875,"p99FrameMs":152.314697265625,"meanFps":42.5484329573466,"artifactCount":4}
+```
+
+The result is an honest production budget failure with complete reports, rather than a path or
+missing-evidence failure. This workstation result is diagnostic only; it does not promote a
+baseline or certify a hosted or physical lane.
+
+### PRD-358 native cleanup repair — 2026-09-06
+
+The hosted macOS collector reached the corrected absolute artifact path, but a runner failure
+after the child exited caused cleanup to call `process.kill` on a gone process group. The resulting
+`ESRCH` escaped before `desktopFailureRun` could retain the failed report. Cleanup now treats only
+that already-exited condition as complete and still propagates other signals.
+
+The hosted macOS run `34003845012` exposed the failure:
+
+```text
+{"codes":["TN_PROD_EVIDENCE_INVALID"],"message":"kill ESRCH","status":"BLOCKED","exitCode":2}
+```
+
+The focused regression was red before the repair:
+
+```text
+pnpm exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t "desktop cleanup tolerates"
+Test Files 1 failed (1)
+Tests 1 failed | 33 skipped (34)
+exit 1
+```
+
+It passed after the repair:
+
+```text
+pnpm exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t "desktop cleanup tolerates"
+Test Files 1 passed (1)
+Tests 1 passed | 33 skipped (34)
+exit 0
+```
+
+The complete production-profile suite passed with 34 tests. The same hosted run retained a
+Windows production manifest with `TN_PROD_RENDER_SAMPLES_INCOMPLETE`,
+`TN_PROD_STARTUP_SAMPLES_INCOMPLETE`, `TN_PROD_PLAYTEST_FAILED`, and zero samples; iOS remained
+an advisory simulator row without a retained production manifest. The native coverage summary
+reported Windows, macOS and iOS simulator as `BLOCKED`, with the physical rows `UNVERIFIED` and
+the optional parity/emulator rows `SKIPPED`. These are evidence dispositions, not platform
+performance claims.
+
+### PRD-358 hosted software evaluation repair — 2026-09-06
+
+GitHub-hosted native collectors run without a calibrated physical GPU. They now pass
+`--hosted-software`, which records `execution.performanceEvaluation: "advisory"`. Lifecycle,
+playtest, startup collection and evidence integrity remain blocking checks; frame, draw-call,
+triangle, memory and startup budget observations remain in the manifest and move to
+`advisoryCodes` when they cannot be treated as a physical performance claim. The default path
+and physical targets remain strict, and the hosted mode cannot be selected for a physical target
+or a fixture control.
+
+The focused tests passed:
+
+```text
+pnpm exec vitest run --config vitest.config.ts tests/production-profile.test.mjs -t "hosted software|accepted profile controls|production evidence uses nearest-rank"
+Test Files 1 passed (1)
+Tests 3 passed | 32 skipped (35)
+exit 0
+
+pnpm exec vitest run --config vitest.config.ts scripts/__tests__/ci-structure.spec.ts -t "bounded native desktop and simulator collectors"
+Test Files 1 passed (1)
+Tests 1 passed | 65 skipped (66)
+exit 0
+```
+
+The built Linux host completed the same bounded collector locally with `DISPLAY` unset:
+
+```text
+timeout 90s node packages/runtime-native/scripts/profile-production.mjs --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 --hosted-software --prebuilt-artifact packages/runtime-native/build/tn-linux/mystral --out artifacts/prd358-hosted-software-repro-1788661250
+status PASS
+exitCode 0
+codes []
+advisoryCodes ["TN_PROD_PERFORMANCE_BUDGET"]
+performanceEvaluation "advisory"
+meanFps 27.894704622219916
+p95FrameMs 117.862060546875
+p99FrameMs 210.113525390625
+startupMs 4602
+runWindows [{"durationSeconds":9.858501953125,"sampleCount":275}]
+```
+
+This proves the hosted smoke contract and complete artifact retention. It does not promote a
+baseline or certify physical desktop, Android or iOS performance.
+
+### PRD-358 hosted software render-tier repair — 2026-09-06
+
+The hosted Windows collector reached the game, but Microsoft Basic software D3D12 could not
+compile the platformer's high-quality SSGI/SSR chain. FXC returned `E_FAIL`, the native host
+reported invalid command buffers, and the collector retained neither a screenshot nor the
+startup/steady markers. The profile now writes an executable `__THREENATIVE_PROFILE__` marker
+before importing the game. The platformer generated source uses the existing `low` quality preset
+only when that marker says `hostedSoftware: true` and no explicit tier override is present;
+ordinary desktop runs remain `high`, and `TN_QUALITY_TIER` reports the source.
+
+The regression test was red before the marker existed:
+
+```text
+packages/runtime-native/tests/production-profile.test.mjs
+  generated native profile exposes hosted software only to the profile entry
+  ENOENT: src/profile-native-profile.ts
+```
+
+It passed after the repair. The focused production-profile suite passed 42/42, the platformer
+template and quality checks passed 26/26, and the scaffold hash check passed 1/1 after updating
+the expected platformer tree hash.
+
+The local production collector then completed the hosted profile with a built native host:
+
+```text
+timeout 150s node packages/runtime-native/scripts/profile-production.mjs --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 --hosted-software --prebuilt-artifact packages/runtime-native/build/tn-linux/mystral --out artifacts/prd358-hosted-software-profile-marker
+status PASS
+exitCode 0
+codes []
+advisoryCodes ["TN_PROD_PERFORMANCE_BUDGET"]
+markers run-start, first-workload-frame, clean-end
+startupMs 3487
+p95FrameMs 66.39
+p99FrameMs 94.29
+meanFps 50.14
+sampleCount 250
+TN_QUALITY_TIER low mobile=false source=hosted-software
+```
+
+The run retained one screenshot and complete startup/steady evidence with the local NVIDIA RTX
+2080 adapter. This proves profile propagation, the low smoke path, screenshot/mailbox transport,
+and fail-closed evidence collection; the advisory timing budget is not a physical performance
+baseline. Hosted run `34061495196` confirmed the tier change on Microsoft Basic D3D12
+(`TN_QUALITY_TIER low`) but still failed its 1920×1080 screenshot request: buffer mapping timed
+out and the host exited with `SIGSEGV`, leaving only `run-start`. The second red test showed that
+the hosted desktop profile's unrequested 1920×1080 default was the remaining input; it now selects
+the proven 1280×720 smoke surface, while an explicit `--render-size 1920x1080` remains honored.
+The next hosted Windows rerun is required before this repair can be called cross-platform CI
+evidence.
+
+### PRD-358 hosted screenshot callback lifetime repair — 2026-09-06
+
+The hosted Windows 1280x720 rerun reached the screenshot request but timed out while mapping the
+readback buffer, then exited with `SIGSEGV`. The native screenshot path passed stack-local
+`BufferMapData` to an asynchronous Dawn callback; when the timeout returned, a late callback could
+write through that expired pointer. The fix gives each callback a heap-owned `shared_ptr` holder,
+uses Dawn's `AllowSpontaneous` callback mode, waits against a five-second wall-clock deadline,
+and unmaps the buffer on timeout. This follows the already-shipped async `GPUBuffer.mapAsync`
+ownership pattern in `bindings_resources.cpp`.
+
+Red/green evidence:
+
+```text
+before fix: production-profile.test.mjs 42 passed, 1 failed
+after fix:  production-profile.test.mjs 43 passed
+```
+
+The rebuilt Linux Dawn host and focused native gate both passed:
+
+```text
+cmake --build packages/runtime-native/build/tn-linux --target mystral -j2       PASS
+ctest --test-dir packages/runtime-native/build/tn-linux -R screenshot-capture-gate \
+  --output-on-failure                                                        PASS (1/1)
+```
+
+The local hosted-software collector then completed at the same 1280x720 smoke size:
+
+```text
+pnpm --filter @threenative/runtime-native profile:production -- --target desktop \
+  --render-size 1280x720 --cold-starts 1 --warmup 1 --repetitions 1 --hosted-software \
+  --prebuilt-artifact build/tn-linux/mystral --out /tmp/prd358-local-screenshot-fix-2
+status PASS; exitCode 0; markers run-start, first-workload-frame, clean-end
+startupMs 3528; sampleCount 275; codes []
+```
+
+This proves the callback lifetime fix on the local Dawn host and retains startup, steady-frame,
+and screenshot evidence. Hosted run
+[`34064759191`](https://github.com/ThreeNativeHQ/threenative/actions/runs/34064759191) then
+passed the Windows and macOS desktop jobs, the iOS simulator/no-Xcode consumer job, the
+scaffolded Linux starter job, and the final native collector-evidence coverage job. The retained
+`native-desktop-Windows` artifact records:
+
+```text
+collector-status: PASS; collectorExitCode: 0; provenance: hosted-software
+production markers: run-start, first-workload-frame, clean-end
+native report: pass true; rendered frames 300; screenshot 1280x720
+production evidence: status PASS; exitCode 0; startupMs 289; sampleCount 270
+```
+
+The hosted production evidence carries the expected advisory
+`TN_PROD_PERFORMANCE_BUDGET` code because hosted software rendering is not a physical
+performance baseline; lifecycle, screenshot, and artifact-retention checks passed. This closes
+the cross-platform CI evidence gap for the callback-lifetime repair without claiming physical
+Windows performance.
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,

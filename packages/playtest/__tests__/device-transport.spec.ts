@@ -8,6 +8,7 @@ import {
   DeviceMailboxTransport,
   type IDeviceResponseObservation,
   type IDeviceMailbox,
+  type IDevicePlaytestTransport,
   validateDeviceEndpoint,
 } from "../src/runner/deviceTransport.js";
 
@@ -123,11 +124,29 @@ test("mailbox operations honor the configured runner timeout", async () => {
   }
 });
 
+test("mailbox operations honor a longer per-call timeout for slow advances", async () => {
+  const paths = androidMailboxPaths("com.example.game", "/slow-device-files");
+  const mailbox = new FakeMailbox(paths, 30);
+  const transport = new DeviceMailboxTransport(mailbox, paths, 20);
+  const timedTransport: IDevicePlaytestTransport = transport;
+  await transport.start();
+  try {
+    await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));
+    await expect(transport.waitForBridge(100)).resolves.toBe(true);
+    await expect(timedTransport.call("advance", 60, 50)).resolves.toEqual({ ok: true });
+  } finally {
+    await transport.close();
+  }
+});
+
 class FakeMailbox implements IDeviceMailbox {
   readonly files = new Map<string, string>();
   readonly requests: unknown[] = [];
 
-  constructor(private readonly paths: ReturnType<typeof androidMailboxPaths>) {}
+  constructor(
+    private readonly paths: ReturnType<typeof androidMailboxPaths>,
+    private readonly responseDelayMs = 0,
+  ) {}
 
   async read(path: string): Promise<string | undefined> {
     return this.files.get(path);
@@ -142,6 +161,8 @@ class FakeMailbox implements IDeviceMailbox {
     if (path !== this.paths.request) return;
     const request = JSON.parse(contents) as { argument?: unknown; id: string };
     this.requests.push(request.argument);
-    this.files.set(this.paths.response, JSON.stringify({ id: request.id, result: { ok: true } }));
+    setTimeout(() => {
+      this.files.set(this.paths.response, JSON.stringify({ id: request.id, result: { ok: true } }));
+    }, this.responseDelayMs);
   }
 }
