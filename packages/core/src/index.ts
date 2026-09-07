@@ -52,14 +52,11 @@ export type {
  * @override size normalises the instance to real-world metres with skin-aware measurement
  * @example import { SkeletalMesh3D } from "@threenative/core";
  * const character = new SkeletalMesh3D({
- *   source: gltf.scene,
- *   clips: gltf.animations,
- *   requiredClips: ["idle", "walk"],
- *   size: { metres: 1.8, axis: "height" },
- *   strideRoot: body,
+ *   source: gltf.scene, clips: gltf.animations, requiredClips: ["idle", "walk"],
+ *   size: { metres: 1.8, axis: "height" }, strideRoot: body,
  * });
- * body.add(character.root);
- * character.play("idle");
+ * body.add(character.root); character.play("idle");
+ * function update(dt: number): void { character.update(dt); }
  */
 export { SkeletalMesh3D } from "./skeletal-mesh.js";
 /**

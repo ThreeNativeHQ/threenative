@@ -1246,14 +1246,11 @@ export class SkeletalMesh3D { … }
 ```ts
 import { SkeletalMesh3D } from "@threenative/core";
 const character = new SkeletalMesh3D({
-  source: gltf.scene,
-  clips: gltf.animations,
-  requiredClips: ["idle", "walk"],
-  size: { metres: 1.8, axis: "height" },
-  strideRoot: body,
+  source: gltf.scene, clips: gltf.animations, requiredClips: ["idle", "walk"],
+  size: { metres: 1.8, axis: "height" }, strideRoot: body,
 });
-body.add(character.root);
-character.play("idle");
+body.add(character.root); character.play("idle");
+function update(dt: number): void { character.update(dt); }
 ```
 
 ### `skeletonBones`

@@ -10,12 +10,12 @@ export interface ISkeletalMesh3DOptions {
   /** Available animation clips for this character. */
   readonly clips?: readonly AnimationClip[];
   /**
-   * Clips required by name, array, or dictionary.
+   * Clips required by name, array, or string-valued dictionary.
    *
    * If any requested clip is missing from `clips` or binds 0 tracks to the rig,
    * preparation throws an Error at load time.
    */
-  readonly requiredClips?: readonly string[] | Readonly<Record<string, string>> | object;
+  readonly requiredClips?: readonly string[] | Readonly<Record<string, string>>;
   /**
    * Normalise the instance to real-world metres via `normaliseToMetres`.
    */
@@ -63,11 +63,7 @@ export class SkeletalMesh3D {
 
     const availableClips = options.clips ?? [];
     if (options.requiredClips !== undefined) {
-      const required: string[] = Array.isArray(options.requiredClips)
-        ? options.requiredClips
-        : Object.values(options.requiredClips).filter(
-            (value): value is string => typeof value === "string",
-          );
+      const required = requiredClipNames(options.requiredClips);
       const clipMap = new Map<string, AnimationClip>(
         availableClips.map((clip) => [clip.name, clip]),
       );
@@ -126,4 +122,21 @@ export class SkeletalMesh3D {
  */
 export function prepareSkeletalMesh(options: ISkeletalMesh3DOptions): SkeletalMesh3D {
   return new SkeletalMesh3D(options);
+}
+
+function requiredClipNames(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((clipName, index) => requiredClipName(clipName, String(index)));
+  }
+  if (value === null || typeof value !== "object") {
+    throw new Error("SkeletalMesh3D: requiredClips must be an array or string-valued dictionary.");
+  }
+  return Object.entries(value).map(([key, clipName]) => requiredClipName(clipName, key));
+}
+
+function requiredClipName(value: unknown, key: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`SkeletalMesh3D: requiredClips['${key}'] must be a non-empty string.`);
+  }
+  return value;
 }

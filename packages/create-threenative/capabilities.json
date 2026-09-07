@@ -1518,7 +1518,7 @@
         "use strideRoot to name the body moved by game code when the rig is parented under it",
         "requiredClips fails closed at load time if any requested clip is missing or binds 0 tracks"
       ],
-      "example": "import { SkeletalMesh3D } from \"@threenative/core\";\nconst character = new SkeletalMesh3D({\n  source: gltf.scene,\n  clips: gltf.animations,\n  requiredClips: [\"idle\", \"walk\"],\n  size: { metres: 1.8, axis: \"height\" },\n  strideRoot: body,\n});\nbody.add(character.root);\ncharacter.play(\"idle\");",
+      "example": "import { SkeletalMesh3D } from \"@threenative/core\";\nconst character = new SkeletalMesh3D({\n  source: gltf.scene, clips: gltf.animations, requiredClips: [\"idle\", \"walk\"],\n  size: { metres: 1.8, axis: \"height\" }, strideRoot: body,\n});\nbody.add(character.root); character.play(\"idle\");\nfunction update(dt: number): void { character.update(dt); }",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [

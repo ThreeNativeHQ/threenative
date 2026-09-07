@@ -579,6 +579,17 @@ describe("SkeletalMesh3D shared character preparation", () => {
       });
     }).toThrow(/has no tracks/);
   });
+
+  it("fails closed when required clip map values are malformed", () => {
+    const fixture = createMultiPrimitiveRigFixture();
+
+    expect(() => {
+      new SkeletalMesh3D({
+        source: fixture.root,
+        requiredClips: { idle: undefined } as unknown as Readonly<Record<string, string>>,
+      });
+    }).toThrow(/requiredClips/);
+  });
 });
 
 /**
