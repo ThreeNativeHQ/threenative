@@ -1,6 +1,6 @@
 # PRD-361 — Shared Character Setup Verification Record
 
-**Date:** 2026-09-06  
+**Date:** 2026-09-06; verification refresh **2026-09-07**
 **PRD:** PRD-361 — Two games share correct character setup  
 **Parent:** PRD-354 — An imported rig instances and poses correctly, once  
 
@@ -20,9 +20,9 @@ Replaced private repeated plumbing in two independent live consumers:
 
 | Consumer | File | Line Anchor | Replaced Plumbing |
 |---|---|---|---|
-| Wildwood Animal | `sandbox/wildwood/src/entities/animals/Animal.ts` | `:144-150` | Removed inline `cloneSkeleton`, `normaliseToMetres`, manual `AnimationPlayer` |
-| HQ Worker | `sandbox/threenative-hq/src/office/Worker.ts` | `:67-73` | Removed inline `cloneSkinned`, `normaliseToMetres`, manual `AnimationPlayer` |
-| HQ Visitor | `sandbox/threenative-hq/src/office/Visitor.ts` | `:64-70` | Removed inline `cloneSkinned`, `normaliseToMetres`, manual `AnimationPlayer` |
+| Wildwood Animal | `sandbox/wildwood/src/entities/animals/Animal.ts` | `:146-154` | Removed inline `cloneSkeleton`, `normaliseToMetres`, manual `AnimationPlayer` |
+| HQ Worker | `sandbox/threenative-hq/src/office/Worker.ts` | `:68-74` | Removed inline `cloneSkinned`, `normaliseToMetres`, manual `AnimationPlayer` |
+| HQ Visitor | `sandbox/threenative-hq/src/office/Visitor.ts` | `:74-80` | Removed inline `cloneSkinned`, `normaliseToMetres`, manual `AnimationPlayer` |
 
 ## 3. Red / Green Evidence
 
@@ -81,3 +81,63 @@ character.play("idle");
 - `touch controls LOC: 1385 across 8 authored copies`
 - `cloth feature LOC: framework 46, hand-written 761`
 - Net framework growth within limits; shared preparation eliminates duplicated setup across consumers.
+
+## 7. Consumer browser proofs — 2026-09-07
+
+The sandbox worktree was installed from the staged `@threenative/core` and `@threenative/playtest`
+tarballs. The ignored FAB output packs were mounted temporarily for the browser run and are not
+part of the consumer commit. Every browser invocation used `tools/capture-lock.sh`,
+`--browser-recipe webgpu`, and `--headed`.
+
+Wildwood passed `pnpm typecheck`, `pnpm test:render` (15 tests), `pnpm test:audio` (191 checks),
+and `pnpm build`. These five committed scenarios each exited 0 against the built preview:
+
+```text
+playtests/startup.playtest.json   pass=true  ready=13122.5 ms
+playtests/survives.playtest.json  pass=true  ready=13261.5 ms
+playtests/walk.playtest.json      pass=true  distance=30.75 m, minimum=15 m
+playtests/discover.playtest.json  pass=true
+playtests/wade-out.playtest.json  pass=true  path=35.76 m, minimum=16 m
+```
+
+The browser animal observation at
+`sandbox/wildwood/artifacts/animals/browser-observation.json` is version 2 and ready, with six
+subjects, positive movement samples, positive head-minus-pelvis forward means, and an NVIDIA
+Turing adapter. The recorded displacements were fox 40.12 m, stag 22.86 m, doe 31.80 m, wolf
+89.68 m, pig 39.73 m, and crow 11.49 m. The artifact retains one generic 404 console diagnostic
+from the debug page; the animal validator completed successfully.
+
+HQ passed `pnpm typecheck`, `pnpm test:bridge`, and `pnpm build`. These committed scenarios each
+exited 0 against the built preview with the fixture bridge:
+
+```text
+playtests/office.playtest.json           pass=true  worker distance=6.43 m
+playtests/visitor.playtest.json          pass=true  visitor distance=30.11 m
+playtests/office-animation.playtest.json pass=true  required clips advanced
+playtests/office-poses.playtest.json     pass=true  sit/stand transitions and clips advanced
+```
+
+The live office lane was skipped because no bridge was listening on `127.0.0.1:7373`; it remains
+unverified by design. The fixture lane is the deterministic proof of the refactored Worker and
+Visitor setup.
+
+## 8. Runner timeout regression — 2026-09-07
+
+The consumer proofs exposed that the browser runner ignored the configured operation timeout when
+it connected the bridge. The red targeted test failed with:
+
+```text
+TN_PLAYTEST_OPERATION_TIMEOUT: Bridge operation 'describe' exceeded 5000ms.
+```
+
+`openPageAndConnectBridge` now forwards `config.timeoutMs` to `connectPlaytestBridge`. The green
+targeted run was:
+
+```text
+pnpm exec vitest run packages/playtest/__tests__/runner.spec.ts
+Test Files  1 passed (1)
+Tests  67 passed (67)
+```
+
+The package gates also passed sequentially: `@threenative/playtest` typecheck, build, orphan
+cleanup, and strict publint.

@@ -212,7 +212,7 @@ export async function openPageAndConnectBridge(
       // A forced boot-failure scenario deliberately stops before the runtime bridge can install;
       // the browser DOM and screenshot assertions still run against the rendered failure surface.
       if (scenario.bootFailure !== undefined) return undefined;
-      return await connectPlaytestBridge(page, scenario);
+      return await connectPlaytestBridge(page, scenario, config.timeoutMs);
     } catch (error) {
       if (error instanceof PlaytestBridgeError || !isPageNavigatedRace(error)) throw error;
       lastError = error instanceof Error ? error : new Error(String(error));
