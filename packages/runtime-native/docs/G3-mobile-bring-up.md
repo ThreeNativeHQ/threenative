@@ -39,7 +39,7 @@ These commands used the installed NDK and pinned GN on PATH. They do not fetch m
 source trees; automatic fresh-checkout reconstruction remains open. Twenty helper tests
 passed, including missing receipts, changed archives, source pins and invalid tools.
 Logs: `helper-real-build.log`, `helper-stage-link.log`, and `helper-download-entry.log`
-under the same artifact directory. Shipping Android/iOS Canvas2D flags remain unchanged. No physical phone
+under the same artifact directory. Shipping Android/iOS Canvas2D flags remain unchanged. The shared `90-document-window-stubs` row is explicitly excluded from Android and Android-hardware parity until the Canvas2D flag is enabled; its Skia-backed ellipse, gradient, stroke and upload assertions would otherwise execute against the intentional no-Skia stub. No physical phone
 was connected, no APK was installed, and the prebuilt V8 library's separate 16 KB-page
 limitation is not resolved by aligning this runtime library.
 

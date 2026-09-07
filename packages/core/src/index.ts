@@ -36,6 +36,31 @@ export type {
   IStrideReport,
 } from "./animation.js";
 /**
+ * Shared preparation for an imported rigged character.
+ *
+ * Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement,
+ * validates requested clips against the file and rig at load time, and sets up AnimationPlayer
+ * with honest stride-root accounting.
+ * @situation put an animated character in the scene
+ * @situation my imported character renders deformed
+ * @situation instance an imported rigged character
+ * @situation validate animation clips on a character rig at load time
+ * @situation prepare a skinned character with safe skeleton cloning and stride sync
+ * @constraint use strideRoot to name the body moved by game code when the rig is parented under it
+ * @constraint requiredClips fails closed at load time if any requested clip is missing or binds 0 tracks
+ * @override strideSync controls whether locomotion playback rate matches ground covered
+ * @override size normalises the instance to real-world metres with skin-aware measurement
+ * @example import { SkeletalMesh3D } from "@threenative/core";
+ * const character = new SkeletalMesh3D({
+ *   source: gltf.scene, clips: gltf.animations, requiredClips: ["idle", "walk"],
+ *   size: { metres: 1.8, axis: "height" }, strideRoot: body,
+ * });
+ * body.add(character.root); character.play("idle");
+ * function update(dt: number): void { character.update(dt); }
+ */
+export { SkeletalMesh3D } from "./skeletal-mesh.js";
+export type { ISkeletalMesh3DOptions } from "./skeletal-mesh.js";
+/**
  * Face a game-owned object toward a perspective or orthographic camera.
  * @situation keep a world-space marker or nameplate facing the camera
  * @situation billboard a tree, label, or effect under a rotated parent

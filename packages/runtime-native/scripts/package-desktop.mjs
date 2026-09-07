@@ -72,6 +72,7 @@ export function packageDesktop(options) {
       options.assets,
       staging,
       options.config === undefined ? undefined : readConfig(options.config),
+      process.env.THREENATIVE_RUNTIME_SOURCE ?? runtimeRoot,
     );
     // The UI bundle sits beside the executable rather than inside it. Desktop compiles to one
     // file, but the overlay's web view reads its page from a real path — that is what gives it a

@@ -276,26 +276,33 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  // desktopHostArgs was briefly exported and then made module-private again after review:
-  // a one-line getter over a config field does not belong in the agent-facing manifest, and
-  // the driver-construction seam tests the wiring better. Nine trees return to their earlier
-  // values; sailing alone moves, for main's ocean-clock fix.
-  // Recomputed 2026-09-06 after merging origin/main into networking-359: main's adaptive
-  // quality and desktop-window authoring text now sits alongside PRD-359's optional transport
-  // contract, so every scaffold tree moves. Values come from the committed merge, not a dirty tree.
-  "action-rpg": "8bc1d037248cefcceba62080c0537be4b066db88b7c2e8ccce0cf4b0f316ebbf",
-  defense: "cb485e171ed1388d6ebd8e2f7016bf487fe576667bfc941473a92eb93c6b8abb",
+  // Recomputed 2026-09-05 from clean committed HEAD eb1149dd. The Three.js patch landed with
+  // 18 committed agent-file skill changes in b7336980 and remains in eb1149dd, so every scaffold
+  // hash includes both the patch and those reviewed skill bytes. Values come from the isolated
+  // HEAD fixture, not this shared checkout's working tree.
+  // Recomputed 2026-09-05 for the desktop window maximized option: every template's resolved
+  // config now carries `window.maximized`, so all ten scaffold trees move by that source byte.
+  // Recomputed 2026-09-05 for the generated pointer-capture and desktop-mode authoring contract
+  // in every template's AGENTS.md/CLAUDE.md pair; values are from the current Received block.
+  // Recomputed 2026-09-06 for PRD-361: SkeletalMesh3D in capability manifest and action-rpg character setup.
+  // Recomputed 2026-09-07 after SkeletalMesh3D became the AnimationPlayer returned by setup.
+  // Recomputed 2026-09-07 after merging origin/main's networking transport with the PRD-361/362
+  // delivery; values are from the current merged scaffold source.
+  // Recomputed 2026-09-07 after merging that source with this lane's audio manifest and
+  // scaffold-doc additions; values are from this isolated merge worktree's Received block.
+  "action-rpg": "a0328bbede74cc6be1b4125a0388ac16ada6ac850cd010fe92a64bdfea9a4af0",
+  defense: "06999866ead0825d945f8477b55ad0c3575032b617babc802b5eb5da3f49b3f0",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "febb28688902d5b9bc7265b998253d6cd76f6cdece6679d33162badc1acc1957",
-  platformer: "e4e63afe0ed6ec40ac188842fd5dbb1dd1910fc97472baff244a4a2379e1b1d0",
-  runner: "c9ab55fe03e46ef53ebd0b12f4d156748907184e3b6357c6dc0aaa90e0aa59e7",
-  puzzle: "9f6c31679e0abcd0030b62f6a99786254939c79a8337d965fd08295d4b57aaca",
-  racing: "907690b9a016704b84da910fb99290d3398a4518105672be3a209ae227d12f5a",
-  shooter: "b90b99547060bfd0034b91ca20a972322731cedc82f34a97c7ccd3afffff6a4e",
+  minimal: "47df0aac66094e60853afef31b47135eb1b75aaddcaa841fc04915066a6bcccd",
+  platformer: "a8ae068202097090fae835faa4f7b3b197ff434100aeb897b6a2443ae7736e43",
+  runner: "ac679093c0398720269d921a0fae1f2dd07b691a85cd571610a34361b5a1a628",
+  puzzle: "b9e6df3a676d1cd0de161110cdba91b6cc22ad57d14821156257359317e6badc",
+  racing: "b5970f740751d7903bd26b071d6599c7da2477c5f0ecf06d3ddbfd800077d571",
+  shooter: "15af198fdf8e63043ab4fb3576608e901ad22caaaa2244695a8fb44ff399f8d8",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "9d3762a78cd568ffc565e672222456ad471c3e6b84b2cb03c71a273a503885e9",
+  starter: "249574c6f783f0b1427060ba87134b399fe2732c83babf01aed91b2433d9a7bc",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -316,24 +323,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  // Recomputed 2026-09-07 again on the networking-359 merge: main's ocean-clock fix and this
-  // branch's published capability metadata both land in the sailing tree.
   // Recomputed 2026-09-07 for sailing's fixed-step ocean clock: the scene now advances
   // `SpectralOcean` before its registered compute passes run, which makes its existing moving-water
   // playtest prove a time-varying field.
-  // Recomputed 2026-09-06: the sailing hull rides the swell from a scene-frame visual update
-  // instead of from gameplay `update`, so the ocean no longer moves under a frozen boat once
-  // the course is won or the wind runs out. Only the sailing tree moves.
-  // Recomputed again the same day: sailing gains the post-terminal float scenario on web and
-  // the native float scenario, and its `test:native` script runs the whole native-playtests
-  // glob instead of naming the smoke scenario alone.
-  // Recomputed 2026-09-06 on the rebase onto origin/main de93a0d9, which already carried the
-  // ocean-clock and sampled-waterline work through #129. Measured from the rebased tree; the
-  // two earlier values on this branch are pre-rebase and only this one is authoritative.
-  // Recomputed 2026-09-07 on the merge with origin/main 6e1ce0c2 (#125 networking). The
-  // previous value was measured before that merge; every other template hash in this table
-  // was unchanged by it, which is what says the merge touched only the sailing tree.
-  sailing: "16803d24a7ca76fbc14d0b57841992bbd70d5d70cbd3939fa48f1ddea971c389",
+  // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
+  // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
+  sailing: "b53f9aee792928b05dd8d4823c32ade949c1886725b16fbdab78da7414610339",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

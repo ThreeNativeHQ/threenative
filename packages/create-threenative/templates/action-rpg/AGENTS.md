@@ -64,7 +64,7 @@ Leave `assets` absent: the cook selects target-decodable passes, with `models.sh
 
 Relative look capture: a binding with `pointerRelative: true` captures the canvas on click by default; set `captureOnClick: false` and call `ctx.input.captureMouse()` from your own gesture to opt out. Desktop mode precedence is CLI (`--windowed`, `--maximized`, `--fullscreen`) over `display.fullscreen` over `window.maximized`; with both false, `window.width`/`height` size the normal window.
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable; generated conventions call `GroundSnap` for floor contact, `normaliseToMetres` for authored model scale, and `attachToBone` for held props.
-Register testable entities with `ctx.entities`; `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity.
+Register testable entities with `ctx.entities`; `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, instance with `SkeletalMesh3D` to clone safely and validate clips, then call `character.update(dt)` from the owning scene's `update(dt)`.
 `ctx.goto(name)` rebuilds without resetting game state; from a frame function `goto` and then
 `return`; `ctx.state.set({ /* copy this game's initial-state shape */ })` is a partial patch.
 `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's state. Seeded
