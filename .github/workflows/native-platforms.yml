@@ -592,6 +592,7 @@ jobs:
           name: native-android-emulator-parity
           path: |
             packages/runtime-native/artifacts/conformance/
+            packages/runtime-native/artifacts/android/multitouch/
             packages/runtime-native/artifacts/performance-contract/
           if-no-files-found: error
 
