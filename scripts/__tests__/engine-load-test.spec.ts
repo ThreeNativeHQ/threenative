@@ -138,6 +138,9 @@ describe("engine load test workload", () => {
       "const value = { promise: (0, import(path)) };",
       "const value = { promise: 0 * import(path) };",
       "const value = { promise: 0 ** import(path) };",
+      "const value = { promise: { ...import(path) } };",
+      "const value = { promise: [...import(path)] };",
+      "const value = { promise: f(...import(path)) };",
       "import(`./${name}.js`);",
       "import(`./static.js` + suffix);",
     ]) {
@@ -146,6 +149,13 @@ describe("engine load test workload", () => {
       );
     }
     expect(extractModuleSpecifiers("const obj = { import(value) { return value; } };")).toEqual([]);
+    for (const [source, specifier] of [
+      ['const value = { ...import("./object.js") };', "./object.js"],
+      ['const value = [...import("./array.js")];', "./array.js"],
+      ['consume(...import("./call.js"));', "./call.js"],
+    ] as const) {
+      expect(extractModuleSpecifiers(source)).toEqual([specifier]);
+    }
     for (const source of [
       "const obj = { *import(value) { return value; } };",
       "const obj = { async *import(value) { return value; } };",

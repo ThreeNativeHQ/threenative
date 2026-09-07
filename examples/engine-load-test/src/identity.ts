@@ -1306,6 +1306,7 @@ function stripInlineSourceMapMetadata(source: string): string {
 type TModuleSourceToken =
   | { kind: "identifier"; propertyAccess: boolean; value: string }
   | { kind: "literal" }
+  | { kind: "spread" }
   | { kind: "punctuation"; code: number };
 
 type TModuleStatement = "import" | "export";
@@ -1620,6 +1621,7 @@ function scanModuleSourcePunctuation(
   state: IModuleCanonicalizationState,
 ): number {
   const code = source.charCodeAt(start);
+  const nextCode = source.charCodeAt(start + 1);
   if (
     code === 123 &&
     (state.moduleStatement === "import" ||
@@ -1641,7 +1643,11 @@ function scanModuleSourcePunctuation(
   ) {
     state.exportDeclarationForm = "from";
   }
-  state.tokens.push({ kind: "punctuation", code });
+  state.tokens.push(
+    code === 46 && nextCode === 46 && source.charCodeAt(start + 2) === 46
+      ? { kind: "spread" }
+      : { kind: "punctuation", code },
+  );
   return scanJavaScriptToken(source, start, state.scanner);
 }
 
