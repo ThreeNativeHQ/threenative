@@ -91,6 +91,46 @@ test('starter desktop screenshot requires the rendered cyan proof asset', () => 
   assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 128);
 });
 
+test('the proof asset is found by hue, not by how bright the grade left the frame', () => {
+  // The gate asks whether the cyan proof asset is *present*. The predicate it used asked whether
+  // the frame was *bright*: `blue > 150 && green > 140` is an exposure threshold wearing a
+  // colour's name, so a kit that grades its world darker failed a gate about asset presence.
+  // Measured on three real captures — the ungraded starter, the same starter under its painterly
+  // chain, and a run that captured the loading screen with no world drawn:
+  //
+  //     frame                     old predicate   this predicate
+  //     ungraded, asset visible             136              489
+  //     painterly, asset visible             75              185   <- failed the 100 floor
+  //     loading screen, no world               0                0
+  const directory = makeTempDirSync('starter-graded-test-');
+  const path = join(directory, 'frame.png');
+  writeFileSync(path, PNG.sync.write(gradedStarterFrame({ cyanPixels: 128 })));
+  assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 128);
+});
+
+// The same fixture as starterFrame, graded down: the proof asset keeps its hue — green near blue,
+// both clearing red — but sits below the brightness the old predicate required. 128 is the lit
+// frame's blue; 118 its green. Both are under the old 150/140 thresholds, so every one of these
+// pixels was invisible to the gate.
+function gradedStarterFrame({ cyanPixels }) {
+  const png = new PNG({ height: 16, width: 16 });
+  for (let index = 0; index < 256; index += 1) {
+    const offset = index * 4;
+    if (index < cyanPixels) {
+      png.data[offset] = 11;
+      png.data[offset + 1] = 118;
+      png.data[offset + 2] = 128;
+    } else {
+      // The painterly world's navy: green at roughly half its blue, and blue below the 100 floor.
+      png.data[offset] = index % 40;
+      png.data[offset + 1] = 25 + (index % 12);
+      png.data[offset + 2] = 50 + (index % 11);
+    }
+    png.data[offset + 3] = 255;
+  }
+  return png;
+}
+
 test('a frame that was never drawn is named as the capture, not a missing asset', () => {
   // The Linux starter lane failed intermittently with TN_NATIVE_STARTER_ASSET_NOT_VISIBLE while its
   // own log carried TN_NATIVE_STARTER_ASSETS_LOADED and "Rendered 300 frames". The capture held
