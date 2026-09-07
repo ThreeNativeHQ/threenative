@@ -1,12 +1,12 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
-import { stageDesktopFiles } from '../scripts/package-desktop.mjs';
+import { packageDesktop, stageDesktopFiles } from '../scripts/package-desktop.mjs';
 import { minimalGlb } from './fixtures/minimal-glb.mjs';
 
 const runtimeRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -16,6 +16,22 @@ function opusBytes() {
   bytes.write('OggS', 0, 'ascii');
   bytes.write('OpusHead', 28, 'ascii');
   return bytes;
+}
+
+function webpGlb() {
+  const json = Buffer.from(
+    JSON.stringify({ asset: { version: '2.0' }, images: [{ mimeType: 'image/webp' }] }),
+    'utf8',
+  );
+  const padded = Buffer.concat([json, Buffer.alloc((4 - (json.length % 4)) % 4, 0x20)]);
+  const header = Buffer.alloc(12);
+  header.write('glTF', 0, 'ascii');
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(12 + 8 + padded.length, 8);
+  const chunkHeader = Buffer.alloc(8);
+  chunkHeader.writeUInt32LE(padded.length, 0);
+  chunkHeader.write('JSON', 4, 'ascii');
+  return Buffer.concat([header, chunkHeader, padded]);
 }
 
 test('desktop public assets are staged at web-root paths', () => {
@@ -214,6 +230,44 @@ test('desktop staging packages a genuine Ogg Vorbis file, because the runtime de
     const staging = join(root, 'staging');
     stageDesktopFiles(bundle, assets, staging, undefined, runtimeRoot);
     assert.deepEqual(readFileSync(join(staging, 'audio', 'pickup.ogg')), fixture);
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+});
+
+test('desktop packaging uses THREENATIVE_RUNTIME_SOURCE for decoder preflight', () => {
+  const root = makeTempDirSync('threenative-desktop-runtime-source-');
+  try {
+    const runtime = join(root, 'runtime');
+    mkdirSync(runtime, { recursive: true });
+    writeFileSync(join(runtime, 'CMakeLists.txt'), '# desktop preflight fixture\n');
+
+    const bundle = join(root, 'game.js');
+    const assets = join(root, 'public');
+    const output = join(root, 'game');
+    const runtimeExecutable = join(root, 'fake-runtime.mjs');
+    mkdirSync(join(assets, 'models'), { recursive: true });
+    writeFileSync(bundle, 'export default 1;\n');
+    writeFileSync(join(assets, 'models', 'webp.glb'), webpGlb());
+    writeFileSync(
+      runtimeExecutable,
+      '#!/usr/bin/env node\nimport { writeFileSync } from "node:fs";\n' +
+        'const index = process.argv.indexOf("--out");\n' +
+        'if (index >= 0) writeFileSync(process.argv[index + 1], "desktop artifact");\n',
+    );
+    chmodSync(runtimeExecutable, 0o755);
+
+    const previous = process.env.THREENATIVE_RUNTIME_SOURCE;
+    process.env.THREENATIVE_RUNTIME_SOURCE = runtime;
+    try {
+      assert.throws(
+        () => packageDesktop({ bundle, assets, output, runtime: runtimeExecutable }),
+        /TN_NATIVE_ASSET_UNSUPPORTED/u,
+      );
+    } finally {
+      if (previous === undefined) delete process.env.THREENATIVE_RUNTIME_SOURCE;
+      else process.env.THREENATIVE_RUNTIME_SOURCE = previous;
+    }
   } finally {
     rmSync(root, { force: true, recursive: true });
   }

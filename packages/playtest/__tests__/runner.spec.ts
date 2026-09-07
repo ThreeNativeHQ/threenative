@@ -8,6 +8,7 @@ import { expect, test, vi } from "vitest";
 import {
   loadPlaytestScenario,
   PLAYTEST_PROTOCOL_LIMITS,
+  PLAYTEST_PROTOCOL_VERSION,
   type IPlaytestObservationSnapshot,
   type IPlaytestScenario,
 } from "../src/index.js";
@@ -337,6 +338,42 @@ test("fixed-step startup races retry without hiding a stopped loop", async () =>
 
   expect(attempts).toBe(2);
   expect(page.evaluate).toHaveBeenCalledTimes(1);
+});
+
+test("browser bridge handshake honors the configured operation timeout", async () => {
+  vi.useFakeTimers();
+  try {
+    const evaluate = vi.fn(async (_callback: unknown, input: { method: string }) => {
+      if (input.method === "describe") {
+        await new Promise<void>((resolve) => setTimeout(resolve, 5_100));
+        return {
+          capabilities: [],
+          limits: PLAYTEST_PROTOCOL_LIMITS,
+          name: "test-bridge",
+          protocolVersion: PLAYTEST_PROTOCOL_VERSION,
+        };
+      }
+      if (input.method === "ready") return { ready: true };
+      throw new Error(`Unexpected bridge method: ${input.method}`);
+    });
+    const page = {
+      evaluate,
+      goto: vi.fn(async () => undefined),
+      waitForFunction: vi.fn(async () => undefined),
+      waitForLoadState: vi.fn(async () => undefined),
+    } as unknown as Page;
+
+    const pending = openPageAndConnectBridge(
+      page,
+      { ...CONFIG, timeoutMs: 6_000 },
+      scenario(undefined),
+    );
+    await vi.advanceTimersByTimeAsync(5_100);
+
+    await expect(pending).resolves.toBeDefined();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 function scenario(assert: IPlaytestScenario["assert"]): IPlaytestScenario {

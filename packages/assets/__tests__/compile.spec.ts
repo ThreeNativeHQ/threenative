@@ -233,6 +233,48 @@ describe("compileAssets", () => {
     expect(webManifest.entries["rock.png"]?.output).toMatch(/\.ktx2$/u);
   });
 
+  it("should write separate model attribute buffers for desktop native output", async () => {
+    const root = await makeTempDir("threenative-compile-desktop-layout-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "character.glb"),
+      await buildFixtureGlb({ textured: false }),
+    );
+
+    await compileAssets({
+      config: {
+        models: {
+          passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
+          textures: "none",
+          virtual: "none",
+        },
+        textures: "none",
+      },
+      cwd: root,
+      platform: "desktop",
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { output: string }> };
+    const entry = manifest.entries["character.glb"];
+    if (entry === undefined) throw new Error("compile manifest is missing character.glb");
+    const json = (
+      await new NodeIO().binaryToJSON(await readFile(path.join(root, "public", entry.output)))
+    ).json;
+    const accessors = json.accessors ?? [];
+    for (const mesh of json.meshes ?? []) {
+      for (const primitive of mesh.primitives ?? []) {
+        const views = new Set(
+          Object.values(primitive.attributes ?? {})
+            .map((index) => accessors[index]?.bufferView)
+            .filter((view): view is number => view !== undefined),
+        );
+        expect(views.size).toBe(Object.keys(primitive.attributes ?? {}).length);
+      }
+    }
+  });
+
   it("should share images on an android build while retaining decoder-free model work", async () => {
     const root = await makeTempDir("threenative-compile-android-shared-");
     await mkdir(path.join(root, "assets"));
