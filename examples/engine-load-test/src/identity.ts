@@ -1559,10 +1559,14 @@ function scanModuleSourceIdentifier(
   const end = skipIdentifier(source, start);
   const word = source.slice(start, end);
   const propertyName = isPropertyNameToken(source, end, state.scanner);
+  const previous = state.tokens.at(-1);
   const objectMethodName =
     word === "import" &&
     insideObjectLiteral(state.scanner) &&
-    source.charCodeAt(skipTrivia(source, end)) === 40;
+    source.charCodeAt(skipTrivia(source, end)) === 40 &&
+    ((previous?.kind === "punctuation" && (previous.code === 44 || previous.code === 123)) ||
+      (previous?.kind === "identifier" &&
+        (previous.value === "async" || previous.value === "get" || previous.value === "set")));
   if (!propertyName && !objectMethodName && word === "import") {
     const callStart = skipTrivia(source, end);
     if (source.charCodeAt(callStart) === 40) {

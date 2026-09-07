@@ -199,6 +199,17 @@ The corrected two-root graph probe gives equal artifact and workload hashes for 
 Vite cache tokens, while a meaningful extra query remains different. The escaped-quote collision
 now remains different. No platform or hardware performance result is claimed.
 
+A final read-only scanner probe found that the object-method exemption was too broad and allowed a
+computed import used as an object property value. The exemption now applies only at an actual method
+name position; computed imports in property values fail closed while `const obj = { import(x) {} }`
+remains valid.
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts -t 'extracts static template'
+Tests 1 failed | 93 skipped (94)  # before the narrow exemption
+Tests 1 passed | 93 skipped (94)  # after the narrow exemption
+```
+
 ---
 
 ## Android: the GPU meter reports on a Pixel 8 — 2026-09-01

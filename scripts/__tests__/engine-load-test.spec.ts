@@ -132,6 +132,7 @@ describe("engine load test workload", () => {
     expect(extractModuleSpecifiers(source)).toEqual(["./dynamic.js", "./escaped.js"]);
     for (const source of [
       "import(moduleName);",
+      "const value = { promise: import(path) };",
       "import(`./${name}.js`);",
       "import(`./static.js` + suffix);",
     ]) {
