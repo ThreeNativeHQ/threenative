@@ -15,7 +15,7 @@ import { assertCaptureNotBlank } from "../src/capture.js";
 import { exitCodeForReport, runConfiguredPlaytest } from "../src/runner/cli.js";
 import { parseStandalonePlaytestArgs, type IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { DesktopPlaytestDriver, LocalDeviceMailbox } from "../src/runner/desktop.js";
-import { runDesktopPlaytest } from "../src/runner/desktopRunner.js";
+import { desktopHostArgs, runDesktopPlaytest } from "../src/runner/desktopRunner.js";
 import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import type { IDevicePlaytestDriver } from "../src/runner/androidRunner.js";
 import { connectDevicePlaytestBridge, type IDeviceBridgeInstallation } from "../src/three/device.js";
@@ -35,6 +35,38 @@ test("desktop CLI parsing requires and resolves the native executable", () => {
   expect(config.desktop).toEqual({ executable: "/project/.threenative/build/game" });
   expect(() => parseStandalonePlaytestArgs(["scenario.json", "--target", "desktop"], "/project"))
     .toThrow("Desktop playtest requires --executable");
+});
+
+test("desktop CLI forwards repeated --host-arg to the native host", () => {
+  const config = parseStandalonePlaytestArgs([
+    "scenario.json",
+    "--project",
+    "/project",
+    "--target",
+    "desktop",
+    "--executable",
+    ".threenative/build/game",
+    "--host-arg",
+    "run",
+    "--host-arg",
+    "dist/game.js",
+  ]);
+
+  expect(config.desktop).toEqual({
+    executable: "/project/.threenative/build/game",
+    hostArgs: ["run", "dist/game.js"],
+  });
+});
+
+test("desktop runner passes the configured host arguments to the driver", () => {
+  expect(
+    desktopHostArgs({
+      ...minimalConfig("desktop"),
+      desktop: { executable: "/project/game", hostArgs: ["run", "dist/game.js"] },
+    }),
+  ).toEqual(["run", "dist/game.js"]);
+  // A host that needs no arguments must still launch, so an absent list is empty, never undefined.
+  expect(desktopHostArgs(minimalConfig("desktop"))).toEqual([]);
 });
 
 test("desktop CLI routing selects the shared desktop runner", async () => {

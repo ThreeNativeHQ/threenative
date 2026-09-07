@@ -19,6 +19,14 @@ export interface IDesktopPlaytestDependencies {
   transport?: IDevicePlaytestTransport;
 }
 
+/**
+ * Arguments the native desktop host is launched with, from `--host-arg`.
+ * A host that needs none still launches, so an absent list is empty rather than undefined.
+ */
+export function desktopHostArgs(config: IStandalonePlaytestConfig): readonly string[] {
+  return config.desktop?.hostArgs ?? [];
+}
+
 export async function runDesktopPlaytest(
   config: IStandalonePlaytestConfig,
   dependencies: IDesktopPlaytestDependencies = {},
@@ -75,6 +83,7 @@ export async function runDesktopPlaytest(
     ownsMailboxRoot = configuredRoot === undefined;
     const paths = deviceMailboxPaths(root);
     driver = dependencies.driver ?? new DesktopPlaytestDriver({
+      args: desktopHostArgs(config),
       cwd: config.projectPath,
       executable,
       mailboxRoot: root,
