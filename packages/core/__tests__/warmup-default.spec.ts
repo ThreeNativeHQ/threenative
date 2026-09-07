@@ -112,7 +112,7 @@ describe("the warmUp option", () => {
     });
     try {
       const warmUp = {
-        cache: { key: "warm-up-default-test-v1" },
+        cache: { key: "test-cache-key" },
         yieldFrame: () => Promise.resolve(),
       };
       expect(await bootAndCountCompiles(warmUp)).toBe(1);

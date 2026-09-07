@@ -28,9 +28,10 @@ its own persistent cache. A changed key or count invalidates the marker. The foc
 game integration evidence is in [the PRD-360 verification record](prd-360-warmup-cache-2026-09-07/README.md).
 
 The physical candidate result that motivated the follow-up was **16,020.007 ms** to first frame,
-with **8,404.781 ms** across 93 pipeline calls and **2.146719 m** of movement. The original 8-second
-and 250 ms timing limits were retired in the PRD revision; no new physical cache-hit timing was run
-because the recorded Pixel 8 was unreachable.
+with **8,404.781 ms** across 93 pipeline calls and **2.146719 m** of movement. That is roughly
+twice PRD-360's 8-second target, so the 8-second median and the 250 ms pump-silence limit both
+remain open and the PRD stays PARTIAL. No physical cache-hit timing was run because the recorded
+Pixel 8 was unreachable.
 
 ---
 
