@@ -444,6 +444,20 @@ jobs:
 
           const outDir = "packages/runtime-native/artifacts/performance-contract/android-emulator";
           mkdirSync(outDir, { recursive: true });
+
+          // The captured buffer is published whatever the verdict, and that is the point. When
+          // conformance fails the step below records BLOCKED and asserts nothing about the
+          // observer — but the log it just read is the only evidence that says whether the markers
+          // reached Android logcat at all, which is still unproven. Discarding it on a red run is
+          // exactly the mistake `web-reference` was making: the one artifact that answers the
+          // question was published only by the runs that did not need to answer it.
+          for (const name of ["emulator-logcat.txt", "emulator-logcat.err", "conformance-status.txt"]) {
+            try {
+              copyFileSync(join(temp, name), join(outDir, name));
+            } catch (error) {
+              if (error?.code !== "ENOENT") throw error;
+            }
+          }
           const record = (payload) =>
             writeFileSync(
               join(outDir, "pump-silence-structural.json"),
