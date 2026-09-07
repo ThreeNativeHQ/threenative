@@ -1151,12 +1151,20 @@ jobs:
           path: artifacts/performance-coverage
       - name: Report the performance contract through the shared comparison summary
         if: always()
+        env:
+          TN_CI_SCOPE: ${{ needs.scope.outputs.selection }}
         run: |
           set -euo pipefail
+          required_lanes=""
+          if [ "$TN_CI_SCOPE" != prose ]; then
+            required_lanes="performance-contracts,native-linux-contract"
+          else
+            echo "performance collector evidence: not applicable (prose-only change)"
+          fi
           pnpm tsx scripts/performance-regression/ci-summary.ts \
             --artifact-dir artifacts/performance-coverage \
             --manifest scripts/performance-regression/lanes.json \
             --coverage performance-contracts,native-linux-contract,Windows,macOS,android-emulator,ios-simulator \
-            --required-lanes performance-contracts,native-linux-contract \
+            --required-lanes "$required_lanes" \
             --expected-sha "$GITHUB_SHA" \
             | tee -a "$GITHUB_STEP_SUMMARY"
