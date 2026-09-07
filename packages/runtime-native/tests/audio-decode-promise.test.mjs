@@ -2,7 +2,9 @@
 // the source-shape duplicate: the native lane executes Promise chaining, settlement and callbacks.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
@@ -50,3 +52,35 @@ test("QuickJS implements the per-frame microtask pump the runtime calls", () => 
   );
   assert.match(read("src/runtime.cpp"), /processMicrotasks\(\);/u);
 });
+
+test("a handled decode rejection does not also write to stderr", () => {
+  // The failure already reaches the caller three ways: a rejected Promise, the legacy
+  // onError callback, and the AudioError it settles with. Writing it to stderr as well
+  // makes a game that tests its own error path fail every playtest with noConsoleErrors —
+  // examples/native-smoke/src/game.ts:185 does exactly that on purpose, and it failed the
+  // PRD-359 desktop networking lane. A browser rejects decodeAudioData without printing.
+  const binary = join(root, "build/tn-linux/mystral");
+  if (!existsSync(binary)) return;
+  const dir = mkdtempSync(join(tmpdir(), "tn-audio-stderr-"));
+  const script = join(dir, "handled-decode.js");
+  writeFileSync(
+    script,
+    'const c = new AudioContext();\n'
+      + 'c.decodeAudioData(new ArrayBuffer(0)).then(\n'
+      + '  () => console.log("UNEXPECTED_RESOLVE"),\n'
+      + '  (error) => console.log("HANDLED:" + (error instanceof Error)),\n'
+      + ');\n',
+  );
+  // The host is a game runtime: it keeps its frame loop running, so this bounds the run
+  // and reads the streams the kill leaves behind rather than waiting for an exit.
+  const run = spawnSync(binary, ["run", script, "--headless"], {
+    encoding: "utf8",
+    timeout: 10_000,
+  });
+  assert.match(run.stdout, /HANDLED:true/u, "the caller must receive the rejection as an Error");
+  assert.doesNotMatch(
+    run.stderr,
+    /decodeAudioData received an empty or non-ArrayBuffer argument/u,
+    "a rejection the caller handles must not also be reported as a console error",
+  );
+}, 60_000);

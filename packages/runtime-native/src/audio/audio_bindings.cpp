@@ -502,7 +502,11 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
             const bool ok = failure == nullptr;
             const js::JSValueHandle settled =
                 ok ? createAudioBufferJS(engine, buffer) : newAudioError(engine, failure);
-            if (!ok) std::cerr << "[Audio] " << failure << std::endl;
+            // No stderr here. The failure already reaches the caller three ways — the
+            // rejected Promise below, the legacy onError callback, and the AudioError it
+            // settles with — and a browser's decodeAudioData rejects without printing.
+            // Writing it as well made a game that tests its own error path fail every
+            // playtest with noConsoleErrors on a correctly behaving host.
 
             // Legacy callback style, delivered before the thenable is handed back so a caller
             // using both sees the same order a browser gives it.

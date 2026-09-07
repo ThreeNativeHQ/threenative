@@ -1305,7 +1305,11 @@ bool openCandidate(Session* s) {
     const char* insecurePeerVerificationValue = std::getenv(kInsecurePeerVerificationEnv);
     const bool allowInsecurePeerVerification =
         isTruthyEnvironmentValue(insecurePeerVerificationValue);
-    std::cerr << "[WebTransport] TLS peer verification mode: "
+    // Status, not a fault: the secure default is the ordinary case, and a game's playtest
+    // fails closed on anything the host writes to stderr. Reporting "verification is on"
+    // as an error failed every scenario with noConsoleErrors on a correctly behaving host.
+    // Disabling verification is still shouted about, on stderr, just below.
+    std::cout << "[WebTransport] TLS peer verification mode: "
               << (allowInsecurePeerVerification ? "insecure-override" : "verify-peer")
               << " (parsed from " << kInsecurePeerVerificationEnv << "="
               << (insecurePeerVerificationValue ? insecurePeerVerificationValue : "<unset>")

@@ -316,6 +316,32 @@ async function runScript(
   return output;
 }
 
+/**
+ * Runs a script and keeps the two streams apart. `runScript` concatenates them, which is
+ * right for asserting a line exists but cannot tell an informational line from an error —
+ * and a scenario with `noConsoleErrors` fails on anything the host writes to stderr.
+ */
+async function runScriptStreams(
+  name: string,
+  source: string,
+  options: ScriptOptions = {},
+): Promise<{ stderr: string; stdout: string }> {
+  if (!existsSync(TEST_DIR)) mkdirSync(TEST_DIR, { recursive: true });
+  const path = join(TEST_DIR, name);
+  writeFileSync(path, source);
+  const env = { ...process.env };
+  if (options.allowInsecurePeerVerification) env.MYSTRAL_WEBTRANSPORT_INSECURE = "1";
+  else Reflect.deleteProperty(env, "MYSTRAL_WEBTRANSPORT_INSECURE");
+  if (options.trustFile !== undefined) env.SSL_CERT_FILE = options.trustFile;
+  else Reflect.deleteProperty(env, "SSL_CERT_FILE");
+  const { stderr, stdout } = await runCommand(runtimeBinary, ["run", path, "--headless"], {
+    cwd: options.cwd,
+    env,
+    timeoutMs: options.timeoutMs ?? SCRIPT_TIMEOUT_MS,
+  });
+  return { stderr, stdout };
+}
+
 async function runTrustedScript(
   name: string,
   source: string,
@@ -2010,6 +2036,32 @@ function requireExpiryFixture(skip: (note?: string) => never): void {
   failClosed(expiryUnavailableReason);
   skip(expiryUnavailableReason);
 }
+
+describe("WebTransport peer verification logging", () => {
+  it("reports the secure default on stdout, not stderr", async ({ skip }) => {
+    requireWebTransport(skip);
+    // The mode line is a status, and the secure default is the ordinary case. Writing it to
+    // stderr makes every playtest with `noConsoleErrors` fail on a host that is behaving
+    // correctly — which is exactly what happened to the PRD-359 desktop networking lane.
+    const { stderr, stdout } = await runScriptStreams(
+      "verification-mode-stream.js",
+      'new WebTransport("https://127.0.0.1:1/echo").ready.catch(() => {}); console.log("PASS");',
+    );
+    expect(stdout).toContain("TLS peer verification mode: verify-peer");
+    expect(stderr).not.toContain("TLS peer verification mode");
+  }, 30_000);
+
+  it("keeps the insecure override warning on stderr", async ({ skip }) => {
+    requireWebTransport(skip);
+    // Turning verification off is worth shouting about, so that one stays an error stream.
+    const { stderr } = await runScriptStreams(
+      "verification-override-stream.js",
+      'new WebTransport("https://127.0.0.1:1/echo").ready.catch(() => {}); console.log("PASS");',
+      { allowInsecurePeerVerification: true },
+    );
+    expect(stderr).toContain("TLS peer verification disabled");
+  }, 30_000);
+});
 
 describe("WebTransport expired certificate rejection", () => {
   beforeAll(async () => {
