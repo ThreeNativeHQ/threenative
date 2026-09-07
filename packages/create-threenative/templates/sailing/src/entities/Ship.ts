@@ -176,10 +176,12 @@ export class Ship {
     const blend = Math.min(1, Math.max(0, deltaTime) * 3.2);
     this.visual.position.x = this.mesh.position.x;
     this.visual.position.z = this.mesh.position.z;
-    // The design waterline sits on the water. Copying the body's y instead put the hull wherever
+    // The design waterline sits on the sampled water. The copy can be many frames old while the
+    // GPU FFT is busy, so easing this axis would invent a second lag and let the hull drift beyond
+    // its own sampled surface between readbacks. Copying the body's y instead put the hull wherever
     // the buoyancy solver happened to have pushed it that frame — which, with no angular damping
     // to settle it, was rarely the same place twice and often most of a hull below the surface.
-    this.visual.position.y += (hereHeight - this.visual.position.y) * blend;
+    this.visual.position.y = hereHeight;
     this.visual.rotation.y = this.#heading;
     this.visual.rotation.x += (pitch - this.visual.rotation.x) * blend;
     this.visual.rotation.z += (roll - this.visual.rotation.z) * blend;

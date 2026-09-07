@@ -10,10 +10,20 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { test } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 const ROOT = join(import.meta.dirname, "..");
+const EVALUATOR_SOURCE = join(
+  ROOT,
+  "..",
+  "..",
+  "docs",
+  "verification",
+  "prd-360-startup-2026-09-05",
+  "evaluate-first-playable.mjs.txt",
+);
 const RUNTIME_SRC = readFileSync(join(ROOT, "src", "runtime.cpp"), "utf8");
 const PRES_SRC = readFileSync(join(ROOT, "src", "webgpu", "bindings_presentation.cpp"), "utf8");
 const HEADER = readFileSync(join(ROOT, "include", "mystral", "pump_silence.h"), "utf8");
@@ -123,15 +133,30 @@ function endpointSnapshots(log) {
     .map((line) => JSON.parse(line.slice(line.indexOf("{"))));
 }
 
+async function loadEvaluator() {
+  const evaluatorPath = join(makeTempDirSync("tn-pump-evaluator-"), "evaluate-first-playable.mjs");
+  writeFileSync(evaluatorPath, readFileSync(EVALUATOR_SOURCE, "utf8"));
+  return import(pathToFileURL(evaluatorPath).href);
+}
+
 // Drives the real host through an actual mailbox respond() with a
 // displacement-shaped payload, like device.ts dispatch() after sampling.
 // Returns the host log plus the response path for coordinator correlation.
-function runMailboxRespond({ stallBeforeRespondMs = 0 } = {}) {
+function runMailboxRespond({
+  requestId = "sample-1",
+  requestMethod = "sample",
+  responsePathSegment = "response.json",
+  stallBeforeRespondMs = 0,
+} = {}) {
   const dir = makeTempDirSync("tn-pump-ep-");
   const root = join(dir, "mbox");
   mkdirSync(root, { recursive: true });
-  const res = join(root, "response.json");
+  const res = join(root, responsePathSegment);
   const bundle = join(dir, "game.js");
+  const responseBody = JSON.stringify({
+    id: requestId,
+    result: { entities: { player: { position: [0.41, -0.02, -0.46] } } },
+  });
   const spin =
     stallBeforeRespondMs > 0
       ? `const spinEnd = Date.now() + ${stallBeforeRespondMs}; while (Date.now() < spinEnd) {}`
@@ -145,7 +170,7 @@ function runMailboxRespond({ stallBeforeRespondMs = 0 } = {}) {
       "  n += 1;",
       "  if (n === 3) {",
       `    ${spin}`,
-      `    __THREENATIVE_NATIVE__.playtest.respond(${JSON.stringify(res)}, JSON.stringify({ id: "sample-1", result: { entities: { player: { position: [0.41, -0.02, -0.46] } } } }), "sample-1", "sample", 1);`,
+      `    __THREENATIVE_NATIVE__.playtest.respond(${JSON.stringify(res)}, ${JSON.stringify(responseBody)}, ${JSON.stringify(requestId)}, ${JSON.stringify(requestMethod)}, 1);`,
       "  }",
       "  if (n >= 5) { clearInterval(id); process.exit(0); }",
       "}, 50);",
@@ -200,6 +225,8 @@ test("respond() stamps a non-consuming displacement-correlated endpoint", () => 
     /TN_PUMP_ENDPOINT/u,
     "endpoint rides the existing diagnostic transport",
   );
+  assert.match(RUNTIME_SRC, /std::cout << endpointRecord << std::endl;/u);
+  assert.match(RUNTIME_SRC, /LOGI\("%s", endpointRecord\.c_str\(\)\);/u);
 });
 
 test("real host: the pump is observed at the bounded endpoint", () => {
@@ -298,6 +325,56 @@ test("real host: mailbox respond() yields a correlated endpoint snapshot", () =>
   assert.ok(pump.firstPumpAtMs >= 0, "process-to-first-pump retained through endpoint");
   const diagnostics = (log.match(/TN_PUMP_SILENCE:/g) ?? []).length;
   assert.equal(diagnostics, 1, "requested snapshot must not suppress the diagnostic line");
+});
+
+test("real host: endpoint strings round-trip through the actual evaluator", async () => {
+  const requestId = 'sample-"quoted"\\control\n\t\u0001';
+  const { log, res } = runMailboxRespond({
+    requestId,
+    responsePathSegment: 'response"\\control\n\t\u0001.json',
+  });
+  const movementResponseBody = readFileSync(res, "utf8");
+  const { evaluatePumpEndpoint } = await loadEvaluator();
+  const result = evaluatePumpEndpoint({
+    hostLog: log,
+    movementPayload: { entity: "player", position: [0.41, -0.02, -0.46] },
+    movementResponseBody,
+    movementResponseObservation: {
+      inputOrder: 0,
+      method: "sample",
+      order: 1,
+      postInput: true,
+      requestId,
+    },
+    movementResponsePath: res,
+  });
+  assert.ok(result.pass || result.code === "R7_PUMP_SILENCE_EXCEEDED", JSON.stringify(result));
+  const endpoint = endpointSnapshots(log).at(-1);
+  assert.equal(endpoint.path, res);
+  assert.equal(endpoint.requestId, requestId);
+  assert.equal(endpoint.requestMethod, "sample");
+});
+
+test("real host: request method controls round-trip through the actual evaluator parser", async () => {
+  const requestMethod = 'sample-"quoted"\\control\n\t\u0001';
+  const { log, res } = runMailboxRespond({ requestMethod });
+  const movementResponseBody = readFileSync(res, "utf8");
+  const { evaluatePumpEndpoint } = await loadEvaluator();
+  const result = evaluatePumpEndpoint({
+    hostLog: log,
+    movementPayload: { entity: "player", position: [0.41, -0.02, -0.46] },
+    movementResponseBody,
+    movementResponseObservation: {
+      inputOrder: 0,
+      method: "sample",
+      order: 1,
+      postInput: true,
+      requestId: "sample-1",
+    },
+    movementResponsePath: res,
+  });
+  assert.equal(result.code, "R7_PUMP_CORRELATION_UNPROVEN", JSON.stringify(result));
+  assert.equal(result.detail.gotRequestMethod, requestMethod);
 });
 
 test("real host: >250ms trailing stall through the endpoint is rejected-worthy", () => {

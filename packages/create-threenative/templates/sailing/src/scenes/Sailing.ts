@@ -103,6 +103,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
       }
 
       elapsed += deltaTime;
+      ocean.advance(elapsed);
       const wind = Math.max(0, 1 - elapsed / 45);
       if (status === "sailing") advanceSailing(frameCtx, deltaTime, wind);
 
