@@ -135,6 +135,20 @@ const BUG_REPORT_SKILL_PATHS = [
 // generated capability manifest and capability reference copied into every scaffold, so all
 // ten trees move again. Values come from the clean committed tree's Received block, not a dirty
 // sibling worktree; no template source or scaffold implementation changed.
+// Recomputed 2026-09-07 for the `assets.audio` config seam: `parseAudioConfig` became the CLI's
+// validation path and entered the public surface, so the capability manifest and the reference
+// generated from it each gained exactly one entry — a 20-line pure addition, no deletions — and
+// both files are copied verbatim into every scaffold, so all ten trees move by those bytes.
+// Measured on this tree; `worker-scaffold-delta.mjs` names the only two changed repo files that
+// reach a scaffold, and neither of the concurrent lane's edits (`src/build.ts`,
+// `__tests__/build.spec.ts`) appears in one. No template source or scaffold implementation moved.
+// Recomputed 2026-09-07 again, one variable later: every template's AGENTS.md gained the
+// `audio: "none"` opt-out beside the `models`/`textures` ones it already listed, and
+// `pnpm sync:agents` carried that line into each generated CLAUDE.md — 20 files, one line each,
+// one added phrase. Ablation names the whole cause: restoring only those 20 docs to HEAD returns
+// all ten hashes to the values above, so nothing else in this lane reaches a scaffold. The docs
+// arrive through the templating step rather than a verbatim copy, which is why a content-hash
+// matcher does not list them and this ablation is the evidence instead.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-03 after merging PRD-346's MCP host configs into the authored painterly
   // starter. Every scaffold gains the Blender server wiring; starter also gains its bounded mix.
@@ -269,19 +283,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-06 after merging origin/main into networking-359: main's adaptive
   // quality and desktop-window authoring text now sits alongside PRD-359's optional transport
   // contract, so every scaffold tree moves. Values come from the committed merge, not a dirty tree.
-  "action-rpg": "8806ed90784df85a8b8a7256939df0b66cbb054b848b8f4f1a7d3efa78bf9e11",
-  defense: "cda5a7477eee4afcbd0a2ac8cb3674f81d524c936b321658da0a948995b1e3a1",
+  "action-rpg": "8bc1d037248cefcceba62080c0537be4b066db88b7c2e8ccce0cf4b0f316ebbf",
+  defense: "cb485e171ed1388d6ebd8e2f7016bf487fe576667bfc941473a92eb93c6b8abb",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "2870ae650bcbf82d3f895a6bf671a70f6f2a0f26e30b61c2b0640110b374ac5d",
-  platformer: "8ec3c4c9ab9eaf4e05b3430184658550dcc187ce9f8c77a5ce26f456f0f8155a",
-  runner: "4d3cc6d1ab2a9e27c3bb2b847fdbcb3a396c29fd0bfc7de2baf6f0bb62460c81",
-  puzzle: "5807e697cb8e621dff01cbbf3db121e977e269fc65fb56dd45c2f241f1c42431",
-  racing: "b0fc3c47f17877537ddcb037141e006663aa8bd29cc965e9baf13c9be89860ca",
-  shooter: "f21a659f950e015364d3050e9ec4870ed324bb80acae6ad4611b383b7801009b",
+  minimal: "febb28688902d5b9bc7265b998253d6cd76f6cdece6679d33162badc1acc1957",
+  platformer: "e4e63afe0ed6ec40ac188842fd5dbb1dd1910fc97472baff244a4a2379e1b1d0",
+  runner: "c9ab55fe03e46ef53ebd0b12f4d156748907184e3b6357c6dc0aaa90e0aa59e7",
+  puzzle: "9f6c31679e0abcd0030b62f6a99786254939c79a8337d965fd08295d4b57aaca",
+  racing: "907690b9a016704b84da910fb99290d3398a4518105672be3a209ae227d12f5a",
+  shooter: "b90b99547060bfd0034b91ca20a972322731cedc82f34a97c7ccd3afffff6a4e",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "1cc5a9583359ce935ee588afc4a0ee7cb5f429b053fc08d55de4ec1b68d36d1a",
+  starter: "9d3762a78cd568ffc565e672222456ad471c3e6b84b2cb03c71a273a503885e9",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -319,7 +333,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-07 on the merge with origin/main 6e1ce0c2 (#125 networking). The
   // previous value was measured before that merge; every other template hash in this table
   // was unchanged by it, which is what says the merge touched only the sailing tree.
-  sailing: "2c42201e05ef149575c231d704e024e88e124c1dc920ca286945b30c0b92982b",
+  sailing: "16803d24a7ca76fbc14d0b57841992bbd70d5d70cbd3939fa48f1ddea971c389",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

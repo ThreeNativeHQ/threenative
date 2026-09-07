@@ -89,6 +89,10 @@ export { AudioBus } from "./audio.js";
  */
 export { CanvasLayer } from "./canvas-layer.js";
 export type {
+  IThreeNativeAudioConfig,
+  IThreeNativeAudioLoop,
+  IThreeNativeAudioOverride,
+  IThreeNativeAudioSpectrum,
   IThreeNativeBootSplash,
   IThreeNativeConfig,
   IThreeNativeIconVariants,

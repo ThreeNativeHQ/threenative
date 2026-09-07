@@ -188,7 +188,7 @@ export interface IAudioConfig {
   readonly overrides?: readonly IAudioOverride[];
   readonly peakDb?: number;
   readonly quality?: number;
-  readonly seamThreshold?: number;
+  readonly seamMaxRatio?: number;
 }
 
 export interface ITexturesConfig {

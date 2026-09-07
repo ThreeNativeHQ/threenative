@@ -1,0 +1,287 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution
+
+ ❯ packages/create-threenative/__tests__/config.spec.ts (92 tests | 10 failed | 82 skipped) 207ms
+   ↓ should carry both budget gates through the real config loader into the compiler
+   ↓ rejects malformed asset budget 0 at config load
+   ↓ rejects malformed asset budget -1 at config load
+   ↓ rejects malformed asset budget 1.5 at config load
+   ↓ rejects malformed asset budget null at config load
+   ↓ rejects malformed asset budget {"uncooked":"bad"} at config load
+   ↓ rejects malformed asset budget {"typo":1} at config load
+   ↓ rejects malformed asset budget {"total":-1} at config load
+   ↓ should carry asset exclusions from the real config loader into the compiler
+     ↓ accepts every renderer key the shipped templates actually set
+     ↓ carries alpha antialiasing through to the resolved config, Android override included
+     ↓ re-exports the core-owned texture config type
+     ↓ accepts tRNS PNG alpha through the shared parser
+     ↓ parses every group and applies defaults for omitted fields
+     ↓ preserves renderer resolution scale and the Android override
+     ↓ uses package name defaults and the nativeEntry compatibility fallback without a config file
+     ↓ uses the Vite-owned esbuild without invoking Vite's config loader
+     ↓ rejects a package without a name with the named code
+     ↓ rejects malformed package metadata with the named code
+     ↓ rejects a non-object package compatibility block with the named code
+     ↓ resolves every declared brand variant and boot splash asset
+     ↓ rejects a declared brand variant with its path and stable code
+     ↓ rejects a reintroduced loading group as an unknown config key
+     ↓ parses the assets group and omits it from resolved configs that do not declare it
+     ↓ parses declared asset targets into the resolved config
+     ↓ rejects an unknown key under the assets group with the named code
+     ↓ rejects an unknown key under assets.targets with the named code
+     ↓ parses the textures block and the none shorthand into the resolved config
+     ↓ rejects an unknown texture codec with the named code
+     ↓ rejects a bad texture quality with the named code
+     ↓ rejects an invalid standalone texture maxSize with the named code
+     ↓ parses the models block and the none shorthand into the resolved config
+     ↓ rejects an unknown model pass name with the named code
+     ↓ rejects an unknown key under assets.models with the named code
+     ↓ carries the virtual-geometry bake through to the resolved config
+     ↓ carries the virtual-geometry opt-out through to the resolved config
+     ↓ hands every resolved assets key to the pipeline that receives it
+     ↓ hands assets.models.sharedImages to the pipeline that receives it
+     ↓ rejects a non-boolean assets.models.sharedImages with the named code
+     ↓ hands assets.concurrency to the pipeline that receives it
+     ↓ rejects a non-integer assets.concurrency with the named code
+     × hands assets.audio to the pipeline that receives it and ships the declared bytes 106ms
+     × carries the whole audio block, overrides included, through to the pipeline 14ms
+     × rejects the malformed audio declaration { audio: "off" } with the named code 13ms
+     × rejects the malformed audio declaration { audio: { seamThreshold: 2 } } with the named code 12ms
+     × rejects the malformed audio declaration { audio: { normalise: 'loudest' } } with the named code 10ms
+     × rejects the malformed audio declaration { audio: { peakDb: 3 } } with the named code 10ms
+     × rejects the malformed audio declaration { audio: { overrides: [{ glob: '**', loop: { crossFadeMs: 'soon' } }] } } with the named code 9ms
+     × rejects the malformed audio declaration { audio: { overrides: [{ glob: '**', spectrum: { band: 'ultrasonic', maxPercent: 10 } }] } } with the named code 9ms
+     × rejects the malformed audio declaration { audio: { overrides: [{ glob: '**', spectrum: { band: 'high' } }] } } with the named code 12ms
+     × rejects the malformed audio declaration { audio: { overrides: [{ loop: true }] } } with the named code 9ms
+     ↓ rejects an unknown key under assets.models.virtual with the named code
+     ↓ rejects a simplify ratio outside the open unit interval with the named code
+     ↓ rejects an out-of-range quantize depth with the named code
+     ↓ rejects bad orientation with the named code
+     ↓ rejects invalid display.maxFps -1 with the named code
+     ↓ rejects invalid display.maxFps 60.5 with the named code
+     ↓ rejects invalid display.maxFps 1001 with the named code
+     ↓ rejects invalid display.maxFps "120" with the named code
+     ↓ rejects bad app ids with the named code
+     ↓ rejects an underscore app id that Android might otherwise accept
+     ↓ rejects an invalid app name with the named code
+     ↓ rejects an invalid app version with the named code
+     ↓ rejects a prerelease app version with the named code
+     ↓ rejects an invalid app build with the named code
+     ↓ rejects a non-PNG icon with the named code
+     ↓ rejects corrupt PNG content with the named code
+     ↓ rejects a missing icon instead of silently using the platform default
+     ↓ rejects a config/package native-entry conflict
+     ↓ rejects a native entry outside the project with the named code
+     ↓ rejects an empty native entry with the named code
+     ↓ rejects a malformed group with the named code
+     ↓ rejects an unknown config key with the named code
+     ↓ rejects an invalid fullscreen value with the named code
+     ↓ rejects an invalid keep-screen-on value with the named code
+     ↓ rejects an invalid window title with the named code
+     ↓ rejects an invalid window width with the named code
+     ↓ rejects an invalid window height with the named code
+     ↓ rejects an invalid resizable value with the named code
+     ↓ rejects an invalid maximized value with the named code
+     ↓ rejects an invalid renderer value with the named code
+     ↓ rejects an invalid renderer resolution scale with the named code
+     ↓ rejects an invalid renderer resolution scale with the named code
+     ↓ rejects an invalid renderer resolution scale with the named code
+     ↓ rejects an invalid renderer resolution scale with the named code
+     ↓ accepts the shipped "auto" scale and the Android sampling override
+     ↓ rejects a config with no default export object
+     ↓ rejects a config that cannot be transpiled
+     ↓ rejects a config that fails while loading
+     ↓ keeps loading provenance tied to the config source, not an embedded error-code prefix
+     ↓ rejects a second package.json config surface
+     ↓ cleans the transpiled temporary module after loading
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+ConfigFailure: TN_CONFIG_UNKNOWN_KEY: config validation layer failed for '/tmp/threenative-config-raGAzd/threenative.config.ts' from '/tmp/threenative-config-raGAzd'. Searched: /tmp/threenative-config-raGAzd/package.json, /tmp/threenative-config-raGAzd/threenative.config.ts. assets.audio is not recognised. Fix: fix '/tmp/threenative-config-raGAzd/threenative.config.ts' and rerun pnpm exec threenative build --target web
+ ❯ contextualize packages/create-threenative/src/config.ts:342:46
+    340| ): ConfigFailure {
+    341|   if (error instanceof ConfigFailure && error.context !== undefined) r…
+    342|   if (error instanceof ConfigFailure) return new ConfigFailure(error.c…
+       |                                              ^
+    343|   return new ConfigFailure(
+    344|     fallbackCode,
+ ❯ withConfigContext packages/create-threenative/src/config.ts:358:11
+ ❯ withConfigContext packages/create-threenative/src/config.ts:356:12
+ ❯ packages/create-threenative/__tests__/config.spec.ts:673:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > carries the whole audio block, overrides included, through to the pipeline
+ConfigFailure: TN_CONFIG_UNKNOWN_KEY: config validation layer failed for '/tmp/threenative-config-a5kfVH/threenative.config.ts' from '/tmp/threenative-config-a5kfVH'. Searched: /tmp/threenative-config-a5kfVH/package.json, /tmp/threenative-config-a5kfVH/threenative.config.ts. assets.audio is not recognised. Fix: fix '/tmp/threenative-config-a5kfVH/threenative.config.ts' and rerun pnpm exec threenative build --target web
+ ❯ contextualize packages/create-threenative/src/config.ts:342:46
+    340| ): ConfigFailure {
+    341|   if (error instanceof ConfigFailure && error.context !== undefined) r…
+    342|   if (error instanceof ConfigFailure) return new ConfigFailure(error.c…
+       |                                              ^
+    343|   return new ConfigFailure(
+    344|     fallbackCode,
+ ❯ withConfigContext packages/create-threenative/src/config.ts:358:11
+ ❯ withConfigContext packages/create-threenative/src/config.ts:356:12
+ ❯ packages/create-threenative/__tests__/config.spec.ts:711:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > rejects the malformed audio declaration { audio: "off" } with the named code
+AssertionError: expected [Function] to throw error matching /TN_CONFIG_ASSETS_INVALID/u but got 'TN_CONFIG_UNKNOWN_KEY: config validat…'
+
+- Expected:
+/TN_CONFIG_ASSETS_INVALID/u
+
++ Received:
+"TN_CONFIG_UNKNOWN_KEY: config validation layer failed for '/tmp/threenative-config-0tt0C5/threenative.config.ts' from '/tmp/threenative-config-0tt0C5'. Searched: /tmp/threenative-config-0tt0C5/package.json, /tmp/threenative-config-0tt0C5/threenative.config.ts. assets.audio is not recognised. Fix: fix '/tmp/threenative-config-0tt0C5/threenative.config.ts' and rerun pnpm exec threenative build --target web"
+
+ ❯ packages/create-threenative/__tests__/config.spec.ts:758:35
+    756|     const root = await project();
+    757|     await config(root, `export default { assets: { ${block} } };`);
+    758|     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_I…
+       |                                   ^
+    759|     await expect(loadConfig(root)).rejects.toThrow(detail);
+    760|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > rejects the malformed audio declaration { audio: { seamThreshold: 2 } } with the named code
+AssertionError: expected [Function] to throw error matching /TN_CONFIG_ASSETS_INVALID/u but got 'TN_CONFIG_UNKNOWN_KEY: config validat…'
+
+- Expected:
+/TN_CONFIG_ASSETS_INVALID/u
+
++ Received:
+"TN_CONFIG_UNKNOWN_KEY: config validation layer failed for '/tmp/threenative-config-s066vs/threenative.config.ts' from '/tmp/threenative-config-s066vs'. Searched: /tmp/threenative-config-s066vs/package.json, /tmp/threenative-config-s066vs/threenative.config.ts. assets.audio is not recognised. Fix: fix '/tmp/threenative-config-s066vs/threenative.config.ts' and rerun pnpm exec threenative build --target web"
+
+ ❯ packages/create-threenative/__tests__/config.spec.ts:758:35
+    756|     const root = await project();
+    757|     await config(root, `export default { assets: { ${block} } };`);
+    758|     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_I…
+       |                                   ^
+    759|     await expect(loadConfig(root)).rejects.toThrow(detail);
+    760|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > rejects the malformed audio declaration { audio: { normalise: 'loudest' } } with the named code
+AssertionError: expected [Function] to throw error matching /TN_CONFIG_ASSETS_INVALID/u but got 'TN_CONFIG_UNKNOWN_KEY: config validat…'
+
+- Expected:
+/TN_CONFIG_ASSETS_INVALID/u
+
++ Received:
+"TN_CONFIG_UNKNOWN_KEY: config validation layer failed for '/tmp/threenative-config-rgdm1y/threenative.config.ts' from '/tmp/threenative-config-rgdm1y'. Searched: /tmp/threenative-config-rgdm1y/package.json, /tmp/threenative-config-rgdm1y/threenative.config.ts. assets.audio is not recognised. Fix: fix '/tmp/threenative-config-rgdm1y/threenative.config.ts' and rerun pnpm exec threenative build --target web"
+
+ ❯ packages/create-threenative/__tests__/config.spec.ts:758:35
+    756|     const root = await project();
+    757|     await config(root, `export default { assets: { ${block} } };`);
+    758|     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_I…
+       |                                   ^
+    759|     await expect(loadConfig(root)).rejects.toThrow(detail);
+    760|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+ FAIL  packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > rejects the malformed audio declaration { audio: { peakDb: 3 } } with the named code
+AssertionError: expected [Function] to throw error matching /TN_CONFIG_ASSETS_INVALID/u but got 'TN_CONFIG_UNKNOWN_KEY: config validat…'
+
+- Expected:
+/TN_CONFIG_ASSETS_INVALID/u
+
++ Received:
+"TN_CONFIG_UNKNOWN_KEY: config validation layer failed for '/tmp/threenative-config-42MgW5/threenative.config.ts' from '/tmp/threenative-config-42MgW5'. Searched: /tmp/threenative-config-42MgW5/package.json, /tmp/threenative-config-42MgW5/threenative.config.ts. assets.audio is not recognised. Fix: fix '/tmp/threenative-config-42MgW5/threenative.config.ts' and rerun pnpm exec threenative build --target web"
+
+ ❯ packages/create-threenative/__tests__/config.spec.ts:758:35
+    756|     const root = await project();
+    757|     await config(root, `export default { assets: { ${block} } };`);
+    758|     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_I…
+       |                                   ^
+    759|     await expect(loadConfig(root)).rejects.toThrow(detail);
+    760|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯
+
+ FAIL  packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > rejects the malformed audio declaration { audio: { overrides: [{ glob: '**', loop: { crossFadeMs: 'soon' } }] } } with the named code
+AssertionError: expected [Function] to throw error matching /TN_CONFIG_ASSETS_INVALID/u but got 'TN_CONFIG_UNKNOWN_KEY: config validat…'
+
+- Expected:
+/TN_CONFIG_ASSETS_INVALID/u
+
++ Received:
+"TN_CONFIG_UNKNOWN_KEY: config validation layer failed for '/tmp/threenative-config-cBt0Cq/threenative.config.ts' from '/tmp/threenative-config-cBt0Cq'. Searched: /tmp/threenative-config-cBt0Cq/package.json, /tmp/threenative-config-cBt0Cq/threenative.config.ts. assets.audio is not recognised. Fix: fix '/tmp/threenative-config-cBt0Cq/threenative.config.ts' and rerun pnpm exec threenative build --target web"
+
+ ❯ packages/create-threenative/__tests__/config.spec.ts:758:35
+    756|     const root = await project();
+    757|     await config(root, `export default { assets: { ${block} } };`);
+    758|     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_I…
+       |                                   ^
+    759|     await expect(loadConfig(root)).rejects.toThrow(detail);
+    760|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/10]⎯
+
+ FAIL  packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > rejects the malformed audio declaration { audio: { overrides: [{ glob: '**', spectrum: { band: 'ultrasonic', maxPercent: 10 } }] } } with the named code
+AssertionError: expected [Function] to throw error matching /TN_CONFIG_ASSETS_INVALID/u but got 'TN_CONFIG_UNKNOWN_KEY: config validat…'
+
+- Expected:
+/TN_CONFIG_ASSETS_INVALID/u
+
++ Received:
+"TN_CONFIG_UNKNOWN_KEY: config validation layer failed for '/tmp/threenative-config-PJyGn3/threenative.config.ts' from '/tmp/threenative-config-PJyGn3'. Searched: /tmp/threenative-config-PJyGn3/package.json, /tmp/threenative-config-PJyGn3/threenative.config.ts. assets.audio is not recognised. Fix: fix '/tmp/threenative-config-PJyGn3/threenative.config.ts' and rerun pnpm exec threenative build --target web"
+
+ ❯ packages/create-threenative/__tests__/config.spec.ts:758:35
+    756|     const root = await project();
+    757|     await config(root, `export default { assets: { ${block} } };`);
+    758|     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_I…
+       |                                   ^
+    759|     await expect(loadConfig(root)).rejects.toThrow(detail);
+    760|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/10]⎯
+
+ FAIL  packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > rejects the malformed audio declaration { audio: { overrides: [{ glob: '**', spectrum: { band: 'high' } }] } } with the named code
+AssertionError: expected [Function] to throw error matching /TN_CONFIG_ASSETS_INVALID/u but got 'TN_CONFIG_UNKNOWN_KEY: config validat…'
+
+- Expected:
+/TN_CONFIG_ASSETS_INVALID/u
+
++ Received:
+"TN_CONFIG_UNKNOWN_KEY: config validation layer failed for '/tmp/threenative-config-yrKsXm/threenative.config.ts' from '/tmp/threenative-config-yrKsXm'. Searched: /tmp/threenative-config-yrKsXm/package.json, /tmp/threenative-config-yrKsXm/threenative.config.ts. assets.audio is not recognised. Fix: fix '/tmp/threenative-config-yrKsXm/threenative.config.ts' and rerun pnpm exec threenative build --target web"
+
+ ❯ packages/create-threenative/__tests__/config.spec.ts:758:35
+    756|     const root = await project();
+    757|     await config(root, `export default { assets: { ${block} } };`);
+    758|     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_I…
+       |                                   ^
+    759|     await expect(loadConfig(root)).rejects.toThrow(detail);
+    760|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/10]⎯
+
+ FAIL  packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > rejects the malformed audio declaration { audio: { overrides: [{ loop: true }] } } with the named code
+AssertionError: expected [Function] to throw error matching /TN_CONFIG_ASSETS_INVALID/u but got 'TN_CONFIG_UNKNOWN_KEY: config validat…'
+
+- Expected:
+/TN_CONFIG_ASSETS_INVALID/u
+
++ Received:
+"TN_CONFIG_UNKNOWN_KEY: config validation layer failed for '/tmp/threenative-config-m07xsS/threenative.config.ts' from '/tmp/threenative-config-m07xsS'. Searched: /tmp/threenative-config-m07xsS/package.json, /tmp/threenative-config-m07xsS/threenative.config.ts. assets.audio is not recognised. Fix: fix '/tmp/threenative-config-m07xsS/threenative.config.ts' and rerun pnpm exec threenative build --target web"
+
+ ❯ packages/create-threenative/__tests__/config.spec.ts:758:35
+    756|     const root = await project();
+    757|     await config(root, `export default { assets: { ${block} } };`);
+    758|     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_I…
+       |                                   ^
+    759|     await expect(loadConfig(root)).rejects.toThrow(detail);
+    760|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/10]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  10 failed | 82 skipped (92)
+   Start at  10:58:39
+   Duration  1.34s (transform 652ms, setup 0ms, import 936ms, tests 207ms, environment 0ms)
+
