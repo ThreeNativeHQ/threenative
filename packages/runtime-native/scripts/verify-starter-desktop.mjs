@@ -13,44 +13,101 @@ const ASSET_MARKER = 'TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb';
 const UNRENDERED_FRAME_COLOR_FLOOR = 64;
 // 64x64. Below this the frame is a fixture, not a capture.
 const UNRENDERED_FRAME_MIN_PIXELS = 4096;
+const ASSET_PIXEL_FLOOR = 100;
+// The packaged proof is a cyan/magenta checkerboard pennant, and it is identified by CHANNEL
+// MARGIN rather than by distance to the authored texture colour. The gate reads a lit, tonemapped
+// render, and the authored cyan never reaches the screen: measured on the CI capture of run
+// 34076016432, the pennant's cyan renders as rgb(86,180,189) — 103 away from the authored
+// [18,220,255] — while the ocean behind it sits at 149 and the sky at 140. Any absolute-distance
+// threshold wide enough to admit the asset also admits the sea, which is how a frame showing the
+// pennant plainly was rejected with 798,464 of 921,600 pixels classified as proof.
+//
+// Magenta is the discriminator, because an ocean world contains none: 521 magenta pixels on the
+// pennant, against 0 in the same frame with the pennant cropped away.
+const PROOF_MAGENTA_MIN_MARGIN = 40;
+// Corroborating cyan, counted only inside the magenta bounds so the background cannot supply it.
+const PROOF_CYAN_MIN_MARGIN = 70;
+const PROOF_CYAN_IN_BOUNDS_FLOOR = 50;
+// A proof region may occupy up to a quarter of a rendered frame; a wash that reaches almost every
+// part of the frame must not count as localized evidence.
+const MAX_ASSET_BOUNDS_FRACTION = 0.25;
+// Bounds alone cannot separate a small asset from magenta scattered thinly across the frame, since
+// scattered pixels share almost the same bounding box as a solid one. Density does: the pennant
+// fills 0.236 of its own bounds, scattered noise fills 0.04.
+const MIN_ASSET_BOUNDS_DENSITY = 0.1;
+
+function isProofMagenta(data, offset) {
+  return (
+    data[offset + 3] > 0 &&
+    data[offset] > data[offset + 1] + PROOF_MAGENTA_MIN_MARGIN &&
+    data[offset + 2] > data[offset + 1] + PROOF_MAGENTA_MIN_MARGIN
+  );
+}
+
+function isProofCyan(data, offset) {
+  return (
+    data[offset + 3] > 0 &&
+    data[offset + 1] - data[offset] > PROOF_CYAN_MIN_MARGIN &&
+    data[offset + 2] - data[offset] > PROOF_CYAN_MIN_MARGIN
+  );
+}
+
+function countProofCyanInBounds(png, bounds) {
+  let cyan = 0;
+  for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+    for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+      if (isProofCyan(png.data, (y * png.width + x) * 4)) cyan += 1;
+    }
+  }
+  return cyan;
+}
+
+// Localization is a question about a capture, not about a texture, so only a capture-sized frame
+// reaches this. The distribution test feeds the packaged 16x16 proof itself, where the asset
+// legitimately fills the whole frame and asking where it sits has no meaning.
+function assertProofIsLocalized(png, bounds, magentaAssetPixels) {
+  const boundsArea = (bounds.maxX - bounds.minX + 1) * (bounds.maxY - bounds.minY + 1);
+  const boundsFraction = boundsArea / (png.width * png.height);
+  if (boundsFraction > MAX_ASSET_BOUNDS_FRACTION) {
+    throw new Error(
+      `TN_NATIVE_STARTER_ASSET_NOT_LOCALIZED: magenta spans ${(boundsFraction * 100).toFixed(1)}% of the frame, which is a wash, not the proof asset.`,
+    );
+  }
+  const density = magentaAssetPixels / boundsArea;
+  if (density < MIN_ASSET_BOUNDS_DENSITY) {
+    throw new Error(
+      `TN_NATIVE_STARTER_ASSET_NOT_LOCALIZED: magenta fills only ${(density * 100).toFixed(1)}% of its own bounds, which is scatter, not the proof asset.`,
+    );
+  }
+}
+
+// One pass over the frame: the colour census the unrendered-frame floor reads, and the magenta
+// pixel count with the bounds it occupies.
+function scanProofMagenta(png) {
+  const colors = new Set();
+  const bounds = { maxX: -1, maxY: -1, minX: png.width, minY: png.height };
+  let magentaAssetPixels = 0;
+  for (let index = 0; index < png.data.length; index += 4) {
+    colors.add(
+      `${png.data[index]},${png.data[index + 1]},${png.data[index + 2]},${png.data[index + 3]}`,
+    );
+    if (!isProofMagenta(png.data, index)) continue;
+    magentaAssetPixels += 1;
+    const pixel = index / 4;
+    const x = pixel % png.width;
+    const y = Math.floor(pixel / png.width);
+    if (x < bounds.minX) bounds.minX = x;
+    if (x > bounds.maxX) bounds.maxX = x;
+    if (y < bounds.minY) bounds.minY = y;
+    if (y > bounds.maxY) bounds.maxY = y;
+  }
+  return { bounds, colors, magentaAssetPixels };
+}
 
 export function inspectStarterScreenshot(path) {
   if (!existsSync(path)) throw new Error(`TN_NATIVE_STARTER_SCREENSHOT_MISSING: ${path}`);
   const png = PNG.sync.read(readFileSync(path));
-  const colors = new Set();
-  let cyanAssetPixels = 0;
-  for (let index = 0; index < png.data.length; index += 4) {
-    const red = png.data[index];
-    const green = png.data[index + 1];
-    const blue = png.data[index + 2];
-    const alpha = png.data[index + 3];
-    colors.add(`${red},${green},${blue},${alpha}`);
-    // Cyan by hue, not by exposure. The old test asked for `blue > 150 && green > 140`, which is
-    // a brightness threshold wearing a colour's name: it counted the proof asset only while the
-    // frame was bright, and a kit that grades its world darker failed a gate about whether an
-    // asset is *present*. Measured on three real captures — the ungraded starter, the same
-    // starter under its painterly chain, and a run that captured the loading screen with no world
-    // drawn at all:
-    //
-    //     frame                     old test   this test
-    //     ungraded, asset visible        136         489
-    //     painterly, asset visible        75         185   <- failed the 100 floor
-    //     loading screen, no world          0           0
-    //
-    // What identifies the asset is that green sits near blue while both clear red — cyan, where
-    // the world's navy has green at roughly half its blue. The `blue > 100` floor is what keeps
-    // that background out: it sits at 50-60 in the painterly capture, so the floor clears it by
-    // forty and the count falls off a cliff below it (1029 at 60, 21731 at 50).
-    if (
-      alpha > 0 &&
-      blue > 100 &&
-      blue > red * 1.4 &&
-      green > red * 1.25 &&
-      green > blue * 0.75
-    ) {
-      cyanAssetPixels += 1;
-    }
-  }
+  const { bounds, colors, magentaAssetPixels } = scanProofMagenta(png);
   if (colors.size < 2) throw new Error('TN_NATIVE_STARTER_SCREENSHOT_BLANK: one-color frame.');
   // A one-colour guard is too weak to catch the capture this gate actually loses. A rendered
   // starter frame carries roughly 17k distinct colours; an intermittent CI failure captured five —
@@ -63,14 +120,28 @@ export function inspectStarterScreenshot(path) {
   const rendered = png.width * png.height >= UNRENDERED_FRAME_MIN_PIXELS;
   if (rendered && colors.size < UNRENDERED_FRAME_COLOR_FLOOR) {
     throw new Error(
-      `TN_NATIVE_STARTER_FRAME_NOT_RENDERED: only ${colors.size} distinct colours in ${png.width}x${png.height}. ` +
-        'The run log may still show every marker: this is the capture, not the scene.',
+      `TN_NATIVE_STARTER_FRAME_NOT_RENDERED: only ${colors.size} distinct colours in ${png.width}x${png.height}. The run log may still show every marker: this is the capture, not the scene.`,
     );
   }
-  if (cyanAssetPixels < 100) {
-    throw new Error(`TN_NATIVE_STARTER_ASSET_NOT_VISIBLE: found ${cyanAssetPixels} cyan proof pixels in a frame of ${colors.size} colours.`);
+  if (magentaAssetPixels < ASSET_PIXEL_FLOOR) {
+    throw new Error(
+      `TN_NATIVE_STARTER_ASSET_NOT_VISIBLE: found ${magentaAssetPixels} magenta proof pixels in a frame of ${colors.size} colours.`,
+    );
   }
-  return { colors: colors.size, cyanAssetPixels, height: png.height, width: png.width };
+  if (rendered) assertProofIsLocalized(png, bounds, magentaAssetPixels);
+  const cyanAssetPixels = countProofCyanInBounds(png, bounds);
+  if (cyanAssetPixels < PROOF_CYAN_IN_BOUNDS_FLOOR) {
+    throw new Error(
+      `TN_NATIVE_STARTER_ASSET_NOT_VISIBLE: magenta found but only ${cyanAssetPixels} cyan proof pixels inside its bounds; the checkerboard needs both colours.`,
+    );
+  }
+  return {
+    colors: colors.size,
+    cyanAssetPixels,
+    height: png.height,
+    magentaAssetPixels,
+    width: png.width,
+  };
 }
 
 export function analyzeStarterLog(log, frames = 300) {

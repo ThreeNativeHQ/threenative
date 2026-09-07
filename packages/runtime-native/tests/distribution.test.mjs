@@ -561,14 +561,9 @@ test.runIf(process.platform === 'linux')('an installed runtime verifier uses pac
   const runtimePackage = join(consumer, 'node_modules', '@threenative', 'runtime-native');
 
   const expectedScreenshot = join(root, 'expected.png');
-  const png = new PNG({ height: 16, width: 16 });
-  for (let index = 0; index < png.data.length; index += 4) {
-    const cyan = index < 128 * 4;
-    png.data[index] = cyan ? 20 : 0;
-    png.data[index + 1] = cyan ? 220 : 0;
-    png.data[index + 2] = cyan ? 240 : 0;
-    png.data[index + 3] = 255;
-  }
+  const png = PNG.sync.read(
+    readFileSync(new URL('../../create-threenative/templates/starter/assets/native-proof.png', import.meta.url)),
+  );
   writeFileSync(expectedScreenshot, PNG.sync.write(png));
 
   const artifactDirectory = join(consumer, 'dist-native');
