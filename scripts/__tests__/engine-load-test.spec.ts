@@ -1,4 +1,11 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  type IModuleGraphEntry,
+  hashServedModuleGraph,
+  hashWorkloadModuleGraph,
+} from "../../examples/engine-load-test/src/identity.js";
 import {
   createLcg,
   createPlacements,
@@ -109,6 +116,1433 @@ describe("engine load test workload", () => {
     expect(positionHash(createPlacements(1024))).toBe(positionHash(createPlacements(1024)));
     expect(positionHash(createPlacements(1024))).not.toBe(positionHash(createPlacements(256)));
     expect(positionHash(createPlacements(1024))).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it("should keep artifact identity independent of source labels and workload identity byte-sensitive", async () => {
+    const module = (url: string, source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url,
+    });
+    const artifactModules = [
+      module("/src/main.ts", "import './game.ts';"),
+      module("/src/game.ts", "import './workload.ts';"),
+      module("/src/workload.ts", "export const ladder = [256, 1024];"),
+    ];
+    const workloadConfiguration = {
+      frames: 1_800,
+      ladder: [16_384],
+      modes: ["L2", "L3"],
+      repeats: 1,
+      warmup: 120,
+    };
+    const artifactHash = await hashServedModuleGraph(artifactModules);
+    const relabeledArtifactHash = await hashServedModuleGraph(artifactModules);
+    const workloadHash = await hashWorkloadModuleGraph(
+      artifactModules.slice(1),
+      workloadConfiguration,
+    );
+    const changedWorkloadHash = await hashWorkloadModuleGraph(
+      [
+        ...artifactModules.slice(1, 2),
+        module("/src/workload.ts", "export const ladder = [256, 1024, 4096];"),
+      ],
+      workloadConfiguration,
+    );
+    const changedConfigurationHash = await hashWorkloadModuleGraph(artifactModules.slice(1), {
+      ...workloadConfiguration,
+      modes: ["L2"],
+    });
+    expect(relabeledArtifactHash).toBe(artifactHash);
+    expect(changedWorkloadHash).not.toBe(workloadHash);
+    expect(changedConfigurationHash).not.toBe(workloadHash);
+
+    const candidateIdentity = { artifactHash, sourceSha: "candidate-sha", workloadHash };
+    const relabeledIdentity = {
+      artifactHash: relabeledArtifactHash,
+      sourceSha: "other-sha",
+      workloadHash,
+    };
+    expect(relabeledIdentity.artifactHash).toBe(candidateIdentity.artifactHash);
+    expect(relabeledIdentity.sourceSha).not.toBe(candidateIdentity.sourceSha);
+
+    const browserSource = await readFile(
+      path.join(process.cwd(), "examples/engine-load-test/src/main.ts"),
+      "utf8",
+    );
+    expect(browserSource).toMatch(/hashServedModuleGraph\(artifactModules\)/u);
+    expect(browserSource).toMatch(/hashWorkloadModuleGraph\(workloadModules,/u);
+    expect(browserSource).not.toMatch(/hashServedModuleGraph\(sourceSha\)/u);
+  });
+
+  it("should keep graph identity stable across absolute worktree roots", async () => {
+    const module = (url: string, source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url,
+    });
+    const graph = (worktree: string): IModuleGraphEntry[] => [
+      module(
+        `http://127.0.0.1:5199/@fs${worktree}/examples/engine-load-test/src/main.ts`,
+        `import "/@fs${worktree}/packages/core/src/renderProjection.ts";`,
+      ),
+      module(
+        `http://127.0.0.1:5199/@fs${worktree}/packages/core/src/renderProjection.ts`,
+        'export const projection = "stable";',
+      ),
+    ];
+    const baselineGraph = graph("/home/runner/work/threenative-baseline");
+    const candidateGraph = graph("/home/runner/work/threenative-candidate");
+    const configuration = {
+      frames: 1_800,
+      ladder: [16_384],
+      modes: ["L2", "L3"],
+      repeats: 1,
+      warmup: 120,
+    };
+
+    const baselineArtifactHash = await hashServedModuleGraph(baselineGraph);
+    const candidateArtifactHash = await hashServedModuleGraph(candidateGraph);
+    const baselineWorkloadHash = await hashWorkloadModuleGraph(baselineGraph, configuration);
+    const candidateWorkloadHash = await hashWorkloadModuleGraph(candidateGraph, configuration);
+    const changedBytesHash = await hashWorkloadModuleGraph(
+      candidateGraph.map((entry, index) =>
+        index === 1
+          ? module(entry.url, 'export const projection = "changed served bytes";')
+          : entry,
+      ),
+      configuration,
+    );
+    const changedConfigurationHash = await hashWorkloadModuleGraph(candidateGraph, {
+      ...configuration,
+      modes: ["L2"],
+    });
+
+    expect(candidateArtifactHash).toBe(baselineArtifactHash);
+    expect(candidateWorkloadHash).toBe(baselineWorkloadHash);
+    expect(changedBytesHash).not.toBe(candidateWorkloadHash);
+    expect(changedConfigurationHash).not.toBe(candidateWorkloadHash);
+  });
+
+  it("should keep graph identity stable across local Vite origins and entry order", async () => {
+    const encode = (source: string): Uint8Array => new TextEncoder().encode(source);
+    const graph: IModuleGraphEntry[] = [
+      { url: "http://localhost:5199/src/a.js", bytes: encode("export const x=0;") },
+      { url: "http://127.0.0.1:5199/src/b.js", bytes: encode("export const x=1;") },
+    ];
+    const reversed = [...graph].reverse();
+    const configuration = { frames: 1_800, ladder: [16_384] };
+
+    expect(await hashServedModuleGraph(graph)).toBe(await hashServedModuleGraph(reversed));
+    expect(await hashWorkloadModuleGraph(graph, configuration)).toBe(
+      await hashWorkloadModuleGraph(reversed, configuration),
+    );
+  });
+
+  it("should keep graph identity stable for canonically distinct Unicode URLs and entry order", async () => {
+    const encode = (source: string): Uint8Array => new TextEncoder().encode(source);
+    const graph: IModuleGraphEntry[] = [
+      { url: "/src/caf\u00e9.js", bytes: encode("export const value = 1;") },
+      { url: "/src/cafe\u0301.js", bytes: encode("export const value = 1;") },
+    ];
+    const reversed = [...graph].reverse();
+    const configuration = { frames: 1_800, ladder: [16_384] };
+
+    expect(await hashServedModuleGraph(graph)).toBe(await hashServedModuleGraph(reversed));
+    expect(await hashWorkloadModuleGraph(graph, configuration)).toBe(
+      await hashWorkloadModuleGraph(reversed, configuration),
+    );
+  });
+
+  it("should normalize local Vite loopback origins in graph URLs and module references", async () => {
+    const encode = (source: string): Uint8Array => new TextEncoder().encode(source);
+    const graph = (origin: string): IModuleGraphEntry[] => [
+      {
+        url: `${origin}/src/main.js`,
+        bytes: encode(`import "${origin}/src/dependency.js";`),
+      },
+      { url: `${origin}/src/dependency.js`, bytes: encode("export const value = 1;") },
+    ];
+    const origins = [
+      "http://127.0.0.1:5199",
+      "http://127.0.0.1:5200",
+      "http://localhost:5199",
+      "http://localhost:5200",
+      "http://[::1]:5199",
+      "http://[::1]:5200",
+    ];
+    const configuration = { frames: 1_800, ladder: [16_384] };
+    const baseline = graph(origins[0] ?? "");
+
+    for (const origin of origins.slice(1)) {
+      expect(await hashServedModuleGraph(graph(origin))).toBe(
+        await hashServedModuleGraph(baseline),
+      );
+      expect(await hashWorkloadModuleGraph(graph(origin), configuration)).toBe(
+        await hashWorkloadModuleGraph(baseline, configuration),
+      );
+    }
+  });
+
+  it("should reject conflicting duplicate module observations in either order", async () => {
+    const duplicate: IModuleGraphEntry[] = [
+      { url: "/src/duplicate.js", bytes: new TextEncoder().encode("export const x=0;") },
+      { url: "/src/duplicate.js", bytes: new TextEncoder().encode("export const x=1;") },
+    ];
+    const configuration = { frames: 1_800 };
+
+    for (const graph of [duplicate, [...duplicate].reverse()]) {
+      await expect(hashServedModuleGraph(graph)).rejects.toThrow(
+        /TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:conflicting duplicate module URL/u,
+      );
+      await expect(hashWorkloadModuleGraph(graph, configuration)).rejects.toThrow(
+        /TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:conflicting duplicate module URL/u,
+      );
+    }
+  });
+
+  it("should strip large inline source maps without hiding executable byte changes", async () => {
+    const encoder = new TextEncoder();
+    const configuration = { frames: 1_800, modes: ["L2", "L3"], repeats: 1 };
+    const executablePayload = "x".repeat(11_000_000);
+    const graph = (worktree: string, changed = false): IModuleGraphEntry[] => {
+      const executableSource = [
+        `import "/@fs${worktree}/packages/core/src/index.ts";`,
+        `export const payload = "${changed ? "y" : executablePayload}";`,
+      ].join("\n");
+      const sourceMap = {
+        version: 3,
+        sources: [`${worktree}/packages/core/src/index.ts`],
+        sourcesContent: [`absolute checkout ${worktree}`],
+        names: [],
+        mappings: "AAAA",
+      };
+      return [
+        {
+          bytes: encoder.encode(
+            `${executableSource}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify(sourceMap)).toString("base64")}`,
+          ),
+          url: `http://127.0.0.1:5199/@fs${worktree}/examples/engine-load-test/src/main.ts`,
+        },
+      ];
+    };
+    const baseline = graph("/home/runner/work/threenative-baseline");
+    const candidate = graph("/home/runner/work/threenative-candidate");
+
+    const baselineArtifactHash = await hashServedModuleGraph(baseline);
+    const candidateArtifactHash = await hashServedModuleGraph(candidate);
+    const baselineWorkloadHash = await hashWorkloadModuleGraph(baseline, configuration);
+    const candidateWorkloadHash = await hashWorkloadModuleGraph(candidate, configuration);
+    const changedBytesHash = await hashWorkloadModuleGraph(
+      graph("/home/runner/work/threenative-candidate", true),
+      configuration,
+    );
+
+    expect(candidateArtifactHash).toBe(baselineArtifactHash);
+    expect(candidateWorkloadHash).toBe(baselineWorkloadHash);
+    expect(changedBytesHash).not.toBe(candidateWorkloadHash);
+  });
+
+  it("should strip only terminal inline source-map comments outside literals", async () => {
+    const module = (source: string, url = "/src/main.ts"): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url,
+    });
+    const lineMarker = "//# sourceMappingURL=data:application/json;base64,ZmFrZQ==";
+    const blockMarker = "/*# sourceMappingURL=data:application/json;base64,ZmFrZQ==*/";
+    const templateSource = [
+      "export const literal = `",
+      lineMarker,
+      "`;",
+      "export const suffix = 1;",
+    ].join("\n");
+    const templateChanged = templateSource.replace("suffix = 1", "suffix = 2");
+    expect(await hashServedModuleGraph([module(templateChanged)])).not.toBe(
+      await hashServedModuleGraph([module(templateSource)]),
+    );
+
+    const stringSource = `export const literal = ${JSON.stringify(lineMarker)};\nexport const suffix = 1;`;
+    expect(await hashServedModuleGraph([module(stringSource)])).not.toBe(
+      await hashServedModuleGraph([module(stringSource.replace(lineMarker, "literal"))]),
+    );
+
+    const blockSource = ["export const before = 1;", blockMarker, "export const suffix = 1;"].join(
+      "\n",
+    );
+    const blockChanged = blockSource.replace("suffix = 1", "suffix = 2");
+    expect(await hashServedModuleGraph([module(blockChanged)])).not.toBe(
+      await hashServedModuleGraph([module(blockSource)]),
+    );
+
+    const sourceMap = (root: string): string =>
+      `/*# sourceMappingURL=data:application/json;base64,${Buffer.from(
+        JSON.stringify({ version: 3, sources: [`${root}/src/main.ts`], names: [], mappings: "" }),
+      ).toString("base64")}*/`;
+    const baseline = module(`export const stable = 1;\n${sourceMap("/home/baseline")}`);
+    const candidate = module(`export const stable = 1;\n${sourceMap("/home/candidate")}`);
+    expect(await hashServedModuleGraph([candidate])).toBe(await hashServedModuleGraph([baseline]));
+  });
+
+  it("should preserve executable bytes after line source maps separated by JS line terminators", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const lineMarker = "//# sourceMappingURL=data:application/json;base64,ZmFrZQ==";
+    for (const separator of ["\u2028", "\u2029"]) {
+      const baseline = module(
+        `globalThis.auditValue=1;\n${lineMarker}${separator}globalThis.auditValue=1;`,
+      );
+      const candidate = module(
+        `globalThis.auditValue=1;\n${lineMarker}${separator}globalThis.auditValue=2;`,
+      );
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+    }
+  });
+
+  it("should strip a terminal inline source map after a regex literal", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const sourceMap = (root: string): string =>
+      `/*# sourceMappingURL=data:application/json;base64,${Buffer.from(
+        JSON.stringify({ version: 3, sources: [`${root}/src/main.ts`], names: [], mappings: "" }),
+      ).toString("base64")}*/`;
+    const baseline = module(`export const regex = /"/g;\n${sourceMap("/home/baseline")}`);
+    const candidate = module(`export const regex = /"/g;\n${sourceMap("/home/candidate")}`);
+    expect(await hashServedModuleGraph([candidate])).toBe(await hashServedModuleGraph([baseline]));
+  });
+
+  it("should preserve executable template bytes after a control-condition regex", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const baseline = module(
+      'if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    );
+    const candidate = module(
+      'if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:BBB`;',
+    );
+
+    expect(await hashServedModuleGraph([candidate])).not.toBe(
+      await hashServedModuleGraph([baseline]),
+    );
+    expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+    );
+  });
+
+  it("should preserve executable bytes after break and continue statement completion", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const separators = ["\n", "\r", "\r\n", "\u2028", "\u2029", "/* multiline comment\n */"];
+    const regexLiteral = "/`/;";
+    const source = (
+      keyword: "break" | "continue",
+      labeled: boolean,
+      separator: string,
+      marker: string,
+    ): string => {
+      const statement = labeled ? `${keyword} loop` : keyword;
+      return [
+        "loop: for (;;) {",
+        `  ${statement}${separator}${regexLiteral}`,
+        "}",
+        `globalThis.auditValue = \`//# sourceMappingURL=data:${marker}\`;`,
+      ].join("\n");
+    };
+
+    for (const keyword of ["break", "continue"] as const) {
+      for (const labeled of [false, true]) {
+        for (const separator of separators) {
+          const baseline = module(source(keyword, labeled, separator, "AAA"));
+          const candidate = module(source(keyword, labeled, separator, "BBB"));
+          expect(await hashServedModuleGraph([candidate])).not.toBe(
+            await hashServedModuleGraph([baseline]),
+          );
+          expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+            await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+          );
+        }
+      }
+    }
+  });
+
+  it("should consume escaped break and continue labels across every separator", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const separators = [
+      "\n",
+      "\r",
+      "\r\n",
+      "\u2028",
+      "\u2029",
+      "/* comment */",
+      "/* multiline comment\n */",
+      "// comment\n",
+    ];
+    const labels = [
+      "",
+      "loop",
+      String.raw`\u006coop`,
+      String.raw`\u{6c}oop`,
+      String.raw`\u{000006c}oop`,
+    ];
+    const source = (
+      keyword: "break" | "continue",
+      label: string,
+      separator: string,
+      marker: string,
+    ): string => {
+      const statement = label.length === 0 ? keyword : `${keyword} ${label}`;
+      return [
+        "loop: for (;;) {",
+        `  ${statement}${separator}/\`/;`,
+        "}",
+        `globalThis.auditValue = \`//# sourceMappingURL=data:${marker}\`;`,
+      ].join("\n");
+    };
+
+    for (const keyword of ["break", "continue"] as const) {
+      for (const label of labels) {
+        for (const separator of separators) {
+          const baseline = module(source(keyword, label, separator, "AAA"));
+          const candidate = module(source(keyword, label, separator, "BBB"));
+          expect(await hashServedModuleGraph([candidate])).not.toBe(
+            await hashServedModuleGraph([baseline]),
+          );
+          expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+            await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+          );
+        }
+      }
+    }
+  });
+
+  it("should ignore only the absolute root in a terminal map after a control-condition regex", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const sourceMap = (root: string): string =>
+      `/*# sourceMappingURL=data:application/json;base64,${Buffer.from(
+        JSON.stringify({ version: 3, sources: [`${root}/src/main.ts`], names: [], mappings: "" }),
+      ).toString("base64")}*/`;
+    const baseline = module(`if (true) /"/g.test("x");\n${sourceMap("/home/baseline")}`);
+    const candidate = module(`if (true) /"/g.test("x");\n${sourceMap("/home/candidate")}`);
+
+    expect(await hashServedModuleGraph([candidate])).toBe(await hashServedModuleGraph([baseline]));
+  });
+
+  it("should preserve executable template bytes after nested control-condition regexes", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const baseline = module(
+      'if (true) if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    );
+    const candidate = module(
+      'if (true) if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:BBB`;',
+    );
+
+    expect(await hashServedModuleGraph([candidate])).not.toBe(
+      await hashServedModuleGraph([baseline]),
+    );
+    expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+    );
+  });
+
+  it("should preserve executable template bytes after keyword properties and contextual identifiers", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const testCases = [
+      'globalThis.return / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const of = 1; of / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'function f() { return /`/.test("x"); } globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'for (const x of /`/.test("x")) {} globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    ];
+    for (const statement of testCases) {
+      const baseline = module(statement);
+      const candidate = module(statement.replace("AAA", "BBB"));
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should preserve control-parenthesis context through for await", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const baseline = module(
+      'for await (const x of []) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    );
+    const candidate = module(
+      'for await (const x of []) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:BBB`;',
+    );
+
+    expect(await hashServedModuleGraph([candidate])).not.toBe(
+      await hashServedModuleGraph([baseline]),
+    );
+    expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+    );
+  });
+
+  it("should preserve for-await context through trivia and all JavaScript line terminators", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const separators = [
+      "\n",
+      "/* comment */",
+      "/* comment\n */",
+      "// comment\n",
+      "\u2028",
+      "\u2029",
+    ];
+    const source = (separator: string, marker: string): string =>
+      `for${separator}await (const x of []) /\`/.test("x"); globalThis.auditValue = \`//# sourceMappingURL=data:${marker}\`;`;
+
+    for (const separator of separators) {
+      const baseline = module(source(separator, "AAA"));
+      const candidate = module(source(separator, "BBB"));
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should classify only the actual for-of separator and preserve an of identifier", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const baseline = module(
+      'for (let of = 0; of / 1;) {} if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    );
+    const candidate = module(
+      'for (let of = 0; of / 1;) {} if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:BBB`;',
+    );
+
+    expect(await hashServedModuleGraph([candidate])).not.toBe(
+      await hashServedModuleGraph([baseline]),
+    );
+    expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+    );
+  });
+
+  it("should preserve unary operand context before an of identifier", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const baseline = module(
+      'for (let x = typeof of / 1; false;) {} if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    );
+    const candidate = module(
+      'for (let x = typeof of / 1; false;) {} if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:BBB`;',
+    );
+
+    expect(await hashServedModuleGraph([candidate])).not.toBe(
+      await hashServedModuleGraph([baseline]),
+    );
+    expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+    );
+  });
+
+  it("should preserve prefix update operand context across trivia", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const source = (init: string, marker: string): string =>
+      `let of=0; for(${init};false;){} /\`/; globalThis.auditValue=\`//# sourceMappingURL=data:${marker}\`;`;
+    const separators = [
+      "",
+      "/* block comment */",
+      "/* block comment\n */",
+      "// line comment\n",
+      "\n",
+      "\r",
+      "\r\n",
+      "\u2028",
+      "\u2029",
+    ];
+
+    for (const update of ["++", "--"]) {
+      for (const separator of separators) {
+        const baseline = module(source(`${update}${separator}of / 1`, "AAA"));
+        const candidate = module(source(`${update}${separator}of / 1`, "BBB"));
+        expect(await hashServedModuleGraph([candidate])).not.toBe(
+          await hashServedModuleGraph([baseline]),
+        );
+        expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+          await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+        );
+      }
+    }
+
+    for (const update of ["++", "--"]) {
+      const baseline = module(source(`of${update} / 1`, "AAA"));
+      const candidate = module(source(`of${update} / 1`, "BBB"));
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+
+    const ordinaryForOf = (marker: string): IModuleGraphEntry =>
+      module(
+        `for (const value of []) {} /\`/; globalThis.auditValue=\`//# sourceMappingURL=data:${marker}\`;`,
+      );
+    const ordinaryBaseline = ordinaryForOf("AAA");
+    const ordinaryCandidate = ordinaryForOf("BBB");
+    expect(await hashServedModuleGraph([ordinaryCandidate])).not.toBe(
+      await hashServedModuleGraph([ordinaryBaseline]),
+    );
+    expect(await hashWorkloadModuleGraph([ordinaryCandidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([ordinaryBaseline], { frames: 1_800 }),
+    );
+  });
+
+  it("should establish restricted-production ASI boundaries only after line breaks", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const lineBreakCases = [
+      'function f() { return\nfunction g() {} /`/.test("x"); } globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'function* f() { yield\nfunction g() {} /`/.test("x"); } globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    ];
+    for (const statement of lineBreakCases) {
+      const baseline = module(statement);
+      const candidate = module(statement.replace("AAA", "BBB"));
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+
+    const sameLineBaseline = module(
+      "function f() { return function g() {} / 1; } globalThis.auditValue = `//# sourceMappingURL=data:AAA`;",
+    );
+    const sameLineCandidate = module(
+      "function f() { return function g() {} / 1; } globalThis.auditValue = `//# sourceMappingURL=data:BBB`;",
+    );
+    expect(await hashServedModuleGraph([sameLineCandidate])).not.toBe(
+      await hashServedModuleGraph([sameLineBaseline]),
+    );
+    expect(await hashWorkloadModuleGraph([sameLineCandidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([sameLineBaseline], { frames: 1_800 }),
+    );
+  });
+
+  it("should establish yield ASI boundaries when yield occurs inside an expression", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const baseline = module(
+      'function* f() {\n  const x = yield\n  function g() {} /`/.test("x");\n}\nglobalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    );
+    const candidate = module(
+      'function* f() {\n  const x = yield\n  function g() {} /`/.test("x");\n}\nglobalThis.auditValue = `//# sourceMappingURL=data:BBB`;',
+    );
+
+    expect(await hashServedModuleGraph([candidate])).not.toBe(
+      await hashServedModuleGraph([baseline]),
+    );
+    expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+    );
+
+    const sameLineBaseline = module(
+      "function* f() { const x = yield function g() {} / 1; } globalThis.auditValue = `//# sourceMappingURL=data:AAA`;",
+    );
+    const sameLineCandidate = module(
+      "function* f() { const x = yield function g() {} / 1; } globalThis.auditValue = `//# sourceMappingURL=data:BBB`;",
+    );
+    expect(await hashServedModuleGraph([sameLineCandidate])).not.toBe(
+      await hashServedModuleGraph([sameLineBaseline]),
+    );
+    expect(await hashWorkloadModuleGraph([sameLineCandidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([sameLineBaseline], { frames: 1_800 }),
+    );
+  });
+
+  it("should ignore only the absolute root in a terminal map after nested control-condition regexes", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const sourceMap = (root: string): string =>
+      `/*# sourceMappingURL=data:application/json;base64,${Buffer.from(
+        JSON.stringify({ version: 3, sources: [`${root}/src/main.ts`], names: [], mappings: "" }),
+      ).toString("base64")}*/`;
+    const baseline = module(`if (true) if (true) /"/g.test("x");\n${sourceMap("/home/baseline")}`);
+    const candidate = module(
+      `if (true) if (true) /"/g.test("x");\n${sourceMap("/home/candidate")}`,
+    );
+
+    expect(await hashServedModuleGraph([candidate])).toBe(await hashServedModuleGraph([baseline]));
+  });
+
+  it("should preserve executable template bytes after a labeled statement boundary", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const baseline = module(
+      'audit: if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    );
+    const candidate = module(
+      'audit: if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:BBB`;',
+    );
+
+    expect(await hashServedModuleGraph([candidate])).not.toBe(
+      await hashServedModuleGraph([baseline]),
+    );
+  });
+
+  it("should preserve executable template bytes after a switch case boundary", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const baseline = module(
+      'switch (true) { case true: if (true) /`/.test("x"); } globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    );
+    const candidate = module(
+      'switch (true) { case true: if (true) /`/.test("x"); } globalThis.auditValue = `//# sourceMappingURL=data:BBB`;',
+    );
+
+    expect(await hashServedModuleGraph([candidate])).not.toBe(
+      await hashServedModuleGraph([baseline]),
+    );
+  });
+
+  it("should preserve division after a function expression and later executable template bytes", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const baseline = module(
+      'const f = function() {} / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    );
+    const candidate = module(
+      'const f = function() {} / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:BBB`;',
+    );
+
+    expect(await hashServedModuleGraph([candidate])).not.toBe(
+      await hashServedModuleGraph([baseline]),
+    );
+    expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+    );
+  });
+
+  it("should preserve statement boundary after async function and generator declarations", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const testCases = [
+      'async function f() {} /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'async function* g() {} /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const x = 1\nasync function f() {} /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const x = 1\nasync function* g() {} /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const x = 1\n/* separator\n */ async function f() {} /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const x = 1\nif (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    ];
+    for (const statement of testCases) {
+      const baseline = module(statement);
+      const candidate = module(statement.replace("AAA", "BBB"));
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should preserve expression context for async function expressions and line-terminated async identifiers", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const exprCases = [
+      'const f = async function() {} / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const f = async\nfunction f2() {} /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    ];
+    for (const statement of exprCases) {
+      const baseline = module(statement);
+      const candidate = module(statement.replace("AAA", "BBB"));
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should distinguish conditional expression colons from statement boundaries", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const conditionalCases = [
+      'const f = true ? 0 : function() {} / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const f = a ? b ? 1 : 2 : function() {} / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const obj = { a: true ? 0 : function() {} / 1 }; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    ];
+    for (const statement of conditionalCases) {
+      const baseline = module(statement);
+      const candidate = module(statement.replace("AAA", "BBB"));
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should distinguish class expressions from class declarations", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const classCases = [
+      'const F = class {} / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const F = class Named {} / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const arr = [class {} / 1]; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'class C {} /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    ];
+    for (const statement of classCases) {
+      const baseline = module(statement);
+      const candidate = module(statement.replace("AAA", "BBB"));
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should preserve class-field initializer expressions and module references", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "http://127.0.0.1:5199/@fs/repo/packages/core/src/main.js",
+    });
+    const baseline = module(
+      'class C { x = function() {} / 1; } /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    );
+    const candidate = module(
+      'class C { x = function() {} / 1; } /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:BBB`;',
+    );
+
+    expect(await hashServedModuleGraph([candidate])).not.toBe(
+      await hashServedModuleGraph([baseline]),
+    );
+    expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+    );
+
+    const baselinePath = "/@fs/repo/packages/core/src/a";
+    const candidatePath = "packages/core/src/a";
+    const moduleReferences: [string, string][] = [
+      [
+        `class C { x = import(${JSON.stringify(baselinePath)}); }`,
+        `class C { x = import(${JSON.stringify(candidatePath)}); }`,
+      ],
+      [
+        `class C { x = new URL(${JSON.stringify(baselinePath)}, import.meta.url); }`,
+        `class C { x = new URL(${JSON.stringify(candidatePath)}, import.meta.url); }`,
+      ],
+    ];
+    for (const [baselineSource, candidateSource] of moduleReferences) {
+      expect(await hashServedModuleGraph([module(candidateSource)])).toBe(
+        await hashServedModuleGraph([module(baselineSource)]),
+      );
+      expect(await hashWorkloadModuleGraph([module(candidateSource)], { frames: 1_800 })).toBe(
+        await hashWorkloadModuleGraph([module(baselineSource)], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should not treat property or private names as keyword syntax", async () => {
+    const module = (source: string, url = "/src/main.ts"): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url,
+    });
+    const propertyCases = [
+      'class C extends ({ class: Object }).class {} /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'class C extends globalThis.function() {} /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    ];
+    for (const statement of propertyCases) {
+      const baseline = module(statement);
+      const candidate = module(statement.replace("AAA", "BBB"));
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+
+    const checkoutUrl = "http://127.0.0.1:5199/@fs/repo/packages/core/src/main.ts";
+    const privateNameCases = (pathValue: string): string[] => [
+      `class C { #import(x) { return x; } run() { return this.#import(${JSON.stringify(pathValue)}); } }`,
+      `class C { #new(x) { return x; } run() { return this.#new\nURL(${JSON.stringify(pathValue)}, import.meta.url); } }`,
+    ];
+    const baselinePath = "/@fs/repo/packages/core/src/a";
+    const candidatePath = "packages/core/src/a";
+    for (const index of [0, 1]) {
+      const baseline = module(privateNameCases(baselinePath)[index] ?? "", checkoutUrl);
+      const candidate = module(privateNameCases(candidatePath)[index] ?? "", checkoutUrl);
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should preserve statement boundaries after declarations separated by ASI", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const testCases = [
+      'const x = 1\nfunction f() {} /`/.test("x");\nglobalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const x = 1\nclass C {} /`/.test("x");\nglobalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const café = 1\u2028function f() {} /`/.test("x");\nglobalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const café = 1\u2029class C {} /`/.test("x");\nglobalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    ];
+    for (const statement of testCases) {
+      const baseline = module(statement);
+      const candidate = module(statement.replace("AAA", "BBB"));
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should preserve class-expression context through heritage parentheses", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const testCases = [
+      'const C = class extends (Object) {} / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const C = class extends (class {}) {} / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const C = class extends ((class {})) {} / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'const C = Object.assign(class {}, {}) / 1; if (true) /`/.test("x"); globalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    ];
+    for (const statement of testCases) {
+      const baseline = module(statement);
+      const candidate = module(statement.replace("AAA", "BBB"));
+
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should consume nullish operators without recording conditional questions", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/main.ts",
+    });
+    const testCases = [
+      'const x = null ?? 1;\nlabel: if (true) /`/.test("x");\nglobalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+      'let x;\nx ??= 1;\nlabel: if (true) /`/.test("x");\nglobalThis.auditValue = `//# sourceMappingURL=data:AAA`;',
+    ];
+    for (const statement of testCases) {
+      const baseline = module(statement);
+      const candidate = module(statement.replace("AAA", "BBB"));
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should canonicalize only syntactic module references", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "http://127.0.0.1:5199/@fs/repo/packages/core/src/a.js",
+    });
+    const runtimeCases: [string, string][] = [
+      [
+        'globalThis.auditValue = `"/@fs/repo/packages/core/src/a"`;',
+        'globalThis.auditValue = `"packages/core/src/a"`;',
+      ],
+      [
+        'globalThis.auditValue = "/@fs/repo/packages/core/src/a";',
+        'globalThis.auditValue = "packages/core/src/a";',
+      ],
+      [
+        'globalThis.auditValue = new RegExp("\\"/@fs/repo/packages/core/src/a\\"").source;',
+        'globalThis.auditValue = new RegExp("\\"packages/core/src/a\\"").source;',
+      ],
+      [
+        'globalThis.import\n"/@fs/repo/packages/core/src/a";',
+        'globalThis.import\n"packages/core/src/a";',
+      ],
+      [
+        'const obj = { from: 0 };\nexport default obj.from\n"/@fs/repo/packages/core/src/a";',
+        'const obj = { from: 0 };\nexport default obj.from\n"packages/core/src/a";',
+      ],
+    ];
+    for (const [baselineSource, candidateSource] of runtimeCases) {
+      const baseline = module(baselineSource);
+      const candidate = module(candidateSource);
+      expect(await hashServedModuleGraph([candidate])).not.toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+
+    const moduleReferenceCases: [string, string][] = [
+      ['import "/@fs/repo/packages/core/src/a";', 'import "packages/core/src/a";'],
+      [
+        'export { value } from "/@fs/repo/packages/core/src/a";',
+        'export { value } from "packages/core/src/a";',
+      ],
+      ['void import("/@fs/repo/packages/core/src/a");', 'void import("packages/core/src/a");'],
+      [
+        'new URL("/@fs/repo/packages/core/src/a", import.meta.url);',
+        'new URL("packages/core/src/a", import.meta.url);',
+      ],
+      [
+        'globalThis.auditValue = `${import("/@fs/repo/packages/core/src/a")}`;',
+        'globalThis.auditValue = `${import("packages/core/src/a")}`;',
+      ],
+    ];
+    for (const [baselineSource, candidateSource] of moduleReferenceCases) {
+      const baseline = module(baselineSource);
+      const candidate = module(candidateSource);
+      expect(await hashServedModuleGraph([candidate])).toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+
+    const lookalikeBaseline =
+      'globalThis.new\nURL("/@fs/repo/packages/core/src/a", import.meta.url);';
+    const lookalikeCandidate = 'globalThis.new\nURL("packages/core/src/a", import.meta.url);';
+    const runtimeSpecifier = (source: string): string => {
+      const match = /URL\("([^"]+)", import\.meta\.url\)/u.exec(source);
+      if (match?.[1] === undefined) throw new Error("test fixture has no URL argument");
+      return match[1];
+    };
+    expect(runtimeSpecifier(lookalikeBaseline)).toBe("/@fs/repo/packages/core/src/a");
+    expect(runtimeSpecifier(lookalikeCandidate)).toBe("packages/core/src/a");
+    expect(runtimeSpecifier(lookalikeBaseline)).not.toBe(runtimeSpecifier(lookalikeCandidate));
+    expect(lookalikeBaseline).not.toBe(lookalikeCandidate);
+    expect(await hashServedModuleGraph([module(lookalikeCandidate)])).not.toBe(
+      await hashServedModuleGraph([module(lookalikeBaseline)]),
+    );
+    expect(await hashWorkloadModuleGraph([module(lookalikeCandidate)], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([module(lookalikeBaseline)], { frames: 1_800 }),
+    );
+  });
+
+  it("should recognize new URL module references with a trailing comma and trivia", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "http://127.0.0.1:5199/@fs/repo/packages/core/src/main.js",
+    });
+    const urlSource = (pathValue: string): string =>
+      `new URL(${JSON.stringify(pathValue)}, import.meta.url, /* trailing */\n\t)`;
+    const baselinePath = "/@fs/repo/packages/core/src/a";
+    const candidatePath = "packages/core/src/a";
+    const baseline = module(urlSource(baselinePath));
+    const candidate = module(urlSource(candidatePath));
+
+    expect(await hashServedModuleGraph([candidate])).toBe(await hashServedModuleGraph([baseline]));
+    expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).toBe(
+      await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+    );
+
+    const differingValues: [string, string][] = [
+      ["/@fs/repo/packages/core/src/a?one", "/@fs/repo/packages/core/src/a?two"],
+      ["/@fs/repo/packages/core/src/a#one", "/@fs/repo/packages/core/src/a#two"],
+      ["data:text/plain,AAA", "data:text/plain,BBB"],
+    ];
+    for (const [baselineValue, candidateValue] of differingValues) {
+      const queryBaseline = module(urlSource(baselineValue));
+      const queryCandidate = module(urlSource(candidateValue));
+      expect(await hashServedModuleGraph([queryCandidate])).not.toBe(
+        await hashServedModuleGraph([queryBaseline]),
+      );
+      expect(await hashWorkloadModuleGraph([queryCandidate], { frames: 1_800 })).not.toBe(
+        await hashWorkloadModuleGraph([queryBaseline], { frames: 1_800 }),
+      );
+    }
+
+    const lookalikeBaseline = module(
+      `globalThis.new\nURL(${JSON.stringify(baselinePath)}, import.meta.url, /* trailing */\n\t)`,
+    );
+    const lookalikeCandidate = module(
+      `globalThis.new\nURL(${JSON.stringify(candidatePath)}, import.meta.url, /* trailing */\n\t)`,
+    );
+    expect(await hashServedModuleGraph([lookalikeCandidate])).not.toBe(
+      await hashServedModuleGraph([lookalikeBaseline]),
+    );
+    expect(await hashWorkloadModuleGraph([lookalikeCandidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([lookalikeBaseline], { frames: 1_800 }),
+    );
+  });
+
+  it("should canonicalize multiline static imports through named clauses and comments", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "http://127.0.0.1:5199/@fs/repo/packages/core/src/main.js",
+    });
+    const cases: [string, string][] = [
+      ['import x\nfrom "/@fs/repo/packages/core/src/a";', 'import x\nfrom "packages/core/src/a";'],
+      [
+        'import { x as y, z } // keep the import open\nfrom "/@fs/repo/packages/core/src/a";',
+        'import { x as y, z } // keep the import open\nfrom "packages/core/src/a";',
+      ],
+    ];
+    for (const [baselineSource, candidateSource] of cases) {
+      const baseline = module(baselineSource);
+      const candidate = module(candidateSource);
+      expect(await hashServedModuleGraph([candidate])).toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should canonicalize multiline named import and export clauses", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "http://127.0.0.1:5199/@fs/repo/packages/core/src/main.js",
+    });
+    const separators = [
+      "\n",
+      "\r",
+      "\r\n",
+      "\u2028",
+      "\u2029",
+      "/* block comment */\n",
+      "/* block comment\n */",
+      "// line comment\n",
+    ];
+    const baselinePath = "/@fs/repo/packages/core/src/a";
+    const candidatePath = "packages/core/src/a";
+    for (const statement of ["export ", "import "]) {
+      for (const separator of separators) {
+        const source = (pathValue: string): string =>
+          `${statement}{${separator}x} from ${JSON.stringify(pathValue)};`;
+        const baseline = module(source(baselinePath));
+        const candidate = module(source(candidatePath));
+        expect(await hashServedModuleGraph([candidate])).toBe(
+          await hashServedModuleGraph([baseline]),
+        );
+        expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).toBe(
+          await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+        );
+      }
+    }
+  });
+
+  it("should preserve legal multiline static import and export continuations", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "http://127.0.0.1:5199/@fs/repo/packages/core/src/main.js",
+    });
+    const cases: [string, string][] = [
+      [
+        'import x\n, { y } from "/@fs/repo/packages/core/src/a";',
+        'import x\n, { y } from "packages/core/src/a";',
+      ],
+      ['export\n* from "/@fs/repo/packages/core/src/a";', 'export\n* from "packages/core/src/a";'],
+      [
+        'export\n{ x } from "/@fs/repo/packages/core/src/a";',
+        'export\n{ x } from "packages/core/src/a";',
+      ],
+    ];
+    for (const [baselineSource, candidateSource] of cases) {
+      const baseline = module(baselineSource);
+      const candidate = module(candidateSource);
+      expect(await hashServedModuleGraph([candidate])).toBe(
+        await hashServedModuleGraph([baseline]),
+      );
+      expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).toBe(
+        await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+      );
+    }
+  });
+
+  it("should preserve namespace static import and export continuations through binding names", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "http://127.0.0.1:5199/@fs/repo/packages/core/src/main.js",
+    });
+    const separators = [
+      "\n",
+      "/* comment */\n",
+      "/* comment\n */",
+      "// comment\n",
+      "\u2028",
+      "\u2029",
+    ];
+    const baselinePath = "/@fs/repo/packages/core/src/a";
+    const candidatePath = "packages/core/src/a";
+    for (const statement of ["import * as", "export * as"]) {
+      for (const separator of separators) {
+        const source = (pathValue: string): string =>
+          `${statement}${separator}x from ${JSON.stringify(pathValue)};`;
+        const baseline = module(source(baselinePath));
+        const candidate = module(source(candidatePath));
+        expect(await hashServedModuleGraph([candidate])).toBe(
+          await hashServedModuleGraph([baseline]),
+        );
+        expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).toBe(
+          await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+        );
+      }
+    }
+  });
+
+  it("should canonicalize named clauses across every trivia boundary", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "http://127.0.0.1:5199/@fs/repo/packages/core/src/main.js",
+    });
+    const separators = [
+      "\n",
+      "\r",
+      "\r\n",
+      "\u2028",
+      "\u2029",
+      "/* block comment */",
+      "/* multiline comment\n */",
+      "// line comment\n",
+    ];
+    const baselinePath = "/@fs/repo/packages/core/src/a";
+    const candidatePath = "packages/core/src/a";
+    const clauseSources = [
+      (statement: string, separator: string, pathValue: string): string =>
+        `${statement}{${separator}x} from ${JSON.stringify(pathValue)};`,
+      (statement: string, separator: string, pathValue: string): string =>
+        `${statement}{x${separator}as y} from ${JSON.stringify(pathValue)};`,
+      (statement: string, separator: string, pathValue: string): string =>
+        `${statement}{x${separator}} from ${JSON.stringify(pathValue)};`,
+      (statement: string, separator: string, pathValue: string): string =>
+        `${statement}{x as y${separator}} from ${JSON.stringify(pathValue)};`,
+    ];
+
+    for (const statement of ["export ", "import "]) {
+      for (const separator of separators) {
+        for (const createSource of clauseSources) {
+          const baseline = module(createSource(statement, separator, baselinePath));
+          const candidate = module(createSource(statement, separator, candidatePath));
+          expect(await hashServedModuleGraph([candidate])).toBe(
+            await hashServedModuleGraph([baseline]),
+          );
+          expect(await hashWorkloadModuleGraph([candidate], { frames: 1_800 })).toBe(
+            await hashWorkloadModuleGraph([baseline], { frames: 1_800 }),
+          );
+        }
+      }
+    }
+
+    const propertyBaseline = module(
+      `const object = { x: 1 };\nexport {x} from ${JSON.stringify(candidatePath)};`,
+    );
+    const propertyCandidate = module(
+      `const object = { y: 1 };\nexport {x} from ${JSON.stringify(candidatePath)};`,
+    );
+    expect(await hashServedModuleGraph([propertyCandidate])).not.toBe(
+      await hashServedModuleGraph([propertyBaseline]),
+    );
+    expect(await hashWorkloadModuleGraph([propertyCandidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([propertyBaseline], { frames: 1_800 }),
+    );
+
+    const statementBaseline = module(
+      `const unrelated = 1;\nexport {x} from ${JSON.stringify(candidatePath)};`,
+    );
+    const statementCandidate = module(
+      `const unrelated = 2;\nexport {x} from ${JSON.stringify(candidatePath)};`,
+    );
+    expect(await hashServedModuleGraph([statementCandidate])).not.toBe(
+      await hashServedModuleGraph([statementBaseline]),
+    );
+    expect(await hashWorkloadModuleGraph([statementCandidate], { frames: 1_800 })).not.toBe(
+      await hashWorkloadModuleGraph([statementBaseline], { frames: 1_800 }),
+    );
+  });
+
+  it("should preserve full paths when recognized Vite layouts repeat", async () => {
+    const module = (url: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode("export const shared = true;"),
+      url,
+    });
+    const rooted = (root: string): IModuleGraphEntry[] => [
+      module(`http://127.0.0.1:5199/@fs${root}/packages/core/src/a/packages/core/src/index.ts`),
+    ];
+    expect(await hashServedModuleGraph(rooted("/repo-a"))).not.toBe(
+      await hashServedModuleGraph(rooted("/repo-b")),
+    );
+  });
+
+  it("should preserve full paths when adjacent Vite layout evidence overlaps", async () => {
+    const module = (url: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode("export const shared = true;"),
+      url,
+    });
+    const rooted = (root: string): IModuleGraphEntry[] => [
+      module(`http://127.0.0.1:5199/@fs${root}/packages/core/src/packages/core/src/index.ts`),
+    ];
+
+    expect(await hashServedModuleGraph(rooted("/repo-a"))).not.toBe(
+      await hashServedModuleGraph(rooted("/repo-b")),
+    );
+  });
+
+  it("should preserve complete package paths in served module identity", async () => {
+    const module = (url: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode("export const shared = true;"),
+      url,
+    });
+    const graph = (path: string): IModuleGraphEntry[] => [
+      module(`http://127.0.0.1:5199/@fs/repo/${path}`),
+    ];
+    const core = await hashServedModuleGraph(graph("packages/core/src/index.ts"));
+    const physics = await hashServedModuleGraph(graph("packages/physics/src/index.ts"));
+    const nestedA = await hashServedModuleGraph(
+      graph("node_modules/outer/node_modules/packages/src/index.ts"),
+    );
+    const nestedB = await hashServedModuleGraph(
+      graph("node_modules/other/node_modules/packages/src/index.ts"),
+    );
+
+    expect(physics).not.toBe(core);
+    expect(nestedB).not.toBe(nestedA);
+
+    const rooted = (root: string): IModuleGraphEntry[] => [
+      module(`http://127.0.0.1:5199/@fs${root}/packages/core/src/index.ts`),
+    ];
+    expect(await hashServedModuleGraph(rooted("/home/packages/candidate"))).toBe(
+      await hashServedModuleGraph(rooted("/home/packages/baseline")),
+    );
+  });
+
+  it("should preserve ordinary external URLs and module query identity", async () => {
+    const module = (url: string, source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url,
+    });
+    const externalUrl = (value: string): IModuleGraphEntry[] => [
+      module("/src/workload.ts", `export const mesh = ${JSON.stringify(value)};`),
+    ];
+    const rawModule = [module("/src/shader.glsl?raw", 'export default "shader";')];
+    const urlModule = [module("/src/shader.glsl?url", 'export default "shader";')];
+    const localVite = (origin: string): IModuleGraphEntry[] => [
+      module(`${origin}/src/workload.ts?raw#stable`, 'export const mesh = "stable";'),
+    ];
+    const dataUrl = (value: string): IModuleGraphEntry[] => [
+      module("/src/data.ts", `export const asset = ${JSON.stringify(value)};`),
+    ];
+    const unrecognizedPath = (value: string): IModuleGraphEntry[] => [
+      module("/src/path.ts", `export const path = ${JSON.stringify(value)};`),
+    ];
+    const externalAbsolute = (origin: string): IModuleGraphEntry[] => [
+      module(`${origin}/@fs/repo/packages/core/src/index.ts`, "export const shared = true;"),
+    ];
+
+    expect(
+      await hashWorkloadModuleGraph(externalUrl("https://a.example/mesh?quality=low"), {}),
+    ).not.toBe(
+      await hashWorkloadModuleGraph(externalUrl("https://b.example/mesh?quality=high"), {}),
+    );
+    expect(await hashServedModuleGraph(rawModule)).not.toBe(await hashServedModuleGraph(urlModule));
+    expect(await hashWorkloadModuleGraph(rawModule, {})).not.toBe(
+      await hashWorkloadModuleGraph(urlModule, {}),
+    );
+    expect(await hashServedModuleGraph(localVite("http://127.0.0.1:5199"))).toBe(
+      await hashServedModuleGraph(localVite("http://127.0.0.1:5200")),
+    );
+    expect(await hashWorkloadModuleGraph(dataUrl("data:text/plain;base64,AAAA"), {})).not.toBe(
+      await hashWorkloadModuleGraph(dataUrl("data:text/plain;base64,BBBB"), {}),
+    );
+    expect(await hashWorkloadModuleGraph(unrecognizedPath("/not-a-vite-module?raw"), {})).not.toBe(
+      await hashWorkloadModuleGraph(unrecognizedPath("/not-a-vite-module?url"), {}),
+    );
+    expect(await hashServedModuleGraph(externalAbsolute("https://a.example"))).not.toBe(
+      await hashServedModuleGraph(externalAbsolute("https://b.example")),
+    );
+  });
+
+  it("should fail closed when a served module observation has no URL", async () => {
+    const bytes = new TextEncoder().encode("export const value = 1;");
+    await expect(hashServedModuleGraph([])).rejects.toThrow(
+      /TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:empty graph/u,
+    );
+
+    const missingUrlEntries: readonly (readonly IModuleGraphEntry[])[] = [
+      [{ bytes, url: "" }],
+      [{ bytes } as unknown as IModuleGraphEntry],
+      [{ bytes, url: undefined } as unknown as IModuleGraphEntry],
+    ];
+    for (const entries of missingUrlEntries) {
+      await expect(hashServedModuleGraph(entries)).rejects.toThrow(
+        /TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:missing module URL/u,
+      );
+    }
+
+    const validHash = await hashServedModuleGraph([{ bytes, url: "/src/main.ts" }]);
+    expect(validHash).toMatch(/^[0-9a-f]{64}$/u);
   });
 });
 

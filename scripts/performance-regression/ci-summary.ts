@@ -27,6 +27,22 @@ export interface IPerformanceCiSummaryInput {
   readonly results: readonly IPerformanceCiResult[];
 }
 
+export interface IPerformanceWorkflowRow {
+  readonly lane: string;
+  readonly resultKey: string;
+}
+
+/** Matrix rows are also the accepted result-key namespace for workflow dispatch selection. */
+export const PERFORMANCE_WORKFLOW_ROWS: readonly IPerformanceWorkflowRow[] = [
+  { lane: "browser-webgpu", resultKey: "browser-webgpu" },
+  { lane: "browser-moving-ladder", resultKey: "browser-moving-ladder" },
+  { lane: "native-linux", resultKey: "native-linux" },
+  { lane: "native-windows", resultKey: "native-windows" },
+  { lane: "native-macos", resultKey: "native-macos" },
+  { lane: "native-android", resultKey: "native-android" },
+  { lane: "native-ios", resultKey: "native-ios" },
+];
+
 export interface IPerformanceCiSummary {
   readonly counts: Readonly<Record<CiEvidenceStatus, number>>;
   readonly expectedSha: string;
@@ -43,6 +59,35 @@ export class PerformanceCiSummaryError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "PerformanceCiSummaryError";
+  }
+}
+
+export function validateSelectedPerformanceLane(
+  selectedLane: string,
+  manifest: Pick<IPerformanceLaneManifest, "lanes">,
+  rows: readonly IPerformanceWorkflowRow[] = PERFORMANCE_WORKFLOW_ROWS,
+): void {
+  if (selectedLane.length === 0) return;
+  const laneIds = new Set(manifest.lanes.map(({ id }) => id));
+  const resultKeys = new Set(rows.map(({ resultKey }) => resultKey));
+  const selectedRows = rows.filter(
+    ({ lane, resultKey }) => lane === selectedLane || resultKey === selectedLane,
+  );
+  const undeclaredRows = rows.filter(({ lane }) => !laneIds.has(lane));
+  if (undeclaredRows.length > 0) {
+    throw new PerformanceCiSummaryError(
+      `TN_PERF_WORKFLOW_MANIFEST_MISMATCH: matrix lane(s) ${undeclaredRows.map(({ lane }) => lane).join(", ")} are not declared in the lane manifest`,
+    );
+  }
+  if (!laneIds.has(selectedLane) && !resultKeys.has(selectedLane)) {
+    throw new PerformanceCiSummaryError(
+      `TN_PERF_UNKNOWN_LANE: '${selectedLane}' is neither a declared lane id nor a workflow result key; declared lane ids: ${[...laneIds].join(", ")}; result keys: ${[...resultKeys].join(", ")}`,
+    );
+  }
+  if (selectedRows.length === 0) {
+    throw new PerformanceCiSummaryError(
+      `TN_PERF_LANE_NO_MATRIX_ROW: declared lane '${selectedLane}' has no matching workflow result key`,
+    );
   }
 }
 
@@ -109,12 +154,9 @@ export function parsePerformanceCiSummaryInput(value: unknown): IPerformanceCiSu
   if (
     requiredLanes !== undefined &&
     (!Array.isArray(requiredLanes) ||
-      requiredLanes.length === 0 ||
       requiredLanes.some((lane) => typeof lane !== "string" || lane.length === 0))
   ) {
-    throw new PerformanceCiSummaryError(
-      "requiredLanes must be a non-empty string array when supplied",
-    );
+    throw new PerformanceCiSummaryError("requiredLanes must be a string array when supplied");
   }
   return {
     expectedSha,
@@ -290,6 +332,16 @@ function argument(name: string): string | undefined {
 }
 
 async function main(): Promise<void> {
+  const selectedLane = argument("validate-selected-lane");
+  if (selectedLane !== undefined) {
+    const manifestPath = argument("manifest") ?? argument("lanes");
+    if (manifestPath === undefined)
+      throw new PerformanceCiSummaryError("--manifest is required for lane selection validation");
+    const manifest = parsePerformanceLaneManifest(JSON.parse(await readFile(manifestPath, "utf8")));
+    validateSelectedPerformanceLane(selectedLane, manifest);
+    process.stdout.write(`validated performance lane selection: ${selectedLane || "all"}\n`);
+    return;
+  }
   const inputPath = argument("input");
   const manifestPath = argument("manifest") ?? argument("lanes");
   const expectedSha = argument("expected-sha") ?? process.env.GITHUB_SHA;

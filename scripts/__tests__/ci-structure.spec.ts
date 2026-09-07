@@ -4,17 +4,21 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { allTemplates } from "../../test-support/templates.js";
+import { parsePerformanceLaneManifest } from "../engine-load-test/report.js";
 import {
   collectorCoverage,
   renderPerformanceCiSummary,
   summarizePerformanceCi,
+  validateSelectedPerformanceLane,
 } from "../performance-regression/ci-summary.js";
 import {
   DEFAULT_PERFORMANCE_POLICY,
   parsePerformanceRun,
 } from "../performance-regression/compare.js";
 import {
+  PERFORMANCE_QUICK_SUITE_BUDGET_MS,
   acquirePerformanceLease,
+  collectorTimeoutMs,
   plannedPerformancePairs,
   productionEvidenceToPerformanceRun,
   runPerformanceLane,
@@ -69,6 +73,182 @@ it("scheduled ladder producer has its own comparison consumer and baseline", asy
   expect(ladder.baseline.status).toBe("unavailable");
 });
 
+it("rejects a workflow-dispatch lane that matches no declared matrix row", async () => {
+  const manifest = parsePerformanceLaneManifest(
+    JSON.parse(
+      await readFile(path.join(repo, "scripts/performance-regression/lanes.json"), "utf8"),
+    ),
+  );
+  expect(() => validateSelectedPerformanceLane("native-windwos", manifest)).toThrow(
+    /TN_PERF_UNKNOWN_LANE.*native-windwos.*result keys/u,
+  );
+  const performance = await readFile(
+    path.join(repo, ".github/workflows/performance-regression.yml"),
+    "utf8",
+  );
+  const summary = performance.slice(
+    performance.indexOf("  performance-summary:"),
+    performance.indexOf("  weekly-workload-rotation:"),
+  );
+  expect(summary).toContain(
+    'pnpm tsx scripts/performance-regression/ci-summary.ts --validate-selected-lane "$TN_PERF_SELECTED_LANE" --manifest scripts/performance-regression/lanes.json',
+  );
+  expect(summary.indexOf("Validate requested performance lane")).toBeLessThan(
+    summary.indexOf("Download every available platform result"),
+  );
+});
+
+it("keeps source-pair preparation failures keyed by matrix identity", async () => {
+  const performance = await readFile(
+    path.join(repo, ".github/workflows/performance-regression.yml"),
+    "utf8",
+  );
+  const prepare = performance.slice(
+    performance.indexOf("      - name: Prepare isolated source checkouts"),
+    performance.indexOf("      - name: Run independent alternating baseline/candidate pairs"),
+  );
+  const env = prepare.slice(prepare.indexOf("        env:"), prepare.indexOf("        run:"));
+  expect(env).toContain("TN_PERF_LANE: ${{ matrix.lane }}");
+  expect(env).toContain("TN_PERF_RESULT_KEY: ${{ matrix.result_key }}");
+  expect(prepare.indexOf("TN_PERF_LANE")).toBeLessThan(
+    prepare.indexOf("TN_PERF_SOURCE_FAILURE_REASON"),
+  );
+  expect(prepare).toContain("candidateSourceSha: process.env.TN_PERF_CANDIDATE_SOURCE_SHA");
+  expect(prepare).toContain("sourceSha: process.env.TN_PERF_BASELINE_SOURCE_SHA");
+});
+
+it("preserves both source identities in blocked source-pair artifacts", async () => {
+  const performance = await readFile(
+    path.join(repo, ".github/workflows/performance-regression.yml"),
+    "utf8",
+  );
+  const prepare = performance.slice(
+    performance.indexOf("      - name: Prepare isolated source checkouts"),
+    performance.indexOf("      - name: Run independent alternating baseline/candidate pairs"),
+  );
+  const writerLine = prepare
+    .split("\n")
+    .find((line) => line.includes("node --input-type=module -e '"));
+  if (writerLine === undefined) throw new Error("source-pair failure writer was not found");
+  const scriptStart = writerLine.indexOf("'", writerLine.indexOf("-e ")) + 1;
+  const script = writerLine.slice(scriptStart, writerLine.lastIndexOf("'"));
+  const directory = await makeTempDir("performance-source-pair-");
+  await mkdir(path.join(directory, "artifacts/performance-regression"), { recursive: true });
+  const cases = [
+    {
+      baseline: "",
+      candidate: "candidate-sha",
+      reason: "TN_PERF_BASELINE_MISSING: a reviewed baseline SHA is required",
+      resultKey: "missing-baseline",
+    },
+    {
+      baseline: "baseline-sha",
+      candidate: "",
+      reason: "TN_PERF_CANDIDATE_MISSING: a candidate SHA is required",
+      resultKey: "missing-candidate",
+    },
+    {
+      baseline: "same-sha",
+      candidate: "same-sha",
+      reason: "TN_PERF_SELF_COMPARISON: baseline and candidate source SHAs must differ",
+      resultKey: "self-comparison",
+    },
+  ] as const;
+
+  for (const testCase of cases) {
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: directory,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        TN_PERF_BASELINE_SOURCE_SHA: testCase.baseline,
+        TN_PERF_CANDIDATE_SOURCE_SHA: testCase.candidate,
+        TN_PERF_LANE: "native-linux",
+        TN_PERF_RESULT_KEY: testCase.resultKey,
+        TN_PERF_SOURCE_FAILURE_REASON: testCase.reason,
+      },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    const artifact = JSON.parse(
+      await readFile(
+        path.join(directory, "artifacts/performance-regression", `${testCase.resultKey}.json`),
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    expect(artifact).toMatchObject({
+      candidateSourceSha: testCase.candidate === "" ? null : testCase.candidate,
+      lane: "native-linux",
+      reason: testCase.reason,
+      resultKey: testCase.resultKey,
+      sourceSha: testCase.baseline === "" ? null : testCase.baseline,
+      status: "BLOCKED",
+    });
+    expect(Object.hasOwn(artifact, "candidateSourceSha")).toBe(true);
+    expect(Object.hasOwn(artifact, "sourceSha")).toBe(true);
+  }
+});
+
+it("requires scheduled pairs to use a distinct reviewed baseline and forwards both identities", async () => {
+  const performance = await readFile(
+    path.join(repo, ".github/workflows/performance-regression.yml"),
+    "utf8",
+  );
+  const prepare = performance.slice(
+    performance.indexOf("      - name: Prepare isolated source checkouts"),
+    performance.indexOf("      - name: Run independent alternating baseline/candidate pairs"),
+  );
+  expect(prepare).toContain("REVIEWED_BASELINE_INPUT: ${{ vars.TN_PERF_REVIEWED_BASELINE_SHA }}");
+  expect(prepare).toContain('baseline_sha="${BASELINE_INPUT:-$REVIEWED_BASELINE_INPUT}"');
+  expect(prepare).toContain('candidate_sha="${CANDIDATE_INPUT:-$GITHUB_SHA}"');
+  expect(prepare).toContain(
+    'if [ -z "$baseline_sha" ] || [ -z "$candidate_sha" ] || [ "$baseline_sha" = "$candidate_sha" ]; then',
+  );
+  const collector = performance.slice(
+    performance.indexOf("      - name: Run independent alternating baseline/candidate pairs"),
+    performance.indexOf(
+      "      - uses: actions/upload-artifact@v7",
+      performance.indexOf("      - name: Run independent alternating baseline/candidate pairs"),
+    ),
+  );
+  expect(collector).toContain('--baseline-source-sha "$BASELINE_SOURCE_SHA"');
+  expect(collector).toContain('--candidate-source-sha "$CANDIDATE_SOURCE_SHA"');
+  const summary = performance.slice(
+    performance.indexOf("  performance-summary:"),
+    performance.indexOf("  weekly-workload-rotation:"),
+  );
+  expect(summary).toContain("TN_PERF_SELECTED_LANE: ${{ inputs.lane }}");
+  expect(summary).toContain(
+    "const required = (row) => selected(row) && manifestByLane.get(row.lane)?.required === true;",
+  );
+  expect(summary).toContain('status: selected(row) ? "UNVERIFIED" : "SKIPPED",');
+  expect(summary).toContain(
+    "requiredLanes: expectedRows.filter(required).map(({ resultKey }) => resultKey),",
+  );
+  expect(summary).not.toContain("requiredLanes: expectedResultKeys");
+
+  const plan = plannedPerformancePairs("native-linux", "/repo/baseline", "/repo/candidate");
+  expect(plan[0]?.baselineCommand).toContain("--source-sha <baseline-source>");
+  expect(plan[0]?.candidateCommand).toContain("--source-sha <candidate-source>");
+});
+
+it("allows an empty required-lane set for advisory or unselected matrix rows", () => {
+  expect(
+    summarizePerformanceCi({
+      expectedSha: "sha",
+      requiredLanes: [],
+      results: [
+        { lane: "native-linux", resultKey: "native-linux", required: false, status: "SKIPPED" },
+        {
+          lane: "native-android",
+          resultKey: "native-android",
+          required: false,
+          status: "UNVERIFIED",
+        },
+      ],
+    }),
+  ).toMatchObject({ exitCode: 0, status: "UNVERIFIED" });
+});
+
 it("required coverage cannot be weakened by a result flag", () => {
   for (const status of ["SKIPPED", "UNVERIFIED"]) {
     expect(
@@ -95,6 +275,98 @@ it("hardware workflow has no matrix context before expansion and uses Bash on Wi
   );
   expect(job.match(/^ {4}if:[\s\S]*?(?=^ {4}\w)/m)?.[0] ?? "").not.toContain("matrix.");
   expect(job).toMatch(/defaults:\s+run:\s+shell: bash/);
+});
+
+it("gives the moving 1800-frame collector the remaining fifteen-minute budget", () => {
+  expect(PERFORMANCE_QUICK_SUITE_BUDGET_MS).toBe(15 * 60_000);
+  expect(collectorTimeoutMs(180_000, 0)).toBe(180_000);
+  expect(collectorTimeoutMs(PERFORMANCE_QUICK_SUITE_BUDGET_MS, 0)).toBe(
+    PERFORMANCE_QUICK_SUITE_BUDGET_MS,
+  );
+  const ladder = plannedPerformancePairs(
+    "browser-moving-ladder",
+    "/repo/baseline",
+    "/repo/candidate",
+    {
+      workload: "moving-l2-l3-16384",
+    },
+  );
+  expect(ladder[0]?.candidateCommand).toContain("--frames 1800");
+});
+
+it("moves ladder source identity into a complete comparator report", async () => {
+  const ladder = plannedPerformancePairs(
+    "browser-moving-ladder",
+    "/repo/baseline",
+    "/repo/candidate",
+    { workload: "moving-l2-l3-16384" },
+  );
+  expect(ladder[0]?.candidateCommand).toContain("--source-sha <candidate-source>");
+  const browserSource = await readFile(
+    path.join(repo, "examples/engine-load-test/src/main.ts"),
+    "utf8",
+  );
+  expect(browserSource).toMatch(/\n\s+identity:/u);
+  for (const field of [
+    "architecture",
+    "artifactHash",
+    "browser",
+    "device",
+    "graphicsBackend",
+    "gpu",
+    "instrumentationRevision",
+    "jsRuntime",
+    "nativeBinaryHash",
+    "operatingSystem",
+    "presentMode",
+    "resolution",
+    "sourceSha",
+    "workloadHash",
+  ]) {
+    expect(browserSource).toMatch(new RegExp(`${field}(?:\\s*:|\\s*,)`, "u"));
+  }
+  const identity = {
+    architecture: "x86_64",
+    artifactHash: "bundle-sha256",
+    browser: "Chromium 140",
+    device: "Linux x86_64 NVIDIA",
+    graphicsBackend: "WebGPU",
+    gpu: "NVIDIA RTX observed",
+    instrumentationRevision: "engine-load-test-v2",
+    jsRuntime: "Chromium V8",
+    nativeBinaryHash: "bundle-sha256",
+    operatingSystem: "Linux",
+    presentMode: "immediate",
+    resolution: "1280x720",
+    sourceSha: "candidate-source",
+    workloadHash: "workload-sha256",
+  };
+  const converted = productionEvidenceToPerformanceRun(
+    {
+      arm: "tn-web",
+      build: { notes: "", type: "release" },
+      device: { battery: null, label: "Linux x86_64 NVIDIA" },
+      display: { height: 720, refreshHz: 60, vsync: false, width: 1280 },
+      driver: { adapter: "NVIDIA RTX observed", renderer: "WebGPU" },
+      engine: { name: "threenative", version: "workspace" },
+      identity,
+      rungs: [
+        {
+          drawCalls: 2,
+          frameMs: [10, 11, 12],
+          mode: "L2",
+          objectCount: 16_384,
+          positionHash: "aabbccdd",
+          repeat: 0,
+          triangles: 196_610,
+          visibleObjects: 16_384,
+        },
+      ],
+    },
+    { id: "browser-moving-ladder", platform: "browser-webgpu", workload: "moving-l2-l3-16384" },
+    "candidate-source",
+  );
+  expect(converted.identity).toEqual(identity);
 });
 
 it("promoted conversion rejects absent hardware observations", () => {
@@ -1931,18 +2203,23 @@ describe("CI pipeline structure", () => {
     expect(renderPerformanceCiSummary(advisory)).toContain("UNVERIFIED=1");
   });
 
-  it("treats shared-lane result keys as required independent executions", () => {
+  it("treats Windows and macOS as independently keyed platform executions", () => {
     const expectedSha = "a".repeat(40);
     const windows = {
       ...{
         artifactHash: "artifact-windows",
-        lane: "native-windows-macos",
+        lane: "native-windows",
         sourceSha: expectedSha,
         status: "PASS" as const,
       },
       resultKey: "native-windows",
     };
-    const macos = { ...windows, artifactHash: "artifact-macos", resultKey: "native-macos" };
+    const macos = {
+      ...windows,
+      artifactHash: "artifact-macos",
+      lane: "native-macos",
+      resultKey: "native-macos",
+    };
     expect(
       summarizePerformanceCi({
         expectedSha,
@@ -2061,10 +2338,10 @@ describe("CI pipeline structure", () => {
     );
     expect(performance).toMatch(/matrix:[\s\S]*runner: ubuntu-24\.04/u);
     expect(performance).toMatch(
-      /lane: native-windows-macos[\s\S]*result_key: native-windows[\s\S]*runner: windows-2025/u,
+      /lane: native-windows[\s\S]*result_key: native-windows[\s\S]*runner: windows-2025/u,
     );
     expect(performance).toMatch(
-      /lane: native-windows-macos[\s\S]*result_key: native-macos[\s\S]*runner: macos-15/u,
+      /lane: native-macos[\s\S]*result_key: native-macos[\s\S]*runner: macos-15/u,
     );
     expect(performance).toMatch(
       /lane: native-android[\s\S]*runner:\s*\[self-hosted, linux, android,/u,
@@ -2357,10 +2634,10 @@ describe("CI pipeline structure", () => {
       minimumCalibrationSessions: 3,
       requiredCheckPromotion: "maintainer-review",
     });
-    expect(manifest.lanes).toHaveLength(6);
+    expect(manifest.lanes).toHaveLength(7);
     expect(manifest.lanes.every(({ required }) => required === false)).toBe(true);
     expect(
       manifest.lanes.filter(({ provisioning }) => provisioning === "unprovisioned"),
-    ).toHaveLength(5);
+    ).toHaveLength(6);
   });
 });

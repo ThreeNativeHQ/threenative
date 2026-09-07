@@ -417,6 +417,59 @@ test('regression evidence accepts a bounded real-clock, ready, moving, pixel-bac
   assert.equal(result.exitCode, 0);
 });
 
+test('regression readiness requires the explicit runtimeReady observation', () => {
+  const frame = new PNG({ height: 2, width: 2 });
+  frame.data.fill(255);
+  frame.data[0] = 0;
+  const makeEvidence = (runtimeReady) => assembleEvidence({
+    context: { audioEvidence: {}, physicalEvidence: {}, sourceSha, sourceState: { dirty: false } },
+    native: undefined,
+    options: {
+      coldStarts: 1,
+      control: undefined,
+      device: undefined,
+      profile: 'regression',
+      renderSize: { height: 1080, width: 1920 },
+      repetitions: 1,
+      target: 'web',
+      warmup: 0,
+    },
+    performanceBounds: undefined,
+    project: 'fixture-project',
+    runId: `readiness-${runtimeReady ? 'present' : 'missing'}`,
+    startedAt: new Date().toISOString(),
+    web: {
+      applicationClass: 'fixture',
+      artifactSha,
+      driverClass: 'fixture',
+      kind: 'web',
+      runs: [{
+        report: {
+          assertionResults: [{
+            details: { policy: runtimeReady ? { runtimeReady: true } : {} },
+            id: 'diagnostics',
+            pass: true,
+          }],
+          diagnostics: [],
+          pass: true,
+        },
+        screenshot: PNG.sync.write(frame),
+        series: [{ frameIndex: 1, frameMs: 16 }],
+        status: 0,
+      }],
+      startups: [],
+    },
+  });
+  assert.equal(makeEvidence(false).execution.readiness.ready, false);
+  assert.equal(makeEvidence(true).execution.readiness.ready, true);
+  const blocked = evaluateProductionEvidence(regressionEvidence({
+    execution: { ...regressionEvidence().execution, readiness: { ready: false, sampleReset: true } },
+  }));
+  assert.equal(blocked.status, 'BLOCKED');
+  assert.equal(blocked.exitCode, 2);
+  assert.ok(blocked.codes.includes('TN_PROD_READINESS_MISSING'));
+});
+
 test('regression evidence requires every launch to meet the full steady-state window', () => {
   const result = evaluateProductionEvidence(regressionEvidence({
     metrics: {

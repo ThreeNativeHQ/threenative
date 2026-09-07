@@ -119,7 +119,8 @@ describe("performance regression lane manifest", () => {
     expect([...new Set(manifest.lanes.map((lane) => lane.platform))]).toEqual([
       "browser-webgpu",
       "native-linux",
-      "native-windows-macos",
+      "native-windows",
+      "native-macos",
       "native-android",
       "native-ios",
     ]);

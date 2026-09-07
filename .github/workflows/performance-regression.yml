@@ -11,7 +11,7 @@ on:
         required: false
         type: string
       baseline_source_sha:
-        description: "Reviewed accepted-baseline source SHA"
+        description: "Reviewed accepted-baseline source SHA; scheduled runs use the repository baseline variable when empty"
         required: false
         type: string
       candidate_source_sha:
@@ -89,13 +89,13 @@ jobs:
             resource: browser-webgpu-runner
             device: ''
             physical_evidence: ''
-          - lane: native-windows-macos
+          - lane: native-windows
             result_key: native-windows
             runner: windows-2025
             resource: windows-gpu-performance-runner
             device: ''
             physical_evidence: ''
-          - lane: native-windows-macos
+          - lane: native-macos
             result_key: native-macos
             runner: macos-15
             resource: macos-gpu-performance-runner
@@ -133,11 +133,13 @@ jobs:
         env:
           BASELINE_INPUT: ${{ inputs.baseline_source_sha }}
           CANDIDATE_INPUT: ${{ inputs.candidate_source_sha }}
+          REVIEWED_BASELINE_INPUT: ${{ vars.TN_PERF_REVIEWED_BASELINE_SHA }}
           TN_PERF_LANE: ${{ matrix.lane }}
           TN_PERF_RESOURCE_READY: ${{ matrix.physical != true || vars.TN_PERF_PHYSICAL_PROVISIONED == 'true' }}
           TN_PERF_RESULT_KEY: ${{ matrix.result_key }}
         run: |
           set -euo pipefail
+          baseline_sha="${BASELINE_INPUT:-$REVIEWED_BASELINE_INPUT}"
           candidate_sha="${CANDIDATE_INPUT:-$GITHUB_SHA}"
           if [ "$TN_PERF_RESOURCE_READY" != "true" ]; then
             exit 0
@@ -184,6 +186,22 @@ jobs:
             exit 0
           fi
           echo "TN_PERF_BASELINE_AVAILABLE=true" >> "$GITHUB_ENV"
+          if [ -z "$baseline_sha" ] || [ -z "$candidate_sha" ] || [ "$baseline_sha" = "$candidate_sha" ]; then
+            if [ -z "$baseline_sha" ]; then
+              reason="TN_PERF_BASELINE_MISSING: a reviewed baseline SHA is required"
+            elif [ -z "$candidate_sha" ]; then
+              reason="TN_PERF_CANDIDATE_MISSING: a candidate SHA is required"
+            else
+              reason="TN_PERF_SELF_COMPARISON: baseline and candidate source SHAs must differ"
+            fi
+            mkdir -p artifacts/performance-regression
+            TN_PERF_SOURCE_FAILURE_REASON="$reason" \
+            TN_PERF_BASELINE_SOURCE_SHA="$baseline_sha" \
+            TN_PERF_CANDIDATE_SOURCE_SHA="$candidate_sha" \
+            node --input-type=module -e 'import { writeFile } from "node:fs/promises"; const value = {artifactHash: "source-pair-validation", candidateSourceSha: process.env.TN_PERF_CANDIDATE_SOURCE_SHA || null, exitCode: 2, lane: process.env.TN_PERF_LANE, provenance: "unverified", reason: process.env.TN_PERF_SOURCE_FAILURE_REASON, resultKey: process.env.TN_PERF_RESULT_KEY, sourceSha: process.env.TN_PERF_BASELINE_SOURCE_SHA || null, status: "BLOCKED"}; await writeFile(`artifacts/performance-regression/${process.env.TN_PERF_RESULT_KEY}.json`, `${JSON.stringify(value, null, 2)}\n`);'
+            printf '%s\n' "$reason" >&2
+            exit 2
+          fi
           git fetch --no-tags origin "$baseline_sha" "$candidate_sha"
           mkdir -p "$GITHUB_WORKSPACE/.worktrees"
           baseline_worktree="$GITHUB_WORKSPACE/.worktrees/performance-baseline-${{ matrix.result_key }}"
@@ -262,6 +280,10 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Validate requested performance lane
+        env:
+          TN_PERF_SELECTED_LANE: ${{ inputs.lane }}
+        run: pnpm tsx scripts/performance-regression/ci-summary.ts --validate-selected-lane "$TN_PERF_SELECTED_LANE" --manifest scripts/performance-regression/lanes.json
       - name: Download every available platform result
         uses: actions/download-artifact@v7
         with:
@@ -272,6 +294,7 @@ jobs:
         env:
           TN_PERF_EXPECTED_SHA: ${{ inputs.candidate_source_sha || github.sha }}
           TN_PERF_CANCELLED: ${{ needs.hardware-pairs.result == 'cancelled' }}
+          TN_PERF_SELECTED_LANE: ${{ inputs.lane }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/performance-regression
@@ -281,15 +304,20 @@ jobs:
           import { readdir, readFile, writeFile } from "node:fs/promises";
 
           const manifest = JSON.parse(await readFile("scripts/performance-regression/lanes.json", "utf8"));
-          const expectedResultKeys = [
-            "browser-webgpu",
-            "browser-moving-ladder",
-            "native-linux",
-            "native-windows",
-            "native-macos",
-            "native-android",
-            "native-ios",
+          const expectedRows = [
+            { lane: "browser-webgpu", resultKey: "browser-webgpu" },
+            { lane: "browser-moving-ladder", resultKey: "browser-moving-ladder" },
+            { lane: "native-linux", resultKey: "native-linux" },
+            { lane: "native-windows", resultKey: "native-windows" },
+            { lane: "native-macos", resultKey: "native-macos" },
+            { lane: "native-android", resultKey: "native-android" },
+            { lane: "native-ios", resultKey: "native-ios" },
           ];
+          const selectedLane = process.env.TN_PERF_SELECTED_LANE ?? "";
+          const manifestByLane = new Map(manifest.lanes.map((lane) => [lane.id, lane]));
+          const selected = (row) => selectedLane === "" || selectedLane === row.lane || selectedLane === row.resultKey;
+          const required = (row) => selected(row) && manifestByLane.get(row.lane)?.required === true;
+          const rowsByResultKey = new Map(expectedRows.map((row) => [row.resultKey, row]));
           const root = "artifacts/performance-regression";
           const files = await readdir(root).catch(() => []);
           const results = [];
@@ -297,25 +325,30 @@ jobs:
             const value = JSON.parse(await readFile(`${root}/${file}`, "utf8"));
             if (typeof value.lane !== "string" || typeof value.status !== "string") continue;
             const resultKey = file.slice(0, -5);
+            const row = rowsByResultKey.get(resultKey);
             results.push({
               artifactHash: value.artifactHash,
               lane: value.lane,
               reason: value.reason,
-              required: manifest.lanes.find((lane) => lane.id === value.lane)?.required === true,
+              required: row === undefined
+                ? manifestByLane.get(value.lane)?.required === true
+                : required(row),
               resultKey,
               sourceSha: value.candidateSourceSha ?? value.sourceSha,
               status: value.status,
             });
           }
           const seen = new Set(results.map((result) => result.resultKey));
-          for (const resultKey of expectedResultKeys) {
-            if (seen.has(resultKey)) continue;
+          for (const row of expectedRows) {
+            if (seen.has(row.resultKey)) continue;
             results.push({
-              lane: resultKey,
-              reason: "matrix row was not selected or did not publish evidence",
-              required: true,
-              resultKey,
-              status: "SKIPPED",
+              lane: row.lane,
+              reason: selected(row)
+                ? "selected matrix row did not publish evidence"
+                : "matrix row was not selected",
+              required: required(row),
+              resultKey: row.resultKey,
+              status: selected(row) ? "UNVERIFIED" : "SKIPPED",
             });
           }
           if (process.env.TN_PERF_CANCELLED === "true") {
@@ -333,7 +366,7 @@ jobs:
             "artifacts/performance-regression/summary-input.json",
             `${JSON.stringify({
               expectedSha: process.env.TN_PERF_EXPECTED_SHA,
-              requiredLanes: expectedResultKeys,
+              requiredLanes: expectedRows.filter(required).map(({ resultKey }) => resultKey),
               results,
             }, null, 2)}\n`,
           );

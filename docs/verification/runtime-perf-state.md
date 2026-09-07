@@ -10,6 +10,57 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## Repair-20 — cross-platform engine-load identity — 2026-09-07
+
+This repair belongs to the `examples/engine-load-test` identity layer, not to a public engine
+package: it canonicalizes the served/workload graph hashes used by the example's performance
+arms. The required capability search was run before editing. The three returned entries
+(`readRenderChainObservation`, `readRenderChainReport`, and `reconcileMirroredClips`) were then
+inspected and none covered graph identity, URL canonicalization, or JavaScript label parsing; no
+public capability was used.
+
+The repair now recognizes bracketed IPv6 loopback (`[::1]`) alongside the other local Vite hosts,
+so graph URLs and embedded module references remain stable across loopback hostnames and dev
+ports. URL ordering uses exact UTF-16 code-unit ordering instead of locale-dependent comparison,
+so canonically distinct Unicode paths (`café` and `cafe\u0301`) hash deterministically regardless of
+entry order. Braced JavaScript identifier escapes accept leading-zero forms such as
+`\u{000006c}oop` while retaining the existing invalid-code-point checks.
+
+The existing identity contracts remain in force: equal-byte duplicate observations are still
+serialized deterministically; conflicting duplicates and missing URLs still fail closed; workload
+configuration remains part of workload identity; external origins, data URLs, query/fragment
+suffixes, and recognized/unrecognized checkout paths retain their prior distinctions.
+
+### Red/green evidence
+
+Focused regression command before the source repair:
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts -t 'canonically distinct Unicode URLs|loopback origins|escaped break and continue labels'
+FAIL — 3 failed, 84 skipped (87 collected)
+```
+
+The same command after the repair passed all three new cases (`3 passed, 84 skipped`). The full
+identity file then passed `87/87` tests. The source and regression test are the only code changes.
+
+### Gates
+
+- `pnpm typecheck` passed (root plus 28 of 29 workspace projects).
+- `pnpm lint` passed: 1,967 files checked, 619 existing warnings, 0 errors.
+- `git diff --check` passed.
+- `pnpm test` ran 392 files / 4,372 tests: 389 files and 4,364 tests passed, 2 files and 7 tests
+  skipped, and one unrelated playtest test failed. The failure is
+  `packages/playtest/__tests__/e2e-runner.spec.ts` — the browser closed during a GPU
+  `ReadPixels` stall, so the page-navigation guard reported `TN_PLAYTEST_PAGE_NAVIGATED` before
+  the expected transport diagnostics. The focused rerun reproduced that same failure; no
+  playtest code was changed.
+- `pnpm budgets` passed all checks through evidence accounting, then failed only because the
+  pre-existing `docs/benchmark/SCREENSHOT-RETENTION.md` retention index is stale. That file is
+  intentionally not edited in this repair.
+
+This entry records repair evidence, not a completed Astra audit. A manager must run a fresh
+independent Astra audit before claiming the overall audit complete.
+
 ---
 
 ## Android: the GPU meter reports on a Pixel 8 — 2026-09-01
@@ -2514,7 +2565,8 @@ cross-platform comparison ran.
 |---|---|---|---|
 | `browser-webgpu` | hosted software | UNVERIFIED | No accepted calibrated baseline; the required-baseline control correctly returned BLOCKED/exit 2. |
 | `native-linux` | unprovisioned physical GPU | UNVERIFIED | The Linux native binary built locally, but no dedicated leased GPU pair was provisioned. If promoted to required, missing hardware evidence is BLOCKED/exit 2. |
-| `native-windows-macos` | unprovisioned | UNVERIFIED | No Windows or macOS runner was available in this Linux worktree. |
+| `native-windows` | unprovisioned physical GPU | UNVERIFIED | No Windows runner or accepted independent baseline was available in this Linux worktree. |
+| `native-macos` | unprovisioned physical GPU | UNVERIFIED | No macOS runner or accepted independent baseline was available in this Linux worktree. |
 | `native-android` | unprovisioned physical device | UNVERIFIED | No physical Android device pair was run; emulator evidence cannot satisfy this row. |
 | `native-ios` | unprovisioned physical device | UNVERIFIED | No Apple hardware or `xcrun` environment was available; no simulator was counted as physical iOS. |
 | `android-emulator` | simulator/emulator | UNVERIFIED | Advisory collector hook only; no physical-device claim. |
@@ -3291,6 +3343,198 @@ The hosted production evidence carries the expected advisory
 performance baseline; lifecycle, screenshot, and artifact-retention checks passed. This closes
 the cross-platform CI evidence gap for the callback-lifetime repair without claiming physical
 Windows performance.
+
+### PRD-358 audit repair — source-pair and workload identity — 2026-09-06
+
+This repair addresses two independent audit defects. The source-pair failure artifact now writes
+`sourceSha` and `candidateSourceSha` as explicit nullable keys, so missing-baseline,
+missing-candidate, and self-comparison failures always retain both identities while remaining
+`BLOCKED`. The browser load test now traverses the actual served import/export, dynamic-import, and
+static-URL module graph. `artifactHash` hashes that graph without `sourceSha`; `workloadHash` hashes
+the served `game.ts`/`workload.ts` graph and the selected frames, ladder, modes, repeats, warmup,
+workload, and render configuration. `sourceSha` remains a separate identity field, and the
+1,800-frame workload and 15-minute deadline are unchanged. The source PRD, baseline promotion, and
+physical-lane claims were not changed.
+
+The focused tests were written and run red before the implementation. The mutation was the old
+workflow writer's `|| undefined` fields and the old single-module/parameter-only identity wiring:
+
+```text
+pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/engine-load-test.spec.ts -t 'preserves both source identities|keep artifact identity independent'
+Test Files 2 failed (2)
+Tests 2 failed | 111 skipped (113)
+exit 1
+```
+
+The failures were the omitted `sourceSha` key for a missing baseline and the absent
+`hashServedModuleGraph(artifactModules)` wiring. After the repair, the same focused command passed:
+
+```text
+Test Files 2 passed (2)
+Tests 2 passed | 111 skipped (113)
+exit 0
+```
+
+The real browser probe also ran twice with identical settings and different source labels. Both
+runs exited 0 on the local NVIDIA WebGPU adapter; the retained report comparison was:
+
+```json
+{"artifactHashEqual":true,"workloadHashEqual":true,"sourceShaA":"runtime-probe-source","sourceShaB":"relabeled-source","artifactHash":"0a0f092e55b20b341a598ffeee7522b896d4adb6d696e9fed4e378d67629cdad","workloadHash":"4a8170522548f2eb94356d096f59e2b6e66878508984b5d246b979f6442aa13a"}
+```
+
+Implementation and focused proof: [`performance-regression.yml:155`](../../.github/workflows/performance-regression.yml#L155), [`main.ts:381`](../../examples/engine-load-test/src/main.ts#L381), [`identity.ts:43`](../../examples/engine-load-test/src/identity.ts#L43), [`ci-structure.spec.ts:120`](../../scripts/__tests__/ci-structure.spec.ts#L120), and [`engine-load-test.spec.ts:121`](../../scripts/__tests__/engine-load-test.spec.ts#L121).
+
+Repository gates after the repair:
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck` | PASS; root plus 28 participating workspace projects; exit 0 |
+| `pnpm lint` | PASS; `Checked 1967 files`; `Found 614 warnings`; no errors; exit 0 |
+| `pnpm test` | PASS; 391 files passed, 1 skipped; 4,321 tests passed, 4 skipped; exit 0 |
+| `pnpm budgets` | BLOCKED by the unchanged stale generated retention index: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit)`; exit 1. No unrelated generated file was changed. |
+| `git diff --check` | PASS; exit 0 |
+
+The full test suite's known negative-control logs remained expected and did not alter the result.
+No baseline was promoted, and no hosted or physical platform performance result is claimed.
+
+### PRD-358 audit repair — served module graph identity across worktrees — 2026-09-06
+
+The browser probe's served Vite module URLs include absolute `/@fs` paths. The previous graph
+serializer hashed those paths and the transformed source bytes verbatim, so identical baseline and
+candidate source trees in different checkout roots received different `artifactHash` and
+`workloadHash` values. That could block a valid paired comparison before performance was even
+considered. The repair canonicalizes served URLs and absolute transformed import references to
+repository-relative paths before hashing; source bytes that are not root references remain
+byte-sensitive, and workload configuration remains JSON-sensitive. No source PRD, baseline or
+platform claim changed.
+
+The focused regression was red before the implementation:
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts -t 'stable across absolute worktree roots'
+Test Files 1 failed (1)
+Tests 1 failed | 40 skipped (41)
+Expected: 0a14c172f765faad56c1a6d039656ad2989616dc498f783255b0a69dc538a05a
+Received: ef710c080ce78364f7e0c534a02e6358b1e74709dbff24e731887ecf33113e2b
+exit 1
+```
+
+After the repair, the focused identity tests passed:
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts -t 'graph identity stable across absolute worktree roots|artifact identity independent of source labels'
+Test Files 1 passed (1)
+Tests 2 passed | 39 skipped (41)
+exit 0
+```
+
+The complete `engine-load-test.spec.ts` file passed `41/41`. Repository gates after the repair:
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck` | PASS; root plus 28 participating workspace projects; exit 0 |
+| `pnpm lint` | PASS; `Checked 1967 files`; `Found 614 warnings`; no errors; exit 0 |
+| `pnpm test` | PASS; `390` files passed, `2` skipped; `4,319` tests passed, `7` skipped; exit 0 |
+| `pnpm budgets` | BLOCKED by the unchanged stale generated retention index: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit)`; exit 1 |
+| `git diff --check` | PASS; exit 0 |
+
+Implementation and proof: [`identity.ts`](../../examples/engine-load-test/src/identity.ts),
+[`engine-load-test.spec.ts`](../../scripts/__tests__/engine-load-test.spec.ts). No baseline was
+promoted, and no hosted or physical platform performance result is claimed.
+
+### PRD-358 audit repair — source-map and module-reference identity hardening — 2026-09-06
+
+The previous canonicalizer had three independent failure modes: a regex could overflow on the
+roughly 11 MB inline source map Vite adds to an unoptimized dependency; last-marker slicing could
+collapse `packages/core` and `packages/physics` to the same `src/...` identity; and broad URL
+rewriting could erase external origins or module query semantics. The repair strips only terminal
+inline source-map metadata, scans executable quoted references linearly, removes only an explicitly
+recognized checkout prefix, and preserves external/data URLs, complete package paths, and query or
+hash suffixes. Executable bytes and workload configuration remain identity-sensitive.
+
+The three new regression tests were red before the implementation:
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts -t 'graph identity stable across absolute worktree roots|strip large inline source maps|preserve complete package paths|preserve ordinary external URLs'
+Test Files 1 failed (1)
+Tests 3 failed | 1 passed | 40 skipped (44)
+exit 1
+```
+
+After the repair, the same focused command passed:
+
+```text
+Test Files 1 passed (1)
+Tests 4 passed | 40 skipped (44)
+exit 0
+```
+
+The complete `engine-load-test.spec.ts` file passed `44/44`. A real Vite middleware response was
+also exercised: the served dependency was `9,893,196` bytes, included an inline source map, and
+hashed successfully to
+`581fc81edb6d01e2c264a06d4140f5f4df76e8feb89587eb1540e6ce2688d7bd`; no stack overflow occurred.
+
+Repository gates after the repair:
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck` | PASS; root plus 28 participating workspace projects; exit 0 |
+| `pnpm lint` | PASS; `Checked 1967 files`; `Found 614 warnings`; no errors; exit 0 |
+| `pnpm test` | PASS; `390` files passed, `2` skipped; `4,322` tests passed, `7` skipped; exit 0 |
+| `pnpm budgets` | BLOCKED by the unchanged stale generated retention index: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit)`; exit 1 |
+| `git diff --check` | PASS; exit 0 |
+
+Implementation and proof: [`identity.ts`](../../examples/engine-load-test/src/identity.ts) and
+[`engine-load-test.spec.ts`](../../scripts/__tests__/engine-load-test.spec.ts). No baseline was
+promoted, and no hosted or physical platform performance result is claimed.
+
+### PRD-358 follow-up — Vite checkout-root and terminal source-map hardening — 2026-09-06
+
+The follow-up repairs generic Vite module identity without relying on a marker that can occur in
+an unrelated path. It recognizes complete Vite layout suffixes, requires one candidate checkout
+root to agree across the graph, rejects `node_modules` candidate prefixes, and limits absolute
+`/@fs` inference to local Vite hosts. Source-map removal now scans quoted strings, templates, and
+comments linearly and removes only a terminal inline line or block map with trailing whitespace;
+literal text, nested template expressions, external URLs, query/hash suffixes, and complete
+package paths remain intact.
+
+The focused regression command was red before the implementation:
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts -t 'strip only terminal inline source-map comments outside literals|preserve complete package paths'
+Test Files 1 failed (1)
+Tests 2 failed | 43 skipped (45)
+exit 1
+```
+
+After the implementation, the same focused command passed:
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts -t 'strip only terminal inline source-map comments outside literals|preserve complete package paths'
+Test Files 1 passed (1)
+Tests 2 passed | 43 skipped (45)
+exit 0
+```
+
+The complete `engine-load-test.spec.ts` file passed `45/45`. A real Vite middleware response was
+also exercised with `pnpm --filter threenative-engine-load-test dev --host 127.0.0.1 --port 5199
+--strictPort`: `/src/main.ts` returned status `200`, `55,362` bytes, contained an inline source
+map, and hashed to
+`5042b5e381c037bc6cc098888d2247839a12ff1173134890408188f5682365ea`.
+
+Repository gates after the follow-up:
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck` | PASS; root plus 28 participating workspace projects; exit 0 |
+| `pnpm lint` | PASS; `Checked 1967 files`; `Found 616 warnings`; no errors; exit 0 |
+| `pnpm test` | PASS; `391` files passed, `1` skipped; `4,326` tests passed, `4` skipped; exit 0 |
+| `pnpm budgets` | BLOCKED by the unchanged stale generated retention index: `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it (do not hand-edit)`; exit 1 |
+| `git diff --check` | PASS; exit 0 |
+
+Implementation and proof: [`identity.ts`](../../examples/engine-load-test/src/identity.ts) and
+[`engine-load-test.spec.ts`](../../scripts/__tests__/engine-load-test.spec.ts). No baseline was
+promoted, and no hosted or physical platform performance result is claimed.
 
 ## 7. Harness status
 

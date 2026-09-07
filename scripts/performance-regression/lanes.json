@@ -45,19 +45,35 @@
       }
     },
     {
-      "id": "native-windows-macos",
-      "platform": "native-windows-macos",
-      "arms": [],
+      "id": "native-windows",
+      "platform": "native-windows",
+      "arms": ["tn-desktop"],
       "workload": "platformer-production",
       "requiredMetrics": ["drawCalls", "triangles", "frameP95Ms", "phaseP95Ms"],
       "producer": "packages/runtime-native/scripts/profile-production.mjs --target desktop",
       "evidenceClass": "hosted-telemetry",
-      "deviceResource": "windows-or-macos-gpu-performance-runner",
+      "deviceResource": "windows-gpu-performance-runner",
       "provisioning": "unprovisioned",
       "required": false,
       "baseline": {
         "status": "unavailable",
-        "reason": "Windows and macOS GPU identities require independent provisioned baselines."
+        "reason": "No calibrated dedicated Windows GPU baseline has been accepted."
+      }
+    },
+    {
+      "id": "native-macos",
+      "platform": "native-macos",
+      "arms": ["tn-desktop"],
+      "workload": "platformer-production",
+      "requiredMetrics": ["drawCalls", "triangles", "frameP95Ms", "phaseP95Ms"],
+      "producer": "packages/runtime-native/scripts/profile-production.mjs --target desktop",
+      "evidenceClass": "hosted-telemetry",
+      "deviceResource": "macos-gpu-performance-runner",
+      "provisioning": "unprovisioned",
+      "required": false,
+      "baseline": {
+        "status": "unavailable",
+        "reason": "No calibrated dedicated macOS GPU baseline has been accepted."
       }
     },
     {
