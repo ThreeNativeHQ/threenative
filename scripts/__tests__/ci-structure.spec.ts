@@ -208,10 +208,30 @@ interface IScopeFixture {
   readonly root: string;
 }
 
+function isolatedGitEnvironment(): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  for (const variable of [
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_NAMESPACE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_WORK_TREE",
+  ]) {
+    delete environment[variable];
+  }
+  return environment;
+}
+
 async function scopeFixture(): Promise<IScopeFixture> {
   const root = await mkdtemp(path.join(tmpdir(), "threenative-ci-scope-"));
   const git = (args: readonly string[]): string => {
-    const result = spawnSync("git", [...args], { cwd: root, encoding: "utf8" });
+    const result = spawnSync("git", [...args], {
+      cwd: root,
+      encoding: "utf8",
+      env: isolatedGitEnvironment(),
+    });
     if (result.status !== 0) {
       throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
     }
@@ -256,7 +276,7 @@ function classifyScope(root: string, base: string, head: string): Record<string,
       "--format",
       "json",
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", env: isolatedGitEnvironment() },
   );
   expect(result.status, result.stderr).toBe(0);
   return JSON.parse(result.stdout) as Record<string, unknown>;
