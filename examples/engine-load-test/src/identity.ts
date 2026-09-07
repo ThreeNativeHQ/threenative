@@ -292,6 +292,78 @@ function skipQuotedLiteral(source: string, start: number): number {
   return end === undefined ? source.length : end + 1;
 }
 
+function decodeModuleSpecifier(value: string): string {
+  let decoded = "";
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] !== "\\") {
+      decoded += value[index] ?? "";
+      continue;
+    }
+    const escaped = value[index + 1];
+    if (escaped === undefined) {
+      throw new Error("TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:invalid module specifier escape");
+    }
+    if (isLineTerminator(escaped.charCodeAt(0))) {
+      index += escaped === "\r" && value[index + 2] === "\n" ? 2 : 1;
+      continue;
+    }
+    if (escaped === "x") {
+      const first = hexDigitValue(value.charCodeAt(index + 2));
+      const second = hexDigitValue(value.charCodeAt(index + 3));
+      if (first === undefined || second === undefined) {
+        throw new Error("TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:invalid module specifier escape");
+      }
+      decoded += String.fromCharCode(first * 16 + second);
+      index += 3;
+      continue;
+    }
+    if (escaped === "u") {
+      if (value[index + 2] === "{") {
+        const close = value.indexOf("}", index + 3);
+        const digits = value.slice(index + 3, close === -1 ? value.length : close);
+        if (
+          close === -1 ||
+          digits.length === 0 ||
+          digits.length > 6 ||
+          !/^[0-9a-f]+$/iu.test(digits)
+        ) {
+          throw new Error("TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:invalid module specifier escape");
+        }
+        const codePoint = Number.parseInt(digits, 16);
+        if (codePoint > 0x10ffff) {
+          throw new Error("TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:invalid module specifier escape");
+        }
+        decoded += String.fromCodePoint(codePoint);
+        index = close;
+        continue;
+      }
+      let codePoint = 0;
+      for (let offset = 0; offset < 4; offset += 1) {
+        const digit = hexDigitValue(value.charCodeAt(index + 2 + offset));
+        if (digit === undefined) {
+          throw new Error("TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:invalid module specifier escape");
+        }
+        codePoint = codePoint * 16 + digit;
+      }
+      decoded += String.fromCharCode(codePoint);
+      index += 5;
+      continue;
+    }
+    const simpleEscape: Record<string, string> = {
+      "0": "\0",
+      b: "\b",
+      f: "\f",
+      n: "\n",
+      r: "\r",
+      t: "\t",
+      v: "\v",
+    };
+    decoded += simpleEscape[escaped] ?? escaped;
+    index += 1;
+  }
+  return decoded;
+}
+
 function isIdentifierStart(code: number): boolean {
   return (
     code === 36 ||
@@ -794,7 +866,12 @@ function braceContext(
   return block ? "block" : "object";
 }
 
-function scanOpenBraceToken(source: string, start: number, state: IScannerState): number {
+function scanOpenBraceToken(
+  source: string,
+  start: number,
+  state: IScannerState,
+  lineTerminatorBeforeToken: boolean,
+): number {
   updateForHeaderExpressionEnd(state, false);
   const functionBody = state.expectFunctionBody;
   const classBodyExpectation = [...state.expectClassBodies]
@@ -810,7 +887,8 @@ function scanOpenBraceToken(source: string, start: number, state: IScannerState)
     functionBody !== undefined ||
     classBody !== undefined ||
     state.expectBlock ||
-    state.statementStart;
+    state.statementStart ||
+    (lineTerminatorBeforeToken && canStartDeclarationAtLineBreak(state));
   const context = braceContext(functionBody, classBody, block);
   state.delimiters.push({
     kind: "brace",
@@ -963,7 +1041,12 @@ function scanOtherPunctuationToken(source: string, start: number, state: IScanne
   return start + 1;
 }
 
-function scanPunctuationToken(source: string, start: number, state: IScannerState): number {
+function scanPunctuationToken(
+  source: string,
+  start: number,
+  state: IScannerState,
+  lineTerminatorBeforeToken: boolean,
+): number {
   const code = source.charCodeAt(start);
   const nextCode = source.charCodeAt(start + 1);
   switch (code) {
@@ -976,7 +1059,7 @@ function scanPunctuationToken(source: string, start: number, state: IScannerStat
     case 93:
       return scanCloseBracketToken(source, start, state);
     case 123:
-      return scanOpenBraceToken(source, start, state);
+      return scanOpenBraceToken(source, start, state, lineTerminatorBeforeToken);
     case 125:
       return scanCloseBraceToken(source, start, state);
     case 43:
@@ -1103,7 +1186,7 @@ function scanJavaScriptToken(source: string, start: number, state: IScannerState
     updateForHeaderExpressionEnd(state, true);
     return skipNumber(source, start);
   }
-  return scanPunctuationToken(source, start, state);
+  return scanPunctuationToken(source, start, state, lineTerminatorBeforeToken);
 }
 
 function stripInlineSourceMapMetadata(source: string): string {
@@ -1193,21 +1276,7 @@ function isModuleReferenceLiteral(
   ) {
     return true;
   }
-  const dynamicImport = tokens.at(-2);
-  const beforeDynamicImport = tokens.at(-3);
-  if (
-    previous?.kind === "punctuation" &&
-    previous.code === 40 &&
-    dynamicImport?.kind === "identifier" &&
-    dynamicImport.value === "import" &&
-    !dynamicImport.propertyAccess &&
-    !(
-      beforeDynamicImport?.kind === "punctuation" &&
-      (beforeDynamicImport.code === 35 || beforeDynamicImport.code === 46)
-    )
-  ) {
-    return true;
-  }
+  if (isDynamicImportCall(tokens)) return true;
   if (previous?.kind === "identifier" && previous.value === "from") {
     return (
       moduleStatement === "import" ||
@@ -1230,6 +1299,36 @@ function isModuleReferenceLiteral(
     !newKeyword.propertyAccess &&
     matchesImportMetaUrlCall(source, end + 1)
   );
+}
+
+function isDynamicImportCall(tokens: readonly TModuleSourceToken[]): boolean {
+  const previous = tokens.at(-1);
+  const dynamicImport = tokens.at(-2);
+  const beforeDynamicImport = tokens.at(-3);
+  return (
+    previous?.kind === "punctuation" &&
+    previous.code === 40 &&
+    dynamicImport?.kind === "identifier" &&
+    dynamicImport.value === "import" &&
+    !dynamicImport.propertyAccess &&
+    !(
+      beforeDynamicImport?.kind === "punctuation" &&
+      (beforeDynamicImport.code === 35 || beforeDynamicImport.code === 46)
+    )
+  );
+}
+
+function assertStaticDynamicImportArgument(
+  source: string,
+  end: number,
+  tokens: readonly TModuleSourceToken[],
+): void {
+  if (!isDynamicImportCall(tokens)) return;
+  const next = skipTrivia(source, end + 1);
+  const nextCode = source.charCodeAt(next);
+  if (nextCode !== 41 && nextCode !== 44) {
+    throw new Error("TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:computed module specifier");
+  }
 }
 
 interface IModuleCanonicalizationState {
@@ -1340,10 +1439,12 @@ function scanModuleSourceString(
     state.exportDeclarationForm,
   );
   if (moduleReference) {
-    const value = source.slice(start + 1, end);
+    const rawValue = source.slice(start + 1, end);
+    assertStaticDynamicImportArgument(source, end, state.tokens);
+    const value = decodeModuleSpecifier(rawValue);
     state.moduleReferences.add(value);
     const canonical = canonicalizeModuleReference(value, context);
-    if (canonical !== value) {
+    if (canonical !== rawValue) {
       state.chunks.push(source.slice(state.outputStart, start + 1), canonical);
       state.outputStart = end;
     }
@@ -1367,6 +1468,16 @@ function scanModuleSourceIdentifier(
   const end = skipIdentifier(source, start);
   const word = source.slice(start, end);
   const propertyName = isPropertyNameToken(source, end, state.scanner);
+  if (!propertyName && word === "import") {
+    const callStart = skipTrivia(source, end);
+    if (source.charCodeAt(callStart) === 40) {
+      const argumentStart = skipTrivia(source, callStart + 1);
+      const argumentCode = source.charCodeAt(argumentStart);
+      if (argumentCode !== 34 && argumentCode !== 39 && argumentCode !== 96) {
+        throw new Error("TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:computed module specifier");
+      }
+    }
+  }
   if (
     !propertyName &&
     (word === "import" || word === "export") &&
@@ -1458,6 +1569,7 @@ function scanModuleSourceTemplate(
   state: IModuleCanonicalizationState,
 ): number {
   let index = start + 1;
+  let hasExpression = false;
   while (index < source.length) {
     const code = source.charCodeAt(index);
     if (code === 92) {
@@ -1465,10 +1577,32 @@ function scanModuleSourceTemplate(
       continue;
     }
     if (code === 96) {
+      const moduleReference = isModuleReferenceLiteral(
+        source,
+        index,
+        state.tokens,
+        state.moduleStatement,
+        state.exportDeclarationForm,
+      );
+      if (moduleReference) {
+        if (hasExpression) {
+          throw new Error("TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:computed module specifier");
+        }
+        assertStaticDynamicImportArgument(source, index, state.tokens);
+        const rawValue = source.slice(start + 1, index);
+        const value = decodeModuleSpecifier(rawValue);
+        state.moduleReferences.add(value);
+        const canonical = canonicalizeModuleReference(value, context);
+        if (canonical !== rawValue) {
+          state.chunks.push(source.slice(state.outputStart, start + 1), canonical);
+          state.outputStart = index;
+        }
+      }
       state.tokens.push({ kind: "literal" });
       return scanJavaScriptToken(source, start, state.scanner);
     }
     if (code === 36 && source.charCodeAt(index + 1) === 123) {
+      hasExpression = true;
       index = scanTemplateExpressionForModuleReferences(source, index + 2, context, state);
       continue;
     }

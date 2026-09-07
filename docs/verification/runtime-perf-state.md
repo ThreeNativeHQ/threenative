@@ -121,6 +121,55 @@ The independent review also probed the corrected two-worktree hash path and foun
 hashes. Its remaining source-reference and escaped-specifier observations are coverage risks, not
 reproduced false passes; no platform or hardware performance result is claimed.
 
+### Astra final follow-up — ASI block boundary repair — 2026-09-07
+
+The review's next probe found the same scanner failure after a valid expression statement followed
+by an ASI-separated block (`value = 1` followed by `{}`). The scanner had cleared the line-break
+fact before classifying the opening brace as an object, so the following regex was treated as
+division and executable template contents could again disappear from identity.
+
+Brace classification now receives the line-terminator boundary observed by the token scanner and
+chooses a block when JavaScript can begin a declaration at that boundary.
+
+Red/green evidence:
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts -t 'keeps executable template contents'
+Tests 1 failed | 91 skipped (92)  # before the final follow-up
+Tests 1 passed | 91 skipped (92)  # after the final follow-up
+```
+
+The corrected probe produced different hashes for different executable template values. No
+platform or hardware performance result is claimed.
+
+### Astra final follow-up — module-specifier extraction closure — 2026-09-07
+
+The next read-only probe found three lexical identity gaps: static dynamic imports written with
+template literals were omitted; JavaScript escapes in quoted specifiers were retained raw, so
+equivalent imports hashed differently; and computed dynamic imports could be treated as absent or
+partially extracted.
+
+Module extraction now recognizes static template imports, decodes JavaScript string and template
+escapes before URL canonicalization, and fails closed for non-literal or concatenated dynamic
+imports. The same decoded value is used for both reported references and graph bytes, so equivalent
+spellings share an identity.
+
+Red/green evidence:
+
+```text
+Astra probe before the follow-up:
+static template import -> []
+escaped equivalent imports -> different hashes
+computed dynamic import -> no extraction error
+
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts -t 'extracts executable|extracts static template|keeps executable template contents'
+Tests 3 passed | 90 skipped (93)
+```
+
+The corrected probe now reports static template and decoded escaped references, equivalent escaped
+and unescaped module graphs hash equally, and computed imports fail closed. No platform or hardware
+performance result is claimed.
+
 ---
 
 ## Android: the GPU meter reports on a Pixel 8 — 2026-09-01

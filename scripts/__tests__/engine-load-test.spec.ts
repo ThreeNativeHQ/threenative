@@ -127,6 +127,28 @@ describe("engine load test workload", () => {
     ]);
   });
 
+  it("extracts static template imports, decodes escapes, and rejects computed imports", async () => {
+    const source = ["import(`./dynamic.js`);", 'import("./escaped\\u002ejs");'].join("\n");
+    expect(extractModuleSpecifiers(source)).toEqual(["./dynamic.js", "./escaped.js"]);
+    for (const source of [
+      "import(moduleName);",
+      "import(`./${name}.js`);",
+      "import(`./static.js` + suffix);",
+    ]) {
+      expect(() => extractModuleSpecifiers(source)).toThrow(
+        /TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:computed module specifier/u,
+      );
+    }
+
+    const module = (value: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(value),
+      url: "http://127.0.0.1:5199/@fs/repo/examples/engine-load-test/src/game.ts",
+    });
+    expect(await hashServedModuleGraph([module('import("./escaped\\u002ejs");')])).toBe(
+      await hashServedModuleGraph([module('import("./escaped.js");')]),
+    );
+  });
+
   it("keeps engine implementation modules out of benchmark workload identity", async () => {
     const module = (url: string, source: string): IModuleGraphEntry => ({
       bytes: new TextEncoder().encode(source),
@@ -148,12 +170,12 @@ describe("engine load test workload", () => {
     );
   });
 
-  it("keeps executable template contents in the identity after optional catch binding", async () => {
+  it("keeps executable template contents in the identity after statement boundaries", async () => {
     const module = (source: string): IModuleGraphEntry => ({
       bytes: new TextEncoder().encode(source),
       url: "/src/value.js",
     });
-    for (const prefix of ["try {} catch {}\n", "debugger\n"]) {
+    for (const prefix of ["try {} catch {}\n", "debugger\n", "globalThis.auditValue = 1\n{}\n"]) {
       const baseline = `${prefix}/\`/.test("x"); globalThis.auditValue = \`//# sourceMappingURL=data:AAA\`;`;
       const candidate = baseline.replace("AAA", "BBB");
 
