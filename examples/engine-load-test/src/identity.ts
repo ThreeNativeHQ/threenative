@@ -1560,14 +1560,25 @@ function scanModuleSourceIdentifier(
   const word = source.slice(start, end);
   const propertyName = isPropertyNameToken(source, end, state.scanner);
   const previous = state.tokens.at(-1);
+  const beforePrevious = state.tokens.at(-2);
+  const beforeGenerator = state.tokens.at(-3);
   const enclosing = state.scanner.delimiters.at(-1);
+  const objectMemberSeparator = (token: TModuleSourceToken | undefined): boolean =>
+    token?.kind === "punctuation" && (token.code === 44 || token.code === 123);
+  const objectGeneratorMethodName =
+    previous?.kind === "punctuation" &&
+    previous.code === 42 &&
+    (objectMemberSeparator(beforePrevious) ||
+      (beforePrevious?.kind === "identifier" &&
+        beforePrevious.value === "async" &&
+        objectMemberSeparator(beforeGenerator)));
   const objectMethodName =
     word === "import" &&
     enclosing?.kind === "brace" &&
     enclosing.context === "object" &&
     source.charCodeAt(skipTrivia(source, end)) === 40 &&
-    ((previous?.kind === "punctuation" &&
-      (previous.code === 42 || previous.code === 44 || previous.code === 123)) ||
+    (objectMemberSeparator(previous) ||
+      objectGeneratorMethodName ||
       (previous?.kind === "identifier" &&
         (previous.value === "async" || previous.value === "get" || previous.value === "set")));
   if (!propertyName && !objectMethodName && word === "import") {

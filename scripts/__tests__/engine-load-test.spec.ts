@@ -136,6 +136,8 @@ describe("engine load test workload", () => {
       "const value = { promise: [0, import(path)] };",
       "const value = { promise: f(0, import(path)) };",
       "const value = { promise: (0, import(path)) };",
+      "const value = { promise: 0 * import(path) };",
+      "const value = { promise: 0 ** import(path) };",
       "import(`./${name}.js`);",
       "import(`./static.js` + suffix);",
     ]) {

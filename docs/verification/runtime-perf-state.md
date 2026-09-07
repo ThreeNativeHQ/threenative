@@ -3693,7 +3693,8 @@ for any enclosing object. Those valid JavaScript forms could therefore disappear
 identity. The scanner now limits the exemption to the current object-member delimiter, recognizes
 generator methods (`*import` and `async *import`), and starts template-expression scans in
 expression context so an object literal there is not mistaken for a block. Nested computed
-imports fail closed with `TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE`.
+imports, including operands after `*` and `**`, fail closed with
+`TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE`.
 
 Red/green evidence:
 
