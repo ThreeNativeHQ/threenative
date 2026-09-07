@@ -1379,20 +1379,24 @@ describe("CI pipeline structure", () => {
         .filter((line) => !/^\s*#/u.test(line))
         .join("\n");
     const producerCommands = commands(producer);
-    const pullRequestEligibility = [
-      "      (github.event_name != 'pull_request' ||",
-      "       contains(github.event.pull_request.labels.*.name, 'native'))",
-    ].join("\n");
+    const labelGate = "contains(github.event.pull_request.labels.*.name, 'native')";
 
     expect(producerCommands).toContain("--target web --out artifacts/conformance/web");
+    // The invariant is a direction, not a literal: the producer must be at least as permissive as
+    // its most permissive consumer, or that consumer runs on a pull request with no reference to
+    // compare against. Since 2026-09-06 `android-emulator-parity` carries no label gate, so the
+    // producer may not carry one either; when both consumers were gated it did. Pinning the exact
+    // string here is what made this test fail for the right reason and the wrong cause.
     expect(producer, "web reference is an orphan on unlabelled pull requests").toContain(
-      [
-        "if: >-",
-        "      needs.scope.outputs.selection != 'prose' &&",
-        "      inputs.ios_only == false &&",
-        pullRequestEligibility,
-      ].join("\n"),
+      ["if: >-", "      needs.scope.outputs.selection != 'prose' &&"].join("\n"),
     );
+    expect(producer).toContain("inputs.ios_only == false");
+    if (!android.includes(labelGate)) {
+      expect(
+        producer,
+        "producer is gated more tightly than the Android leg that needs it",
+      ).not.toContain(labelGate);
+    }
     expect(producer).toContain("actions/upload-artifact");
     expect(producer).toContain("native-web-reference-${{ github.sha }}");
     expect(producer).toContain("if-no-files-found: error");
@@ -1403,14 +1407,28 @@ describe("CI pipeline structure", () => {
       ["desktop", desktop],
     ] as const) {
       const consumer = commands(section);
+      // Both consumers share the scope and dispatch conditions; they differ only in the label,
+      // which `desktop-parity` still carries and `android-emulator-parity` shed on 2026-09-06.
       expect(section, `${name} eligibility drifted from the web producer`).toContain(
         [
           "if: >-",
           "      needs.scope.outputs.selection != 'prose' &&",
-          "      inputs.ios_only != true &&",
-          pullRequestEligibility,
+          "      inputs.ios_only != true",
         ].join("\n"),
       );
+      if (name === "desktop") {
+        expect(section, `${name} lost the label gate it is meant to keep`).toContain(
+          [
+            "      (github.event_name != 'pull_request' ||",
+            "       contains(github.event.pull_request.labels.*.name, 'native'))",
+          ].join("\n"),
+        );
+      } else {
+        expect(
+          section,
+          `${name} regained a label gate the web producer does not carry`,
+        ).not.toContain(labelGate);
+      }
       expect(section, `${name} is not ordered behind the producer`).toContain(
         "needs: [scope, web-reference]",
       );
@@ -1536,26 +1554,37 @@ describe("CI pipeline structure", () => {
     // main the lane cancelled itself before finishing anyway (owner call: run everything,
     // everywhere, and let a red be a red).
     //
-    // Two legs are gated again as of 2026-09-03, and the reason is a measurement the earlier call
-    // did not have. `desktop-parity` costs 3173s and `android-emulator-parity` 1858s: together 84
-    // of the ~130 runner-minutes this workflow spends per pull request, against ~60 for all of
-    // CI, on one shared pool. On run 33782776626 CI took 457s while its longest job was 332s —
-    // the difference is its own 26 jobs queueing against slots these two legs were holding.
+    // Two legs were gated again as of 2026-09-03, and the reason was a measurement the earlier
+    // call did not have. `desktop-parity` costs 3173s and `android-emulator-parity` 1858s:
+    // together 84 of the ~130 runner-minutes this workflow spends per pull request, against ~60
+    // for all of CI, on one shared pool. On run 33782776626 CI took 457s while its longest job was
+    // 332s — the difference is its own 26 jobs queueing against slots these two legs were holding.
     //
-    // What the earlier call was protecting is intact: both still run on every push to main, every
-    // night, and on any PR labelled `native`, so nothing reaches a release unproven. What changed
-    // is that they no longer sit in front of the checks people actually wait on — and both are
-    // advisory rather than required, both are red on main today, and both report 30-53 minutes
-    // after a PR opens, which is after it has been read.
+    // `android-emulator-parity` is ungated again as of 2026-09-06, and only that leg. The cost
+    // measurement above still stands, but the clause carrying it was "both are red on main today":
+    // minutes spent on a leg that cannot produce a result are what made the trade lopsided. That
+    // leg was red for a reason unrelated to any pull request's diff — `stb` is fetched fresh from
+    // raw.githubusercontent.com on every run, unauthenticated, and returned 429 on run
+    // 34078916876, so `Install Android build prerequisites` exited 1 and the emulator never
+    // booted. With the fetch retried and authenticated the leg produces a result, and a reporting
+    // advisory leg is worth its 31 runner-minutes where an always-red one was not.
     //
-    // Every other leg keeps the old rule. The only other condition any leg may carry is the manual
-    // `ios_only` dispatch toggle.
+    // `desktop-parity` stays gated: it is the larger half of those 84 minutes and nothing has made
+    // it green.
+    //
+    // Every other leg keeps the old rule. The only other conditions any leg may carry are the
+    // manual `ios_only` dispatch toggle and the prose-only `scope` skip.
     const native = await readFile(
       path.join(repo, ".github/workflows/native-platforms.yml"),
       "utf8",
     );
-    const gated = ["android-emulator-parity", "desktop-parity"] as const;
-    const ungated = ["desktop", "ios-simulator", "starter-linux"] as const;
+    const gated = ["desktop-parity"] as const;
+    const ungated = [
+      "android-emulator-parity",
+      "desktop",
+      "ios-simulator",
+      "starter-linux",
+    ] as const;
 
     for (const name of ungated) {
       const job = requiredJob(native, name);
