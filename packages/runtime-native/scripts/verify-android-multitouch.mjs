@@ -96,7 +96,11 @@ function stateAfter(report) {
 export function validateResults(positive, negative) {
   const state = stateAfter(positive);
   if (!positive.pass) {
-    throw new Error(`Positive multi-touch scenario failed its assertions: ${JSON.stringify(state)}.`);
+    throw new Error(`Positive multi-touch scenario failed: ${JSON.stringify({
+      assertionResults: positive.assertionResults ?? null,
+      diagnostics: positive.diagnostics ?? [],
+      state,
+    })}.`);
   }
   if (positive.assertionResults?.some(({ pass }) => !pass) !== false) {
     throw new Error('Positive multi-touch scenario did not evaluate a complete passing assertion set.');
