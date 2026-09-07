@@ -75,7 +75,7 @@ test("a handled decode rejection does not also write to stderr", () => {
   // and reads the streams the kill leaves behind rather than waiting for an exit.
   const run = spawnSync(binary, ["run", script, "--headless"], {
     encoding: "utf8",
-    timeout: 10_000,
+    timeout: 3_000,
   });
   assert.match(run.stdout, /HANDLED:true/u, "the caller must receive the rejection as an Error");
   assert.doesNotMatch(
@@ -83,4 +83,4 @@ test("a handled decode rejection does not also write to stderr", () => {
     /decodeAudioData received an empty or non-ArrayBuffer argument/u,
     "a rejection the caller handles must not also be reported as a console error",
   );
-}, 60_000);
+}, 30_000);
