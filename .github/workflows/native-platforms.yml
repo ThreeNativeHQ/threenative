@@ -134,16 +134,27 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Only networking lane results, never the conformance artifacts the platform jobs
+      # upload as native-*: the aggregator validates every JSON it finds under this path,
+      # so pointing it at a foreign artifact would fail the gate on the wrong evidence.
+      # Task 7c's proof runner publishes these; until then no artifact matches and the
+      # directory stays empty, which is the honest state.
       - uses: actions/download-artifact@v7
         if: always()
         continue-on-error: true
         with:
-          pattern: native-*
+          pattern: networking-lane-*
           path: artifacts/networking-matrix
-      # PRD-359 Task 7b. This job is the networking release verdict, so it stays red
-      # until Task 7c actually runs the qualification lanes and their evidence lands
-      # here. An advisory green would be exactly the false claim the row forbids.
-      - name: Verify networking qualification matrix
+      # PRD-359 Task 7b. Ordinary CI cannot execute the qualification lanes, so this job
+      # proves the gate rather than the platforms: the aggregator's own suite must pass,
+      # and the aggregator must report UNQUALIFIED over whatever evidence this run has.
+      # It never claims a platform. The moment any lane result appears in the artifacts,
+      # every required row is enforced and a partial set fails — so a green here cannot be
+      # mistaken for qualification, which is what the execution row forbids.
+      - name: Prove the aggregator is fail-closed
+        if: always()
+        run: pnpm exec vitest run scripts/__tests__/networking-matrix.spec.ts
+      - name: Report the networking qualification verdict
         if: always()
         run: |
           mkdir -p artifacts/networking-matrix
@@ -151,6 +162,9 @@ jobs:
             --manifest docs/PRDs/networking/qualification-lanes.json \
             --results artifacts/networking-matrix 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
+      # The release verdict is the same aggregator with --require-evidence, where an empty
+      # evidence set is a failure instead of an honest "nothing ran". Task 7c wires the tag
+      # path to this once real lane evidence exists.
 
   android-emulator-parity:
     name: Android emulator visual parity

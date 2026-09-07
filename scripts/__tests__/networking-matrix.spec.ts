@@ -5,6 +5,8 @@ const {
   assertFiniteMetrics,
   assertNonEmptyObservations,
   formatSummary,
+  main,
+  parseCli,
   validateManifest,
   validateResultRow,
   verifyNetworkingMatrix,
@@ -299,6 +301,87 @@ describe("networking matrix verification", () => {
         expect(lane.status).toBe("required");
       }
     }
+  });
+
+  it("reports unqualified without evidence instead of claiming a pass", async () => {
+    const { mkdir, mkdtemp, rm, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const testDir = await mkdtemp(join(tmpdir(), "net-matrix-empty-"));
+    try {
+      const manifestPath = join(testDir, "manifest.json");
+      await writeFile(manifestPath, JSON.stringify(sampleManifest(), null, 2));
+      const resultsDir = join(testDir, "results");
+      await mkdir(resultsDir);
+
+      // An ordinary CI run cannot execute the qualification lanes, so no evidence is the
+      // normal case. It must not fail, and it must not claim anything either.
+      const summary = await verifyNetworkingMatrix({ manifestPath, resultsDir });
+      expect(summary.verdict).toBe("unqualified");
+      expect(summary.passedRequired).toBe(0);
+      expect(formatSummary(summary)).toMatch(/no lane evidence/iu);
+      expect(formatSummary(summary)).toMatch(/Verdict: UNQUALIFIED/u);
+      expect(formatSummary(summary)).not.toMatch(/Verdict: PASSED/u);
+      expect(await main(["--manifest", manifestPath, "--results", resultsDir])).toBe(0);
+
+      // The release path must refuse the same empty run.
+      expect(
+        await main(["--manifest", manifestPath, "--results", resultsDir, "--require-evidence"]),
+      ).toBe(1);
+    } finally {
+      await rm(testDir, { force: true, recursive: true });
+    }
+  });
+
+  it("enforces every required row as soon as any evidence exists", async () => {
+    const { mkdir, mkdtemp, rm, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const testDir = await mkdtemp(join(tmpdir(), "net-matrix-partial-"));
+    try {
+      const manifest = sampleManifest({
+        lanes: [
+          {
+            laneId: "desktop-linux-x64",
+            platform: "desktop",
+            status: "required",
+            requiredProfiles: ["clean-lan"],
+            nativeBinaryHash: HASH_NATIVE,
+            serverBinaryHash: HASH_SERVER,
+          },
+          {
+            laneId: "desktop-windows-x64",
+            platform: "desktop",
+            status: "required",
+            requiredProfiles: ["clean-lan"],
+            nativeBinaryHash: HASH_NATIVE,
+            serverBinaryHash: HASH_SERVER,
+          },
+        ],
+      });
+      const manifestPath = join(testDir, "manifest.json");
+      await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+      const resultsDir = join(testDir, "results");
+      await mkdir(resultsDir);
+      // One lane reported. Partial evidence is the dangerous case: it must not pass.
+      await writeFile(
+        join(resultsDir, "desktop-linux-x64.json"),
+        JSON.stringify(sampleResult(), null, 2),
+      );
+
+      await expect(verifyNetworkingMatrix({ manifestPath, resultsDir })).rejects.toThrow(
+        /missing required lane/iu,
+      );
+      expect(await main(["--manifest", manifestPath, "--results", resultsDir])).toBe(1);
+    } finally {
+      await rm(testDir, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects an unknown flag rather than ignoring it", () => {
+    expect(() => parseCli(["--manifest", "m", "--results", "r", "--force"])).toThrow(/--force/u);
   });
 
   it("executes verifyNetworkingMatrix against files on disk", async () => {

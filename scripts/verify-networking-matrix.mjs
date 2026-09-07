@@ -380,6 +380,24 @@ function evaluateLaneCoverage(manifest, resultsMap) {
 
 export function aggregateMatrix(manifest, results) {
   validateManifest(manifest);
+  // An ordinary CI run cannot execute the qualification lanes, so an empty evidence set is
+  // the normal case rather than a failure. It reports "unqualified" and claims nothing. The
+  // moment a single lane reports, every required row is enforced below, so partial evidence
+  // — the case that could actually mislead — still fails.
+  if (results.length === 0) {
+    const totalRequired = manifest.lanes.reduce(
+      (count, lane) => count + (lane.status === "required" ? lane.requiredProfiles.length : 0),
+      0,
+    );
+    return {
+      verdict: "unqualified",
+      totalRequired,
+      passedRequired: 0,
+      deferredCount: 0,
+      deferred: [],
+      passedRows: [],
+    };
+  }
   const resultsMap = indexAndValidateResults(manifest, results);
   assertAllResultsMatchManifestLanes(resultsMap, manifest);
   const { totalRequired, passedRequired, deferred, passedRows } = evaluateLaneCoverage(
@@ -404,6 +422,12 @@ export function formatSummary(summary) {
     `Required lanes: ${summary.passedRequired} / ${summary.totalRequired} passed`,
     `Deferred lanes: ${summary.deferredCount}`,
   ];
+  if (summary.verdict === "unqualified") {
+    lines.push(
+      "No lane evidence in this run: no platform is qualified and no verdict is claimed.",
+      "The release verdict requires --require-evidence over real lane results.",
+    );
+  }
   if (summary.deferred.length > 0) {
     lines.push("Explicit deferred rows (owner-deferred, not passed):");
     for (const item of summary.deferred) {
@@ -446,6 +470,7 @@ export async function verifyNetworkingMatrix(options) {
 export function parseCli(argv) {
   let manifestPath;
   let resultsDir;
+  let requireEvidence = false;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === "--manifest" && i + 1 < argv.length) {
       i += 1;
@@ -453,22 +478,30 @@ export function parseCli(argv) {
     } else if (argv[i] === "--results" && i + 1 < argv.length) {
       i += 1;
       resultsDir = argv[i];
+    } else if (argv[i] === "--require-evidence") {
+      requireEvidence = true;
     } else {
       invalid(`unknown or unexpected argument '${argv[i]}'`);
     }
   }
   if (!manifestPath || !resultsDir) {
-    invalid("usage: node scripts/verify-networking-matrix.mjs --manifest <path> --results <dir>");
+    invalid(
+      "usage: node scripts/verify-networking-matrix.mjs --manifest <path> --results <dir> [--require-evidence]",
+    );
   }
-  return { manifestPath, resultsDir };
+  return { manifestPath, requireEvidence, resultsDir };
 }
 
 export async function main(argv = process.argv.slice(2)) {
   try {
-    const { manifestPath, resultsDir } = parseCli(argv);
+    const { manifestPath, requireEvidence, resultsDir } = parseCli(argv);
     const summary = await verifyNetworkingMatrix({ manifestPath, resultsDir });
     process.stdout.write(`${formatSummary(summary)}\n`);
-    return summary.verdict === "passed" ? 0 : 1;
+    if (summary.verdict === "passed") return 0;
+    // Without evidence there is nothing to judge. The release path passes
+    // --require-evidence, which turns that same state into a failure.
+    if (summary.verdict === "unqualified") return requireEvidence ? 1 : 0;
+    return 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`TN_NETWORKING_MATRIX_VERIFY_FAILED: ${message}\n`);
