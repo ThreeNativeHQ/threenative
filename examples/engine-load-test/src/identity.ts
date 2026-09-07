@@ -1560,9 +1560,11 @@ function scanModuleSourceIdentifier(
   const word = source.slice(start, end);
   const propertyName = isPropertyNameToken(source, end, state.scanner);
   const previous = state.tokens.at(-1);
+  const enclosing = state.scanner.delimiters.at(-1);
   const objectMethodName =
     word === "import" &&
-    insideObjectLiteral(state.scanner) &&
+    enclosing?.kind === "brace" &&
+    enclosing.context === "object" &&
     source.charCodeAt(skipTrivia(source, end)) === 40 &&
     ((previous?.kind === "punctuation" && (previous.code === 44 || previous.code === 123)) ||
       (previous?.kind === "identifier" &&

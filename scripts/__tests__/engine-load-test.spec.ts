@@ -133,6 +133,9 @@ describe("engine load test workload", () => {
     for (const source of [
       "import(moduleName);",
       "const value = { promise: import(path) };",
+      "const value = { promise: [0, import(path)] };",
+      "const value = { promise: f(0, import(path)) };",
+      "const value = { promise: (0, import(path)) };",
       "import(`./${name}.js`);",
       "import(`./static.js` + suffix);",
     ]) {

@@ -3685,6 +3685,33 @@ Implementation and proof: [`identity.ts`](../../examples/engine-load-test/src/id
 [`engine-load-test.spec.ts`](../../scripts/__tests__/engine-load-test.spec.ts). No baseline was
 promoted, and no hosted or physical platform performance result is claimed.
 
+### PRD-358 follow-up — nested computed-import fail-closed scan and generated evidence — 2026-09-07
+
+The object-method exemption in the lexical scanner previously treated `import(path)` inside an
+object property's array, call, or parenthesized expression as a method name because it searched
+for any enclosing object. Those valid JavaScript forms could therefore disappear from graph
+identity. The exemption now applies only when the current delimiter is the object member itself;
+the nested forms fail closed with `TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE`.
+
+Red/green evidence:
+
+```text
+before fix: Test Files 1 failed (1); Tests 1 failed | 93 skipped (94); exit 1
+after fix:  Test Files 1 passed (1); Tests 1 passed | 93 skipped (94); exit 0
+```
+
+The generated retention index and native coverage digest were regenerated after the verification
+record changed. Current repository gates are:
+
+| Command | Result |
+|---|---|
+| `pnpm budgets` | PASS; generated retention index fresh, native coverage digest current; exit 0 |
+| `git diff --check` | PASS; exit 0 |
+
+Implementation and proof: [`identity.ts`](../../examples/engine-load-test/src/identity.ts) and
+[`engine-load-test.spec.ts`](../../scripts/__tests__/engine-load-test.spec.ts). No baseline was
+promoted, and no hosted or physical platform performance result is claimed.
+
 ## 7. Harness status
 
 `assert.performance` (playtest scenarios) bounds `maxFrameMsP95`, `minFps`, `maxPhaseMsP95`,
