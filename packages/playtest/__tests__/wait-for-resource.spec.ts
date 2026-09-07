@@ -39,6 +39,26 @@ test("a resource that satisfies the predicate within its budget passes", async (
   expect(samples).toBe(2);
 });
 
+test("an observation landing exactly on the budget still passes", async () => {
+  // The boundary the deadline check turns on. Without this, tightening `remainingMs >= 0` to
+  // `> 0` would reject a transition that met its budget exactly and no test would notice.
+  const time = clock();
+  const result = await waitForResource({
+    id: "state",
+    now: time.now,
+    path: "networkConnected",
+    predicate: { equals: true },
+    sample: async () => {
+      time.advance(32);
+      return snapshot(true);
+    },
+    sleep: async () => undefined,
+    timeoutMs: 32,
+  });
+
+  expect(result).toEqual(snapshot(true));
+});
+
 test("a resource that only becomes true after its timeout is a timeout, not a pass", async () => {
   // The wait returned as soon as the predicate held, before comparing elapsed time to the
   // budget, so an observation that arrived late still passed. A scenario asking for a
