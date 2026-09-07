@@ -902,8 +902,8 @@ jobs:
           if-no-files-found: error
 
   performance-contracts:
-    needs: build
-    if: ${{ !cancelled() }}
+    needs: [scope, build]
+    if: ${{ needs.scope.outputs.selection != 'prose' && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -1018,7 +1018,6 @@ jobs:
     # git history — gitleaks' default git mode — which is strictly stronger than the incremental
     # PR range and immune to force-push SHAs the checkout may not have.
     if: >-
-      needs.scope.outputs.selection != 'prose' &&
       (github.event_name == 'pull_request' || github.event_name == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 10

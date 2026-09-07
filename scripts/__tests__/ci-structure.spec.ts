@@ -305,7 +305,7 @@ describe("CI pipeline structure", () => {
       "benchmark",
       "build",
       "budgets",
-      "supply-chain",
+      "performance-contracts",
     ]) {
       const job = requiredJob(ci, name);
       expect(job, `${name} does not wait for scope`).toContain("scope");
@@ -344,6 +344,8 @@ describe("CI pipeline structure", () => {
         "needs.scope.outputs.selection != 'prose'",
       );
     }
+    const performanceCoverage = requiredJob(native, "performance-coverage");
+    expect(performanceCoverage).toContain("needs.scope.outputs.selection != 'prose'");
     const triggers = triggerSection(native);
     expect(triggers).toContain("workflow_dispatch:");
     expect(triggers).toContain("workflow_call:");
@@ -848,8 +850,10 @@ describe("CI pipeline structure", () => {
   it("PR CI reviews dependencies and scans changed commits for leaked secrets", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const supplyChain = requiredJob(ci, "supply-chain");
-    // Runs on pushes too since 2026-09-01 (owner call): a skipped job on main read as a pass.
-    expect(supplyChain).toContain("needs.scope.outputs.selection != 'prose'");
+    // Secret scanning remains on prose-only PRs: Markdown can contain credentials even when it
+    // does not alter executable behavior.
+    expect(supplyChain).toContain("needs: scope");
+    expect(supplyChain).not.toContain("needs.scope.outputs.selection != 'prose'");
     expect(supplyChain).toContain(
       "(github.event_name == 'pull_request' || github.event_name == 'push')",
     );

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { access, chmod, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -7,29 +7,6 @@ import { makeTempDir } from "../../test-support/temp-dir.js";
 const repo = path.resolve(import.meta.dirname, "../..");
 const localRunner = path.join(repo, "scripts", "ci-local.sh");
 const suiteRunner = path.join(repo, "scripts", "run-test-suite.sh");
-
-async function prebuiltOutputTargets(): Promise<readonly string[]> {
-  const packageDirectories = await readdir(path.join(repo, "packages"), {
-    withFileTypes: true,
-  });
-  const targets: string[] = [];
-  for (const entry of packageDirectories) {
-    if (!entry.isDirectory()) continue;
-    const config = path.join(repo, "packages", entry.name, "tsup.config.ts");
-    if (
-      await access(config)
-        .then(() => true)
-        .catch(() => false)
-    ) {
-      targets.push(path.join(repo, "packages", entry.name, "dist", "index.js"));
-    }
-  }
-  return [
-    ...targets,
-    path.join(repo, "packages/playtest/dist/runner/cli.js"),
-    path.join(repo, "site/dist/client/index.html"),
-  ];
-}
 
 async function recorderRoot(): Promise<{
   readonly bin: string;
@@ -52,6 +29,26 @@ async function recorderRoot(): Promise<{
   );
   await chmod(path.join(bin, "pnpm"), 0o755);
   return { bin, root, trace };
+}
+
+async function missingPrebuiltFixture(): Promise<{
+  readonly bin: string;
+  readonly root: string;
+  readonly trace: string;
+}> {
+  const fixture = await recorderRoot();
+  await mkdir(path.join(fixture.root, "packages/fake"), { recursive: true });
+  await writeFile(path.join(fixture.root, "packages/fake/tsup.config.ts"), "export default {};\n");
+  await mkdir(path.join(fixture.root, "packages/playtest/__tests__"), { recursive: true });
+  const orphanCleanup = path.join(fixture.root, "packages/playtest/__tests__/orphan-cleanup.sh");
+  await writeFile(orphanCleanup, "#!/bin/sh\nexit 0\n");
+  await chmod(orphanCleanup, 0o755);
+  await mkdir(path.join(fixture.root, "scripts"), { recursive: true });
+  await writeFile(path.join(fixture.root, "scripts/gate-records.mjs"), "process.exit(0);\n");
+  const runner = path.join(fixture.root, "scripts/run-test-suite.sh");
+  await copyFile(suiteRunner, runner);
+  await chmod(runner, 0o755);
+  return fixture;
 }
 
 async function runLocal(
@@ -143,24 +140,20 @@ describe("ci-local build contract", () => {
   });
 
   it("should reject prebuilt execution when required outputs are missing", async () => {
-    const fixture = await recorderRoot();
+    const fixture = await missingPrebuiltFixture();
     const statusPath = path.join(fixture.root, "status.json");
-    const hidden: { readonly original: string; readonly stashed: string }[] = [];
     try {
-      for (const [index, original] of (await prebuiltOutputTargets()).entries()) {
-        try {
-          const stashed = `${original}.ci-local-hidden-${String(process.pid)}-${String(index)}`;
-          await rename(original, stashed);
-          hidden.push({ original, stashed });
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        }
-      }
       const result = spawnSync(
         "bash",
-        [suiteRunner, "--status-path", statusPath, "--run-id", "ci-local-test"],
+        [
+          path.join(fixture.root, "scripts/run-test-suite.sh"),
+          "--status-path",
+          statusPath,
+          "--run-id",
+          "ci-local-test",
+        ],
         {
-          cwd: repo,
+          cwd: fixture.root,
           encoding: "utf8",
           env: {
             ...process.env,
@@ -174,7 +167,6 @@ describe("ci-local build contract", () => {
       expect(result.status).not.toBe(0);
       expect(`${result.stdout}\n${result.stderr}`).toContain("TN_SUITE_PREBUILT_MISSING");
     } finally {
-      for (const { original, stashed } of hidden.reverse()) await rename(stashed, original);
       await rm(fixture.root, { force: true, recursive: true });
     }
   });

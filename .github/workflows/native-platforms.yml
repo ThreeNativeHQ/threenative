@@ -122,8 +122,8 @@ jobs:
 
   performance-coverage:
     name: Native collector evidence coverage
-    needs: [android-emulator-parity, desktop-parity, desktop, ios-simulator]
-    if: always()
+    needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
+    if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
