@@ -13,7 +13,6 @@ export interface ISkeletalMesh3DOptions {
   readonly strideSync?: boolean;
 }
 
-/** Skeleton-safe, measured preparation that is also the rig's AnimationPlayer. */
 export class SkeletalMesh3D extends AnimationPlayer {
   readonly root: Object3D;
   readonly scaleFactor: number;
@@ -22,47 +21,27 @@ export class SkeletalMesh3D extends AnimationPlayer {
     if (!options?.source) throw new Error("SkeletalMesh3D requires a source Object3D.");
     const root = cloneSkeleton(options.source);
     const clips = options.clips ?? [];
-    validateRequiredClips(root, clips, options.requiredClips);
+    for (const name of requiredClipNames(options.requiredClips)) {
+      const clip = clips.find((item) => item.name === name);
+      if (clip === undefined)
+        throw new Error(
+          `SkeletalMesh3D: missing required clip '${name}'. Available clips: ${clips.map((item) => `'${item.name}'`).join(", ") || "(none)"}.`,
+        );
+      if (clipTrackBindings(root, clip).bound === 0)
+        throw new Error(
+          `SkeletalMesh3D: clip '${name}' binds 0 tracks to '${root.name || root.type}'.`,
+        );
+    }
     super({ clips, root, strideRoot: options.strideRoot ?? root, strideSync: options.strideSync });
     this.root = root;
     this.scaleFactor = options.size === undefined ? 1 : normaliseToMetres(root, options.size);
   }
 }
 
-function validateRequiredClips(
-  root: Object3D,
-  clips: readonly AnimationClip[],
-  requiredClips: unknown,
-): void {
-  if (requiredClips === undefined) return;
-  const names = requiredClipNames(requiredClips);
-  const available = new Map(clips.map((clip) => [clip.name, clip]));
-  for (const name of names) {
-    const clip = available.get(name);
-    if (clip === undefined) {
-      const listed = clips.map((item) => `'${item.name}'`).join(", ") || "(none)";
-      throw new Error(
-        `SkeletalMesh3D: missing required clip '${name}'. Available clips: ${listed}.`,
-      );
-    }
-    if (clipTrackBindings(root, clip).bound === 0)
-      throw new Error(
-        `SkeletalMesh3D: clip '${name}' binds 0 tracks to '${root.name || root.type}'.`,
-      );
-  }
-}
-
-function requiredClipNames(value: unknown): string[] {
-  const values = Array.isArray(value)
-    ? value
-    : value !== null && typeof value === "object"
-      ? Object.values(value)
-      : undefined;
-  if (values === undefined)
-    throw new Error("SkeletalMesh3D: requiredClips must be an array or string-valued dictionary.");
-  return values.map((name, index) => {
-    if (typeof name !== "string" || name.length === 0)
-      throw new Error(`SkeletalMesh3D: requiredClips['${index}'] must be a non-empty string.`);
-    return name;
-  });
+function requiredClipNames(value: ISkeletalMesh3DOptions["requiredClips"]): readonly string[] {
+  if (value === undefined) return [];
+  const names = Array.isArray(value) ? value : Object.values(value);
+  if (!names.every((name): name is string => typeof name === "string" && name.length > 0))
+    throw new Error("SkeletalMesh3D: requiredClips must contain non-empty strings.");
+  return names;
 }
