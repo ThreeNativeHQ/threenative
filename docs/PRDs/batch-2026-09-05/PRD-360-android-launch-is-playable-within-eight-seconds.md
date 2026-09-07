@@ -4,17 +4,17 @@ prd_contract: v1
 
 # PRD-360 — Android launch is playable within eight seconds
 
-**Status:** BLOCKED — `requires-physical-device`. Every non-device criterion this PRD can reach has been reached and proved; the remaining acceptance is three physical Android cold launches, and no Android device is reachable from this machine. Attempted and recorded 2026-09-07 (see the device-lane section below): USB, an adb server restart, a 192.168.1.0/24 sweep on 5555 and 5037, direct `adb connect` to every live neighbour, and `adb mdns services` — which is the only method that can see Android 11+ wireless debugging, since it binds a random port — all empty. Nothing here is a judgement that the work is finished: it is not, and no acceptance box is ticked.
+**Status:** PARTIAL — measured on hardware 2026-09-07 and the criterion is **unmet**. Three cold launches of the preserved baseline on a physical Pixel 8 give a median launch-to-first-playable bound of 50,948.7 ms against the 8,000 ms criterion, with the player moving 2.147 m and a visible world proved. The device blocker that filed this under `requires-physical-device` is resolved, so it returns to its batch. What remains is implementation, not evidence: a build that reaches the criterion, and an observer-carrying artifact for the pump-silence bullet. Evidence: [prd-360-device-2026-09-07](../../verification/prd-360-device-2026-09-07/README.md).
 **Priority:** 1 — start today, September 5, 2026.
 **Complexity:** 2 (6–10 files) + 2 (async startup) + 2 (core/native) = 6 → MEDIUM mode.
 **Estimate:** 6–10 engineering hours plus native build/device time.
-**Parent:** [Existing owning PRD](../../performance/critical/PRD-339-the-compile-walk-leaves-the-main-thread.md). This document is its bounded delivery slice, not a competing implementation.
+**Parent:** [Existing owning PRD](../performance/critical/PRD-339-the-compile-walk-leaves-the-main-thread.md). This document is its bounded delivery slice, not a competing implementation.
 
 ## Problem, scope and grounding
 
 The September 3 physical Android runs recorded first presentation at 14,776 ms, including 8,300 ms across 103 synchronous pipeline compiles. Enabling warm-up regressed launch to roughly 35 seconds. A player cannot use a game that freezes before its first frame.
 
-Evidence: [inspected source or dated measurement](../../../verification/runtime-perf-state.md). Historical device results were not rerun during planning.
+Evidence: [inspected source or dated measurement](../../verification/runtime-perf-state.md). Historical device results were not rerun during planning.
 
 Deliver the responsive compile walk and startup integration portion of PRD-339, also advancing PRD-327's failed device acceptance. Persistent cross-launch pipeline caching remains outside this slice. Core/native own scheduling and compilation; the game owns loading appearance.
 
@@ -78,7 +78,7 @@ absent from tracked history. The exact installed APK was preserved read-only wit
 120-FPS/0.55-scale baseline. A source choice is pending. The latest battery observation was 29%,
 discharging, below the required 50% measurement threshold. No qualified candidate launch is
 claimed. Retained source, exact commands and observations are in the
-[batch ledger](../../../verification/batch-2026-09-05-execution.md). Both phases remain open.
+[batch ledger](../../verification/batch-2026-09-05-execution.md). Both phases remain open.
 
 Pump-silence measurement mechanism (desktop proof only, 2026-09-05):
 `mystral::PumpSilenceObserver` (`packages/runtime-native/include/mystral/pump_silence.h`)
@@ -87,7 +87,7 @@ stamps `pollEvents()` entries, retains the unfiltered maximum gap, and emits one
 displacement-correlated `TN_PUMP_ENDPOINT` on mailbox `respond()`. Desktop proof
 (vitest 11/11, evaluator 32/32, collector flow with mocked adb only) is retained
 with byte-identical proof sources in
-[prd-360-startup-2026-09-05](../../../verification/prd-360-startup-2026-09-05/README.md)
+[prd-360-startup-2026-09-05](../../verification/prd-360-startup-2026-09-05/README.md)
 (host `50144dc9…`). Full Android end-to-end is unexecuted; the rebuilt candidate
 APK `20da12fa…` has not been run on a device. The earlier `403bd10c…` candidate
 predates the observer. No phase accepted; no device claim.
