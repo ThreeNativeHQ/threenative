@@ -13,6 +13,8 @@ import {
   inspectStarterScreenshot,
 } from '../scripts/verify-starter-desktop.mjs';
 
+const PROOF_ASSET = new URL('../../create-threenative/templates/starter/assets/native-proof.png', import.meta.url);
+
 test('starter desktop log fails closed without asset and frame markers', () => {
   assert.deepEqual(analyzeStarterLog('TN_NATIVE_SMOKE_READY:webgpu'), [
     'missing TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb',
@@ -23,7 +25,7 @@ test('starter desktop log fails closed without asset and frame markers', () => {
 
 // A drawn frame carries thousands of distinct colours. Shade the non-proof half so the fixture is
 // a rendered frame rather than a flat fill, which is the thing the floor below distinguishes.
-function starterFrame({ cyanPixels }) {
+function cyanObjectFrame({ cyanPixels }) {
   const png = new PNG({ height: 16, width: 16 });
   for (let index = 0; index < 256; index += 1) {
     const offset = index * 4;
@@ -32,8 +34,7 @@ function starterFrame({ cyanPixels }) {
       png.data[offset + 1] = 220;
       png.data[offset + 2] = 240;
     } else {
-      // Vary all three channels but keep blue under the cyan threshold, so the shading is scenery
-      // and never counts itself as the proof asset.
+      // Vary all three channels but keep the shading away from both packaged proof colours.
       png.data[offset] = index;
       png.data[offset + 1] = (index * 3) % 256;
       png.data[offset + 2] = index % 120;
@@ -41,6 +42,62 @@ function starterFrame({ cyanPixels }) {
     png.data[offset + 3] = 255;
   }
   return png;
+}
+
+function checkerboardCapture() {
+  const png = new PNG({ height: 128, width: 128 });
+  for (let y = 0; y < png.height; y += 1) {
+    for (let x = 0; x < png.width; x += 1) {
+      const offset = (y * png.width + x) * 4;
+      const index = y * png.width + x;
+      png.data[offset] = index % 80;
+      png.data[offset + 1] = 20 + (index % 30);
+      png.data[offset + 2] = 50 + (index % 40);
+      png.data[offset + 3] = 255;
+    }
+  }
+  return png;
+}
+
+function paintProof(png, proof, x = 56, y = 56, scale = 1, opacity = 1) {
+  for (let proofY = 0; proofY < proof.height; proofY += 1) {
+    for (let proofX = 0; proofX < proof.width; proofX += 1) {
+      const source = (proofY * proof.width + proofX) * 4;
+      for (let offsetY = 0; offsetY < scale; offsetY += 1) {
+        for (let offsetX = 0; offsetX < scale; offsetX += 1) {
+          const target =
+            ((y + proofY * scale + offsetY) * png.width + x + proofX * scale + offsetX) * 4;
+          for (let channel = 0; channel < 3; channel += 1) {
+            png.data[target + channel] = Math.round(proof.data[source + channel] * opacity + 30 * (1 - opacity));
+          }
+          png.data[target + 3] = proof.data[source + 3];
+        }
+      }
+    }
+  }
+}
+
+function paintPennant(png, proof, x = 32, y = 32, scale = 4, opacity = 1) {
+  const width = proof.width * scale;
+  const height = proof.height * scale;
+  for (let localY = 0; localY < height; localY += 1) {
+    const v = (localY + 0.5) / height;
+    const left = v / 2;
+    const right = 1 - v / 2;
+    for (let localX = 0; localX < width; localX += 1) {
+      const horizontal = (localX + 0.5) / width;
+      if (horizontal < left || horizontal >= right) continue;
+      const u = (horizontal - left) / (right - left);
+      const proofX = Math.min(proof.width - 1, Math.floor(u * proof.width));
+      const proofY = Math.min(proof.height - 1, Math.floor(v * proof.height));
+      const source = (proofY * proof.width + proofX) * 4;
+      const target = ((y + localY) * png.width + x + localX) * 4;
+      for (let channel = 0; channel < 3; channel += 1) {
+        png.data[target + channel] = Math.round(proof.data[source + channel] * opacity + 30 * (1 - opacity));
+      }
+      png.data[target + 3] = proof.data[source + 3];
+    }
+  }
 }
 
 test('a capture taken before the startup gate opened is not evidence', () => {
@@ -66,20 +123,12 @@ test('the unrendered-frame floor does not judge small synthetic fixtures', () =>
   // be, and a diversity floor written for a 1280x720 capture must not reject it.
   const directory = makeTempDirSync('starter-fixture-test-');
   const path = join(directory, 'frame.png');
-  const png = new PNG({ height: 16, width: 16 });
-  for (let index = 0; index < 256; index += 1) {
-    const offset = index * 4;
-    png.data[offset] = 20;
-    png.data[offset + 1] = 220;
-    png.data[offset + 2] = 240;
-    png.data[offset + 3] = 255;
-  }
-  png.data[0] = 21;
+  const png = PNG.sync.read(readFileSync(PROOF_ASSET));
   writeFileSync(path, PNG.sync.write(png));
-  assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 256);
+  assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 128);
 });
 
-test('starter desktop screenshot requires the rendered cyan proof asset', () => {
+test('starter desktop screenshot requires the checkerboard proof asset', () => {
   const directory = makeTempDirSync('starter-desktop-test-');
   const path = join(directory, 'frame.png');
   const blank = new PNG({ height: 16, width: 16 });
@@ -87,36 +136,55 @@ test('starter desktop screenshot requires the rendered cyan proof asset', () => 
   writeFileSync(path, PNG.sync.write(blank));
   assert.throws(() => inspectStarterScreenshot(path), /TN_NATIVE_STARTER_SCREENSHOT_BLANK/);
 
-  writeFileSync(path, PNG.sync.write(starterFrame({ cyanPixels: 128 })));
-  assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 128);
+  writeFileSync(path, PNG.sync.write(cyanObjectFrame({ cyanPixels: 128 })));
+  assert.throws(() => inspectStarterScreenshot(path), /TN_NATIVE_STARTER_ASSET_NOT_VISIBLE/);
 });
 
 test('the packaged checkerboard proof remains accepted in a capture-sized frame', () => {
   const directory = makeTempDirSync('starter-checkerboard-test-');
   const path = join(directory, 'frame.png');
-  const proof = PNG.sync.read(
-    readFileSync(new URL('../../create-threenative/templates/starter/assets/native-proof.png', import.meta.url)),
-  );
-  const png = new PNG({ height: 128, width: 128 });
-  for (let y = 0; y < png.height; y += 1) {
-    for (let x = 0; x < png.width; x += 1) {
+  const proof = PNG.sync.read(readFileSync(PROOF_ASSET));
+  const png = checkerboardCapture();
+  paintProof(png, proof);
+  writeFileSync(path, PNG.sync.write(png));
+  assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 128);
+});
+
+test('a scaled and softly antialiased checkerboard remains accepted', () => {
+  const directory = makeTempDirSync('starter-scaled-checkerboard-test-');
+  const path = join(directory, 'frame.png');
+  const proof = PNG.sync.read(readFileSync(PROOF_ASSET));
+  const png = checkerboardCapture();
+  paintProof(png, proof, 32, 32, 4, 0.8);
+  writeFileSync(path, PNG.sync.write(png));
+  assert.ok(inspectStarterScreenshot(path).cyanAssetPixels >= 100);
+});
+
+test('the packaged checkerboard remains visible on its authored pennant shape', () => {
+  const directory = makeTempDirSync('starter-pennant-checkerboard-test-');
+  const path = join(directory, 'frame.png');
+  const proof = PNG.sync.read(readFileSync(PROOF_ASSET));
+  const png = checkerboardCapture();
+  paintPennant(png, proof, 32, 32, 4, 0.8);
+  writeFileSync(path, PNG.sync.write(png));
+  assert.ok(inspectStarterScreenshot(path).cyanAssetPixels >= 100);
+});
+
+test('a localized cyan object without the checkerboard proof is rejected', () => {
+  const directory = makeTempDirSync('starter-cyan-object-test-');
+  const path = join(directory, 'frame.png');
+  const png = checkerboardCapture();
+  for (let y = 56; y < 72; y += 1) {
+    for (let x = 56; x < 72; x += 1) {
       const offset = (y * png.width + x) * 4;
-      const index = y * png.width + x;
-      png.data[offset] = index % 80;
-      png.data[offset + 1] = 20 + (index % 30);
-      png.data[offset + 2] = 50 + (index % 40);
+      png.data[offset] = 18;
+      png.data[offset + 1] = 220;
+      png.data[offset + 2] = 255;
       png.data[offset + 3] = 255;
     }
   }
-  for (let y = 0; y < proof.height; y += 1) {
-    for (let x = 0; x < proof.width; x += 1) {
-      const source = (y * proof.width + x) * 4;
-      const target = ((y + 56) * png.width + x + 56) * 4;
-      png.data.set(proof.data.subarray(source, source + 4), target);
-    }
-  }
   writeFileSync(path, PNG.sync.write(png));
-  assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 128);
+  assert.throws(() => inspectStarterScreenshot(path), /TN_NATIVE_STARTER_ASSET_NOT_VISIBLE/);
 });
 
 test('a blue-grey background alone is not the cyan proof asset', () => {
@@ -134,7 +202,7 @@ test('a blue-grey background alone is not the cyan proof asset', () => {
   assert.throws(() => inspectStarterScreenshot(path), /TN_NATIVE_STARTER_ASSET_NOT_VISIBLE/);
 });
 
-test('a darker localized proof asset remains accepted in a capture-sized frame', () => {
+test('a darker localized cyan object is not the proof asset', () => {
   const directory = makeTempDirSync('starter-dark-asset-test-');
   const path = join(directory, 'frame.png');
   const png = new PNG({ height: 128, width: 128 });
@@ -155,7 +223,7 @@ test('a darker localized proof asset remains accepted in a capture-sized frame',
     }
   }
   writeFileSync(path, PNG.sync.write(png));
-  assert.equal(inspectStarterScreenshot(path).cyanAssetPixels, 256);
+  assert.throws(() => inspectStarterScreenshot(path), /TN_NATIVE_STARTER_ASSET_NOT_VISIBLE/);
 });
 
 test('a fragmented near-edge cyan wash is not asset evidence', () => {
@@ -206,7 +274,7 @@ test('a frame that was never drawn is named as the capture, not a missing asset'
   assert.throws(() => inspectStarterScreenshot(path), /TN_NATIVE_STARTER_FRAME_NOT_RENDERED/);
 
   // A drawn frame that genuinely lacks the proof asset still reports the asset.
-  writeFileSync(path, PNG.sync.write(starterFrame({ cyanPixels: 0 })));
+  writeFileSync(path, PNG.sync.write(cyanObjectFrame({ cyanPixels: 0 })));
   assert.throws(() => inspectStarterScreenshot(path), /TN_NATIVE_STARTER_ASSET_NOT_VISIBLE/);
 });
 
