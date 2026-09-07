@@ -15,7 +15,7 @@ import { assertCaptureNotBlank } from "../src/capture.js";
 import { exitCodeForReport, runConfiguredPlaytest } from "../src/runner/cli.js";
 import { parseStandalonePlaytestArgs, type IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { DesktopPlaytestDriver, LocalDeviceMailbox } from "../src/runner/desktop.js";
-import { desktopHostArgs, runDesktopPlaytest } from "../src/runner/desktopRunner.js";
+import { runDesktopPlaytest } from "../src/runner/desktopRunner.js";
 import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import type { IDevicePlaytestDriver } from "../src/runner/androidRunner.js";
 import { connectDevicePlaytestBridge, type IDeviceBridgeInstallation } from "../src/three/device.js";
@@ -58,15 +58,30 @@ test("desktop CLI forwards repeated --host-arg to the native host", () => {
   });
 });
 
-test("desktop runner passes the configured host arguments to the driver", () => {
-  expect(
-    desktopHostArgs({
+test("desktop runner constructs its driver with the configured host arguments", async () => {
+  // Watches the construction the runner actually performs. Injecting dependencies.driver
+  // would bypass the one line under test, which is why the earlier version of this test
+  // could not fail when that line was deleted.
+  const constructed: (readonly string[] | undefined)[] = [];
+  const driverFactory = (options: { args?: readonly string[] }): IDevicePlaytestDriver => {
+    constructed.push(options.args);
+    throw new Error("captured");
+  };
+
+  await runDesktopPlaytest(
+    {
       ...minimalConfig("desktop"),
       desktop: { executable: "/project/game", hostArgs: ["run", "dist/game.js"] },
-    }),
-  ).toEqual(["run", "dist/game.js"]);
-  // A host that needs no arguments must still launch, so an absent list is empty, never undefined.
-  expect(desktopHostArgs(minimalConfig("desktop"))).toEqual([]);
+    },
+    { driverFactory },
+  ).catch(() => undefined);
+  expect(constructed).toEqual([["run", "dist/game.js"]]);
+
+  constructed.length = 0;
+  // A host that needs no arguments must still launch, and it must be given an empty list
+  // rather than undefined, so the driver spreads nothing instead of skipping the field.
+  await runDesktopPlaytest(minimalConfig("desktop"), { driverFactory }).catch(() => undefined);
+  expect(constructed).toEqual([[]]);
 });
 
 test("desktop CLI routing selects the shared desktop runner", async () => {

@@ -144,6 +144,16 @@ function validateManifestLane(lane, seenLanes) {
   seenLanes.add(lane.laneId);
 
   const status = lane.status;
+  // Coverage reads requiredProfiles directly, so an absent or empty list would either throw
+  // a raw TypeError or silently mean "no profiles required". Neither is a verdict.
+  if (!Array.isArray(lane.requiredProfiles) || lane.requiredProfiles.length === 0) {
+    invalid(`lane '${lane.laneId}' must list at least one required profile`);
+  }
+  for (const profile of lane.requiredProfiles) {
+    if (typeof profile !== "string" || profile.trim() === "") {
+      invalid(`lane '${lane.laneId}' has a non-string or empty required profile`);
+    }
+  }
   if (status !== "required" && status !== "owner-deferred") {
     invalid(`lane '${lane.laneId}' status must be 'required' or 'owner-deferred', got '${status}'`);
   }
@@ -263,6 +273,13 @@ function assertBundleHashConsistency(row, manifestBundleHash, state) {
 
 function assertProtocolConsistency(row, manifestProtocolVersion, state) {
   const rowProtocol = extractProtocolVersion(row);
+  // A row that names no protocol version used to skip both checks below, so omitting the
+  // field was a way past the consistency requirement the row exists to enforce.
+  if (rowProtocol === undefined) {
+    invalid(
+      `row ${row.laneId} (${row.profile}) names no protocol version; the common-revision check cannot be satisfied by omission`,
+    );
+  }
   if (manifestProtocolVersion !== null && manifestProtocolVersion !== undefined) {
     if (rowProtocol !== undefined && rowProtocol !== manifestProtocolVersion) {
       invalid(
@@ -362,7 +379,7 @@ function evaluateLaneCoverage(manifest, resultsMap) {
       continue;
     }
 
-    const profiles = lane.requiredProfiles ?? lane.profiles ?? ["clean-lan", "impaired"];
+    const profiles = lane.requiredProfiles;
     for (const profile of profiles) {
       totalRequired += 1;
       const key = `${lane.laneId}::${profile}`;

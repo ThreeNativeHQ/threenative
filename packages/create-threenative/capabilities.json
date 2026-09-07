@@ -3153,28 +3153,6 @@
     },
     {
       "aliases": [],
-      "constraints": [
-        "the desktop host must be built before launching",
-        "a host started without its bundle reports TN_PLAYTEST_BRIDGE_MISSING at zero frames"
-      ],
-      "example": "await runDesktopPlaytest(options);",
-      "importPath": "@threenative/playtest/runner",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/playtest",
-      "signature": "export function desktopHostArgs(config: IStandalonePlaytestConfig): readonly string[] { … }",
-      "situations": [
-        "execute a scenario against the desktop host",
-        "verify native desktop behavior from the same scenario",
-        "pass a built game bundle to the desktop host",
-        "launch the native host with run arguments from a scenario run"
-      ],
-      "summary": "Run a desktop playtest and collect its report.",
-      "supersedes": [],
-      "symbol": "desktopHostArgs"
-    },
-    {
-      "aliases": [],
       "constraints": ["the mailbox lifecycle must be disposed after the run"],
       "example": "const driver = new DesktopPlaytestDriver(options);",
       "importPath": "@threenative/playtest/runner",

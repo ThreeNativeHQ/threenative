@@ -2612,21 +2612,6 @@ export async function connectPlaytestBridgeTransport( transport: IBridgeTranspor
 const bridge = await connectPlaytestBridge(page, scenario);
 ```
 
-### `desktopHostArgs`
-
-`function` — Run a desktop playtest and collect its report.
-
-```ts
-export function desktopHostArgs(config: IStandalonePlaytestConfig): readonly string[] { … }
-```
-
-- **Use when:** execute a scenario against the desktop host · verify native desktop behavior from the same scenario · pass a built game bundle to the desktop host · launch the native host with run arguments from a scenario run
-- **Constraints:** the desktop host must be built before launching · a host started without its bundle reports TN_PLAYTEST_BRIDGE_MISSING at zero frames
-
-```ts
-await runDesktopPlaytest(options);
-```
-
 ### `DesktopPlaytestDriver`
 
 `class` — Drive a local desktop playtest mailbox.

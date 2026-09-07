@@ -8,7 +8,7 @@ targets could not be built and are named below.
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
 | `src/async/` | 73 | 53 | 72.60% |
-| `src/audio/` | 1050 | 602 | 57.33% |
+| `src/audio/` | 1051 | 603 | 57.37% |
 | `src/canvas/` | 1168 | 606 | 51.88% |
 | `src/cli/` | 1593 | 0 | 0.00% |
 | `src/fs/` | 235 | 88 | 37.45% |
@@ -23,10 +23,10 @@ targets could not be built and are named below.
 | `src/vfs/` | 239 | 175 | 73.22% |
 | `src/webgpu/` | 8227 | 3669 | 44.60% |
 | `src/webtransport/` | 1391 | 959 | 68.94% |
-| `src/workers/` | 615 | 524 | 85.20% |
-| **TOTAL** | **21733** | **9571** | **44.04%** |
+| `src/workers/` | 615 | 527 | 85.69% |
+| **TOTAL** | **21734** | **9575** | **44.06%** |
 
-Source digest: `sha256:4ab3d479a1fa141d14481c91bb5a379e1f2f5a3e55d3a0dc7f92824516bfc2b0`
+Source digest: `sha256:8f2fa9f133f484548f018e3c71ae6506e176046e25b36e6c1aa7e28b3bc80b79`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -35,7 +35,7 @@ change requires this opt-in command to refresh the record.
 | Coverage floor | Minimum |
 | --- | ---: |
 | `src/async/` | 72.60% |
-| `src/audio/` | 57.33% |
+| `src/audio/` | 57.37% |
 | `src/canvas/` | 48.39% |
 | `src/cli/` | 0.00% |
 | `src/fs/` | 37.45% |
@@ -92,12 +92,6 @@ Worker landed. This is not a coverage regression: covered lines in that file wen
 rose. The same change brought `src/workers/` into this configuration for the first time -
 it was previously listed under "not compiled" - which is why a new 9.05% floor appears
 above and why the total moved on a larger denominator.
-
-`src/audio/` 57.37% -> 57.33%, released on 2026-09-07 when PRD-359 removed the `std::cerr`
-write from the `decodeAudioData` failure path. Uncovered lines are **identical** either side
-of it, 448 and 448: instrumented fell 1051 -> 1050 and covered fell 603 -> 602, because the
-deleted line was a covered one. A ratio above 50% falls when a covered line is removed, so
-this is arithmetic rather than a coverage regression, and nothing became less tested.
 
 Releasing a floor is a ratchet release and should stay rare. The debt this records is
 `src/workers/` at 9.05%: `worker_registry.cpp` and `worker_thread.cpp` compile but are

@@ -376,6 +376,30 @@ describe("networking matrix verification", () => {
     }
   });
 
+  it("rejects a row that names no protocol version", () => {
+    const manifest = sampleManifest();
+    // extractProtocolVersion reads row.protocolVersion, versions.protocolVersion and
+    // versions.protocol in turn; a row naming none used to skip the check entirely.
+    const { protocolVersion: _omitted, ...row } = sampleResult({ versions: { node: "v20" } });
+    expect(() => aggregateMatrix(manifest, [row])).toThrow(/names no protocol version/iu);
+  });
+
+  it("rejects a lane with no required profiles", () => {
+    const manifest = sampleManifest({
+      lanes: [
+        {
+          laneId: "desktop-linux-x64",
+          platform: "desktop",
+          status: "required",
+          requiredProfiles: [],
+          nativeBinaryHash: HASH_NATIVE,
+          serverBinaryHash: HASH_SERVER,
+        },
+      ],
+    });
+    expect(() => validateManifest(manifest)).toThrow(/at least one required profile/iu);
+  });
+
   it("rejects an unknown flag rather than ignoring it", () => {
     expect(() => parseCli(["--manifest", "m", "--results", "r", "--force"])).toThrow(/--force/u);
   });
