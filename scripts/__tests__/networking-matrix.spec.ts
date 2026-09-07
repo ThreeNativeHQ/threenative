@@ -305,7 +305,7 @@ describe("networking matrix verification", () => {
     }
   });
 
-  it("reports unqualified without evidence instead of claiming a pass", async () => {
+  it("fails closed without evidence unless a report was explicitly asked for", async () => {
     const { mkdir, writeFile } = await import("node:fs/promises");
     const { join } = await import("node:path");
 
@@ -324,12 +324,14 @@ describe("networking matrix verification", () => {
       expect(formatSummary(summary)).toMatch(/no lane evidence/iu);
       expect(formatSummary(summary)).toMatch(/Verdict: UNQUALIFIED/u);
       expect(formatSummary(summary)).not.toMatch(/Verdict: PASSED/u);
-      expect(await main(["--manifest", manifestPath, "--results", resultsDir])).toBe(0);
+      // Fail closed by default: an empty matrix is not a pass for any caller that has not
+      // explicitly asked for a report instead of a verdict.
+      expect(await main(["--manifest", manifestPath, "--results", resultsDir])).toBe(1);
 
-      // The release path must refuse the same empty run.
+      // Only the informational caller gets a zero, and its summary says it is not a verdict.
       expect(
-        await main(["--manifest", manifestPath, "--results", resultsDir, "--require-evidence"]),
-      ).toBe(1);
+        await main(["--manifest", manifestPath, "--results", resultsDir, "--report-only"]),
+      ).toBe(0);
     }
   });
 

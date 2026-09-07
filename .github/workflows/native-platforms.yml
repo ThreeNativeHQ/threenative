@@ -164,24 +164,29 @@ jobs:
       # shards; re-running it here would only duplicate that work.
       - uses: actions/download-artifact@v7
         if: always()
-        continue-on-error: true
         with:
           # Networking lane results only. The platform jobs upload conformance artifacts
           # as native-*, and the aggregator validates every JSON under this path, so that
           # pattern would fail the gate on foreign evidence. Task 7c publishes these.
           pattern: networking-lane-*
           path: artifacts/networking-matrix
-      # With no lane evidence this reports UNQUALIFIED and exits 0: ordinary CI cannot run
-      # the lanes, so their absence is not a failure and no platform is claimed. One lane
-      # result is enough to enforce every required row, so a partial set still fails, and
-      # the release path passes --require-evidence to make an empty set fail too.
-      - name: Report the networking qualification verdict
+          # No lane publishes these yet, so nothing matching is the expected state today.
+          # It is not `continue-on-error`: a download that genuinely fails must not be
+          # indistinguishable from an empty matrix.
+          if-no-files-found: ignore
+      # --report-only, and named so, because ordinary CI cannot execute the qualification
+      # lanes: this step reports what evidence exists and never claims a platform. The
+      # aggregator fails closed without that flag, so the verdict is still the default for
+      # every other caller. One lane result is enough to enforce every required row, so a
+      # partial set fails here too.
+      - name: Report the networking qualification matrix (not a verdict)
         if: always()
         run: |
           mkdir -p artifacts/networking-matrix
           node scripts/verify-networking-matrix.mjs \
             --manifest docs/PRDs/networking/qualification-lanes.json \
-            --results artifacts/networking-matrix 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+            --results artifacts/networking-matrix --report-only 2>&1 \
+            | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
 
   android-emulator-parity:

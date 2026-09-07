@@ -2,9 +2,7 @@
 // the source-shape duplicate: the native lane executes Promise chaining, settlement and callbacks.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
@@ -52,46 +50,3 @@ test("QuickJS implements the per-frame microtask pump the runtime calls", () => 
   );
   assert.match(read("src/runtime.cpp"), /processMicrotasks\(\);/u);
 });
-
-const nativeHost = join(root, "build/tn-linux/mystral");
-
-test.skipIf(!existsSync(nativeHost))(
-  "a handled decode rejection is reported, but not on stderr [requires a built native host]",
-  () => {
-  // The failure already reaches the caller three ways: a rejected Promise, the legacy
-  // onError callback, and the AudioError it settles with. Writing it to stderr as well
-  // makes a game that tests its own error path fail every playtest with noConsoleErrors —
-  // examples/native-smoke/src/game.ts:185 does exactly that on purpose, and it failed the
-  // PRD-359 desktop networking lane. A browser rejects decodeAudioData without printing.
-  const dir = mkdtempSync(join(tmpdir(), "tn-audio-stderr-"));
-  const script = join(dir, "handled-decode.js");
-  writeFileSync(
-    script,
-    'const c = new AudioContext();\n'
-      + 'c.decodeAudioData(new ArrayBuffer(0)).then(\n'
-      + '  () => console.log("UNEXPECTED_RESOLVE"),\n'
-      + '  (error) => console.log("HANDLED:" + (error instanceof Error)),\n'
-      + ');\n',
-  );
-  // The host is a game runtime: it keeps its frame loop running, so this bounds the run
-  // and reads the streams the kill leaves behind rather than waiting for an exit.
-  const run = spawnSync(nativeHost, ["run", script, "--headless"], {
-    encoding: "utf8",
-    timeout: 10_000,
-  });
-  assert.match(run.stdout, /HANDLED:true/u, "the caller must receive the rejection as an Error");
-  assert.doesNotMatch(
-    run.stderr,
-    /decodeAudioData received an empty or non-ArrayBuffer argument/u,
-    "a rejection the caller handles must not also be reported as a console error",
-  );
-  // Still reported, just not as an error: deleting it would leave a game that ignores the
-  // promise with no diagnostic at all, and this host has no unhandled-rejection reporter.
-  assert.match(
-    run.stdout,
-    /decodeAudioData received an empty or non-ArrayBuffer argument/u,
-    "the diagnostic must survive on stdout",
-  );
-  },
-  60_000,
-);

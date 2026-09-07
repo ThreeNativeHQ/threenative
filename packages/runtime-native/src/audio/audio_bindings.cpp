@@ -502,14 +502,7 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
             const bool ok = failure == nullptr;
             const js::JSValueHandle settled =
                 ok ? createAudioBufferJS(engine, buffer) : newAudioError(engine, failure);
-            // Reported, but not on the error stream. The failure reaches the caller three
-            // ways — the rejected Promise below, the legacy onError callback, and the
-            // AudioError it settles with — so writing it to stderr as well made a game that
-            // tests its own error path fail every playtest with noConsoleErrors. Deleting
-            // the line instead would be worse: this host has no unhandled-rejection
-            // reporter, so a game that ignores the promise would get silence where a
-            // browser's console still shows it. Keeping it on stdout keeps the diagnostic.
-            if (!ok) std::cout << "[Audio] " << failure << std::endl;
+            if (!ok) std::cerr << "[Audio] " << failure << std::endl;
 
             // Legacy callback style, delivered before the thenable is handed back so a caller
             // using both sees the same order a browser gives it.

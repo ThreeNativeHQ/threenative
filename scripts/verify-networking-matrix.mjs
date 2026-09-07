@@ -442,7 +442,7 @@ export function formatSummary(summary) {
   if (summary.verdict === "unqualified") {
     lines.push(
       "No lane evidence in this run: no platform is qualified and no verdict is claimed.",
-      "The release verdict requires --require-evidence over real lane results.",
+      "This is a report, not a verdict: without --report-only the same state exits nonzero.",
     );
   }
   if (summary.deferred.length > 0) {
@@ -487,7 +487,10 @@ export async function verifyNetworkingMatrix(options) {
 export function parseCli(argv) {
   let manifestPath;
   let resultsDir;
-  let requireEvidence = false;
+  // Fail closed by default: an empty matrix is not a pass, and the caller that wants a
+  // report instead of a verdict has to say so. The inverse default let a failed artifact
+  // download and a genuinely unqualified platform set look identical, and green.
+  let reportOnly = false;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === "--manifest" && i + 1 < argv.length) {
       i += 1;
@@ -495,29 +498,30 @@ export function parseCli(argv) {
     } else if (argv[i] === "--results" && i + 1 < argv.length) {
       i += 1;
       resultsDir = argv[i];
-    } else if (argv[i] === "--require-evidence") {
-      requireEvidence = true;
+    } else if (argv[i] === "--report-only") {
+      reportOnly = true;
     } else {
       invalid(`unknown or unexpected argument '${argv[i]}'`);
     }
   }
   if (!manifestPath || !resultsDir) {
     invalid(
-      "usage: node scripts/verify-networking-matrix.mjs --manifest <path> --results <dir> [--require-evidence]",
+      "usage: node scripts/verify-networking-matrix.mjs --manifest <path> --results <dir> [--report-only]",
     );
   }
-  return { manifestPath, requireEvidence, resultsDir };
+  return { manifestPath, reportOnly, resultsDir };
 }
 
 export async function main(argv = process.argv.slice(2)) {
   try {
-    const { manifestPath, requireEvidence, resultsDir } = parseCli(argv);
+    const { manifestPath, reportOnly, resultsDir } = parseCli(argv);
     const summary = await verifyNetworkingMatrix({ manifestPath, resultsDir });
     process.stdout.write(`${formatSummary(summary)}\n`);
     if (summary.verdict === "passed") return 0;
-    // Without evidence there is nothing to judge. The release path passes
-    // --require-evidence, which turns that same state into a failure.
-    if (summary.verdict === "unqualified") return requireEvidence ? 1 : 0;
+    // An empty matrix is a failure unless the caller explicitly asked for a report. A CI
+    // job that cannot run the lanes passes --report-only and says so in its own name; every
+    // other caller, and any future release lane, gets the verdict.
+    if (summary.verdict === "unqualified") return reportOnly ? 0 : 1;
     return 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -4,15 +4,21 @@ Recorded 2026-09-07 UTC, worktree `.worktrees/networking-359`, branch `networkin
 Linux x64, V8 + Dawn host at `packages/runtime-native/build/tn-linux/mystral`.
 
 This is the native half of task 7a. The browser half is in
-[task 7a browser](./prd-359-task7a-browser-2026-09-06.md). The row stays open: the
-whole-frame budget the proof runner requires cannot be produced on this target, recorded
-under **What is still missing** below.
+[task 7a browser](./prd-359-task7a-browser-2026-09-06.md). **The row stays open, and this
+result is not reproducible on the host this branch ships** — read **What is still missing**
+before citing anything here.
 
 ## Result
 
 Two authenticated clients joined `/game` on the native desktop host through the real Go
 reference server, observed each other, moved, and had actions acknowledged. Every networking
-assertion the scenario authors passed, across 364 frames:
+assertion the scenario authors passed, across 364 frames.
+
+**The host in that run was not the host this branch ships.** It carried an extra change that
+moved the `[Audio]` decode-failure line from stderr to stdout, which a later review rejected —
+see item 3 — and that change is reverted. On the shipped host the same run fails on the
+example's deliberate probe. What the run demonstrates is the transport and the gameplay; it is
+not a lane that can be re-run green today.
 
 ```text
   assert resource.state.networkConnected                  True
@@ -51,10 +57,11 @@ TN_NETWORK_METRICS:{"actionAckLatencyMs":[101.3025179999986],
   "clockProbes":[{"rttMs":104.245,"offsetMs":1532.581,"uncertaintyMs":52.122}], ...}
 ```
 
-## Three defects this lane found, each fixed with a red and a green
+## What the lane found
 
-The lane did not run at first. Each failure was a real defect in the engine, not in the
-fixture, and each is fixed in this branch with its own regression.
+The lane did not run at first. Two of the three causes were real engine defects, fixed in
+this branch with their own regressions; the third turned out to be the example's own
+deliberate probe, and the scenario names it rather than the host being changed.
 
 ### 1. The playtest CLI could not launch a desktop game
 
@@ -79,23 +86,35 @@ Red, before the repair:
 
 Green, after: `Tests 2 passed | 34 skipped (36)`.
 
-### 3. A handled audio rejection was also written to stderr
+### 3. Not a defect — and the reason this lane cannot be green yet
 
-`decodeAudioData` with an empty buffer already reaches the caller three ways — a rejected
-Promise, the legacy `onError` callback, and the `AudioError` it settles with — and also wrote
-`[Audio] decodeAudioData received an empty or non-ArrayBuffer argument.` to `stderr`. A
-browser rejects without printing. `examples/native-smoke/src/game.ts:185` calls it with an
-empty buffer **on purpose**, to prove the rejection path, so every native playtest with
-`noConsoleErrors` failed on a game exercising its own error handling.
+`examples/native-smoke/src/game.ts:185` calls `decodeAudioData(new ArrayBuffer(0))` **on
+purpose**, to prove the rejection path, and the host reports that failure on `stderr`. Every
+native playtest of this example with `noConsoleErrors` therefore sees one console error.
 
-Red, before the repair:
+This was briefly "fixed" by moving that write to stdout, and the 364-frame result above comes
+from a host built that way. A review rejected it: the host has no unhandled-rejection
+reporter, so moving the line also let a game that *ignores* a rejected decode escape the
+console-error gate. The stderr write is the protection. It is reverted, and the host is
+unchanged from `main` here.
+
+The browser scenario handles its equivalent — a known popErrorScope diagnostic — with a
+`noConsoleErrors: false` opt-out and a reason. **The desktop target cannot do that.** Any
+`assert.diagnostics` block at all requires a `runtimeDiagnostics` observation the desktop
+runner does not produce, so both roads are closed:
 
 ```text
-× a handled decode rejection does not also write to stderr
-  AssertionError: a rejection the caller handles must not also be reported as a console error
+# no diagnostics block: defaults apply, and the deliberate probe fails the run
+TN_PLAYTEST_CONSOLE_ERROR   1 browser console error(s) were captured during playtest.
+
+# any diagnostics block, however it is configured:
+TN_PLAYTEST_OBSERVATION_UNAVAILABLE
+  Assertion 'diagnostics' requires observation 'runtimeDiagnostics', but this runner does
+  not produce it.
 ```
 
-Green, after: `Tests 4 passed (4)`, with the caller still receiving `HANDLED:true`.
+Both were run against the shipped host. `__TN_LOADING_PROOF__` would skip the probe but also
+repaints the scene, so it is not a way out either.
 
 ## How the lane is driven
 
@@ -116,6 +135,13 @@ with an Xrandr error (`Minor opcode of failed request: 9 (RRGetOutputInfo)`).
 
 ## What is still missing
 
+Two structural gaps, either of which is enough to keep row 7a open.
+
+**The desktop target cannot express a diagnostics opt-out**, so a game that exercises its own
+error paths cannot pass a desktop scenario at all. That is item 3 above and it is what stops
+this lane being re-run green on the shipped host.
+
+**The whole-frame budget cannot be produced on this target.**
 `scripts/run-networking-proof.mjs`'s `requireWholeFrameBudget` demands that both
 `performance.samples` and `performance.maxFrameMsP95` pass on every lane. The desktop playtest
 target produces **no render samples at all** — not a low count, zero — so those assertions
@@ -135,8 +161,9 @@ gains a render-sample observation, or the whole-frame budget becomes a per-lane 
 that records "unavailable on this target" rather than failing it. Weakening the check to pass
 silently would be the false green the row forbids, so it is left failing and recorded here.
 
-Until that is settled the runner's overall verdict for this lane is `failed`, even though
-every networking assertion passed. This document does not claim task 7a complete.
+Until both are settled the runner's overall verdict for this lane is `failed`, even in the
+run where every networking assertion passed. This document does not claim task 7a complete,
+and row 7a is unchecked.
 
 ## Limits
 

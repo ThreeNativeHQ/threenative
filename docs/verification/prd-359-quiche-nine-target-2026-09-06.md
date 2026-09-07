@@ -104,14 +104,35 @@ exit=0
 
 The validator emits its 18-file asset list — nine archives and nine manifests.
 
-## What this does and does not establish
+## Published, and validated unmodified
 
-Every non-iOS target is built and the release passes its own gate. It is **not published**:
-that needs the `quiche-owned-v1` tag, which creates an immutable public release, and it is
-not an agent's call to make. The artifacts validated above were built by the run that predates
-the `ndk_revision` repair, so the three Android manifests were patched locally to pre-flight
-the other six targets; the authoritative artifacts are the ones CI rebuilds with the fixed
-producer.
+The `exit=0` above was a **pre-flight**: those artifacts predate the `ndk_revision` repair, so
+the three Android manifests were patched locally to see whether the other six targets would
+pass. That run does not substantiate the release.
+
+Run 34087936051 then rebuilt all nine with the fixed producer, and the Android manifests carry
+the recorded revision without any local edit:
+
+```text
+ndk_revision = 27.1.12297006
+ndk path     = /opt/hostedtoolcache/ndk/r27b/x64
+```
+
+The validator was run over those nine downloaded artifacts, unmodified:
+
+```text
+$ python3 packages/runtime-native/scripts/validate-quiche-release.py \
+    --dist <downloaded> --tag quiche-owned-v1
+validator exit=0
+```
+
+`quiche-owned-v1` was then tagged at `e480b680` and published by run 34089963144 with 18
+assets — nine archives and nine manifests. Publishing was explicitly authorised by the owner;
+it is the one outward-facing action of this work.
+
+**The row `1b-quiche-platforms` is still unchecked in the ledger.** Nine archives that build
+and validate are not the row's acceptance, which also requires that each target's runtime
+qualification be recorded, and cross-compilation is not runtime proof.
 
 Cross-compilation is not runtime proof. Nothing here says the Apple, Windows or Android hosts
 run — only that their dependency archives build reproducibly from the pinned source and pass
