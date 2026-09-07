@@ -1,142 +1,68 @@
 import type { AnimationClip, Object3D } from "three";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
-import { AnimationPlayer, type IAnimationPlayOptions, type IStrideReport } from "./animation.js";
+import { AnimationPlayer } from "./animation.js";
 import { clipTrackBindings } from "./clip-audit.js";
 import { type INormaliseToMetresOptions, normaliseToMetres } from "./scale.js";
 
 export interface ISkeletalMesh3DOptions {
-  /** The source rig (e.g. gltf.scene) to clone skeleton-safely for this instance. */
   readonly source: Object3D;
-  /** Available animation clips for this character. */
   readonly clips?: readonly AnimationClip[];
-  /**
-   * Clips required by name, array, or string-valued dictionary.
-   *
-   * If any requested clip is missing from `clips` or binds 0 tracks to the rig,
-   * preparation throws an Error at load time.
-   */
   readonly requiredClips?: readonly string[] | Readonly<Record<string, string>>;
-  /**
-   * Normalise the instance to real-world metres via `normaliseToMetres`.
-   */
   readonly size?: INormaliseToMetresOptions;
-  /**
-   * The object whose travel counts as ground covered for stride sync. Defaults to `this.root`.
-   *
-   * Name the parent body a game moves when the rig is a child of it, so measuring the body
-   * does not read the clip's own root motion back.
-   */
   readonly strideRoot?: Object3D;
-  /**
-   * Match a travelling clip's playback rate to ground covered. Defaults to true.
-   */
   readonly strideSync?: boolean;
 }
 
-/**
- * Shared preparation for an imported rigged character.
- *
- * Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement,
- * validates requested clips against the file and rig at load time, and sets up AnimationPlayer
- * with honest stride-root accounting.
- */
-export class SkeletalMesh3D {
-  /** The skeleton-safely cloned rig instance. */
+/** Skeleton-safe, measured preparation that is also the rig's AnimationPlayer. */
+export class SkeletalMesh3D extends AnimationPlayer {
   readonly root: Object3D;
-  /** The animation player driving this rig. */
-  readonly player: AnimationPlayer;
-  /** The scale factor applied if `size` was provided, or 1. */
   readonly scaleFactor: number;
 
   constructor(options: ISkeletalMesh3DOptions) {
-    if (!options.source) {
-      throw new Error("SkeletalMesh3D requires a source Object3D.");
-    }
-
-    this.root = cloneSkeleton(options.source);
-
-    if (options.size !== undefined) {
-      this.scaleFactor = normaliseToMetres(this.root, options.size);
-    } else {
-      this.scaleFactor = 1;
-    }
-
-    const availableClips = options.clips ?? [];
-    if (options.requiredClips !== undefined) {
-      const required = requiredClipNames(options.requiredClips);
-      const clipMap = new Map<string, AnimationClip>(
-        availableClips.map((clip) => [clip.name, clip]),
-      );
-      for (const clipName of required) {
-        const clip = clipMap.get(clipName);
-        if (clip === undefined) {
-          const available = availableClips.map((c) => `'${c.name}'`).join(", ") || "(none)";
-          throw new Error(
-            `SkeletalMesh3D: missing required clip '${clipName}'. Available clips: ${available}.`,
-          );
-        }
-        const report = clipTrackBindings(this.root, clip);
-        if (report.bound === 0) {
-          throw new Error(
-            `SkeletalMesh3D: clip '${clipName}' binds 0 tracks to '${this.root.name || this.root.type}'.`,
-          );
-        }
-      }
-    }
-
-    this.player = new AnimationPlayer({
-      clips: availableClips,
-      root: this.root,
-      strideRoot: options.strideRoot ?? this.root,
-      strideSync: options.strideSync,
-    });
-  }
-
-  get current(): string | undefined {
-    return this.player.current;
-  }
-
-  get stride(): IStrideReport {
-    return this.player.stride;
-  }
-
-  play(name: string, playOptions?: IAnimationPlayOptions): void {
-    this.player.play(name, playOptions);
-  }
-
-  update(dt: number): void {
-    this.player.update(dt);
-  }
-
-  stop(): void {
-    this.player.stop();
-  }
-
-  dispose(): void {
-    this.player.dispose();
+    if (!options?.source) throw new Error("SkeletalMesh3D requires a source Object3D.");
+    const root = cloneSkeleton(options.source);
+    const clips = options.clips ?? [];
+    validateRequiredClips(root, clips, options.requiredClips);
+    super({ clips, root, strideRoot: options.strideRoot ?? root, strideSync: options.strideSync });
+    this.root = root;
+    this.scaleFactor = options.size === undefined ? 1 : normaliseToMetres(root, options.size);
   }
 }
 
-/**
- * Prepare a rigged character with skeleton-safe cloning, size normalisation, and clip audit.
- */
-export function prepareSkeletalMesh(options: ISkeletalMesh3DOptions): SkeletalMesh3D {
-  return new SkeletalMesh3D(options);
+function validateRequiredClips(
+  root: Object3D,
+  clips: readonly AnimationClip[],
+  requiredClips: unknown,
+): void {
+  if (requiredClips === undefined) return;
+  const names = requiredClipNames(requiredClips);
+  const available = new Map(clips.map((clip) => [clip.name, clip]));
+  for (const name of names) {
+    const clip = available.get(name);
+    if (clip === undefined) {
+      const listed = clips.map((item) => `'${item.name}'`).join(", ") || "(none)";
+      throw new Error(
+        `SkeletalMesh3D: missing required clip '${name}'. Available clips: ${listed}.`,
+      );
+    }
+    if (clipTrackBindings(root, clip).bound === 0)
+      throw new Error(
+        `SkeletalMesh3D: clip '${name}' binds 0 tracks to '${root.name || root.type}'.`,
+      );
+  }
 }
 
 function requiredClipNames(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.map((clipName, index) => requiredClipName(clipName, String(index)));
-  }
-  if (value === null || typeof value !== "object") {
+  const values = Array.isArray(value)
+    ? value
+    : value !== null && typeof value === "object"
+      ? Object.values(value)
+      : undefined;
+  if (values === undefined)
     throw new Error("SkeletalMesh3D: requiredClips must be an array or string-valued dictionary.");
-  }
-  return Object.entries(value).map(([key, clipName]) => requiredClipName(clipName, key));
-}
-
-function requiredClipName(value: unknown, key: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`SkeletalMesh3D: requiredClips['${key}'] must be a non-empty string.`);
-  }
-  return value;
+  return values.map((name, index) => {
+    if (typeof name !== "string" || name.length === 0)
+      throw new Error(`SkeletalMesh3D: requiredClips['${index}'] must be a non-empty string.`);
+    return name;
+  });
 }

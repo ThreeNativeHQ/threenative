@@ -1172,20 +1172,6 @@
     },
     {
       "aliases": [],
-      "constraints": [],
-      "example": "import { prepareSkeletalMesh } from \"@threenative/core\";\nconst character = prepareSkeletalMesh({ source: gltf.scene, clips: gltf.animations });",
-      "importPath": "@threenative/core",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/core",
-      "signature": "export function prepareSkeletalMesh(options: ISkeletalMesh3DOptions): SkeletalMesh3D { … }",
-      "situations": ["prepare an imported rigged character instance"],
-      "summary": "Prepare a rigged character with skeleton-safe cloning, size normalisation, and clip audit.",
-      "supersedes": [],
-      "symbol": "prepareSkeletalMesh"
-    },
-    {
-      "aliases": [],
       "constraints": [
         "keep the surface visible with zero opacity; do not hide it with `visible = false`"
       ],
@@ -1526,7 +1512,7 @@
         "size normalises the instance to real-world metres with skin-aware measurement"
       ],
       "package": "@threenative/core",
-      "signature": "export class SkeletalMesh3D { … }",
+      "signature": "export class SkeletalMesh3D extends AnimationPlayer { … }",
       "situations": [
         "put an animated character in the scene",
         "my imported character renders deformed",

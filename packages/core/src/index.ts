@@ -59,13 +59,6 @@ export type {
  * function update(dt: number): void { character.update(dt); }
  */
 export { SkeletalMesh3D } from "./skeletal-mesh.js";
-/**
- * Prepare a rigged character with skeleton-safe cloning, size normalisation, and clip audit.
- * @situation prepare an imported rigged character instance
- * @example import { prepareSkeletalMesh } from "@threenative/core";
- * const character = prepareSkeletalMesh({ source: gltf.scene, clips: gltf.animations });
- */
-export { prepareSkeletalMesh } from "./skeletal-mesh.js";
 export type { ISkeletalMesh3DOptions } from "./skeletal-mesh.js";
 /**
  * Face a game-owned object toward a perspective or orthographic camera.

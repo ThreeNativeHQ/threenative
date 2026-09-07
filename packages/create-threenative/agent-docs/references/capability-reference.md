@@ -938,21 +938,6 @@ export function posedBounds(root: Object3D, meshes?: readonly Object3D[]): IThre
 const measurement = measureThreePose(model);
 ```
 
-### `prepareSkeletalMesh`
-
-`function` — Prepare a rigged character with skeleton-safe cloning, size normalisation, and clip audit.
-
-```ts
-export function prepareSkeletalMesh(options: ISkeletalMesh3DOptions): SkeletalMesh3D { … }
-```
-
-- **Use when:** prepare an imported rigged character instance
-
-```ts
-import { prepareSkeletalMesh } from "@threenative/core";
-const character = prepareSkeletalMesh({ source: gltf.scene, clips: gltf.animations });
-```
-
 ### `prewarm`
 
 `function` — Keep transient render surfaces in the renderer's pipeline cache before first use.
@@ -1236,7 +1221,7 @@ await ctx.tween(door, { y: 2.4 }, 0.5, { ease: (t) => 1 - (1 - t) ** 3 });
 `class` — Shared preparation for an imported rigged character. Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement, validates requested clips against the file and rig at load time, and sets up AnimationPlayer with honest stride-root accounting.
 
 ```ts
-export class SkeletalMesh3D { … }
+export class SkeletalMesh3D extends AnimationPlayer { … }
 ```
 
 - **Use when:** put an animated character in the scene · my imported character renders deformed · instance an imported rigged character · validate animation clips on a character rig at load time · prepare a skinned character with safe skeleton cloning and stride sync

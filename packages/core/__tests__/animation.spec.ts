@@ -428,6 +428,7 @@ describe("SkeletalMesh3D shared character preparation", () => {
       requiredClips: ["walk"],
     });
 
+    expect(first).toBeInstanceOf(AnimationPlayer);
     first.play("walk");
     first.update(0.5);
 
