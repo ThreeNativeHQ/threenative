@@ -14,6 +14,31 @@ import {
 } from '../scripts/verify-starter-desktop.mjs';
 
 const PROOF_ASSET = new URL('../../create-threenative/templates/starter/assets/native-proof.png', import.meta.url);
+// Real pixels from the scaffolded starter capture of Actions run 34076016432, not a synthetic
+// stand-in. The first frame shows the proof pennant over the ocean world; the second is the same
+// ocean with the pennant cropped away, so the pair pins both directions of the gate.
+const REAL_CAPTURE = fileURLToPath(
+  new URL('./fixtures/starter-desktop-real-capture.png', import.meta.url),
+);
+const OCEAN_WITHOUT_PENNANT = fileURLToPath(
+  new URL('./fixtures/starter-desktop-ocean-only.png', import.meta.url),
+);
+
+test('accepts the real CI capture in which the proof pennant is visible', () => {
+  // Matching the authored texture colour rejected this frame: the ocean sits 149 from the authored
+  // cyan and the lit pennant only 103, so a threshold wide enough for the asset swallowed the sea
+  // and the whole frame read as a wash.
+  const result = inspectStarterScreenshot(REAL_CAPTURE);
+  assert.equal(result.magentaAssetPixels, 521);
+  assert.equal(result.cyanAssetPixels, 321);
+});
+
+test('rejects the same ocean with the proof pennant cropped away', () => {
+  assert.throws(
+    () => inspectStarterScreenshot(OCEAN_WITHOUT_PENNANT),
+    /TN_NATIVE_STARTER_ASSET_NOT_VISIBLE/u,
+  );
+});
 
 test('starter desktop log fails closed without asset and frame markers', () => {
   assert.deepEqual(analyzeStarterLog('TN_NATIVE_SMOKE_READY:webgpu'), [
@@ -50,7 +75,11 @@ function checkerboardCapture() {
     for (let x = 0; x < png.width; x += 1) {
       const offset = (y * png.width + x) * 4;
       const index = y * png.width + x;
-      png.data[offset] = index % 80;
+      // Red stays below green so this stand-in background cannot manufacture magenta. The old
+      // `index % 80` reached 79 while green dipped to 20, so 680 scattered pixels of pure modulo
+      // arithmetic satisfied the magenta test — an artifact of the fixture, not of any renderer.
+      // The spread still carries 120 distinct colours, well past UNRENDERED_FRAME_COLOR_FLOOR.
+      png.data[offset] = index % 20;
       png.data[offset + 1] = 20 + (index % 30);
       png.data[offset + 2] = 50 + (index % 40);
       png.data[offset + 3] = 255;

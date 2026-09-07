@@ -14,257 +14,100 @@ const UNRENDERED_FRAME_COLOR_FLOOR = 64;
 // 64x64. Below this the frame is a fixture, not a capture.
 const UNRENDERED_FRAME_MIN_PIXELS = 4096;
 const ASSET_PIXEL_FLOOR = 100;
-const PROOF_COLOR_MAX_DISTANCE = 180;
-const CHECKERBOARD_CELLS = 4;
-const CHECKERBOARD_MIN_SUPPORTED_CELLS = 8;
-const CHECKERBOARD_MIN_MATCH_RATIO = 0.75;
-const CHECKERBOARD_MIN_CELL_COVERAGE = 0.08;
-const CHECKERBOARD_MIN_TRANSITIONS = 2;
-const CHECKERBOARD_MAX_UNKNOWN_GAP = 2;
-// The packaged 16x16 proof has four alternating 4x4 blocks in each axis.
-const PROOF_CYAN = [18, 220, 255];
-const PROOF_MAGENTA = [255, 40, 180];
+// The packaged proof is a cyan/magenta checkerboard pennant, and it is identified by CHANNEL
+// MARGIN rather than by distance to the authored texture colour. The gate reads a lit, tonemapped
+// render, and the authored cyan never reaches the screen: measured on the CI capture of run
+// 34076016432, the pennant's cyan renders as rgb(86,180,189) — 103 away from the authored
+// [18,220,255] — while the ocean behind it sits at 149 and the sky at 140. Any absolute-distance
+// threshold wide enough to admit the asset also admits the sea, which is how a frame showing the
+// pennant plainly was rejected with 798,464 of 921,600 pixels classified as proof.
+//
+// Magenta is the discriminator, because an ocean world contains none: 521 magenta pixels on the
+// pennant, against 0 in the same frame with the pennant cropped away.
+const PROOF_MAGENTA_MIN_MARGIN = 40;
+// Corroborating cyan, counted only inside the magenta bounds so the background cannot supply it.
+const PROOF_CYAN_MIN_MARGIN = 70;
+const PROOF_CYAN_IN_BOUNDS_FLOOR = 50;
 // A proof region may occupy up to a quarter of a rendered frame; a wash that reaches almost every
 // part of the frame must not count as localized evidence.
 const MAX_ASSET_BOUNDS_FRACTION = 0.25;
+// Bounds alone cannot separate a small asset from magenta scattered thinly across the frame, since
+// scattered pixels share almost the same bounding box as a solid one. Density does: the pennant
+// fills 0.236 of its own bounds, scattered noise fills 0.04.
+const MIN_ASSET_BOUNDS_DENSITY = 0.1;
 
-function colorDistanceSquared(data, offset, color) {
-  const red = data[offset] - color[0];
-  const green = data[offset + 1] - color[1];
-  const blue = data[offset + 2] - color[2];
-  return red * red + green * green + blue * blue;
+function isProofMagenta(data, offset) {
+  return (
+    data[offset + 3] > 0 &&
+    data[offset] > data[offset + 1] + PROOF_MAGENTA_MIN_MARGIN &&
+    data[offset + 2] > data[offset + 1] + PROOF_MAGENTA_MIN_MARGIN
+  );
 }
 
-function classifyProofPixel(data, offset) {
-  if (data[offset + 3] === 0) return 0;
-  const cyanDistance = colorDistanceSquared(data, offset, PROOF_CYAN);
-  const magentaDistance = colorDistanceSquared(data, offset, PROOF_MAGENTA);
-  if (Math.min(cyanDistance, magentaDistance) > PROOF_COLOR_MAX_DISTANCE ** 2) return 0;
-  return cyanDistance <= magentaDistance ? 1 : 2;
+function isProofCyan(data, offset) {
+  return (
+    data[offset + 3] > 0 &&
+    data[offset + 1] - data[offset] > PROOF_CYAN_MIN_MARGIN &&
+    data[offset + 2] - data[offset] > PROOF_CYAN_MIN_MARGIN
+  );
 }
 
-function enqueueProofNeighbor(presence, queue, tail, neighbor) {
-  if (presence[neighbor] === 0) return tail;
-  presence[neighbor] = 0;
-  queue[tail] = neighbor;
-  return tail + 1;
-}
-
-function enqueueProofNeighbors(presence, queue, tail, width, height, index) {
-  const x = index % width;
-  const y = Math.floor(index / width);
-  let nextTail = tail;
-  for (let dy = -1; dy <= 1; dy += 1) {
-    for (let dx = -1; dx <= 1; dx += 1) {
-      if (dx === 0 && dy === 0) continue;
-      const neighborX = x + dx;
-      const neighborY = y + dy;
-      if (neighborX < 0 || neighborX >= width || neighborY < 0 || neighborY >= height) continue;
-      nextTail = enqueueProofNeighbor(presence, queue, nextTail, neighborY * width + neighborX);
-    }
-  }
-  return nextTail;
-}
-
-function measureProofRegion(classes, presence, queue, width, height, start) {
-  let head = 0;
-  let tail = 1;
-  let cyanPixels = 0;
-  let magentaPixels = 0;
-  let minX = width;
-  let maxX = -1;
-  let minY = height;
-  let maxY = -1;
-  queue[0] = start;
-  presence[start] = 0;
-  while (head < tail) {
-    const index = queue[head];
-    head += 1;
-    const proofClass = classes[index];
-    if (proofClass !== 0) {
-      if (proofClass === 1) cyanPixels += 1;
-      else magentaPixels += 1;
-      const x = index % width;
-      const y = Math.floor(index / width);
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-    }
-    tail = enqueueProofNeighbors(presence, queue, tail, width, height, index);
-  }
-  return { cyanPixels, magentaPixels, maxX, maxY, minX, minY };
-}
-
-function countCheckerboardCell(classes, width, startX, endX, startY, endY) {
-  let observed = 0;
+function countProofCyanInBounds(png, bounds) {
   let cyan = 0;
-  let magenta = 0;
-  for (let y = startY; y < endY; y += 1) {
-    for (let x = startX; x < endX; x += 1) {
-      const proofClass = classes[y * width + x];
-      if (proofClass === 0) continue;
-      observed += 1;
-      if (proofClass === 1) cyan += 1;
-      else magenta += 1;
+  for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+    for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
+      if (isProofCyan(png.data, (y * png.width + x) * 4)) cyan += 1;
     }
   }
-  return { cyan, magenta, observed };
+  return cyan;
 }
 
-function isSupportedCheckerboardCell(cell, cellArea) {
-  return cell.observed >= Math.max(2, Math.ceil(cellArea * CHECKERBOARD_MIN_CELL_COVERAGE));
-}
-
-function matchesCheckerboardCell(cell, cellX, cellY, phase) {
-  const expectedIsCyan = (cellX + cellY + phase) % 2 !== 0;
-  const expectedPixels = expectedIsCyan ? cell.cyan : cell.magenta;
-  const otherPixels = expectedIsCyan ? cell.magenta : cell.cyan;
-  return expectedPixels >= otherPixels && expectedPixels / cell.observed >= 0.55;
-}
-
-function checkerboardCellMatch(classes, width, region, phase) {
-  const regionWidth = region.maxX - region.minX + 1;
-  const regionHeight = region.maxY - region.minY + 1;
-  let supportedCells = 0;
-  let matchingCells = 0;
-  for (let cellY = 0; cellY < CHECKERBOARD_CELLS; cellY += 1) {
-    const startY = region.minY + Math.floor((cellY * regionHeight) / CHECKERBOARD_CELLS);
-    const endY = region.minY + Math.floor(((cellY + 1) * regionHeight) / CHECKERBOARD_CELLS);
-    for (let cellX = 0; cellX < CHECKERBOARD_CELLS; cellX += 1) {
-      const startX = region.minX + Math.floor((cellX * regionWidth) / CHECKERBOARD_CELLS);
-      const endX = region.minX + Math.floor(((cellX + 1) * regionWidth) / CHECKERBOARD_CELLS);
-      const cell = countCheckerboardCell(classes, width, startX, endX, startY, endY);
-      const cellArea = (endX - startX) * (endY - startY);
-      if (!isSupportedCheckerboardCell(cell, cellArea)) continue;
-      supportedCells += 1;
-      if (matchesCheckerboardCell(cell, cellX, cellY, phase)) matchingCells += 1;
-    }
+// Localization is a question about a capture, not about a texture, so only a capture-sized frame
+// reaches this. The distribution test feeds the packaged 16x16 proof itself, where the asset
+// legitimately fills the whole frame and asking where it sits has no meaning.
+function assertProofIsLocalized(png, bounds, magentaAssetPixels) {
+  const boundsArea = (bounds.maxX - bounds.minX + 1) * (bounds.maxY - bounds.minY + 1);
+  const boundsFraction = boundsArea / (png.width * png.height);
+  if (boundsFraction > MAX_ASSET_BOUNDS_FRACTION) {
+    throw new Error(
+      `TN_NATIVE_STARTER_ASSET_NOT_LOCALIZED: magenta spans ${(boundsFraction * 100).toFixed(1)}% of the frame, which is a wash, not the proof asset.`,
+    );
   }
-  return { matchingCells, supportedCells };
-}
-
-function countAlternatingTransitions(classes, startIndex, length, stride) {
-  let observed = 0;
-  let transitions = 0;
-  let previousClass = 0;
-  let unknownGap = 0;
-  for (let offset = 0; offset < length; offset += 1) {
-    const proofClass = classes[startIndex + offset * stride];
-    if (proofClass === 0) {
-      if (previousClass !== 0) unknownGap += 1;
-      continue;
-    }
-    observed += 1;
-    if (previousClass !== 0) {
-      if (unknownGap <= CHECKERBOARD_MAX_UNKNOWN_GAP && proofClass !== previousClass) {
-        transitions += 1;
-      } else if (unknownGap > CHECKERBOARD_MAX_UNKNOWN_GAP) {
-        previousClass = 0;
-      }
-    }
-    previousClass = proofClass;
-    unknownGap = 0;
-  }
-  return { observed, transitions };
-}
-
-function countQualifiedScanlines(classes, width, region, horizontal) {
-  const lineCount = horizontal ? region.maxY - region.minY + 1 : region.maxX - region.minX + 1;
-  const lineLength = horizontal ? region.maxX - region.minX + 1 : region.maxY - region.minY + 1;
-  const minimumObserved = Math.max(4, Math.ceil(lineLength * 0.2));
-  const stride = horizontal ? 1 : width;
-  let qualified = 0;
-  for (let line = 0; line < lineCount; line += 1) {
-    const startIndex = horizontal
-      ? (region.minY + line) * width + region.minX
-      : region.minY * width + region.minX + line;
-    const stats = countAlternatingTransitions(classes, startIndex, lineLength, stride);
-    if (stats.observed >= minimumObserved && stats.transitions >= CHECKERBOARD_MIN_TRANSITIONS) {
-      qualified += 1;
-    }
-  }
-  return qualified;
-}
-
-function hasCheckerboardScanlineEvidence(classes, width, region) {
-  const horizontal = countQualifiedScanlines(classes, width, region, true);
-  const vertical = countQualifiedScanlines(classes, width, region, false);
-  const minimumHorizontal = Math.max(4, Math.ceil((region.maxY - region.minY + 1) * 0.2));
-  const minimumVertical = Math.max(4, Math.ceil((region.maxX - region.minX + 1) * 0.2));
-  return horizontal >= minimumHorizontal && vertical >= minimumVertical;
-}
-
-function isCheckerboardRegion(classes, width, height, region, rendered) {
-  const cyanPixels = region.cyanPixels;
-  const magentaPixels = region.magentaPixels;
-  if (cyanPixels < ASSET_PIXEL_FLOOR || magentaPixels < ASSET_PIXEL_FLOOR / 4) return false;
-  const regionWidth = region.maxX - region.minX + 1;
-  const regionHeight = region.maxY - region.minY + 1;
-  if (regionWidth < CHECKERBOARD_CELLS || regionHeight < CHECKERBOARD_CELLS) return false;
-  if (
-    rendered &&
-    regionWidth * regionHeight > width * height * MAX_ASSET_BOUNDS_FRACTION
-  )
-    return false;
-  let bestMatch = { matchingCells: 0, supportedCells: 0 };
-  for (let phase = 0; phase < 2; phase += 1) {
-    const match = checkerboardCellMatch(classes, width, region, phase);
-    if (match.matchingCells > bestMatch.matchingCells) bestMatch = match;
-  }
-  const cellEvidence =
-    bestMatch.supportedCells >= CHECKERBOARD_MIN_SUPPORTED_CELLS &&
-    bestMatch.matchingCells / bestMatch.supportedCells >= CHECKERBOARD_MIN_MATCH_RATIO;
-  return cellEvidence || hasCheckerboardScanlineEvidence(classes, width, region);
-}
-
-function markProofNeighborhood(presence, width, height, index) {
-  const x = index % width;
-  const y = Math.floor(index / width);
-  for (let dy = -1; dy <= 1; dy += 1) {
-    for (let dx = -1; dx <= 1; dx += 1) {
-      const neighborX = x + dx;
-      const neighborY = y + dy;
-      if (neighborX >= 0 && neighborX < width && neighborY >= 0 && neighborY < height) {
-        presence[neighborY * width + neighborX] = 1;
-      }
-    }
+  const density = magentaAssetPixels / boundsArea;
+  if (density < MIN_ASSET_BOUNDS_DENSITY) {
+    throw new Error(
+      `TN_NATIVE_STARTER_ASSET_NOT_LOCALIZED: magenta fills only ${(density * 100).toFixed(1)}% of its own bounds, which is scatter, not the proof asset.`,
+    );
   }
 }
 
-function hasCheckerboardProof(classes, width, height, rendered) {
-  const presence = new Uint8Array(classes.length);
-  for (let index = 0; index < classes.length; index += 1) {
-    if (classes[index] === 0) continue;
-    markProofNeighborhood(presence, width, height, index);
+// One pass over the frame: the colour census the unrendered-frame floor reads, and the magenta
+// pixel count with the bounds it occupies.
+function scanProofMagenta(png) {
+  const colors = new Set();
+  const bounds = { maxX: -1, maxY: -1, minX: png.width, minY: png.height };
+  let magentaAssetPixels = 0;
+  for (let index = 0; index < png.data.length; index += 4) {
+    colors.add(
+      `${png.data[index]},${png.data[index + 1]},${png.data[index + 2]},${png.data[index + 3]}`,
+    );
+    if (!isProofMagenta(png.data, index)) continue;
+    magentaAssetPixels += 1;
+    const pixel = index / 4;
+    const x = pixel % png.width;
+    const y = Math.floor(pixel / png.width);
+    if (x < bounds.minX) bounds.minX = x;
+    if (x > bounds.maxX) bounds.maxX = x;
+    if (y < bounds.minY) bounds.minY = y;
+    if (y > bounds.maxY) bounds.maxY = y;
   }
-  const queue = new Uint32Array(classes.length);
-  for (let start = 0; start < presence.length; start += 1) {
-    if (presence[start] === 0) continue;
-    const region = measureProofRegion(classes, presence, queue, width, height, start);
-    if (isCheckerboardRegion(classes, width, height, region, rendered)) return true;
-  }
-  return false;
+  return { bounds, colors, magentaAssetPixels };
 }
 
 export function inspectStarterScreenshot(path) {
   if (!existsSync(path)) throw new Error(`TN_NATIVE_STARTER_SCREENSHOT_MISSING: ${path}`);
   const png = PNG.sync.read(readFileSync(path));
-  const colors = new Set();
-  const proofClasses = new Uint8Array(png.width * png.height);
-  let cyanAssetPixels = 0;
-  for (let index = 0; index < png.data.length; index += 4) {
-    const red = png.data[index];
-    const green = png.data[index + 1];
-    const blue = png.data[index + 2];
-    const alpha = png.data[index + 3];
-    colors.add(`${red},${green},${blue},${alpha}`);
-    const proofClass = classifyProofPixel(png.data, index);
-    proofClasses[index / 4] = proofClass;
-    if (proofClass === 1) {
-      cyanAssetPixels += 1;
-    }
-  }
+  const { bounds, colors, magentaAssetPixels } = scanProofMagenta(png);
   if (colors.size < 2) throw new Error('TN_NATIVE_STARTER_SCREENSHOT_BLANK: one-color frame.');
   // A one-colour guard is too weak to catch the capture this gate actually loses. A rendered
   // starter frame carries roughly 17k distinct colours; an intermittent CI failure captured five —
@@ -277,16 +120,28 @@ export function inspectStarterScreenshot(path) {
   const rendered = png.width * png.height >= UNRENDERED_FRAME_MIN_PIXELS;
   if (rendered && colors.size < UNRENDERED_FRAME_COLOR_FLOOR) {
     throw new Error(
-        `TN_NATIVE_STARTER_FRAME_NOT_RENDERED: only ${colors.size} distinct colours in ${png.width}x${png.height}. The run log may still show every marker: this is the capture, not the scene.`,
+      `TN_NATIVE_STARTER_FRAME_NOT_RENDERED: only ${colors.size} distinct colours in ${png.width}x${png.height}. The run log may still show every marker: this is the capture, not the scene.`,
     );
   }
-  const hasAssetEvidence =
-    cyanAssetPixels >= ASSET_PIXEL_FLOOR &&
-    hasCheckerboardProof(proofClasses, png.width, png.height, rendered);
-  if (!hasAssetEvidence) {
-    throw new Error(`TN_NATIVE_STARTER_ASSET_NOT_VISIBLE: checkerboard proof was not identified; found ${cyanAssetPixels} cyan proof pixels in a frame of ${colors.size} colours.`);
+  if (magentaAssetPixels < ASSET_PIXEL_FLOOR) {
+    throw new Error(
+      `TN_NATIVE_STARTER_ASSET_NOT_VISIBLE: found ${magentaAssetPixels} magenta proof pixels in a frame of ${colors.size} colours.`,
+    );
   }
-  return { colors: colors.size, cyanAssetPixels, height: png.height, width: png.width };
+  if (rendered) assertProofIsLocalized(png, bounds, magentaAssetPixels);
+  const cyanAssetPixels = countProofCyanInBounds(png, bounds);
+  if (cyanAssetPixels < PROOF_CYAN_IN_BOUNDS_FLOOR) {
+    throw new Error(
+      `TN_NATIVE_STARTER_ASSET_NOT_VISIBLE: magenta found but only ${cyanAssetPixels} cyan proof pixels inside its bounds; the checkerboard needs both colours.`,
+    );
+  }
+  return {
+    colors: colors.size,
+    cyanAssetPixels,
+    height: png.height,
+    magentaAssetPixels,
+    width: png.width,
+  };
 }
 
 export function analyzeStarterLog(log, frames = 300) {
