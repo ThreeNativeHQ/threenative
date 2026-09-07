@@ -172,6 +172,36 @@ Record performance findings in `docs/verification/runtime-perf-state.md`; other 
 in a dated `docs/verification/` record. Link exact commands, outputs and artifact identities here.
 Unrun platform gates remain unverified. These plans do not claim implementation or measured improvement.
 
+## The observer emits on Android — first executed evidence, 2026-09-07
+
+Run 34104583517, `android-emulator-parity`, x86_64 emulator. The captured logcat carries one
+well-formed observation, verbatim:
+
+```text
+TN_PUMP_SILENCE:{"observed":true,"pumpCount":1,"firstPumpAtMs":1204.780,"lastPumpAtMs":1204.780,
+"maxGapMs":0.000,"maxGapAtMs":-1.000,"trailingGapMs":28.052,"longGaps":[],"droppedLongGaps":0}
+```
+
+**What this closes.** `PumpSilenceObserver` compiles into an Android build, runs there, and emits a
+line the tracked evaluator parses — `observed:true`, finite non-negative stamps. Until this run that
+path existed only on desktop and against a mocked adb transport, and this document recorded it as
+unexecuted. It is no longer.
+
+**What it does not close, and none of it is a near miss.**
+
+- **Not a budget result.** `firstPumpAtMs` of 1204.78 ms is a conformance harness launching on a
+  software-emulated x86_64 device, not a game cold start on a phone. It is not evidence against the
+  250 ms criterion and must not be quoted as such. The structural step that read this log recorded
+  `status: BLOCKED`, `pass: false`, because conformance exited 1 — it asserts nothing about the
+  observer when the app may never have finished launching.
+- **`TN_PUMP_ENDPOINT` did not appear** (0 occurrences in 1,534 lines). Expected: the endpoint is
+  stamped on mailbox `respond()`, which needs a playtest driving movement, and the conformance run
+  drives none. The displacement-correlated half of the contract stays unexecuted on Android.
+- **Not a device.** An emulator is a separate result from a phone, and this repository's own native
+  contract says a green on one does not carry to the other.
+
+The acceptance criteria are unchanged and none is ticked.
+
 ## What closing this actually requires — verified 2026-09-07
 
 The device lane was attempted, not assumed: `adb devices -l` empty, no phone on USB, and a sweep of
