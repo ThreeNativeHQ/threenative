@@ -139,7 +139,7 @@ jobs:
           TN_PERF_RESULT_KEY: ${{ matrix.result_key }}
         run: |
           set -euo pipefail
-          baseline_sha="${BASELINE_INPUT:-$REVIEWED_BASELINE_INPUT}"
+          baseline_sha="${BASELINE_INPUT:-${REVIEWED_BASELINE_INPUT:-}}"
           candidate_sha="${CANDIDATE_INPUT:-$GITHUB_SHA}"
           if [ "$TN_PERF_RESOURCE_READY" != "true" ]; then
             exit 0

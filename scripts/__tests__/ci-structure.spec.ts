@@ -128,7 +128,7 @@ it("preserves both source identities in blocked source-pair artifacts", async ()
   );
   const writerLine = prepare
     .split("\n")
-    .find((line) => line.includes("node --input-type=module -e '"));
+    .find((line) => line.includes("process.env.TN_PERF_SOURCE_FAILURE_REASON"));
   if (writerLine === undefined) throw new Error("source-pair failure writer was not found");
   const scriptStart = writerLine.indexOf("'", writerLine.indexOf("-e ")) + 1;
   const script = writerLine.slice(scriptStart, writerLine.lastIndexOf("'"));
@@ -198,7 +198,7 @@ it("requires scheduled pairs to use a distinct reviewed baseline and forwards bo
     performance.indexOf("      - name: Run independent alternating baseline/candidate pairs"),
   );
   expect(prepare).toContain("REVIEWED_BASELINE_INPUT: ${{ vars.TN_PERF_REVIEWED_BASELINE_SHA }}");
-  expect(prepare).toContain('baseline_sha="${BASELINE_INPUT:-$REVIEWED_BASELINE_INPUT}"');
+  expect(prepare).toContain('baseline_sha="${BASELINE_INPUT:-${REVIEWED_BASELINE_INPUT:-}}"');
   expect(prepare).toContain('candidate_sha="${CANDIDATE_INPUT:-$GITHUB_SHA}"');
   expect(prepare).toContain(
     'if [ -z "$baseline_sha" ] || [ -z "$candidate_sha" ] || [ "$baseline_sha" = "$candidate_sha" ]; then',
