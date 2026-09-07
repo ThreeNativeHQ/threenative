@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-360 — Android launch is playable within eight seconds
 
-**Status:** PROPOSED
+**Status:** PARTIAL — implementation/proof in progress; acceptance remains open
 **Priority:** 1 — start today, September 5, 2026.
 **Complexity:** 2 (6–10 files) + 2 (async startup) + 2 (core/native) = 6 → MEDIUM mode.
 **Estimate:** 6–10 engineering hours plus native build/device time.
@@ -60,6 +60,37 @@ sequenceDiagram
 1. Exercise existing object granularity before adding machinery. Bound the expensive walk without raising timeout budgets or omitting scene/effect work.
 2. Reinstall built engine artifacts in Bayview and integrate the working startup path. Test three baseline and three candidate cold launches on the same qualified device.
 3. Assert a visible world plus input-driven player displacement, not just a ready flag. Verify the same game on browser WebGPU. Reverting the compile-path fix must fail the real launch criterion.
+
+## Current evidence and unresolved baseline — September 5, 2026
+
+The installer exists at `packages/runtime-native/src/runtime.cpp:3178`. A real-host probe held
+presentation, made 32 explicit calls to Three.js's `yieldToMain`, observed a timer, and completed
+`WebGPURenderer.compileAsync`. Deleting `globalThis.scheduler` instead reached the bounded
+15-second deadline with zero completed yields. Screenshot-mode host runs exited 0 in both cases;
+the semantic positive/deletion expectations are evaluated separately. This supports the existing
+scheduler path; no installer defect or production scheduler fix is claimed. A saturated Bayview
+compile walk, maximum event-pump gap and first accepted movement remain unmeasured.
+
+The original `prd329-bayview-20260905` source was removed by concurrent sandbox cleanup and is
+absent from tracked history. The exact installed APK was preserved read-only with SHA-256
+`007e1dc247b58cc13126f44c52cff97f230934bcc2f305c83e35805bcba9077e`. The surviving
+`fps-framework` is a different 240-FPS/0.44-scale arm; it has not been substituted for the installed
+120-FPS/0.55-scale baseline. A source choice is pending. The latest battery observation was 29%,
+discharging, below the required 50% measurement threshold. No qualified candidate launch is
+claimed. Retained source, exact commands and observations are in the
+[batch ledger](../../verification/batch-2026-09-05-execution.md). Both phases remain open.
+
+Pump-silence measurement mechanism (desktop proof only, 2026-09-05):
+`mystral::PumpSilenceObserver` (`packages/runtime-native/include/mystral/pump_silence.h`)
+stamps `pollEvents()` entries, retains the unfiltered maximum gap, and emits one
+`TN_PUMP_SILENCE` line at first-present/loop-exit/shutdown plus a
+displacement-correlated `TN_PUMP_ENDPOINT` on mailbox `respond()`. Desktop proof
+(vitest 11/11, evaluator 32/32, collector flow with mocked adb only) is retained
+with byte-identical proof sources in
+[prd-360-startup-2026-09-05](../../verification/prd-360-startup-2026-09-05/README.md)
+(host `50144dc9…`). Full Android end-to-end is unexecuted; the rebuilt candidate
+APK `20da12fa…` has not been run on a device. The earlier `403bd10c…` candidate
+predates the observer. No phase accepted; no device claim.
 
 ## Acceptance and checkpoint protocol
 

@@ -80,9 +80,9 @@ After changing bounds, field, or resolution, run three fixed seeds and require t
 
 ## Quality and proof
 
-`src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`;
-override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
-the source. The bridge flushes about 100 ms; keep state human-readable and frame feedback in Three.js.
+`src/render/quality.ts` owns `low`, `medium`, `high`; platform selects the boot tier, and `adaptiveQuality.ts` reads `game.ts` frame windows.
+Fresh GPU time wins, with a named presentation fallback. After startup, two overloaded windows lower quality; five with 20% headroom raise it; cooldown is five seconds. Presentation fallback allows 5% timing jitter (`presentationTolerance`); `overloadBudgetMs` reports its threshold. Vsync-bound presentation alone cannot prove recovery headroom.
+`setupPost` exposes policy options and `targetFps`; `Play` supplies `display.maxFps` and readiness. Pin `{ tier: "low" }`; invalid tiers throw and pinned costs report. The `quality` entity and `TN_QUALITY_TIER` expose decisions; dispose on scene exit.
 The starter's painterly look is generated source (`outline.ts`, `kuwahara.ts`, `watercolor.ts`) reached by `worldEnvironment.ts`; `quality.ts` owns tier, radius, resolution, and strength; `TN_RENDER_CHAIN` names each independently, and a missing stage observation is a failure.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. A scenario
 with no assertions or missing observations fails; open a real capture after visual changes.

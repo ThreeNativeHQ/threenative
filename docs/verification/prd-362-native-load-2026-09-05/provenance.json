@@ -1,0 +1,279 @@
+{
+  "generatedAt": "2026-09-05T21:03:37-07:00",
+  "lane": "PRD-362 starter native controlled-load reruns on the PR123 base",
+  "provenance": {
+    "engineHead": "79f879143570859a398a19f449db05193f59c7c9",
+    "runtimeNativeVsOriginMain": "identical (git diff origin/main HEAD -- packages/runtime-native is empty; worktree clean apart from the untracked third_party cache symlink)",
+    "host": {
+      "path": "packages/runtime-native/build/tn-linux/mystral",
+      "sha256": "53fe0026923da727583dac8c746e6c64b6f070410a4300803f03e48e58c29f70",
+      "reuseJustification": "source tree byte-identical to origin/main, so the Release host corresponds to this base"
+    },
+    "runner": {
+      "trackedCopy": "docs/verification/prd-362-native-load-2026-09-05/runner.mjs.txt",
+      "localPath": "artifacts/batch-2026-09-05/starter-quality-load-native.mjs",
+      "sha256": "86ad1b39af8a3c606590c2eaeb1f554dd6cae1265b0dfce39fbbaa787b866b1b",
+      "byteIdentical": true,
+      "retentionNote": "tracked with a .txt suffix so repo-wide biome format/lint for shipped source does not rewrite verbatim evidence bytes; strip the suffix to run, from a path two levels below the repo root"
+    },
+    "gamePolicySource": {
+      "path": "src/render/adaptiveQuality.ts",
+      "sha256": "dfa3d27df7fdf9ba853f3a6d5f2e37469707ceef069c75a36eb59c87381834b5",
+      "identicalToPrTemplate": true
+    },
+    "threePatch": {
+      "sha256": "baf077414020ff2399cac6cf7bf0e4079aef27f79b16ffed5eeec31d58906043",
+      "gameCopyIdentical": true
+    },
+    "installedCore": {
+      "tarball": "pr-base-packages/threenative-core-0.3.0-a03703863cd2.tgz",
+      "tarballSha256": "a03703863cd2807eb55febb4b0d5eec0bbb2ccbb27a4ca9c3aefc4364270223b",
+      "installedDistIndexSha256": "d0df1d25de001f6763c34f6b420425e397a83d2e685368b8ceeeb69aa796bcc6",
+      "matchesTarball": true,
+      "carriesGpuFrameAge": true
+    },
+    "gameLockfile": {
+      "staleSharedPackagesReferences": 0,
+      "allTarballsUnder": "artifacts/batch-2026-09-05/pr-base-packages/"
+    },
+    "sandboxConfigsAfterRuns": {
+      "vite.config.ts": "93c3034660ea5d07594e513a3d83e2b5a8e9c61c03a678037957ec049a9897ad",
+      "threenative.config.ts": "087e4a98164a936f1d1714072f1b3874e83776798d978997035e4fb500847148",
+      "state": "byte-identical to the pre-fixture originals"
+    },
+    "desktopOutputRestored": {
+      "dist-native/starter-quality-20260905": "17aff19f6c0b10db01e7d660839de9c4e3f268ce5d9249230834e05a4deb1f67",
+      "note": "rebuilt from the restored configs; the negative fixture binary ccd0f21e no longer occupies the ordinary output path"
+    },
+    "fixtureFactory": {
+      "trackedCopy": "docs/verification/prd-362-native-load-2026-09-05/fixture.mjs.txt",
+      "localPath": "artifacts/batch-2026-09-05/build-starter-quality-load.mjs",
+      "sha256": "7e385a70d0dc974aea761785004a730f3567062cbd0f0e06a4f87615c22a98b9",
+      "byteIdentical": true,
+      "retentionNote": "same as the runner; the receipts' build.transformReport lists every applied transform label"
+    }
+  },
+  "variants": {
+    "normal": {
+      "build": {
+        "exit": 0,
+        "transformReport": [
+          {
+            "file": "src/game.ts",
+            "label": "frameBudget reportEvery",
+            "matchCount": 1
+          },
+          {
+            "file": "threenative.config.ts",
+            "label": "resolutionScale stress override",
+            "matchCount": 1
+          },
+          {
+            "file": "src/render/quality.ts",
+            "label": "quality stress fixture append",
+            "matchCount": 1
+          }
+        ],
+        "executableSha256": "79cda4ba6677cd9cadd77e74eed84329cbed311450db2082c22a065a863f250b",
+        "embeddedConfigSha256": "6c842fd1b2411a7e23df73daf94f325c83ca08baadf8b5a7a6827e2701dd33f3",
+        "restoration": {
+          "vite": "restored",
+          "native": "restored"
+        }
+      },
+      "proof": {
+        "exit": 0,
+        "expectedExit": 0,
+        "pass": true,
+        "failure": null,
+        "tiers": ["high", "medium", "low", "medium", "high"],
+        "windows": 29,
+        "decisions": 30,
+        "freshGpuOverloadCpuUnderBudget": 3,
+        "stressEndedWindow": 14,
+        "consoleErrors": [],
+        "teardownErrors": null,
+        "adapter": ["[WebGPU] Adapter: NVIDIA GeForce RTX 2080", "[WebGPU] Backend: Vulkan"],
+        "everyWindowDrawingBuffer": "1920x1080",
+        "captures": [
+          {
+            "tier": "high",
+            "file": "high.png",
+            "sha256": "fe059144fe5f205766ce6b75c3e83f9f0b2b7ba34a397574b95221988db7c8dc",
+            "bytes": 653138,
+            "pixels": "1920x1080"
+          },
+          {
+            "tier": "medium",
+            "file": "medium.png",
+            "sha256": "6bafeadbbf9b90447187774eec6d5c83775cdb7a0913bc0777b4e68e82772f73",
+            "bytes": 599398,
+            "pixels": "1920x1080"
+          },
+          {
+            "tier": "low",
+            "file": "low.png",
+            "sha256": "58ee409564999e03cfb8217d818b3c49987dc865ae1aff3d50b92289cc084b91",
+            "bytes": 550936,
+            "pixels": "1920x1080"
+          }
+        ],
+        "recovery": {
+          "decisionWindow": 24,
+          "sustainedHighWindows": [25, 26, 27, 28, 29]
+        },
+        "trackedReceipt": "docs/verification/prd-362-native-load-2026-09-05/normal-receipt.json"
+      }
+    },
+    "pinned": {
+      "build": {
+        "exit": 0,
+        "transformReport": [
+          {
+            "file": "src/game.ts",
+            "label": "frameBudget reportEvery",
+            "matchCount": 1
+          },
+          {
+            "file": "src/scenes/Play.ts",
+            "label": "pinned high tier",
+            "matchCount": 1
+          },
+          {
+            "file": "threenative.config.ts",
+            "label": "resolutionScale stress override",
+            "matchCount": 1
+          },
+          {
+            "file": "src/render/quality.ts",
+            "label": "quality stress fixture append",
+            "matchCount": 1
+          }
+        ],
+        "executableSha256": "f78bbb68c2aebfeecbf1981b81f08458f93df8e5924b7a825bc17d693cd7c9f5",
+        "embeddedConfigSha256": "6c842fd1b2411a7e23df73daf94f325c83ca08baadf8b5a7a6827e2701dd33f3",
+        "restoration": {
+          "vite": "restored",
+          "native": "restored"
+        }
+      },
+      "proof": {
+        "exit": 0,
+        "expectedExit": 0,
+        "pass": true,
+        "failure": null,
+        "tiers": [],
+        "windows": 30,
+        "decisions": 31,
+        "freshGpuOverloadCpuUnderBudget": 20,
+        "stressEndedWindow": null,
+        "consoleErrors": [],
+        "teardownErrors": null,
+        "adapter": ["[WebGPU] Adapter: NVIDIA GeForce RTX 2080", "[WebGPU] Backend: Vulkan"],
+        "everyWindowDrawingBuffer": "1920x1080",
+        "captures": [
+          {
+            "tier": "high",
+            "file": "high.png",
+            "sha256": "c2760c548e200af32cd2794c3b5fb87876360c9524c999d9a461c8bf28b9eddc",
+            "bytes": 653365,
+            "pixels": "1920x1080"
+          }
+        ],
+        "trackedReceipt": "docs/verification/prd-362-native-load-2026-09-05/pinned-receipt.json"
+      }
+    },
+    "negative": {
+      "build": {
+        "exit": 0,
+        "transformReport": [
+          {
+            "file": "src/game.ts",
+            "label": "frameBudget reportEvery",
+            "matchCount": 1
+          },
+          {
+            "file": "threenative.config.ts",
+            "label": "resolutionScale stress override",
+            "matchCount": 1
+          },
+          {
+            "file": "src/render/adaptiveQuality.ts",
+            "label": "negative platform-only policy",
+            "matchCount": 1
+          },
+          {
+            "file": "src/render/quality.ts",
+            "label": "quality stress fixture append",
+            "matchCount": 1
+          }
+        ],
+        "executableSha256": "ccd0f21e84a00f319fff166068e48e4295ac5a4bb52547dfe5e2eaad86258e0f",
+        "embeddedConfigSha256": "6c842fd1b2411a7e23df73daf94f325c83ca08baadf8b5a7a6827e2701dd33f3",
+        "restoration": {
+          "vite": "restored",
+          "native": "restored"
+        }
+      },
+      "proof": {
+        "exit": 1,
+        "expectedExit": 1,
+        "pass": false,
+        "failure": "Error: expected high,medium,low,medium,high; observed high",
+        "tiers": ["high"],
+        "windows": 55,
+        "decisions": 56,
+        "freshGpuOverloadCpuUnderBudget": 45,
+        "stressEndedWindow": null,
+        "consoleErrors": [],
+        "teardownErrors": null,
+        "adapter": ["[WebGPU] Adapter: NVIDIA GeForce RTX 2080", "[WebGPU] Backend: Vulkan"],
+        "everyWindowDrawingBuffer": "1920x1080",
+        "captures": [
+          {
+            "tier": "high",
+            "file": "high.png",
+            "sha256": "09251ea452d04e43204564dfea833ace8b39a5d32d2f283495ceea516a868536",
+            "bytes": 653514,
+            "pixels": "1920x1080"
+          }
+        ],
+        "failedAssertion": "tier sequence: expected high,medium,low,medium,high; observed high",
+        "decisionMix": {
+          "high/platform-only/auto": 45,
+          "high/startup/auto": 7,
+          "high/compiling/auto": 3
+        },
+        "trackedReceipt": "docs/verification/prd-362-native-load-2026-09-05/negative-receipt.json"
+      }
+    }
+  },
+  "controls": {
+    "screenGeometry": {
+      "observation": "the first normal rerun set TN_XVFB_SCREEN=1920x1080x24 and failed the tier-sequence assertion with high,medium,low,medium,low,medium,high,medium,low,medium",
+      "timingVariability": "post-stress absolute gpuMs on this lane varies several-fold between runs at a fixed tier and a fixed 1920x1080 buffer, including across the three passing normal runs on the wrapper-default screen. The 1920x1080-screen run's band falls inside that envelope. The ranges are recorded once, in docs/verification/runtime-perf-state.md.",
+      "causeAttribution": "none. The differing screen setting and the differing timings are both observed; no causal link is claimed and the cause of the run-to-run variation is unidentified.",
+      "clippingRuledOut": "independent review confirmed the desktop capture is a GPU frame read-back rather than an X grab, and that the region beyond the 1600x900 boundary carries fully shaded scene content in all three retained captures. The 1920x1080 render is physical.",
+      "resolution": "the retained passing runs use the scripts/xvfb.sh default screen, the same condition the earlier lane used. No production threshold was changed and nothing was rerun to obtain the pass.",
+      "reproducibility": "three independent normal runs at the retained configuration passed (pre-base, pre-final, current base), so the pass is reproducible rather than selected.",
+      "evidence": "artifacts/batch-2026-09-05/quality-load-native-normal-screen1920-proof/, opus-pr-logs/proof-normal-screen1920.log (local, ignored)"
+    },
+    "negativeIsScoped": "the negative build changes only src/render/adaptiveQuality.ts, replacing the adaptive branch with report(\"platform-only\"); it still measured 45 fresh GPU-overload windows, produced no console error and named the same adapter, so exit 1 comes from the deleted decision, not a broken run",
+    "preBaseProofsPreserved": [
+      "quality-load-native-normal-pre-base-proof/",
+      "quality-load-native-pinned-pre-base-proof/"
+    ],
+    "oscillationCounterExample": "the TN_XVFB_SCREEN=1920x1080x24 run is a live counter-example to PRD-362's 'transitions do not oscillate' bullet: ten tier changes, each individually consistent with the shipped policy given the sample it cites. The retained pass proves the sequence occurred and held for five consecutive windows; it does not prove long-run stability, because the runner breaks as soon as the target state holds."
+  },
+  "limitations": [
+    "Desktop Linux under a private Xvfb only. No phone was launched (battery below the measurement gate) and no browser lane was rerun, so no PRD-362 device acceptance is claimed.",
+    "Absolute gpuMs from this lane is unstable between runs and is not a hardware performance claim. Measured frame rate here is dominated by Xvfb present behaviour and carries no meaning; the controller's only input is gpuMs. Timing observations live in docs/verification/runtime-perf-state.md.",
+    "Recovery is fixture-driven, not load-driven. Under stress the fixture gives high and medium the same Kuwahara load, so the first downshift buys nothing, and relief at low comes from the fixture switching the load off. This lane does not show that a downshift reduces GPU cost.",
+    "The high and medium captures were taken while the stress fixture was active, so they show fixture appearance, not shipped-tier appearance. Only the low capture is a clean preset.",
+    "The scenario is a bespoke native handshake: the runner deletes the web-only diagnostics and visibility assertions and substitutes its own visibility, movement and odometer checks. It is not the game's shipped playtest assertion set.",
+    "receipt.tiers is built from source=='auto' decisions without the eligible() filter. It does not bite here (every gpu-meter decision in all three runs has gpuAgeFrames 1) but the sequence assertion is weaker than the eligibility rule it sits beside.",
+    "presentationTolerance 0.05 was not exercised: every eligible decision in all three runs used meter=gpu.",
+    "The proof logs record the thrown error or the final pass line but not an explicit exit-code line; the exits reported here were observed in the shell that ran them."
+  ],
+  "trackedCopyNote": "Tracked evidence copy. The full receipts, console logs and the pre-base and 1920x1080-screen runs stay local under artifacts/batch-2026-09-05/, which is gitignored; everything needed to inspect or reproduce the accepted result is tracked here."
+}

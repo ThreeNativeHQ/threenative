@@ -1,6 +1,6 @@
 # Three product priorities — September 5, 2026
 
-**Status:** PROPOSED. Three focused delivery PRDs advancing existing work.
+**Status:** PARTIAL — execution started; no delivery PRD is accepted yet.
 
 | Rank | Delivery PRD | What changes for the user | Existing owner |
 | --- | --- | --- | --- |
@@ -21,6 +21,8 @@ starter quality/setup source. Historical measurements were not rerun. The origin
 drafts were replaced following the user's direction to prioritize product progress.
 
 PRD-creator supplied the complexity assessment, live-caller ledgers, bounded phases and negative
-controls. Planning only: no runtime changes or performance wins claimed; full code gates not run.
+controls. Execution evidence and remaining gates are in the
+[batch ledger](../../verification/batch-2026-09-05-execution.md). Starter callback wiring has browser
+red/green proof; physical-device performance acceptance and full delivery remain open.
 
 Next action (under 2 minutes): open PRD-360 and read phase 1.

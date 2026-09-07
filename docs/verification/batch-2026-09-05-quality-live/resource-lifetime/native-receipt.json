@@ -1,0 +1,382 @@
+{
+  "processExit": 0,
+  "markerCount": 1,
+  "result": {
+    "pass": true,
+    "framesPerDecision": 10,
+    "cycles": [
+      [
+        {
+          "cycle": 1,
+          "step": "high-start",
+          "textures": 26,
+          "drawCalls": 25,
+          "debug": {
+            "tier": "high",
+            "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+            "dropped": []
+          }
+        },
+        {
+          "cycle": 1,
+          "step": "medium",
+          "textures": 26,
+          "drawCalls": 25,
+          "debug": {
+            "tier": "medium",
+            "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+            "dropped": []
+          }
+        },
+        {
+          "cycle": 1,
+          "step": "low",
+          "textures": 16,
+          "drawCalls": 16,
+          "debug": {
+            "tier": "low",
+            "stages": ["bloom"],
+            "dropped": []
+          }
+        },
+        {
+          "cycle": 1,
+          "step": "medium",
+          "textures": 26,
+          "drawCalls": 25,
+          "debug": {
+            "tier": "medium",
+            "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+            "dropped": []
+          }
+        },
+        {
+          "cycle": 1,
+          "step": "high",
+          "textures": 26,
+          "drawCalls": 25,
+          "debug": {
+            "tier": "high",
+            "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+            "dropped": []
+          }
+        }
+      ],
+      [
+        {
+          "cycle": 2,
+          "step": "high-start",
+          "textures": 26,
+          "drawCalls": 25,
+          "debug": {
+            "tier": "high",
+            "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+            "dropped": []
+          }
+        },
+        {
+          "cycle": 2,
+          "step": "medium",
+          "textures": 26,
+          "drawCalls": 25,
+          "debug": {
+            "tier": "medium",
+            "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+            "dropped": []
+          }
+        },
+        {
+          "cycle": 2,
+          "step": "low",
+          "textures": 16,
+          "drawCalls": 16,
+          "debug": {
+            "tier": "low",
+            "stages": ["bloom"],
+            "dropped": []
+          }
+        },
+        {
+          "cycle": 2,
+          "step": "medium",
+          "textures": 26,
+          "drawCalls": 25,
+          "debug": {
+            "tier": "medium",
+            "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+            "dropped": []
+          }
+        },
+        {
+          "cycle": 2,
+          "step": "high",
+          "textures": 26,
+          "drawCalls": 25,
+          "debug": {
+            "tier": "high",
+            "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+            "dropped": []
+          }
+        }
+      ]
+    ]
+  },
+  "hostSha256": "d8cbe3f74f890ceb6de7d94101e26d1251e3e97946170bdc32994dab97dab8bb",
+  "bundleSha256": "9549ca8cd3702a9615b46320e6b0de5de84d484aad49819d3742d8b3e559d611",
+  "platform": "desktop Linux V8/Dawn Vulkan NVIDIA RTX 2080",
+  "syntheticQualityInputs": true,
+  "visualAcceptance": false,
+  "negative": {
+    "processExit": 0,
+    "verificationExit": 1,
+    "markerCount": 1,
+    "result": {
+      "pass": false,
+      "cycles": [
+        [
+          {
+            "cycle": 1,
+            "step": "high-start",
+            "textures": 26,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "high",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 1,
+            "step": "medium",
+            "textures": 28,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "medium",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 1,
+            "step": "low",
+            "textures": 20,
+            "drawCalls": 16,
+            "debug": {
+              "tier": "low",
+              "stages": ["bloom"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 1,
+            "step": "medium",
+            "textures": 32,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "medium",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 1,
+            "step": "high",
+            "textures": 34,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "high",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 2,
+            "step": "high-start",
+            "textures": 34,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "high",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 2,
+            "step": "medium",
+            "textures": 36,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "medium",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 2,
+            "step": "low",
+            "textures": 28,
+            "drawCalls": 16,
+            "debug": {
+              "tier": "low",
+              "stages": ["bloom"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 2,
+            "step": "medium",
+            "textures": 40,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "medium",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 2,
+            "step": "high",
+            "textures": 42,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "high",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          }
+        ]
+      ],
+      "error": "Error: texture count grew on repeat at high-start: 26 -> 34"
+    },
+    "log": "artifacts/batch-2026-09-05/quality-resource-lifecycle-native-negative.log",
+    "bundleSha256": "81c5b9f526221a5577c87ee18e1bd877a18bf61f3dcdcd975250d5417dcf23d6",
+    "mutation": "remove first disposeGraph?.() at offset2338; occurrences2->1; final disposal preserved"
+  },
+  "restored": {
+    "processExit": 0,
+    "verificationExit": 0,
+    "markerCount": 1,
+    "result": {
+      "pass": true,
+      "framesPerDecision": 10,
+      "cycles": [
+        [
+          {
+            "cycle": 1,
+            "step": "high-start",
+            "textures": 26,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "high",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 1,
+            "step": "medium",
+            "textures": 26,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "medium",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 1,
+            "step": "low",
+            "textures": 16,
+            "drawCalls": 16,
+            "debug": {
+              "tier": "low",
+              "stages": ["bloom"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 1,
+            "step": "medium",
+            "textures": 26,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "medium",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 1,
+            "step": "high",
+            "textures": 26,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "high",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          }
+        ],
+        [
+          {
+            "cycle": 2,
+            "step": "high-start",
+            "textures": 26,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "high",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 2,
+            "step": "medium",
+            "textures": 26,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "medium",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 2,
+            "step": "low",
+            "textures": 16,
+            "drawCalls": 16,
+            "debug": {
+              "tier": "low",
+              "stages": ["bloom"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 2,
+            "step": "medium",
+            "textures": 26,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "medium",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          },
+          {
+            "cycle": 2,
+            "step": "high",
+            "textures": 26,
+            "drawCalls": 25,
+            "debug": {
+              "tier": "high",
+              "stages": ["bloom", "outline", "kuwahara", "watercolor"],
+              "dropped": []
+            }
+          }
+        ]
+      ]
+    },
+    "log": "artifacts/batch-2026-09-05/quality-resource-lifecycle-native-restored.log",
+    "bundleSha256": "9549ca8cd3702a9615b46320e6b0de5de84d484aad49819d3742d8b3e559d611"
+  }
+}

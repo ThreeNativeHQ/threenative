@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-362 — Starter quality adapts to measured load
 
-**Status:** PROPOSED
+**Status:** PARTIAL — implementation/proof in progress; acceptance remains open
 **Priority:** 3 — start today, September 5, 2026.
 **Complexity:** 2 (6–10 files) + 2 (adaptive state) + 2 (core/template integration) = 6 → MEDIUM mode.
 **Estimate:** 6–8 engineering hours plus device measurement.
@@ -54,7 +54,7 @@ sequenceDiagram
 
 1. Search capabilities and inspect existing observation subscriptions and chain lifecycle. Add a red GPU-overload/CPU-under-budget test; reuse the current meter.
 2. Keep platform classification as boot policy. Initially require two overloaded windows to step down, five healthy windows with 20% headroom to step up, and five seconds between changes. Keep these tunable policy values in generated source and validate them in phase 2.
-3. Derive budget from configured FPS target. Ignore startup, stale and invalid GPU samples. Use available presentation/frame timing when GPU timing is unavailable, with a named limitation. Explicit tier always wins and remains observed. Prove noise, missing timing and lowest-tier cases; restore platform-only selection to observe red.
+3. Derive budget from configured FPS target. Ignore startup, stale and invalid GPU samples. Use available presentation/frame timing when GPU timing is unavailable, with a named limitation. Presentation fallback allows 5% timing jitter by default (`presentationTolerance`, an unmeasured policy allowance rather than a hardware-calibrated value); report its effective `overloadBudgetMs`. Vsync-capped presentation does not prove recovery headroom. Explicit tier always wins and remains observed. Prove noise, missing timing and lowest-tier cases; restore platform-only selection to observe red.
 
 ## Phase 2 — The real starter remains playable through transitions
 
@@ -63,6 +63,36 @@ sequenceDiagram
 1. Wire decisions through one owned chain lifecycle. Prove disposal, bounded resource use and no repeated compilation of unchanged graphs.
 2. Scaffold a static starter through the existing sandbox workflow. Run browser Android and native Android on the same qualified phone for 120 seconds after startup; discard the first measurement window and record buffer size, actual effects, tier, GPU time, FPS and thermal state.
 3. Drive a controlled expensive interval and recovery; verify a real transition plus pinned-tier behavior. Capture each tier so gains cannot come from losing the world, controls or essential visibility. If low quality still misses the floor, fix measured generated policy without lowering that floor.
+
+## Implementation and verification checkpoint — September 5, 2026
+
+Current non-test callers in the implementation at `6b46480d`:
+
+| Path | Current integration |
+| --- | --- |
+| `packages/core/src/renderer.ts:325` → `packages/core/src/game.ts:1091` → `packages/core/src/frame-budget.ts:456` | Successful query frame age accompanies the actual GPU duration; invalid age throws. |
+| `packages/create-threenative/templates/starter/src/game.ts:12` → `src/render/postprocessing.ts:33` | The real FrameBudget callback reaches the active quality controller. |
+| `packages/create-threenative/templates/starter/src/scenes/Play.ts:140` → `src/render/postprocessing.ts:37` → `src/render/adaptiveQuality.ts:45` | Scene owns the controller, supplies configured FPS/readiness, and generated policy owns decisions. |
+| `packages/create-threenative/templates/starter/src/render/postprocessing.ts:58` and `:93` | Replacement disposes the previous graph; final disposal clears the active controller. |
+
+The quality unit owner is `packages/create-threenative/__tests__/template-quality.spec.ts`;
+resource ownership is covered by `world-environment-lifetime.spec.ts`, with core observation
+coverage in `renderer.spec.ts` and `game-frame-budget-surface.spec.ts`. The implementation also
+changes the canonical world-environment asset and its ten generated mirrors: shared disposal
+must not drift between scaffolds. This exceeds the listed five-file phase bounds; the phase
+checkpoint must resolve that scope variance before acceptance. The minified implicit-surface
+worker closure fix was required
+by the real starter refinement playtest and has its own observed regression proof.
+
+Observed proof includes actual callback deletion/restoration on browser, native live-game
+movement/refinement, and browser plus native resource disposal mutation/restoration. The
+[native receipt](../../verification/batch-2026-09-05-quality-live/resource-lifetime/native-receipt.json)
+records process exits separately from semantic-verifier exits. Synthetic resource windows are
+not performance acceptance. Controlled browser load reached low but did not recover; after three
+failed calibration attempts that lane stopped without weakening the policy. Physical Android,
+measured recovery, pinned-load behavior and independent phase checkpoint reviews remain open.
+No phase or acceptance criterion is declared complete. Full commands and prior gate outputs are
+in the [batch ledger](../../verification/batch-2026-09-05-execution.md).
 
 ## Acceptance and checkpoint protocol
 

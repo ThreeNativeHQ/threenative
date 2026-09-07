@@ -3,11 +3,13 @@ import { playtest } from "@threenative/core/playtest";
 import type { IPhysicsContext } from "@threenative/physics";
 import { rapier } from "@threenative/physics";
 import config from "../threenative.config.js";
+import { observeQualityWindow } from "./render/postprocessing.js";
 import { Play } from "./scenes/Play.js";
 import type { GameState } from "./state.js";
 
 // game.state is the single store: the fixed-step loop writes it, and React/playtests read it.
 const game = defineGame<GameState, IPhysicsContext>({
+  frameBudget: { onWindow: (window) => observeQualityWindow(window) },
   input: {
     // The four directions of `input.vector("move")`. Declared rather than inherited from the
     // default binding, so the axis every scene reads is visible where the game is defined.

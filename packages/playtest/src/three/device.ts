@@ -89,7 +89,7 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
     __THREENATIVE_NATIVE__?: {
       playtest?: {
         receive?(path: string): string | undefined;
-        respond?(path: string, payload: string): boolean;
+        respond?(path: string, payload: string, requestId?: string, method?: string, order?: number): boolean;
       };
     };
   };
@@ -104,6 +104,7 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
   let closed = false;
   let frame: number | undefined;
   const nativePointers = new Map<number, INativePointer>();
+  let requestOrder = 0;
   // The poll loop rides requestAnimationFrame, so a host whose frame pump stops goes silent
   // with no error anywhere: the app runs, its loop is not pumping, and the runner waits out its
   // operation timeout. Timers are serviced independently of frames, so a timer-driven watchdog
@@ -111,8 +112,11 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
   let watchdogBeats = 0;
   let polledAtBeat = 0;
   let stallReported = false;
-  const respond = (response: IPlaytestDeviceResponse): void => {
-    if (!host.respond!(mailbox.response as string, JSON.stringify(response))) {
+  const respond = (response: IPlaytestDeviceResponse, method?: string, order?: number): void => {
+    const sent = method === undefined || order === undefined
+      ? host.respond!(mailbox.response as string, JSON.stringify(response), response.id)
+      : host.respond!(mailbox.response as string, JSON.stringify(response), response.id, method, order);
+    if (!sent) {
       console.error("TN_PLAYTEST_DEVICE_TRANSPORT: native mailbox response failed");
     }
   };
@@ -123,7 +127,8 @@ function connectNativeMailbox(bridge: IPlaytestBridgeV1): IDeviceBridgeInstallat
     if (raw !== undefined) {
       try {
         const request = parseRequest(JSON.parse(raw));
-        void dispatch(bridge, request, nativePointers).then(respond);
+        const order = ++requestOrder;
+        void dispatch(bridge, request, nativePointers).then((response) => respond(response, request.method, order));
       } catch (error) {
         respond({
           error: { message: error instanceof Error ? error.message : String(error) },

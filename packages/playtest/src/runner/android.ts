@@ -159,7 +159,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
     this.rotation = this.options.touchRotation;
     const override = parseOverrideSize(await this.adb(["shell", "wm", "size"]));
     const expected = viewportPresentationCommands(viewport, physical)[0]?.[3];
-    if (override !== expected) {
+    if (!viewportPresentationObserved(override, expected, physical)) {
       throw new Error(
         `TN_PLAYTEST_ANDROID_VIEWPORT_NOT_PRESENTED: asked for ${String(expected)} and the device reports ${String(override)}.`,
       );
@@ -564,6 +564,24 @@ function parsePhysicalSize(output: string): { height: number; width: number } | 
 /** `wm size`'s override line, as written — absent until something overrides it. */
 function parseOverrideSize(output: string): string | undefined {
   return /Override size:\s*(\d+x\d+)/u.exec(output)?.[1];
+}
+
+/**
+ * Confirm that Android reported the requested viewport, including the physical-size omission.
+ *
+ * @situation verify that an Android device presented the requested viewport
+ * @situation accept the physical panel size when `wm size` omits its override line
+ * @example viewportPresentationObserved(undefined, "1080x2400", { width: 1080, height: 2400 });
+ */
+export function viewportPresentationObserved(
+  override: string | undefined,
+  expected: string | undefined,
+  physical: { height: number; width: number },
+): boolean {
+  return (
+    expected !== undefined
+    && (override === expected || (override === undefined && expected === `${physical.width}x${physical.height}`))
+  );
 }
 
 /**

@@ -14,9 +14,9 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
 | `docs/benchmark` | 1583 | 109397932 | 0 |
-| `docs/verification` | 573 | 52849952 | 23 |
+| `docs/verification` | 608 | 55866167 | 27 |
 
-**23 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
+**27 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories
 
@@ -46,6 +46,10 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/artifacts/prd-222-resume/pixel8/fontscale-exit-info.txt` | 7115 |
 | `docs/verification/artifacts/prd-222-resume/pixel8/fontscale-screen.png` | 32012 |
 | `docs/verification/artifacts/prd-222-resume/pixel8/lock-evidence.txt` | 36536 |
+| `docs/verification/batch-2026-09-05-quality-live/resource-lifetime/quality-resource-lifecycle-browser.mjs` | 2423 |
+| `docs/verification/batch-2026-09-05-quality-live/resource-lifetime/quality-resource-lifecycle-negative-build.mjs` | 2323 |
+| `docs/verification/batch-2026-09-05-quality-live/resource-lifetime/quality-resource-lifecycle-probe.mjs` | 6407 |
+| `docs/verification/batch-2026-09-05-quality-live/resource-lifetime/verify-native-result.py` | 1081 |
 | `docs/verification/loading-screen-leak-2026-08-11-frame-0248.png` | 31721 |
 | `docs/verification/loading-screen-leak-2026-08-11-repro-frame-7.png` | 20485 |
 | `docs/verification/native-canvas-presentation-2026-09-05.md` | 20814 |

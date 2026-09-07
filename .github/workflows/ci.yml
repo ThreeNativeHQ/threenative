@@ -353,6 +353,10 @@ jobs:
       #   Cannot find module '.../packages/playtest/dist/index.js'
       #     imported from '.../packages/runtime-native/tests/production-profile.test.mjs'
       - uses: ./.github/actions/workspace-dist
+      # The pump-silence observer drives the real host with the public native-smoke bundle. Keep
+      # this explicit because the shared action only builds packages/*/dist, not examples/*/dist.
+      - name: Build the native-smoke host fixture
+        run: pnpm --filter threenative-native-smoke build
       # Only the suite that needs what the steps above built. `publint` and
       # `native:physics:parity` ride along inside that script, which is the package's whole gate.
       - run: pnpm --filter @threenative/runtime-native test

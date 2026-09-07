@@ -5,6 +5,7 @@
 #include "bindings_presentation.h"
 #include "bindings_state.h"
 #include "mystral/cold_start.h"
+#include "mystral/pump_silence.h"
 #include "mystral/js/engine.h"
 #include "mystral/stall_budget.h"
 #include "mystral/webgpu/bindings.h"
@@ -655,6 +656,9 @@ void presentPendingSurface(BindingsState* state) {
             if (!state->profiling.firstPresentReported) {
                 state->profiling.firstPresentReported = true;
                 mystral::coldStartMark("first_frame");
+                // PRD-360 bounded endpoint: the trailing pump interval is
+                // measured here, beside first_frame on the same clock.
+                mystral::pumpSilence().flush(mystral::coldStartNowMs());
                 // Same clock, same instant: the attribution for everything that happened before this
                 // present, reported against the gap the player just sat through. PRD-218.
                 mystral::stallBudget().report(mystral::coldStartNowMs());

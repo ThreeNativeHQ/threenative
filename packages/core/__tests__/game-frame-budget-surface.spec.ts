@@ -88,7 +88,8 @@ describe("the frame budget names the surface the game's own loop drew", () => {
         preferWebGPU: false,
         webgl2Factory: () => ({
           domElement: canvas,
-          info: { render: { timestamp: 6.25 } },
+          info: { frame: 10, render: { timestamp: 6.25 } },
+          backend: { getTimestampFrames: () => [8] },
           render: () => undefined,
           setSize: () => undefined,
         }),
@@ -114,6 +115,7 @@ describe("the frame budget names the surface the game's own loop drew", () => {
       expect(marker).toBeDefined();
       expect(JSON.parse(marker?.slice(FRAME_BUDGET_MARKER.length + 1) ?? "{}")).toMatchObject({
         gpuMs: 6.25,
+        gpuAgeFrames: 2,
         frames: 2,
       });
     } finally {

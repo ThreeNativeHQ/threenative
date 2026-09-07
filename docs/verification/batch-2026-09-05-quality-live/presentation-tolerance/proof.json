@@ -1,0 +1,185 @@
+{
+  "pass": true,
+  "diagnostics": [],
+  "distance": 1.9999894374211422,
+  "target": "web",
+  "scenario": "starter-quality-live-window",
+  "assertionResults": [
+    {
+      "details": {
+        "after": 2.016977697453308,
+        "before": 0.01669249173027126,
+        "expected": {
+          "gte": 1,
+          "changed": true
+        },
+        "id": "state",
+        "path": "odometer",
+        "trivial": false
+      },
+      "id": "resource.state.odometer",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 3,
+        "before": 3,
+        "component": "window",
+        "entity": "quality",
+        "expected": {
+          "component": "window",
+          "entity": "quality",
+          "allowTrivial": "This observation must exist after 900 presented startup frames; movement separately proves input remains live.",
+          "gte": 1
+        },
+        "trivial": true,
+        "trivialityOptOut": true
+      },
+      "id": "component.quality.window.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    },
+    {
+      "details": {
+        "entity": "player",
+        "minProjectedPixels": 20,
+        "offscreenRatio": 0,
+        "projectedPixels": 1323.578953550599,
+        "expected": {
+          "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the odometer assertion.",
+          "entity": "player",
+          "minProjectedPixels": 20
+        },
+        "initialPass": true,
+        "trivial": true,
+        "trivialityOptOut": true
+      },
+      "id": "visibility.player",
+      "pass": true
+    }
+  ],
+  "quality": {
+    "stages": {
+      "before": ["bloom", "outline", "kuwahara", "watercolor"],
+      "after": ["bloom", "outline", "kuwahara", "watercolor"]
+    },
+    "dropped": {
+      "before": [],
+      "after": []
+    },
+    "tier": {
+      "before": "high",
+      "after": "high"
+    },
+    "source": {
+      "before": "auto",
+      "after": "auto"
+    },
+    "changed": {
+      "before": false,
+      "after": false
+    },
+    "reason": {
+      "before": "steady",
+      "after": "steady"
+    },
+    "budgetMs": {
+      "before": 16.666666666666668,
+      "after": 16.666666666666668
+    },
+    "overloadBudgetMs": {
+      "before": 17.500000000000004,
+      "after": 17.500000000000004
+    },
+    "meter": {
+      "before": "presented",
+      "after": "presented"
+    },
+    "fallback": {
+      "before": "gpu-stale",
+      "after": "gpu-stale"
+    },
+    "gpuMs": {
+      "before": 4.15,
+      "after": 4.15
+    },
+    "cpuMs": {
+      "before": 7,
+      "after": 7
+    },
+    "costMs": {
+      "before": 66.7,
+      "after": 66.7
+    },
+    "window": {
+      "before": 3,
+      "after": 3
+    }
+  },
+  "ridge": {
+    "state": {
+      "before": "preview",
+      "after": "refined"
+    },
+    "generation": {
+      "before": 0,
+      "after": 1
+    },
+    "requestedGeneration": {
+      "before": 0,
+      "after": 1
+    },
+    "positionHash": {
+      "before": "319c7420",
+      "after": "fcb5d5fb"
+    },
+    "indexHash": {
+      "before": "d84049b3",
+      "after": "e7a65301"
+    },
+    "topology": {
+      "before": {
+        "boundaryEdges": 0,
+        "degenerateTriangles": 0,
+        "signedVolume": 24133.163043744265,
+        "windingConflicts": 0,
+        "triangles": 636,
+        "vertices": 320,
+        "buildMs": 15,
+        "cellSize": 10
+      },
+      "after": {
+        "boundaryEdges": 0,
+        "degenerateTriangles": 0,
+        "signedVolume": 25733.46177012051,
+        "windingConflicts": 0,
+        "triangles": 1028,
+        "vertices": 516,
+        "buildMs": 29,
+        "cellSize": 8
+      }
+    }
+  },
+  "limits": "Live callback, movement, and visible scene integration only; healthy vsync fallback regression is unit evidence. No measured recovery or device acceptance.",
+  "sourceSha256": "dfa3d27df7fdf9ba853f3a6d5f2e37469707ceef069c75a36eb59c87381834b5",
+  "processExit": 0,
+  "captureReceipt": {
+    "path": "docs/verification/generated-shooter-input-2026-08-21/web/capture.json",
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c",
+    "reuse": "The current run emitted byte-identical adapter and browser configuration metadata; retain one copy."
+  }
+}

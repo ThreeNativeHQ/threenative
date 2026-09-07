@@ -382,7 +382,7 @@ describe("ProbeVolume", () => {
 
   it("keeps depth testing enabled for cube-camera captures", () => {
     let cubeDepthBuffer: boolean | undefined;
-    const subject = volume({ report: () => undefined });
+    const subject = volume({ now: () => 0, report: () => undefined });
     const raw = {
       coordinateSystem: WebGPUCoordinateSystem,
       copyTextureToTexture: vi.fn(),

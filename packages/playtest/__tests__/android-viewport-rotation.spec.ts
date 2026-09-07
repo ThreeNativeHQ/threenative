@@ -5,6 +5,7 @@ import {
   tapCommand,
   touchRotationFromWindowDump,
   viewportPresentationCommands,
+  viewportPresentationObserved,
   viewportRestoreCommands,
 } from "../src/runner/android.js";
 
@@ -59,6 +60,11 @@ test("a landscape-natural device presents the same viewport the other way round"
       ["shell", "wm", "density", "160"],
       ["shell", "wm", "user-rotation", "lock", "0"],
     ]);
+});
+
+test("a physical-size viewport is presented when Android omits an override line", () => {
+  expect(viewportPresentationObserved(undefined, "1080x2400", { height: 2400, width: 1080 })).toBe(true);
+  expect(viewportPresentationObserved(undefined, "720x1280", { height: 2400, width: 1080 })).toBe(false);
 });
 
 /**
