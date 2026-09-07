@@ -484,6 +484,16 @@ def resolve_ndk_root(env=None):
     return os.path.join(sdk, "ndk", ANDROID_NDK_PIN)
 
 
+def read_ndk_revision(ndk_root):
+    """The NDK's own Pkg.Revision. The install path is named for the release
+    archive (r27b on GitHub runners), so the revision is the only value that
+    identifies the NDK, and it is what the release validator compares."""
+    props = os.path.join(ndk_root, "source.properties")
+    with open(props) as f:
+        m = re.search(r"Pkg\.Revision\s*=\s*(\S+)", f.read())
+    return m.group(1) if m else None
+
+
 def check_ndk_pin(ndk_root):
     props = os.path.join(ndk_root, "source.properties")
     try:
@@ -588,6 +598,9 @@ def prepare_target_env(target, env):
         ndk = resolve_ndk_root(env)
         check_ndk_pin(ndk)
         selected["ndk"] = ndk
+        # Record the verified revision, not just the path: check_ndk_pin above
+        # already proved it, and the path alone cannot be checked downstream.
+        selected["ndk_revision"] = read_ndk_revision(ndk) or ANDROID_NDK_PIN
         selected["api"] = ANDROID_API
         bindir = os.path.join(ndk, "toolchains", "llvm", "prebuilt",
                               _ndk_host_dir(), "bin")

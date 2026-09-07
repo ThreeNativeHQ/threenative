@@ -132,9 +132,13 @@ def check_target_inputs(inputs, man_path, target, builder):
         triple, _ = builder.ANDROID_ARCH[target]
         driver = ("armv7a-linux-androideabi" if target == "android-armv7"
                   else triple) + builder.ANDROID_API + "-clang"
-        expected |= {"ndk", "api", driver, "llvm-ar", "llvm-ranlib"}
+        expected |= {"ndk", "ndk_revision", "api", driver, "llvm-ar", "llvm-ranlib"}
+        # Compare the NDK's Pkg.Revision, which the producer verified and recorded.
+        # The install path is named for the release archive — r27b on GitHub
+        # runners — so substring-matching the pin against it rejects every real
+        # artifact while a fixture that spells the pin into the path passes.
         if inputs.get("api") != builder.ANDROID_API or \
-                builder.ANDROID_NDK_PIN not in inputs.get("ndk", ""):
+                inputs.get("ndk_revision") != builder.ANDROID_NDK_PIN:
             raise ReleaseError(
                 f"TN_QUICHE_RELEASE_TARGET_INPUTS: {man_path} Android "
                 "NDK/API does not match producer pins")

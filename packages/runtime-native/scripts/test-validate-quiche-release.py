@@ -132,10 +132,15 @@ def target_inputs(target):
         triple, _ = BUILDER.ANDROID_ARCH[target]
         driver = ("armv7a-linux-androideabi" if target == "android-armv7"
                   else triple) + BUILDER.ANDROID_API + "-clang"
-        result.update({"ndk": f"/ndk/{BUILDER.ANDROID_NDK_PIN}",
-                       "api": BUILDER.ANDROID_API, driver: f"/ndk/bin/{driver}",
-                       "llvm-ar": "/ndk/bin/llvm-ar",
-                       "llvm-ranlib": "/ndk/bin/llvm-ranlib"})
+        # The real CI path is named for the NDK *archive* (r27b), not its
+        # Pkg.Revision, so a fixture that spells the revision into the path can
+        # pass a check no real artifact passes. Keep this shaped like CI.
+        ndk = "/opt/hostedtoolcache/ndk/r27b/x64"
+        result.update({"ndk": ndk,
+                       "ndk_revision": BUILDER.ANDROID_NDK_PIN,
+                       "api": BUILDER.ANDROID_API, driver: f"{ndk}/bin/{driver}",
+                       "llvm-ar": f"{ndk}/bin/llvm-ar",
+                       "llvm-ranlib": f"{ndk}/bin/llvm-ranlib"})
     return result
 
 
@@ -363,6 +368,31 @@ class ReleaseGateTests(unittest.TestCase):
                              "manifest-android-arm64.json"),
                 lambda m: m["toolchain"]["target_inputs"].__setitem__(
                     "api", "22"))
+            with self.assertRaises(VALIDATOR.ReleaseError) as ctx:
+                VALIDATOR.validate(tmp, BUILDER, tag="quiche-owned-v1")
+            self.assertIn("NDK/API", str(ctx.exception))
+
+    def test_ndk_revision_mismatch_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for t in NINE:
+                make_target(tmp, t)
+            rewrite_manifest(
+                os.path.join(tmp, "quiche-owned-android-arm64",
+                             "manifest-android-arm64.json"),
+                lambda m: m["toolchain"]["target_inputs"].__setitem__(
+                    "ndk_revision", "26.3.11579264"))
+            with self.assertRaises(VALIDATOR.ReleaseError) as ctx:
+                VALIDATOR.validate(tmp, BUILDER, tag="quiche-owned-v1")
+            self.assertIn("NDK/API", str(ctx.exception))
+
+    def test_missing_ndk_revision_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for t in NINE:
+                make_target(tmp, t)
+            rewrite_manifest(
+                os.path.join(tmp, "quiche-owned-android-armv7",
+                             "manifest-android-armv7.json"),
+                lambda m: m["toolchain"]["target_inputs"].pop("ndk_revision"))
             with self.assertRaises(VALIDATOR.ReleaseError) as ctx:
                 VALIDATOR.validate(tmp, BUILDER, tag="quiche-owned-v1")
             self.assertIn("NDK/API", str(ctx.exception))
