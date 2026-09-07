@@ -481,10 +481,12 @@ export { loadAll } from "./streaming.js";
 export type { ILoadAllOptions, ILoadAllProgress } from "./streaming.js";
 export { warmUpScene } from "./warmup.js";
 export type {
+  IWarmUpCacheOptions,
   IWarmUpOptions,
   IWarmUpProgress,
   IWarmUpRenderer,
   IWarmUpReport,
+  WarmUpCacheStatus,
 } from "./warmup.js";
 export type {
   IGame,

@@ -99,6 +99,30 @@ describe("the warmUp option", () => {
     expect(await bootAndCountCompiles({ yieldFrame: () => Promise.resolve() })).toBeGreaterThan(0);
   });
 
+  it("uses the persistent warm-up hint on a later launch", async () => {
+    const storage = new Map<string, string>();
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
+    try {
+      const warmUp = {
+        cache: { key: "warm-up-default-test-v1" },
+        yieldFrame: () => Promise.resolve(),
+      };
+      expect(await bootAndCountCompiles(warmUp)).toBe(1);
+      expect(await bootAndCountCompiles(warmUp)).toBe(0);
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(globalThis, "localStorage");
+      else Object.defineProperty(globalThis, "localStorage", previous);
+    }
+  });
+
   it("opts out of warm-up entirely on false", async () => {
     platform.native = true;
     expect(await bootAndCountCompiles(false)).toBe(0);
