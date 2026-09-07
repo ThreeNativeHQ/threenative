@@ -1,0 +1,49 @@
+{
+  "completedAt": "2026-09-07T23:36:46.526Z",
+  "frames": 300,
+  "host": {
+    "arch": "x64",
+    "platform": "linux"
+  },
+  "artifact": {
+    "path": "packages/runtime-native/build/tn-linux/mystral",
+    "sha256": "03637735e2bde54ca5f6c2b8e432047d2abc50784ac3095f63c07314b443216a"
+  },
+  "log": "packages/runtime-native/artifacts/desktop-linux.log",
+  "markers": [
+    "TN_NATIVE_SMOKE_READY:webgpu",
+    "TN_NATIVE_SMOKE_FIRST_FRAME",
+    "TN_NATIVE_WORKER_PROOF_PASS",
+    "TN_SURFACE_FORMAT",
+    "Rendered 300 frames"
+  ],
+  "surfaceFormats": [
+    {
+      "native": "bgra8unorm",
+      "render": "bgra8unorm",
+      "bridge": false,
+      "present": "fifo"
+    }
+  ],
+  "pass": true,
+  "preset": "tn-linux",
+  "worker": {
+    "engine": "V8",
+    "callbacksAfterTerminate": 0,
+    "completionOrder": [
+      2
+    ],
+    "framesAdvanced": 4,
+    "inputChecksum": 319126392,
+    "outputChecksum": 2110598008,
+    "sourceForm": "classic-blob",
+    "workerIdentity": "dedicated-worker"
+  },
+  "screenshot": {
+    "height": 720,
+    "width": 1280,
+    "overlayPixels": 4096,
+    "path": "packages/runtime-native/artifacts/desktop-core-2026-09-07.png",
+    "sha256": "b7f96827af94c7346112d7b01c7b6d622b1fbbd5100606e60d19e2d61adc0bda"
+  }
+}

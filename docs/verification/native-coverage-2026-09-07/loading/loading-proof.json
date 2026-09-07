@@ -1,0 +1,45 @@
+{
+  "artifactDirectory": "/home/joao/projects/threenative/threenative-engine/.worktrees/native-coverage-80/packages/runtime-native/artifacts/desktop-loading-2026-09-07T23-39-11-490Z",
+  "host": "linux",
+  "markers": [
+    "[info] TN_LOADING_PROOF_OVERLAY_VISIBLE",
+    "[info] TN_LOADING_PROOF_COMPILE_START",
+    "TN_PRESENTS_TICK:{\"frames\":60,\"presents\":60,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "[info] TN_LOADING_PROOF_COMPILE_END:{\"elapsedMs\":2961,\"outcome\":\"native-stall-fixture\"}",
+    "[log] TN_STARTUP_WARMUP:{\"compiled\":1,\"pipelines\":404,\"slices\":1,\"elapsedMs\":2966,\"unsupported\":false,\"abandoned\":0,\"timedOut\":false}",
+    "[info] TN_LOADING_PROOF_DISMISSED",
+    "TN_PRESENTS_TICK:{\"frames\":120,\"presents\":120,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":180,\"presents\":180,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":240,\"presents\":240,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":300,\"presents\":300,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":360,\"presents\":360,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":420,\"presents\":420,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":480,\"presents\":480,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":540,\"presents\":540,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":600,\"presents\":600,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":660,\"presents\":660,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":720,\"presents\":720,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":780,\"presents\":780,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":840,\"presents\":840,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":900,\"presents\":900,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":960,\"presents\":960,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":1020,\"presents\":1020,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":1080,\"presents\":1080,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}",
+    "TN_PRESENTS_TICK:{\"frames\":1140,\"presents\":1140,\"textureMB\":52,\"textures\":4,\"bufferMB\":0,\"capHz\":60}"
+  ],
+  "pass": true,
+  "screenshots": {
+    "settled": {
+      "loadingPixels": 0,
+      "path": "/home/joao/projects/threenative/threenative-engine/.worktrees/native-coverage-80/packages/runtime-native/artifacts/desktop-loading-2026-09-07T23-39-11-490Z/startup-settled.png"
+    },
+    "midStall": {
+      "loadingPixels": 913920,
+      "path": "/home/joao/projects/threenative/threenative-engine/.worktrees/native-coverage-80/packages/runtime-native/artifacts/desktop-loading-2026-09-07T23-39-11-490Z/startup-mid-stall.png"
+    },
+    "startup": {
+      "loadingPixels": 913920,
+      "path": "/home/joao/projects/threenative/threenative-engine/.worktrees/native-coverage-80/packages/runtime-native/artifacts/desktop-loading-2026-09-07T23-39-11-490Z/startup-stall.png"
+    }
+  }
+}

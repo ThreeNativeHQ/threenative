@@ -198,7 +198,56 @@ measurement with all 38 runnable contract targets passing. The generated result 
 **14,481 / 21,768 lines (66.52%)**, compared with the base commit's committed **9,579 / 21,762
 lines (44.02%)**. No coverage floor was lowered.
 
-This evidence is the Linux clang/V8/Dawn configuration. Physics and video were disabled as
-listed above; the optional SDL window checks skipped because the available SDL build could
-not initialize a window driver. It does not establish Windows, macOS, Android, iOS, or
-window-presentation coverage, and it does not meet an 80% total-coverage target.
+This coverage measurement is the Linux clang/V8/Dawn configuration. Physics and video were
+disabled as listed above; the optional SDL window checks skipped because the coverage run
+had no display. It does not establish Windows, macOS, Android, or iOS coverage, and it does
+not meet an 80% total-coverage target. A separate windowed runtime proof follows.
+
+
+## Windowed desktop proof — 2026-09-07
+
+The same changed Linux runtime then passed the existing desktop core verifier on an NVIDIA
+GeForce RTX 2080 using Vulkan. The verifier provisions its own X display, renders exactly
+300 frames, checks one present per frame plus the single capture refresh, verifies the native
+worker lifecycle and ordered startup markers, and checks the saved overlay pixels. The
+1280×720 capture was also visually inspected.
+
+The first run reached all 300 frames but failed because this host's ALSA device was unavailable.
+Setting SDL's existing dummy audio driver allowed the display proof to complete; this run
+does not establish audible output.
+
+```text
+SDL_AUDIODRIVER=dummy node packages/runtime-native/scripts/verify-desktop-core.mjs
+desktop core gate passed: 300 frames, 1280x720
+[WebGPU] Adapter: NVIDIA GeForce RTX 2080
+[WebGPU] Backend: Vulkan
+TN_CAPTURE_REFRESH_PRESENTS:1
+Rendered 300 frames in 13267ms
+TN_PRESENTS:301
+```
+
+Retained receipts: [report](native-coverage-2026-09-07/desktop-linux-report.json),
+[host log](native-coverage-2026-09-07/desktop-linux.log), and
+[capture](native-coverage-2026-09-07/desktop-core-2026-09-07.png). The report's artifact paths
+name their original runtime output locations; these retained copies are byte-identical.
+
+Runtime SHA-256: `03637735e2bde54ca5f6c2b8e432047d2abc50784ac3095f63c07314b443216a`.
+Capture SHA-256: `b7f96827af94c7346112d7b01c7b6d622b1fbbd5100606e60d19e2d61adc0bda`.
+
+
+The existing `examples/native-smoke/playtests/loading-screen-desktop.playtest.json` scenario
+also passed against this binary through the desktop playtest driver. Its assertions observe
+the loading surface and readiness during the first-use stall and after startup settles.
+
+```text
+SDL_AUDIODRIVER=dummy sh scripts/xvfb.sh node packages/runtime-native/scripts/verify-desktop-loading.mjs
+desktop loading playtest proof passed: 913920 startup loading pixels, 0 settled loading pixels
+```
+
+Retained loading receipts: [proof](native-coverage-2026-09-07/loading/loading-proof.json),
+[console](native-coverage-2026-09-07/loading/console.json),
+[startup capture](native-coverage-2026-09-07/loading/startup-stall.png),
+[mid-stall capture](native-coverage-2026-09-07/loading/startup-mid-stall.png), and
+[settled capture](native-coverage-2026-09-07/loading/startup-settled.png). The startup and
+settled images were visually inspected. Original output paths remain in the byte-identical
+proof record.
