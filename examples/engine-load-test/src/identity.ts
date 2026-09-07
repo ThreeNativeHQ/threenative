@@ -79,7 +79,7 @@ const FOR_HEADER_OPERAND_KEYWORDS = new Set([
   "yield",
 ]);
 const CONTROL_PAREN_KEYWORDS = new Set(["catch", "for", "if", "switch", "while", "with"]);
-const STATEMENT_BODY_KEYWORDS = new Set(["do", "else", "finally", "try"]);
+const STATEMENT_BODY_KEYWORDS = new Set(["catch", "debugger", "do", "else", "finally", "try"]);
 const DECLARATION_PREFIX_KEYWORDS = new Set(["abstract", "declare", "default", "export"]);
 
 interface IIdentityContext {
@@ -1572,14 +1572,17 @@ function compareExactStrings(left: string, right: string): number {
   return 0;
 }
 
-function serializeModuleGraph(entries: readonly IModuleGraphEntry[]): Uint8Array {
+function serializeModuleGraph(
+  entries: readonly IModuleGraphEntry[],
+  contextEntries: readonly IModuleGraphEntry[] = entries,
+): Uint8Array {
   if (entries.length === 0) throw new Error("TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:empty graph");
   for (const entry of entries) {
     if (typeof entry.url !== "string" || entry.url.trim().length === 0) {
       throw new Error("TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:missing module URL");
     }
   }
-  const context = createIdentityContext(entries);
+  const context = createIdentityContext(contextEntries);
   const chunks: Uint8Array[] = [encoder.encode("threenative-module-graph-v1\0")];
   const canonicalEntries = entries.map((entry) => ({
     bytes: canonicalizeModuleBytes(entry.bytes, context),
@@ -1625,11 +1628,12 @@ export async function hashServedModuleGraph(
 export async function hashWorkloadModuleGraph(
   entries: readonly IModuleGraphEntry[],
   configuration: unknown,
+  contextEntries: readonly IModuleGraphEntry[] = entries,
 ): Promise<string> {
   return sha256(
     concatenate([
       encoder.encode("threenative-workload-v1\0"),
-      serializeModuleGraph(entries),
+      serializeModuleGraph(entries, contextEntries),
       encoder.encode(JSON.stringify(configuration)),
     ]),
   );

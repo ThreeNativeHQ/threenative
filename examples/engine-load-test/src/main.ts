@@ -410,22 +410,25 @@ async function ladderIdentity(adapterLabel: string): Promise<Record<string, stri
   );
   const sourceSha = observed(parameters.get("sourceSha"), "sourceSha");
   const artifactModules = await servedModuleGraph([new URL(import.meta.url).href]);
-  const workloadModules = (
-    await servedModuleGraph([
-      new URL("./game.ts", import.meta.url).href,
-      new URL("./workload.ts", import.meta.url).href,
-    ])
-  ).filter(isBenchmarkWorkloadModule);
+  const workloadGraph = await servedModuleGraph([
+    new URL("./game.ts", import.meta.url).href,
+    new URL("./workload.ts", import.meta.url).href,
+  ]);
+  const workloadModules = workloadGraph.filter(isBenchmarkWorkloadModule);
   const artifactHash = await hashServedModuleGraph(artifactModules);
-  const workloadHash = await hashWorkloadModuleGraph(workloadModules, {
-    frames,
-    ladder,
-    modes,
-    repeats,
-    warmup,
-    workload: "moving-l2-l3-16384",
-    render: `${VIEWPORT_WIDTH}x${VIEWPORT_HEIGHT}`,
-  });
+  const workloadHash = await hashWorkloadModuleGraph(
+    workloadModules,
+    {
+      frames,
+      ladder,
+      modes,
+      repeats,
+      warmup,
+      workload: "moving-l2-l3-16384",
+      render: `${VIEWPORT_WIDTH}x${VIEWPORT_HEIGHT}`,
+    },
+    workloadGraph,
+  );
   return {
     architecture,
     artifactHash,

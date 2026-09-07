@@ -93,6 +93,34 @@ The review's read-only probe reproduced the selected-lane failure as `UNVERIFIED
 the follow-up; selected missing rows now enter `BLOCKED` evidence and the summary's required-lane
 set. No platform or hardware performance result is claimed.
 
+### Astra second follow-up — executable scanner and workload context repairs — 2026-09-07
+
+The fresh independent review found two additional identity defects. The lexical scanner could treat
+the regex after an optional `catch {}` or an ASI-separated `debugger` statement as division, then
+strip executable template contents that looked like a terminal source map. It also derived the
+checkout-root normalization context only after filtering engine modules out of the workload graph,
+so absolute engine import references made identical worktrees hash differently.
+
+The scanner now treats `catch` and `debugger` as statement boundaries. Workload hashing accepts the
+complete served graph as canonicalization context while serializing only the benchmark workload
+entries, so engine bytes stay out of workload identity without losing checkout-root normalization.
+
+Red/green evidence:
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts -t 'keeps executable|keeps filtered'
+Tests 2 failed | 90 skipped (92)  # before the second follow-up
+Tests 2 passed | 90 skipped (92)  # after the second follow-up
+
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/performance-regression.spec.ts packages/create-threenative/__tests__/build.spec.ts
+Test Files 4 passed (4)
+Tests 200 passed (200)
+```
+
+The independent review also probed the corrected two-worktree hash path and found equal workload
+hashes. Its remaining source-reference and escaped-specifier observations are coverage risks, not
+reproduced false passes; no platform or hardware performance result is claimed.
+
 ---
 
 ## Android: the GPU meter reports on a Pixel 8 — 2026-09-01

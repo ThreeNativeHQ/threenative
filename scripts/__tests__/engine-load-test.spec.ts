@@ -148,6 +148,56 @@ describe("engine load test workload", () => {
     );
   });
 
+  it("keeps executable template contents in the identity after optional catch binding", async () => {
+    const module = (source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url: "/src/value.js",
+    });
+    for (const prefix of ["try {} catch {}\n", "debugger\n"]) {
+      const baseline = `${prefix}/\`/.test("x"); globalThis.auditValue = \`//# sourceMappingURL=data:AAA\`;`;
+      const candidate = baseline.replace("AAA", "BBB");
+
+      expect(await hashServedModuleGraph([module(candidate)])).not.toBe(
+        await hashServedModuleGraph([module(baseline)]),
+      );
+    }
+  });
+
+  it("keeps filtered workload identity stable across absolute engine import roots", async () => {
+    const module = (url: string, source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url,
+    });
+    const graph = (worktree: string): IModuleGraphEntry[] => [
+      module(
+        "http://127.0.0.1:5199/src/game.ts",
+        `import "/@fs${worktree}/packages/core/src/renderProjection.ts"; import "/src/workload.ts";`,
+      ),
+      module("http://127.0.0.1:5199/src/workload.ts", "export const count = 1;"),
+      module(
+        `http://127.0.0.1:5199/@fs${worktree}/packages/core/src/renderProjection.ts`,
+        "export const projection = 1;",
+      ),
+    ];
+    const configuration = { frames: 1_800, ladder: [16_384], modes: ["L2", "L3"] };
+    const baseline = graph("/repo/.worktrees/baseline");
+    const candidate = graph("/repo/.worktrees/candidate");
+
+    expect(
+      await hashWorkloadModuleGraph(
+        baseline.filter(isBenchmarkWorkloadModule),
+        configuration,
+        baseline,
+      ),
+    ).toBe(
+      await hashWorkloadModuleGraph(
+        candidate.filter(isBenchmarkWorkloadModule),
+        configuration,
+        candidate,
+      ),
+    );
+  });
+
   it("wires the browser collector to the syntax-aware scanner and workload filter", async () => {
     const browserSource = await readFile(
       path.join(process.cwd(), "examples/engine-load-test/src/main.ts"),
@@ -155,6 +205,9 @@ describe("engine load test workload", () => {
     );
     expect(browserSource).toMatch(/extractModuleSpecifiers\(source\)/u);
     expect(browserSource).toMatch(/filter\(isBenchmarkWorkloadModule\)/u);
+    expect(browserSource).toMatch(
+      /hashWorkloadModuleGraph\([\s\S]*workloadModules[\s\S]*workloadGraph/u,
+    );
     expect(browserSource).not.toMatch(/IMPORT_FROM_PATTERN|IMPORT_SIDE_EFFECT_PATTERN/u);
   });
 
@@ -223,7 +276,9 @@ describe("engine load test workload", () => {
       "utf8",
     );
     expect(browserSource).toMatch(/hashServedModuleGraph\(artifactModules\)/u);
-    expect(browserSource).toMatch(/hashWorkloadModuleGraph\(workloadModules,/u);
+    expect(browserSource).toMatch(
+      /hashWorkloadModuleGraph\([\s\S]*workloadModules[\s\S]*workloadGraph/u,
+    );
     expect(browserSource).not.toMatch(/hashServedModuleGraph\(sourceSha\)/u);
   });
 
