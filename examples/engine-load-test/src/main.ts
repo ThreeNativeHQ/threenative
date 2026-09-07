@@ -19,8 +19,10 @@ import {
 } from "./game.js";
 import {
   type IModuleGraphEntry,
+  extractModuleSpecifiers,
   hashServedModuleGraph,
   hashWorkloadModuleGraph,
+  isBenchmarkWorkloadModule,
 } from "./identity.js";
 import {
   FRAMES_PER_RUNG,
@@ -339,28 +341,6 @@ function observed(value: unknown, field: string): string {
   return value;
 }
 
-const IMPORT_FROM_PATTERN = /\b(?:import|export)\b[\s\S]*?\bfrom\s*["']([^"']+)["']/g;
-const IMPORT_SIDE_EFFECT_PATTERN = /\bimport\s*["']([^"']+)["']/g;
-const IMPORT_DYNAMIC_PATTERN = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
-const URL_ASSET_PATTERN = /\bnew\s+URL\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)/g;
-
-function servedModuleSpecifiers(source: string): string[] {
-  const specifiers = new Set<string>();
-  for (const pattern of [
-    IMPORT_FROM_PATTERN,
-    IMPORT_SIDE_EFFECT_PATTERN,
-    IMPORT_DYNAMIC_PATTERN,
-    URL_ASSET_PATTERN,
-  ]) {
-    pattern.lastIndex = 0;
-    for (const match of source.matchAll(pattern)) {
-      const specifier = match[1];
-      if (specifier !== undefined) specifiers.add(specifier);
-    }
-  }
-  return [...specifiers];
-}
-
 function resolveServedModuleUrl(specifier: string, parentUrl: string): string {
   let resolved: URL;
   try {
@@ -391,7 +371,7 @@ async function servedModuleGraph(roots: readonly string[]): Promise<IModuleGraph
     const bytes = new Uint8Array(await response.arrayBuffer());
     entries.push({ bytes, url });
     const source = new TextDecoder().decode(bytes);
-    for (const specifier of servedModuleSpecifiers(source)) {
+    for (const specifier of extractModuleSpecifiers(source)) {
       pending.push(resolveServedModuleUrl(specifier, url));
     }
   }
@@ -430,10 +410,12 @@ async function ladderIdentity(adapterLabel: string): Promise<Record<string, stri
   );
   const sourceSha = observed(parameters.get("sourceSha"), "sourceSha");
   const artifactModules = await servedModuleGraph([new URL(import.meta.url).href]);
-  const workloadModules = await servedModuleGraph([
-    new URL("./game.ts", import.meta.url).href,
-    new URL("./workload.ts", import.meta.url).href,
-  ]);
+  const workloadModules = (
+    await servedModuleGraph([
+      new URL("./game.ts", import.meta.url).href,
+      new URL("./workload.ts", import.meta.url).href,
+    ])
+  ).filter(isBenchmarkWorkloadModule);
   const artifactHash = await hashServedModuleGraph(artifactModules);
   const workloadHash = await hashWorkloadModuleGraph(workloadModules, {
     frames,

@@ -3,6 +3,22 @@ export interface IModuleGraphEntry {
   readonly url: string;
 }
 
+/** The benchmark's own source files; engine and renderer modules are artifact identity instead. */
+export function isBenchmarkWorkloadModule(entry: IModuleGraphEntry): boolean {
+  let pathname: string;
+  try {
+    pathname = new URL(entry.url).pathname;
+  } catch {
+    return false;
+  }
+  return (
+    pathname === "/src/game.ts" ||
+    pathname === "/src/workload.ts" ||
+    pathname.endsWith("/examples/engine-load-test/src/game.ts") ||
+    pathname.endsWith("/examples/engine-load-test/src/workload.ts")
+  );
+}
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -1220,6 +1236,7 @@ interface IModuleCanonicalizationState {
   chunks: string[];
   exportDeclarationForm: TExportDeclarationForm;
   moduleStatement: TModuleStatement | undefined;
+  moduleReferences: Set<string>;
   namedClauseDelimiterDepth: number | undefined;
   outputStart: number;
   scanner: IScannerState;
@@ -1324,6 +1341,7 @@ function scanModuleSourceString(
   );
   if (moduleReference) {
     const value = source.slice(start + 1, end);
+    state.moduleReferences.add(value);
     const canonical = canonicalizeModuleReference(value, context);
     if (canonical !== value) {
       state.chunks.push(source.slice(state.outputStart, start + 1), canonical);
@@ -1413,6 +1431,7 @@ function scanTemplateExpressionForModuleReferences(
     chunks: outerState.chunks,
     exportDeclarationForm: "unknown",
     moduleStatement: undefined,
+    moduleReferences: outerState.moduleReferences,
     namedClauseDelimiterDepth: undefined,
     outputStart: outerState.outputStart,
     scanner: createScannerState(),
@@ -1488,11 +1507,16 @@ function scanModuleSourceToken(
   return scanModuleSourcePunctuation(source, start, state);
 }
 
-function canonicalizeModuleSource(source: string, context: IIdentityContext): string {
+function canonicalizeModuleSource(
+  source: string,
+  context: IIdentityContext,
+  moduleReferences = new Set<string>(),
+): string {
   const state: IModuleCanonicalizationState = {
     chunks: [],
     exportDeclarationForm: "unknown",
     moduleStatement: undefined,
+    moduleReferences,
     namedClauseDelimiterDepth: undefined,
     outputStart: 0,
     scanner: createScannerState(),
@@ -1609,4 +1633,10 @@ export async function hashWorkloadModuleGraph(
       encoder.encode(JSON.stringify(configuration)),
     ]),
   );
+}
+
+export function extractModuleSpecifiers(source: string): string[] {
+  const moduleReferences = new Set<string>();
+  canonicalizeModuleSource(stripInlineSourceMapMetadata(source), {}, moduleReferences);
+  return [...moduleReferences];
 }

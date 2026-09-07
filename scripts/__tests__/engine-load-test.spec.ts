@@ -3,8 +3,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   type IModuleGraphEntry,
+  extractModuleSpecifiers,
   hashServedModuleGraph,
   hashWorkloadModuleGraph,
+  isBenchmarkWorkloadModule,
 } from "../../examples/engine-load-test/src/identity.js";
 import {
   createLcg,
@@ -105,6 +107,57 @@ function ladderReport(topP95: number, arm: IRunReport["arm"] = "tn-web"): IRunRe
 }
 
 describe("engine load test workload", () => {
+  it("extracts executable module specifiers without reading strings or comments as imports", () => {
+    const source = `
+      const text = 'import "./fake-string.js"';
+      // export { fake } from "./fake-comment.js";
+      import /* comment */ "./side-effect.js";
+      export { value } from /* comment */ "./named.js";
+      const dynamic = import /* comment */ ("./dynamic.js");
+      const asset = new URL("./asset.bin", import.meta.url);
+      void text;
+      void dynamic;
+      void asset;
+    `;
+    expect(extractModuleSpecifiers(source)).toEqual([
+      "./side-effect.js",
+      "./named.js",
+      "./dynamic.js",
+      "./asset.bin",
+    ]);
+  });
+
+  it("keeps engine implementation modules out of benchmark workload identity", async () => {
+    const module = (url: string, source: string): IModuleGraphEntry => ({
+      bytes: new TextEncoder().encode(source),
+      url,
+    });
+    const game = module("http://127.0.0.1:5199/src/game.ts", 'import "./workload.ts";');
+    const workload = module("http://127.0.0.1:5199/src/workload.ts", "export const count = 1;");
+    const engine = module(
+      "http://127.0.0.1:5199/@fs/home/repo/packages/core/src/renderProjection.ts",
+      "export const implementation = 1;",
+    );
+    const changedEngine = module(engine.url, "export const implementation = 2;");
+    const configuration = { frames: 1_800, ladder: [16_384], modes: ["L2", "L3"] };
+    const workloadGraph = [game, workload, engine].filter(isBenchmarkWorkloadModule);
+    const changedWorkloadGraph = [game, workload, changedEngine].filter(isBenchmarkWorkloadModule);
+    expect(workloadGraph).toHaveLength(2);
+    expect(await hashWorkloadModuleGraph(workloadGraph, configuration)).toBe(
+      await hashWorkloadModuleGraph(changedWorkloadGraph, configuration),
+    );
+  });
+
+  it("wires the browser collector to the syntax-aware scanner and workload filter", async () => {
+    const browserSource = await readFile(
+      path.join(process.cwd(), "examples/engine-load-test/src/main.ts"),
+      "utf8",
+    );
+    expect(browserSource).toMatch(/extractModuleSpecifiers\(source\)/u);
+    expect(browserSource).toMatch(/filter\(isBenchmarkWorkloadModule\)/u);
+    expect(browserSource).not.toMatch(/IMPORT_FROM_PATTERN|IMPORT_SIDE_EFFECT_PATTERN/u);
+  });
+
   it("should produce the LCG sequence PRD-117 §3.3 specifies", () => {
     const random = createLcg();
     const first = random();

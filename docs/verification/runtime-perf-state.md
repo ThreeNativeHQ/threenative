@@ -61,6 +61,38 @@ identity file then passed `87/87` tests. The source and regression test are the 
 This entry records repair evidence, not a completed Astra audit. A manager must run a fresh
 independent Astra audit before claiming the overall audit complete.
 
+### Astra follow-up — identity collector and selected-lane fail-closed repairs — 2026-09-07
+
+The independent medium review found three defects in the delivered repair. The browser collector
+was using regexes that treated imports inside strings and comments as dependencies and missed
+comment-separated imports. Workload identity traversed into engine and renderer modules, so an
+engine-only change could invalidate a comparison before metrics were considered. Finally, a
+selected advisory lane with no published artifact could be summarized as `UNVERIFIED` with exit 0.
+
+The follow-up reuses the identity scanner for executable module-specifier extraction, hashes only
+the benchmark-owned `game.ts` and `workload.ts` sources for workload identity, and marks every
+selected matrix row `BLOCKED` until it publishes evidence. The deleted build-exit regression was
+also restored; it guards against a completed build retaining an audio worker pool.
+
+Red/green evidence:
+
+```text
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts -t 'extracts executable|keeps engine implementation|wires the browser collector'
+Tests 3 failed | 87 skipped (90)  # before the follow-up
+Tests 3 passed | 87 skipped (90)  # after the follow-up
+
+pnpm exec vitest run scripts/__tests__/engine-load-test.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/performance-regression.spec.ts
+Test Files 3 passed (3)
+Tests 183 passed (183)
+
+pnpm exec vitest run packages/create-threenative/__tests__/build.spec.ts -t 'audio worker pool'
+Tests 1 passed | 14 skipped (15)
+```
+
+The review's read-only probe reproduced the selected-lane failure as `UNVERIFIED`, exit 0 before
+the follow-up; selected missing rows now enter `BLOCKED` evidence and the summary's required-lane
+set. No platform or hardware performance result is claimed.
+
 ---
 
 ## Android: the GPU meter reports on a Pixel 8 — 2026-09-01

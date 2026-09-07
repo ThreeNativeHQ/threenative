@@ -316,7 +316,7 @@ jobs:
           const selectedLane = process.env.TN_PERF_SELECTED_LANE ?? "";
           const manifestByLane = new Map(manifest.lanes.map((lane) => [lane.id, lane]));
           const selected = (row) => selectedLane === "" || selectedLane === row.lane || selectedLane === row.resultKey;
-          const required = (row) => selected(row) && manifestByLane.get(row.lane)?.required === true;
+          const required = (row) => selected(row) || manifestByLane.get(row.lane)?.required === true;
           const rowsByResultKey = new Map(expectedRows.map((row) => [row.resultKey, row]));
           const root = "artifacts/performance-regression";
           const files = await readdir(root).catch(() => []);
@@ -348,7 +348,7 @@ jobs:
                 : "matrix row was not selected",
               required: required(row),
               resultKey: row.resultKey,
-              status: selected(row) ? "UNVERIFIED" : "SKIPPED",
+              status: selected(row) ? "BLOCKED" : "SKIPPED",
             });
           }
           if (process.env.TN_PERF_CANCELLED === "true") {

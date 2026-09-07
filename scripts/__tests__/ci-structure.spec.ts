@@ -218,9 +218,9 @@ it("requires scheduled pairs to use a distinct reviewed baseline and forwards bo
   );
   expect(summary).toContain("TN_PERF_SELECTED_LANE: ${{ inputs.lane }}");
   expect(summary).toContain(
-    "const required = (row) => selected(row) && manifestByLane.get(row.lane)?.required === true;",
+    "const required = (row) => selected(row) || manifestByLane.get(row.lane)?.required === true;",
   );
-  expect(summary).toContain('status: selected(row) ? "UNVERIFIED" : "SKIPPED",');
+  expect(summary).toContain('status: selected(row) ? "BLOCKED" : "SKIPPED",');
   expect(summary).toContain(
     "requiredLanes: expectedRows.filter(required).map(({ resultKey }) => resultKey),",
   );
