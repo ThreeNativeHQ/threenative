@@ -81,7 +81,10 @@ function simulateTimerInstallationOrders(runtime) {
 
 function assertTimerExecutableFailsClosed(source) {
   assert.match(source, /constexpr int kCompletionExitCode = [1-9]\d*;/u);
-  assert.match(source, /process\.exit\(timeoutCount === 1 && intervalCount === 3 \? 42 : 1\);/u);
+  assert.match(
+    source,
+    /process\.exit\(timeoutCount === 1 && intervalCount === 3(?: && performanceSamples >= 4)?\s*\? 42 : 1\);/u,
+  );
   assert.match(source, /bool timedOut = false;/u);
   assert.match(
     source,
@@ -94,12 +97,32 @@ function assertTimerExecutableFailsClosed(source) {
   assert.ok(successLine > completionCheck, "the success line must follow the failure gate");
 }
 
+function assertMonotonicPerformanceContract(runtime, timerSource) {
+  const setupStart = runtime.indexOf("void setupPerformance()");
+  const setupEnd = runtime.indexOf("\n    void setupProcess()", setupStart);
+  assert.ok(setupStart >= 0 && setupEnd > setupStart, "performance setup must have a bounded body");
+  const setup = runtime.slice(setupStart, setupEnd);
+  assert.match(setup, /PerformanceClock::now\(\)\s*-\s*performanceOrigin_/u);
+  assert.doesNotMatch(setup, /high_resolution_clock/u);
+  assert.match(runtime, /performanceOrigin_\s*=\s*PerformanceClock::now\(\)/u);
+  assert.match(timerSource, /performance\.now\(\)/u);
+  assert.match(timerSource, /Number\.isFinite\(/u);
+  assert.match(timerSource, /performanceSamples\s*>=\s*4/u);
+}
+
 test("native timers have one real runtime owner and no engine-level stubs", () => {
   const v8 = read("src/js/v8_engine.cpp");
   const quickjs = read("src/js/quickjs_engine.cpp");
   const runtime = read("src/runtime.cpp");
 
   assert.doesNotThrow(() => assertTimerContract(v8, quickjs, runtime));
+});
+
+test("native performance time is runtime-relative and monotonic", () => {
+  assert.doesNotThrow(() => assertMonotonicPerformanceContract(
+    read("src/runtime.cpp"),
+    read("tests/timer_delivery_test.cpp"),
+  ));
 });
 
 test("scheduler-first and engine-first timer installation both reach the real scheduler", () => {
@@ -172,7 +195,7 @@ test("timer executable contract rejects the old timeout false-positive", () => {
   const falsePositive = source
     .replace("constexpr int kCompletionExitCode = 42;\n", "")
     .replace(
-      "process.exit(timeoutCount === 1 && intervalCount === 3 ? 42 : 1);",
+      /process\.exit\(timeoutCount === 1 && intervalCount === 3 && performanceSamples >= 4\s*\? 42 : 1\);/u,
       "process.exit(timeoutCount === 1 && intervalCount === 3 ? 0 : 1);",
     )
     .replace("if (exitCode != kCompletionExitCode)", "if (exitCode != 0)");

@@ -1,10 +1,51 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const runtimeRoot = fileURLToPath(new URL("../", import.meta.url));
-export const runtimeBinary = join(runtimeRoot, "build", "tn-linux", "mystral");
+
+/**
+ * The executable override, named like the package's other executable overrides
+ * (`TN_NATIVE_BEHAVIOR_EXECUTABLE`, `TN_NATIVE_WORKER_BIN`): an operator points a suite at a
+ * runtime built somewhere else — a cross-compiled host, a sanitizer build, an installed
+ * artifact — without the suite guessing where one might be.
+ */
+export const RUNTIME_EXECUTABLE_ENV = "TN_NATIVE_RUNTIME_EXECUTABLE";
+
+/**
+ * The build directory CMakePresets.json actually ships for this desktop host, matching
+ * `scripts/native-test-lane.mjs`'s `desktopPreset()`. Only shipped preset names appear here:
+ * a default that resolves to a directory no preset writes is a path no build can ever fill.
+ */
+export function desktopBuildPreset(platform: NodeJS.Platform = process.platform): string {
+  if (platform === "darwin") return "tn-macos";
+  if (platform === "win32") return "tn-windows";
+  return "tn-linux";
+}
+
+/**
+ * The native host a suite drives. The default is this host's own preset build, so the same suite
+ * runs on Linux, macOS and Windows desktops instead of only where it was written. A relative
+ * override is resolved from the working directory the operator typed it in; an override that is
+ * set and blank fails closed, because silently running the default build is how an override that
+ * never took effect passes for one that did.
+ */
+export function resolveRuntimeBinary(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const declared = env[RUNTIME_EXECUTABLE_ENV];
+  if (declared !== undefined) {
+    const override = declared.trim();
+    if (override === "") throw new Error(`${RUNTIME_EXECUTABLE_ENV} is set but names no path`);
+    return isAbsolute(override) ? override : resolve(override);
+  }
+  const executable = platform === "win32" ? "mystral.exe" : "mystral";
+  return join(runtimeRoot, "build", desktopBuildPreset(platform), executable);
+}
+
+export const runtimeBinary = resolveRuntimeBinary();
 
 type Skip = (note?: string) => never;
 

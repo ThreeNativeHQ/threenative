@@ -36,6 +36,10 @@ namespace webtransport {
  */
 void init();
 
+// Native contract seams: capture the delay when scheduling a resolver operation.
+void setResolverDelayForTesting(unsigned milliseconds);
+unsigned activeResolutionsForTesting();
+
 /**
  * Tear down all active sessions and release resources. Idempotent.
  */

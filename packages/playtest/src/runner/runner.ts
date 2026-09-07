@@ -634,7 +634,9 @@ async function runStandalonePlaytestInternal(
         pathEntity,
         pathPositions,
         inputState,
-        capturesMovementSamples || movementNeedsBaseline ? sampleRequest : undefined,
+        step.waitForResource !== undefined || capturesMovementSamples || movementNeedsBaseline
+          ? sampleRequest
+          : undefined,
         index === scenario.steps.length - 1,
         scenario.subject,
       );

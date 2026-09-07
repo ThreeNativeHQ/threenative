@@ -252,6 +252,7 @@ export function observedResourceIds(scenario: IPlaytestScenario): string[] {
   return [...new Set([
     ...(scenario.assert?.resources ?? []).map(({ id }) => id),
     ...(scenario.setup?.resources ?? []).map(({ id }) => id),
+    ...scenario.steps.flatMap(({ waitForResource }) => waitForResource === undefined ? [] : [waitForResource.id]),
   ])];
 }
 

@@ -62,6 +62,7 @@ HttpClient& getHttpClient() {
 #include <curl/curl.h>
 #include <iostream>
 #include <cstring>
+#include <cstdlib>
 
 namespace mystral {
 namespace http {
@@ -176,6 +177,10 @@ HttpResponse HttpClient::request(const std::string& method, const std::string& u
     // SSL verification (can be disabled for testing)
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, options.verifySSL ? 1L : 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, options.verifySSL ? 2L : 0L);
+    const char* trustFile = std::getenv("SSL_CERT_FILE");
+    if (trustFile != nullptr && trustFile[0] != '\0') {
+        curl_easy_setopt(curl, CURLOPT_CAINFO, trustFile);
+    }
 
     // Set custom headers
     struct curl_slist* headerList = nullptr;
