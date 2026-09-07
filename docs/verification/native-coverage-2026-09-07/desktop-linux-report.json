@@ -30,9 +30,7 @@
   "worker": {
     "engine": "V8",
     "callbacksAfterTerminate": 0,
-    "completionOrder": [
-      2
-    ],
+    "completionOrder": [2],
     "framesAdvanced": 4,
     "inputChecksum": 319126392,
     "outputChecksum": 2110598008,

@@ -227,9 +227,13 @@ TN_PRESENTS:301
 ```
 
 Retained receipts: [report](native-coverage-2026-09-07/desktop-linux-report.json),
-[host log](native-coverage-2026-09-07/desktop-linux.log), and
+[host log](native-coverage-2026-09-07/desktop-linux.txt), and
 [capture](native-coverage-2026-09-07/desktop-core-2026-09-07.png). The report's artifact paths
-name their original runtime output locations; these retained copies are byte-identical.
+name their original runtime output locations. The PNG copy is byte-identical. Biome
+formatted the retained JSON report, and trailing whitespace was removed from the host log;
+the recorded fields and observations are unchanged.
+
+Original host-log SHA-256: `11fa54f8059fc2e8412a6eeed5f03d0dbf988f047963f6ce6b1900aaf100b149`.
 
 Runtime SHA-256: `03637735e2bde54ca5f6c2b8e432047d2abc50784ac3095f63c07314b443216a`.
 Capture SHA-256: `b7f96827af94c7346112d7b01c7b6d622b1fbbd5100606e60d19e2d61adc0bda`.
