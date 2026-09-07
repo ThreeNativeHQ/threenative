@@ -40,8 +40,8 @@ function implementedRows() {
 
 const RUNTIME_SCRIPT_HASHES = {
   'storage-polyfill.js': '7e03f256b0e11b5370bf86ccb5ae286be221080a1baa8339efe2aa570dd3c25d',
-  'fetch-polyfill.js': '0b9f8553897fa012e5eb2a754f9f36e3178d8a1bc1de4645dbeac0a2545a45e5',
-  'streams-polyfill.js': '134957d3cb3154f4e27b95b611af510b55c4e0e48a56c3785444ca0b31d45901',
+  'fetch-polyfill.js': '7b4cf3551605af8d13175239f1f270722af5e709067ad451fa07790a0d58ec1a',
+  'streams-polyfill.js': 'b57569ac2079bc5864eb7c8aefef6b03321acad8b6f6364b3de714e2bee64d83',
   'url-worker-polyfill.js': 'fb709b56f527c82cc7ba4d2c3430a6f17c81e0550f736d145819b25463811af3',
   'create-element-setup.js': '3891c716e3e7b8801f45306b50c5c8c5990042276524fbaac745b157389d1bee',
   'event-constructors-setup.js': '3e7f592806866915e7d4fecd051bb5268542cefb79324efc8e15c9bc73978a11',
@@ -49,7 +49,7 @@ const RUNTIME_SCRIPT_HASHES = {
   'onload-trigger.js': '396a17433bcc18d6193b3167404ff51faecc1451b1b9dfaeb6a3473e86c6371a',
   'install-async-pipelines.js': 'd58fb3fb55d24743273ea79f9ec72303a79ec91b322969d705a9f4d11ce47024',
   'image-bitmap-polyfill.js': '30e2cb4a45fc20ee9b983ef4dd404afd63be1889d0b1e12055f01a8716b66cfa',
-  'webtransport-polyfill.js': '4b5a07862083c8e905341190cf37c613083517db84139288bbf7cee12fb6d359',
+  'webtransport-polyfill.js': '7a25c702d467985f89f3b8a6d4a3c222307397c22b9b76ed5381defefd8e8d32',
   'webtransport-stub.js': '9b653430e429a8fad538151523a2c4346b0b9c52a201ec5e01314128b788081e',
   'audio-context-constructor.js': 'c3436f70b2597d2d953f780a3388c24b7e60fa3697796973d5002d0c378de227',
   'audio-source-properties.js': 'e631cdd093d660c0ada6f9cf23e0627a2bd1f16d22d8c003c52d7f86419d29ef',
@@ -100,6 +100,40 @@ function assertRuntimeScriptContract(filename, expectedHash, sources) {
       `${filename} is not loaded by its native consumer`,
     );
   }
+}
+
+function webTransportContext(bridge = '') {
+  const context = {
+    console: { log() {}, warn() {}, error() {} },
+  };
+  runInNewContext(read('src/runtime-scripts/fetch-polyfill.js'), context, {
+    filename: 'fetch-polyfill.js',
+  });
+  runInNewContext(read('src/runtime-scripts/streams-polyfill.js'), context, {
+    filename: 'streams-polyfill.js',
+  });
+  runInNewContext(`
+    globalThis.__wtStreamReadCredit = () => 0;
+    globalThis.__wtStreamReleaseRead = () => 0;
+    globalThis.__wtStreamShutdown = () => 0;
+    globalThis.__wtSendDatagram = () => 0;
+    globalThis.__wtClose = () => 0;
+    globalThis.__wtNativeStats = () => ({
+      sessions: 0, streams: 0, queuedReliableBytes: 0, queuedDatagrams: 0,
+      queuedEvents: 0, inFlightReceiveBytes: 0, readCreditBytes: 0, pendingHeaderBytes: 0,
+    });
+  `, context, { filename: 'webtransport-bridge-defaults.js' });
+  runInNewContext(bridge, context, { filename: 'webtransport-bridge-fixture.js' });
+  runInNewContext(read('src/runtime-scripts/webtransport-polyfill.js'), context, {
+    filename: 'webtransport-polyfill.js',
+  });
+  return context;
+}
+
+async function runWebTransport(context, source) {
+  return runInNewContext(`(async () => { ${source}\n })()`, context, {
+    filename: 'webtransport-contract-probe.js',
+  });
 }
 
 test('official ThreeNative CMake presets and feature flags exist', () => {
@@ -264,6 +298,408 @@ test('runtime JavaScript is byte-stable, embedded, and loaded by the bootstrap',
   assert.doesNotMatch(audio, /engine->evalScript\(\s*"/u, 'Web Audio constructor still owns an inline JavaScript string');
   assert.doesNotMatch(canvas, /const char\*\s+setupPropertyInterceptors\s*=\s*R"/u, 'Canvas2D bindings still own a raw JavaScript string');
   assert.match(runtime, /__tnOnloadCallback/u, 'onload trigger must receive the callback through the host bridge');
+});
+
+test('WebTransport stream writes wait for native capacity and retain their input', async () => {
+  const context = webTransportContext(`
+    globalThis.writeCalls = [];
+    globalThis.shutdownCalls = [];
+    globalThis.__wtConnect = () => 71;
+    globalThis.__wtCreateStream = (() => {
+      let next = 4;
+      return () => (next += 4) - 4;
+    })();
+    globalThis.__wtStreamWrite = (_id, sid, bytes, fin) => {
+      writeCalls.push({ sid, bytes: Array.from(bytes), fin });
+      if (sid === 4) return writeCalls.filter((call) => call.sid === sid).length === 1 ? -2 : bytes.byteLength;
+      return -2;
+    };
+    globalThis.__wtStreamShutdown = (...args) => { shutdownCalls.push(args); return 0; };
+    globalThis.__wtNativeStats = () => ({
+      sessions: 1, streams: 2, queuedReliableBytes: 0, queuedDatagrams: 0,
+      queuedEvents: 0, inFlightReceiveBytes: 0, readCreditBytes: 0, pendingHeaderBytes: 0,
+    });
+  `);
+  const encoded = await runWebTransport(context, `
+    const transport = new WebTransport('https://fixture.test:4433');
+    __wtDispatch(71, 'ready', 1200);
+    const first = await transport.createBidirectionalStream();
+    const firstWriter = first.writable.getWriter();
+    const original = new Uint8Array([1, 2, 3]);
+    let firstSettled = false;
+    const firstWrite = firstWriter.write(original).then(() => { firstSettled = true; return 'resolved'; }, () => { firstSettled = true; return 'rejected'; });
+    await Promise.resolve();
+    await Promise.resolve();
+    const blocked = !firstSettled;
+    original[0] = 9;
+    __wtDispatch(71, 'writable');
+    const firstResult = await firstWrite;
+
+    const second = await transport.createBidirectionalStream();
+    const secondWriter = second.writable.getWriter();
+    secondWriter.closed.catch(() => {});
+    const reason = { tag: 'capacity-abort' };
+    let secondSettled = false;
+    const secondWrite = secondWriter.write(new Uint8Array([4])).then(
+      () => { secondSettled = true; return 'resolved'; },
+      (error) => { secondSettled = true; return error === reason ? 'reason' : 'other'; },
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    const secondBlocked = !secondSettled;
+    const abortResult = await secondWriter.abort(reason).then(() => 'resolved', () => 'rejected');
+    const secondResult = await secondWrite;
+    return JSON.stringify({
+      blocked, firstResult, secondBlocked, secondResult, abortResult,
+      calls: writeCalls, shutdownCalls,
+    });
+  `);
+  const result = JSON.parse(encoded);
+  assert.equal(result.blocked, true);
+  assert.equal(result.firstResult, 'resolved');
+  assert.equal(result.secondBlocked, true);
+  assert.equal(result.secondResult, 'reason');
+  assert.equal(result.abortResult, 'resolved');
+  assert.deepEqual(result.calls.slice(0, 2), [
+    { sid: 4, bytes: [1, 2, 3], fin: false },
+    { sid: 4, bytes: [1, 2, 3], fin: false },
+  ]);
+  assert.deepEqual(result.shutdownCalls, [[71, 8, 0, 1]]);
+});
+
+test('WebTransport close waits for native FIN and shutdown keeps stream directions separate', async () => {
+  const context = webTransportContext(`
+    globalThis.writeCalls = [];
+    globalThis.shutdownCalls = [];
+    globalThis.__wtConnect = () => 72;
+    globalThis.__wtCreateStream = (() => {
+      let next = 4;
+      return () => { const sid = next; next += 4; return sid; };
+    })();
+    globalThis.__wtStreamWrite = (_id, sid, bytes, fin) => {
+      writeCalls.push({ sid, bytes: Array.from(bytes), fin });
+      return bytes.byteLength;
+    };
+    globalThis.__wtStreamShutdown = (...args) => { shutdownCalls.push(args); return 0; };
+    globalThis.__wtNativeStats = () => ({
+      sessions: 1, streams: 2, queuedReliableBytes: 0, queuedDatagrams: 0,
+      queuedEvents: 0, inFlightReceiveBytes: 0, readCreditBytes: 0, pendingHeaderBytes: 0,
+    });
+  `);
+  const encoded = await runWebTransport(context, `
+    const transport = new WebTransport('https://fixture.test:4433');
+    __wtDispatch(72, 'ready', 1200);
+    const first = await transport.createBidirectionalStream();
+    const firstWriter = first.writable.getWriter();
+    await firstWriter.write(new Uint8Array([7]));
+    let closeSettled = false;
+    const closePromise = firstWriter.close().then(() => { closeSettled = true; return 'resolved'; }, () => { closeSettled = true; return 'rejected'; });
+    await Promise.resolve();
+    await Promise.resolve();
+    const closeBlocked = !closeSettled;
+    __wtDispatch(72, 'streamWriteClosed', 4);
+    const closeResult = await closePromise;
+    const firstReader = first.readable.getReader();
+    await firstReader.cancel('read-side');
+
+    const second = await transport.createBidirectionalStream();
+    const secondWriter = second.writable.getWriter();
+    const secondReader = second.readable.getReader();
+    await secondReader.cancel('read-side-2');
+    const abortResult = await secondWriter.abort('write-side-2').then(() => 'resolved', () => 'rejected');
+
+    const third = await transport.createBidirectionalStream();
+    const thirdWriter = third.writable.getWriter();
+    thirdWriter.closed.catch(() => {});
+    let finCloseSettled = false;
+    let finAbortSettled = false;
+    const finClose = thirdWriter.close().then(
+      () => { finCloseSettled = true; return 'resolved'; },
+      (error) => { finCloseSettled = true; return error === 'cancel-fin' ? 'reason' : 'rejected'; },
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    const finAbort = thirdWriter.abort('cancel-fin').then(
+      () => { finAbortSettled = true; return 'resolved'; },
+      (error) => { finAbortSettled = true; return error === 'cancel-fin' ? 'reason' : 'other'; },
+    );
+    const finCloseResult = await finClose;
+    const finAbortResult = await finAbort;
+    return JSON.stringify({
+      closeBlocked, closeResult, abortResult, finCloseSettled, finAbortSettled,
+      finCloseResult, finAbortResult, writeCalls, shutdownCalls,
+    });
+  `);
+  const result = JSON.parse(encoded);
+  assert.equal(result.closeBlocked, true);
+  assert.equal(result.closeResult, 'resolved');
+  assert.equal(result.abortResult, 'resolved');
+  assert.equal(result.finCloseSettled, true);
+  assert.equal(result.finAbortSettled, true);
+  assert.equal(result.finCloseResult, 'reason');
+  assert.equal(result.finAbortResult, 'reason');
+  assert.deepEqual(result.writeCalls, [
+    { sid: 4, bytes: [7], fin: false },
+    { sid: 4, bytes: [], fin: true },
+    { sid: 12, bytes: [], fin: true },
+  ]);
+  assert.deepEqual(result.shutdownCalls, [
+    [72, 4, 0, 0],
+    [72, 8, 0, 0],
+    [72, 8, 0, 1],
+    [72, 12, 0, 1],
+  ]);
+});
+
+test('WebTransport releases a FIN read only after queued bytes drain and reports live resources', async () => {
+  const context = webTransportContext(`
+    globalThis.releaseCalls = [];
+    globalThis.__wtConnect = () => 73;
+    globalThis.__wtStreamReadCredit = () => 0;
+    globalThis.__wtStreamReleaseRead = (...args) => { releaseCalls.push(args); return 0; };
+    globalThis.__wtStreamShutdown = () => 0;
+    globalThis.__wtNativeStats = () => ({
+      sessions: 1, streams: 1, queuedReliableBytes: 0, queuedDatagrams: 0,
+      queuedEvents: 0, inFlightReceiveBytes: 2, readCreditBytes: 4, pendingHeaderBytes: 0,
+    });
+  `);
+  const encoded = await runWebTransport(context, `
+    const transport = new WebTransport('https://fixture.test:4433');
+    __wtDispatch(73, 'ready', 1200);
+    const incomingReader = transport.incomingBidirectionalStreams.getReader();
+    __wtDispatch(73, 'incomingBidi', 20);
+    const incoming = (await incomingReader.read()).value;
+    const reader = incoming.readable.getReader();
+    __wtDispatch(73, 'streamData', 20, new Uint8Array([1, 2]), false);
+    __wtDispatch(73, 'streamData', 20, new Uint8Array(0), true);
+    await Promise.resolve();
+    const before = releaseCalls.length;
+    const statsBefore = __wtResourceStats();
+    const value = await reader.read();
+    const done = await reader.read();
+    await Promise.resolve();
+    await Promise.resolve();
+    const statsAfter = __wtResourceStats();
+    return JSON.stringify({
+      before, value: Array.from(value.value), done: done.done,
+      releaseCalls, statsBefore, statsAfter,
+    });
+  `);
+  const result = JSON.parse(encoded);
+  assert.equal(result.before, 0);
+  assert.deepEqual(result.value, [1, 2]);
+  assert.equal(result.done, true);
+  assert.deepEqual(result.releaseCalls, [[73, 20]]);
+  assert.equal(result.statsBefore.native.inFlightReceiveBytes, 2);
+  assert.equal(result.statsBefore.native.readCreditBytes, 4);
+  assert.equal(result.statsBefore.js.queuedReceiveBytes, 2);
+  assert.equal(result.statsAfter.js.queuedReceiveBytes, 0);
+});
+
+test('WebTransport rejects unsupported options before allocation and settles native failures', async () => {
+  const context = webTransportContext(`
+    globalThis.connectCalls = 0;
+    globalThis.__wtConnect = () => { connectCalls += 1; return 74; };
+    globalThis.__wtCreateStream = () => 4;
+    globalThis.__wtStreamWrite = () => -2;
+    globalThis.__wtStreamShutdown = () => 0;
+    globalThis.__wtNativeStats = () => ({
+      sessions: 1, streams: 1, queuedReliableBytes: 0, queuedDatagrams: 0,
+      queuedEvents: 0, inFlightReceiveBytes: 0, readCreditBytes: 0, pendingHeaderBytes: 0,
+    });
+  `);
+  const encoded = await runWebTransport(context, `
+    const unsupported = [];
+    for (const options of [
+      { requireUnreliable: true },
+      { congestionControl: 'low-latency' },
+      { serverCertificateHashes: [new Uint8Array([1])] },
+      { allowPooling: true },
+    ]) {
+      try { new WebTransport('https://fixture.test:4433', options); unsupported.push(false); }
+      catch (error) { unsupported.push(error instanceof TypeError); }
+    }
+    const allocated = connectCalls;
+    const transport = new WebTransport('https://fixture.test:4433', {});
+    __wtDispatch(74, 'ready', 1200);
+    const stream = await transport.createBidirectionalStream();
+    const writer = stream.writable.getWriter();
+    writer.closed.catch(() => {});
+    const pending = writer.write(new Uint8Array([1])).then(() => 'resolved', (error) => ({
+      name: error.name, source: error.source, code: error.streamErrorCode,
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+    __wtDispatch(74, 'streamWriteError', 4, 99);
+    const writeResult = await pending;
+    const closed = transport.closed.then(() => 'resolved', (error) => error.name);
+    __wtDispatch(74, 'error', 'peer failure');
+    __wtDispatch(74, 'closed', 'peer failure', 55);
+    const closedResult = await closed;
+    return JSON.stringify({ unsupported, allocated, writeResult, closedResult });
+  `);
+  const result = JSON.parse(encoded);
+  assert.deepEqual(result.unsupported, [true, true, true, true]);
+  assert.equal(result.allocated, 0);
+  assert.deepEqual(result.writeResult, { name: 'WebTransportError', source: 'stream', code: 99 });
+  assert.equal(result.closedResult, 'WebTransportError');
+});
+
+test('WebTransport keeps aggregate reliable bytes, write operations, and datagrams bounded', async () => {
+  const context = webTransportContext(`
+    globalThis.writeCalls = [];
+    globalThis.__wtConnect = () => 75;
+    globalThis.__wtCreateStream = (() => {
+      let next = 4;
+      return () => { const sid = next; next += 4; return sid; };
+    })();
+    globalThis.__wtStreamWrite = (_id, sid, bytes, fin) => {
+      writeCalls.push({ sid, length: bytes.byteLength, fin });
+      if (bytes.byteLength === 1024 * 1024 &&
+          writeCalls.filter((call) => call.sid === sid).length === 1) return -2;
+      return bytes.byteLength;
+    };
+    globalThis.__wtNativeStats = () => ({
+      sessions: 1, streams: 2, queuedReliableBytes: 0, queuedDatagrams: 0,
+      queuedEvents: 0, inFlightReceiveBytes: 0, readCreditBytes: 0, pendingHeaderBytes: 0,
+    });
+  `);
+  const encoded = await runWebTransport(context, `
+    const transport = new WebTransport('https://fixture.test:4433');
+    __wtDispatch(75, 'ready', 1200);
+    const first = await transport.createBidirectionalStream();
+    const second = await transport.createBidirectionalStream();
+    const firstWriter = first.writable.getWriter();
+    const secondWriter = second.writable.getWriter();
+    firstWriter.closed.catch(() => {});
+    secondWriter.closed.catch(() => {});
+    let firstSettled = false;
+    let secondSettled = false;
+    const firstWrite = firstWriter.write(new Uint8Array(1024 * 1024)).then(
+      () => { firstSettled = true; return 'resolved'; },
+      () => { firstSettled = true; return 'rejected'; },
+    );
+    const secondWrite = secondWriter.write(new Uint8Array([1])).then(
+      () => { secondSettled = true; return 'resolved'; },
+      () => { secondSettled = true; return 'rejected'; },
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    const exactBoundary = !firstSettled && secondSettled && writeCalls.length === 1 &&
+      writeCalls[0].length === 1024 * 1024;
+    __wtDispatch(75, 'writable');
+    const reliableResults = [await firstWrite, await secondWrite];
+
+    const zeroWriter = (await transport.createBidirectionalStream()).writable.getWriter();
+    zeroWriter.closed.catch(() => {});
+    const zeroResults = await Promise.all(Array.from({ length: 257 }, () =>
+      zeroWriter.write(new Uint8Array(0)).then(() => 'resolved', () => 'rejected')));
+    for (let i = 0; i < 300; i += 1) __wtDispatch(75, 'datagram', new Uint8Array([i & 255]));
+    const stats = __wtResourceStats();
+    return JSON.stringify({
+      exactBoundary, reliableResults,
+      zeroResolved: zeroResults.filter((value) => value === 'resolved').length,
+      zeroRejected: zeroResults.filter((value) => value === 'rejected').length,
+      stats,
+    });
+  `);
+  const result = JSON.parse(encoded);
+  assert.equal(result.exactBoundary, true);
+  assert.deepEqual(result.reliableResults, ['resolved', 'rejected']);
+  assert.equal(result.zeroResolved, 256);
+  assert.equal(result.zeroRejected, 1);
+  assert.equal(result.stats.js.queuedDatagrams, 256);
+  assert.equal(result.stats.js.incomingDatagramDrops, 44);
+  assert.equal(result.stats.js.queuedReliableBytes, 0);
+  assert.ok(result.stats.js.queuedReliableOperations <= 256);
+});
+
+test('WebTransport local close settles writers and clears retained stream and datagram queues', async () => {
+  const context = webTransportContext(`
+    globalThis.nativeSession = true;
+    globalThis.__wtConnect = () => 76;
+    globalThis.__wtCreateStream = () => 4;
+    globalThis.__wtStreamWrite = (_id, _sid, bytes) => bytes.byteLength;
+    globalThis.__wtClose = () => { nativeSession = false; };
+    globalThis.__wtNativeStats = () => ({
+      sessions: nativeSession ? 1 : 0, streams: nativeSession ? 1 : 0, queuedReliableBytes: 0, queuedDatagrams: 0,
+      queuedEvents: 0, inFlightReceiveBytes: 0, readCreditBytes: 0, pendingHeaderBytes: 0,
+    });
+  `);
+  const encoded = await runWebTransport(context, `
+    const transport = new WebTransport('https://fixture.test:4433');
+    __wtDispatch(76, 'ready', 1200);
+    const pair = await transport.createBidirectionalStream();
+    const writer = pair.writable.getWriter();
+    writer.closed.catch(() => {});
+    const closePromise = writer.close().then(() => 'resolved', (error) => error.name);
+    const reader = pair.readable.getReader();
+    __wtDispatch(76, 'streamData', 4, new Uint8Array([1, 2, 3]), false);
+    __wtDispatch(76, 'datagram', new Uint8Array([9]));
+    const datagramWriter = transport.datagrams.writable.getWriter();
+    const datagramClosed = datagramWriter.closed.then(() => 'resolved', (error) => error.name);
+    transport.close({ closeCode: 8, reason: 'local-close' });
+    __wtDispatch(76, 'closed', 'local-close', 8);
+    const closeResult = await closePromise;
+    const datagramClosedResult = await datagramClosed;
+    const closedResult = await transport.closed.then((info) => ({
+      state: 'resolved', code: info.closeCode, reason: info.reason,
+    }), (error) => ({ state: error.name }));
+    const stats = __wtResourceStats();
+    return JSON.stringify({
+      closeResult, datagramClosedResult, closedResult,
+      streamCount: transport._state.streams.size,
+      streamBytes: transport._state.streams.size ? 1 : 0,
+      stats,
+    });
+  `);
+  const result = JSON.parse(encoded);
+  assert.equal(result.closeResult, 'WebTransportError');
+  assert.equal(result.datagramClosedResult, 'WebTransportError');
+  assert.deepEqual(result.closedResult, { state: 'resolved', code: 8, reason: 'local-close' });
+  assert.equal(result.streamCount, 0);
+  assert.equal(result.streamBytes, 0);
+  assert.equal(result.stats.native.sessions, 0);
+  assert.equal(result.stats.js.sessions, 0);
+  assert.equal(result.stats.js.queuedDatagrams, 0);
+  assert.equal(result.stats.js.queuedReceiveBytes, 0);
+});
+
+test('WebTransport incoming queue cancellation preserves delivered bidi streams and shuts down discarded halves', async () => {
+  const context = webTransportContext(`
+    globalThis.shutdownCalls = [];
+    globalThis.__wtConnect = () => 77;
+    globalThis.__wtStreamWrite = (_id, _sid, bytes) => bytes.byteLength;
+    globalThis.__wtStreamShutdown = (...args) => { shutdownCalls.push(args); return 0; };
+    globalThis.__wtNativeStats = () => ({
+      sessions: 1, streams: 2, queuedReliableBytes: 0, queuedDatagrams: 0,
+      queuedEvents: 0, inFlightReceiveBytes: 0, readCreditBytes: 0, pendingHeaderBytes: 0,
+    });
+  `);
+  const encoded = await runWebTransport(context, `
+    const transport = new WebTransport('https://fixture.test:4433');
+    __wtDispatch(77, 'ready', 1200);
+    const incomingReader = transport.incomingBidirectionalStreams.getReader();
+    __wtDispatch(77, 'incomingBidi', 4);
+    __wtDispatch(77, 'incomingBidi', 8);
+    __wtDispatch(77, 'incomingBidi', 12);
+    const accepted = (await incomingReader.read()).value;
+    await incomingReader.cancel('stop-listening');
+    __wtDispatch(77, 'incomingBidi', 16);
+    const acceptedWriteResult = await accepted.writable.getWriter().write(new Uint8Array([5]));
+    const acceptedWrite = acceptedWriteResult === undefined ? 'resolved' : acceptedWriteResult;
+    return JSON.stringify({ acceptedWrite, shutdownCalls });
+  `);
+  const result = JSON.parse(encoded);
+  assert.equal(result.acceptedWrite, 'resolved');
+  assert.deepEqual(result.shutdownCalls, [
+    [77, 8, 0, 0],
+    [77, 8, 0, 1],
+    [77, 12, 0, 0],
+    [77, 12, 0, 1],
+    [77, 16, 0, 0],
+    [77, 16, 0, 1],
+  ]);
 });
 
 test('CLI build tools are separate units behind an unchanged dispatch surface', () => {

@@ -221,7 +221,8 @@ struct HostGapMeter {
 
     enum Segment : size_t {
         kEvents = 0,     // platform event pump + lifecycle markers + desktop overlay pump
-        kIo,             // libuv runOnce, HTTP, WebTransport, async file reads, file watcher
+        kIo,             // libuv runOnce, HTTP, async file reads, file watcher
+        kWebTransport,   // one main-thread WebTransport processEvents pass
         kAudio,          // audio event delivery off the platform thread
         kTimers,         // due timer callbacks + deferred file callbacks + UI message drain
         kMicrotasks,     // V8 message-loop pump + microtask checkpoint
@@ -239,7 +240,7 @@ struct HostGapMeter {
     };
 
     static constexpr std::array<const char*, kSegmentCount> kNames = {
-        "events", "io", "audio", "timers", "microtasks", "preFrame",
+        "events", "io", "webtransport", "audio", "timers", "microtasks", "preFrame",
         "frameDrain", "frameReplay", "present", "gpuDrain", "devicePoll", "endFrameOther",
         "storage", "handles", "screenshot",
     };
@@ -247,6 +248,7 @@ struct HostGapMeter {
     struct Sample {
         uint64_t micros[kSegmentCount] = {};
         uint64_t periodMicros = 0;
+        uint64_t frameId = 0;
     };
 
     using Clock = std::chrono::steady_clock;
@@ -255,6 +257,7 @@ struct HostGapMeter {
     Clock::time_point lastRafBegin_{};
     Sample current_{};
     bool inSegment_ = false;
+    uint64_t nextFrameId_ = 0;
     std::vector<Sample> samples_;
 
     void begin(Segment segment) {
@@ -284,6 +287,7 @@ struct HostGapMeter {
                 current_.periodMicros = static_cast<uint64_t>(period.count());
         }
         lastRafBegin_ = now;
+        current_.frameId = ++nextFrameId_;
     }
 
     // endDawnFrame timed its own interior in bindings.cpp; absorb that split here. Values are
@@ -360,7 +364,15 @@ struct HostGapMeter {
                 << ",\"meanMs\":" << mean << "}";
             sumP50 += p50;
         }
-        out << "},\"sumP50Ms\":" << sumP50 << "}";
+        out << "},\"sumP50Ms\":" << sumP50 << ",\"samples\":[";
+        for (size_t i = 0; i < samples_.size(); ++i) {
+            if (i > 0) out << ",";
+            const Sample& sample = samples_[i];
+            out << "{\"frame\":" << sample.frameId
+                << ",\"webtransportMs\":"
+                << static_cast<double>(sample.micros[kWebTransport]) / 1000.0 << "}";
+        }
+        out << "]}";
         const std::string marker = out.str();
         std::cout << marker << std::endl;
         LOGI("%s", marker.c_str());
@@ -1379,12 +1391,36 @@ public:
         // This must be called after runOnce() to invoke callbacks safely on the main thread
         http::getAsyncHttpClient().processCompletedRequests();
 
-        // Drive WebTransport QUIC sessions and dispatch their JS events (main thread)
+        // Drive WebTransport QUIC sessions and dispatch their JS events (main thread). Keep this
+        // out of the generic I/O sample so proof can charge the actual transport work separately.
+        hostGapMeter_.end(HostGapMeter::kIo);
+        hostGapMeter_.begin(HostGapMeter::kWebTransport);
+        // The proof lane can inject a bounded delay into this exact measured segment. It is an
+        // environment-only seam, never read by game code, and lets the CPU budget prove that a
+        // slow native transport pass cannot be hidden inside the broader I/O sample.
+        if (const char* delay = std::getenv("TN_NETWORKING_TEST_PROCESS_EVENTS_DELAY_MS")) {
+            const std::string value(delay);
+            if (value.size() <= 4 && !value.empty()) {
+                unsigned milliseconds = 0;
+                bool valid = true;
+                for (char digit : value) {
+                    if (digit < '0' || digit > '9') {
+                        valid = false;
+                        break;
+                    }
+                    milliseconds = milliseconds * 10 + static_cast<unsigned>(digit - '0');
+                }
+                if (valid && milliseconds <= 1000)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
+            }
+        }
         webtransport::processEvents();
+        hostGapMeter_.end(HostGapMeter::kWebTransport);
 
         // Process completed async file reads (queues their callbacks)
         // Note: We don't process the pending callbacks immediately because we might
         // still be in a nested callback stack. The callbacks will be processed next frame.
+        hostGapMeter_.begin(HostGapMeter::kIo);
         fs::getAsyncFileReader().processCompletedReads();
 
         // Process file watch events (for hot reload)
@@ -1642,9 +1678,10 @@ private:
         // JavaScript budget reads the same interval as presentedDelta.
         hostGapMeter_.noteRafBegin();
 
-        // Get current time
-        auto now = std::chrono::high_resolution_clock::now();
-        double timestamp = std::chrono::duration<double, std::milli>(now.time_since_epoch()).count();
+        // Match browser rAF/performance timestamps: finite milliseconds from this runtime's
+        // monotonic time origin, never a wall-clock epoch value.
+        const auto elapsed = PerformanceClock::now() - performanceOrigin_;
+        const double timestamp = std::chrono::duration<double, std::milli>(elapsed).count();
 
         // Copy callbacks (they might add new ones during execution)
         auto callbacks = std::move(rafCallbacks_);
@@ -1849,7 +1886,7 @@ private:
                 int id = nextTimerId_++;
                 const auto callback = jsEngine_->retainHandle(args[0]);
 
-                auto targetTime = std::chrono::high_resolution_clock::now() +
+                auto targetTime = PerformanceClock::now() +
                                   std::chrono::milliseconds(delay);
 
                 timerCallbacks_.push_back({id, callback, targetTime, 0, false});
@@ -1895,7 +1932,7 @@ private:
                 int id = nextTimerId_++;
                 const auto callback = jsEngine_->retainHandle(args[0]);
 
-                auto targetTime = std::chrono::high_resolution_clock::now() +
+                auto targetTime = PerformanceClock::now() +
                                   std::chrono::milliseconds(delay);
 
                 timerCallbacks_.push_back({id, callback, targetTime, delay, false});
@@ -1936,9 +1973,8 @@ private:
 
         jsEngine_->setProperty(performance, "now",
             jsEngine_->newFunction("now", [this](void* ctx, const std::vector<js::JSValueHandle>& args) {
-                // Return time in milliseconds since epoch (or some stable reference)
-                auto now = std::chrono::high_resolution_clock::now();
-                double timestamp = std::chrono::duration<double, std::milli>(now.time_since_epoch()).count();
+                const auto elapsed = PerformanceClock::now() - performanceOrigin_;
+                const double timestamp = std::chrono::duration<double, std::milli>(elapsed).count();
                 return jsEngine_->newNumber(timestamp);
             })
         );
@@ -2074,6 +2110,26 @@ private:
     bool setupFetch() {
         if (!jsEngine_) return false;
 
+        auto readHttpHeaders = [this](js::JSValueHandle optionsObject, http::HttpOptions& options) {
+            const auto headers = jsEngine_->getProperty(optionsObject, "headers");
+            if (jsEngine_->isUndefined(headers) || jsEngine_->isNull(headers) ||
+                !jsEngine_->isObject(headers))
+                return;
+            const auto forEach = jsEngine_->getProperty(headers, "forEach");
+            if (!jsEngine_->isFunction(forEach)) return;
+            const auto callback = jsEngine_->newFunction(
+                "__httpHeader",
+                [this, &options](void*, const std::vector<js::JSValueHandle>& headerArgs) {
+                    if (headerArgs.size() >= 2) {
+                        const auto name = jsEngine_->toString(headerArgs[1]);
+                        if (!name.empty()) options.headers[name] = jsEngine_->toString(headerArgs[0]);
+                    }
+                    return jsEngine_->newUndefined();
+                });
+            jsEngine_->call(forEach, headers, {callback});
+            jsEngine_->freeHandle(callback);
+        };
+
         // Native file reading function - uses SDL on Android for asset access
         jsEngine_->setGlobalProperty("__readFileSync",
             jsEngine_->newFunction("__readFileSync", [this](void* ctx, const std::vector<js::JSValueHandle>& args) {
@@ -2183,7 +2239,7 @@ private:
 
         // Native HTTP request function
         jsEngine_->setGlobalProperty("__httpRequest",
-            jsEngine_->newFunction("__httpRequest", [this](void* ctx, const std::vector<js::JSValueHandle>& args) {
+            jsEngine_->newFunction("__httpRequest", [this, readHttpHeaders](void* ctx, const std::vector<js::JSValueHandle>& args) {
                 if (args.empty()) {
                     return jsEngine_->newNull();
                 }
@@ -2202,11 +2258,7 @@ private:
                         method = jsEngine_->toString(methodVal);
                     }
 
-                    auto headersVal = jsEngine_->getProperty(optObj, "headers");
-                    if (!jsEngine_->isUndefined(headersVal)) {
-                        // Get header keys - this is simplified, real impl would iterate
-                        // For now, just handle common headers
-                    }
+                    readHttpHeaders(optObj, options);
 
                     auto bodyVal = jsEngine_->getProperty(optObj, "body");
                     if (!jsEngine_->isUndefined(bodyVal)) {
@@ -2257,7 +2309,7 @@ private:
         // Async HTTP request function - uses libuv for non-blocking I/O
         // Takes (url, options, callback) where callback receives the result object
         jsEngine_->setGlobalProperty("__httpRequestAsync",
-            jsEngine_->newFunction("__httpRequestAsync", [this](void* ctx, const std::vector<js::JSValueHandle>& args) {
+            jsEngine_->newFunction("__httpRequestAsync", [this, readHttpHeaders](void* ctx, const std::vector<js::JSValueHandle>& args) {
                 if (args.size() < 3) {
                     std::cerr << "[HTTP Async] Missing arguments (need url, options, callback)" << std::endl;
                     return jsEngine_->newUndefined();
@@ -2276,6 +2328,8 @@ private:
                     if (!jsEngine_->isUndefined(methodVal)) {
                         method = jsEngine_->toString(methodVal);
                     }
+
+                    readHttpHeaders(optObj, options);
 
                     auto bodyVal = jsEngine_->getProperty(optObj, "body");
                     if (!jsEngine_->isUndefined(bodyVal)) {
@@ -2650,7 +2704,7 @@ private:
                 platform::noteDroppedTimerFiring();
         }
 #else
-        const auto now = std::chrono::high_resolution_clock::now();
+        const auto now = PerformanceClock::now();
         for (const auto& timer : timerCallbacks_) {
             if (timer.cancelled || now < timer.targetTime) continue;
             if (countedPausedTimers_.insert(timer.id).second) platform::noteDroppedTimerFiring();
@@ -2699,7 +2753,7 @@ private:
         // Fallback: std::chrono-based timer processing
         if (timerCallbacks_.empty()) return;
 
-        auto now = std::chrono::high_resolution_clock::now();
+        const auto now = PerformanceClock::now();
 
         // Process timers - collect expired ones
         std::vector<TimerCallback> toExecute;
@@ -2821,6 +2875,8 @@ private:
     std::unordered_set<int> activeWorkerIds_;
     storage::LocalStorage localStorage_;
     HostGapMeter hostGapMeter_;
+    using PerformanceClock = std::chrono::steady_clock;
+    PerformanceClock::time_point performanceOrigin_ = PerformanceClock::now();
 
     // requestAnimationFrame state
     struct RAFCallback {
@@ -2857,7 +2913,7 @@ private:
     struct TimerCallback {
         int id;
         js::JSValueHandle callback;
-        std::chrono::high_resolution_clock::time_point targetTime;
+        PerformanceClock::time_point targetTime;
         int intervalMs;  // 0 for setTimeout, >0 for setInterval
         bool cancelled;
     };

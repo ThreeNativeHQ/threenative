@@ -262,27 +262,26 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  // Recomputed 2026-09-05 from clean committed HEAD eb1149dd. The Three.js patch landed with
-  // 18 committed agent-file skill changes in b7336980 and remains in eb1149dd, so every scaffold
-  // hash includes both the patch and those reviewed skill bytes. Values come from the isolated
-  // HEAD fixture, not this shared checkout's working tree.
-  // Recomputed 2026-09-05 for the desktop window maximized option: every template's resolved
-  // config now carries `window.maximized`, so all ten scaffold trees move by that source byte.
-  // Recomputed 2026-09-05 for the generated pointer-capture and desktop-mode authoring contract
-  // in every template's AGENTS.md/CLAUDE.md pair; values are from the current Received block.
-  "action-rpg": "9eb8ab77493a112a9ebb103a077618bf042819ddde740cf4b9eefc641adc3708",
-  defense: "2820601f6e4bcd580fdacc4edc344bcfee337e31addebcf08504dba84a1266cf",
+  // desktopHostArgs was briefly exported and then made module-private again after review:
+  // a one-line getter over a config field does not belong in the agent-facing manifest, and
+  // the driver-construction seam tests the wiring better. Nine trees return to their earlier
+  // values; sailing alone moves, for main's ocean-clock fix.
+  // Recomputed 2026-09-06 after merging origin/main into networking-359: main's adaptive
+  // quality and desktop-window authoring text now sits alongside PRD-359's optional transport
+  // contract, so every scaffold tree moves. Values come from the committed merge, not a dirty tree.
+  "action-rpg": "8806ed90784df85a8b8a7256939df0b66cbb054b848b8f4f1a7d3efa78bf9e11",
+  defense: "cda5a7477eee4afcbd0a2ac8cb3674f81d524c936b321658da0a948995b1e3a1",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "a5137a0194d61aebbb393860965dad8c59fa9751bde2c2437e2cdfd13d0af8ad",
-  platformer: "54ae4655502847ec20de6b349cc4b258e8a6adf21518916d0e7d5cdd6d4a3747",
-  runner: "263c8527700d2c5193de60c3b48fc057eb801224185fb237262fc2aa84a54c41",
-  puzzle: "2055528b04705027ebea4d4127dcdd65bc6b0f736081dcd53ed6b23b9627035a",
-  racing: "67300a2b6e9aba9414096671f9f0e142ed226f1c37d08615c21d3a6efd619c05",
-  shooter: "5dd79dc7f08051a1b5b6a7ad53d9eaf28a2caf65d016fff36c1761a260a542d3",
+  minimal: "2870ae650bcbf82d3f895a6bf671a70f6f2a0f26e30b61c2b0640110b374ac5d",
+  platformer: "8ec3c4c9ab9eaf4e05b3430184658550dcc187ce9f8c77a5ce26f456f0f8155a",
+  runner: "4d3cc6d1ab2a9e27c3bb2b847fdbcb3a396c29fd0bfc7de2baf6f0bb62460c81",
+  puzzle: "5807e697cb8e621dff01cbbf3db121e977e269fc65fb56dd45c2f241f1c42431",
+  racing: "b0fc3c47f17877537ddcb037141e006663aa8bd29cc965e9baf13c9be89860ca",
+  shooter: "f21a659f950e015364d3050e9ec4870ed324bb80acae6ad4611b383b7801009b",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "aad58b9149a4b889fce504bf3196f3c9642d504db680474802d8ef5de243d56d",
+  starter: "1cc5a9583359ce935ee588afc4a0ee7cb5f429b053fc08d55de4ec1b68d36d1a",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -303,6 +302,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
+  // Recomputed 2026-09-07 again on the networking-359 merge: main's ocean-clock fix and this
+  // branch's published capability metadata both land in the sailing tree.
   // Recomputed 2026-09-07 for sailing's fixed-step ocean clock: the scene now advances
   // `SpectralOcean` before its registered compute passes run, which makes its existing moving-water
   // playtest prove a time-varying field.

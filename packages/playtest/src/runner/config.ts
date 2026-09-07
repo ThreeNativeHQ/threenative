@@ -30,7 +30,7 @@ export interface IStandalonePlaytestConfig {
   captureArtifactScreenshots?: boolean;
   browserArgs?: readonly string[];
   device?: string;
-  desktop?: { executable: string };
+  desktop?: { executable: string; hostArgs?: readonly string[] };
   endpoint?: string;
   headless: boolean;
   ios?: { appPath?: string; bundleId: string; transport: "device" | "simulator" };
@@ -75,6 +75,7 @@ export const PLAYTEST_FLAGS = {
   "--executable": { default: "required for desktop", summary: "native desktop game executable", takesValue: true },
   "--endpoint": { default: "http://127.0.0.1:41777/playtest", summary: "device bridge endpoint", takesValue: true },
   "--headed": { default: "false", summary: "show the browser window", takesValue: false },
+  "--host-arg": { default: "none", repeatable: true, summary: "argument passed to the native desktop host, repeatable", takesValue: true },
   "--mailbox-root": { default: "Android external files directory", summary: "native device mailbox directory", takesValue: true },
   "--ios-transport": { default: "simulator", summary: "iOS transport (simulator or device)", takesValue: true },
   "--project": { default: ".", summary: "project root used to resolve paths", takesValue: true },
@@ -239,6 +240,10 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
   if (androidUser !== undefined && !/^\d+$/u.test(androidUser)) {
     throw new PlaytestCliUsageError(`Android --user must be numeric, got '${androidUser}'.`);
   }
+  // The desktop host is launched with no arguments unless the caller names them, so a game
+  // bundle reaches it the same way DesktopPlaytestDriver already accepts: `--host-arg run
+  // --host-arg dist/game.js`. Without this the CLI could only start a host with no game.
+  const hostArgs = flags.get("--host-arg") ?? [];
   const browserArgs =
     explicitBrowserArgs.length > 0
       ? explicitBrowserArgs
@@ -265,7 +270,14 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     captureArtifactScreenshots: !argv.includes("--no-screenshots"),
     ...(browserArgs.length === 0 ? {} : { browserArgs }),
     ...(device === undefined ? {} : { device }),
-    ...(executable === undefined ? {} : { desktop: { executable: resolve(projectPath, executable) } }),
+    ...(executable === undefined
+      ? {}
+      : {
+          desktop: {
+            executable: resolve(projectPath, executable),
+            ...(hostArgs.length === 0 ? {} : { hostArgs }),
+          },
+        }),
     endpoint: flags.get("--endpoint")?.[0] ?? "http://127.0.0.1:41777/playtest",
     headless: !argv.includes("--headed"),
     ios: {

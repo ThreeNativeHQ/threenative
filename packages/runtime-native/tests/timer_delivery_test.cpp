@@ -19,14 +19,30 @@ constexpr const char* kScript = R"JS((() => {
   let timeoutCount = 0;
   let intervalCount = 0;
   let intervalId = 0;
+  let previousPerformance = -1;
+  let performanceSamples = 0;
+
+  function observePerformance() {
+    const currentPerformance = performance.now();
+    if (!Number.isFinite(currentPerformance) || currentPerformance < 0 ||
+        currentPerformance < previousPerformance || currentPerformance > 60000) {
+      process.exit(1);
+    }
+    previousPerformance = currentPerformance;
+    performanceSamples += 1;
+  }
+
+  observePerformance();
 
   setTimeout(() => { timeoutCount += 1; }, 0);
   intervalId = setInterval(() => {
+    observePerformance();
     intervalCount += 1;
     if (intervalCount === 3) {
       clearInterval(intervalId);
       setTimeout(() => {
-        process.exit(timeoutCount === 1 && intervalCount === 3 ? 42 : 1);
+        process.exit(timeoutCount === 1 && intervalCount === 3 && performanceSamples >= 4
+          ? 42 : 1);
       }, 0);
     }
   }, 1);

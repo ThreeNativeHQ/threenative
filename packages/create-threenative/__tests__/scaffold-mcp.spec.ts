@@ -170,6 +170,42 @@ async function probeEngineServer(target: string): Promise<void> {
       expect.arrayContaining(["FluidField2D", "GPUReadback", "SoftBody3D", "SpectralOcean"]),
     );
     expect(broadResults.every((result) => result.matchedSituation.length > 0)).toBe(true);
+
+    const networking = await request(child, nextId, lines, "tools/call", {
+      arguments: {
+        scope: "request",
+        situation: "exchange authenticated multiplayer messages over WebTransport",
+      },
+      name: "engine_search_capabilities",
+    });
+    const networkingContent = networking.content as Array<{ text: string }>;
+    const networkingResponse = capabilitySearchResponse(
+      JSON.parse(networkingContent[0]?.text ?? "null") as unknown,
+    );
+    expect(networkingResponse.verdict).toBe("matched");
+    const transport = networkingResponse.results.find((result) => result.symbol === "connect");
+    expect(transport?.importPath).toBe("@threenative/core/net");
+
+    const detailCall = await request(child, nextId, lines, "tools/call", {
+      arguments: { symbol: "connect" },
+      name: "engine_capability_detail",
+    });
+    const detailContent = detailCall.content as Array<{ text: string }>;
+    const detail = JSON.parse(detailContent[0]?.text ?? "null") as {
+      constraints: string[];
+      importPath: string;
+      overrides: string[];
+      symbol: string;
+    };
+    expect(detail.symbol).toBe("connect");
+    expect(detail.importPath).toBe("@threenative/core/net");
+    expect(detail.constraints.join(" ")).toContain("HTTPS");
+    expect(detail.constraints.join(" ")).toContain("queues");
+    expect(detail.overrides).toEqual(
+      expect.arrayContaining([
+        "connectTimeoutMs, maxReliableMessageBytes, maxQueuedReliableBytes, and maxQueuedDatagrams are named per-connection limits",
+      ]),
+    );
   } finally {
     lines.close();
     if (child.exitCode === null && child.signalCode === null) {
@@ -180,7 +216,7 @@ async function probeEngineServer(target: string): Promise<void> {
 }
 
 describe("scaffolded engine MCP", () => {
-  it("starts and searches offline from every template", async () => {
+  it("starts and discovers networking metadata from every template", async () => {
     for (const template of templates) {
       const root = await makeTempDir(`threenative-scaffold-mcp-${template}-`);
       temporaryRoots.push(root);
