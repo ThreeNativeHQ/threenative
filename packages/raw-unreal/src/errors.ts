@@ -28,6 +28,7 @@ export type UAssetErrorCode =
  * @situation tell why a raw .uasset failed to load, by code, before any geometry is shown
  * @situation branch on an unsupported Unreal layout instead of shipping broken geometry
  * @constraint every parse, decompression, and geometry failure surfaces as this error; the loader never invents fallback geometry
+ * @requires npm i @threenative/raw-unreal
  * @example catch (error) { if (error instanceof UAssetError) log(error.code, error.details); }
  */
 export class UAssetError extends Error {

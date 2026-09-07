@@ -8,6 +8,27 @@ interface IManifestPackageEntry {
 }
 
 describe("generated capability reference", () => {
+  it("renders install requirements beside the capability that needs them", () => {
+    const page = renderCapabilityReference([
+      {
+        constraints: [],
+        example: "const mesh = createThreeObject(decoded);",
+        importPath: "@threenative/raw-unreal",
+        kind: "function",
+        overrides: [],
+        package: "@threenative/raw-unreal",
+        requires: ["npm i @threenative/raw-unreal"],
+        signature: "function createThreeObject()",
+        situations: ["put a raw .uasset mesh on screen"],
+        summary: "Build a Three.js object from raw Unreal mesh data.",
+        supersedes: [],
+        symbol: "createThreeObject",
+      },
+    ]);
+
+    expect(page).toContain("- **Requires:** npm i @threenative/raw-unreal");
+  });
+
   it("describes every package represented by the manifest", async () => {
     const manifest = JSON.parse(
       await readFile(

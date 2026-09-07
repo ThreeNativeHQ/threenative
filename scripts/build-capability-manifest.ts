@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
 
@@ -35,6 +35,7 @@ export interface ICapabilityManifestEntry {
   readonly example: string;
   readonly constraints: readonly string[];
   readonly overrides: readonly string[];
+  readonly requires?: readonly string[];
   readonly supersedes: readonly string[];
 }
 
@@ -57,6 +58,7 @@ interface IParsedDocumentation {
   readonly example: string;
   readonly constraints: readonly string[];
   readonly overrides: readonly string[];
+  readonly requires: readonly string[];
   readonly supersedes: readonly string[];
 }
 
@@ -77,6 +79,7 @@ const EMPTY_DOCUMENTATION: IParsedDocumentation = {
   constraints: [],
   example: "",
   overrides: [],
+  requires: [],
   situations: [],
   summary: "",
   supersedes: [],
@@ -221,14 +224,16 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
   const aliases: string[] = [];
   const constraints: string[] = [];
   const overrides: string[] = [];
+  const requires: string[] = [];
   const supersedes: string[] = [];
   const exampleLines: string[] = [];
   const summaryLines: string[] = [];
   let inExample = false;
   for (const line of lines) {
-    const tag = /^@(situation|alias|constraint|example|override|supersedes)\b(?:\s+(.*))?$/u.exec(
-      line,
-    );
+    const tag =
+      /^@(situation|alias|constraint|example|override|requires|supersedes)\b(?:\s+(.*))?$/u.exec(
+        line,
+      );
     if (tag !== null) {
       inExample = tag[1] === "example";
       const value = tag[2]?.trim() ?? "";
@@ -236,6 +241,7 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
       if (tag[1] === "alias" && value.length > 0) aliases.push(value);
       if (tag[1] === "constraint" && value.length > 0) constraints.push(value);
       if (tag[1] === "override" && value.length > 0) overrides.push(value);
+      if (tag[1] === "requires" && value.length > 0) requires.push(value);
       if (tag[1] === "supersedes" && value.length > 0) supersedes.push(value);
       if (tag[1] === "example" && value.length > 0) exampleLines.push(value);
       continue;
@@ -255,6 +261,7 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
     constraints: [...new Set(constraints)],
     example,
     overrides: [...new Set(overrides)],
+    requires: [...new Set(requires)],
     situations: [...new Set(situations)],
     summary: summaryLines.join(" ").trim(),
     supersedes: [...new Set(supersedes)],
@@ -270,6 +277,7 @@ function mergeDocumentation(
     constraints: [...new Set([...primary.constraints, ...fallback.constraints])],
     example: primary.example || fallback.example,
     overrides: [...new Set([...primary.overrides, ...fallback.overrides])],
+    requires: [...new Set([...primary.requires, ...fallback.requires])],
     situations: [...new Set([...primary.situations, ...fallback.situations])],
     summary: primary.summary || fallback.summary,
     supersedes: [...new Set([...primary.supersedes, ...fallback.supersedes])],
@@ -621,6 +629,9 @@ export function buildCapabilityManifest(
       kind: candidate.kind,
       overrides: candidate.documentation.overrides,
       package: candidate.packageName,
+      ...(candidate.documentation.requires.length > 0
+        ? { requires: candidate.documentation.requires }
+        : {}),
       signature: signature(candidate.declaration),
       situations: candidate.documentation.situations,
       summary: candidate.documentation.summary || candidate.symbol,
@@ -660,6 +671,259 @@ function manifestPath(root: string): string {
 
 function manifestPaths(root: string): readonly string[] {
   return [manifestPath(root), path.join(root, CAPABILITY_MANIFEST_MIRROR_PATH)];
+}
+
+export interface IScaffoldDependencyClosure {
+  readonly packages: readonly string[];
+  readonly sourceImports: readonly string[];
+  readonly template: string;
+}
+
+export interface ICapabilityScaffoldImportProblem {
+  readonly importPath: string;
+  readonly packageName: string;
+  readonly reason: string;
+  readonly symbol: string;
+  readonly template: string;
+}
+
+export interface ICapabilityScaffoldImportReport {
+  readonly checkedEntries: number;
+  readonly problems: readonly ICapabilityScaffoldImportProblem[];
+  readonly requiredEntries: number;
+  readonly resolvedEntries: number;
+  readonly templates: readonly IScaffoldDependencyClosure[];
+}
+
+const TEMPLATE_SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
+const TEMPLATE_SOURCE_EXCLUSIONS = new Set(["dist", "node_modules"]);
+const TEMPLATE_PACKAGE_FIELDS = ["dependencies", "devDependencies"] as const;
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function manifestImportPackageName(importPathValue: string): string | undefined {
+  if (
+    importPathValue.startsWith("src/") ||
+    importPathValue.startsWith("@threenative/template/") ||
+    importPathValue.startsWith(".") ||
+    importPathValue.startsWith("node:")
+  )
+    return undefined;
+  const parts = importPathValue.split("/");
+  const count = importPathValue.startsWith("@") ? 2 : 1;
+  const name = parts.slice(0, count).join("/");
+  return name.length === 0 ? undefined : name;
+}
+
+function templatePackageNames(manifest: Record<string, unknown>): readonly string[] {
+  const packages = new Set<string>();
+  for (const field of TEMPLATE_PACKAGE_FIELDS) {
+    const block = manifest[field];
+    if (!isObjectRecord(block)) continue;
+    for (const name of Object.keys(block)) packages.add(name);
+  }
+  return [...packages].sort((left, right) => left.localeCompare(right));
+}
+
+async function templateFilesUnder(directory: string): Promise<readonly string[]> {
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  const files: string[] = [];
+  for (const entry of entries) {
+    if (TEMPLATE_SOURCE_EXCLUSIONS.has(entry.name)) continue;
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await templateFilesUnder(absolute)));
+    } else if (entry.isFile() && TEMPLATE_SOURCE_EXTENSIONS.has(path.extname(entry.name))) {
+      files.push(absolute);
+    }
+  }
+  return files;
+}
+
+function sourceKind(file: string): ts.ScriptKind {
+  const extension = path.extname(file);
+  if (extension === ".tsx" || extension === ".jsx") return ts.ScriptKind.TSX;
+  if (extension === ".js") return ts.ScriptKind.JS;
+  return ts.ScriptKind.TS;
+}
+
+function importedPackageName(specifier: string): string | undefined {
+  if (
+    specifier.startsWith(".") ||
+    specifier.startsWith("/") ||
+    specifier.startsWith("#") ||
+    specifier.startsWith("node:")
+  )
+    return undefined;
+  const parts = specifier.split("/");
+  const count = specifier.startsWith("@") ? 2 : 1;
+  const name = parts.slice(0, count).join("/");
+  return name.length === 0 ? undefined : name;
+}
+
+async function templateSourceImportPackages(directory: string): Promise<readonly string[]> {
+  const packages = new Set<string>();
+  for (const file of await templateFilesUnder(directory)) {
+    const source = ts.createSourceFile(
+      file,
+      await readFile(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+      sourceKind(file),
+    );
+    const visit = (node: ts.Node): void => {
+      if (
+        (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+        node.moduleSpecifier !== undefined &&
+        ts.isStringLiteral(node.moduleSpecifier)
+      ) {
+        const name = importedPackageName(node.moduleSpecifier.text);
+        if (name !== undefined) packages.add(name);
+      }
+      if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        const argument = node.arguments[0];
+        if (node.arguments.length === 1 && argument !== undefined && ts.isStringLiteral(argument)) {
+          const name = importedPackageName(argument.text);
+          if (name !== undefined) packages.add(name);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return [...packages].sort((left, right) => left.localeCompare(right));
+}
+
+export async function scaffoldDependencyClosures(
+  root: string,
+): Promise<readonly IScaffoldDependencyClosure[]> {
+  const templatesRoot = path.join(root, "packages", "create-threenative", "templates");
+  if (!existsSync(templatesRoot)) return [];
+  const templates: IScaffoldDependencyClosure[] = [];
+  for (const entry of (await readdir(templatesRoot, { withFileTypes: true }))
+    .filter((candidate) => candidate.isDirectory() && !candidate.name.startsWith("."))
+    .sort((left, right) => left.name.localeCompare(right.name))) {
+    const directory = path.join(templatesRoot, entry.name);
+    const packageFile = path.join(directory, "package.json");
+    if (!existsSync(packageFile)) continue;
+    const manifest = JSON.parse(await readFile(packageFile, "utf8")) as Record<string, unknown>;
+    templates.push({
+      packages: templatePackageNames(manifest),
+      sourceImports: await templateSourceImportPackages(directory),
+      template: entry.name,
+    });
+  }
+  return templates;
+}
+
+function entryRequires(entry: ICapabilityManifestEntry): readonly string[] {
+  return entry.requires ?? [];
+}
+
+export async function capabilityScaffoldImportReport(
+  root: string,
+  manifest: ICapabilityManifest,
+): Promise<ICapabilityScaffoldImportReport> {
+  const templates = await scaffoldDependencyClosures(root);
+  if (templates.length === 0) {
+    return {
+      checkedEntries: 0,
+      problems: [],
+      requiredEntries: 0,
+      resolvedEntries: 0,
+      templates,
+    };
+  }
+
+  const installedByAnyTemplate = new Set(templates.flatMap((template) => template.packages));
+  const sourceImportedByAnyTemplate = new Set(
+    templates.flatMap((template) => template.sourceImports),
+  );
+  const entriesByPackage = new Map<string, ICapabilityManifestEntry[]>();
+  let checkedEntries = 0;
+  let requiredEntries = 0;
+  for (const entry of manifest.entries) {
+    const packageNameValue = manifestImportPackageName(entry.importPath);
+    if (packageNameValue === undefined) continue;
+    checkedEntries += 1;
+    const group = entriesByPackage.get(packageNameValue) ?? [];
+    group.push(entry);
+    entriesByPackage.set(packageNameValue, group);
+    if (entryRequires(entry).length > 0) {
+      requiredEntries += 1;
+      continue;
+    }
+    if (installedByAnyTemplate.has(packageNameValue)) continue;
+    if (sourceImportedByAnyTemplate.has(packageNameValue)) continue;
+  }
+
+  const problems: ICapabilityScaffoldImportProblem[] = [];
+  for (const [packageNameValue, entries] of entriesByPackage) {
+    if (installedByAnyTemplate.has(packageNameValue)) continue;
+    if (sourceImportedByAnyTemplate.has(packageNameValue)) continue;
+    for (const entry of entries.filter((candidate) => entryRequires(candidate).length === 0)) {
+      problems.push({
+        importPath: entry.importPath,
+        packageName: packageNameValue,
+        reason:
+          "no scaffold dependency closure installs this package and the capability has no @requires install instruction",
+        symbol: entry.symbol,
+        template: "all templates",
+      });
+    }
+  }
+
+  for (const template of templates) {
+    const installed = new Set(template.packages);
+    for (const packageNameValue of template.sourceImports) {
+      if (installed.has(packageNameValue)) continue;
+      for (const entry of entriesByPackage.get(packageNameValue) ?? []) {
+        problems.push({
+          importPath: entry.importPath,
+          packageName: packageNameValue,
+          reason:
+            "template source imports this package but the generated package.json dependency closure omits it",
+          symbol: entry.symbol,
+          template: template.template,
+        });
+      }
+    }
+  }
+
+  return {
+    checkedEntries,
+    problems,
+    requiredEntries,
+    resolvedEntries: checkedEntries - requiredEntries - problems.length,
+    templates,
+  };
+}
+
+export function formatCapabilityScaffoldImportReport(
+  report: ICapabilityScaffoldImportReport,
+): string {
+  return `capability scaffold imports: ${report.resolvedEntries + report.requiredEntries} of ${report.checkedEntries} package-backed entries resolvable or documented across ${report.templates.length} template closures (${report.requiredEntries} require install instructions, ${report.problems.length} unresolved)`;
+}
+
+function formatCapabilityScaffoldImportErrors(report: ICapabilityScaffoldImportReport): string {
+  return [
+    `CAPABILITY_SCAFFOLD_IMPORT_UNRESOLVED: ${report.problems.length} manifest imports are unusable from scaffolded projects`,
+    ...report.problems.map(
+      (problem) =>
+        `- ${problem.template}: ${problem.symbol} -> ${problem.importPath} (${problem.packageName}); ${problem.reason}`,
+    ),
+  ].join("\n");
+}
+
+export async function checkCapabilityScaffoldImports(
+  root: string,
+  manifest: ICapabilityManifest,
+): Promise<ICapabilityScaffoldImportReport> {
+  const report = await capabilityScaffoldImportReport(root, manifest);
+  if (report.problems.length === 0) return report;
+  throw new Error(formatCapabilityScaffoldImportErrors(report));
 }
 
 const JSON_LINE_WIDTH = 100;
@@ -704,7 +968,13 @@ export async function writeCapabilityManifest(root: string): Promise<ICapability
 }
 
 export async function checkCapabilityManifest(root: string): Promise<ICapabilityManifest> {
-  const expected = serialiseManifest(buildCapabilityManifest(root));
+  const expectedManifest = buildCapabilityManifest(root);
+  const expected = serialiseManifest(expectedManifest);
+  const errors: string[] = [];
+  const scaffoldReport = await capabilityScaffoldImportReport(root, expectedManifest);
+  if (scaffoldReport.problems.length > 0) {
+    errors.push(formatCapabilityScaffoldImportErrors(scaffoldReport));
+  }
   let parsed: ICapabilityManifest | undefined;
   for (const file of manifestPaths(root)) {
     let actual: string;
@@ -719,10 +989,11 @@ export async function checkCapabilityManifest(root: string): Promise<ICapability
       throw new Error(`Capability manifest is unparseable at ${file}: ${String(error)}`);
     }
     if (actual !== expected) {
-      throw new Error(`Capability manifest is stale at ${file}; run pnpm build to regenerate it.`);
+      errors.push(`Capability manifest is stale at ${file}; run pnpm build to regenerate it.`);
     }
   }
   if (parsed === undefined) throw new Error("Capability manifest has no destination to check.");
+  if (errors.length > 0) throw new Error(errors.join("\n"));
   return parsed;
 }
 
@@ -732,9 +1003,11 @@ async function main(): Promise<void> {
   const manifest = check
     ? await checkCapabilityManifest(root)
     : await writeCapabilityManifest(root);
+  const scaffoldReport = await checkCapabilityScaffoldImports(root, manifest);
   process.stdout.write(
     `${check ? "capability manifest fresh" : "capability manifest generated"}: ${manifest.entries.length} entries and ${manifest.notOwned.length} notOwned rows at ${manifestPath(root)}\n`,
   );
+  process.stdout.write(`${formatCapabilityScaffoldImportReport(scaffoldReport)}\n`);
 }
 
 if (
