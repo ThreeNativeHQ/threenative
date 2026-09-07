@@ -3896,7 +3896,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
-      "signature": "export function touchPositionForViewport( x: number, y: number, viewport: IAndroidTouchViewport, ): [number, number] { … }",
+      "signature": "export function touchPositionForViewport( x: number, y: number, viewport: IAndroidTouchViewport, rotationOverride?: number, ): [number, number] { … }",
       "situations": [
         "run a scenario on an Android emulator or device",
         "parse Android console diagnostics"

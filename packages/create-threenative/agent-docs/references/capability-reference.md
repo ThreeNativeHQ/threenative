@@ -3269,7 +3269,7 @@ const adb = discoverAdb(process.env);
 `function` — Drive and inspect Android playtest transport.
 
 ```ts
-export function touchPositionForViewport( x: number, y: number, viewport: IAndroidTouchViewport, ): [number, number] { … }
+export function touchPositionForViewport( x: number, y: number, viewport: IAndroidTouchViewport, rotationOverride?: number, ): [number, number] { … }
 ```
 
 - **Use when:** run a scenario on an Android emulator or device · parse Android console diagnostics
