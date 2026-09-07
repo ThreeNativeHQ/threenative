@@ -771,15 +771,20 @@ void Canvas2DContext::ellipse(float x, float y, float radiusX, float radiusY, fl
         if (counterclockwise && sweep > 0) sweep -= tau;
     }
 
-    // Build a unit arc then transform it into the rotated ellipse. Two half arcs
-    // preserve the full-circle endpoint (Skia arcTo treats a 360-degree sweep as zero).
+    // Build a unit arc then transform it into the rotated ellipse. addOval keeps the
+    // full-circle contour intact on every native backend; arcTo treats a 360-degree
+    // sweep as zero and its two-half workaround is not reliable on Android.
     const float start = std::fmod(startAngle, tau) * 180.0f / M_PI;
     const float halfSweep = sweep * 90.0f / M_PI;
     const SkRect unit = SkRect::MakeLTRB(-1, -1, 1, 1);
     SkPathBuilder arc;
-    arc.moveTo(std::cos(startAngle), std::sin(startAngle));
-    arc.arcTo(unit, start, halfSweep, false);
-    arc.arcTo(unit, start + halfSweep, halfSweep, false);
+    if (std::fabs(sweep) >= tau) {
+        arc.addOval(unit, sweep > 0 ? SkPathDirection::kCW : SkPathDirection::kCCW);
+    } else {
+        arc.moveTo(std::cos(startAngle), std::sin(startAngle));
+        arc.arcTo(unit, start, halfSweep, false);
+        arc.arcTo(unit, start + halfSweep, halfSweep, false);
+    }
     SkMatrix matrix;
     matrix.setAll(radiusX * std::cos(rotation), -radiusY * std::sin(rotation), x,
                   radiusX * std::sin(rotation), radiusY * std::cos(rotation), y, 0, 0, 1);
