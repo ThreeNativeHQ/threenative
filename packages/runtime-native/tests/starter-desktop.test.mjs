@@ -40,6 +40,56 @@ test('rejects the same ocean with the proof pennant cropped away', () => {
   );
 });
 
+// The proof asset is graded down until it sits well below the brightness the pre-#126 predicate
+// demanded — `blue > 150 && green > 140` was an exposure threshold wearing a colour's name, so a
+// kit that grades its world darker failed a gate about whether an asset is *present*. Channel
+// margins are ratios between channels, so they survive the grade the same way hue did. This is
+// #126's property, kept, but on a fixture carrying the packaged asset's two colours rather than
+// cyan alone: the real proof is a cyan/magenta checkerboard, and a cyan-only stand-in is not it.
+function gradedProofFrame() {
+  const png = new PNG({ height: 16, width: 16 });
+  for (let y = 0; y < 16; y += 1) {
+    for (let x = 0; x < 16; x += 1) {
+      const offset = (y * 16 + x) * 4;
+      png.data[offset + 3] = 255;
+      if (y === 15) {
+        // One row of world behind the asset, so the frame is not the proof alone.
+        png.data[offset] = x % 12;
+        png.data[offset + 1] = 25 + (x % 9);
+        png.data[offset + 2] = 50 + (x % 11);
+      } else if ((Math.floor(x / 4) + Math.floor(y / 4)) % 2 === 0) {
+        // Authored magenta [255,40,180], graded down.
+        png.data[offset] = 128;
+        png.data[offset + 1] = 20;
+        png.data[offset + 2] = 90;
+      } else {
+        // Authored cyan [18,220,255], graded down: 128 is the lit frame's blue and 118 its green,
+        // both under the pre-#126 predicate's 150/140 thresholds.
+        png.data[offset] = 11;
+        png.data[offset + 1] = 118;
+        png.data[offset + 2] = 128;
+      }
+    }
+  }
+  return png;
+}
+
+test('the proof asset survives a grade that leaves it darker than the old floor', () => {
+  const directory = makeTempDirSync('starter-graded-test-');
+  const path = join(directory, 'frame.png');
+  const png = gradedProofFrame();
+  writeFileSync(path, PNG.sync.write(png));
+  // Every proof pixel here is below the old brightness floor, so the pre-#126 predicate saw none.
+  let brightEnoughForTheOldPredicate = 0;
+  for (let index = 0; index < png.data.length; index += 4) {
+    if (png.data[index + 2] > 150 && png.data[index + 1] > 140) brightEnoughForTheOldPredicate += 1;
+  }
+  assert.equal(brightEnoughForTheOldPredicate, 0);
+  const result = inspectStarterScreenshot(path);
+  assert.ok(result.magentaAssetPixels >= 100);
+  assert.ok(result.cyanAssetPixels >= 50);
+});
+
 test('starter desktop log fails closed without asset and frame markers', () => {
   assert.deepEqual(analyzeStarterLog('TN_NATIVE_SMOKE_READY:webgpu'), [
     'missing TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb',
