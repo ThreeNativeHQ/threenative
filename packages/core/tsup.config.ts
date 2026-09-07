@@ -8,6 +8,7 @@ export default defineConfig({
     "src/react.ts",
     "src/ui-layer.ts",
     "src/world.ts",
+    "src/net.ts",
   ],
   // React and the reconciler are optional peers: the game supplies them, and `dist/index.js` must
   // never pull them in, so core stays consumable from React Three Fiber and a game that mounts no

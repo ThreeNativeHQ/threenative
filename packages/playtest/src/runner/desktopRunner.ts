@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { runDevicePlaytest, type IDevicePlaytestDriver } from "./androidRunner.js";
-import { DesktopPlaytestDriver, LocalDeviceMailbox } from "./desktop.js";
+import {
+  DesktopPlaytestDriver,
+  LocalDeviceMailbox,
+  type IDesktopPlaytestDriverOptions,
+} from "./desktop.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import {
   DeviceMailboxTransport,
@@ -15,8 +19,18 @@ import type { IStandalonePlaytestReport } from "./runner.js";
 
 export interface IDesktopPlaytestDependencies {
   driver?: IDevicePlaytestDriver;
+  /** Builds the driver when one is not injected, so a test can watch what it is given. */
+  driverFactory?: (options: IDesktopPlaytestDriverOptions) => IDevicePlaytestDriver;
   mailboxRoot?: string;
   transport?: IDevicePlaytestTransport;
+}
+
+/**
+ * Arguments the native desktop host is launched with, from repeatable `--host-arg`.
+ * A host that needs none still launches, so an absent list is empty rather than undefined.
+ */
+function desktopHostArgs(config: IStandalonePlaytestConfig): readonly string[] {
+  return config.desktop?.hostArgs ?? [];
 }
 
 export async function runDesktopPlaytest(
@@ -74,7 +88,10 @@ export async function runDesktopPlaytest(
     mailboxRoot = root;
     ownsMailboxRoot = configuredRoot === undefined;
     const paths = deviceMailboxPaths(root);
-    driver = dependencies.driver ?? new DesktopPlaytestDriver({
+    const makeDriver =
+      dependencies.driverFactory ?? ((options) => new DesktopPlaytestDriver(options));
+    driver = dependencies.driver ?? makeDriver({
+      args: desktopHostArgs(config),
       cwd: config.projectPath,
       executable,
       mailboxRoot: root,

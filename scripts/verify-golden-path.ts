@@ -373,7 +373,59 @@ async function assertSculptResources(
   }
 }
 
-async function assertEngineCapabilityDiscovery(
+function parseMcpToolPayload(value: unknown, operation: string): unknown {
+  if (!isRecord(value) || !Array.isArray(value.content)) {
+    throw new Error(`threenative-engine ${operation} returned no content.`);
+  }
+  const text = value.content
+    .map((item) => (isRecord(item) && typeof item.text === "string" ? item.text : ""))
+    .join("");
+  if (text.trim().length === 0) {
+    throw new Error(`threenative-engine ${operation} returned empty content.`);
+  }
+  return JSON.parse(text) as unknown;
+}
+
+function assertNetworkingSearch(value: unknown): void {
+  if (
+    !isRecord(value) ||
+    value.verdict !== "matched" ||
+    value.guidance !== "" ||
+    !Array.isArray(value.results) ||
+    !value.results.every(isRecord)
+  ) {
+    throw new Error("threenative-engine is missing portable networking transport metadata.");
+  }
+  const transport = value.results.find(
+    (entry) => entry.symbol === "connect" && entry.importPath === "@threenative/core/net",
+  );
+  const constraints = transport?.constraints;
+  if (
+    !Array.isArray(constraints) ||
+    !constraints.every((constraint) => typeof constraint === "string") ||
+    !constraints.join(" ").includes("HTTPS") ||
+    !constraints.join(" ").includes("queues")
+  ) {
+    throw new Error("threenative-engine is missing portable networking transport metadata.");
+  }
+}
+
+function assertNetworkingDetail(value: unknown): void {
+  if (
+    !isRecord(value) ||
+    value.symbol !== "connect" ||
+    value.importPath !== "@threenative/core/net" ||
+    !Array.isArray(value.constraints) ||
+    !value.constraints.every((constraint) => typeof constraint === "string") ||
+    !Array.isArray(value.overrides) ||
+    !value.overrides.every((override) => typeof override === "string") ||
+    !value.overrides.some((override) => override.includes("maxQueuedReliableBytes"))
+  ) {
+    throw new Error("threenative-engine returned incomplete portable networking detail.");
+  }
+}
+
+export async function assertEngineCapabilityDiscovery(
   request: (method: string, params?: Record<string, unknown>) => Promise<unknown>,
 ): Promise<void> {
   const called = await request("tools/call", {
@@ -416,6 +468,21 @@ async function assertEngineCapabilityDiscovery(
   if (results.some((entry) => typeof entry.matchedSituation !== "string")) {
     throw new Error("threenative-engine returned a capability without matchedSituation evidence.");
   }
+
+  const networkingCall = await request("tools/call", {
+    arguments: {
+      scope: "request",
+      situation: "exchange authenticated multiplayer messages over WebTransport",
+    },
+    name: "engine_search_capabilities",
+  });
+  assertNetworkingSearch(parseMcpToolPayload(networkingCall, "networking search"));
+
+  const detailCall = await request("tools/call", {
+    arguments: { symbol: "connect" },
+    name: "engine_capability_detail",
+  });
+  assertNetworkingDetail(parseMcpToolPayload(detailCall, "networking detail"));
 }
 
 function resolveMcpMessage(value: unknown, pending: Map<number, IMcpPendingRequest>): void {
@@ -460,6 +527,64 @@ async function stopProcess(child: ChildProcess): Promise<void> {
   const exited = child.exitCode === null ? once(child, "exit") : Promise.resolve();
   await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5_000))]);
   if (child.exitCode === null) child.kill("SIGKILL");
+}
+
+function assertInstalledNetworkingExport(cwd: string): void {
+  try {
+    execFileSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        'import { connect } from "@threenative/core/net"; if (typeof connect !== "function") throw new Error("connect is not a function");',
+      ],
+      { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    );
+    process.stdout.write(`threenative-engine installed @threenative/core/net: connect (${cwd})\n`);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `threenative-engine installed @threenative/core/net import failed in '${cwd}': ${detail}`,
+    );
+  }
+}
+
+async function assertPackedEngineNetworking(
+  request: (method: string, params?: Record<string, unknown>) => Promise<unknown>,
+  cwd: string,
+): Promise<void> {
+  await assertEngineCapabilityDiscovery(request);
+  assertInstalledNetworkingExport(cwd);
+}
+
+async function probeProjectManifestFallback(
+  target: string,
+  configPath: string,
+  servers: Record<string, unknown>,
+): Promise<void> {
+  const projectManifest = path.join(target, "capabilities.json");
+  const hiddenManifest = path.join(target, ".capabilities.golden-path-backup.json");
+  const engine = servers["threenative-engine"];
+  if (!isRecord(engine) || typeof engine.command !== "string" || !Array.isArray(engine.args)) {
+    throw new Error(`TN_GOLDEN_PATH_MCP_SERVER_MISSING: ${configPath} lacks 'threenative-engine'.`);
+  }
+  await rename(projectManifest, hiddenManifest);
+  try {
+    await probeMcpServer(
+      "threenative-engine",
+      {
+        args: engine.args.filter((argument): argument is string => typeof argument === "string"),
+        command: engine.command,
+        ...(isStringRecord(engine.env) ? { env: engine.env } : {}),
+      },
+      await readMcpSurface(
+        path.join(REPO_ROOT, "packages/create-threenative", "engine-mcp-tools.json"),
+      ),
+      target,
+    );
+  } finally {
+    await rename(hiddenManifest, projectManifest);
+  }
 }
 
 export async function probeMcpServer(
@@ -554,7 +679,7 @@ export async function probeMcpServer(
     const listed = await request("tools/list");
     assertMcpToolSurface(serverName, surface.tools, listed);
     if (serverName === "threenative-sculpt") await assertSculptResources(request);
-    if (serverName === "threenative-engine") await assertEngineCapabilityDiscovery(request);
+    if (serverName === "threenative-engine") await assertPackedEngineNetworking(request, cwd);
     process.stdout.write(
       `${serverName} ok: ${surface.tools.length} tools from ${surface.version}\n`,
     );
@@ -600,29 +725,7 @@ export async function assertMcpServers(target: string): Promise<void> {
   // A project that adds @threenative/core by hand has no scaffold-owned capabilities.json.
   // Temporarily remove the generated copy and prove the packed core shim falls back to the
   // manifest inside its own tarball, which is the only source-less surface that adopter has.
-  const projectManifest = path.join(target, "capabilities.json");
-  const hiddenManifest = path.join(target, ".capabilities.golden-path-backup.json");
-  const engine = parsed.mcpServers["threenative-engine"];
-  if (!isRecord(engine) || typeof engine.command !== "string" || !Array.isArray(engine.args)) {
-    throw new Error(`TN_GOLDEN_PATH_MCP_SERVER_MISSING: ${configPath} lacks 'threenative-engine'.`);
-  }
-  await rename(projectManifest, hiddenManifest);
-  try {
-    await probeMcpServer(
-      "threenative-engine",
-      {
-        args: engine.args.filter((argument): argument is string => typeof argument === "string"),
-        command: engine.command,
-        ...(isStringRecord(engine.env) ? { env: engine.env } : {}),
-      },
-      await readMcpSurface(
-        path.join(REPO_ROOT, "packages/create-threenative", "engine-mcp-tools.json"),
-      ),
-      target,
-    );
-  } finally {
-    await rename(hiddenManifest, projectManifest);
-  }
+  await probeProjectManifestFallback(target, configPath, parsed.mcpServers);
 }
 
 export async function runCommand(

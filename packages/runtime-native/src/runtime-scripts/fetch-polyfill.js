@@ -1,22 +1,180 @@
-// TextDecoder polyfill (if not available)
+// TextDecoder fallback (only when the engine ships none — e.g. QuickJS).
+// Implements the standard UTF-8 behavior the protocol needs: fatal:true
+// throws a TypeError on malformed input, nonfatal decoding emits U+FFFD,
+// an incomplete trailing sequence survives across { stream: true } calls,
+// ArrayBuffer views honor byteOffset/byteLength, and unsupported
+// labels/options are rejected instead of silently coerced.
 if (typeof TextDecoder === "undefined") {
-  class TextDecoder {
-    constructor(encoding = "utf-8") {
-      this.encoding = encoding;
+  const UTF8_LABELS = [
+    "unicode-1-1-utf-8",
+    "unicode11utf8",
+    "unicode20utf8",
+    "unicode-2-0-utf-8",
+    "utf-8",
+    "utf8",
+    "x-unicode20utf8",
+  ];
+
+  function normalizeEncodingLabel(label) {
+    const text = String(label === undefined ? "utf-8" : label)
+      .toLowerCase()
+      .replace(/[\t\n\f\r ]/g, "");
+    if (UTF8_LABELS.indexOf(text) === -1) {
+      throw new RangeError(`TextDecoder: unsupported encoding "${text}" (only utf-8 is supported)`);
     }
-    decode(input) {
-      if (!input) return "";
-      const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
-      let result = "";
-      for (let i = 0; i < bytes.length; i++) {
-        result += String.fromCharCode(bytes[i]);
+    return "utf-8";
+  }
+
+  function toDecoderOptions(value, what) {
+    if (value === undefined || value === null) return {};
+    if (typeof value !== "object") {
+      throw new TypeError(`${what} must be an object`);
+    }
+    return value;
+  }
+
+  function toDecodeBytes(input) {
+    if (input === undefined || input === null) return new Uint8Array(0);
+    // ArrayBuffer.isView covers every typed array and DataView, and the
+    // (buffer, byteOffset, byteLength) view honors the caller's window.
+    if (typeof ArrayBuffer !== "undefined" && ArrayBuffer.isView(input)) {
+      return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+    }
+    if (typeof ArrayBuffer !== "undefined" && input instanceof ArrayBuffer) {
+      return new Uint8Array(input);
+    }
+    if (typeof SharedArrayBuffer !== "undefined" && input instanceof SharedArrayBuffer) {
+      return new Uint8Array(input);
+    }
+    throw new TypeError("TextDecoder.decode input must be an ArrayBuffer or ArrayBuffer view");
+  }
+
+  function malformed(fatal, out) {
+    if (fatal) throw new TypeError("TextDecoder: malformed UTF-8 sequence");
+    out.push("�");
+  }
+
+  // Lead byte -> { needed continuations, first-continuation bounds, point }.
+  // The bounds reject overlongs, surrogates and out-of-range points; null
+  // means a standalone continuation or impossible lead (0x80-0xC1, 0xF5-0xFF).
+  function sequencePlan(lead) {
+    if (lead >= 0xc2 && lead <= 0xdf) {
+      return { needed: 1, lower: 0x80, upper: 0xbf, point: lead & 0x1f };
+    }
+    if (lead >= 0xe0 && lead <= 0xef) {
+      return {
+        needed: 2,
+        point: lead & 0x0f,
+        lower: lead === 0xe0 ? 0xa0 : 0x80,
+        upper: lead === 0xed ? 0x9f : 0xbf,
+      };
+    }
+    if (lead >= 0xf0 && lead <= 0xf4) {
+      return {
+        needed: 3,
+        point: lead & 0x07,
+        lower: lead === 0xf0 ? 0x90 : 0x80,
+        upper: lead === 0xf4 ? 0x8f : 0xbf,
+      };
+    }
+    return null;
+  }
+
+  // Consumes one multibyte sequence at bytes[cursor.index]. An incomplete
+  // streaming tail rewinds and returns incomplete:true; a flush emits one
+  // replacement. An out-of-bounds continuation is rejected immediately while
+  // leaving the offending byte unconsumed.
+  function consumeSequence(bytes, cursor, plan, fatal, out, stream) {
+    const seqStart = cursor.index;
+    cursor.index += 1;
+    let lower = plan.lower;
+    let upper = plan.upper;
+    let point = plan.point;
+    for (let seen = 0; seen < plan.needed; seen += 1) {
+      if (cursor.index >= bytes.length) {
+        if (stream) {
+          cursor.index = seqStart;
+          return { incomplete: true, point: null };
+        }
+        malformed(fatal, out);
+        cursor.index = bytes.length;
+        return { incomplete: false, point: null };
       }
-      // Handle UTF-8 decoding properly
-      try {
-        return decodeURIComponent(escape(result));
-      } catch (e) {
-        return result;
+      const continuation = bytes[cursor.index];
+      if (continuation < lower || continuation > upper) {
+        malformed(fatal, out);
+        return { incomplete: false, point: null };
       }
+      point = (point << 6) | (continuation & 0x3f);
+      cursor.index += 1;
+      lower = 0x80;
+      upper = 0xbf;
+    }
+    return { incomplete: false, point };
+  }
+
+  // Decodes bytes as UTF-8. Returns { text, rest }: rest is the incomplete
+  // trailing sequence a streaming caller keeps for the next chunk, or null
+  // when everything was consumed (a truncated tail on flush is an error).
+  function decodeUtf8(bytes, fatal, stream) {
+    const out = [];
+    const cursor = { index: 0 };
+    while (cursor.index < bytes.length) {
+      const lead = bytes[cursor.index];
+      if (lead <= 0x7f) {
+        out.push(String.fromCharCode(lead));
+        cursor.index += 1;
+        continue;
+      }
+      const plan = sequencePlan(lead);
+      if (plan === null) {
+        malformed(fatal, out);
+        cursor.index += 1;
+        continue;
+      }
+      const step = consumeSequence(bytes, cursor, plan, fatal, out, stream);
+      if (step.incomplete) return { text: out.join(""), rest: bytes.slice(cursor.index) };
+      if (step.point === null) continue;
+      out.push(String.fromCodePoint(step.point));
+    }
+    const rest = cursor.index < bytes.length ? bytes.slice(cursor.index, bytes.length) : null;
+    return { text: out.join(""), rest };
+  }
+
+  class TextDecoder {
+    // Matches the Web IDL signature constructor(optional DOMString label = "utf-8", ...).
+    // biome-ignore lint/style/useDefaultParameterLast: Web IDL default precedes options.
+    constructor(label = "utf-8", options) {
+      normalizeEncodingLabel(label);
+      const settings = toDecoderOptions(options, "TextDecoder options");
+      this.encoding = "utf-8";
+      this.fatal = Boolean(settings.fatal);
+      this.ignoreBOM = Boolean(settings.ignoreBOM);
+      this._pending = new Uint8Array(0);
+      this._bomChecked = false;
+    }
+    decode(input, options) {
+      const settings = toDecoderOptions(options, "TextDecoder.decode options");
+      const stream = Boolean(settings.stream);
+      let bytes = toDecodeBytes(input);
+      if (this._pending.length > 0) {
+        const joined = new Uint8Array(this._pending.length + bytes.length);
+        joined.set(this._pending, 0);
+        joined.set(bytes, this._pending.length);
+        bytes = joined;
+        this._pending = new Uint8Array(0);
+      }
+      const result = decodeUtf8(bytes, this.fatal, stream);
+      this._pending = result.rest === null ? new Uint8Array(0) : result.rest;
+      let text = result.text;
+      // The BOM is stripped once, at the start of the stream, unless ignored.
+      if (!this._bomChecked && (text.length > 0 || !stream)) {
+        this._bomChecked = true;
+        if (!this.ignoreBOM && text.charCodeAt(0) === 0xfeff) {
+          text = text.slice(1);
+        }
+      }
+      return text;
     }
   }
   globalThis.TextDecoder = TextDecoder;
@@ -355,9 +513,13 @@ async function fetch(input, options = {}) {
   // Check URL type
   if (url.startsWith("http://") || url.startsWith("https://")) {
     // HTTP/HTTPS request via async libcurl + libuv (non-blocking)
+    const nativeOptions = { ...(options || {}) };
+    if (nativeOptions.headers !== undefined && !(nativeOptions.headers instanceof Headers)) {
+      nativeOptions.headers = new Headers(nativeOptions.headers);
+    }
     return new Promise((resolve, reject) => {
       if (signal) signal.addEventListener("abort", () => reject(abortError()));
-      __httpRequestAsync(url, options, (result) => {
+      __httpRequestAsync(url, nativeOptions, (result) => {
         if (result.error) {
           reject(new Error(`Fetch error: ${result.error}`));
         } else {

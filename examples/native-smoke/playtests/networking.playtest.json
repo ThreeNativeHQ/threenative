@@ -1,0 +1,68 @@
+{
+  "artifacts": { "console": true, "screenshots": false },
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "The WebGPU browser lane emits the known popErrorScope diagnostic; networking state assertions remain authoritative.",
+      "noRuntimeDiagnostics": false,
+      "runtimeDiagnosticsOptOutReason": "The WebGPU browser lane emits the known popErrorScope diagnostic; networking state assertions remain authoritative."
+    },
+    "resources": [
+      {
+        "allowTrivial": "The authenticated connection may complete during runner startup; the live runner still requires both client reports and distinct sessions.",
+        "equals": true,
+        "id": "state",
+        "path": "networkConnected",
+        "throughoutSteps": true
+      },
+      {
+        "allowTrivial": "Both authenticated clients may observe each other before the first sampled scenario frame; the runner cross-checks both player identities.",
+        "equals": true,
+        "id": "state",
+        "path": "networkPeerObserved"
+      },
+      {
+        "allowTrivial": "Remote movement may already be visible before the first sampled scenario frame; the value is accumulated from successive authenticated peer snapshots only.",
+        "gte": 1,
+        "id": "state",
+        "path": "networkRemoteDistance"
+      },
+      {
+        "allowTrivial": "The first authenticated action may be acknowledged before the first sampled scenario frame; only accepted server replies increment this value.",
+        "gte": 1,
+        "id": "state",
+        "path": "networkActionAcks"
+      },
+      {
+        "allowTrivial": "The protocol error counter starts at zero and must remain zero throughout the authenticated two-client run.",
+        "equals": 0,
+        "id": "state",
+        "path": "networkProtocolErrors"
+      }
+    ]
+  },
+  "name": "native-smoke-networking",
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "timeoutMs": 15000,
+      "waitForResource": { "equals": true, "id": "state", "path": "networkConnected" }
+    },
+    {
+      "timeoutMs": 15000,
+      "waitForResource": { "equals": true, "id": "state", "path": "networkPeerObserved" }
+    },
+    {
+      "timeoutMs": 15000,
+      "waitForResource": { "gte": 1, "id": "state", "path": "networkRemoteDistance" }
+    },
+    {
+      "label": "network-settled",
+      "timeoutMs": 15000,
+      "waitForResource": { "gte": 1, "id": "state", "path": "networkActionAcks" }
+    }
+  ],
+  "target": "web",
+  "viewport": { "height": 360, "width": 640 },
+  "warmupFrames": 30
+}

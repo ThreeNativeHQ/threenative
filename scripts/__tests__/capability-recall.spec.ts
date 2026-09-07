@@ -8,6 +8,7 @@ import {
   type ICapabilityRecallBudget,
   type ICapabilityRecallRow,
   compareBudget,
+  loadCorpus,
   measureRecall,
   resolveCorpusSources,
   validateCorpus,
@@ -55,6 +56,21 @@ function budget(overrides: Partial<ICapabilityRecallBudget> = {}): ICapabilityRe
 }
 
 describe("capability recall gate", () => {
+  it("pins transport ownership while keeping replication and prediction game-owned", async () => {
+    const corpus = await loadCorpus();
+    const transport = corpus.rows.find((candidate) => candidate.id === "request.multiplayer");
+    expect(transport).toMatchObject({
+      expect: ["connect"],
+      query: "exchange authenticated multiplayer messages over WebTransport",
+    });
+    expect(transport?.notOwned).toBeUndefined();
+
+    for (const id of ["request.multiplayer-replication", "request.multiplayer-prediction"]) {
+      const gameOwned = corpus.rows.find((candidate) => candidate.id === id);
+      expect(gameOwned?.notOwned, id).toBe("networked-multiplayer");
+    }
+  });
+
   it("should throw when the corpus is empty", () => {
     expect(() => validateCorpus({ rows: [], version: 1 })).toThrow(
       "TN_CAPABILITY_RECALL: corpus.json: corpus has no rows",
