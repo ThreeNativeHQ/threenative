@@ -260,18 +260,18 @@ screenshot. Android and iOS were not executed.
 The current engine worktree gates completed with these exact summaries:
 
 ```text
-pnpm typecheck                         exit 0; 28 workspaces
-pnpm lint                              exit 0; 624 existing warnings
-SDL_AUDIODRIVER=dummy pnpm test        exit 0; 396 files passed, 2 skipped; 4412 passed, 7 skipped
+pnpm typecheck                         exit 0; 28 of 29 workspaces
+pnpm lint                              exit 0; Biome checked 2016 files; 651 existing warnings
+SDL_AUDIODRIVER=dummy pnpm test        exit 0; 401 files passed, 2 skipped; 4487 passed, 7 skipped
 pnpm budgets                           exit 0
-pnpm quality                           exit 0; 138 report findings
-pnpm check:docs                        exit 0; 1554 relative links checked
+pnpm quality                           exit 0; 139 report findings
+pnpm check:docs                        exit 0; 1632 relative links across 1003 Markdown files
 pnpm sync:agents --check               exit 0; 19 CLAUDE.md mirrors
 ```
 
 The full test run included the engine build, package checks, docs checks, golden-path checks, and
-runtime-native lanes: 104 native files with 809 tests passed and 35 skipped, plus 29 JavaScript
-parity checks and 14 Rust unit tests with 2 parity checks. The follow-up Astra review found no
+runtime-native lanes: 104 native files with 837 tests passed and 57 skipped, plus 29 JavaScript
+parity checks and 16 Rust unit tests with 2 parity checks. The follow-up Astra review found no
 new issue after the package refresh; the LOC ratchet and rendered native proof remain open. PRD-362 remains explicitly partial: its
 focused starter checks are green, while the required qualified Android runs and acceptance remain
 unverified.
