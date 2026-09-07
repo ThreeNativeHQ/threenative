@@ -88,11 +88,13 @@ jobs:
   web-reference:
     needs: scope
     name: Commit-keyed web conformance reference
+    # Ungated on pull requests with android-emulator-parity, which needs this reference to compare
+    # against and would otherwise skip with it. desktop-parity also needs it and stays gated; a
+    # skipped dependant does not force this job to run, so the cost here is one browser capture on
+    # pull requests that previously ran none. The prose-only scope skip is unrelated and kept.
     if: >-
       needs.scope.outputs.selection != 'prose' &&
-      inputs.ios_only == false &&
-      (github.event_name != 'pull_request' ||
-       contains(github.event.pull_request.labels.*.name, 'native'))
+      inputs.ios_only == false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -114,7 +116,14 @@ jobs:
           test "$status" -eq 0 -o "$status" -eq 2
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
             packages/runtime-native/artifacts/conformance/web "web reference"
+      # Uploaded even when the capture step fails, and that changes no verdict: this job still
+      # reports its own red, and a consumer whose `needs` failed still skips. What it changes is
+      # that the red becomes diagnosable. `report.json` is written before the exit test, so on a
+      # failing run the one artifact naming which row failed existed and was thrown away — which is
+      # why "web-reference is red" has been readable for three runs on main without anyone being
+      # able to say what failed.
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: native-web-reference-${{ github.sha }}
           path: packages/runtime-native/artifacts/conformance/web
@@ -196,29 +205,28 @@ jobs:
     # platform legs behind pushes to main and a `native` label, and the lane then spent its runs
     # being cancelled by the next push instead of reporting anything. A leg that is skipped on the
     # branch where the work happens is a leg nobody is watching.
-    # Runs on every event except an unlabelled pull request — the only two legs that are gated,
-    # and the numbers behind it rather than a preference:
+    # Ungated on pull requests again, 2026-09-06, and only this leg — desktop-parity keeps the
+    # label. The cost note that gated both still stands on its numbers:
     #
     #   desktop-parity            3173s   android-emulator-parity   1858s
     #
-    # 84 of the ~130 runner-minutes this workflow spends per pull request, against ~60 for all of
-    # CI, on the same pool. That pool is what CI's wall clock is made of: on run 33782776626 the
-    # run took 457s while its longest job was 332s, and CI's own 26 jobs were queueing against
-    # ~10 slots that these legs were also holding.
+    # but its load-bearing clause was "both are red on main today", and that was the reason the
+    # evidence did not justify the minutes. This leg was red for a reason that had nothing to do
+    # with any pull request's diff: `stb` is fetched fresh from raw.githubusercontent.com on every
+    # run, unauthenticated, and returned 429 (run 34078916876), so `Install Android build
+    # prerequisites` exited 1 and the emulator never booted. With that fixed and the lane
+    # producing a result, "advisory but reporting" is worth 31 runner-minutes; "advisory and
+    # always red" was not.
     #
-    # What that buys on a pull request is less than it looks. Both legs are advisory rather than
-    # required, both are red on main today, and both report 30-53 minutes after a pull request
-    # opens — long after CI is green and the pull request has been read. Evidence that arrives
-    # after the decision is not gating the decision.
+    # desktop-parity is left gated: it is the larger half of the 84 runner-minutes, and nothing
+    # here has made it green.
     #
-    # They still run on every push to main, every night, and on any pull request labelled
-    # `native`, so nothing reaches a release without them reporting. Deleting this one `if` puts
-    # them back on every pull request.
+    # This leg is still advisory, not a required check, so it reports without blocking.
+    # Restoring the label gate is the same `if` desktop-parity still carries. The prose-only
+    # scope skip is unrelated and kept.
     if: >-
       needs.scope.outputs.selection != 'prose' &&
-      inputs.ios_only != true &&
-      (github.event_name != 'pull_request' ||
-       contains(github.event.pull_request.labels.*.name, 'native'))
+      inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -242,6 +250,18 @@ jobs:
       # these were simply never added. Keys are content-addressed where a lockfile exists and
       # pinned to the versions this workflow installs where one does not, so a version bump
       # misses rather than serving a stale toolchain.
+      # This leg was the only compiling native job without it — desktop-parity, desktop and
+      # starter-linux all restore the same path under the same key. Its absence is why the lane
+      # re-fetched every Android dependency on every run, including stb's three single headers from
+      # raw.githubusercontent.com, which returned 429 on run 34078916876 and took the whole lane
+      # down before the emulator booted. On a warm cache `download-deps.mjs` finds the headers
+      # already present and skips the fetch entirely, so the failure mode cannot recur; the retry
+      # added alongside this covers the cold-cache run that still has to reach the network.
+      - name: Restore native third-party dependencies
+        uses: actions/cache@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
       - name: Restore the Android SDK packages
         uses: actions/cache@v4
         with:
@@ -348,10 +368,23 @@ jobs:
           # overwriting the web reference this lane had just captured and then comparing the
           # emulator against the wreckage. Keep the invocation on one line; `sh -c` keeps the
           # `||` tolerance for exit 2 (rows blocked by this machine) on that same line.
+          # The logcat dump rides this same folded line on purpose. `android-emulator-runner` tears
+          # the emulator down when `script` returns, so a later step has no device to read: the
+          # buffer has to be captured here, before the exit test that decides this step's status.
+          #
+          # adb's stderr goes to its own file rather than into the log. Folded into the capture it
+          # would make "device offline" indistinguishable from "the observer emitted nothing": the
+          # log would be non-empty, carry no marker, and the next step would blame the observer.
+          # The conformance status is recorded for the same reason — exit 2 means rows were
+          # blocked and the app may never have launched, which is not an observer failure.
           script: >-
             node packages/runtime-native/conformance/run-conformance.mjs --target android
             --device emulator-5554 --reference artifacts/conformance/web
-            --out artifacts/conformance/android; status=$?; test "$status" -eq 0 -o "$status" -eq 2
+            --out artifacts/conformance/android; status=$?; echo "$status" >
+            "$RUNNER_TEMP/conformance-status.txt"; adb logcat -d >
+            "$RUNNER_TEMP/emulator-logcat.txt" 2> "$RUNNER_TEMP/emulator-logcat.err" || echo
+            TN_ADB_LOGCAT_FAILED >> "$RUNNER_TEMP/emulator-logcat.err";
+            test "$status" -eq 0 -o "$status" -eq 2
       - name: Verify captured parity ledger
         if: always()
         run: |
@@ -420,6 +453,139 @@ jobs:
             > packages/runtime-native/artifacts/performance-contract/android-emulator/collector-status.json
           node packages/runtime-native/scripts/production-evidence.mjs \
             > packages/runtime-native/artifacts/performance-contract/android-emulator/collector-contract.json
+      # PRD-360 structural check. This proves the observer EMITS on a real Android build and that
+      # the tracked evaluator parses a real logcat — the one half of the launch measurement that
+      # was previously exercised only on desktop and against a mocked adb transport.
+      #
+      # It deliberately does NOT judge the 8s or 250ms budgets. This lane is x86_64 SwiftShader on
+      # `-accel auto`, has booted in 474s without KVM, and the evaluator's own 50% battery preflight
+      # is meaningless on an emulator. A budget verdict from here would be a manufactured result, so
+      # the timings are recorded UNVERIFIED and only the marker's presence and shape can fail.
+      - name: Assert PRD-360 pump observer emits on Android (structural, non-timing)
+        if: always()
+        run: |
+          node --input-type=module - <<'NODE'
+          import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+          import { pathToFileURL } from "node:url";
+
+          const temp = process.env.RUNNER_TEMP;
+          const logPath = join(temp, "emulator-logcat.txt");
+          const read = (name) => {
+            try {
+              return readFileSync(join(temp, name), "utf8");
+            } catch (error) {
+              if (error?.code === "ENOENT") return null;
+              throw error;
+            }
+          };
+
+          const outDir = "packages/runtime-native/artifacts/performance-contract/android-emulator";
+          mkdirSync(outDir, { recursive: true });
+
+          const record = (payload) =>
+            writeFileSync(
+              join(outDir, "pump-silence-structural.json"),
+              `${JSON.stringify(
+                { provenance: "android-emulator", sourceSha: process.env.GITHUB_SHA, ...payload },
+                null,
+                2,
+              )}\n`,
+            );
+
+          // Reached on always(), so it runs when an earlier step failed and no emulator ever
+          // booted. Name that cause rather than burying it in an ENOENT stack.
+          const hostLog = read("emulator-logcat.txt");
+          const conformanceStatus = read("conformance-status.txt");
+          if (hostLog === null || conformanceStatus === null) {
+            throw new Error(
+              `TN_PUMP_ANDROID_LOGCAT_MISSING: ${logPath} was never written, so the emulator lane ` +
+                "did not run. Read the first failing step in this job, not this one.",
+            );
+          }
+
+          // Evidence is published whatever the verdict, and that is the point: when conformance
+          // fails, the step below records BLOCKED and asserts nothing about the observer, but the
+          // log it just read is the only thing that says whether the markers reached Android
+          // logcat at all — still unproven. Discarding it on a red run is exactly the mistake
+          // `web-reference` was making, publishing the answer only from runs that did not need it.
+          //
+          // What is published is the marker lines, not the buffer. `adb logcat -d` returns the
+          // default set including `system`, ~1,500 lines of unrelated framework chatter per run,
+          // and the open question needs three greps of it. Publishing the whole buffer widens the
+          // distribution surface for no added answer. The parser still reads the full capture from
+          // RUNNER_TEMP; only the artifact is narrowed.
+          const markerLines = hostLog.split("\n")
+            .filter((line) => line.includes("TN_PUMP_SILENCE:") || line.includes("TN_PUMP_ENDPOINT:"));
+          writeFileSync(
+            join(outDir, "pump-markers.log"),
+            `# TN_PUMP_* lines from adb logcat -d. Device output, filtered; not the full buffer.\n${
+              markerLines.join("\n")
+            }\n`,
+          );
+          // Named for what it is: adb's own stderr on the host, not device output. Empty on a
+          // healthy run; on a failed one it carries host error text under an artifact whose name
+          // otherwise implies the emulator produced it.
+          const adbStderr = read("emulator-logcat.err");
+          if (adbStderr !== null) {
+            writeFileSync(
+              join(outDir, "adb-host-stderr.txt"),
+              `# adb stderr on the RUNNER, not emulator output.\n${adbStderr}`,
+            );
+          }
+
+          // adb's own failure is not the observer's. A dead or offline device leaves a log that is
+          // present, empty of markers, and would otherwise read as "the observer emitted nothing".
+          const adbErrors = (read("emulator-logcat.err") ?? "").trim();
+          if (adbErrors.includes("TN_ADB_LOGCAT_FAILED") || adbErrors.length > 0) {
+            record({ claim: "adb could not read the buffer", pass: false, status: "BLOCKED" });
+            throw new Error(`TN_PUMP_ANDROID_ADB_FAILED: ${adbErrors.slice(0, 500)}`);
+          }
+
+          // The lane deliberately accepts conformance exit 2 — rows blocked by this machine, where
+          // the app may never have launched. Absent markers then say nothing about the observer,
+          // so this records BLOCKED rather than manufacturing a red against it.
+          if (conformanceStatus.trim() !== "0") {
+            record({
+              claim: "conformance did not fully execute; observer emission not assessed",
+              conformanceStatus: conformanceStatus.trim(),
+              pass: false,
+              status: "BLOCKED",
+            });
+            console.log(
+              `TN_PUMP_ANDROID_BLOCKED conformance exited ${conformanceStatus.trim()}; ` +
+                "the app may never have launched, so the observer is not judged here.",
+            );
+            process.exit(0);
+          }
+
+          // The evaluator is tracked as retained source beside its proof; import the same bytes the
+          // desktop suite imports rather than restating its rules here.
+          const source = "docs/verification/prd-360-startup-2026-09-05/evaluate-first-playable.mjs.txt";
+          const staged = join(process.env.RUNNER_TEMP, "evaluate-first-playable.mjs");
+          copyFileSync(source, staged);
+          const { evaluatePumpSilence } = await import(pathToFileURL(staged).href);
+
+          // Infinity retires the budget branch, leaving presence, JSON shape, observed:true and
+          // finite non-negative stamps as the only things that can fail here.
+          const result = evaluatePumpSilence({ hostLog, maxGapMs: Number.POSITIVE_INFINITY });
+
+          record({
+            claim: "observer emits and parses on Android; timings are NOT a PRD-360 verdict",
+            code: result.code,
+            detail: result.detail ?? null,
+            pass: result.pass,
+            status: "UNVERIFIED",
+          });
+
+          if (!result.pass) {
+            throw new Error(
+              `TN_PUMP_ANDROID_STRUCTURAL_FAILED: ${result.code} ` +
+                `${JSON.stringify(result.detail ?? null)}`,
+            );
+          }
+          console.log(`TN_PUMP_ANDROID_STRUCTURAL_OK ${JSON.stringify(result.detail)}`);
+          NODE
       - uses: actions/upload-artifact@v7
         if: always()
         with:

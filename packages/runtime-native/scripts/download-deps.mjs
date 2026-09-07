@@ -598,12 +598,78 @@ function verifyAndRecordWgpuInstallation(name, destDir, expectedVersion) {
   return manifest;
 }
 
-async function downloadFile(url, destPath) {
+// A hosted runner shares one egress IP with every other job on the pool, and
+// raw.githubusercontent.com rate-limits it. On 2026-09-07 that took the whole Android lane down:
+// every cached dependency reported OK and then `stb` — three single headers fetched fresh on each
+// run, outside the third-party cache — came back 429, so `Install Android build prerequisites`
+// exited 1, the emulator never booted, and the two steps after it reported a missing report and a
+// BLOCKED collector. One transient status must not read as a missing dependency.
+const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+// One retry may never outlast the job that is waiting for it. A server is free to answer
+// `Retry-After: 600`, and four of those inside `android-emulator-parity` (timeout-minutes: 45)
+// would sleep past the job's own ceiling and report as an emulator hang rather than a rate limit.
+const MAX_RETRY_DELAY_MS = 30_000;
+
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * `Retry-After` in seconds when the server names one, else exponential backoff from 1s; capped
+ * either way. A malformed, non-positive or HTTP-date value falls through to the backoff.
+ */
+function retryDelayMs(response, attempt) {
+  const header = Number(response?.headers?.get?.('retry-after'));
+  const requested = Number.isFinite(header) && header > 0 ? header * 1000 : 1000 * 2 ** attempt;
+  return Math.min(requested, MAX_RETRY_DELAY_MS);
+}
+
+// No Authorization header is ever attached here, and that is deliberate rather than an omission.
+// raw.githubusercontent.com gates on the header instead of ignoring it: measured 2026-09-07 against
+// nothings/stb, an anonymous GET returns 200 while the same GET carrying a bearer token the host
+// cannot validate for that repository returns 404. `secrets.GITHUB_TOKEN` is scoped to this
+// repository and has no grant on the upstreams this script fetches, so sending it would convert a
+// retryable 429 into the one status this function refuses to retry, failing first-try and reading
+// as a deleted upstream file. The cache restore in the workflow is what removes the fetch; this
+// retry only has to survive the cold-cache run.
+export async function downloadFile(url, destPath, options = {}) {
+  const { fetchImpl = fetch, sleep = defaultSleep, retries = 4 } = options;
+
   console.log(`Downloading: ${url}`);
 
-  const response = await fetch(url, { redirect: 'follow' });
-  if (!response.ok) {
-    throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
+  const init = { redirect: 'follow' };
+
+  let response;
+  for (let attempt = 0; ; attempt += 1) {
+    let failure;
+    try {
+      response = await fetchImpl(url, init);
+    } catch (error) {
+      // A rate limit is not the only way this leg loses the network. `fetch` throws rather than
+      // answering on ECONNRESET, a DNS failure or a dropped TLS handshake, and a retry that
+      // survives only HTTP statuses would give up on exactly the flakiness it exists to absorb.
+      if (attempt >= retries) throw error;
+      failure = error;
+    }
+
+    if (!failure) {
+      if (response.ok) break;
+      // A 404 is the answer, not a transient failure: retrying it only delays a real error.
+      if (!TRANSIENT_STATUSES.has(response.status) || attempt >= retries) {
+        throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
+      }
+    }
+
+    const delay = retryDelayMs(failure ? undefined : response, attempt);
+    const reason = failure
+      ? `${failure.code ?? failure.name ?? 'network error'}`
+      : `${response.status} ${response.statusText}`;
+    console.log(
+      `  ${reason} — retrying in ${delay}ms (attempt ${attempt + 2} of ${retries + 1})`,
+    );
+    // The rejected response's body is never read; release it rather than holding the connection
+    // open until GC across every retry.
+    if (!failure) await response.body?.cancel?.().catch(() => {});
+    await sleep(delay);
   }
 
   const dir = dirname(destPath);
