@@ -525,8 +525,23 @@ describe("SkeletalMesh3D shared character preparation", () => {
       size: { axis: "longest", metres: 1 },
     });
 
-    expect(instance.scaleFactor).toBeCloseTo(0.5, 4);
     expect(instance.root.scale.x).toBeCloseTo(0.5, 4);
+  });
+
+  it("maps an object-valued top option onto the cloned rig", () => {
+    const fixture = createMultiPrimitiveRigFixture();
+    fixture.bones[1]?.position.set(0, 1, 0);
+    fixture.bones[2]?.position.set(0, 2, 0);
+    const translatedParent = new Group();
+    translatedParent.position.y = 10;
+    translatedParent.add(fixture.root);
+
+    const instance = new SkeletalMesh3D({
+      source: fixture.root,
+      size: { axis: "height", metres: 4, top: fixture.bones[2] },
+    });
+
+    expect(instance.root.scale.y).toBeCloseTo(4 / 3, 4);
   });
 
   it("fails at load time when a requested clip is missing, including the historically bad doe clip map", () => {

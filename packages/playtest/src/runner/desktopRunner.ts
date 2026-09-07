@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
 import { runDevicePlaytest, type IDevicePlaytestDriver } from "./androidRunner.js";
+import { provideDisplay, type IProvidedDisplay } from "./captureEnvironment.js";
 import { DesktopPlaytestDriver, LocalDeviceMailbox } from "./desktop.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 import {
@@ -34,6 +35,7 @@ export async function runDesktopPlaytest(
   };
   let mailboxRoot: string | undefined;
   let ownsMailboxRoot = false;
+  let providedDisplay: IProvidedDisplay | undefined;
   let driver: IDevicePlaytestDriver | undefined;
   let transport: IDevicePlaytestTransport | undefined;
   let signalCleanup: Promise<void> | undefined;
@@ -74,8 +76,10 @@ export async function runDesktopPlaytest(
     mailboxRoot = root;
     ownsMailboxRoot = configuredRoot === undefined;
     const paths = deviceMailboxPaths(root);
+    if (dependencies.driver === undefined) providedDisplay = await provideDisplay();
     driver = dependencies.driver ?? new DesktopPlaytestDriver({
       cwd: config.projectPath,
+      ...(providedDisplay === undefined ? {} : { env: providedDisplay.env }),
       executable,
       mailboxRoot: root,
     });
@@ -127,6 +131,7 @@ export async function runDesktopPlaytest(
         });
       }
     }
+    if (providedDisplay !== undefined) await attemptCleanup(providedDisplay.release);
     if (cleanupErrors.length > 0) {
       if (executionFailed) {
         executionError = cleanupFailure([executionError, ...cleanupErrors]);
