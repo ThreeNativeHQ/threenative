@@ -3690,8 +3690,10 @@ promoted, and no hosted or physical platform performance result is claimed.
 The object-method exemption in the lexical scanner previously treated `import(path)` inside an
 object property's array, call, or parenthesized expression as a method name because it searched
 for any enclosing object. Those valid JavaScript forms could therefore disappear from graph
-identity. The exemption now applies only when the current delimiter is the object member itself;
-the nested forms fail closed with `TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE`.
+identity. The scanner now limits the exemption to the current object-member delimiter, recognizes
+generator methods (`*import` and `async *import`), and starts template-expression scans in
+expression context so an object literal there is not mistaken for a block. Nested computed
+imports fail closed with `TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE`.
 
 Red/green evidence:
 

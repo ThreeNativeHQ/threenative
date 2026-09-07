@@ -144,6 +144,13 @@ describe("engine load test workload", () => {
       );
     }
     expect(extractModuleSpecifiers("const obj = { import(value) { return value; } };")).toEqual([]);
+    for (const source of [
+      "const obj = { *import(value) { return value; } };",
+      "const obj = { async *import(value) { return value; } };",
+      "const template = `${{ import(value) {} }}`;",
+    ]) {
+      expect(extractModuleSpecifiers(source)).toEqual([]);
+    }
 
     const module = (value: string): IModuleGraphEntry => ({
       bytes: new TextEncoder().encode(value),

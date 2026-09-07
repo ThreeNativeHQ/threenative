@@ -1566,7 +1566,8 @@ function scanModuleSourceIdentifier(
     enclosing?.kind === "brace" &&
     enclosing.context === "object" &&
     source.charCodeAt(skipTrivia(source, end)) === 40 &&
-    ((previous?.kind === "punctuation" && (previous.code === 44 || previous.code === 123)) ||
+    ((previous?.kind === "punctuation" &&
+      (previous.code === 42 || previous.code === 44 || previous.code === 123)) ||
       (previous?.kind === "identifier" &&
         (previous.value === "async" || previous.value === "get" || previous.value === "set")));
   if (!propertyName && !objectMethodName && word === "import") {
@@ -1649,6 +1650,7 @@ function scanTemplateExpressionForModuleReferences(
     scanner: createScannerState(),
     tokens: [],
   };
+  expressionState.scanner.statementStart = false;
   let index = start;
   while (index < source.length) {
     if (source.charCodeAt(index) === 125 && expressionState.scanner.delimiters.length === 0) {
