@@ -271,19 +271,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-05 for the generated pointer-capture and desktop-mode authoring contract
   // in every template's AGENTS.md/CLAUDE.md pair; values are from the current Received block.
   // Recomputed 2026-09-06 for PRD-361: SkeletalMesh3D in capability manifest and action-rpg character setup.
-  "action-rpg": "bff1841b5af985439e0fee93b36e21220cd61afed01299aeec577b80a26c6808",
-  defense: "d30742244556785796e69ec827b8a768d6e668483f92f7eedcc5f966e3bc0ac1",
+  // Recomputed 2026-09-07 after the malformed and empty required-clip guards updated the generated capability reference.
+  "action-rpg": "66e23db8b674e1fc936c2dd4107e3fa2ac1f996f9402fb29eafa26dab4ad6875",
+  defense: "43e6455be0494de8ebf17ef52a192eb16e9fbbf78fd2ad11dc7fe8403e3464ff",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "463c6d7fc0769ced5a850cd3bb8b281e70effa2b99d8ccaea140d886d4dfa2f3",
-  platformer: "bdb18a6ffcfd00c38267a339646d22a40f88737724c71bdc5f03d56f82698787",
-  runner: "061941578e54b8321d126972513e3a61e6c56f491d4ba2c8aa89565f786db254",
-  puzzle: "8b476a6be68fffc6825cba98a8bee3595409f86c9640359c83a8de3751b32707",
-  racing: "bb56c7e8c8447737d3ac39c52995f2d6a638f5def33e016f54f938a8485830eb",
-  shooter: "8a141b6f39729fbeed8e4f8722146c9549271be372a4c98f6307e227084e0b9a",
+  minimal: "e9174209ba1272d97ca2ccd1210f210f321b0a0cab8bd8c77aab3453a53174b7",
+  platformer: "2d5b32cdcc663045ee4a1f37e911d715e573aff5f272c205e83bf9255cfd2f0b",
+  runner: "53eea9c9fd0fd195cb4aede62842910e202d058bf45f4b553035221ff16c4a09",
+  puzzle: "20994855bd124988afaed23706e349d7dd5bea20d07f2aa467fc355830d5aab8",
+  racing: "753f64991a3da668e957887dde8d4d6eb2817c086f8b957747187aca50b961f5",
+  shooter: "09b990a27b011118894df6e08e7c80c2dc8572829f1e2a65dfb4790b33264fd7",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "14c43d61a5f9fa3b2b8e3ee34d543c7f03a92fa993b5379a888831cc2060ce17",
+  starter: "2974289206264eb560402f6f0c1f94d72e11973c141220563dd7775cc6810590",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -307,7 +308,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-07 for sailing's fixed-step ocean clock: the scene now advances
   // `SpectralOcean` before its registered compute passes run, which makes its existing moving-water
   // playtest prove a time-varying field.
-  sailing: "8e01e047f68f5ff62ff12a29ec1408bbf2f963e8cee0dda5cedd76d6f8802606",
+  sailing: "2ee16664f34bccff5c144481e9c5df24492599033984c9818573e8957fb91e46",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
