@@ -58,7 +58,8 @@ playability and a visible world. It is a single launch of the package already re
 device, not a cold install, so it is not a sample of what PRD-360's criterion measures — and at
 16,020.007 ms it misses that 8-second criterion by roughly twice over regardless. One run is also
 not the three-sample thermal benchmark the criterion requires. The baseline record retains three
-cold launches with a 50,948.7 ms median and states that charging made the preflight unqualified.
+preflight-qualified cold launches with a 49,788.7 ms median; its earlier plugged-in 50,948.7 ms set
+is retained as superseded evidence.
 
 The follow-up tried the recorded Wi-Fi device:
 
