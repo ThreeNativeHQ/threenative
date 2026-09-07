@@ -71,6 +71,13 @@ async function writeTemplateSource(
   await writeFile(file, source);
 }
 
+async function writeTemplatePackageJsonDirectory(root: string, template: string): Promise<void> {
+  await mkdir(
+    path.join(root, "packages", "create-threenative", "templates", template, "package.json"),
+    { recursive: true },
+  );
+}
+
 const documentedClass = [
   "/**",
   " * A fixture capability.",
@@ -237,6 +244,10 @@ describe("capability manifest generator", () => {
     const root = await makeTempDir("threenative-capability-freshness-");
     temporaryRoots.push(root);
     await writePackage(root, "core", "@threenative/core", documentedClass);
+    await writeTemplatePackage(root, "starter", {
+      dependencies: { "@threenative/core": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
     const generated = await writeCapabilityManifest(root);
     await expect(checkCapabilityManifest(root)).resolves.toMatchObject({
       entries: generated.entries,
@@ -251,6 +262,10 @@ describe("capability manifest generator", () => {
     const root = await makeTempDir("threenative-capability-missing-manifest-");
     temporaryRoots.push(root);
     await writePackage(root, "core", "@threenative/core", documentedClass);
+    await writeTemplatePackage(root, "starter", {
+      dependencies: { "@threenative/core": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
 
     await expect(checkCapabilityManifest(root)).rejects.toThrow(
       path.join(root, "packages/create-threenative/capabilities.json"),
@@ -456,6 +471,76 @@ describe("capability manifest generator", () => {
     await expect(
       checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
     ).rejects.toThrow(/NopeCapability.*@threenative\/nope/u);
+  });
+
+  it("fails closed when the templates root is missing", async () => {
+    const root = await makeTempDir("threenative-capability-no-templates-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/templates.*missing/u);
+  });
+
+  it("fails closed when no template closures are discovered", async () => {
+    const root = await makeTempDir("threenative-capability-empty-templates-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+    await mkdir(path.join(root, "packages", "create-threenative", "templates"), {
+      recursive: true,
+    });
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/no template closures/u);
+  });
+
+  it("fails closed when a template package manifest is missing", async () => {
+    const root = await makeTempDir("threenative-capability-template-no-package-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+    await mkdir(path.join(root, "packages", "create-threenative", "templates", "starter"), {
+      recursive: true,
+    });
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/starter.*package\.json.*missing/u);
+  });
+
+  it("fails closed when a template package manifest is unreadable or invalid", async () => {
+    const root = await makeTempDir("threenative-capability-template-bad-package-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+    await writeTemplatePackageJsonDirectory(root, "directory-package");
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/directory-package.*package\.json.*unreadable/u);
+
+    await rm(path.join(root, "packages", "create-threenative", "templates", "directory-package"), {
+      recursive: true,
+      force: true,
+    });
+    await mkdir(path.join(root, "packages", "create-threenative", "templates", "invalid-package"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(
+        root,
+        "packages",
+        "create-threenative",
+        "templates",
+        "invalid-package",
+        "package.json",
+      ),
+      "{\n",
+    );
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/invalid-package.*package\.json.*invalid/u);
   });
 
   it("derives template dependency closure from package.json and source imports", async () => {

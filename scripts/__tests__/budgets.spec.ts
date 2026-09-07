@@ -37,29 +37,59 @@ async function nativeFixture(root: string): Promise<void> {
   await writeFile(path.join(directory, "CMakeLists.txt"), "owned");
 }
 
-async function capabilityFixture(root: string): Promise<void> {
-  const packageRoot = path.join(root, "packages", "core");
+async function writeCapabilityPackage(
+  root: string,
+  directory: string,
+  name: string,
+  source: string,
+): Promise<void> {
+  const packageRoot = path.join(root, "packages", directory);
   await mkdir(path.join(packageRoot, "src"), { recursive: true });
   await writeFile(
     path.join(packageRoot, "package.json"),
     JSON.stringify({
       exports: { ".": { import: "./dist/index.js", types: "./dist/index.d.ts" } },
-      name: "@threenative/core",
+      name,
     }),
   );
+  await writeFile(path.join(packageRoot, "src", "index.ts"), source);
+}
+
+async function writeTemplatePackage(
+  root: string,
+  template: string,
+  manifest: {
+    readonly dependencies?: Readonly<Record<string, string>>;
+    readonly devDependencies?: Readonly<Record<string, string>>;
+  },
+): Promise<void> {
+  const templateRoot = path.join(root, "packages", "create-threenative", "templates", template);
+  await mkdir(templateRoot, { recursive: true });
   await writeFile(
-    path.join(packageRoot, "src", "index.ts"),
-    [
-      "/**",
-      " * A fixture capability.",
-      " * @situation test a documented capability",
-      " * @example const capability = new FixtureCapability();",
-      " */",
-      "export class FixtureCapability {}",
-      "",
-    ].join("\n"),
+    path.join(templateRoot, "package.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
   );
-  await capabilityManifest.writeCapabilityManifest(root);
+}
+
+async function writeTemplateSource(
+  root: string,
+  template: string,
+  relativePath: string,
+  source: string,
+): Promise<void> {
+  const file = path.join(
+    root,
+    "packages",
+    "create-threenative",
+    "templates",
+    template,
+    relativePath,
+  );
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, source);
+}
+
+async function budgetSupportFixture(root: string): Promise<void> {
   await nativeFixture(root);
   for (const file of ["CMakeLists.txt", "CMakePresets.json", "build-matrix.json"]) {
     await writeFile(
@@ -73,6 +103,29 @@ async function capabilityFixture(root: string): Promise<void> {
     [...measurement.areas.entries()].map(([area, lines]) => [`\`${area}\``, lines] as const),
     measurement.total,
   );
+}
+
+async function capabilityFixture(root: string): Promise<void> {
+  await writeCapabilityPackage(
+    root,
+    "core",
+    "@threenative/core",
+    [
+      "/**",
+      " * A fixture capability.",
+      " * @situation test a documented capability",
+      " * @example const capability = new FixtureCapability();",
+      " */",
+      "export class FixtureCapability {}",
+      "",
+    ].join("\n"),
+  );
+  await writeTemplatePackage(root, "starter", {
+    dependencies: { "@threenative/core": "0.0.0", three: "0.0.0" },
+    devDependencies: {},
+  });
+  await capabilityManifest.writeCapabilityManifest(root);
+  await budgetSupportFixture(root);
 }
 
 async function writeNativeCensus(
@@ -441,6 +494,121 @@ describe("budget gate", () => {
     await writeFile(manifestPath, `${await readFile(manifestPath, "utf8")}\n`);
 
     await expect(enforceBudgets(root)).rejects.toThrow(/Capability manifest is stale/u);
+  });
+
+  it("should reject missing template closures when budgets run", async () => {
+    const root = await fixtureRoot();
+    await writeCapabilityPackage(
+      root,
+      "core",
+      "@threenative/core",
+      [
+        "/**",
+        " * A fixture capability.",
+        " * @situation test a documented capability",
+        " * @example const capability = new FixtureCapability();",
+        " */",
+        "export class FixtureCapability {}",
+        "",
+      ].join("\n"),
+    );
+    await capabilityManifest.writeCapabilityManifest(root);
+    await budgetSupportFixture(root);
+
+    await expect(enforceBudgets(root)).rejects.toThrow(/templates.*missing/u);
+  });
+
+  it("should reject an unresolved capability import when budgets run", async () => {
+    const root = await fixtureRoot();
+    await writeCapabilityPackage(
+      root,
+      "core",
+      "@threenative/core",
+      [
+        "/**",
+        " * A fixture capability.",
+        " * @situation test a documented capability",
+        " * @example const capability = new FixtureCapability();",
+        " */",
+        "export class FixtureCapability {}",
+        "",
+      ].join("\n"),
+    );
+    await writeCapabilityPackage(
+      root,
+      "nope",
+      "@threenative/nope",
+      [
+        "/**",
+        " * A fabricated package capability.",
+        " * @situation prove the budgets gate fails closed",
+        " * @example const nope = new NopeCapability();",
+        " */",
+        "export class NopeCapability {}",
+        "",
+      ].join("\n"),
+    );
+    await writeTemplatePackage(root, "starter", {
+      dependencies: { "@threenative/core": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
+    await capabilityManifest.writeCapabilityManifest(root);
+    await budgetSupportFixture(root);
+
+    await expect(enforceBudgets(root)).rejects.toThrow(/NopeCapability.*@threenative\/nope/u);
+  });
+
+  it("should reject a template UI import without a dependency when budgets run", async () => {
+    const root = await fixtureRoot();
+    await writeCapabilityPackage(
+      root,
+      "core",
+      "@threenative/core",
+      [
+        "/**",
+        " * A fixture capability.",
+        " * @situation test a documented capability",
+        " * @example const capability = new FixtureCapability();",
+        " */",
+        "export class FixtureCapability {}",
+        "",
+      ].join("\n"),
+    );
+    await writeCapabilityPackage(
+      root,
+      "ui",
+      "@threenative/ui",
+      [
+        "/**",
+        " * A fixture UI layer.",
+        " * @situation render a React HUD over the game",
+        " * @example const layer = new UiLayer();",
+        " */",
+        "export class UiLayer {}",
+        "",
+      ].join("\n"),
+    );
+    await writeTemplatePackage(root, "minimal", {
+      dependencies: { "@threenative/core": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
+    await writeTemplatePackage(root, "starter", {
+      dependencies: { "@threenative/core": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
+    await writeTemplateSource(
+      root,
+      "starter",
+      path.join("src", "ui", "App.tsx"),
+      'import { UiLayer } from "@threenative/ui";\nexport const layer = UiLayer;\n',
+    );
+    await capabilityManifest.writeCapabilityManifest(root);
+    await budgetSupportFixture(root);
+
+    await expect(enforceBudgets(root)).rejects.toThrow(/starter.*UiLayer.*@threenative\/ui/u);
+    await expect(enforceBudgets(root)).rejects.toThrow(
+      /^(?![\s\S]*minimal.*UiLayer)[\s\S]*starter.*UiLayer.*@threenative\/ui/u,
+    );
   });
 
   it("should check the capability manifest once when the root budget chain runs", async () => {

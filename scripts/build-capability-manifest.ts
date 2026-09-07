@@ -800,15 +800,52 @@ export async function scaffoldDependencyClosures(
   root: string,
 ): Promise<readonly IScaffoldDependencyClosure[]> {
   const templatesRoot = path.join(root, "packages", "create-threenative", "templates");
-  if (!existsSync(templatesRoot)) return [];
+  if (!existsSync(templatesRoot)) {
+    throw new Error(`capability scaffold imports: templates root is missing at ${templatesRoot}`);
+  }
   const templates: IScaffoldDependencyClosure[] = [];
-  for (const entry of (await readdir(templatesRoot, { withFileTypes: true }))
+  const entries = await readdir(templatesRoot, { withFileTypes: true }).catch((error: unknown) => {
+    throw new Error(
+      `capability scaffold imports: templates root is unreadable at ${templatesRoot}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
+  const templateDirectories = entries
     .filter((candidate) => candidate.isDirectory() && !candidate.name.startsWith("."))
-    .sort((left, right) => left.name.localeCompare(right.name))) {
+    .sort((left, right) => left.name.localeCompare(right.name));
+  if (templateDirectories.length === 0) {
+    throw new Error(
+      `capability scaffold imports: no template closures discovered under ${templatesRoot}`,
+    );
+  }
+  for (const entry of templateDirectories) {
     const directory = path.join(templatesRoot, entry.name);
     const packageFile = path.join(directory, "package.json");
-    if (!existsSync(packageFile)) continue;
-    const manifest = JSON.parse(await readFile(packageFile, "utf8")) as Record<string, unknown>;
+    if (!existsSync(packageFile)) {
+      throw new Error(
+        `capability scaffold imports: template ${entry.name} package.json is missing at ${packageFile}`,
+      );
+    }
+    let rawManifest: string;
+    try {
+      rawManifest = await readFile(packageFile, "utf8");
+    } catch (error) {
+      throw new Error(
+        `capability scaffold imports: template ${entry.name} package.json is unreadable at ${packageFile}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    let manifest: unknown;
+    try {
+      manifest = JSON.parse(rawManifest);
+    } catch (error) {
+      throw new Error(
+        `capability scaffold imports: template ${entry.name} package.json is invalid at ${packageFile}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (!isObjectRecord(manifest)) {
+      throw new Error(
+        `capability scaffold imports: template ${entry.name} package.json is invalid at ${packageFile}: expected an object`,
+      );
+    }
     templates.push({
       packages: templatePackageNames(manifest),
       sourceImports: await templateSourceImportPackages(directory),
