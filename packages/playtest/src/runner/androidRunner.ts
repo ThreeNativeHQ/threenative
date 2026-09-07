@@ -224,6 +224,10 @@ async function runDevicePlaytestInternal(
       await waitForStartupReady({
         acceptCompileSettled: config.allowSoftwareAdapter === true,
         bridge: attached,
+        // A device host can die mid-launch, and its mailbox then simply stops answering. Without
+        // this the wait reads that as a slow loading gate and burns its whole deadline; with it
+        // the report names the exit and carries the console tail that says why.
+        hostAlive: () => target.driver.isAlive().catch(() => undefined),
         pump: () => attached.advance(1),
       });
     await throwIfAborted(target);

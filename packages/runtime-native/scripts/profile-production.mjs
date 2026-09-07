@@ -16,10 +16,12 @@ import { suppressPlayProtectOnAdbInstalls } from './device-preflight.mjs';
 import {
   PRODUCTION_EVIDENCE_VERSION,
   ProductionEvidenceError,
+  REGRESSION_COLLECTION_PROFILE,
   meanFps,
   nearestRank,
   sha256,
   writeProductionEvidence,
+  sanitizeManifest,
 } from './production-evidence.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -52,6 +54,8 @@ const FRAME_SAMPLE_BATCH_SIZE = 30;
 // Android logcat truncates long lines, so native samples use a smaller JSON batch.
 const NATIVE_FRAME_SAMPLE_BATCH_SIZE = 5;
 const DESKTOP_SCREENSHOT_TIMEOUT_MS = 5_000;
+const PRODUCTION_PROFILE = 'production';
+const REGRESSION_PROFILE = 'regression';
 
 function installedPackageFile(packageName, file) {
   try {
@@ -86,40 +90,61 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     control: undefined,
     device: undefined,
     duration: 60,
+    hostedSoftware: false,
     out: '.runtime/prd064/production',
+    prebuiltArtifact: undefined,
     physicalEvidence: undefined,
-    renderSize: { height: 1080, width: 1920 },
+    profile: PRODUCTION_PROFILE,
+    renderSize: undefined,
     repetitions: 3,
     sourceSha: undefined,
     target: undefined,
     warmup: 60,
   };
+  const explicit = new Set();
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === '--') continue;
-    if (flag === '--audio-evidence') options.audioEvidence = nextValue(argv, ++index, flag);
-    else if (flag === '--cold-starts') options.coldStarts = positiveInteger(nextValue(argv, ++index, flag), flag);
-    else if (flag === '--config') options.config = nextValue(argv, ++index, flag);
-    else if (flag === '--control') options.control = nextValue(argv, ++index, flag);
-    else if (flag === '--device') options.device = nextValue(argv, ++index, flag);
-    else if (flag === '--duration') options.duration = positiveNumber(nextValue(argv, ++index, flag), flag);
-    else if (flag === '--out') options.out = nextValue(argv, ++index, flag);
-    else if (flag === '--physical-evidence') options.physicalEvidence = nextValue(argv, ++index, flag);
-    else if (flag === '--render-size') options.renderSize = parseRenderSize(nextValue(argv, ++index, flag));
-    else if (flag === '--repetitions') options.repetitions = positiveInteger(nextValue(argv, ++index, flag), flag);
-    else if (flag === '--source-sha') options.sourceSha = nextValue(argv, ++index, flag);
-    else if (flag === '--target') options.target = nextValue(argv, ++index, flag);
-    else if (flag === '--warmup') options.warmup = positiveNumber(nextValue(argv, ++index, flag), flag);
+    if (flag === '--audio-evidence') { explicit.add('audioEvidence'); options.audioEvidence = nextValue(argv, ++index, flag); }
+    else if (flag === '--cold-starts') { explicit.add('coldStarts'); options.coldStarts = positiveInteger(nextValue(argv, ++index, flag), flag); }
+    else if (flag === '--config') { explicit.add('config'); options.config = nextValue(argv, ++index, flag); }
+    else if (flag === '--control') { explicit.add('control'); options.control = nextValue(argv, ++index, flag); }
+    else if (flag === '--device') { explicit.add('device'); options.device = nextValue(argv, ++index, flag); }
+    else if (flag === '--duration') { explicit.add('duration'); options.duration = positiveNumber(nextValue(argv, ++index, flag), flag); }
+    else if (flag === '--hosted-software') { options.hostedSoftware = true; }
+    else if (flag === '--out') { explicit.add('out'); options.out = nextValue(argv, ++index, flag); }
+    else if (flag === '--prebuilt-artifact') { explicit.add('prebuiltArtifact'); options.prebuiltArtifact = nextValue(argv, ++index, flag); }
+    else if (flag === '--physical-evidence') { explicit.add('physicalEvidence'); options.physicalEvidence = nextValue(argv, ++index, flag); }
+    else if (flag === '--profile') options.profile = nextValue(argv, ++index, flag);
+    else if (flag === '--regression') options.profile = REGRESSION_PROFILE;
+    else if (flag === '--render-size') { explicit.add('renderSize'); options.renderSize = parseRenderSize(nextValue(argv, ++index, flag)); }
+    else if (flag === '--repetitions') { explicit.add('repetitions'); options.repetitions = positiveInteger(nextValue(argv, ++index, flag), flag); }
+    else if (flag === '--source-sha') { explicit.add('sourceSha'); options.sourceSha = nextValue(argv, ++index, flag); }
+    else if (flag === '--target') { explicit.add('target'); options.target = nextValue(argv, ++index, flag); }
+    else if (flag === '--warmup') { explicit.add('warmup'); options.warmup = positiveNumber(nextValue(argv, ++index, flag), flag); }
     else if (flag === '--help') return { ...options, help: true };
     else throw new ProductionEvidenceError('TN_PROD_CLI_USAGE', `Unknown production profile option '${flag}'.`);
   }
   if (options.target === undefined) throw new ProductionEvidenceError('TN_PROD_CLI_USAGE', 'Production profile requires --target.');
+  if (options.profile === REGRESSION_PROFILE) {
+    if (!explicit.has('coldStarts')) options.coldStarts = REGRESSION_COLLECTION_PROFILE.coldStarts;
+    if (!explicit.has('duration')) options.duration = REGRESSION_COLLECTION_PROFILE.durationSeconds;
+    if (!explicit.has('out')) options.out = '.runtime/prd358/regression';
+    if (!explicit.has('repetitions')) options.repetitions = 1;
+    if (!explicit.has('warmup')) options.warmup = 5;
+  }
   return validateProductionOptions(options);
 }
 
 export function validateProductionOptions(input) {
   const options = normalizeOptions(input);
   if (options.help) return options;
+  if (options.profile === REGRESSION_PROFILE && (options.repetitions !== 1 || options.coldStarts !== 5 || options.duration < 30 || options.duration > 60 || options.warmup > 10)) {
+    throw new ProductionEvidenceError('TN_PROD_PAIR_UNIT', 'Each regression arm requires one 30–60 second steady launch, five startup launches, and at most ten seconds warmup.');
+  }
+  if (options.profile !== PRODUCTION_PROFILE && options.profile !== REGRESSION_PROFILE) {
+    throw new ProductionEvidenceError('TN_PROD_PROFILE_UNSUPPORTED', `Production profile '${options.profile}' is not supported.`);
+  }
   if (!supportedTargets.has(options.target)) {
     throw new ProductionEvidenceError('TN_PROD_TARGET_UNSUPPORTED', `Production target '${options.target}' is not supported.`);
   }
@@ -137,6 +162,9 @@ export function validateProductionOptions(input) {
   }
   if (physicalTargets.has(options.target) && options.device === undefined) {
     throw new ProductionEvidenceError('TN_PROD_DEVICE_REQUIRED', `Target '${options.target}' requires --device.`);
+  }
+  if (options.hostedSoftware && (physicalTargets.has(options.target) || options.target === 'fixture')) {
+    throw new ProductionEvidenceError('TN_PROD_HOSTED_SOFTWARE_UNSUPPORTED', 'Hosted-software evaluation is only valid for non-physical platform probes.');
   }
   if (options.target === 'desktop-pair' && options.control === 'slow-native') return options;
   if (options.control === 'slow-native' && options.target !== 'desktop-pair') {
@@ -158,6 +186,7 @@ export async function runProductionProfile(input, dependencies = {}) {
   const sourceState = await currentSourceState();
   const requiredSourceSha = sourceState.sha;
   const sourceSha = options.sourceSha ?? requiredSourceSha;
+  options.sourceSha = sourceSha;
   const runId = `${options.target}-${Date.now()}`;
   const physicalEvidence = await readPhysicalEvidence(options.physicalEvidence);
   const audioEvidence = await readOptionalArtifact(options.audioEvidence);
@@ -190,6 +219,7 @@ export async function collectProduction(options, context, runId) {
   const startedAt = new Date().toISOString();
   try {
     await scaffoldPlatformer(project, tools);
+    tools.workloadSourceHash = await hashPath(join(project, 'src'));
     const scenarios = await writeRunScenarios(project, options);
     const artifactsRoot = join(project, 'artifacts', 'production');
     await mkdir(artifactsRoot, { recursive: true });
@@ -217,20 +247,28 @@ export async function collectProduction(options, context, runId) {
 function normalizeOptions(input = {}) {
   const renderSize = typeof input.renderSize === 'string' ? parseRenderSize(input.renderSize) : input.renderSize;
   const target = input.target === 'desktop-web' ? 'web' : input.target;
+  const profile = input.profile ?? PRODUCTION_PROFILE;
+  const regression = profile === REGRESSION_PROFILE;
+  const defaultRenderSize = input.hostedSoftware === true && target === 'desktop'
+    ? { height: 720, width: 1280 }
+    : { height: 1080, width: 1920 };
   return {
     audioEvidence: input.audioEvidence,
-    coldStarts: input.coldStarts ?? 1,
+    coldStarts: input.coldStarts ?? (regression ? REGRESSION_COLLECTION_PROFILE.coldStarts : 1),
     control: input.control,
     device: input.device,
-    duration: input.duration ?? 60,
+    duration: input.duration ?? (regression ? REGRESSION_COLLECTION_PROFILE.durationSeconds : 60),
+    hostedSoftware: input.hostedSoftware === true,
     help: input.help,
-    out: input.out ?? '.runtime/prd064/production',
+    out: input.out ?? (regression ? '.runtime/prd358/regression' : '.runtime/prd064/production'),
+    prebuiltArtifact: input.prebuiltArtifact === undefined ? undefined : resolve(input.prebuiltArtifact),
     physicalEvidence: input.physicalEvidence,
-    renderSize: renderSize ?? { height: 1080, width: 1920 },
-    repetitions: input.repetitions ?? 3,
+    renderSize: renderSize ?? defaultRenderSize,
+    profile,
+    repetitions: input.repetitions ?? (regression ? 1 : 3),
     sourceSha: input.sourceSha,
     target,
-    warmup: input.warmup ?? 60,
+    warmup: input.warmup ?? (regression ? 5 : 60),
   };
 }
 
@@ -298,15 +336,32 @@ function packageSourceFlag(name) {
   throw new Error(`TN_PROD_PACKAGE_FLAG_UNSUPPORTED: ${name}`);
 }
 
+function nativeDiagnostics(assertions) {
+  return {
+    ...assertions,
+    diagnostics: {
+      ...assertions.diagnostics,
+      noConsoleErrors: true,
+      noRuntimeDiagnostics: true,
+      runtimeReady: true,
+      noNetworkErrors: false,
+      networkErrorsOptOutReason: 'Native mailbox transports have no browser network observer; console and runtime diagnostics remain required.',
+    },
+  };
+}
+
 export async function writeRunScenarios(project, options) {
   const source = JSON.parse(await readFile(join(project, platformerScenario), 'utf8'));
   const sourceAssertions = source.assert && typeof source.assert === 'object' && !Array.isArray(source.assert)
     ? source.assert
     : {};
   const { performance: performanceBounds, ...playtestAssertions } = sourceAssertions;
-  const workloadAssertions = Object.keys(playtestAssertions).length === 0
+  const baseWorkloadAssertions = Object.keys(playtestAssertions).length === 0
     ? { diagnostics: { noConsoleErrors: true, runtimeReady: true } }
     : playtestAssertions;
+  const workloadAssertions = options.profile === REGRESSION_PROFILE
+    ? { ...baseWorkloadAssertions, movement: { entity: 'player', minDistance: 0.1 } }
+    : baseWorkloadAssertions;
   const { assert: _sourceAssertions, ...scenarioSource } = source;
   const workloadFrames = Math.max(1, Math.ceil(options.duration * 60));
   const warmupFrames = Math.max(0, Math.ceil(options.warmup * 60));
@@ -342,10 +397,15 @@ export async function writeRunScenarios(project, options) {
   };
   const nativeWorkload = {
     ...workload,
-    artifacts: { screenshots: nativeTarget === 'desktop' ? 'after' : false },
+    assert: nativeDiagnostics(workload.assert),
+    artifacts: {
+      screenshots: options.profile === REGRESSION_PROFILE || nativeTarget === 'desktop'
+        ? 'after'
+        : false,
+    },
     steps: nativeWorkloadSteps,
   };
-  const nativeStartup = { ...startup, artifacts: { screenshots: 'after' } };
+  const nativeStartup = { ...startup, assert: nativeDiagnostics(startup.assert), artifacts: { screenshots: 'after' } };
   const workloadPath = join(project, 'playtests/production-performance.run.playtest.json');
   const startupPath = join(project, 'playtests/production-startup.run.playtest.json');
   const nativeWorkloadPath = join(project, 'playtests/production-performance.native.playtest.json');
@@ -364,7 +424,7 @@ export async function writeRunScenarios(project, options) {
 }
 
 async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
-  const markerServer = await createFrameMarkerServer();
+  const markerServer = await createFrameMarkerServer(options.profile === REGRESSION_PROFILE ? 41778 : 0);
   try {
     await installWebProfileEntry(project, markerServer.url, options.control, warmupFramesFor(options));
     const build = await runCommand('pnpm', ['run', 'build:web'], project);
@@ -375,7 +435,7 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
     for (let coldStart = 0; coldStart < options.coldStarts; coldStart += 1) {
       const startup = await runWebScenario(project, scenarios.startupPath, join(artifactsRoot, `web-startup-${coldStart + 1}`), markerServer, tools.playtestCli);
       startups.push(startup);
-      for (let repetition = 0; repetition < options.repetitions; repetition += 1) {
+      for (let repetition = 0; repetition < steadyLaunchesAt(options, coldStart); repetition += 1) {
         runs.push(await runWebScenario(
           project,
           scenarios.workloadPath,
@@ -387,6 +447,7 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
     }
     return {
       artifactSha,
+      workloadHash: await workloadHashFor(project, tools.workloadSourceHash),
       applicationClass: 'platformer-web-build',
       driverClass: 'playwright-chromium-webgpu',
       kind: 'web',
@@ -408,7 +469,7 @@ async function runWebScenario(project, scenarioPath, artifactDirectory, markerSe
     '--artifacts', relativeArtifact,
     '--browser-recipe', 'webgpu',
     '--project', project,
-    '--server-command', `pnpm dev --host 127.0.0.1 --port ${port} --strictPort`,
+    '--server-command', `pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
     '--timeout', '30000',
     '--url', `http://127.0.0.1:${port}`,
   ];
@@ -431,7 +492,7 @@ async function runWebScenario(project, scenarioPath, artifactDirectory, markerSe
 async function collectNative(project, scenarios, artifactsRoot, options, tools) {
   const target = options.target === 'desktop-pair' || options.target === 'desktop' ? 'desktop' : options.target.startsWith('ios') ? 'ios' : 'android';
   await installNativeProfileEntry(project, target, options);
-  const build = await runCommand('pnpm', ['run', `build:${target}`], project);
+  const build = await prepareNativeWorkload(project, target, options);
   if (build.status !== 0) {
     const details = [build.stdout, build.stderr]
       .filter((value) => typeof value === 'string' && value.trim().length > 0)
@@ -442,14 +503,14 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
       `The scaffolded platformer ${target} build failed.${details.length === 0 ? '' : `\n${details.slice(-4_000)}`}`,
     );
   }
-  const artifactPath = await nativeArtifactPath(project, target);
+  const artifactPath = options.prebuiltArtifact ?? await nativeArtifactPath(project, target);
   const artifactSha = await hashPath(artifactPath);
   const runs = [];
   const startups = [];
   for (let coldStart = 0; coldStart < options.coldStarts; coldStart += 1) {
     const startup = await runNativeScenario(project, target, scenarios.nativeStartupPath, join(artifactsRoot, `native-startup-${coldStart + 1}`), options, artifactPath, tools);
     startups.push(startup);
-    for (let repetition = 0; repetition < options.repetitions; repetition += 1) {
+    for (let repetition = 0; repetition < steadyLaunchesAt(options, coldStart); repetition += 1) {
       runs.push(await runNativeScenario(
         project,
         target,
@@ -463,6 +524,8 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
   }
   return {
     artifactSha,
+    workloadHash: build.workloadHash ?? await workloadHashFor(project, tools.workloadSourceHash),
+    bundleSha: build.bundleSha ?? await hashPath(join(project, '.threenative/build/game.js')),
     applicationClass: `platformer-${target}-build`,
     driverClass: `threenative-${target}-runtime`,
     kind: target,
@@ -483,9 +546,12 @@ async function runNativeScenario(project, target, scenarioPath, artifactDirector
   if (target === 'android') await installAndroidArtifact(artifactPath, options.device);
   // The game declares its identity in `threenative.config.ts` and packaging resolves it; profiling
   // launches whatever packaging shipped, so it reads the id from there instead of restating one.
-  const appId = readAndroidConfig(profileConfigPath(project, options.config)).app.id;
+  const appId = options.prebuiltArtifact === undefined
+    ? readAndroidConfig(profileConfigPath(project, options.config)).app.id
+    : (await readPrebuiltWorkload(options.prebuiltArtifact, target, options)).appId;
   const config = {
     android: { activity: 'com.threenative.runtime.MystralActivity', packageName: appId },
+    allowSoftwareAdapter: options.hostedSoftware,
     artifactDirectory,
     device: options.device,
     headless: true,
@@ -531,15 +597,11 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
   await removeMailbox(mailboxRoot);
   const requestPath = join(mailboxRoot, 'tn-playtest-request.json');
   const responsePath = join(mailboxRoot, 'tn-playtest-response.json');
-  const screenshotRequestPath = join(mailboxRoot, 'tn-production-screenshot-request.json');
   const runner = await import(pathToFileURL(modulePath).href);
-  const mailbox = {
-    read: async (path) => readFile(path, 'utf8').catch((error) => error?.code === 'ENOENT' ? undefined : Promise.reject(error)),
-    remove: async (path) => rm(path, { force: true }).catch(() => undefined),
-    write: async (path, contents) => writeFile(path, contents, 'utf8'),
-  };
-  const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath });
-  const driver = createDesktopDriver(artifactPath, project, options, screenshotRequestPath);
+  const mailbox = new runner.LocalDeviceMailbox();
+  const timeoutMs = 30_000;
+  const innerTransport = new runner.DeviceMailboxTransport(mailbox, { request: requestPath, response: responsePath }, timeoutMs);
+  const driver = createDesktopDriver(artifactPath, project, options, mailboxRoot);
   const transport = {
     capabilities: innerTransport.capabilities,
     call: innerTransport.call.bind(innerTransport),
@@ -551,12 +613,13 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
     waitForBridge: innerTransport.waitForBridge.bind(innerTransport),
   };
   const config = {
+    allowSoftwareAdapter: options.hostedSoftware,
     artifactDirectory,
     headless: true,
     projectPath: project,
     scenarioPath: relative(project, scenarioPath),
     target: 'android',
-    timeoutMs: 30_000,
+    timeoutMs,
     trace: false,
     url: 'http://127.0.0.1:41777',
   };
@@ -578,24 +641,51 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
       firstFrameMsFromReport(report, startedAt),
       frameSeriesFromReport(report),
     );
-  } catch {
-    await driver.stop();
-    return { elapsedMs: performance.now() - started, report: undefined, screenshot: undefined, series: undefined, status: 2 };
+  } catch (error) {
+    let cleanupError;
+    try {
+      await driver.stop();
+    } catch (error) {
+      cleanupError = error;
+    }
+    return desktopFailureRun(error, await driver.captureConsole(), performance.now() - started, cleanupError);
   }
+}
+
+export function desktopFailureRun(error, consoleOutput, elapsedMs, cleanupError = undefined) {
+  const retain = (value, fallback) => {
+    try { return sanitizeManifest(value); } catch { return fallback; }
+  };
+  const diagnostic = cleanupError?.diagnostic ?? error?.diagnostic;
+  return {
+    elapsedMs, status: 2, screenshot: undefined, series: undefined,
+    report: {
+      pass: false, target: 'desktop', assertionResults: [],
+      diagnostics: [retain(diagnostic ?? {
+        code: 'TN_PROD_PLAYTEST_FAILED', severity: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      }, { code: 'TN_PROD_REDACTION', severity: 'error', message: 'Unsafe native error details withheld.' })],
+      observations: { console: consoleOutput.map((entry) => retain(entry, {
+        type: 'error', text: 'TN_PROD_REDACTION: unsafe native console entry withheld.',
+      })) },
+    },
+  };
 }
 
 export function profileConfigPath(project, configPath = undefined) {
   return configPath ?? join(project, '.threenative', 'build', 'config.json');
 }
 
-function createDesktopDriver(artifactPath, project, options, screenshotRequestPath) {
+function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
   let child;
   let output = '';
+  let stopping;
+  const screenshotRequestPath = join(mailboxRoot, 'tn-playtest-screenshot-request.txt');
   return {
     captureConsole: async () => output.split(/\r?\n/u).filter(Boolean).map((text) => ({ text, type: /\b(?:Error|FAILED|FATAL)\b/u.test(text) ? 'error' : 'log' })),
     isAlive: async () => child !== undefined && child.exitCode === null,
     launch: async () => {
-      child = spawnNative(artifactPath, project, options);
+      child = spawnNative(artifactPath, project, options, mailboxRoot);
       child.stdout?.on('data', (chunk) => { output += chunk.toString(); });
       child.stderr?.on('data', (chunk) => { output += chunk.toString(); });
       await new Promise((resolve, reject) => {
@@ -608,7 +698,7 @@ function createDesktopDriver(artifactPath, project, options, screenshotRequestPa
     removeFile: async (path) => rm(path, { force: true }).catch(() => undefined),
     screenshot: async (path) => {
       const temporary = `${screenshotRequestPath}.tmp`;
-      await writeFile(temporary, JSON.stringify({ path }), 'utf8');
+      await writeFile(temporary, path, 'utf8');
       await rename(temporary, screenshotRequestPath);
       const deadline = Date.now() + DESKTOP_SCREENSHOT_TIMEOUT_MS;
       while (Date.now() < deadline) {
@@ -618,16 +708,56 @@ function createDesktopDriver(artifactPath, project, options, screenshotRequestPa
       throw new Error('TN_PROD_NATIVE_SCREENSHOT_UNAVAILABLE');
     },
     stop: async () => {
-      if (child === undefined || child.exitCode !== null) return;
-      if (process.platform === 'win32') child.kill();
-      else process.kill(-child.pid, 'SIGTERM');
-      await new Promise((resolve) => child.once('exit', resolve));
+      if (stopping !== undefined) return stopping;
+      stopping = (async () => {
+        if (child === undefined || child.exitCode !== null || child.signalCode !== null) return;
+        const cleanupTimeoutMs = options.desktopCleanupTimeoutMs ?? 2_000;
+        const waitForExit = new Promise((resolve, reject) => {
+          let timer;
+          let settled = false;
+          const finish = (exited) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            child.off('exit', onExit);
+            resolve(exited);
+          };
+          const onExit = () => finish(true);
+          child.once('exit', onExit);
+          timer = setTimeout(() => finish(false), cleanupTimeoutMs);
+          try {
+            if (process.platform === 'win32') child.kill();
+            else process.kill(-child.pid, 'SIGTERM');
+          } catch (error) {
+            if (error?.code === 'ESRCH') finish(true);
+            else {
+              settled = true;
+              clearTimeout(timer);
+              child.off('exit', onExit);
+              reject(error);
+            }
+          }
+          if (child.exitCode !== null || child.signalCode !== null) finish(true);
+        });
+        if (await waitForExit || child.exitCode !== null || child.signalCode !== null) return;
+        const diagnostic = {
+          code: 'TN_PROD_DESKTOP_CLEANUP_TIMEOUT',
+          message: `Desktop cleanup phase 'desktop-stop' did not observe the process exit within ${cleanupTimeoutMs}ms; process was observed alive.`,
+          observedAlive: true,
+          observedExited: false,
+          phase: 'desktop-stop',
+          processState: 'alive',
+          severity: 'error',
+        };
+        throw Object.assign(new Error(diagnostic.message), { diagnostic });
+      })();
+      return stopping;
     },
     writeFile: async (path, contents) => writeFile(path, contents, 'utf8'),
   };
 }
 
-function spawnNative(artifactPath, project, options) {
+function spawnNative(artifactPath, project, options, mailboxRoot) {
   const bundle = join(project, '.threenative/build/game.js');
   const nativeArgs = [
     'run',
@@ -641,34 +771,44 @@ function spawnNative(artifactPath, project, options) {
   return spawn(command, args, {
     cwd: project,
     detached: process.platform !== 'win32',
-    env: { ...process.env, SDL_VIDEODRIVER: process.platform === 'linux' ? 'x11' : process.env.SDL_VIDEODRIVER },
+    env: { ...process.env, TN_PLAYTEST_MAILBOX_ROOT: mailboxRoot, SDL_VIDEODRIVER: process.platform === 'linux' ? 'x11' : process.env.SDL_VIDEODRIVER },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
 
-async function installNativeProfileEntry(project, target, options) {
+export async function installNativeProfileEntry(project, target, options) {
   const entryPath = join(project, 'src/profile-native-entry.ts');
-  const mailboxRoot = join(project, '.runtime-mailbox');
+  const profileMarkerPath = join(project, 'src/profile-native-profile.ts');
+  const mailboxRoot = '.runtime-mailbox';
+  const profileMarker = `Object.assign(globalThis, { __THREENATIVE_PROFILE__: Object.freeze({ hostedSoftware: ${options.hostedSoftware === true} }) });\n`;
   const mailbox = target === 'desktop'
-    ? `globalThis.TN_PLAYTEST_MAILBOX = { request: ${JSON.stringify(join(mailboxRoot, 'tn-playtest-request.json'))}, response: ${JSON.stringify(join(mailboxRoot, 'tn-playtest-response.json'))};\n`
+    ? `globalThis.TN_PLAYTEST_MAILBOX = ${JSON.stringify({ request: join(mailboxRoot, 'tn-playtest-request.json'), response: join(mailboxRoot, 'tn-playtest-response.json') })};\n`
     : '';
-  const screenshotRequestPath = target === 'desktop' ? join(mailboxRoot, 'tn-production-screenshot-request.json') : undefined;
-  const source = `import game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), screenshotRequestPath)}\n${mailbox}export default game;\n`;
+  const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options))}\n${mailbox}export default game;\n`;
+  await writeFile(profileMarkerPath, profileMarker);
   await writeFile(entryPath, source);
-  await setNativeProfileEntry(project, 'src/profile-native-entry.ts');
+  await setNativeProfileEntry(project, 'src/profile-native-entry.ts', target);
 }
 
-export async function setNativeProfileEntry(project, entry) {
+export async function setNativeProfileEntry(project, entry, target) {
   const configPath = join(project, 'threenative.config.ts');
   const packagePath = join(project, 'package.json');
   const config = await readFile(configPath, 'utf8').catch(() => undefined);
   if (config !== undefined) {
-    const rendered = config.replace(
+    const withEntry = config.replace(
       /^(\s*nativeEntry\s*:\s*)["'][^"']*["'](,?.*)$/mu,
       `$1"${entry}"$2`,
     );
+    const rendered = target === 'desktop'
+      ? withEntry.replace(
+          /(\bui\s*:\s*\{\s*renderer\s*:\s*)["'][^"']*["']/mu,
+          `$1"native"`,
+        )
+      : withEntry;
     if (rendered !== config) {
       await writeFile(configPath, rendered);
+    }
+    if (withEntry !== config) {
       const packageJson = JSON.parse(await readFile(packagePath, 'utf8'));
       if (packageJson.threenative?.nativeEntry !== undefined) {
         delete packageJson.threenative.nativeEntry;
@@ -694,6 +834,7 @@ const tnProductionReadPerformance = () => {
     const performance = snapshot.performance;
     return {
       ...(Number.isFinite(performance?.drawCalls) ? { drawCalls: performance.drawCalls } : {}),
+      ...(performance?.phases !== undefined ? { phases: performance.phases } : {}),
       ...(Number.isFinite(performance?.triangles) ? { triangles: performance.triangles } : {}),
     };
   } catch {
@@ -703,11 +844,10 @@ const tnProductionReadPerformance = () => {
 `;
 }
 
-export function nativeFrameInstrumentation(control, warmupFrames = 0, screenshotRequestPath = undefined) {
+export function nativeFrameInstrumentation(control, warmupFrames = 0) {
   return `
 const tnProductionControl = ${JSON.stringify(control ?? '')};
 const tnProductionWarmupFrames = ${Math.max(0, Math.floor(warmupFrames))};
-const tnProductionScreenshotRequestPath = ${JSON.stringify(screenshotRequestPath)};
 const tnProductionRequestAnimationFrame = globalThis.requestAnimationFrame;
 if (typeof tnProductionRequestAnimationFrame !== "function") {
   throw new Error("TN_PROD_NATIVE_RAF_UNAVAILABLE: native host did not provide requestAnimationFrame.");
@@ -739,24 +879,16 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
     console.log("TN_PROD_FIRST_NONBLANK_FRAME:" + Date.now());
   }
   if (!inWarmup && frameMs !== undefined) {
-    tnProductionSamples.push({ ...tnProductionReadPerformance(), frameIndex, frameMs });
+    tnProductionSamples.push({
+      ...tnProductionReadPerformance(),
+      ...(Number.isFinite(timestamp) ? { presentationMs: timestamp } : {}),
+      clockMs: now,
+      frameIndex,
+      frameMs,
+    });
     if (tnProductionSamples.length >= ${NATIVE_FRAME_SAMPLE_BATCH_SIZE}) {
       console.log("TN_PROD_FRAME_SAMPLES:" + JSON.stringify(tnProductionSamples));
       tnProductionSamples = [];
-    }
-  }
-  if (tnProductionScreenshotRequestPath !== undefined) {
-    const nativeHost = globalThis.__THREENATIVE_NATIVE__;
-    const receive = nativeHost?.playtest?.receive;
-    const capture = nativeHost?.captureScreenshot;
-    if (typeof receive === "function" && typeof capture === "function") {
-      const request = receive(tnProductionScreenshotRequestPath);
-      if (typeof request === "string") {
-        try {
-          const payload = JSON.parse(request);
-          if (typeof payload.path === "string") capture(payload.path);
-        } catch {}
-      }
     }
   }
   if (!inWarmup && tnProductionControl === "slow-native" && tnProductionSlowFramesRemaining > 0) {
@@ -811,7 +943,13 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
     tnProductionPost({ kind: "first-frame" });
   }
   if (!inWarmup && frameMs !== undefined) {
-    tnProductionSamples.push({ ...tnProductionReadPerformance(), frameIndex, frameMs });
+    tnProductionSamples.push({
+      ...tnProductionReadPerformance(),
+      ...(Number.isFinite(timestamp) ? { presentationMs: timestamp } : {}),
+      clockMs: now,
+      frameIndex,
+      frameMs,
+    });
     if (tnProductionSamples.length >= ${FRAME_SAMPLE_BATCH_SIZE}) {
       tnProductionPost({ kind: "samples", samples: tnProductionSamples });
       tnProductionSamples = [];
@@ -835,7 +973,7 @@ async function installWebProfileEntry(project, markerUrl, control, warmupFrames 
   if (!main.includes(markerImport)) await writeFile(mainPath, `${markerImport}\n${main}`);
 }
 
-async function createFrameMarkerServer() {
+async function createFrameMarkerServer(port = 0) {
   const events = [];
   const waiters = [];
   const server = createServer((request, response) => {
@@ -861,7 +999,7 @@ async function createFrameMarkerServer() {
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
+    server.listen(port, '127.0.0.1', resolve);
   });
   const address = server.address();
   if (address === null || typeof address === 'string') throw new ProductionEvidenceError('TN_PROD_MARKER_SERVER_FAILED', 'The first-frame marker server did not expose a TCP port.');
@@ -916,8 +1054,10 @@ async function normalizeRun(
   };
 }
 
-function safeReport(report) {
-  return {
+const REPORT_REDACTION_MESSAGE = 'TN_PROD_REDACTION: unsafe native report detail withheld.';
+
+export function safeReport(report) {
+  const safe = {
     assertionResults: report.assertionResults,
     diagnostics: report.diagnostics,
     observations: report.observations,
@@ -925,6 +1065,35 @@ function safeReport(report) {
     scenario: report.scenario,
     target: report.target,
   };
+  try {
+    return sanitizeManifest(safe);
+  } catch {
+    return sanitizeReportValue(safe);
+  }
+}
+
+function sanitizeReportValue(value) {
+  if (value === undefined || value === null) return value;
+  if (Array.isArray(value)) return value.map((nested) => sanitizeReportValue(nested));
+  if (typeof value === 'object') {
+    const sanitized = {};
+    for (const [key, nested] of Object.entries(value)) {
+      const candidate = sanitizeReportValue(nested);
+      try {
+        const checked = sanitizeManifest({ [key]: candidate });
+        sanitized[key] = checked[key];
+      } catch {
+        // Privacy-sensitive fields are omitted from retained diagnostics; the verdict and safe
+        // observations remain available for a fail-closed report.
+      }
+    }
+    return sanitized;
+  }
+  try {
+    return sanitizeManifest(value);
+  } catch {
+    return REPORT_REDACTION_MESSAGE;
+  }
 }
 
 function parsePlaytestReport(stdout) {
@@ -975,7 +1144,8 @@ function frameSeriesFromReport(report) {
 
 export function assembleEvidence({ context, native, options, performanceBounds, project, runId, startedAt, web }) {
   const arms = [web, native].filter((arm) => arm !== undefined);
-  const expectedRuns = options.coldStarts * options.repetitions;
+  const regression = options.profile === REGRESSION_PROFILE;
+  const expectedRuns = collectionLaunchPlan(options).filter((entry) => entry === 'steady').length;
   const codes = [];
   const rawArtifacts = [];
   for (const arm of arms) {
@@ -1003,7 +1173,29 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
     ...(webMetrics === undefined ? {} : { web: pairMetrics(webMetrics) }),
     ...(nativeMetrics === undefined ? {} : { native: pairMetrics(nativeMetrics) }),
   };
-  const artifactHashes = arms.map(({ artifactSha }) => artifactSha);
+  const selectedMetrics = webMetrics ?? nativeMetrics ?? emptyMetrics();
+  const readiness = regressionReadiness(arms, warmupFramesFor(options));
+  const warmupReset = regressionWarmupReset(arms, warmupFramesFor(options));
+  const motion = regressionMotion(arms);
+  const pixels = regressionPixels(arms);
+  if (regression) {
+    metrics.clockSamplesMs = selectedMetrics.clockSamplesMs;
+    metrics.clockSource = selectedMetrics.clockSource;
+    metrics.hitchCount = selectedMetrics.hitchCount;
+    metrics.presentationClockSource = selectedMetrics.presentationClockSource;
+    metrics.presentationSamplesMs = selectedMetrics.presentationSamplesMs;
+    metrics.sampleCount = selectedMetrics.sampleCount;
+    metrics.worstFrameMs = selectedMetrics.worstFrameMs;
+    metrics.motion = motion;
+    metrics.pixels = pixels;
+    const resources = resourceMetrics(arms);
+    if (resources !== undefined) {
+      metrics.battery = resources.battery;
+      metrics.thermal = resources.thermal;
+    }
+    if (selectedMetrics.phaseP95Ms !== undefined) metrics.phaseP95Ms = selectedMetrics.phaseP95Ms;
+  }
+  const artifactHashes = arms.map(({ artifactSha, bundleSha }) => `${artifactSha}:${bundleSha ?? artifactSha}`);
   const target = options.target;
   const identity = identityFor(options, web, native, artifactHashes);
   const evidence = {
@@ -1017,6 +1209,10 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
       maxP99FrameMs: 33,
       maxStartupMs: target.includes('physical') ? 8_000 : 5_000,
       minMeanFps: target.includes('physical') ? 59.4 : 60,
+      ...(regression ? {
+        minDurationSeconds: REGRESSION_COLLECTION_PROFILE.durationSeconds,
+        minFrameSamples: REGRESSION_COLLECTION_PROFILE.minFrameSamples,
+      } : {}),
       ...productionPerformanceBudget(performanceBounds),
     },
     command: profileCommand(options),
@@ -1026,8 +1222,12 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
       coldStarts: options.coldStarts,
       ...(options.control === undefined ? {} : { control: options.control }),
       deviceSelected: options.device !== undefined,
+      ...(options.hostedSoftware ? { performanceEvaluation: 'advisory' } : {}),
+      profile: options.profile,
+      ...(regression ? { readiness } : {}),
       renderSize: `${options.renderSize.width}x${options.renderSize.height}`,
       repetitions: options.repetitions,
+      ...(regression ? { warmupReset } : {}),
       warmupSeconds: options.warmup,
     },
     identity,
@@ -1055,12 +1255,92 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
   return evidence;
 }
 
+function allProfileRuns(arms) {
+  return arms.flatMap(({ runs }) => runs);
+}
+
+function passedAssertion(report, prefix) {
+  return report?.assertionResults?.some(({ id, pass }) => id.startsWith(prefix) && pass === true) === true;
+}
+
+function regressionReadiness(arms, warmupFrames) {
+  const reports = allProfileRuns(arms).map(({ report }) => report).filter(Boolean);
+  const ready = reports.length > 0 && reports.every((report) =>
+    passedAssertion(report, 'diagnostics.runtimeReady')
+      || (report?.pass === true && report?.diagnostics?.every(({ code }) => code !== 'TN_PLAYTEST_RUNTIME_NOT_READY')));
+  return { ready, sampleReset: regressionWarmupReset(arms, warmupFrames) };
+}
+
+function regressionWarmupReset(arms, warmupFrames) {
+  const runs = allProfileRuns(arms);
+  return runs.length > 0 && runs.every(({ series }) => {
+    if (!Array.isArray(series) || series.length === 0) return false;
+    if (warmupFrames === 0) return true;
+    const first = series[0];
+    return Number.isFinite(first?.frameIndex) && first.frameIndex > warmupFrames;
+  });
+}
+
+function regressionMotion(arms) {
+  const runs = allProfileRuns(arms);
+  const moved = runs.length > 0 && runs.every(({ report }) =>
+    (typeof report?.distance === 'number' && report.distance > 0)
+      || (Array.isArray(report?.movementDelta) && report.movementDelta.some((value) => typeof value === 'number' && Math.abs(value) > 0))
+      || passedAssertion(report, 'movement.'));
+  return { moved, movingObjects: moved ? 1 : 0 };
+}
+
+function regressionPixels(arms) {
+  const runs = allProfileRuns(arms);
+  const nonBlank = runs.length > 0 && runs.every(({ screenshot }) => screenshot !== undefined && isNonBlankFrame(screenshot));
+  const changed = arms.length > 0 && arms.every(({ runs: armRuns, startups }) => {
+    const startupScreenshot = startups.find(({ screenshot }) => screenshot !== undefined)?.screenshot;
+    return startupScreenshot !== undefined
+      && armRuns.some(({ screenshot }) => screenshot !== undefined && screenshotsDiffer(startupScreenshot, screenshot));
+  });
+  return { changed, nonBlank };
+}
+
+function resourceMetrics(arms) {
+  const observations = allProfileRuns(arms)
+    .map(({ report }) => report?.observations?.deviceMetrics)
+    .filter(Boolean);
+  if (observations.length === 0) return undefined;
+  const complete = observations.every((observation) =>
+    observation.available === true
+      && Array.isArray(observation.samples)
+      && observation.samples.length >= 2
+      && Array.isArray(observation.errors)
+      && observation.errors.length === 0,
+  );
+  const verdicts = observations
+    .map((observation) => observation.verdict)
+    .filter((verdict) => verdict !== undefined);
+  return {
+    battery: {
+      complete,
+      samples: observations.reduce((count, observation) => count + (observation.samples?.length ?? 0), 0),
+    },
+    thermal: {
+      complete,
+      samples: observations.reduce((count, observation) => count + (observation.samples?.length ?? 0), 0),
+      thermallyConfounded: verdicts.some((verdict) => verdict.thermallyConfounded === true),
+    },
+  };
+}
+
+function screenshotsDiffer(left, right) {
+  if (!Buffer.isBuffer(left) || !Buffer.isBuffer(right) || left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) if (left[index] !== right[index]) return true;
+  return false;
+}
+
 function productionPerformanceBudget(bounds) {
   if (bounds === undefined) return {};
   if (typeof bounds !== 'object' || bounds === null || Array.isArray(bounds)) {
     throw new ProductionEvidenceError('TN_PROD_PERFORMANCE_BUDGET_INVALID', 'The source performance bounds must be an object.');
   }
-  const keys = ['maxDrawCalls', 'maxFrameMsP95', 'maxTriangles'];
+  const keys = ['maxDrawCalls', 'maxFrameMsP95', 'maxTriangles', 'minFps'];
   const unknown = Object.keys(bounds).filter((key) => !keys.includes(key));
   if (unknown.length > 0) {
     throw new ProductionEvidenceError('TN_PROD_PERFORMANCE_BUDGET_INVALID', `The source performance bounds contain unsupported keys: ${unknown.join(', ')}.`);
@@ -1094,35 +1374,96 @@ export function postWarmupFrameSamples(samples, warmupFrames = 0) {
 export function aggregateMetrics(runs, startups, warmupFrames = 0) {
   const intervals = [];
   const frameIntervalsMs = [];
+  const clockSamplesMs = [];
+  const presentationSamplesMs = [];
+  const runWindows = [];
+  const phaseSamples = {};
   const startupSamplesMs = startups
     .filter(isSuccessfulStartupSample)
     .map(({ firstFrameMs }) => firstFrameMs);
   let timestampMs = 0;
   let sequence = 1;
+  let sampleCount = 0;
+  let hitchCount = 0;
+  let worstFrameMs;
+  let missingClock = false;
+  let missingPresentationClock = false;
   for (const run of runs) {
-    for (const sample of postWarmupFrameSamples(run.series ?? [], warmupFrames)) {
+    let clockOrigin;
+    let presentationOrigin;
+    const postWarmupSamples = postWarmupFrameSamples(run.series ?? [], warmupFrames);
+    let runDurationMs = 0;
+    let runSampleCount = 0;
+    for (const sample of postWarmupSamples) {
       if (typeof sample?.frameMs !== 'number') {
         frameIntervalsMs.push(sample?.frameMs);
         continue;
       }
       frameIntervalsMs.push(sample.frameMs);
+      sampleCount += 1;
+      runSampleCount += 1;
+      runDurationMs += sample.frameMs;
+      if (sample.frameMs > 33.3) hitchCount += 1;
+      worstFrameMs = worstFrameMs === undefined ? sample.frameMs : Math.max(worstFrameMs, sample.frameMs);
+      if (Number.isFinite(sample.clockMs)) {
+        clockOrigin ??= sample.clockMs;
+        clockSamplesMs.push(timestampMs + sample.clockMs - clockOrigin);
+      } else {
+        missingClock = true;
+      }
+      if (Number.isFinite(sample.presentationMs)) {
+        presentationOrigin ??= sample.presentationMs;
+        presentationSamplesMs.push(timestampMs + sample.presentationMs - presentationOrigin);
+      } else {
+        missingPresentationClock = true;
+      }
+      if (sample.phases !== undefined && typeof sample.phases === 'object' && sample.phases !== null) {
+        for (const [phase, value] of Object.entries(sample.phases)) {
+          if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) continue;
+          const samples = phaseSamples[phase] ?? [];
+          phaseSamples[phase] = samples;
+          samples.push(value);
+        }
+      }
       intervals.push({
         ...(typeof sample.drawCalls === 'number' ? { drawCalls: sample.drawCalls } : {}),
         frameMs: sample.frameMs,
+        ...(Number.isFinite(sample.clockMs) ? { clockMs: sample.clockMs } : {}),
+        ...(Number.isFinite(sample.presentationMs) ? { presentationMs: sample.presentationMs } : {}),
+        ...(sample.phases === undefined ? {} : { phases: sample.phases }),
         sequence: sequence++,
         timestampMs,
         ...(typeof sample.triangles === 'number' ? { triangles: sample.triangles } : {}),
       });
       timestampMs += sample.frameMs;
     }
+    runWindows.push({ durationSeconds: runDurationMs / 1_000, sampleCount: runSampleCount });
   }
+  const phaseP95ByName = Object.fromEntries(
+    Object.entries(phaseSamples).map(([phase, samples]) => [phase, nearestRank(samples, 0.95)]),
+  );
   return {
+    ...(clockSamplesMs.length === 0 ? {} : { clockSamplesMs }),
+    ...(sampleCount === 0 ? {} : { clockSource: missingClock ? 'missing' : 'monotonic-performance' }),
     ...(frameIntervalsMs.length === 0 ? {} : { frameIntervalsMs }),
+    ...(hitchCount === 0 ? { hitchCount: 0 } : { hitchCount }),
     ...(intervals.length === 0 ? {} : { intervals }),
+    ...(Object.keys(phaseP95ByName).length === 0 ? {} : {
+      phaseP95ByName,
+      ...(phaseP95ByName.render === undefined ? {} : { phaseP95Ms: phaseP95ByName.render }),
+    }),
+    ...(presentationSamplesMs.length === 0 ? {} : { presentationSamplesMs }),
+    ...(runWindows.length === 0 ? {} : { runWindows }),
+    ...(sampleCount === 0 ? {} : { presentationClockSource: missingPresentationClock ? 'missing' : 'raf-presentation', sampleCount, worstFrameMs }),
     ...(startupSamplesMs.length === 0 ? {} : { startupSamplesMs, startupMs: startupSamplesMs[0] }),
     ...(timestampMs === 0 ? {} : { durationSeconds: timestampMs / 1_000 }),
     ...(startupSamplesMs.length === 0 ? {} : { startupP95Ms: nearestRank(startupSamplesMs, 0.95) }),
-    ...(frameIntervalsMs.length === 0 ? {} : { meanFps: meanFps(frameIntervalsMs), p99FrameMs: nearestRank(frameIntervalsMs, 0.99) }),
+    ...(frameIntervalsMs.length === 0 ? {} : {
+      meanFps: meanFps(frameIntervalsMs),
+      p50FrameMs: nearestRank(frameIntervalsMs, 0.5),
+      p95FrameMs: nearestRank(frameIntervalsMs, 0.95),
+      p99FrameMs: nearestRank(frameIntervalsMs, 0.99),
+    }),
     ...(intervals.some(({ drawCalls }) => drawCalls !== undefined) ? { drawCalls: Math.max(...intervals.flatMap(({ drawCalls }) => drawCalls === undefined ? [] : [drawCalls])) } : {}),
     ...(intervals.some(({ triangles }) => triangles !== undefined) ? { triangles: Math.max(...intervals.flatMap(({ triangles }) => triangles === undefined ? [] : [triangles])) } : {}),
   };
@@ -1143,10 +1484,9 @@ function pairMetrics(metrics) {
 
 function identityFor(options, web, native, artifactHashes) {
   const common = {
-    deviceClass: options.device === undefined ? 'default-target' : 'selected-target',
-    hostClass: `${process.platform}-${process.arch}`,
-    osClass: process.platform,
-    refreshHz: 60,
+    // Only observed hardware data may certify a promoted comparison. Missing fields remain absent.
+    ...(web?.runs[0]?.report?.observations?.hardwareIdentity ?? native?.runs[0]?.report?.observations?.hardwareIdentity ?? {}),
+    workloadHash: web?.workloadHash ?? native?.workloadHash,
     renderHeight: options.renderSize.height,
     renderWidth: options.renderSize.width,
   };
@@ -1159,7 +1499,52 @@ function identityFor(options, web, native, artifactHashes) {
       webProcess: web?.driverClass,
     };
   }
-  return { ...common, artifactSha256: artifactHashes[0], executableClass: web?.driverClass ?? native?.driverClass };
+  return {
+    ...common,
+    artifactSha256: artifactHashes[0],
+    ...(native === undefined ? {} : { nativeBinarySha256: native.artifactSha }),
+    executableClass: web?.driverClass ?? native?.driverClass,
+  };
+}
+
+function steadyLaunchesAt(options, coldStart) {
+  return options.profile === REGRESSION_PROFILE ? (coldStart === options.coldStarts - 1 ? 1 : 0) : options.repetitions;
+}
+
+export function collectionLaunchPlan(options) {
+  return Array.from({ length: options.coldStarts }, (_, index) => ['startup', ...Array(steadyLaunchesAt(options, index)).fill('steady')]).flat();
+}
+
+export async function prepareNativeWorkload(project, target, options, execute = runCommand) {
+  if (options.prebuiltArtifact !== undefined && target !== 'desktop') {
+    const receipt = await readPrebuiltWorkload(options.prebuiltArtifact, target, options);
+    return { status: 0, workloadHash: receipt.workloadHash, bundleSha: receipt.bundleSha256 };
+  }
+  // build:desktop compiles assets, the instrumented entry and UI, then packages the existing host.
+  // THREENATIVE_RUNTIME_BINARY prevents a second native compile without omitting the game bundle.
+  return execute('pnpm', ['run', `build:${target}`], project, {
+    ...process.env,
+    ...(options.prebuiltArtifact === undefined ? {} : { THREENATIVE_RUNTIME_BINARY: resolve(options.prebuiltArtifact) }),
+  });
+}
+
+export async function readPrebuiltWorkload(artifact, target, options) {
+  try {
+    const receipt = JSON.parse(await readFile(`${artifact}.production.json`, 'utf8'));
+    if (receipt.target !== target || receipt.workload !== 'platformer-production' || receipt.instrumentationRevision !== 'productionEvidenceV1'
+      || receipt.sourceSha !== options.sourceSha || !receipt.appId || !receipt.workloadHash
+      || receipt.artifactSha256 !== await hashPath(artifact)) throw new Error('receipt identity mismatch');
+    const bundle = target === 'ios'
+      ? await readFile(join(artifact, 'native-smoke.js'))
+      : (await execFileAsync('unzip', ['-p', artifact, 'assets/scripts/main.js'], { encoding: 'buffer' })).stdout;
+    const appId = target === 'ios'
+      ? (await execFileAsync('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', join(artifact, 'Info.plist')])).stdout.trim()
+      : (await execFileAsync('aapt', ['dump', 'badging', artifact])).stdout.match(/package: name='([^']+)'/u)?.[1];
+    if (appId !== receipt.appId || sha256(bundle) !== receipt.bundleSha256 || !bundle.includes('TN_PROD_FRAME_SAMPLES:')) throw new Error('packaged workload mismatch');
+    return receipt;
+  } catch (error) {
+    throw new ProductionEvidenceError('TN_PROD_PREBUILT_WORKLOAD', `Prebuilt ${target} requires a matching instrumented platformer receipt and packaged application identity: ${error.message}`);
+  }
 }
 
 function markersFor(arms, codes) {
@@ -1193,6 +1578,8 @@ function profileCommand(options) {
     `--warmup ${options.warmup}`,
     `--repetitions ${options.repetitions}`,
     ...(options.device === undefined ? [] : ['--device <selected>']),
+    ...(options.hostedSoftware ? ['--hosted-software'] : []),
+    ...(options.prebuiltArtifact === undefined ? [] : ['--prebuilt-artifact <existing-build>']),
   ].join(' ');
 }
 
@@ -1409,6 +1796,11 @@ async function hashPath(path) {
   return sha256(Buffer.from(hashInput.join('\n')));
 }
 
+async function workloadHashFor(project, sourceHash) {
+  if (!sourceHash) throw new ProductionEvidenceError('TN_PROD_WORKLOAD_IDENTITY', 'The workload source tree was not hashed before instrumentation.');
+  return sha256(Buffer.from(`${sourceHash}:${await hashPath(join(project, 'public'))}`));
+}
+
 async function listFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
@@ -1488,7 +1880,7 @@ async function removeMailbox(root) {
   await Promise.all([
     rm(join(root, 'tn-playtest-request.json'), { force: true }),
     rm(join(root, 'tn-playtest-response.json'), { force: true }),
-    rm(join(root, 'tn-production-screenshot-request.json'), { force: true }),
+    rm(join(root, 'tn-playtest-screenshot-request.txt'), { force: true }),
   ]);
 }
 

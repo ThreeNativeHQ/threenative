@@ -275,7 +275,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
   minimal: "dfb6fe115e33363827c9c42f58cfa03f016177c0ae553f1a3f07b186081eb61c",
-  platformer: "ae91c6ea42b70dde1ab4ec2823c28a5cc2faf302065034b4037d5325cb63d535",
+  platformer: "500e4d4a788d1c83fbdae70a79c820e8600266e984acd052a6242f29323e0ae8",
   runner: "2267903ab4bdd04be723a6363916804a5e623bfce2b56594939e16c2a82e3e59",
   puzzle: "8d60559bc70c1e6ed4e8a778184d3ceac9240020ec5d4dbd6b2d9254dbe31bb1",
   racing: "d59025b065e2cdbee303d48e95431da89105b76301871c3ae9ac75bc06fb382d",
