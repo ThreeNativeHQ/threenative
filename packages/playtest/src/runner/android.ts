@@ -71,6 +71,13 @@ export interface IAndroidPointerInjection {
   trackingIds: number[];
 }
 
+export interface IAndroidTouchViewport {
+  device: { height: number; width: number };
+  logical: { bottom: number; left: number; right: number; top: number };
+  orientation: number;
+  physical: { bottom: number; left: number; right: number; top: number };
+}
+
 export class AdbAndroidDriver implements IAndroidDriver {
   private static readonly COVERAGE_VIDEO_PATH = "/sdcard/tn-playtest-framebuffer-coverage.mp4";
   private readonly adbPath: string;
@@ -84,6 +91,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
   }>();
   private nextTrackingId = 100;
   private rotation?: number;
+  private touchViewport?: IAndroidTouchViewport;
   private readonly user?: string;
   private activeUser?: string;
   private viewportPresented = false;
@@ -157,6 +165,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
     this.viewportPresented = true;
     // The touch rotation is a property of the window, and the window has just been resized.
     this.rotation = this.options.touchRotation;
+    this.touchViewport = undefined;
     const override = parseOverrideSize(await this.adb(["shell", "wm", "size"]));
     const expected = viewportPresentationCommands(viewport, physical)[0]?.[3];
     if (!viewportPresentationObserved(override, expected, physical)) {
@@ -278,6 +287,9 @@ export class AdbAndroidDriver implements IAndroidDriver {
       throw new Error("Android touch injection supports buttons=1 only.");
     }
     this.rotation ??= await this.readRotation();
+    if (this.viewportPresented && this.touchViewport === undefined) {
+      this.touchViewport = parseAndroidTouchViewport(await this.adb(["shell", "dumpsys", "input"]));
+    }
     const next = new Map(pointers.map((pointer) => [pointer.id, pointer]));
     const identity: string[] = [];
     const positions: string[] = [];
@@ -291,7 +303,9 @@ export class AdbAndroidDriver implements IAndroidDriver {
       this.touchSlots.delete(id);
     }
     for (const pointer of pointers) {
-      const [x, y] = rotatedTouchPosition(pointer.x, pointer.y, this.rotation);
+      const [x, y] = this.touchViewport === undefined
+        ? rotatedTouchPosition(pointer.x, pointer.y, this.rotation)
+        : touchPositionForViewport(pointer.x, pointer.y, this.touchViewport);
       let held = this.touchSlots.get(pointer.id);
       if (held === undefined) {
         const usedSlots = new Set([...this.touchSlots.values()].map(({ slot }) => slot));
@@ -354,6 +368,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
     await this.setPointers([]).catch(() => undefined);
     if (this.viewportPresented) {
       this.viewportPresented = false;
+      this.touchViewport = undefined;
       // Before the force-stop below, and unconditional: a device left at a test viewport is a
       // device whose next measurement is silently against the wrong screen.
       for (const command of viewportRestoreCommands()) {
@@ -523,6 +538,88 @@ function isPlatformWebViewNoise(text: string): boolean {
 }
 
 const TOUCH_AXIS_MAX = 32767;
+
+export function parseAndroidTouchViewport(output: string): IAndroidTouchViewport {
+  const match = /Viewport\s+INTERNAL:\s*displayId=0,[\s\S]*?orientation=(\d+),\s*logicalFrame=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\],\s*physicalFrame=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\],\s*deviceSize=\[\s*(\d+),\s*(\d+)\s*\]/u.exec(output);
+  if (match === null) {
+    throw new Error(
+      "TN_PLAYTEST_ANDROID_TOUCH_VIEWPORT_MISSING: dumpsys input did not report an INTERNAL viewport for display 0.",
+    );
+  }
+  const [
+    orientation,
+    logicalLeft,
+    logicalTop,
+    logicalRight,
+    logicalBottom,
+    physicalLeft,
+    physicalTop,
+    physicalRight,
+    physicalBottom,
+    deviceWidth,
+    deviceHeight,
+  ] = match.slice(1).map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  if (![0, 1, 2, 3].includes(orientation)) {
+    throw new Error(`TN_PLAYTEST_ANDROID_TOUCH_ORIENTATION_INVALID: display 0 reported orientation ${orientation}.`);
+  }
+  if (logicalRight <= logicalLeft || logicalBottom <= logicalTop
+    || physicalRight <= physicalLeft || physicalBottom <= physicalTop
+    || deviceWidth <= 0 || deviceHeight <= 0) {
+    throw new Error(
+      `TN_PLAYTEST_ANDROID_TOUCH_VIEWPORT_EMPTY: display 0 reported logical [${logicalLeft}, ${logicalTop}, ${logicalRight}, ${logicalBottom}], physical [${physicalLeft}, ${physicalTop}, ${physicalRight}, ${physicalBottom}], device ${deviceWidth}x${deviceHeight}.`,
+    );
+  }
+  return {
+    device: { height: deviceHeight, width: deviceWidth },
+    logical: { bottom: logicalBottom, left: logicalLeft, right: logicalRight, top: logicalTop },
+    orientation,
+    physical: { bottom: physicalBottom, left: physicalLeft, right: physicalRight, top: physicalTop },
+  };
+}
+
+/** Map a normalized logical-display point to the raw touchscreen axes. */
+export function touchPositionForViewport(
+  x: number,
+  y: number,
+  viewport: IAndroidTouchViewport,
+): [number, number] {
+  const logicalX = viewport.logical.left + clampUnit(x) * (viewport.logical.right - viewport.logical.left);
+  const logicalY = viewport.logical.top + clampUnit(y) * (viewport.logical.bottom - viewport.logical.top);
+  const physicalX = viewport.physical.left
+    + (logicalX - viewport.logical.left) * (viewport.physical.right - viewport.physical.left)
+      / (viewport.logical.right - viewport.logical.left);
+  const physicalY = viewport.physical.top
+    + (logicalY - viewport.logical.top) * (viewport.physical.bottom - viewport.physical.top)
+      / (viewport.logical.bottom - viewport.logical.top);
+  const [rawX, rawY, rawWidth, rawHeight] = viewport.orientation === 0
+    ? [physicalX, physicalY, viewport.device.width, viewport.device.height]
+    : viewport.orientation === 1
+      ? [viewport.device.height - physicalY, physicalX, viewport.device.height, viewport.device.width]
+      : viewport.orientation === 2
+        ? [viewport.device.width - physicalX, viewport.device.height - physicalY, viewport.device.width, viewport.device.height]
+        : [physicalY, viewport.device.width - physicalX, viewport.device.height, viewport.device.width];
+  return [
+    Math.round(clampUnit(rawX / rawWidth) * TOUCH_AXIS_MAX),
+    Math.round(clampUnit(rawY / rawHeight) * TOUCH_AXIS_MAX),
+  ];
+}
+
+function clampUnit(value: number): number {
+  if (!Number.isFinite(value)) throw new Error(`Android touch coordinate must be finite, got ${String(value)}.`);
+  return Math.max(0, Math.min(1, value));
+}
 
 /**
  * Splits slot identity from coordinates into separate synced `adb emu event send` batches.
