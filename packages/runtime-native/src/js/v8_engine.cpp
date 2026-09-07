@@ -307,6 +307,10 @@ public:
             entry.second.Reset();
         }
         internedKeys_.clear();
+        // Remove the foreground task runner before releasing its isolate. Worker isolates are
+        // created and destroyed rapidly, and V8's default platform keeps runners keyed by the
+        // raw isolate pointer; leaving one behind can route a later wake into stale runner state.
+        v8::platform::NotifyIsolateShutdown(g_platform.get(), isolate_);
         context_.Reset();
         isolate_->Dispose();
         delete allocator_;

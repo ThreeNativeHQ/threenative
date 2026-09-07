@@ -1,8 +1,9 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { afterEach, test } from 'vitest';
 import { PNG } from 'pngjs';
@@ -18,13 +19,18 @@ import {
 } from '../scripts/production-evidence.mjs';
 import {
   aggregateMetrics,
+  desktopFailureRun,
   assembleEvidence,
   isSuccessfulStartupSample,
+  installNativeProfileEntry,
   nativeFrameInstrumentation,
   parseProductionArgs,
+  prepareNativeWorkload,
+  collectionLaunchPlan,
   profileConfigPath,
   postWarmupFrameSamples,
   runProductionProfile,
+  safeReport,
   setNativeProfileEntry,
   webFrameInstrumentation,
   writeRunScenarios,
@@ -33,6 +39,205 @@ import {
 const temporary = [];
 const sourceSha = 'a'.repeat(64);
 const artifactSha = sha256(Buffer.from('fixture-artifact'));
+
+test('desktop runner exceptions retain failed evidence rather than disappearing', () => {
+  const error = new Error('TN_PLAYTEST_OPERATION_TIMEOUT: advance');
+  const output = [{ text: 'native bridge connected', type: 'log' }];
+  const run = desktopFailureRun(error, output, 123);
+  assert.equal(run.status, 2);
+  assert.equal(run.report.pass, false);
+  assert.equal(run.report.diagnostics[0].message, error.message);
+  assert.deepEqual(run.report.observations.console, output);
+  assert.equal(run.series, undefined);
+  const unsafe = desktopFailureRun(error, [{ text: '/home/operator/private/build', type: 'log' }], 123);
+  assert.equal(JSON.stringify(unsafe.report).includes('/home/'), false);
+  assert.match(unsafe.report.observations.console[0].text, /TN_PROD_REDACTION/u);
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  assert.match(source, /return desktopFailureRun\(error, await driver.captureConsole\(\),/u);
+});
+
+test('desktop cleanup tolerates a child process group that already exited', async () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const context = {
+    join,
+    process: {
+      env: { DISPLAY: ':fixture' },
+      kill: () => {
+        const error = new Error('process group already exited');
+        error.code = 'ESRCH';
+        throw error;
+      },
+      platform: 'linux',
+    },
+    spawn: () => {
+      const child = new EventEmitter();
+      child.exitCode = null;
+      child.signalCode = null;
+      child.pid = 123;
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    },
+    writeFile: async () => undefined,
+    rename: async () => undefined,
+    nonBlankPng: async () => true,
+    DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
+    clearTimeout,
+    setTimeout,
+  };
+  runInNewContext(driverSource, context);
+  const driver = context.createDesktopDriver('/fixture/mystral', '/fixture/scaffold', { renderSize: { height: 900, width: 1600 } }, '/fixture/mailbox');
+  await driver.launch();
+  await assert.doesNotReject(() => driver.stop());
+});
+
+test('desktop cleanup observes a Windows child that exits synchronously when killed', async () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = null;
+  child.pid = 123;
+  child.kill = () => {
+    child.exitCode = 0;
+    child.emit('exit', 0, null);
+  };
+  const context = {
+    join,
+    process: { env: {}, platform: 'win32' },
+    spawn: () => {
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    },
+    writeFile: async () => undefined,
+    rename: async () => undefined,
+    nonBlankPng: async () => true,
+    DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
+    clearTimeout,
+    setTimeout,
+  };
+  runInNewContext(driverSource, context);
+  const driver = context.createDesktopDriver('/fixture/mystral.exe', '/fixture/scaffold', { renderSize: { height: 900, width: 1600 } }, '/fixture/mailbox');
+  await driver.launch();
+  await assert.doesNotReject(() => Promise.race([
+    driver.stop(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('desktop stop timed out')), 100)),
+  ]));
+});
+
+test('desktop cleanup does not wait forever when a Windows kill emits no exit event', async () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = null;
+  child.pid = 123;
+  child.kill = () => undefined;
+  const context = {
+    join,
+    process: { env: {}, platform: 'win32' },
+    spawn: () => {
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    },
+    writeFile: async () => undefined,
+    rename: async () => undefined,
+    nonBlankPng: async () => true,
+    DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
+    clearTimeout,
+    setTimeout,
+  };
+  runInNewContext(driverSource, context);
+  const driver = context.createDesktopDriver('/fixture/mystral.exe', '/fixture/scaffold', {
+    desktopCleanupTimeoutMs: 25,
+    renderSize: { height: 900, width: 1600 },
+  }, '/fixture/mailbox');
+  await driver.launch();
+  await assert.rejects(driver.stop(), (error) => {
+    assert.equal(error.diagnostic.code, 'TN_PROD_DESKTOP_CLEANUP_TIMEOUT');
+    assert.equal(error.diagnostic.phase, 'desktop-stop');
+    assert.equal(error.diagnostic.processState, 'alive');
+    assert.equal(error.diagnostic.observedAlive, true);
+    assert.equal(error.diagnostic.observedExited, false);
+    return true;
+  });
+});
+
+test('desktop cleanup diagnostics survive conversion to a failed production run', () => {
+  const cleanupDiagnostic = {
+    code: 'TN_PROD_DESKTOP_CLEANUP_TIMEOUT',
+    message: 'Desktop cleanup phase stopped observing an alive process.',
+    observedAlive: true,
+    observedExited: false,
+    phase: 'desktop-stop',
+    processState: 'alive',
+    severity: 'error',
+  };
+  const cleanupError = Object.assign(new Error(cleanupDiagnostic.message), { diagnostic: cleanupDiagnostic });
+  const run = desktopFailureRun(new Error('playtest failed'), [], 123, cleanupError);
+  assert.deepEqual(run.report.diagnostics, [cleanupDiagnostic]);
+  assert.equal(run.status, 2);
+  assert.equal(run.report.pass, false);
+});
+
+test('native report retention redacts unsafe host console paths without dropping safe evidence', () => {
+  const report = safeReport({
+    assertionResults: [{ id: 'diagnostics', pass: false }],
+    diagnostics: [],
+    observations: {
+      console: [
+        { text: '/home/operator/.local/share/mystral/storage/platformer.json', type: 'log' },
+        { text: 'TN_NATIVE_SMOKE_READY:webgpu', type: 'log' },
+      ],
+      network: [],
+    },
+    pass: false,
+    scenario: 'production-startup',
+    target: 'desktop',
+  });
+  assert.match(report.observations.console[0].text, /TN_PROD_REDACTION/u);
+  assert.equal(report.observations.console[1].text, 'TN_NATIVE_SMOKE_READY:webgpu');
+});
+
+test('desktop child receives the transport mailbox root and writes a raw post-present screenshot request', async () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const driverSource = source.slice(source.indexOf('function createDesktopDriver('), source.indexOf('export async function installNativeProfileEntry('));
+  const project = '/fixture/scaffold';
+  const mailboxRoot = join(project, '.runtime-mailbox');
+  const screenshotRequestPath = join(mailboxRoot, 'tn-playtest-screenshot-request.txt');
+  let childOptions;
+  const writes = [];
+  const context = {
+    join,
+    process: { platform: 'linux', env: { DISPLAY: ':fixture', TN_PLAYTEST_MAILBOX_ROOT: '/wrong/inherited/root' } },
+    spawn: (_command, _args, options) => {
+      childOptions = options;
+      const child = new EventEmitter();
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    },
+    writeFile: async (path, contents) => writes.push({ contents, path }),
+    rename: async (from, to) => writes.push({ from, to }),
+    nonBlankPng: async () => true,
+    DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
+  };
+  runInNewContext(driverSource, context);
+  const driver = context.createDesktopDriver('/fixture/mystral', project, { renderSize: { width: 1920, height: 1080 } }, mailboxRoot);
+  await driver.launch();
+  assert.equal(childOptions.env.TN_PLAYTEST_MAILBOX_ROOT, mailboxRoot);
+  assert.equal(childOptions.cwd, project);
+  await driver.screenshot('/fixture/capture.png');
+  assert.deepEqual(writes, [
+    { contents: '/fixture/capture.png', path: `${screenshotRequestPath}.tmp` },
+    { from: `${screenshotRequestPath}.tmp`, to: screenshotRequestPath },
+  ]);
+  assert.match(source, /const driver = createDesktopDriver\(artifactPath, project, options, mailboxRoot\)/u);
+});
+
+test('production desktop mailbox uses atomic request writes', () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  assert.match(source, /const mailbox = new runner\.LocalDeviceMailbox\(\);/u);
+});
 
 afterEach(() => {
   for (const path of temporary.splice(0)) rmSync(path, { force: true, recursive: true });
@@ -126,6 +331,7 @@ test('production evidence uses nearest-rank pacing and arithmetic mean fps', () 
   );
   assert.equal(budget.failures.length, 0);
   assert.ok(budget.mean > 60);
+  assert.deepEqual(evaluateFrameBudget({ frameIntervalsMs: [40, 40, 40] }, { minFps: 30 }).failures, ['TN_PROD_PERFORMANCE_BUDGET']);
 });
 
 test('complete current evidence is the only PASS state', () => {
@@ -133,6 +339,197 @@ test('complete current evidence is the only PASS state', () => {
   assert.equal(result.status, 'PASS');
   assert.equal(result.exitCode, 0);
   assert.deepEqual(result.codes, []);
+});
+
+test('hosted software keeps timing failures advisory while preserving measured budgets', () => {
+  const result = evaluateProductionEvidence(completeEvidence({
+    execution: { performanceEvaluation: 'advisory' },
+    metrics: {
+      ...completeEvidence().metrics,
+      frameIntervalsMs: [40, 40, 40],
+      intervals: [
+        { frameMs: 40, sequence: 1, timestampMs: 1_000 },
+        { frameMs: 40, sequence: 2, timestampMs: 1_040 },
+        { frameMs: 40, sequence: 3, timestampMs: 1_080 },
+      ],
+    },
+  }));
+  assert.equal(result.status, 'PASS');
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(result.codes, []);
+  assert.deepEqual(result.advisoryCodes, ['TN_PROD_PERFORMANCE_BUDGET']);
+});
+
+test('hosted native collection allows software-adapter startup settlement', () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  assert.equal((source.match(/allowSoftwareAdapter: options\.hostedSoftware/gu) ?? []).length, 2);
+});
+
+function regressionEvidence(overrides = {}) {
+  const count = 1_800;
+  const frameMs = 1_000 / 60;
+  const intervals = Array.from({ length: count }, (_, index) => ({
+    clockMs: index * frameMs,
+    frameMs,
+    sequence: index + 1,
+    timestampMs: index * frameMs,
+  }));
+  return completeEvidence({
+    budget: {
+      maxP99FrameMs: 33,
+      maxStartupMs: 5_000,
+      minMeanFps: 60,
+      minDurationSeconds: 30,
+      minFrameSamples: 1_000,
+    },
+    execution: {
+      coldStarts: 5,
+      profile: 'regression',
+      readiness: { ready: true, sampleReset: true },
+      warmupReset: true,
+    },
+    markers: ['run-start', 'first-workload-frame', 'clean-end'],
+    metrics: {
+      battery: { complete: true, samples: 1 },
+      clockSamplesMs: intervals.map(({ clockMs }) => clockMs),
+      clockSource: 'monotonic-performance',
+      durationSeconds: 30,
+      frameIntervalsMs: intervals.map(({ frameMs: value }) => value),
+      intervals,
+      meanFps: 60,
+      memory: { complete: true, growthBytes: 0, highWaterBytes: 1, slopeBytesPerMinute: 0 },
+      motion: { moved: true, movingObjects: 256 },
+      pixels: { changed: true, nonBlank: true },
+      presentationClockSource: 'raf-presentation',
+      presentationSamplesMs: intervals.map(({ clockMs }) => clockMs),
+      runWindows: [{ durationSeconds: 30, sampleCount: count }],
+      startupSamplesMs: [100, 100, 100, 100, 100],
+      startupMs: 100,
+      thermal: { complete: true, samples: 1 },
+    },
+    ...overrides,
+  });
+}
+
+test('regression evidence accepts a bounded real-clock, ready, moving, pixel-backed window', () => {
+  const result = evaluateProductionEvidence(regressionEvidence());
+  assert.equal(result.status, 'PASS');
+  assert.equal(result.exitCode, 0);
+});
+
+test('regression evidence requires every launch to meet the full steady-state window', () => {
+  const result = evaluateProductionEvidence(regressionEvidence({
+    metrics: {
+      ...regressionEvidence().metrics,
+      runWindows: [
+        { durationSeconds: 30, sampleCount: 1_800 },
+        { durationSeconds: 2, sampleCount: 120 },
+      ],
+    },
+  }));
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.exitCode, 2);
+  assert.ok(result.codes.includes('TN_PROD_REGRESSION_WINDOW'));
+});
+
+test('regression rejects pooling two individually valid steady launches', () => {
+  const base = regressionEvidence();
+  const result = evaluateProductionEvidence({ ...base, metrics: { ...base.metrics, runWindows: [
+    { durationSeconds: 30, sampleCount: 1800 }, { durationSeconds: 30, sampleCount: 1800 },
+  ] } });
+  assert.equal(result.status, 'BLOCKED');
+});
+
+test('generated native mailbox declaration is executable and independent of scaffold directory', async () => {
+  const project = makeTempDirSync('tn-profile-mailbox-');
+  temporary.push(project);
+  mkdirSync(join(project, 'src'));
+  writeFileSync(join(project, 'package.json'), '{}');
+  writeFileSync(join(project, 'threenative.config.ts'), 'export default { nativeEntry: "src/game.ts" };');
+  await installNativeProfileEntry(project, 'desktop', { warmup: 1 });
+  const source = readFileSync(join(project, 'src/profile-native-entry.ts'), 'utf8');
+  const declaration = source.split('\n').find((line) => line.startsWith('globalThis.TN_PLAYTEST_MAILBOX'));
+  const context = {};
+  runInNewContext(declaration, context);
+  assert.equal(context.TN_PLAYTEST_MAILBOX.request, '.runtime-mailbox/tn-playtest-request.json');
+  assert.doesNotMatch(source, /tn-production-screenshot-request\.json|tnProductionScreenshotRequestPath|captureScreenshot|playtest\?\.receive/u);
+});
+
+test('generated native profile exposes hosted software only to the profile entry', async () => {
+  const hostedProject = makeTempDirSync('tn-profile-hosted-software-');
+  const normalProject = makeTempDirSync('tn-profile-normal-software-');
+  temporary.push(hostedProject, normalProject);
+  for (const project of [hostedProject, normalProject]) {
+    mkdirSync(join(project, 'src'));
+    writeFileSync(join(project, 'package.json'), '{}');
+    writeFileSync(join(project, 'threenative.config.ts'), 'export default { nativeEntry: "src/game.ts" };');
+  }
+
+  await installNativeProfileEntry(hostedProject, 'desktop', { hostedSoftware: true, warmup: 1 });
+  await installNativeProfileEntry(normalProject, 'desktop', { hostedSoftware: false, warmup: 1 });
+
+  const hostedEntry = readFileSync(join(hostedProject, 'src/profile-native-entry.ts'), 'utf8');
+  const hostedMarker = readFileSync(join(hostedProject, 'src/profile-native-profile.ts'), 'utf8');
+  const normalMarker = readFileSync(join(normalProject, 'src/profile-native-profile.ts'), 'utf8');
+  assert.match(hostedEntry, /import "\.\/profile-native-profile\.js";/u);
+  const hostedContext = {};
+  const normalContext = {};
+  runInNewContext(hostedMarker, hostedContext);
+  runInNewContext(normalMarker, normalContext);
+  assert.equal(hostedContext.__THREENATIVE_PROFILE__.hostedSoftware, true);
+  assert.equal(normalContext.__THREENATIVE_PROFILE__.hostedSoftware, false);
+});
+
+test('desktop profiling switches web UI to native while mobile profiling preserves web UI', async () => {
+  const desktopProject = makeTempDirSync('tn-profile-desktop-ui-');
+  const mobileProject = makeTempDirSync('tn-profile-mobile-ui-');
+  temporary.push(desktopProject, mobileProject);
+  for (const project of [desktopProject, mobileProject]) {
+    mkdirSync(join(project, 'src'));
+    writeFileSync(join(project, 'package.json'), '{}');
+    writeFileSync(
+      join(project, 'threenative.config.ts'),
+      'export default { nativeEntry: "src/game.ts", ui: { renderer: "web" } };\n',
+    );
+  }
+
+  await installNativeProfileEntry(desktopProject, 'desktop', { warmup: 1 });
+  await installNativeProfileEntry(mobileProject, 'android', { warmup: 1 });
+
+  assert.match(readFileSync(join(desktopProject, 'threenative.config.ts'), 'utf8'), /ui: \{ renderer: "native" \}/u);
+  assert.match(readFileSync(join(mobileProject, 'threenative.config.ts'), 'utf8'), /ui: \{ renderer: "web" \}/u);
+});
+
+test('physical regression evidence blocks a thermally confounded device result', () => {
+  const base = regressionEvidence();
+  const result = evaluateProductionEvidence({
+    ...base,
+    metrics: {
+      ...base.metrics,
+      thermal: { complete: true, samples: 2, thermallyConfounded: true },
+    },
+    physical: { provenance: 'physical-hardware' },
+    target: 'android-physical',
+  });
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.exitCode, 2);
+  assert.ok(result.codes.includes('TN_PROD_THERMAL_STATE_INVALID'));
+});
+
+test('regression evidence blocks short windows, fixed clocks, contaminated startup, frozen work, and changed-pixel gaps', () => {
+  const cases = [
+    ['short window', { metrics: { ...regressionEvidence().metrics, durationSeconds: 29, frameIntervalsMs: Array(999).fill(16.666) } }, 'TN_PROD_REGRESSION_WINDOW'],
+    ['fixed tick', { metrics: { ...regressionEvidence().metrics, clockSource: 'fixed-tick' } }, 'TN_PROD_CLOCK_INVALID'],
+    ['startup contamination', { execution: { ...regressionEvidence().execution, warmupReset: false } }, 'TN_PROD_STARTUP_CONTAMINATION'],
+    ['frozen motion', { metrics: { ...regressionEvidence().metrics, motion: { moved: false, movingObjects: 0 } } }, 'TN_PROD_MOTION_MISSING'],
+    ['changed pixels missing', { metrics: { ...regressionEvidence().metrics, pixels: { changed: false, nonBlank: true } } }, 'TN_PROD_PIXEL_EVIDENCE_MISSING'],
+  ];
+  for (const [name, override, code] of cases) {
+    const result = evaluateProductionEvidence(regressionEvidence(override));
+    assert.equal(result.status, 'BLOCKED', name);
+    assert.equal(result.exitCode, 2, name);
+    assert.ok(result.codes.includes(code), `${name}: ${result.codes.join(', ')}`);
+  }
 });
 
 test('missing lifecycle marker is BLOCKED with exit 2', () => {
@@ -202,18 +599,50 @@ test('accepted profile controls are parsed and execution receives every value', 
     '--render-size', '1920x1080',
     '--cold-starts', '2',
     '--device', 'emulator-5554',
+    '--prebuilt-artifact', '/tmp/already-built-runtime.apk',
     '--warmup', '3',
     '--repetitions', '4',
   ]);
   assert.deepEqual(parsed.renderSize, { height: 1080, width: 1920 });
   assert.equal(parsed.coldStarts, 2);
   assert.equal(parsed.device, 'emulator-5554');
+  assert.equal(parsed.prebuiltArtifact, '/tmp/already-built-runtime.apk');
   assert.equal(parsed.warmup, 3);
   assert.equal(parsed.repetitions, 4);
+  assert.equal(parsed.profile, 'production');
+  const hosted = parseProductionArgs(['--target', 'desktop', '--hosted-software']);
+  assert.equal(hosted.hostedSoftware, true);
+  assert.deepEqual(hosted.renderSize, { height: 720, width: 1280 });
+  const hostedExplicit = parseProductionArgs([
+    '--target', 'desktop', '--hosted-software', '--render-size', '1920x1080',
+  ]);
+  assert.deepEqual(hostedExplicit.renderSize, { height: 1080, width: 1920 });
+  const hostedAndroid = parseProductionArgs([
+    '--target', 'android', '--device', 'emulator-5554', '--hosted-software',
+  ]);
+  assert.deepEqual(hostedAndroid.renderSize, { height: 1080, width: 1920 });
+  const relativeArtifact = parseProductionArgs([
+    '--target', 'desktop',
+    '--prebuilt-artifact', 'build/tn-macos/mystral',
+  ]);
+  assert.equal(
+    relativeArtifact.prebuiltArtifact,
+    resolve('build/tn-macos/mystral'),
+  );
+  const regression = parseProductionArgs(['--target', 'desktop', '--profile', 'regression']);
+  assert.equal(regression.profile, 'regression');
+  assert.equal(regression.duration, 30);
+  assert.equal(regression.warmup, 5);
+  assert.equal(regression.coldStarts, 5);
+  assert.equal(regression.repetitions, 1);
   assert.equal(parseProductionArgs(['--target', 'desktop-web']).target, 'web');
   assert.throws(
     () => parseProductionArgs(['--target', 'web', '--device', 'emulator-5554']),
     (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_DEVICE_UNSUPPORTED',
+  );
+  assert.throws(
+    () => parseProductionArgs(['--target', 'android-physical', '--device', 'pixel', '--hosted-software']),
+    (error) => error instanceof ProductionEvidenceError && error.code === 'TN_PROD_HOSTED_SOFTWARE_UNSUPPORTED',
   );
 });
 
@@ -247,6 +676,29 @@ test('native profile reads the generated app identity when no config override is
   );
 });
 
+test('regression collects one steady launch and five startup launches per paired arm', () => {
+  const options = parseProductionArgs(['--target', 'desktop', '--profile', 'regression']);
+  const plan = collectionLaunchPlan(options);
+  assert.equal(plan.filter((entry) => entry === 'startup').length, 5);
+  assert.equal(plan.filter((entry) => entry === 'steady').length, 1);
+  assert.ok(6 * (options.duration + options.warmup + options.coldStarts * 8) < 900);
+  assert.throws(() => parseProductionArgs(['--target', 'desktop', '--profile', 'regression', '--repetitions', '3']), { code: 'TN_PROD_PAIR_UNIT' });
+});
+
+test('prebuilt desktop still builds its instrumented scaffold with the supplied runtime', async () => {
+  const calls = [];
+  await prepareNativeWorkload('/project', 'desktop', { prebuiltArtifact: '/runtime/mystral' }, async (...args) => {
+    calls.push(args);
+    return { status: 0 };
+  });
+  assert.deepEqual(calls[0].slice(0, 3), ['pnpm', ['run', 'build:desktop'], '/project']);
+  assert.equal(calls[0][3].THREENATIVE_RUNTIME_BINARY, '/runtime/mystral');
+});
+
+test('prebuilt mobile refuses an app without a bound instrumented workload receipt', async () => {
+  await assert.rejects(prepareNativeWorkload('/project', 'android', { prebuiltArtifact: '/missing.apk' }), { code: 'TN_PROD_PREBUILT_WORKLOAD' });
+});
+
 test('startup aggregation rejects failed reports and blank first frames', () => {
   const blank = new PNG({ height: 2, width: 2 });
   blank.data.fill(255);
@@ -272,11 +724,41 @@ test('startup aggregation rejects failed reports and blank first frames', () => 
   assert.equal(metrics.startupP95Ms, undefined);
 });
 
+test('native scenarios explicitly waive browser network observation while browser startup retains it', async () => {
+  const project = makeTempDirSync('tn-native-diagnostics-');
+  temporary.push(project);
+  mkdirSync(join(project, 'playtests'));
+  writeFileSync(join(project, 'playtests/performance.playtest.json'), JSON.stringify({
+    name: 'production-performance', schemaVersion: 1, steps: [{ kind: 'wait', waitFrames: 10 }],
+    assert: { diagnostics: { noConsoleErrors: true, noNetworkErrors: true, noRuntimeDiagnostics: true, runtimeReady: true } },
+  }));
+  const playtest = await import(new URL('../../playtest/dist/index.js', import.meta.url).href);
+  for (const target of ['desktop', 'android', 'ios']) {
+    const paths = await writeRunScenarios(project, { duration: 1, warmup: 1, target, renderSize: { width: 1920, height: 1080 } });
+    for (const path of [paths.startupPath, paths.workloadPath]) {
+      const scenario = await playtest.loadPlaytestScenario(project, path);
+      assert.notEqual(scenario.assert.diagnostics.noNetworkErrors, false);
+      assert.equal(playtest.requiredPlaytestCapabilities(scenario).includes('browser.network'), true);
+      assert.equal(scenario.assert.diagnostics.networkErrorsOptOutReason, undefined);
+    }
+    for (const path of [paths.nativeStartupPath, paths.nativeWorkloadPath]) {
+      const scenario = await playtest.loadPlaytestScenario(project, path);
+      const policy = scenario.assert.diagnostics;
+      assert.equal(policy.noNetworkErrors, false);
+      assert.equal(playtest.requiredPlaytestCapabilities(scenario).includes('browser.network'), false);
+      assert.match(policy.networkErrorsOptOutReason, /native.*network/i);
+      assert.equal(policy.noConsoleErrors, true);
+      assert.equal(policy.noRuntimeDiagnostics, true);
+      assert.equal(policy.runtimeReady, true);
+    }
+  }
+});
+
 test('generated production workload runs through the playtest validator and keeps source bounds out of band', async () => {
   const project = makeTempDirSync('tn-prd064-scenario-');
   temporary.push(project);
   mkdirSync(join(project, 'playtests'));
-  const assertion = { performance: { maxDrawCalls: 180, maxFrameMsP95: 15, maxTriangles: 100_000 } };
+  const assertion = { performance: { maxDrawCalls: 180, maxFrameMsP95: 15, maxTriangles: 100_000, minFps: 30 } };
   writeFileSync(join(project, 'playtests/performance.playtest.json'), JSON.stringify({
     assert: assertion,
     artifacts: { screenshots: 'after' },
@@ -294,7 +776,8 @@ test('generated production workload runs through the playtest validator and keep
   const workload = JSON.parse(readFileSync(paths.workloadPath, 'utf8'));
   const nativeWorkload = JSON.parse(readFileSync(paths.nativeWorkloadPath, 'utf8'));
   assert.deepEqual(workload.assert, { diagnostics: { noConsoleErrors: true, runtimeReady: true } });
-  assert.deepEqual(nativeWorkload.assert, workload.assert);
+  assert.equal(nativeWorkload.assert.diagnostics.noNetworkErrors, false);
+  assert.equal(nativeWorkload.assert.diagnostics.noConsoleErrors, true);
   assert.equal(workload.assert.performance, undefined);
   assert.deepEqual(paths.performanceBounds, assertion.performance);
   assert.equal(nativeWorkload.artifacts.screenshots, 'after');
@@ -340,6 +823,20 @@ test('generated production workload runs through the playtest validator and keep
   });
   assert.deepEqual(androidWorkload.steps.at(-1), { kind: 'wait', release: true, waitFrames: 1 });
 
+  const regressionPaths = await writeRunScenarios(project, {
+    duration: 30,
+    profile: 'regression',
+    renderSize: { height: 1080, width: 1920 },
+    target: 'android-physical',
+    warmup: 5,
+  });
+  const regressionWorkload = JSON.parse(readFileSync(regressionPaths.workloadPath, 'utf8'));
+  const regressionNativeWorkload = JSON.parse(readFileSync(regressionPaths.nativeWorkloadPath, 'utf8'));
+  assert.deepEqual(regressionWorkload.assert.movement, { entity: 'player', minDistance: 0.1 });
+  assert.equal(regressionNativeWorkload.artifacts.screenshots, 'after');
+  assert.equal(regressionNativeWorkload.steps.length, 1_741);
+  assert.equal(regressionNativeWorkload.steps.at(-1).waitFrames, 1);
+
   const rendererPerformance = { drawCalls: 180, triangles: 100_000 };
   const nativeSamples = injectedFrameSamples(
     nativeFrameInstrumentation(undefined, 0),
@@ -354,8 +851,8 @@ test('generated production workload runs through the playtest validator and keep
   assert.equal(nativeSamples.samples.length, 30);
   assert.equal(webSamples.samples.length, 30);
   assert.ok(nativeSamples.sampleLines.every((line) => line.length < 1_000));
-  assert.deepEqual(nativeSamples.samples[0], { drawCalls: 180, frameIndex: 1, frameMs: 14, triangles: 100_000 });
-  assert.deepEqual(webSamples.samples[0], { drawCalls: 180, frameIndex: 1, frameMs: 14, triangles: 100_000 });
+  assert.deepEqual(nativeSamples.samples[0], { clockMs: 14, drawCalls: 180, frameIndex: 1, frameMs: 14, presentationMs: 14, triangles: 100_000 });
+  assert.deepEqual(webSamples.samples[0], { clockMs: 14, drawCalls: 180, frameIndex: 1, frameMs: 14, presentationMs: 14, triangles: 100_000 });
   const missingSamples = injectedFrameSamples(
     webFrameInstrumentation('http://127.0.0.1:41777', undefined, 0),
     undefined,
@@ -399,6 +896,7 @@ test('generated production workload runs through the playtest validator and keep
     maxStartupMs: 5_000,
     maxTriangles: 100_000,
     minMeanFps: 60,
+    minFps: 30,
   });
   assert.equal(evaluateProductionEvidence(evidence).status, 'PASS');
   assert.equal(evidence.metrics.drawCalls, 180);
@@ -424,6 +922,7 @@ test('generated production workload runs through the playtest validator and keep
       frameIntervalsMs: [16],
       intervals: [{ drawCalls: 180, frameMs: 16, timestampMs: 0, triangles: 100_000 }],
       meanFps: 62.5,
+      p95FrameMs: undefined,
       p99FrameMs: 16,
     },
   });
@@ -489,14 +988,32 @@ test('slow-path control is bounded and returns the intended exit-1 budget failur
   assert.deepEqual(result.codes, ['TN_PROD_PERFORMANCE_BUDGET']);
 });
 
-test('desktop screenshot evidence is associated with the timed native process', () => {
+test('desktop screenshot evidence uses the host post-present mailbox protocol', () => {
   const profile = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
   const runtime = readFileSync(new URL('../src/runtime.cpp', import.meta.url), 'utf8');
   assert.doesNotMatch(profile, /runNativeScreenshot/u);
   assert.doesNotMatch(profile, /spawnNative\([^\n]+,\s*true\)/u);
-  assert.match(profile, /screenshotRequestPath/u);
+  assert.match(profile, /tn-playtest-screenshot-request\.txt/u);
+  assert.match(profile, /writeFile\(temporary, path, 'utf8'\)/u);
+  assert.match(profile, /rm\(join\(root, 'tn-playtest-screenshot-request\.txt'\), \{ force: true \}\)/u);
   assert.match(profile, /screenshot: async \(path\)/u);
-  assert.match(runtime, /captureScreenshot/u);
+  assert.doesNotMatch(profile, /tn-production-screenshot-request\.json|nativeHost\?\.playtest\?\.receive|captureScreenshot/u);
+  assert.match(runtime, /tn-playtest-screenshot-request\.txt/u);
+});
+
+test('native screenshot mapping keeps asynchronous callback state alive after a timeout', () => {
+  const context = readFileSync(new URL('../src/webgpu/context.cpp', import.meta.url), 'utf8');
+  assert.match(context, /using BufferMapDataPtr = std::shared_ptr<BufferMapData>/u);
+  assert.match(context, /new BufferMapDataPtr\(mapData\)/u);
+  assert.match(context, /WGPUCallbackMode_AllowSpontaneous/u);
+  assert.doesNotMatch(context, /userdata1 = &mapData/u);
+});
+
+test('desktop production profiling forwards its 30-second operation timeout to the mailbox transport', () => {
+  const profile = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  assert.match(profile, /new runner\.DeviceMailboxTransport\(mailbox, \{ request: requestPath, response: responsePath \}, timeoutMs\)/u);
+  assert.match(profile, /const timeoutMs = 30_000;/u);
+  assert.match(profile, /target: 'android',\n {4}timeoutMs,/u);
 });
 
 test('playtest assertion failure cannot become a clean production run', () => {

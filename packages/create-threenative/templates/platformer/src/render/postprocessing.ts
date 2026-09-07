@@ -15,6 +15,10 @@ import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.j
 import type { OutputRenderer } from "./worldEnvironment.js";
 import { WorldEnvironment } from "./worldEnvironment.js";
 
+type ProfileGlobals = typeof globalThis & {
+  __THREENATIVE_PROFILE__?: { hostedSoftware?: unknown };
+};
+
 export function setupPost(
   renderer: OutputRenderer,
   scene: Scene,
@@ -26,8 +30,16 @@ export function setupPost(
     tier?: QualityTier;
   } = {},
 ): void {
-  const tier = resolveQualityTier({ mobile: environment.mobile, tier: environment.tier });
-  const source = environment.tier === undefined ? "platform" : "override";
+  // The native production collector explicitly marks a software-only hosted smoke run. This is
+  // a profile input, not a host fact: the normal desktop game remains high, while this run uses
+  // the existing low look so screenshot and lifecycle evidence can settle on a CPU adapter.
+  const hostedSoftware =
+    (globalThis as ProfileGlobals).__THREENATIVE_PROFILE__?.hostedSoftware === true;
+  const requestedTier: QualityTier | undefined =
+    environment.tier ?? (hostedSoftware ? "low" : undefined);
+  const tier = resolveQualityTier({ mobile: environment.mobile, tier: requestedTier });
+  const source =
+    environment.tier !== undefined ? "override" : hostedSoftware ? "hosted-software" : "platform";
   console.info(`TN_QUALITY_TIER ${tier} mobile=${environment.mobile === true} source=${source}`);
   const world = new WorldEnvironment(qualityPreset(tier));
   world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
