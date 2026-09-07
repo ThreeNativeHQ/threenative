@@ -2889,6 +2889,21 @@ export function parseAndroidConsole(output: string): Array< { … }
 const adb = discoverAdb(process.env);
 ```
 
+### `parseAndroidTouchViewport`
+
+`function` — Drive and inspect Android playtest transport.
+
+```ts
+export function parseAndroidTouchViewport(output: string): IAndroidTouchViewport { … }
+```
+
+- **Use when:** run a scenario on an Android emulator or device · parse Android console diagnostics
+- **Constraints:** Android evidence must name its target and transport
+
+```ts
+const adb = discoverAdb(process.env);
+```
+
 ### `parseLaunchedPid`
 
 `function` — Drive and inspect iOS simulator playtest transport.
@@ -3225,6 +3240,21 @@ const report = await runStandalonePlaytest(options);
 
 ```ts
 export function tapCommand(x: number, y: number): string[] { … }
+```
+
+- **Use when:** run a scenario on an Android emulator or device · parse Android console diagnostics
+- **Constraints:** Android evidence must name its target and transport
+
+```ts
+const adb = discoverAdb(process.env);
+```
+
+### `touchPositionForViewport`
+
+`function` — Drive and inspect Android playtest transport.
+
+```ts
+export function touchPositionForViewport( x: number, y: number, viewport: IAndroidTouchViewport, ): [number, number] { … }
 ```
 
 - **Use when:** run a scenario on an Android emulator or device · parse Android console diagnostics

@@ -3465,6 +3465,23 @@
     },
     {
       "aliases": [],
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function parseAndroidTouchViewport(output: string): IAndroidTouchViewport { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
+      "symbol": "parseAndroidTouchViewport"
+    },
+    {
+      "aliases": [],
       "constraints": ["simulator evidence does not claim physical-device proof"],
       "example": "const driver = new XcrunIosDriver(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3850,6 +3867,23 @@
       "summary": "Drive and inspect Android playtest transport.",
       "supersedes": [],
       "symbol": "tapCommand"
+    },
+    {
+      "aliases": [],
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function touchPositionForViewport( x: number, y: number, viewport: IAndroidTouchViewport, ): [number, number] { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
+      "symbol": "touchPositionForViewport"
     },
     {
       "aliases": [],
