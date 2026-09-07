@@ -79,13 +79,11 @@ export class SkeletalMesh3D {
             `SkeletalMesh3D: missing required clip '${clipName}'. Available clips: ${available}.`,
           );
         }
-        if (clip.tracks.length > 0) {
-          const report = clipTrackBindings(this.root, clip);
-          if (report.bound === 0) {
-            throw new Error(
-              `SkeletalMesh3D: clip '${clipName}' binds 0 tracks to '${this.root.name || this.root.type}'.`,
-            );
-          }
+        const report = clipTrackBindings(this.root, clip);
+        if (report.bound === 0) {
+          throw new Error(
+            `SkeletalMesh3D: clip '${clipName}' binds 0 tracks to '${this.root.name || this.root.type}'.`,
+          );
         }
       }
     }

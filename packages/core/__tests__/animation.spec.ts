@@ -566,6 +566,19 @@ describe("SkeletalMesh3D shared character preparation", () => {
       });
     }).toThrow(/binds 0 tracks/);
   });
+
+  it("fails at load time when a named required clip has no tracks", () => {
+    const fixture = createMultiPrimitiveRigFixture();
+    const emptyClip = new AnimationClip("empty_clip", 1, []);
+
+    expect(() => {
+      new SkeletalMesh3D({
+        source: fixture.root,
+        clips: [emptyClip],
+        requiredClips: ["empty_clip"],
+      });
+    }).toThrow(/has no tracks/);
+  });
 });
 
 /**
