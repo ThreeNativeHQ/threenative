@@ -56,9 +56,40 @@ permissions:
   contents: read
 
 jobs:
+  # The native lane shares ci.yml's fail-closed merge-base classifier. Non-PR events are always
+  # full, which preserves scheduled, workflow-call and manual platform evidence.
+  scope:
+    name: Change scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.classify.outputs.scope }}
+      selection: ${{ steps.classify.outputs.selection }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: classify
+        name: Classify the complete pull-request diff
+        env:
+          TN_CI_EVENT: ${{ github.event_name }}
+          TN_CI_BASE: ${{ github.event.pull_request.base.sha }}
+          TN_CI_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          node scripts/ci-change-scope.mjs \
+            --event-name "$TN_CI_EVENT" \
+            --base "$TN_CI_BASE" \
+            --head "$TN_CI_HEAD" \
+            --format github | tee "$RUNNER_TEMP/ci-scope.outputs"
+          cat "$RUNNER_TEMP/ci-scope.outputs" >> "$GITHUB_OUTPUT"
+
   web-reference:
+    needs: scope
     name: Commit-keyed web conformance reference
     if: >-
+      needs.scope.outputs.selection != 'prose' &&
       inputs.ios_only == false &&
       (github.event_name != 'pull_request' ||
        contains(github.event.pull_request.labels.*.name, 'native'))
@@ -91,8 +122,8 @@ jobs:
 
   performance-coverage:
     name: Native collector evidence coverage
-    needs: [android-emulator-parity, desktop-parity, desktop, ios-simulator]
-    if: always()
+    needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
+    if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -168,7 +199,7 @@ jobs:
 
   android-emulator-parity:
     name: Android emulator visual parity
-    needs: web-reference
+    needs: [scope, web-reference]
     # Runs on every event since 2026-09-01 (owner call): the earlier narrowing held the expensive
     # platform legs behind pushes to main and a `native` label, and the lane then spent its runs
     # being cancelled by the next push instead of reporting anything. A leg that is skipped on the
@@ -192,6 +223,7 @@ jobs:
     # `native`, so nothing reaches a release without them reporting. Deleting this one `if` puts
     # them back on every pull request.
     if: >-
+      needs.scope.outputs.selection != 'prose' &&
       inputs.ios_only != true &&
       (github.event_name != 'pull_request' ||
        contains(github.event.pull_request.labels.*.name, 'native'))
@@ -407,7 +439,7 @@ jobs:
 
   desktop-parity:
     name: Desktop web/native parity
-    needs: web-reference
+    needs: [scope, web-reference]
     # Runs on every event except an unlabelled pull request — the only two legs that are gated,
     # and the numbers behind it rather than a preference:
     #
@@ -427,6 +459,7 @@ jobs:
     # `native`, so nothing reaches a release without them reporting. Deleting this one `if` puts
     # them back on every pull request.
     if: >-
+      needs.scope.outputs.selection != 'prose' &&
       inputs.ios_only != true &&
       (github.event_name != 'pull_request' ||
        contains(github.event.pull_request.labels.*.name, 'native'))
@@ -591,10 +624,11 @@ jobs:
 
   desktop:
     name: ${{ matrix.platform }} desktop core
+    needs: scope
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity. The only
     # remaining gate is the manual `ios_only` dispatch toggle, which exists to run the iOS lane
     # alone; it is not a skip of the default flow.
-    if: inputs.ios_only != true
+    if: needs.scope.outputs.selection != 'prose' && inputs.ios_only != true
     strategy:
       fail-fast: false
       matrix:
@@ -748,7 +782,8 @@ jobs:
 
   starter-linux:
     name: Scaffolded starter desktop artifact
-    if: inputs.ios_only != true
+    needs: scope
+    if: needs.scope.outputs.selection != 'prose' && inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
@@ -854,6 +889,8 @@ jobs:
 
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
+    needs: scope
+    if: needs.scope.outputs.selection != 'prose'
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity.
     runs-on: macos-15
     timeout-minutes: 60

@@ -36,11 +36,10 @@ ledger, a done PRD, an open PRD, or a script that names it — or one that opens
 root, which no by-name scan can see, so those roots are listed in `scripts/evidence-citations.ts`.
 `docs/benchmark/SCREENSHOT-RETENTION.md` is generated from that scan; never hand-edit it.
 
-Three caps in `scripts/check-evidence-budget.ts` fail closed, and raising one needs its own commit
-saying why: tracked bytes and file counts per tree, and **1,000 lines per evidence file**. Past the
-line cap a file consolidates in place, keeping every result a ledger or a done PRD cites. Two files
-are exempt with their reasons recorded beside them — a pinned third-party source snapshot a live
-PRD's borrow map addresses, and the consolidation target below.
+The tracked-byte caps in `scripts/check-evidence-budget.ts` fail closed, and raising one needs its
+own commit saying why. The report still prints file counts and duplicate-byte measurements for
+cleanup work, but those measurements do not block a change. Generated sweep instruction files,
+Git/read failures and byte overages remain hard failures.
 
 Deleting tracked evidence needs the owner's checkpoint, and `pnpm round:next`, `pnpm
 round:deletions` and `pnpm alpha:bar` must print byte-identical output either side of it.

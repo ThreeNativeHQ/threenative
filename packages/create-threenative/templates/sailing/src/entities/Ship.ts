@@ -179,7 +179,7 @@ export class Ship {
     // The design waterline sits on the water. Copying the body's y instead put the hull wherever
     // the buoyancy solver happened to have pushed it that frame — which, with no angular damping
     // to settle it, was rarely the same place twice and often most of a hull below the surface.
-    this.visual.position.y += (hereHeight - this.visual.position.y) * blend;
+    this.visual.position.y = hereHeight;
     this.visual.rotation.y = this.#heading;
     this.visual.rotation.x += (pitch - this.visual.rotation.x) * blend;
     this.visual.rotation.z += (roll - this.visual.rotation.z) * blend;

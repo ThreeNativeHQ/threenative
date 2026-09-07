@@ -93,6 +93,49 @@ describe("ci needs graph", () => {
     ).toEqual([]);
   });
 
+  it("should allow the exact scope decision job to schedule coverage", () => {
+    expect(
+      ciNeedsFindings(
+        ciJobGraph(
+          workflow(`  scope:
+    outputs:
+      selection: \${{ steps.classify.outputs.selection }}
+      reason: \${{ steps.classify.outputs.reason }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: classify
+        run: node scripts/ci-change-scope.mjs
+
+  build:
+    needs: scope
+    runs-on: ubuntu-latest
+    steps:
+      - run: pnpm build
+`),
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it("should reject a fake scope job without the decision output", () => {
+    const findings = ciNeedsFindings(
+      ciJobGraph(
+        workflow(`  scope:
+    runs-on: ubuntu-latest
+    steps:
+      - run: node scripts/ci-change-scope.mjs
+
+  build:
+    needs: scope
+    runs-on: ubuntu-latest
+    steps:
+      - run: pnpm build
+`),
+      ),
+    );
+    expect(findings[0]?.problem).toContain("produces no artifact");
+  });
+
   it("should fail closed on an edge naming a job the workflow does not declare", () => {
     const findings = ciNeedsFindings(
       ciJobGraph(

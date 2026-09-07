@@ -300,7 +300,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "e4beb70107e73d678b23c4a3abf1d64c3f48a532732a166c85a7b77693dbc5ec",
+  // Recomputed 2026-09-07 again on the networking-359 merge: main's ocean-clock fix and this
+  // branch's published capability metadata both land in the sailing tree.
+  // Recomputed 2026-09-07 for sailing's fixed-step ocean clock: the scene now advances
+  // `SpectralOcean` before its registered compute passes run, which makes its existing moving-water
+  // playtest prove a time-varying field.
+  sailing: "03dd8a2b25cccbf25f26e3d8c05e3535a6e2122e2d88c3a9f693180c6a43b85e",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

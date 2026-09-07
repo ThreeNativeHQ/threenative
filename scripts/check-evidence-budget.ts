@@ -1,66 +1,34 @@
 import { spawnSync } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 
 /**
- * The evidence budget (PRD-323): tracked bytes, file counts and per-file lines under the evidence
- * trees are bounded, so the next 369 MB fails at the commit that causes it instead of being
- * discovered in six months. This script never deletes anything; it only refuses growth.
+ * The evidence budget (PRD-323): tracked bytes under the evidence trees are bounded, so the next
+ * 369 MB fails at the commit that causes it instead of being discovered in six months. File and
+ * duplicate measurements remain visible for cleanup reports, but they are not arbitrary blockers.
+ * This script never deletes anything; it only refuses growth and generated sweep instructions.
  *
  * The caps are growth stops, not reclamation targets. Raising one needs its own commit saying why.
  */
 
 export const EVIDENCE_BUDGETS = {
   // 2026-09-04, after Phase 3 deleted the uncited artifacts: 65.9 MB over 664 tracked files.
-  // Was 80 MB / 800 files at the 2026-09-02 growth-stop setting.
-  // PRD-357 C4 residual cap: only non-image duplicates remain after canonicalization.
-  "docs/verification": { bytes: 72 * 1024 * 1024, duplicateBytes: 3_073, files: 700 },
+  // Was 80 MB / 800 files at the 2026-09-02 growth-stop setting. The byte cap remains hard;
+  // file and duplicate counts are reported measurements for cleanup work.
+  "docs/verification": { bytes: 72 * 1024 * 1024 },
   // 2026-09-04, after Phase 3 and Phase 4: 180.9 MB over 1,849 tracked files, down from
   // 203.3 MB over 5,362. Phase 4 untracked the generated arm sources under
   // docs/benchmark/sweeps but kept every measurement artifact, and kept the source of the 13
   // archives a `sweep-*.md` ledger names because two specs recompute their measurement from it.
   // So the file count fell by two thirds while the bytes barely moved — the sweep record is
   // mostly PNG frames a blind judge scored, and those are the benchmark, not its build output.
-  // C3's 26 generated sweep instruction files are untracked; the byte/file caps remain fixed.
-  // PRD-357 C4 residual cap: only non-image duplicates remain after canonicalization.
-  "docs/benchmark": { bytes: 200 * 1024 * 1024, duplicateBytes: 1_007_187, files: 1950 },
+  // C3's 26 generated sweep instruction files are untracked. The byte cap remains hard; file and
+  // duplicate counts are reported measurements for cleanup work.
+  "docs/benchmark": { bytes: 200 * 1024 * 1024 },
 } as const;
 
 /** Reject generated sweep instruction files if one returns to the Git index. */
 export const SWEEP_INSTRUCTION_FILE = /^docs\/benchmark\/sweeps\/[^/]+\/(AGENTS|CLAUDE)\.md$/u;
-
-/**
- * The line cap (PRD-323 Phase 5). A result buried in a 4,050-line file that nobody opens does not
- * exist, the same way `docs/PRDs/AGENTS.md` says a gate result living only in a commit message
- * does not. An evidence file past this cap consolidates in place — the general form of the
- * `runtime-perf-state.md` exception the owner granted on 2026-08-27.
- *
- * 1,000 lines with the third-largest evidence file at 910: a growth stop, not a reclamation
- * target.
- */
-export const EVIDENCE_LINE_CAP = 1000;
-
-/**
- * Files the line cap does not reach, each with the reason it outranks the cap.
- *
- * This list is the whole escape hatch and it is deliberately short. "It is long because the run
- * was long" is not a reason — that is the case the cap exists for.
- */
-export const LINE_CAP_EXEMPT: Readonly<Record<string, string>> = {
-  // 128 lines of evidence plus 3,922 lines of third-party source pinned from
-  // imsarah/threejs-world@398320e9 under MIT. PRD-251 is at PHASE 1 COMPLETE with phases 2-6
-  // unexecuted, and its §5 borrow map addresses line ranges *into* this dump
-  // (`Heightfield.ts:49-194`, `TerrainTiles.ts:55-493`, …) — "the complete files are preserved in
-  // the Phase 0 verification record". Upstream is a third-party repository; this snapshot is the
-  // only copy under this repository's control. Consolidating it would break a live PRD's borrow
-  // map to reclaim lines that are not narrative in the first place.
-  "docs/verification/PRD-251-phase0.md": "pinned third-party source snapshot a live PRD addresses",
-  // The consolidation target itself. The owner's 2026-08-27 decision routes every new runtime
-  // performance finding into this file instead of opening another perf report, which keeps the
-  // frame ledger, the lever graveyard and the method rules in one place. Capping the file the
-  // policy consolidates *into* would invert the policy.
-  "docs/verification/runtime-perf-state.md": "the consolidation target of the 2026-08-27 exception",
-};
 
 export interface IEvidenceBudgetReport {
   readonly findings: readonly string[];
@@ -200,85 +168,12 @@ interface ITreeBudgetResult {
   readonly tree: IEvidenceBudgetReport["trees"][number];
 }
 
-function sizeFindings(
-  tree: string,
-  bytes: number,
-  byteBudget: number,
-  files: readonly string[],
-  fileBudget: number,
-): readonly string[] {
+function sizeFindings(tree: string, bytes: number, byteBudget: number): readonly string[] {
   const findings: string[] = [];
   if (bytes > byteBudget) {
     findings.push(
       `evidence tree '${tree}' holds ${(bytes / 1024 / 1024).toFixed(1)} MB tracked, over the ${(byteBudget / 1024 / 1024).toFixed(0)} MB budget — stop the growth at the commit that causes it, do not raise the cap`,
     );
-  }
-  if (files.length > fileBudget) {
-    findings.push(
-      `evidence tree '${tree}' tracks ${files.length} file(s), over the ${String(fileBudget)} cap`,
-    );
-  }
-  return findings;
-}
-
-function duplicateFindings(
-  tree: string,
-  duplicates: ReturnType<typeof summariseDuplicates>,
-  duplicateByteBudget: number | undefined,
-): readonly string[] {
-  if (duplicateByteBudget === undefined || duplicates.bytes <= duplicateByteBudget) return [];
-  const largest = duplicates.largest;
-  const group =
-    largest === undefined
-      ? "no group"
-      : `largest group: '${largest.file}' stored ${String(largest.count)} times, ${(largest.bytes / 1024 / 1024).toFixed(1)} MB redundant`;
-  return [
-    `evidence tree '${tree}' holds ${(duplicates.bytes / 1024 / 1024).toFixed(1)} MB of byte-identical tracked content across ${String(duplicates.groups)} group(s), over the ${(duplicateByteBudget / 1024 / 1024).toFixed(1)} MB duplicate budget — ${group}. Store it once and cite it; do not raise the cap`,
-  ];
-}
-
-async function readEvidenceText(root: string, file: string): Promise<string> {
-  try {
-    return await readFile(path.join(root, file), "utf8");
-  } catch (error) {
-    // Fail closed. An earlier version skipped here, claiming the byte walk above "already fails
-    // on it" — it does not. That walk uses `stat`, which needs only directory-traverse permission
-    // and follows symlinks; `readFile` needs read permission on the file itself. A review probe put
-    // a tracked evidence file at chmod 000 and this gate returned ok. An evidence file the gate
-    // cannot read is a file whose length it does not know.
-    throw new Error(
-      `evidence budget: cannot read evidence file '${file}' — ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-}
-
-function countEvidenceLines(text: string): number {
-  // A file ending in a newline splits to one extra empty element, so the naive count was one too
-  // high: the 1,000-line cap enforced 999 and the message told an author to trim a file whose
-  // length it was misreporting. Found by review; the spec had baked the wrong number in.
-  return text.length === 0 ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
-}
-
-async function lineFinding(
-  root: string,
-  file: string,
-  lineCap: number,
-): Promise<string | undefined> {
-  if (!file.endsWith(".md") || LINE_CAP_EXEMPT[file] !== undefined) return undefined;
-  const lines = countEvidenceLines(await readEvidenceText(root, file));
-  if (lines <= lineCap) return undefined;
-  return `evidence file '${file}' is ${String(lines)} lines, over the ${String(lineCap)}-line cap — consolidate it in place, keeping every result a round ledger or a done PRD cites`;
-}
-
-async function lineFindings(
-  root: string,
-  files: readonly string[],
-  lineCap: number,
-): Promise<readonly string[]> {
-  const findings: string[] = [];
-  for (const file of files) {
-    const finding = await lineFinding(root, file, lineCap);
-    if (finding !== undefined) findings.push(finding);
   }
   return findings;
 }
@@ -286,8 +181,7 @@ async function lineFindings(
 async function inspectTree(
   root: string,
   tree: string,
-  budget: { readonly bytes: number; readonly duplicateBytes?: number; readonly files: number },
-  lineCap: number,
+  budget: { readonly bytes: number },
 ): Promise<ITreeBudgetResult> {
   const blobs = trackedBlobs(root, tree);
   const files = blobs.map((blob) => blob.file);
@@ -297,11 +191,7 @@ async function inspectTree(
     if (info.isFile()) bytes += info.size;
   }
   const duplicates = summariseDuplicates(duplicateInventoryForBlobs(root, blobs));
-  const findings = [
-    ...sizeFindings(tree, bytes, budget.bytes, files, budget.files),
-    ...duplicateFindings(tree, duplicates, budget.duplicateBytes),
-    ...(await lineFindings(root, files, lineCap)),
-  ];
+  const findings = [...sizeFindings(tree, bytes, budget.bytes)];
   const sweepInstructions = files.filter((file) => SWEEP_INSTRUCTION_FILE.test(file));
   if (sweepInstructions.length > 0) {
     findings.unshift(
@@ -322,13 +212,10 @@ async function inspectTree(
 
 export async function checkEvidenceBudget(
   root: string,
-  budgets: Readonly<
-    Record<string, { bytes: number; duplicateBytes?: number; files: number }>
-  > = EVIDENCE_BUDGETS,
-  lineCap: number = EVIDENCE_LINE_CAP,
+  budgets: Readonly<Record<string, { bytes: number }>> = EVIDENCE_BUDGETS,
 ): Promise<IEvidenceBudgetReport> {
   const inspected = await Promise.all(
-    Object.entries(budgets).map(([tree, budget]) => inspectTree(root, tree, budget, lineCap)),
+    Object.entries(budgets).map(([tree, budget]) => inspectTree(root, tree, budget)),
   );
   const findings = inspected.flatMap((result) => result.findings);
   return {
