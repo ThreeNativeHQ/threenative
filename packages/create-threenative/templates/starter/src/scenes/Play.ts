@@ -10,6 +10,7 @@ import {
 } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { BufferAttribute, Group, Mesh, NearestFilter, type PerspectiveCamera } from "three";
+import config from "../../threenative.config.js";
 import { Crate } from "../entities/Crate.js";
 import { Goal, ISLAND } from "../entities/Goal.js";
 import { Player } from "../entities/Player.js";
@@ -134,10 +135,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     // isMobile() arrives as an argument because src/render/ imports no framework package:
     // the platform decision is made here, in portable game code, exactly like createRandom.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
-      godraysLight: sun,
-      mobile: isMobile(),
-    });
+    this.#post = ctx.entities.add(
+      "quality",
+      setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+        godraysLight: sun,
+        mobile: isMobile(),
+        targetFps: config.display?.maxFps ?? 60,
+        ready: () => ctx.startup.phase === "ready",
+      }),
+    );
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
     const waves = new WaveField({ waves: COAST_WAVES, domainWarp: COAST_DOMAIN_WARP });
@@ -336,7 +342,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
   }
 
+  #post: ReturnType<typeof setupPost> | undefined;
+
   override exit(ctx: GameCtx): void {
+    this.#post?.dispose();
+    this.#post = undefined;
     this.#scenery?.dispose();
     this.#scenery = undefined;
     super.exit(ctx);

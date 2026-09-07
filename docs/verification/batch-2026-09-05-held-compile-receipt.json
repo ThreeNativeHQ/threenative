@@ -1,0 +1,44 @@
+{
+  "host": "packages/runtime-native/build/tn-linux-coverage/mystral",
+  "hostSha256": "d8cbe3f74f890ceb6de7d94101e26d1251e3e97946170bdc32994dab97dab8bb",
+  "platform": "desktop Linux V8/Dawn Vulkan NVIDIA RTX 2080",
+  "scope": "32 explicit upstream yieldToMain calls followed by real compileAsync while RAF callbacks are held; not a saturated Bayview compile walk or phone startup acceptance",
+  "cases": {
+    "positive": {
+      "processExit": 0,
+      "verificationExit": 0,
+      "marker": {
+        "pass": true,
+        "yields": 32,
+        "timer": true,
+        "requestedFrames": 1,
+        "error": null
+      },
+      "source": "docs/verification/batch-2026-09-05-held-compile.mjs",
+      "sourceSha256": "b3e21944ea7def3b1042e65986d098b75bb5fcbf344a6e28a61e9c30acae8742",
+      "bundle": "artifacts/batch-2026-09-05/held-compile-retained-positive.js",
+      "bundleSha256": "5852253ca6f852a819b165413d309522c9f5f0cac2b1d5c03cf87f8999647b1a",
+      "log": "artifacts/batch-2026-09-05/held-compile-retained-positive.log",
+      "presents": 737,
+      "screenshotSaved": true
+    },
+    "negative": {
+      "processExit": 0,
+      "verificationExit": 1,
+      "marker": {
+        "pass": false,
+        "yields": 0,
+        "timer": true,
+        "requestedFrames": 2,
+        "error": "deadline"
+      },
+      "source": "docs/verification/batch-2026-09-05-held-compile-negative.mjs",
+      "sourceSha256": "8d1aeb331a3213cacc0b77856981c17e2f84623eaee4fcfb987fcebee04a4e42",
+      "bundle": "artifacts/batch-2026-09-05/held-compile-retained-negative.js",
+      "bundleSha256": "43f1a0669d6818366fc3092ec451f0e68d54646658719cc772dbc3216f94c1dc",
+      "log": "artifacts/batch-2026-09-05/held-compile-retained-negative.log",
+      "presents": 354,
+      "screenshotSaved": true
+    }
+  }
+}

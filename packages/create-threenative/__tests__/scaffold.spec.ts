@@ -262,21 +262,29 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and those bytes are embedded in every scaffold.
   // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
   // source VFX and combat playtests, so only those two scaffold trees move.
-  // Recomputed 2026-09-06 for PRD-358: platformer production profiles expose an explicit hosted
-  // software smoke tier while ordinary desktop runs retain the high look.
-  "action-rpg": "01dc987fd2625ef537ffe1effc65eb71947804a851f072565f6dbf5afd8e85c7",
-  defense: "9169a9e82d308a694ef63d7551683723d90ca7f52481116db0e23d0822bf8850",
+  // Recomputed 2026-09-05 for this batch on origin/main 356cbe9f: every template's
+  // worldEnvironment mirror gained the render-target lifetime fix, and starter also carries
+  // adaptive quality, its texture-lifetime module and the self-contained implicit-surface
+  // worker, so all eight parent trees move. Measured in an isolated single-lane worktree
+  // whose working tree matched its index exactly, so these are the committed bytes.
+  // Recomputed 2026-09-06 for the Android viewport observation helper and its generated
+  // capability manifest/reference entry, which every scaffold embeds.
+  "action-rpg": "ae1efde9b8cd6f96ca01c6ce9392bced39863285608e0177964fef83042459f1",
+  defense: "bf98dc2aa9570168054bfc14af0a290c8c85d4a92fb92f50129d9160722cc745",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "a88129930facd05353536293e09f0d3bfa7b29fc6d6cfa3226fb982efc38788c",
-  platformer: "5cace4e500298ab91ac61e692e440685de74b2c15b3c5629289c998b5f10d278",
-  runner: "f00775702fe9194ddb2da0513aebef439906d09ed54b4045c5b37642dcc58a8b",
-  puzzle: "84a286786a6f99747c509f7b92cfeda28593172b5c85ca2d32d405ddf5ee078e",
-  racing: "341bc8294c4e15841bfaf02d9db6e2f84b380feb09437f21e5e3ad273540d8c9",
-  shooter: "e3464e241b0badaa140f9ce27b83c2c46e3885f0260d72eb521db00929ed1629",
+  minimal: "af47fa85f26b0008afa6df2dc5801a187dd98a6f761736b644908594b3025ea8",
+  // Recomputed 2026-09-06 for the merge with #122, which is the only reason any tree moved
+  // here: its platformer production profile changed that template's render source, so the
+  // platformer tree alone differs from the value this batch measured before that landed.
+  platformer: "b5fc2b01802d2315e7175042bf0bbc73cfebf1f0293a593d8fd46455209f8a30",
+  runner: "db9fa55c8aae24210d7581768c498ecf39c1582549f03ca5987f7740f2d28504",
+  puzzle: "72e43920e6003db7b81d2948bf20fdea408892cac78e6b46109cb1572da7e9f2",
+  racing: "13116a4018e9a041ab4d55737cb13c23c81a2a88098412408a81520225183ef9",
+  shooter: "587639506d72a6b90d77dd44fd4f2349378ca74b35a895171a92d5ad9c83ecb3",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "c352f88ca201eca0320f3924155ace77a854a26c7f5f78c09c3b16a2bed03bfc",
+  starter: "3bdfec53377eaf5fc183f2fca9a8b1bc3a56205ff4fa62cee3a051a7bc3fc7aa",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -297,7 +305,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
   // scenario, routes test:native through it, and closes the generated command fence.
   // Recomputed after the template contract required every kit to ship a native icon.
-  sailing: "79fe675895b73a65d1e9802ef676530ef12dd58f942d7625a8b7b417d428c707",
+  sailing: "6bfd913d5b6229b7ec550c1c11dc214ca7fd1f242c84fffee3b1e60a01848316",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -406,6 +414,8 @@ const STARTER_PATHS = [
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
+  "src/render/adaptiveQuality.ts",
+  "src/render/textureLifetime.ts",
   "src/render/worldEnvironment.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",

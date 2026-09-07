@@ -291,6 +291,7 @@ export type ChainStage = {
  */
 function stage(definition: {
   readonly name: ChainStage["name"];
+  readonly dispose?: () => void;
   readonly available?: (context: ChainContext) => boolean | string;
   readonly build: (input: ChainNode, context: ChainContext) => ChainNode;
 }): ChainStage {
@@ -326,6 +327,7 @@ export type OutputRenderer = {
     stages?: readonly ChainStage[];
   }) => {
     applied: { dropped: readonly { name: string; reason: string }[]; stages: readonly string[] };
+    dispose(): void;
   };
 };
 
@@ -411,6 +413,7 @@ export class WorldEnvironment {
   ): {
     dropped: readonly { name: string; reason: string }[];
     stages: readonly string[];
+    dispose?: () => void;
   } {
     const options = this.#options;
     const raw = renderer.raw as { toneMapping?: number; toneMappingExposure?: number };
@@ -479,6 +482,7 @@ export class WorldEnvironment {
     const giDenoise = (node: ChainNode): ChainNode =>
       options.denoiseEnabled ? denoised(denoise(node, depth(), normal(), view)) : node;
 
+    let releaseBloom = (): void => {};
     const stages: ChainStage[] = [
       stage({
         name: "ssgi",
@@ -624,15 +628,33 @@ export class WorldEnvironment {
       }),
       stage({
         name: "bloom",
-        build: (input) =>
-          input.add(
-            bloom(
-              convertToTexture(input),
-              options.bloomStrength,
-              options.bloomRadius,
-              options.bloomThreshold,
-            ),
-          ),
+        dispose: () => {
+          releaseBloom();
+          releaseBloom = () => {};
+        },
+        build: (input) => {
+          const texture = convertToTexture(input);
+          const effect = bloom(
+            texture,
+            options.bloomStrength,
+            options.bloomRadius,
+            options.bloomThreshold,
+          );
+          releaseBloom = () => {
+            effect.dispose();
+            // convertToTexture may return its input. Only the newly allocated RTT is ours.
+            const scratch = texture as unknown as {
+              isRTTNode?: boolean;
+              renderTarget: { dispose(): void };
+              _quadMesh: { material: { dispose(): void } };
+            };
+            if (texture !== input && scratch.isRTTNode === true) {
+              scratch.renderTarget.dispose();
+              scratch._quadMesh.material.dispose();
+            }
+          };
+          return input.add(effect);
+        },
       }),
       stage({
         name: "vignette",
@@ -675,7 +697,14 @@ export class WorldEnvironment {
       worldPass: scenePass,
     });
     this.#reportApplied(chain.applied.stages, chain.applied.dropped);
-    return { dropped: chain.applied.dropped, stages: chain.applied.stages };
+    return {
+      dropped: chain.applied.dropped,
+      stages: chain.applied.stages,
+      dispose: () => {
+        chain.dispose();
+        scenePass.dispose();
+      },
+    };
   }
 
   /**

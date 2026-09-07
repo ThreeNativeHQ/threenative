@@ -172,6 +172,8 @@ export interface IFrameBudgetWindow {
    * frame that genuinely cost no GPU time are different facts, and a zero would merge them.
    */
   readonly gpuMs?: number;
+  /** Age of the resolved GPU timestamp in Three.js frame IDs; absent means unobservable. */
+  readonly gpuAgeFrames?: number;
 }
 
 export interface IFrameBudgetOptions {
@@ -198,6 +200,8 @@ export interface IFrameBudgetOptions {
   readonly readSurface?: () => IFrameSurfaceState;
   /** Reads the last resolved GPU frame time, called once per reported window. */
   readonly readGpuMs?: () => number | undefined;
+  /** Reads the successful GPU query frame age, not the age of the last resolve attempt. */
+  readonly readGpuAgeFrames?: () => number | undefined;
 }
 
 const DEFAULT_REPORT_EVERY = 300;
@@ -291,6 +295,7 @@ export class FrameBudget {
   #onWindow: ((window: IFrameBudgetWindow) => void) | undefined;
   #readSurface: (() => IFrameSurfaceState) | undefined;
   #readGpuMs: (() => number | undefined) | undefined;
+  #readGpuAgeFrames: (() => number | undefined) | undefined;
   #scratch: Float64Array;
   #presented: Ring;
   #frame: Ring;
@@ -323,6 +328,7 @@ export class FrameBudget {
     this.#onWindow = options.onWindow;
     this.#readSurface = options.readSurface;
     this.#readGpuMs = options.readGpuMs;
+    this.#readGpuAgeFrames = options.readGpuAgeFrames;
     this.#scratch = new Float64Array(capacity);
     this.#presented = new Ring(capacity);
     this.#frame = new Ring(capacity);
@@ -447,6 +453,11 @@ export class FrameBudget {
     const surface =
       this.#readSurface === undefined ? undefined : requireSurface(this.#readSurface());
     const gpuMs = this.#readGpuMs?.();
+    const gpuAgeFrames = gpuMs === undefined ? undefined : this.#readGpuAgeFrames?.();
+    if (gpuAgeFrames !== undefined && (!Number.isInteger(gpuAgeFrames) || gpuAgeFrames < 0))
+      throw new Error(
+        `Frame budget gpuAgeFrames must be a non-negative integer, received ${String(gpuAgeFrames)}.`,
+      );
     if (gpuMs !== undefined && (!Number.isFinite(gpuMs) || gpuMs < 0))
       throw new Error(
         `Frame budget gpuMs must be a non-negative number, received ${String(gpuMs)}.`,
@@ -467,6 +478,7 @@ export class FrameBudget {
       },
       substeps: this.#substeps.summarize(this.#scratch),
       ...(gpuMs === undefined ? {} : { gpuMs: round(gpuMs) }),
+      ...(gpuAgeFrames === undefined ? {} : { gpuAgeFrames }),
       ...(surface === undefined ? {} : { surface }),
       window: this.#windowIndex + 1,
     };

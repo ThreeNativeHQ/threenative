@@ -166,6 +166,8 @@ export interface IRendererLike {
    * caller reads whatever the last resolve produced.
    */
   gpuFrameMs(): number | undefined;
+  /** Age in Three.js frame IDs of the resolved render timestamp; absent when unobservable. */
+  gpuFrameAge?(): number | undefined;
   /** Starts a resolve of the GPU timestamps for the frames drawn since the last call. */
   resolveGpuFrame(): void;
   /**
@@ -226,7 +228,8 @@ export interface IRendererOptions {
 type RendererInstance = {
   autoClear?: boolean;
   /** three's resolved GPU timings; `info.render.timestamp` is milliseconds. */
-  info?: { render?: { timestamp?: number } };
+  info?: { frame?: number; render?: { timestamp?: number } };
+  backend?: { getTimestampFrames?: (type: string) => number[] };
   resolveTimestampsAsync?: (type?: string) => Promise<number | undefined>;
   /** Three answers an `antialias` request with a sample count; 0 means one sample per pixel. */
   samples?: number;
@@ -318,6 +321,23 @@ function wrapRenderer(
       return typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0
         ? timestamp
         : undefined;
+    },
+    gpuFrameAge: () => {
+      const frame = raw.info?.frame;
+      const frames = raw.backend?.getTimestampFrames?.("render");
+      const sampled = frames?.[frames.length - 1];
+      if (
+        frame === undefined ||
+        sampled === undefined ||
+        !Number.isInteger(frame) ||
+        !Number.isInteger(sampled) ||
+        sampled < 0 ||
+        frame < sampled
+      )
+        return undefined;
+      // A fulfilled resolve may return the pool's lastValue on failure. The successful query's
+      // frame ID, not the promise or a changed duration, is the evidence of freshness.
+      return frame - sampled;
     },
     resolveGpuFrame: () => {
       // Fire and forget: a rejected resolve means this adapter has no timestamps, which is a

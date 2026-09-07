@@ -1,0 +1,131 @@
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { resolve, isAbsolute } from 'node:path';
+import { DesktopPlaytestDriver, LocalDeviceMailbox } from '../../packages/playtest/src/runner/desktop.ts';
+import { DeviceMailboxTransport, deviceMailboxPaths } from '../../packages/playtest/src/runner/deviceTransport.ts';
+import { connectPlaytestBridgeTransport } from '../../packages/playtest/src/runner/bridgeClient.ts';
+
+const [game, variant, widthArg='2560', heightArg='1440'] = process.argv.slice(2);
+const width=Number(widthArg),height=Number(heightArg);
+if(!Number.isInteger(width)||width<=0||!Number.isInteger(height)||height<=0)throw Error('positive integer dimensions required');
+if (!isAbsolute(game ?? '') || !['normal','pinned','negative'].includes(variant)) throw Error('absolute game and variant required');
+const out=resolve('artifacts/batch-2026-09-05',`quality-load-native-${variant}-proof`);
+await mkdir(out,{recursive:true});
+const mailbox=resolve(out,`mailbox-${process.pid}`);
+const executable=resolve('artifacts/batch-2026-09-05',`quality-load-native-${variant}-package`,"starter-quality-20260905");
+const args=['--width',String(width),'--height',String(height)];
+const driver=new DesktopPlaytestDriver({executable,args,cwd:game,mailboxRoot:mailbox,env:{SDL_AUDIODRIVER:'dummy'},screenshotTimeoutMs:15000});
+const transport=new DeviceMailboxTransport(new LocalDeviceMailbox(),deviceMailboxPaths(mailbox),30000);
+const receipt={variant,executable,executableSha256:createHash('sha256').update(await readFile(executable)).digest('hex'),runnerSha256:createHash('sha256').update(await readFile(new URL(import.meta.url))).digest('hex'),args,handshakeOnlyScenario:true,windows:[],decisions:[],samples:[],captures:[],errors:[],startedAt:Date.now()};
+const logs=[];let logCursor=0;let lastWindow;let stressWindow;let bridge;let failure;
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+const check=(condition,message)=>{if(!condition)throw Error(message);};
+function fields(line){return Object.fromEntries(line.split(/\s+/).slice(2).filter(x=>x.includes('=')).map(x=>{const i=x.indexOf('=');return [x.slice(0,i),x.slice(i+1)];}));}
+async function collect(){
+ const entries=await driver.captureConsole();
+ for(const entry of entries.slice(logCursor)){
+  logs.push(entry);
+  const line=entry.text;
+  if(entry.type==='error'||/\[error\]|TN_NATIVE_START_FAILED:|Unhandled.*(?:Error|exception)/i.test(line))receipt.errors.push(line);
+  const windowAt=line.indexOf('TN_FRAME_BUDGET:');
+  if(windowAt>=0){
+   const w=JSON.parse(line.slice(windowAt+'TN_FRAME_BUDGET:'.length));
+   check(Number.isInteger(w.window)&&(!lastWindow||w.window>lastWindow.window),'non-monotonic frame window');
+   w.observedAt=Date.now();receipt.windows.push(w);lastWindow=w;
+  }
+  const stressAt=line.indexOf('TN_QUALITY_STRESS_END:');
+  if(stressAt>=0){check(stressWindow===undefined,'stress ended more than once');check(lastWindow!==undefined,'stress ended without window');stressWindow=lastWindow.window;receipt.stressEnded={window:stressWindow,hostTime:Number(line.slice(stressAt+'TN_QUALITY_STRESS_END:'.length))};}
+  const tierAt=line.indexOf('TN_QUALITY_TIER ');
+  if(tierAt>=0){
+   const text=line.slice(tierAt);const f=fields(text);
+   const d={line:text,tier:text.split(' ')[1],...f,window:lastWindow?.window,observedAt:Date.now()};
+   receipt.decisions.push(d);console.log(JSON.stringify({tier:d.tier,meter:d.meter,reason:d.reason,window:d.window,gpuMs:lastWindow?.gpuMs,gpuAgeFrames:lastWindow?.gpuAgeFrames,cpuP95:lastWindow?.frame?.p95}));
+  }
+ }
+ logCursor=entries.length;
+}
+const player=s=>s.entities?.find(e=>e.id==='player');
+function visibility(s){const p=player(s);check(p?.visible===true,'player visibility missing/false');check(p.bounds&&p.bounds.width*p.bounds.height>=20,'player projected bounds missing/small');}
+const eligible=d=>{
+ const w=receipt.windows.find(w=>w.window===d.window);
+ return d.source=== (variant==='pinned'?'pinned':'auto')&&!['startup','compiling','invalid'].includes(d.reason)&&w?.surface?.compiling!==true&&w?.frames>=30&&w.surface?.drawingBufferWidth===width&&w.surface?.drawingBufferHeight===height&&Number.isInteger(w.gpuAgeFrames)&&w.gpuAgeFrames>=0&&w.gpuAgeFrames<=4&&Number.isFinite(w.gpuMs)&&w.gpuMs>0&&d.meter==='gpu';
+};
+function recovery(){return receipt.decisions.find(d=>stressWindow!==undefined&&d.window>stressWindow&&d.tier==='high'&&d.reason==='headroom'&&eligible(d)&&Number(d.costMs)<=Number(d.budgetMs)*.8);}
+try{
+ await transport.start();await driver.prepare('http://127.0.0.1:0/',mailbox);
+ const scenario=JSON.parse(await readFile(resolve(game,'playtests/quality-live.playtest.json'),'utf8'));
+ scenario.target='desktop';delete scenario.assert.diagnostics;delete scenario.assert.visibility;receipt.handshakeScenario=scenario;receipt.nativeNetworkObservation=false;
+ bridge=await connectPlaytestBridgeTransport(transport,scenario,120000);
+ check(bridge!==undefined,'bridge missing');
+ const startupDeadline=receipt.startedAt+120000;
+ while(true){
+  await collect();check(await driver.isAlive(),'native host exited during startup');
+  const ready=await bridge.readiness();
+  if(ready.ready&&ready.startup?.phase==='ready'){receipt.ready=ready;receipt.readyAt=Date.now();break;}
+  check(Date.now()<startupDeadline,'native startup did not become ready');await delay(200);
+ }
+ const sample=()=>bridge.sample({entities:['player','quality'],resources:['state'],include:['components','diagnostics','renderChain','runtimeDiagnosticsSeries']});
+ const captured=new Set();const deadline=Date.now()+120000;
+ while(Date.now()<deadline){
+  await collect();check(await driver.isAlive(),'native host exited during adaptation');
+  const before=await sample();receipt.runtimeDiagnosticsAvailable=before.diagnostics!==undefined;if(before.diagnostics!==undefined)check(Array.isArray(before.diagnostics)&&before.diagnostics.length===0,'native diagnostic observation malformed/nonempty');const q=before.components?.quality;
+  check(q&&['high','medium','low'].includes(q.tier),'quality observation missing');
+  check(Array.isArray(q.stages)&&q.stages.includes('bloom')&&Array.isArray(q.dropped)&&q.dropped.length===0,'quality stage observation missing/dropped');
+  if(!captured.has(q.tier)){
+   visibility(before);
+   const key=receipt.samples.length%2===0?'ArrowUp':'ArrowDown';
+   await transport.call('input.keyDown',{key});
+   try{await delay(1000);}finally{await transport.call('input.keyUp',{key});}
+   const after=await sample();visibility(after);
+   const a=player(before)?.transform?.position,b=player(after)?.transform?.position;
+   const distance=a&&b?Math.hypot(...a.map((v,i)=>b[i]-v)):NaN;
+   const ticks=after.clock.tick-before.clock.tick;
+   const odometer=after.resources?.state?.odometer-before.resources?.state?.odometer;
+   check(distance>=.5&&ticks>0&&odometer>0,'real-time input did not move player');
+   const entry={tier:q.tier,key,distance,ticks,odometer,before,after};receipt.samples.push(entry);
+   if(after.components?.quality?.tier===q.tier){
+    const path=resolve(out,`${q.tier}.png`);await driver.screenshot(path);
+    const capturedState=await sample();
+    if(capturedState.components?.quality?.tier===q.tier){visibility(capturedState);captured.add(q.tier);receipt.captures.push({tier:q.tier,path,snapshot:capturedState});}
+   }
+  }
+  await collect();
+  const recovered=recovery();
+  const endingWindows=[...new Map(receipt.decisions.filter(d=>d.window!==undefined).map(d=>[d.window,d])).values()].slice(-5);
+  const sustainedRecovery=recovered&&endingWindows.length===5&&endingWindows.every((d,i)=>d.window>recovered.window&&d.tier==='high'&&eligible(d)&&Number(d.costMs)<=Number(d.budgetMs)*.8&&(i===0||d.window===endingWindows[i-1].window+1));
+  if(variant==='normal'&&recovered&&sustainedRecovery&&q.tier==='high'&&captured.size===3){receipt.recoveryDecision=recovered;receipt.recoveryWindows=endingWindows;break;}
+  if(variant==='pinned'&&new Set(receipt.decisions.filter(eligible).map(d=>d.window)).size>=20&&captured.has('high'))break;
+  await delay(200);
+ }
+ await collect();
+ const decisions=receipt.decisions.filter(d=>d.source==='auto'&&d.reason&&!['startup','compiling','invalid'].includes(d.reason));
+ receipt.tiers=decisions.map(d=>d.tier).filter((tier,i,all)=>i===0||tier!==all[i-1]);
+ const overload=receipt.decisions.filter(d=>eligible(d)&&Number(d.costMs)>Number(d.budgetMs)&&Number.isFinite(receipt.windows.find(w=>w.window===d.window)?.frame?.p95)&&receipt.windows.find(w=>w.window===d.window).frame.p95>=0&&receipt.windows.find(w=>w.window===d.window).frame.p95<Number(d.budgetMs));
+ receipt.freshGpuOverloadCpuUnderBudget=[...new Map(overload.map(d=>[d.window,d])).values()];
+ check(receipt.freshGpuOverloadCpuUnderBudget.length>=2,'fewer than two fresh GPU-overload / CPU-under-budget windows');
+ check(receipt.windows.length>0&&receipt.windows.every(w=>w.surface?.drawingBufferWidth===width&&w.surface?.drawingBufferHeight===height),'stress buffer dimensions missing/changed');
+ check(logs.some(e=>e.text==='[WebGPU] Adapter: NVIDIA GeForce RTX 2080')&&logs.some(e=>e.text==='[WebGPU] Backend: Vulkan'),'expected RTX 2080/Vulkan adapter missing');
+ check(receipt.errors.length===0,`native errors: ${receipt.errors.join('\n')}`);
+ if(variant==='pinned'){
+  const measured=[...new Map(receipt.decisions.filter(eligible).map(d=>[d.window,d])).values()];check(measured.length>=20,'fewer than20 eligible pinned windows');
+  check(receipt.decisions.every(d=>d.tier==='high'),'pinned tier changed');check(measured.some(d=>d.reason==='pinned'),'pinned reason absent');
+  check(stressWindow===undefined,'pinned stress ended');
+ }else{
+  check(receipt.tiers.join(',')==='high,medium,low,medium,high',`expected high,medium,low,medium,high; observed ${receipt.tiers}`);
+  check(receipt.recoveryDecision!==undefined,'five fresh high headroom recovery windows missing');
+  check(captured.size===3,'missing tier capture');
+ }
+ receipt.pass=true;
+}catch(error){failure=error;receipt.pass=false;receipt.failure=String(error);}finally{
+ for(const operation of [async()=>{if(bridge)await bridge.close();else await transport.close();},async()=>driver.stop(),async()=>collect()]){
+  try{await operation();}catch(error){receipt.teardownErrors??=[];receipt.teardownErrors.push(String(error));receipt.pass=false;failure??=error;}
+ }
+ if(receipt.errors.length){receipt.pass=false;failure??=Error(`native errors: ${receipt.errors.join('\n')}`);receipt.failure??=String(failure);}
+
+ receipt.finishedAt=Date.now();
+ await writeFile(resolve(out,'receipt.json'),JSON.stringify(receipt,null,2)+'\n');
+ await writeFile(resolve(out,'console.json'),JSON.stringify(logs,null,2)+'\n');
+ await rm(mailbox,{recursive:true,force:true});
+}
+if(failure)throw failure;
+console.log(JSON.stringify({pass:true,variant,tiers:receipt.tiers,freshGpuOverloadCpuUnderBudget:receipt.freshGpuOverloadCpuUnderBudget.length}));

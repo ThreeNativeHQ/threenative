@@ -1,7 +1,8 @@
 // Generated source: the starter owns this value treatment and paper field.
 
-import { color, convertToTexture, float, hash, luminance, mix, screenUV, vec4 } from "three/tsl";
+import { color, float, hash, luminance, mix, screenUV, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
+import { createTextureScope } from "./textureLifetime.js";
 
 export interface IWatercolorStageOptions {
   readonly levels?: number;
@@ -26,13 +27,15 @@ export function createWatercolorStage(options: IWatercolorStageOptions = {}): IW
   const shadowStrength = unit(options.shadowStrength ?? 0.16, "watercolor shadowStrength");
   const strength = unit(options.strength ?? 0.72, "watercolor strength");
   const shadowTint = color(options.shadowTint ?? 0x6d5a52);
+  const textureScope = createTextureScope();
 
   return {
     after: "kuwahara",
     build: (input) => {
+      textureScope.dispose();
       if (!isNode(input)) throw new Error("watercolor input is missing");
       if (strength === 0) return input;
-      const source = convertToTexture(input) as unknown as ITextureNode;
+      const source = textureScope.texture(input) as unknown as ITextureNode;
       const base = source.sample(screenUV);
       const sceneLuminance = luminance(base.rgb);
       // Quantise one scalar and apply its ratio to the full colour vector; never quantise RGB
@@ -45,7 +48,7 @@ export function createWatercolorStage(options: IWatercolorStageOptions = {}): IW
       const painted = shaded.mul(paper);
       return mix(base, vec4(painted, base.a), strength) as Node<"vec4">;
     },
-    dispose: () => undefined,
+    dispose: textureScope.dispose,
     minimumTier: "medium",
     name: "watercolor",
   };

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NodeIO } from "@gltf-transform/core";
@@ -445,7 +446,7 @@ describe("watchAssets", () => {
 
     const burstStartedAt = Date.now();
     for (let index = 1; index <= 5; index += 1) {
-      await writeFile(path.join(root, "assets", "rock.png"), `burst write ${index}`);
+      writeFileSync(path.join(root, "assets", "rock.png"), `burst write ${index}`);
     }
     const burstMs = Date.now() - burstStartedAt;
     // Fail on the premise, not on a downstream symptom. A burst that outruns its own debounce

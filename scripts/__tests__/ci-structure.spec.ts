@@ -1082,10 +1082,14 @@ describe("CI pipeline structure", () => {
       scripts: Record<string, string>;
     };
     const test = requiredJob(ci, "test");
+    const native = requiredJob(ci, "test-native");
     const browser = requiredJob(ci, "test-browser");
     const playtest = requiredJob(ci, "test-playtest");
     const browserDist = browser.indexOf("uses: ./.github/actions/workspace-dist");
     const playtestDist = playtest.indexOf("uses: ./.github/actions/workspace-dist");
+    const nativeDist = native.indexOf("uses: ./.github/actions/workspace-dist");
+    const nativeSmokeBuild = native.indexOf("pnpm --filter threenative-native-smoke build");
+    const nativeTests = native.indexOf("pnpm --filter @threenative/runtime-native test");
 
     expect(manifest.scripts.test).toBe("bash scripts/run-test-suite.sh");
     expect(manifest.scripts["test:ci"]).toContain("TN_SUITE_PREBUILT=1");
@@ -1096,6 +1100,13 @@ describe("CI pipeline structure", () => {
 
     expect(test).toContain('TN_SUITE_PHASES: "docs,build,package-test"');
     expect(test).toContain("run: pnpm test:ci");
+    expect(nativeDist).toBeGreaterThanOrEqual(0);
+    expect(nativeSmokeBuild, "the native suite has no built smoke bundle").toBeGreaterThan(
+      nativeDist,
+    );
+    expect(nativeTests, "the smoke bundle is built after the native suite starts").toBeGreaterThan(
+      nativeSmokeBuild,
+    );
     expect(browserDist).toBeGreaterThanOrEqual(0);
     expect(playtestDist).toBeGreaterThanOrEqual(0);
     expect(browser.indexOf("pnpm test:browser:ci")).toBeGreaterThan(browserDist);

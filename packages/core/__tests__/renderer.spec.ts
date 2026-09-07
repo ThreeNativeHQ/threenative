@@ -15,6 +15,40 @@ function testCanvas(): HTMLCanvasElement {
 }
 
 describe("createRenderer", () => {
+  it("reports the age of the resolved GPU frame without treating a repeated duration as fresh", async () => {
+    const canvas = testCanvas();
+    const info = { frame: 10, render: { timestamp: 6.25 } };
+    let timestampFrames = [7, 8];
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: false,
+      webgl2Factory: () => ({
+        domElement: canvas,
+        info,
+        backend: { getTimestampFrames: () => timestampFrames },
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      expect(renderer.gpuFrameAge?.()).toBe(2);
+      info.frame = 310;
+      expect(renderer.gpuFrameMs()).toBe(6.25);
+      expect(renderer.gpuFrameAge?.()).toBe(302);
+      timestampFrames = [309];
+      expect(renderer.gpuFrameAge?.()).toBe(1);
+      for (const invalid of [[], [Number.NaN], [311], [-1], [1.5]]) {
+        timestampFrames = invalid;
+        expect(renderer.gpuFrameAge?.()).toBeUndefined();
+      }
+      timestampFrames = [309];
+      Reflect.deleteProperty(info, "frame");
+      expect(renderer.gpuFrameAge?.()).toBeUndefined();
+    } finally {
+      renderer.dispose();
+    }
+  });
+
   it("defers platform resize and reports the old buffer until compilation releases it", async () => {
     const canvas = testCanvas();
     let resize = () => {};
@@ -45,6 +79,10 @@ describe("createRenderer", () => {
     });
     const compilation = renderer.compileAsync(new Scene(), new PerspectiveCamera());
     try {
+      expect(
+        renderer.gpuFrameAge?.(),
+        "a renderer without a timestamp backend has no age",
+      ).toBeUndefined();
       width = 640;
       resize();
       width = 800;
