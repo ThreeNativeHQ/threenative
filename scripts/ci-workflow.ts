@@ -19,6 +19,8 @@ export interface ICiJob {
   readonly needs: readonly string[];
   /** Runs `actions/upload-artifact`, so downstream jobs may legitimately be ordered behind it. */
   readonly producesArtifact: boolean;
+  /** The exact `scope` job that decides whether the rest of the workflow is applicable. */
+  readonly producesSchedulingDecision: boolean;
   /** Reads `needs.<job>.result` — an aggregator whose whole job is to report an upstream verdict. */
   readonly aggregates: readonly string[];
   /**
@@ -89,15 +91,32 @@ export function declaredNeeds(section: string): readonly string[] {
 
 /** Reads the workflow into the shape the rule is stated over. */
 export function ciJobGraph(source: string): readonly ICiJob[] {
-  return jobSections(source).map(([name, section]) => ({
-    aggregates: [...section.matchAll(/needs\.([A-Za-z0-9_-]+)\.result/gu)].map(
-      (match) => match[1] ?? "",
-    ),
-    aggregatesAll: /toJSON\(\s*needs\s*\)/u.test(section),
-    name,
-    needs: declaredNeeds(section),
-    producesArtifact: section.includes("actions/upload-artifact"),
-  }));
+  return jobSections(source).map(([name, section]) => {
+    const outputsDecision =
+      name === "scope" &&
+      /^ {4}outputs:\n(?:(?: {6}[A-Za-z0-9_-]+:.*)\n?)+/mu.test(section) &&
+      /steps\.[A-Za-z0-9_-]+\.outputs\.(?:selection|reason)/u.test(section) &&
+      section.includes("scripts/ci-change-scope.mjs");
+    return {
+      aggregates: [...section.matchAll(/needs\.([A-Za-z0-9_-]+)\.result/gu)].map(
+        (match) => match[1] ?? "",
+      ),
+      aggregatesAll: /toJSON\(\s*needs\s*\)/u.test(section),
+      name,
+      needs: declaredNeeds(section),
+      producesArtifact: section.includes("actions/upload-artifact"),
+      producesSchedulingDecision: outputsDecision,
+    };
+  });
+}
+
+function legalNeed(job: ICiJob, upstream: ICiJob): boolean {
+  return (
+    upstream.producesArtifact ||
+    upstream.producesSchedulingDecision ||
+    job.aggregatesAll ||
+    job.aggregates.includes(upstream.name)
+  );
 }
 
 /**
@@ -125,8 +144,7 @@ export function ciNeedsFindings(jobs: readonly ICiJob[]): readonly ICiNeedsFindi
         });
         continue;
       }
-      if (upstream.producesArtifact) continue;
-      if (job.aggregatesAll || job.aggregates.includes(dependsOn)) continue;
+      if (legalNeed(job, upstream)) continue;
       findings.push({
         dependsOn,
         job: job.name,

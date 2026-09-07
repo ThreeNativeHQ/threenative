@@ -21,6 +21,35 @@ permissions:
   contents: read
 
 jobs:
+  # This is deliberately a native-Node decision job: a pull request must prove its complete
+  # merge-base diff before it is allowed to omit the board. Every other event is full by policy.
+  scope:
+    name: Change scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.classify.outputs.scope }}
+      selection: ${{ steps.classify.outputs.selection }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: classify
+        name: Classify the complete pull-request diff
+        env:
+          TN_CI_EVENT: ${{ github.event_name }}
+          TN_CI_BASE: ${{ github.event.pull_request.base.sha }}
+          TN_CI_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          node scripts/ci-change-scope.mjs \
+            --event-name "$TN_CI_EVENT" \
+            --base "$TN_CI_BASE" \
+            --head "$TN_CI_HEAD" \
+            --format github | tee "$RUNNER_TEMP/ci-scope.outputs"
+          cat "$RUNNER_TEMP/ci-scope.outputs" >> "$GITHUB_OUTPUT"
+
   # A red job no longer stops the rest of the run, and that is deliberate. The fail-fast this
   # replaces cancelled the whole run through the Actions API from inside the job that failed —
   # and a run-level cancel re-marks every in-flight job `cancelled`, the caller included. On
@@ -35,6 +64,8 @@ jobs:
   # job that discards its own node_modules — it only added a serial edge in front of the run.
   # The cheap gates now start together, and the expensive ones name the gate they wait on.
   typecheck:
+    needs: scope
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -49,6 +80,7 @@ jobs:
       - run: pnpm typecheck
 
   lint:
+    needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -59,7 +91,21 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
+      - name: Run the complete lint gate
+        if: needs.scope.outputs.selection != 'prose'
+        run: pnpm lint
+      - name: Run the prose-only documentation and evidence gates
+        if: needs.scope.outputs.selection == 'prose'
+        run: |
+          set -euo pipefail
+          pnpm check:docs
+          pnpm exec vitest run \
+            scripts/__tests__/check-doc-links.spec.ts \
+            scripts/__tests__/evidence-budget.spec.ts \
+            scripts/__tests__/evidence-citations.spec.ts \
+            scripts/__tests__/sync-agent-docs.spec.ts \
+            scripts/__tests__/ci-structure.spec.ts \
+            scripts/__tests__/ci-needs.spec.ts
 
   # `pnpm test` needs the native contract executables; nothing else here does. Keeping the browser
   # and playtest lanes in their own jobs means one run reports every failure instead of teaching us
@@ -71,6 +117,8 @@ jobs:
   # executables. That moved to `test-native` below, which runs beside this job instead of in front
   # of it. `scripts/__tests__/ci-structure.spec.ts` asserts the two halves partition the workspace.
   test:
+    needs: scope
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -102,6 +150,8 @@ jobs:
   # file in two shards. `scripts/__tests__/ci-structure.spec.ts` holds the matrix to that shape,
   # and `run-test-suite.sh` refuses a phase selection that would run nothing at all.
   test-unit:
+    needs: scope
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -129,6 +179,8 @@ jobs:
       - run: pnpm test
 
   test-native:
+    needs: scope
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
@@ -386,6 +438,8 @@ jobs:
           if-no-files-found: error
 
   test-browser:
+    needs: scope
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -429,6 +483,8 @@ jobs:
           if-no-files-found: ignore
 
   test-playtest:
+    needs: scope
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -453,7 +509,8 @@ jobs:
       - run: pnpm test:playtest:ci
 
   golden-path-template:
-    needs: build
+    needs: [scope, build]
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
     strategy:
       fail-fast: false
       matrix:
@@ -622,7 +679,8 @@ jobs:
     # Ran only on push/schedule until 2026-09-01 (owner call): every template now proves itself
     # non-visually on every PR too, so a template regression is reported by the PR that caused it
     # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
-    needs: build
+    needs: [scope, build]
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
     # One leg per template was one leg per *unit of naming*, not per unit of work: on run
     # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
     # fast as its slowest leg. Timestamping platformer's step splits it as ~74s of scaffold install
@@ -724,12 +782,13 @@ jobs:
   # a matrix, the context the ruleset waits for stopped existing and every PR would sit on
   # "Expected — waiting for status to be reported" forever.
   #
-  # This job is that context. It runs no work; it reads the matrix result and fails when any leg
-  # failed. `if: always()` matters: without it a failed matrix leaves this skipped, and a skipped
-  # required check counts as satisfied, which would turn the ruleset into decoration. Adding a
-  # template to the matrix above needs no ruleset change, which is the point of the indirection.
+  # This job is that context. On a full run it reads the matrix result and fails when any leg
+  # failed; on a deliberate prose-only run it emits an explicit not-applicable verdict. The job
+  # still runs after a skipped matrix so a required check never disappears into an accidental skip.
+  # Adding a template to the matrix above needs no ruleset change, which is the point of the
+  # indirection.
   golden-path:
-    needs: golden-path-template
+    needs: [scope, golden-path-template]
     # `!cancelled()` rather than `always()`. Both run this job when a matrix leg fails, which is the
     # point. `always()` also runs it when the whole run was cancelled — a superseding push, someone
     # hitting the button — where the matrix result is `cancelled`, this job reported *failure*, and
@@ -741,15 +800,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require every golden-path template to have passed
+      - name: Require or report golden-path template applicability
         run: |
           set -euo pipefail
+          if [ '${{ needs.scope.outputs.selection }}' = prose ]; then
+            echo "golden-path templates: not applicable (prose-only change)"
+            exit 0
+          fi
           result='${{ needs.golden-path-template.result }}'
           echo "golden-path templates: $result"
           test "$result" = "success"
 
   benchmark:
-    needs: build
+    needs: [scope, build]
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -789,6 +853,8 @@ jobs:
   # nor a browser, so it is a gate the scaffold and benchmark lanes can wait on instead of waiting
   # ~15 minutes behind the native suite.
   build:
+    needs: scope
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -898,7 +964,8 @@ jobs:
           if-no-files-found: warn
 
   budgets:
-    needs: build
+    needs: [scope, build]
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -945,11 +1012,14 @@ jobs:
   # docs/PRDs/native/PRD-295-the-native-platform-lane-has-never-been-green.md, which requires the
   # call to come back here in the same commit that fixes them.
   supply-chain:
+    needs: scope
     # PR-only until 2026-09-01 (owner call): a push to main skipped the whole job, so the board
     # read a skip where the secrets scan should have been. Pushes now scan the repository's full
     # git history — gitleaks' default git mode — which is strictly stronger than the incremental
     # PR range and immune to force-push SHAs the checkout may not have.
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: >-
+      needs.scope.outputs.selection != 'prose' &&
+      (github.event_name == 'pull_request' || github.event_name == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -1020,6 +1090,7 @@ jobs:
   # and cannot itself become something to route around.
   run-summary:
     needs:
+      - scope
       - typecheck
       - lint
       - test
@@ -1054,8 +1125,20 @@ jobs:
           # argument: it is multi-line JSON, and an expression interpolated into a `run:` line is
           # shell source.
           TN_CI_NEEDS: ${{ toJSON(needs) }}
+          TN_CI_SCOPE: ${{ needs.scope.outputs.selection }}
+          TN_CI_SCOPE_REASON: ${{ needs.scope.outputs.reason }}
         run: |
           set -euo pipefail
+          {
+            echo "## CI change scope"
+            echo ""
+            echo "- Selection: `$TN_CI_SCOPE`"
+            echo "- Reason: $TN_CI_SCOPE_REASON"
+            if [ "$TN_CI_SCOPE" = prose ]; then
+              echo "- Not applicable: compilation, browser/playtest, native and full game-matrix jobs."
+            fi
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
           printf '%s' "$TN_CI_NEEDS" > "$RUNNER_TEMP/needs.json"
           pnpm tsx scripts/ci-run-summary.ts \
             --workflow .github/workflows/ci.yml \
