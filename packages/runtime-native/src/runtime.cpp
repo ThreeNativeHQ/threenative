@@ -98,6 +98,33 @@
 
 namespace mystral {
 
+static std::string jsonEscape(const std::string& value) {
+    static constexpr char kHex[] = "0123456789abcdef";
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (unsigned char character : value) {
+        switch (character) {
+            case '"': escaped += "\\\""; break;
+            case '\\': escaped += "\\\\"; break;
+            case '\b': escaped += "\\b"; break;
+            case '\f': escaped += "\\f"; break;
+            case '\n': escaped += "\\n"; break;
+            case '\r': escaped += "\\r"; break;
+            case '\t': escaped += "\\t"; break;
+            default:
+                if (character < 0x20) {
+                    escaped += "\\u00";
+                    escaped.push_back(kHex[character >> 4]);
+                    escaped.push_back(kHex[character & 0x0f]);
+                } else {
+                    escaped.push_back(static_cast<char>(character));
+                }
+                break;
+        }
+    }
+    return escaped;
+}
+
 static bool evalRuntimeScript(js::Engine& engine, std::string_view name, const char* filename) {
     const runtime_scripts::ScriptView script = runtime_scripts::find(name);
     if (!script.data) {
@@ -3500,20 +3527,18 @@ private:
                 // logcat. The coordinator compares it against the same hash of
                 // the exact bytes it read back — a linkage check against
                 // reused/wrong-path responses, not a cryptographic identity.
-                std::cout << "TN_PUMP_ENDPOINT:{\"path\":\"" << path << "\",\"stored\":"
-                          << (stored ? "true" : "false") << ",\"payloadHash\":\""
-                          << endpointHash.str() << "\",\"bytes\":" << payload.size()
-                          << ",\"requestId\":\"" << requestId << "\",\"requestMethod\":\""
-                          << requestMethod << "\",\"requestOrder\":"
-                          << (hasRequestOrder ? std::to_string(static_cast<unsigned long long>(requestOrder)) : "-1")
-                          << ",\"pump\":" << snapshot << "}" << std::endl;
-                LOGI("TN_PUMP_ENDPOINT:{\"path\":\"%s\",\"stored\":%s,\"payloadHash\":\"%s\","
-                     "\"bytes\":%zu,\"requestId\":\"%s\",\"requestMethod\":\"%s\","
-                     "\"requestOrder\":%s,\"pump\":%s}",
-                     path.c_str(), stored ? "true" : "false", endpointHash.str().c_str(),
-                     payload.size(), requestId.c_str(), requestMethod.c_str(),
-                     hasRequestOrder ? std::to_string(static_cast<unsigned long long>(requestOrder)).c_str() : "-1",
-                     snapshot.c_str());
+                const std::string requestOrderJson = hasRequestOrder
+                    ? std::to_string(static_cast<unsigned long long>(requestOrder))
+                    : "-1";
+                const std::string endpointRecord =
+                    "TN_PUMP_ENDPOINT:{\"path\":\"" + jsonEscape(path) + "\",\"stored\":"
+                    + (stored ? "true" : "false") + ",\"payloadHash\":\""
+                    + endpointHash.str() + "\",\"bytes\":" + std::to_string(payload.size())
+                    + ",\"requestId\":\"" + jsonEscape(requestId) + "\",\"requestMethod\":\""
+                    + jsonEscape(requestMethod) + "\",\"requestOrder\":" + requestOrderJson
+                    + ",\"pump\":" + snapshot + "}";
+                std::cout << endpointRecord << std::endl;
+                LOGI("%s", endpointRecord.c_str());
                 return jsEngine_->newBoolean(stored);
             })
         );

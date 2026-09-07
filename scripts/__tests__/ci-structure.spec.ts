@@ -155,6 +155,21 @@ function requiredJob(source: string, name: string): string {
   return section;
 }
 
+function workflowRunScript(source: string, stepName: string): string {
+  const stepStart = source.indexOf(`      - name: ${stepName}`);
+  if (stepStart < 0) throw new Error(`workflow step ${stepName} was not found.`);
+  const runStart = source.indexOf("        run: |\n", stepStart);
+  if (runStart < 0) throw new Error(`workflow step ${stepName} did not contain a run block.`);
+  const bodyStart = runStart + "        run: |\n".length;
+  const bodyEnd = source.indexOf("\n      - ", bodyStart);
+  if (bodyEnd < 0) throw new Error(`workflow step ${stepName} did not have a following step.`);
+  return source
+    .slice(bodyStart, bodyEnd)
+    .split("\n")
+    .map((line) => (line.startsWith("          ") ? line.slice(10) : line))
+    .join("\n");
+}
+
 function occurrences(source: string, pattern: RegExp): number {
   return [...source.matchAll(pattern)].length;
 }
@@ -1939,6 +1954,63 @@ describe("CI pipeline structure", () => {
     expect(performance).toContain("release-soak");
     expect(performance).toContain("pnpm native:qualify:physical");
     expect(performance).toContain("7200000");
+  });
+
+  it("reports a scheduled missing baseline before fetching or checking out source", async () => {
+    const performance = await readFile(
+      path.join(repo, ".github/workflows/performance-regression.yml"),
+      "utf8",
+    );
+    const directory = await makeTempDir("performance-scheduled-baseline-");
+    const manifestDirectory = path.join(directory, "scripts/performance-regression");
+    const artifactDirectory = path.join(directory, "artifacts/performance-regression");
+    const binDirectory = path.join(directory, "bin");
+    await mkdir(manifestDirectory, { recursive: true });
+    await mkdir(binDirectory, { recursive: true });
+    await writeFile(
+      path.join(manifestDirectory, "lanes.json"),
+      await readFile(path.join(repo, "scripts/performance-regression/lanes.json"), "utf8"),
+    );
+    const gitLog = path.join(directory, "git.log");
+    await writeFile(
+      path.join(binDirectory, "git"),
+      '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$TEST_GIT_LOG"\n',
+      { mode: 0o755 },
+    );
+    const envFile = path.join(directory, "github.env");
+    const script = workflowRunScript(
+      performance,
+      "Prepare isolated source checkouts inside the repository worktree",
+    ).replaceAll("${{ matrix.result_key }}", "browser-webgpu");
+    const result = spawnSync("bash", ["-e", "-u", "-o", "pipefail", "-c", script], {
+      cwd: directory,
+      env: {
+        ...process.env,
+        BASELINE_INPUT: "",
+        CANDIDATE_INPUT: "",
+        GITHUB_ENV: envFile,
+        GITHUB_EVENT_NAME: "schedule",
+        GITHUB_SHA: "candidate-sha",
+        GITHUB_WORKSPACE: directory,
+        PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+        TEST_GIT_LOG: gitLog,
+        TN_PERF_LANE: "browser-webgpu",
+        TN_PERF_RESOURCE_READY: "true",
+        TN_PERF_RESULT_KEY: "browser-webgpu",
+      },
+      encoding: "utf8",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(await readFile(gitLog, "utf8").catch(() => "")).toBe("");
+    expect(
+      JSON.parse(await readFile(path.join(artifactDirectory, "browser-webgpu.json"), "utf8")),
+    ).toMatchObject({
+      candidateSourceSha: "candidate-sha",
+      lane: "browser-webgpu",
+      resultKey: "browser-webgpu",
+      status: "UNVERIFIED",
+    });
+    expect(await readFile(envFile, "utf8")).toContain("TN_PERF_BASELINE_AVAILABLE=false");
   });
 
   it("maps every performance matrix row to its declared platform runner and unique result key", async () => {
