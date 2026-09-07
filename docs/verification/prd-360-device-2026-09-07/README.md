@@ -1,9 +1,33 @@
 # PRD-360 — first physical Android measurement, 2026-09-07
 
 Bounded claim: **the preserved Bayview baseline was cold-launched three times on a physical Pixel 8,
-the player moved under input, and the launch-to-first-playable bound was measured.** The bound
-exceeds PRD-360's 8-second criterion by roughly six times. Nothing here accepts the PRD; the
-criterion is measured and **unmet**.
+preflight-qualified, the player moved under input, and the launch-to-first-playable bound was
+measured.** The bound exceeds PRD-360's 8-second criterion by roughly six times. Nothing here
+accepts the PRD; the criterion is measured and **unmet**.
+
+## Qualified result — the one to cite
+
+Three cold launches with the device unplugged and **no** `--allow-device-condition`, so the preflight
+decided rather than being overridden. `R0B_PREFLIGHT` **passes** on all three: `charging: false`,
+`provisional: []`, battery 100%, thermal status NONE, 29.6-30.6 °C.
+
+| Run | Bound | Runner | Preflight |
+| --- | ---: | --- | --- |
+| a | 50,219.2 ms | exit 0 | qualified |
+| b | 49,788.7 ms | exit 0 | qualified |
+| c | 49,689.1 ms | exit 0 | qualified |
+
+**Median 49,788.7 ms against a criterion of 8,000 ms.** Seven of nine checks pass, including
+`R4_MOVEMENT` at 2.147 m and `R5_VISIBLE_WORLD`. Two fail: `R6_BOUND_EXCEEDED`, and
+`R7_PUMP_SILENCE_MISSING` because this APK predates the observer. Retained as
+`qualified-{a,b,c}.json`.
+
+The screen must be awake for the preflight — an unplugged Pixel 8 sleeps and the run fails closed
+with `TN_DEVICE_PREFLIGHT_CONDITION_FAILED: screen: expected on, observed off`. A
+`KEYCODE_WAKEUP` before each launch is enough; `screen_off_timeout` was already 1,800,000 ms and was
+not modified.
+
+The section below records the earlier, **superseded** set taken while the device was still plugged.
 
 ## Subject and device
 
@@ -12,12 +36,12 @@ criterion is measured and **unmet**.
 | APK | `com.threenative.bayview`, installed on the device, SHA-256 `007e1dc247b58cc13126f44c52cff97f230934bcc2f305c83e35805bcba9077e` |
 | Identity | Byte-identical to the SHA-256 PRD-360 recorded as the preserved installed baseline. `R1_ARM_IDENTITY` passes on all three runs. |
 | Device | Pixel 8 (`shiba`), serial `37251FDJH0037Z`, arm64-v8a, Android 17, driven over Wi-Fi ADB at `192.168.1.192:5555` |
-| Condition | Battery 100%, thermal status `0` (NONE), 25.0–26.7 °C across the runs |
+| Condition | Battery 100%, thermal status `0` (NONE); 29.6–30.6 °C for the qualified set, 25.0–26.7 °C for the superseded one |
 
 The APK carries **no** pump observer — `strings` over its packaged `lib/arm64-v8a/*.so` finds neither
 `TN_PUMP_SILENCE` nor `TN_PUMP_ENDPOINT`. It predates the observer, so `R7` cannot be assessed on it.
 
-## Result — three cold launches, `--arm frozen`
+## Superseded: the first set, taken plugged in
 
 | Run | Bound | Runner |
 | --- | ---: | --- |
@@ -80,6 +104,7 @@ holds, then a 6-tick settle, asserting `movement.minDistance` 0.25.
 Closes: PRD-360's first acceptance bullet is no longer unmeasured. Three physical cold launches ran,
 on the recorded baseline, on real hardware, with movement and a visible world proved.
 
-Does not close: the criterion is **unmet by ~6×**, the runs are not preflight-qualified, and the
-pump-silence bullet is unexecuted for want of an observer-carrying build. PRD-360 is not accepted
-and no acceptance box is ticked.
+Does not close: the criterion is **unmet by ~6×**, and the pump-silence bullet is unexecuted for
+want of an observer-carrying build. PRD-360 is not accepted and no acceptance box is ticked. The
+preflight caveat is gone — the qualified set at the top of this file has `R0B_PREFLIGHT` passing —
+so what remains is an implementation gap, not an evidence gap.
