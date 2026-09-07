@@ -5,9 +5,10 @@
 // parity ledger reported a report that was never written, and the bounded performance step
 // recorded BLOCKED while reading as a green step.
 //
-// These cases pin the two halves of the fix: transient statuses are retried with backoff, a
-// genuine 404 still fails on the first response, and a GitHub host carries the token when CI
-// supplies one.
+// These cases pin the halves of the fix: transient statuses are retried with backoff, a thrown
+// network error is retried too, a genuine 404 still fails on the first response, and no
+// Authorization header is ever attached — the last one because sending a token the upstream
+// cannot validate turns the retryable 429 into the 404 this function refuses to retry.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
