@@ -2,12 +2,26 @@
   "name": "survives",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "input", "label": "move", "press": "ArrowUp", "holdTicks": 60, "release": true },
-    { "kind": "wait", "label": "settle", "waitTicks": 10, "release": true }
+    {
+      "kind": "input",
+      "label": "move",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 10,
+      "release": true
+    }
   ],
   "assert": {
     "diagnostics": {
@@ -32,11 +46,14 @@
       {
         "entity": "player",
         "component": "normaliseFactor",
-        "gte": 1.01,
-        "allowTrivial": "The minimal cube has an authored non-unit target height; this retained factor proves normaliseToMetres ran in generated source."
+        "allowTrivial": "The figure is authored taller than the template's 1.1 m convention and normalised down, so the retained factor is below one; either side of one proves normaliseToMetres ran in generated source.",
+        "lte": 0.99
       }
     ],
-    "movement": { "entity": "player", "minDistance": 0.5 },
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.5
+    },
     "visibility": [
       {
         "entity": "touch-controls",

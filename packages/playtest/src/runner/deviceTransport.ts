@@ -34,8 +34,17 @@ export interface IDeviceMailboxPaths {
   response: string;
 }
 
+/** The raw response and request position captured before a mailbox file is consumed. */
+export interface IDeviceResponseObservation {
+  body: string;
+  method: string;
+  order: number;
+  requestId: string;
+}
+
 export interface IDevicePlaytestTransport extends IBridgeTransport {
   start(): Promise<void>;
+  setResponseObserver?(observer: (observation: IDeviceResponseObservation) => void): void;
 }
 
 interface IPendingCall {
@@ -162,6 +171,8 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
   private connected = false;
   private closed = false;
   private nextId = 1;
+  private nextOrder = 1;
+  private responseObserver?: (observation: IDeviceResponseObservation) => void;
 
   constructor(
     private readonly mailbox: IDeviceMailbox,
@@ -169,25 +180,32 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     private readonly operationTimeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
   ) {}
 
+  setResponseObserver(observer: (observation: IDeviceResponseObservation) => void): void {
+    this.responseObserver = observer;
+  }
+
   async start(): Promise<void> {
     this.closed = false;
     this.connected = false;
+    this.nextId = 1;
+    this.nextOrder = 1;
     await this.mailbox.remove(this.paths.request);
     await this.mailbox.remove(this.paths.response);
   }
 
-  async call<T>(method: string, argument?: unknown): Promise<T> {
+  async call<T>(method: string, argument?: unknown, timeoutMs = this.operationTimeoutMs): Promise<T> {
     if (this.closed) throw new Error("Device mailbox transport is closed.");
     if (!this.connected) throw new Error("Device mailbox bridge is not connected.");
     if (argument !== undefined) assertBounded(argument);
     const id = String(this.nextId++);
+    const order = this.nextOrder++;
     await this.mailbox.remove(this.paths.response);
     await this.mailbox.write(this.paths.request, JSON.stringify({
       ...(argument === undefined ? {} : { argument: argument as JsonValue }),
       id,
       method,
     } satisfies IPlaytestDeviceRequest));
-    const response = await this.waitForResponse(id);
+    const response = await this.waitForResponse(id, method, order, timeoutMs);
     if (response.error !== undefined) throw new Error(response.error.message);
     return response.result as T;
   }
@@ -215,11 +233,18 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     return false;
   }
 
-  private async waitForResponse(id: string): Promise<IPlaytestDeviceResponse> {
-    const deadline = Date.now() + this.operationTimeoutMs;
+  private async waitForResponse(
+    id: string,
+    method: string,
+    order: number,
+    timeoutMs: number,
+  ): Promise<IPlaytestDeviceResponse> {
+    const deadline = Date.now() + timeoutMs;
     while (!this.closed && Date.now() < deadline) {
-      const response = await this.readResponse();
-      if (response !== undefined) {
+      const raw = await this.mailbox.read(this.paths.response);
+      if (raw !== undefined) {
+        const response = parseResponse(raw);
+        this.responseObserver?.({ body: raw, method, order, requestId: response.id });
         await this.mailbox.remove(this.paths.response);
         if (response.id !== id) throw new Error(`Unexpected device response id '${response.id}'.`);
         return response;
@@ -228,7 +253,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     }
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_OPERATION_TIMEOUT",
-      `Device mailbox operation '${id}' exceeded ${this.operationTimeoutMs}ms.`,
+      `Device mailbox operation '${id}' exceeded ${timeoutMs}ms.`,
       "Confirm the app is running and its native mailbox is polling the configured files.",
     ));
   }

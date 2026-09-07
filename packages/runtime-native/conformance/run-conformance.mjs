@@ -1478,6 +1478,42 @@ export function androidDisplayRestoreTarget(sizeDump, captureSize = ANDROID_CAPT
   return override === undefined || override === captureSize ? "reset" : override;
 }
 
+/** What this lane forces rotation to while it captures: locked, in the panel's natural frame. */
+export const ANDROID_CAPTURE_ROTATION = { accelerometer_rotation: "0", user_rotation: "0" };
+
+/** Auto-rotate on, no manual rotation — the state a Pixel ships in. */
+export const ANDROID_ROTATION_DEFAULT = { accelerometer_rotation: "1", user_rotation: "0" };
+
+/**
+ * Decide what a row must restore rotation to, given what it observed before locking the display.
+ *
+ * The size override had a restore path and an exit guard; rotation had neither, so
+ * `accelerometer_rotation 0` and `user_rotation 0` were written once and left there. On 2026-09-05
+ * that reached a physical Pixel 8: auto-rotate off and rotation pinned, so the phone stayed in
+ * landscape long after the run ended, and nothing in the lane ever claimed to put it back.
+ *
+ * The same leak rule as `androidDisplayRestoreTarget` applies, for the same reason. Observing this
+ * lane's own locked pair is indistinguishable from an operator who deliberately locked their phone
+ * to its natural orientation, so it resets to auto-rotate rather than echoing the lock back. An
+ * operator's lock costs one quick-settings tap to redo; a perpetuated one silently leaves a device
+ * somebody is holding stuck in landscape.
+ */
+export function androidRotationRestoreTarget(accelerometerDump, userDump) {
+  const read = (dump) => {
+    const value = String(dump ?? "").trim();
+    return /^[0-3]$/u.test(value) ? value : null;
+  };
+  const accelerometer = read(accelerometerDump);
+  const user = read(userDump);
+  if (accelerometer === null || user === null) return { ...ANDROID_ROTATION_DEFAULT };
+  if (
+    accelerometer === ANDROID_CAPTURE_ROTATION.accelerometer_rotation &&
+    user === ANDROID_CAPTURE_ROTATION.user_rotation
+  )
+    return { ...ANDROID_ROTATION_DEFAULT };
+  return { accelerometer_rotation: accelerometer, user_rotation: user };
+}
+
 /**
  * Reset the display on the way out, including the ways that skip every `finally` in this file.
  *
@@ -1488,7 +1524,7 @@ export function androidDisplayRestoreTarget(sizeDump, captureSize = ANDROID_CAPT
  */
 let androidDisplayGuardArmed = false;
 
-export function armAndroidDisplayGuard(adb, serial) {
+export function armAndroidDisplayGuard(adb, serial, rotation = ANDROID_ROTATION_DEFAULT) {
   if (androidDisplayGuardArmed) return;
   androidDisplayGuardArmed = true;
   const reset = () => {
@@ -1497,6 +1533,16 @@ export function armAndroidDisplayGuard(adb, serial) {
         spawnSync(adb, androidArgs(serial, "shell", "wm", property, "reset"), { timeout: 10_000 });
       } catch {
         // An exit path is the wrong place to raise. The next run's own reset is the backstop.
+      }
+    }
+    // Rotation leaks the same way size did, and a signal skips the row's `finally` just as surely.
+    for (const [setting, value] of Object.entries(rotation)) {
+      try {
+        spawnSync(adb, androidArgs(serial, "shell", "settings", "put", "system", setting, value), {
+          timeout: 10_000,
+        });
+      } catch {
+        // Same reasoning as above: never raise from an exit path.
       }
     }
   };
@@ -1654,6 +1700,7 @@ async function runAndroid(
         );
   const screenshotRequest = `${androidMailboxRoot}/tn-playtest-screenshot-request.txt`;
   let displayRestore = null;
+  let rotationRestore = null;
   let releaseMultitouch = null;
   try {
     runCommand(tools.adb, androidArgs(serial, "uninstall", APP_ID), {
@@ -1664,6 +1711,12 @@ async function runAndroid(
     const install = common("install", "-r", "-t", apk);
     if (!/Success/iu.test(String(install.stdout)))
       throw new Error(`adb install did not report Success: ${install.stdout}`);
+    // Read rotation before touching it. Written after the override, these two values are this
+    // lane's own and restoring them is restoring the leak.
+    rotationRestore = androidRotationRestoreTarget(
+      common("shell", "settings", "get", "system", "accelerometer_rotation").stdout,
+      common("shell", "settings", "get", "system", "user_rotation").stdout,
+    );
     common("shell", "settings", "put", "system", "accelerometer_rotation", "0");
     // Rotation 0, not 1. `wm size` below defines the *logical* display in the panel's natural
     // frame, and a 90-degree user rotation transposes it: the lane asked for 1280x720, set
@@ -1675,7 +1728,7 @@ async function runAndroid(
     common("shell", "settings", "put", "system", "user_rotation", "0");
     const originalSize = String(common("shell", "wm", "size").stdout || "");
     displayRestore = androidDisplayRestoreTarget(originalSize);
-    armAndroidDisplayGuard(tools.adb, serial);
+    armAndroidDisplayGuard(tools.adb, serial, rotationRestore);
     common("shell", "wm", "size", ANDROID_CAPTURE_SIZE);
     common("shell", "am", "force-stop", APP_ID);
     common("logcat", "-c");
@@ -1970,6 +2023,40 @@ async function runAndroid(
         };
       }
       displayRestore = null;
+    }
+    if (rotationRestore !== null) {
+      for (const [setting, value] of Object.entries(rotationRestore)) {
+        const restored = runCommand(
+          tools.adb,
+          androidArgs(serial, "shell", "settings", "put", "system", setting, value),
+          { allowFailure: true, timeout: 10_000 },
+        );
+        if (restored.status !== 0) {
+          result.status = "fail";
+          result.native = {
+            completed: false,
+            ...(result.native || {}),
+            error: `Android ${setting} restore failed: ${restored.stderr || restored.stdout || "unknown error"}`,
+          };
+          continue;
+        }
+        // Read back, for the reason the size restore reads back: exit status is what the command
+        // claims, and a lane that leaves auto-rotate off strands the device in landscape.
+        const readBack = runCommand(
+          tools.adb,
+          androidArgs(serial, "shell", "settings", "get", "system", setting),
+          { allowFailure: true, timeout: 10_000 },
+        );
+        if (String(readBack.stdout || "").trim() !== value) {
+          result.status = "fail";
+          result.native = {
+            completed: false,
+            ...(result.native || {}),
+            error: `TN_ANDROID_ROTATION_LEAKED: ${setting} is ${String(readBack.stdout || "").trim() || "unreadable"} after restore, not ${value}; the device was left mutated.`,
+          };
+        }
+      }
+      rotationRestore = null;
     }
   }
 }

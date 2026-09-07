@@ -18,9 +18,11 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): Direction
   renderer.shadowMap.type = PCFSoftShadowMap;
   // First person puts the player inside the arena rather than above it, so the sky term does
   // most of the work of making a wall read as a surface instead of a silhouette.
-  scene.add(new HemisphereLight(palette.skyHigh, palette.skyLow, 1.9));
+  scene.add(new HemisphereLight(palette.skyHigh, palette.arena, 1.5));
 
-  const key = new DirectionalLight(palette.accent, 3.1);
+  // Warm white, not the accent. Keyed with the accent itself, every neutral surface in the arena
+  // picked up the same yellow the HUD and the floor lines use, so nothing separated from anything.
+  const key = new DirectionalLight(0xffeccc, 2.8);
   key.name = "key-light";
   key.position.set(-6, 10, 7);
   key.castShadow = true;
@@ -39,7 +41,7 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): Direction
   rim.name = "rim-light";
   rim.position.set(8, 5, -10);
   scene.add(rim);
-  scene.add(new AmbientLight(palette.skyLow, 0.55));
+  scene.add(new AmbientLight(palette.skyHigh, 0.55));
 
   return key;
 }

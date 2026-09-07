@@ -320,6 +320,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `threenative-blender`, which `pnpm sync:mcp` writes into all seven host configs of every
   // template, and the shared `finding-assets.md` reference gained the downloaded-.fbx loop.
   // All ten trees moved; no template source did.
+  // Recomputed 2026-09-06, third move, sailing only: a review of the compressed water section
+  // found one dropped clause (a basic material cannot agree with the hull floating on it), one
+  // weakened mechanism (samples averaging into a mean sea level), and one new sentence that was
+  // simply wrong — the CPU height query does not read the cascade buffers, it reads a grid the
+  // cascades are summed onto. All three are restored, so the sailing instructions move again.
+  // Recomputed 2026-09-06, second move: the starter's `hero()` and `IHeroMaterials` left
+  // `src/render/shapes.ts` for their own `src/render/hero.ts`, which puts the toolkit file back
+  // under the 200-line smell cap `looks.spec.ts` enforces on generated render source. The starter
+  // tree alone moves; `Player.ts` follows the import.
+  // Recomputed 2026-09-06 for the local-main sync repair. Sailing's water became `SpectralOcean`,
+  // moving `src/render/ocean.ts`, `src/scenes/Sailing.ts` and an AGENTS.md rewritten under the
+  // 100-line cap; defense's `src/render/shapes.ts` gained two `Mesh[]` annotations that let the
+  // template typecheck again; Biome reformatted the two sailing sources. Eight trees move on the
+  // shared agent-doc and manifest bytes those edits touch. Puzzle and runner do not move.
 };
 
 const GENERATED_SCAFFOLD_METADATA =

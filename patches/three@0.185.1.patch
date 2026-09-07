@@ -1,5 +1,5 @@
 diff --git a/build/three.cjs b/build/three.cjs
-index 8939a67d..b0f91724 100644
+index 8939a67dd76325ccd25ee8806fc4d22b1caea88a..b0f917241f1f2cd25baa21dec20edda32176ef6a 100644
 --- a/build/three.cjs
 +++ b/build/three.cjs
 @@ -26116,6 +26116,8 @@ function copyArrayContents( src, target ) {
@@ -12,7 +12,7 @@ index 8939a67d..b0f91724 100644
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.core.js b/build/three.core.js
-index 0bb9262c..868a634b 100644
+index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d55d6dd6e7 100644
 --- a/build/three.core.js
 +++ b/build/three.core.js
 @@ -26136,6 +26136,8 @@ function copyArrayContents( src, target ) {
@@ -25,7 +25,7 @@ index 0bb9262c..868a634b 100644
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796..325b497a 100644
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..81ec551afb3ddc3c5edc173001719ee503b94d52 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -18500,7 +18500,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
@@ -86,7 +86,56 @@ index 2e490796..325b497a 100644
  
  			}
  
-@@ -39725,7 +39742,8 @@ class VelocityNode extends TempNode {
+@@ -29911,6 +29928,18 @@ class RenderObject {
+ 		 */
+ 		this._sourceMaterial = renderer._currentSourceMaterial;
+ 
++		/**
++		 * The version of `_sourceMaterial` this render object was last validated against.
++		 *
++		 * An override material is shared by every object in the pass and is used as a per-object
++		 * scratchpad, so its own `version` moves for reasons that have nothing to do with this
++		 * render object. The source material's version is the signal that does.
++		 *
++		 * @type {number}
++		 * @default 0
++		 */
++		this.sourceVersion = ( this._sourceMaterial === null || this._sourceMaterial === undefined ) ? 0 : this._sourceMaterial.version;
++
+ 		/**
+ 		 * An event listener which is defined by `RenderObjects`. It performs
+ 		 * clean up tasks when `dispose()` on this render object.
+@@ -30707,9 +30736,18 @@ class RenderObjects {
+ 
+ 			}
+ 
+-			if ( renderObject.version !== material.version || renderObject.needsUpdate ) {
++			// When the renderer is drawing through an override material, that material is shared by
++			// the whole pass and mutated per object, so its `version` alone answers the wrong
++			// question. The source material this object actually carries answers the right one.
++
++			const sourceMaterial = this.renderer._currentSourceMaterial;
++			const sourceTracked = sourceMaterial !== null && sourceMaterial !== undefined;
++			const sourceReplaced = sourceTracked && renderObject._sourceMaterial !== sourceMaterial;
++			const sourceChanged = sourceTracked && ( sourceReplaced || renderObject.sourceVersion !== sourceMaterial.version );
+ 
+-				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
++			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
++
++				if ( sourceReplaced || renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
+ 
+ 					renderObject.dispose();
+ 
+@@ -30719,6 +30757,8 @@ class RenderObjects {
+ 
+ 					renderObject.version = material.version;
+ 
++					if ( sourceTracked ) renderObject.sourceVersion = sourceMaterial.version;
++
+ 				}
+ 
+ 			}
+@@ -39725,7 +39765,8 @@ class VelocityNode extends TempNode {
  
  		const previousModelMatrix = getPreviousMatrix( object );
  
@@ -96,7 +145,7 @@ index 2e490796..325b497a 100644
  
  		//
  
-@@ -53841,7 +53859,7 @@ class NodeBuilder {
+@@ -53841,7 +53882,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -105,7 +154,48 @@ index 2e490796..325b497a 100644
  
  	}
  
-@@ -83814,6 +83832,14 @@ class WebGPUBackend extends Backend {
+@@ -62731,6 +62772,7 @@ class Renderer {
+ 		let materialDisplacementMap;
+ 		let materialDisplacementScale;
+ 		let materialDisplacementBias;
++		let materialAlphaTest;
+ 
+ 		const previousSourceMaterial = this._currentSourceMaterial;
+ 
+@@ -62756,6 +62798,7 @@ class Renderer {
+ 			materialDisplacementMap = overrideMaterial.displacementMap;
+ 			materialDisplacementScale = overrideMaterial.displacementScale;
+ 			materialDisplacementBias = overrideMaterial.displacementBias;
++			materialAlphaTest = overrideMaterial.alphaTest;
+ 
+ 			if ( material.positionNode && material.positionNode.isNode ) {
+ 
+@@ -62763,7 +62806,15 @@ class Renderer {
+ 
+ 			}
+ 
+-			overrideMaterial.alphaTest = material.alphaTest;
++			// `Material.alphaTest`'s setter bumps `version` whenever alpha-test-ness flips, and this
++			// override material is shared by every caster in the pass. A scene that mixes alpha-tested
++			// casters with opaque ones therefore moves that shared version several times per frame,
++			// and every OTHER render object drawn with it then fails the version gate in
++			// `RenderObjects.get` and recomputes a full material cache key that always matches.
++			// Writing the backing field leaves the `alphaTest` getter — and so the cache key — still
++			// reporting this caster's value, while each render object tracks the staleness signal
++			// that belongs to it: its own source material's version.
++			overrideMaterial._alphaTest = material.alphaTest;
+ 			overrideMaterial.alphaMap = material.alphaMap;
+ 			overrideMaterial.displacementMap = material.displacementMap;
+ 			overrideMaterial.displacementScale = material.displacementScale;
+@@ -62825,6 +62876,7 @@ class Renderer {
+ 			scene.overrideMaterial.displacementMap = materialDisplacementMap;
+ 			scene.overrideMaterial.displacementScale = materialDisplacementScale;
+ 			scene.overrideMaterial.displacementBias = materialDisplacementBias;
++			scene.overrideMaterial._alphaTest = materialAlphaTest;
+ 
+ 		}
+ 
+@@ -83814,6 +83866,14 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -120,7 +210,7 @@ index 2e490796..325b497a 100644
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +83952,9 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +83986,9 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -132,7 +222,7 @@ index 2e490796..325b497a 100644
  			if ( adapter === null ) {
  
 diff --git a/src/nodes/accessors/Batch.js b/src/nodes/accessors/Batch.js
-index ab62e98d..2cf4bb60 100644
+index ab62e98dadab2539d7e1d663fd42267bbc8ebcaa..2cf4bb6039853d5c922e89041419250b243694ef 100644
 --- a/src/nodes/accessors/Batch.js
 +++ b/src/nodes/accessors/Batch.js
 @@ -1,6 +1,6 @@
@@ -178,7 +268,7 @@ index ab62e98d..2cf4bb60 100644
 -
 -
 diff --git a/src/nodes/accessors/Instance.js b/src/nodes/accessors/Instance.js
-index b89834b9..c7b7bdd7 100644
+index b89834b9166c75fd946ade24db265bf8c367d244..c7b7bdd7a31d852a581d4bc75a1e1afc1d214e5e 100644
 --- a/src/nodes/accessors/Instance.js
 +++ b/src/nodes/accessors/Instance.js
 @@ -220,7 +220,8 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
@@ -192,7 +282,7 @@ index b89834b9..c7b7bdd7 100644
  		} );
  
 diff --git a/src/nodes/accessors/Skinning.js b/src/nodes/accessors/Skinning.js
-index 2356aed8..aaeea633 100644
+index 2356aed8656dceb1ea74b73ea2e739371a960484..aaeea633a8ece291be5faf868e312867ddad01b6 100644
 --- a/src/nodes/accessors/Skinning.js
 +++ b/src/nodes/accessors/Skinning.js
 @@ -149,7 +149,8 @@ export const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
@@ -216,7 +306,7 @@ index 2356aed8..aaeea633 100644
  			}
  
 diff --git a/src/nodes/accessors/VelocityNode.js b/src/nodes/accessors/VelocityNode.js
-index 373548b0..c48002ab 100644
+index 373548b0b587e7da3ef0993bfe316af420e7f66c..c48002abbce20ee8b29908cf314d7b03afe0db03 100644
 --- a/src/nodes/accessors/VelocityNode.js
 +++ b/src/nodes/accessors/VelocityNode.js
 @@ -106,7 +106,8 @@ class VelocityNode extends TempNode {
@@ -230,7 +320,7 @@ index 373548b0..c48002ab 100644
  		//
  
 diff --git a/src/nodes/core/NodeBuilder.js b/src/nodes/core/NodeBuilder.js
-index be00b81e..1990da8f 100644
+index be00b81ef36e1af83b0066603e616f8f1f81a115..1990da8fe8f1f29a7b53030756dfd966d8de3cb6 100644
 --- a/src/nodes/core/NodeBuilder.js
 +++ b/src/nodes/core/NodeBuilder.js
 @@ -3450,7 +3450,7 @@ class NodeBuilder {
@@ -243,7 +333,7 @@ index be00b81e..1990da8f 100644
  	}
  
 diff --git a/src/objects/BatchedMesh.js b/src/objects/BatchedMesh.js
-index 2ef7cb25..35cc0ffe 100644
+index 2ef7cb257438826059eb2408b3756c4891f06a10..35cc0ffe83a69ea9fa5fca6dec2d820ca193f88d 100644
 --- a/src/objects/BatchedMesh.js
 +++ b/src/objects/BatchedMesh.js
 @@ -181,6 +181,8 @@ function copyArrayContents( src, target ) {
@@ -255,8 +345,110 @@ index 2ef7cb25..35cc0ffe 100644
  	/**
  	 * Constructs a new batched mesh.
  	 *
+diff --git a/src/renderers/common/RenderObject.js b/src/renderers/common/RenderObject.js
+index c900fa4c9654f8cf3512e96de52a2c1c83e189a6..d0a87eabffc8f667ebe9b2f0eccda0ddf3309652 100644
+--- a/src/renderers/common/RenderObject.js
++++ b/src/renderers/common/RenderObject.js
+@@ -299,6 +299,18 @@ class RenderObject {
+ 		 */
+ 		this._sourceMaterial = renderer._currentSourceMaterial;
+ 
++		/**
++		 * The version of `_sourceMaterial` this render object was last validated against.
++		 *
++		 * An override material is shared by every object in the pass and is used as a per-object
++		 * scratchpad, so its own `version` moves for reasons that have nothing to do with this
++		 * render object. The source material's version is the signal that does.
++		 *
++		 * @type {number}
++		 * @default 0
++		 */
++		this.sourceVersion = ( this._sourceMaterial === null || this._sourceMaterial === undefined ) ? 0 : this._sourceMaterial.version;
++
+ 		/**
+ 		 * An event listener which is defined by `RenderObjects`. It performs
+ 		 * clean up tasks when `dispose()` on this render object.
+diff --git a/src/renderers/common/RenderObjects.js b/src/renderers/common/RenderObjects.js
+index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..0fa661db793548254a15ff43f39207abcc43ef49 100644
+--- a/src/renderers/common/RenderObjects.js
++++ b/src/renderers/common/RenderObjects.js
+@@ -124,9 +124,18 @@ class RenderObjects {
+ 
+ 			}
+ 
+-			if ( renderObject.version !== material.version || renderObject.needsUpdate ) {
++			// When the renderer is drawing through an override material, that material is shared by
++			// the whole pass and mutated per object, so its `version` alone answers the wrong
++			// question. The source material this object actually carries answers the right one.
+ 
+-				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
++			const sourceMaterial = this.renderer._currentSourceMaterial;
++			const sourceTracked = sourceMaterial !== null && sourceMaterial !== undefined;
++			const sourceReplaced = sourceTracked && renderObject._sourceMaterial !== sourceMaterial;
++			const sourceChanged = sourceTracked && ( sourceReplaced || renderObject.sourceVersion !== sourceMaterial.version );
++
++			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
++
++				if ( sourceReplaced || renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
+ 
+ 					renderObject.dispose();
+ 
+@@ -136,6 +145,8 @@ class RenderObjects {
+ 
+ 					renderObject.version = material.version;
+ 
++					if ( sourceTracked ) renderObject.sourceVersion = sourceMaterial.version;
++
+ 				}
+ 
+ 			}
+diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
+index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..e9d27b3ddad3b1f080a717d1f6683b60afd2b259 100644
+--- a/src/renderers/common/Renderer.js
++++ b/src/renderers/common/Renderer.js
+@@ -3550,6 +3550,7 @@ class Renderer {
+ 		let materialDisplacementMap;
+ 		let materialDisplacementScale;
+ 		let materialDisplacementBias;
++		let materialAlphaTest;
+ 
+ 		const previousSourceMaterial = this._currentSourceMaterial;
+ 
+@@ -3575,6 +3576,7 @@ class Renderer {
+ 			materialDisplacementMap = overrideMaterial.displacementMap;
+ 			materialDisplacementScale = overrideMaterial.displacementScale;
+ 			materialDisplacementBias = overrideMaterial.displacementBias;
++			materialAlphaTest = overrideMaterial.alphaTest;
+ 
+ 			if ( material.positionNode && material.positionNode.isNode ) {
+ 
+@@ -3582,7 +3584,15 @@ class Renderer {
+ 
+ 			}
+ 
+-			overrideMaterial.alphaTest = material.alphaTest;
++			// `Material.alphaTest`'s setter bumps `version` whenever alpha-test-ness flips, and this
++			// override material is shared by every caster in the pass. A scene that mixes alpha-tested
++			// casters with opaque ones therefore moves that shared version several times per frame,
++			// and every OTHER render object drawn with it then fails the version gate in
++			// `RenderObjects.get` and recomputes a full material cache key that always matches.
++			// Writing the backing field leaves the `alphaTest` getter — and so the cache key — still
++			// reporting this caster's value, while each render object tracks the staleness signal
++			// that belongs to it: its own source material's version.
++			overrideMaterial._alphaTest = material.alphaTest;
+ 			overrideMaterial.alphaMap = material.alphaMap;
+ 			overrideMaterial.displacementMap = material.displacementMap;
+ 			overrideMaterial.displacementScale = material.displacementScale;
+@@ -3644,6 +3654,7 @@ class Renderer {
+ 			scene.overrideMaterial.displacementMap = materialDisplacementMap;
+ 			scene.overrideMaterial.displacementScale = materialDisplacementScale;
+ 			scene.overrideMaterial.displacementBias = materialDisplacementBias;
++			scene.overrideMaterial._alphaTest = materialAlphaTest;
+ 
+ 		}
+ 
 diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
-index 06e20369..37b5e0be 100644
+index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..37b5e0be09967e8acbd38e570b71eb201fc9bad7 100644
 --- a/src/renderers/webgpu/WebGPUBackend.js
 +++ b/src/renderers/webgpu/WebGPUBackend.js
 @@ -102,6 +102,14 @@ class WebGPUBackend extends Backend {

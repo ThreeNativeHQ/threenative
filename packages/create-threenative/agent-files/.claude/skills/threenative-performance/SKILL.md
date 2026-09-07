@@ -1,6 +1,6 @@
 ---
 name: threenative-performance
-description: Measure ThreeNative frame budgets and report platform evidence without guessing.
+description: Measure ThreeNative frame budgets and report platform evidence without guessing. Use when a frame budget, FPS floor, or platform performance claim is in question, when reading `TN_FRAME_BUDGET`, or when writing a bounded performance assertion.
 ---
 
 # ThreeNative performance evidence
@@ -37,5 +37,6 @@ fields are defined in `agent-docs/assertion-reference.md#performance`.
 |4|Thermal-status|≤2|≤1|
 |4|Whole-device-current|—|report;not-gated|
 
-On Pixel 8, budget roughly a 500 MiB driver floor; a dual-use equirectangular environment adds
-about 48 MiB. Fix it with `agent-docs/mobile-memory-budget.md`.
+On Android, budget roughly a 500 MiB driver floor before your own textures; a dual-use
+equirectangular environment adds about 48 MiB. Fix it with `agent-docs/mobile-memory-budget.md`,
+which carries the measurement conditions behind both numbers.

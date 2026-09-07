@@ -1,0 +1,676 @@
+#!/usr/bin/env node
+// Decide whether one arm's launch-to-first-playable run is admissible evidence, and whether its
+// bound meets the criterion. Fail closed: a missing observation is a failure, never a skip.
+//
+// The bound this evaluates is a coordinator-clock UPPER BOUND. t0 is stamped before the runner is
+// spawned (the runner force-stops and launches the app itself, inside driver.prepare); t1 is
+// stamped after the runner exits having reported measured displacement. It therefore includes adb,
+// mailbox transport and runner process startup, and is never smaller than the game's own latency.
+// <= criterionMs proves the criterion. > criterionMs does not isolate game latency.
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(here, '..', '..', '..', '..');
+const capturePath = join(repoRoot, 'packages', 'playtest', 'dist', 'capture.js');
+
+export const CRITERION_MS = 8000;
+export const MIN_HORIZONTAL_METRES = 0.25;
+export const MINIMUM_BATTERY_PERCENT = 50;
+const SHA256 = /^[0-9a-f]{64}$/;
+const PUMP_TIMESTAMP_TOLERANCE_MS = 0.01;
+const PREFLIGHT_MAX_AGE_MS = 5 * 60 * 1000;
+
+const finite = (value) => typeof value === 'number' && Number.isFinite(value);
+
+/**
+ * The harness's own blank-frame guard, loaded from the built playtest package rather than
+ * reimplemented. Kept injectable so the evaluator's own validation can drive it with real PNG
+ * bytes it encoded itself.
+ */
+export async function defaultFrameInspector() {
+  const { assertCaptureNotBlank, inspectFrame } = await import(capturePath);
+  return (png, label) => {
+    const stats = inspectFrame(png);
+    assertCaptureNotBlank(png, label);
+    return stats;
+  };
+}
+
+// PRD-360 pump-silence consumer (R7). Parses one TN_PUMP_SILENCE line out of a
+// host log (logcat on device, stdout on desktop) and fails closed on every
+// absence: no line, observed:false, or a frozen-APK log that predates the
+// observer reads as pump UNKNOWN, never as a pass. The valid first-movement
+// bound is retained as its own result — an unknown pump does not revoke it.
+//
+// Criterion coverage: process->first-pump (firstPumpAtMs), every inter-entry
+// gap (global maxGapMs, not the bounded longGaps array alone), and the
+// trailing gap to the endpoint (trailingGapMs). A run killed before the
+// endpoint (SIGKILL, force-stop flush loss) has no line and fails here, which
+// distinguishes a genuine good measurement from an absent flush.
+// Non-finite, negative, or malformed timestamps fail. All clocks are
+// launch-relative coldStartNowMs(); no new global was needed.
+// Threading: the observer assumes poll/present/flush share one thread.
+export const PUMP_SILENCE_GAP_BUDGET_MS = 250;
+
+// Full-acceptance pump contract, option (a): the endpoint is the actual
+// displacement-correlated response, not first-present. The host stamps one
+// TN_PUMP_ENDPOINT line per mailbox respond() on the launch clock, carrying
+// the path, stored flag, a 64-bit FNV-1a content tag (payloadHash) and byte
+// count of the exact bytes written, plus the non-consuming pump snapshot.
+// The coordinator requires the LAST endpoint whose path matches the movement
+// response file AND whose hash/bytes match the exact bytes it read back from
+// that file. A first-present TN_PUMP_SILENCE line alone, an endpoint for an
+// unrelated path, a reused response (hash mismatch), a response before
+// movement, or a stale endpoint (atMs at or before the last pump entry) all
+// fail. Frozen/403bd10c APKs emit no endpoint: unobserved, never a pass.
+//
+// payloadHash is a linkage tag, not a cryptographic identity: recomputed by
+// fnv1a64() below over the same bytes, it binds the endpoint to the response
+// the coordinator actually holds rather than to any payload merely labelled
+// displacement in a fixture.
+export function fnv1a64(text) {
+  let hash = 1469598103934665603n;
+  const bytes = Buffer.from(String(text), 'utf8');
+  for (const byte of bytes) {
+    hash ^= BigInt(byte);
+    hash = (hash * 1099511628211n) & 0xffffffffffffffffn;
+  }
+  return hash.toString(16).padStart(16, '0');
+}
+
+const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const vector = (value) => Array.isArray(value) && value.length === 3 && value.every(finite) ? value : undefined;
+const isQualifiedPreflightReading = (reading) => isRecord(reading)
+  && Number.isInteger(reading.batteryPercent)
+  && reading.batteryPercent >= MINIMUM_BATTERY_PERCENT
+  && reading.batteryPercent <= 100
+  && reading.charging === false
+  && reading.chargingSource === 'NONE'
+  && reading.thermalStatus === 'NONE'
+  && reading.thermalStatusCode === 0
+  && reading.screenOn === true
+  && Array.isArray(reading.provisional)
+  && reading.provisional.length === 0;
+
+function responseObservation(value, entity) {
+  if (!isRecord(value)) return undefined;
+  const payload = isRecord(value.result) ? value.result : value;
+  const entities = payload.entities;
+  if (Array.isArray(entities)) {
+    const entry = entities.find((candidate) => isRecord(candidate) && candidate.id === entity);
+    if (!isRecord(entry)) return undefined;
+    return { entity, position: vector(entry.transform?.position ?? entry.position) };
+  }
+  if (isRecord(entities)) {
+    const entry = entities[entity];
+    if (!isRecord(entry)) return undefined;
+    return { entity, position: vector(entry.transform?.position ?? entry.position) };
+  }
+  return undefined;
+}
+
+function expectedObservation(value, entity) {
+  if (!isRecord(value)) return { entity, position: undefined };
+  const direct = vector(value.position);
+  if (direct !== undefined) return { entity: value.entity ?? entity, position: direct };
+  if (isRecord(value.after)) {
+    const after = vector(value.after.position);
+    if (after !== undefined) return { entity: value.entity ?? entity, position: after };
+  }
+  return responseObservation(value, entity) ?? { entity, position: undefined };
+}
+
+function sameVector(left, right) {
+  return left !== undefined && right !== undefined
+    && left.every((value, index) => Math.abs(value - right[index]) <= 1e-6);
+}
+
+export function evaluatePumpEndpoint({
+  hostLog,
+  movementResponsePath = undefined,
+  movementResponseBody = undefined,
+  movementPayload = undefined,
+  collectorError = undefined,
+  collectorStoppedEarly = false,
+  cleanupError = undefined,
+  movementResponseError = undefined,
+  movementResponseObservation = undefined,
+  metadataError = undefined,
+  maxGapMs = PUMP_SILENCE_GAP_BUDGET_MS,
+} = {}) {
+  const fail = (code, detail) => ({ code, detail, id: 'R7_PUMP_SILENCE', pass: false });
+  if (typeof hostLog !== 'string' || hostLog.length === 0) {
+    return fail('R7_PUMP_SILENCE_MISSING', { reason: 'no host log supplied' });
+  }
+  if (metadataError !== undefined && metadataError !== null) {
+    return fail('R7_PUMP_METADATA_MISSING', { error: String(metadataError) });
+  }
+  if (collectorError !== undefined && collectorError !== null && collectorError !== '') {
+    return fail('R7_PUMP_COLLECTOR_FAILED', { error: String(collectorError) });
+  }
+  if (collectorStoppedEarly === true) {
+    return fail('R7_PUMP_COLLECTOR_STOPPED_EARLY', { collectorStoppedEarly: true });
+  }
+  if (cleanupError !== undefined && cleanupError !== null && cleanupError !== '') {
+    return fail('R7_PUMP_CLEANUP_FAILED', { error: String(cleanupError) });
+  }
+  if (movementResponseError !== undefined && movementResponseError !== null && movementResponseError !== '') {
+    return fail('R7_PUMP_RESPONSE_READ_FAILED', { error: String(movementResponseError) });
+  }
+  if (typeof movementResponsePath !== 'string' || movementResponsePath.length === 0) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', { reason: 'movement response path is required' });
+  }
+  if (typeof movementResponseBody !== 'string' || movementResponseBody.length === 0) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', { reason: 'movement response body is required' });
+  }
+  if (!isRecord(movementResponseObservation)) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', { reason: 'response request/order provenance is required' });
+  }
+  const responseObservationValid = movementResponseObservation.method === 'sample'
+    && typeof movementResponseObservation.requestId === 'string'
+    && movementResponseObservation.requestId.length > 0
+    && Number.isInteger(movementResponseObservation.order)
+    && movementResponseObservation.order > 0
+    && Number.isInteger(movementResponseObservation.inputOrder)
+    && movementResponseObservation.inputOrder >= 0
+    && movementResponseObservation.order > movementResponseObservation.inputOrder
+    && movementResponseObservation.postInput !== false
+    && (movementResponseObservation.runId === undefined
+      || (typeof movementResponseObservation.runId === 'string' && movementResponseObservation.runId.length > 0));
+  if (!responseObservationValid) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', {
+      reason: 'response is not a finite post-input sample with request identity and order',
+      responseObservation: movementResponseObservation,
+    });
+  }
+  const lines = hostLog.split('\n').filter((entry) => entry.includes('TN_PUMP_ENDPOINT:'));
+  if (lines.length === 0) {
+    return fail('R7_PUMP_SILENCE_MISSING', { reason: 'no TN_PUMP_ENDPOINT line in host log' });
+  }
+  let endpoint;
+  for (const line of lines) {
+    let parsed;
+    try {
+      parsed = JSON.parse(line.slice(line.indexOf('{')));
+    } catch (error) {
+      return fail('R7_PUMP_SILENCE_MALFORMED', { reason: error instanceof Error ? error.message : String(error) });
+    }
+    if (!isRecord(parsed)) {
+      return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'endpoint is not an object' });
+    }
+    if (movementResponsePath !== undefined && parsed.path !== movementResponsePath) continue;
+    endpoint = parsed;
+  }
+  if (endpoint === undefined) {
+    return fail('R7_PUMP_CORRELATION_WRONG_PATH', { expectedPath: movementResponsePath ?? null });
+  }
+  if (endpoint.stored !== true) {
+    return fail('R7_PUMP_SILENCE_UNOBSERVED', { stored: endpoint.stored ?? null });
+  }
+  // Exact-bytes binding: the endpoint's hash and length must match the response body
+  // the coordinator read back. A reused or foreign response with the right path but
+  // different bytes fails here; identity is mandatory in full acceptance mode.
+  const body = movementResponseBody;
+  const expectedBytes = Buffer.byteLength(body, 'utf8');
+  const expectedHash = fnv1a64(body);
+  if (endpoint.bytes !== expectedBytes || String(endpoint.payloadHash ?? '').toLowerCase() !== expectedHash) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', {
+      expectedBytes,
+      expectedHash,
+      gotBytes: endpoint.bytes ?? null,
+      gotHash: endpoint.payloadHash ?? null,
+      reason: 'endpoint does not match the response bytes read back',
+    });
+  }
+  if (endpoint.requestId !== movementResponseObservation.requestId
+    || endpoint.requestMethod !== movementResponseObservation.method
+    || endpoint.requestOrder !== movementResponseObservation.order) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', {
+      expectedRequestId: movementResponseObservation.requestId,
+      expectedRequestMethod: movementResponseObservation.method,
+      expectedRequestOrder: movementResponseObservation.order,
+      gotRequestId: endpoint.requestId ?? null,
+      gotRequestMethod: endpoint.requestMethod ?? null,
+      gotRequestOrder: endpoint.requestOrder ?? null,
+      reason: 'endpoint request identity/order does not match the captured post-input response',
+    });
+  }
+  const pump = endpoint.pump;
+  if (pump?.observed !== true) {
+    return fail('R7_PUMP_SILENCE_UNOBSERVED', { observed: pump?.observed ?? null });
+  }
+  const pumpCount = pump.pumpCount;
+  const stamps = [pump.firstPumpAtMs, pump.lastPumpAtMs, pump.maxGapMs, pump.maxGapAtMs, pump.trailingGapMs, pump.atMs];
+  const longGaps = Array.isArray(pump.longGaps) ? pump.longGaps : undefined;
+  if (!Number.isInteger(pumpCount) || pumpCount < 1 || longGaps === undefined || !stamps.every(finite)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { pump });
+  }
+  if (stamps.some((value) => value < 0 && value !== -1)
+    || pump.firstPumpAtMs < 0
+    || pump.lastPumpAtMs < 0
+    || pump.atMs < 0
+    || pump.maxGapMs < 0
+    || pump.trailingGapMs <= 0
+    || pump.droppedLongGaps === undefined
+    || !Number.isInteger(pump.droppedLongGaps)
+    || pump.droppedLongGaps < 0
+    || !longGaps.every((gap) => finite(gap) && gap >= 0)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'negative timestamp', pump });
+  }
+  // Stale endpoint: stamped at or before the last pump entry, so the trailing
+  // interval it claims cannot cover the displacement report.
+  if (!(pump.firstPumpAtMs <= pump.lastPumpAtMs && pump.atMs > pump.lastPumpAtMs)) {
+    return fail('R7_PUMP_CORRELATION_STALE', { atMs: pump.atMs, lastPumpAtMs: pump.lastPumpAtMs });
+  }
+  if (Math.abs(pump.trailingGapMs - (pump.atMs - pump.lastPumpAtMs)) > PUMP_TIMESTAMP_TOLERANCE_MS) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', {
+      atMs: pump.atMs,
+      lastPumpAtMs: pump.lastPumpAtMs,
+      trailingGapMs: pump.trailingGapMs,
+      reason: 'trailing gap does not match endpoint and last-pump timestamps',
+    });
+  }
+  if (pumpCount === 1) {
+    if (Math.abs(pump.maxGapMs) > PUMP_TIMESTAMP_TOLERANCE_MS || pump.maxGapAtMs !== -1) {
+      return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'single pump has an inter-entry gap', pump });
+    }
+    if (Math.abs(pump.lastPumpAtMs - pump.firstPumpAtMs) > PUMP_TIMESTAMP_TOLERANCE_MS) {
+      return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'single pump spans multiple timestamps', pump });
+    }
+  } else {
+    const pumpSpan = pump.lastPumpAtMs - pump.firstPumpAtMs;
+    const roundingAllowance = PUMP_TIMESTAMP_TOLERANCE_MS * pumpCount;
+    if (!(pump.maxGapMs > 0 && pump.maxGapAtMs >= pump.firstPumpAtMs && pump.maxGapAtMs < pump.lastPumpAtMs)
+      || pump.maxGapAtMs + pump.maxGapMs > pump.lastPumpAtMs + PUMP_TIMESTAMP_TOLERANCE_MS
+      || pumpSpan + PUMP_TIMESTAMP_TOLERANCE_MS < pump.maxGapMs
+      || pumpSpan > (pumpCount - 1) * pump.maxGapMs + roundingAllowance) {
+      return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'pump count, span, and maximum gap are inconsistent', pump });
+    }
+  }
+  if (longGaps.some((gap) => gap > pump.maxGapMs + PUMP_TIMESTAMP_TOLERANCE_MS)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'retained gap exceeds reported maximum', pump });
+  }
+  // Displacement shape: the read-back body must parse as the actual device
+  // response and carry a finite position for the named entity. A bare ack or
+  // a string containing "player" is not movement proof.
+  let parsedResponse;
+  try {
+    parsedResponse = JSON.parse(body);
+  } catch (error) {
+    return fail('R7_PUMP_CORRELATION_MALFORMED', { reason: error instanceof Error ? error.message : String(error) });
+  }
+  const expectedEntity = movementPayload?.entity ?? 'player';
+  const observed = responseObservation(parsedResponse, expectedEntity);
+  if (observed?.position === undefined) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', {
+      entity: expectedEntity,
+      reason: 'response body carries no finite position observation for the named entity',
+    });
+  }
+  const expected = expectedObservation(movementPayload, expectedEntity);
+  if (typeof expectedEntity !== 'string'
+    || expectedEntity.length === 0
+    || expected.entity !== expectedEntity
+    || expected.position === undefined
+    || !sameVector(observed.position, expected.position)) {
+    return fail('R7_PUMP_CORRELATION_UNPROVEN', {
+      expectedEntity,
+      expectedPosition: expected.position ?? null,
+      observedEntity: observed.entity,
+      observedPosition: observed.position,
+      reason: 'response position does not match the runner movement observation',
+    });
+  }
+  const worst = Math.max(pump.maxGapMs, pump.trailingGapMs);
+  if (pump.firstPumpAtMs > maxGapMs || worst > maxGapMs) {
+    return fail('R7_PUMP_SILENCE_EXCEEDED', {
+      atMs: pump.atMs,
+      firstPumpAtMs: pump.firstPumpAtMs,
+      maxGapMs: pump.maxGapMs,
+      path: endpoint.path,
+      pumpCount: pump.pumpCount,
+      thresholdMs: maxGapMs,
+      trailingGapMs: pump.trailingGapMs,
+    });
+  }
+  return {
+    code: null,
+    detail: {
+      atMs: pump.atMs,
+      firstPumpAtMs: pump.firstPumpAtMs,
+      maxGapMs: pump.maxGapMs,
+      path: endpoint.path,
+      pumpCount: pump.pumpCount,
+      trailingGapMs: pump.trailingGapMs,
+    },
+    id: 'R7_PUMP_SILENCE',
+    pass: true,
+  };
+}
+
+// Legacy launch-scope entry point: first-present/shutdown line only. Kept for
+// movement-only diagnostics; NEVER presented as PRD-360 acceptance, which
+// requires evaluatePumpEndpoint above.
+export function evaluatePumpSilence({ hostLog, maxGapMs = PUMP_SILENCE_GAP_BUDGET_MS } = {}) {
+  const fail = (code, detail) => ({ code, detail, id: 'R7_PUMP_SILENCE', pass: false, scope: 'movement-only' });
+  if (typeof hostLog !== 'string' || hostLog.length === 0) {
+    return fail('R7_PUMP_SILENCE_MISSING', { reason: 'no host log supplied' });
+  }
+  const line = hostLog.split('\n').find((entry) => entry.includes('TN_PUMP_SILENCE:'));
+  if (line === undefined) {
+    // Frozen APKs (and the 403bd10c candidate) predate the observer: unknown, not good.
+    return fail('R7_PUMP_SILENCE_MISSING', { reason: 'no TN_PUMP_SILENCE line in host log' });
+  }
+  let payload;
+  try {
+    payload = JSON.parse(line.slice(line.indexOf('{')));
+  } catch (error) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: error instanceof Error ? error.message : String(error) });
+  }
+  const stamps = [payload.firstPumpAtMs, payload.lastPumpAtMs, payload.maxGapMs, payload.maxGapAtMs, payload.trailingGapMs];
+  if (payload.observed !== true) {
+    return fail('R7_PUMP_SILENCE_UNOBSERVED', { observed: payload.observed ?? null });
+  }
+  if (!stamps.every(finite)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { payload });
+  }
+  if (stamps.some((value) => value < 0 && value !== -1)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'negative timestamp', payload });
+  }
+  const gaps = [payload.maxGapMs, payload.trailingGapMs, ...(Array.isArray(payload.longGaps) ? payload.longGaps : [])];
+  if (!gaps.every(finite)) {
+    return fail('R7_PUMP_SILENCE_MALFORMED', { reason: 'non-finite gap', payload });
+  }
+  const worst = Math.max(payload.maxGapMs, payload.trailingGapMs);
+  if (payload.firstPumpAtMs > maxGapMs || worst > maxGapMs) {
+    return fail('R7_PUMP_SILENCE_EXCEEDED', {
+      firstPumpAtMs: payload.firstPumpAtMs,
+      maxGapMs: payload.maxGapMs,
+      thresholdMs: maxGapMs,
+      trailingGapMs: payload.trailingGapMs,
+    });
+  }
+  return {
+    code: null,
+    detail: {
+      firstPumpAtMs: payload.firstPumpAtMs,
+      maxGapMs: payload.maxGapMs,
+      pumpCount: payload.pumpCount,
+      scope: 'movement-only: launch window only, not PRD-360 acceptance',
+      trailingGapMs: payload.trailingGapMs,
+    },
+    id: 'R7_PUMP_SILENCE',
+    pass: true,
+  };
+}
+
+export async function evaluateFirstPlayable(input) {
+  const {
+    bound,
+    report,
+    framePng,
+    hostLog,
+    maxPumpGapMs = PUMP_SILENCE_GAP_BUDGET_MS,
+    criterionMs = CRITERION_MS,
+    minHorizontalMetres = MIN_HORIZONTAL_METRES,
+    inspect,
+  } = input;
+  const checks = [];
+  const check = (id, pass, code, detail) => {
+    checks.push({ code: pass ? null : code, detail, id, pass });
+    return pass;
+  };
+
+  // R1 — which build actually ran. Two arms that cannot each prove which APK the device was
+  // running are one arm measured twice.
+  const installed = bound?.installedSha256;
+  const expected = bound?.expectedSha256;
+  check(
+    'R1_ARM_IDENTITY',
+    typeof installed === 'string' && SHA256.test(installed)
+      && typeof expected === 'string' && SHA256.test(expected)
+      && installed === expected,
+    'R1_ARM_IDENTITY_UNPROVEN',
+    { arm: bound?.arm ?? null, expected: expected ?? null, installed: installed ?? null },
+  );
+
+  // R2 — the clock. A bound assembled from two unrelated epochs, or marked synthetic, is not
+  // evidence of elapsed time.
+  const t0 = typeof bound?.t0Ns === 'string' && /^\d+$/.test(bound.t0Ns) ? BigInt(bound.t0Ns) : undefined;
+  const t1 = typeof bound?.t1Ns === 'string' && /^\d+$/.test(bound.t1Ns) ? BigInt(bound.t1Ns) : undefined;
+  const derivedMs = t0 === undefined || t1 === undefined || t1 <= t0
+    ? undefined
+    : Number(t1 - t0) / 1e6;
+  const boundMs = bound?.boundMs;
+  check(
+    'R2_CLOCK',
+    bound?.clockSource === 'process.hrtime.bigint'
+      && bound?.synthetic !== true
+      && derivedMs !== undefined
+      && finite(boundMs)
+      && Math.abs(boundMs - derivedMs) < 1,
+    'R2_CLOCK_UNSOUND',
+    { boundMs: finite(boundMs) ? boundMs : null, clockSource: bound?.clockSource ?? null, derivedMs: derivedMs ?? null, synthetic: bound?.synthetic === true },
+  );
+
+  // R0 — explicit Android report target. A browser (or desktop) report under a copied bound
+  // proves nothing about the device lane, which this measurement is.
+  check(
+    'R0_ANDROID_TARGET',
+    report?.target === 'android',
+    'R0_WRONG_TARGET',
+    { target: report?.target ?? null },
+  );
+
+  // R0b — recorded device qualification. The launch must carry a before-launch preflight reading
+  // from the assertDeviceReady gate (battery >= 50%, discharging, thermal NONE, screen on) that
+  // is fresh — taken after the install, not before it. Missing, stale (before-install only),
+  // overridden, or unqualified readings fail; a gate is a gate, not a doctor existence probe.
+  const preflight = bound?.preflight;
+  const beforeInstall = preflight?.beforeInstall;
+  const beforeLaunch = preflight?.beforeLaunch;
+  const beforeInstallRecordedMs = typeof beforeInstall?.recordedAt === 'string'
+    ? Date.parse(beforeInstall.recordedAt)
+    : Number.NaN;
+  const preflightRecordedMs = typeof beforeLaunch?.recordedAt === 'string'
+    ? Date.parse(beforeLaunch.recordedAt)
+    : Number.NaN;
+  const boundRecordedMs = typeof bound?.recordedAt === 'string' ? Date.parse(bound.recordedAt) : Number.NaN;
+  const batteryPercent = beforeLaunch?.batteryPercent;
+  const qualified =
+    beforeLaunch !== undefined && beforeLaunch !== null
+    && beforeLaunch.phase === 'before-launch'
+    && beforeInstall?.phase === 'before-install'
+    && typeof bound?.serial === 'string'
+    && bound.serial.length > 0
+    && beforeInstall.serial === bound.serial
+    && beforeLaunch.serial === bound.serial
+    && Number.isFinite(beforeInstallRecordedMs)
+    && Number.isFinite(preflightRecordedMs)
+    && Number.isFinite(boundRecordedMs)
+    && beforeInstallRecordedMs <= preflightRecordedMs
+    && preflightRecordedMs - beforeInstallRecordedMs <= PREFLIGHT_MAX_AGE_MS
+    && preflightRecordedMs <= boundRecordedMs
+    && boundRecordedMs - preflightRecordedMs <= PREFLIGHT_MAX_AGE_MS
+    && preflight?.minimumBatteryPercent === MINIMUM_BATTERY_PERCENT
+    && preflight?.required?.charging === 'discharging'
+    && preflight?.required?.thermal === 'NONE'
+    && isQualifiedPreflightReading(beforeInstall)
+    && isQualifiedPreflightReading(beforeLaunch);
+  check(
+    'R0B_PREFLIGHT',
+    qualified === true,
+    beforeLaunch === undefined || beforeLaunch === null
+      ? 'R0B_PREFLIGHT_MISSING'
+      : 'R0B_PREFLIGHT_UNQUALIFIED',
+    {
+      beforeInstallPhase: preflight?.beforeInstall?.phase ?? null,
+      beforeLaunchPhase: beforeLaunch?.phase ?? null,
+      batteryPercent: beforeLaunch?.batteryPercent ?? null,
+      charging: beforeLaunch?.charging ?? null,
+      provisional: beforeLaunch?.provisional ?? null,
+      recordedAt: beforeLaunch?.recordedAt ?? null,
+      required: preflight?.required ?? null,
+      screenOn: beforeLaunch?.screenOn ?? null,
+      thermalStatus: beforeLaunch?.thermalStatus ?? null,
+    },
+  );
+
+  // R3 — the runner itself. A non-zero exit or a failed report is not a slow pass.
+  check(
+    'R3_RUNNER',
+    bound?.runnerExitCode === 0 && report?.pass === true,
+    'R3_RUNNER_FAILED',
+    { diagnostics: (report?.diagnostics ?? []).map((entry) => entry?.code ?? null), exitCode: bound?.runnerExitCode ?? null, pass: report?.pass ?? null },
+  );
+
+  // R4 — real measured displacement of the named entity, horizontal so that a spawn settling under
+  // gravity cannot be mistaken for a response to the key. Dispatching input and observing nothing
+  // fails here; so does an absent or non-numeric position.
+  const delta = report?.movementDelta;
+  const vector = Array.isArray(delta) && delta.length === 3 && delta.every(finite) ? delta : undefined;
+  const horizontal = vector === undefined ? undefined : Math.hypot(vector[0], vector[2]);
+  check(
+    'R4_MOVEMENT',
+    report?.entity === 'player'
+      && vector !== undefined
+      && finite(report?.distance)
+      && horizontal >= minHorizontalMetres,
+    vector === undefined ? 'R4_POSITION_MISSING' : 'R4_NO_INPUT_DRIVEN_DISPLACEMENT',
+    { distance: finite(report?.distance) ? report.distance : null, entity: report?.entity ?? null, horizontal: horizontal ?? null, minHorizontalMetres, movementDelta: vector ?? null },
+  );
+
+  // R5 — a visible world in the frame captured at the input step, judged by the harness's own
+  // blank-frame guard. Bridge reachability and a ready phase are not pixels.
+  let frame = { pass: false, reason: 'no frame supplied' };
+  if (framePng === undefined || framePng === null) {
+    frame = { pass: false, reason: 'step screenshot missing' };
+  } else {
+    const inspector = inspect ?? (await defaultFrameInspector());
+    try {
+      frame = { pass: true, stats: inspector(framePng, 'first-input') };
+    } catch (error) {
+      frame = { pass: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  check('R5_VISIBLE_WORLD', frame.pass, 'R5_NO_VISIBLE_WORLD', frame);
+
+  // R6 — the criterion. Reported as its own check so an admissible run that is simply slow is
+  // distinguishable from an inadmissible one.
+  const withinCriterion = finite(boundMs) && derivedMs !== undefined && boundMs <= criterionMs;
+  check('R6_BOUND', withinCriterion, 'R6_BOUND_EXCEEDED', {
+    boundMs: finite(boundMs) ? boundMs : null,
+    criterionMs,
+    meaning: withinCriterion
+      ? 'upper bound including adb, transport and runner startup; the criterion is proven'
+      : 'a bound above the criterion does not isolate game latency and proves nothing about it',
+  });
+
+  // R7 — pump silence, FULL acceptance (option (a)). Required by default:
+  // the endpoint is the displacement-correlated mailbox response, never
+  // first-present alone. scope:'movement-only' selects the launch-window
+  // diagnostic explicitly and is never PRD-360 acceptance. A frozen-APK run
+  // has no endpoint and fails R7 while R4 (real displacement) can still pass
+  // — unknown pump, valid movement; the movement upper bound stays truthful.
+  const pumpScope = input.pumpScope ?? 'full';
+  const pump = pumpScope === 'movement-only'
+    ? evaluatePumpSilence({ hostLog, maxGapMs: maxPumpGapMs })
+    : evaluatePumpEndpoint({
+      collectorError: input.collectorError,
+      collectorStoppedEarly: input.collectorStoppedEarly,
+      cleanupError: input.cleanupError,
+      hostLog,
+      maxGapMs: maxPumpGapMs,
+      metadataError: input.metadataError,
+      movementResponseBody: input.movementResponseBody,
+      movementResponseError: input.movementResponseError,
+      movementResponseObservation: input.movementResponseObservation,
+      movementResponsePath: input.movementResponsePath,
+      movementPayload: {
+        entity: report?.entity,
+        position: report?.after?.position,
+      },
+    });
+  checks.push(pump);
+
+  const admissible = checks.filter(({ id }) => id !== 'R6_BOUND').every(({ pass }) => pass);
+  return {
+    admissible,
+    arm: bound?.arm ?? null,
+    boundMs: finite(boundMs) ? boundMs : null,
+    checks,
+    criterionMs,
+    pump,
+    verdict: admissible && withinCriterion ? 'pass' : 'fail',
+  };
+}
+
+const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const armDir = process.argv[2];
+  if (armDir === undefined) {
+    process.stderr.write('usage: evaluate-first-playable.mjs <arm-artifact-directory>\n');
+    process.exit(2);
+  }
+  const bound = readJson(join(armDir, 'bound.json'));
+  const report = readJson(join(armDir, 'report.json'));
+  let framePng;
+  try {
+    framePng = readFileSync(join(armDir, 'first-input.png'));
+  } catch {
+    framePng = undefined;
+  }
+  // The default CLI path is FULL acceptance: host log, movement response path
+  // and body come from the run directory measure-first-playable.mjs wrote, so
+  // a future device invocation needs no manual assembly. scope:movement-only
+  // is an explicit opt-out flag, never the default.
+  const pumpScope = process.argv.includes('--pump-scope=movement-only') ? 'movement-only' : 'full';
+  let hostLog;
+  try {
+    hostLog = readFileSync(join(armDir, 'host.log'), 'utf8');
+  } catch {
+    hostLog = undefined;
+  }
+  let movementResponseBody;
+  let movementResponsePath;
+  let collectorError;
+  let collectorStoppedEarly = false;
+  let cleanupError;
+  let movementResponseError;
+  let movementResponseObservation;
+  let metadataError;
+  try {
+    const pumpMeta = readJson(join(armDir, 'pump-endpoint.json'));
+    collectorError = pumpMeta.collectorError ?? undefined;
+    collectorStoppedEarly = pumpMeta.collectorStoppedEarly === true;
+    cleanupError = pumpMeta.cleanupError ?? undefined;
+    movementResponsePath = pumpMeta.responsePath ?? undefined;
+    movementResponseError = pumpMeta.movementResponseError ?? undefined;
+    movementResponseObservation = pumpMeta.movementResponseObservation ?? undefined;
+    if (movementResponseError === undefined) {
+      movementResponseBody = readFileSync(join(armDir, 'movement-response.json'), 'utf8');
+    }
+  } catch (error) {
+    metadataError = error instanceof Error ? error.message : String(error);
+  }
+  const result = await evaluateFirstPlayable({
+    bound,
+    collectorError,
+    collectorStoppedEarly,
+    cleanupError,
+    framePng,
+    hostLog,
+    metadataError,
+    movementResponseBody,
+    movementResponseError,
+    movementResponseObservation,
+    movementResponsePath,
+    pumpScope,
+    report,
+  });
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  process.exit(result.verdict === 'pass' ? 0 : 1);
+}

@@ -4,7 +4,6 @@ import {
   cameraFar,
   cameraNear,
   color,
-  convertToTexture,
   luminance,
   mix,
   perspectiveDepthToViewZ,
@@ -15,6 +14,7 @@ import {
   vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
+import { createTextureScope } from "./textureLifetime.js";
 
 export interface IOutlineStageOptions {
   /** The depth attachment written by the scene pass. */
@@ -30,6 +30,7 @@ export interface IOutlineStageOptions {
 export interface IOutlineStage {
   readonly after: "bloom";
   readonly build: (input: unknown) => unknown;
+  readonly dispose: () => void;
   readonly name: "outline";
 }
 
@@ -48,13 +49,15 @@ export function createOutlineStage(options: IOutlineStageOptions): IOutlineStage
   const depthWeight = finiteUnit(options.depthWeight ?? 0.65, "outline depthWeight");
   const colourWeight = 1 - depthWeight;
   const ink = color(options.inkColor ?? 0x142331);
+  const textureScope = createTextureScope();
 
   return {
     after: "bloom",
     build: (input) => {
+      textureScope.dispose();
       if (!isNode(input)) throw new Error("outline input is missing");
       if (strength === 0) return input;
-      const source = convertToTexture(input);
+      const source = textureScope.texture(input) as unknown as ITextureNode;
       const depthSource = texture(options.depthNode as never);
       const texel = screenSize.reciprocal();
       const sampleUv = (x: number, y: number): Node<"vec2"> =>
@@ -105,8 +108,13 @@ export function createOutlineStage(options: IOutlineStageOptions): IOutlineStage
       const base = source.sample(screenUV);
       return mix(base, vec4(ink, base.a), mask);
     },
+    dispose: textureScope.dispose,
     name: "outline",
   };
+}
+
+interface ITextureNode extends Node<"vec4"> {
+  sample(uv: Node<"vec2">): Node<"vec4">;
 }
 
 function isNode(value: unknown): value is Node {

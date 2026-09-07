@@ -168,3 +168,6 @@ __pycache__/
 *.pyc
 
 .afk/
+
+# Local visual-iteration scaffolds and frames (scripts/shot.ts loop). Not part of the repo.
+.tnshots/

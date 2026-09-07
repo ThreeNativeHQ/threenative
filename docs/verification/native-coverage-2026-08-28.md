@@ -9,8 +9,8 @@ targets could not be built and are named below.
 | --- | ---: | ---: | ---: |
 | `src/async/` | 73 | 53 | 72.60% |
 | `src/audio/` | 1051 | 603 | 57.37% |
-| `src/canvas/` | 985 | 482 | 48.93% |
-| `src/cli/` | 1572 | 0 | 0.00% |
+| `src/canvas/` | 1168 | 606 | 51.88% |
+| `src/cli/` | 1593 | 0 | 0.00% |
 | `src/fs/` | 235 | 88 | 37.45% |
 | `src/http/` | 410 | 230 | 56.10% |
 | `src/js/` | 2625 | 1042 | 39.70% |

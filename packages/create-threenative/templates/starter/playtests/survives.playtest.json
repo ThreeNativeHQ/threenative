@@ -44,10 +44,10 @@
         "lte": 0.01
       },
       {
-        "allowTrivial": "The starter cube has an authored non-unit target height; this retained factor proves normaliseToMetres ran in the generated player.",
+        "allowTrivial": "The hero is authored at 1.22 m and normalised down to the template's 1.1 m convention, so the retained factor is below one; either side of one proves normaliseToMetres ran in the generated player.",
         "component": "normaliseFactor",
         "entity": "player",
-        "gte": 1.01
+        "lte": 0.99
       }
     ],
     "movement": {

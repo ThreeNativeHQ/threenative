@@ -27,6 +27,8 @@
 #include "mystral/physics/native_bindings.h"
 #endif
 #include "storage/local_storage.h"
+#include "mystral/pump_silence.h"
+#include "mystral/cold_start.h"
 
 #include "raytracing/bindings.h"
 #include <map>
@@ -406,7 +408,14 @@ public:
         }
 
         // Initialize SDL3 window
-        if (!platform::createWindow(config_.title, width_, height_, config_.fullscreen, config_.resizable)) {
+        if (!platform::createWindow(
+                config_.title,
+                width_,
+                height_,
+                config_.fullscreen,
+                config_.resizable,
+                config_.maximized
+            )) {
             std::cerr << "[Mystral] Failed to create window" << std::endl;
             return false;
         }
@@ -741,6 +750,10 @@ public:
     void shutdown() {
         std::cout << "[Mystral] Shutting down runtime..." << std::endl;
         running_ = false;
+        // PRD-360 trailing endpoint: a run that never presented still flushes
+        // the trailing pump interval. Once-only: a first-frame flush suppresses
+        // this one, so a launch emits exactly one line.
+        pumpSilence().flush(coldStartNowMs());
         localStorage_.flushIfDirty();
 
         // Worker callbacks close over the main engine. Stop and join every worker before any
@@ -803,6 +816,8 @@ public:
             }
         }
         rafCallbacks_.clear();
+
+        clearSchedulerCallbacks();
 
         // Unprotect all timer callbacks before clearing
 #ifndef MYSTRAL_USE_LIBUV_TIMERS
@@ -924,6 +939,7 @@ public:
 
 private:
     void clearAllTimers() {
+        clearSchedulerCallbacks();
 #ifdef MYSTRAL_USE_LIBUV_TIMERS
         // Stop and clean up all libuv timers
         for (auto& [id, ctx] : uvTimers_) {
@@ -1045,7 +1061,7 @@ public:
 
             // In no-SDL (headless) mode, exit when there's no more work to do
             if (config_.noSdl) {
-                bool hasWork = !rafCallbacks_.empty() || hasActiveTimers() ||
+                bool hasWork = !rafCallbacks_.empty() || !schedulerCallbacks_.empty() || hasActiveTimers() ||
                                webtransport::hasActiveSessions();
                 if (!hasWork) {
                     idleFrames++;
@@ -1061,6 +1077,12 @@ public:
         }
 
         std::cout << "[Mystral] Main loop ended" << std::endl;
+        // PRD-360 trailing endpoint for runs that exit the loop without
+        // presenting (a plain `run` that calls process.exit, a never-ready
+        // gate that quits). Once-only: a first-frame flush suppresses this one.
+        // Runs killed by signal (SIGKILL/SIGTERM) never reach here by
+        // construction — the harness must treat their missing line as failure.
+        pumpSilence().flush(coldStartNowMs());
     }
 
     // Check if there are any active (non-cancelled) timers
@@ -1205,6 +1227,10 @@ public:
     }
 
     bool pollEvents() override {
+        // PRD-360 pump-silence observation: one entry stamp on the launch clock,
+        // before every early return. Two steady_clock reads per entry; no
+        // scheduling, quality, or scene-work change.
+        pumpSilence().notePumpEntry(coldStartNowMs());
         // Each frame's between-callbacks time is metered into named sub-phases (TN_HOST_GAP).
         // Segments bracket the existing calls; nothing here changes order or behaviour.
         hostGapMeter_.begin(HostGapMeter::kEvents);
@@ -1400,6 +1426,7 @@ public:
         // Process microtask queue for promises
         hostGapMeter_.begin(HostGapMeter::kMicrotasks);
         processMicrotasks();
+        executeSchedulerCallbacks();
         hostGapMeter_.end(HostGapMeter::kMicrotasks);
 
         // A deliberate fault, after startup, only when a proof harness asked for one. This is the
@@ -2786,6 +2813,28 @@ private:
         jsEngine_->processMicrotasks();
     }
 
+    void clearSchedulerCallbacks() {
+        while (!schedulerCallbacks_.empty()) {
+            if (jsEngine_) jsEngine_->freeHandle(schedulerCallbacks_.front());
+            schedulerCallbacks_.pop();
+        }
+    }
+
+    void executeSchedulerCallbacks() {
+        // Tasks may enqueue their next continuation at the microtask checkpoint. Let cheap
+        // chains advance without presenting a frame per task, but bound both time and count
+        // so an unending chain cannot starve the next input/timer/render iteration.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2);
+        for (int count = 0; running_ && count < 1024 && !schedulerCallbacks_.empty(); ++count) {
+            auto callback = schedulerCallbacks_.front();
+            schedulerCallbacks_.pop();
+            jsEngine_->call(callback, jsEngine_->newUndefined(), {});
+            jsEngine_->freeHandle(callback);
+            processMicrotasks();
+            if (std::chrono::steady_clock::now() >= deadline) break;
+        }
+    }
+
     RuntimeConfig config_;
     bool running_;
     int exitCode_ = 0;  // Exit code set by process.exit()
@@ -2809,6 +2858,7 @@ private:
     };
     std::vector<RAFCallback> rafCallbacks_;
     int nextRafId_ = 1;
+    std::queue<js::JSValueHandle> schedulerCallbacks_;
 
     // setTimeout/setInterval state
 #ifdef MYSTRAL_USE_LIBUV_TIMERS
@@ -3221,18 +3271,19 @@ private:
         // shader cost one fully rendered frame** -- measured at 50 ms and up during play on a
         // Pixel 8, paid per node, which is what a player feels when a new material first appears.
         //
-        // A macrotask is the honest implementation: `scheduler.yield()` yields to the event loop,
-        // and on this runtime one `setTimeout(0)` is exactly one loop iteration, resolving at the
-        // top of it rather than a whole frame later inside the animation-frame phase. It is not a
-        // microtask, because a yield that never lets the loop run would defeat the reason three
-        // calls it.
+        // A dedicated task queue avoids the frame-coupled timer queue. Its bounded drain keeps
+        // microtask checkpoints between continuations without starving input or presentation.
         //
         // Installed only if absent, so a host or polyfill that already provides the real
         // scheduler API keeps it.
         {
             auto installer = evalRuntimeScriptWithResult(
                 *jsEngine_, "scheduler-yield", "scheduler-yield.js");
-            auto installed = jsEngine_->call(installer, jsEngine_->newUndefined(), {});
+            auto enqueue = jsEngine_->newFunction("enqueueYield", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (!args.empty()) schedulerCallbacks_.push(jsEngine_->retainHandle(args[0]));
+                return jsEngine_->newUndefined();
+            });
+            auto installed = jsEngine_->call(installer, jsEngine_->newUndefined(), {enqueue});
             // Fail loudly rather than let three quietly go back to a frame per node build.
             if (!jsEngine_->toBoolean(installed)) {
                 std::cerr << "[Mystral] failed to install scheduler.yield" << std::endl;
@@ -3474,7 +3525,52 @@ private:
                 output.write(payload.data(), static_cast<std::streamsize>(payload.size()));
                 output.close();
                 std::remove(path.c_str());
-                return jsEngine_->newBoolean(std::rename(temporary.c_str(), path.c_str()) == 0);
+                const bool stored = std::rename(temporary.c_str(), path.c_str()) == 0;
+                const std::string requestId = args.size() >= 3 ? jsEngine_->toString(args[2]) : "";
+                const std::string requestMethod = args.size() >= 4 ? jsEngine_->toString(args[3]) : "";
+                const double requestOrder = args.size() >= 5 ? jsEngine_->toNumber(args[4]) : -1.0;
+                const bool hasRequestOrder = std::isfinite(requestOrder)
+                    && requestOrder >= 1.0
+                    && std::floor(requestOrder) == requestOrder;
+                // PRD-360 full endpoint (option (a)): a non-consuming pump snapshot
+                // stamped on the launch clock at the moment the game reports —
+                // not when input was dispatched. Reads the existing mailbox path
+                // as the correlation key; preserves observer counters; emits no
+                // per-frame log. The coordinator verifies the response identity
+                // (path + FNV-1a tag and length of the exact bytes stored) and
+                // endpoint coverage, never the stamp alone. Only stored:true
+                // is valid:
+                // the stamp is taken after the rename, so it covers the
+                // successful write, not the attempt.
+                const std::string snapshot = pumpSilence().snapshot(coldStartNowMs());
+                std::ostringstream endpointHash;
+                {
+                    unsigned long long hash = 1469598103934665603ULL;
+                    for (size_t i = 0; i < payload.size(); ++i) {
+                        hash ^= static_cast<unsigned char>(payload[i]);
+                        hash *= 1099511628211ULL;
+                    }
+                    endpointHash << std::hex << std::setfill('0') << std::setw(16) << hash;
+                }
+                // NOT a sha256: a 64-bit FNV-1a content tag compact enough for
+                // logcat. The coordinator compares it against the same hash of
+                // the exact bytes it read back — a linkage check against
+                // reused/wrong-path responses, not a cryptographic identity.
+                std::cout << "TN_PUMP_ENDPOINT:{\"path\":\"" << path << "\",\"stored\":"
+                          << (stored ? "true" : "false") << ",\"payloadHash\":\""
+                          << endpointHash.str() << "\",\"bytes\":" << payload.size()
+                          << ",\"requestId\":\"" << requestId << "\",\"requestMethod\":\""
+                          << requestMethod << "\",\"requestOrder\":"
+                          << (hasRequestOrder ? std::to_string(static_cast<unsigned long long>(requestOrder)) : "-1")
+                          << ",\"pump\":" << snapshot << "}" << std::endl;
+                LOGI("TN_PUMP_ENDPOINT:{\"path\":\"%s\",\"stored\":%s,\"payloadHash\":\"%s\","
+                     "\"bytes\":%zu,\"requestId\":\"%s\",\"requestMethod\":\"%s\","
+                     "\"requestOrder\":%s,\"pump\":%s}",
+                     path.c_str(), stored ? "true" : "false", endpointHash.str().c_str(),
+                     payload.size(), requestId.c_str(), requestMethod.c_str(),
+                     hasRequestOrder ? std::to_string(static_cast<unsigned long long>(requestOrder)).c_str() : "-1",
+                     snapshot.c_str());
+                return jsEngine_->newBoolean(stored);
             })
         );
         jsEngine_->setProperty(nativeHost, "playtest", playtestMailbox);

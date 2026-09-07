@@ -1,6 +1,6 @@
 ---
 name: threenative-context
-description: Use the portable ThreeNative ctx lifecycle, scheduling, randomness, pointer, and raycast APIs.
+description: Use the portable ThreeNative ctx lifecycle, scheduling, randomness, pointer, and raycast APIs. Use when writing scene changes, timers, tweens, randomness, pointer or drag handling, raycasts, or startup gating rather than hand-rolling them, and when `pnpm budgets` rejects a raw construct.
 ---
 
 # ThreeNative context surface

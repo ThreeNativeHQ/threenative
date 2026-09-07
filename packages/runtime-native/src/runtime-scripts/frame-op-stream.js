@@ -532,7 +532,13 @@
   };
   queue.copyExternalImageToTexture = (s, d, z) => {
     const image = s?.source;
-    const rgba = image && (image.data || image._data);
+    let rgba = image && (image.data || image._data);
+    // CanvasTexture sources have live pixels, not an ImageBitmap's stored byte array.
+    // Snapshot at enqueue time: later canvas drawing must not change this recorded upload.
+    if (!rgba && typeof image?.getContext === "function") {
+      const context = image.getContext("2d");
+      rgba = context?.getImageData(0, 0, image.width, image.height).data;
+    }
     if (!rgba) throw new TypeError("frame op stream: external image has no eager-copy RGBA data");
     const copy = upload(rgba, 0);
     const o = opt(s.origin, {});

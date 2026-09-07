@@ -1,0 +1,595 @@
+#!/usr/bin/env node
+// Evaluator/harness validation ONLY. Nothing here touches a phone, an APK or the game: it drives
+// the evaluator with observation streams built in this file and asserts the verdict it must reach.
+// A green run says the evaluator's rules fire; it says nothing about Bayview's startup.
+import { createRequire } from 'node:module';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { evaluateFirstPlayable, fnv1a64 } from './evaluate-first-playable.mjs';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(here, '..', '..', '..', '..');
+const require = createRequire(join(repoRoot, 'packages', 'playtest', 'package.json'));
+const { PNG } = require('pngjs');
+
+/** A real PNG, encoded with the same library inspectFrame decodes with. */
+function png(width, height, colour) {
+  const image = new PNG({ height, width });
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const [red, green, blue] = colour(x, y);
+      image.data[offset] = red;
+      image.data[offset + 1] = green;
+      image.data[offset + 2] = blue;
+      image.data[offset + 3] = 255;
+    }
+  }
+  return PNG.sync.write(image);
+}
+
+const BLANK_FRAME = png(64, 36, () => [0, 0, 0]);
+const WORLD_FRAME = png(64, 36, (x, y) => [(x * 4) % 256, (y * 7) % 256, ((x + y) * 3) % 256]);
+
+const nanos = (ms) => String(BigInt(Math.round(ms * 1e6)));
+const qualifiedPreflight = (overrides = {}) => ({
+  minimumBatteryPercent: 50,
+  required: { charging: 'discharging', thermal: 'NONE' },
+  beforeInstall: {
+    phase: 'before-install',
+    recordedAt: '2026-09-06T10:00:00.000Z',
+    serial: 'MOCKSERIAL',
+    batteryPercent: 71,
+    charging: false,
+    chargingSource: 'NONE',
+    thermalStatus: 'NONE',
+    thermalStatusCode: 0,
+    screenOn: true,
+    provisional: [],
+  },
+  beforeLaunch: {
+    phase: 'before-launch',
+    recordedAt: '2026-09-06T10:01:00.000Z',
+    serial: 'MOCKSERIAL',
+    batteryPercent: 70,
+    charging: false,
+    chargingSource: 'NONE',
+    thermalStatus: 'NONE',
+    thermalStatusCode: 0,
+    screenOn: true,
+    provisional: [],
+  },
+  ...overrides,
+});
+const bound = (overrides = {}) => {
+  const elapsedMs = overrides.elapsedMs ?? 4200;
+  const start = 1_000_000_000_000n;
+  return {
+    arm: 'candidate',
+    boundMs: elapsedMs,
+    clockSource: 'process.hrtime.bigint',
+    expectedSha256: '403bd10c297f91f40202b322d57bc9c3d4291b1f2c9c9a958c1c8b3c5f9053af',
+    installedSha256: '403bd10c297f91f40202b322d57bc9c3d4291b1f2c9c9a958c1c8b3c5f9053af',
+    preflight: qualifiedPreflight(overrides.preflight ?? {}),
+    recordedAt: overrides.recordedAt ?? '2026-09-06T10:02:00.000Z',
+    runnerExitCode: 0,
+    serial: 'MOCKSERIAL',
+    t0Ns: String(start),
+    t1Ns: String(start + BigInt(nanos(elapsedMs))),
+    ...overrides,
+  };
+};
+const report = (overrides = {}) => ({
+  after: { position: [0.41, -0.02, -0.46] },
+  distance: 0.62,
+  entity: 'player',
+  movementDelta: [0.41, -0.02, -0.46],
+  pass: true,
+  target: 'android',
+  ...overrides,
+});
+const foreignPositionBody = JSON.stringify({
+  id: 'sample-foreign',
+  result: { entities: [{ id: 'player', transform: { position: [99, 0, 99] } }] },
+});
+
+const movementResponseBody = JSON.stringify({
+  id: 'sample-1',
+  result: { entities: [{ id: 'player', transform: { position: [0.41, -0.02, -0.46] } }] },
+});
+const movementPayload = { entity: 'player', position: [0.41, -0.02, -0.46] };
+const validResponseObservation = {
+  inputOrder: 2,
+  method: 'sample',
+  order: 4,
+  postInput: true,
+  requestId: 'sample-1',
+};
+const pumpEndpoint = ({ body = movementResponseBody, ...overrides } = {}) => `TN_PUMP_ENDPOINT:${JSON.stringify({
+  bytes: Buffer.byteLength(body, 'utf8'),
+  path: '/run/res',
+  payloadHash: fnv1a64(body),
+  pump: {
+    observed: overrides.observed ?? true,
+    pumpCount: overrides.pumpCount ?? 60,
+    firstPumpAtMs: overrides.firstPumpAtMs ?? 120.0,
+    lastPumpAtMs: overrides.lastPumpAtMs ?? 900.0,
+    maxGapMs: overrides.maxGapMs ?? 14.0,
+    maxGapAtMs: overrides.maxGapAtMs ?? 400.0,
+    trailingGapMs: overrides.trailingGapMs ?? 50.0,
+    atMs: overrides.atMs ?? 950.0,
+    longGaps: overrides.longGaps ?? [],
+    droppedLongGaps: overrides.droppedLongGaps ?? 0,
+  },
+  requestId: overrides.requestId ?? validResponseObservation.requestId,
+  requestMethod: overrides.requestMethod ?? validResponseObservation.method,
+  requestOrder: overrides.requestOrder ?? validResponseObservation.order,
+  stored: true,
+})}`;
+
+const cases = [
+  {
+    expect: 'pass',
+    mustFail: [],
+    name: 'bounded valid movement may pass',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint(),
+      movementPayload,
+      movementResponseBody,
+      movementResponsePath: '/run/res',
+      report: report(),
+    },
+  },
+  {
+    expect: 'pass',
+    mustFail: [],
+    name: 'single-pump timestamps may pass when internally consistent',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ atMs: 150, firstPumpAtMs: 100, lastPumpAtMs: 100, maxGapMs: 0, maxGapAtMs: -1, trailingGapMs: 50, pumpCount: 1 }),
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'missing response identity fails full pump acceptance',
+    mustFailCode: 'R7_PUMP_CORRELATION_UNPROVEN',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint(),
+      movementPayload,
+      movementResponseBody: undefined,
+      movementResponsePath: undefined,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'ack containing player is not a displacement observation',
+    mustFailCode: 'R7_PUMP_CORRELATION_UNPROVEN',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ body: '{"ack":"player"}' }),
+      movementPayload,
+      movementResponseBody: '{"ack":"player"}',
+      movementResponsePath: '/run/res',
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'missing runner position fails endpoint correlation',
+    mustFailCode: 'R7_PUMP_CORRELATION_UNPROVEN',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ body: foreignPositionBody }),
+      movementPayload: undefined,
+      movementResponseBody: foreignPositionBody,
+      report: (() => { const value = report(); delete value.after; return value; })(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'inconsistent trailing timestamp fails pump',
+    mustFailCode: 'R7_PUMP_SILENCE_MALFORMED',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ atMs: 1900, trailingGapMs: 1 }),
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'zero-pump endpoint fails pump',
+    mustFailCode: 'R7_PUMP_SILENCE_MALFORMED',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ atMs: 0, firstPumpAtMs: -1, lastPumpAtMs: -1, maxGapAtMs: -1, trailingGapMs: -1, pumpCount: 0 }),
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    mustFailCode: 'R7_PUMP_SILENCE_MALFORMED',
+    name: 'pump count and span mismatch fails pump',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ pumpCount: 2 }),
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    mustFailCode: 'R7_PUMP_SILENCE_MALFORMED',
+    name: 'maximum-gap endpoint cannot extend beyond the last pump',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ maxGapAtMs: 899, maxGapMs: 14 }),
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    mustFailCode: 'R7_PUMP_SILENCE_MALFORMED',
+    name: 'negative first-pump timestamp fails observed pump',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ firstPumpAtMs: -1, maxGapMs: 16 }),
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    mustFailCode: 'R7_PUMP_CORRELATION_UNPROVEN',
+    name: 'caller payload cannot override runner position',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint(),
+      movementPayload,
+      report: report({ after: { position: [99, 0, 99] } }),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'collector read failure fails full pump acceptance',
+    mustFailCode: 'R7_PUMP_COLLECTOR_FAILED',
+    input: {
+      bound: bound(),
+      collectorError: 'adb logcat exited',
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint(),
+      movementPayload,
+      movementResponseBody,
+      movementResponsePath: '/run/res',
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'frozen APK with no endpoint fails pump while movement stands',
+    mustFailCode: 'R7_PUMP_SILENCE_MISSING',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: 'TN_COLD_START:{"segment":"first_frame","atMs":531.0}\n',
+      movementPayload,
+      movementResponsePath: '/run/res',
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'trailing stall through the endpoint fails pump',
+    mustFailCode: 'R7_PUMP_SILENCE_EXCEEDED',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint({ atMs: 1299.6, trailingGapMs: 399.6 }),
+      movementPayload,
+      movementResponsePath: '/run/res',
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R7_PUMP_SILENCE'],
+    name: 'wrong-path endpoint fails correlation',
+    mustFailCode: 'R7_PUMP_CORRELATION_WRONG_PATH',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      hostLog: pumpEndpoint(),
+      movementPayload,
+      movementResponsePath: '/run/other',
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R6_BOUND'],
+    name: 'late displacement fails the 8s criterion',
+    input: { bound: bound({ elapsedMs: 11_400 }), framePng: WORLD_FRAME, report: report() },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R4_MOVEMENT'],
+    name: 'dispatch-only, no displacement, fails',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      report: report({ distance: 0.0004, movementDelta: [0, -0.0004, 0] }),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R4_MOVEMENT'],
+    name: 'absent or invalid position fails',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      report: report({ distance: Number.NaN, movementDelta: undefined }),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R5_VISIBLE_WORLD'],
+    name: 'no visible world fails',
+    input: { bound: bound(), framePng: BLANK_FRAME, report: report() },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R1_ARM_IDENTITY'],
+    name: 'unproven arm identity fails',
+    input: {
+      bound: bound({ installedSha256: 'f'.repeat(64) }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R2_CLOCK'],
+    name: 'synthetic or inconsistent clock fails',
+    input: {
+      bound: bound({ boundMs: 900, synthetic: true }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R3_RUNNER'],
+    name: 'failed runner is not a slow pass',
+    input: {
+      bound: bound({ runnerExitCode: 1 }),
+      framePng: WORLD_FRAME,
+      report: report({ diagnostics: [{ code: 'TN_PLAYTEST_BRIDGE_MISSING' }], pass: false }),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0_ANDROID_TARGET'],
+    name: 'copied browser report fails the target rule',
+    input: {
+      bound: bound(),
+      framePng: WORLD_FRAME,
+      report: report({ target: 'browser' }),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'missing preflight fails',
+    input: {
+      bound: (() => { const b = bound(); delete b.preflight; return b; })(),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'stale before-install-only preflight fails',
+    input: {
+      bound: (() => {
+        const b = bound();
+        b.preflight = qualifiedPreflight({ beforeLaunch: undefined });
+        delete b.preflight.beforeLaunch;
+        return b;
+      })(),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'low-battery preflight fails (29% < 50%)',
+    input: {
+      bound: bound({ preflight: qualifiedPreflight({ beforeLaunch: { phase: 'before-launch', recordedAt: '2026-09-06T10:01:00.000Z', serial: 'MOCKSERIAL', batteryPercent: 29, charging: false, chargingSource: 'NONE', thermalStatus: 'NONE', thermalStatusCode: 0, screenOn: true, provisional: [] } }) }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'hot-device preflight fails (MODERATE > NONE)',
+    input: {
+      bound: bound({ preflight: qualifiedPreflight({ beforeLaunch: { phase: 'before-launch', recordedAt: '2026-09-06T10:01:00.000Z', serial: 'MOCKSERIAL', batteryPercent: 70, charging: false, chargingSource: 'NONE', thermalStatus: 'MODERATE', thermalStatusCode: 2, screenOn: true, provisional: [] } }) }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'charging-device preflight fails (cable on)',
+    input: {
+      bound: bound({ preflight: qualifiedPreflight({ beforeLaunch: { phase: 'before-launch', recordedAt: '2026-09-06T10:01:00.000Z', serial: 'MOCKSERIAL', batteryPercent: 70, charging: true, chargingSource: 'USB', thermalStatus: 'NONE', thermalStatusCode: 0, screenOn: true, provisional: [] } }) }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'forged battery threshold cannot lower the qualification floor',
+    mustFailCode: 'R0B_PREFLIGHT_UNQUALIFIED',
+    input: {
+      bound: bound({
+        preflight: qualifiedPreflight({
+          beforeLaunch: {
+            phase: 'before-launch',
+            recordedAt: '2026-09-06T10:01:00.000Z',
+            serial: 'MOCKSERIAL',
+            batteryPercent: 2,
+            charging: false,
+            chargingSource: 'NONE',
+            thermalStatus: 'NONE',
+            thermalStatusCode: 0,
+            screenOn: true,
+            provisional: [],
+          },
+          minimumBatteryPercent: 1,
+        }),
+      }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'invalid preflight timestamp fails qualification',
+    mustFailCode: 'R0B_PREFLIGHT_UNQUALIFIED',
+    input: {
+      bound: bound({
+        preflight: qualifiedPreflight({
+          beforeLaunch: {
+            phase: 'before-launch',
+            recordedAt: 'invalid',
+            serial: 'MOCKSERIAL',
+            batteryPercent: 70,
+            charging: false,
+            chargingSource: 'NONE',
+            thermalStatus: 'NONE',
+            thermalStatusCode: 0,
+            screenOn: true,
+            provisional: [],
+          },
+        }),
+      }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    name: 'before-launch preflight must follow before-install',
+    mustFailCode: 'R0B_PREFLIGHT_UNQUALIFIED',
+    input: {
+      bound: bound({
+        preflight: qualifiedPreflight({
+          beforeLaunch: {
+            phase: 'before-launch',
+            recordedAt: '2026-09-06T09:59:00.000Z',
+            serial: 'MOCKSERIAL',
+            batteryPercent: 70,
+            charging: false,
+            chargingSource: 'NONE',
+            thermalStatus: 'NONE',
+            thermalStatusCode: 0,
+            screenOn: true,
+            provisional: [],
+          },
+        }),
+      }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+  {
+    expect: 'fail',
+    mustFail: ['R0B_PREFLIGHT'],
+    mustFailCode: 'R0B_PREFLIGHT_UNQUALIFIED',
+    name: 'before-install preflight must itself be qualified',
+    input: {
+      bound: bound({
+        preflight: qualifiedPreflight({
+          beforeInstall: {
+            phase: 'before-install',
+            recordedAt: '2026-09-06T10:00:00.000Z',
+            serial: 'MOCKSERIAL',
+            batteryPercent: 1,
+            charging: true,
+            chargingSource: 'USB',
+            thermalStatus: 'SEVERE',
+            thermalStatusCode: 3,
+            screenOn: false,
+            provisional: ['battery', 'charging', 'thermal', 'screen'],
+          },
+        }),
+      }),
+      framePng: WORLD_FRAME,
+      report: report(),
+    },
+  },
+];
+
+let failures = 0;
+process.stdout.write('evaluator/harness validation only — not game or device proof\n\n');
+for (const testCase of cases) {
+  const effectiveBody = Object.prototype.hasOwnProperty.call(testCase.input, 'movementResponseBody')
+    ? testCase.input.movementResponseBody
+    : movementResponseBody;
+  const result = await evaluateFirstPlayable({
+    framePng: WORLD_FRAME,
+    hostLog: pumpEndpoint(),
+    movementPayload,
+    movementResponseBody,
+    movementResponsePath: '/run/res',
+    movementResponseObservation: effectiveBody === undefined ? undefined : validResponseObservation,
+    ...testCase.input,
+  });
+  const failed = result.checks.filter(({ pass }) => !pass).map(({ id }) => id);
+  const failedCodes = result.checks.filter(({ pass }) => !pass).map(({ code }) => code);
+  const verdictOk = result.verdict === testCase.expect;
+  const rulesOk = testCase.mustFail.every((id) => failed.includes(id))
+    && failed.length === testCase.mustFail.length
+    && (testCase.mustFailCode === undefined || failedCodes.includes(testCase.mustFailCode));
+  if (!verdictOk || !rulesOk) failures += 1;
+  process.stdout.write(
+    `${verdictOk && rulesOk ? 'GREEN' : 'RED  '} ${testCase.name}\n`
+    + `        verdict=${result.verdict} (expected ${testCase.expect})`
+    + ` boundMs=${result.boundMs} admissible=${result.admissible}\n`
+    + `        failedChecks=[${failed.join(', ')}] codes=[${failedCodes.join(', ')}] required=[${testCase.mustFail.join(', ')}]\n`,
+  );
+}
+process.stdout.write(`\n${cases.length - failures}/${cases.length} cases behaved as required\n`);
+process.exit(failures === 0 ? 0 : 1);

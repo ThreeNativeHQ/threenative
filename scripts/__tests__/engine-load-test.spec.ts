@@ -464,6 +464,121 @@ describe("the performance baseline gate", () => {
     expect(checkPerformance(report({ arm: "tn-web" }), BASELINES)).toBeUndefined();
   });
 
+  it("rejects a missing baseline when the caller marks the lane required", () => {
+    expect(() =>
+      checkPerformance(report({ arm: "tn-web" }), {}, undefined, { required: true }),
+    ).toThrow(/TN_BENCH_BASELINE_MISSING/u);
+  });
+
+  it("rejects empty and cross-device evidence in required mode", () => {
+    const empty = {
+      "tn-android": {
+        evidence: "docs/verification/accepted.md",
+        rungs: {},
+        status: "accepted" as const,
+      },
+    };
+    expect(() =>
+      checkPerformance(androidReport(8.27, 8.34), empty, undefined, { required: true }),
+    ).toThrow(/TN_BENCH_BASELINE_EMPTY/u);
+    const otherDevice = {
+      "tn-android": {
+        evidence: "docs/verification/accepted.md",
+        identity: { device: "different-device" },
+        rungs: { "L2@4096": 8.27, "L3@16384": 8.34 },
+        status: "accepted" as const,
+      },
+    };
+    expect(() =>
+      checkPerformance(androidReport(8.27, 8.34), otherDevice, undefined, { required: true }),
+    ).toThrow(/TN_BENCH_BASELINE_IDENTITY_MISMATCH/u);
+  });
+
+  it("requires every provenance field for a required baseline candidate", () => {
+    const provenance = {
+      architecture: "arm64",
+      artifactHash: "accepted-artifact",
+      browser: "none",
+      device: "desktop-chrome-linux",
+      graphicsBackend: "vulkan",
+      gpu: "accepted-gpu",
+      instrumentationRevision: "accepted-instrumentation",
+      jsRuntime: "v8",
+      nativeBinaryHash: "accepted-binary",
+      operatingSystem: "linux",
+      presentMode: "immediate",
+      resolution: "1280x720",
+      sourceSha: "accepted-source",
+      workloadHash: "accepted-workload",
+    };
+    const baseline = {
+      "tn-android": {
+        evidence: "docs/verification/accepted.md",
+        identity: provenance,
+        rungs: { "L2@4096": 8.27, "L3@16384": 8.34 },
+        status: "accepted" as const,
+      },
+    };
+    for (const field of ["sourceSha", "artifactHash", "nativeBinaryHash"] as const) {
+      const value = { ...provenance, [field]: undefined };
+      expect(() =>
+        checkPerformance(androidReport(8.27, 8.34, { identity: value }), baseline, undefined, {
+          required: true,
+        }),
+      ).toThrow(/TN_BENCH_BASELINE_IDENTITY_(?:MISSING|MISMATCH)/u);
+    }
+  });
+
+  it("evaluates a genuine candidate with fresh provenance when stable identity matches", () => {
+    const baselineIdentity = {
+      architecture: "arm64",
+      artifactHash: "accepted-artifact",
+      browser: "none",
+      device: "desktop-chrome-linux",
+      graphicsBackend: "vulkan",
+      gpu: "accepted-gpu",
+      instrumentationRevision: "accepted-instrumentation",
+      jsRuntime: "v8",
+      nativeBinaryHash: "accepted-binary",
+      operatingSystem: "linux",
+      presentMode: "immediate",
+      resolution: "1280x720",
+      sourceSha: "accepted-source",
+      workloadHash: "accepted-workload",
+    };
+    const baseline = {
+      "tn-android": {
+        evidence: "docs/verification/accepted.md",
+        identity: baselineIdentity,
+        rungs: { "L2@4096": 8.27, "L3@16384": 8.34 },
+        status: "accepted" as const,
+      },
+    };
+    const candidate = {
+      ...baselineIdentity,
+      artifactHash: "candidate-artifact",
+      nativeBinaryHash: "candidate-binary",
+      sourceSha: "candidate-source",
+    };
+    const check = checkPerformance(
+      androidReport(8.27, 8.34, { identity: candidate }),
+      baseline,
+      undefined,
+      { required: true },
+    );
+    expect(check?.regressions).toEqual([]);
+    expect(() =>
+      checkPerformance(
+        androidReport(8.27, 8.34, {
+          identity: { ...candidate, gpu: "different-gpu" },
+        }),
+        baseline,
+        undefined,
+        { required: true },
+      ),
+    ).toThrow(/TN_BENCH_BASELINE_IDENTITY_MISMATCH/u);
+  });
+
   it("refuses a negative tolerance instead of inverting the comparison", () => {
     expect(() => checkPerformance(androidReport(8.27, 8.34), BASELINES, -0.1)).toThrow(
       /TN_BENCH_BAD_TOLERANCE/u,

@@ -99,6 +99,21 @@ test("device args select Android and preserve an explicit endpoint", () => {
   expect(config.device).toBe("emulator-5554");
 });
 
+test("device args preserve an explicit Android user", () => {
+  const config = parseStandalonePlaytestArgs([
+    "playtests/move.json",
+    "--target", "android",
+    "--user", "10",
+  ], "/project");
+
+  expect(config.android?.user).toBe("10");
+  expect(() => parseStandalonePlaytestArgs([
+    "playtests/move.json",
+    "--target", "android",
+    "--user", "current",
+  ], "/project")).toThrow(/Android --user must be numeric/u);
+});
+
 test("device args select iOS simulator or physical devicectl transport", () => {
   const simulator = parseStandalonePlaytestArgs([
     "scenario.json", "--target", "ios", "--app", "build/ThreeNative.app",

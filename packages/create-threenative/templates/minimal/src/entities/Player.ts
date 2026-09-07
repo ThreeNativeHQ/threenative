@@ -2,7 +2,7 @@ import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { BoxGeometry, Group, Mesh } from "three";
 import { type IMinimalConventions, preparePlayerConventions } from "../conventions.js";
-import { defaultMaterial } from "../render/materials.js";
+import { accentMaterial, defaultMaterial } from "../render/materials.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
@@ -26,8 +26,23 @@ export class Player {
 
   constructor(ctx: GameCtx) {
     this.mesh = new Group();
-    this.visual = new Mesh(new BoxGeometry(0.6, 1, 0.6), defaultMaterial);
+    // A figure, not a cube. Three boxes is still minimal, and it gives the player a front — which
+    // is the whole difference between "a character" and "the scene's placeholder".
+    this.visual = new Mesh(new BoxGeometry(0.46, 0.56, 0.34), defaultMaterial);
     this.visual.castShadow = true;
+    const head = new Mesh(new BoxGeometry(0.34, 0.3, 0.3), defaultMaterial);
+    head.position.y = 0.42;
+    head.castShadow = true;
+    this.visual.add(head);
+    const visor = new Mesh(new BoxGeometry(0.26, 0.08, 0.04), accentMaterial);
+    visor.position.set(0, 0.44, -0.16);
+    this.visual.add(visor);
+    for (const side of [-1, 1]) {
+      const leg = new Mesh(new BoxGeometry(0.15, 0.34, 0.2), accentMaterial);
+      leg.position.set(side * 0.12, -0.44, 0);
+      leg.castShadow = true;
+      this.visual.add(leg);
+    }
     this.mesh.add(this.visual);
     this.mesh.position.set(SPAWN.x, SPAWN.y, SPAWN.z);
     this.#conventions = preparePlayerConventions(this.visual);

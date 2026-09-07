@@ -65,7 +65,7 @@ test('desktop staging embeds the resolved window contract for the native host', 
     const config = {
       app: { id: 'com.studio.foxgame', name: 'Fox', version: '1.2.3', build: 7 },
       display: { orientation: 'landscape', fullscreen: true, keepScreenOn: false, maxFps: 120 },
-      window: { title: 'Fox Desktop', width: 1024, height: 576, resizable: false },
+      window: { title: 'Fox Desktop', width: 1024, height: 576, maximized: true, resizable: false },
     };
     writeFileSync(bundle, 'export default 1;');
 
@@ -90,9 +90,20 @@ test('desktop staging embeds the resolved window contract for the native host', 
     assert.match(host, /extractJsonString\(config, "uiRenderer"\)/u);
     assert.match(host, /extractJsonNumber\(config, "width"/u);
     assert.match(host, /extractJsonNumber\(config, "height"/u);
+    assert.match(host, /extractJsonBool\(config, "fullscreen"/u);
+    assert.match(host, /extractJsonBool\(config, "maximized"/u);
     assert.match(host, /extractJsonBool\(config, "resizable"/u);
+    assert.match(host, /arg == "--windowed"/u);
+    assert.match(host, /arg == "--maximized"/u);
+    assert.match(host, /arg == "--fullscreen"/u);
+    assert.match(host, /windowModeOverride/u);
     assert.match(host, /extractJsonNumber\(config, "maxFps"/u);
+    assert.match(host, /config\.fullscreen = opts\.fullscreen/u);
+    assert.match(host, /config\.maximized = opts\.maximized/u);
     assert.match(host, /config\.maxFps = opts\.maxFps/u);
+    const windowSource = readFileSync(new URL('../src/platform/window.cpp', import.meta.url), 'utf8');
+    assert.match(windowSource, /maximized && !fullscreen/u);
+    assert.match(windowSource, /SDL_WINDOW_MAXIMIZED/u);
   } finally {
     rmSync(root, { force: true, recursive: true });
   }

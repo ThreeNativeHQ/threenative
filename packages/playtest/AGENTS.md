@@ -433,6 +433,16 @@ adapter guess, or a game that does not report `compileSettled` (which fails clos
 being inferred). Every report carries `startup.rule`, `"sustained-frames"` or `"compile-settled"`,
 so a software-lane pass is never read as a smoothness measurement.
 
+A bridge that stops answering is not automatically a slow launch. A host that has **exited** looks
+identical from the runner's side — both are operation timeouts — so on the device targets the wait
+also asks the driver whether the process is still there, and a dead one fails immediately as
+`TN_PLAYTEST_STARTUP_HOST_EXITED` with the console tail that says why. Only a `false` reading ends
+the wait: a driver that cannot answer leaves it exactly as it was, because inferring a crash from an
+unreadable probe is the implicit fallback everything else here refuses. Without it a crashed runtime
+spent the full `PLAYTEST_STARTUP_READY_TIMEOUT_MS` and was then reported as the game's loading gate
+being too slow — three minutes of silence blamed on the wrong layer, which is how the hosted
+Windows performance collector read on PR #122.
+
 Never fix a boot race by lengthening a wait. Padding changes which runs get lucky; the tick counts
 were already identical in the runs that disagreed.
 

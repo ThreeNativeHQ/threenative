@@ -118,3 +118,33 @@ test('iOS stages a web-renderer UI and refuses both mismatches', () => {
   assert.throws(() => stageIosUi(undefined, 'web', join(root, 'a')), /TN_UI_BUNDLE_MISSING/u);
   assert.throws(() => stageIosUi(ui, 'native', join(root, 'b')), /TN_UI_BUNDLE_UNEXPECTED/u);
 });
+
+// An overlay that cannot attach is a reported absence, not a startup failure. Every reason
+// attachDesktopUiOverlay returns false is a property of the machine rather than of the game: no
+// display, no compositing manager, a window the X server does not own, and — in any build without
+// TN_ENABLE_UI_OVERLAY — always. Returning that value from attachUiOverlayIfConfigured turned each
+// of them into `return 1` at main.cpp's startup gate, so a scaffolded game exited 1 before drawing
+// a frame on a machine with no compositor running. The bundle-missing branch stays fatal: a game
+// that asked for a UI directory which is not there is a configuration error, not an environment.
+test('an overlay that cannot attach is reported, not fatal to startup', () => {
+  const source = readFileSync(new URL('../src/cli/main.cpp', import.meta.url), 'utf8');
+  const signature = /\bstatic bool attachUiOverlayIfConfigured\s*\([^;]*?\)\s*\{/su.exec(source);
+  assert.ok(signature, 'attachUiOverlayIfConfigured must be defined');
+  const end = source.indexOf('\n}\n', signature.index);
+  assert.notEqual(end, -1, 'attachUiOverlayIfConfigured has no closing brace');
+  const body = source.slice(signature.index, end + 2);
+
+  assert.doesNotMatch(
+    body,
+    /return\s+mystral::platform::attachDesktopUiOverlay/u,
+    'attachDesktopUiOverlay reports through TN_UI_OVERLAY; its false must not abort startup',
+  );
+  assert.match(
+    body,
+    /mystral::platform::attachDesktopUiOverlay\(uiRoot\.string\(\)\);/u,
+    'the overlay must still be attached when the game asked for one',
+  );
+  // The one genuine configuration error stays fatal.
+  assert.match(body, /TN_UI_BUNDLE_MISSING/u);
+  assert.match(body, /TN_UI_BUNDLE_MISSING[\s\S]*?return false;/u);
+});

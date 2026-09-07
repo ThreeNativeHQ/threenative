@@ -32,6 +32,7 @@ import {
   androidDependencyBlocker,
   ANDROID_CAPTURE_SIZE,
   androidDisplayRestoreTarget,
+  androidRotationRestoreTarget,
   androidDisplaySize,
   androidForegroundBlocker,
   androidWindowDump,
@@ -663,8 +664,48 @@ test("a leaked capture-size override is reset rather than restored back onto the
   // device is.
   assert.match(source, /TN_ANDROID_DISPLAY_LEAKED/u);
   // A per-row finally cannot survive a signal, and this lane mutates hardware.
-  assert.match(source, /armAndroidDisplayGuard\(tools\.adb, serial\)/u);
+  assert.match(source, /armAndroidDisplayGuard\(tools\.adb, serial, rotationRestore\)/u);
   assert.match(source, /process\.once\("exit", reset\)/u);
+});
+
+test("a leaked rotation lock is reset rather than restored back onto the device", () => {
+  // The 2026-09-05 defect. The lane wrote `accelerometer_rotation 0` and `user_rotation 0` and had
+  // no restore path at all, so a physical Pixel 8 was left with auto-rotate off and rotation
+  // pinned. Reading that pair back is indistinguishable from this lane's own leak, so it resets.
+  assert.deepEqual(androidRotationRestoreTarget("0", "0"), {
+    accelerometer_rotation: "1",
+    user_rotation: "0",
+  });
+  // Auto-rotate on is the ordinary case and survives untouched.
+  assert.deepEqual(androidRotationRestoreTarget("1", "0"), {
+    accelerometer_rotation: "1",
+    user_rotation: "0",
+  });
+  // An operator locked to a rotation this lane never writes is preserved.
+  assert.deepEqual(androidRotationRestoreTarget("0", "3"), {
+    accelerometer_rotation: "0",
+    user_rotation: "3",
+  });
+  // Unset or unreadable settings fall back to the shipped default rather than writing junk.
+  for (const dump of ["null", "", "  ", undefined, "9"])
+    assert.deepEqual(androidRotationRestoreTarget(dump, dump), {
+      accelerometer_rotation: "1",
+      user_rotation: "0",
+    });
+  // adb appends a newline; the parse must not be fooled by it.
+  assert.deepEqual(androidRotationRestoreTarget("1\n", "2\n"), {
+    accelerometer_rotation: "1",
+    user_rotation: "2",
+  });
+
+  const source = readFileSync(runner, "utf8");
+  // Rotation is read before it is overwritten, or the baseline is the lane's own lock.
+  assert.match(source, /rotationRestore = androidRotationRestoreTarget\([\s\S]*?accelerometer_rotation[\s\S]*?user_rotation/u);
+  // Restored in the row's finally, read back, and reported when it does not take.
+  assert.match(source, /finally \{[\s\S]*?rotationRestore/u);
+  assert.match(source, /TN_ANDROID_ROTATION_LEAKED/u);
+  // And on the paths that skip every finally in this file.
+  assert.match(source, /"settings", "put", "system", setting, value[\s\S]*?Same reasoning as above/u);
 });
 
 test("Android rows uninstall the test package before each large debug APK install", () => {

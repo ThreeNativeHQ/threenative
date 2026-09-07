@@ -10,6 +10,8 @@
 #include <cmath>
 #include <regex>
 #include <stack>
+#include <algorithm>
+#include <sstream>
 
 // M_PI is not defined by default on Windows MSVC
 #ifndef M_PI
@@ -33,14 +35,20 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkImage.h"
+#include "include/effects/SkGradient.h"
+#include "include/utils/SkParse.h"
 
 // Platform-specific font manager
 #if defined(__APPLE__)
 #include "include/ports/SkFontMgr_mac_ct.h"
+#elif defined(__ANDROID__)
+#include "include/ports/SkFontMgr_android.h"
+#include "include/ports/SkFontScanner_FreeType.h"
 #elif defined(_WIN32)
 #include "include/ports/SkFontMgr_directory.h"
 #else
 #include "include/ports/SkFontMgr_fontconfig.h"
+#include "include/ports/SkFontScanner_FreeType.h"
 #endif
 #endif
 
@@ -55,16 +63,23 @@ struct Color {
     uint8_t r = 0, g = 0, b = 0, a = 255;
 };
 
-static Color parseColor(const std::string& colorStr) {
+static Color parseColor(const std::string& colorStr, bool* valid = nullptr) {
     Color color;
+    if (valid) *valid = true;
 
     if (colorStr.empty()) {
+        if (valid) *valid = false;
         return color;
     }
 
     // Handle hex colors: #RGB, #RGBA, #RRGGBB, #RRGGBBAA
     if (colorStr[0] == '#') {
         std::string hex = colorStr.substr(1);
+        if ((hex.size() != 3 && hex.size() != 4 && hex.size() != 6 && hex.size() != 8) ||
+            hex.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
+            if (valid) *valid = false;
+            return color;
+        }
         if (hex.length() == 3) {
             // #RGB -> #RRGGBB
             color.r = std::stoi(std::string(2, hex[0]), nullptr, 16);
@@ -139,6 +154,7 @@ static Color parseColor(const std::string& colorStr) {
     else if (colorStr == "green") { color.r = 0; color.g = 128; color.b = 0; }
     else if (colorStr == "blue") { color.r = 0; color.g = 0; color.b = 255; }
     else if (colorStr == "transparent") { color.r = 0; color.g = 0; color.b = 0; color.a = 0; }
+    else if (valid) *valid = false;
 
     return color;
 }
@@ -150,7 +166,7 @@ static Color parseColor(const std::string& colorStr) {
 struct FontInfo {
     float size = 16.0f;
     std::string family = "sans-serif";
-    bool bold = false;
+    int weight = 400;
     bool italic = false;
 };
 
@@ -168,7 +184,7 @@ static FontInfo parseFont(const std::string& fontStr) {
         }
         if (match[2].matched) {
             std::string weight = match[2];
-            info.bold = (weight == "bold" || std::stoi(weight) >= 700);
+            info.weight = weight == "bold" ? 700 : weight == "normal" ? 400 : std::stoi(weight);
         }
         info.size = std::stof(match[3]);
         std::string unit = match[4];
@@ -196,12 +212,37 @@ static FontInfo parseFont(const std::string& fontStr) {
 struct Canvas2DState {
     std::string fillStyle = "#000000";
     std::string strokeStyle = "#000000";
+    std::shared_ptr<CanvasGradient> fillGradient;
+    std::shared_ptr<CanvasGradient> strokeGradient;
     float lineWidth = 1.0f;
+    std::string lineCap = "butt";
     float globalAlpha = 1.0f;
     std::string font = "10px sans-serif";
     std::string textAlign = "start";
     std::string textBaseline = "alphabetic";
 };
+
+bool CanvasGradient::addColorStop(float offset, const std::string& text) {
+    if (!std::isfinite(offset) || offset < 0 || offset > 1) return false;
+    bool parsed = false;
+    Color color;
+    try { color = parseColor(text, &parsed); } catch (...) { return false; }
+#if defined(MYSTRAL_HAS_SKIA)
+    SkColor skColor;
+    const char* end = !parsed ? SkParse::FindNamedColor(text.c_str(), text.size(), &skColor) : nullptr;
+    if (end && *end == '\0') {
+        color = {static_cast<uint8_t>(SkColorGetR(skColor)), static_cast<uint8_t>(SkColorGetG(skColor)),
+                 static_cast<uint8_t>(SkColorGetB(skColor)), static_cast<uint8_t>(SkColorGetA(skColor))};
+        parsed = true;
+    }
+#endif
+    if (!parsed) return false;
+    const uint32_t rgba = (uint32_t(color.a) << 24) | (uint32_t(color.r) << 16) |
+                          (uint32_t(color.g) << 8) | color.b;
+    stops.push_back({offset, rgba});
+    std::stable_sort(stops.begin(), stops.end(), [](const Stop& a, const Stop& b) { return a.offset < b.offset; });
+    return true;
+}
 
 // ============================================================================
 // Implementation
@@ -235,6 +276,10 @@ struct Canvas2DContext::Impl {
         // Initialize font manager (platform-specific)
 #if defined(__APPLE__)
         fontMgr = SkFontMgr_New_CoreText(nullptr);
+#elif defined(__ANDROID__)
+        fontMgr = SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
+#elif defined(__linux__) && !defined(__ANDROID__)
+        fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
 #else
         fontMgr = SkFontMgr::RefEmpty();  // Fallback
 #endif
@@ -260,6 +305,30 @@ struct Canvas2DContext::Impl {
         }
     }
 
+    void applyGradient(SkPaint& paint, const std::shared_ptr<CanvasGradient>& gradient) {
+        if (!gradient) return;
+        if (gradient->stops.empty() || (gradient->x0 == gradient->x1 && gradient->y0 == gradient->y1)) {
+            paint.setColor(SK_ColorTRANSPARENT);
+            return;
+        }
+        std::vector<SkColor4f> colors;
+        std::vector<SkScalar> offsets;
+        for (const auto& stop : gradient->stops) {
+            colors.push_back(SkColor4f::FromColor(stop.color));
+            offsets.push_back(stop.offset);
+        }
+        if (colors.size() == 1) {
+            colors.push_back(colors.front());
+            offsets = {0, 1};
+        }
+        const SkPoint points[] = {{gradient->x0, gradient->y0}, {gradient->x1, gradient->y1}};
+        paint.setColor(SK_ColorWHITE);
+        paint.setAlphaf(currentState.globalAlpha);
+        const SkGradient::Colors stops({colors.data(), colors.size()},
+                                       {offsets.data(), offsets.size()}, SkTileMode::kClamp);
+        paint.setShader(SkShaders::LinearGradient(points, SkGradient(stops, {})));
+    }
+
     SkPaint makeFillPaint() {
         SkPaint paint;
         paint.setAntiAlias(true);
@@ -269,6 +338,7 @@ struct Canvas2DContext::Impl {
             static_cast<uint8_t>(c.a * currentState.globalAlpha),
             c.r, c.g, c.b
         ));
+        applyGradient(paint, currentState.fillGradient);
         return paint;
     }
 
@@ -277,24 +347,39 @@ struct Canvas2DContext::Impl {
         paint.setAntiAlias(true);
         paint.setStyle(SkPaint::kStroke_Style);
         paint.setStrokeWidth(currentState.lineWidth);
+        paint.setStrokeCap(currentState.lineCap == "round" ? SkPaint::kRound_Cap :
+                           currentState.lineCap == "square" ? SkPaint::kSquare_Cap : SkPaint::kButt_Cap);
         Color c = parseColor(currentState.strokeStyle);
         paint.setColor(SkColorSetARGB(
             static_cast<uint8_t>(c.a * currentState.globalAlpha),
             c.r, c.g, c.b
         ));
+        applyGradient(paint, currentState.strokeGradient);
         return paint;
     }
 
     void updateFont() {
         FontInfo fi = parseFont(currentState.font);
         SkFontStyle style = SkFontStyle(
-            fi.bold ? SkFontStyle::kBold_Weight : SkFontStyle::kNormal_Weight,
+            fi.weight,
             SkFontStyle::kNormal_Width,
             fi.italic ? SkFontStyle::kItalic_Slant : SkFontStyle::kUpright_Slant
         );
 
         if (fontMgr) {
-            currentTypeface = fontMgr->matchFamilyStyle(fi.family.c_str(), style);
+            currentTypeface.reset();
+            std::istringstream families(fi.family);
+            std::string family;
+            while (std::getline(families, family, ',')) {
+                const auto first = family.find_first_not_of(" \t\"'");
+                if (first == std::string::npos) continue;
+                family = family.substr(first, family.find_last_not_of(" \t\"'") - first + 1);
+                if (family == "ui-monospace") family = "monospace";
+                else if (family == "ui-serif") family = "serif";
+                else if (family == "ui-sans-serif" || family == "system-ui") family = "sans-serif";
+                currentTypeface = fontMgr->matchFamilyStyle(family.c_str(), style);
+                if (currentTypeface) break;
+            }
             if (!currentTypeface) {
                 currentTypeface = fontMgr->matchFamilyStyle("sans-serif", style);
             }
@@ -376,14 +461,37 @@ void Canvas2DContext::restore() {
 // Fill and Stroke Styles
 void Canvas2DContext::setFillStyle(const std::string& color) {
     impl_->currentState.fillStyle = color;
+    impl_->currentState.fillGradient.reset();
 }
 
 void Canvas2DContext::setStrokeStyle(const std::string& color) {
     impl_->currentState.strokeStyle = color;
+    impl_->currentState.strokeGradient.reset();
+}
+
+void Canvas2DContext::setGradient(bool stroke, std::shared_ptr<CanvasGradient> gradient) {
+    (stroke ? impl_->currentState.strokeGradient : impl_->currentState.fillGradient) = std::move(gradient);
+}
+
+size_t Canvas2DContext::createLinearGradient(float x0, float y0, float x1, float y1) {
+    gradients_.push_back(std::make_shared<CanvasGradient>(CanvasGradient{x0, y0, x1, y1, {}}));
+    return gradients_.size() - 1;
+}
+
+std::shared_ptr<CanvasGradient> Canvas2DContext::getGradient(size_t index) const {
+    return index < gradients_.size() ? gradients_[index] : nullptr;
 }
 
 void Canvas2DContext::setLineWidth(float width) {
     impl_->currentState.lineWidth = width;
+}
+
+void Canvas2DContext::setLineCap(const std::string& cap) {
+    if (cap == "butt" || cap == "round" || cap == "square") impl_->currentState.lineCap = cap;
+}
+
+std::string Canvas2DContext::getLineCap() const {
+    return impl_->currentState.lineCap;
 }
 
 void Canvas2DContext::setGlobalAlpha(float alpha) {
@@ -643,6 +751,39 @@ void Canvas2DContext::arc(float x, float y, float radius, float startAngle, floa
 void Canvas2DContext::arcTo(float x1, float y1, float x2, float y2, float radius) {
 #if defined(MYSTRAL_HAS_SKIA)
     impl_->pathBuilder.arcTo(SkPoint::Make(x1, y1), SkPoint::Make(x2, y2), radius);
+#endif
+}
+
+void Canvas2DContext::ellipse(float x, float y, float radiusX, float radiusY, float rotation,
+                              float startAngle, float endAngle, bool counterclockwise) {
+#if defined(MYSTRAL_HAS_SKIA)
+    for (float value : {x, y, radiusX, radiusY, rotation, startAngle, endAngle}) {
+        if (!std::isfinite(value)) return;
+    }
+    if (radiusX < 0 || radiusY < 0) return; // The JS boundary throws IndexSizeError.
+    constexpr float tau = 2.0f * M_PI;
+    float sweep = endAngle - startAngle;
+    if (!counterclockwise && sweep >= tau) sweep = tau;
+    else if (counterclockwise && -sweep >= tau) sweep = -tau;
+    else {
+        sweep = std::fmod(sweep, tau);
+        if (!counterclockwise && sweep < 0) sweep += tau;
+        if (counterclockwise && sweep > 0) sweep -= tau;
+    }
+
+    // Build a unit arc then transform it into the rotated ellipse. Two half arcs
+    // preserve the full-circle endpoint (Skia arcTo treats a 360-degree sweep as zero).
+    const float start = std::fmod(startAngle, tau) * 180.0f / M_PI;
+    const float halfSweep = sweep * 90.0f / M_PI;
+    const SkRect unit = SkRect::MakeLTRB(-1, -1, 1, 1);
+    SkPathBuilder arc;
+    arc.moveTo(std::cos(startAngle), std::sin(startAngle));
+    arc.arcTo(unit, start, halfSweep, false);
+    arc.arcTo(unit, start + halfSweep, halfSweep, false);
+    SkMatrix matrix;
+    matrix.setAll(radiusX * std::cos(rotation), -radiusY * std::sin(rotation), x,
+                  radiusX * std::sin(rotation), radiusY * std::cos(rotation), y, 0, 0, 1);
+    impl_->pathBuilder.addPath(arc.snapshot(), matrix, SkPath::kExtend_AddPathMode);
 #endif
 }
 

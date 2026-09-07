@@ -11,33 +11,90 @@
 // `setupPost(renderer, scene, camera, { tier: "low" })`. Overriding does not silence the report:
 // `TN_QUALITY_TIER` names the tier that ran either way.
 import type { Camera, DirectionalLight, Scene } from "three";
+import {
+  type IAdaptiveQualityOptions,
+  type IQualityWindow,
+  createAdaptiveQuality,
+  formatQualityAdaptation,
+} from "./adaptiveQuality.js";
 import { painterlyStageNames, painterlyStages } from "./painterly.js";
-import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.js";
-import type { OutputRenderer } from "./worldEnvironment.js";
-import { WorldEnvironment } from "./worldEnvironment.js";
+import { type QualityTier, qualityPreset } from "./quality.js";
+import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
+
+interface IPostController {
+  debug(): Record<string, unknown>;
+  observe(window: IQualityWindow): void;
+  dispose(): void;
+}
+
+let active: IPostController | undefined;
+
+/** The starter's game.ts connects its existing completed frame-window callback here. */
+export function observeQualityWindow(window: IQualityWindow): void {
+  active?.observe(window);
+}
 
 export function setupPost(
   renderer: OutputRenderer,
   scene: Scene,
   camera: Camera,
-  environment: {
+  environment: IAdaptiveQualityOptions & {
     godraysLight?: DirectionalLight;
     mobile?: boolean;
-    /** Forces a tier, ignoring `mobile`. An unknown name throws rather than falling back. */
+    /** Forces a tier while keeping its costs observed. Unknown names throw. */
     tier?: QualityTier;
   } = {},
-): void {
-  const tier = resolveQualityTier({ mobile: environment.mobile, tier: environment.tier });
+): IPostController {
+  const policy = createAdaptiveQuality(environment, environment);
+  active?.dispose();
+  let disposed = false;
+  let disposeGraph: (() => void) | undefined;
+  let observation: Record<string, unknown> = {
+    tier: policy.tier,
+    source: policy.pinned ? "pinned" : "auto",
+  };
+  function apply(): void {
+    // Replacement is serialized: no old graph or subscription remains alive beside the new one.
+    disposeGraph?.();
+    const settings = qualityPreset(policy.tier);
+    const world = new WorldEnvironment({
+      ...settings,
+      authoredStageNames: painterlyStageNames(settings),
+      authoredStages: painterlyStages(settings),
+    });
+    const applied = world.apply(renderer, scene, camera, {
+      godraysLight: environment.godraysLight,
+    });
+    disposeGraph = applied.dispose;
+    observation = { ...observation, stages: applied.stages, dropped: applied.dropped };
+  }
+  apply();
   const source = environment.tier === undefined ? "platform" : "override";
-  console.info(`TN_QUALITY_TIER ${tier} mobile=${environment.mobile === true} source=${source}`);
-  const settings = qualityPreset(tier);
-  // The kit's own stages go through the seam rather than into the shared plumbing: the names up
-  // front, because the chain decides whether to build a pass at all before one exists, and the
-  // graph as a factory, because an outline needs the pass's depth texture.
-  const world = new WorldEnvironment({
-    ...settings,
-    authoredStageNames: painterlyStageNames(settings),
-    authoredStages: painterlyStages(settings),
-  });
-  world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
+  console.info(
+    `TN_QUALITY_TIER ${policy.tier} mobile=${environment.mobile === true} source=${source}`,
+  );
+  const controller = {
+    debug: () => observation,
+    observe(window: IQualityWindow): void {
+      if (disposed) return;
+      const decision = policy.observe(window);
+      if (decision.changed) apply();
+      observation = {
+        stages: observation.stages,
+        dropped: observation.dropped,
+        ...decision,
+        ...(Number.isInteger(window.window) ? { window: window.window } : {}),
+      };
+      console.info(formatQualityAdaptation(decision));
+    },
+    dispose(): void {
+      if (disposed) return;
+      disposed = true;
+      disposeGraph?.();
+      disposeGraph = undefined;
+      if (active === controller) active = undefined;
+    },
+  };
+  active = controller;
+  return controller;
 }

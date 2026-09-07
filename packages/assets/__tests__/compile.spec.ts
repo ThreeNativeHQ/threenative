@@ -213,7 +213,13 @@ describe("compileAssets", () => {
 
     expect(mobileManifest.entries["rock.png"]?.output).toMatch(/\.png$/u);
     expect(mobile.skippedCompression).toEqual([
-      { bytes: 0, files: 0, kind: "model", reason: "platform" },
+      {
+        bytes: 0,
+        decoders: ["meshopt", "KTX2"],
+        files: 0,
+        kind: "model",
+        reason: "platform",
+      },
       { bytes: source.length, files: 1, kind: "texture", reason: "platform" },
     ]);
 
@@ -294,6 +300,90 @@ describe("compileAssets", () => {
     }
   });
 
+  it("should not report decoder-backed model work that the config already disabled", async () => {
+    const root = await makeTempDir("threenative-compile-mobile-report-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "character.glb"), await buildFixtureGlb());
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+
+    try {
+      await compileAssets({
+        config: { models: { passes: { meshopt: false }, textures: "none" } },
+        cwd: root,
+        platform: "android",
+      });
+
+      expect(lines.some((line) => line.startsWith("TN_ASSETS_COMPRESSION_SKIPPED model:"))).toBe(
+        false,
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("should share images on an ios build", async () => {
+    const root = await makeTempDir("threenative-compile-ios-shared-");
+    await mkdir(path.join(root, "assets"));
+    const source = await singleImageFixtureGlb();
+    await writeFile(path.join(root, "assets", "one.glb"), source);
+    await writeFile(path.join(root, "assets", "two.glb"), source);
+
+    await compileAssets({
+      config: { budget: "none" },
+      concurrency: 2,
+      cwd: root,
+      platform: "ios",
+    });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as {
+      entries: Record<string, { extensions?: string[]; sharedImages?: { codec: string }[] }>;
+    };
+    for (const logical of ["one.glb", "two.glb"]) {
+      const entry = manifest.entries[logical];
+      expect(entry?.extensions ?? []).not.toContain("EXT_meshopt_compression");
+      expect(entry?.sharedImages).toHaveLength(1);
+      expect(entry?.sharedImages?.[0]?.codec).toBe("none");
+    }
+    expect(await readdir(path.join(root, "public", "shared", "images"))).toHaveLength(1);
+  });
+
+  it("should keep web output separate from a cached mobile compile", async () => {
+    const root = await makeTempDir("threenative-compile-cross-target-cache-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "hero.glb"), await singleImageFixtureGlb());
+
+    await compileAssets({
+      config: { budget: "none" },
+      cwd: root,
+      platform: "android",
+    });
+    const mobileManifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { extensions?: string[]; output: string }> };
+    const mobileEntry = mobileManifest.entries["hero.glb"];
+    expect(mobileEntry?.extensions ?? []).not.toContain("EXT_meshopt_compression");
+
+    const web = await compileAssets({
+      config: { budget: "none" },
+      cwd: root,
+      platform: "web",
+      transcoder: TRANSCODER,
+    });
+    const webManifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { extensions?: string[]; output: string }> };
+    const webEntry = webManifest.entries["hero.glb"];
+
+    expect(web.written).toBe(1);
+    expect(web.skipped).toBe(0);
+    expect(webEntry?.output).not.toBe(mobileEntry?.output);
+    expect(webEntry?.extensions ?? []).toContain("EXT_meshopt_compression");
+  });
   it("should decode compressed source for mobile output", async () => {
     const root = await makeTempDir("threenative-compile-android-source-");
     await mkdir(path.join(root, "assets"));
@@ -823,8 +913,20 @@ describe("compileAssets", () => {
     await mkdir(path.join(root, "assets"));
     const source = Buffer.from(await buildFixtureGlb());
     await writeFile(path.join(root, "assets", "character.glb"), source);
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
 
-    await compileAssets({ config: { models: "none" }, cwd: root });
+    try {
+      await compileAssets({ config: { models: "none" }, cwd: root });
+      expect(lines.some((line) => line.startsWith("TN_ASSETS_COMPRESSION_SKIPPED model:"))).toBe(
+        true,
+      );
+      expect(lines.some((line) => line.includes('assets.models is "none"'))).toBe(true);
+    } finally {
+      log.mockRestore();
+    }
 
     const manifest = JSON.parse(
       await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),

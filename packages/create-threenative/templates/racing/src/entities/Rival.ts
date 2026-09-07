@@ -14,8 +14,11 @@ export class Rival {
     startDistance: number,
   ) {
     this.#distance = startDistance;
-    const visual = vehicle(createMaterials());
-    visual.scale.setScalar(0.92);
+    // Same sculpt, different livery. The rival was indistinguishable from the player in the first
+    // frame because both cars asked for the same material set.
+    const materials = createMaterials();
+    const visual = vehicle({ ...materials, body: materials.rivalBody });
+    visual.scale.setScalar(0.96);
     this.mesh.add(visual);
   }
 

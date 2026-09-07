@@ -44,8 +44,14 @@ export interface IInputAction {
   readonly scroll?: boolean;
   /** Add the signed two-pointer distance change to `axis(name)`; moving apart is positive. */
   readonly pinch?: boolean;
-  /** Add raw mouse movement since the last input tick to `vector(name)`. */
+  /**
+   * Add raw mouse movement since the last input tick to `vector(name)`. A click on the pointer
+   * target automatically asks for pointer capture when this binding is present; call
+   * `captureMouse()` explicitly when a game needs to start capture from another named gesture.
+   */
   readonly pointerRelative?: boolean;
+  /** Disable the automatic click capture for a relative binding that has its own gesture. */
+  readonly captureOnClick?: boolean;
   /** The +x direction of `vector(name)`. */
   readonly right?: readonly string[];
   /** The +y direction of `vector(name)`. */
@@ -232,6 +238,20 @@ export class InputMap {
       if (code !== undefined) this.#heldKeys.delete(code);
     });
     this.#listen(this.#target, "mousemove", (event) => this.#mouseEvent(event));
+    if (
+      this.#bindingNames.some(
+        (name) =>
+          this.#bindings[name]?.pointerRelative === true &&
+          this.#bindings[name]?.captureOnClick !== false,
+      )
+    ) {
+      this.#listen(this.#pointerTarget, "click", (event) => {
+        // Touch and pen gestures must not enter desktop relative-mouse mode.
+        const pointerType = (event as PointerEvent).pointerType;
+        if (pointerType && pointerType !== "mouse") return;
+        this.#captureFromClick();
+      });
+    }
     this.#listen(this.#pointerTarget, "pointerdown", (event) => this.#pointerEvent(event, "down"));
     if (this.#bindingNames.some((name) => this.#bindings[name]?.scroll === true))
       this.#listen(this.#target, "wheel", (event) => this.#wheelEvent(event));
@@ -306,7 +326,7 @@ export class InputMap {
     return Math.max(-1, Math.min(1, value));
   }
 
-  /** Request pointer capture. Call this from a user gesture on the game surface. */
+  /** Request pointer capture explicitly from a named game gesture. Relative bindings request it on canvas click by default. */
   captureMouse(): void {
     if (this.raw.pointer.captured) return;
     const target = this.#pointerTarget as PointerLockTarget;
@@ -583,6 +603,10 @@ export class InputMap {
     } else if (fallback !== undefined) {
       this.raw.pointer.captured = fallback;
     }
+  }
+
+  #captureFromClick(): void {
+    this.captureMouse();
   }
 
   #pointerEvent(event: Event, edgeType?: IRawInputPointerEdge["type"]): void {

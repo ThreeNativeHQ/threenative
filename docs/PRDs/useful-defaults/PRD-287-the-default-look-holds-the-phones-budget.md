@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-287 — the default look holds the phone's budget, or steps down and says so
 
-**Status: OPEN — filed 2026-08-30 against `728f72e8`. Nothing below has been executed.** Part of
+**Status: PARTIAL — starter implementation and desktop/browser wiring proofs exist; physical-phone
+acceptance and the other templates remain open.** Filed 2026-08-30 against `728f72e8`. Part of
 the [decent-defaults batch](./ORIGIN-decent-defaults-2026-08-30.md). Depends on
 [PRD-278](../done/PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) for a chain to
 measure, The ruling on where the ladder lives was answered
@@ -17,6 +18,23 @@ signal; AC4's defaults are graded in seven generated files, not one seam.
 frame, proven on a physical phone, and the step-down says why it happened.** Today the ladder is
 specified against the wrong meter and gated on the wrong platform, and the mobile defaults were
 picked by hand from a desktop capture.
+
+## Starter slice — September 5, 2026
+
+[PRD-362](../batch-2026-09-05/PRD-362-starter-quality-adapts-to-measured-load.md) implements the
+starter slice. Core reports successful GPU-query age beside GPU duration; generated starter
+source owns the hysteresis, tier mapping, explicit override and fallback reason. Its fallback
+uses presented-frame timing as allowed by that delivery slice. No appearance policy moved to core.
+
+The actual starter callback has browser deletion/restoration proof and native live-game proof.
+Browser and desktop-native resource cycles have disposal mutation/restoration proof: removing
+replacement disposal grows textures from 26 to 34 at the repeated high tier, and restoration
+passes. These inputs are synthetic and do not prove measured-load recovery. The browser stress
+calibration lowered high→medium→low but failed recovery; phone performance, real pinned-load
+behavior, phase checkpoint review and all-template coverage remain unverified. No acceptance box
+below is closed by these partial results. Commands, source identities and limitations are in the
+[batch ledger](../../verification/batch-2026-09-05-execution.md); timing findings are in the
+[single performance record](../../verification/runtime-perf-state.md).
 
 ## The two defects, both already measured
 

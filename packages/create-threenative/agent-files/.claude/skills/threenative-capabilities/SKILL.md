@@ -1,6 +1,6 @@
 ---
 name: threenative-capabilities
-description: Discover and use the ThreeNative capability surface before writing a game system.
+description: Discover and use the ThreeNative capability surface before writing a game system. Use before prd-creator drafts a plan, and before building or replacing any world, traversal, interaction, simulation, combat, camera, audio, UI, entity, movement, navigation, attachment, particle, terrain, or measurement system.
 ---
 
 # ThreeNative capabilities

@@ -945,6 +945,58 @@ endif()
 # All platforms now use olilarkin/skia-builder: https://github.com/olilarkin/skia-builder/releases
 # Structure: skia/build/include/include/core/...
 #            skia/build/{platform}-gpu/lib/Release/{arch}/libskia.a
+# TN_SKIA_BLOCK_BEGIN
+if(ANDROID AND TN_ENABLE_CANVAS2D)
+    # Android Skia is staged per ABI; never select the host Linux archive for an Android build.
+    if(CMAKE_ANDROID_ARCH_ABI)
+        set(SKIA_ANDROID_ABI "${CMAKE_ANDROID_ARCH_ABI}")
+    else()
+        set(SKIA_ANDROID_ABI "${ANDROID_ABI}")
+    endif()
+    if(NOT SKIA_ANDROID_ABI)
+        message(FATAL_ERROR
+            "TN_SKIA_ANDROID_ABI_MISSING: Android Canvas2D requires CMAKE_ANDROID_ARCH_ABI or ANDROID_ABI")
+    endif()
+    set(SKIA_ANDROID_ROOT "${THIRD_PARTY_DIR}/skia-android")
+    set(SKIA_INCLUDE_DIR "${SKIA_ANDROID_ROOT}/build/include")
+    set(SKIA_ANDROID_LIB_DIR "${SKIA_ANDROID_ROOT}/build/android/lib/Release/${SKIA_ANDROID_ABI}")
+    if(NOT EXISTS "${SKIA_INCLUDE_DIR}/include/core/SkCanvas.h"
+       OR NOT EXISTS "${SKIA_INCLUDE_DIR}/include/ports/SkFontMgr_android.h"
+       OR NOT EXISTS "${SKIA_INCLUDE_DIR}/include/ports/SkFontScanner_FreeType.h")
+        message(FATAL_ERROR
+            "TN_SKIA_ANDROID_HEADERS_MISSING: ${SKIA_INCLUDE_DIR} must contain SkCanvas, Android font, "
+            "and FreeType scanner headers for ${SKIA_ANDROID_ABI}")
+    endif()
+    set(SKIA_ANDROID_REQUIRED_ARCHIVES
+        libskia.a libfreetype2.a libpng.a libzlib.a libexpat.a libskcms.a libwuffs.a libcpu-features.a)
+    set(SKIA_ANDROID_MISSING_ARCHIVES "")
+    foreach(SKIA_ANDROID_ARCHIVE IN LISTS SKIA_ANDROID_REQUIRED_ARCHIVES)
+        if(NOT EXISTS "${SKIA_ANDROID_LIB_DIR}/${SKIA_ANDROID_ARCHIVE}")
+            list(APPEND SKIA_ANDROID_MISSING_ARCHIVES "${SKIA_ANDROID_ARCHIVE}")
+        endif()
+    endforeach()
+    if(SKIA_ANDROID_MISSING_ARCHIVES)
+        message(FATAL_ERROR
+            "TN_SKIA_ANDROID_ARCHIVE_MISSING: ${SKIA_ANDROID_LIB_DIR} is missing "
+            "${SKIA_ANDROID_MISSING_ARCHIVES} for ${SKIA_ANDROID_ABI}")
+    endif()
+    set(SKIA_LIBRARY "${SKIA_ANDROID_LIB_DIR}/libskia.a")
+    set(SKIA_ANDROID_EXTRA_LIBS "")
+    foreach(SKIA_ANDROID_ARCHIVE IN LISTS SKIA_ANDROID_REQUIRED_ARCHIVES)
+        if(NOT SKIA_ANDROID_ARCHIVE STREQUAL "libskia.a")
+            list(APPEND SKIA_ANDROID_EXTRA_LIBS "${SKIA_ANDROID_LIB_DIR}/${SKIA_ANDROID_ARCHIVE}")
+        endif()
+    endforeach()
+    # CMake 3.20 has no LINK_GROUP generator expression. Raw GNU/Clang linker items are accepted
+    # by that minimum and keep every cyclic archive, including libskia.a, inside one group.
+    add_library(skia::skia INTERFACE IMPORTED)
+    set_target_properties(skia::skia PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${SKIA_INCLUDE_DIR}"
+        INTERFACE_LINK_LIBRARIES "-Wl,--start-group;${SKIA_LIBRARY};${SKIA_ANDROID_EXTRA_LIBS};-Wl,--end-group"
+    )
+    add_compile_definitions(MYSTRAL_HAS_SKIA)
+    message(STATUS "Found Skia Android ${SKIA_ANDROID_ABI}: ${SKIA_LIBRARY}")
+else()
 if(MYSTRAL_PLATFORM STREQUAL "ios")
     set(SKIA_DIR ${THIRD_PARTY_DIR}/skia-ios)
     # iOS Skia structure: skia-ios/{device,simulator}/build/...
@@ -1027,6 +1079,8 @@ else()
         message(STATUS "Skia not found - Canvas 2D support disabled. Run 'node scripts/download-deps.mjs --only skia' to enable.")
     endif()
 endif()
+endif()
+# TN_SKIA_BLOCK_END
 
 # SWC (TypeScript transpiler)
 # Prebuilt layout: swc/include/swc.h and swc/lib/libswc.a (or swc.lib on Windows)
@@ -1801,6 +1855,11 @@ endif()
 # Skia linkage (optional - for Canvas 2D support)
 if(TARGET skia::skia)
     target_link_libraries(mystral-runtime PRIVATE skia::skia)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID)
+        find_package(Fontconfig REQUIRED)
+        find_package(Freetype REQUIRED)
+        target_link_libraries(mystral-runtime PRIVATE Fontconfig::Fontconfig Freetype::Freetype)
+    endif()
 endif()
 
 # SWC linkage (TypeScript transpiler)

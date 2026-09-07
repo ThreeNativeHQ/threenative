@@ -1,12 +1,11 @@
-(() => {
+((enqueue) => {
   const scope = globalThis;
   const existing = scope.scheduler;
   if (existing !== undefined && typeof existing.yield === "function") return true;
   const scheduler = existing === undefined || existing === null ? {} : existing;
-  // A macrotask is the honest implementation: the yield has to let the loop run, and one
-  // setTimeout(0) is exactly one loop iteration here. A microtask would defeat the reason
-  // three calls it.
-  scheduler.yield = () => new Promise((resolve) => { setTimeout(resolve, 0); });
+  // The host drains cooperative tasks with a bounded time slice between frames. Its timer
+  // queue is frame-coupled; using setTimeout here makes each shader node pay for a frame.
+  scheduler.yield = () => new Promise((resolve) => { enqueue(resolve); });
   // Assigned through globalThis by name, not through the `scope` alias, so the shim manifest
   // gate can read the installation instead of taking the alias on trust.
   globalThis.scheduler = scheduler;

@@ -51,7 +51,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       : undefined;
     const solarInput = {
       dayOfYear: 172,
-      timeOfDay: 6,
+      // Late morning. At 6 the sun clears the horizon by a couple of degrees at this latitude and
+      // the atmosphere has almost no light to scatter: the smallest template's first frame was a
+      // dark slab under a black sky, which is a poor advertisement for a physically-based sky.
+      // The fix is the sun, not the exposure — `sky.ts` explains why the radiance multiplier
+      // cannot simply be raised, since the same radiance is also fed to aerial perspective. At
+      // 11.75 the sun is around fifty degrees up and the scattering does the work it is there for.
+      timeOfDay: 11.75,
       latitude: 49.28,
       longitude: -123.12,
       utcOffset: -8,
@@ -89,14 +95,34 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     floor.position.y = -0.1;
     floor.receiveShadow = true;
     ctx.add(floor);
-    const nearWallGeometry = new BoxGeometry(1.4, 2.8, 0.6);
-    nearWallGeometry.translate(-3, 1.4, 2.5);
-    const distantRidgeGeometry = new BoxGeometry(12_000, 500, 100);
-    distantRidgeGeometry.translate(0, 230, -5_000);
-    const hazeProbe = new Mesh(
-      mergeGeometries([nearWallGeometry, distantRidgeGeometry]),
-      defaultMaterial,
-    );
+    // Two things at very different distances, so aerial perspective has something to work on:
+    // a marker beside the player and a range of hills five kilometres away. Both used to be plain
+    // boxes — the far one a single 12 km x 500 m slab — and the frame showed a flat blue stripe
+    // ruled across the sky above a grey monolith. Same probe, same one draw call, but the near
+    // one reads as a marker and the far one as a horizon.
+    const marker = new BoxGeometry(0.7, 2.4, 0.7);
+    marker.translate(-3, 1.2, 2.5);
+    const markerCap = new BoxGeometry(1, 0.22, 1);
+    markerCap.translate(-3, 2.5, 2.5);
+    // Seeded, so two captures of the same build frame the same skyline.
+    let seed = 20_260_906;
+    const jitter = (): number => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const ridges: BoxGeometry[] = [];
+    for (let index = 0; index < 14; index += 1) {
+      const height = 260 + jitter() * 620;
+      const width = 900 + jitter() * 1_500;
+      const peak = new BoxGeometry(width, height, 260 + jitter() * 300);
+      peak.translate(
+        -6_000 + index * 900 + jitter() * 320,
+        height / 2 - 40,
+        -4_600 - jitter() * 1_400,
+      );
+      ridges.push(peak);
+    }
+    const hazeProbe = new Mesh(mergeGeometries([marker, markerCap, ...ridges]), defaultMaterial);
     hazeProbe.castShadow = true;
     ctx.add(hazeProbe);
     new RigidBody3D({

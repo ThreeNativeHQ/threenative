@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PerspectiveCamera, Scene } from "three";
 import { describe, expect, it } from "vitest";
 import {
   QUALITY_TIERS,
@@ -167,5 +168,470 @@ describe("template quality tiers", () => {
       .map((entry) => entry.name)
       .sort();
     expect(names).toEqual(onDisk);
+  });
+});
+
+/**
+ * The runtime half of the switch: PRD-362 phase 1.
+ *
+ * `resolveQualityTier` decides once, at boot, from the platform. That decision cannot see an
+ * overloaded desktop GPU, a scene that got expensive, or a phone that is throttling. These
+ * exercise the policy that reads completed frame-budget windows and moves the tier, and they are
+ * written against the starter because the starter is the template PRD-362 delivers end to end.
+ */
+
+/** The window shape the policy reads, in the same field names `IFrameBudgetWindow` uses. */
+interface ITestWindow {
+  readonly window: number;
+  readonly frames: number;
+  readonly fps: number;
+  readonly presented: { readonly p95: number };
+  readonly frame: { readonly p95: number };
+  readonly gpuMs?: number;
+  readonly gpuAgeFrames?: number;
+  readonly surface?: { readonly compiling?: boolean };
+}
+
+interface ITestDecision {
+  readonly tier: string;
+  readonly changed: boolean;
+  readonly meter: string;
+  readonly reason: string;
+  readonly budgetMs: number;
+  readonly overloadBudgetMs: number;
+  readonly gpuMs?: number;
+  readonly cpuMs?: number;
+  readonly costMs?: number;
+}
+
+interface IAdaptiveQuality {
+  readonly tier: string;
+  readonly pinned: boolean;
+  observe(window: ITestWindow): ITestDecision;
+}
+
+interface IAdaptiveModule {
+  readonly createAdaptiveQuality: (
+    request?: { mobile?: boolean; tier?: string },
+    options?: Record<string, unknown>,
+  ) => IAdaptiveQuality;
+  readonly formatQualityAdaptation: (decision: ITestDecision) => string;
+}
+
+async function loadAdaptive(template: string): Promise<IAdaptiveModule> {
+  return (await import(
+    path.join(templatesDir, template, "src/render/adaptiveQuality.ts")
+  )) as IAdaptiveModule;
+}
+
+/**
+ * A healthy 60 fps window: 16.7 ms between presents, a 5.5 ms frame callback, 8 ms of GPU.
+ *
+ * The CPU number is deliberately cheap in every window below. PRD-287's motivating measurement is
+ * CPU 5.5 ms against GPU 14.7 ms — a frame that misses its budget with the callback idle — so a
+ * policy that reads the frame callback would call every one of these windows healthy.
+ */
+function frameWindow(index: number, overrides: Partial<ITestWindow> = {}): ITestWindow {
+  return {
+    frame: { p95: 5.5 },
+    fps: 60,
+    frames: 60,
+    gpuMs: 8,
+    gpuAgeFrames: 1,
+    presented: { p95: 16.7 },
+    window: index,
+    ...overrides,
+  };
+}
+
+/** Feeds `count` windows starting at `start`, and returns the last decision. */
+function feed(
+  policy: IAdaptiveQuality,
+  start: number,
+  count: number,
+  overrides: Partial<ITestWindow> = {},
+): ITestDecision {
+  let last = policy.observe(frameWindow(start, overrides));
+  for (let index = 1; index < count; index += 1) {
+    last = policy.observe(frameWindow(start + index, overrides));
+  }
+  return last;
+}
+
+describe("starter adaptive quality", () => {
+  /** A clock the test moves by hand, so the cooldown is asserted rather than waited out. */
+  function clockAt(start: number): { now: () => number; advance: (ms: number) => void } {
+    let value = start;
+    return {
+      advance: (ms: number) => {
+        value += ms;
+      },
+      now: () => value,
+    };
+  }
+
+  it("should step down when the GPU is over budget and the CPU frame is cheap", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const clock = clockAt(0);
+    const policy = createAdaptiveQuality({ mobile: false }, { now: clock.now, startupWindows: 1 });
+    expect(policy.tier).toBe("high");
+    // Window 1 is startup and is discarded; 2 and 3 are the two overloaded windows.
+    policy.observe(frameWindow(1, { gpuMs: 22 }));
+    const first = policy.observe(frameWindow(2, { gpuMs: 22 }));
+    expect(first.changed, "one overloaded window is not evidence").toBe(false);
+    expect(first.tier).toBe("high");
+    const stepped = policy.observe(frameWindow(3, { gpuMs: 22 }));
+    expect(stepped.changed).toBe(true);
+    expect(stepped.tier).toBe("medium");
+    expect(stepped.reason).toBe("overloaded");
+    // The finding is the GPU, and it must say so while the CPU frame was under budget.
+    expect(stepped.meter).toBe("gpu");
+    expect(stepped.costMs).toBe(22);
+    expect(stepped.cpuMs).toBe(5.5);
+    expect(stepped.budgetMs).toBeCloseTo(1000 / 60, 5);
+    expect(stepped.overloadBudgetMs).toBeCloseTo(1000 / 60, 5);
+  });
+
+  it("should refuse a second step inside the cooldown", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const clock = clockAt(0);
+    const policy = createAdaptiveQuality(
+      { mobile: false },
+      { cooldownMs: 5000, now: clock.now, startupWindows: 0 },
+    );
+    expect(feed(policy, 1, 2, { gpuMs: 22 }).tier).toBe("medium");
+    clock.advance(1000);
+    const held = feed(policy, 3, 2, { gpuMs: 22 });
+    expect(held.changed).toBe(false);
+    expect(held.reason).toBe("cooldown");
+    expect(held.tier).toBe("medium");
+    clock.advance(4001);
+    const dropped = feed(policy, 5, 2, { gpuMs: 22 });
+    expect(dropped.tier).toBe("low");
+    expect(dropped.reason).toBe("overloaded");
+  });
+
+  it("should need five healthy windows with headroom before stepping back up", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const clock = clockAt(0);
+    const policy = createAdaptiveQuality(
+      { mobile: true },
+      { cooldownMs: 5000, now: clock.now, startupWindows: 0 },
+    );
+    expect(policy.tier).toBe("low");
+    clock.advance(6000);
+    // 13.3 ms is exactly the 20% headroom line; 8 ms clears it.
+    const four = feed(policy, 1, 4, { gpuMs: 8 });
+    expect(four.changed, "four healthy windows are not five").toBe(false);
+    const fifth = policy.observe(frameWindow(5, { gpuMs: 8 }));
+    expect(fifth.changed).toBe(true);
+    expect(fifth.tier).toBe("medium");
+    expect(fifth.reason).toBe("headroom");
+    // 14 ms is under budget but inside the deadband: healthy enough to stay, not to step up.
+    clock.advance(6000);
+    const deadband = feed(policy, 6, 6, { gpuMs: 14 });
+    expect(deadband.changed).toBe(false);
+    expect(deadband.reason).toBe("steady");
+    expect(deadband.tier).toBe("medium");
+  });
+
+  it("should keep an explicit tier pinned and still observe it", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality({ mobile: false, tier: "high" }, { startupWindows: 0 });
+    expect(policy.pinned).toBe(true);
+    const decision = feed(policy, 1, 6, { gpuMs: 40 });
+    expect(decision.tier).toBe("high");
+    expect(decision.changed).toBe(false);
+    expect(decision.reason).toBe("pinned");
+    // Pinned is not silent: the measurement that would have moved an unpinned game is reported.
+    expect(decision.meter).toBe("gpu");
+    expect(decision.costMs).toBe(40);
+  });
+
+  it("should ignore startup, compiling and invalid windows rather than count them", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality({ mobile: false }, { startupWindows: 2 });
+    expect(policy.observe(frameWindow(1, { gpuMs: 60 })).reason).toBe("startup");
+    expect(policy.observe(frameWindow(2, { gpuMs: 60 })).reason).toBe("startup");
+    const compiling = policy.observe(frameWindow(3, { gpuMs: 60, surface: { compiling: true } }));
+    expect(compiling.reason).toBe("compiling");
+    const short = policy.observe(frameWindow(4, { frames: 3, gpuMs: 60 }));
+    expect(short.reason).toBe("invalid");
+    const broken = policy.observe(frameWindow(5, { fps: Number.NaN, gpuMs: 60 }));
+    expect(broken.reason).toBe("invalid");
+    // Five overloaded-looking windows, none of them evidence: the tier has not moved.
+    expect(policy.tier).toBe("high");
+    expect(feed(policy, 6, 2, { gpuMs: 60 }).tier).toBe("medium");
+  });
+
+  it("does not let a malformed window identifier block later valid observations", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality({}, { startupWindows: 0 });
+    expect(policy.observe(frameWindow(Number.POSITIVE_INFINITY, { gpuMs: 40 })).reason).toBe(
+      "invalid",
+    );
+    expect(feed(policy, 1, 2, { gpuMs: 40 }).tier).toBe("medium");
+  });
+
+  it("waits for actual readiness and discards the first clean window afterward", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    let ready = false;
+    const policy = createAdaptiveQuality({}, { ready: () => ready });
+    expect(feed(policy, 1, 10, { gpuMs: 40 }).reason).toBe("startup");
+    expect(policy.tier).toBe("high");
+    ready = true;
+    expect(policy.observe(frameWindow(11, { gpuMs: 40 })).reason).toBe("startup");
+    expect(policy.observe(frameWindow(12, { gpuMs: 40 })).changed).toBe(false);
+    expect(policy.observe(frameWindow(13, { gpuMs: 40 })).tier).toBe("medium");
+  });
+
+  it("rejects fractional window counts and names unobservable GPU timing", async () => {
+    const { createAdaptiveQuality, formatQualityAdaptation } = await loadAdaptive("starter");
+    expect(() => createAdaptiveQuality({}, { overloadedWindows: 1.5 })).toThrow(
+      /overloadedWindows/u,
+    );
+    const policy = createAdaptiveQuality({}, { startupWindows: 0 });
+    const decision = policy.observe(frameWindow(1, { gpuAgeFrames: undefined }));
+    expect(decision.meter).toBe("presented");
+    expect(formatQualityAdaptation(decision)).toContain("fallback=gpu-age-unavailable");
+  });
+
+  it("should keep identical fresh GPU timings and fall back when their frame age becomes stale", async () => {
+    const { createAdaptiveQuality, formatQualityAdaptation } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality(
+      { mobile: false },
+      { maxGpuAgeFrames: 4, startupWindows: 0 },
+    );
+    // Identical values can be fresh; only the successful query's frame identity proves its age.
+    for (let index = 1; index <= 3; index += 1) {
+      const fresh = policy.observe(frameWindow(index, { gpuMs: 9.125, gpuAgeFrames: 1 }));
+      expect(fresh.meter).toBe("gpu");
+    }
+    policy.observe(frameWindow(4, { gpuMs: 9.125, gpuAgeFrames: 60, presented: { p95: 33 } }));
+    const stale = policy.observe(
+      frameWindow(5, { gpuMs: 9.125, gpuAgeFrames: 120, presented: { p95: 33 } }),
+    );
+    expect(stale.meter).toBe("presented");
+    expect(stale.costMs).toBe(33);
+    expect(stale.tier).toBe("medium");
+    expect(formatQualityAdaptation(stale)).toContain("meter=presented");
+  });
+
+  it("should detect overload on presentation timing when no GPU sample exists", async () => {
+    const { createAdaptiveQuality, formatQualityAdaptation } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality({ mobile: false }, { startupWindows: 0 });
+    const overloaded = feed(policy, 1, 2, {
+      fps: 30,
+      gpuMs: undefined,
+      presented: { p95: 33 },
+    });
+    expect(overloaded.meter).toBe("presented");
+    expect(overloaded.tier).toBe("medium");
+    expect(overloaded.reason).toBe("overloaded");
+    expect(overloaded.overloadBudgetMs).toBeCloseTo((1000 / 60) * 1.05, 5);
+    // The limitation is named where a reader will meet it, not left to a code comment alone.
+    expect(formatQualityAdaptation(overloaded)).toContain("meter=presented");
+    expect(formatQualityAdaptation(overloaded)).toContain("overloadBudgetMs=17.5");
+  });
+
+  it("should keep a healthy 60 Hz presentation fallback at high quality", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const clock = clockAt(0);
+    const policy = createAdaptiveQuality(
+      { mobile: false },
+      { now: clock.now, startupWindows: 0, cooldownMs: 5000 },
+    );
+    const fallback = { gpuMs: undefined, presented: { p95: 16.7 } };
+    const firstWindows = feed(policy, 1, 3, fallback);
+    expect(firstWindows.meter).toBe("presented");
+    expect(firstWindows.tier).toBe("high");
+    expect(firstWindows.overloadBudgetMs).toBeCloseTo((1000 / 60) * 1.05, 5);
+
+    clock.advance(6000);
+    const laterWindows = feed(policy, 4, 3, fallback);
+    expect(laterWindows.tier).toBe("high");
+    expect(laterWindows.changed).toBe(false);
+  });
+
+  it("should still step down on a fresh GPU sample above the strict budget", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality({ mobile: false }, { startupWindows: 0 });
+    const decision = feed(policy, 1, 2, { gpuMs: 17, presented: { p95: 16.7 } });
+    expect(decision.tier).toBe("medium");
+    expect(decision.reason).toBe("overloaded");
+    expect(decision.overloadBudgetMs).toBeCloseTo(1000 / 60, 5);
+  });
+
+  it("should allow a strict presentation fallback override", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality(
+      { mobile: false },
+      { presentationTolerance: 0, startupWindows: 0 },
+    );
+    const decision = feed(policy, 1, 2, { gpuMs: undefined, presented: { p95: 16.7 } });
+    expect(decision.tier).toBe("medium");
+    expect(decision.overloadBudgetMs).toBeCloseTo(1000 / 60, 5);
+  });
+
+  it("should keep quality reports safe for JSON recorders", async () => {
+    const { createAdaptiveQuality, formatQualityAdaptation } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality({}, { startupWindows: 0 });
+    const fresh = policy.observe(frameWindow(1, { gpuMs: 9, gpuAgeFrames: 1 }));
+    const absent = policy.observe(frameWindow(2, { gpuMs: undefined }));
+    const invalid = policy.observe(
+      frameWindow(3, {
+        gpuMs: Number.NaN,
+        frame: { p95: Number.NaN },
+        presented: { p95: Number.POSITIVE_INFINITY },
+      }),
+    );
+
+    for (const report of [fresh, absent, invalid]) {
+      expect(JSON.parse(JSON.stringify(report))).toEqual(report);
+    }
+    expect(Object.hasOwn(fresh, "fallback")).toBe(false);
+    expect(Object.hasOwn(absent, "gpuMs")).toBe(false);
+    expect(Object.hasOwn(invalid, "gpuMs")).toBe(false);
+    expect(Object.hasOwn(invalid, "cpuMs")).toBe(false);
+    expect(Object.hasOwn(invalid, "costMs")).toBe(false);
+    expect(formatQualityAdaptation(invalid)).toContain("costMs=unavailable");
+  });
+
+  it("should report at-floor rather than stepping below the cheapest tier", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality({ tier: undefined, mobile: true }, { startupWindows: 0 });
+    const floored = feed(policy, 1, 4, { gpuMs: 40 });
+    expect(floored.tier).toBe("low");
+    expect(floored.changed).toBe(false);
+    expect(floored.reason).toBe("at-floor");
+  });
+
+  it("should not move on alternating overloaded and healthy windows", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality({ mobile: false }, { startupWindows: 0 });
+    let last = policy.observe(frameWindow(1, { gpuMs: 22 }));
+    for (let index = 2; index <= 12; index += 1) {
+      last = policy.observe(frameWindow(index, { gpuMs: index % 2 === 0 ? 8 : 22 }));
+    }
+    expect(last.tier).toBe("high");
+    expect(last.changed).toBe(false);
+  });
+
+  it("should throw on a target frame rate that cannot produce a budget", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    expect(() => createAdaptiveQuality({}, { targetFps: 0 })).toThrow(/targetFps/u);
+    expect(() => createAdaptiveQuality({}, { headroom: 1.5 })).toThrow(/headroom/u);
+    expect(() => createAdaptiveQuality({}, { presentationTolerance: -0.1 })).toThrow(
+      /presentationTolerance/u,
+    );
+    expect(() => createAdaptiveQuality({}, { presentationTolerance: Number.NaN })).toThrow(
+      /presentationTolerance/u,
+    );
+    expect(() => createAdaptiveQuality({}, { presentationTolerance: 1 })).toThrow(
+      /presentationTolerance/u,
+    );
+  });
+
+  it("should derive the budget from the configured frame rate", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality({ mobile: false }, { startupWindows: 0, targetFps: 30 });
+    // 22 ms of GPU is an overload at 60 fps and comfortable at 30.
+    const decision = feed(policy, 1, 6, { fps: 30, gpuMs: 22, presented: { p95: 33 } });
+    expect(decision.budgetMs).toBeCloseTo(1000 / 30, 5);
+    expect(decision.tier).toBe("high");
+  });
+});
+
+describe("starter postprocessing lifecycle", () => {
+  it("replaces GPU and fallback observations without retaining stale optional fields", async () => {
+    const post = await import("../templates/starter/src/render/postprocessing.js");
+    const controller = post.setupPost(
+      {
+        kind: "webgpu",
+        raw: {},
+        createRenderChain: () => ({ applied: { stages: [], dropped: [] }, dispose() {} }),
+      },
+      new Scene(),
+      new PerspectiveCamera(),
+      { mobile: false, startupWindows: 0 },
+    );
+
+    post.observeQualityWindow(frameWindow(1, { gpuMs: undefined }));
+    const absent = controller.debug();
+    expect(absent).toMatchObject({ fallback: "gpu-unavailable", meter: "presented", window: 1 });
+    expect(Object.hasOwn(absent, "gpuMs")).toBe(false);
+
+    post.observeQualityWindow(frameWindow(2, { gpuMs: 8 }));
+    const fresh = controller.debug();
+    expect(fresh).toMatchObject({ gpuMs: 8, meter: "gpu", window: 2 });
+    expect(Object.hasOwn(fresh, "fallback")).toBe(false);
+
+    post.observeQualityWindow(frameWindow(3, { gpuMs: undefined }));
+    const missing = controller.debug();
+    expect(missing).toMatchObject({ fallback: "gpu-unavailable", meter: "presented", window: 3 });
+    expect(Object.hasOwn(missing, "gpuMs")).toBe(false);
+    controller.dispose();
+  });
+
+  it("replaces only changed graphs and stops consuming windows after scene disposal", async () => {
+    const post = await import("../templates/starter/src/render/postprocessing.js");
+    const built: string[] = [];
+    let live = 0;
+    let disposed = 0;
+    let disposedPasses = 0;
+    const renderer = {
+      kind: "webgpu",
+      raw: {},
+      createRenderChain(options: {
+        request?: { tier?: string; stages?: readonly string[] };
+        worldPass?: unknown;
+      }) {
+        const worldPass = options.worldPass as { dispose(): void } | undefined;
+        if (worldPass !== undefined) {
+          const disposePass = worldPass.dispose.bind(worldPass);
+          worldPass.dispose = () => {
+            disposedPasses += 1;
+            disposePass();
+          };
+        }
+        built.push(options.request?.tier ?? "missing");
+        live += 1;
+        let dead = false;
+        return {
+          applied: { dropped: [], stages: options.request?.stages ?? [] },
+          dispose() {
+            if (dead) return;
+            dead = true;
+            live -= 1;
+            disposed += 1;
+          },
+        };
+      },
+    };
+    let time = 0;
+    const controller = post.setupPost(renderer, new Scene(), new PerspectiveCamera(), {
+      mobile: false,
+      targetFps: 60,
+      startupWindows: 0,
+      now: () => time,
+    });
+    expect(built).toEqual(["high"]);
+    post.observeQualityWindow(frameWindow(1, { gpuMs: 22 }));
+    expect(built).toEqual(["high"]);
+    post.observeQualityWindow(frameWindow(2, { gpuMs: 22 }));
+    expect(built).toEqual(["high", "medium"]);
+    expect(live).toBe(1);
+    expect(disposed).toBe(1);
+    expect(disposedPasses).toBe(1);
+    time = 6000;
+    post.observeQualityWindow(frameWindow(3, { gpuMs: 22 }));
+    post.observeQualityWindow(frameWindow(4, { gpuMs: 22 }));
+    expect(built).toEqual(["high", "medium", "low"]);
+    expect(live).toBe(1);
+    controller.dispose();
+    expect(live).toBe(0);
+    time = 12000;
+    for (let index = 5; index <= 12; index += 1) post.observeQualityWindow(frameWindow(index));
+    expect(built).toHaveLength(3);
   });
 });

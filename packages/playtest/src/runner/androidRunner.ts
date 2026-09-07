@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { assertCaptureNotBlank } from "../capture.js";
@@ -34,6 +34,7 @@ import {
   DeviceBridgeTransport,
   DeviceMailboxTransport,
   deviceTimeoutDiagnostic,
+  type IDeviceResponseObservation,
   type IDevicePlaytestTransport,
   type IDeviceMailbox,
 } from "./deviceTransport.js";
@@ -186,6 +187,8 @@ async function runDevicePlaytestInternal(
   let coverageRecordingStarted = false;
   let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
   const coverageVideoPath = join(config.artifactDirectory, "framebuffer-coverage.mp4");
+  const responseObservations: IDeviceResponseObservation[] = [];
+  transport.setResponseObserver?.((observation) => responseObservations.push(observation));
   const metrics = deviceMetricsRecorder(target);
   try {
     await throwIfAborted(target);
@@ -225,6 +228,10 @@ async function runDevicePlaytestInternal(
       await waitForStartupReady({
         acceptCompileSettled: config.allowSoftwareAdapter === true,
         bridge: attached,
+        // A device host can die mid-launch, and its mailbox then simply stops answering. Without
+        // this the wait reads that as a slow loading gate and burns its whole deadline; with it
+        // the report names the exit and carries the console tail that says why.
+        hostAlive: () => target.driver.isAlive().catch(() => undefined),
         pump: () => attached.advance(1),
       });
     await throwIfAborted(target);
@@ -501,6 +508,16 @@ async function runDevicePlaytestInternal(
         cleanupErrors.push(error);
       }
     };
+    await attemptCleanup(async () => {
+      await writeFile(
+        join(config.artifactDirectory, "device-response-observations.json"),
+        `${JSON.stringify({
+          responsePath: target.mailboxPaths.response,
+          observations: responseObservations,
+        }, null, 2)}\n`,
+        "utf8",
+      );
+    });
     if (scenario.steps.some((step) => step.pointers !== undefined)) {
       await attemptCleanup(async () => {
         if (target.name === "ios") {

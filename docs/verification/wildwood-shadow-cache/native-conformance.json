@@ -1,0 +1,37 @@
+{
+  "case": "17-shadow-map",
+  "sourceHead": "356cbe9f01085d801ffa67b85a3afa39f5cf7f6d",
+  "workingPatchSha256": "93cf92dd81fc3274bb1998529d3802c45a83449cbb5520b352caf75e4443b717",
+  "fixtureSha256": "ed9e030b5a907cc102780a2d2bea52b1c0cd78338b5f220c168337932553d424",
+  "runtimeSha256": "92fc51519ef420c934615f772a496d66823ab09373caed14b588d3aeee9de48a",
+  "browser": {
+    "status": "pass",
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    },
+    "pageErrors": [],
+    "screenshotSha256": "6eba6c9dd52871c80b14cd2091fd99bf621d801e7faa26aa0fd677e06317e540"
+  },
+  "native": {
+    "status": "pass",
+    "exitCode": 0,
+    "stderr": "Warning: startup gate never opened within 30s; capturing anyway.\n",
+    "screenshotSha256": "75bed7bcfef8575ebad12f0725e369120d994b4b7813b050bfb8bdc798c5de44"
+  },
+  "metrics": {
+    "pixelMismatchRatio": 0,
+    "perceptualDeltaE": 0,
+    "width": 1280,
+    "height": 720
+  },
+  "gpuValidationErrors": [],
+  "selection": {
+    "selected": 1,
+    "unselectedBlocked": 92,
+    "runnerExitCode": 2
+  },
+  "scope": "Rendering conformance only. No startup-readiness or FPS claim."
+}

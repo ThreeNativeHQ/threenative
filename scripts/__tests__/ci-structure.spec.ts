@@ -1,11 +1,135 @@
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import { allTemplates } from "../../test-support/templates.js";
+import {
+  collectorCoverage,
+  renderPerformanceCiSummary,
+  summarizePerformanceCi,
+} from "../performance-regression/ci-summary.js";
+import {
+  DEFAULT_PERFORMANCE_POLICY,
+  parsePerformanceRun,
+} from "../performance-regression/compare.js";
+import {
+  acquirePerformanceLease,
+  plannedPerformancePairs,
+  productionEvidenceToPerformanceRun,
+  runPerformanceLane,
+  validateApprovedBaseline,
+  validateArtifactIdentity,
+  validatePerformanceDispatch,
+  validateThermalEvidence,
+  withPerformanceLease,
+} from "../performance-regression/run.js";
 
 const repo = path.resolve(import.meta.dirname, "../..");
+
+it("coverage consumes retained production evidence and blocks status-only artifacts", async () => {
+  const directory = await makeTempDir("performance-coverage-");
+  await writeFile(
+    path.join(directory, "collector-status.json"),
+    JSON.stringify({ status: "PASS" }),
+  );
+  const blocked = await collectorCoverage(directory);
+  expect(blocked[0]?.status).toBe("BLOCKED");
+  await writeFile(
+    path.join(directory, "production-evidence.json"),
+    JSON.stringify({
+      target: "desktop",
+      source: { sha: "sha" },
+      artifact: { sha256: "hash" },
+      status: "PASS",
+      codes: [],
+    }),
+  );
+  const actual = await collectorCoverage(directory);
+  expect(actual).toHaveLength(1);
+  expect(
+    summarizePerformanceCi({
+      expectedSha: "sha",
+      requiredLanes: [path.basename(directory)],
+      results: actual,
+    }),
+  ).toMatchObject({ status: "PASS", exitCode: 0 });
+});
+
+it("scheduled ladder producer has its own comparison consumer and baseline", async () => {
+  const manifest = JSON.parse(
+    await readFile(path.join(repo, "scripts/performance-regression/lanes.json"), "utf8"),
+  );
+  const ladder = manifest.lanes.find((lane: { id: string }) => lane.id === "browser-moving-ladder");
+  expect(ladder.workload).toBe("moving-l2-l3-16384");
+  const plan = plannedPerformancePairs(ladder.id, "/baseline", "/candidate", {
+    workload: ladder.workload,
+  });
+  expect(plan[0]?.baselineCommand).toContain("--modes L2,L3 --ladder 16384 --repeats 1");
+  expect(ladder.baseline.status).toBe("unavailable");
+});
+
+it("required coverage cannot be weakened by a result flag", () => {
+  for (const status of ["SKIPPED", "UNVERIFIED"]) {
+    expect(
+      summarizePerformanceCi({
+        expectedSha: "sha",
+        requiredLanes: ["native-linux"],
+        results: [
+          { lane: "browser-webgpu", status: "PASS", sourceSha: "sha", artifactHash: "hash" },
+          { lane: "native-linux", status, required: false },
+        ],
+      }),
+    ).toMatchObject({ status: "BLOCKED", exitCode: 2 });
+  }
+});
+
+it("hardware workflow has no matrix context before expansion and uses Bash on Windows", async () => {
+  const source = await readFile(
+    path.join(repo, ".github/workflows/performance-regression.yml"),
+    "utf8",
+  );
+  const job = source.slice(
+    source.indexOf("  hardware-pairs:"),
+    source.indexOf("  performance-summary:"),
+  );
+  expect(job.match(/^ {4}if:[\s\S]*?(?=^ {4}\w)/m)?.[0] ?? "").not.toContain("matrix.");
+  expect(job).toMatch(/defaults:\s+run:\s+shell: bash/);
+});
+
+it("promoted conversion rejects absent hardware observations", () => {
+  expect(() =>
+    productionEvidenceToPerformanceRun(
+      {
+        source: { sha: "sha" },
+        artifact: { sha256: "hash" },
+        identity: { nativeBinarySha256: "binary" },
+        metrics: { p95FrameMs: 10 },
+        runId: "run",
+        command: "collector",
+        timestamps: {},
+      },
+      { id: "native-linux", platform: "native-linux", workload: "platformer-production" },
+      "sha",
+    ),
+  ).toThrow(/identity/);
+});
+
+it("approved baseline binds provenance while allowing a fresh candidate", () => {
+  const identity = {
+    sourceSha: "approved",
+    artifactHash: "artifact",
+    nativeBinaryHash: "binary",
+    gpu: "gpu",
+  };
+  expect(() => validateApprovedBaseline(identity, { ...identity, sourceSha: "other" })).toThrow(
+    /approved baseline/,
+  );
+  expect(() => validateApprovedBaseline(identity, { ...identity, artifactHash: "other" })).toThrow(
+    /approved baseline/,
+  );
+  expect(() => validateApprovedBaseline(identity, identity)).not.toThrow();
+});
 const workflows = [
   ".github/workflows/ci.yml",
   ".github/workflows/native-platforms.yml",
@@ -958,10 +1082,14 @@ describe("CI pipeline structure", () => {
       scripts: Record<string, string>;
     };
     const test = requiredJob(ci, "test");
+    const native = requiredJob(ci, "test-native");
     const browser = requiredJob(ci, "test-browser");
     const playtest = requiredJob(ci, "test-playtest");
     const browserDist = browser.indexOf("uses: ./.github/actions/workspace-dist");
     const playtestDist = playtest.indexOf("uses: ./.github/actions/workspace-dist");
+    const nativeDist = native.indexOf("uses: ./.github/actions/workspace-dist");
+    const nativeSmokeBuild = native.indexOf("pnpm --filter threenative-native-smoke build");
+    const nativeTests = native.indexOf("pnpm --filter @threenative/runtime-native test");
 
     expect(manifest.scripts.test).toBe("bash scripts/run-test-suite.sh");
     expect(manifest.scripts["test:ci"]).toContain("TN_SUITE_PREBUILT=1");
@@ -972,6 +1100,13 @@ describe("CI pipeline structure", () => {
 
     expect(test).toContain('TN_SUITE_PHASES: "docs,build,package-test"');
     expect(test).toContain("run: pnpm test:ci");
+    expect(nativeDist).toBeGreaterThanOrEqual(0);
+    expect(nativeSmokeBuild, "the native suite has no built smoke bundle").toBeGreaterThan(
+      nativeDist,
+    );
+    expect(nativeTests, "the smoke bundle is built after the native suite starts").toBeGreaterThan(
+      nativeSmokeBuild,
+    );
     expect(browserDist).toBeGreaterThanOrEqual(0);
     expect(playtestDist).toBeGreaterThanOrEqual(0);
     expect(browser.indexOf("pnpm test:browser:ci")).toBeGreaterThan(browserDist);
@@ -1448,5 +1583,421 @@ describe("CI pipeline structure", () => {
     expect(step, "the KVM step must report its mode, not assert it").not.toMatch(
       /\n\s+test -w \/dev\/kvm\s*\n/u,
     );
+  });
+
+  it("aggregates performance evidence fail-closed across empty, stale, failed, and advisory rows", () => {
+    const expectedSha = "a".repeat(40);
+    const pass = {
+      artifactHash: "artifact-browser",
+      lane: "browser-webgpu",
+      required: true,
+      sourceSha: expectedSha,
+      status: "PASS" as const,
+    };
+    expect(summarizePerformanceCi({ expectedSha, results: [pass] })).toMatchObject({
+      exitCode: 0,
+      status: "PASS",
+    });
+    expect(summarizePerformanceCi({ expectedSha, results: [] })).toMatchObject({
+      exitCode: 2,
+      status: "BLOCKED",
+    });
+    expect(
+      summarizePerformanceCi({
+        expectedSha,
+        results: [{ ...pass, sourceSha: "b".repeat(40) }],
+      }),
+    ).toMatchObject({ exitCode: 2, status: "BLOCKED" });
+    expect(
+      summarizePerformanceCi({
+        expectedSha,
+        results: [{ ...pass, status: "FAIL" }],
+      }),
+    ).toMatchObject({ exitCode: 1, status: "FAIL" });
+    const advisory = summarizePerformanceCi({
+      expectedSha,
+      requiredLanes: ["browser-webgpu"],
+      results: [
+        { lane: "native-ios", reason: "physical device unavailable", status: "UNVERIFIED" },
+      ],
+    });
+    expect(advisory.status).toBe("BLOCKED");
+    expect(renderPerformanceCiSummary(advisory)).toContain("UNVERIFIED=1");
+  });
+
+  it("treats shared-lane result keys as required independent executions", () => {
+    const expectedSha = "a".repeat(40);
+    const windows = {
+      ...{
+        artifactHash: "artifact-windows",
+        lane: "native-windows-macos",
+        sourceSha: expectedSha,
+        status: "PASS" as const,
+      },
+      resultKey: "native-windows",
+    };
+    const macos = { ...windows, artifactHash: "artifact-macos", resultKey: "native-macos" };
+    expect(
+      summarizePerformanceCi({
+        expectedSha,
+        requiredLanes: ["native-windows", "native-macos"],
+        results: [windows, macos],
+      }),
+    ).toMatchObject({ exitCode: 0, status: "PASS" });
+    expect(
+      summarizePerformanceCi({
+        expectedSha,
+        requiredLanes: ["native-windows", "native-macos"],
+        results: [windows],
+      }),
+    ).toMatchObject({ exitCode: 2, status: "BLOCKED" });
+  });
+
+  it("requires the performance workflow structure to retain collectors, failure evidence, and promotion separation", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const performance = await readFile(
+      path.join(repo, ".github/workflows/performance-regression.yml"),
+      "utf8",
+    );
+    const contracts = requiredJob(ci, "performance-contracts");
+    expect(contracts).toContain("profile-production.mjs");
+    expect(contracts).toContain("ci-summary.ts");
+    expect(contracts).toContain("if: always()");
+    expect(contracts).toContain("retention-days: 14");
+    expect(contracts).toContain("retention-days: 30");
+    for (const source of [native, performance]) {
+      expect(source).toContain("production-evidence.mjs");
+      expect(source).toContain("actions/upload-artifact");
+      expect(source).toContain("if: always()");
+    }
+    expect(performance).toContain("workflow_dispatch:");
+    expect(performance).toContain("schedule:");
+    expect(performance).not.toContain("pull_request_target");
+    expect(performance).toContain("max-parallel: 2");
+    expect(performance).toContain("--trusted");
+    expect(performance).toContain("TN_PERF_PHYSICAL_PROVISIONED");
+    expect(performance).toContain("matrix.physical == true");
+    expect(performance).toContain("inputs.trusted == true");
+    expect(performance).toContain("required-check-promotion");
+    expect(performance).toContain("baseline-regeneration");
+    expect(performance).toContain("weekly-workload-rotation");
+    expect(performance).toContain("pnpm test:templates");
+    expect(performance).toContain("release-soak");
+    expect(performance).toContain("pnpm native:qualify:physical");
+    expect(performance).toContain("7200000");
+  });
+
+  it("maps every performance matrix row to its declared platform runner and unique result key", async () => {
+    const performance = await readFile(
+      path.join(repo, ".github/workflows/performance-regression.yml"),
+      "utf8",
+    );
+    expect(performance).toMatch(/matrix:[\s\S]*runner: ubuntu-24\.04/u);
+    expect(performance).toMatch(
+      /lane: native-windows-macos[\s\S]*result_key: native-windows[\s\S]*runner: windows-2025/u,
+    );
+    expect(performance).toMatch(
+      /lane: native-windows-macos[\s\S]*result_key: native-macos[\s\S]*runner: macos-15/u,
+    );
+    expect(performance).toMatch(
+      /lane: native-android[\s\S]*runner:\s*\[self-hosted, linux, android,/u,
+    );
+    expect(performance).toMatch(/lane: native-ios[\s\S]*runner:\s*\[self-hosted, macOS, ios,/u);
+    expect(performance).toMatch(/runs-on:.*matrix.runner/u);
+    expect(performance).toContain("result_key");
+    expect(performance).toContain("native-windows");
+    expect(performance).toContain("native-macos");
+  });
+
+  it("uses a permitted cancellation source in the performance summary step", async () => {
+    const performance = await readFile(
+      path.join(repo, ".github/workflows/performance-regression.yml"),
+      "utf8",
+    );
+    const summary = requiredJob(performance, "performance-summary");
+    expect(summary).not.toContain("TN_PERF_CANCELLED: ${{ cancelled() }}");
+    expect(summary).toContain(
+      "TN_PERF_CANCELLED: ${{ needs.hardware-pairs.result == 'cancelled' }}",
+    );
+  });
+
+  it("runs bounded native desktop and simulator collectors against built artifacts", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    expect(requiredJob(ci, "test-native")).toContain("--hosted-software");
+    const desktopStart = native.indexOf(
+      "Collect bounded desktop performance evidence from the built runtime",
+    );
+    const desktopEnd = native.indexOf("uses: actions/upload-artifact", desktopStart);
+    const desktop = native.slice(desktopStart, desktopEnd);
+    expect(desktop).toContain("--target desktop");
+    expect(desktop).toContain('--prebuilt-artifact "$artifact"');
+    expect(desktop).toContain("--duration 1");
+    expect(desktop).toContain("--cold-starts 1");
+    expect(desktop).toContain("--repetitions 1");
+    expect(desktop).toContain("--hosted-software");
+    expect(desktop).toContain("collector_status=FAIL");
+    expect(desktop).toContain("build/tn-windows/mystral.exe");
+    expect(desktop).toContain("build/tn-macos/mystral");
+    expect(desktop).not.toContain("--help");
+    const simulatorStart = native.indexOf(
+      "Collect bounded iOS simulator evidence without claiming a phone run",
+    );
+    const simulatorEnd = native.indexOf("uses: actions/upload-artifact", simulatorStart);
+    const simulator = native.slice(simulatorStart, simulatorEnd);
+    expect(simulator).toContain(
+      "find packages/runtime-native/build/tn-ios-simulator -name threenative-ios.app",
+    );
+    expect(simulator).toContain("--target ios");
+    expect(simulator).toContain("--device ios-simulator");
+    expect(simulator).toContain('--prebuilt-artifact "$app"');
+    expect(simulator).toContain("--duration 1");
+    expect(simulator).toContain("--hosted-software");
+    expect(simulator).toContain("--cold-starts 1");
+    expect(simulator).toContain('provenance":"simulator"');
+    expect(simulator).toContain('status":"UNVERIFIED"');
+    expect(simulator).not.toContain("--help");
+  });
+
+  it("plans real alternating pairs and rejects unsafe or incomparable hardware evidence", () => {
+    expect(
+      plannedPerformancePairs("native-android", "/repo/baseline", "/repo/candidate").map(
+        ({ order }) => order,
+      ),
+    ).toEqual(["baseline-first", "candidate-first", "baseline-first"]);
+    expect(
+      plannedPerformancePairs("native-linux", "/repo/baseline", "/repo/candidate")[0]
+        ?.baselineCommand,
+    ).toContain("--profile regression");
+    expect(() => validatePerformanceDispatch({ eventName: "pull_request", trusted: true })).toThrow(
+      /only schedule and trusted manual dispatch/u,
+    );
+    expect(() =>
+      validatePerformanceDispatch({ eventName: "workflow_dispatch", trusted: false }),
+    ).toThrow(/trusted dispatch/u);
+    expect(() =>
+      validateArtifactIdentity({
+        artifactHash: "apk-hash",
+        expectedSourceSha: "a".repeat(40),
+        lane: "native-android",
+        nativeBinaryHash: "binary-hash",
+        provenance: "android-emulator",
+        sourceSha: "a".repeat(40),
+      }),
+    ).toThrow(/physical-hardware/u);
+    expect(() =>
+      validateThermalEvidence({
+        lane: "native-android",
+        metrics: { thermal: { complete: false, thermallyConfounded: true } },
+      }),
+    ).toThrow(/thermally confounded/u);
+  });
+
+  it("puts the selected physical device and evidence artifact on every collector command", () => {
+    const plan = (
+      plannedPerformancePairs as unknown as (
+        lane: string,
+        baselineWorktree: string,
+        candidateWorktree: string,
+        options: { device: string; physicalEvidence: string },
+      ) => ReturnType<typeof plannedPerformancePairs>
+    )("native-android", "/repo/baseline", "/repo/candidate", {
+      device: "pixel-8",
+      physicalEvidence: "/evidence/android.json",
+    });
+    for (const attempt of plan) {
+      expect(attempt.baselineCommand).toContain(
+        "--device pixel-8 --physical-evidence /evidence/android.json",
+      );
+      expect(attempt.candidateCommand).toContain(
+        "--device pixel-8 --physical-evidence /evidence/android.json",
+      );
+    }
+  });
+
+  it("does not invoke a physical collector when its selected device or evidence is missing", async () => {
+    const directory = await makeTempDir("threenative-performance-missing-input-");
+    const raw = JSON.parse(
+      await readFile(path.join(repo, "scripts/performance-regression/lanes.json"), "utf8"),
+    ) as {
+      promotionPolicy: Record<string, unknown>;
+      lanes: Array<Record<string, unknown>>;
+    };
+    const acceptedIdentity = {
+      architecture: "arm64",
+      artifactHash: "accepted-artifact",
+      browser: "none",
+      device: "pixel-8",
+      graphicsBackend: "vulkan",
+      gpu: "accepted-gpu",
+      instrumentationRevision: "productionEvidenceV1",
+      jsRuntime: "v8",
+      nativeBinaryHash: "accepted-binary",
+      operatingSystem: "android",
+      presentMode: "surfaceflinger",
+      resolution: "1920x1080",
+      sourceSha: "accepted-source",
+      workloadHash: "workload-1",
+    };
+    const manifest = {
+      ...raw,
+      promotionPolicy: { ...raw.promotionPolicy, calibrationStatus: "accepted" },
+      lanes: raw.lanes.map((lane) =>
+        lane.id === "native-android"
+          ? {
+              ...lane,
+              baseline: {
+                evidence: "docs/verification/accepted.md",
+                identity: acceptedIdentity,
+                rungs: { "L2@4096": 8.27 },
+                status: "accepted",
+              },
+              provisioning: "physical-hardware",
+            }
+          : lane,
+      ),
+    };
+    const manifestPath = path.join(directory, "lanes.json");
+    await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
+    const result = await runPerformanceLane({
+      baselineSourceSha: "a".repeat(40),
+      candidateSourceSha: "b".repeat(40),
+      candidateWorktree: directory,
+      eventName: "workflow_dispatch",
+      lane: "native-android",
+      leaseDirectory: path.join(directory, "leases"),
+      manifestPath,
+      outputPath: directory,
+      trusted: true,
+    });
+    expect(["BLOCKED", "UNVERIFIED"]).toContain(result.status);
+    expect(result.reason).toMatch(/device|physical-evidence/u);
+  });
+
+  it("preserves all five startup samples while keeping the p95 value", () => {
+    const evidence = {
+      artifact: { sha256: "a".repeat(64) },
+      command: "profile",
+      execution: { profile: "regression" },
+      identity: {
+        hostClass: "x86_64",
+        deviceClass: "gpu-runner-1",
+        graphicsBackend: "vulkan",
+        gpuClass: "NVIDIA Turing",
+        jsRuntime: "v8",
+        presentMode: "fifo",
+        renderWidth: 1920,
+        renderHeight: 1080,
+        workloadHash: "workload-sha256",
+        nativeBinarySha256: "binary-hash",
+        osClass: "linux",
+      },
+      metrics: {
+        frameSampleCount: 1_000,
+        p95FrameMs: 10,
+        startupP95Ms: 125,
+        startupSamplesMs: [100, 110, 120, 125, 125],
+      },
+      physical: {},
+      runId: "run-1",
+      source: { sha: "a".repeat(40) },
+      target: "desktop",
+      timestamps: { endedAt: "2026-09-05T00:00:01Z", startedAt: "2026-09-05T00:00:00Z" },
+    };
+    const converted = productionEvidenceToPerformanceRun(evidence, {
+      id: "native-linux",
+      platform: "native-linux",
+      workload: "platformer-production",
+    });
+    expect(converted.metrics.startupP95Ms).toMatchObject({
+      samples: [100, 110, 120, 125, 125],
+      unit: "ms",
+      value: 125,
+    });
+    for (const gpuClass of ["unknown-gpu", "fixture-control", "SwiftShader"]) {
+      expect(() =>
+        productionEvidenceToPerformanceRun(
+          { ...evidence, identity: { ...evidence.identity, gpuClass } },
+          { id: "native-linux", platform: "native-linux", workload: "platformer-production" },
+        ),
+      ).toThrow(/observed hardware/u);
+    }
+    const shortWindow = productionEvidenceToPerformanceRun(
+      {
+        ...evidence,
+        metrics: { ...evidence.metrics, startupSamplesMs: [100, 110, 120, 125] },
+        runId: "run-short-window",
+      },
+      { id: "native-linux", platform: "native-linux", workload: "platformer-production" },
+    );
+    expect(() => parsePerformanceRun(shortWindow, DEFAULT_PERFORMANCE_POLICY)).toThrow(
+      /TN_PERF_SHORT_SAMPLE_WINDOW/u,
+    );
+  });
+
+  it("keeps an unapproved advisory baseline UNVERIFIED instead of manufacturing a BLOCKED result", async () => {
+    const result = await runPerformanceLane({
+      baselineSourceSha: "a".repeat(40),
+      candidateSourceSha: "b".repeat(40),
+      dryRun: false,
+      eventName: "workflow_dispatch",
+      lane: "browser-webgpu",
+      manifestPath: path.join(repo, "scripts/performance-regression/lanes.json"),
+      trusted: true,
+    });
+    expect(result.status).toBe("UNVERIFIED");
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("serializes a hardware resource and releases the lease after failure", async () => {
+    const directory = await makeTempDir("threenative-performance-lease-");
+    const first = await acquirePerformanceLease(directory, "pixel-8", "first-owner");
+    await expect(acquirePerformanceLease(directory, "pixel-8", "second-owner")).rejects.toThrow(
+      /already leased/u,
+    );
+    await first.release();
+    await expect(
+      withPerformanceLease(directory, "pixel-8", "throwing-owner", async () => {
+        throw new Error("measurement failed");
+      }),
+    ).rejects.toThrow("measurement failed");
+    const afterFailure = await acquirePerformanceLease(directory, "pixel-8", "third-owner");
+    await afterFailure.release();
+  });
+
+  it("encodes the unpromoted calibration and CI-cost sample requirements in the lane manifest", async () => {
+    const manifest = JSON.parse(
+      await readFile(path.join(repo, "scripts/performance-regression/lanes.json"), "utf8"),
+    ) as {
+      promotionPolicy: {
+        accuracyRuns: number;
+        baselineRegeneration: string;
+        calibrationPairs: number;
+        ciCostRuns: number;
+        minimumCalibrationSessions: number;
+        requiredCheckPromotion: string;
+      };
+      lanes: { id: string; provisioning: string; required: boolean }[];
+    };
+    expect(manifest.promotionPolicy).toMatchObject({
+      accuracyRuns: 20,
+      baselineRegeneration: "separate-reviewed-change",
+      calibrationPairs: 10,
+      ciCostRuns: 20,
+      minimumCalibrationSessions: 3,
+      requiredCheckPromotion: "maintainer-review",
+    });
+    expect(manifest.lanes).toHaveLength(6);
+    expect(manifest.lanes.every(({ required }) => required === false)).toBe(true);
+    expect(
+      manifest.lanes.filter(({ provisioning }) => provisioning === "unprovisioned"),
+    ).toHaveLength(5);
   });
 });

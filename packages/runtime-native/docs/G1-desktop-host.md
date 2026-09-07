@@ -373,3 +373,44 @@ defines NOMINMAX at its own first include as well. CI first proved the productio
 repair, then exposed this independent test-header boundary. Corrected Windows
 wire-test compilation is pending CI, with local V8 and preprocessing evidence in
 the same Windows verification record.
+## Shared shadow-material invalidation — 2026-09-05
+
+The `17-shadow-map` conformance case now mixes an opaque torus with two planar casters. One source
+material changes `alphaTest` from 0 to 0.5 on render 2. On render 3, the other source is replaced by
+a material at the same version whose white alpha map changes its checker-cutout shadow to solid.
+The final frame shows all three shadows separately.
+
+After `pnpm native:build`, the selected case passed on browser WebGPU (NVIDIA/Turing) and the
+Linux desktop host at 1280×720: pixel mismatch ratio 0, perceptual delta E 0, no GPU validation
+errors, native exit 0. This verifies the dependency patch that avoids shared override-material
+version churn while tracking the source material's version and identity.
+
+The conformance runner returned 2 because the other 92 rows were deliberately unselected and
+reported blocked; this is one selected case passing, not a full-registry pass. The native capture
+also warned that its startup gate had not opened within 30 seconds and captured anyway. This
+receipt proves rendering, not startup readiness or performance. No Android/iOS result is claimed.
+
+[Machine-readable receipt](../../../docs/verification/wildwood-shadow-cache/native-conformance.json)
+and [shared browser/native image](../../../docs/verification/wildwood-shadow-cache/shadow-materials.png).
+
+## Canvas2D procedural-art regression (2026-09-05)
+
+The existing Canvas2D graphics backend now supports rotated elliptical arcs. Native pixel assertions cover the long and short axes and counterclockwise sweep; JS conformance also checks rejection of negative radii. This is drawing support on the existing canvas object, not a wider DOM UI stub. The bounded desktop case passed (1 pass, 0 fail, 92 unselected). Full game artwork parity remains open pending gradients. Evidence: `docs/verification/native-canvas-presentation-2026-09-05.md` and local `artifacts/wildwood-native-profile-20260905/ellipse-*`.
+
+Follow-up: linear gradients and the frame-stream Canvas2D upload path now pass native pixel checks, including GPU readback (1 selected case passed, 92 unselected). The original Wildwood preload renders without a baked-image workaround. Fresh matched desktop/browser captures still differ in font styling and stroke caps; full-game startup/performance and other platforms remain unverified. Details and red/green artifacts are recorded in the same verification document.
+
+Font follow-up: CSS family-list fallback, UI generic aliases and numeric weight are now honored. Equal-advance pixel-metric tests changed red to green, JS conformance passed, and the original title's monospace styling is visible in the new native capture. Stroke caps and full-game verification remain open.
+
+Stroke-cap follow-up: butt/round/square caps, state restoration and invalid assignments are now covered by native pixel tests and the selected conformance case (1 pass, 0 fail, 92 unselected). Matched original-source preload captures have mean RGB error 3.653/255 and 0.8813% of pixels differing by more than 16; the baked-image workaround is removed. This closes the observed preload drawing defects, not full-game or cross-platform verification.
+
+Input integration follow-up: the actual Linux host passed `86-pointer-keyboard-events` with core's automatic relative-pointer click capture (1 pass, 0 fail, 92 unselected; inspected nonblank capture, no GPU validation errors). This synthetic-event case is not real OS input proof. Fresh installed-package Wildwood packaging and its OS input probe remain pending; receipts are in `docs/verification/native-canvas-presentation-2026-09-05.md` and `artifacts/wildwood-native-profile-20260905/fresh-input-conformance/report.json` at the workspace root.
+
+Packaged-flow follow-up: the fresh Wildwood desktop build completed; real OS mouse input turned heading 34 → 42 degrees and W moved 5.1 metres. The unchanged native scenario subsequently passed all five assertions, covering world/UI readiness and 26.4476 metres of movement. The playtest driver needed a red/green severity fix: explicit GTK/EGL warnings remain observations rather than errors, while native `[error]` stdout now fails diagnostics. Artifacts: `fresh-native-e2e/profile.json`, `desktop-severity-{red,green}.log`, and `fresh-native-flow-green-console.log` under the same workspace artifact root. This verifies Linux loading/input behavior, not real-display performance, cursor visibility on the final bundle, or other platforms.
+
+Touch/cursor follow-up: `touch-input-conformance/report.json` records the updated Linux input case passing touch/pen rejection followed by mouse capture (1 pass, 0 fail, 92 unselected; no GPU validation errors; inspected nonblank capture). The existing desktop-parity CI job runs this case. Browser-generated touch followed by mouse also passed against current core source (`touch-capture-browser.log`); this is not physical-device touch proof. Separately, the fresh packaged game launched under GDB and real OS input reached SDL relative-mode state `1,0,1` (relative mode enabled, relative cursor visibility disabled, ordinary cursor enabled), which hides the cursor under SDL's relative-mode rule (`fresh-native-cursor-gdb/cursor-state.log`). Neither result establishes mobile readiness or steady-state performance.
+
+CI audit follow-up: desktop-parity is advisory and label-gated on PRs. The blocking Linux native suite now executes `threenative-canvas2d-dirty-test` through `runtime-next-contract.test.mjs`; previously CI built it without running the Linux-only glyph checks. Withholding the binary failed the new check, restoring it passed, and the runtime-next/frame-stream suites passed 44 tests with 2 skipped (`canvas-ci-{missing-red,green,suite}.log`). Detailed scope and earlier pixel red/green receipts are in the native canvas verification document.
+
+Linux backend default: the no-WebView preload probe failed in this Wayland desktop session because SDL chose Wayland while the host only creates X11 WebGPU surfaces (`linux-backend-default-red.log`). Window creation now prefers SDL's X11 driver on Linux desktop; the standard `SDL_VIDEODRIVER` environment override remains available. After rebuilding, the same probe launched without an override and produced pixels identical to the earlier explicit-X11 capture (`linux-backend-default-green.log` / `.png`). Android is excluded from this default. This proves XWayland use in the executed Linux lane, not a new native Wayland backend.
+
+Refreshed executable: `wrap-desktop-build.log` records successful packaging with the current host (verified identical prefix) and current core bundle. `wrap-native-flow-console.log` passes all five assertions, including 26.4476 m movement and zero game error diagnostics. `wrap-native-os-input/profile.json` verifies real OS turning (34 → 42°), walking (3.7 m), and SDL relative cursor hiding; the loading capture includes the shared-game artwork/color fixes. The separate real-time performance run failed its foreground requirement and supplies no steady-state FPS claim. See the verification document's handoff section for exact artifacts and remaining mobile limits.

@@ -77,9 +77,21 @@ static void applyEmbeddedWindowIcon() {
 /**
  * Initialize SDL and create window
  */
-bool createWindow(const char* title, int width, int height, bool fullscreen, bool resizable) {
+bool createWindow(
+    const char* title,
+    int width,
+    int height,
+    bool fullscreen,
+    bool resizable,
+    bool maximized
+) {
     std::cout << "[Window] Creating window: " << title << " (" << width << "x" << height << ")" << std::endl;
 
+#if defined(__linux__) && !defined(__ANDROID__)
+    // The Linux WebGPU surface currently consumes SDL's X11 handles. Prefer that supported
+    // backend even in a Wayland session; an explicit SDL_VIDEODRIVER remains an override.
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
+#endif
     // Initialize SDL
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD)) {
         std::cerr << "[Window] SDL_Init failed: " << SDL_GetError() << std::endl;
@@ -91,6 +103,7 @@ bool createWindow(const char* title, int width, int height, bool fullscreen, boo
     SDL_WindowFlags flags = 0;
     if (resizable) flags |= SDL_WINDOW_RESIZABLE;
     if (fullscreen) flags |= SDL_WINDOW_FULLSCREEN;
+    if (maximized && !fullscreen) flags |= SDL_WINDOW_MAXIMIZED;
 
     // Check for headless/background mode via environment variable
     const char* headless = std::getenv("MYSTRAL_HEADLESS");

@@ -15,14 +15,14 @@ export function setupSky(scene: Scene): void {
   const top = new Color(palette.skyHigh);
   const bottom = new Color(palette.skyLow);
   scene.background = top;
-  scene.fog = new Fog(bottom, 34, 90);
+  scene.fog = new Fog(bottom, 48, 150);
 
   // A vertical gradient, not a flat fill. This dome used to be one solid colour, and a blind score
   // of the first frame read it as exactly that: 8,001 unique colours in the whole
   // 1280x720 frame, with a 240px vertical background sample running 177888, 187888, 197988, 1B7988.
   // Sky is most of the frame, so a flat one costs more than anything else here. Edit or delete
   // this — it is your file.
-  const radius = 80;
+  const radius = 300;
   const geometry = new SphereGeometry(radius, 24, 12);
   const positions = geometry.getAttribute("position");
   const colors = new Float32Array(positions.count * 3);

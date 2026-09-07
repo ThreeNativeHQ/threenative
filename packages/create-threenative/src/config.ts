@@ -38,6 +38,8 @@ export interface IResolvedThreeNativeConfig {
     readonly title: string;
     readonly width: number;
     readonly height: number;
+    /** Start maximized on desktop; ignored when `display.fullscreen` is true. */
+    readonly maximized: boolean;
     readonly resizable: boolean;
   };
   readonly bootSplash?: IThreeNativeBootSplash;
@@ -828,7 +830,7 @@ function validateDisplay(raw: unknown): IResolvedThreeNativeConfig["display"] {
 
 function validateWindow(raw: unknown, appName: string): IResolvedThreeNativeConfig["window"] {
   const window = assertRecord(raw, "window");
-  assertKeys(window, "window", ["title", "width", "height", "resizable"]);
+  assertKeys(window, "window", ["title", "width", "height", "maximized", "resizable"]);
   return {
     title:
       window.title === undefined
@@ -836,6 +838,12 @@ function validateWindow(raw: unknown, appName: string): IResolvedThreeNativeConf
         : nonEmptyString(window.title, "TN_CONFIG_WINDOW_TITLE_INVALID", "window.title"),
     width: positiveInteger(window.width, 1280, "TN_CONFIG_WINDOW_WIDTH_INVALID", "window.width"),
     height: positiveInteger(window.height, 720, "TN_CONFIG_WINDOW_HEIGHT_INVALID", "window.height"),
+    maximized: booleanValue(
+      window.maximized,
+      false,
+      "TN_CONFIG_WINDOW_MAXIMIZED_INVALID",
+      "window.maximized",
+    ),
     resizable: booleanValue(
       window.resizable,
       true,

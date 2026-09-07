@@ -409,6 +409,8 @@ export interface ISkippedCompressionRow {
   readonly bytes: number;
   readonly files: number;
   readonly kind: "model" | "texture";
+  /** Decoder-backed sub-passes that this row actually omitted. */
+  readonly decoders?: readonly ("meshopt" | "KTX2")[];
   /** `"config"` — the game set `"none"`. `"platform"` — this target cannot decode compression. */
   readonly reason: "config" | "platform";
 }
@@ -435,12 +437,21 @@ export type ISkippedReportRow = ISkippedCompressionRow | ISkippedPassRow;
  */
 export function formatSkippedCompression(rows: readonly ISkippedReportRow[]): readonly string[] {
   return rows
-    .filter((row) => row.kind === "pass" || row.files > 0)
+    .filter(
+      (row) =>
+        (row.kind === "pass" || row.files > 0) &&
+        (row.kind !== "model" ||
+          row.reason !== "platform" ||
+          row.decoders === undefined ||
+          row.decoders.length > 0),
+    )
     .map((row) => {
       if (row.kind === "pass") {
         return `TN_ASSETS_PASS_SKIPPED ${row.pass}: omitted because the pass declares needsRuntimeDecoder=true and this target has no runtime decoder (reason: platform).`;
       }
-      const decoders = row.kind === "model" ? "meshopt and KTX2" : "KTX2";
+      const decoders = (
+        row.decoders ?? (row.kind === "model" ? ["meshopt", "KTX2"] : ["KTX2"])
+      ).join(" and ");
       const action =
         row.kind === "model" && row.reason === "platform"
           ? "retained without decoder-backed compression while decoder-free model passes still ran"

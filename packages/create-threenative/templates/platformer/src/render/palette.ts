@@ -6,7 +6,10 @@ export const palette = {
   ground: 0x55b935,
   character: 0xf29a38,
   accent: 0xffc83d,
-  shadow: 0x241d1a,
+  // Stone and crates. At 0x241d1a these read as black holes in the frame — the key comes from
+  // behind and above, so every face the camera can see is the unlit one, and the ambient alone
+  // has to carry them.
+  shadow: 0x6b5744,
 } as const;
 
 const materialCache = new Map<number, MeshStandardMaterial>();

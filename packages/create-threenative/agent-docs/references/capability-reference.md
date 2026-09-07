@@ -3257,6 +3257,21 @@ export function viewportPresentationCommands( viewport: { … }
 const adb = discoverAdb(process.env);
 ```
 
+### `viewportPresentationObserved`
+
+`function` — Drive and inspect Android playtest transport.
+
+```ts
+export function viewportPresentationObserved( override: string | undefined, expected: string | undefined, physical: { … }
+```
+
+- **Use when:** run a scenario on an Android emulator or device · parse Android console diagnostics · verify that an Android device presented the requested viewport · accept the physical panel size when `wm size` omits its override line
+- **Constraints:** Android evidence must name its target and transport
+
+```ts
+const adb = discoverAdb(process.env);
+```
+
 ### `viewportRestoreCommands`
 
 `function` — Drive and inspect Android playtest transport.

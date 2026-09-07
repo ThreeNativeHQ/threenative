@@ -2,6 +2,7 @@
 import { HalfFloatType } from "three";
 import * as tsl from "three/tsl";
 import type { Node } from "three/webgpu";
+import { createTextureScope } from "./textureLifetime.js";
 export type KernelOffset = { readonly x: number; readonly y: number };
 export interface IKuwaharaStageOptions {
   readonly anisotropy?: number;
@@ -36,18 +37,15 @@ export function createKuwaharaStage(options: IKuwaharaStageOptions = {}): IKuwah
     "kuwahara resolutionScale",
   );
   const strength = finiteRange(options.strength ?? 0.82, 0, 1, false, "kuwahara strength");
-  let scratches: IScratchTexture[] = [];
-  const dispose = (): void => {
-    for (const scratch of scratches) scratch.dispose();
-    scratches = [];
-  };
+  const textureScope = createTextureScope();
+  const dispose = textureScope.dispose;
   return {
     after: "outline",
     build: (input) => {
       if (!isNode(input)) throw new Error("kuwahara input is missing");
       if (strength === 0) return input;
       dispose();
-      const source = tsl.convertToTexture(input) as unknown as ITextureNode;
+      const source = textureScope.texture(input) as unknown as ITextureNode;
       const texel = tsl.screenSize.reciprocal();
       const sampleUv = (x: Node<"float"> | number, y: Node<"float"> | number): Node<"vec2"> =>
         tsl.screenUV.add(texel.mul(tsl.vec2(x, y))).clamp(0, 1) as Node<"vec2">;
@@ -56,11 +54,11 @@ export function createKuwaharaStage(options: IKuwaharaStageOptions = {}): IKuwah
       const gradientX = sampleColour(1, 0).sub(sampleColour(-1, 0)).mul(0.5);
       const gradientY = sampleColour(0, 1).sub(sampleColour(0, -1)).mul(0.5);
       const tensor = makeHalfFloatScratch(
+        textureScope,
         tsl.vec4(gradientX.mul(gradientX), gradientX.mul(gradientY), gradientY.mul(gradientY), 1),
         resolutionScale,
       );
-      scratches.push(tensor);
-      const tensorSample = tensor.texture.sample(tsl.screenUV);
+      const tensorSample = tensor.sample(tsl.screenUV);
       const orientation = tsl
         .atan(tensorSample.y.mul(2), tensorSample.x.sub(tensorSample.z))
         .mul(0.5);
@@ -98,46 +96,43 @@ export function createKuwaharaStage(options: IKuwaharaStageOptions = {}): IKuwah
         };
       }
       const base = source.sample(tsl.screenUV);
-      const paint = makeHalfFloatScratch(tsl.vec4(best.mean, base.a), resolutionScale);
-      scratches.push(paint);
-      return mixColour(base, paint.texture.sample(tsl.screenUV).rgb, strength);
+      const paint = makeHalfFloatScratch(
+        textureScope,
+        tsl.vec4(best.mean, base.a),
+        resolutionScale,
+      );
+      return mixColour(base, paint.sample(tsl.screenUV).rgb, strength);
     },
     dispose,
     minimumTier: "medium",
     name: "kuwahara",
   };
 }
-interface IScratchTexture {
-  readonly texture: ITextureNode;
-  dispose: () => void;
-}
 interface ITextureNode extends Node<"vec4"> {
   sample(uv: Node<"vec2">): Node<"vec4">;
 }
-function makeHalfFloatScratch(node: Node<"vec4">, resolutionScale: number): IScratchTexture {
+function makeHalfFloatScratch(
+  scope: ReturnType<typeof createTextureScope>,
+  node: Node<"vec4">,
+  resolutionScale: number,
+): IRawScratch {
   let scratch: IRawScratch | undefined;
   try {
-    scratch = tsl.rtt(node, null, null, { type: HalfFloatType }) as unknown as IRawScratch;
+    scratch = scope.own(
+      tsl.rtt(node, null, null, { type: HalfFloatType }) as unknown as IRawScratch,
+    );
     scratch.setResolutionScale(resolutionScale);
   } catch (error) {
-    scratch?.renderTarget.dispose();
+    scope.dispose();
     throw new Error(
       `kuwahara scratch allocation failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   if (scratch.renderTarget.texture.type !== HalfFloatType) {
-    scratch.renderTarget.dispose();
+    scope.dispose();
     throw new Error("kuwahara scratch format is not half-float");
   }
-  let released = false;
-  return {
-    texture: scratch,
-    dispose: () => {
-      if (released) return;
-      released = true;
-      scratch.renderTarget.dispose();
-    },
-  };
+  return scratch;
 }
 interface IRawScratch extends ITextureNode {
   readonly renderTarget: { readonly texture: { readonly type: number }; dispose: () => void };
