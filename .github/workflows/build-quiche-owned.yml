@@ -49,8 +49,12 @@ jobs:
           - target: mac-arm64
             os: macos-15
             sdk: macosx
+          # macos-13 was retired from GitHub-hosted runners: the job sat queued for
+          # over nine hours and never started, which stalled the whole nine-target
+          # release. macos-15 is arm64, so this is a cross-compile to
+          # x86_64-apple-darwin — the same shape ios-sim-x64 already builds here.
           - target: mac-x86_64
-            os: macos-13
+            os: macos-15
             sdk: macosx
           - target: android-arm64
             os: ubuntu-24.04
