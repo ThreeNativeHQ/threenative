@@ -202,6 +202,29 @@ test("a registered, unexpired exclusion is an expected block; anything else is n
   ]);
 });
 
+test("the runner applies an active target exclusion before native prerequisites", () => {
+  const out = makeTempDirSync("threenative-row-exclusion-");
+  try {
+    const result = run([
+      "--target",
+      "android-hardware",
+      "--device",
+      "unavailable",
+      "--only-tests",
+      "90-document-window-stubs",
+      "--out",
+      out,
+    ]);
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    const report = JSON.parse(readFileSync(join(out, "report.json"), "utf8"));
+    const row = report.results.find(({ id }) => id === "90-document-window-stubs");
+    assert.equal(row?.status, "blocked");
+    assert.match(row?.blockedReason ?? "", /^TN_PARITY_ROW_EXCLUDED: android-hardware-canvas2d-document-window-stubs/u);
+  } finally {
+    rmSync(out, { force: true, recursive: true });
+  }
+});
+
 test("both parity ledgers compute their exit cell with the runner's own rule", async () => {
   // The workflow used to restate the rule inline, and the copy knew only `fail` and `blocked`. A
   // report whose Android multitouch proof failed was therefore written down as exit 2 while the
@@ -851,7 +874,11 @@ test("registry exclusion expiry is validated and surfaced as blocked evidence", 
   assert.equal(expiredExclusions(registry, Date.parse("2026-12-30T23:59:59.000Z")).length, 0);
   assert.deepEqual(
     expiredExclusions(registry, Date.parse("2027-01-01T00:00:00.000Z")).map(({ id }) => id),
-    ["desktop-multitouch-input"],
+    [
+      "desktop-multitouch-input",
+      "android-canvas2d-document-window-stubs",
+      "android-hardware-canvas2d-document-window-stubs",
+    ],
   );
   assert.equal(validateRegistry(registry).length, 0);
 
