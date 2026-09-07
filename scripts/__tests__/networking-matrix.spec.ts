@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { makeTempDir } from "../../test-support/temp-dir.js";
+
 const {
   aggregateMatrix,
   assertFiniteMetrics,
@@ -304,12 +306,11 @@ describe("networking matrix verification", () => {
   });
 
   it("reports unqualified without evidence instead of claiming a pass", async () => {
-    const { mkdir, mkdtemp, rm, writeFile } = await import("node:fs/promises");
-    const { tmpdir } = await import("node:os");
+    const { mkdir, writeFile } = await import("node:fs/promises");
     const { join } = await import("node:path");
 
-    const testDir = await mkdtemp(join(tmpdir(), "net-matrix-empty-"));
-    try {
+    const testDir = await makeTempDir("net-matrix-empty-");
+    {
       const manifestPath = join(testDir, "manifest.json");
       await writeFile(manifestPath, JSON.stringify(sampleManifest(), null, 2));
       const resultsDir = join(testDir, "results");
@@ -329,18 +330,15 @@ describe("networking matrix verification", () => {
       expect(
         await main(["--manifest", manifestPath, "--results", resultsDir, "--require-evidence"]),
       ).toBe(1);
-    } finally {
-      await rm(testDir, { force: true, recursive: true });
     }
   });
 
   it("enforces every required row as soon as any evidence exists", async () => {
-    const { mkdir, mkdtemp, rm, writeFile } = await import("node:fs/promises");
-    const { tmpdir } = await import("node:os");
+    const { mkdir, writeFile } = await import("node:fs/promises");
     const { join } = await import("node:path");
 
-    const testDir = await mkdtemp(join(tmpdir(), "net-matrix-partial-"));
-    try {
+    const testDir = await makeTempDir("net-matrix-partial-");
+    {
       const manifest = sampleManifest({
         lanes: [
           {
@@ -375,8 +373,6 @@ describe("networking matrix verification", () => {
         /missing required lane/iu,
       );
       expect(await main(["--manifest", manifestPath, "--results", resultsDir])).toBe(1);
-    } finally {
-      await rm(testDir, { force: true, recursive: true });
     }
   });
 
@@ -385,12 +381,11 @@ describe("networking matrix verification", () => {
   });
 
   it("executes verifyNetworkingMatrix against files on disk", async () => {
-    const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
-    const { tmpdir } = await import("node:os");
+    const { writeFile } = await import("node:fs/promises");
     const { join } = await import("node:path");
 
-    const testDir = await mkdtemp(join(tmpdir(), "net-matrix-test-"));
-    try {
+    const testDir = await makeTempDir("net-matrix-test-");
+    {
       const manifest = sampleManifest();
       const manifestPath = join(testDir, "manifest.json");
       await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
@@ -405,8 +400,6 @@ describe("networking matrix verification", () => {
       const summary = await verifyNetworkingMatrix({ manifestPath, resultsDir });
       expect(summary.verdict).toBe("passed");
       expect(summary.passedRequired).toBe(1);
-    } finally {
-      await rm(testDir, { recursive: true, force: true });
     }
   });
 });
