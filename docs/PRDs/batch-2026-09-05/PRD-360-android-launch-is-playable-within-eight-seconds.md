@@ -92,6 +92,51 @@ with byte-identical proof sources in
 APK `20da12fa…` has not been run on a device. The earlier `403bd10c…` candidate
 predates the observer. No phase accepted; no device claim.
 
+## Android CI lane evidence — September 6, 2026
+
+The Android emulator CI lane had never reached the emulator. On run 34078916876 the step "Install
+Android build prerequisites" exited 1 with `Failed to download stb: Failed to download: 429 Too
+Many Requests` from raw.githubusercontent.com. Consequences: "Run checksum-locked APKs on the
+emulator" was skipped, "Verify captured parity ledger" failed with TN_PARITY_ANDROID_REPORT_MISSING,
+and "Collect bounded Android performance evidence from the emulator build" reported success while
+writing status BLOCKED, because it runs under `set +e`.
+
+The cause: `stb` is three single headers fetched fresh from raw.githubusercontent.com every run,
+outside the third-party cache, unauthenticated, sharing the hosted runner pool's egress IP and rate
+limit. `downloadFile` in `packages/runtime-native/scripts/download-deps.mjs` had no retry and sent
+no token. **The fix:** it now retries 429/500/502/503/504 with exponential backoff from 1000 ms,
+honours `Retry-After`, never retries a non-transient status such as 404, and sends
+`Authorization: Bearer $GITHUB_TOKEN` only to GitHub hosts. Proof is
+`packages/runtime-native/tests/download-retry.test.mjs`, 5 cases: red before the fix (5 failed),
+green after (5 passed). Mutation control: removing 429 from `TRANSIENT_STATUSES` reproduces the
+exact CI error `Failed to download: 429` and fails 3 of the 5 cases; restoring it returns 5 passed.
+
+A new CI step, "Assert PRD-360 pump observer emits on Android (structural, non-timing)", captures
+logcat inside the emulator-runner script (the action tears the emulator down when its script
+returns) and runs the tracked evaluator
+`docs/verification/prd-360-startup-2026-09-05/evaluate-first-playable.mjs.txt` over it. **This step
+deliberately does not judge the 8-second or 250-millisecond budgets:** it calls `evaluatePumpSilence`
+with `maxGapMs` set to `Infinity`, so only the marker's presence, JSON shape, `observed:true` and
+finite non-negative timestamps can fail; the timings are recorded with status UNVERIFIED, because the
+lane is x86_64 SwiftShader on `-accel auto`, has booted in 474 seconds without KVM, and the
+evaluator's own 50% battery preflight has no meaning on an emulator.
+
+At the time of writing this step had not yet executed on a real emulator run, so whether the
+observer's markers actually appear in Android logcat is unproven; the step fails closed if they do
+not. PRD-360's acceptance is unchanged and still open: it requires three physical Android cold
+launches on a thermally qualified device, and no device result is claimed here.
+
+The APK on disk at `packages/runtime-native/android/app/build/outputs/apk/debug/app-debug.apk`,
+SHA-256 `1ca640655779c7745c93fea6612017c313dfc42533b9f93eac29cbf56da968a6`, does NOT carry the
+observer: `strings` over its packaged `lib/x86_64/*.so` finds no `TN_PUMP_SILENCE` or
+`TN_PUMP_ENDPOINT`. It predates the observer and must not be used as a measurement subject. The
+vanished measurement subject has a recoverable substitute: the sandbox repository still holds
+`prd259-bayview-current-20260830` (381 files, 314 MB) at commit `2bf7bd7^`, removed by `2bf7bd7
+chore(sandbox): remove superseded game copies` — an older tree than the unrecoverable
+`prd329-bayview-20260905`, so using it means both baseline and candidate must be rebuilt from it for
+the A/B to be internally valid. It was deliberately not restored, because no measurement is possible
+without the device.
+
 ## Acceptance and checkpoint protocol
 
 - [ ] Median first playable frame ≤8 seconds over three physical Android cold launches; no event-pump silence >250 ms.
