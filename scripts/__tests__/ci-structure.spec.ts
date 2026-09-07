@@ -193,6 +193,19 @@ function kvmProvisioning(source: string): readonly string[] {
     );
 }
 
+function commandText(section: string): string {
+  return section
+    .split("\n")
+    .filter((line) => !/^\s*#/u.test(line))
+    .join("\n");
+}
+
+function cmakeFunction(source: string, name: string): string {
+  const match = new RegExp(`^function\\(${name}\\b[\\s\\S]*?^endfunction\\(\\)`, "mu").exec(source);
+  if (match === null) throw new Error(`CMake function ${name} was not found.`);
+  return match[0];
+}
+
 /**
  * Which templates a matrix job actually covers.
  *
@@ -444,6 +457,27 @@ describe("CI pipeline structure", () => {
         selection: "full",
       });
       expect(classifyScope(fixture.root, mixedHead, mixedHead)).toMatchObject({
+        scope: "full",
+        selection: "full",
+      });
+    } finally {
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("classifies workflow-only changes as full CI with no prose skip", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const workflowHead = await commitScopeChange(
+        fixture,
+        ".github/workflows/ci.yml",
+        "name: CI\njobs: {}\n",
+        "workflow-only change",
+      );
+
+      expect(classifyScope(fixture.root, fixture.base, workflowHead)).toMatchObject({
+        files: [".github/workflows/ci.yml"],
+        reason: '".github/workflows/ci.yml" is a non-Markdown path',
         scope: "full",
         selection: "full",
       });
@@ -1179,6 +1213,75 @@ describe("CI pipeline structure", () => {
     expect(native).toContain('du -sh "$CCACHE_DIR"');
   });
 
+  it("builds V8 native contracts through the configured aggregate target", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const native = requiredJob(ci, "test-native");
+    const commands = commandText(native);
+    const v8Contracts = workflowRunScript(ci, "Build the V8 contract executables").trim();
+
+    expect(v8Contracts).toBe(
+      [
+        "set -euo pipefail",
+        'cmake --build build/tn-linux --target threenative-native-tests --parallel "$(nproc)"',
+      ].join("\n"),
+    );
+    expect(commands, "test-native must not rediscover configured targets lexically").not.toContain(
+      "add_executable",
+    );
+    expect(commands, "test-native must not rebuild a handwritten target vector").not.toContain(
+      "target_args",
+    );
+    expect(commands, "test-native must not swallow a failed aggregate build").not.toContain(
+      "combined contract build failed",
+    );
+    expect(
+      v8Contracts,
+      "test-native must not turn a failed contract build into echo output",
+    ).not.toMatch(/\|\|\s*\\?\s*\n?\s*echo/u);
+
+    const quickJs = workflowRunScript(
+      ci,
+      "Build the QuickJS engine variant the cross-engine contracts need",
+    );
+    expect(quickJs).toContain("node scripts/download-deps.mjs --only quickjs");
+    expect(quickJs).toContain(
+      "cmake -S . -B build/tn-linux-quickjs -DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF",
+    );
+    expect(quickJs).toContain(
+      "cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test",
+    );
+    expect(quickJs).toContain(
+      '--target threenative-rg11b10-renderable-test --target mystral --parallel "$(nproc)"',
+    );
+  });
+
+  it("wires the native contract aggregate to CMake's configured registration set", async () => {
+    const cmake = await readFile(path.join(repo, "packages/runtime-native/CMakeLists.txt"), "utf8");
+    const registerFunction = cmakeFunction(cmake, "tn_register_contract_test");
+    expect(registerFunction).toContain(
+      "set_property(GLOBAL APPEND PROPERTY TN_NATIVE_CONTRACT_TARGETS ${target})",
+    );
+
+    const registrations = [...cmake.matchAll(/^\s*tn_register_contract_test\(/gmu)];
+    expect(registrations.length, "CMake registers no native contract targets").toBeGreaterThan(0);
+    const lastRegistration = registrations.at(-1)?.index;
+    expect(lastRegistration).toBeDefined();
+
+    const propertyRead = cmake.indexOf(
+      "get_property(TN_NATIVE_CONTRACT_TARGETS GLOBAL PROPERTY TN_NATIVE_CONTRACT_TARGETS)",
+    );
+    const aggregate = cmake.indexOf(
+      "add_custom_target(threenative-native-tests DEPENDS ${TN_NATIVE_CONTRACT_TARGETS})",
+    );
+    expect(
+      propertyRead,
+      "CMake never reads the configured native contract target list",
+    ).toBeGreaterThan(lastRegistration ?? -1);
+    expect(aggregate, "CMake never defines the aggregate native contract target").toBeGreaterThan(
+      propertyRead,
+    );
+  });
+
   // ccache has never paid off on this lane: 195 of 272 cacheable compiles miss on every run, and
   // the other half of the invocations sit behind SDL3's precompiled header where ccache cannot
   // reach them at all. Caching the compiled tree instead is safe because ninja re-stats every
@@ -1817,7 +1920,9 @@ describe("CI pipeline structure", () => {
   it("keeps the native contracts and primary CI documentation honest", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const test = requiredJob(ci, "test-native");
-    expect(test).toContain("grep -oE 'add_executable\\(\\s*threenative-[a-z0-9-]+-test'");
+    expect(test).toContain(
+      'cmake --build build/tn-linux --target threenative-native-tests --parallel "$(nproc)"',
+    );
     expect(test).toContain("Build the QuickJS engine variant the cross-engine contracts need");
     expect(test).toContain("-DMYSTRAL_USE_QUICKJS=ON -DMYSTRAL_USE_V8=OFF");
     for (const job of ["lint", "build", "budgets"]) requiredJob(ci, job);
