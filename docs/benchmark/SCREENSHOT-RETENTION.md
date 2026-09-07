@@ -14,9 +14,9 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
 | `docs/benchmark` | 1583 | 109397932 | 0 |
-| `docs/verification` | 651 | 56060142 | 30 |
+| `docs/verification` | 653 | 56068741 | 32 |
 
-**30 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
+**32 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories
 
@@ -56,6 +56,8 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/night-batch-2026-08-26-step0-2026-08-27.md` | 4442 |
 | `docs/verification/prd-219-menu-flow-merged-tree-2026-08-27.md` | 3525 |
 | `docs/verification/prd-243-starter-pixel-after-2026-08-30.png` | 171532 |
+| `docs/verification/prd-359-desktop-host-args-2026-09-06.md` | 3627 |
+| `docs/verification/prd-359-quiche-nine-target-2026-09-06.md` | 4972 |
 | `docs/verification/prd-359-task2b-send-2026-09-05.md` | 11167 |
 | `docs/verification/prd-359-task2b-signal-2026-09-05.md` | 9709 |
 | `docs/verification/prd-359-task7clock-7native-2026-09-06.md` | 2109 |

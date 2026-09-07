@@ -20,8 +20,11 @@ export interface IDesktopPlaytestDependencies {
 }
 
 /**
- * Arguments the native desktop host is launched with, from `--host-arg`.
- * A host that needs none still launches, so an absent list is empty rather than undefined.
+ * Arguments the native desktop host is launched with, from repeatable `--host-arg`.
+ * @situation pass a built game bundle to the desktop host
+ * @situation launch the native host with run arguments from a scenario run
+ * @constraint a host started without its bundle reports TN_PLAYTEST_BRIDGE_MISSING at zero frames
+ * @example const args = desktopHostArgs(config); // ["run", "dist/game.js"]
  */
 export function desktopHostArgs(config: IStandalonePlaytestConfig): readonly string[] {
   return config.desktop?.hostArgs ?? [];
