@@ -1087,6 +1087,30 @@
     {
       "aliases": [],
       "constraints": [
+        "every part is de-indexed and stripped to position, so UVs and authored normals do not survive; normals are recomputed from the merged buffer",
+        "either every part names a color or none does, and a mix throws",
+        "an empty part list throws, and a merge three.js refuses throws naming the label"
+      ],
+      "example": "const wall = new Mesh(mergeParts(pieces, { label: \"gatehouse\" }), stone);\n// pieces are meshes, or { geometry, matrix, color } when the colour is per piece:\nconst banner = mergeParts([{ color: 0x8b2f1a, geometry: cloth, matrix: placement }], { label: \"banner\" });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "color is per part and optional; without it no colour attribute is written and the surface alone decides"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function mergeParts( parts: Iterable<IMergePart>, options: IMergePartsOptions, ): BufferGeometry { … }",
+      "situations": [
+        "bake a building, ship or character authored out of primitives into one draw call",
+        "merge many small geometries and keep each piece's own colour",
+        "stop mergeGeometries from silently returning null on an extruded shape"
+      ],
+      "summary": "Merge pieces a game authored out of primitives into one buffer, keeping each piece's own colour. `InstancedBatch` collapses many copies of one shape; this collapses many *different* shapes that never move relative to each other — a building, a ship, a character built from boxes. Two things go wrong every time and neither is about how any of it looks. `mergeGeometries` hands back `null` on mismatched inputs instead of throwing, and the usual mismatch is invisible: one `ExtrudeGeometry` is non-indexed while every other primitive is indexed, so the merge fails at the first piece and the scene never loads. And a merged buffer draws with one surface, so per-piece colour is gone unless every piece carries a flat `color` attribute written before the merge. Both are mechanical. Geometry, placement, colour and the surface it draws with all stay the game's.",
+      "supersedes": [],
+      "symbol": "mergeParts"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "skinned height uses a crown bone; game-specific asset expectations stay in render code"
       ],
       "example": "normaliseToMetres(character, { metres: 1.8, axis: \"height\" });",
