@@ -25,7 +25,31 @@ export function inspectStarterScreenshot(path) {
     const blue = png.data[index + 2];
     const alpha = png.data[index + 3];
     colors.add(`${red},${green},${blue},${alpha}`);
-    if (alpha > 0 && blue > 150 && green > 140 && blue > red * 1.4) cyanAssetPixels += 1;
+    // Cyan by hue, not by exposure. The old test asked for `blue > 150 && green > 140`, which is
+    // a brightness threshold wearing a colour's name: it counted the proof asset only while the
+    // frame was bright, and a kit that grades its world darker failed a gate about whether an
+    // asset is *present*. Measured on three real captures — the ungraded starter, the same
+    // starter under its painterly chain, and a run that captured the loading screen with no world
+    // drawn at all:
+    //
+    //     frame                     old test   this test
+    //     ungraded, asset visible        136         489
+    //     painterly, asset visible        75         185   <- failed the 100 floor
+    //     loading screen, no world          0           0
+    //
+    // What identifies the asset is that green sits near blue while both clear red — cyan, where
+    // the world's navy has green at roughly half its blue. The `blue > 100` floor is what keeps
+    // that background out: it sits at 50-60 in the painterly capture, so the floor clears it by
+    // forty and the count falls off a cliff below it (1029 at 60, 21731 at 50).
+    if (
+      alpha > 0 &&
+      blue > 100 &&
+      blue > red * 1.4 &&
+      green > red * 1.25 &&
+      green > blue * 0.75
+    ) {
+      cyanAssetPixels += 1;
+    }
   }
   if (colors.size < 2) throw new Error('TN_NATIVE_STARTER_SCREENSHOT_BLANK: one-color frame.');
   // A one-colour guard is too weak to catch the capture this gate actually loses. A rendered
