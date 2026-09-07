@@ -315,7 +315,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-06 on the rebase onto origin/main de93a0d9, which already carried the
   // ocean-clock and sampled-waterline work through #129. Measured from the rebased tree; the
   // two earlier values on this branch are pre-rebase and only this one is authoritative.
-  sailing: "a3c0c1639381eea02aa3e5855d54e69ab7f3d1320535aff5e0bc71d5535478a1",
+  sailing: "d485c7d834b9f841cb45be76f85b68fa4a3df5f0265a38cf5d79874a8aab161f",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

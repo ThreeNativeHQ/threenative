@@ -101,6 +101,11 @@ beforeEach(() => {
   fixture.ship.updateVisual.mockClear();
   fixture.ship.capsize.mockClear();
   fixture.ship.mesh.position.z = 0;
+  // Every mutable field on the shared mock, not just the ones a case happens to touch today: the
+  // fixture is hoisted once for the whole file, so a field left dirty here is a case reading the
+  // previous case's ship.
+  fixture.ship.immersion = 0;
+  fixture.ship.visual.position.y = 0;
 });
 
 describe("sailing scene ocean clock", () => {
@@ -111,14 +116,7 @@ describe("sailing scene ocean clock", () => {
     frame(context, 0.5);
 
     expect(fixture.ocean.advance.mock.calls.map(([seconds]) => seconds)).toEqual([0.25, 0.75]);
-    expect(fixture.order).toEqual([
-      "ocean:0.25",
-      "ship",
-      "visual",
-      "ocean:0.75",
-      "ship",
-      "visual",
-    ]);
+    expect(fixture.order).toEqual(["ocean:0.25", "ship", "visual", "ocean:0.75", "ship", "visual"]);
   });
 });
 
