@@ -157,6 +157,7 @@ export type {
   IPlaytestRenderChainAssertion,
   IPlaytestStartupAssertion,
   IPlaytestPointer,
+  IPlaytestResourceWait,
   IPlaytestScenario,
   IPlaytestSignalAssertion,
   IPlaytestStep,

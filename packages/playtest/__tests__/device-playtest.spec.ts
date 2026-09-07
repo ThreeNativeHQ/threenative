@@ -11,6 +11,7 @@ import {
   type IPlaytestBridgeV1,
   type IPlaytestSampleRequest,
   type IPlaytestSetupRequest,
+  type JsonValue,
 } from "../src/index.js";
 import type { IAndroidDriver } from "../src/runner/android.js";
 import { AdbAndroidDriver, androidTouchBatches } from "../src/runner/android.js";
@@ -98,6 +99,44 @@ test("the Android runner samples only after the advertised startup phase is read
   expect(result.pass).toBe(true);
   expect(moving.readinessPhases).toEqual(["collapsing", "collapsing", "collapsing", "ready"]);
   expect(moving.sampledBeforeStartup).toBe(0);
+});
+
+test("native runner waits on an asynchronously changing resource", async () => {
+  const moving = movingBridge({ resourceReadyAtTick: 2 });
+  const result = await runDevice(
+    {
+      diagnostics: deviceDiagnosticsOptOut,
+      resources: [{ changed: true, equals: true, id: "state", path: "networkConnected" }],
+    },
+    new FakeAndroidDriver(moving.bridge),
+    1_000,
+    [{ timeoutMs: 1_000, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
+    null,
+  );
+
+  expect(result.pass).toBe(true);
+  expect(moving.tick()).toBe(2);
+  expect(moving.sampleRequests.some(({ resources }) => resources?.includes("state"))).toBe(true);
+});
+
+test("native runner times out a resource wait with the last observation", async () => {
+  const moving = movingBridge({ resourceReadyAtTick: Number.POSITIVE_INFINITY });
+  const result = await runDevice(
+    {
+      diagnostics: deviceDiagnosticsOptOut,
+      resources: [{ equals: true, id: "state", path: "networkConnected" }],
+    },
+    new FakeAndroidDriver(moving.bridge),
+    1_000,
+    [{ timeoutMs: 32, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
+    null,
+  );
+
+  expect(result.pass).toBe(false);
+  expect(result.diagnostics).toContainEqual(expect.objectContaining({
+    code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+    message: expect.stringContaining("last observation false"),
+  }));
 });
 
 test("the existing device-smoke scenario reaches its visibility assertion on Android", async () => {
@@ -711,7 +750,7 @@ const deviceDiagnosticsOptOut = {
   networkErrorsOptOutReason: "The Android transport has no network observer in this scenario.",
 };
 
-function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: string; height?: number; setup?: boolean; startupPolls?: number } = {}): {
+function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: string; height?: number; resourceReadyAtTick?: number; setup?: boolean; startupPolls?: number } = {}): {
   bridge: IPlaytestBridgeV1;
   sampleRequests: IPlaytestSampleRequest[];
   sampledBeforeStartup: number;
@@ -720,6 +759,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
   setHeld(value: boolean): void;
   tick(): number;
 } {
+  const resourceReadyAtTick = options.resourceReadyAtTick;
   let held = false;
   let tick = 0;
   let x = 0;
@@ -744,6 +784,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
           ...(options.setup === true ? ["entity.setup"] : []),
           "runtime.fixedStep",
           "runtime.diagnostics",
+          ...(resourceReadyAtTick === undefined ? [] : ["runtime.resources"]),
           ...(options.startupPolls === undefined ? [] : ["runtime.startup"]),
         ],
         limits: PLAYTEST_PROTOCOL_LIMITS,
@@ -771,6 +812,9 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
       sample: (request) => {
         if (!startupReady) sampledBeforeStartup += 1;
         sampleRequests.push(request);
+        const resources: Record<string, JsonValue> = resourceReadyAtTick === undefined
+          ? {}
+          : { state: { networkConnected: tick >= resourceReadyAtTick } };
         return {
           clock: { mode: "fixed-step", tick },
           diagnostics: [],
@@ -778,7 +822,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
             { id: options.entity ?? "player", transform: { position: [x, options.height ?? 0, 0] }, visible: true },
             { bounds: { height: 40, width: 40, x: 300, y: 160 }, id: "cube", visible: true },
           ],
-          resources: {},
+          resources,
         };
       },
     },

@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "endpoint": "https://localhost:4433/game",
+  "issuerUrl": "https://localhost:8443/token",
+  "room": "networking-proof",
+  "playerId": "alpha"
+}

@@ -51,6 +51,7 @@ import { HOST_PLAYTEST_OBSERVATION_FIELDS, STANDALONE_PLAYTEST_OBSERVATION_FIELD
 import { aimAngles, yawPitchToQuaternion } from "../scenario/orientation.js";
 import { MAX_FIXED_STEP_STARTUP_RETRIES, STOPPED_LOOP_ERROR } from "./shared.js";
 import type { IRunStepSamples } from "./shared.js";
+import { waitForResource } from "./wait-for-resource.js";
 export function collectTrivialityOptOuts(assertions: readonly IPlaytestAssertionResult[]): IPlaytestTrivialityOptOut[] {
   return assertions.flatMap(({ details, id }) => {
     if (details?.trivialityOptOut !== true) return [];
@@ -215,6 +216,36 @@ export async function runStep(
   finalStep: boolean,
   subject?: string,
 ): Promise<IRunStepSamples> {
+  if (step.waitForResource !== undefined) {
+    if (bridge === undefined || movementSampleRequest === undefined) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+        `Resource wait for '${step.waitForResource.id}.${step.waitForResource.path}' has no resource observer.`,
+        "Expose runtime.resources from the playtest bridge before waiting on a resource.",
+        { capability: "runtime.resources", path: `resources.${step.waitForResource.id}.${step.waitForResource.path}` },
+      ));
+    }
+    const wait = step.waitForResource;
+    const timeoutMs = step.timeoutMs;
+    if (timeoutMs === undefined) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+        `Resource wait for '${wait.id}.${wait.path}' has no timeout.`,
+        "Validate the scenario with timeoutMs as a positive integer no greater than 120000.",
+      ));
+    }
+    const after = await waitForResource({
+      advance: bridge.description.capabilities.includes("runtime.fixedStep")
+        ? () => advanceFixedStep(page, bridge, 1)
+        : undefined,
+      id: wait.id,
+      path: wait.path,
+      predicate: wait,
+      sample: () => bridge.sample(movementSampleRequest),
+      timeoutMs,
+    });
+    return { afterInput: after, afterStep: after, inputDriven: false };
+  }
   if (step.kind === "click") {
     await executeClickStep(page, bridge, step, viewport);
     const frames = Math.max(step.waitFrames ?? 0, step.waitTicks ?? 0, 1);

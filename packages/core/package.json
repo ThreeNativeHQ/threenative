@@ -52,6 +52,10 @@
       "types": "./dist/world.d.ts",
       "import": "./dist/world.js"
     },
+    "./net": {
+      "types": "./dist/net.d.ts",
+      "import": "./dist/net.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

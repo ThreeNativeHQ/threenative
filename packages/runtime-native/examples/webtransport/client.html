@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ThreeNative WebTransport echo conformance</title>
+    <style>
+      body {
+        font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        margin: 2rem;
+        max-width: 60rem;
+      }
+      label {
+        display: block;
+        margin: 0.75rem 0;
+      }
+      input {
+        font: inherit;
+        width: 100%;
+        padding: 0.35rem;
+      }
+      table {
+        border-collapse: collapse;
+        margin-top: 1.25rem;
+        width: 100%;
+      }
+      th,
+      td {
+        border: 1px solid #bbb;
+        padding: 0.35rem 0.6rem;
+        text-align: left;
+      }
+      .pass {
+        color: #0a6b1f;
+      }
+      .fail {
+        color: #a01212;
+      }
+      #verdict {
+        font-weight: bold;
+        margin-top: 1rem;
+      }
+      pre {
+        background: #f4f4f4;
+        overflow-x: auto;
+        padding: 0.75rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>WebTransport echo conformance</h1>
+
+    <p>
+      Proves a real browser's built-in <code>WebTransport</code> against the Go reference echo
+      server in <code>server/</code>: a 64 KiB bidirectional stream transfer that must come back
+      byte-identical, a datagram round trip, and a unidirectional stream the server echoes on a
+      stream of its own. This is transport conformance only — no application protocol, no
+      authentication, no gameplay.
+    </p>
+
+    <p>Start the server and serve this page from an origin it allows:</p>
+
+    <pre>
+go -C server build -o tn-network-server .
+./server/tn-network-server --listen 127.0.0.1:4433 --dev-self-signed \
+  --allow-origin http://127.0.0.1:8000
+python3 -m http.server 8000 --bind 127.0.0.1   # then open http://127.0.0.1:8000/client.html</pre
+    >
+
+    <p>
+      The server prints one <code>CERT_SHA256 &lt;base64&gt;</code> line for its development
+      certificate. Paste it below: a self-signed certificate is only reachable from a browser by
+      pinning that digest through <code>serverCertificateHashes</code>. Running from
+      <code>file://</code> will not work, and neither will an origin missing from
+      <code>--allow-origin</code>.
+    </p>
+
+    <form id="run-form">
+      <label>
+        WebTransport URL
+        <input id="url" name="url" value="https://127.0.0.1:4433/echo" />
+      </label>
+      <label>
+        Certificate SHA-256 (base64, from the server's CERT_SHA256 line)
+        <input id="certhash" name="certhash" placeholder="paste CERT_SHA256 here" />
+      </label>
+      <button type="submit" id="run">Run conformance</button>
+    </form>
+
+    <div id="verdict">Not run.</div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Check</th>
+          <th>Result</th>
+          <th>Bytes</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody id="results"></tbody>
+    </table>
+
+    <script type="module">
+      const STREAM_BYTES = 64 * 1024;
+      const DATAGRAM_BYTES = 32;
+      const DATAGRAM_ATTEMPTS = 3;
+      const DATAGRAM_TIMEOUT_MS = 2000;
+
+      const form = document.getElementById("run-form");
+      const urlInput = document.getElementById("url");
+      const certHashInput = document.getElementById("certhash");
+      const verdict = document.getElementById("verdict");
+      const results = document.getElementById("results");
+
+      // A deterministic payload so a corrupted byte is reproducible rather than random noise.
+      function payload(byteLength, seed) {
+        const bytes = new Uint8Array(byteLength);
+        let state = seed >>> 0;
+        for (let index = 0; index < byteLength; index += 1) {
+          state ^= state << 13;
+          state ^= state >>> 17;
+          state ^= state << 5;
+          state >>>= 0;
+          bytes[index] = state & 0xff;
+        }
+        return bytes;
+      }
+
+      function firstDifference(expected, actual) {
+        if (expected.length !== actual.length) {
+          return `length ${actual.length}, expected ${expected.length}`;
+        }
+        for (let index = 0; index < expected.length; index += 1) {
+          if (expected[index] !== actual[index]) {
+            return `byte ${index} is ${actual[index]}, expected ${expected[index]}`;
+          }
+        }
+        return null;
+      }
+
+      function base64ToBytes(base64) {
+        const binary = atob(base64.replace(/-/gu, "+").replace(/_/gu, "/"));
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) {
+          bytes[index] = binary.charCodeAt(index);
+        }
+        return bytes;
+      }
+
+      async function readAll(readable) {
+        const reader = readable.getReader();
+        const chunks = [];
+        let total = 0;
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            total += value.length;
+          }
+        }
+        const joined = new Uint8Array(total);
+        let offset = 0;
+        for (const chunk of chunks) {
+          joined.set(chunk, offset);
+          offset += chunk.length;
+        }
+        return joined;
+      }
+
+      // A 64 KiB message the server must return byte for byte. The writer is closed before
+      // reading so the echo terminates; the server answers while the write is still in flight.
+      async function checkBidirectionalStream(transport) {
+        const expected = payload(STREAM_BYTES, 0x5eed1234);
+        const stream = await transport.createBidirectionalStream();
+        const writer = stream.writable.getWriter();
+        await writer.write(expected);
+        await writer.close();
+        const echoed = await readAll(stream.readable);
+        const difference = firstDifference(expected, echoed);
+        return {
+          bytes: echoed.length,
+          detail: difference ?? `${STREAM_BYTES} bytes echoed byte-identical`,
+          passed: difference === null,
+        };
+      }
+
+      // Datagrams are unreliable by definition, so a loss is retried rather than reported as a
+      // transport defect. What is being proved is that a delivered datagram arrives intact.
+      async function checkDatagram(transport) {
+        const expected = payload(DATAGRAM_BYTES, 0x00c0ffee);
+        const writer = transport.datagrams.writable.getWriter();
+        const reader = transport.datagrams.readable.getReader();
+        try {
+          for (let attempt = 1; attempt <= DATAGRAM_ATTEMPTS; attempt += 1) {
+            await writer.write(expected);
+            const timeout = new Promise((resolve) => {
+              setTimeout(() => resolve({ value: null }), DATAGRAM_TIMEOUT_MS);
+            });
+            const { value } = await Promise.race([reader.read(), timeout]);
+            if (!value) continue;
+            const difference = firstDifference(expected, value);
+            return {
+              bytes: value.length,
+              detail: difference ?? `echoed intact on attempt ${attempt} of ${DATAGRAM_ATTEMPTS}`,
+              passed: difference === null,
+            };
+          }
+          return {
+            bytes: 0,
+            detail: `no datagram echoed within ${DATAGRAM_ATTEMPTS} attempts`,
+            passed: false,
+          };
+        } finally {
+          reader.releaseLock();
+          writer.releaseLock();
+        }
+      }
+
+      // The server answers a client unidirectional stream on a server-initiated one, so the
+      // incoming reader is taken before anything is sent.
+      async function checkUnidirectionalStream(transport) {
+        const expected = payload(1024, 0x13572468);
+        const incoming = transport.incomingUnidirectionalStreams.getReader();
+        try {
+          const outgoing = await transport.createUnidirectionalStream();
+          const writer = outgoing.getWriter();
+          await writer.write(expected);
+          await writer.close();
+          const { value: returned } = await incoming.read();
+          if (!returned) {
+            return { bytes: 0, detail: "server opened no return stream", passed: false };
+          }
+          const echoed = await readAll(returned);
+          const difference = firstDifference(expected, echoed);
+          return {
+            bytes: echoed.length,
+            detail: difference ?? "1024 bytes echoed byte-identical",
+            passed: difference === null,
+          };
+        } finally {
+          incoming.releaseLock();
+        }
+      }
+
+      const CHECKS = [
+        ["64 KiB bidirectional stream", checkBidirectionalStream],
+        ["datagram round trip", checkDatagram],
+        ["unidirectional stream", checkUnidirectionalStream],
+      ];
+
+      function render(rows) {
+        results.replaceChildren();
+        for (const row of rows) {
+          const tr = document.createElement("tr");
+          for (const [index, cell] of [
+            row.name,
+            row.passed ? "PASS" : "FAIL",
+            String(row.bytes),
+            row.detail,
+          ].entries()) {
+            const td = document.createElement("td");
+            td.textContent = cell;
+            if (index === 1) td.className = row.passed ? "pass" : "fail";
+            tr.append(td);
+          }
+          results.append(tr);
+        }
+      }
+
+      async function runConformance(url, certHash) {
+        const options = {};
+        const trimmed = certHash.trim();
+        if (trimmed !== "") {
+          options.serverCertificateHashes = [
+            { algorithm: "sha-256", value: base64ToBytes(trimmed) },
+          ];
+        }
+        const transport = new WebTransport(url, options);
+        transport.closed.catch(() => {});
+        await transport.ready;
+        const rows = [];
+        try {
+          for (const [name, check] of CHECKS) {
+            try {
+              rows.push({ name, ...(await check(transport)) });
+            } catch (error) {
+              rows.push({ name, bytes: 0, detail: String(error), passed: false });
+            }
+            render(rows);
+          }
+        } finally {
+          try {
+            transport.close();
+          } catch {
+            // A transport already closed by a failing check has nothing left to release.
+          }
+        }
+        return rows;
+      }
+
+      async function onRun(url, certHash) {
+        verdict.textContent = "Running...";
+        verdict.className = "";
+        results.replaceChildren();
+        let outcome;
+        try {
+          const rows = await runConformance(url, certHash);
+          const passed = rows.length === CHECKS.length && rows.every((row) => row.passed);
+          outcome = { url, checks: rows, passed };
+          verdict.textContent = passed
+            ? `PASS: ${rows.length} of ${CHECKS.length} checks passed against ${url}`
+            : `FAIL: ${rows.filter((row) => row.passed).length} of ${CHECKS.length} checks passed`;
+          verdict.className = passed ? "pass" : "fail";
+        } catch (error) {
+          outcome = { url, checks: [], passed: false, error: String(error) };
+          verdict.textContent = `FAIL: ${error}`;
+          verdict.className = "fail";
+        }
+        // Published so an automated driver reads the same result a human reads on the page.
+        globalThis.__TN_WEBTRANSPORT_RESULT__ = outcome;
+        return outcome;
+      }
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void onRun(urlInput.value, certHashInput.value);
+      });
+
+      // A driver can supply the URL and digest as query parameters and start immediately.
+      const parameters = new URLSearchParams(globalThis.location.search);
+      if (parameters.has("url")) urlInput.value = parameters.get("url");
+      if (parameters.has("certhash")) certHashInput.value = parameters.get("certhash");
+      if (parameters.get("autorun") === "1") {
+        void onRun(urlInput.value, certHashInput.value);
+      }
+    </script>
+  </body>
+</html>

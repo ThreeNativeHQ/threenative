@@ -54,7 +54,8 @@ describe("threenative-engine-mcp", () => {
     const cases = [
       ["make an inventory system", "src/"],
       ["dialogue with an NPC", "src/"],
-      ["multiplayer", "pnpm add"],
+      ["authoritative replication", "@threenative/core/net"],
+      ["client prediction", "@threenative/core/net"],
     ] as const;
 
     for (const [query, expectedGuidance] of cases) {
@@ -63,6 +64,28 @@ describe("threenative-engine-mcp", () => {
       expect(response.results, query).toEqual([]);
       expect(response.guidance, query).toContain(expectedGuidance);
     }
+  });
+
+  it("finds the portable transport while leaving replication game-owned", () => {
+    const transport = searchCapabilities(
+      "exchange multiplayer messages",
+      workspaceManifest,
+      "request",
+    );
+    expect(transport.verdict).toBe("matched");
+    expect(transport.results[0]?.symbol).toBe("connect");
+    expect(transport.results[0]?.importPath).toBe("@threenative/core/net");
+    expect(transport.results[0]?.constraints.join(" ")).toContain("HTTPS");
+    expect(transport.results[0]?.constraints.join(" ")).toContain("queues");
+
+    const replication = searchCapabilities(
+      "authoritative replication",
+      workspaceManifest,
+      "request",
+    );
+    expect(replication.verdict).toBe("none");
+    expect(replication.results).toEqual([]);
+    expect(replication.guidance).toContain("authoritative replication");
   });
 
   it("finds camera framing from third-person vocabulary", () => {

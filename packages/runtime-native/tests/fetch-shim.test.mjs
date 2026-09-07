@@ -249,7 +249,11 @@ test("http fetch surfaces status fields and unwraps a Request for the native bri
   const seen = [];
   const { context } = setupFetchContext({
     __httpRequestAsync: (url, options, callback) => {
-      seen.push({ url, method: options.method });
+      seen.push({
+        headers: options.headers?.entries ? Array.from(options.headers.entries()) : null,
+        method: options.method,
+        url,
+      });
       if (url.includes("down")) callback({ error: "connection refused" });
       else callback({ ok: true, status: 200, url, data: new ArrayBuffer(4) });
     },
@@ -257,6 +261,12 @@ test("http fetch surfaces status fields and unwraps a Request for the native bri
 
   const response = await vm.runInContext(`fetch("https://cdn.example/ship.glb")`, context);
   assert.equal(response.ok, true);
+  await vm.runInContext(
+    `fetch("https://cdn.example/auth", {
+      method: "POST", headers: { Authorization: "Bearer token" }, body: "{}",
+    })`,
+    context,
+  );
   assert.equal(response.status, 200);
 
   // Three.js r168+ passes a Request object, not a URL string.
@@ -265,15 +275,60 @@ test("http fetch surfaces status fields and unwraps a Request for the native bri
     context,
   );
   assert.equal(viaRequest.status, 200);
-  assert.deepEqual(seen.slice(0, 2), [
-    { url: "https://cdn.example/ship.glb", method: undefined },
-    { url: "https://cdn.example/tracks.glb", method: "GET" },
+  assert.deepEqual(guest(seen.slice(0, 3)), [
+    { headers: null, url: "https://cdn.example/ship.glb" },
+    { headers: [["authorization", "Bearer token"]], method: "POST", url: "https://cdn.example/auth" },
+    { headers: [], method: "GET", url: "https://cdn.example/tracks.glb" },
   ]);
 
   await assert.rejects(
     vm.runInContext(`fetch("https://cdn.example/down")`, context),
     /Fetch error: connection refused/u,
   );
+});
+
+test("fallback TextDecoder: fatal throws, nonfatal replaces, splits and offsets decode", () => {
+  const { context } = setupFetchContext();
+  const result = vm.runInContext(
+    `(() => {
+      const malformed = new Uint8Array([0xff, 0xfe]);
+      let fatalThrew = null;
+      try { new TextDecoder("utf-8", { fatal: true }).decode(malformed); }
+      catch (e) { fatalThrew = e instanceof TypeError ? e.name : String(e && e.name); }
+      const replaced = new TextDecoder().decode(malformed);
+      // valid split multibyte sequence across streaming chunks ("é" = U+00E9)
+      const streaming = new TextDecoder();
+      const first = streaming.decode(new Uint8Array([0xc3]), { stream: true });
+      const second = streaming.decode(new Uint8Array([0xa9]));
+      // ArrayBuffer views must honor byteOffset/byteLength
+      const backing = new Uint8Array([0x00, 0x68, 0x69, 0x00]);
+      const view = new Uint8Array(backing.buffer, 1, 2);
+      const offset = new TextDecoder().decode(view);
+      // unsupported encodings/options reject honestly
+      let badLabel = null;
+      try { new TextDecoder("utf-16"); } catch (e) { badLabel = e instanceof RangeError ? "RangeError" : String(e && e.name); }
+      let badOption = null;
+      try { new TextDecoder("utf-8", { fatal: true }).decode("nope"); } catch (e) { badOption = "threw"; }
+      return {
+        fatalThrew, replaced, first, second,
+        offset, badLabel, badOption,
+        fatalFlag: new TextDecoder("utf-8", { fatal: true }).fatal,
+        encoding: new TextDecoder().encoding,
+      };
+    })()`,
+    context,
+  );
+  assert.deepEqual(guest(result), {
+    fatalThrew: "TypeError",
+    replaced: "��",
+    first: "",
+    second: "é",
+    offset: "hi",
+    badLabel: "RangeError",
+    badOption: "threw",
+    fatalFlag: true,
+    encoding: "utf-8",
+  });
 });
 
 test("unsupported URL schemes reject instead of falling through to file reads", async () => {

@@ -500,7 +500,24 @@
     },
     {
       "id": "request.multiplayer",
-      "query": "multiplayer",
+      "query": "exchange authenticated multiplayer messages over WebTransport",
+      "scope": "request",
+      "source": "template:starter#Ownership",
+      "expect": ["connect"],
+      "reject": []
+    },
+    {
+      "id": "request.multiplayer-replication",
+      "query": "authoritative replication",
+      "scope": "request",
+      "source": "template:starter#Ownership",
+      "expect": ["defineGame"],
+      "reject": [],
+      "notOwned": "networked-multiplayer"
+    },
+    {
+      "id": "request.multiplayer-prediction",
+      "query": "client prediction",
       "scope": "request",
       "source": "template:starter#Ownership",
       "expect": ["defineGame"],

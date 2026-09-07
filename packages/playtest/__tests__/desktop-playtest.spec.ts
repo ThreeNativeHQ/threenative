@@ -9,6 +9,7 @@ import {
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
   type IPlaytestBridgeV1,
+  type JsonValue,
 } from "../src/index.js";
 import { assertCaptureNotBlank } from "../src/capture.js";
 import { exitCodeForReport, runConfiguredPlaytest } from "../src/runner/cli.js";
@@ -34,6 +35,53 @@ test("desktop CLI parsing requires and resolves the native executable", () => {
   expect(config.desktop).toEqual({ executable: "/project/.threenative/build/game" });
   expect(() => parseStandalonePlaytestArgs(["scenario.json", "--target", "desktop"], "/project"))
     .toThrow("Desktop playtest requires --executable");
+});
+
+test("desktop CLI forwards repeated --host-arg to the native host", () => {
+  const config = parseStandalonePlaytestArgs([
+    "scenario.json",
+    "--project",
+    "/project",
+    "--target",
+    "desktop",
+    "--executable",
+    ".threenative/build/game",
+    "--host-arg",
+    "run",
+    "--host-arg",
+    "dist/game.js",
+  ]);
+
+  expect(config.desktop).toEqual({
+    executable: "/project/.threenative/build/game",
+    hostArgs: ["run", "dist/game.js"],
+  });
+});
+
+test("desktop runner constructs its driver with the configured host arguments", async () => {
+  // Watches the construction the runner actually performs. Injecting dependencies.driver
+  // would bypass the one line under test, which is why the earlier version of this test
+  // could not fail when that line was deleted.
+  const constructed: (readonly string[] | undefined)[] = [];
+  const driverFactory = (options: { args?: readonly string[] }): IDevicePlaytestDriver => {
+    constructed.push(options.args);
+    throw new Error("captured");
+  };
+
+  await runDesktopPlaytest(
+    {
+      ...minimalConfig("desktop"),
+      desktop: { executable: "/project/game", hostArgs: ["run", "dist/game.js"] },
+    },
+    { driverFactory },
+  ).catch(() => undefined);
+  expect(constructed).toEqual([["run", "dist/game.js"]]);
+
+  constructed.length = 0;
+  // A host that needs no arguments must still launch, and it must be given an empty list
+  // rather than undefined, so the driver spreads nothing instead of skipping the field.
+  await runDesktopPlaytest(minimalConfig("desktop"), { driverFactory }).catch(() => undefined);
+  expect(constructed).toEqual([[]]);
 });
 
 test("desktop CLI routing selects the shared desktop runner", async () => {
@@ -213,6 +261,27 @@ test("desktop playtest reuses the device evaluator for positive and negative ass
   expect(exitCodeForReport(failing)).toBe(1);
 });
 
+test("desktop runner waits on an asynchronously changing resource", async () => {
+  const run = await runDesktopResourceScenario(2, 1_000);
+
+  expect(run.report.pass).toBe(true);
+  expect(run.report.assertionResults).toContainEqual(expect.objectContaining({
+    id: "resource.state.networkConnected",
+    pass: true,
+  }));
+  expect(run.tick()).toBe(2);
+});
+
+test("desktop runner times out a resource wait with the last observation", async () => {
+  const run = await runDesktopResourceScenario(Number.POSITIVE_INFINITY, 32);
+
+  expect(run.report.pass).toBe(false);
+  expect(run.report.diagnostics).toContainEqual(expect.objectContaining({
+    code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+    message: expect.stringContaining("last observation false"),
+  }));
+});
+
 test("desktop playtest surfaces a driver cleanup failure", async () => {
   await expect(runDesktopScenario(2, { stopError: new Error("desktop stop failed") }))
     .rejects.toThrow("desktop stop failed");
@@ -324,6 +393,44 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
   }
 }
 
+async function runDesktopResourceScenario(resourceReadyAtTick: number, timeoutMs: number) {
+  const projectPath = await makeTempDir("playtest-desktop-resource-");
+  const scenarioPath = join(projectPath, "scenario.json");
+  await writeFile(scenarioPath, JSON.stringify({
+    artifacts: { screenshots: false },
+    assert: { resources: [{ changed: true, equals: true, id: "state", path: "networkConnected" }] },
+    name: "desktop-resource-wait",
+    schemaVersion: 1,
+    steps: [{ timeoutMs, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
+    target: "desktop",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 0,
+  }));
+  const endpoint = `http://127.0.0.1:${await availablePort()}/playtest`;
+  const moving = movingBridge({ resourceReadyAtTick });
+  const driver = new FakeDesktopDriver(moving.bridge);
+  try {
+    const report = await runDesktopPlaytest({
+      artifactDirectory: join(projectPath, "artifacts"),
+      desktop: { executable: "/fake/native-game" },
+      endpoint,
+      headless: true,
+      projectPath,
+      scenarioPath,
+      target: "desktop",
+      timeoutMs: 1_000,
+      trace: false,
+      url: "http://127.0.0.1:5173",
+    }, {
+      driver,
+      transport: new DeviceBridgeTransport(endpoint),
+    });
+    return { report, tick: moving.tick };
+  } finally {
+    await rm(projectPath, { force: true, recursive: true });
+  }
+}
+
 class FakeDesktopDriver implements IDevicePlaytestDriver {
   private installation?: IDeviceBridgeInstallation;
   prepareCalls = 0;
@@ -353,10 +460,14 @@ class FakeDesktopDriver implements IDevicePlaytestDriver {
   }
 }
 
-function movingBridge(): { bridge: IPlaytestBridgeV1; setHeld(value: boolean): void } {
+function movingBridge(options: { resourceReadyAtTick?: number } = {}): { bridge: IPlaytestBridgeV1; setHeld(value: boolean): void; tick: () => number } {
+  const resourceReadyAtTick = options.resourceReadyAtTick;
   let held = false;
   let tick = 0;
   let x = 0;
+  const resources = (): Record<string, JsonValue> => resourceReadyAtTick === undefined
+    ? {}
+    : { state: { networkConnected: tick >= resourceReadyAtTick } };
   return {
     bridge: {
       advance: async (ticks) => {
@@ -365,7 +476,12 @@ function movingBridge(): { bridge: IPlaytestBridgeV1; setHeld(value: boolean): v
         return { clock: { mode: "fixed-step", tick }, ticks };
       },
       describe: () => ({
-        capabilities: ["entity.observe", "runtime.diagnostics", "runtime.fixedStep"],
+        capabilities: [
+          "entity.observe",
+          "runtime.diagnostics",
+          "runtime.fixedStep",
+          ...(resourceReadyAtTick === undefined ? [] : ["runtime.resources"]),
+        ],
         limits: PLAYTEST_PROTOCOL_LIMITS,
         name: "desktop-test",
         protocolVersion: PLAYTEST_PROTOCOL_VERSION,
@@ -375,10 +491,11 @@ function movingBridge(): { bridge: IPlaytestBridgeV1; setHeld(value: boolean): v
         clock: { mode: "fixed-step", tick },
         diagnostics: [],
         entities: [{ id: "player", transform: { position: [x, 0, 0] }, visible: true }],
-        resources: {},
+        resources: resources(),
       }),
     },
     setHeld: (value) => { held = value; },
+    tick: () => tick,
   };
 }
 

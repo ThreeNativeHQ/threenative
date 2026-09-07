@@ -1563,6 +1563,24 @@ export function assertPortableState(state: unknown): void { … }
 assertPortableState(game.state.getState());
 ```
 
+## `@threenative/core/net`
+
+### `connect`
+
+`function` — Open a bounded, authenticated WebTransport message channel shared by browser and native games.
+
+```ts
+export function connect(url: string, options: INetworkOptions): Promise<INetworkConnection> { … }
+```
+
+- **Use when:** connect two game clients over the portable WebTransport seam · send ordered actions and bounded unreliable state messages between game clients · exchange multiplayer messages without putting replication or gameplay in the engine
+- **Constraints:** the URL must use HTTPS and the credential is supplied by the game's identity flow; this API never issues credentials · channels, message sizes, and queues are validated before WebTransport opens, and reliable overflow returns false · native qualification depends on the installed host WebTransport bridge; iOS remains unverified
+- **Overrides:** connectTimeoutMs, maxReliableMessageBytes, maxQueuedReliableBytes, and maxQueuedDatagrams are named per-connection limits
+
+```ts
+const connection = await connect("https://game.example/game", { applicationProtocol: "my-game/1", credential, channels: [{ id: 1, delivery: "unreliable" }] });
+```
+
 ## `@threenative/core/playtest`
 
 ### `playtest`

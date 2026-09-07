@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-359 — players on every platform share one multiplayer transport
 
-**Status: NOT STARTED — READY FOR EXECUTION, 2026-09-05.** Implementation not started.
+**Status: IN PROGRESS, 2026-09-05.** Tasks 0, 1a and 1a-close passed: Go/Chromium and Linux-native development echo execute. Trusted TLS qualification and full platform acceptance remain open.
 The owner selected shared protocol/conformance tests with thin language adapters.
 The reference backend is Go; Node/Rust adapters are deferred. Execute
 [EXECUTION.md](./EXECUTION.md) in order using [PROTOCOL.md](./PROTOCOL.md).

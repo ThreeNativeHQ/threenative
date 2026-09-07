@@ -1,0 +1,227 @@
+diff --git a/quiche/src/tls/mod.rs b/quiche/src/tls/mod.rs
+index a63da22..d259d97 100644
+--- a/quiche/src/tls/mod.rs
++++ b/quiche/src/tls/mod.rs
+@@ -441,12 +441,24 @@ impl Handshake {
+ 
+     pub fn set_host_name(&mut self, name: &str) -> Result<()> {
+         let cstr = ffi::CString::new(name).map_err(|_| Error::TlsFail)?;
++        let param = unsafe { SSL_get0_param(self.as_mut_ptr()) };
++
++        // MystralNative addition: a numeric address is not a DNS name. RFC 6066
++        // section 3 forbids sending a literal IPv4/IPv6 address as SNI, and a DNS
++        // name check can never match an iPAddress SAN, so a verifying client could
++        // not connect to a numeric authority at all. Check the address against the
++        // certificate's IP SANs instead. Only the IP check is configured, so no DNS
++        // SAN and no subject common name can authenticate a numeric address.
++        if name.parse::<std::net::IpAddr>().is_ok() {
++            return map_result(unsafe {
++                X509_VERIFY_PARAM_set1_ip_asc(param, cstr.as_ptr())
++            });
++        }
++
+         let rc =
+             unsafe { SSL_set_tlsext_host_name(self.as_mut_ptr(), cstr.as_ptr()) };
+         self.map_result_ssl(rc)?;
+ 
+-        let param = unsafe { SSL_get0_param(self.as_mut_ptr()) };
+-
+         map_result(unsafe {
+             X509_VERIFY_PARAM_set1_host(param, cstr.as_ptr(), name.len())
+         })
+@@ -1223,6 +1235,13 @@ extern "C" {
+         param: *mut X509_VERIFY_PARAM, name: *const c_char, namelen: usize,
+     ) -> c_int;
+ 
++    // MystralNative addition: BoringSSL's IP-address identity check, used for a
++    // numeric authority. Decodes the ASCII address and configures `param` to
++    // check it against the certificate's iPAddress SANs.
++    fn X509_VERIFY_PARAM_set1_ip_asc(
++        param: *mut X509_VERIFY_PARAM, ipasc: *const c_char,
++    ) -> c_int;
++
+     // X509_STORE
+     #[cfg(windows)]
+     fn X509_STORE_add_cert(ctx: *mut X509_STORE, x: *mut X509) -> c_int;
+diff --git a/quiche/tests/ip_san.rs b/quiche/tests/ip_san.rs
+new file mode 100644
+index 0000000..57b4fe5
+--- /dev/null
++++ b/quiche/tests/ip_san.rs
+@@ -0,0 +1,176 @@
++// IP-SAN identity verification, end to end over quiche's public API.
++//
++// Each case runs a real QUIC/TLS handshake between quiche::connect and
++// quiche::accept, shuttling packets through memory: no sockets, no fixture
++// server. The client verifies the peer (verify_peer(true)) and trusts exactly
++// the server's own self-signed certificate, so the only variable is whether the
++// name the client was given can be authenticated against that certificate.
++//
++// Certificates are minted per case with the system `openssl` CLI into a
++// temporary directory and removed afterwards.
++
++use std::net::SocketAddr;
++use std::path::PathBuf;
++use std::process::Command;
++
++const PROTOS: [&[u8]; 1] = [b"proto1"];
++
++struct Fixture {
++    dir: PathBuf,
++    cert: String,
++    key: String,
++}
++
++impl Drop for Fixture {
++    fn drop(&mut self) {
++        let _ = std::fs::remove_dir_all(&self.dir);
++    }
++}
++
++/// Mints a self-signed leaf whose only identity is `san`, e.g. "IP:127.0.0.1".
++/// The subject CN is deliberately not a name under test, so nothing can pass
++/// through a common-name fallback.
++fn mint(tag: &str, san: &str) -> Fixture {
++    let dir = std::env::temp_dir().join(format!("quiche-ip-san-{tag}-{}", std::process::id()));
++    std::fs::create_dir_all(&dir).unwrap();
++    let cert = dir.join("cert.pem").to_str().unwrap().to_string();
++    let key = dir.join("key.pem").to_str().unwrap().to_string();
++    let status = Command::new("openssl")
++        .args([
++            "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes",
++            "-keyout", &key, "-out", &cert, "-days", "2",
++            "-subj", "/CN=quiche-ip-san-fixture",
++            "-addext", &format!("subjectAltName={san}"),
++        ])
++        .stderr(std::process::Stdio::null())
++        .status()
++        .expect("openssl must be installed to run these tests");
++    assert!(status.success(), "openssl failed to mint {tag}");
++    Fixture { dir, cert, key }
++}
++
++fn server_config(fixture: &Fixture) -> quiche::Config {
++    let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap();
++    config.load_cert_chain_from_pem_file(&fixture.cert).unwrap();
++    config.load_priv_key_from_pem_file(&fixture.key).unwrap();
++    config.set_application_protos(&PROTOS).unwrap();
++    config.verify_peer(false);
++    config.set_initial_max_data(30);
++    config.set_max_idle_timeout(5_000);
++    config
++}
++
++fn client_config(fixture: &Fixture) -> quiche::Config {
++    let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap();
++    config.set_application_protos(&PROTOS).unwrap();
++    // Peer verification on, and the fixture certificate is the only anchor.
++    config.verify_peer(true);
++    config.load_verify_locations_from_file(&fixture.cert).unwrap();
++    config.set_initial_max_data(30);
++    config.set_max_idle_timeout(5_000);
++    config
++}
++
++/// Runs the handshake to completion. `Ok(())` means the client established the
++/// connection, which for a verifying client means it authenticated the peer.
++fn handshake(server_name: &str, fixture: &Fixture, v6: bool) -> Result<(), quiche::Error> {
++    let (client_addr, server_addr): (SocketAddr, SocketAddr) = if v6 {
++        ("[::1]:1234".parse().unwrap(), "[::1]:4321".parse().unwrap())
++    } else {
++        ("127.0.0.1:1234".parse().unwrap(), "127.0.0.1:4321".parse().unwrap())
++    };
++
++    let mut scid = [0u8; 16];
++    scid[0] = 1;
++    let scid = quiche::ConnectionId::from_ref(&scid);
++    let mut server_scid = [0u8; 16];
++    server_scid[0] = 2;
++    let server_scid = quiche::ConnectionId::from_ref(&server_scid);
++
++    let mut client = quiche::connect(
++        Some(server_name),
++        &scid,
++        client_addr,
++        server_addr,
++        &mut client_config(fixture),
++    )?;
++    let mut server = quiche::accept(
++        &server_scid,
++        None,
++        server_addr,
++        client_addr,
++        &mut server_config(fixture),
++    )?;
++
++    let mut buf = [0u8; 65535];
++    for _ in 0..32 {
++        loop {
++            let (len, info) = match client.send(&mut buf) {
++                Ok(v) => v,
++                Err(quiche::Error::Done) => break,
++                Err(e) => return Err(e),
++            };
++            let recv = quiche::RecvInfo { from: info.from, to: info.to };
++            server.recv(&mut buf[..len], recv)?;
++        }
++        loop {
++            let (len, info) = match server.send(&mut buf) {
++                Ok(v) => v,
++                Err(quiche::Error::Done) => break,
++                Err(e) => return Err(e),
++            };
++            let recv = quiche::RecvInfo { from: info.from, to: info.to };
++            // A verification failure surfaces here, on the client.
++            client.recv(&mut buf[..len], recv)?;
++        }
++        if client.is_established() && server.is_established() {
++            return Ok(());
++        }
++    }
++    Err(quiche::Error::Done)
++}
++
++#[test]
++fn ipv4_ip_san_only_authenticates_numeric_address() {
++    let fixture = mint("v4", "IP:127.0.0.1");
++    assert_eq!(handshake("127.0.0.1", &fixture, false), Ok(()));
++}
++
++#[test]
++fn ipv6_ip_san_only_authenticates_numeric_address() {
++    let fixture = mint("v6", "IP:::1");
++    assert_eq!(handshake("::1", &fixture, true), Ok(()));
++}
++
++#[test]
++fn wrong_ip_is_rejected() {
++    let fixture = mint("wrong", "IP:127.0.0.2");
++    assert!(
++        handshake("127.0.0.1", &fixture, false).is_err(),
++        "a certificate for 127.0.0.2 must not authenticate 127.0.0.1"
++    );
++}
++
++#[test]
++fn dns_san_only_does_not_authenticate_an_ip() {
++    let fixture = mint("dnsonly", "DNS:localhost");
++    assert!(
++        handshake("127.0.0.1", &fixture, false).is_err(),
++        "a DNS-only certificate must never satisfy a numeric address"
++    );
++}
++
++#[test]
++fn dns_name_regression() {
++    let fixture = mint("dns", "DNS:localhost,IP:127.0.0.1");
++    assert_eq!(handshake("localhost", &fixture, false), Ok(()));
++}
++
++#[test]
++fn numeric_dns_san_does_not_authenticate_an_ip() {
++    let fixture = mint("numeric-dns", "DNS:127.0.0.1");
++    assert!(
++        handshake("127.0.0.1", &fixture, false).is_err(),
++        "a numeric DNS SAN must not substitute for an IP SAN"
++    );
++}
