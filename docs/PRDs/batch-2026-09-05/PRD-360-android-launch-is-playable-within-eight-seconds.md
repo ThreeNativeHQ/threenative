@@ -172,4 +172,32 @@ Record performance findings in `docs/verification/runtime-perf-state.md`; other 
 in a dated `docs/verification/` record. Link exact commands, outputs and artifact identities here.
 Unrun platform gates remain unverified. These plans do not claim implementation or measured improvement.
 
-Next action (under 2 minutes): Run `adb devices -l` and locate Bayview's recorded build subject.
+## What closing this actually requires — verified 2026-09-07
+
+The device lane was attempted, not assumed: `adb devices -l` empty, no phone on USB, and a sweep of
+the local `/24` on 5555 and 5037 found no adb listener. It is genuinely unreachable, so no device
+result is claimed.
+
+The remaining chain was walked as far as it goes without hardware, and the order matters — steps 1
+to 3 are **not** blocked by the device:
+
+1. **Choose the measurement subject.** The exact `prd329-bayview-20260905` tree was never tracked
+   and is unrecoverable. A substitute is recoverable: `prd259-bayview-current-20260830`, 381 files,
+   314 MB, at sandbox `2bf7bd7^`. It is an older tree, so both arms must be rebuilt from it for the
+   A/B to be internally valid. Deliberately left to the owner: the choice changes what the number
+   means.
+2. **Build both arms from that source, carrying the observer.** The APK on disk
+   (`app-debug.apk`, `1ca64065…`) does **not** carry it — `strings` over its packaged
+   `lib/x86_64/*.so` finds neither `TN_PUMP_SILENCE` nor `TN_PUMP_ENDPOINT`. The earlier
+   `403bd10c…` predates the observer. Gradle needs JDK 17.
+3. **Stage the harness.** `measure-first-playable.mjs` and `evaluate-first-playable.mjs` are
+   retained beside their proof and resolve repository paths four levels up, so they run from
+   `artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/`, with the candidate APK
+   at `../bayview-candidate.apk`. Confirmed by executing the dry-run path: with the scripts staged
+   elsewhere it fails resolving `device-preflight.mjs`; staged correctly it proceeds to the APK it
+   needs.
+4. **Then the device.** Three cold launches per arm at >=50% battery on a thermally qualified
+   phone: `node measure-first-playable.mjs --arm <frozen|candidate> --device <serial> --out
+   runs/<arm>/<a|b|c>`, each into its own run directory, then `evaluate-first-playable.mjs`.
+
+Next action (under 2 minutes): decide step 1, since steps 2 and 3 need no hardware.
