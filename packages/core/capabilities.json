@@ -1172,6 +1172,20 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "import { prepareSkeletalMesh } from \"@threenative/core\";\nconst character = prepareSkeletalMesh({ source: gltf.scene, clips: gltf.animations });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function prepareSkeletalMesh(options: ISkeletalMesh3DOptions): SkeletalMesh3D { … }",
+      "situations": ["prepare an imported rigged character instance"],
+      "summary": "Prepare a rigged character with skeleton-safe cloning, size normalisation, and clip audit.",
+      "supersedes": [],
+      "symbol": "prepareSkeletalMesh"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "keep the surface visible with zero opacity; do not hide it with `visible = false`"
       ],
@@ -1497,6 +1511,32 @@
       "summary": "Schedule delayed and repeating callbacks or tween numeric properties with game-owned cleanup.",
       "supersedes": [],
       "symbol": "Scheduler"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "use strideRoot to name the body moved by game code when the rig is parented under it",
+        "requiredClips fails closed at load time if any requested clip is missing or binds 0 tracks"
+      ],
+      "example": "import { SkeletalMesh3D } from \"@threenative/core\";\nconst character = new SkeletalMesh3D({\n  source: gltf.scene,\n  clips: gltf.animations,\n  requiredClips: [\"idle\", \"walk\"],\n  size: { metres: 1.8, axis: \"height\" },\n  strideRoot: body,\n});\nbody.add(character.root);\ncharacter.play(\"idle\");",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "strideSync controls whether locomotion playback rate matches ground covered",
+        "size normalises the instance to real-world metres with skin-aware measurement"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SkeletalMesh3D { … }",
+      "situations": [
+        "put an animated character in the scene",
+        "my imported character renders deformed",
+        "instance an imported rigged character",
+        "validate animation clips on a character rig at load time",
+        "prepare a skinned character with safe skeleton cloning and stride sync"
+      ],
+      "summary": "Shared preparation for an imported rigged character. Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement, validates requested clips against the file and rig at load time, and sets up AnimationPlayer with honest stride-root accounting.",
+      "supersedes": [],
+      "symbol": "SkeletalMesh3D"
     },
     {
       "aliases": [],

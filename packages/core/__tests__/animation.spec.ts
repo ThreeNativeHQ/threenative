@@ -1,6 +1,19 @@
-import { AnimationClip, NumberKeyframeTrack, Object3D, VectorKeyframeTrack } from "three";
+import {
+  AnimationClip,
+  Bone,
+  BufferGeometry,
+  Float32BufferAttribute,
+  Group,
+  MeshBasicMaterial,
+  NumberKeyframeTrack,
+  Object3D,
+  Skeleton,
+  SkinnedMesh,
+  VectorKeyframeTrack,
+} from "three";
 import { describe, expect, it } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
+import { SkeletalMesh3D } from "../src/skeletal-mesh.js";
 
 describe("AnimationPlayer", () => {
   it("should say how to fix a duplicate clip name rather than only that there is one", () => {
@@ -342,6 +355,216 @@ describe("AnimationPlayer stride sync", () => {
     player.update(1 / 60);
     expect(player.stride.rate).toBeCloseTo(2, 1);
     expect(player.stride.synced).toBe(true);
+  });
+});
+
+describe("SkeletalMesh3D shared character preparation", () => {
+  function createMultiPrimitiveRigFixture() {
+    const root = new Group();
+    root.name = "source-rig";
+
+    const hips = new Bone();
+    hips.name = "Hips";
+    const spine = new Bone();
+    spine.name = "Spine";
+    const head = new Bone();
+    head.name = "Head";
+    hips.add(spine);
+    spine.add(head);
+    root.add(hips);
+
+    const bones = [hips, spine, head];
+    const skeleton = new Skeleton(bones);
+
+    // Primitive 1: body mesh
+    const bodyGeom = new BufferGeometry();
+    bodyGeom.setAttribute("position", new Float32BufferAttribute([-1, 0, 0, 1, 0, 0, 0, 2, 0], 3));
+    bodyGeom.setAttribute(
+      "skinIndex",
+      new Float32BufferAttribute([0, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0], 4),
+    );
+    bodyGeom.setAttribute(
+      "skinWeight",
+      new Float32BufferAttribute([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], 4),
+    );
+    const bodyMesh = new SkinnedMesh(bodyGeom, new MeshBasicMaterial());
+    bodyMesh.name = "body";
+    bodyMesh.bind(skeleton);
+    root.add(bodyMesh);
+
+    // Primitive 2: fur/coat mesh (sharing bones)
+    const furGeom = new BufferGeometry();
+    furGeom.setAttribute("position", new Float32BufferAttribute([-1, 0, 0, 1, 0, 0, 0, 2, 0], 3));
+    furGeom.setAttribute(
+      "skinIndex",
+      new Float32BufferAttribute([0, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0], 4),
+    );
+    furGeom.setAttribute(
+      "skinWeight",
+      new Float32BufferAttribute([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], 4),
+    );
+    const furMesh = new SkinnedMesh(furGeom, new MeshBasicMaterial());
+    furMesh.name = "fur";
+    furMesh.bind(skeleton);
+    root.add(furMesh);
+
+    return { root, bones, skeleton, bodyMesh, furMesh };
+  }
+
+  it("ensures clones of a multi-primitive rig animate independently", () => {
+    const fixture = createMultiPrimitiveRigFixture();
+    const walkClip = new AnimationClip("walk", 1, [
+      new VectorKeyframeTrack("Hips.position", [0, 1], [0, 0, 0, 0, 0, 2]),
+    ]);
+
+    const first = new SkeletalMesh3D({
+      source: fixture.root,
+      clips: [walkClip],
+      requiredClips: ["walk"],
+    });
+    const second = new SkeletalMesh3D({
+      source: fixture.root,
+      clips: [walkClip],
+      requiredClips: ["walk"],
+    });
+
+    first.play("walk");
+    first.update(0.5);
+
+    const firstHips = first.root.getObjectByName("Hips");
+    const secondHips = second.root.getObjectByName("Hips");
+    expect(firstHips).toBeDefined();
+    expect(secondHips).toBeDefined();
+    expect(firstHips?.position.z).toBeCloseTo(1, 4);
+    expect(secondHips?.position.z).toBe(0);
+
+    const firstBody = first.root.getObjectByName("body") as SkinnedMesh;
+    const secondBody = second.root.getObjectByName("body") as SkinnedMesh;
+    expect(firstBody.skeleton.bones[0]).not.toBe(secondBody.skeleton.bones[0]);
+  });
+
+  it("negative control: plain Object3D.clone(true) fails independent animation by sharing bones", () => {
+    const fixture = createMultiPrimitiveRigFixture();
+    const firstClone = fixture.root.clone(true);
+    const secondClone = fixture.root.clone(true);
+
+    const firstBody = firstClone.getObjectByName("body") as SkinnedMesh;
+    const secondBody = secondClone.getObjectByName("body") as SkinnedMesh;
+    // With plain clone, both SkinnedMesh instances share the exact same bone instances from the source fixture!
+    expect(firstBody.skeleton.bones[0]).toBe(fixture.bones[0]);
+    expect(secondBody.skeleton.bones[0]).toBe(fixture.bones[0]);
+    expect(firstBody.skeleton.bones[0]).toBe(secondBody.skeleton.bones[0]);
+  });
+
+  it("proves two characters play different clips without mutating each other's skeleton", () => {
+    const fixture = createMultiPrimitiveRigFixture();
+    const clipA = new AnimationClip("clipA", 1, [
+      new VectorKeyframeTrack("Hips.position", [0, 1], [0, 0, 0, 0, 0, 5]),
+    ]);
+    const clipB = new AnimationClip("clipB", 1, [
+      new VectorKeyframeTrack("Hips.position", [0, 1], [0, 0, 0, 0, 0, -5]),
+    ]);
+
+    const charA = new SkeletalMesh3D({
+      source: fixture.root,
+      clips: [clipA, clipB],
+      requiredClips: ["clipA", "clipB"],
+    });
+    const charB = new SkeletalMesh3D({
+      source: fixture.root,
+      clips: [clipA, clipB],
+      requiredClips: ["clipA", "clipB"],
+    });
+
+    charA.play("clipA");
+    charB.play("clipB");
+    charA.update(0.5);
+    charB.update(0.5);
+
+    const hipsA = charA.root.getObjectByName("Hips");
+    const hipsB = charB.root.getObjectByName("Hips");
+    expect(hipsA).toBeDefined();
+    expect(hipsB).toBeDefined();
+    expect(hipsA?.position.z).toBeCloseTo(2.5, 3);
+    expect(hipsB?.position.z).toBeCloseTo(-2.5, 3);
+  });
+
+  it("ensures stride measurement reads the motion root rather than the transform the mixer writes", () => {
+    const fixture = createMultiPrimitiveRigFixture();
+    const travellingClip = new AnimationClip("walk", 1, [
+      new VectorKeyframeTrack("Hips.position", [0, 1], [0, 0, 0, 0, 0, 2]),
+    ]);
+
+    const body = new Group();
+    const char = new SkeletalMesh3D({
+      source: fixture.root,
+      clips: [travellingClip],
+      requiredClips: ["walk"],
+      strideRoot: body,
+    });
+    body.add(char.root);
+
+    char.play("walk");
+    char.update(1 / 60);
+    // Mixer moved the rig's internal Hips, but the body has not moved yet:
+    expect(body.position.z).toBe(0);
+
+    // Now the game moves the body by 2 metres/second:
+    body.position.z += 2 * (1 / 60);
+    char.update(1 / 60);
+
+    expect(char.stride.groundSpeed).toBeCloseTo(2, 1);
+    expect(char.stride.rate).toBeCloseTo(1, 1);
+  });
+
+  it("normalises rendered size with skin-aware measurement", () => {
+    const fixture = createMultiPrimitiveRigFixture();
+    const instance = new SkeletalMesh3D({
+      source: fixture.root,
+      size: { axis: "longest", metres: 1 },
+    });
+
+    expect(instance.scaleFactor).toBeCloseTo(0.5, 4);
+    expect(instance.root.scale.x).toBeCloseTo(0.5, 4);
+  });
+
+  it("fails at load time when a requested clip is missing, including the historically bad doe clip map", () => {
+    const fixture = createMultiPrimitiveRigFixture();
+    const doeIdle = new AnimationClip("ANIM_DeerDoe_IdleBreathe", 1, [
+      new VectorKeyframeTrack("Hips.position", [0, 1], [0, 0, 0, 0, 0, 0]),
+    ]);
+    const doeWalk = new AnimationClip("ANIM_DeerDoe_Walk", 1, [
+      new VectorKeyframeTrack("Hips.position", [0, 1], [0, 0, 0, 0, 0, 1]),
+    ]);
+
+    const BAD_DOE_CLIPS = {
+      idle: "ANIM_DeerStag_IdleBreathe",
+      walk: "ANIM_DeerStag_Walk",
+      run: "ANIM_DeerStag_Run",
+    };
+
+    expect(() => {
+      new SkeletalMesh3D({
+        source: fixture.root,
+        clips: [doeIdle, doeWalk],
+        requiredClips: BAD_DOE_CLIPS,
+      });
+    }).toThrow(/missing required clip 'ANIM_DeerStag_IdleBreathe'/);
+  });
+
+  it("fails at load time when a requested clip binds 0 tracks to the rig", () => {
+    const fixture = createMultiPrimitiveRigFixture();
+    const alienClip = new AnimationClip("alien_clip", 1, [
+      new VectorKeyframeTrack("AlienBone.position", [0, 1], [0, 0, 0, 0, 0, 1]),
+    ]);
+
+    expect(() => {
+      new SkeletalMesh3D({
+        source: fixture.root,
+        clips: [alienClip],
+        requiredClips: ["alien_clip"],
+      });
+    }).toThrow(/binds 0 tracks/);
   });
 });
 

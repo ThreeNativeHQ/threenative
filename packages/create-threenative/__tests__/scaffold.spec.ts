@@ -270,19 +270,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // config now carries `window.maximized`, so all ten scaffold trees move by that source byte.
   // Recomputed 2026-09-05 for the generated pointer-capture and desktop-mode authoring contract
   // in every template's AGENTS.md/CLAUDE.md pair; values are from the current Received block.
-  "action-rpg": "9eb8ab77493a112a9ebb103a077618bf042819ddde740cf4b9eefc641adc3708",
-  defense: "2820601f6e4bcd580fdacc4edc344bcfee337e31addebcf08504dba84a1266cf",
+  // Recomputed 2026-09-06 for PRD-361: SkeletalMesh3D in capability manifest and action-rpg character setup.
+  "action-rpg": "bff1841b5af985439e0fee93b36e21220cd61afed01299aeec577b80a26c6808",
+  defense: "d30742244556785796e69ec827b8a768d6e668483f92f7eedcc5f966e3bc0ac1",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "a5137a0194d61aebbb393860965dad8c59fa9751bde2c2437e2cdfd13d0af8ad",
-  platformer: "54ae4655502847ec20de6b349cc4b258e8a6adf21518916d0e7d5cdd6d4a3747",
-  runner: "263c8527700d2c5193de60c3b48fc057eb801224185fb237262fc2aa84a54c41",
-  puzzle: "2055528b04705027ebea4d4127dcdd65bc6b0f736081dcd53ed6b23b9627035a",
-  racing: "67300a2b6e9aba9414096671f9f0e142ed226f1c37d08615c21d3a6efd619c05",
-  shooter: "5dd79dc7f08051a1b5b6a7ad53d9eaf28a2caf65d016fff36c1761a260a542d3",
+  minimal: "463c6d7fc0769ced5a850cd3bb8b281e70effa2b99d8ccaea140d886d4dfa2f3",
+  platformer: "bdb18a6ffcfd00c38267a339646d22a40f88737724c71bdc5f03d56f82698787",
+  runner: "061941578e54b8321d126972513e3a61e6c56f491d4ba2c8aa89565f786db254",
+  puzzle: "8b476a6be68fffc6825cba98a8bee3595409f86c9640359c83a8de3751b32707",
+  racing: "bb56c7e8c8447737d3ac39c52995f2d6a638f5def33e016f54f938a8485830eb",
+  shooter: "8a141b6f39729fbeed8e4f8722146c9549271be372a4c98f6307e227084e0b9a",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "aad58b9149a4b889fce504bf3196f3c9642d504db680474802d8ef5de243d56d",
+  starter: "14c43d61a5f9fa3b2b8e3ee34d543c7f03a92fa993b5379a888831cc2060ce17",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -306,7 +307,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-07 for sailing's fixed-step ocean clock: the scene now advances
   // `SpectralOcean` before its registered compute passes run, which makes its existing moving-water
   // playtest prove a time-varying field.
-  sailing: "f8373c89e83525bd953dc36eee2dfb0888afe0ca361dddccb731887519e548a4",
+  sailing: "8e01e047f68f5ff62ff12a29ec1408bbf2f963e8cee0dda5cedd76d6f8802606",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
