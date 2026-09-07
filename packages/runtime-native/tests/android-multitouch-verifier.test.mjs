@@ -6,6 +6,20 @@ import { test } from 'vitest';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
+test('multi-touch verifier forwards the scenario viewport through its reporting driver', async () => {
+  const calls = [];
+  const driver = {
+    prepare: async (...args) => calls.push(args),
+  };
+  const { ReportingAndroidDriver } = await import('../scripts/verify-android-multitouch.mjs');
+  const reporting = new ReportingAndroidDriver(driver);
+  const viewport = { height: 360, width: 640 };
+
+  await reporting.prepare('http://127.0.0.1:41777/playtest', '/mailbox', viewport);
+
+  assert.deepEqual(calls, [['http://127.0.0.1:41777/playtest', '/mailbox', viewport]]);
+});
+
 test('standalone Android multi-touch proof is rootless, fail-closed, and parity-ready', () => {
   const source = readFileSync(join(root, 'scripts/verify-android-multitouch.mjs'), 'utf8');
   assert.match(source, /adb-emu-event-protocol-b/);
