@@ -172,6 +172,36 @@ Record performance findings in `docs/verification/runtime-perf-state.md`; other 
 in a dated `docs/verification/` record. Link exact commands, outputs and artifact identities here.
 Unrun platform gates remain unverified. These plans do not claim implementation or measured improvement.
 
+## A second blocker, independent of the device — 2026-09-07
+
+The device is not the only thing preventing this measurement, and this was not previously recorded.
+The documented subject is a sandbox game, and a sandbox game **cannot carry the pump observer at
+all today**.
+
+Established by inspecting the packed artifact, not by inference:
+
+- `pnpm --filter ./packages/runtime-native pack` produces a tarball containing `android/` Gradle
+  glue and `scripts/` only. It ships **zero** `src/**/*.cpp` or `*.h` — `pump_silence.h` and
+  `runtime.cpp` are not in it. A consumer therefore cannot compile the observer.
+- `scripts/install-prebuilt.mjs` is how a consumer gets a runtime instead: it resolves
+  `https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v<version>/prebuilt-lock.json`
+  and fails closed with `No prebuilt release asset is recorded for '<key>'` when there is none.
+- There is none. `gh api repos/ThreeNativeHQ/threenative/releases` returns exactly one release,
+  `quiche-owned-v1`; no `runtime-native-v*` tag exists. This is the release lane
+  `packages/runtime-native/AGENTS.md` already records as never having run, and which PRD-078 owns.
+
+So the acceptance as written — three cold launches of a real game built the way a user builds one —
+needs the prebuilt release lane before it needs a phone. The only Android binaries that carry the
+observer today are ones compiled from this repository, which is why CI's conformance APK emitted
+`TN_PUMP_SILENCE` while the sandbox APK on disk (`1ca64065…`) carries neither marker.
+
+This also explains, rather than repeats, the candidate confusion recorded above: `403bd10c…`
+predates the observer and `20da12fa…` was rebuilt from the workspace and never run on a device.
+
+Two routes, and the choice belongs to the owner because it changes what the number means: publish
+the runtime-native prebuilt release (PRD-078's subject) and measure a real sandbox game, or measure
+a workspace-built APK and state plainly that it is not the artifact a user would install.
+
 ## The observer emits on Android — first executed evidence, 2026-09-07
 
 Run 34104583517, `android-emulator-parity`, x86_64 emulator. The captured logcat carries one
