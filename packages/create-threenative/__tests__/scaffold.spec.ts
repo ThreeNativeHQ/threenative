@@ -306,7 +306,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-07 for sailing's fixed-step ocean clock: the scene now advances
   // `SpectralOcean` before its registered compute passes run, which makes its existing moving-water
   // playtest prove a time-varying field.
-  sailing: "f8373c89e83525bd953dc36eee2dfb0888afe0ca361dddccb731887519e548a4",
+  // Recomputed 2026-09-06: the sailing hull rides the swell from a scene-frame visual update
+  // instead of from gameplay `update`, so the ocean no longer moves under a frozen boat once
+  // the course is won or the wind runs out. Only the sailing tree moves.
+  sailing: "714bccb79cb7261ea8ecee67652eab5876e1ca727592356ec5bb899cf0c63bb8",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
