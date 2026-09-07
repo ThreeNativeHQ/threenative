@@ -1,8 +1,11 @@
 import { expect, test } from "vitest";
 
 import {
+  AdbAndroidDriver,
   keyboardIsShown,
+  parseAndroidTouchViewport,
   tapCommand,
+  touchPositionForViewport,
   touchRotationFromWindowDump,
   viewportPresentationCommands,
   viewportPresentationObserved,
@@ -34,6 +37,57 @@ test.each([
 
 test("a window dump with no rotation reports none rather than guessing zero", () => {
   expect(touchRotationFromWindowDump("mDeferredRotationPauseCount=0")).toBeUndefined();
+});
+
+test("raw multitouch coordinates target the letterboxed Android viewport", () => {
+  const viewport = parseAndroidTouchViewport(`
+    Viewport INTERNAL: displayId=0, uniqueId=local:1, port=0, orientation=0,
+    logicalFrame=[0, 0, 1280, 720], physicalFrame=[0, 896, 1080, 1503], deviceSize=[1080, 2400], isActive=[1]
+  `);
+
+  expect(touchPositionForViewport(0.2, 0.5, viewport)).toEqual([6553, 16377]);
+  expect(touchPositionForViewport(0.8, 0.5, viewport)).toEqual([26214, 16377]);
+});
+
+test("the Android driver uses the observed viewport when injecting a pointer", async () => {
+  const sent: string[][] = [];
+  let sizeRead = 0;
+  const driver = new AdbAndroidDriver({
+    activity: ".MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.example.game",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (args) => {
+    if (args.join(" ") === "shell wm size") {
+      sizeRead += 1;
+      return sizeRead === 1
+        ? "Physical size: 1080x2400\n"
+        : "Physical size: 1080x2400\nOverride size: 360x640\n";
+    }
+    if (args[0] === "get-serialno") return "emulator-5554\n";
+    if (args[0] === "emu") {
+      sent.push([...args.slice(3)]);
+      return "OK\n";
+    }
+    if (args.join(" ") === "shell dumpsys window") return "mRotation=1\n";
+    if (args.join(" ") === "shell dumpsys input") {
+      return "Viewport INTERNAL: displayId=0, uniqueId=local:1, port=0, orientation=0, logicalFrame=[0, 0, 1280, 720], physicalFrame=[0, 896, 1080, 1503], deviceSize=[1080, 2400], isActive=[1]\n";
+    }
+    if (args.join(" ") === "shell am get-current-user") return "0\n";
+    return "";
+  };
+
+  await driver.prepare("http://127.0.0.1:41777/playtest", undefined, { height: 360, width: 640 });
+  await driver.setPointers([{ id: 7, x: 0.2, y: 0.5 }]);
+
+  expect(sent[0]).toEqual([
+    "EV_ABS:ABS_MT_SLOT:0",
+    "EV_ABS:ABS_MT_POSITION_X:6553",
+    "EV_ABS:ABS_MT_POSITION_Y:16377",
+    "EV_ABS:ABS_MT_TOUCH_MAJOR:1",
+    "EV_ABS:ABS_MT_PRESSURE:512",
+    "EV_SYN:0:0",
+  ]);
 });
 
 /**
