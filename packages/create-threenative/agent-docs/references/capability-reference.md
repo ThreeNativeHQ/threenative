@@ -2322,7 +2322,7 @@ const scenario = await loadPlaytestScenario(project, file);
 `function` — Evaluate rich semantic assertions against captured observations.
 
 ```ts
-export function requiredPlaytestCapabilities(scenario: IPlaytestScenario): PlaytestCapability[] { … }
+export function requiredPlaytestCapabilities( scenario: IPlaytestScenario, target?: string, ): PlaytestCapability[] { … }
 ```
 
 - **Use when:** assert movement, visibility, or diagnostics in a playtest · turn a scenario observation into a pass or failure
@@ -2624,7 +2624,7 @@ const bridge = await connectPlaytestBridge(page, scenario);
 `function` — Connect a Playwright page to a playtest bridge.
 
 ```ts
-export async function connectPlaytestBridgeTransport( transport: IBridgeTransport, scenario: IPlaytestScenario, timeoutMs: number = bridgeWaitTimeoutMs(), ): Promise<IPlaytestBridgeClient | undefined> { … }
+export async function connectPlaytestBridgeTransport( transport: IBridgeTransport, scenario: IPlaytestScenario, timeoutMs: number = bridgeWaitTimeoutMs(), target?: string, ): Promise<IPlaytestBridgeClient | undefined> { … }
 ```
 
 - **Use when:** run a browser scenario against a game · inspect bridge diagnostics from a runner

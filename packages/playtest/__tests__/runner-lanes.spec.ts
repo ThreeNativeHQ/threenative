@@ -178,6 +178,9 @@ test("browser and native failure reports expose the same field set", () => {
   expect(Object.keys(android).sort()).toEqual(Object.keys(web).sort());
   expect(android.runtime).toBe("native");
   expect(android.target).toBe("android");
+  expect(web.diagnosticsPolicy?.noNetworkErrors).toBe(true);
+  expect(android.diagnosticsPolicy?.noNetworkErrors).toBe(false);
+  expect(android.diagnosticsPolicy?.networkErrorsOptOutReason).toMatch(/no network observer/u);
 });
 
 test.each([

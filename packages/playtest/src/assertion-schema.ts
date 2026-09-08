@@ -1,5 +1,6 @@
 import type { IPlaytestScenario, PlaytestTarget } from "./scenario.js";
 import type { PlaytestCapability } from "./capabilities.js";
+import { resolveDiagnosticsPolicy } from "./assertion-report.js";
 
 export interface IPlaytestAssertionSchemaField {
   description: string;
@@ -625,7 +626,10 @@ export const PLAYTEST_SETUP_REGISTRY: readonly IPlaytestSetupSchemaEntry[] = [
   },
 ] as const;
 
-export function requiredPlaytestCapabilities(scenario: IPlaytestScenario): PlaytestCapability[] {
+export function requiredPlaytestCapabilities(
+  scenario: IPlaytestScenario,
+  target?: string,
+): PlaytestCapability[] {
   const required = new Set<PlaytestCapability>();
   if (scenario.steps.some((step) => step.waitForResource !== undefined)) {
     required.add("runtime.resources");
@@ -643,15 +647,13 @@ export function requiredPlaytestCapabilities(scenario: IPlaytestScenario): Playt
   for (const entry of PLAYTEST_ASSERTION_REGISTRY) {
     if (scenario.assert?.[entry.kind] !== undefined) {
       if (entry.kind === "diagnostics") {
-        // `!== false` throughout, because that is what `resolveDiagnosticsPolicy` does: all three
-        // default to on. Two of these read `=== true`, so a scenario that declared a diagnostics
-        // block and omitted a field required no capability for it while the evaluator went on
-        // asserting it — the gate and the evaluator disagreed about the same run, in the direction
-        // that passes.
-        const policy = scenario.assert.diagnostics;
-        if (policy?.noConsoleErrors !== false) required.add("browser.console");
-        if (policy?.noNetworkErrors !== false) required.add("browser.network");
-        if (policy?.noRuntimeDiagnostics !== false) required.add("runtime.diagnostics");
+        // Capability preflight and evaluation must use the same effective policy. In particular,
+        // an omitted network field defaults on in a browser and is waived on a network-blind
+        // native target; an explicit true remains required everywhere.
+        const policy = resolveDiagnosticsPolicy(scenario.assert.diagnostics, target);
+        if (policy.noConsoleErrors) required.add("browser.console");
+        if (policy.noNetworkErrors) required.add("browser.network");
+        if (policy.noRuntimeDiagnostics) required.add("runtime.diagnostics");
       } else {
         entry.requiredCapabilities.forEach((capability) => required.add(capability));
       }
