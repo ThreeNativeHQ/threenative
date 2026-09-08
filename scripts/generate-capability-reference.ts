@@ -30,6 +30,7 @@ interface IManifestEntry {
   readonly kind: string;
   readonly overrides: readonly string[];
   readonly package: string;
+  readonly requires?: readonly string[];
   readonly signature: string;
   readonly situations: readonly string[];
   readonly summary: string;
@@ -61,6 +62,7 @@ function section(entry: IManifestEntry): string {
     "",
     ...bulletList(entry.situations, "Use when"),
     ...bulletList(entry.constraints, "Constraints"),
+    ...bulletList(entry.requires ?? [], "Requires"),
     ...bulletList(entry.supersedes, "Supersedes (writing this fails `pnpm budgets`)"),
     ...bulletList(entry.overrides, "Overrides"),
   ];

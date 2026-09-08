@@ -5,6 +5,7 @@
  * @situation inspect the LODs, skeleton, sockets, and collision inside a .uemodel file
  * @constraint only UEFormat v10 UEMODEL files are accepted; anything else throws UEFormatError with the byte offset
  * @constraint ZSTD-compressed bodies require an injected `zstdDecoder`; the package never bundles a ZSTD implementation
+ * @requires npm i @threenative/ueformat
  * @example const model = parseUEModel(await file.arrayBuffer());
  */
 export { parseUEModel } from "./parser.js";
@@ -15,6 +16,7 @@ export { parseUEModel } from "./parser.js";
  * @situation load an Unreal static or skeletal mesh with LODs, sockets, and collision geometry
  * @constraint every material comes from the game through `materialFactory`; the fallback is three.js's own GLTFLoader default, a plain MeshStandardMaterial
  * @constraint parsed bones are exposed on `userData` but never bound into a THREE.SkinnedMesh — skeletal rendering is the game's job
+ * @requires npm i @threenative/ueformat
  * @example const hero = createThreeObject(parseUEModel(buffer), { lodDistances: [0, 25, 50] });
  */
 export { createThreeObject } from "./three-adapter.js";
@@ -24,6 +26,7 @@ export { createThreeObject } from "./three-adapter.js";
  * @situation convert one Unreal mesh LOD into a three.js BufferGeometry by hand
  * @situation build custom scene objects from Unreal mesh data instead of a whole model
  * @constraint rejects indices, channels, or material sections that disagree with the vertex count before any geometry is constructed
+ * @requires npm i @threenative/ueformat
  * @example const geometry = createThreeGeometry(model.lods[0]);
  */
 export { createThreeGeometry } from "./three-adapter.js";
@@ -33,6 +36,7 @@ export { createThreeGeometry } from "./three-adapter.js";
  * @situation load a .uemodel asset in the browser with the standard three.js loader protocol
  * @situation hand a game's Unreal-exported meshes to the framework's asset loading
  * @constraint ZSTD-compressed bodies require an injected `zstdDecoder` in the parse options
+ * @requires npm i @threenative/ueformat
  * @example const model = new UEFormatLoader(manager).parse(data);
  */
 export { UEFormatLoader, type IUEFormatLoaderOptions } from "./loader.js";
@@ -42,6 +46,7 @@ export { UEFormatLoader, type IUEFormatLoaderOptions } from "./loader.js";
  * @situation report what a UEFormat model contains without dumping its vertex data
  * @situation validate a .uemodel file before building geometry from it
  * @constraint the summary reflects one already-parsed model; it does not read files itself
+ * @requires npm i @threenative/ueformat
  * @example const summary = summarizeUEModel(parseUEModel(buffer));
  */
 export { summarizeUEModel, type IUEModelSummary } from "./summary.js";
@@ -51,6 +56,7 @@ export { summarizeUEModel, type IUEModelSummary } from "./summary.js";
  * @situation tell why a .uemodel file failed to load
  * @situation report a malformed Unreal export with its byte offset instead of a generic error
  * @constraint every parse and geometry failure surfaces as this error; nothing malformed is silently skipped
+ * @requires npm i @threenative/ueformat
  * @example catch (error) { if (error instanceof UEFormatError) log(error.code, error.offset); }
  */
 export { UEFormatError, type UEFormatErrorCode } from "./errors.js";

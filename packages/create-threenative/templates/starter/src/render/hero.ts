@@ -4,8 +4,7 @@
 // The player character, built from the rounded primitives in `shapes.ts`. It lives in its own
 // file because it is the one object here with a design rather than a shape: fifteen placed boxes
 // in three materials, merged down per material so the whole character costs three draw calls.
-import { type Material, Mesh } from "three";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { type BufferGeometry, type Material, Mesh } from "three";
 import { roundedBox } from "./shapes.js";
 
 export interface IHeroMaterials {
@@ -13,6 +12,11 @@ export interface IHeroMaterials {
   readonly body: Material;
   readonly dark: Material;
 }
+
+export type HeroPartMerger = (
+  parts: Iterable<Mesh>,
+  options: { readonly label: string },
+) => BufferGeometry;
 
 /**
  * The player character.
@@ -28,7 +32,7 @@ export interface IHeroMaterials {
  * The returned value is a `Mesh`, not a `Group`, because `Player.visual` is one and both
  * `GroundSnap` and `preparePlayerConventions` are written against it. Children hang off it.
  */
-export function hero(materials: IHeroMaterials): Mesh {
+export function hero(materials: IHeroMaterials, mergeParts: HeroPartMerger): Mesh {
   const parts = new Map<Material, Mesh[]>();
   const add = (mesh: Mesh): Mesh => {
     const bucket = parts.get(mesh.material as Material);
@@ -72,21 +76,7 @@ export function hero(materials: IHeroMaterials): Mesh {
   // hat, the pack and the body are still repainted from `materials.ts` alone.
   const meshes: Mesh[] = [];
   for (const [material, group] of parts) {
-    const geometry = mergeGeometries(
-      group.map((mesh) => {
-        mesh.updateMatrix();
-        const placed = mesh.geometry.clone().applyMatrix4(mesh.matrix);
-        const cloned = placed.index === null ? placed : placed.toNonIndexed();
-        for (const name of Object.keys(cloned.attributes)) {
-          if (name !== "position") cloned.deleteAttribute(name);
-        }
-        return cloned;
-      }),
-      false,
-    );
-    if (geometry === null) throw new Error("mergeGeometries returned null building the hero.");
-    geometry.computeVertexNormals();
-    const merged = new Mesh(geometry, material);
+    const merged = new Mesh(mergeParts(group, { label: "hero" }), material);
     merged.castShadow = true;
     merged.receiveShadow = true;
     meshes.push(merged);
