@@ -3521,6 +3521,7 @@ export function createThreeGeometry(decoded: IDecodedUAssetStaticMesh): BufferGe
 
 - **Use when:** build custom scene objects from Unreal mesh data instead of a whole mesh · hand a decoded Unreal mesh to a framework pipeline that owns materials itself
 - **Constraints:** materials are never chosen here; the geometry carries groups, the game carries materials
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const geometry = createThreeGeometry(parseUAssetStaticMesh(buffer));
@@ -3536,6 +3537,7 @@ export function createThreeObject( decoded: IDecodedUAssetStaticMesh, options: I
 
 - **Use when:** put a raw .uasset mesh on screen without converting it to glTF first · key materials to a package's own sections by name or section index
 - **Constraints:** the fallback is three.js's own plain MeshStandardMaterial; every real material comes from the game
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const mesh = createThreeObject(decoded, { materialFactory: (d) => d.sections.map(() => barkMaterial) });
@@ -3551,6 +3553,7 @@ export function decompressBulkData( container: Uint8Array, codecs: { … }
 
 - **Use when:** read a UE4 editor static mesh whose source model lives in bulk data rather than inline · decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
 - **Constraints:** zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing · a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const payload = resolveBulkDataPayload(bytes, header, { zlib });
@@ -3566,6 +3569,7 @@ export function decompressCompressedBuffer( buffer: ICompressedBuffer, codecs: I
 
 - **Use when:** decompress the package-trailer payload that carries a UE5 MeshDescription
 - **Constraints:** Oodle and LZ4 payloads require an injected codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const payload = decompressCompressedBuffer(parseCompressedBuffer(bytes, offset), { oodle });
@@ -3581,6 +3585,7 @@ export function findBulkDataHeaders( bytes: Uint8Array, layout: IPackageLayout, 
 
 - **Use when:** read a UE4 editor static mesh whose source model lives in bulk data rather than inline · decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
 - **Constraints:** zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing · a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const payload = resolveBulkDataPayload(bytes, header, { zlib });
@@ -3596,6 +3601,7 @@ export function findCompressedBufferOffsets(bytes: Uint8Array): number[] { … }
 
 - **Use when:** decompress the package-trailer payload that carries a UE5 MeshDescription
 - **Constraints:** Oodle and LZ4 payloads require an injected codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const payload = decompressCompressedBuffer(parseCompressedBuffer(bytes, offset), { oodle });
@@ -3611,6 +3617,7 @@ export function findMeshDescriptionOffsets(bytes: Uint8Array): number[] { … }
 
 - **Use when:** inspect the vertex, triangle, and polygon-group structure of a UE5 MeshDescription
 - **Constraints:** every count is validated against its neighbors before any geometry is built
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const description = parseMeshDescription(payload, offset);
@@ -3626,6 +3633,7 @@ export function findRawMeshBlobs(bytes: Uint8Array): IRawMeshBlob[] { … }
 
 - **Use when:** read the source geometry of a Fab pack saved by UE 4.18 straight from its .uasset
 - **Constraints:** only inline uncompressed blobs are found; compressed or external bulk data throws rather than guessing
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const blob = parseRawMesh(bytes, offset);
@@ -3641,6 +3649,7 @@ export function looksLikeMeshDescription(bytes: Uint8Array, offset = 0): boolean
 
 - **Use when:** inspect the vertex, triangle, and polygon-group structure of a UE5 MeshDescription
 - **Constraints:** every count is validated against its neighbors before any geometry is built
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const description = parseMeshDescription(payload, offset);
@@ -3656,6 +3665,7 @@ export function looksLikeMeshDescriptionUe4(bytes: Uint8Array, offset = 0): bool
 
 - **Use when:** decode the MeshDescription a UE 4.23-4.27 editor package keeps in bulk data
 - **Constraints:** the walk must consume the payload exactly; a short walk throws rather than returning the geometry it managed to read
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const description = parseMeshDescriptionUe4(payload);
@@ -3671,6 +3681,7 @@ export function parseBulkDataHeader( bytes: Uint8Array, offset: number, layout: 
 
 - **Use when:** read a UE4 editor static mesh whose source model lives in bulk data rather than inline · decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
 - **Constraints:** zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing · a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const payload = resolveBulkDataPayload(bytes, header, { zlib });
@@ -3686,6 +3697,7 @@ export function parseCompressedBuffer(bytes: Uint8Array, offset = 0): ICompresse
 
 - **Use when:** decompress the package-trailer payload that carries a UE5 MeshDescription
 - **Constraints:** Oodle and LZ4 payloads require an injected codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const payload = decompressCompressedBuffer(parseCompressedBuffer(bytes, offset), { oodle });
@@ -3701,6 +3713,7 @@ export function parseMeshDescription(input: Uint8Array, offset = 0): IMeshDescri
 
 - **Use when:** inspect the vertex, triangle, and polygon-group structure of a UE5 MeshDescription
 - **Constraints:** every count is validated against its neighbors before any geometry is built
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const description = parseMeshDescription(payload, offset);
@@ -3716,6 +3729,7 @@ export function parseMeshDescriptionUe4(input: Uint8Array, offset = 0): IUe4Mesh
 
 - **Use when:** decode the MeshDescription a UE 4.23-4.27 editor package keeps in bulk data
 - **Constraints:** the walk must consume the payload exactly; a short walk throws rather than returning the geometry it managed to read
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const description = parseMeshDescriptionUe4(payload);
@@ -3731,6 +3745,7 @@ export function parseRawMesh(bytes: Uint8Array, offset = 0): IRawMeshBlob { … 
 
 - **Use when:** read the source geometry of a Fab pack saved by UE 4.18 straight from its .uasset
 - **Constraints:** only inline uncompressed blobs are found; compressed or external bulk data throws rather than guessing
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const blob = parseRawMesh(bytes, offset);
@@ -3746,6 +3761,7 @@ export function parseUAssetStaticMesh( input: ArrayBuffer | ArrayBufferView, opt
 
 - **Use when:** load a raw Unreal editor .uasset mesh in the browser without conversion · decode a Fab pack's UE4.18 static meshes straight from their .uasset files
 - **Constraints:** only legacy-tag uncooked editor packages are read; IoStore (.utoc/.ucas), PAK archives, cooked render buffers, Nanite, and skeletal data throw UAssetError · the format layer never invents fallback geometry; every malformed or unsupported layout surfaces as UAssetError with its byte offset or counts
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const decoded = parseUAssetStaticMesh(await file.arrayBuffer(), { oodle });
@@ -3761,6 +3777,7 @@ export function readPackageLayout(bytes: Uint8Array): IPackageLayout | undefined
 
 - **Use when:** find where a .uasset's export data and bulk-data region begin
 - **Constraints:** returns undefined rather than guessing when the summary does not end on its own name table, or when the package uses a LegacyFileVersion this walk does not model
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const layout = readPackageLayout(bytes); if (layout) readBulk(layout.bulkDataStartOffset);
@@ -3776,6 +3793,7 @@ export function readPackageSummary(bytes: Uint8Array): IPackageSummary { … }
 
 - **Use when:** report which engine generation a .uasset was written by before decoding it · reject a non-Unreal file with the stable INVALID_PACKAGE_TAG error
 - **Constraints:** only the summary prefix is read; locating payload data is the payload readers' self-validating signature scans
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const summary = readPackageSummary(bytes);
@@ -3791,6 +3809,7 @@ export function resolveBulkDataPayload( bytes: Uint8Array, header: IBulkDataHead
 
 - **Use when:** read a UE4 editor static mesh whose source model lives in bulk data rather than inline · decompress the zlib-chunked bulk payload a UE4.2x package stores its MeshDescription in
 - **Constraints:** zlib payloads require an injected `zlib` codec; the package never bundles one, and a missing codec throws MISSING_CODEC instead of guessing · a payload written to a sibling file throws MISSING_BULK_DATA_FILE naming that file, rather than inventing geometry
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const payload = resolveBulkDataPayload(bytes, header, { zlib });
@@ -3806,6 +3825,7 @@ export class UAssetError extends Error { … }
 
 - **Use when:** tell why a raw .uasset failed to load, by code, before any geometry is shown · branch on an unsupported Unreal layout instead of shipping broken geometry
 - **Constraints:** every parse, decompression, and geometry failure surfaces as this error; the loader never invents fallback geometry
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 catch (error) { if (error instanceof UAssetError) log(error.code, error.details); }
@@ -3821,6 +3841,7 @@ export class UAssetLoader extends Loader { … }
 
 - **Use when:** load a .uasset asset in the browser with the standard three.js loader protocol · hand raw Fab-pack meshes to the framework's asset loading without a conversion step
 - **Constraints:** UE5 Oodle payloads require an `oodle` codec in the parse options; see README licensing
+- **Requires:** npm i @threenative/raw-unreal
 
 ```ts
 const mesh = new UAssetLoader(manager, { parse: { oodle } }).parse(data);
@@ -3889,6 +3910,7 @@ export function createThreeGeometry( lod: IUEModelLOD, adapterOptions: IThreeAda
 
 - **Use when:** convert one Unreal mesh LOD into a three.js BufferGeometry by hand · build custom scene objects from Unreal mesh data instead of a whole model
 - **Constraints:** rejects indices, channels, or material sections that disagree with the vertex count before any geometry is constructed
+- **Requires:** npm i @threenative/ueformat
 
 ```ts
 const geometry = createThreeGeometry(model.lods[0]);
@@ -3904,6 +3926,7 @@ export function createThreeObject( model: IUEModelData, adapterOptions: IThreeAd
 
 - **Use when:** put a mesh exported from an Unreal package on screen · load an Unreal static or skeletal mesh with LODs, sockets, and collision geometry
 - **Constraints:** every material comes from the game through `materialFactory`; the fallback is three.js's own GLTFLoader default, a plain MeshStandardMaterial · parsed bones are exposed on `userData` but never bound into a THREE.SkinnedMesh — skeletal rendering is the game's job
+- **Requires:** npm i @threenative/ueformat
 
 ```ts
 const hero = createThreeObject(parseUEModel(buffer), { lodDistances: [0, 25, 50] });
@@ -3919,6 +3942,7 @@ export function parseUEModel( input: ArrayBuffer | ArrayBufferView, options: IPa
 
 - **Use when:** parse a mesh exported from an Unreal package without Unreal installed · inspect the LODs, skeleton, sockets, and collision inside a .uemodel file
 - **Constraints:** only UEFormat v10 UEMODEL files are accepted; anything else throws UEFormatError with the byte offset · ZSTD-compressed bodies require an injected `zstdDecoder`; the package never bundles a ZSTD implementation
+- **Requires:** npm i @threenative/ueformat
 
 ```ts
 const model = parseUEModel(await file.arrayBuffer());
@@ -3934,6 +3958,7 @@ export function summarizeUEModel(model: IUEModelData): IUEModelSummary { … }
 
 - **Use when:** report what a UEFormat model contains without dumping its vertex data · validate a .uemodel file before building geometry from it
 - **Constraints:** the summary reflects one already-parsed model; it does not read files itself
+- **Requires:** npm i @threenative/ueformat
 
 ```ts
 const summary = summarizeUEModel(parseUEModel(buffer));
@@ -3949,6 +3974,7 @@ export class UEFormatError extends Error { … }
 
 - **Use when:** tell why a .uemodel file failed to load · report a malformed Unreal export with its byte offset instead of a generic error
 - **Constraints:** every parse and geometry failure surfaces as this error; nothing malformed is silently skipped
+- **Requires:** npm i @threenative/ueformat
 
 ```ts
 catch (error) { if (error instanceof UEFormatError) log(error.code, error.offset); }
@@ -3964,6 +3990,7 @@ export class UEFormatLoader extends Loader { … }
 
 - **Use when:** load a .uemodel asset in the browser with the standard three.js loader protocol · hand a game's Unreal-exported meshes to the framework's asset loading
 - **Constraints:** ZSTD-compressed bodies require an injected `zstdDecoder` in the parse options
+- **Requires:** npm i @threenative/ueformat
 
 ```ts
 const model = new UEFormatLoader(manager).parse(data);

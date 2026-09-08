@@ -10,6 +10,7 @@ import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   buildCapabilityManifest,
   checkCapabilityManifest,
+  checkCapabilityScaffoldImports,
   validateCapabilityAllowlist,
   validateNotOwned,
   writeCapabilityManifest,
@@ -34,6 +35,47 @@ async function writePackage(
   await mkdir(path.join(packageRoot, "src"), { recursive: true });
   await writeFile(path.join(packageRoot, "package.json"), JSON.stringify({ exports, name }));
   await writeFile(path.join(packageRoot, "src", "index.ts"), source);
+}
+
+async function writeTemplatePackage(
+  root: string,
+  template: string,
+  manifest: {
+    readonly dependencies?: Readonly<Record<string, string>>;
+    readonly devDependencies?: Readonly<Record<string, string>>;
+  },
+): Promise<void> {
+  const templateRoot = path.join(root, "packages", "create-threenative", "templates", template);
+  await mkdir(templateRoot, { recursive: true });
+  await writeFile(
+    path.join(templateRoot, "package.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+}
+
+async function writeTemplateSource(
+  root: string,
+  template: string,
+  relativePath: string,
+  source: string,
+): Promise<void> {
+  const file = path.join(
+    root,
+    "packages",
+    "create-threenative",
+    "templates",
+    template,
+    relativePath,
+  );
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, source);
+}
+
+async function writeTemplatePackageJsonDirectory(root: string, template: string): Promise<void> {
+  await mkdir(
+    path.join(root, "packages", "create-threenative", "templates", template, "package.json"),
+    { recursive: true },
+  );
 }
 
 const documentedClass = [
@@ -202,6 +244,10 @@ describe("capability manifest generator", () => {
     const root = await makeTempDir("threenative-capability-freshness-");
     temporaryRoots.push(root);
     await writePackage(root, "core", "@threenative/core", documentedClass);
+    await writeTemplatePackage(root, "starter", {
+      dependencies: { "@threenative/core": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
     const generated = await writeCapabilityManifest(root);
     await expect(checkCapabilityManifest(root)).resolves.toMatchObject({
       entries: generated.entries,
@@ -216,6 +262,10 @@ describe("capability manifest generator", () => {
     const root = await makeTempDir("threenative-capability-missing-manifest-");
     temporaryRoots.push(root);
     await writePackage(root, "core", "@threenative/core", documentedClass);
+    await writeTemplatePackage(root, "starter", {
+      dependencies: { "@threenative/core": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
 
     await expect(checkCapabilityManifest(root)).rejects.toThrow(
       path.join(root, "packages/create-threenative/capabilities.json"),
@@ -362,6 +412,181 @@ describe("capability manifest generator", () => {
         symbol: "DocumentedCapability",
       }),
     );
+  });
+
+  it("carries @requires into the manifest entry as an install instruction", async () => {
+    const root = await makeTempDir("threenative-capability-requires-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+    await writePackage(
+      root,
+      "raw-unreal",
+      "@threenative/raw-unreal",
+      [
+        "/**",
+        " * A fixture Unreal loader.",
+        " * @situation load an Unreal mesh fixture",
+        " * @requires npm i @threenative/raw-unreal",
+        " * @example const mesh = loadUnrealMesh(bytes);",
+        " */",
+        "export function loadUnrealMesh(bytes: Uint8Array): Uint8Array { return bytes; }",
+        "",
+      ].join("\n"),
+    );
+
+    const manifest = buildCapabilityManifest(root);
+
+    expect(manifest.entries).toContainEqual(
+      expect.objectContaining({
+        importPath: "@threenative/raw-unreal",
+        requires: ["npm i @threenative/raw-unreal"],
+        symbol: "loadUnrealMesh",
+      }),
+    );
+  });
+
+  it("fails when a manifest import has no scaffold dependency or requires instruction", async () => {
+    const root = await makeTempDir("threenative-capability-scaffold-missing-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+    await writePackage(
+      root,
+      "nope",
+      "@threenative/nope",
+      [
+        "/**",
+        " * A fabricated package capability.",
+        " * @situation prove the scaffold import resolver fails closed",
+        " * @example const nope = new NopeCapability();",
+        " */",
+        "export class NopeCapability {}",
+        "",
+      ].join("\n"),
+    );
+    await writeTemplatePackage(root, "starter", {
+      dependencies: { "@threenative/core": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/NopeCapability.*@threenative\/nope/u);
+  });
+
+  it("fails closed when the templates root is missing", async () => {
+    const root = await makeTempDir("threenative-capability-no-templates-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/templates.*missing/u);
+  });
+
+  it("fails closed when no template closures are discovered", async () => {
+    const root = await makeTempDir("threenative-capability-empty-templates-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+    await mkdir(path.join(root, "packages", "create-threenative", "templates"), {
+      recursive: true,
+    });
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/no template closures/u);
+  });
+
+  it("fails closed when a template package manifest is missing", async () => {
+    const root = await makeTempDir("threenative-capability-template-no-package-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+    await mkdir(path.join(root, "packages", "create-threenative", "templates", "starter"), {
+      recursive: true,
+    });
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/starter.*package\.json.*missing/u);
+  });
+
+  it("fails closed when a template package manifest is unreadable or invalid", async () => {
+    const root = await makeTempDir("threenative-capability-template-bad-package-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+    await writeTemplatePackageJsonDirectory(root, "directory-package");
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/directory-package.*package\.json.*unreadable/u);
+
+    await rm(path.join(root, "packages", "create-threenative", "templates", "directory-package"), {
+      recursive: true,
+      force: true,
+    });
+    await mkdir(path.join(root, "packages", "create-threenative", "templates", "invalid-package"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(
+        root,
+        "packages",
+        "create-threenative",
+        "templates",
+        "invalid-package",
+        "package.json",
+      ),
+      "{\n",
+    );
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/invalid-package.*package\.json.*invalid/u);
+  });
+
+  it("derives template dependency closure from package.json and source imports", async () => {
+    const root = await makeTempDir("threenative-capability-template-closure-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+    await writePackage(
+      root,
+      "ui",
+      "@threenative/ui",
+      [
+        "/**",
+        " * A fixture UI layer.",
+        " * @situation render a React HUD over the game",
+        " * @example const layer = new UiLayer();",
+        " */",
+        "export class UiLayer {}",
+        "",
+      ].join("\n"),
+    );
+    await writeTemplatePackage(root, "starter", {
+      dependencies: { "@threenative/core": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
+    await writeTemplateSource(
+      root,
+      "starter",
+      path.join("src", "ui", "App.tsx"),
+      'import { UiLayer } from "@threenative/ui";\nexport const layer = UiLayer;\n',
+    );
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/starter.*UiLayer.*@threenative\/ui/u);
+
+    await writeTemplatePackage(root, "starter", {
+      dependencies: {
+        "@threenative/core": "0.0.0",
+        "@threenative/ui": "0.0.0",
+        three: "0.0.0",
+      },
+      devDependencies: {},
+    });
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).resolves.toEqual(expect.objectContaining({ problems: [] }));
   });
 
   it("maps every authored alias to a named predecessor corpus row", async () => {

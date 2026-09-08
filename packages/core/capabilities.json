@@ -4183,6 +4183,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function createThreeGeometry(decoded: IDecodedUAssetStaticMesh): BufferGeometry { … }",
       "situations": [
         "build custom scene objects from Unreal mesh data instead of a whole mesh",
@@ -4202,6 +4203,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function createThreeObject( decoded: IDecodedUAssetStaticMesh, options: IThreeAdapterOptions = { … }",
       "situations": [
         "put a raw .uasset mesh on screen without converting it to glTF first",
@@ -4222,6 +4224,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function decompressBulkData( container: Uint8Array, codecs: { … }",
       "situations": [
         "read a UE4 editor static mesh whose source model lives in bulk data rather than inline",
@@ -4241,6 +4244,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function decompressCompressedBuffer( buffer: ICompressedBuffer, codecs: IUAssetCodecs, ): Uint8Array { … }",
       "situations": ["decompress the package-trailer payload that carries a UE5 MeshDescription"],
       "summary": "Parses one UE5 `FCompressedBuffer` and decompresses it block-by-block with the codecs the caller injected — uncompressed payloads are handled natively.",
@@ -4258,6 +4262,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function findBulkDataHeaders( bytes: Uint8Array, layout: IPackageLayout, files: IUAssetBulkDataFiles = { … }",
       "situations": [
         "read a UE4 editor static mesh whose source model lives in bulk data rather than inline",
@@ -4277,6 +4282,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function findCompressedBufferOffsets(bytes: Uint8Array): number[] { … }",
       "situations": ["decompress the package-trailer payload that carries a UE5 MeshDescription"],
       "summary": "Parses one UE5 `FCompressedBuffer` and decompresses it block-by-block with the codecs the caller injected — uncompressed payloads are handled natively.",
@@ -4293,6 +4299,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function findMeshDescriptionOffsets(bytes: Uint8Array): number[] { … }",
       "situations": [
         "inspect the vertex, triangle, and polygon-group structure of a UE5 MeshDescription"
@@ -4311,6 +4318,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function findRawMeshBlobs(bytes: Uint8Array): IRawMeshBlob[] { … }",
       "situations": [
         "read the source geometry of a Fab pack saved by UE 4.18 straight from its .uasset"
@@ -4329,6 +4337,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function looksLikeMeshDescription(bytes: Uint8Array, offset = 0): boolean { … }",
       "situations": [
         "inspect the vertex, triangle, and polygon-group structure of a UE5 MeshDescription"
@@ -4347,6 +4356,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function looksLikeMeshDescriptionUe4(bytes: Uint8Array, offset = 0): boolean { … }",
       "situations": ["decode the MeshDescription a UE 4.23-4.27 editor package keeps in bulk data"],
       "summary": "Parses the UE4.2x serialization of `FMeshDescription` — fixed-order element containers, and a triangle container that trails the attribute sets rather than sitting with its siblings.",
@@ -4364,6 +4374,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function parseBulkDataHeader( bytes: Uint8Array, offset: number, layout: IPackageLayout, ): IBulkDataHeader { … }",
       "situations": [
         "read a UE4 editor static mesh whose source model lives in bulk data rather than inline",
@@ -4383,6 +4394,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function parseCompressedBuffer(bytes: Uint8Array, offset = 0): ICompressedBuffer { … }",
       "situations": ["decompress the package-trailer payload that carries a UE5 MeshDescription"],
       "summary": "Parses one UE5 `FCompressedBuffer` and decompresses it block-by-block with the codecs the caller injected — uncompressed payloads are handled natively.",
@@ -4399,6 +4411,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function parseMeshDescription(input: Uint8Array, offset = 0): IMeshDescription { … }",
       "situations": [
         "inspect the vertex, triangle, and polygon-group structure of a UE5 MeshDescription"
@@ -4417,6 +4430,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function parseMeshDescriptionUe4(input: Uint8Array, offset = 0): IUe4MeshDescription { … }",
       "situations": ["decode the MeshDescription a UE 4.23-4.27 editor package keeps in bulk data"],
       "summary": "Parses the UE4.2x serialization of `FMeshDescription` — fixed-order element containers, and a triangle container that trails the attribute sets rather than sitting with its siblings.",
@@ -4433,6 +4447,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function parseRawMesh(bytes: Uint8Array, offset = 0): IRawMeshBlob { … }",
       "situations": [
         "read the source geometry of a Fab pack saved by UE 4.18 straight from its .uasset"
@@ -4452,6 +4467,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function parseUAssetStaticMesh( input: ArrayBuffer | ArrayBufferView, options: IUAssetParseOptions = { … }",
       "situations": [
         "load a raw Unreal editor .uasset mesh in the browser without conversion",
@@ -4471,6 +4487,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function readPackageLayout(bytes: Uint8Array): IPackageLayout | undefined { … }",
       "situations": ["find where a .uasset's export data and bulk-data region begin"],
       "summary": "Walks the whole `FPackageFileSummary` for the offsets bulk data is addressed against — `TotalHeaderSize` and `BulkDataStartOffset` — and returns `undefined` when the walk cannot be trusted.",
@@ -4487,6 +4504,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function readPackageSummary(bytes: Uint8Array): IPackageSummary { … }",
       "situations": [
         "report which engine generation a .uasset was written by before decoding it",
@@ -4507,6 +4525,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export function resolveBulkDataPayload( bytes: Uint8Array, header: IBulkDataHeader, options: { … }",
       "situations": [
         "read a UE4 editor static mesh whose source model lives in bulk data rather than inline",
@@ -4526,6 +4545,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export class UAssetError extends Error { … }",
       "situations": [
         "tell why a raw .uasset failed to load, by code, before any geometry is shown",
@@ -4545,6 +4565,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/raw-unreal",
+      "requires": ["npm i @threenative/raw-unreal"],
       "signature": "export class UAssetLoader extends Loader { … }",
       "situations": [
         "load a .uasset asset in the browser with the standard three.js loader protocol",
@@ -4612,6 +4633,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/ueformat",
+      "requires": ["npm i @threenative/ueformat"],
       "signature": "export function createThreeGeometry( lod: IUEModelLOD, adapterOptions: IThreeAdapterOptions = { … }",
       "situations": [
         "convert one Unreal mesh LOD into a three.js BufferGeometry by hand",
@@ -4632,6 +4654,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/ueformat",
+      "requires": ["npm i @threenative/ueformat"],
       "signature": "export function createThreeObject( model: IUEModelData, adapterOptions: IThreeAdapterOptions = { … }",
       "situations": [
         "put a mesh exported from an Unreal package on screen",
@@ -4652,6 +4675,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/ueformat",
+      "requires": ["npm i @threenative/ueformat"],
       "signature": "export function parseUEModel( input: ArrayBuffer | ArrayBufferView, options: IParseUEModelOptions = { … }",
       "situations": [
         "parse a mesh exported from an Unreal package without Unreal installed",
@@ -4671,6 +4695,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/ueformat",
+      "requires": ["npm i @threenative/ueformat"],
       "signature": "export function summarizeUEModel(model: IUEModelData): IUEModelSummary { … }",
       "situations": [
         "report what a UEFormat model contains without dumping its vertex data",
@@ -4690,6 +4715,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/ueformat",
+      "requires": ["npm i @threenative/ueformat"],
       "signature": "export class UEFormatError extends Error { … }",
       "situations": [
         "tell why a .uemodel file failed to load",
@@ -4709,6 +4735,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/ueformat",
+      "requires": ["npm i @threenative/ueformat"],
       "signature": "export class UEFormatLoader extends Loader { … }",
       "situations": [
         "load a .uemodel asset in the browser with the standard three.js loader protocol",
