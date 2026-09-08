@@ -29,7 +29,10 @@ Baseline real callers found:
 | `packages/create-threenative/templates/starter/src/render/hero.ts` | import at line 8, call at line 75, null check at line 87 |
 | `packages/create-threenative/templates/action-rpg/src/render/shapes.ts` | import at line 2, call at line 23, null check at line 35 |
 | `packages/create-threenative/templates/defense/src/render/shapes.ts` | import at line 12, call at line 76, null check at line 88 |
+| `packages/create-threenative/templates/minimal/src/scenes/Play.ts` | import at line 12, call at line 125 |
 | `packages/create-threenative/templates/racing/src/render/shapes.ts` | import at line 28, calls at lines 183 and 441 |
+| `packages/create-threenative/templates/sailing/src/render/props.ts` | import at line 21, call at line 249, null check at line 263 |
+| `packages/create-threenative/templates/shooter/src/render/shapes.ts` | import at line 21, call at line 270, null check at line 282 |
 | `examples/native-cpu-load-test/src/main.ts` | import at line 1, call at line 448 |
 
 The selected first caller is `packages/create-threenative/templates/starter/src/render/hero.ts`.
@@ -161,7 +164,7 @@ Focused core suite:
 set -o pipefail; pnpm exec vitest run packages/core/__tests__/merge-parts.spec.ts
 ```
 
-Output:
+Historical output before the review repair:
 
 ```text
 packages/core/__tests__/merge-parts.spec.ts (7 tests)
@@ -171,6 +174,43 @@ Duration  585ms
 ```
 
 Log: `/tmp/astra-afk-tn-20260907-2205/prd277-merge-parts-green-r3.log`
+
+Review repair rerun after adding morph-target regression coverage and exhaustive colour checks:
+
+```sh
+set -o pipefail; pnpm exec vitest run packages/core/__tests__/merge-parts.spec.ts 2>&1 | tee /tmp/astra-afk-tn-20260907-2205/prd277-review-repair-merge-parts-green.log
+```
+
+Output:
+
+```text
+packages/core/__tests__/merge-parts.spec.ts (8 tests)
+Test Files  1 passed (1)
+Tests  8 passed (8)
+Duration  381ms
+```
+
+Red first:
+`/tmp/astra-afk-tn-20260907-2205/prd277-review-repair-merge-parts-red.log` failed the new morph
+regression before the implementation change because `mergeGeometries()` received inconsistent
+`morphTargetsRelative` state.
+
+Repair: `flatten()` now clears cloned `morphAttributes` and resets `morphTargetsRelative` before
+merge. The tint test now iterates every output colour vertex for every part.
+
+Review repair affected suite:
+
+```sh
+set -o pipefail; pnpm exec vitest run packages/core/__tests__/build.spec.ts packages/core/__tests__/constraints.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/scaffold-mcp.spec.ts packages/create-threenative/__tests__/template.spec.ts packages/create-threenative/__tests__/looks.spec.ts 2>&1 | tee /tmp/astra-afk-tn-20260907-2205/prd277-review-repair-affected-vitest.log
+```
+
+Output:
+
+```text
+Test Files  6 passed (6)
+Tests  134 passed (134)
+Duration  43.41s
+```
 
 Focused core/template/scaffold suite:
 
@@ -211,6 +251,18 @@ QuickJS prerequisite logs:
 /tmp/astra-afk-tn-20260907-2205/prd277-quickjs-configure.log
 /tmp/astra-afk-tn-20260907-2205/prd277-quickjs-build.log
 ```
+
+Review repair gate addendum:
+
+| Command | Result | Log |
+| --- | --- | --- |
+| `pnpm --filter @threenative/core typecheck` | Pass | `/tmp/astra-afk-tn-20260907-2205/prd277-review-repair-core-typecheck.log` |
+| `pnpm capabilities:check` | Pass; manifest fresh with 276 entries and 4 notOwned rows | `/tmp/astra-afk-tn-20260907-2205/prd277-review-repair-capabilities-check.log` |
+| `pnpm exec vitest run scripts/__tests__/sync-agent-docs.spec.ts scripts/__tests__/ci-structure.spec.ts` | Pass; 2 files, 78 tests | `/tmp/astra-afk-tn-20260907-2205/prd277-review-repair-generated-checks.log` |
+| `pnpm test` | Failed after code change; 402 files passed, 2 skipped; 4,498 tests passed, 7 skipped; one unrelated `workspace-packages.spec.ts` case timed out at 30,000ms | `/tmp/astra-afk-tn-20260907-2205/prd277-review-repair-pnpm-test.log` |
+| `pnpm exec vitest run scripts/__tests__/workspace-packages.spec.ts -t "keeps scaffold smoke package inventory derived when a package is added or renamed"` | Pass on focused rerun; 1 passed, 14 skipped, 7.981s test time | `/tmp/astra-afk-tn-20260907-2205/prd277-review-repair-workspace-packages-rerun.log` |
+| `git diff --check` | Pass; no whitespace errors | `/tmp/astra-afk-tn-20260907-2205/prd277-review-repair-diff-check.log` |
+| changed-file secret/debug scan | Pass; no credential markers or debug-only test focus markers in changed files | `/tmp/astra-afk-tn-20260907-2205/prd277-review-repair-scope-secret-debug-scan-final.log` |
 
 ## Starter Runtime Proof
 
@@ -292,15 +344,38 @@ Logs:
 /tmp/astra-afk-tn-20260907-2205/prd277-native-verify-desktop-r2.log
 ```
 
+The generic desktop native proof above does not by itself invoke `mergeParts` or the changed
+starter hero caller, so it is platform health evidence only.
+
+Feature-specific desktop proof:
+
+```sh
+set -o pipefail; THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-linux/mystral" pnpm tsx scripts/verify-one-template-desktop.ts starter 2>&1 | tee /tmp/astra-afk-tn-20260907-2205/prd277-review-repair-starter-desktop-r2.log
+```
+
+Result:
+
+```text
+ThreeNative desktop artifact: /tmp/threenative-starter-desktop-b1jYB6/starter/dist-native/starter
+starter desktop gate passed: 300 frames, 21390 colors, 295 asset pixels
+starter: native playtests passed at /tmp/threenative-starter-desktop-b1jYB6/starter
+```
+
+The first feature-specific attempt built the changed starter bundle but failed before native
+execution because no published `linux-x64` prebuilt exists for `@threenative/runtime-native@0.3.0`.
+That setup failure is recorded at
+`/tmp/astra-afk-tn-20260907-2205/prd277-review-repair-starter-desktop.log`; the rerun used the
+locally built runtime binary from this lane.
+
 ## AC Map
 
 | AC | Status | Evidence |
 | --- | --- | --- |
 | AC1 existing caller first | Pass | Baseline caller census found starter `hero.ts`; starter caller converted before any broader caller migration |
-| AC2 per-part tint | Pass | `mergeParts` writes a flat `color` attribute only when every part has `color`; mutation log proves the color assertion fails if omitted |
+| AC2 per-part tint | Pass | `mergeParts` writes a flat `color` attribute only when every part has `color`; mutation log proves the color assertion fails if omitted, and the review repair test checks every output colour vertex |
 | AC3 no silent null | Pass | `mergeParts` throws named errors for empty lists and `mergeGeometries()` `null`; mutation log proves the throw assertion fails if bypassed |
 | AC4 mixed Extrude/Box | Pass | Unit test merges non-indexed `ExtrudeGeometry` with indexed `BoxGeometry`; mutation log proves skipping de-indexing fails |
-| AC5 kill-switch LOC | Pass | Selected starter caller reduced `hero.ts` from 98 to 88 lines; `Player.ts` stayed 181 lines; shared core mechanism is 105 lines and serves every generated/user caller |
+| AC5 kill-switch LOC | Pass | Selected starter caller reduced `hero.ts` from 98 to 88 lines; `Player.ts` stayed 181 lines; shared core mechanism is 106 lines and serves every generated/user caller |
 
 ## LOC Evidence
 
@@ -317,7 +392,7 @@ Result:
 ```text
 current hero.ts: 88
 current Player.ts: 181
-current merge-parts.ts: 105
+current merge-parts.ts: 106
 baseline hero.ts: 98
 baseline Player.ts: 181
 ```
@@ -334,7 +409,7 @@ Verified:
 | Platform | Proof |
 | --- | --- |
 | Web | Fresh starter scaffold, 23 WebGPU playtest scenario summaries, no diagnostics |
-| Desktop native | `pnpm native:build` followed by `pnpm native:verify:desktop`; 300 desktop frames, native contracts, physics proof, and loading proof passed |
+| Desktop native | Feature-specific fresh starter desktop run invoked the changed `Player -> hero -> mergeParts` caller and passed 300 native frames; generic `native:verify:desktop` remains platform health evidence only |
 
 Not claimed:
 

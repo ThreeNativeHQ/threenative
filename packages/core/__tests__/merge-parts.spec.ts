@@ -23,6 +23,16 @@ function extruded(): ExtrudeGeometry {
 }
 
 describe("mergeParts", () => {
+  function morphedBox(): BoxGeometry {
+    const geometry = new BoxGeometry(1, 1, 1);
+    const positions = geometry.getAttribute("position");
+    const morph = new Float32Array(positions.count * 3);
+    for (let vertex = 0; vertex < positions.count; vertex += 1) morph[vertex * 3 + 1] = 0.25;
+    geometry.morphAttributes.position = [new BufferAttribute(morph, 3)];
+    geometry.morphTargetsRelative = true;
+    return geometry;
+  }
+
   it("should merge a non-indexed extrusion with an indexed box (PRD-277 AC4)", () => {
     const extrusion = extruded();
     const box = new BoxGeometry(1, 1, 1);
@@ -76,7 +86,7 @@ describe("mergeParts", () => {
     expect(colors.count).toBe(perPart * tones.length);
     tones.forEach((tone, index) => {
       const expected = new Color(tone);
-      for (const vertex of [0, perPart - 1]) {
+      for (let vertex = 0; vertex < perPart; vertex += 1) {
         const at = index * perPart + vertex;
         expect(colors.getX(at)).toBeCloseTo(expected.r, 6);
         expect(colors.getY(at)).toBeCloseTo(expected.g, 6);
@@ -111,6 +121,27 @@ describe("mergeParts", () => {
         { label: "half-painted" },
       ),
     ).toThrow(/half-painted/u);
+  });
+
+  it("should strip morph targets from flattened parts in either input order", () => {
+    const morphed = morphedBox();
+    const plain = new BoxGeometry(1, 1, 1);
+
+    for (const parts of [
+      [{ geometry: morphed }, { geometry: plain }],
+      [{ geometry: plain }, { geometry: morphed }],
+    ]) {
+      const merged = mergeParts(parts, { label: "morph-trim" });
+      expect(Object.keys(merged.morphAttributes)).toEqual([]);
+      expect(merged.morphTargetsRelative).toBe(false);
+      expect(merged.getAttribute("position").count).toBe(
+        morphed.toNonIndexed().getAttribute("position").count +
+          plain.toNonIndexed().getAttribute("position").count,
+      );
+    }
+
+    expect(Object.keys(morphed.morphAttributes)).toEqual(["position"]);
+    expect(morphed.morphTargetsRelative).toBe(true);
   });
 
   it("should drop attributes that cannot survive a merge and keep only position and colour", () => {

@@ -51,6 +51,8 @@ function flatten(part: IMergePart, paint: boolean): BufferGeometry {
   for (const name of Object.keys(flat.attributes)) {
     if (name !== "position") flat.deleteAttribute(name);
   }
+  flat.morphAttributes = {};
+  flat.morphTargetsRelative = false;
   const position = flat.getAttribute("position");
   if (!paint || position === undefined) return flat;
   const tone = new Color(part.color);
