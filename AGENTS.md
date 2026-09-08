@@ -38,19 +38,45 @@ One source, two runtimes: browser WebGPU and an owned C++ host for desktop/Andro
 ## Commands
 
 ```sh
-pnpm typecheck && pnpm lint && pnpm test   # all three before calling a change done
-pnpm test:playtest / test:templates        # in-repo example fixture / each scaffolded template
-pnpm budgets / pnpm quality                # invariants fail, LOC only reports / never fatal
-pnpm sync:agents / pnpm --filter <example> dev   # regenerate mirrors / run one workspace; no root dev
-pnpm native:build && pnpm native:verify:desktop  # opt-in C++ host; 300 frames + a live screenshot
-# ask doctor first when a red is not the game — no browser, blank capture, silent device
-node packages/playtest/dist/runner/cli.js doctor --text [--url <url> | --device <serial>]
-npx threenative doctor --text              # the same question inside a generated project
-pnpm --filter @threenative/playtest build  # then prove one game, usually your sandbox game:
-node packages/playtest/dist/runner/cli.js <scenario>.playtest.json --url http://127.0.0.1:5173 --server-command "<workspace dev command>" --browser-recipe webgpu
+pnpm typecheck && pnpm lint && pnpm test   # executable, config, generated-contract or unknown changes
+pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/evidence-budget.spec.ts scripts/__tests__/evidence-citations.spec.ts scripts/__tests__/sync-agent-docs.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts  # strict prose-only lane
+pnpm test:playtest                         # playtests against the in-repo example fixture
+pnpm test:templates                        # playtests against each scaffolded template
+pnpm budgets                               # hard invariants fail; LOC triggers only report
+pnpm quality                               # file length, suppressions, lint holes; never fatal
+pnpm sync:agents                           # regenerate CLAUDE.md mirrors
+pnpm --filter <example> dev                # there is no root `pnpm dev`
+
+# when a gate fails for a reason that is not the game — no browser, blank screenshot, silent
+# device — ask the machine and the project first
+node packages/playtest/dist/runner/cli.js doctor --text
+node packages/playtest/dist/runner/cli.js doctor --url <url> --text   # + the scene at a glance
+node packages/playtest/dist/runner/cli.js doctor --device <serial> --text  # + is the phone cool enough
+npx threenative doctor --text              # inside a generated project
+
+# prove one game — usually the sandbox game you are working on, not an in-repo example
+# (flags, four targets and exit codes: packages/playtest/AGENTS.md; the runner provisions its own
+# Xvfb on headless Linux, so no display wrapper is needed)
+pnpm --filter @threenative/playtest build
+node packages/playtest/dist/runner/cli.js <scenario>.playtest.json \
+  --url http://127.0.0.1:5173 --server-command "<workspace dev command>" --browser-recipe webgpu
+
+pnpm native:build                          # opt-in; downloads deps, compiles the C++ host
+pnpm native:verify:desktop                 # 300 native frames + a non-blank screenshot
 ```
 
-Playtest flags, its four targets and its exit codes are in `packages/playtest/AGENTS.md`; the runner provisions its own Xvfb, so never wrap it. CI runs `typecheck`, `lint`, `build`, `budgets`, `supply-chain`, `test`, `test-browser`, `test-playtest`, the `golden-path` matrix and the main/nightly `template-nonvisual` matrix; `native-platforms.yml` adds advisory Android, `desktop-parity`, desktop, starter-linux and iOS evidence. **Prove it locally before you push** — CI is the slow lane, and a red there costs more than a run here. Registry commands take the untracked local `.npmrc` explicitly (`npm --userconfig .npmrc <command>`); never print it.
+The pre-push hook runs the bounded `pnpm ci:fast` drift board; it does not run whole-workspace
+typecheck or budgets and never proves runtime correctness. Use `pnpm ci:local` for full local
+verification. A pull request whose complete merge-base diff is only inert Markdown under
+`docs/PRDs/` or `docs/verification/`, excluding agent mirrors and executable Markdown inputs, uses
+the strict prose-only command above and skips compilation, browser/playtest, native and game-matrix
+jobs. Any other diff, plus main, nightly, release and manual invocations, runs the full board. CI
+runs `typecheck`, `lint`, `build`, `budgets`, `supply-chain`, `test`, `test-browser`,
+`test-playtest`, the `golden-path` matrix, and the main/nightly `template-nonvisual` matrix;
+`native-platforms.yml` adds advisory Android, `desktop-parity`, desktop, starter-linux, and iOS
+evidence. **Prove it locally before you push** — CI is the slow lane and a red there costs more than
+a run here. Registry commands take
+the untracked local `.npmrc` explicitly (`npm --userconfig .npmrc <command>`); never print it.
 
 TypeScript 5.9 `strict`, **ESM only**; relative imports carry `.js` even though the file is `.ts`. Versions come from the `catalog:` in `pnpm-workspace.yaml`, templates excepted. Biome owns formatting — do not hand-format. Interfaces are `I`-prefixed, classes and type aliases are not. Unit tests are `<package>/__tests__/*.spec.ts`, vitest, node environment, DOM and GPU stubbed.
 

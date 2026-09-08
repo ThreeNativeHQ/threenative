@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 import {
   discoverNativeTestTargets,
@@ -121,6 +122,141 @@ test("uses the required exceptional invocations and opt-in verification builds",
   assert.doesNotMatch(physicsVerifier, /build-native-physics\.mjs/u);
   assert.match(readFileSync(join(root, "CMakePresets.json"), "utf8"), /"TN_ENABLE_VIDEO": "OFF"/u);
 });
+
+function webtransportFixtureSource(selection = cmake) {
+  // Evaluate the real decision text, not a copy: the early required/disabled
+  // refusal plus the quiche selection block, sliced from CMakeLists.txt. A
+  // A fixture of the complete native source is impractical in this bounded
+  // vitest regression, so the slice is scoped to configure-time selection
+  // only: the dummy header/library below prove presence/absence selection,
+  // never linking.
+  const earlyCondition = selection.indexOf(
+    "TN_REQUIRE_WEBTRANSPORT AND NOT TN_ENABLE_WEBTRANSPORT",
+  );
+  assert.ok(earlyCondition >= 0, "early required refusal block is intact");
+  const earlyStart = selection.lastIndexOf("if(", earlyCondition);
+  const earlyEnd = selection.indexOf("endif()", earlyStart);
+  const quicheStart = selection.indexOf('option(MYSTRAL_USE_QUICHE "');
+  const disabledBranch = selection.indexOf("elseif(TN_REQUIRE_WEBTRANSPORT)", quicheStart);
+  const quicheEnd = selection.indexOf("endif()", disabledBranch);
+  assert.ok(earlyStart >= 0 && earlyEnd > earlyStart, "early required refusal block is intact");
+  assert.ok(
+    quicheStart >= 0 && disabledBranch > quicheStart && quicheEnd > disabledBranch,
+    "quiche selection block is intact",
+  );
+  return `${selection.slice(earlyStart, earlyEnd + "endif()".length)}\n${selection.slice(quicheStart, quicheEnd + "endif()".length)}\n`;
+}
+
+function writeWebtransportFixture(directory, { selection = cmake, withQuicheArtifacts }) {
+  const thirdParty = join(directory, "third_party");
+  mkdirSync(thirdParty, { recursive: true });
+  writeFileSync(
+    join(directory, "CMakeLists.txt"),
+    [
+      "cmake_minimum_required(VERSION 3.20)",
+      "project(tn-webtransport-required NONE)",
+      `set(THIRD_PARTY_DIR "${thirdParty.replace(/\\/gu, "/")}")`,
+      'set(MYSTRAL_PLATFORM "fixture-linux")',
+      webtransportFixtureSource(selection),
+      "",
+    ].join("\n"),
+  );
+  if (withQuicheArtifacts) {
+    const quiche = join(thirdParty, "quiche");
+    mkdirSync(join(quiche, "include"), { recursive: true });
+    writeFileSync(join(quiche, "include", "quiche.h"), "// presence fixture\n");
+    writeFileSync(join(quiche, "libquiche.a"), "presence fixture\n");
+  }
+}
+
+function configureWebtransportFixture({ defines, withQuicheArtifacts }) {
+  const probe = spawnSync("cmake", ["--version"], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(probe.status, 0, "cmake must be available for the configure regression");
+  const scope = makeTempDirSync("tn-webtransport-required-");
+  try {
+    writeWebtransportFixture(scope, { withQuicheArtifacts });
+    const result = spawnSync("cmake", ["-S", scope, "-B", join(scope, "build"), ...defines], {
+      encoding: "utf8",
+      timeout: 60_000,
+    });
+    return { status: result.status, output: `${result.stdout ?? ""}\n${result.stderr ?? ""}` };
+  } finally {
+    rmSync(scope, { force: true, recursive: true });
+  }
+}
+
+test("required WebTransport configure fails closed when quiche is absent", () => {
+  const base = [
+    "-DTN_ENABLE_WEBTRANSPORT=ON",
+    "-DMYSTRAL_USE_QUICHE=ON",
+    "-DMYSTRAL_USE_DAWN=OFF",
+    "-DMYSTRAL_USE_WGPU=OFF",
+  ];
+
+  const requiredMissing = configureWebtransportFixture({
+    defines: ["-DTN_REQUIRE_WEBTRANSPORT=ON", ...base],
+    withQuicheArtifacts: false,
+  });
+  assert.notEqual(requiredMissing.status, 0);
+  assert.match(requiredMissing.output, /TN_WEBTRANSPORT_REQUIRED/u);
+
+  const optionalMissing = configureWebtransportFixture({
+    defines: ["-DTN_REQUIRE_WEBTRANSPORT=OFF", ...base],
+    withQuicheArtifacts: false,
+  });
+  assert.equal(optionalMissing.status, 0, optionalMissing.output);
+  assert.match(optionalMissing.output, /quiche not found[\s\S]*?WebTransport disabled \(stub\)/u);
+
+  const requiredPresent = configureWebtransportFixture({
+    defines: ["-DTN_REQUIRE_WEBTRANSPORT=ON", ...base],
+    withQuicheArtifacts: true,
+  });
+  assert.equal(requiredPresent.status, 0, requiredPresent.output);
+  assert.match(requiredPresent.output, /Found quiche/u);
+
+  const requiredTransportOff = configureWebtransportFixture({
+    defines: ["-DTN_REQUIRE_WEBTRANSPORT=ON", "-DTN_ENABLE_WEBTRANSPORT=OFF"],
+    withQuicheArtifacts: false,
+  });
+  assert.notEqual(requiredTransportOff.status, 0);
+  assert.match(requiredTransportOff.output, /TN_WEBTRANSPORT_REQUIRED/u);
+
+  const requiredQuicheOff = configureWebtransportFixture({
+    defines: [
+      "-DTN_REQUIRE_WEBTRANSPORT=ON",
+      "-DTN_ENABLE_WEBTRANSPORT=ON",
+      "-DMYSTRAL_USE_QUICHE=OFF",
+    ],
+    withQuicheArtifacts: false,
+  });
+  assert.notEqual(requiredQuicheOff.status, 0);
+  assert.match(requiredQuicheOff.output, /TN_WEBTRANSPORT_REQUIRED/u);
+
+  // Removing the required refusal must flip this regression red: without the
+  // TN_REQUIRE_WEBTRANSPORT branches the required+missing configure succeeds.
+  // Disable only the refusal severity in the extracted slice: the conditions
+  // stay intact so the slice anchors still resolve, but neither configure
+  // path can fail closed anymore.
+  const neutered = cmake.replaceAll("message(FATAL_ERROR", "message(STATUS");
+  assert.ok(
+    webtransportFixtureSource(neutered).includes("TN_REQUIRE_WEBTRANSPORT"),
+    "the mutation control must keep the sliced decision text",
+  );
+  const neuteredScope = makeTempDirSync("tn-webtransport-neutered-");
+  try {
+    writeWebtransportFixture(neuteredScope, { selection: neutered, withQuicheArtifacts: false });
+    const neuteredMissing = spawnSync(
+      "cmake",
+      ["-S", neuteredScope, "-B", join(neuteredScope, "build"), "-DTN_REQUIRE_WEBTRANSPORT=ON", ...base],
+      { encoding: "utf8", timeout: 60_000 },
+    );
+    // The diagnostic text still prints, but only as a non-fatal status: the
+    // fail-closed property is the non-zero exit, which this must lose.
+    assert.equal(neuteredMissing.status, 0, "neutered fixture must lose the refusal");
+  } finally {
+    rmSync(neuteredScope, { force: true, recursive: true });
+  }
+}, 120_000);
 
 test("reports every target after aggregating build, execution, and pass-line failures", () => {
   const targets = ["threenative-alpha-test", "threenative-beta-test", "threenative-gamma-test"];

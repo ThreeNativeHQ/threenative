@@ -82,6 +82,8 @@ test("the parity registry implements Tier 1 and Tier 2 rows and documents exclus
     // native multitouch injector"; it has one, and what it lacks is a host that delivers what
     // the injector writes. PRD-077 owns that finding, so it owns the exclusion.
     ["desktop-multitouch-input", "PRD-077"],
+    ["android-canvas2d-document-window-stubs", "runtime-native"],
+    ["android-hardware-canvas2d-document-window-stubs", "runtime-native"],
   ]);
 });
 

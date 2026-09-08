@@ -1,0 +1,121 @@
+{
+  "admissible": false,
+  "arm": "frozen",
+  "boundMs": 50073.340857,
+  "checks": [
+    {
+      "code": null,
+      "detail": {
+        "arm": "frozen",
+        "expected": "007e1dc247b58cc13126f44c52cff97f230934bcc2f305c83e35805bcba9077e",
+        "installed": "007e1dc247b58cc13126f44c52cff97f230934bcc2f305c83e35805bcba9077e"
+      },
+      "id": "R1_ARM_IDENTITY",
+      "pass": true
+    },
+    {
+      "code": null,
+      "detail": {
+        "boundMs": 50073.340857,
+        "clockSource": "process.hrtime.bigint",
+        "derivedMs": 50073.340857,
+        "synthetic": false
+      },
+      "id": "R2_CLOCK",
+      "pass": true
+    },
+    {
+      "code": null,
+      "detail": {
+        "target": "android"
+      },
+      "id": "R0_ANDROID_TARGET",
+      "pass": true
+    },
+    {
+      "code": "R0B_PREFLIGHT_UNQUALIFIED",
+      "detail": {
+        "beforeInstallPhase": "before-install",
+        "beforeLaunchPhase": "before-launch",
+        "batteryPercent": 100,
+        "charging": true,
+        "provisional": ["charging"],
+        "recordedAt": "2026-09-07T15:44:24.325Z",
+        "required": {
+          "charging": "discharging",
+          "thermal": "NONE"
+        },
+        "screenOn": true,
+        "thermalStatus": "NONE"
+      },
+      "id": "R0B_PREFLIGHT",
+      "pass": false
+    },
+    {
+      "code": null,
+      "detail": {
+        "diagnostics": [],
+        "exitCode": 0,
+        "pass": true
+      },
+      "id": "R3_RUNNER",
+      "pass": true
+    },
+    {
+      "code": null,
+      "detail": {
+        "distance": 2.1466860241869212,
+        "entity": "player",
+        "horizontal": 2.14668464712203,
+        "minHorizontalMetres": 0.25,
+        "movementDelta": [-0.000047048861553378174, 0.002431511878967285, -2.1466846466064453]
+      },
+      "id": "R4_MOVEMENT",
+      "pass": true
+    },
+    {
+      "code": null,
+      "detail": {
+        "pass": true,
+        "stats": {
+          "distinctColors": 65855,
+          "brightPixelRatio": 0.19727623456790122,
+          "height": 2400,
+          "luminanceStdDev": 0.15383163561874091,
+          "maxLuminance": 0.9999999999999999,
+          "width": 1080
+        }
+      },
+      "id": "R5_VISIBLE_WORLD",
+      "pass": true
+    },
+    {
+      "code": "R6_BOUND_EXCEEDED",
+      "detail": {
+        "boundMs": 50073.340857,
+        "criterionMs": 8000,
+        "meaning": "a bound above the criterion does not isolate game latency and proves nothing about it"
+      },
+      "id": "R6_BOUND",
+      "pass": false
+    },
+    {
+      "code": "R7_PUMP_SILENCE_MISSING",
+      "detail": {
+        "reason": "no TN_PUMP_ENDPOINT line in host log"
+      },
+      "id": "R7_PUMP_SILENCE",
+      "pass": false
+    }
+  ],
+  "criterionMs": 8000,
+  "pump": {
+    "code": "R7_PUMP_SILENCE_MISSING",
+    "detail": {
+      "reason": "no TN_PUMP_ENDPOINT line in host log"
+    },
+    "id": "R7_PUMP_SILENCE",
+    "pass": false
+  },
+  "verdict": "fail"
+}

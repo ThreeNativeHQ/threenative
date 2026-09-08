@@ -8,6 +8,7 @@ import { expect, test, vi } from "vitest";
 import {
   loadPlaytestScenario,
   PLAYTEST_PROTOCOL_LIMITS,
+  PLAYTEST_PROTOCOL_VERSION,
   type IPlaytestObservationSnapshot,
   type IPlaytestScenario,
 } from "../src/index.js";
@@ -337,6 +338,42 @@ test("fixed-step startup races retry without hiding a stopped loop", async () =>
 
   expect(attempts).toBe(2);
   expect(page.evaluate).toHaveBeenCalledTimes(1);
+});
+
+test("browser bridge handshake honors the configured operation timeout", async () => {
+  vi.useFakeTimers();
+  try {
+    const evaluate = vi.fn(async (_callback: unknown, input: { method: string }) => {
+      if (input.method === "describe") {
+        await new Promise<void>((resolve) => setTimeout(resolve, 5_100));
+        return {
+          capabilities: [],
+          limits: PLAYTEST_PROTOCOL_LIMITS,
+          name: "test-bridge",
+          protocolVersion: PLAYTEST_PROTOCOL_VERSION,
+        };
+      }
+      if (input.method === "ready") return { ready: true };
+      throw new Error(`Unexpected bridge method: ${input.method}`);
+    });
+    const page = {
+      evaluate,
+      goto: vi.fn(async () => undefined),
+      waitForFunction: vi.fn(async () => undefined),
+      waitForLoadState: vi.fn(async () => undefined),
+    } as unknown as Page;
+
+    const pending = openPageAndConnectBridge(
+      page,
+      { ...CONFIG, timeoutMs: 6_000 },
+      scenario(undefined),
+    );
+    await vi.advanceTimersByTimeAsync(5_100);
+
+    await expect(pending).resolves.toBeDefined();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 function scenario(assert: IPlaytestScenario["assert"]): IPlaytestScenario {
@@ -1025,6 +1062,87 @@ test("browser runner samples only after the advertised startup phase is ready", 
     await new Promise<void>((resolve, reject) =>
       server.close((error) => error === undefined ? resolve() : reject(error)),
     );
+  }
+}, 60_000);
+
+test("browser runner waits on an asynchronously changing resource", async () => {
+  const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(fixtureHtml);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("Resource fixture has no port.");
+  const projectPath = await makeTempDir("playtest-runner-resource-");
+  await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
+    artifacts: { screenshots: false },
+    assert: { resources: [{ changed: true, equals: true, id: "state", path: "networkConnected" }] },
+    name: "runner-resource-wait",
+    schemaVersion: 1,
+    steps: [{ timeoutMs: 1_000, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
+    target: "web",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 0,
+  }));
+
+  try {
+    const report = await runStandalonePlaytest({
+      artifactDirectory: join(projectPath, "artifacts"),
+      headless: true,
+      projectPath,
+      scenarioPath: "scenario.json",
+      timeoutMs: 15_000,
+      trace: false,
+      url: `http://127.0.0.1:${address.port}/?mode=wait-resource`,
+    });
+
+    expect(report.pass).toBe(true);
+    expect(report.assertionResults).toContainEqual(expect.objectContaining({ id: "resource.state.networkConnected", pass: true }));
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)));
+  }
+}, 60_000);
+
+test("browser runner times out a resource wait with the last observation", async () => {
+  const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(fixtureHtml);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("Resource timeout fixture has no port.");
+  const projectPath = await makeTempDir("playtest-runner-resource-timeout-");
+  await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
+    artifacts: { screenshots: false },
+    assert: { resources: [{ equals: true, id: "state", path: "networkConnected" }] },
+    name: "runner-resource-timeout",
+    schemaVersion: 1,
+    steps: [{ timeoutMs: 32, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
+    target: "web",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 0,
+  }));
+
+  try {
+    const report = await runStandalonePlaytest({
+      artifactDirectory: join(projectPath, "artifacts"),
+      headless: true,
+      projectPath,
+      scenarioPath: "scenario.json",
+      timeoutMs: 15_000,
+      trace: false,
+      url: `http://127.0.0.1:${address.port}/?mode=wait-resource-timeout`,
+    });
+
+    expect(report.pass).toBe(false);
+    expect(report.diagnostics).toContainEqual(expect.objectContaining({
+      code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+      message: expect.stringContaining("last observation false"),
+    }));
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)));
   }
 }, 60_000);
 

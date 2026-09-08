@@ -77,7 +77,11 @@ test("peer verification contract rejects truthy aliases and missing mode logging
     'bool isTruthyEnvironmentValue(const char* value) {\n    return value != nullptr && std::string(value) == "1";\n}',
   );
   const withoutModeLog = exactParser.replace(
-    /\s*std::cerr << "\[WebTransport\] TLS peer verification mode: "\n\s*<< \(allowInsecurePeerVerification \? "insecure-override" : "verify-peer"\)\n\s*<< " \(parsed from " << kInsecurePeerVerificationEnv << "="\n\s*<< \(insecurePeerVerificationValue \? insecurePeerVerificationValue : "<unset>"\)\n\s*<< "\)" << std::endl;\n/u,
+    // Stream-agnostic on purpose: this control removes the mode log to prove the contract
+    // notices, and which stream carries it is a separate question the runtime test owns.
+    // Pinning std::cerr here made moving the status line off the error stream look like a
+    // contract break.
+    /\s*std::c(?:err|out) << "\[WebTransport\] TLS peer verification mode: "\n\s*<< \(allowInsecurePeerVerification \? "insecure-override" : "verify-peer"\)\n\s*<< " \(parsed from " << kInsecurePeerVerificationEnv << "="\n\s*<< \(insecurePeerVerificationValue \? insecurePeerVerificationValue : "<unset>"\)\n\s*<< "\)" << std::endl;\n/u,
     "\n",
   );
   assert.throws(

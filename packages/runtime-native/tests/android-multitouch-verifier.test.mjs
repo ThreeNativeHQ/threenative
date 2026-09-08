@@ -6,6 +6,41 @@ import { test } from 'vitest';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
+test('multi-touch verifier forwards the scenario viewport through its reporting driver', async () => {
+  const calls = [];
+  const driver = {
+    prepare: async (...args) => calls.push(args),
+  };
+  const { ReportingAndroidDriver } = await import('../scripts/verify-android-multitouch.mjs');
+  const reporting = new ReportingAndroidDriver(driver);
+  const viewport = { height: 360, width: 640 };
+
+  await reporting.prepare('http://127.0.0.1:41777/playtest', '/mailbox', viewport);
+
+  assert.deepEqual(calls, [['http://127.0.0.1:41777/playtest', '/mailbox', viewport]]);
+});
+
+test('multi-touch verifier preserves a positive run protocol diagnostic', async () => {
+  const { validateResults } = await import('../scripts/verify-android-multitouch.mjs');
+
+  assert.throws(
+    () => validateResults({
+      pass: false,
+      diagnostics: [{
+        code: 'TN_PLAYTEST_OPERATION_TIMEOUT',
+        message: 'The Android mailbox stopped answering.',
+      }],
+    }),
+    /TN_PLAYTEST_OPERATION_TIMEOUT.*Android mailbox stopped answering/u,
+  );
+});
+
+test('Android CI retains the standalone multi-touch artifacts on failure', () => {
+  const workflow = readFileSync(join(root, '../../.github/workflows/native-platforms.yml'), 'utf8');
+
+  assert.match(workflow, /packages\/runtime-native\/artifacts\/android\/multitouch\//u);
+});
+
 test('standalone Android multi-touch proof is rootless, fail-closed, and parity-ready', () => {
   const source = readFileSync(join(root, 'scripts/verify-android-multitouch.mjs'), 'utf8');
   assert.match(source, /adb-emu-event-protocol-b/);

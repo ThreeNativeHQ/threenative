@@ -343,7 +343,17 @@ void game.start().catch((error) => console.error(
       target === 'desktop'
         ? [importMetaPlugin, nativeEntryPlugin]
         : [importMetaPlugin, mobileDecodersPlugin, nativeEntryPlugin],
-    resolve: target === 'desktop' ? undefined : { conditions: ['threenative-native'] },
+    // One three, whatever the import graph looks like. The game resolves `three` beside itself
+    // while a linked engine package — `@threenative/core`, or anything else installed outside the
+    // project — resolves the same bare specifier beside *itself*, so a second physical copy enters
+    // the bundle. Three keeps the TSL node stack in module scope, so the copy that builds a
+    // material is not the copy the renderer pushed onto, and the first material build on the phone
+    // dies with "No stack defined for assign operation". `mergeConfig` concatenates arrays, so a
+    // project that dedupes its own packages keeps every one of them.
+    resolve:
+      target === 'desktop'
+        ? { dedupe: ['three'] }
+        : { conditions: ['threenative-native'], dedupe: ['three'] },
     configFile: existsSync(join(absoluteProject, 'vite.config.ts'))
       ? join(absoluteProject, 'vite.config.ts')
       : undefined,

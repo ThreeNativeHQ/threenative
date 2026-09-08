@@ -174,6 +174,205 @@ the baked darker receiver patch; SHA-256
 `a7668f6d18591500732c890fc0f9a774b5c1d199fbe0b64c075d9b7039af301c`. Android/iOS are not claimed:
 their existing `TN_NATIVE_KTX2_UNSUPPORTED` build guard remains intact.
 
+## PRD-359 failed WebTransport handshake — 2026-09-05
+
+The Linux V8+Dawn host now settles both establishment promises when WebTransport closes before readiness. The compiled surface regression went red then green, and the real Go fixture suite passed 11/11 tests, including self-signed certificate rejection without the insecure override. This does not qualify positive trusted TLS or other platforms. Evidence: [Task 1a-close](../../../docs/verification/prd-359-task1a-close-2026-09-05.md).
+
+## PRD-359 native datagram slice — 2026-09-05
+
+The Linux host now reports negotiated payload capacity, rejects invalid/oversized sends, distinguishes hard transport failures from local backlog drops, and drains bounded native receive backlog on idle frames. The idle-frame regression failed before repair; restoring a hard-error drop increment failed the real session-counter test. Final compiled contracts passed 2/2 and the Go/native live suite passed 15/15. Coordinator and independent review accepted this native slice. JS stream backpressure, positive trusted TLS and remaining platform qualification are still open. Evidence: [Task 2a](../../../docs/verification/prd-359-task2a-2026-09-05.md).
+
+## PRD-359 native stream strategies — 2026-09-05
+
+The installed Streams shim now measures readable/writable queue sizes and signals
+pressure, serializes asynchronous pulls/writes, and preserves active sink results
+while deferring abort teardown. Root review rejected incorrect in-flight-write
+expectations and added Node-reference regressions for abort, ready rejection and
+size-callback reentrancy. The current unit suite passes 19/19, including close during an erroring stream. Compiled networking
+contracts pass 2/2 on Linux V8 and 2/2 on Linux QuickJS; real Go/native transport
+checks pass 15/15 on Linux V8. Independent review passed after the close-ordering and duplicate-close corrections.
+Typecheck, lint and the full test suite passed; this prerequisite row is accepted. Hard transport queue bounds remain Task 2b work; no Android,
+Windows, macOS or iOS execution is claimed here. Evidence:
+[Task 2b-streams](../../../docs/verification/prd-359-task2b-streams-2026-09-05.md).
+
+## PRD-359 native reliable send admission — 2026-09-05
+
+The Linux V8+Dawn host now bounds reliable stream admission at 1 MiB per session,
+preserves exact quiche partial-write progress and FIN ordering, releases drained
+buffer storage, and reports hard stream send failures through distinct
+`streamWriteError` events. A session-wide `writable` event is coalesced and reset
+when the existing event pump pops it. The wire regression drove a real quiche
+`Session` through Done, short-write, resume, saturation, oversized input, FIN,
+closed/failed states, and injected hard errors; its required negative mutations
+went red before restoration. The focused Linux V8 build and WebTransport ctests
+passed 2/2. The QuickJS build and contracts also passed 2/2; the coordinator
+ran the real Go/Linux V8 fixture, passing 15/15. This is the native send slice
+only; JavaScript stream integration and other platforms remain open.
+
+Evidence: [Task 2b-send](../../../docs/verification/prd-359-task2b-send-2026-09-05.md).
+
+## PRD-359 writable controller abort signal — 2026-09-05
+
+The installed writable-stream shim now exposes a stable
+`WritableStreamDefaultController.signal` backed by the host's existing
+`AbortController`. `writer.abort(reason)` signals synchronously before it waits
+for a held sink start or write, preserves the signal's first reason, and re-reads stream
+state after signal listeners run. A listener that calls `controller.error()` can
+therefore settle the stream without an extra `sink.abort()` call. Terminal
+closed/errored streams resolve a later abort, while a pending abort remains
+coalesced until its active operation settles.
+
+The focused shim tests pass 23/23, the bootstrap hash/loader contract passes
+29 tests with 2 existing skips, and the compiled Linux V8 WebTransport surface
+and wire contracts pass 2/2. Rebuilt Linux QuickJS contracts also pass 2/2,
+with the source hash unchanged across the build. The surface test holds a native writable operation,
+aborts it, and awaits write rejection plus `closed` settlement; it does not use a
+constant probe. A no-signal mutation failed 3 tests and was restored. The
+recorded Chromium 151 reference for synchronous `controller.error()` during
+abort reports `abort='listener-error'`, `closed='listener-error'`, one signal
+event, and no sink abort; Node 20's crash for that reentrant case is not used as
+passing evidence. The explicit native 64 KiB echo probe also passed with exact
+bytes and FIN after this build. The required existing Go/native fixture suite
+also passed 15/15 after the build. Typecheck, lint and the full suite passed;
+the evidence records an initial timestamp-test failure and passing rebuilt replay.
+This is the signal prerequisite only; native
+capacity retry integration, receive bounds, positive trusted TLS and other
+platforms remain open.
+
+Evidence: [Task 2b-signal](../../../docs/verification/prd-359-task2b-signal-2026-09-05.md).
+
+## PRD-359 monotonic networking measurements — 2026-09-06
+
+Native `performance.now()` is measured from a runtime-relative
+`std::chrono::steady_clock` origin. The host-gap meter gives
+`webtransport::processEvents()` its own frame-keyed `webtransport` segment,
+separate from generic I/O, so the networking proof can charge the actual
+transport pass rather than a larger surrounding interval.
+
+The Linux coverage host passed the timer source contract and both compiled
+timer-delivery contracts. With the bounded test seam
+`TN_NETWORKING_TEST_PROCESS_EVENTS_DELAY_MS=5`, the parser observed 2,100
+unique frame samples at p95 `5.060 ms`, above the networking budget. This is a
+test control only; it is not enabled for normal games.
+
+## PRD-359 native WebTransport stream integration — 2026-09-05
+
+Task 2b is committed as `2dc42fcc`. The JS adapter retries bounded native send
+admission, observes abort while waiting for capacity or FIN, keeps read/write
+shutdown independent, and grants receive credit from the readable queue. Native
+reads have per-tick work bounds, resume on idle sockets, reject foreign session
+headers and retain completed streams until their readable data drains. Local
+close settles outstanding operations and clears retained queues. Actual native
+and JS resource counters are exposed through `__wtResourceStats`; absent native
+observations fail instead of being counted as zero.
+
+Rebuilt Linux V8 and QuickJS wire/surface contracts passed 2/2 each. The final
+required Go/V8 suite passed 15/15, and a separate deterministic 65,536-byte echo
+compared every byte and read to FIN. Native negative controls failed after each
+of five safeguards was removed and passed after restoration. The full suite,
+typecheck and lint passed; the [Task 2b evidence](../../../docs/verification/prd-359-task2b-2026-09-05.md)
+records exact counts and review corrections. These runs use the explicit
+self-signed development fixture; positive trusted TLS remains unverified.
+
+Task 2b-proof completed the live queue checkpoint: all 17 required Go/Linux V8
+cases passed, including a stalled application reader followed by byte-exact 32 MiB
+delivery/FIN and 100 reconnects in one native process. Each reconnect exercised a
+datagram and bidirectional echo, then required all observed native/JS resources to
+return to zero. Removing receive credit made the pressure test fail; retaining a
+closed native session made the first reconnect fail. Source was restored and the
+final required suite, full repository suite, typecheck and lint passed. The
+[Task 2b-proof evidence](../../../docs/verification/prd-359-task2b-proof-2026-09-05.md)
+records exact observations. Task 2a/2b queue integration is accepted; no additional
+platform, trusted TLS or broader load/soak qualification is claimed here.
+
+## PRD-359 asynchronous DNS — 2026-09-06
+
+Linux V8 and QuickJS wire/surface contracts pass 2/2 each, including actual
+animation callbacks during a delayed lookup and cancellation before worker
+completion. The Go/Linux V8 required suite passes 23/23: OS hostname lookup,
+delayed lookup, close before completion, IPv6, candidate fallback and malformed
+fixture controls join the existing queue/reconnect cases. Removing fallback or
+validation makes the corresponding live case fail. Numeric IPv4 and IPv6 each
+also returned exact 64 KiB stream bytes plus FIN.
+
+The resolver uses two process-lifetime workers with 64-job admission and up to
+16 address candidates under one 30-second connection deadline. Session, socket,
+quiche and JS access stay on the game thread. Active OS getaddrinfo calls cannot
+be interrupted; cancelled results are discarded, and pool state remains owned
+through process teardown. Two permanently stuck OS lookups prevent subsequent
+hostname resolution but do not freeze game frames. These Linux proofs do not
+qualify other platforms or trusted TLS. Final repository-gate acceptance is
+recorded in [Task 2c evidence](../../../docs/verification/prd-359-task2c-2026-09-05.md).
+
+## PRD-359 process-local certificate trust — 2026-09-06
+
+Linux V8 and QuickJS wire/surface contracts pass 2/2 each. An explicit
+`SSL_CERT_FILE` is loaded through the packaged
+`quiche_config_load_verify_locations_from_file` after the existing peer-verification
+decision, so the variable names *which* anchors are trusted and never *whether* the
+peer is verified. Unset leaves quiche's own default verify paths untouched; an empty
+value, an unreadable path and a file that is not certificates each abort the candidate,
+stop candidate iteration and reject establishment with a named stderr diagnostic.
+
+The Go/Linux V8 required suite passes 28/28. Five of those are new: a real trusted
+certificate accepted with `verify-peer` on and no development override anywhere, a
+trusted certificate refused for the wrong hostname, an untrusted peer refused while a
+trust file is set, and unreadable and malformed trust files refused. Replacing the
+load helper's body with `return true` makes the native wire contract fail five named
+checks; the pre-existing development self-signed cases are unchanged and set no
+`SSL_CERT_FILE`.
+
+Each secure negative is preceded by a development-mode control against the identical
+URL, DNS mapping and listening peer: it asserts a byte-exact datagram echo with
+`MYSTRAL_WEBTRANSPORT_INSECURE=1`, so the rejection that follows is TLS refusing that
+endpoint rather than a dead port or an unresolved name. The controls are explicitly
+insecure and are not used by the trusted positive. Temporarily forcing
+`quiche_config_verify_peer` false makes both negatives fail — `FAIL: accepted the wrong
+hostname` and `FAIL: accepted an untrusted certificate`, exit 1 each — while the controls
+still pass; the source was restored to an identical hash and the rebuilt binaries hash
+identically to the recorded ones.
+
+Measured and not accepted as final: an IP-literal authority is refused by this quiche
+build even when the loaded anchor carries the matching `IP Address` SAN, while the same
+certificate and anchor verify through `localhost`. That is server-name checking, not
+trust loading, and it is carried into Task 1b as a blocking requirement with the
+certificate/hostname fixture work. These Linux proofs qualify no
+other platform, no browser, and do not claim the loaded file replaces quiche's default
+roots. The [Task 1b-trust evidence](../../../docs/verification/prd-359-task1b-trust-2026-09-06.md)
+records the exact commands, exits and binary hashes.
+
+## PRD-359 executable and expiry fixtures — 2026-09-06
+
+Native test suites accept `TN_NATIVE_RUNTIME_EXECUTABLE`; unset uses the shipped desktop
+preset, while a blank override fails explicitly. Required WebTransport runs name a missing
+executable instead of silently selecting the default. Linux execution passed; macOS and
+Windows path resolution is tested, but those platforms have not executed this fixture.
+
+The live fixture verifies rejection of an expired certificate after an exact-endpoint
+insecure echo control, and accepts a current certificate under the same isolated CA.
+Portable OpenSSL CA date options leave the system clock and trust stores unchanged.
+The corrected live suite passes 33/33; full test, typecheck and lint pass. See
+[fixture evidence](../../../docs/verification/prd-359-task1b-fixture-2026-09-06.md).
+
+A separate scratch-linked Linux/V8 host with the prepared quiche IP-SAN patch passes
+verified numeric IPv4 and IPv6 64 KiB byte/FIN echoes. The installed library is unchanged;
+this is not shipped dependency qualification. See
+[local host evidence](../../../docs/verification/prd-359-ip-san-host-2026-09-06.md).
+
+## PRD-359 Windows header boundary — 2026-09-06
+
+Windows CI exposed Winsock min/max macros through quiche.h before NOMINMAX was defined.
+The WebTransport translation unit now establishes that guard first. The MSVC failure
+is retained in [the repair evidence](../../../docs/verification/prd-359-task1b-win32-2026-09-06.md).
+Linux V8 and QuickJS wire/surface tests pass 2/2 each; required live V8 tests pass 33/33.
+A clang-cl preprocessor control fails before the guard and passes with it. No local
+Windows SDK was available, so corrected Windows compilation remains a CI requirement.
+
+The wire-test translation unit imports quiche before the implementation; it now
+defines NOMINMAX at its own first include as well. CI first proved the production
+repair, then exposed this independent test-header boundary. Corrected Windows
+wire-test compilation is pending CI, with local V8 and preprocessing evidence in
+the same Windows verification record.
 ## Shared shadow-material invalidation — 2026-09-05
 
 The `17-shadow-map` conformance case now mixes an opaque torus with two planar casters. One source

@@ -1,0 +1,17 @@
+{
+  "sourceApk": "/home/joao/projects/threenative/sandbox/prd360-bayview-workspace/dist-native/fps-framework.apk",
+  "sourceApkSha256": "0fa8f49ba3fbc1ea8080c9c89e11ae5a0c8a856ea6715cb281915c12104b4c3c",
+  "files": {
+    "jniLibs/arm64-v8a/libSDL3.so": "ecb1095a6c73b489a033717cd900d84b27c2f88594427ef62363208faa30ec37",
+    "jniLibs/arm64-v8a/libc++_shared.so": "3e852764502d06e0cf1080d532ae7c608b7649d946a3a9d7e84e3d4b7d683214",
+    "jniLibs/arm64-v8a/libmystral-runtime.so": "7bacde5f110ab4f3e79daab3c73c5f2314c0290ac60a8932633c1b04afa6d993",
+    "jniLibs/arm64-v8a/libv8android.so": "eddea92d4cea2ac34e373629327c6293981444fdaf93f8b16986a17effd33124",
+    "jniLibs/x86_64/libSDL3.so": "4bc57b97797106aa53259626dfbfee21b4179d31248376ed39c2eefe2f8f9ec5",
+    "jniLibs/x86_64/libc++_shared.so": "0a2c7afa35b183fdd5a3cb20e2080ad54cbea06c2a4f0bc8f122cb7d1e9e0b9f",
+    "jniLibs/x86_64/libmystral-runtime.so": "67bfd0159338c53fde7488fe514cb585f2f1a3269e7fd197268a2c98a4bbbb02",
+    "jniLibs/x86_64/libv8android.so": "e691332f558e528a49319e32c51df170be17824e623388a417900a60601701d8",
+    "assets/v8/arm64-v8a/snapshot_blob.bin": "8fc946b2d1c7147de02f3f38dee20b178eb66fc30e69e573dbb20d9849c1dd3a",
+    "assets/v8/x86_64/snapshot_blob.bin": "90b174978868b0782d23b097af6ab17f50bb8695d3262fdc31b014e8b79391f0",
+    "SDL3-3.2.30.aar": "ac582807f04c82a8cb80140ce6321598848da4a632fd4531874c60df8e019837"
+  }
+}

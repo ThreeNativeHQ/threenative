@@ -2559,6 +2559,17 @@ async function main(argv = process.argv.slice(2)) {
     provenance,
   );
   const expired = expiredExclusions(registry);
+  const expiredExclusionIds = new Set(expired.map(({ id }) => id));
+  const activeRowExclusions = new Map(
+    (registry.exclusions ?? [])
+      .filter(
+        (entry) =>
+          typeof entry?.target === "string" &&
+          typeof entry?.row === "string" &&
+          !expiredExclusionIds.has(entry.id),
+      )
+      .map((entry) => [`${entry.target}\u0000${entry.row}`, entry]),
+  );
   if (expired.length > 0) {
     report.supplemental = {
       expiredExclusions: expired.map(({ expires, id }) => ({ expires, id, status: "blocked" })),
@@ -2588,10 +2599,14 @@ async function main(argv = process.argv.slice(2)) {
       const expiredRowExclusion = expired.find(
         (entry) => entry.target === target && entry.row === test.id,
       );
+      const rowExclusion = activeRowExclusions.get(`${target}\u0000${test.id}`);
       if (expiredRowExclusion !== undefined) {
         result.status = "blocked";
         result.blockedReason =
           `TN_PARITY_EXCLUSION_EXPIRED: ${expiredRowExclusion.id} expired on ${expiredRowExclusion.expires}.`;
+      } else if (!dryRun && rowExclusion !== undefined) {
+        result.status = "blocked";
+        result.blockedReason = `TN_PARITY_ROW_EXCLUDED: ${rowExclusion.id} — ${rowExclusion.reason}`;
       } else if (test.status !== "implemented") {
         result.status = dryRun ? "planned" : "blocked";
         if (!dryRun) result.blockedReason = "Registry row is not implemented.";
@@ -2604,14 +2619,6 @@ async function main(argv = process.argv.slice(2)) {
       } else if (hardwareReferenceBlocker !== null) {
         result.status = "blocked";
         result.blockedReason = hardwareReferenceBlocker;
-      } else if (!dryRun && target === "desktop" && test.inputProof === "multitouch") {
-        result.status = "blocked";
-        result.blockedReason =
-          "TN_PARITY_ROW_EXCLUDED: desktop-multitouch-input — the injector exists and reaches " +
-          "the kernel, but nothing on this host reads the device it creates: /dev/input/event* " +
-          "is root:input 0660 with this user outside the input group, and the lane runs under " +
-          "Xvfb, which has no evdev backend. A host constraint, not a missing capability. See " +
-          "docs/verification/desktop-multitouch-2026-08-15-r2.md.";
       } else {
         result.status = dryRun ? "validated" : "pass";
         let bundled;

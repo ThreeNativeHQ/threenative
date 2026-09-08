@@ -1,0 +1,128 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > carries the whole audio block, overrides included, through to the pipeline
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 0 bytes (ceiling none)
+
+ ❯ packages/create-threenative/__tests__/config.spec.ts (92 tests | 1 failed | 91 skipped) 958ms
+   ↓ should carry both budget gates through the real config loader into the compiler
+   ↓ rejects malformed asset budget 0 at config load
+   ↓ rejects malformed asset budget -1 at config load
+   ↓ rejects malformed asset budget 1.5 at config load
+   ↓ rejects malformed asset budget null at config load
+   ↓ rejects malformed asset budget {"uncooked":"bad"} at config load
+   ↓ rejects malformed asset budget {"typo":1} at config load
+   ↓ rejects malformed asset budget {"total":-1} at config load
+   ↓ should carry asset exclusions from the real config loader into the compiler
+     ↓ accepts every renderer key the shipped templates actually set
+     ↓ carries alpha antialiasing through to the resolved config, Android override included
+     ↓ re-exports the core-owned asset config types instead of redeclaring them
+     ↓ accepts tRNS PNG alpha through the shared parser
+     ↓ parses every group and applies defaults for omitted fields
+     ↓ preserves renderer resolution scale and the Android override
+     ↓ uses package name defaults and the nativeEntry compatibility fallback without a config file
+     ↓ uses the Vite-owned esbuild without invoking Vite's config loader
+     ↓ rejects a package without a name with the named code
+     ↓ rejects malformed package metadata with the named code
+     ↓ rejects a non-object package compatibility block with the named code
+     ↓ resolves every declared brand variant and boot splash asset
+     ↓ rejects a declared brand variant with its path and stable code
+     ↓ rejects a reintroduced loading group as an unknown config key
+     ↓ parses the assets group and omits it from resolved configs that do not declare it
+     ↓ parses declared asset targets into the resolved config
+     ↓ rejects an unknown key under the assets group with the named code
+     ↓ rejects an unknown key under assets.targets with the named code
+     ↓ parses the textures block and the none shorthand into the resolved config
+     ↓ rejects an unknown texture codec with the named code
+     ↓ rejects a bad texture quality with the named code
+     ↓ rejects an invalid standalone texture maxSize with the named code
+     ↓ parses the models block and the none shorthand into the resolved config
+     ↓ rejects an unknown model pass name with the named code
+     ↓ rejects an unknown key under assets.models with the named code
+     ↓ carries the virtual-geometry bake through to the resolved config
+     ↓ carries the virtual-geometry opt-out through to the resolved config
+     ↓ hands every resolved assets key to the pipeline that receives it
+     ↓ hands assets.models.sharedImages to the pipeline that receives it
+     ↓ rejects a non-boolean assets.models.sharedImages with the named code
+     ↓ hands assets.concurrency to the pipeline that receives it
+     ↓ rejects a non-integer assets.concurrency with the named code
+     ↓ hands assets.audio to the pipeline that receives it and ships the declared bytes
+     × carries the whole audio block, overrides included, through to the pipeline 957ms
+     ↓ rejects the malformed audio declaration { audio: "off" } with the named code
+     ↓ rejects the malformed audio declaration { audio: { seamThreshold: 2 } } with the named code
+     ↓ rejects the malformed audio declaration { audio: { normalise: 'loudest' } } with the named code
+     ↓ rejects the malformed audio declaration { audio: { peakDb: 3 } } with the named code
+     ↓ rejects the malformed audio declaration { audio: { overrides: [{ glob: '**', loop: { crossFadeMs: 'soon' } }] } } with the named code
+     ↓ rejects the malformed audio declaration { audio: { overrides: [{ glob: '**', spectrum: { band: 'ultrasonic', maxPercent: 10 } }] } } with the named code
+     ↓ rejects the malformed audio declaration { audio: { overrides: [{ glob: '**', spectrum: { band: 'high' } }] } } with the named code
+     ↓ rejects the malformed audio declaration { audio: { overrides: [{ loop: true }] } } with the named code
+     ↓ rejects an unknown key under assets.models.virtual with the named code
+     ↓ rejects a simplify ratio outside the open unit interval with the named code
+     ↓ rejects an out-of-range quantize depth with the named code
+     ↓ rejects bad orientation with the named code
+     ↓ rejects invalid display.maxFps -1 with the named code
+     ↓ rejects invalid display.maxFps 60.5 with the named code
+     ↓ rejects invalid display.maxFps 1001 with the named code
+     ↓ rejects invalid display.maxFps "120" with the named code
+     ↓ rejects bad app ids with the named code
+     ↓ rejects an underscore app id that Android might otherwise accept
+     ↓ rejects an invalid app name with the named code
+     ↓ rejects an invalid app version with the named code
+     ↓ rejects a prerelease app version with the named code
+     ↓ rejects an invalid app build with the named code
+     ↓ rejects a non-PNG icon with the named code
+     ↓ rejects corrupt PNG content with the named code
+     ↓ rejects a missing icon instead of silently using the platform default
+     ↓ rejects a config/package native-entry conflict
+     ↓ rejects a native entry outside the project with the named code
+     ↓ rejects an empty native entry with the named code
+     ↓ rejects a malformed group with the named code
+     ↓ rejects an unknown config key with the named code
+     ↓ rejects an invalid fullscreen value with the named code
+     ↓ rejects an invalid keep-screen-on value with the named code
+     ↓ rejects an invalid window title with the named code
+     ↓ rejects an invalid window width with the named code
+     ↓ rejects an invalid window height with the named code
+     ↓ rejects an invalid resizable value with the named code
+     ↓ rejects an invalid maximized value with the named code
+     ↓ rejects an invalid renderer value with the named code
+     ↓ rejects an invalid renderer resolution scale with the named code
+     ↓ rejects an invalid renderer resolution scale with the named code
+     ↓ rejects an invalid renderer resolution scale with the named code
+     ↓ rejects an invalid renderer resolution scale with the named code
+     ↓ accepts the shipped "auto" scale and the Android sampling override
+     ↓ rejects a config with no default export object
+     ↓ rejects a config that cannot be transpiled
+     ↓ rejects a config that fails while loading
+     ↓ keeps loading provenance tied to the config source, not an embedded error-code prefix
+     ↓ rejects a second package.json config surface
+     ↓ cleans the transpiled temporary module after loading
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > carries the whole audio block, overrides included, through to the pipeline
+AssertionError: expected '../../../../../../../tmp/threenative-…' to be '' // Object.is equality
+
+- Expected
++ Received
+
++ ../../../../../../../tmp/threenative-audio-types-EsuJhL/audio.ts(3,81): error TS2353: Object literal may only specify known properties, and '"seamMaxRatio"' does not exist in type 'IAudioConfig'.
++ ../../../../../../../tmp/threenative-audio-types-EsuJhL/audio.ts(5,1): error TS2578: Unused '@ts-expect-error' directive.
+
+ ❯ expectPublishedTypesAccept packages/create-threenative/__tests__/config.spec.ts:150:40
+    148|     fixture,
+    149|   ]).catch((error: unknown) => error)) as { readonly stdout?: string };
+    150|   expect(outcome.stdout?.trim() ?? "").toBe("");
+       |                                        ^
+    151| }
+    152|
+ ❯ packages/create-threenative/__tests__/config.spec.ts:784:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 91 skipped (92)
+   Start at  11:32:23
+   Duration  1.62s (transform 352ms, setup 0ms, import 553ms, tests 958ms, environment 0ms)
+

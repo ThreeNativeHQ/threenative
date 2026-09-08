@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-360 — Android launch is playable within eight seconds
 
-**Status:** PARTIAL — implementation/proof in progress; acceptance remains open
+**Status:** PARTIAL — measured on hardware 2026-09-07 and the criterion is **unmet**. Three cold launches of the preserved baseline on a physical Pixel 8 give a median launch-to-first-playable bound of 50,948.7 ms against the 8,000 ms criterion, with the player moving 2.147 m and a visible world proved. The device blocker that filed this under `requires-physical-device` is resolved, so it returns to its batch. What remains is implementation, not evidence: a build that reaches the criterion, and an observer-carrying artifact for the pump-silence bullet. Evidence: [prd-360-device-2026-09-07](../../verification/prd-360-device-2026-09-07/README.md).
+**Latest handoff (2026-09-07):** The corrected Bayview now starts and moves on the Pixel; one run reached first frame at 16.020 seconds. This does not meet the eight-second criterion. Continue with [the bounded performance follow-up](PRD-360-FOLLOWUP-startup-performance.md); older blocker notes below are historical.
 **Priority:** 1 — start today, September 5, 2026.
 **Complexity:** 2 (6–10 files) + 2 (async startup) + 2 (core/native) = 6 → MEDIUM mode.
 **Estimate:** 6–10 engineering hours plus native build/device time.
@@ -92,6 +93,69 @@ with byte-identical proof sources in
 APK `20da12fa…` has not been run on a device. The earlier `403bd10c…` candidate
 predates the observer. No phase accepted; no device claim.
 
+## Android CI lane evidence — September 6, 2026
+
+The Android emulator CI lane had never reached the emulator. On run 34078916876 the step "Install
+Android build prerequisites" exited 1 with `Failed to download stb: Failed to download: 429 Too
+Many Requests` from raw.githubusercontent.com. Consequences: "Run checksum-locked APKs on the
+emulator" was skipped, "Verify captured parity ledger" failed with TN_PARITY_ANDROID_REPORT_MISSING,
+and "Collect bounded Android performance evidence from the emulator build" reported success while
+writing status BLOCKED, because it runs under `set +e`.
+
+The cause is a missing cache, not a missing token. `android-emulator-parity` was the only
+compiling native leg without a `packages/runtime-native/third_party` cache restore — `desktop-parity`,
+`desktop` and `starter-linux` all have one under the same key — so it re-fetched every Android
+dependency on every run, `stb` included. `download-deps.mjs` skips `stb` outright when the three
+headers are already on disk, so restoring that cache removes the fetch that failed.
+
+**The fix:** the cache restore is added to this leg, and `downloadFile` now retries
+429/500/502/503/504 with exponential backoff from 1000 ms, capped at 30 s, honouring `Retry-After`
+and never retrying a non-transient status such as 404. The retry only has to survive the
+cold-cache run that still reaches the network. Proof is
+`packages/runtime-native/tests/download-retry.test.mjs`, 6 cases: red before the fix (5 failed),
+green after (6 passed). Mutation control: removing 429 from `TRANSIENT_STATUSES` reproduces the
+exact CI error `Failed to download: 429` and fails 3 cases; restoring it returns green.
+
+**No `Authorization` header is sent, deliberately.** An earlier revision of this work passed
+`secrets.GITHUB_TOKEN` to the fetch on the assumption that it lifts the anonymous rate limit.
+Measured against `nothings/stb` on 2026-09-07, it does the opposite: an anonymous GET returns
+`200`, while the same GET carrying a bearer token the host cannot validate for that repository
+returns `404` — the one status the retry refuses to retry. A repo-scoped token has no grant on
+these upstreams, so sending it would have converted a recoverable 429 into a hard first-try
+failure worded as a deleted upstream file. The test now pins the header's absence.
+
+A new CI step, "Assert PRD-360 pump observer emits on Android (structural, non-timing)", captures
+logcat inside the emulator-runner script (the action tears the emulator down when its script
+returns) and runs the tracked evaluator
+`docs/verification/prd-360-startup-2026-09-05/evaluate-first-playable.mjs.txt` over it. **This step
+deliberately does not judge the 8-second or 250-millisecond budgets:** it calls `evaluatePumpSilence`
+with `maxGapMs` set to `Infinity`, so only the marker's presence, JSON shape, `observed:true` and
+finite non-negative timestamps can fail; the timings are recorded with status UNVERIFIED, because the
+lane is x86_64 SwiftShader on `-accel auto`, has booted in 474 seconds without KVM, and the
+evaluator's own 50% battery preflight has no meaning on an emulator.
+
+The step distinguishes what it cannot judge from what it can. adb's stderr is captured to its own
+file and the conformance exit status is recorded beside the log, because a dead device or a lane
+that exited 2 (rows blocked, the app possibly never launched) both leave a marker-free log that
+would otherwise read as "the observer emitted nothing". Those cases record `BLOCKED` or
+`TN_PUMP_ANDROID_ADB_FAILED`; only a fully executed run with no marker fails against the observer.
+
+At the time of writing this step had not yet executed on a real emulator run, so whether the
+observer's markers actually appear in Android logcat is unproven; the step fails closed if they do
+not. PRD-360's acceptance is unchanged and still open: it requires three physical Android cold
+launches on a thermally qualified device, and no device result is claimed here.
+
+The APK on disk at `packages/runtime-native/android/app/build/outputs/apk/debug/app-debug.apk`,
+SHA-256 `1ca640655779c7745c93fea6612017c313dfc42533b9f93eac29cbf56da968a6`, does NOT carry the
+observer: `strings` over its packaged `lib/x86_64/*.so` finds no `TN_PUMP_SILENCE` or
+`TN_PUMP_ENDPOINT`. It predates the observer and must not be used as a measurement subject. The
+vanished measurement subject has a recoverable substitute: the sandbox repository still holds
+`prd259-bayview-current-20260830` (381 files, 314 MB) at commit `2bf7bd7^`, removed by `2bf7bd7
+chore(sandbox): remove superseded game copies` — an older tree than the unrecoverable
+`prd329-bayview-20260905`, so using it means both baseline and candidate must be rebuilt from it for
+the A/B to be internally valid. It was deliberately not restored, because no measurement is possible
+without the device.
+
 ## Acceptance and checkpoint protocol
 
 - [ ] Median first playable frame ≤8 seconds over three physical Android cold launches; no event-pump silence >250 ms.
@@ -109,4 +173,92 @@ Record performance findings in `docs/verification/runtime-perf-state.md`; other 
 in a dated `docs/verification/` record. Link exact commands, outputs and artifact identities here.
 Unrun platform gates remain unverified. These plans do not claim implementation or measured improvement.
 
-Next action (under 2 minutes): Run `adb devices -l` and locate Bayview's recorded build subject.
+## A second blocker, independent of the device — 2026-09-07
+
+The device is not the only thing preventing this measurement, and this was not previously recorded.
+The documented subject is a sandbox game, and a sandbox game **cannot carry the pump observer at
+all today**.
+
+Established by inspecting the packed artifact, not by inference:
+
+- `pnpm --filter ./packages/runtime-native pack` produces a tarball containing `android/` Gradle
+  glue and `scripts/` only. It ships **zero** `src/**/*.cpp` or `*.h` — `pump_silence.h` and
+  `runtime.cpp` are not in it. A consumer therefore cannot compile the observer.
+- `scripts/install-prebuilt.mjs` is how a consumer gets a runtime instead: it resolves
+  `https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v<version>/prebuilt-lock.json`
+  and fails closed with `No prebuilt release asset is recorded for '<key>'` when there is none.
+- There is none. `gh api repos/ThreeNativeHQ/threenative/releases` returns exactly one release,
+  `quiche-owned-v1`; no `runtime-native-v*` tag exists. This is the release lane
+  `packages/runtime-native/AGENTS.md` already records as never having run, and which PRD-078 owns.
+
+So the acceptance as written — three cold launches of a real game built the way a user builds one —
+needs the prebuilt release lane before it needs a phone. The only Android binaries that carry the
+observer today are ones compiled from this repository, which is why CI's conformance APK emitted
+`TN_PUMP_SILENCE` while the sandbox APK on disk (`1ca64065…`) carries neither marker.
+
+This also explains, rather than repeats, the candidate confusion recorded above: `403bd10c…`
+predates the observer and `20da12fa…` was rebuilt from the workspace and never run on a device.
+
+Two routes, and the choice belongs to the owner because it changes what the number means: publish
+the runtime-native prebuilt release (PRD-078's subject) and measure a real sandbox game, or measure
+a workspace-built APK and state plainly that it is not the artifact a user would install.
+
+## The observer emits on Android — first executed evidence, 2026-09-07
+
+Run 34104583517, `android-emulator-parity`, x86_64 emulator. The captured logcat carries one
+well-formed observation, verbatim:
+
+```text
+TN_PUMP_SILENCE:{"observed":true,"pumpCount":1,"firstPumpAtMs":1204.780,"lastPumpAtMs":1204.780,
+"maxGapMs":0.000,"maxGapAtMs":-1.000,"trailingGapMs":28.052,"longGaps":[],"droppedLongGaps":0}
+```
+
+**What this closes.** `PumpSilenceObserver` compiles into an Android build, runs there, and emits a
+line the tracked evaluator parses — `observed:true`, finite non-negative stamps. Until this run that
+path existed only on desktop and against a mocked adb transport, and this document recorded it as
+unexecuted. It is no longer.
+
+**What it does not close, and none of it is a near miss.**
+
+- **Not a budget result.** `firstPumpAtMs` of 1204.78 ms is a conformance harness launching on a
+  software-emulated x86_64 device, not a game cold start on a phone. It is not evidence against the
+  250 ms criterion and must not be quoted as such. The structural step that read this log recorded
+  `status: BLOCKED`, `pass: false`, because conformance exited 1 — it asserts nothing about the
+  observer when the app may never have finished launching.
+- **`TN_PUMP_ENDPOINT` did not appear** (0 occurrences in 1,534 lines). Expected: the endpoint is
+  stamped on mailbox `respond()`, which needs a playtest driving movement, and the conformance run
+  drives none. The displacement-correlated half of the contract stays unexecuted on Android.
+- **Not a device.** An emulator is a separate result from a phone, and this repository's own native
+  contract says a green on one does not carry to the other.
+
+The acceptance criteria are unchanged and none is ticked.
+
+## What closing this actually requires — verified 2026-09-07
+
+The device lane was attempted, not assumed: `adb devices -l` empty, no phone on USB, and a sweep of
+the local `/24` on 5555 and 5037 found no adb listener. It is genuinely unreachable, so no device
+result is claimed.
+
+The remaining chain was walked as far as it goes without hardware, and the order matters — steps 1
+to 3 are **not** blocked by the device:
+
+1. **Choose the measurement subject.** The exact `prd329-bayview-20260905` tree was never tracked
+   and is unrecoverable. A substitute is recoverable: `prd259-bayview-current-20260830`, 381 files,
+   314 MB, at sandbox `2bf7bd7^`. It is an older tree, so both arms must be rebuilt from it for the
+   A/B to be internally valid. Deliberately left to the owner: the choice changes what the number
+   means.
+2. **Build both arms from that source, carrying the observer.** The APK on disk
+   (`app-debug.apk`, `1ca64065…`) does **not** carry it — `strings` over its packaged
+   `lib/x86_64/*.so` finds neither `TN_PUMP_SILENCE` nor `TN_PUMP_ENDPOINT`. The earlier
+   `403bd10c…` predates the observer. Gradle needs JDK 17.
+3. **Stage the harness.** `measure-first-playable.mjs` and `evaluate-first-playable.mjs` are
+   retained beside their proof and resolve repository paths four levels up, so they run from
+   `artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/`, with the candidate APK
+   at `../bayview-candidate.apk`. Confirmed by executing the dry-run path: with the scripts staged
+   elsewhere it fails resolving `device-preflight.mjs`; staged correctly it proceeds to the APK it
+   needs.
+4. **Then the device.** Three cold launches per arm at >=50% battery on a thermally qualified
+   phone: `node measure-first-playable.mjs --arm <frozen|candidate> --device <serial> --out
+   runs/<arm>/<a|b|c>`, each into its own run directory, then `evaluate-first-playable.mjs`.
+
+Next action (under 2 minutes): decide step 1, since steps 2 and 3 need no hardware.

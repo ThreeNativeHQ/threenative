@@ -301,7 +301,9 @@
           entities: mode === "silent-drop" ? [] : (request.entities ?? []).map(observe),
           ...(diagnostics.length === 0 ? {} : { diagnostics }),
           ...(mode === "physics" ? { physicsDebugSeries: [...physicsDebugSeries] } : {}),
-            resources: mode === "startup-delayed" || mode === "startup-stuck"
+            resources: mode === "wait-resource" || mode === "wait-resource-timeout"
+              ? { state: { networkConnected: mode === "wait-resource" && sampleCount >= 3 } }
+              : mode === "startup-delayed" || mode === "startup-stuck"
               ? { startup: { sampledBeforeReady: !startupReadyReported } }
               : {
                   bridgeContract: {

@@ -103,9 +103,13 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
       }
 
       elapsed += deltaTime;
-      ocean.advance(elapsed);
       const wind = Math.max(0, 1 - elapsed / 45);
+      ocean.advance(elapsed);
       if (status === "sailing") advanceSailing(frameCtx, deltaTime, wind);
+      // Outside the gameplay gate on purpose. Steering and buoy counting stop when the run ends;
+      // the hull still has to be placed on a sea that never stops moving, or the boat freezes
+      // mid-wave while the water rolls past underneath it.
+      ship.updateVisual(deltaTime);
 
       const state = frameCtx.state.getState();
       frameCtx.state.set({

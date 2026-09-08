@@ -27,6 +27,11 @@ export interface IPlaytestWheel {
   deltaY: number;
 }
 
+export type IPlaytestResourceWait =
+  | { equals: unknown; gte?: never; id: string; lte?: never; path: string }
+  | { equals?: never; gte: number; id: string; lte?: never; path: string }
+  | { equals?: never; gte?: never; id: string; lte: number; path: string };
+
 export interface IPlaytestStep {
   kind?: "aimAt" | "click" | "input" | "wait";
   /** @deprecated Use holdTicks. Fixed-step bridges treat this as a tick alias. */
@@ -54,8 +59,10 @@ export interface IPlaytestStep {
   screenshot?: string;
   /** Runner-native aim: yaw/pitch are computed from the sampled subject position. */
   target?: IPlaytestAimTarget;
+  timeoutMs?: number;
   /** @deprecated Use waitTicks. Fixed-step bridges treat this as a tick alias. */
   waitFrames?: number;
+  waitForResource?: IPlaytestResourceWait;
   waitTicks?: number;
   /** A browser/native wheel sample; negative DOM deltaY is the conventional toward-user gesture. */
   wheel?: IPlaytestWheel;

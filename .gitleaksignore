@@ -15,3 +15,8 @@ f9c62d2c7ee0b8ec0f88977afc11113bc79434a1:docs/benchmark/DELTA-2026-08-05.md:gene
 # Verified 2026-09-05 at the recorded commit: recook-fixture-v1 is a literal custom-pass
 # cache version in the receipt regression test, not a credential. Scope to this finding only.
 57b76a66f82ee829d5e0c0c9f79fb09c0ae0fbe4:packages/assets/__tests__/bake-receipt.spec.ts:generic-api-key:107
+
+# Verified 2026-09-06 at the recorded commit: 0123456789abcdef is the synthetic
+# shared-image cache key in the concurrent-write regression fixture, not a credential.
+# Scope to this historical finding; other keys and future edits remain scanned.
+f66af22303112d84174d7031cf6a2b28502d3095:packages/assets/__tests__/shared-images.spec.ts:generic-api-key:154

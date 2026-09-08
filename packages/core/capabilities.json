@@ -170,6 +170,26 @@
     {
       "aliases": [],
       "constraints": [
+        "returns undefined for `\"none\"`, which drops the audio pass; an absent block returns the defaults",
+        "throws TN_ASSETS_CONFIG_INVALID or TN_ASSETS_CONFIG_UNKNOWN_KEY rather than dropping a key it does not know"
+      ],
+      "example": "const options = parseAudioConfig({ overrides: [{ glob: \"audio/*.ogg\", conditioning: \"none\" }] });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function parseAudioConfig(raw: unknown): IAudioPassOptions | undefined { … }",
+      "situations": [
+        "validate a threenative.config.ts audio block before compiling assets",
+        "ship audio exactly as committed without conditioning it"
+      ],
+      "summary": "Validates a game's declared `assets.audio` block, the one place its keys and ranges are checked.",
+      "supersedes": [],
+      "symbol": "parseAudioConfig"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "non-PNG or truncated bytes return undefined instead of being treated as a valid image"
       ],
       "example": "const png = parsePng(bytes); if (png !== undefined) console.log(png.width, png.height);",
@@ -1500,6 +1520,32 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "use strideRoot to name the body moved by game code when the rig is parented under it",
+        "requiredClips fails closed at load time if any requested clip is missing or binds 0 tracks"
+      ],
+      "example": "import { SkeletalMesh3D } from \"@threenative/core\";\nconst character = new SkeletalMesh3D({\n  source: gltf.scene, clips: gltf.animations, requiredClips: [\"idle\", \"walk\"],\n  size: { metres: 1.8, axis: \"height\" }, strideRoot: body,\n});\nbody.add(character.root); character.play(\"idle\");\nfunction update(dt: number): void { character.update(dt); }",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "strideSync controls whether locomotion playback rate matches ground covered",
+        "size normalises the instance to real-world metres with skin-aware measurement"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SkeletalMesh3D extends AnimationPlayer { … }",
+      "situations": [
+        "put an animated character in the scene",
+        "my imported character renders deformed",
+        "instance an imported rigged character",
+        "validate animation clips on a character rig at load time",
+        "prepare a skinned character with safe skeleton cloning and stride sync"
+      ],
+      "summary": "Shared preparation for an imported rigged character. Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement, validates requested clips against the file and rig at load time, and sets up AnimationPlayer with honest stride-root accounting.",
+      "supersedes": [],
+      "symbol": "SkeletalMesh3D"
+    },
+    {
+      "aliases": [],
       "constraints": [],
       "example": "import { skeletonBones } from \"@threenative/core\";\nconst bones = skeletonBones(character);",
       "importPath": "@threenative/core",
@@ -1890,6 +1936,30 @@
       "summary": "Validate that hot-reload state can cross the Vite boundary.",
       "supersedes": [],
       "symbol": "assertPortableState"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the URL must use HTTPS and the credential is supplied by the game's identity flow; this API never issues credentials",
+        "channels, message sizes, and queues are validated before WebTransport opens, and reliable overflow returns false",
+        "native qualification depends on the installed host WebTransport bridge; iOS remains unverified"
+      ],
+      "example": "const connection = await connect(\"https://game.example/game\", { applicationProtocol: \"my-game/1\", credential, channels: [{ id: 1, delivery: \"unreliable\" }] });",
+      "importPath": "@threenative/core/net",
+      "kind": "function",
+      "overrides": [
+        "connectTimeoutMs, maxReliableMessageBytes, maxQueuedReliableBytes, and maxQueuedDatagrams are named per-connection limits"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function connect(url: string, options: INetworkOptions): Promise<INetworkConnection> { … }",
+      "situations": [
+        "connect two game clients over the portable WebTransport seam",
+        "send ordered actions and bounded unreliable state messages between game clients",
+        "exchange multiplayer messages without putting replication or gameplay in the engine"
+      ],
+      "summary": "Open a bounded, authenticated WebTransport message channel shared by browser and native games.",
+      "supersedes": [],
+      "symbol": "connect"
     },
     {
       "aliases": [],
@@ -3415,6 +3485,23 @@
     },
     {
       "aliases": [],
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function parseAndroidTouchViewport(output: string): IAndroidTouchViewport { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
+      "symbol": "parseAndroidTouchViewport"
+    },
+    {
+      "aliases": [],
       "constraints": ["simulator evidence does not claim physical-device proof"],
       "example": "const driver = new XcrunIosDriver(options);",
       "importPath": "@threenative/playtest/runner",
@@ -3800,6 +3887,23 @@
       "summary": "Drive and inspect Android playtest transport.",
       "supersedes": [],
       "symbol": "tapCommand"
+    },
+    {
+      "aliases": [],
+      "constraints": ["Android evidence must name its target and transport"],
+      "example": "const adb = discoverAdb(process.env);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function touchPositionForViewport( x: number, y: number, viewport: IAndroidTouchViewport, rotationOverride?: number, ): [number, number] { … }",
+      "situations": [
+        "run a scenario on an Android emulator or device",
+        "parse Android console diagnostics"
+      ],
+      "summary": "Drive and inspect Android playtest transport.",
+      "supersedes": [],
+      "symbol": "touchPositionForViewport"
     },
     {
       "aliases": [],
@@ -5022,9 +5126,9 @@
       "situations": ["NPC dialogue system", "write conversation choices for an NPC"]
     },
     {
-      "guidance": "The framework owns no network transport or multiplayer system. Add the networking library you choose with pnpm add <networking-library>, then write synchronization in your project's src/ and keep game state in ctx.state.",
+      "guidance": "The framework owns the optional authenticated transport seam at @threenative/core/net. Import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes, and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Write authoritative replication, snapshots, prediction, interpolation, and rejoin policy in your project's src/ and server code.",
       "id": "networked-multiplayer",
-      "situations": ["networked multiplayer", "multiplayer mode", "connect players online"]
+      "situations": ["authoritative replication", "client prediction"]
     }
   ],
   "version": 2

@@ -1,0 +1,59 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+TN_ASSETS_EXCLUDED: 0 file(s), 0 bytes
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+[warn] audio/cue.wav: license: unknown
+asset health: 1 asset(s), 0 ok, 1 warn, 0 fail
+cost pass ktx2: ran on 1 input(s), 0 ms
+  cost audio/cue.wav: 0 ms
+cost pass model: ran on 1 input(s), 0 ms
+  cost audio/cue.wav: 0 ms
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 8864 bytes (ceiling none)
+  budget audio/cue.wav: uncooked 0 bytes, total 8864 bytes
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+TN_ASSETS_EXCLUDED: 0 file(s), 0 bytes
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+[warn] audio/cue.wav: license: unknown
+asset health: 1 asset(s), 0 ok, 1 warn, 0 fail
+audio audio/cue.wav (Ogg Vorbis): 8864 -> 3984 bytes (-55.1%), decoded 17640 -> 17640 bytes (-0.0%), 1ch -> 1ch, 0.100 s at 44100 Hz
+  audio audio/cue.wav levels: peak 0.5000 -> 0.5091, DC 0.00000 -> 0.00004
+  audio audio/cue.wav wrap: 0.0313 (not declared a loop, so not judged)
+  audio audio/cue.wav bands: sub 0.1%, low 96.2%, mid 3.7%, high 0.0%, air 0.0%
+audio total: 8864 -> 3984 bytes (-55.1%), decoded 17640 -> 17640 bytes (-0.0%)
+cost pass audio: ran on 1 input(s), 99 ms
+  cost audio/cue.wav: 99 ms
+cost pass ktx2: ran on 1 input(s), 0 ms
+  cost audio/cue.wav: 0 ms
+cost pass model: ran on 1 input(s), 0 ms
+  cost audio/cue.wav: 0 ms
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 3984 bytes (ceiling none)
+  budget audio/cue.wav: uncooked 0 bytes, total 3984 bytes
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > carries the whole audio block, overrides included, through to the pipeline
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 0 bytes (ceiling none)
+
+ ✓ packages/create-threenative/__tests__/config.spec.ts (92 tests | 82 skipped) 657ms
+     ✓ hands assets.audio to the pipeline that receives it and ships the declared bytes  575ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed | 82 skipped (92)
+   Start at  11:01:59
+   Duration  1.31s (transform 374ms, setup 0ms, import 545ms, tests 657ms, environment 0ms)
+
+
+=== whole config spec, same run (no other test disturbed) ===
+
+ Test Files  1 passed (1)
+      Tests  92 passed (92)
+   Start at  11:01:47
+   Duration  2.10s (transform 535ms, setup 0ms, import 547ms, tests 1.46s, environment 0ms)
+

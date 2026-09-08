@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.896551724137931,
+  "recallAtK": 0.8833333333333333,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -52,6 +52,7 @@
     "request.third-person-camera",
     "request.spawn-waves",
     "request.pick-up-item",
+    "request.multiplayer",
     "request.platformer-double-jump"
   ],
   "rowIds": [
@@ -112,17 +113,20 @@
     "request.dialogue-npc",
     "request.pick-up-item",
     "request.multiplayer",
+    "request.multiplayer-replication",
+    "request.multiplayer-prediction",
     "request.platformer-double-jump"
   ],
   "rejectHits": 16,
-  "rowCount": 58,
+  "rowCount": 60,
   "version": 1,
-  "zeroResultRate": 0.06896551724137931,
-  "unresolvedResultRate": 0.1206896551724138,
+  "zeroResultRate": 0.08333333333333333,
+  "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",
     "request.save-progress": "save-load",
     "request.dialogue-npc": "dialogue",
-    "request.multiplayer": "networked-multiplayer"
+    "request.multiplayer-replication": "networked-multiplayer",
+    "request.multiplayer-prediction": "networked-multiplayer"
   }
 }

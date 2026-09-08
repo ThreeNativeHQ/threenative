@@ -56,13 +56,45 @@ permissions:
   contents: read
 
 jobs:
+  # The native lane shares ci.yml's fail-closed merge-base classifier. Non-PR events are always
+  # full, which preserves scheduled, workflow-call and manual platform evidence.
+  scope:
+    name: Change scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.classify.outputs.scope }}
+      selection: ${{ steps.classify.outputs.selection }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: classify
+        name: Classify the complete pull-request diff
+        env:
+          TN_CI_EVENT: ${{ github.event_name }}
+          TN_CI_BASE: ${{ github.event.pull_request.base.sha }}
+          TN_CI_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          node scripts/ci-change-scope.mjs \
+            --event-name "$TN_CI_EVENT" \
+            --base "$TN_CI_BASE" \
+            --head "$TN_CI_HEAD" \
+            --format github | tee "$RUNNER_TEMP/ci-scope.outputs"
+          cat "$RUNNER_TEMP/ci-scope.outputs" >> "$GITHUB_OUTPUT"
+
   web-reference:
+    needs: scope
     name: Commit-keyed web conformance reference
     # Ungated on pull requests with android-emulator-parity, which needs this reference to compare
     # against and would otherwise skip with it. desktop-parity also needs it and stays gated; a
     # skipped dependant does not force this job to run, so the cost here is one browser capture on
-    # pull requests that previously ran none.
-    if: inputs.ios_only == false
+    # pull requests that previously ran none. The prose-only scope skip is unrelated and kept.
+    if: >-
+      needs.scope.outputs.selection != 'prose' &&
+      inputs.ios_only == false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -84,7 +116,14 @@ jobs:
           test "$status" -eq 0 -o "$status" -eq 2
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
             packages/runtime-native/artifacts/conformance/web "web reference"
+      # Uploaded even when the capture step fails, and that changes no verdict: this job still
+      # reports its own red, and a consumer whose `needs` failed still skips. What it changes is
+      # that the red becomes diagnosable. `report.json` is written before the exit test, so on a
+      # failing run the one artifact naming which row failed existed and was thrown away — which is
+      # why "web-reference is red" has been readable for three runs on main without anyone being
+      # able to say what failed.
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: native-web-reference-${{ github.sha }}
           path: packages/runtime-native/artifacts/conformance/web
@@ -92,8 +131,8 @@ jobs:
 
   performance-coverage:
     name: Native collector evidence coverage
-    needs: [android-emulator-parity, desktop-parity, desktop, ios-simulator]
-    if: always()
+    needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
+    if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -121,9 +160,47 @@ jobs:
             --required-lanes "$TN_PERF_REQUIRED_DESKTOP" \
             --expected-sha "$GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
 
+  networking-matrix:
+    name: Networking qualification matrix
+    needs: [android-emulator-parity, desktop-parity, desktop, ios-simulator]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      # The aggregator is plain Node with no dependencies, so this job needs no pnpm
+      # install and no toolchain setup. Its own suite already runs in CI's test-unit
+      # shards; re-running it here would only duplicate that work.
+      - uses: actions/download-artifact@v7
+        if: always()
+        with:
+          # Networking lane results only. The platform jobs upload conformance artifacts
+          # as native-*, and the aggregator validates every JSON under this path, so that
+          # pattern would fail the gate on foreign evidence. Task 7c publishes these.
+          pattern: networking-lane-*
+          path: artifacts/networking-matrix
+          # No lane publishes these yet, so nothing matching is the expected state today.
+          # It is not `continue-on-error`: a download that genuinely fails must not be
+          # indistinguishable from an empty matrix.
+          if-no-files-found: ignore
+      # --report-only, and named so, because ordinary CI cannot execute the qualification
+      # lanes: this step reports what evidence exists and never claims a platform. The
+      # aggregator fails closed without that flag, so the verdict is still the default for
+      # every other caller. One lane result is enough to enforce every required row, so a
+      # partial set fails here too.
+      - name: Report the networking qualification matrix (not a verdict)
+        if: always()
+        run: |
+          mkdir -p artifacts/networking-matrix
+          node scripts/verify-networking-matrix.mjs \
+            --manifest docs/PRDs/networking/qualification-lanes.json \
+            --results artifacts/networking-matrix --report-only 2>&1 \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "${PIPESTATUS[0]}"
+
   android-emulator-parity:
     name: Android emulator visual parity
-    needs: web-reference
+    needs: [scope, web-reference]
     # Runs on every event since 2026-09-01 (owner call): the earlier narrowing held the expensive
     # platform legs behind pushes to main and a `native` label, and the lane then spent its runs
     # being cancelled by the next push instead of reporting anything. A leg that is skipped on the
@@ -144,9 +221,12 @@ jobs:
     # desktop-parity is left gated: it is the larger half of the 84 runner-minutes, and nothing
     # here has made it green.
     #
-    # This leg is still advisory, not a required check, so it reports without blocking. Restoring
-    # the label gate is the same one-line `if` desktop-parity still carries.
-    if: inputs.ios_only != true
+    # This leg is still advisory, not a required check, so it reports without blocking.
+    # Restoring the label gate is the same `if` desktop-parity still carries. The prose-only
+    # scope skip is unrelated and kept.
+    if: >-
+      needs.scope.outputs.selection != 'prose' &&
+      inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -170,6 +250,18 @@ jobs:
       # these were simply never added. Keys are content-addressed where a lockfile exists and
       # pinned to the versions this workflow installs where one does not, so a version bump
       # misses rather than serving a stale toolchain.
+      # This leg was the only compiling native job without it — desktop-parity, desktop and
+      # starter-linux all restore the same path under the same key. Its absence is why the lane
+      # re-fetched every Android dependency on every run, including stb's three single headers from
+      # raw.githubusercontent.com, which returned 429 on run 34078916876 and took the whole lane
+      # down before the emulator booted. On a warm cache `download-deps.mjs` finds the headers
+      # already present and skips the fetch entirely, so the failure mode cannot recur; the retry
+      # added alongside this covers the cold-cache run that still has to reach the network.
+      - name: Restore native third-party dependencies
+        uses: actions/cache@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
       - name: Restore the Android SDK packages
         uses: actions/cache@v4
         with:
@@ -217,13 +309,6 @@ jobs:
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
             packages/runtime-native/artifacts/conformance/web "downloaded web reference"
       - name: Install Android build prerequisites
-        env:
-          # `stb` is three single headers pulled fresh from raw.githubusercontent.com on every run
-          # — the third-party cache above covers the archives, not these. Unauthenticated, they
-          # share the runner pool's egress IP and its rate limit: on 2026-09-07 they returned 429
-          # and took the whole lane down before the emulator booted. The token lifts the limit;
-          # download-deps.mjs retries the 429 that still gets through.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006"
           # build-native-physics.mjs cross-compiles the Rust physics crate for both ABIs
@@ -286,11 +371,20 @@ jobs:
           # The logcat dump rides this same folded line on purpose. `android-emulator-runner` tears
           # the emulator down when `script` returns, so a later step has no device to read: the
           # buffer has to be captured here, before the exit test that decides this step's status.
+          #
+          # adb's stderr goes to its own file rather than into the log. Folded into the capture it
+          # would make "device offline" indistinguishable from "the observer emitted nothing": the
+          # log would be non-empty, carry no marker, and the next step would blame the observer.
+          # The conformance status is recorded for the same reason — exit 2 means rows were
+          # blocked and the app may never have launched, which is not an observer failure.
           script: >-
             node packages/runtime-native/conformance/run-conformance.mjs --target android
             --device emulator-5554 --reference artifacts/conformance/web
-            --out artifacts/conformance/android; status=$?; adb logcat -d >
-            "$RUNNER_TEMP/emulator-logcat.txt" 2>&1 || true; test "$status" -eq 0 -o "$status" -eq 2
+            --out artifacts/conformance/android; status=$?; echo "$status" >
+            "$RUNNER_TEMP/conformance-status.txt"; adb logcat -d >
+            "$RUNNER_TEMP/emulator-logcat.txt" 2> "$RUNNER_TEMP/emulator-logcat.err" || echo
+            TN_ADB_LOGCAT_FAILED >> "$RUNNER_TEMP/emulator-logcat.err";
+            test "$status" -eq 0 -o "$status" -eq 2
       - name: Verify captured parity ledger
         if: always()
         run: |
@@ -375,18 +469,94 @@ jobs:
           import { join } from "node:path";
           import { pathToFileURL } from "node:url";
 
-          const logPath = join(process.env.RUNNER_TEMP, "emulator-logcat.txt");
+          const temp = process.env.RUNNER_TEMP;
+          const logPath = join(temp, "emulator-logcat.txt");
+          const read = (name) => {
+            try {
+              return readFileSync(join(temp, name), "utf8");
+            } catch (error) {
+              if (error?.code === "ENOENT") return null;
+              throw error;
+            }
+          };
+
+          const outDir = "packages/runtime-native/artifacts/performance-contract/android-emulator";
+          mkdirSync(outDir, { recursive: true });
+
+          const record = (payload) =>
+            writeFileSync(
+              join(outDir, "pump-silence-structural.json"),
+              `${JSON.stringify(
+                { provenance: "android-emulator", sourceSha: process.env.GITHUB_SHA, ...payload },
+                null,
+                2,
+              )}\n`,
+            );
+
           // Reached on always(), so it runs when an earlier step failed and no emulator ever
           // booted. Name that cause rather than burying it in an ENOENT stack.
-          let hostLog;
-          try {
-            hostLog = readFileSync(logPath, "utf8");
-          } catch (error) {
-            if (error?.code !== "ENOENT") throw error;
+          const hostLog = read("emulator-logcat.txt");
+          const conformanceStatus = read("conformance-status.txt");
+          if (hostLog === null || conformanceStatus === null) {
             throw new Error(
               `TN_PUMP_ANDROID_LOGCAT_MISSING: ${logPath} was never written, so the emulator lane ` +
                 "did not run. Read the first failing step in this job, not this one.",
             );
+          }
+
+          // Evidence is published whatever the verdict, and that is the point: when conformance
+          // fails, the step below records BLOCKED and asserts nothing about the observer, but the
+          // log it just read is the only thing that says whether the markers reached Android
+          // logcat at all — still unproven. Discarding it on a red run is exactly the mistake
+          // `web-reference` was making, publishing the answer only from runs that did not need it.
+          //
+          // What is published is the marker lines, not the buffer. `adb logcat -d` returns the
+          // default set including `system`, ~1,500 lines of unrelated framework chatter per run,
+          // and the open question needs three greps of it. Publishing the whole buffer widens the
+          // distribution surface for no added answer. The parser still reads the full capture from
+          // RUNNER_TEMP; only the artifact is narrowed.
+          const markerLines = hostLog.split("\n")
+            .filter((line) => line.includes("TN_PUMP_SILENCE:") || line.includes("TN_PUMP_ENDPOINT:"));
+          writeFileSync(
+            join(outDir, "pump-markers.log"),
+            `# TN_PUMP_* lines from adb logcat -d. Device output, filtered; not the full buffer.\n${
+              markerLines.join("\n")
+            }\n`,
+          );
+          // Named for what it is: adb's own stderr on the host, not device output. Empty on a
+          // healthy run; on a failed one it carries host error text under an artifact whose name
+          // otherwise implies the emulator produced it.
+          const adbStderr = read("emulator-logcat.err");
+          if (adbStderr !== null) {
+            writeFileSync(
+              join(outDir, "adb-host-stderr.txt"),
+              `# adb stderr on the RUNNER, not emulator output.\n${adbStderr}`,
+            );
+          }
+
+          // adb's own failure is not the observer's. A dead or offline device leaves a log that is
+          // present, empty of markers, and would otherwise read as "the observer emitted nothing".
+          const adbErrors = (read("emulator-logcat.err") ?? "").trim();
+          if (adbErrors.includes("TN_ADB_LOGCAT_FAILED") || adbErrors.length > 0) {
+            record({ claim: "adb could not read the buffer", pass: false, status: "BLOCKED" });
+            throw new Error(`TN_PUMP_ANDROID_ADB_FAILED: ${adbErrors.slice(0, 500)}`);
+          }
+
+          // The lane deliberately accepts conformance exit 2 — rows blocked by this machine, where
+          // the app may never have launched. Absent markers then say nothing about the observer,
+          // so this records BLOCKED rather than manufacturing a red against it.
+          if (conformanceStatus.trim() !== "0") {
+            record({
+              claim: "conformance did not fully execute; observer emission not assessed",
+              conformanceStatus: conformanceStatus.trim(),
+              pass: false,
+              status: "BLOCKED",
+            });
+            console.log(
+              `TN_PUMP_ANDROID_BLOCKED conformance exited ${conformanceStatus.trim()}; ` +
+                "the app may never have launched, so the observer is not judged here.",
+            );
+            process.exit(0);
           }
 
           // The evaluator is tracked as retained source beside its proof; import the same bytes the
@@ -400,24 +570,13 @@ jobs:
           // finite non-negative stamps as the only things that can fail here.
           const result = evaluatePumpSilence({ hostLog, maxGapMs: Number.POSITIVE_INFINITY });
 
-          const outDir = "packages/runtime-native/artifacts/performance-contract/android-emulator";
-          mkdirSync(outDir, { recursive: true });
-          writeFileSync(
-            join(outDir, "pump-silence-structural.json"),
-            `${JSON.stringify(
-              {
-                claim: "observer emits and parses on Android; timings are NOT a PRD-360 verdict",
-                code: result.code,
-                detail: result.detail ?? null,
-                pass: result.pass,
-                provenance: "android-emulator",
-                sourceSha: process.env.GITHUB_SHA,
-                status: "UNVERIFIED",
-              },
-              null,
-              2,
-            )}\n`,
-          );
+          record({
+            claim: "observer emits and parses on Android; timings are NOT a PRD-360 verdict",
+            code: result.code,
+            detail: result.detail ?? null,
+            pass: result.pass,
+            status: "UNVERIFIED",
+          });
 
           if (!result.pass) {
             throw new Error(
@@ -433,12 +592,13 @@ jobs:
           name: native-android-emulator-parity
           path: |
             packages/runtime-native/artifacts/conformance/
+            packages/runtime-native/artifacts/android/multitouch/
             packages/runtime-native/artifacts/performance-contract/
           if-no-files-found: error
 
   desktop-parity:
     name: Desktop web/native parity
-    needs: web-reference
+    needs: [scope, web-reference]
     # Runs on every event except an unlabelled pull request — the only two legs that are gated,
     # and the numbers behind it rather than a preference:
     #
@@ -458,6 +618,7 @@ jobs:
     # `native`, so nothing reaches a release without them reporting. Deleting this one `if` puts
     # them back on every pull request.
     if: >-
+      needs.scope.outputs.selection != 'prose' &&
       inputs.ios_only != true &&
       (github.event_name != 'pull_request' ||
        contains(github.event.pull_request.labels.*.name, 'native'))
@@ -622,10 +783,11 @@ jobs:
 
   desktop:
     name: ${{ matrix.platform }} desktop core
+    needs: scope
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity. The only
     # remaining gate is the manual `ios_only` dispatch toggle, which exists to run the iOS lane
     # alone; it is not a skip of the default flow.
-    if: inputs.ios_only != true
+    if: needs.scope.outputs.selection != 'prose' && inputs.ios_only != true
     strategy:
       fail-fast: false
       matrix:
@@ -779,7 +941,8 @@ jobs:
 
   starter-linux:
     name: Scaffolded starter desktop artifact
-    if: inputs.ios_only != true
+    needs: scope
+    if: needs.scope.outputs.selection != 'prose' && inputs.ios_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
@@ -885,6 +1048,8 @@ jobs:
 
   ios-simulator:
     name: iOS simulator runtime and no-Xcode consumer handoff
+    needs: scope
+    if: needs.scope.outputs.selection != 'prose'
     # Runs on every event since 2026-09-01 (owner call) — see android-emulator-parity.
     runs-on: macos-15
     timeout-minutes: 60

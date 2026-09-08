@@ -39,7 +39,7 @@ These commands used the installed NDK and pinned GN on PATH. They do not fetch m
 source trees; automatic fresh-checkout reconstruction remains open. Twenty helper tests
 passed, including missing receipts, changed archives, source pins and invalid tools.
 Logs: `helper-real-build.log`, `helper-stage-link.log`, and `helper-download-entry.log`
-under the same artifact directory. Shipping Android/iOS Canvas2D flags remain unchanged. No physical phone
+under the same artifact directory. Shipping Android/iOS Canvas2D flags remain unchanged. The shared `90-document-window-stubs` row is explicitly excluded from Android and Android-hardware parity until the Canvas2D flag is enabled; its Skia-backed ellipse, gradient, stroke and upload assertions would otherwise execute against the intentional no-Skia stub. No physical phone
 was connected, no APK was installed, and the prebuilt V8 library's separate 16 KB-page
 limitation is not resolved by aligning this runtime library.
 
@@ -315,3 +315,13 @@ Xcodebuild, or Rust in the consumer.
 Both native workflows contain a packed-scaffold proof with those toolchain commands masked;
 the release lane additionally launches core and native-physics pass/failure scenarios from
 the repackaged `.app`. Those lanes remain **UNEXECUTED** until the workflow reaches GitHub.
+
+## 2026-09-07 — Bayview native bundle identity
+
+The native bundler now resolves one Three.js instance from the game when linked engine packages
+carry another physical copy. The prior bundle split the renderer and material TSL stacks and
+aborted on Android. The corrected bundle started on a physical Pixel 8, passed runtime diagnostics
+and moved the player 2.146719 m. The world and HUD are visible in the
+[Bayview repair evidence](../../../docs/verification/findings-2026-09-07-bayview-fix/README.md).
+The comparison reuses checksum-locked native binaries; it proves the JavaScript bundle change,
+not a new C++ build. First frame was 16.020 seconds, so the 8-second startup target remains unmet.
