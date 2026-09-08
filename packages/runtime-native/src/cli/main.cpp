@@ -36,11 +36,21 @@
 #include <array>
 #include <cmath>
 
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(__APPLE__)
+#include <dlfcn.h>
+
+static void dumpLlvmProfile() {
+    using ProfileDump = void (*)();
+    const auto dump = reinterpret_cast<ProfileDump>(dlsym(RTLD_DEFAULT, "__llvm_profile_dump"));
+    if (dump) dump();
+}
+#elif defined(__GNUC__) || defined(__clang__)
 extern "C" void __llvm_profile_dump(void) __attribute__((weak));
-#define TN_HAS_WEAK_LLVM_PROFILE_DUMP 1
+static void dumpLlvmProfile() {
+    if (__llvm_profile_dump) __llvm_profile_dump();
+}
 #else
-#define TN_HAS_WEAK_LLVM_PROFILE_DUMP 0
+static void dumpLlvmProfile() {}
 #endif
 
 // WebP animation encoding (for video recording)
@@ -1248,9 +1258,7 @@ static int runScreenshotMode(const CLIOptions& opts, mystral::Runtime& runtime) 
     std::cout.flush();
     std::cerr.flush();
 #ifndef MYSTRAL_CLI_NO_MAIN
-#if TN_HAS_WEAK_LLVM_PROFILE_DUMP
-    if (__llvm_profile_dump) __llvm_profile_dump();
-#endif
+    dumpLlvmProfile();
     _exit(success ? 0 : 1);
 #else
     return success ? 0 : 1;
@@ -1672,9 +1680,7 @@ static int runNormalMode(const CLIOptions& opts, mystral::Runtime& runtime) {
     kill(getpid(), SIGKILL);
     return exitCode;
 #elif !defined(_WIN32)
-#if TN_HAS_WEAK_LLVM_PROFILE_DUMP
-    if (__llvm_profile_dump) __llvm_profile_dump();
-#endif
+    dumpLlvmProfile();
     _exit(exitCode);
 #else
     ExitProcess(exitCode);
