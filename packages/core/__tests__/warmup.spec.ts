@@ -81,6 +81,59 @@ describe("scene warm-up", () => {
     expect(yields.mock.calls.length).toBeGreaterThan(1);
   });
 
+  test("should yield while waiting for a native compile to settle", async () => {
+    let settle: (() => void) | undefined;
+    const renderer = {
+      compileAsync: () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    };
+    const yields = vi.fn(async () => {
+      settle?.();
+    });
+
+    const report = await warmUpScene(renderer, sceneOf(1) as never, {} as never, {
+      budgetMs: 100,
+      compileTimeoutMs: 50,
+      yieldFrame: yields,
+    });
+
+    expect(yields).toHaveBeenCalled();
+    expect(report).toMatchObject({ compiled: 1, abandoned: 0, timedOut: false });
+  });
+
+  test("should reuse a completed warm-up on the next launch", async () => {
+    const storage = new Map<string, string>();
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
+    try {
+      const firstRenderer = fakeRenderer();
+      const first = await warmUpScene(firstRenderer, sceneOf(2) as never, {} as never, {
+        cache: { key: "bayview-scene-v1" },
+      });
+      const secondRenderer = fakeRenderer();
+      const second = await warmUpScene(secondRenderer, sceneOf(2) as never, {} as never, {
+        cache: { key: "bayview-scene-v1" },
+      });
+
+      expect(first.cache).toBe("stored");
+      expect(second.cache).toBe("hit");
+      expect(second.compiled).toBe(0);
+      expect(secondRenderer.compiled).toEqual([]);
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(globalThis, "localStorage");
+      else Object.defineProperty(globalThis, "localStorage", previous);
+    }
+  });
+
   test("should skip objects that carry no material", async () => {
     // Compiling a Group walks its whole subtree again, which turns one linear pass into a
     // quadratic one on a deep scene — the opposite of the fix.
@@ -228,6 +281,13 @@ describe("scene warm-up", () => {
         /TN_WARMUP_TIMEOUT_INVALID/u,
       );
     }
+  });
+
+  test("should fail closed on an empty persistent cache key", async () => {
+    const renderer = fakeRenderer();
+    await expect(
+      warmUpScene(renderer, sceneOf(1) as never, {} as never, { cache: { key: "  " } }),
+    ).rejects.toThrow(/TN_WARMUP_CACHE_INVALID/u);
   });
 
   test("should fail closed on a slice size that cannot terminate", async () => {

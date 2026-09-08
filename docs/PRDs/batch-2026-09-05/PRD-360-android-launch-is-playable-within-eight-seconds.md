@@ -4,8 +4,9 @@ prd_contract: v1
 
 # PRD-360 — Android launch is playable within eight seconds
 
-**Status:** PARTIAL — measured on hardware 2026-09-07 and the criterion is **unmet**. Three cold launches of the preserved baseline on a physical Pixel 8 give a median launch-to-first-playable bound of 50,948.7 ms against the 8,000 ms criterion, with the player moving 2.147 m and a visible world proved. The device blocker that filed this under `requires-physical-device` is resolved, so it returns to its batch. What remains is implementation, not evidence: a build that reaches the criterion, and an observer-carrying artifact for the pump-silence bullet. Evidence: [prd-360-device-2026-09-07](../../verification/prd-360-device-2026-09-07/README.md).
-**Latest handoff (2026-09-07):** The corrected Bayview now starts and moves on the Pixel; one run reached first frame at 16.020 seconds. This does not meet the eight-second criterion. Continue with [the bounded performance follow-up](PRD-360-FOLLOWUP-startup-performance.md); older blocker notes below are historical.
+**Status:** PARTIAL — measured on hardware 2026-09-07 and the criterion is **unmet**. Three cold launches of the preserved baseline on a physical Pixel 8 give a preflight-qualified median launch-to-first-playable bound of 49,788.7 ms against the 8,000 ms criterion, with the player moving 2.147 m and a visible world proved. The device blocker that filed this under `requires-physical-device` is resolved, so it returns to its batch. The 2026-09-07 warm-up host turn and opt-in relaunch cache land compile-path progress, not the criterion: the single 16,020.007 ms candidate run is a retained-package launch rather than a cold install, and it misses 8,000 ms by roughly two times. What remains is implementation, not evidence: a build that reaches the criterion, and an observer-carrying artifact for the pump-silence bullet. Evidence: [prd-360-device-2026-09-07](../../verification/prd-360-device-2026-09-07/README.md), [prd-360-warmup-cache-2026-09-07](../../verification/prd-360-warmup-cache-2026-09-07/README.md).
+
+**Latest repaired-game handoff (2026-09-07):** The corrected Bayview starts and moves on the Pixel; one retained-package run reached first frame at 16.020 seconds. This remains above the eight-second criterion. Continue with [the bounded performance follow-up](PRD-360-FOLLOWUP-startup-performance.md); older blocker notes below are historical.
 **Priority:** 1 — start today, September 5, 2026.
 **Complexity:** 2 (6–10 files) + 2 (async startup) + 2 (core/native) = 6 → MEDIUM mode.
 **Estimate:** 6–10 engineering hours plus native build/device time.
@@ -262,3 +263,50 @@ to 3 are **not** blocked by the device:
    runs/<arm>/<a|b|c>`, each into its own run directory, then `evaluate-first-playable.mjs`.
 
 Next action (under 2 minutes): decide step 1, since steps 2 and 3 need no hardware.
+
+## Warm-up host turn and an opt-in relaunch cache — 2026-09-07
+
+Partial progress on the compile path. **No acceptance bullet is ticked and the ≤8,000 ms
+cold-launch criterion is not revised, retired or replaced by this work.**
+
+**What was found.** The native host settles asynchronous pipeline promises from `pollEvents()`.
+Awaiting one of those promises inside a JavaScript callback could therefore hold the pump until the
+warm-up timeout, even though the compile was running on the native worker pool. The WebGPU surface
+shipped by the host has no portable pipeline-serialization API, so a cross-launch hint can only be a
+marker, not a serialized pipeline.
+
+**Implementation.**
+
+- `packages/core/src/warmup.ts` yields through the configured host signal and one macrotask while an
+  unresolved compile is pending. The timeout still fails closed and reports an abandoned compile.
+- `packages/core/src/warmup.ts` accepts an opt-in `cache: { key }`. A successful warm-up stores a
+  schema, key, pipeline count and compute-node count in `localStorage`; a matching next launch
+  returns `cache: "hit"`, and a changed count or key is a miss. It records that a completed warm-up
+  populated the driver's own cache — it does not serialize GPU pipeline objects.
+- `packages/core/src/game.ts` includes the cache result in `TN_WARMUP` and `TN_STARTUP_WARMUP`;
+  `packages/core/src/index.ts` exports the cache option and status types.
+- `packages/core/__tests__/warmup.spec.ts` and `warmup-default.spec.ts` carry the red host-turn
+  regression, cache storage and hit behaviour, invalid input, and the bounded-timeout behaviour.
+
+**Verification.** The red test failed before the fix because `yieldFrame` was never called while the
+compile promise was pending; the green run passed the warm-up and warm-up-default suites, including
+the second-launch zero-compile assertion, and core typecheck exited 0. Red/green output, the
+`TN_WARMUP` game-integration lines and the fixture-hygiene follow-up are in
+[prd-360-warmup-cache-2026-09-07](../../verification/prd-360-warmup-cache-2026-09-07/README.md).
+
+**The 16,020.007 ms candidate is not a cold-acceptance sample.** The preserved candidate physical
+run reached its first frame at **16,020.007 ms** and moved **2.146719 m** on the Pixel 8, which
+proves playability and a visible world. It is a single run against the package already retained on
+the device, not a cold-install launch, and one run is not the three-sample thermal benchmark this
+PRD requires. Even read at face value it **misses the 8,000 ms criterion by roughly two times**, so
+it cannot close the first acceptance bullet under any reading. The three-run cold baseline in
+[prd-360-device-2026-09-07](../../verification/prd-360-device-2026-09-07/README.md) remains the
+device record, with a preflight-qualified 49,788.7 ms median. Its earlier plugged-in 50,948.7 ms
+set is retained as superseded evidence.
+
+**Still unmeasured on a device:** the ≤8,000 ms median over three physical cold-install launches,
+the 250 ms pump-silence limit, and any physical cache-hit timing. The follow-up attempt on the
+recorded Wi-Fi device returned `failed to connect to '192.168.1.192:5555': No route to host`.
+
+Next action (under 2 minutes): retry `adb connect 192.168.1.192:5555`, and if it answers, run the
+three unplugged cold-install candidate launches this criterion still needs.

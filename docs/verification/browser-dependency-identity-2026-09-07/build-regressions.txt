@@ -1,0 +1,109 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution
+
+ ✓ packages/create-threenative/__tests__/template-vite-plugins.spec.ts (6 tests) 160ms
+stdout | packages/create-threenative/__tests__/build.spec.ts > threenative build > delegates byte-identically to the same Vite binary for every template
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 0 bytes (ceiling none)
+
+stdout | packages/create-threenative/__tests__/build.spec.ts > threenative build > delegates byte-identically to the same Vite binary for every template
+TN_ASSETS_EXCLUDED: 0 file(s), 0 bytes
+
+prune: Removed types... Accessor (2)
+prune: Removed types... Accessor (1)
+Total slices: 5
+Slice: 0, alpha: 0, orig width/height: 16x16, width/height: 16x16, first_block: 0, image_index: 0, mip_level: 0, iframe: 0
+Slice: 1, alpha: 0, orig width/height: 8x8, width/height: 8x8, first_block: 16, image_index: 0, mip_level: 1, iframe: 0
+Slice: 2, alpha: 0, orig width/height: 4x4, width/height: 4x4, first_block: 20, image_index: 0, mip_level: 2, iframe: 0
+Slice: 3, alpha: 0, orig width/height: 2x2, width/height: 4x4, first_block: 21, image_index: 0, mip_level: 3, iframe: 0
+Slice: 4, alpha: 0, orig width/height: 1x1, width/height: 4x4, first_block: 22, image_index: 0, mip_level: 4, iframe: 0
+Mode: ETC1S Quality (0-255): 150, Comp Level (Effort, 0-6): 2
+basis_compressor::process: Success
+stdout | packages/create-threenative/__tests__/build.spec.ts > threenative build > delegates byte-identically to the same Vite binary for every template
+[ok] native-proof.glb: 1 triangles
+[ok] native-proof.glb: 0 material(s)
+[warn] native-proof.glb: no collider found (name a node or mesh '-col' or 'collider')
+[ok] native-proof.glb: no root motion detected
+[warn] native-proof.glb: license: unknown
+[warn] pickup.wav: license: unknown
+[ok] native-proof.png tex0: 16x16 pixels
+[ok] native-proof.png tex0: power-of-two dimensions
+[ok] native-proof.png tex0: alpha channel present
+[warn] native-proof.png: license: unknown
+asset health: 3 asset(s), 6 ok, 4 warn, 0 fail
+audio pickup.wav (Ogg Vorbis): 39246 -> 5228 bytes (-86.7%), decoded 78336 -> 78336 bytes (-0.0%), 2ch -> 2ch, 0.222 s at 44100 Hz
+  audio pickup.wav levels: peak 0.0953 -> 0.0962, DC 0.00007 -> 0.00007
+  audio pickup.wav wrap: 0.0014 (not declared a loop, so not judged)
+  audio pickup.wav bands: sub 0.0%, low 0.2%, mid 99.8%, high 0.0%, air 0.0%
+audio total: 39246 -> 5228 bytes (-86.7%), decoded 78336 -> 78336 bytes (-0.0%)
+texture native-proof.png: 150 -> 150 bytes (-0.0%); compression skipped: not-smaller
+textures total: 150 -> 150 bytes (-0.0%)
+model native-proof.glb (EXT_meshopt_compression, KHR_mesh_quantization): 624 -> 1324 bytes (+112.2%), 1 triangle(s)
+models total: 624 -> 1324 bytes (+112.2%)
+cost pass audio: ran on 3 input(s), 382 ms
+  cost native-proof.glb: 0 ms
+  cost native-proof.png: 0 ms
+  cost pickup.wav: 382 ms
+cost pass ktx2: ran on 3 input(s), 633 ms
+  cost native-proof.glb: 0 ms
+  cost native-proof.png: 633 ms
+  cost pickup.wav: 0 ms
+cost pass model: ran on 3 input(s), 55 ms
+  cost native-proof.glb: 54 ms
+  cost native-proof.png: 0 ms
+  cost pickup.wav: 0 ms
+
+stdout | packages/create-threenative/__tests__/build.spec.ts > threenative build > delegates byte-identically to the same Vite binary for every template
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 591564 bytes (ceiling none)
+  budget basis/basis_transcoder.wasm: uncooked 0 bytes, total 527333 bytes
+  budget basis/basis_transcoder.js: uncooked 0 bytes, total 57529 bytes
+  budget pickup.wav: uncooked 0 bytes, total 5228 bytes
+  budget native-proof.glb: uncooked 0 bytes, total 1324 bytes
+  budget native-proof.png: uncooked 0 bytes, total 150 bytes
+
+stdout | packages/create-threenative/__tests__/build.spec.ts > threenative build > delegates byte-identically to the same Vite binary for every template
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 0 bytes (ceiling none)
+
+vite v8.2.0 building client environment for production...
+[2K
+transforming...✓ 5 modules transformed.
+rendering chunks...
+computing gzip size...
+.threenative/build/ui/.threenative-ui-fa02ccce-99ed-4bae-bd4a-bb42fd610aa5.html  0.39 kB │ gzip: 0.27 kB
+.threenative/build/ui/assets/index-P2Xu9kJm.js                                   0.67 kB │ gzip: 0.38 kB
+
+✓ built in 80ms
+vite v8.2.0 building client environment for production...
+[2K
+transforming...✓ 5 modules transformed.
+rendering chunks...
+computing gzip size...
+.threenative/build/ui/.threenative-ui-b14a3221-ba70-4ca0-b97f-1f5658bea72d.html  0.39 kB │ gzip: 0.27 kB
+.threenative/build/ui/assets/index-P2Xu9kJm.js                                   0.67 kB │ gzip: 0.38 kB
+
+✓ built in 70ms
+vite v8.2.0 building client environment for production...
+[2K
+transforming...✓ 7 modules transformed.
+rendering chunks...
+computing gzip size...
+.threenative/build/ui/.threenative-ui-a611e993-edab-4b37-a42e-de0a8be1d2dd.html  0.39 kB │ gzip: 0.27 kB
+.threenative/build/ui/assets/index-CDluZcET.js                                   0.23 kB │ gzip: 0.20 kB
+
+✓ built in 63ms
+stdout | packages/create-threenative/__tests__/build.spec.ts > threenative build > fails closed when the declared native entry is missing
+TN_ASSETS_EXCLUDED: 0 file(s), 0 bytes
+
+stdout | packages/create-threenative/__tests__/build.spec.ts > threenative build > fails closed when the declared native entry is missing
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 0 bytes (ceiling none)
+
+ ✓ packages/create-threenative/__tests__/build.spec.ts (16 tests) 14381ms
+     ✓ does not allow the mutation "audio worker pool remains referenced after build completion"  5785ms
+     ✓ delegates byte-identically to the same Vite binary for every template  7240ms
+     ✓ emits index.html for the native overlay loader  458ms
+     ✓ preserves a project-owned file while building the native UI page  365ms
+     ✓ bundles one copy of a peer the entry and a linked package both import  391ms
+
+ Test Files  2 passed (2)
+      Tests  22 passed (22)
+   Start at  17:17:50
+   Duration  17.69s (transform 1.98s, setup 0ms, import 3.07s, tests 14.54s, environment 0ms)

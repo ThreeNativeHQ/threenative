@@ -1,0 +1,61 @@
+{
+  "name": "survives",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "move",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "distanceMoved",
+        "gte": 0.5,
+        "changed": true
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ],
+    "components": [
+      {
+        "entity": "render",
+        "component": "invisibleMeshes",
+        "lte": 300,
+        "allowTrivial": "invisibleMeshes counts solid meshes the renderer still draws at zero opacity, which is a state nothing in this game should ever be in except a parked effect pool. It is not trivially zero: the healthy scene sits at 177, the pooled muzzle flashes, impact bursts and smoke that wait at opacity 0 until they are spawned. The ceiling is 300 so a new pool does not trip it, and the failure it exists for lands at 814 -- one prewarm(ctx.scene) call, which cloned every material in the town to opacity 0 and left the player looking at nothing but sky. Every other assertion passed on that build: the frame was nonblank, decals still placed, pathfinding still solved, diagnostics were clean, triangles went UP from 702,618 to 1,101,003 because transparency unbatches, and a dark-pixel-ratio check on the weapon region read 0.25 against 0.37 for the real frame. A counter of what cannot be seen was the only thing that separated them."
+      }
+    ]
+  }
+}
