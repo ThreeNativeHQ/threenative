@@ -75,7 +75,7 @@ async function establishSession(
   try {
     const controlStream = await Promise.resolve(transport.createBidirectionalStream());
     writers.push(controlStream.writable);
-    const controlReader = new FrameReader(controlStream.readable, MAX_HELLO_BYTES + HEADER_BYTES);
+    const controlReader = new FrameReader(controlStream.readable, MAX_HELLO_BYTES);
     readers.push(controlReader);
 
     const helloPayload = new TextEncoder().encode(
@@ -127,7 +127,7 @@ async function establishSession(
     for (const channelId of reliableIds) {
       const stream = await Promise.resolve(transport.createBidirectionalStream());
       writers.push(stream.writable);
-      const reader = new FrameReader(stream.readable, messageLimit + HEADER_BYTES);
+      const reader = new FrameReader(stream.readable, messageLimit);
       readers.push(reader);
       await writeAll(stream.writable, encodeFrame(KIND_BIND, channelId, new Uint8Array(0)));
       const bound = await reader.nextFrame(abort.signal);
