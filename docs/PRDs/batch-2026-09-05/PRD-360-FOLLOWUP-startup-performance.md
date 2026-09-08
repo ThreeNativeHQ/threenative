@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-360 follow-up — finish startup performance on the working Bayview build
 
-**Status:** NOT STARTED. PRD-360 remains PARTIAL.
+**Status:** PARTIAL — three measured optimization experiments were executed and all missed the acceptance gates. PRD-360 remains PARTIAL.
 **Parent:** [PRD-360](PRD-360-android-launch-is-playable-within-eight-seconds.md).
 **Complexity:** 6 → MEDIUM: async startup across core/native, approximately 6–10 implementation files.
 **Execution budget:** Start with a 60-minute profiling task. At most three measured optimization experiments before reporting results or escalating. No speculative rewrite.
@@ -25,6 +25,36 @@ The startup crashes are fixed; performance is not. [PR #136](https://github.com/
 | Unattributed portion of the measured frame stall | **4,917.275 ms** |
 
 The same raw log reports `maxGapMs:15708.693` in pump observations. That is a diagnostic observation, not a completed endpoint-correlated acceptance evaluation. Do not reuse the historical 103-call/8.3-second baseline as if it described this repaired APK.
+
+## Bounded experiment result — 2026-09-08
+
+The three-experiment budget is exhausted. All arms used the preserved Bayview scene, effects,
+assets, UI and Android configuration on the qualified Pixel 8; every movement run reached the
+world and moved the player about **2.1467 m** with clean diagnostics. None met the 8,000 ms or
+250 ms gates.
+
+| Experiment | Change | First frame | Warm-up | Correlated pump result | Disposition |
+| --- | --- | ---: | ---: | ---: | --- |
+| 1 | Explicit game `warmUp` configuration | 16,151.642 ms | `compiled:0`, timed out at 15,344 ms | 15,767.082 ms max gap | Rejected |
+| 2 | Core startup cover recognizes the ready UI (`337a7d36`) | 18,562.037 ms | 13,515 ms, 494 pipelines | 2,665.103 ms max gap; 2,426.070 ms at movement endpoint | Rejected and reverted |
+| 3 | Native compile pool cap 2 → 4 workers | 19,022.717 ms | 14,007 ms, 494 pipelines | 2,618.676 ms max gap; 2,394.758 ms at movement endpoint | Rejected and reverted |
+
+Experiment 3 was worse than experiment 2 on warm-up and first-frame time, so the native source was
+restored. Experiment 2 was also reverted because it regressed the retained-package launch and did
+not meet either budget. Raw receipts remain in the local sandbox under
+`/home/joao/projects/threenative/sandbox/prd360-bayview-live/artifacts/experiment-{1,2,3}-movement/`;
+the experiment-3 APK is `5f6ac0106868013437b97b00854e50ec69b8162187006cc2693378449b1855df` and
+the unchanged game bundle is `b11c5753e1b7a4570dfb7e4bf176b52ebb59b89b73cbac9ea36332d69e33c7c0`.
+
+The black screen seen while the UI appeared first is the game-owned loading surface, not a failed
+final render. Bayview's `Hud` returns a full-screen dark panel while `ready` is false, and the
+native UI surface is opaque. The captured `experiment-3-movement/after.png` shows the authored
+world and HUD after startup; hiding the loading surface or changing the scene to satisfy a timing
+number would violate this follow-up's unchanged-content constraint.
+
+Per the stop rule, no fourth experiment is started. The remaining doubtful assumption is that the
+measured pipeline warm-up and pump gap are the dominant launch cost; the records show a large
+unattributed stall, so a future attempt needs a new attribution hypothesis before editing code.
 
 Evidence: [repair report](../../verification/findings-2026-09-07-bayview-fix/README.md), [APK identities](../../verification/findings-2026-09-07-bayview-fix/proof.json), [scenario](../../verification/findings-2026-09-07-bayview-fix/manifest.playtest.json), [visible world](../../verification/findings-2026-09-07-bayview-fix/android-world.png).
 

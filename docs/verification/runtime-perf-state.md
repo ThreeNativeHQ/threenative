@@ -3902,3 +3902,34 @@ records one physical Pixel 8 run: first frame 16,020.007 ms, pipeline compilatio
 These are single-run diagnostics, not a qualified three-run first-playable or correlated
 pump acceptance result. APK and log identities are in the [repair proof](findings-2026-09-07-bayview-fix/proof.json).
 PRD-360 remains PARTIAL; the next task is baseline attribution before a bounded optimization.
+
+## Bayview bounded startup experiments — 2026-09-08
+
+The PRD-360 follow-up allowed three measured optimization experiments. They used the same
+preserved Bayview scene, effects, assets, UI and Android configuration on the qualified Pixel 8.
+Every movement scenario reached the authored world and moved the player about **2.1467 m** with
+clean diagnostics. The acceptance gates remained unmet:
+
+| Experiment | Change | First frame | Warm-up | Pump observations | Result |
+| --- | --- | ---: | ---: | --- | --- |
+| 1 | Explicit game `warmUp` configuration | 16,151.642 ms | `TN_WARMUP` compiled 0; timed out at 15,344 ms | 15,767.082 ms max gap; 15,767.082 ms movement endpoint | Rejected |
+| 2 | Core `startupCoverActive()` treated the ready UI as the startup cover | 18,562.037 ms | `TN_STARTUP_WARMUP` compiled 1, 494 pipelines, 13,515 ms | 2,665.103 ms max gap; 2,426.070 ms movement endpoint | Rejected; commit `337a7d360` reverted |
+| 3 | Native async pipeline compile pool cap 2 → 4 workers | 19,022.717 ms | `TN_STARTUP_WARMUP` compiled 1, 494 pipelines, 14,007 ms | 2,618.676 ms max gap; 2,394.758 ms movement endpoint | Rejected; source restored |
+
+The candidate was slower than the prior repaired-package run in every startup measure tested by
+the final experiment. The 2,394.758 ms endpoint gap is also far above the 250 ms criterion. The
+experiment-3 APK is SHA-256
+`5f6ac0106868013437b97b00854e50ec69b8162187006cc2693378449b1855df`; its game bundle is
+`b11c5753e1b7a4570dfb7e4bf176b52ebb59b89b73cbac9ea36332d69e33c7c0`. Raw console, endpoint and
+image receipts are retained in the local sandbox at
+`/home/joao/projects/threenative/sandbox/prd360-bayview-live/artifacts/experiment-{1,2,3}-movement/`.
+
+The reported black area during startup is expected loading behavior. Bayview's `Hud` renders a
+full-screen dark panel while `ready` is false, and the native web UI surface is opaque. The
+experiment-3 post-start capture shows the real town, player, weapon and HUD, so this observation
+does not indicate a persistent renderer failure. No loading-state or authored-content change was
+made to manufacture a timing result.
+
+The three-experiment stop rule is now satisfied. The records leave a large unattributed startup
+stall after the measured pipeline work; a future optimization needs a new attribution hypothesis
+before another code change. PRD-360 and its follow-up remain PARTIAL and stay in their batch.
