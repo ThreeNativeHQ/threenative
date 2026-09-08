@@ -345,6 +345,25 @@ index 2ef7cb257438826059eb2408b3756c4891f06a10..35cc0ffe83a69ea9fa5fca6dec2d820c
  	/**
  	 * Constructs a new batched mesh.
  	 *
+diff --git a/src/renderers/common/Bindings.js b/src/renderers/common/Bindings.js
+index 5f3d213a016b37db3b2e5d022da3dd0234d86f6d..7a9a168f29773f37ef9a51ef9f07ade9f3ea95ef 100644
+--- a/src/renderers/common/Bindings.js
++++ b/src/renderers/common/Bindings.js
+@@ -206,10 +206,14 @@ class Bindings extends DataMap {
+ 
+ 					} else if ( binding.isSampledTexture ) {
+ 
++						// Async node compilation can yield while a viewport node changes targets.
++						// Refresh its reference before creating the first GPU binding, not after.
++						binding.update();
+ 						this.textures.updateTexture( binding.texture );
+ 
+ 					} else if ( binding.isSampler ) {
+ 
++						binding.update();
+ 						this.textures.updateSampler( binding );
+ 
+ 					} else if ( binding.isStorageBuffer ) {
 diff --git a/src/renderers/common/RenderObject.js b/src/renderers/common/RenderObject.js
 index c900fa4c9654f8cf3512e96de52a2c1c83e189a6..d0a87eabffc8f667ebe9b2f0eccda0ddf3309652 100644
 --- a/src/renderers/common/RenderObject.js
