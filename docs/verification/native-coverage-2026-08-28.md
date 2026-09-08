@@ -291,3 +291,18 @@ TOTAL: 21768 instrumented lines; 14493 covered; 66.58%
 The two blocked rows are still the explicitly disabled physics and video targets. Native
 coverage floors are unchanged. This is Linux green evidence for the repair; macOS and Windows
 verification must run again on the published follow-up before either platform is claimed green.
+
+## Native diagnostics capability preflight — 2026-09-08
+
+Commit `5e2db7025f9055cd66d973d77abd892828439519` resolves omitted diagnostics for the
+executed target before checking bridge capabilities. An Android scenario that omits
+`noNetworkErrors` therefore records browser network observation as unavailable instead of
+requiring the native bridge to provide `browser.network`; an explicit request remains a
+fail-closed unsupported capability.
+
+An exact semantic revert reproduced `TN_PLAYTEST_CAPABILITY_MISSING browser.network` and failed
+the focused test 1/1. Restoring the target-aware call passed that test 1/1, then
+`device-playtest`, `unobservable-lane`, `bridgeClient`, and `runner-lanes` passed 64/64. The
+resulting generated capability metadata changed all ten scaffold trees; the measured hashes are
+pinned in `packages/create-threenative/__tests__/scaffold.spec.ts`, whose complete suite passed
+55/55.
