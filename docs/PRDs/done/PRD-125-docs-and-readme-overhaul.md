@@ -231,7 +231,7 @@ it on the front page, and **do not replace it with a claim that the benchmark pa
 ## 4. Phase 2 — stale facts
 
 1. Fix all 18 links from §1.2. For the 14 caused by the PRD-078/080 move, repoint at
-   `docs/PRDs/BLOCKED/requires-hosted-run/PRD-078-toolchain-free-consumer-proof.md` and
+   `docs/PRDs/production-readiness/PRD-078-toolchain-free-consumer-proof.md` and
    `docs/PRDs/BLOCKED/requires-external-person/PRD-080-five-minute-stranger-test.md`. For the
    outbound links inside those two moved files, fix the depth (`../../` → `../../../` where
    the target is under `docs/`, verified per link — do not pattern-replace).
