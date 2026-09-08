@@ -36,6 +36,8 @@
 #include <array>
 #include <cmath>
 
+extern "C" void __llvm_profile_dump(void) __attribute__((weak));
+
 // WebP animation encoding (for video recording)
 #ifdef MYSTRAL_HAS_WEBP_MUX
 #include <webp/encode.h>
@@ -1240,7 +1242,12 @@ static int runScreenshotMode(const CLIOptions& opts, mystral::Runtime& runtime) 
 #endif
     std::cout.flush();
     std::cerr.flush();
+#ifndef MYSTRAL_CLI_NO_MAIN
+    if (__llvm_profile_dump) __llvm_profile_dump();
     _exit(success ? 0 : 1);
+#else
+    return success ? 0 : 1;
+#endif
 }
 
 #if !TN_ENABLE_VIDEO
@@ -1651,15 +1658,20 @@ static int runNormalMode(const CLIOptions& opts, mystral::Runtime& runtime) {
 
     int exitCode = runtime.getExitCode();
     if (!opts.quiet) std::cout << "=== Script finished ===" << std::endl;
+#ifndef MYSTRAL_CLI_NO_MAIN
 #ifdef __APPLE__
     // SDL3's audio callback threads can prevent graceful shutdown, so give them a moment then kill.
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     kill(getpid(), SIGKILL);
     return exitCode;
 #elif !defined(_WIN32)
+    if (__llvm_profile_dump) __llvm_profile_dump();
     _exit(exitCode);
 #else
     ExitProcess(exitCode);
+#endif
+#else
+    return exitCode;
 #endif
 }
 

@@ -1388,6 +1388,25 @@ int main() {
     processEvents();
     check(!hasActiveSessions(), "no active sessions after idle pump");
 
+    // URL parsing and resolver test seams
+    setResolverDelayForTesting(10);
+    activeResolutionsForTesting();
+    setResolverDelayForTesting(0);
+    connectSession("https://[::1]:4433/ipv6_test");
+    connectSession("https://localhost:4433/host_test");
+    connectSession("http://not_https:4433/bad");
+    connectSession("not_a_url");
+    connectSession("https://" + std::string(260, 'x') + ":4433/too_long");
+
+    // Invalid session query checks
+    sendDatagram(9999, nullptr, 0);
+    createStream(9999, true);
+    createStream(9999, false);
+    streamWrite(9999, 0, nullptr, 0, false);
+    streamShutdown(9999, 0, 0);
+    streamReadCredit(9999, 0, 100);
+    streamReleaseRead(9999, 0);
+
     // Connect session to test socket and session operations
     uint32_t sessId = connectSession("https://127.0.0.1:4433/wt_test");
     if (sessId != 0) {

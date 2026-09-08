@@ -733,6 +733,8 @@ public:
 
     JSValueHandle createFloat32Array(const float* data, size_t count) override {
         V8EntryScope entry_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        entry_scope.enterContext(context);
 
         size_t byteLength = count * sizeof(float);
         std::unique_ptr<v8::BackingStore> backingStore = v8::ArrayBuffer::NewBackingStore(isolate_, byteLength);
@@ -749,6 +751,8 @@ public:
 
     JSValueHandle createFloat32ArrayView(float* data, size_t count) override {
         V8EntryScope entry_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        entry_scope.enterContext(context);
 
         size_t byteLength = count * sizeof(float);
         // Create external backing store (no copy, caller manages lifetime)
@@ -767,6 +771,8 @@ public:
 
     JSValueHandle createUint32Array(const uint32_t* data, size_t count) override {
         V8EntryScope entry_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        entry_scope.enterContext(context);
 
         size_t byteLength = count * sizeof(uint32_t);
         std::unique_ptr<v8::BackingStore> backingStore = v8::ArrayBuffer::NewBackingStore(isolate_, byteLength);

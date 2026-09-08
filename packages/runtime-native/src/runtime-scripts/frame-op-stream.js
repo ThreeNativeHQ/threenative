@@ -503,6 +503,14 @@
   const createTexture = device.createTexture.bind(device);
   device.createBuffer = (descriptor) => wrapDestroy(createBuffer(descriptor), bufferId, 32);
   device.createTexture = (descriptor) => wrapDestroy(createTexture(descriptor), textureId, 33);
+  const nativeWriteBuffer = queue.writeBuffer ? queue.writeBuffer.bind(queue) : null;
+  const nativeWriteTexture = queue.writeTexture ? queue.writeTexture.bind(queue) : null;
+  const nativeSubmit = queue.submit ? queue.submit.bind(queue) : null;
+  const nativeCopyExternalImageToTexture = queue.copyExternalImageToTexture ? queue.copyExternalImageToTexture.bind(queue) : null;
+  queue.__nativeWriteBuffer = nativeWriteBuffer;
+  queue.__nativeWriteTexture = nativeWriteTexture;
+  queue.__nativeSubmit = nativeSubmit;
+  queue.__nativeCopyExternalImageToTexture = nativeCopyExternalImageToTexture;
   queue.writeBuffer = (b, o, d, do_, z) => {
     if (!Number.isSafeInteger(o) || o < 0 || o & 3)
       throw new RangeError(

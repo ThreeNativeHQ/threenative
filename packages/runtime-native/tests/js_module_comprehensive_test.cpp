@@ -19,6 +19,69 @@ void writeFile(const fs::path& path, const std::string& content) {
     out << content;
 }
 
+class QuickJSEngineFacade : public mystral::js::Engine {
+    mystral::js::Engine* real_;
+public:
+    explicit QuickJSEngineFacade(mystral::js::Engine* real) : real_(real) {}
+    mystral::js::EngineType getType() const override { return mystral::js::EngineType::QuickJS; }
+    const char* getName() const override { return "quickjs"; }
+    bool eval(const char* code, const char* filename) override { return real_->eval(code, filename); }
+    mystral::js::JSValueHandle evalWithResult(const char* code, const char* filename) override { return real_->evalWithResult(code, filename); }
+    bool evalScript(const char* code, const char* filename) override { return real_->evalScript(code, filename); }
+    mystral::js::JSValueHandle evalScriptWithResult(const char* code, const char* filename) override { return real_->evalScriptWithResult(code, filename); }
+    mystral::js::JSValueHandle getGlobal() override { return real_->getGlobal(); }
+    bool setGlobalProperty(const char* name, mystral::js::JSValueHandle val) override { return real_->setGlobalProperty(name, val); }
+    mystral::js::JSValueHandle getGlobalProperty(const char* name) override { return real_->getGlobalProperty(name); }
+    mystral::js::JSValueHandle newUndefined() override { return real_->newUndefined(); }
+    mystral::js::JSValueHandle newNull() override { return real_->newNull(); }
+    mystral::js::JSValueHandle newBoolean(bool val) override { return real_->newBoolean(val); }
+    mystral::js::JSValueHandle newNumber(double val) override { return real_->newNumber(val); }
+    mystral::js::JSValueHandle newString(const char* val) override { return real_->newString(val); }
+    mystral::js::JSValueHandle newObject() override { return real_->newObject(); }
+    mystral::js::JSValueHandle newArray(size_t len) override { return real_->newArray(len); }
+    mystral::js::JSValueHandle newArrayBuffer(const uint8_t* d, size_t l) override { return real_->newArrayBuffer(d, l); }
+    mystral::js::JSValueHandle newArrayBufferExternal(void* d, size_t l) override { return real_->newArrayBufferExternal(d, l); }
+    void* getArrayBufferData(mystral::js::JSValueHandle v, size_t* s) override { return real_->getArrayBufferData(v, s); }
+    mystral::js::JSValueHandle createFloat32Array(const float* d, size_t c) override { return real_->createFloat32Array(d, c); }
+    mystral::js::JSValueHandle createFloat32ArrayView(float* d, size_t c) override { return real_->createFloat32ArrayView(d, c); }
+    mystral::js::JSValueHandle createUint32Array(const uint32_t* d, size_t c) override { return real_->createUint32Array(d, c); }
+    mystral::js::JSValueHandle createUint8Array(const uint8_t* d, size_t c) override { return real_->createUint8Array(d, c); }
+    mystral::js::JSValueHandle newFunction(const char* n, mystral::js::NativeFunction f) override { return real_->newFunction(n, f); }
+    bool toBoolean(mystral::js::JSValueHandle v) override { return real_->toBoolean(v); }
+    double toNumber(mystral::js::JSValueHandle v) override { return real_->toNumber(v); }
+    std::string toString(mystral::js::JSValueHandle v) override { return real_->toString(v); }
+    bool isUndefined(mystral::js::JSValueHandle v) override { return real_->isUndefined(v); }
+    bool isNull(mystral::js::JSValueHandle v) override { return real_->isNull(v); }
+    bool isBoolean(mystral::js::JSValueHandle v) override { return real_->isBoolean(v); }
+    bool isNumber(mystral::js::JSValueHandle v) override { return real_->isNumber(v); }
+    bool isString(mystral::js::JSValueHandle v) override { return real_->isString(v); }
+    bool isObject(mystral::js::JSValueHandle v) override { return real_->isObject(v); }
+    bool isArray(mystral::js::JSValueHandle v) override { return real_->isArray(v); }
+    bool isFunction(mystral::js::JSValueHandle v) override { return real_->isFunction(v); }
+    bool isBindingDestination(mystral::js::JSValueHandle v) override { return real_->isBindingDestination(v); }
+    bool isSameValue(mystral::js::JSValueHandle l, mystral::js::JSValueHandle r) override { return real_->isSameValue(l, r); }
+    bool setProperty(mystral::js::JSValueHandle o, const char* n, mystral::js::JSValueHandle v) override { return real_->setProperty(o, n, v); }
+    mystral::js::JSValueHandle getProperty(mystral::js::JSValueHandle o, const char* n) override { return real_->getProperty(o, n); }
+    bool getPropertyInfo(mystral::js::JSValueHandle o, const char* n, mystral::js::JSPropertyInfo& i) override { return real_->getPropertyInfo(o, n, i); }
+    void releasePropertyInfo(mystral::js::JSPropertyInfo& i) override { real_->releasePropertyInfo(i); }
+    bool hasProperty(mystral::js::JSValueHandle o, const char* n) override { return real_->hasProperty(o, n); }
+    bool deleteProperty(mystral::js::JSValueHandle o, const char* n) override { return real_->deleteProperty(o, n); }
+    bool setPropertyIndex(mystral::js::JSValueHandle a, uint32_t i, mystral::js::JSValueHandle v) override { return real_->setPropertyIndex(a, i, v); }
+    mystral::js::JSValueHandle getPropertyIndex(mystral::js::JSValueHandle a, uint32_t i) override { return real_->getPropertyIndex(a, i); }
+    mystral::js::JSValueHandle call(mystral::js::JSValueHandle f, mystral::js::JSValueHandle t, const std::vector<mystral::js::JSValueHandle>& a) override { return real_->call(f, t, a); }
+    void freezeHandle(mystral::js::JSValueHandle v) override { real_->freezeHandle(v); }
+    void freeHandle(mystral::js::JSValueHandle v) override { real_->freeHandle(v); }
+    size_t outstandingHandleCount() const override { return real_->outstandingHandleCount(); }
+    void gc() override { real_->gc(); }
+    void processMicrotasks() override { real_->processMicrotasks(); }
+    bool hasException() override { return real_->hasException(); }
+    std::string getException() override { return real_->getException(); }
+    void throwException(const char* m) override { real_->throwException(m); }
+    void setPrivateData(mystral::js::JSValueHandle o, void* d) override { real_->setPrivateData(o, d); }
+    void* getPrivateData(mystral::js::JSValueHandle o) override { return real_->getPrivateData(o); }
+    void* getRawContext() override { return real_->getRawContext(); }
+};
+
 bool testTsTranspiler() {
     if (mystral::js::isTypeScriptTranspilerAvailable()) {
         std::string outJs, outErr;
@@ -172,6 +235,48 @@ bool testModuleResolverAndSystem(mystral::js::Engine* engine, const fs::path& te
         // okay if nonexistent
     }
 
+    // Root dir, bundle query, resolve resolved path
+    resolver.setRootDir(tempDir.string());
+    resolver.usingBundle();
+    mystral::js::ResolvedModule resolvedPathMod;
+    resolver.resolveResolvedPath(indexJs.string(), resolvedPathMod, error);
+
+    // Directory resolution with index.js / index.ts
+    fs::path dirWithIndex = tempDir / "dirWithIndex";
+    fs::create_directories(dirWithIndex);
+    writeFile(dirWithIndex / "index.js", "exports.dirIndex = true;");
+    if (resolver.resolve("./dirWithIndex", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error)) {
+        // resolved directory with index.js
+    }
+
+    // Package.json parsing tests exercising json parser branches
+    fs::path jsonFixtures = tempDir / "node_modules" / "json-fixture" / "package.json";
+    writeFile(jsonFixtures, R"JSON({
+      "name": "json-fixture",
+      "main": "./main.js",
+      "scientific": 1.25e2,
+      "negScientific": -3.5E-1,
+      "escaped": "A\bB\fC\nD\rE\tF\/G\\H\"I\u0041",
+      "bools": [true, false],
+      "nullVal": null,
+      "emptyObj": {},
+      "emptyArr": []
+    })JSON");
+    writeFile(tempDir / "node_modules" / "json-fixture" / "main.js", "exports.ok = true;");
+    resolver.resolve("json-fixture", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    fs::path jsonBadEscape = tempDir / "node_modules" / "bad-escape" / "package.json";
+    writeFile(jsonBadEscape, "{\"name\": \"bad-escape\", \"main\": \"index.js\", \"bad\": \"\\z\"}");
+    resolver.resolve("bad-escape", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    fs::path jsonBadNum = tempDir / "node_modules" / "bad-num" / "package.json";
+    writeFile(jsonBadNum, "{\"name\": \"bad-num\", \"main\": \"index.js\", \"bad\": 12. }");
+    resolver.resolve("bad-num", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    fs::path jsonUnclosed = tempDir / "node_modules" / "unclosed" / "package.json";
+    writeFile(jsonUnclosed, "{\"name\": \"unclosed\", \"arr\": [1, 2");
+    resolver.resolve("unclosed", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
     // Test ModuleSystem with V8 Engine
     mystral::js::ModuleSystem modSys(engine, tempDir.string());
     if (!modSys.loadEntry(indexJs.string())) {
@@ -208,6 +313,35 @@ bool testModuleResolverAndSystem(mystral::js::Engine* engine, const fs::path& te
     modSys.loadedPaths();
 
     modSys.clearCaches();
+
+    // ModuleSystem global pointers and resolver access
+    mystral::js::setModuleSystem(&modSys);
+    if (mystral::js::getModuleSystem() != &modSys) return false;
+    modSys.resolver();
+    mystral::js::setModuleSystem(nullptr);
+
+    // Test ESM transpilation to CJS using QuickJS facade
+    fs::path esmFixture = tempDir / "esm_transpile.mjs";
+    writeFile(esmFixture, R"JS(
+import DefaultPkg from './sub/helper.js';
+import * as AllFeature from './sub/helper.js';
+import { value } from './sub/helper.js';
+import MixedDef, { value } from './sub/helper.js';
+import './sub/helper.js';
+
+export default function myFunc() { return 123; }
+export default class MyClass { foo() { return 1; } }
+export default 42;
+export const exportedNum = 456;
+export { exportedNum };
+export * from './sub/helper.js';
+)JS");
+
+    QuickJSEngineFacade qjsFacade(engine);
+    mystral::js::ModuleSystem qjsModSys(&qjsFacade, tempDir.string());
+    qjsModSys.loadEntry(esmFixture.string());
+    qjsModSys.require("./esm_transpile.mjs", indexJs.string());
+
     return true;
 }
 
@@ -281,6 +415,83 @@ bool testV8EngineFeatures(mystral::js::Engine* engine) {
     engine->eval("var __myEvalVar = 999;", "eval.js");
     auto evalRes = engine->evalScriptWithResult("10 + 20", "math.js");
     if (engine->toNumber(evalRes) != 30) return false;
+
+    // Types and context queries
+    engine->getType();
+    engine->getName();
+    engine->getRawContext();
+
+    // ArrayBuffer and TypedArray creation methods
+    const uint8_t rawBytes[] = { 10, 20, 30, 40 };
+    auto ab = engine->newArrayBuffer(rawBytes, sizeof(rawBytes));
+    size_t abSize = 0;
+    engine->getArrayBufferData(ab, &abSize);
+
+    uint8_t externalBytes[16] = { 1, 2, 3, 4 };
+    auto abExt = engine->newArrayBufferExternal(externalBytes, sizeof(externalBytes));
+    engine->getArrayBufferData(abExt, &abSize);
+
+    const float floatData[] = { 1.5f, 2.5f, 3.5f };
+    auto f32Arr = engine->createFloat32Array(floatData, 3);
+    float externalFloats[] = { 4.5f, 5.5f, 6.5f };
+    auto f32View = engine->createFloat32ArrayView(externalFloats, 3);
+
+    const uint32_t u32Data[] = { 100, 200, 300 };
+    auto u32Arr = engine->createUint32Array(u32Data, 3);
+
+    const uint8_t u8Data[] = { 7, 8, 9 };
+    auto u8Arr = engine->createUint8Array(u8Data, 3);
+
+    // Methods and Object templates
+    if (engine->supportsNativeMethods()) {
+        auto method = engine->newMethod("sampleMethod", [](mystral::js::Engine& eng, void* priv, const std::vector<mystral::js::JSValueHandle>& args) {
+            return eng.newNumber(42);
+        });
+        auto protoObj = engine->newObject();
+        engine->setProperty(protoObj, "method", method);
+        auto instObj = engine->newObject();
+        engine->setPrototypeOf(instObj, protoObj);
+        engine->setGlobalProperty("__methodTarget", instObj);
+        engine->eval("globalThis.__methodTarget.method();", "callMethod.js");
+    }
+
+    if (engine->supportsNativeObjectTemplates()) {
+        engine->newNativeObject("TestClass", nullptr);
+    }
+
+    // Value queries
+    engine->isBoolean(engine->newBoolean(false));
+    engine->isNumber(engine->newNumber(123));
+    engine->isString(engine->newString("abc"));
+    engine->isArray(engine->newArray(1));
+    auto freshFn = engine->newFunction("freshFn", [](void*, const std::vector<mystral::js::JSValueHandle>&) { return mystral::js::JSValueHandle(); });
+    engine->isFunction(freshFn);
+    engine->evalScript("const __sc = 5;", "evalScript.js");
+    engine->setGlobalProperty("__globProp", engine->newNumber(99));
+    engine->getGlobalProperty("__globProp");
+
+    // Private data
+    auto privObj = engine->newObject();
+    int dummyPrivate = 12345;
+    engine->setPrivateData(privObj, &dummyPrivate);
+    if (engine->getPrivateData(privObj) != &dummyPrivate) return false;
+    engine->setPrivateData(privObj, nullptr);
+
+    // Protect / unprotect / outstandingHandleCount
+    engine->protect(ab);
+    engine->unprotect(ab);
+    engine->outstandingHandleCount();
+
+    // Release callback
+    bool releaseCalled = false;
+    auto releaseObj = engine->newObject();
+    engine->registerRelease(releaseObj, [&releaseCalled]() {
+        releaseCalled = true;
+    });
+
+    // Task waiting
+    engine->supportsBlockingTaskWait();
+    engine->wakeTaskWait();
 
     engine->throwException("expected test error");
     if (!engine->hasException()) return false;

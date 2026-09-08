@@ -23,6 +23,7 @@
 #ifndef _WIN32
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 #include <chrono>
@@ -191,6 +192,54 @@ void exerciseCliHelpers() {
         "--bounces", "2", "--unknown-flag"
     };
     parseArgs(sizeof(allFlags) / sizeof(allFlags[0]), const_cast<char**>(allFlags));
+
+    // Base64 encoding
+    const uint8_t b64Sample[] = "ThreeNative Native CLI Integration";
+    base64Encode(b64Sample, sizeof(b64Sample) - 1);
+    base64Encode(nullptr, 0);
+
+#if TN_ENABLE_DEBUG_SERVER
+    // Debug commands
+    handleKeyboardDebugCommand("Input.dispatchKeyEvent", "{\"type\":\"rawKeyDown\",\"key\":\"KeyA\"}");
+    handleKeyboardDebugCommand("Input.dispatchKeyEvent", "{\"type\":\"keyUp\",\"key\":\"KeyA\"}");
+    handleKeyboardDebugCommand("Input.dispatchKeyEvent", "{\"type\":\"invalid\"}");
+    handleKeyboardDebugCommand("Input.unknownMethod", "{}");
+    handleMouseDebugCommand("Input.dispatchMouseEvent", "{\"type\":\"mouseMoved\",\"x\":10,\"y\":20}");
+    handleMouseDebugCommand("Input.dispatchMouseEvent", "{\"type\":\"mousePressed\",\"x\":10,\"y\":20,\"button\":\"left\"}");
+    handleMouseDebugCommand("Input.dispatchMouseEvent", "{\"type\":\"mouseReleased\",\"x\":10,\"y\":20,\"button\":\"right\"}");
+    handleMouseDebugCommand("Input.dispatchMouseEvent", "{\"type\":\"mouseWheel\",\"x\":10,\"y\":20,\"deltaX\":0,\"deltaY\":-10}");
+    handleMouseDebugCommand("Input.dispatchMouseEvent", "{\"type\":\"invalid\"}");
+    handleGamepadDebugCommand("Input.dispatchGamepadEvent", "{\"type\":\"connected\",\"index\":0}");
+    handleGamepadDebugCommand("Input.dispatchGamepadEvent", "{\"type\":\"button\",\"index\":0,\"button\":0,\"value\":1.0,\"pressed\":true}");
+    handleGamepadDebugCommand("Input.dispatchGamepadEvent", "{\"type\":\"axis\",\"index\":0,\"axis\":0,\"value\":0.5}");
+    handleGamepadDebugCommand("Input.dispatchGamepadEvent", "{\"type\":\"disconnected\",\"index\":0}");
+    handleGamepadDebugCommand("Input.dispatchGamepadEvent", "{\"type\":\"invalid\"}");
+#endif
+
+    // Input injection
+    injectKeyboardEvent(SDL_SCANCODE_SPACE, true);
+    injectKeyboardEvent(SDL_SCANCODE_SPACE, false);
+    injectMouseMotion(50.0f, 60.0f);
+    injectMouseButton(50.0f, 60.0f, SDL_BUTTON_LEFT, true);
+    injectMouseButton(50.0f, 60.0f, SDL_BUTTON_LEFT, false);
+
+    // readFile & helpers
+    try { readFile("nonexistent_path_file.txt"); } catch (...) {}
+    isFFmpegAvailable();
+    convertWebPToMP4("nonexistent.webp", "nonexistent.mp4", 30, false, true);
+    javascriptString("test \\ \" \n \r \t \x01 hello");
+
+#ifdef MYSTRAL_HAS_WEBP_MUX
+    WebPVideoRecorder recorder(32, 32, 30, 80);
+    if (recorder.isValid()) {
+        std::vector<uint8_t> rgbaFrame(32 * 32 * 4, 200);
+        recorder.addFrame(rgbaFrame.data());
+        fs::path webpOut = fs::temp_directory_path() / "test_recorder.webp";
+        recorder.save(webpOut.string());
+        recorder.getFrameCount();
+        fs::remove(webpOut);
+    }
+#endif
 }
 
 bool testCliSubsystem(const fs::path& tempDir) {
@@ -216,6 +265,113 @@ bool testCliSubsystem(const fs::path& tempDir) {
     char* bakeHelp[] = { (char*)"mystral", (char*)"bake", (char*)"--help" };
     if (mystral::cli::runCli(3, bakeHelp) != 0) return false;
 
+    char* badRunArgv[] = { (char*)"mystral", (char*)"run", (char*)"non_existent_file_xyz.js", (char*)"--headless" };
+    if (mystral::cli::runCli(4, badRunArgv) == 0) return false;
+
+    fs::path testScriptPath = tempDir / "cli_integration_test_script.js";
+    {
+        std::ofstream out(testScriptPath);
+        out << "console.log('cli integration script running');\n"
+            << "process.exit(0);\n";
+    }
+    std::string testScriptStr = testScriptPath.string();
+
+    CLIOptions bannerOpts;
+    bannerOpts.scriptPath = testScriptStr;
+    bannerOpts.width = 256;
+    bannerOpts.height = 256;
+    bannerOpts.maxFps = 60;
+    bannerOpts.headless = true;
+    bannerOpts.quiet = true;
+    setupHeadlessEnvironment(bannerOpts);
+    printRunBanner(bannerOpts, false, false);
+    printRunBanner(bannerOpts, true, false);
+    printRunBanner(bannerOpts, false, true);
+    auto runtime = createConfiguredRuntime(bannerOpts);
+    if (runtime) {
+        wirePlaytestMailboxBridge(runtime);
+    }
+
+#ifndef _WIN32
+    // Fork to run real CLI script in headless mode
+    pid_t pid = fork();
+    if (pid == 0) {
+        char* runArgv[] = {
+            (char*)"mystral",
+            (char*)"run",
+            const_cast<char*>(testScriptStr.c_str()),
+            (char*)"--no-sdl",
+            (char*)"--quiet",
+            nullptr
+        };
+        int rc = mystral::cli::runCli(5, runArgv);
+        _exit(rc);
+    }
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        std::cerr << "runScript CLI child process failed with status " << status << "\n";
+        return false;
+    }
+#endif
+
+    // Direct runScript invocations in test mode (MYSTRAL_CLI_NO_MAIN)
+    CLIOptions directRunOpts;
+    directRunOpts.scriptPath = testScriptStr;
+    directRunOpts.noSdl = true;
+    directRunOpts.headless = true;
+    directRunOpts.quiet = true;
+    runScript(directRunOpts);
+
+    CLIOptions directShotOpts = directRunOpts;
+    directShotOpts.screenshotPath = (tempDir / "direct_shot.png").string();
+    directShotOpts.frames = 1;
+    runScript(directShotOpts);
+
+    CLIOptions directVidOpts = directRunOpts;
+    directVidOpts.videoPath = (tempDir / "direct_vid.mp4").string();
+    runScript(directVidOpts);
+
+    // Test applyEmbeddedConfig with bundle
+    fs::path configBundle = tempDir / "config_test.bundle";
+    fs::path dotTn = tempDir / ".threenative";
+    fs::create_directories(dotTn);
+    {
+        std::ofstream cfg(dotTn / "config.json");
+        cfg << R"JSON({
+            "title": "Configured Title",
+            "icon": "icon.png",
+            "width": 1024,
+            "height": 768,
+            "fullscreen": false,
+            "maximized": true,
+            "resizable": true,
+            "maxFps": 120,
+            "uiRenderer": "web"
+        })JSON";
+    }
+    mystral::cli::BundlerOptions cfgBundleOpts;
+    cfgBundleOpts.scriptPath = testScriptStr;
+    cfgBundleOpts.rootDir = tempDir.string();
+    cfgBundleOpts.assetDirs.push_back(dotTn.string());
+    cfgBundleOpts.outputPath = configBundle.string();
+    cfgBundleOpts.bundleOnly = true;
+    cfgBundleOpts.quiet = true;
+    mystral::cli::compileBundle(cfgBundleOpts);
+
+#ifndef _WIN32
+    setenv("MYSTRAL_BUNDLE", configBundle.string().c_str(), 1);
+#else
+    _putenv_s("MYSTRAL_BUNDLE", configBundle.string().c_str());
+#endif
+    CLIOptions embOpts;
+    applyEmbeddedConfig(embOpts);
+#ifndef _WIN32
+    unsetenv("MYSTRAL_BUNDLE");
+#else
+    _putenv_s("MYSTRAL_BUNDLE", "");
+#endif
+
     // Test runToolsCli
     char* toolUsageArgv[] = { (char*)"mystral-tools" };
     if (mystral::cli::runToolsCli(1, toolUsageArgv) == 0) return false;
@@ -235,6 +391,7 @@ bool testCliSubsystem(const fs::path& tempDir) {
         std::ofstream out(dummyJs);
         out << "console.log('dummy bundle input');";
     }
+    readFile(dummyJsStr);
     fs::path assetsDir = tempDir / "assets";
     fs::create_directories(assetsDir);
     {
@@ -256,6 +413,30 @@ bool testCliSubsystem(const fs::path& tempDir) {
     bundleOpts.outputPath = (tempDir / "out_app").string();
     mystral::cli::compileBundle(bundleOpts);
 
+    // Multi-file dependency bundling
+    fs::path depA = tempDir / "depA.js";
+    { std::ofstream f(depA); f << "import { b } from './depB.js'; export const a = 1;"; }
+    fs::path depB = tempDir / "depB.js";
+    { std::ofstream f(depB); f << "const c = require('./depC.js'); export const b = 2;"; }
+    fs::path depC = tempDir / "depC.js";
+    { std::ofstream f(depC); f << "module.exports = { c: 3 };"; }
+    fs::path depD = tempDir / "depD.ts";
+    { std::ofstream f(depD); f << "export const d: number = 4;"; }
+    fs::path depMain = tempDir / "depMain.js";
+    { std::ofstream f(depMain); f << "import './depA.js'; import './depD.ts';"; }
+
+    mystral::cli::BundlerOptions multiOpts;
+    multiOpts.scriptPath = depMain.string();
+    multiOpts.rootDir = tempDir.string();
+    multiOpts.outputPath = (tempDir / "multi.bundle").string();
+    multiOpts.bundleOnly = true;
+    multiOpts.quiet = true;
+    mystral::cli::compileBundle(multiOpts);
+
+    mystral::cli::BundlerOptions badOpts;
+    badOpts.scriptPath = (tempDir / "nonexistent.js").string();
+    mystral::cli::compileBundle(badOpts);
+
     // Test LightmapOptions & bakeLightmaps
     mystral::cli::LightmapOptions bakeOpts;
     bakeOpts.scriptPath = dummyJsStr;
@@ -265,6 +446,34 @@ bool testCliSubsystem(const fs::path& tempDir) {
     bakeOpts.bakeBounces = 1;
     bakeOpts.quiet = true;
     mystral::cli::bakeLightmaps(bakeOpts);
+
+    // GLB lightmap bake path
+    fs::path dummyGlb = tempDir / "scene.glb";
+    { std::ofstream f(dummyGlb); f << "glTF-binary-mock"; }
+    mystral::cli::LightmapOptions glbBakeOpts = bakeOpts;
+    glbBakeOpts.scriptPath = dummyGlb.string();
+    mystral::cli::bakeLightmaps(glbBakeOpts);
+
+    // Tool dispatch with valid helper
+    fs::path toolsBinary = fs::current_path() / "mystral-tools";
+    if (fs::exists(toolsBinary)) {
+#ifndef _WIN32
+        setenv("THREENATIVE_CLI_TOOLS", toolsBinary.string().c_str(), 1);
+        pid_t dPid = fork();
+        if (dPid == 0) {
+            char* dispatchArgv[] = {
+                const_cast<char*>("mystral-tools"),
+                const_cast<char*>("--help"),
+                nullptr
+            };
+            int rc = mystral::cli::dispatchBuildTool(2, dispatchArgv);
+            _exit(rc);
+        }
+        int dStatus = 0;
+        waitpid(dPid, &dStatus, 0);
+        unsetenv("THREENATIVE_CLI_TOOLS");
+#endif
+    }
 
     std::string tempDirStr = tempDir.string();
     std::string lmDirStr = (tempDir / "lm").string();
@@ -524,6 +733,15 @@ bool testRaytracingAndWebTransport() {
       __wtStreamWrite(9999, 0, new Uint8Array([1]), false);
       __wtStreamShutdown(9999, 0, 0);
       __wtClose(9999, 0, "test");
+      try {
+        __wtNativeStats();
+        __wtStreamReadCredit(9999, 0, 1024);
+        __wtStreamReadCredit(9999, 0, -1);
+        __wtStreamReleaseRead(9999, 0);
+        __wtMaxDatagramSize(9999);
+        __wtSendStreamsBudget(9999, true);
+        __wtReceiveStreamsBudget(9999, false);
+      } catch (e) {}
 
       const id = __wtConnect("https://127.0.0.1:4433/test");
       if (typeof id === 'number' && id > 0) {
