@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-358 — Performance regressions produce actionable CI failures on every platform
 
-**Status:** PROPOSED — discovery and harness probes executed 2026-09-05; implementation not started.
+**Status:** PARTIAL — Phase 1 and the bounded hosted-reporting scope of Phase 4 landed in PR #122.
+No physical performance lane is calibrated or promoted; Phases 2, 3, 5, 6 and CI-cost evidence
+remain open.
 **Complexity:** +3 for more than 10 implementation files, +2 concurrency/resource scheduling,
 +2 multi-package integration = **7 → HIGH mode**. Checkpoint after every phase.
 **Layer:** engine verification and CI infrastructure. Game fixtures supply representative work;
@@ -52,6 +54,26 @@ Local discovery: Chromium and display available; Android online, 80% battery, di
 thermal NONE, battery 32.8 °C. iOS unavailable (`xcrun` absent on Linux). No hardware FPS,
 startup, sustained-memory or noise calibration was measured in this discovery. Device availability
 is not physical performance proof, and the phone exceeded the historical 31.5 °C cool-run limit.
+
+### Current implementation checkpoint — 2026-09-07
+
+PR #122, starting at implementation commit `486120e24`, delivered the regression policy, manifest,
+collectors, summaries and workflows. This checkpoint records acceptance separately from source
+availability; later repair commits do not supply the physical execution that the open phases require.
+
+| Phase | Audited state | Current evidence boundary |
+| --- | --- | --- |
+| 1 — required baselines | **DELIVERED** | [`cli.ts:202`](../../scripts/engine-load-test/cli.ts#L202) enters required validation, [`report.ts:1078`](../../scripts/engine-load-test/report.ts#L1078) rejects an absent accepted baseline, and the [executed CLI control](../../verification/runtime-perf-state.md#L2693) returned `TN_BENCH_BASELINE_MISSING` with exit 2. |
+| 2 — production observations | **OPEN** | Bounded collector code and fixture controls exist, but no retained compliant real web/native run proves independent launches, at least 1,000 actual frames and 30 seconds, moving work and nonblank pixels. |
+| 3 — paired sensitivity | **OPEN** | [`run.ts:830`](../../scripts/performance-regression/run.ts#L830) invokes the implemented comparator, but same-hardware real-loop slowdown red/restored green evidence and ten A/A pairs across at least three sessions do not exist. |
+| 4 — bounded CI reporting | **DELIVERED for hosted reporting** | [PR run 34171268230](https://github.com/ThreeNativeHQ/threenative/actions/runs/34171268230/job/101892726795) passed `performance-contracts` at `aaad3690`. In [native run 34104583517](https://github.com/ThreeNativeHQ/threenative/actions/runs/34104583517), the [Windows](https://github.com/ThreeNativeHQ/threenative/actions/runs/34104583517/job/101686765632) and [macOS](https://github.com/ThreeNativeHQ/threenative/actions/runs/34104583517/job/101686765718) hosted jobs passed, while the [collector coverage summary](https://github.com/ThreeNativeHQ/threenative/actions/runs/34104583517/job/101697363239) passed after the Android job retained an honest non-PASS collector result. This is software/emulator/simulator provenance, not physical timing. |
+| 5 — hardware comparisons | **OPEN** | The workflow exists, but every manifest row remains `required: false`, every timing baseline is unavailable, and Linux/Windows/macOS GPU plus Android/iOS physical resources remain unprovisioned. |
+| 6 — promotion and cost | **OPEN** | The manifest encodes 20 accuracy and 20 CI-cost runs; neither sample set, branch-protection observation nor maintainer promotion is recorded. |
+
+The latest inspected scheduled hardware-workflow run,
+[34107613452](https://github.com/ThreeNativeHQ/threenative/actions/runs/34107613452), ran at
+`d3655097` and predates the later missing-baseline/source-pair repairs. Its failure is historical
+evidence, not a current-source verdict. A post-repair manual or scheduled execution is still open.
 
 ## Scope and platform coverage
 
@@ -180,11 +202,11 @@ actual non-test `file:line` in each phase. A test-only caller does not close a r
 
 | # | New or changed thing | Live entry/caller to edit | Replaces / old path disposition | Negative control |
 | --- | --- | --- | --- | --- |
-| 1 | Required baseline validation | `scripts/engine-load-test/cli.ts` → `report.ts:405` | Optional baseline remains for diagnostics; required mode rejects undefined | Remove selected lane baseline → exit 2 |
-| 2 | Lane policy and paired comparison | Existing benchmark CLI invokes proposed `scripts/performance-regression/compare.ts` | Historical Android cliff tables stay explicit legacy inputs, not universal defaults | +50 ms real-loop delay → exit 1; cross-device input → exit 2 |
-| 3 | Reusable workload collection | `profile-production.mjs:155` and benchmark CLI entry | Reuse collectors; production default durations unchanged | Missing marker/short window/stopped workload rejected |
-| 4 | Hosted platform probes and hardware workflow | `.github/workflows/ci.yml` and `native-platforms.yml` invoke collectors; new scheduled workflow invokes paired runs | Existing benchmark viewport/LOC coverage retained | Remove collector invocation/artifact → CI summary non-success |
-| 5 | Evidence summary and baseline approval | Existing CI `run-summary` job and new workflow summary invoke comparison report | No independent status database; reuse existing artifact/status conventions | Stale SHA or empty platform result set cannot pass |
+| 1 | Required baseline validation | [`scripts/engine-load-test/cli.ts:202`](../../scripts/engine-load-test/cli.ts#L202) calls required `checkPerformance`; [`report.ts:775`](../../scripts/engine-load-test/report.ts#L775) validates the manifest and [`report.ts:1078`](../../scripts/engine-load-test/report.ts#L1078) blocks an absent baseline | Optional baseline remains for diagnostics; required mode rejects undefined | Remove selected lane baseline → exit 2 |
+| 2 | Lane policy and paired comparison | [`scripts/engine-load-test/cli.ts:244`](../../scripts/engine-load-test/cli.ts#L244) invokes the comparison CLI; [`scripts/performance-regression/run.ts:830`](../../scripts/performance-regression/run.ts#L830) calls [`compare.ts:841`](../../scripts/performance-regression/compare.ts#L841) on the collected pairs | Historical Android cliff tables stay explicit legacy inputs, not universal defaults | +50 ms real-loop delay → exit 1; cross-device input → exit 2 |
+| 3 | Reusable workload collection | [`scripts/engine-load-test/cli.ts:256`](../../scripts/engine-load-test/cli.ts#L256) forwards bounded collection to the production profiler; [`scripts/performance-regression/run.ts:425`](../../scripts/performance-regression/run.ts#L425) executes that collector for each arm | Reuse collectors; production default durations unchanged | Missing marker/short window/stopped workload rejected |
+| 4 | Hosted platform probes and hardware workflow | [`.github/workflows/ci.yml:927`](../../.github/workflows/ci.yml#L927), [`.github/workflows/native-platforms.yml:439`](../../.github/workflows/native-platforms.yml#L439), [`:917`](../../.github/workflows/native-platforms.yml#L917) and [`:1223`](../../.github/workflows/native-platforms.yml#L1223) invoke bounded collectors; [`.github/workflows/performance-regression.yml:246`](../../.github/workflows/performance-regression.yml#L246) invokes paired runs | Existing benchmark viewport/LOC coverage retained | Remove collector invocation/artifact → CI summary non-success |
+| 5 | Evidence summary and baseline approval | [`.github/workflows/ci.yml:1164`](../../.github/workflows/ci.yml#L1164), [`.github/workflows/native-platforms.yml:156`](../../.github/workflows/native-platforms.yml#L156) and [`.github/workflows/performance-regression.yml:375`](../../.github/workflows/performance-regression.yml#L375) invoke the shared summary; [`lanes.json:4`](../../scripts/performance-regression/lanes.json#L4) keeps promotion evidence reviewed in git | No independent status database; reuse existing artifact/status conventions | Stale SHA or empty platform result set cannot pass |
 
 No product UI, public game API, new package, database, renderer optimization, or external service
 integration is required. Observable output is check status, GitHub job summary and downloadable
@@ -204,9 +226,9 @@ All named NEW paths below are proposals, not commands or files already shipped.
 **Files (4):** EDIT `scripts/engine-load-test/cli.ts`, `scripts/engine-load-test/report.ts`,
 `scripts/__tests__/engine-load-test.spec.ts`; NEW `scripts/performance-regression/lanes.json`.
 
-- [ ] Add explicit required-baseline CLI mode and lane identity validation; preserve opt-in diagnostics.
-- [ ] Declare every platform row, required producer/metric and evidence class; unavailable baseline is explicit.
-- [ ] Wire CLI to validation, fill ledger #1, and keep one comparison owner.
+- [x] Add explicit required-baseline CLI mode and lane identity validation; preserve opt-in diagnostics.
+- [x] Declare every platform row, required producer/metric and evidence class; unavailable baseline is explicit.
+- [x] Wire CLI to validation, fill ledger #1, and keep one comparison owner.
 
 **Tests:** existing engine-load spec: `should reject a required missing baseline`, `should reject
 cross-device or empty-rung evidence`, `should preserve optional diagnostic mode`. Run real CLI
@@ -261,11 +283,14 @@ controls separately when those metrics are promoted. Record control detection an
 **Files (4):** EDIT `.github/workflows/ci.yml`, `.github/workflows/native-platforms.yml`,
 `scripts/__tests__/ci-structure.spec.ts`; NEW `scripts/performance-regression/ci-summary.ts`.
 
-- [ ] Reuse compiled artifacts in current Linux, Windows/macOS, Android emulator and iOS simulator
+**Delivered boundary:** the checked items cover bounded hosted/software, emulator and simulator
+reporting. They do not claim calibrated or promoted physical timing for any platform.
+
+- [x] Reuse compiled artifacts in current Linux, Windows/macOS, Android emulator and iOS simulator
       jobs; execute only bounded telemetry/invariant smoke, not the physical 30-second timed suite.
-- [ ] Keep old benchmark checks and preserve native PR-label conditions. Coverage summary names
+- [x] Keep old benchmark checks and preserve native PR-label conditions. Coverage summary names
       intentionally unscheduled legs; required contracts do not claim those legs executed.
-- [ ] Always upload failure artifacts and aggregate FAIL/BLOCKED/skips explicitly. Wire ledger #4/#5.
+- [x] Always upload failure artifacts and aggregate FAIL/BLOCKED/skips explicitly. Wire ledger #4/#5.
 
 **Tests:** CI-structure checks actual workflow invocations/dependencies, all matrix entries,
 no duplicate native build, timeout/concurrency budgets, `always()` evidence and no permissive
@@ -331,7 +356,7 @@ runtime performance record; unexecuted commands are UNVERIFIED.
       branch protection is observed, and every ledger row has actual non-test file:line wiring.
 - [ ] False-alarm, sensitivity and CI-cost targets pass on measured samples; baseline updates are
       reviewed and never silently ratchet with regressions.
-- [ ] PRD-222 floors and PRD-058 release/soak obligations retain their owners; no missing iOS
+- [x] PRD-222 floors and PRD-058 release/soak obligations retain their owners; no missing iOS
       hardware, unresolved workload or advisory-only platform is counted as complete.
 
 Rollback reverts CI wiring and comparison policy together, keeps existing viewport/unit/native
