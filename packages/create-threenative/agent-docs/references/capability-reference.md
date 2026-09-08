@@ -145,6 +145,21 @@ export function modelPass(options: IModelPassOptions = { … }
 const pass = modelPass({ simplify: { ratio: 0.5 } });
 ```
 
+### `parseAudioConfig`
+
+`function` — Validates a game's declared `assets.audio` block, the one place its keys and ranges are checked.
+
+```ts
+export function parseAudioConfig(raw: unknown): IAudioPassOptions | undefined { … }
+```
+
+- **Use when:** validate a threenative.config.ts audio block before compiling assets · ship audio exactly as committed without conditioning it
+- **Constraints:** returns undefined for `"none"`, which drops the audio pass; an absent block returns the defaults · throws TN_ASSETS_CONFIG_INVALID or TN_ASSETS_CONFIG_UNKNOWN_KEY rather than dropping a key it does not know
+
+```ts
+const options = parseAudioConfig({ overrides: [{ glob: "audio/*.ogg", conditioning: "none" }] });
+```
+
 ### `parsePng`
 
 `function` — Reads dimensions and alpha metadata from a PNG signature and IHDR header.
@@ -2907,6 +2922,21 @@ export function parseAndroidConsole(output: string): Array< { … }
 const adb = discoverAdb(process.env);
 ```
 
+### `parseAndroidTouchViewport`
+
+`function` — Drive and inspect Android playtest transport.
+
+```ts
+export function parseAndroidTouchViewport(output: string): IAndroidTouchViewport { … }
+```
+
+- **Use when:** run a scenario on an Android emulator or device · parse Android console diagnostics
+- **Constraints:** Android evidence must name its target and transport
+
+```ts
+const adb = discoverAdb(process.env);
+```
+
 ### `parseLaunchedPid`
 
 `function` — Drive and inspect iOS simulator playtest transport.
@@ -3243,6 +3273,21 @@ const report = await runStandalonePlaytest(options);
 
 ```ts
 export function tapCommand(x: number, y: number): string[] { … }
+```
+
+- **Use when:** run a scenario on an Android emulator or device · parse Android console diagnostics
+- **Constraints:** Android evidence must name its target and transport
+
+```ts
+const adb = discoverAdb(process.env);
+```
+
+### `touchPositionForViewport`
+
+`function` — Drive and inspect Android playtest transport.
+
+```ts
+export function touchPositionForViewport( x: number, y: number, viewport: IAndroidTouchViewport, rotationOverride?: number, ): [number, number] { … }
 ```
 
 - **Use when:** run a scenario on an Android emulator or device · parse Android console diagnostics

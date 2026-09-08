@@ -1,0 +1,43 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution
+
+vite v8.2.0 building client environment for production...
+[2Ktransforming...✓ 8 modules transformed.
+rendering chunks...
+computing gzip size...
+.threenative/build/ui/.threenative-ui-47b2f743-eaec-4b23-8d61-c1bd5d2267bd.html  0.39 kB │ gzip: 0.27 kB
+.threenative/build/ui/assets/index-D7_QLUUo.js                                   0.25 kB │ gzip: 0.21 kB
+
+✓ built in 33ms
+ ❯ packages/create-threenative/__tests__/build.spec.ts (16 tests | 1 failed | 15 skipped) 211ms
+     ↓ does not allow the mutation "audio worker pool remains referenced after build completion"
+     ↓ resolves every declared brand input through the live packaging-config caller
+     ↓ keeps build as the only command and target as a flag
+     ↓ delegates byte-identically to the same Vite binary for every template
+     ↓ emits index.html for the native overlay loader
+     ↓ preserves a project-owned file while building the native UI page
+     × bundles one copy of a peer the entry and a linked package both import 210ms
+     ↓ accepts web UI bundles for every native host that stages them
+     ↓ accepts the decoder-free Android manifest produced by the asset compiler
+     ↓ ships the CLI and native runtime pins in every template
+     ↓ parses every orientation and defaults missing orientation to landscape
+     ↓ fails the native build with a named code for an unrecognised orientation
+     ↓ guards web-only UI on every native target and WASM on mobile only
+     ↓ still refuses react-dom in the portable entry after the UI layer landed
+     ↓ fails closed when the declared native entry is missing
+     ↓ routes iOS through the verified simulator packager instead of a source build
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/create-threenative/__tests__/build.spec.ts > threenative build > bundles one copy of a peer the entry and a linked package both import
+Error: TN_UI_DUPLICATE_PEER: react root-react/linked-react
+ ❯ ../../../../../../../tmp/threenative-ui-dedupe-1YbtfV/game/.threenative/build/ui/assets/index-D7_QLUUo.js:1:170
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 15 skipped (16)
+   Start at  10:59:59
+   Duration  848ms (transform 348ms, setup 0ms, import 538ms, tests 211ms, environment 0ms)
+

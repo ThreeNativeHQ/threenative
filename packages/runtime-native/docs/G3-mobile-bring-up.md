@@ -315,3 +315,13 @@ Xcodebuild, or Rust in the consumer.
 Both native workflows contain a packed-scaffold proof with those toolchain commands masked;
 the release lane additionally launches core and native-physics pass/failure scenarios from
 the repackaged `.app`. Those lanes remain **UNEXECUTED** until the workflow reaches GitHub.
+
+## 2026-09-07 — Bayview native bundle identity
+
+The native bundler now resolves one Three.js instance from the game when linked engine packages
+carry another physical copy. The prior bundle split the renderer and material TSL stacks and
+aborted on Android. The corrected bundle started on a physical Pixel 8, passed runtime diagnostics
+and moved the player 2.146719 m. The world and HUD are visible in the
+[Bayview repair evidence](../../../docs/verification/findings-2026-09-07-bayview-fix/README.md).
+The comparison reuses checksum-locked native binaries; it proves the JavaScript bundle change,
+not a new C++ build. First frame was 16.020 seconds, so the 8-second startup target remains unmet.
