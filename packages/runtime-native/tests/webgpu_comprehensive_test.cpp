@@ -5,8 +5,10 @@
 #include "mystral/webgpu/context.h"
 #include "mystral/runtime.h"
 
+#include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <thread>
 
 namespace {
 
@@ -364,7 +366,9 @@ constexpr const char* kScript = R"JS((async () => {
 
   // Query Set
   const occlusionQuerySet = device.createQuerySet({ type: "occlusion", count: 4 });
-  const tsQuerySet = device.createQuerySet({ type: "timestamp", count: 4 });
+  const tsQuerySet = device.features.has("timestamp-query")
+    ? device.createQuerySet({ type: "timestamp", count: 4 })
+    : null;
   globalThis.__tsQuerySet = tsQuerySet;
 
   // Command Encoder
@@ -506,6 +510,7 @@ constexpr const char* kScript = R"JS((async () => {
 
   globalThis.__tnWebgpuDone = true;
  } catch (err) {
+   globalThis.__tnWebgpuError = String(err?.stack || err);
    console.error("WEBGPU_TEST_ERROR:", err, err?.stack);
  }
 })();
@@ -604,19 +609,47 @@ int main() {
         return 1;
     }
 
-    for (int frame = 0; frame < 100; ++frame) {
-        if (!runtime->pollEvents()) break;
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime->getWebGPUBindingsState());
+    if (!state || !state->engine) {
+        std::cerr << "headless runtime did not expose WebGPU binding state\n";
+        return 1;
     }
 
-    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime->getWebGPUBindingsState());
-    if (state && state->engine) {
+    auto* engine = state->engine;
+    // GPU callbacks advance on wall clock. A fixed number of tight polls can finish before Metal
+    // or D3D12 settles the submitted-work and map promises this script awaits.
+    const auto scriptDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < scriptDeadline) {
+        if (!runtime->pollEvents()) break;
+        engine->processMicrotasks();
+        mystral::js::JSValueGuard done(*engine, engine->getGlobalProperty("__tnWebgpuDone"));
+        if (engine->toBoolean(done.get())) break;
+        mystral::js::JSValueGuard error(*engine, engine->getGlobalProperty("__tnWebgpuError"));
+        if (!engine->isUndefined(error.get())) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (!runtime->evalScript(
+            "if (globalThis.__tnWebgpuError) throw new Error(globalThis.__tnWebgpuError);"
+            "if (globalThis.__tnWebgpuDone !== true) throw new Error('webgpu script timed out');",
+            "webgpu_comprehensive_assert.js")) {
+        std::cerr << "webgpu comprehensive test script did not complete\n";
+        return 1;
+    }
+
+    {
         auto* engine = state->engine;
         auto deviceHandle = engine->getGlobalProperty("__device");
-        if (deviceHandle.ptr) {
-            auto nativeEncoder = mystral::webgpu::handleGpuDeviceCreateCommandEncoder(state, deviceHandle, {});
-            engine->setGlobalProperty("__nativeEncoder", nativeEncoder);
-            if (!runtime->evalScript(kDirectScript, "direct_encoder.js")) return 1;
+        if (!deviceHandle.ptr || engine->isUndefined(deviceHandle)) {
+            std::cerr << "webgpu comprehensive script did not expose its device\n";
+            return 1;
         }
+        auto nativeEncoder = mystral::webgpu::handleGpuDeviceCreateCommandEncoder(state, deviceHandle, {});
+        if (!nativeEncoder.ptr || engine->isUndefined(nativeEncoder) ||
+            !engine->setGlobalProperty("__nativeEncoder", nativeEncoder)) {
+            std::cerr << "could not expose the native command encoder\n";
+            return 1;
+        }
+        if (!runtime->evalScript(kDirectScript, "direct_encoder.js")) return 1;
 
         // Exercise screenshot & getters
         mystral::webgpu::getCurrentRenderedTexture(state);

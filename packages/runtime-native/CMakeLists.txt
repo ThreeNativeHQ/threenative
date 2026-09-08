@@ -2267,6 +2267,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_compile_definitions(threenative-cli-network-fs-test PRIVATE
         MYSTRAL_TOOLS_NO_MAIN=1)
     target_link_libraries(threenative-cli-network-fs-test PRIVATE mystral-runtime)
+    if(TARGET webp::mux)
+        target_include_directories(threenative-cli-network-fs-test PRIVATE ${WEBP_INCLUDE_DIR})
+    endif()
     if(SDL3_STATIC_TARGET)
         target_link_libraries(threenative-cli-network-fs-test PRIVATE ${SDL3_STATIC_TARGET})
     elseif(TARGET SDL3::SDL3-static)

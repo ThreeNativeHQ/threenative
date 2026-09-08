@@ -21,12 +21,12 @@ targets could not be built and are named below.
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 8227 | 5152 | 62.62% |
+| `src/webgpu/` | 8227 | 5161 | 62.73% |
 | `src/webtransport/` | 1391 | 991 | 71.24% |
-| `src/workers/` | 615 | 524 | 85.20% |
-| **TOTAL** | **21768** | **14481** | **66.52%** |
+| `src/workers/` | 615 | 527 | 85.69% |
+| **TOTAL** | **21768** | **14493** | **66.58%** |
 
-Source digest: `sha256:f86526d78703ddbe83794809deab5adb632435bce36cd73fa7efa1084523fd72`
+Source digest: `sha256:6b1828eb3ee06009400f5a87f81b4f83d96b68d4d98013be14c9b88de79325c8`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -195,7 +195,7 @@ PASS: unavailable native ray tracing remains unsupported
 
 The five added contract targets passed locally, followed by a complete `pnpm native:coverage`
 measurement with all 38 runnable contract targets passing. The generated result above is
-**14,481 / 21,768 lines (66.52%)**, compared with the base commit's committed **9,579 / 21,762
+**14,493 / 21,768 lines (66.58%)**, compared with the base commit's committed **9,579 / 21,762
 lines (44.02%)**. No coverage floor was lowered.
 
 This coverage measurement is the Linux clang/V8/Dawn configuration. Physics and video were
@@ -255,3 +255,39 @@ Retained loading receipts: [proof](native-coverage-2026-09-07/loading/loading-pr
 [settled capture](native-coverage-2026-09-07/loading/startup-settled.png). The startup and
 settled images were visually inspected. Original output paths remain in the byte-identical
 proof record.
+
+
+## Desktop test portability red-green — 2026-09-08
+
+Hosted run `34170333684` exposed two assumptions in the new native tests. The CLI test
+compiles the real CLI entry source, so it needs the same private WebP headers as the executable.
+The WebGPU test must use only features granted to its device and wait for asynchronous GPU
+completion before asserting the final sentinel. These are engine verification defects; the
+shipping runtime and game appearance are unchanged by this follow-up.
+
+The observed macOS and Windows failures were:
+
+```text
+fatal error: 'webp/encode.h' file not found
+fatal error C1083: Cannot open include file: 'webp/encode.h': No such file or directory
+[WebGPU] adapter feature probe timestamp-query: no
+[error] WEBGPU_TEST_ERROR: createQuerySet: this device was not granted 'timestamp-query'
+[V8] check.js:1: Error: not done
+webgpu comprehensive test did not complete successfully
+```
+
+The CLI test target now inherits the WebP include directory, timestamp queries require the
+device's feature grant, and the test pumps until completion or an explicit five-second deadline.
+Missing device/encoder state and script errors still fail. The full Linux coverage command
+then rebuilt and executed all 38 runnable native contract targets successfully:
+
+```text
+CMAKE_BUILD_PARALLEL_LEVEL=2 pnpm --filter @threenative/runtime-native native:coverage
+Configuration: tn-linux-coverage with clang source-based coverage
+Executed 38 native contract targets; 2 configured targets could not be built
+TOTAL: 21768 instrumented lines; 14493 covered; 66.58%
+```
+
+The two blocked rows are still the explicitly disabled physics and video targets. Native
+coverage floors are unchanged. This is Linux green evidence for the repair; macOS and Windows
+verification must run again on the published follow-up before either platform is claimed green.
