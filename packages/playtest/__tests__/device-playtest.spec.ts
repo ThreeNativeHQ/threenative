@@ -151,6 +151,33 @@ test("the existing device-smoke scenario reaches its visibility assertion on And
   expect(exitCodeForReport(result)).toBe(0);
 });
 
+test("the Android runner resolves an omitted network policy before bridge capability validation", async () => {
+  const result = await runDevice(
+    {
+      diagnostics: {
+        noRuntimeDiagnostics: false,
+        runtimeDiagnosticsOptOutReason: "This input proof judges its semantic assertions while retaining console diagnostics.",
+      },
+    },
+    new FakeAndroidDriver(movingBridge().bridge),
+    1_000,
+    [{ waitTicks: 1 }],
+  );
+
+  expect(result.diagnostics).not.toContainEqual(expect.objectContaining({
+    capability: "browser.network",
+    code: "TN_PLAYTEST_CAPABILITY_MISSING",
+  }));
+  expect(result.pass).toBe(true);
+  expect(result.diagnosticsPolicy).toMatchObject({
+    noConsoleErrors: true,
+    noNetworkErrors: false,
+    noRuntimeDiagnostics: false,
+  });
+  expect(result.diagnosticsPolicy?.networkErrorsOptOutReason).toMatch(/no network observer/u);
+  expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "diagnostics", pass: true }));
+});
+
 test("the native lane composes setup overrides and reports the applied receipt", async () => {
   const moving = movingBridge({ height: 1.6, setup: true });
   const setup = {

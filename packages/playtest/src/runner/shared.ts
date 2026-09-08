@@ -123,7 +123,7 @@ export function failureReport(
   target: string = scenario.target,
 ): IStandalonePlaytestReport {
   const native = target === "android" || target === "desktop" || target === "ios";
-  const diagnosticsPolicy = resolveDiagnosticsPolicy(scenario.assert?.diagnostics);
+  const diagnosticsPolicy = resolveDiagnosticsPolicy(scenario.assert?.diagnostics, target);
   const item: IPlaytestDiagnostic = { ...diagnostic, suggestion: diagnostic.fix.instruction };
   return {
     artifactDirectory: config.artifactDirectory,
