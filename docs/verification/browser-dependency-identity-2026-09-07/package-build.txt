@@ -1,0 +1,24 @@
+
+> create-threenative@0.2.3 build /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution/packages/create-threenative
+> tsup --config tsup.config.ts && publint
+
+CLI Building entry: src/index.ts, src/threenative.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Using tsup config: /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution/packages/create-threenative/tsup.config.ts
+CLI Target: node20
+CLI Cleaning output folder
+ESM Build start
+"execFile" is imported from external module "child_process" but never used in "dist/threenative.js".
+"default" is imported from external module "os" but never used in "dist/threenative.js".
+ESM dist/index.js       80.29 KB
+ESM dist/threenative.js 104.16 KB
+ESM ⚡️ Build success in 946ms
+DTS Build start
+DTS ⚡️ Build success in 8036ms
+DTS dist/index.d.ts       10.99 KB
+DTS dist/threenative.d.ts 719.00 B
+Running publint v0.3.22 for create-threenative...
+Packing files with `pnpm pack`...
+Linting...
+All good!

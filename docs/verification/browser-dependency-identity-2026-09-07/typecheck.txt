@@ -1,0 +1,51 @@
+
+> threenative@0.1.0 typecheck /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution
+> tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck
+
+Scope: 28 of 29 workspace projects
+packages/blender-mcp typecheck$ tsc --noEmit
+packages/engine-mcp typecheck$ tsc --noEmit
+packages/playtest typecheck$ tsc --noEmit
+packages/raw-unreal typecheck$ tsc --noEmit
+packages/blender-mcp typecheck: Done
+packages/ueformat typecheck$ tsc --noEmit
+packages/engine-mcp typecheck: Done
+site typecheck$ tsc --noEmit -p tsconfig.json
+packages/raw-unreal typecheck: Done
+packages/ueformat typecheck: Done
+site typecheck: Done
+packages/playtest typecheck: Done
+packages/assets typecheck$ tsc --noEmit
+packages/core typecheck$ tsc --noEmit
+packages/assets typecheck: Done
+packages/core typecheck: Done
+examples/prd140-picking typecheck$ tsc --noEmit -p tsconfig.json
+examples/prd242-compute-lifetime typecheck$ tsc --noEmit -p tsconfig.json
+examples/prd249-fluid-field typecheck$ tsc --noEmit -p tsconfig.json
+examples/prd268-probe-volume typecheck$ tsc --noEmit -p tsconfig.json
+examples/prd268-probe-volume typecheck: Done
+examples/prd307-environment-cost typecheck$ tsc --noEmit -p tsconfig.json
+examples/prd249-fluid-field typecheck: Done
+examples/prd314-clip-audit typecheck$ tsc --noEmit -p tsconfig.json
+examples/prd140-picking typecheck: Done
+examples/quarry typecheck$ tsc --noEmit -p tsconfig.json
+examples/prd242-compute-lifetime typecheck: Done
+examples/vfx-gallery typecheck$ tsc --noEmit -p tsconfig.json
+examples/prd307-environment-cost typecheck: Done
+packages/physics typecheck$ tsc --noEmit
+examples/prd314-clip-audit typecheck: Done
+packages/ui typecheck$ tsc --noEmit
+examples/quarry typecheck: Done
+examples/vfx-gallery typecheck: Done
+packages/ui typecheck: Done
+packages/physics typecheck: Done
+examples/fps-friction typecheck$ tsc --noEmit -p tsconfig.json
+examples/native-smoke typecheck$ tsc --noEmit -p tsconfig.json
+examples/prd243-cloth typecheck$ tsc --noEmit -p tsconfig.json
+packages/create-threenative typecheck$ tsc --noEmit
+examples/fps-friction typecheck: Done
+examples/prd243-cloth typecheck: Done
+examples/native-smoke typecheck: Done
+packages/create-threenative typecheck: Done
+examples/abyss-framework typecheck$ tsc --noEmit -p tsconfig.json
+examples/abyss-framework typecheck: Done
