@@ -781,6 +781,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const camera = createCamera(this.#config.camera);
     const viewport = new Viewport({ camera, renderer: this.#renderer, source: platform?.viewport });
     const canvasLayer = new CanvasLayer(viewport);
+    // A web UI is the loading surface on native and on the web. Its bridge must be both attached
+    // and announced ready: an attached but unrendered web view is not a cover the player can see.
+    // Keep this as a local predicate so every startup gate makes the same decision as the render
+    // path, while games with no UI continue to use the ordinary first-world path.
+    const startupCoverActive = (): boolean =>
+      canvasLayer.opaque || (this.#uiReady && this.#uiBridge?.hasPeer() === true);
     this.#viewport = viewport;
     // The renderer goes to the asset loader so compiled KTX2 textures detect transcoding
     // support against the real backend; a target that supports none fails right here.
@@ -1131,7 +1137,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // is on it has already happened behind the loading screen, so running it again here
           // would pay the same cost twice.
           startupReadiness.start(
-            canvasLayer.opaque && !this.#warmUpConfiguredExplicitly() ? startupCompile : undefined,
+            startupCoverActive() && !this.#warmUpConfiguredExplicitly()
+              ? startupCompile
+              : undefined,
           );
         }
         // Render-cadence compute is first-use work too: keep it behind an opaque startup layer
@@ -1146,18 +1154,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (
           this.#renderer !== undefined &&
           this.#sceneEntered &&
-          (!canvasLayer.opaque || startupReadiness.ready)
+          (!startupCoverActive() || startupReadiness.ready)
         ) {
           const computeStart = frameBudget === undefined ? 0 : budgetNow();
           this.#computeDriven.processRender(this.#renderer);
           frameBudget?.addRender(budgetNow() - computeStart);
         }
         const waitingForFirstUse =
-          firstWorldPass && canvasLayer.opaque && !startupReadiness.compileSettled;
+          firstWorldPass && startupCoverActive() && !startupReadiness.compileSettled;
         if (
           !mustPresentLoader &&
           !waitingForFirstUse &&
-          (!canvasLayer.opaque || !startupReadiness.ready)
+          (!startupCoverActive() || !startupReadiness.ready)
         ) {
           // The projection's own scene when it is faithful, the game's when it is not. Nothing
           // here branches on which: `root` is the single render input either way, so there is no
@@ -1243,7 +1251,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();
         const computeBlockedByStartup =
-          !worldRendered && canvasLayer.opaque && !this.#warmUpConfiguredExplicitly();
+          !worldRendered && startupCoverActive() && !this.#warmUpConfiguredExplicitly();
         if (this.#renderer !== undefined && this.#sceneEntered && !computeBlockedByStartup)
           this.#computeDriven.process(this.#renderer);
       },

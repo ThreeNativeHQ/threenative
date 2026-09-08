@@ -12,6 +12,7 @@ import { type IGamePlatformSource, defineGame } from "../src/game.js";
 import { InputMap } from "../src/input.js";
 import type { IRenderPerformanceSample } from "../src/loop.js";
 import { type ICtx, Scene } from "../src/scene.js";
+import { UI_INTENT_MESSAGE, UI_READY_INTENT, connectUiBridge } from "../src/ui-bridge.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -470,6 +471,69 @@ describe("IGame", () => {
       expect(renderedRoots.at(-2)).toBe(compileRoots[0]);
     } finally {
       game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  it("warms behind a ready web UI before the first world render", async () => {
+    const canvas = testCanvas();
+    const compileRoots: unknown[] = [];
+    let worldRenders = 0;
+    let frame: ((time: number) => void) | undefined;
+    class WebUiScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.add(new Mesh());
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          compileAsync: vi.fn((scene: unknown) => {
+            compileRoots.push(scene);
+            return Promise.resolve();
+          }),
+          domElement: canvas,
+          render: () => {
+            worldRenders += 1;
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: WebUiScene },
+      start: "test",
+    });
+    const gameUi = game.ui;
+    gameUi.onIntent(() => undefined);
+    const ui = connectUiBridge({ end: "ui" });
+    ui.post({ type: UI_INTENT_MESSAGE, intent: UI_READY_INTENT });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      frame(16);
+      expect(worldRenders).toBe(0);
+      for (let flush = 0; flush < 6; flush += 1) await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(compileRoots).toHaveLength(1);
+
+      frame(32);
+      expect(worldRenders).toBe(1);
+    } finally {
+      game.stop();
+      ui.close();
       if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
       else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
     }
