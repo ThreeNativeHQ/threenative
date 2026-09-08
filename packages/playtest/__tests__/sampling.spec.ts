@@ -221,6 +221,15 @@ async function captureVisibilityScreenshots(
   return { page: observedPage, screenshotOptions, screenshots };
 }
 
+function capturedScreenshot(
+  observed: Awaited<ReturnType<typeof captureVisibilityScreenshots>>,
+  index = 0,
+): Buffer {
+  const screenshot = observed.screenshots[index];
+  if (screenshot === undefined) throw new Error(`missing captured screenshot ${index}`);
+  return screenshot;
+}
+
 async function temporaryVisibilityArtifacts(page: Page): Promise<{ markers: number; styles: number }> {
   return page.evaluate(() => {
     const elements = [...document.querySelectorAll("*")];
@@ -238,6 +247,16 @@ async function expectPendingVisibilityMutationToReject(page: Page, mutate: () =>
   });
   expect(observed.screenshots).toHaveLength(1);
   await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+}
+
+function writeIsolationOwnedSameValue({ property, targetName }: { property: string; targetName: string }): void {
+  const target = targetName === "control" ? document.getElementById("control") : document.documentElement;
+  if (target === null) throw new Error("visibility fixture has no direct-setter target");
+  const style = (target as HTMLElement).style as unknown as Record<string, string>;
+  const propertyName = property === "background-color"
+    ? "backgroundColor"
+    : property === "background-image" ? "backgroundImage" : "visibility";
+  style[propertyName] = style[propertyName] ?? "";
 }
 
 describe("playtest sampling", () => {
@@ -292,6 +311,47 @@ describe("playtest sampling", () => {
     } finally {
       restoreWindow();
       restore();
+    }
+  });
+
+  test("fails closed for invalid selectors, zero-sized boxes, and fully offscreen boxes", async () => {
+    const page = {
+      evaluate: async (callback: (argument: unknown) => unknown, argument: unknown) => callback(argument),
+    } as unknown as Page;
+    const restoreInvalidSelectorDocument = installGlobal("document", {
+      querySelector: () => {
+        throw new Error("invalid selector");
+      },
+    });
+    try {
+      await expect(sampleElementVisibility(page, { selector: "[" })).resolves.toEqual({ rendered: false });
+    } finally {
+      restoreInvalidSelectorDocument();
+    }
+
+    const zeroSizedNode = { getBoundingClientRect: () => ({ bottom: 10, height: 0, left: 0, right: 10, top: 0, width: 10 }) };
+    const restoreZeroDocument = installGlobal("document", { getElementById: () => zeroSizedNode });
+    try {
+      await expect(sampleElementVisibility(page, { id: "zero" })).resolves.toEqual({ rendered: false });
+    } finally {
+      restoreZeroDocument();
+    }
+
+    const offscreenNode = { getBoundingClientRect: () => ({ bottom: 20, height: 20, left: 200, right: 220, top: 0, width: 20 }), parentElement: null };
+    const restoreOffscreenDocument = installGlobal("document", { getElementById: () => offscreenNode });
+    const restoreOffscreenWindow = installGlobal("window", {
+      getComputedStyle: () => ({ display: "block", opacity: "1", visibility: "visible" }),
+      innerHeight: 100,
+      innerWidth: 100,
+    });
+    try {
+      await expect(sampleElementVisibility(page, { id: "offscreen" })).resolves.toEqual({
+        bounds: { height: 20, width: 20, x: 200, y: 0 },
+        rendered: false,
+      });
+    } finally {
+      restoreOffscreenWindow();
+      restoreOffscreenDocument();
     }
   });
 
@@ -580,6 +640,8 @@ describe("playtest sampling", () => {
     expect(positiveFiniteDelta(undefined, 1)).toBeUndefined();
     expect(positiveFiniteDelta(Number.NaN, 1)).toBeUndefined();
     expect(positiveFiniteDelta(1, 1)).toBeUndefined();
+    expect(positiveFiniteDelta(2, 1)).toBeUndefined();
+    expect(positiveFiniteDelta(Number.MAX_VALUE, -Number.MAX_VALUE)).toBeUndefined();
     expect(positiveFiniteDelta(1, 2)).toBe(1);
     expect(entityRotation(after, "ghost")).toBeUndefined();
     expect(entityRotation({ ...after, entities: [{ id: "player", transform: { rotation: [0, 1, 0, 0] } }] }, "player")).toEqual([0, 1, 0, 0]);
@@ -683,12 +745,19 @@ describe("playtest sampling", () => {
 
   test("uses legacy WebGPU adapter info and WebGL debug renderer metadata", async () => {
     const restoreDocument = installGlobal("document", {
-      querySelector: () => ({
-        getAttribute: () => "",
-        getContext: (kind: string) => kind === "webgpu" ? null : {
-          RENDERER: 1,
-          VENDOR: 2,
-          getExtension: () => ({ UNMASKED_RENDERER_WEBGL: 3, UNMASKED_VENDOR_WEBGL: 4 }),
+        querySelector: () => ({
+          getAttribute: () => "",
+          getContext: (kind: string) => kind === "webgpu" ? null : {
+          // biome-ignore lint/style/useNamingConvention: mirrors the browser WebGL constant
+          "RENDERER": 1,
+          // biome-ignore lint/style/useNamingConvention: mirrors the browser WebGL constant
+          "VENDOR": 2,
+          getExtension: () => ({
+            // biome-ignore lint/style/useNamingConvention: mirrors the browser WebGL constant
+            "UNMASKED_RENDERER_WEBGL": 3,
+            // biome-ignore lint/style/useNamingConvention: mirrors the browser WebGL constant
+            "UNMASKED_VENDOR_WEBGL": 4,
+          }),
           getParameter: (key: number) => key === 3 ? "Renderer" : key === 4 ? "Vendor" : "fallback",
         },
       }),
@@ -708,6 +777,51 @@ describe("playtest sampling", () => {
     } finally {
       restoreNavigator();
       restoreDocument();
+    }
+  });
+
+  test("uses an unmarked WebGPU context and fails when adapter discovery rejects", async () => {
+    const unmarkedCanvas = {
+      getAttribute: () => null,
+      getContext: (kind: string) => kind === "webgpu" ? {} : null,
+    };
+    const restoreDocument = installGlobal("document", { querySelector: () => unmarkedCanvas });
+    const restoreNavigator = installGlobal("navigator", {
+      gpu: {
+        requestAdapter: async () => ({ info: { vendor: "unmarked-vendor" }, features: [] }),
+      },
+    });
+    try {
+      const page = { evaluate: async (callback: () => unknown) => callback() } as unknown as Page;
+      await expect(readCaptureProvenance(page, {} as never, { target: "web", viewport: { height: 100, width: 200 } } as never)).resolves.toMatchObject({
+        adapter: { vendor: "unmarked-vendor" },
+        rendererKind: "webgpu",
+      });
+    } finally {
+      restoreNavigator();
+      restoreDocument();
+    }
+
+    const markedCanvas = {
+      getAttribute: (name: string) => name === "data-engine" ? "webgpu" : null,
+      getContext: () => null,
+    };
+    const restoreRejectedDocument = installGlobal("document", { querySelector: () => markedCanvas });
+    const restoreRejectedNavigator = installGlobal("navigator", {
+      gpu: {
+        requestAdapter: async () => {
+          throw new Error("adapter unavailable");
+        },
+      },
+    });
+    try {
+      const page = { evaluate: async (callback: () => unknown) => callback() } as unknown as Page;
+      await expect(readCaptureProvenance(page, {} as never, { target: "web", viewport: { height: 100, width: 200 } } as never)).rejects.toMatchObject({
+        diagnostic: { code: "TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING" },
+      });
+    } finally {
+      restoreRejectedNavigator();
+      restoreRejectedDocument();
     }
   });
 });
@@ -731,7 +845,9 @@ describe("browser-backed DOM visibility isolation", () => {
         const style = document.createElement("style");
         style.textContent = "#target { visibility: hidden !important; }";
         document.head.appendChild(style);
-        const visibility = getComputedStyle(document.getElementById("target")!).visibility;
+        const target = document.getElementById("target");
+        if (target === null) throw new Error("visibility fixture has no target");
+        const visibility = getComputedStyle(target).visibility;
         style.remove();
         return visibility;
       });
@@ -762,6 +878,28 @@ describe("browser-backed DOM visibility isolation", () => {
     }
   });
 
+  test("returns unrendered and cleans isolation when the screenshot throws", async () => {
+    const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
+    try {
+      await installVisibilityFixture(page, { csp: false, paintedTarget: true });
+      const throwingPage = new Proxy(page, {
+        get(target, property) {
+          if (property === "screenshot") return async () => { throw new Error("capture failed"); };
+          const value = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as Page;
+
+      await expect(sampleElementVisibility(throwingPage, { id: "target" })).resolves.toEqual({
+        bounds: { height: 80, width: 80, x: 0, y: 0 },
+        rendered: false,
+      });
+      await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
+    } finally {
+      await page.close();
+    }
+  });
+
   test("does not report paint from a non-target with higher-specificity important visibility", async () => {
     const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
     try {
@@ -773,7 +911,7 @@ describe("browser-backed DOM visibility isolation", () => {
         rendered: false,
       });
       expect(observed.screenshots).toHaveLength(1);
-      expect(pngPixel(observed.screenshots[0]!, 10, 20)).toEqual([0, 0, 0, 0]);
+      expect(pngPixel(capturedScreenshot(observed), 10, 20)).toEqual([0, 0, 0, 0]);
       expect(await page.evaluate(() => document.getElementById("control")?.style.cssText)).toBe(originalControlStyle);
       await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
     } finally {
@@ -989,14 +1127,7 @@ describe("browser-backed DOM visibility isolation", () => {
     try {
       await installImportantNonTargetFixture(page);
       await expectPendingVisibilityMutationToReject(page, async () => {
-        await page.evaluate(({ property, targetName }) => {
-          const target = targetName === "control" ? document.getElementById("control") : document.documentElement;
-          if (target === null) throw new Error("visibility fixture has no direct-setter target");
-          const style = (target as HTMLElement).style as unknown as Record<string, string>;
-          const propertyName = property === "background-color" ? "backgroundColor"
-            : property === "background-image" ? "backgroundImage" : "visibility";
-          style[propertyName] = style[propertyName] ?? "";
-        }, { property, targetName });
+        await page.evaluate(writeIsolationOwnedSameValue, { property, targetName });
       });
     } finally {
       await page.close();
@@ -1055,7 +1186,7 @@ describe("browser-backed DOM visibility isolation", () => {
         rendered: true,
       });
       expect(observed.screenshotOptions).toEqual([{ clip: { ...initialBounds }, omitBackground: true }]);
-      expect(pngPixel(observed.screenshots[0]!, 40, 40)).toEqual([240, 40, 40, 255]);
+      expect(pngPixel(capturedScreenshot(observed), 40, 40)).toEqual([240, 40, 40, 255]);
       await expect(page.evaluate(() => {
         const rect = document.getElementById("target")?.getBoundingClientRect();
         if (rect === undefined) throw new Error("visibility fixture has no target bounds after sampling");
@@ -1077,8 +1208,8 @@ describe("browser-backed DOM visibility isolation", () => {
         rendered: true,
       });
       expect(observed.screenshots).toHaveLength(1);
-      expect(pngPixel(observed.screenshots[0]!, 20, 20)).toEqual([240, 40, 40, 255]);
-      expect(pngPixel(observed.screenshots[0]!, 60, 20)).toEqual([0, 0, 0, 0]);
+      expect(pngPixel(capturedScreenshot(observed), 20, 20)).toEqual([240, 40, 40, 255]);
+      expect(pngPixel(capturedScreenshot(observed), 60, 20)).toEqual([0, 0, 0, 0]);
       await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
     } finally {
       await page.close();
