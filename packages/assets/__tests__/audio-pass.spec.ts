@@ -6,6 +6,8 @@ import {
   // preflight's own table rather than restating it means a decoder list that drifts fails here
   // too, instead of leaving this suite green over a silent asset on every native target.
 } from "../../runtime-native/scripts/asset-preflight.mjs";
+import type { IAssetPassOutput } from "../src/compile.js";
+import { audioPass } from "../src/passes/audio.js";
 import {
   bandLimitedNoise,
   compileAudio,
@@ -32,6 +34,88 @@ import {
  */
 
 const RATE = 44_100;
+
+function passOutput(value: Buffer | IAssetPassOutput): IAssetPassOutput {
+  if (Buffer.isBuffer(value)) throw new Error("audio pass test expected manifest output");
+  return value;
+}
+
+describe("the audio pass direct seam", () => {
+  it("should leave non-audio bytes untouched and publish its effective configuration", async () => {
+    const input = Buffer.from("not an audio asset");
+    const pass = audioPass({ normalise: "peak", peakDb: -3, quality: 4, seamMaxRatio: 2 });
+
+    expect(pass.configuration).toMatchObject({
+      normalise: "peak",
+      peakDb: -3,
+      quality: 4,
+      seamMaxRatio: 2,
+    });
+    await expect(pass.apply(input, "notes/readme.txt")).resolves.toBe(input);
+  });
+
+  it("should condition a WAV directly and return native-readable Vorbis output", async () => {
+    const output = passOutput(
+      await audioPass().apply(
+        wavClip({ frames: RATE, sample: bandLimitedNoise(71) }),
+        "audio/bed.wav",
+      ),
+    );
+
+    expect(output.outputExtension).toBe(".ogg");
+    expect(output.entry?.audio).toMatchObject({
+      conditioned: true,
+      container: "Ogg Vorbis",
+      reencoded: true,
+    });
+    expect(output.buffer.subarray(0, 4).toString("ascii")).toBe("OggS");
+  });
+
+  it("should preserve a declared unconditioned loop and its WAV bytes", async () => {
+    const input = wavClip({ frames: RATE, sample: () => 0 });
+    const output = passOutput(
+      await audioPass({
+        overrides: [{ glob: "bar.wav", conditioning: "none", loop: { crossFadeMs: 0 } }],
+      }).apply(input, "bar.wav"),
+    );
+
+    expect(output.buffer).toBe(input);
+    expect(output.outputExtension).toBe(".wav");
+    expect(output.entry?.audio).toMatchObject({
+      conditioned: false,
+      container: "RIFF/WAVE",
+      crossFadeMs: 0,
+      crossFadeMsRequested: 0,
+      loop: true,
+      reencoded: false,
+    });
+  });
+
+  it("should downmix positional stereo before encoding and report the memory saving", async () => {
+    const output = passOutput(
+      await audioPass({ overrides: [{ glob: "step.wav", positional: true }] }).apply(
+        wavClip({ channels: 2, frames: RATE, sample: noise(73) }),
+        "step.wav",
+      ),
+    );
+    const audio = output.entry?.audio as Record<string, unknown>;
+
+    expect(audio.channelsBefore).toBe(2);
+    expect(audio.channelsAfter).toBe(1);
+    expect(audio.decodedBytesAfter).toBe((audio.decodedBytesBefore as number) / 2);
+  });
+
+  it("should reuse an already-conditioned Ogg without another lossy generation", async () => {
+    const first = passOutput(
+      await audioPass().apply(wavClip({ frames: RATE, sample: bandLimitedNoise(79) }), "bed.wav"),
+    );
+    const second = passOutput(await audioPass().apply(first.buffer, "bed.ogg"));
+
+    expect(second.buffer).toBe(first.buffer);
+    expect(second.entry?.audio).toMatchObject({ container: "Ogg Vorbis", reencoded: false });
+    expect(second.outputExtension).toBe(".ogg");
+  });
+});
 
 describe("the audio pass seam assertion", () => {
   /**
