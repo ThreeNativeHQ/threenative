@@ -272,6 +272,14 @@ function uiBuildDriver(cwd: string, page: string, output: string): string {
     // weapon among them. Nothing in `src/ui/` reads those files; it reaches the game through
     // published state and intents.
     "    publicDir: false,",
+    // One React, one ReactDOM, whatever the import graph looks like. The UI entry resolves its
+    // peers beside the game while a linked package — `@threenative/ui`, or anything else pnpm
+    // symlinks in — resolves the same bare specifiers beside itself, so a hook-owning package
+    // installed outside the project brings a second physical copy into the bundle. React's
+    // dispatcher lives in module state, so the copy the entry did not mount reads null and the
+    // first `useState` on the phone throws `Cannot read properties of null`. `mergeConfig`
+    // concatenates arrays, so a project that deduped its own packages keeps every one of them.
+    '    resolve: { dedupe: ["react", "react-dom"] },',
     "    build: {",
     `      outDir: ${literal(output)},`,
     "      emptyOutDir: true,",

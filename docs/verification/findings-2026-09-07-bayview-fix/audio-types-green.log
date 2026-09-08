@@ -1,0 +1,224 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution
+
+ ✓ packages/assets/__tests__/png-source.spec.ts (1 test) 5ms
+stdout | packages/create-threenative/__tests__/config.spec.ts > should carry both budget gates through the real config loader into the compiler
+TN_ASSETS_EXCLUDED: 0 file(s), 0 bytes
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > should carry both budget gates through the real config loader into the compiler
+[warn] large.txt: license: unknown
+asset health: 1 asset(s), 0 ok, 1 warn, 0 fail
+cost pass audio: ran on 1 input(s), 0 ms
+  cost large.txt: 0 ms
+cost pass ktx2: ran on 1 input(s), 0 ms
+  cost large.txt: 0 ms
+cost pass model: ran on 1 input(s), 0 ms
+  cost large.txt: 0 ms
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > should carry both budget gates through the real config loader into the compiler
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling none); total 18 bytes (ceiling 1)
+  budget large.txt: uncooked 0 bytes, total 18 bytes
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > should carry asset exclusions from the real config loader into the compiler
+TN_ASSETS_EXCLUDED: 1 file(s), 23 bytes
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > should carry asset exclusions from the real config loader into the compiler
+[warn] keep.txt: license: unknown
+asset health: 1 asset(s), 0 ok, 1 warn, 0 fail
+cost pass audio: ran on 1 input(s), 0 ms
+  cost keep.txt: 0 ms
+cost pass ktx2: ran on 1 input(s), 0 ms
+  cost keep.txt: 0 ms
+cost pass model: ran on 1 input(s), 0 ms
+  cost keep.txt: 0 ms
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > should carry asset exclusions from the real config loader into the compiler
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 4 bytes (ceiling none)
+  budget keep.txt: uncooked 0 bytes, total 4 bytes
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands every resolved assets key to the pipeline that receives it
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 0 bytes (ceiling none)
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.models.sharedImages to the pipeline that receives it
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 0 bytes (ceiling none)
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.concurrency to the pipeline that receives it
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 0 bytes (ceiling none)
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+TN_ASSETS_EXCLUDED: 0 file(s), 0 bytes
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+[warn] audio/cue.wav: license: unknown
+asset health: 1 asset(s), 0 ok, 1 warn, 0 fail
+cost pass ktx2: ran on 1 input(s), 0 ms
+  cost audio/cue.wav: 0 ms
+cost pass model: ran on 1 input(s), 0 ms
+  cost audio/cue.wav: 0 ms
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 8864 bytes (ceiling none)
+  budget audio/cue.wav: uncooked 0 bytes, total 8864 bytes
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+TN_ASSETS_EXCLUDED: 0 file(s), 0 bytes
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+[warn] audio/cue.wav: license: unknown
+asset health: 1 asset(s), 0 ok, 1 warn, 0 fail
+audio audio/cue.wav (Ogg Vorbis): 8864 -> 3984 bytes (-55.1%), decoded 17640 -> 17640 bytes (-0.0%), 1ch -> 1ch, 0.100 s at 44100 Hz
+  audio audio/cue.wav levels: peak 0.5000 -> 0.5091, DC 0.00000 -> 0.00004
+  audio audio/cue.wav wrap: 0.0313 (not declared a loop, so not judged)
+  audio audio/cue.wav bands: sub 0.1%, low 96.2%, mid 3.7%, high 0.0%, air 0.0%
+audio total: 8864 -> 3984 bytes (-55.1%), decoded 17640 -> 17640 bytes (-0.0%)
+cost pass audio: ran on 1 input(s), 174 ms
+  cost audio/cue.wav: 174 ms
+cost pass ktx2: ran on 1 input(s), 0 ms
+  cost audio/cue.wav: 0 ms
+cost pass model: ran on 1 input(s), 0 ms
+  cost audio/cue.wav: 0 ms
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > hands assets.audio to the pipeline that receives it and ships the declared bytes
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 3984 bytes (ceiling none)
+  budget audio/cue.wav: uncooked 0 bytes, total 3984 bytes
+
+stdout | packages/create-threenative/__tests__/config.spec.ts > threenative.config.ts > carries the whole audio block, overrides included, through to the pipeline
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 0 bytes (ceiling none)
+
+ ✓ packages/create-threenative/__tests__/config.spec.ts (92 tests) 4282ms
+   ✓ should carry both budget gates through the real config loader into the compiler  301ms
+     ✓ hands assets.audio to the pipeline that receives it and ships the declared bytes  869ms
+     ✓ carries the whole audio block, overrides included, through to the pipeline  1730ms
+stdout | packages/create-threenative/__tests__/scaffold.spec.ts > create-threenative > keeps the starter's shipped assets mobile-shippable
+TN_ASSETS_EXCLUDED: 0 file(s), 0 bytes
+
+prune: Removed types... Accessor (2)
+prune: Removed types... Accessor (1)
+stdout | packages/create-threenative/__tests__/scaffold.spec.ts > create-threenative > keeps the starter's shipped assets mobile-shippable
+[ok] web-codec-proof.png tex0: 128x128 pixels
+[ok] web-codec-proof.png tex0: power-of-two dimensions
+[ok] web-codec-proof.png tex0: alpha channel present
+[warn] web-codec-proof.png: license: unknown
+[ok] native-proof.png tex0: 16x16 pixels
+[ok] native-proof.png tex0: power-of-two dimensions
+[ok] native-proof.png tex0: alpha channel present
+[warn] native-proof.png: license: unknown
+[ok] native-proof.glb: 1 triangles
+[ok] native-proof.glb: 0 material(s)
+[warn] native-proof.glb: no collider found (name a node or mesh '-col' or 'collider')
+[ok] native-proof.glb: no root motion detected
+[warn] native-proof.glb: license: unknown
+[warn] pickup.wav: license: unknown
+asset health: 4 asset(s), 9 ok, 5 warn, 0 fail
+audio pickup.wav (Ogg Vorbis): 39246 -> 5228 bytes (-86.7%), decoded 78336 -> 78336 bytes (-0.0%), 2ch -> 2ch, 0.222 s at 44100 Hz
+  audio pickup.wav levels: peak 0.0953 -> 0.0962, DC 0.00007 -> 0.00007
+  audio pickup.wav wrap: 0.0014 (not declared a loop, so not judged)
+  audio pickup.wav bands: sub 0.0%, low 0.2%, mid 99.8%, high 0.0%, air 0.0%
+audio total: 39246 -> 5228 bytes (-86.7%), decoded 78336 -> 78336 bytes (-0.0%)
+model native-proof.glb (KHR_mesh_quantization): 624 -> 864 bytes (+38.5%), 1 triangle(s)
+models total: 624 -> 864 bytes (+38.5%)
+cost pass audio: ran on 4 input(s), 122 ms
+  cost native-proof.glb: 0 ms
+  cost native-proof.png: 0 ms
+  cost pickup.wav: 122 ms
+  cost web-codec-proof.png: 0 ms
+cost pass model: ran on 4 input(s), 13 ms
+  cost native-proof.glb: 12 ms
+  cost native-proof.png: 0 ms
+  cost pickup.wav: 0 ms
+  cost web-codec-proof.png: 0 ms
+TN_ASSETS_COMPRESSION_SKIPPED model: 1 file(s), 0.0 MB retained without decoder-backed compression while decoder-free model passes still ran because this target has no WebAssembly and cannot run its meshopt and KTX2 decoder.
+TN_ASSETS_COMPRESSION_SKIPPED texture: 2 file(s), 0.1 MB shipped as authored because this target has no WebAssembly and cannot run its KTX2 decoder.
+
+stdout | packages/create-threenative/__tests__/scaffold.spec.ts > create-threenative > keeps the starter's shipped assets mobile-shippable
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 62506 bytes (ceiling none)
+  budget web-codec-proof.png: uncooked 0 bytes, total 56264 bytes
+  budget pickup.wav: uncooked 0 bytes, total 5228 bytes
+  budget native-proof.glb: uncooked 0 bytes, total 864 bytes
+  budget native-proof.png: uncooked 0 bytes, total 150 bytes
+
+stdout | packages/create-threenative/__tests__/scaffold.spec.ts > create-threenative > keeps the starter's shipped assets mobile-shippable
+TN_ASSETS_EXCLUDED: 0 file(s), 0 bytes
+
+prune: Removed types... Accessor (2)
+prune: Removed types... Accessor (1)
+Total slices: 5
+Total slices: 8
+Slice: 0, alpha: 0, orig width/height: 16x16, width/height: 16x16, first_block: 0, image_index: 0, mip_level: 0, iframe: 0
+Slice: 1, alpha: 0, orig width/height: 8x8, width/height: 8x8, first_block: 16, image_index: 0, mip_level: 1, iframe: 0
+Slice: 2, alpha: 0, orig width/height: 4x4, width/height: 4x4, first_block: 20, image_index: 0, mip_level: 2, iframe: 0
+Slice: 3, alpha: 0, orig width/height: 2x2, width/height: 4x4, first_block: 21, image_index: 0, mip_level: 3, iframe: 0
+Slice: 4, alpha: 0, orig width/height: 1x1, width/height: 4x4, first_block: 22, image_index: 0, mip_level: 4, iframe: 0
+Mode: ETC1S Quality (0-255): 150, Comp Level (Effort, 0-6): 2
+basis_compressor::process: Success
+Slice: 0, alpha: 0, orig width/height: 128x128, width/height: 128x128, first_block: 0, image_index: 0, mip_level: 0, iframe: 0
+Slice: 1, alpha: 0, orig width/height: 64x64, width/height: 64x64, first_block: 1024, image_index: 0, mip_level: 1, iframe: 0
+Slice: 2, alpha: 0, orig width/height: 32x32, width/height: 32x32, first_block: 1280, image_index: 0, mip_level: 2, iframe: 0
+Slice: 3, alpha: 0, orig width/height: 16x16, width/height: 16x16, first_block: 1344, image_index: 0, mip_level: 3, iframe: 0
+Slice: 4, alpha: 0, orig width/height: 8x8, width/height: 8x8, first_block: 1360, image_index: 0, mip_level: 4, iframe: 0
+Slice: 5, alpha: 0, orig width/height: 4x4, width/height: 4x4, first_block: 1364, image_index: 0, mip_level: 5, iframe: 0
+Slice: 6, alpha: 0, orig width/height: 2x2, width/height: 4x4, first_block: 1365, image_index: 0, mip_level: 6, iframe: 0
+Slice: 7, alpha: 0, orig width/height: 1x1, width/height: 4x4, first_block: 1366, image_index: 0, mip_level: 7, iframe: 0
+Mode: ETC1S Quality (0-255): 150, Comp Level (Effort, 0-6): 2
+basis_compressor::process: Success
+stdout | packages/create-threenative/__tests__/scaffold.spec.ts > create-threenative > keeps the starter's shipped assets mobile-shippable
+[ok] native-proof.glb: 1 triangles
+[ok] native-proof.glb: 0 material(s)
+[warn] native-proof.glb: no collider found (name a node or mesh '-col' or 'collider')
+[ok] native-proof.glb: no root motion detected
+[warn] native-proof.glb: license: unknown
+[warn] pickup.wav: license: unknown
+[ok] native-proof.png tex0: 16x16 pixels
+[ok] native-proof.png tex0: power-of-two dimensions
+[ok] native-proof.png tex0: alpha channel present
+[warn] native-proof.png: license: unknown
+[ok] web-codec-proof.png tex0: 128x128 pixels
+[ok] web-codec-proof.png tex0: power-of-two dimensions
+[ok] web-codec-proof.png tex0: alpha channel present
+[warn] web-codec-proof.png: license: unknown
+asset health: 4 asset(s), 9 ok, 5 warn, 0 fail
+audio pickup.wav (Ogg Vorbis): 39246 -> 5228 bytes (-86.7%), decoded 78336 -> 78336 bytes (-0.0%), 2ch -> 2ch, 0.222 s at 44100 Hz
+  audio pickup.wav levels: peak 0.0953 -> 0.0962, DC 0.00007 -> 0.00007
+  audio pickup.wav wrap: 0.0014 (not declared a loop, so not judged)
+  audio pickup.wav bands: sub 0.0%, low 0.2%, mid 99.8%, high 0.0%, air 0.0%
+audio total: 39246 -> 5228 bytes (-86.7%), decoded 78336 -> 78336 bytes (-0.0%)
+texture native-proof.png: 150 -> 150 bytes (-0.0%); compression skipped: not-smaller
+texture web-codec-proof.png (etc1s): 56264 -> 4623 bytes (-91.8%)
+textures total: 56414 -> 4773 bytes (-91.5%)
+model native-proof.glb (EXT_meshopt_compression, KHR_mesh_quantization): 624 -> 1324 bytes (+112.2%), 1 triangle(s)
+models total: 624 -> 1324 bytes (+112.2%)
+cost pass audio: ran on 4 input(s), 137 ms
+  cost native-proof.glb: 0 ms
+  cost native-proof.png: 0 ms
+  cost pickup.wav: 137 ms
+  cost web-codec-proof.png: 0 ms
+cost pass ktx2: ran on 4 input(s), 954 ms
+  cost native-proof.glb: 0 ms
+  cost native-proof.png: 397 ms
+  cost pickup.wav: 0 ms
+  cost web-codec-proof.png: 556 ms
+cost pass model: ran on 4 input(s), 18 ms
+  cost native-proof.glb: 18 ms
+  cost native-proof.png: 0 ms
+  cost pickup.wav: 0 ms
+  cost web-codec-proof.png: 0 ms
+
+stdout | packages/create-threenative/__tests__/scaffold.spec.ts > create-threenative > keeps the starter's shipped assets mobile-shippable
+TN_ASSETS_BUDGET: uncooked 0 bytes (ceiling 64000000); total 596187 bytes (ceiling none)
+  budget basis/basis_transcoder.wasm: uncooked 0 bytes, total 527333 bytes
+  budget basis/basis_transcoder.js: uncooked 0 bytes, total 57529 bytes
+  budget pickup.wav: uncooked 0 bytes, total 5228 bytes
+  budget web-codec-proof.png: uncooked 0 bytes, total 4623 bytes
+  budget native-proof.glb: uncooked 0 bytes, total 1324 bytes
+
+ ✓ packages/create-threenative/__tests__/scaffold.spec.ts (55 tests) 8864ms
+     ✓ keeps every no-install scaffold tree byte-stable against the PRD parent  724ms
+     ✓ copies the canonical native icon to every fixed generated output  2134ms
+     ✓ keeps the starter's shipped assets mobile-shippable  1184ms
+     ✓ should not ship recast in a build that never imports the navigation entry  1285ms
+
+ Test Files  3 passed (3)
+      Tests  148 passed (148)
+   Start at  11:36:31
+   Duration  9.73s (transform 1.38s, setup 0ms, import 1.51s, tests 13.15s, environment 0ms)
+

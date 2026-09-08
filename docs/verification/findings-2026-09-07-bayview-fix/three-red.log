@@ -1,0 +1,45 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution
+
+ ❯ packages/runtime-native/__tests__/bundle-canvas.spec.ts (2 tests | 1 failed) 172ms
+   ✓ native project prelude preserves independent canvases for loading text 2ms
+   × bundles one copy of three when a linked package resolves its own 168ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/runtime-native/__tests__/bundle-canvas.spec.ts > bundles one copy of three when a linked package resolves its own
+AssertionError: expected { …(3) } to deeply equal { …(3) }
+
+- Expected
++ Received
+
+  {
+    "copies": [
+      "project",
+-     "project",
++     "linked",
+    ],
+-   "sharedStack": true,
++   "sharedStack": false,
+    "stack": [
+      "game",
+-     "engine",
+    ],
+  }
+
+ ❯ packages/runtime-native/__tests__/bundle-canvas.spec.ts:124:55
+    122|   };
+    123|   runInNewContext(await readFile(output, "utf8"), context);
+    124|   expect(JSON.parse(String(context.tnThreeIdentity))).toEqual({
+       |                                                       ^
+    125|     copies: ["project", "project"],
+    126|     sharedStack: true,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  11:28:02
+   Duration  300ms (transform 21ms, setup 0ms, import 33ms, tests 172ms, environment 0ms)
+

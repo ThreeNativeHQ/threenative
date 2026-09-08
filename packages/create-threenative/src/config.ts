@@ -2,8 +2,9 @@ import { access, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parsePng } from "@threenative/assets";
+import { parseAudioConfig, parsePng } from "@threenative/assets";
 import type {
+  IThreeNativeAudioConfig,
   IThreeNativeBootSplash,
   IThreeNativeConfig,
   IThreeNativeIconVariants,
@@ -13,6 +14,10 @@ import type {
 } from "@threenative/core";
 
 export type {
+  IThreeNativeAudioConfig,
+  IThreeNativeAudioLoop,
+  IThreeNativeAudioOverride,
+  IThreeNativeAudioSpectrum,
   IThreeNativeConfig,
   IThreeNativeTexturesConfig,
   ThreeNativeOrientation,
@@ -59,6 +64,8 @@ export interface IResolvedThreeNativeConfig {
     readonly renderer: ThreeNativeUiRenderer;
   };
   readonly assets?: {
+    /** Audio conditioning options, or `"none"` to ship every clip exactly as committed. */
+    readonly audio?: "none" | IThreeNativeAudioConfig;
     readonly budget?: NonNullable<IThreeNativeConfig["assets"]>["budget"];
     readonly exclude?: readonly string[];
     /** The bound on how many workers a bake may use; absent means the driver's default. */
@@ -1239,9 +1246,29 @@ function validateBudget(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
   return raw as NonNullable<IResolvedThreeNativeConfig["assets"]>["budget"];
 }
 
+/**
+ * Checks a declared audio block with the compiler's own parser, then hands the declaration on
+ * unchanged.
+ *
+ * Unchanged, not parsed: `parseAudioConfig` answers `undefined` for `"none"`, and `undefined` is
+ * exactly what the compiler reads as "run the defaults" — forwarding the parsed value would turn
+ * an opt-out into the full conditioning pass while the config still reported success. So this is
+ * the `concurrency` seam again: validate here with the named code, hand the driver the
+ * declaration, and let the driver re-check it. There is no second vocabulary for audio keys.
+ */
+function validateAudio(raw: unknown): "none" | IThreeNativeAudioConfig {
+  try {
+    parseAudioConfig(raw);
+  } catch (error) {
+    fail("TN_CONFIG_ASSETS_INVALID", error instanceof Error ? error.message : String(error));
+  }
+  return raw as "none" | IThreeNativeAudioConfig;
+}
+
 function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
   const assets = assertRecord(raw, "assets");
   assertKeys(assets, "assets", [
+    "audio",
     "budget",
     "exclude",
     "concurrency",
@@ -1262,6 +1289,7 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
     fail("TN_CONFIG_ASSETS_INVALID", "assets.exclude must be an array of non-empty glob strings.");
   }
   return {
+    ...(assets.audio === undefined ? {} : { audio: validateAudio(assets.audio) }),
     ...(assets.exclude === undefined ? {} : { exclude: assets.exclude as readonly string[] }),
     ...(assets.budget === undefined ? {} : { budget: validateBudget(assets.budget) }),
     // The worker bound a bake may use. Validated here so a malformed value fails at config

@@ -110,8 +110,9 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 
 [PRD-276 — instanced batch assembly is mechanism](./PRD-276-instanced-batch-assembly-is-mechanism.md)
 is filed here because it extracts a rendering mechanism from `lumen-hall` while leaving every
-appearance choice in the game. Its sibling [PRD-277](../useful-defaults/PRD-277-merged-geometry-keeps-its-per-part-tint.md)
-remains in `useful-defaults/` because it is still a proposed default, not a mined mechanism record.
+appearance choice in the game. Its sibling [PRD-277](../done/useful-defaults/PRD-277-merged-geometry-keeps-its-per-part-tint.md)
+is archived in `done/useful-defaults/` because it completed as a useful default, not as a mined
+mechanism record.
 
 [PRD-325 — three sandbox games hand-wrote the same three seams](./PRD-325-three-games-hand-wrote-the-same-three-seams.md)
 is filed here because it mines repeated cross-frame and physics seams from real game source for

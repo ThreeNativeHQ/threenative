@@ -61,6 +61,15 @@ export type {
   IAudioSpectrumExpectation,
 } from "./passes/audio-config.js";
 /**
+ * Validates a game's declared `assets.audio` block, the one place its keys and ranges are checked.
+ * @situation validate a threenative.config.ts audio block before compiling assets
+ * @situation ship audio exactly as committed without conditioning it
+ * @constraint returns undefined for `"none"`, which drops the audio pass; an absent block returns the defaults
+ * @constraint throws TN_ASSETS_CONFIG_INVALID or TN_ASSETS_CONFIG_UNKNOWN_KEY rather than dropping a key it does not know
+ * @example const options = parseAudioConfig({ overrides: [{ glob: "audio/*.ogg", conditioning: "none" }] });
+ */
+export { parseAudioConfig } from "./passes/audio-config.js";
+/**
  * Conditions a game's audio and proves the conditioning did not destroy it.
  * @situation make an ambience bed loop without an audible click
  * @situation halve what a positional sound effect costs a device's memory

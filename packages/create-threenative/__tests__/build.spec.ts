@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { chmod, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -55,6 +56,29 @@ await writeFile(path.join(out, "assets", "game.js"), "export const game = true;\
   );
   await chmod(bin, 0o755);
   return bin;
+}
+
+// A physically separate copy of a package the bundle may end up carrying twice: same name, same
+// export, a marker naming which copy answered.
+async function writeStubPackage(
+  directory: string,
+  exported: string,
+  marker: string,
+): Promise<void> {
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    path.join(directory, "package.json"),
+    JSON.stringify({
+      main: "index.js",
+      name: path.basename(directory),
+      type: "module",
+      version: "1.0.0",
+    }),
+  );
+  await writeFile(
+    path.join(directory, "index.js"),
+    `export const ${exported} = () => ${JSON.stringify(marker)};\n`,
+  );
 }
 
 describe("threenative build", () => {
@@ -210,6 +234,83 @@ describe("threenative build", () => {
 
     await expect(readFile(projectFile, "utf8")).resolves.toBe("project-owned\n");
   });
+
+  // The native web view loads exactly one page, so whatever `src/ui/main.tsx` imports and
+  // whatever a linked package imports have to be the same React: a second copy carries its own
+  // null dispatcher and every hook throws on the phone. pnpm links `@threenative/ui` from
+  // outside the game, so its `react` resolves beside the engine rather than beside the game.
+  // Two physically separate stub packages stand in for that here, and the entry compares the
+  // identities the bundle actually produced rather than the config text that asked for them.
+  it("bundles one copy of a peer the entry and a linked package both import", async () => {
+    const root = await makeTempDir("threenative-ui-dedupe-");
+    roots.push(root);
+    const project = path.join(root, "game");
+    const linked = path.join(root, "engine", "linked-hud");
+    await mkdir(path.join(project, "src/ui"), { recursive: true });
+    await mkdir(path.join(project, "node_modules"), { recursive: true });
+    const vitePackage = (await readdir(path.resolve("node_modules/.pnpm"))).find((entry) =>
+      entry.startsWith("vite@"),
+    );
+    if (vitePackage === undefined) throw new Error("The workspace Vite package is missing.");
+    await symlink(
+      path.resolve("node_modules/.pnpm", vitePackage, "node_modules/vite"),
+      path.join(project, "node_modules/vite"),
+      "dir",
+    );
+    await writeStubPackage(path.join(project, "node_modules/react"), "useState", "root-react");
+    await writeStubPackage(path.join(project, "node_modules/hud-theme"), "token", "root-theme");
+    await writeStubPackage(path.join(linked, "node_modules/react"), "useState", "linked-react");
+    await writeStubPackage(path.join(linked, "node_modules/hud-theme"), "token", "linked-theme");
+    await writeFile(
+      path.join(linked, "package.json"),
+      JSON.stringify({ main: "index.js", name: "linked-hud", type: "module", version: "1.0.0" }),
+    );
+    await writeFile(
+      path.join(linked, "index.js"),
+      'export { useState as linkedUseState } from "react";\nexport { token as linkedToken } from "hud-theme";\n',
+    );
+    await symlink(linked, path.join(project, "node_modules/linked-hud"), "dir");
+    await writeFile(
+      path.join(project, "package.json"),
+      JSON.stringify({ name: "ui-dedupe", type: "module" }),
+    );
+    // `hud-theme` is the project's own dedupe entry and `modulePreload` its own build option.
+    // Both have to survive the merge: the first proves the engine's entries were added to the
+    // project's list instead of replacing it, the second keeps the built page runnable in Node.
+    await writeFile(
+      path.join(project, "vite.config.js"),
+      'export default { build: { modulePreload: false }, resolve: { dedupe: ["hud-theme"] } };\n',
+    );
+    await writeFile(
+      path.join(project, "src/ui/main.tsx"),
+      [
+        'import { token } from "hud-theme";',
+        'import { linkedToken, linkedUseState } from "linked-hud";',
+        'import { useState } from "react";',
+        "",
+        "const duplicated = [",
+        '  useState === linkedUseState ? "" : `react ${useState()}/${linkedUseState()}`,',
+        '  token === linkedToken ? "" : `hud-theme ${token()}/${linkedToken()}`,',
+        "].filter(Boolean);",
+        'if (duplicated.length > 0) throw new Error(`TN_UI_DUPLICATE_PEER: ${duplicated.join(", ")}`);',
+        "globalThis.tnUiPeers = { react: useState(), theme: token() };",
+        "",
+      ].join("\n"),
+    );
+
+    const output = await buildUi(project, {
+      ui: { renderer: "web" },
+    } as Parameters<typeof buildUi>[1]);
+    const page = await readFile(path.join(output, "index.html"), "utf8");
+    const entry = /src="\.\/(?<chunk>[^"]+\.js)"/u.exec(page)?.groups?.chunk;
+    if (entry === undefined) throw new Error(`The built page loads no module:\n${page}`);
+    await import(pathToFileURL(path.join(output, entry)).href);
+
+    expect((globalThis as { tnUiPeers?: unknown }).tnUiPeers).toEqual({
+      react: "root-react",
+      theme: "root-theme",
+    });
+  }, 60_000);
 
   it("accepts web UI bundles for every native host that stages them", () => {
     expect(() => assertNativeUiRendererCompatible("android", "web")).not.toThrow();

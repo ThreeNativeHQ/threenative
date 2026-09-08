@@ -1,0 +1,22 @@
+{
+  "status": "android-startup-and-movement-passed",
+  "device": "Pixel 8, Android 17, arm64-v8a",
+  "applicationId": "com.threenative.bayview.manifestfix",
+  "command": "node packages/playtest/dist/runner/cli.js artifacts/findings-fix/manifest.playtest.json --target android --device 192.168.1.192:5555 --package com.threenative.bayview.manifestfix --activity com.threenative.runtime.MystralActivity --timeout 60000 --artifacts artifacts/findings-fix/green-playtest-uninterrupted",
+  "exitCode": 0,
+  "movementMeters": 2.1467192069698604,
+  "firstFrameMs": 16020.007,
+  "startupEightSeconds": "not-met; this repair removes the startup failure, not the startup latency",
+  "hostProvenance": "Native binaries reused unchanged from preserved failed candidate; see host-identity.json. New native JS bundle and UI.",
+  "artifacts": {
+    "red.apk": "c9936657fc7170b5ee06380a63e878d4b5fc4ab057b87b6b3549d768b69b3c73",
+    "green.apk": "2f4ceac5441b1aa5bda67a9cd44d9948729ddc5d350e621cb4d220bce282a145",
+    "green/main.js": "400a0ab3ba14039138a6eb105b5e601dedfbddffcae4eac7411fedb8c51a7f25",
+    "green-host-uninterrupted.log": "b74636ec5c3e6b164ed22e32c55a6b68c8d5284bf9ab839551f26792e0dfde1a"
+  },
+  "knownLimits": [
+    "Android compatibility dialog for existing native library alignment was visible over the automated capture; OK was dismissed for android-world.png.",
+    "The Android run used the game\u2019s unpatched Three.js copy; it does not prove the optional patched batched velocity path.",
+    "No iOS, Android emulator, or startup budget conformance claim."
+  ]
+}
