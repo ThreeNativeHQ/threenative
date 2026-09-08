@@ -2235,6 +2235,53 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-lifecycle-policy-test EXCLUDE_FROM_ALL
         tests/lifecycle_policy_test.cpp)
     target_link_libraries(threenative-lifecycle-policy-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-webgpu-comprehensive-test EXCLUDE_FROM_ALL
+        tests/webgpu_comprehensive_test.cpp)
+    target_link_libraries(threenative-webgpu-comprehensive-test PRIVATE mystral-runtime)
+    if(MYSTRAL_USE_DAWN)
+        target_include_directories(threenative-webgpu-comprehensive-test PRIVATE ${DAWN_INCLUDE_DIR})
+    elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
+        target_include_directories(threenative-webgpu-comprehensive-test PRIVATE ${WGPU_TEST_INCLUDES})
+    endif()
+
+    add_executable(threenative-js-module-comprehensive-test EXCLUDE_FROM_ALL
+        tests/js_module_comprehensive_test.cpp)
+    target_link_libraries(threenative-js-module-comprehensive-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-runtime-platform-comprehensive-test EXCLUDE_FROM_ALL
+        tests/runtime_platform_comprehensive_test.cpp)
+    target_link_libraries(threenative-runtime-platform-comprehensive-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-canvas-audio-comprehensive-test EXCLUDE_FROM_ALL
+        tests/canvas_audio_comprehensive_test.cpp)
+    target_link_libraries(threenative-canvas-audio-comprehensive-test PRIVATE mystral-runtime)
+
+    add_executable(threenative-cli-network-fs-test EXCLUDE_FROM_ALL
+        tests/cli_network_fs_test.cpp
+        src/cli/tools_main.cpp
+        src/cli/bundler.cpp
+        src/cli/lightmap.cpp
+        src/cli/tool_dispatch.cpp
+    )
+    target_compile_definitions(threenative-cli-network-fs-test PRIVATE
+        MYSTRAL_TOOLS_NO_MAIN=1)
+    target_link_libraries(threenative-cli-network-fs-test PRIVATE mystral-runtime)
+    if(TARGET webp::mux)
+        target_include_directories(threenative-cli-network-fs-test PRIVATE ${WEBP_INCLUDE_DIR})
+    endif()
+    if(SDL3_STATIC_TARGET)
+        target_link_libraries(threenative-cli-network-fs-test PRIVATE ${SDL3_STATIC_TARGET})
+    elseif(TARGET SDL3::SDL3-static)
+        target_link_libraries(threenative-cli-network-fs-test PRIVATE SDL3::SDL3-static)
+    elseif(SDL3_INCLUDE_DIR)
+        target_include_directories(threenative-cli-network-fs-test PRIVATE ${SDL3_INCLUDE_DIR})
+    endif()
+    if(SDL3_STATIC_TARGET)
+        target_link_libraries(threenative-runtime-platform-comprehensive-test PRIVATE ${SDL3_STATIC_TARGET})
+    elseif(TARGET SDL3::SDL3-static)
+        target_link_libraries(threenative-runtime-platform-comprehensive-test PRIVATE SDL3::SDL3-static)
+    endif()
     # This test includes <SDL3/SDL.h> directly. `mystral-runtime` links SDL3 PRIVATE, so its
     # include directories do not propagate to a consumer, and the target compiled everywhere SDL3
     # happened to be on the default search path and nowhere else. On the hosted macOS and Windows
@@ -2305,6 +2352,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-rg11b10-renderable-test)
     tn_register_contract_test(threenative-wgpu-null-handle-test)
     tn_register_contract_test(threenative-surface-format-selection-test)
+    tn_register_contract_test(threenative-webgpu-comprehensive-test)
+    tn_register_contract_test(threenative-js-module-comprehensive-test)
+    tn_register_contract_test(threenative-runtime-platform-comprehensive-test)
+    tn_register_contract_test(threenative-canvas-audio-comprehensive-test)
+    tn_register_contract_test(threenative-cli-network-fs-test)
     tn_mark_sanitizer_contract_test(threenative-bindings-creation-test)
     tn_mark_sanitizer_contract_test(threenative-dom-dispatch-lifetime-test)
     tn_mark_sanitizer_contract_test(threenative-frame-op-stream-replay-test)

@@ -20,7 +20,8 @@ bool takeValue(int& index, int argc, char** argv, std::string& value) {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+namespace mystral::cli {
+int runToolsCli(int argc, char** argv) {
     if (argc < 2) {
         printUsage();
         return 1;
@@ -92,3 +93,10 @@ int main(int argc, char** argv) {
     printUsage();
     return 1;
 }
+}  // namespace mystral::cli
+
+#ifndef MYSTRAL_TOOLS_NO_MAIN
+int main(int argc, char** argv) {
+    return mystral::cli::runToolsCli(argc, argv);
+}
+#endif

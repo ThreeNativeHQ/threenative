@@ -1703,7 +1703,8 @@ int runScript(const CLIOptions& opts) {
     return driveMainLoop(opts, runtime);
 }
 
-int main(int argc, char* argv[]) {
+namespace mystral::cli {
+int runCli(int argc, char* argv[]) {
     // First marker of the launch, and the one that pins the launch thread for `ColdStartEvalScope`
     // (see `mystral/cold_start.h`). It must stay the first `coldStartMark` on this entry point.
     mystral::coldStartMark("process");
@@ -1761,3 +1762,11 @@ int main(int argc, char* argv[]) {
     printHelp();
     return 1;
 }
+
+}  // namespace mystral::cli
+
+#ifndef MYSTRAL_CLI_NO_MAIN
+int main(int argc, char* argv[]) {
+    return mystral::cli::runCli(argc, argv);
+}
+#endif
