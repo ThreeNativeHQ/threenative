@@ -384,6 +384,35 @@ describe("net", () => {
     }
   });
 
+  it("enforces negotiated reliable receive payload limits", async () => {
+    const messageLimit = 10;
+    const connection = await connect(
+      "https://example.test/game",
+      validOptions({
+        maxReliableMessageBytes: messageLimit,
+        maxQueuedReliableBytes: 64,
+      }),
+    );
+    try {
+      const transport = FakeWebTransport.instances[0];
+      transport?.streams[1]?.enqueue(testFrame(16, 2, new Uint8Array(messageLimit)));
+      await tick();
+      const exact = connection.poll();
+      expect(exact.disconnected).toBe(false);
+      expect(exact.messages).toHaveLength(1);
+      expect(exact.messages[0]?.channel).toBe(2);
+      expect(exact.messages[0]?.data).toHaveLength(messageLimit);
+
+      transport?.streams[1]?.enqueue(testFrame(16, 2, new Uint8Array(messageLimit + 1)));
+      await tick();
+      const oversized = connection.poll();
+      expect(oversized.messages).toEqual([]);
+      expect(oversized).toMatchObject({ disconnected: true, reason: "transport error" });
+    } finally {
+      await connection.close();
+    }
+  });
+
   it("serializes concurrent reliable writes", async () => {
     let releaseFirstWrite!: () => void;
     let firstWriteStarted!: () => void;
