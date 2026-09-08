@@ -239,6 +239,20 @@ describe("threenative-engine-mcp", () => {
     }
   });
 
+  it("returns install requirements in detail and search results", () => {
+    const detail = capabilityDetail("createThreeObject", workspaceManifest);
+
+    expect(detail.importPath).toBe("@threenative/raw-unreal");
+    expect(detail.requires).toContain("npm i @threenative/raw-unreal");
+
+    const rawMesh = searchResults(
+      "put a raw .uasset mesh on screen without converting it to glTF first",
+      workspaceManifest,
+    ).find((result) => result.symbol === "createThreeObject");
+
+    expect(rawMesh?.requires).toContain("npm i @threenative/raw-unreal");
+  });
+
   it("ranks NavigationAgent3D for an agent walking around a wall", () => {
     const results = searchResults("enemy walks around a wall", workspaceManifest);
     expect(results.slice(0, 3).map((result) => result.symbol)).toContain("NavigationAgent3D");
