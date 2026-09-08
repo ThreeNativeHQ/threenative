@@ -145,6 +145,52 @@ scripts/__tests__/capability-manifest.spec.ts:
 - checkCapabilityScaffoldImports rejects missing templates root, empty templates root, missing template package.json, unreadable template package.json, and invalid template package.json.
 ```
 
+## Push-Gate Repair
+
+Pre-push RED, from `/tmp/tn-ci-fast.1q8zLs/drift.log` and locally reproduced at clean HEAD
+`28610348e299670d9109dd17a1ea10063b855103` in
+`/tmp/astra-afk-tn-20260907-2205/logs/prd354-scaffold-hash-red.log`:
+
+```text
+pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts -t "keeps every no-install scaffold tree byte-stable against the PRD parent"
+Test Files  1 failed (1)
+Tests  1 failed | 54 skipped (55)
+
+packages/create-threenative/__tests__/scaffold.spec.ts > create-threenative > keeps every no-install scaffold tree byte-stable against the PRD parent
+expected PRD_201_PARENT_SCAFFOLD_HASHES to equal the current scaffold hashes
+Received changed for all ten templates: action-rpg, defense, minimal, platformer, puzzle, racing, runner, sailing, shooter, starter.
+```
+
+Cause: PRD-354 changes the generated capability manifest and capability reference bytes embedded
+in every no-install scaffold by adding `requires` install guidance for raw-unreal and UEFormat
+imports. The repair updates only the scaffold hash fixture and its explanatory comment; no template
+content changed to chase hashes.
+
+Push-gate GREEN:
+
+```text
+pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts -t "keeps every no-install scaffold tree byte-stable against the PRD parent"
+Test Files  1 passed (1)
+Tests  1 passed | 54 skipped (55)
+
+pnpm capabilities:check
+capability manifest fresh: 275 entries and 4 notOwned rows at /home/joao/projects/threenative/threenative-engine/.worktrees/astra-prd354-manifest-import-closure-20260907/packages/create-threenative/capabilities.json
+capability scaffold imports: 271 of 271 package-backed entries resolvable or documented across 10 template closures (27 require install instructions, 0 unresolved)
+
+git diff --check
+passed
+
+pnpm ci:fast
+lint         pass    1s
+docs         pass    1s
+agents       pass    1s
+drift        pass   50s
+```
+
+AC8 remains PARTIAL: this push-gate repair proves the branch-attributable scaffold drift without
+rerunning native build/CMake/Ninja or the full `pnpm test` chain that is still blocked by the
+runtime-native artifact issue recorded below.
+
 ## Green
 
 Current affected count:

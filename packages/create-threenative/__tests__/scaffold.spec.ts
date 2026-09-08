@@ -274,19 +274,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-07 after SkeletalMesh3D became the AnimationPlayer returned by setup.
   // Recomputed 2026-09-07 after merging origin/main's networking transport with the PRD-361/362
   // delivery; values are from the current merged scaffold source.
-  "action-rpg": "d3b40977bd495db57df2c8db93f7d9b779ded1ee9a6a9adebd78e5819157d649",
-  defense: "9dabd58ed2ad8674f75d6b18f3f9de11aa99c084f7f7cea74d8e8f9c9d12c258",
+  // Recomputed 2026-09-07 for PRD-354: the generated capability manifest and reference now
+  // carry `requires` install guidance for raw-unreal and UEFormat imports, and both generated
+  // byte streams are embedded in all ten no-install scaffolds.
+  "action-rpg": "148c60ebc069caa9e97719c05b160c01a6662808512dd2c7cf29d6728fc598c0",
+  defense: "4608013a1829719265bc02988a8ef69f5985f2d65c059a28cbdbf3fc3f819ef0",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "b4467ba84a470afa4f66f6e8eec4bca02c29740af159c84490b7538b903479e6",
-  platformer: "906aadbd3a58d348db0dfbfa7080419bbe5a93e15df0602482b9db88aa6b7860",
-  runner: "984e0be4c2e4b945275c525c15fe89a4d2485d4676cf50cd9bf62141eefa49a8",
-  puzzle: "26ff1ca733bf16b6c7c6734c6307bd9f590d451aa174b116beea7bf631147fed",
-  racing: "c2775b3911e34f0f4b1e242e40cfd8d71054080ff9898d920559402aeda664ba",
-  shooter: "8d4d5b6daebe13d79764e9dfc9942cd836046b72cd533531f55f5fab7b67273a",
+  minimal: "f26833fc25a65a2b7c5f42fdc64c7ae04b2106b4467452a8e672d40a1a9e1d68",
+  platformer: "227a63928b81f9434152bf002e5bdadc1166414a1a2a98026ae2233acca1dd0e",
+  runner: "66c3b3abf807fe432b9cdd3a4643ef8a3c56a288c1be1ae10fbc47f38b1a0e57",
+  puzzle: "80833855b191595a63a5cd86e7dd31e1d8b32da7870aeb27d00c2c5c9bc5842a",
+  racing: "73be2a154bdff4167c024918b6ad1b306769f3770c88201b9a15e2b2b7d3bdcf",
+  shooter: "b7b40793a5acad04586dd7e9e065294fd5655a8280866fbda9ccf78a3d9884be",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "580711fb08386b33ff8dcc00f6fb0d254c60ae543c1f6f9dd2ecae747228b298",
+  starter: "61c0ba277add2f1bfc57be4bc5be1434ab2441c5156c0211beb51c131d7c42f2",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -312,7 +315,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "ad883ad5ebe6a3b3129268511e8e27ea2f8d6a1ed1c5cf12c74ecb29ad460426",
+  sailing: "f7d0ee315b9559ec8612b55496b4421da31aa9db534911ca4d92e35f9c824d13",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
