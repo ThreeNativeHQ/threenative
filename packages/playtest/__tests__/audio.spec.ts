@@ -11,6 +11,7 @@ import {
   spectrogramPng,
   type IAudioClipExpectation,
 } from "../src/runner/audio.js";
+import { parseWav } from "../src/runner/audioRun.js";
 
 const RATE = 44_100;
 
@@ -57,6 +58,26 @@ describe("audio inspection arguments", () => {
 
   it("should reject an unknown flag rather than ignore it", () => {
     expect(() => parseAudioArgs(["--expect", "a.json", "--loud"])).toThrow(/--loud/u);
+  });
+
+  it("should parse every supported switch and require values for value-taking flags", () => {
+    const args = parseAudioArgs([
+      "--expect", "audio.expect.json",
+      "--dir", "public/audio",
+      "--out", "artifacts/spectrograms",
+      "--root", ".",
+      "--text",
+      "--no-spectrograms",
+    ]);
+    expect(args).toMatchObject({
+      dir: "public/audio",
+      expect: "audio.expect.json",
+      spectrograms: false,
+      text: true,
+    });
+    expect(args.out).toMatch(/artifacts[/\\]spectrograms$/u);
+    expect(() => parseAudioArgs(["--expect"])).toThrow(/needs a value/u);
+    expect(() => parseAudioArgs(["--dir", "--text", "--expect", "a.json"])).toThrow(/needs a value/u);
   });
 });
 
@@ -128,6 +149,46 @@ describe("audio expectation manifest", () => {
       /version/u,
     );
   });
+
+  it("should reject non-objects, missing clip arrays, and non-object clip entries", () => {
+    expect(() => parseAudioManifest("[]", "a.json")).toThrow(/JSON object/u);
+    expect(() => parseAudioManifest(JSON.stringify({ clips: "clip", version: 1 }), "a.json")).toThrow(
+      /clips.*array/u,
+    );
+    expect(() => parseAudioManifest(JSON.stringify({ clips: [null], version: 1 }), "a.json")).toThrow(
+      /clips\[0\].*object/u,
+    );
+  });
+
+  it("should validate optional bounds and every measured band shape", () => {
+    const parsed = parseAudioManifest(
+      manifest([{
+        bands: { air: { max: 80 }, low: { min: 10, max: 90 } },
+        loop: false,
+        path: "a.ogg",
+        peakMax: 0.9,
+        silenceRms: 0.01,
+      }]),
+      "a.json",
+    );
+    expect(parsed.clips[0]).toMatchObject({
+      bands: { air: { max: 80 }, low: { max: 90, min: 10 } },
+      peakMax: 0.9,
+      silenceRms: 0.01,
+    });
+    expect(() => parseAudioManifest(manifest([{ bands: { mid: null }, loop: false, path: "a.ogg" }]), "a.json"))
+      .toThrow(/band.*object/u);
+    expect(() => parseAudioManifest(manifest([{ bands: {}, loop: false, path: "a.ogg" }]), "a.json"))
+      .toThrow(/bands.*empty/u);
+    for (const key of ["peakMax", "seamMaxRatio", "silenceRms"] as const) {
+      expect(() => parseAudioManifest(manifest([{ [key]: 0, loop: true, path: "a.ogg" }]), "a.json"))
+        .toThrow(new RegExp(`${key}.*positive`, "u"));
+    }
+    expect(() => parseAudioManifest(manifest([{ bands: { low: { min: -1 } }, loop: false, path: "a.ogg" }]), "a.json"))
+      .toThrow(/percentage/u);
+    expect(() => parseAudioManifest(manifest([{ bands: { low: { max: 101 } }, loop: false, path: "a.ogg" }]), "a.json"))
+      .toThrow(/percentage/u);
+  });
 });
 
 describe("audio analysis", () => {
@@ -196,6 +257,23 @@ describe("audio analysis", () => {
     const analysis = analyseSamples([samples], RATE);
     expect(analysis.seam?.nearP99 ?? 0).toBeGreaterThan(0);
   });
+
+  it("should reject empty decodes and handle uneven channels and a silent seam neighborhood", () => {
+    expect(() => analyseSamples([], RATE)).toThrow(/no samples/u);
+    expect(() => analyseSamples([new Float64Array()], RATE)).toThrow(/no samples/u);
+
+    const uneven = analyseSamples([
+      new Float64Array([0, 1, 0, -1]),
+      new Float64Array([0]),
+    ], RATE);
+    expect(uneven.channels).toBe(2);
+    expect(uneven.seam).toBeDefined();
+
+    const silentJoin = analyseSamples([new Float64Array([1, 1, 1, 1, 0, 0, 0, 0])], RATE);
+    expect(silentJoin.seam?.ratio).toBe(Number.POSITIVE_INFINITY);
+    expect(checkClip("loop.wav", silentJoin, expectation({ loop: true })).find(({ name }) => name === "seam"))
+      .toMatchObject({ status: "fail" });
+  });
 });
 
 describe("audio checks", () => {
@@ -245,6 +323,28 @@ describe("audio checks", () => {
     const checks = checkClip("audio/clip.ogg", analyseSamples([samples], RATE), expectation());
     expect(checks.find(({ name }) => name === "dc")?.status).toBe("warn");
   });
+
+  it("should warn on a quiet peak, reject a short loop, and report both band-bound failures", () => {
+    const quiet = checkClip("quiet.ogg", analyseSamples(tone(4_000, 0.1, 0.05), RATE), expectation());
+    expect(quiet.find(({ name }) => name === "headroom")).toMatchObject({ status: "warn" });
+
+    const shortLoop = checkClip(
+      "short.ogg",
+      analyseSamples([new Float64Array([0, 0, 0])], RATE),
+      expectation({ loop: true }),
+    );
+    expect(shortLoop.find(({ name }) => name === "seam")).toMatchObject({ status: "fail" });
+
+    const bounded = checkClip(
+      "bounded.ogg",
+      clean,
+      expectation({ bands: { high: { max: 1, min: 101 } } }),
+    );
+    expect(bounded.find(({ name }) => name === "band high")).toMatchObject({
+      status: "fail",
+    });
+    expect(bounded.find(({ name }) => name === "band high")?.detail).toMatch(/below.*above/su);
+  });
 });
 
 describe("audio report", () => {
@@ -259,6 +359,7 @@ describe("audio report", () => {
       pass: false,
     };
     expect(audioExitCode(bad)).toBe(1);
+    expect(audioExitCode({ checks: [], pass: true })).toBe(1);
   });
 
   it("should name every spectrogram it wrote, because the picture is what a person looks at", () => {
@@ -274,6 +375,19 @@ describe("audio report", () => {
   it("should say plainly that nothing was checked when nothing was", () => {
     const text = formatAudioReport({ checks: [], clips: [], pass: false });
     expect(text).toMatch(/no checks/iu);
+  });
+
+  it("should print fixes and a failed summary when a check fails", () => {
+    const text = formatAudioReport({
+      checks: [
+        { detail: "too loud", fix: "lower it", name: "headroom", status: "fail" },
+        { detail: "quiet", name: "dc", status: "warn" },
+      ],
+      clips: [],
+      pass: false,
+    });
+    expect(text).toContain("fix: lower it");
+    expect(text).toContain("1 of 2 checks failed");
   });
 });
 
@@ -292,6 +406,12 @@ describe("spectrogram", () => {
 
   it("should refuse to invent a picture from nothing", () => {
     expect(() => spectrogramPng([])).toThrow(/no spectrum/iu);
+    expect(() => spectrogramPng([new Float64Array()])).toThrow(/no spectrum/iu);
+  });
+
+  it("should treat missing bins in a shorter column as zero", () => {
+    const png = spectrogramPng([new Float64Array([1, 0]), new Float64Array([0])]);
+    expect(String.fromCharCode(...png.subarray(12, 16))).toBe("IHDR");
   });
 });
 
@@ -302,5 +422,58 @@ describe("band definitions", () => {
       expect(edges[index]?.[0]).toBe(edges[index - 1]?.[1]);
     }
     expect(edges[0]?.[0]).toBe(0);
+  });
+});
+
+describe("ffmpeg WAV parsing", () => {
+  function stream(options: { data?: Buffer; dataSize?: number; fmt?: Buffer; extra?: Buffer } = {}): Buffer {
+    const fmt = options.fmt ?? (() => {
+      const value = Buffer.alloc(16);
+      value.writeUInt16LE(1, 0);
+      value.writeUInt16LE(1, 2);
+      value.writeUInt32LE(RATE, 4);
+      value.writeUInt16LE(32, 14);
+      return value;
+    })();
+    const data = options.data ?? Buffer.alloc(4);
+    const chunk = (id: string, bytes: Buffer, declared = bytes.length): Buffer => {
+      const result = Buffer.alloc(8 + bytes.length + (bytes.length % 2));
+      result.write(id, 0, "ascii");
+      result.writeUInt32LE(declared, 4);
+      bytes.copy(result, 8);
+      return result;
+    };
+    const chunks = [chunk("fmt ", fmt), ...(options.extra === undefined ? [] : [options.extra]), chunk("data", data, options.dataSize)];
+    return Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WAVE"), ...chunks]);
+  }
+
+  it("reads a 32-bit float stream with metadata padding and placeholder sizes", () => {
+    const data = Buffer.alloc(8);
+    data.writeFloatLE(0.25, 0);
+    data.writeFloatLE(-0.5, 4);
+    const parsed = parseWav(stream({ data, dataSize: 0 }));
+    expect(parsed).toEqual({ channels: [new Float64Array([0.25, -0.5])], sampleRate: RATE });
+    expect(parseWav(stream({ data, dataSize: 0xffffffff })).channels[0]).toEqual(
+      new Float64Array([0.25, -0.5]),
+    );
+  });
+
+  it("rejects invalid headers, ordering, widths, and empty data", () => {
+    expect(() => parseWav(Buffer.alloc(11))).toThrow(/RIFF\/WAVE/u);
+    expect(() => parseWav(Buffer.from("RIFFxxxxxxxxWAVE"))).toThrow(/RIFF\/WAVE/u);
+    const dataBeforeFormat = Buffer.concat([
+      Buffer.from("RIFF\0\0\0\0WAVE", "binary"),
+      Buffer.from("data\x04\0\0\0\0\0\0\0", "binary"),
+      stream().subarray(12, 36),
+    ]);
+    expect(() => parseWav(dataBeforeFormat)).toThrow(/data before its format/u);
+    const wrongBits = Buffer.alloc(16);
+    wrongBits.writeUInt16LE(1, 0);
+    wrongBits.writeUInt16LE(1, 2);
+    wrongBits.writeUInt32LE(RATE, 4);
+    wrongBits.writeUInt16LE(16, 14);
+    expect(() => parseWav(stream({ fmt: wrongBits }))).toThrow(/expected 32-bit/u);
+    expect(() => parseWav(stream({ data: Buffer.alloc(0) }))).toThrow(/no samples/u);
+    expect(() => parseWav(stream().subarray(0, 36))).toThrow(/no data chunk/u);
   });
 });

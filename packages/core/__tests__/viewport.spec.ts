@@ -1,6 +1,6 @@
 import { OrthographicCamera, PerspectiveCamera, Vector2, Vector3 } from "three";
 import { afterEach, describe, expect, it } from "vitest";
-import { type IViewportSize, Viewport } from "../src/viewport.js";
+import { type IViewportPlatformSource, type IViewportSize, Viewport } from "../src/viewport.js";
 
 class FakeResizeObserver {
   static current: FakeResizeObserver | undefined;
@@ -257,5 +257,169 @@ describe("Viewport", () => {
         expect(viewport.safeArea.source).toBe("full-drawable-fallback");
       },
     );
+  });
+
+  it("rejects invalid projection requests and ignores callbacks after disposal", () => {
+    const canvas = testCanvas();
+    const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+    camera.position.z = 10;
+    camera.lookAt(0, 0, 0);
+    const viewport = new Viewport({ camera, renderer: renderer(canvas) });
+
+    expect(() => viewport.projectPosition(new Vector2(640, 360), Number.NaN)).toThrow(
+      "Viewport.projectPosition z must be finite.",
+    );
+
+    const parallelCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+    parallelCamera.position.set(0, 0, 10);
+    parallelCamera.lookAt(1, 0, 10);
+    parallelCamera.updateMatrixWorld(true);
+    const parallelViewport = new Viewport({
+      camera: parallelCamera,
+      renderer: renderer(canvas),
+    });
+    expect(() => parallelViewport.projectPosition(new Vector2(640, 360))).toThrow(
+      "Viewport.projectPosition cannot reach the requested z plane.",
+    );
+
+    let calls = 0;
+    const stopped = viewport.onResize(() => {
+      calls += 1;
+    });
+    viewport.dispose();
+    viewport.dispose();
+    expect(
+      viewport.onResize(() => {
+        calls += 1;
+      }),
+    ).not.toThrow;
+    canvas.size = { aspect: 1, height: 720, width: 720 };
+    viewport.resize();
+    expect(calls).toBe(0);
+    stopped();
+    parallelViewport.dispose();
+  });
+
+  it("falls back to canvas dimensions and distinguishes unchanged from safe-area-only resize", () => {
+    const canvas = testCanvas(320, 180);
+    let insets = { bottom: 0, left: 0, right: 0, top: 0 };
+    const source = {
+      observeResize: (_canvas: HTMLCanvasElement, _resize: () => void) => () => undefined,
+      readSafeArea: () => insets,
+      readSize: () => undefined as unknown as IViewportSize,
+    } satisfies IViewportPlatformSource;
+    const viewport = new Viewport({
+      camera: new PerspectiveCamera(),
+      renderer: renderer(canvas),
+      source,
+    });
+    const sizes: IViewportSize[] = [];
+    viewport.onResize((size) => sizes.push(size));
+
+    expect(viewport.size).toEqual({ aspect: 320 / 180, height: 180, width: 320 });
+    viewport.resize();
+    expect(sizes).toHaveLength(0);
+
+    insets = { bottom: 12, left: 0, right: 0, top: 0 };
+    viewport.resize();
+    expect(sizes).toHaveLength(1);
+    expect(viewport.safeArea).toMatchObject({ bottom: 12, height: 168, source: "measured" });
+    viewport.dispose();
+  });
+
+  it("validates native insets and clamps impossible measurements to the drawable", () => {
+    withGlobals(
+      {
+        __THREENATIVE_NATIVE__: {
+          safeAreaInsets: { bottom: 1000, left: -4, right: 1000, top: Number.NaN },
+        },
+      },
+      () => {
+        const canvas = testCanvas(640, 360);
+        const viewport = new Viewport({
+          camera: new PerspectiveCamera(),
+          renderer: renderer(canvas),
+        });
+        expect(viewport.safeArea).toEqual({
+          bottom: 360,
+          height: 0,
+          left: 0,
+          right: 640,
+          source: "measured",
+          top: 0,
+          width: 0,
+          x: 0,
+          y: 0,
+        });
+      },
+    );
+
+    withGlobals({ __THREENATIVE_NATIVE__: { safeAreaInsets: { top: 1 } } }, () => {
+      const canvas = testCanvas(640, 360);
+      const viewport = new Viewport({
+        camera: new PerspectiveCamera(),
+        renderer: renderer(canvas),
+      });
+      expect(viewport.safeArea.source).toBe("full-drawable-fallback");
+    });
+  });
+
+  it("uses browser safe-area CSS only after attaching its probe and tolerates missing style APIs", () => {
+    let appended: unknown;
+    let removed = false;
+    const probe = {
+      remove: () => {
+        removed = true;
+      },
+      style: { cssText: "" },
+    };
+    withGlobals(
+      {
+        document: {
+          body: {
+            appendChild: (value: unknown) => {
+              appended = value;
+            },
+          },
+          createElement: () => probe,
+        },
+        window: {
+          getComputedStyle: () => ({
+            paddingBottom: "bad",
+            paddingLeft: "4.5px",
+            paddingRight: "",
+            paddingTop: "12px",
+          }),
+        },
+      },
+      () => {
+        const canvas = testCanvas(640, 360);
+        const viewport = new Viewport({
+          camera: new PerspectiveCamera(),
+          renderer: renderer(canvas),
+        });
+        expect(viewport.safeArea).toMatchObject({
+          bottom: 0,
+          left: 4.5,
+          right: 0,
+          source: "measured",
+          top: 12,
+          width: 635.5,
+          x: 4.5,
+          y: 12,
+        });
+        expect(appended).toBe(probe);
+        expect(removed).toBe(true);
+      },
+    );
+
+    withGlobals({ document: { body: {}, createElement: () => probe }, window: {} }, () => {
+      const canvas = testCanvas(640, 360);
+      const viewport = new Viewport({
+        camera: new PerspectiveCamera(),
+        renderer: renderer(canvas),
+      });
+      expect(viewport.safeArea.source).toBe("full-drawable-fallback");
+    });
   });
 });

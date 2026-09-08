@@ -45,6 +45,23 @@ function samplerTextureDimensions(node: Node): readonly string[] {
   return [...dimensions];
 }
 
+function webgpuRenderer(overrides: Record<string, unknown> = {}): IRendererLike {
+  const raw = {
+    coordinateSystem: WebGPUCoordinateSystem,
+    copyTextureToTexture: vi.fn(),
+    getActiveCubeFace: () => 0,
+    getActiveMipmapLevel: () => 0,
+    getRenderTarget: () => null,
+    isWebGLRenderer: false,
+    render: vi.fn(),
+    reversedDepthBuffer: false,
+    setRenderTarget: vi.fn(),
+    xr: { enabled: false },
+    ...overrides,
+  };
+  return { kind: "webgpu", raw } as unknown as IRendererLike;
+}
+
 describe("ProbeVolume", () => {
   it("rejects malformed density, bounds, and atlas limits at construction", () => {
     expect(() => volume({ density: 0 })).toThrow(/density/u);
@@ -64,6 +81,31 @@ describe("ProbeVolume", () => {
         }),
     ).toThrow(/bounds/u);
     expect(() => volume({ maxTextureDimension3D: 16 })).toThrow(/maxTextureDimension3D/u);
+  });
+
+  it("normalizes per-axis density and rejects invalid bake camera options", () => {
+    const subject = volume({
+      density: [0.5, 1, 1.5],
+      deviceTextureLimit: 42,
+      bounces: 2,
+      cubemapSize: 4,
+      far: 20,
+      near: 0.5,
+    });
+    expect(subject.resolution).toEqual(new Vector3(2, 3, 4));
+    expect(subject.paddedSlices).toBe(6);
+    expect(subject.atlasDepth).toBe(42);
+    expect(subject.maximumDimension).toBe(42);
+    expect(subject.observation.bakeProgress.passes).toBe(3);
+
+    expect(() => volume({ density: { x: 0.5, y: 1, z: 1.5 } })).not.toThrow();
+    expect(() => volume({ bakeBudgetMs: 0 })).toThrow(/bakeBudgetMs/u);
+    expect(() => volume({ maxWorkItemsPerFrame: 1.5 })).toThrow(/maxWorkItemsPerFrame/u);
+    expect(() => volume({ cubemapSize: 0 })).toThrow(/cubemapSize/u);
+    expect(() => volume({ near: 0 })).toThrow(/near/u);
+    expect(() => volume({ far: 0.5, near: 0.5 })).toThrow(/far/u);
+    expect(() => volume({ bounces: -1 })).toThrow(/bounces/u);
+    expect(() => volume({ maxTextureDimension3D: 1.5 })).toThrow(/maxTextureDimension3D/u);
   });
 
   it("samples both sides of every packed sub-volume seam through the public sampler", () => {
@@ -104,6 +146,75 @@ describe("ProbeVolume", () => {
     expect(irradiance.x).toBeGreaterThan(irradiance.z * 3);
   });
 
+  it("keeps numeric and node sampling overloads on the same public seam", () => {
+    const subject = volume({ report: () => undefined });
+    subject.setProbeCoefficients(0, 0, 0, coefficient(0.3, 0.2, 0.1));
+
+    const numeric = subject.sample(new Vector3(0, 0, 0), new Vector3(0, 1, 0));
+    expect(numeric).toBeInstanceOf(Vector3);
+    expect(numeric.x).toBeGreaterThan(numeric.z);
+    expect(subject.sample()).toBeDefined();
+    expect(subject.sample(new Vector3(0, 0, 0))).toBeDefined();
+    expect(subject.sampleNode()).toBeDefined();
+    expect(subject.probePosition(0, 0, 0)).toEqual(new Vector3(0, 0, 0));
+
+    expect(() => subject.sampleIrradiance({} as Vector3, new Vector3())).toThrow(/Vector3/u);
+    expect(() => subject.sampleIrradiance(new Vector3(), {} as Vector3)).toThrow(/Vector3/u);
+  });
+
+  it("rejects invalid coefficient edits at the public data seam", () => {
+    const subject = volume({ report: () => undefined });
+    const valid = coefficient(0.1, 0.2, 0.3);
+
+    expect(() => subject.setProbeCoefficients(-1, 0, 0, valid)).toThrow(/ix/u);
+    expect(() => subject.setProbeCoefficients(0, subject.resolution.y, 0, valid)).toThrow(/iy/u);
+    expect(() => subject.setProbeCoefficients(0, 0, 0.5, valid)).toThrow(/iz/u);
+    expect(() => subject.setProbeCoefficients(0, 0, 0, valid.slice(0, 8))).toThrow(/9/u);
+
+    const nonFinite = valid.slice();
+    nonFinite[0] = { b: 0.3, g: Number.POSITIVE_INFINITY, r: 0.1 };
+    expect(() => subject.setProbeCoefficients(0, 0, 0, nonFinite)).toThrow(/finite/u);
+  });
+
+  it("coalesces pending bakes and closes every detached public seam", async () => {
+    const subject = volume({ report: () => undefined });
+    const scene = new Scene();
+    const bake = subject.requestBake(scene);
+
+    expect(subject.requestBake(scene)).toBe(bake);
+    expect(() => subject.requestBake({} as Scene)).toThrow(/Scene/u);
+    expect(() => subject.requestBake(scene, { bounces: -1 })).toThrow(/bounces/u);
+    expect(() => subject.setProbeCoefficients(0, 0, 0, coefficient(1, 1, 1))).toThrow(/bake/u);
+
+    subject.detach();
+    expect(subject.released).toBe(true);
+    await expect(bake).rejects.toThrow(/detached/u);
+    expect(() => subject.attachRenderer(webgpuRenderer())).toThrow(/detach/u);
+    expect(() => subject.requestBake(scene)).toThrow(/detach/u);
+    expect(() => subject.process(webgpuRenderer())).toThrow(/detach/u);
+    subject.detach();
+  });
+
+  it("dispatches bake overloads only for a complete renderer-shaped first argument", async () => {
+    const scene = new Scene();
+    const sceneBake = volume({ report: () => undefined });
+    const scenePromise = sceneBake.bake(scene);
+    expect(sceneBake.bake(scene)).toBe(scenePromise);
+    sceneBake.detach();
+    await expect(scenePromise).rejects.toThrow(/detached/u);
+
+    for (const candidate of [null, "renderer", { kind: "webgpu" }]) {
+      const subject = volume({ report: () => undefined });
+      expect(() => subject.bake(candidate as unknown as Scene)).toThrow(/Scene/u);
+    }
+
+    const rendererBake = volume({ report: () => undefined });
+    const rendererPromise = rendererBake.bake(webgpuRenderer(), scene);
+    expect(rendererBake.observation.status).toBe("baking");
+    rendererBake.detach();
+    await expect(rendererPromise).rejects.toThrow(/detached/u);
+  });
+
   it("reports an unbaked sample instead of hiding it as black", () => {
     const lines: string[] = [];
     const subject = volume({ report: (line) => lines.push(line) });
@@ -130,6 +241,94 @@ describe("ProbeVolume", () => {
       readProbeVolumeObservation({
         ...observation,
         bakeProgress: { ...observation.bakeProgress, completed: Number.NaN },
+      }),
+    ).toBeUndefined();
+  });
+
+  it("rejects malformed scalar, atlas, and progress fields instead of accepting partial evidence", () => {
+    const observation = volume({ report: () => undefined }).observation;
+    const withPatch = (patch: Record<string, unknown>): unknown => ({ ...observation, ...patch });
+    const invalidObservations: unknown[] = [
+      null,
+      [],
+      withPatch({ marker: "TN_PROBE_VOLUME_OLD" }),
+      withPatch({ status: "finished" }),
+      withPatch({ stale: "false" }),
+      withPatch({ unbaked: 0 }),
+      withPatch({ stalenessFrames: -1 }),
+      withPatch({ probeCount: 0 }),
+      withPatch({ atlasBytes: 0 }),
+      withPatch({ bakeCostMs: Number.NaN }),
+      withPatch({ bakeBudgetMs: 0 }),
+      withPatch({ samplingIsolated: null }),
+      withPatch({ atlas: { ...observation.atlas, width: 1 } }),
+      withPatch({ atlas: { ...observation.atlas, depth: observation.atlas.depth + 1 } }),
+      withPatch({ bakeProgress: { ...observation.bakeProgress, fraction: 2 } }),
+    ];
+
+    for (const invalid of invalidObservations) {
+      expect(readProbeVolumeObservation(invalid)).toBeUndefined();
+    }
+  });
+
+  it("accepts a complete ready observation only when its age and sampling state are present", () => {
+    const observation = volume({ report: () => undefined }).observation;
+    const ready = {
+      ...observation,
+      status: "ready" as const,
+      stale: false,
+      unbaked: false,
+      stalenessFrames: 0,
+      samplingIsolated: false,
+      bakeProgress: {
+        ...observation.bakeProgress,
+        completed: observation.bakeProgress.total,
+        fraction: 1,
+        probesCompleted: observation.bakeProgress.probesTotal,
+        pass: observation.bakeProgress.passes - 1,
+      },
+    };
+
+    expect(readProbeVolumeObservation(ready)).toBe(ready);
+    expect(readProbeVolumeObservation({ ...ready, stalenessFrames: null })).toBeUndefined();
+    expect(readProbeVolumeObservation({ ...ready, samplingIsolated: true })).toBeUndefined();
+  });
+
+  it("rejects malformed nested atlas and progress records", () => {
+    const observation = volume({ report: () => undefined }).observation;
+    expect(readProbeVolumeObservation({ ...observation, atlas: null })).toBeUndefined();
+    expect(
+      readProbeVolumeObservation({
+        ...observation,
+        atlas: { ...observation.atlas, depth: 21 },
+      }),
+    ).toBeUndefined();
+    expect(readProbeVolumeObservation({ ...observation, bakeProgress: null })).toBeUndefined();
+  });
+
+  it("accepts a baking observation at the capture-to-repack boundary", () => {
+    const observation = volume({ report: () => undefined }).observation;
+    const completedCapture = observation.probeCount * 8;
+    const baking = {
+      ...observation,
+      samplingIsolated: true,
+      stale: true,
+      status: "baking" as const,
+      unbaked: false,
+      bakeProgress: {
+        ...observation.bakeProgress,
+        completed: completedCapture,
+        fraction: completedCapture / observation.bakeProgress.total,
+        pass: 0,
+        probesCompleted: observation.probeCount,
+      },
+    };
+
+    expect(readProbeVolumeObservation(baking)).toBe(baking);
+    expect(
+      readProbeVolumeObservation({
+        ...baking,
+        bakeProgress: { ...baking.bakeProgress, completed: baking.bakeProgress.total, fraction: 1 },
       }),
     ).toBeUndefined();
   });
@@ -222,6 +421,33 @@ describe("ProbeVolume", () => {
         bakeProgress: movedBackwards,
       }),
     ).toBeUndefined();
+  });
+
+  it("guards renderer ownership and observes ready-volume staleness per idle frame", () => {
+    const webgl = { kind: "webgl2", raw: {} } as unknown as IRendererLike;
+    expect(() => volume({ report: () => undefined }).attachRenderer(webgl)).toThrow(
+      /WebGPURenderer/u,
+    );
+
+    const deviceLimited = webgpuRenderer({ device: { limits: { maxTextureDimension3D: 34 } } });
+    expect(() => volume({ report: () => undefined }).attachRenderer(deviceLimited)).toThrow(
+      /device texture limit/u,
+    );
+
+    const subject = volume({ report: () => undefined });
+    subject.setProbeCoefficients(0, 0, 0, coefficient(1, 1, 1));
+    const first = webgpuRenderer();
+    const second = webgpuRenderer();
+    subject.attachRenderer(first);
+    subject.attachRenderer(first);
+    subject.process(first);
+    expect(subject.observation.stalenessFrames).toBe(1);
+    subject.process(first);
+    expect(subject.observation.stalenessFrames).toBe(2);
+    expect(() => subject.attachRenderer(second)).toThrow(/two renderers/u);
+    expect(() => subject.process(second)).toThrow(/different renderer/u);
+    expect(() => subject.process(webgl)).toThrow(/WebGPURenderer/u);
+    subject.detach();
   });
 
   it("keeps a large bake incremental across process calls", () => {
