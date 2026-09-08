@@ -633,10 +633,12 @@ export async function sampleElementVisibility(
   }
   if (domSample.isolationKey === undefined) return { bounds: domSample.bounds, rendered: false };
   let screenshot: Buffer | undefined;
+  let screenshotFailure: string | undefined;
   let cleanupResult: IVisibilityIsolationCleanupResult | undefined;
   try {
     screenshot = await page.screenshot({ clip: domSample.clip, omitBackground: true });
-  } catch {
+  } catch (error) {
+    screenshotFailure = error instanceof Error ? error.message : "the page screenshot failed";
     screenshot = undefined;
   } finally {
     cleanupResult = await page.evaluate((key): IVisibilityIsolationCleanupResult => {
@@ -765,20 +767,41 @@ export async function sampleElementVisibility(
       "Rerun the playtest after ensuring the target page permits temporary DOM attribute and style restoration.",
     ));
   }
+  if (screenshotFailure !== undefined) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+      `Could not capture the isolated visibility screenshot: ${screenshotFailure}.`,
+      "Rerun the playtest after ensuring the page renderer remains available for screenshot capture.",
+    ));
+  }
+  if (screenshot === undefined) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+      "The isolated visibility screenshot was not produced.",
+      "Rerun the playtest after ensuring the page renderer remains available for screenshot capture.",
+    ));
+  }
+  let rendered: boolean;
+  try {
+    rendered = containsPaintedPixels(screenshot);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "the PNG could not be decoded";
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+      `Could not decode the isolated visibility screenshot: ${reason}.`,
+      "Rerun the playtest after ensuring screenshot capture returns a valid PNG.",
+    ));
+  }
   return {
     bounds: domSample.bounds,
-    rendered: screenshot !== undefined && containsPaintedPixels(screenshot),
+    rendered,
   };
 }
 
 function containsPaintedPixels(screenshot: Buffer): boolean {
-  try {
-    const png = PNG.sync.read(screenshot);
-    for (let offset = 0; offset < png.data.length; offset += 4) {
-      if ((png.data[offset + 3] ?? 0) > 0) return true;
-    }
-  } catch {
-    return false;
+  const png = PNG.sync.read(screenshot);
+  for (let offset = 0; offset < png.data.length; offset += 4) {
+    if ((png.data[offset + 3] ?? 0) > 0) return true;
   }
   return false;
 }
