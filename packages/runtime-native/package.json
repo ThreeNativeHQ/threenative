@@ -60,7 +60,7 @@
   "scripts": {
     "deps:download": "node scripts/download-deps.mjs",
     "native:build": "node scripts/download-deps.mjs && node scripts/native-build.mjs",
-    "native:coverage": "node scripts/measure-native-coverage.mjs",
+    "native:coverage": "sh ../../scripts/xvfb.sh node scripts/measure-native-coverage.mjs",
     "native:test:cpp": "node scripts/measure-native-coverage.mjs --ctest",
     "native:test:asan": "node scripts/measure-native-coverage.mjs --sanitizers",
     "native:physics:cross": "node scripts/build-native-physics.mjs",

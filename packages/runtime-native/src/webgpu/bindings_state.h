@@ -317,6 +317,9 @@ struct FrameProfiling {
     // Production frame recorder drain, installed when requestDevice creates the device wrapper.
     // The host invokes it once after all rAF callbacks and replays the returned operations here.
     js::JSValueHandle frameOpStreamDrain{};
+    // Native contract tests can opt into the pre-recorder binding path without exposing a queue
+    // escape hatch to game code. Production leaves this false.
+    bool disableFrameOpStreamForTesting = false;
     // Set while a mid-frame flush is replaying, so a nested flush cannot re-enter the drain.
     bool frameOpStreamFlushing = false;
     uint64_t frameOpStreamReplayCrossings = 0;

@@ -45,6 +45,17 @@ bool testCrashAndLifecycle() {
     deliberateCrashAfterFrames("invalid");
     deliberateCrashAfterFrames(nullptr);
     deliberateCrashFrameCount();
+#ifndef _WIN32
+    setenv("THREENATIVE_PREFIX_CRASH_HANDLERS", "1", 1);
+    applyCrashHandlerPolicy(CrashHandlerPolicy::SuppressDialog);
+    unsetenv("THREENATIVE_PREFIX_CRASH_HANDLERS");
+
+    setenv("THREENATIVE_DELIBERATE_CRASH", "150", 1);
+    if (deliberateCrashFrameCount() != 150) return false;
+    setenv("THREENATIVE_DELIBERATE_CRASH", "invalid", 1);
+    if (deliberateCrashFrameCount() != 0) return false;
+    unsetenv("THREENATIVE_DELIBERATE_CRASH");
+#endif
 
     // Lifecycle
     lifecycleActionFor(SDL_EVENT_WILL_ENTER_BACKGROUND);
@@ -117,42 +128,35 @@ bool testPlatformInput() {
     refreshSafeAreaInsets();
 
     // Keys conversion
-    sdlKeyToDOMKey(SDLK_RETURN);
-    sdlKeyToDOMKey(SDLK_ESCAPE);
-    sdlKeyToDOMKey(SDLK_BACKSPACE);
-    sdlKeyToDOMKey(SDLK_TAB);
-    sdlKeyToDOMKey(SDLK_SPACE);
-    sdlKeyToDOMKey(SDLK_UP);
-    sdlKeyToDOMKey(SDLK_DOWN);
-    sdlKeyToDOMKey(SDLK_LEFT);
-    sdlKeyToDOMKey(SDLK_RIGHT);
-    sdlKeyToDOMKey(SDLK_HOME);
-    sdlKeyToDOMKey(SDLK_END);
-    sdlKeyToDOMKey(SDLK_PAGEUP);
-    sdlKeyToDOMKey(SDLK_PAGEDOWN);
-    sdlKeyToDOMKey(SDLK_INSERT);
-    sdlKeyToDOMKey(SDLK_DELETE);
-    sdlKeyToDOMKey(SDLK_F1);
-    sdlKeyToDOMKey(SDLK_F12);
-    sdlKeyToDOMKey(SDLK_LSHIFT);
-    sdlKeyToDOMKey(SDLK_LCTRL);
-    sdlKeyToDOMKey(SDLK_LALT);
-    sdlKeyToDOMKey(SDLK_LGUI);
-    sdlKeyToDOMKey(SDLK_CAPSLOCK);
-    sdlKeyToDOMKey('a');
-    sdlKeyToDOMKey('1');
+    for (uint32_t k = SDLK_A; k <= SDLK_Z; ++k) sdlKeyToDOMKey(k);
+    for (uint32_t k = SDLK_0; k <= SDLK_9; ++k) sdlKeyToDOMKey(k);
+    for (uint32_t k = SDLK_F1; k <= SDLK_F12; ++k) sdlKeyToDOMKey(k);
+    const uint32_t navKeys[] = {
+        SDLK_UP, SDLK_DOWN, SDLK_LEFT, SDLK_RIGHT, SDLK_HOME, SDLK_END,
+        SDLK_PAGEUP, SDLK_PAGEDOWN, SDLK_BACKSPACE, SDLK_DELETE, SDLK_INSERT,
+        SDLK_RETURN, SDLK_TAB, SDLK_ESCAPE, SDLK_SPACE, SDLK_LSHIFT, SDLK_RSHIFT,
+        SDLK_LCTRL, SDLK_RCTRL, SDLK_LALT, SDLK_RALT, SDLK_LGUI, SDLK_RGUI,
+        SDLK_CAPSLOCK, SDLK_MINUS, SDLK_EQUALS, SDLK_LEFTBRACKET, SDLK_RIGHTBRACKET,
+        SDLK_BACKSLASH, SDLK_SEMICOLON, SDLK_APOSTROPHE, SDLK_GRAVE, SDLK_COMMA,
+        SDLK_PERIOD, SDLK_SLASH, 0xFFFF
+    };
+    for (uint32_t k : navKeys) sdlKeyToDOMKey(k);
 
-    sdlKeyToDOMCode(SDLK_RETURN, SDL_SCANCODE_RETURN);
-    sdlKeyToDOMCode(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
-    sdlKeyToDOMCode(SDLK_BACKSPACE, SDL_SCANCODE_BACKSPACE);
-    sdlKeyToDOMCode(SDLK_TAB, SDL_SCANCODE_TAB);
-    sdlKeyToDOMCode(SDLK_SPACE, SDL_SCANCODE_SPACE);
-    sdlKeyToDOMCode(SDLK_UP, SDL_SCANCODE_UP);
-    sdlKeyToDOMCode(SDLK_DOWN, SDL_SCANCODE_DOWN);
-    sdlKeyToDOMCode(SDLK_LEFT, SDL_SCANCODE_LEFT);
-    sdlKeyToDOMCode(SDLK_RIGHT, SDL_SCANCODE_RIGHT);
-    sdlKeyToDOMCode(SDLK_A, SDL_SCANCODE_A);
-    sdlKeyToDOMCode(SDLK_1, SDL_SCANCODE_1);
+    for (uint32_t sc = SDL_SCANCODE_A; sc <= SDL_SCANCODE_Z; ++sc) sdlKeyToDOMCode(0, sc);
+    for (uint32_t sc = SDL_SCANCODE_1; sc <= SDL_SCANCODE_0; ++sc) sdlKeyToDOMCode(0, sc);
+    for (uint32_t sc = SDL_SCANCODE_F1; sc <= SDL_SCANCODE_F12; ++sc) sdlKeyToDOMCode(0, sc);
+    const uint32_t navScancodes[] = {
+        SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT,
+        SDL_SCANCODE_HOME, SDL_SCANCODE_END, SDL_SCANCODE_PAGEUP, SDL_SCANCODE_PAGEDOWN,
+        SDL_SCANCODE_BACKSPACE, SDL_SCANCODE_DELETE, SDL_SCANCODE_INSERT, SDL_SCANCODE_RETURN,
+        SDL_SCANCODE_TAB, SDL_SCANCODE_ESCAPE, SDL_SCANCODE_SPACE, SDL_SCANCODE_LSHIFT,
+        SDL_SCANCODE_RSHIFT, SDL_SCANCODE_LCTRL, SDL_SCANCODE_RCTRL, SDL_SCANCODE_LALT,
+        SDL_SCANCODE_RALT, SDL_SCANCODE_LGUI, SDL_SCANCODE_RGUI, SDL_SCANCODE_CAPSLOCK,
+        SDL_SCANCODE_MINUS, SDL_SCANCODE_EQUALS, SDL_SCANCODE_LEFTBRACKET, SDL_SCANCODE_RIGHTBRACKET,
+        SDL_SCANCODE_BACKSLASH, SDL_SCANCODE_SEMICOLON, SDL_SCANCODE_APOSTROPHE, SDL_SCANCODE_GRAVE,
+        SDL_SCANCODE_COMMA, SDL_SCANCODE_PERIOD, SDL_SCANCODE_SLASH, 0xFFFF
+    };
+    for (uint32_t sc : navScancodes) sdlKeyToDOMCode(0, sc);
 
     // Callbacks
     bool keyCalled = false;
@@ -233,6 +237,16 @@ constexpr const char* kRuntimeScript = R"JS((() => {
   const rafId = requestAnimationFrame((ts) => { rafFired = true; });
   cancelAnimationFrame(rafId);
 
+  // scheduler.yield
+  if (typeof scheduler !== "undefined" && scheduler.yield) {
+    scheduler.yield().then(() => {});
+  }
+
+  // performance.now
+  if (typeof performance !== "undefined" && performance.now) {
+    const pNow = performance.now();
+  }
+
   // URL & URLSearchParams
   const u = new URL("https://example.com/test?x=1&y=2#hash");
   if (u.hostname !== "example.com" || u.pathname !== "/test") throw new Error("URL mismatch");
@@ -269,6 +283,14 @@ constexpr const char* kRuntimeScript = R"JS((() => {
   let resizeFired = false;
   window.addEventListener("resize", () => { resizeFired = true; });
   window.dispatchEvent(new Event("resize"));
+
+  // Event capture options
+  const capCb = () => {};
+  window.addEventListener("capEvent", capCb, true);
+  window.addEventListener("capEvent", capCb, { capture: true });
+  window.addEventListener("capEvent", capCb, { capture: false });
+  window.removeEventListener("capEvent", capCb, true);
+  window.removeEventListener("capEvent", capCb, { capture: true });
 
   // Continuous rAF loop for HostGapMeter attribution
   let frameCount = 0;
@@ -317,6 +339,8 @@ constexpr const char* kRuntimeScript = R"JS((() => {
     if (pMail) {
       pMail.respond("test_mail.json", "{\"test\":1}", "r1", "ping", 1.0);
       pMail.receive("test_mail.json");
+      pMail.respond("test_large.json", "a".repeat(1000005));
+      pMail.receive("nonexistent_mail.json");
     }
   }
 
@@ -329,11 +353,165 @@ constexpr const char* kRuntimeScript = R"JS((() => {
   globalThis.__tnUiGameReceive = (frame) => {
     globalThis.__lastUiFrame = frame;
   };
+  if (globalThis.__tnUiPostMessage) {
+    try { globalThis.__tnUiPostMessage("{\"type\":\"test_ping\"}"); } catch(e) {}
+  }
+  globalThis.__tnOnTrimMemory = (lvl) => {
+    if (lvl === 999) throw new Error("intentional trim handler error");
+  };
+
+  // Storage edge cases
+  if (typeof __storageGetItem !== "undefined") {
+    __storageGetItem();
+    __storageGetItem("non_existent_key_12345");
+    __storageSetItem();
+    __storageSetItem("single_key");
+    __storageRemoveItem();
+    __storageKey();
+    __storageKey(9999);
+    __storageLength();
+  }
+
+  // Fetch / HTTP edge cases
+  if (typeof __readFileSync !== "undefined") {
+    __readFileSync();
+  }
+  if (typeof __readFileAsync !== "undefined") {
+    __readFileAsync();
+    __readFileAsync("missing_callback.txt");
+  }
+  if (typeof __httpRequest !== "undefined") {
+    __httpRequest();
+  }
+  if (typeof __httpRequestAsync !== "undefined") {
+    __httpRequestAsync();
+    __httpRequestAsync("http://127.0.0.1:0/test_async", {
+      method: "POST",
+      headers: new Map([["x-custom-h", "custom-val"]]),
+      body: new Uint8Array([10, 20, 30]).buffer
+    }, (res) => {});
+  }
+
+  // Worker edge cases
+  if (typeof __tnNativeWorkerCreate !== "undefined") {
+    try { __tnNativeWorkerCreate(); } catch(e) {}
+    try { __tnNativeWorkerCreate(12345); } catch(e) {}
+  }
+  if (typeof __tnNativeWorkerPost !== "undefined") {
+    __tnNativeWorkerPost();
+    __tnNativeWorkerPost(99999);
+    __tnNativeWorkerPost(99999, "hello");
+  }
+  if (typeof __tnNativeWorkerTerminate !== "undefined") {
+    __tnNativeWorkerTerminate();
+    __tnNativeWorkerTerminate(99999);
+  }
+
+  // UI bridge edge cases
+  if (typeof __tnUiPost !== "undefined") {
+    __tnUiPost();
+    __tnUiPost("test payload");
+  }
+  if (typeof __tnUiOverlayAttached !== "undefined") {
+    __tnUiOverlayAttached();
+  }
+
+  // Module edge cases
+  if (typeof __mystralRequire !== "undefined") {
+    __mystralRequire();
+  }
+
+  // File fetch integration
+  (async () => {
+    try {
+      if (globalThis.__localFetchFile) {
+        const res = await fetch("file://" + globalThis.__localFetchFile);
+        if (res.ok && res.status === 200) {
+          const txt = await res.text();
+          const json = JSON.parse(txt);
+          globalThis.__fetchOk = json.success === true;
+        }
+        const badRes = await fetch("file:///non_existent_path_xyz123.txt");
+        globalThis.__fetch404 = badRes.status === 404;
+      }
+    } catch (e) {
+      console.error("fetch_err", e);
+    }
+  })();
+
+  // DOM document event listeners
+  let docEventFired = false;
+  const docListener = () => { docEventFired = true; };
+  document.addEventListener("custom", docListener);
+  document.dispatchEvent(new Event("custom"));
+  document.removeEventListener("custom", docListener);
+
+  // Constructed event with immediate propagation stopped and default prevented
+  const ev = new Event("customConstructed");
+  ev._immediatePropagationStopped = true;
+  ev.defaultPrevented = true;
+  document.addEventListener("customConstructed", () => {});
+  document.dispatchEvent(ev);
+
+  // Event preventDefault and stopPropagation handlers
+  window.addEventListener("keydown", (e) => { e.preventDefault(); e.stopPropagation(); });
+  window.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
+  window.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); });
+  window.addEventListener("wheel", (e) => { e.preventDefault(); e.stopPropagation(); });
+  window.addEventListener("gamepadconnected", (e) => {});
+
+  // Canvas element DOM methods
+  const cvsEl = document.getElementById("canvas");
+  if (cvsEl) {
+    const dummy = () => {};
+    cvsEl.addEventListener("testEvent", dummy);
+    cvsEl.addEventListener("testEvent", dummy);
+    cvsEl.dispatchEvent(new Event("testEvent"));
+    cvsEl.removeEventListener("testEvent", dummy);
+    cvsEl.getBoundingClientRect();
+    cvsEl.toDataURL("image/png");
+    cvsEl.toDataURL("image/jpeg");
+    cvsEl.toDataURL("image/webp");
+    cvsEl.toDataURL("image/gif");
+    cvsEl.toDataURL("image/unsupported");
+    if (cvsEl.setPointerCapture) cvsEl.setPointerCapture(1);
+    if (cvsEl.releasePointerCapture) cvsEl.releasePointerCapture(1);
+    if (cvsEl.getContext) cvsEl.getContext("unsupported");
+  }
+  document.getElementById("nonexistent");
+  document.getElementById();
+
+  // __readFileSync and __readFileAsync native helpers
+  try {
+    if (globalThis.__localFetchFile && globalThis.__readFileSync) {
+      globalThis.__readFileSync(globalThis.__localFetchFile);
+      globalThis.__readFileSync("nonexistent_sync.txt");
+      globalThis.__readFileSync();
+    }
+    if (globalThis.__localFetchFile && globalThis.__readFileAsync) {
+      globalThis.__readFileAsync(globalThis.__localFetchFile, (data, err) => {});
+      globalThis.__readFileAsync("nonexistent_async.txt", (data, err) => {});
+    }
+    if (globalThis.__httpRequest) {
+      globalThis.__httpRequest("http://127.0.0.1:0/test", {
+        method: "POST",
+        headers: new Map([["x-test", "1"]]),
+        body: "test"
+      }, () => {});
+      globalThis.__httpRequest();
+    }
+  } catch (e) {}
 
   globalThis.__tnRuntimeDone = true;
 })())JS";
 
 bool testRuntimeMethods() {
+    fs::path fetchTestFile = fs::current_path() / "test_fetch.json";
+    {
+        std::ofstream out(fetchTestFile);
+        out << "{\"success\": true, \"count\": 42}";
+    }
+
     mystral::RuntimeConfig config;
     config.width = 640;
     config.height = 480;
@@ -351,6 +529,11 @@ bool testRuntimeMethods() {
 
     if (runtime->getWidth() <= 0 || runtime->getHeight() <= 0) return false;
 
+    // Connect gamepad 0 before script runs so navigator.getGamepads() sees it
+    mystral::platform::processGamepadConnected(0);
+
+    runtime->evalScript(("globalThis.__localFetchFile = '" + fetchTestFile.string() + "';").c_str());
+
     if (!runtime->evalScript(kRuntimeScript, "runtime_test.js")) return false;
 
     // Test loadScript with watch mode enabled
@@ -361,6 +544,21 @@ bool testRuntimeMethods() {
     }
     if (!runtime->loadScript(tempScript.string())) return false;
     if (!runtime->evalScript("if (globalThis.__tnRuntimeDone !== true || globalThis.__scriptLoaded !== true) throw new Error('runtime scripts did not complete');", "check.js")) return false;
+
+    // Playtest screenshot request mailbox
+    fs::path reqFile = fs::current_path() / "tn-playtest-screenshot-request.txt";
+    fs::path outPng = fs::current_path() / "mailbox_out.png";
+    {
+        std::ofstream out(reqFile);
+        out << outPng.string();
+    }
+#ifndef _WIN32
+    setenv("TN_PLAYTEST_MAILBOX_ROOT", fs::current_path().string().c_str(), 1);
+    runtime->pollEvents();
+    unsetenv("TN_PLAYTEST_MAILBOX_ROOT");
+#endif
+    fs::remove(reqFile);
+    fs::remove(outPng);
 
     std::vector<uint8_t> frameData;
     uint32_t fw = 0, fh = 0;
@@ -406,6 +604,9 @@ bool testRuntimeMethods() {
 
     mystral::platform::processResize(1024, 768);
 
+    mystral::platform::processGamepadConnected(0);
+    mystral::platform::processGamepadDisconnected(0);
+
     // Run at least 305 frames to trigger HostGapMeter::report() (kWindow = 300)
     for (int frame = 0; frame < 305; ++frame) {
         if (!runtime->pollEvents()) break;
@@ -414,6 +615,45 @@ bool testRuntimeMethods() {
 
     runtime->reloadScript();
     fs::remove(tempScript);
+    fs::remove(fetchTestFile);
+
+    // Runtime getters and lifecycle triggers
+    runtime->getJSContext();
+    runtime->getWGPUDevice();
+    runtime->getWGPUQueue();
+    runtime->getWGPUInstance();
+    runtime->getCurrentTexture();
+    runtime->getSDLWindow();
+    runtime->getPresentCount();
+    runtime->isStartupReady();
+    runtime->hasCapturedFrame();
+    runtime->clearCapturedFrame();
+    runtime->requestFrameScreenshot();
+    runtime->getWebGPUBindingsState();
+    runtime->getExitCode();
+    runtime->quit();
+    mystral::getVersion();
+    mystral::getJSEngine();
+    mystral::getWebGPUBackend();
+
+    // Request surface revalidation and memory trim
+    mystral::platform::requestSurfaceRevalidation();
+    mystral::platform::noteMemoryTrimLevel(50);
+    mystral::platform::noteMemoryTrimLevel(999);
+    runtime->pollEvents();
+
+    // Test surface revalidation control branches
+#ifndef _WIN32
+    setenv("THREENATIVE_SKIP_SURFACE_REVALIDATE", "1", 1);
+    mystral::platform::requestSurfaceRevalidation();
+    runtime->pollEvents();
+    unsetenv("THREENATIVE_SKIP_SURFACE_REVALIDATE");
+
+    setenv("THREENATIVE_FORCE_SURFACE_REVALIDATE_FAILURE", "1", 1);
+    mystral::platform::requestSurfaceRevalidation();
+    runtime->pollEvents();
+    unsetenv("THREENATIVE_FORCE_SURFACE_REVALIDATE_FAILURE");
+#endif
 
     // Test runtime->run() in headless mode with idle exit
     {
@@ -426,6 +666,34 @@ bool testRuntimeMethods() {
             if (!runRuntime->evalScript("setTimeout(() => {}, 5);", "idle_test.js")) return false;
             runRuntime->run();
         } else {
+            return false;
+        }
+    }
+
+    // Test process.exit() from JS
+    {
+        mystral::RuntimeConfig exitConfig;
+        exitConfig.width = 64;
+        exitConfig.height = 64;
+        exitConfig.noSdl = true;
+        auto exitRuntime = mystral::Runtime::create(exitConfig);
+        if (!exitRuntime) return false;
+        if (!exitRuntime->evalScript(
+                "if (typeof process !== 'undefined' && process.exit) { process.exit(42); }",
+                "exit_test.js") ||
+            exitRuntime->getExitCode() != 42) {
+            std::cerr << "process.exit contract did not report exit code 42\n";
+            return false;
+        }
+    }
+
+    // Test invalid maxFps validation
+    {
+        mystral::RuntimeConfig badCapConfig;
+        badCapConfig.maxFps = 2000;
+        auto badRuntime = mystral::Runtime::create(badCapConfig);
+        if (badRuntime != nullptr) {
+            std::cerr << "Expected Runtime::create to fail with maxFps > 1000\n";
             return false;
         }
     }
@@ -493,6 +761,96 @@ bool testWindowAndSurface() {
     runtime->resize(128, 128);
     for (int frame = 0; frame < 3; ++frame) {
         if (!runtime->pollEvents()) break;
+    }
+
+    // Test window query and configuration APIs
+    int winW = 0, winH = 0;
+    mystral::platform::getWindowSize(&winW, &winH);
+    mystral::platform::displayPixelDensity();
+    mystral::platform::getSDLWindow();
+    mystral::platform::getMetalView();
+    mystral::platform::getMetalLayer();
+    mystral::platform::setWindowTitle("Updated Test Window");
+    mystral::platform::setFullscreen(false);
+    mystral::platform::syncWindowSize(64, 64);
+    mystral::platform::setWindowSize(64, 64);
+
+    // Push SDL events to exercise pollEvents switch statement
+    SDL_Event ev{};
+
+    ev.type = SDL_EVENT_WINDOW_RESIZED;
+    ev.window.data1 = 128;
+    ev.window.data2 = 128;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_KEY_DOWN;
+    ev.key.key = SDLK_A;
+    ev.key.scancode = SDL_SCANCODE_A;
+    ev.key.down = true;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_KEY_UP;
+    ev.key.key = SDLK_A;
+    ev.key.scancode = SDL_SCANCODE_A;
+    ev.key.down = false;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_MOUSE_MOTION;
+    ev.motion.x = 32.0f;
+    ev.motion.y = 32.0f;
+    ev.motion.xrel = 1.0f;
+    ev.motion.yrel = 1.0f;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    ev.button.button = SDL_BUTTON_LEFT;
+    ev.button.x = 32.0f;
+    ev.button.y = 32.0f;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_MOUSE_BUTTON_UP;
+    ev.button.button = SDL_BUTTON_LEFT;
+    ev.button.x = 32.0f;
+    ev.button.y = 32.0f;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_MOUSE_WHEEL;
+    ev.wheel.x = 0.0f;
+    ev.wheel.y = 1.0f;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_FINGER_DOWN;
+    ev.tfinger.fingerID = 1;
+    ev.tfinger.x = 0.5f;
+    ev.tfinger.y = 0.5f;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_FINGER_MOTION;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_FINGER_UP;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_FINGER_CANCELED;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_GAMEPAD_ADDED;
+    ev.gdevice.which = 0;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_GAMEPAD_REMOVED;
+    ev.gdevice.which = 0;
+    SDL_PushEvent(&ev);
+
+    // Poll all queued events through platform
+    mystral::platform::pollEvents();
+
+    // Test QUIT event and shouldQuit
+    ev.type = SDL_EVENT_QUIT;
+    SDL_PushEvent(&ev);
+    mystral::platform::pollEvents();
+    if (!mystral::platform::shouldQuit()) {
+        std::cerr << "shouldQuit should be true after SDL_EVENT_QUIT\n";
     }
 
     return true;

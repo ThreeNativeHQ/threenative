@@ -294,6 +294,30 @@ constexpr const char* kScript = R"JS((() => {
       await incoming.cancel('stop-accepting');
       ok.push(shutdowns.join(',') === '4:1,24:0,24:1');
       await accepted.writable.getWriter().write(new Uint8Array([7]));
+
+      // incomingUni, datagram, and stream data events
+      const incomingUni = transport.incomingUnidirectionalStreams.getReader();
+      __wtDispatch(5151, 'incomingUni', 23);
+      const uniStream = (await incomingUni.read()).value;
+      ok.push(uniStream instanceof ReadableStream);
+
+      const dgramReader = transport.datagrams.readable.getReader();
+      __wtDispatch(5151, 'datagram', new Uint8Array([1, 2, 3]));
+      const dgramChunk = (await dgramReader.read()).value;
+      ok.push(dgramChunk && dgramChunk.byteLength === 3);
+
+      __wtDispatch(5151, 'datagramCapacity', 256);
+      ok.push(transport.datagrams.maxDatagramSize === 256);
+
+      const uniStreamReader = uniStream.getReader();
+      __wtDispatch(5151, 'streamData', 23, new Uint8Array([9, 8, 7]), false);
+      const uniData = (await uniStreamReader.read()).value;
+      ok.push(uniData && uniData.byteLength === 3);
+
+      __wtDispatch(5151, 'streamReset', 23, 404);
+      __wtDispatch(5151, 'streamWriteError', 4, 500);
+      __wtDispatch(5151, 'streamWriteClosed', 4);
+
       __wtDispatch(5151, 'closed', 'local', 9);
       ok.push((await transport.closed).closeCode === 9);
       ok.push(transport._state.streams.size === 0);

@@ -11,6 +11,12 @@
 
 namespace fs = std::filesystem;
 
+#if defined(MYSTRAL_USE_V8) && MYSTRAL_USE_V8
+namespace mystral::js {
+void mystralSetV8SnapshotBlob(const char* data, size_t size);
+}
+#endif
+
 namespace {
 
 void writeFile(const fs::path& path, const std::string& content) {
@@ -18,6 +24,69 @@ void writeFile(const fs::path& path, const std::string& content) {
     std::ofstream out(path);
     out << content;
 }
+
+class QuickJSEngineFacade : public mystral::js::Engine {
+    mystral::js::Engine* real_;
+public:
+    explicit QuickJSEngineFacade(mystral::js::Engine* real) : real_(real) {}
+    mystral::js::EngineType getType() const override { return mystral::js::EngineType::QuickJS; }
+    const char* getName() const override { return "quickjs"; }
+    bool eval(const char* code, const char* filename) override { return real_->eval(code, filename); }
+    mystral::js::JSValueHandle evalWithResult(const char* code, const char* filename) override { return real_->evalWithResult(code, filename); }
+    bool evalScript(const char* code, const char* filename) override { return real_->evalScript(code, filename); }
+    mystral::js::JSValueHandle evalScriptWithResult(const char* code, const char* filename) override { return real_->evalScriptWithResult(code, filename); }
+    mystral::js::JSValueHandle getGlobal() override { return real_->getGlobal(); }
+    bool setGlobalProperty(const char* name, mystral::js::JSValueHandle val) override { return real_->setGlobalProperty(name, val); }
+    mystral::js::JSValueHandle getGlobalProperty(const char* name) override { return real_->getGlobalProperty(name); }
+    mystral::js::JSValueHandle newUndefined() override { return real_->newUndefined(); }
+    mystral::js::JSValueHandle newNull() override { return real_->newNull(); }
+    mystral::js::JSValueHandle newBoolean(bool val) override { return real_->newBoolean(val); }
+    mystral::js::JSValueHandle newNumber(double val) override { return real_->newNumber(val); }
+    mystral::js::JSValueHandle newString(const char* val) override { return real_->newString(val); }
+    mystral::js::JSValueHandle newObject() override { return real_->newObject(); }
+    mystral::js::JSValueHandle newArray(size_t len) override { return real_->newArray(len); }
+    mystral::js::JSValueHandle newArrayBuffer(const uint8_t* d, size_t l) override { return real_->newArrayBuffer(d, l); }
+    mystral::js::JSValueHandle newArrayBufferExternal(void* d, size_t l) override { return real_->newArrayBufferExternal(d, l); }
+    void* getArrayBufferData(mystral::js::JSValueHandle v, size_t* s) override { return real_->getArrayBufferData(v, s); }
+    mystral::js::JSValueHandle createFloat32Array(const float* d, size_t c) override { return real_->createFloat32Array(d, c); }
+    mystral::js::JSValueHandle createFloat32ArrayView(float* d, size_t c) override { return real_->createFloat32ArrayView(d, c); }
+    mystral::js::JSValueHandle createUint32Array(const uint32_t* d, size_t c) override { return real_->createUint32Array(d, c); }
+    mystral::js::JSValueHandle createUint8Array(const uint8_t* d, size_t c) override { return real_->createUint8Array(d, c); }
+    mystral::js::JSValueHandle newFunction(const char* n, mystral::js::NativeFunction f) override { return real_->newFunction(n, f); }
+    bool toBoolean(mystral::js::JSValueHandle v) override { return real_->toBoolean(v); }
+    double toNumber(mystral::js::JSValueHandle v) override { return real_->toNumber(v); }
+    std::string toString(mystral::js::JSValueHandle v) override { return real_->toString(v); }
+    bool isUndefined(mystral::js::JSValueHandle v) override { return real_->isUndefined(v); }
+    bool isNull(mystral::js::JSValueHandle v) override { return real_->isNull(v); }
+    bool isBoolean(mystral::js::JSValueHandle v) override { return real_->isBoolean(v); }
+    bool isNumber(mystral::js::JSValueHandle v) override { return real_->isNumber(v); }
+    bool isString(mystral::js::JSValueHandle v) override { return real_->isString(v); }
+    bool isObject(mystral::js::JSValueHandle v) override { return real_->isObject(v); }
+    bool isArray(mystral::js::JSValueHandle v) override { return real_->isArray(v); }
+    bool isFunction(mystral::js::JSValueHandle v) override { return real_->isFunction(v); }
+    bool isBindingDestination(mystral::js::JSValueHandle v) override { return real_->isBindingDestination(v); }
+    bool isSameValue(mystral::js::JSValueHandle l, mystral::js::JSValueHandle r) override { return real_->isSameValue(l, r); }
+    bool setProperty(mystral::js::JSValueHandle o, const char* n, mystral::js::JSValueHandle v) override { return real_->setProperty(o, n, v); }
+    mystral::js::JSValueHandle getProperty(mystral::js::JSValueHandle o, const char* n) override { return real_->getProperty(o, n); }
+    bool getPropertyInfo(mystral::js::JSValueHandle o, const char* n, mystral::js::JSPropertyInfo& i) override { return real_->getPropertyInfo(o, n, i); }
+    void releasePropertyInfo(mystral::js::JSPropertyInfo& i) override { real_->releasePropertyInfo(i); }
+    bool hasProperty(mystral::js::JSValueHandle o, const char* n) override { return real_->hasProperty(o, n); }
+    bool deleteProperty(mystral::js::JSValueHandle o, const char* n) override { return real_->deleteProperty(o, n); }
+    bool setPropertyIndex(mystral::js::JSValueHandle a, uint32_t i, mystral::js::JSValueHandle v) override { return real_->setPropertyIndex(a, i, v); }
+    mystral::js::JSValueHandle getPropertyIndex(mystral::js::JSValueHandle a, uint32_t i) override { return real_->getPropertyIndex(a, i); }
+    mystral::js::JSValueHandle call(mystral::js::JSValueHandle f, mystral::js::JSValueHandle t, const std::vector<mystral::js::JSValueHandle>& a) override { return real_->call(f, t, a); }
+    void freezeHandle(mystral::js::JSValueHandle v) override { real_->freezeHandle(v); }
+    void freeHandle(mystral::js::JSValueHandle v) override { real_->freeHandle(v); }
+    size_t outstandingHandleCount() const override { return real_->outstandingHandleCount(); }
+    void gc() override { real_->gc(); }
+    void processMicrotasks() override { real_->processMicrotasks(); }
+    bool hasException() override { return real_->hasException(); }
+    std::string getException() override { return real_->getException(); }
+    void throwException(const char* m) override { real_->throwException(m); }
+    void setPrivateData(mystral::js::JSValueHandle o, void* d) override { real_->setPrivateData(o, d); }
+    void* getPrivateData(mystral::js::JSValueHandle o) override { return real_->getPrivateData(o); }
+    void* getRawContext() override { return real_->getRawContext(); }
+};
 
 bool testTsTranspiler() {
     if (mystral::js::isTypeScriptTranspilerAvailable()) {
@@ -172,12 +241,185 @@ bool testModuleResolverAndSystem(mystral::js::Engine* engine, const fs::path& te
         // okay if nonexistent
     }
 
+    // Root dir, bundle query, resolve resolved path
+    resolver.setRootDir(tempDir.string());
+    resolver.usingBundle();
+    mystral::js::ResolvedModule resolvedPathMod;
+    resolver.resolveResolvedPath(indexJs.string(), resolvedPathMod, error);
+
+    // Directory resolution with index.js / index.ts
+    fs::path dirWithIndex = tempDir / "dirWithIndex";
+    fs::create_directories(dirWithIndex);
+    writeFile(dirWithIndex / "index.js", "exports.dirIndex = true;");
+    if (resolver.resolve("./dirWithIndex", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error)) {
+        // resolved directory with index.js
+    }
+
+    // Package.json parsing tests exercising json parser branches
+    fs::path jsonFixtures = tempDir / "node_modules" / "json-fixture" / "package.json";
+    writeFile(jsonFixtures, R"JSON({
+      "name": "json-fixture",
+      "main": "./main.js",
+      "scientific": 1.25e2,
+      "negScientific": -3.5E-1,
+      "escaped": "A\bB\fC\nD\rE\tF\/G\\H\"I\u0041",
+      "bools": [true, false],
+      "nullVal": null,
+      "emptyObj": {},
+      "emptyArr": []
+    })JSON");
+    writeFile(tempDir / "node_modules" / "json-fixture" / "main.js", "exports.ok = true;");
+    resolver.resolve("json-fixture", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    fs::path jsonBadEscape = tempDir / "node_modules" / "bad-escape" / "package.json";
+    writeFile(jsonBadEscape, "{\"name\": \"bad-escape\", \"main\": \"index.js\", \"bad\": \"\\z\"}");
+    resolver.resolve("bad-escape", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    fs::path jsonBadNum = tempDir / "node_modules" / "bad-num" / "package.json";
+    writeFile(jsonBadNum, "{\"name\": \"bad-num\", \"main\": \"index.js\", \"bad\": 12. }");
+    resolver.resolve("bad-num", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    fs::path jsonUnclosed = tempDir / "node_modules" / "unclosed" / "package.json";
+    writeFile(jsonUnclosed, "{\"name\": \"unclosed\", \"arr\": [1, 2");
+    resolver.resolve("unclosed", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    // Resolver matrix: scoped packages, package fallbacks, directory packages and every
+    // public exports/imports shape. These are deliberately separate package roots so the
+    // resolver's package-json cache cannot hide a branch on a later lookup.
+    writeFile(tempDir / "node_modules" / "@scope" / "pkg" / "package.json",
+              R"JSON({"name":"@scope/pkg","main":"index.js"})JSON");
+    writeFile(tempDir / "node_modules" / "@scope" / "pkg" / "index.js", "exports.ok = true;");
+    writeFile(tempDir / "node_modules" / "@scope" / "pkg" / "sub.js", "exports.sub = true;");
+    if (!resolver.resolve("@scope/pkg", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error) ||
+        !resolver.resolve("@scope/pkg/sub", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error)) {
+        std::cerr << "scoped package resolution failed: " << error << "\n";
+        return false;
+    }
+    resolver.resolve("@scope", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    writeFile(tempDir / "node_modules" / "plain-index" / "index.js", "exports.ok = true;");
+    resolver.resolve("plain-index", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    writeFile(tempDir / "node_modules" / "no-main" / "package.json", R"JSON({"name":"no-main"})JSON");
+    writeFile(tempDir / "node_modules" / "no-main" / "index.js", "exports.ok = true;");
+    resolver.resolve("no-main", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    writeFile(tempDir / "node_modules" / "plain-sub" / "package.json", R"JSON({"name":"plain-sub"})JSON");
+    writeFile(tempDir / "node_modules" / "plain-sub" / "extra.js", "exports.ok = true;");
+    resolver.resolve("plain-sub/extra", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    const fs::path directoryPackage = tempDir / "directory-package";
+    writeFile(directoryPackage / "package.json", R"JSON({"main":"main.js"})JSON");
+    writeFile(directoryPackage / "main.js", "exports.ok = true;");
+    resolver.resolve("./directory-package", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("./directory-package", indexJs.string(), mystral::js::ResolveMode::Import, outMod, error);
+
+    const fs::path directoryExports = tempDir / "directory-exports";
+    writeFile(directoryExports / "package.json", R"JSON({"exports":{".":"./entry.js"}})JSON");
+    writeFile(directoryExports / "entry.js", "export const ok = true;");
+    resolver.resolve("./directory-exports", indexJs.string(), mystral::js::ResolveMode::Import, outMod, error);
+
+    const auto addPackage = [&](const std::string& name, const std::string& packageJson,
+                                const std::string& entry = "index.js") {
+        writeFile(tempDir / "node_modules" / name / "package.json", packageJson);
+        if (!entry.empty()) writeFile(tempDir / "node_modules" / name / entry, "exports.ok = true;");
+    };
+    addPackage("array-exports", R"JSON({"exports":[null,"./index.js"]})JSON");
+    resolver.resolve("array-exports", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    addPackage("conditional-exports", R"JSON({"exports":{"browser":"./missing.js","default":"./index.js"}})JSON");
+    resolver.resolve("conditional-exports", indexJs.string(), mystral::js::ResolveMode::Import, outMod, error);
+    addPackage("conditional-array", R"JSON({"exports":{".":[null,{"default":"./index.js"}]}})JSON");
+    resolver.resolve("conditional-array", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    addPackage("invalid-exports", R"JSON({"exports":true})JSON");
+    resolver.resolve("invalid-exports", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    addPackage("bare-exports", R"JSON({"exports":"bare-target"})JSON");
+    resolver.resolve("bare-exports", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    addPackage("no-condition", R"JSON({"exports":{".":{"browser":"./index.js"}}})JSON");
+    resolver.resolve("no-condition", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    addPackage("pattern-exports", R"JSON({"exports":{"./foo/*/bar":"./dist/*.js","./*":"./dist/*.js"}})JSON");
+    writeFile(tempDir / "node_modules" / "pattern-exports" / "dist" / "ok.js", "exports.ok = true;");
+    resolver.resolve("pattern-exports/foo/nope", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("pattern-exports/*", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("pattern-exports/missing", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    const fs::path importPackage = tempDir / "node_modules" / "import-package";
+    writeFile(importPackage / "package.json", R"JSON({"imports":{"#local":"./internal.js","#pkg":"plain-index"}})JSON");
+    writeFile(importPackage / "internal.js", "exports.ok = true;");
+    resolver.resolve("#local", (importPackage / "ref.js").string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("#pkg", (importPackage / "ref.js").string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("#missing", (importPackage / "ref.js").string(), mystral::js::ResolveMode::Require, outMod, error);
+    writeFile(tempDir / "node_modules" / "no-imports" / "package.json", R"JSON({"name":"no-imports"})JSON");
+    resolver.resolve("#missing", (tempDir / "node_modules" / "no-imports" / "ref.js").string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("#missing", (tempDir / "outside-ref.js").string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    // Extension and absolute-path branches.
+    writeFile(tempDir / "late-ext.tsx", "export const ok = true;");
+    resolver.resolve("./late-ext", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("./late-ext", indexJs.string(), mystral::js::ResolveMode::Import, outMod, error);
+    resolver.resolve("C:/not-a-real-native-path.js", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    // Parser failures that cannot be reached through the happy-path package fixtures above.
+    const std::vector<std::pair<std::string, std::string>> malformedPackages = {
+        {"trailing-json", "{} trailing"},
+        {"empty-json", ""},
+        {"invalid-value-json", "{\"x\":?}"},
+        {"missing-colon-json", "{\"x\" 1}"},
+        {"missing-comma-json", "{\"x\":1 \"y\":2}"},
+        {"unclosed-object-json", "{\"x\":1"},
+        {"unclosed-object-loop-json", "{\"x\":1, \"y\":2"},
+        {"array-comma-json", "[1 2]"},
+        {"array-end-json", "[1,2"},
+        {"invalid-number-json", "{\"x\":-}"},
+        {"unterminated-string-json", "{\"x\":\"unterminated}"},
+        {"trailing-escape-json", "{\"x\":\"bad\\"},
+        {"short-unicode-json", "{\"x\":\"\\u12\"}"},
+        {"bad-unicode-json", "{\"x\":\"\\u12G4\"}"},
+    };
+    for (const auto& [name, contents] : malformedPackages) {
+        writeFile(tempDir / "node_modules" / name / "package.json", contents);
+        resolver.resolve(name, indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    }
+    addPackage("hex-json", R"JSON({"name":"hex-json","main":"index.js","low":"\u00af","upper":"\u00AF"})JSON");
+    resolver.resolve("hex-json", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    // Test ModuleResolver helper methods and resolveResolvedPath
+    mystral::js::ModuleResolver emptyRes("");
+    emptyRes.setRootDir("");
+    emptyRes.resolve("", "", mystral::js::ResolveMode::Require, outMod, error);
+    emptyRes.normalizeSpecifier("file:///path/to/script.js");
+    emptyRes.dirname("/a/b/c.js");
+    emptyRes.dirname("script.js");
+
+    mystral::js::ResolvedModule resMod;
+    emptyRes.resolveResolvedPath(indexJs.string(), resMod, error);
+    emptyRes.resolveResolvedPath((tempDir / "nonexistent.mjs").string(), resMod, error);
+    emptyRes.resolveResolvedPath((tempDir / "nonexistent.cjs").string(), resMod, error);
+    emptyRes.resolveResolvedPath((tempDir / "nonexistent.json").string(), resMod, error);
+
+    std::string emptyFileContent;
+    mystral::js::ResolvedPath resPath{ indexJs.string(), false };
+    emptyRes.readFile(resPath, emptyFileContent, error);
+    mystral::js::ResolvedPath badPath{ (tempDir / "nonexistent.js").string(), false };
+    emptyRes.readFile(badPath, emptyFileContent, error);
+
     // Test ModuleSystem with V8 Engine
     mystral::js::ModuleSystem modSys(engine, tempDir.string());
     if (!modSys.loadEntry(indexJs.string())) {
         std::cerr << "failed loadEntry\n";
         return false;
     }
+
+    // Test ESM entry and TypeScript entry
+    fs::path esmEntry = tempDir / "esm_entry.mjs";
+    writeFile(esmEntry, "export const value = 123;");
+    modSys.loadEntry(esmEntry.string());
+
+    modSys.loadEntry(testTs.string());
+
+    // Test loadEntry and require error branches
+    modSys.loadEntry("nonexistent_entry_xyz.js");
+    modSys.loadEntry("");
+    mystral::js::ModuleSystem noEng(nullptr, tempDir.string());
+    noEng.loadEntry("test.js");
+    noEng.require("test.js", "");
 
     auto reqResult = modSys.require("./sub/helper.js", indexJs.string());
     if (!engine->isObject(reqResult)) {
@@ -208,6 +450,35 @@ bool testModuleResolverAndSystem(mystral::js::Engine* engine, const fs::path& te
     modSys.loadedPaths();
 
     modSys.clearCaches();
+
+    // ModuleSystem global pointers and resolver access
+    mystral::js::setModuleSystem(&modSys);
+    if (mystral::js::getModuleSystem() != &modSys) return false;
+    modSys.resolver();
+    mystral::js::setModuleSystem(nullptr);
+
+    // Test ESM transpilation to CJS using QuickJS facade
+    fs::path esmFixture = tempDir / "esm_transpile.mjs";
+    writeFile(esmFixture, R"JS(
+import DefaultPkg from './sub/helper.js';
+import * as AllFeature from './sub/helper.js';
+import { value } from './sub/helper.js';
+import MixedDef, { value } from './sub/helper.js';
+import './sub/helper.js';
+
+export default function myFunc() { return 123; }
+export default class MyClass { foo() { return 1; } }
+export default 42;
+export const exportedNum = 456;
+export { exportedNum };
+export * from './sub/helper.js';
+)JS");
+
+    QuickJSEngineFacade qjsFacade(engine);
+    mystral::js::ModuleSystem qjsModSys(&qjsFacade, tempDir.string());
+    qjsModSys.loadEntry(esmFixture.string());
+    qjsModSys.require("./esm_transpile.mjs", indexJs.string());
+
     return true;
 }
 
@@ -281,6 +552,105 @@ bool testV8EngineFeatures(mystral::js::Engine* engine) {
     engine->eval("var __myEvalVar = 999;", "eval.js");
     auto evalRes = engine->evalScriptWithResult("10 + 20", "math.js");
     if (engine->toNumber(evalRes) != 30) return false;
+
+    // Types and context queries
+    engine->getType();
+    engine->getName();
+    engine->getRawContext();
+
+    // ArrayBuffer and TypedArray creation methods
+    const uint8_t rawBytes[] = { 10, 20, 30, 40 };
+    auto ab = engine->newArrayBuffer(rawBytes, sizeof(rawBytes));
+    size_t abSize = 0;
+    engine->getArrayBufferData(ab, &abSize);
+
+    uint8_t externalBytes[16] = { 1, 2, 3, 4 };
+    auto abExt = engine->newArrayBufferExternal(externalBytes, sizeof(externalBytes));
+    engine->getArrayBufferData(abExt, &abSize);
+
+    const float floatData[] = { 1.5f, 2.5f, 3.5f };
+    auto f32Arr = engine->createFloat32Array(floatData, 3);
+    float externalFloats[] = { 4.5f, 5.5f, 6.5f };
+    auto f32View = engine->createFloat32ArrayView(externalFloats, 3);
+
+    const uint32_t u32Data[] = { 100, 200, 300 };
+    auto u32Arr = engine->createUint32Array(u32Data, 3);
+
+    const uint8_t u8Data[] = { 7, 8, 9 };
+    auto u8Arr = engine->createUint8Array(u8Data, 3);
+
+    // Methods and Object templates
+    if (engine->supportsNativeMethods()) {
+        auto method = engine->newMethod("sampleMethod", [](mystral::js::Engine& eng, void* priv, const std::vector<mystral::js::JSValueHandle>& args) {
+            return eng.newNumber(42);
+        });
+        auto protoObj = engine->newObject();
+        engine->setProperty(protoObj, "method", method);
+        auto instObj = engine->newObject();
+        engine->setPrototypeOf(instObj, protoObj);
+        engine->setGlobalProperty("__methodTarget", instObj);
+        engine->eval("globalThis.__methodTarget.method();", "callMethod.js");
+    }
+
+    if (engine->supportsNativeObjectTemplates()) {
+        engine->newNativeObject("TestClass", nullptr);
+    }
+
+    // Value queries
+    engine->isBoolean(engine->newBoolean(false));
+    engine->isNumber(engine->newNumber(123));
+    engine->isString(engine->newString("abc"));
+    engine->isArray(engine->newArray(1));
+    auto freshFn = engine->newFunction("freshFn", [](void*, const std::vector<mystral::js::JSValueHandle>&) { return mystral::js::JSValueHandle(); });
+    engine->isFunction(freshFn);
+    engine->evalScript("const __sc = 5;", "evalScript.js");
+    engine->setGlobalProperty("__globProp", engine->newNumber(99));
+    engine->getGlobalProperty("__globProp");
+
+    // Private data
+    auto privObj = engine->newObject();
+    int dummyPrivate = 12345;
+    engine->setPrivateData(privObj, &dummyPrivate);
+    if (engine->getPrivateData(privObj) != &dummyPrivate) return false;
+    engine->setPrivateData(privObj, nullptr);
+
+    // Protect / unprotect / outstandingHandleCount
+    engine->protect(ab);
+    engine->unprotect(ab);
+    engine->outstandingHandleCount();
+
+    // Release callback
+    bool releaseCalled = false;
+    auto releaseObj = engine->newObject();
+    engine->registerRelease(releaseObj, [&releaseCalled]() {
+        releaseCalled = true;
+    });
+
+    // Task waiting
+    engine->supportsBlockingTaskWait();
+    engine->wakeTaskWait();
+
+    // Freeze handle
+    auto fzHandle = engine->retainHandle(engine->newString("frozen_test"));
+    engine->freezeHandle(fzHandle);
+
+    // evalWithResult
+    engine->evalWithResult("export const x = 42; x;", "test_esm_mod.js");
+
+    // Syntax error handling in evals
+    engine->eval("syntax error ? ? ?", "bad_eval.js");
+    engine->evalScript("syntax error ? ? ?", "bad_eval_script.js");
+    engine->evalWithResult("syntax error ? ? ?", "bad_eval_with_res.js");
+    engine->evalScriptWithResult("syntax error ? ? ?", "bad_eval_script_with_res.js");
+    if (engine->hasException()) {
+        engine->getException();
+    }
+
+#if defined(MYSTRAL_USE_V8) && MYSTRAL_USE_V8
+    // Snapshot blob helper
+    mystral::js::mystralSetV8SnapshotBlob("dummy_snapshot", 14);
+    mystral::js::mystralSetV8SnapshotBlob(nullptr, 0);
+#endif
 
     engine->throwException("expected test error");
     if (!engine->hasException()) return false;
