@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events";
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { build, createServer } from "vite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createEngineFreshnessPlugin, hashEngineDist } from "../src/engine-freshness.js";
@@ -41,6 +43,100 @@ function readMarker(root: string): { hash: string; pid: number; port?: number } 
 
 const MARKER_HASH = "0".repeat(64);
 const DEAD_PID = 2 ** 22; // above Linux's default pid_max: no live process can carry it
+
+describe("engine dependency identity", () => {
+  it.each(["serve", "build"] as const)(
+    "uses the game's stateful dependencies in linked packages during %s",
+    async (command) => {
+      const root = await makeTempDir("threenative-browser-peers-");
+      roots.push(root);
+      const project = path.join(root, "game");
+      const linked = path.join(root, "engine", "linked-game");
+      const dependencies = ["three", "react", "react-dom", "game-singleton"];
+      for (const directory of [project, linked]) {
+        mkdirSync(path.join(directory, "node_modules"), { recursive: true });
+        writeFileSync(path.join(directory, "package.json"), JSON.stringify({ type: "module" }));
+        for (const name of dependencies) {
+          const peer = path.join(directory, "node_modules", name);
+          mkdirSync(peer, { recursive: true });
+          writeFileSync(
+            path.join(peer, "package.json"),
+            JSON.stringify({
+              name,
+              type: "module",
+              exports: { ".": "./index.js", "./*": "./index.js" },
+            }),
+          );
+          writeFileSync(
+            path.join(peer, "index.js"),
+            `export const state = { origin: ${JSON.stringify(directory)} };\n`,
+          );
+        }
+      }
+      const imports = [
+        "three",
+        "three/webgpu",
+        "three/tsl",
+        "react",
+        "react-dom/client",
+        "game-singleton",
+      ];
+      writeFileSync(
+        path.join(linked, "index.js"),
+        imports
+          .map((name, index) => `export { state as peer${index} } from ${JSON.stringify(name)};`)
+          .join("\n"),
+      );
+      symlinkSync(linked, path.join(project, "node_modules", "linked-game"), "dir");
+      const entry = path.join(project, "entry.js");
+      writeFileSync(
+        entry,
+        [
+          'import * as linked from "linked-game/index.js";',
+          ...imports.map(
+            (name, index) => `import { state as peer${index} } from ${JSON.stringify(name)};`,
+          ),
+          `export const identities = [${imports.map((_, index) => `peer${index} === linked.peer${index}`).join(",")}];`,
+        ].join("\n"),
+      );
+      const config = {
+        root: project,
+        configFile: false as const,
+        logLevel: "silent" as const,
+        plugins: [createEngineFreshnessPlugin()],
+        resolve: { dedupe: ["game-singleton"] },
+        optimizeDeps: { noDiscovery: true },
+      };
+      if (command === "serve") {
+        const server = await createServer({ ...config, server: { middlewareMode: true } });
+        try {
+          for (const name of imports) {
+            const fromGame = await server.environments.client.pluginContainer.resolveId(
+              name,
+              entry,
+            );
+            const fromEngine = await server.environments.client.pluginContainer.resolveId(
+              name,
+              path.join(linked, "index.js"),
+            );
+            expect(fromEngine?.id, name).toBe(fromGame?.id);
+            expect(fromGame?.id, name).toBeTruthy();
+          }
+        } finally {
+          await server.close();
+        }
+      } else {
+        await build({
+          ...config,
+          build: { lib: { entry, formats: ["es"], fileName: "identity" } },
+        });
+        const result = await import(pathToFileURL(path.join(project, "dist", "identity.js")).href);
+        expect(result.identities).toEqual(imports.map(() => true));
+      }
+    },
+    60_000,
+  );
+});
 
 describe("engine freshness plugin", () => {
   it("hashes the installed engine dists and changes the hash when they change", async () => {
@@ -83,7 +179,7 @@ describe("engine freshness plugin", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const plugin = createEngineFreshnessPlugin();
     const patch = await plugin.config({ root }, { command: "serve" });
-    expect(patch).toEqual({ optimizeDeps: { force: true } });
+    expect(patch).toMatchObject({ optimizeDeps: { force: true } });
     expect(warn).toHaveBeenCalledTimes(1);
     const message = warn.mock.calls[0]?.join(" ") ?? "";
     expect(message).toContain(String(process.pid));

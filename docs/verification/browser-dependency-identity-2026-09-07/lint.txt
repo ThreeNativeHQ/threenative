@@ -1,0 +1,289 @@
+
+> threenative@0.1.0 lint /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution
+> biome check .
+
+./examples/abyss-framework/src/replay-proof.ts:76:66 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 22 detected (max: 15).
+
+    74 │         return driver(runtime);
+    75 │       },
+  > 76 │       recordAndReplay: async (steps: readonly ReplayProofStep[]) => {
+       │                                                                  ^^^
+    77 │         game.stop();
+    78 │         await game.start();
+
+  i Please refactor this function to reduce its complexity score from 22 to the max allowed complexity 15.
+
+
+./examples/engine-load-test/src/native.ts:29:16 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 58 detected (max: 15).
+
+    27 │ }
+    28 │
+  > 29 │ async function main(): Promise<void> {
+       │                ^^^^
+    30 │   const surface = globalThis.canvas;
+    31 │   if (surface === undefined) throw new Error("TN_BENCH_NO_CANVAS");
+
+  i Please refactor this function to reduce its complexity score from 58 to the max allowed complexity 15.
+
+
+./examples/abyss-framework/src/scenes/Abyss.ts:272:27 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 42 detected (max: 15).
+
+    270 │     pearls.forEach((pearl, index) => placePearl(pearl, index, false));
+    271 │
+  > 272 │     return (frameCtx, dt) => {
+        │                           ^^^
+    273 │       field.w = VIEW * 2 * frameCtx.viewport.size.aspect;
+    274 │       uField.value.x = field.w;
+
+  i Please refactor this function to reduce its complexity score from 42 to the max allowed complexity 15.
+
+
+./examples/engine-load-test/src/game.ts:174:43 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 16 detected (max: 15).
+
+    172 │   let collapseMs = 0;
+    173 │
+  > 174 │   const step = (frameIndex: number): void => {
+        │                                           ^^^
+    175 │     if (state === undefined) throw new Error("TN_BENCH_NO_RUNG");
+    176 │     const startedAt = performance.now();
+
+  i Please refactor this function to reduce its complexity score from 16 to the max allowed complexity 15.
+
+
+./examples/engine-load-test/src/main.ts:120:16 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 19 detected (max: 15).
+
+    118 │ const profileStages = parameters.get("stages") === "1";
+    119 │
+  > 120 │ async function measureRung(
+        │                ^^^^^^^^^^^
+    121 │   harness: Awaited<ReturnType<typeof createLoadTestHarness>>,
+    122 │   rung: ILoadTestRung,
+
+  i Please refactor this function to reduce its complexity score from 19 to the max allowed complexity 15.
+
+
+./examples/native-smoke/src/physics.ts:262:50 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 16 detected (max: 15).
+
+    260 │       rapierVersion = runtime.rapier;
+    261 │       const drain = simulation.drainCollisionEvents.bind(simulation);
+  > 262 │       simulation.drainCollisionEvents = (output) => {
+        │                                                  ^^^
+    263 │         const count = drain(output);
+    264 │         for (let index = 0; index < count; index += 1) {
+
+  i Please refactor this function to reduce its complexity score from 16 to the max allowed complexity 15.
+
+
+./examples/native-smoke/src/physics.ts:285:19 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 25 detected (max: 15).
+
+    283 │       return undefined;
+    284 │     },
+  > 285 │     update: (ctx) => {
+        │                   ^^^
+    286 │       if (completedSteps >= scenario.steps) return;
+    287 │       const step = completedSteps;
+
+  i Please refactor this function to reduce its complexity score from 25 to the max allowed complexity 15.
+
+
+./examples/native-smoke/src/physics.ts:592:15 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 20 detected (max: 15).
+
+    590 │     markSceneReady?.();
+    591 │
+  > 592 │     return () => {
+        │               ^^^
+    593 │       if (completedSteps >= scenario.steps) return;
+    594 │       const step = completedSteps;
+
+  i Please refactor this function to reduce its complexity score from 20 to the max allowed complexity 15.
+
+
+./examples/native-smoke/src/physics.ts:489:12 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 21 detected (max: 15).
+
+    487 │   };
+    488 │
+  > 489 │   override enter(ctx: ICtx<IPhysicsState, IPhysicsContext>) {
+        │            ^^^^^
+    490 │     ctx.camera.position.set(0, 2, 8);
+    491 │     for (const spec of scenario.bodies) {
+
+  i Please refactor this function to reduce its complexity score from 21 to the max allowed complexity 15.
+
+
+./examples/quarry/src/game.ts:194:29 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━━━━━━━
+
+  ! Excessive complexity of 21 detected (max: 15).
+
+    192 │       const free = new Vector3(0, floorHeight(0, 20) + EYE_HEIGHT, 20);
+    193 │
+  > 194 │       return (frameCtx, dt) => {
+        │                             ^^^
+    195 │         if (!started && frameCtx.input.justPressed("start")) started = true;
+    196 │         if (options.mode === "control") {
+
+  i Please refactor this function to reduce its complexity score from 21 to the max allowed complexity 15.
+
+
+./examples/quarry/src/game.ts:125:14 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━━━━━━━
+
+  ! Excessive complexity of 21 detected (max: 15).
+
+    123 │     }
+    124 │
+  > 125 │     override enter(ctx: ICtx<IQuarryState>): SceneFrame<IQuarryState> {
+        │              ^^^^^
+    126 │       const look = createQuarryLook(ctx.scene, ctx.camera);
+    127 │       const floorModel = this.#floorModel;
+
+  i Please refactor this function to reduce its complexity score from 21 to the max allowed complexity 15.
+
+
+./examples/vfx-gallery/src/scenes/Gallery.ts:429:67 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 16 detected (max: 15).
+
+    428 │     if (typeof window !== "undefined") {
+  > 429 │       window.addEventListener("threenative-gallery-retrigger", () => {
+        │                                                                   ^^^
+    430 │         const page = ctx.state.getState().page;
+    431 │         for (const entity of effectEntities.values()) {
+
+  i Please refactor this function to reduce its complexity score from 16 to the max allowed complexity 15.
+
+
+./examples/vfx-gallery/src/scenes/Gallery.ts:440:23 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 21 detected (max: 15).
+
+    438 │     }
+    439 │
+  > 440 │     return (frameCtx) => {
+        │                       ^^^
+    441 │       if (frameCtx.input.justPressed("nextPage")) {
+    442 │         const page = (frameCtx.state.getState().page + 1) % PAGE_COUNT;
+
+  i Please refactor this function to reduce its complexity score from 21 to the max allowed complexity 15.
+
+
+./examples/prd243-cloth/src/game.ts:122:23 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 28 detected (max: 15).
+
+    120 │     let collisionHeld = 0;
+    121 │     let outcome: IClothState["outcome"] = "playing";
+  > 122 │     return (frameCtx) => {
+        │                       ^^^
+    123 │       if (frameCtx.input.justPressed("reload")) {
+    124 │         lifetime.reloads += 1;
+
+  i Please refactor this function to reduce its complexity score from 28 to the max allowed complexity 15.
+
+
+./examples/native-smoke/src/game.ts:209:10 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 19 detected (max: 15).
+
+    207 │ }
+    208 │
+  > 209 │ function runPureJsProfile(): void {
+        │          ^^^^^^^^^^^^^^^^
+    210 │   if (profile.pureJsObjects === 0 || profile.pureJsIterations === 0) return;
+    211 │   const objects = Array.from({ length: profile.pureJsObjects }, (_, index) => ({
+
+  i Please refactor this function to reduce its complexity score from 19 to the max allowed complexity 15.
+
+
+./examples/native-smoke/src/game.ts:493:54 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 24 detected (max: 15).
+
+    491 │       console.info(`TN_SMOKE_POINTER_DOWN:${pointerDowns}`);
+    492 │     });
+  > 493 │     return (frameCtx: ICtx<ISmokeState>, dt: number) => {
+        │                                                      ^^^
+    494 │       // Start after the renderer has reached steady frames. Starting during enter() lets native
+    495 │       // renderer compilation overlap the worker and proves startup latency instead of continuity.
+
+  i Please refactor this function to reduce its complexity score from 24 to the max allowed complexity 15.
+
+
+./examples/native-smoke/src/networking-game.ts:330:17 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 16 detected (max: 15).
+
+    328 │ }
+    329 │
+  > 330 │ export function observeSnapshot<TState extends INetworkingState>(
+        │                 ^^^^^^^^^^^^^^^
+    331 │   store: INetworkingStore<TState>,
+    332 │   config: INetworkingConfig,
+
+  i Please refactor this function to reduce its complexity score from 16 to the max allowed complexity 15.
+
+
+./packages/assets/__tests__/model-pass.spec.ts:152:104 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 23 detected (max: 15).
+
+    150 │   });
+    151 │
+  > 152 │   it("decodes normalized ushort joint weights by their own component type in reachableStats", async () => {
+        │                                                                                                        ^^^
+    153 │     // External exporters ship WEIGHTS_0 as normalized UNSIGNED_SHORT. reachableStats must
+    154 │     // decode them /65535 like the GPU does; the hardcoded ubyte scale (/255) reads raw
+
+  i Please refactor this function to reduce its complexity score from 23 to the max allowed complexity 15.
+
+
+./examples/vfx-gallery/src/render/fireSmokeWeather.ts:123:10 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 20 detected (max: 15).
+
+    121 │ }
+    122 │
+  > 123 │ function colorCurve(
+        │          ^^^^^^^^^^
+    124 │   points:
+    125 │     | readonly (readonly [
+
+  i Please refactor this function to reduce its complexity score from 20 to the max allowed complexity 15.
+
+
+./test-support/webgpu-provenance.ts:155:23 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━
+
+  ! Excessive complexity of 18 detected (max: 15).
+
+    154 │ /** Verify every configured Playwright project against the real browser adapter before its tests run. */
+  > 155 │ export async function verifyWebGpuProjects(
+        │                       ^^^^^^^^^^^^^^^^^^^^
+    156 │   config: Pick<FullConfig, "projects">,
+    157 │   browserArgs: readonly string[],
+
+  i Please refactor this function to reduce its complexity score from 18 to the max allowed complexity 15.
+
+
+Skipped 183 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --fix --unsafe
+
+The number of diagnostics exceeds the number allowed by Biome.
+Diagnostics not shown: 633.
+Checked 2028 files in 1704ms. No fixes applied.
+Found 653 warnings.

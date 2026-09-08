@@ -123,7 +123,7 @@ For each experiment: state a predicted improvement; record the baseline red; mak
 - [ ] Three qualified physical Android cold launches: median **first playable ≤8,000 ms**, with visible world and input-driven displacement **≥0.25 m**.
 - [ ] Correlated pump observations prove **no gap >250 ms**, including startup and the movement endpoint. Missing or malformed observations fail; first-present-only markers are insufficient.
 - [ ] Same scene, effects, asset content, render settings and native/Three.js configuration across baseline and candidate; no warm-cache substitution for the required cold launch.
-- [ ] Browser WebGPU movement/visual proof passes and records the actual adapter. The repaired candidate's web bundle was separately observed to contain duplicate Three.js; verify and resolve its dependency identity before claiming browser parity, without changing the visual workload.
+- [x] Browser WebGPU movement/visual proof passes and records the actual adapter. The Vite dependency identity repair passed the unchanged repaired game's four assertions on NVIDIA/Turing: 2.146736 m movement, visible world, and zero console/network/runtime errors. Source, dependency and artifact hashes plus the scenario are retained in [browser verification](../../verification/browser-dependency-identity-2026-09-07/README.md). This does not establish the Android timing or pump criteria.
 - [ ] Focused red/green and revert controls, full repository checks, independent checkpoint review, and final parent acceptance audit all pass.
 
 Use these existing commands; run from the retained engine worktree:

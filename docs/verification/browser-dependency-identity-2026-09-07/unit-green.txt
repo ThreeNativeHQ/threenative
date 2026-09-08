@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution
+
+ ✓ packages/create-threenative/__tests__/engine-freshness.spec.ts (9 tests) 231ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  17:16:58
+   Duration  1.63s (transform 522ms, setup 0ms, import 1.15s, tests 231ms, environment 0ms)
