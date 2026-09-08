@@ -3905,6 +3905,9 @@ PRD-360 remains PARTIAL; the next task is baseline attribution before a bounded 
 
 ## Bayview bounded startup experiments — 2026-09-08
 
+This section is the canonical measurement record for the PRD-360 follow-up; the PRD carries the
+decision and acceptance checklist.
+
 The PRD-360 follow-up allowed three measured optimization experiments. They used the same
 preserved Bayview scene, effects, assets, UI and Android configuration on the qualified Pixel 8.
 Every movement scenario reached the authored world and moved the player about **2.1467 m** with

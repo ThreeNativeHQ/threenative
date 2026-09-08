@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** PARTIAL — three measured optimization experiments were executed and all missed the acceptance gates. PRD-360 remains PARTIAL.
 **Parent:** [PRD-360](PRD-360-android-launch-is-playable-within-eight-seconds.md).
+**Reference record:** [runtime performance state](../../verification/runtime-perf-state.md) — canonical measurements and receipt pointers.
 **Complexity:** 6 → MEDIUM: async startup across core/native, approximately 6–10 implementation files.
 **Execution budget:** Start with a 60-minute profiling task. At most three measured optimization experiments before reporting results or escalating. No speculative rewrite.
 **Delegate:** A cheaper coding model can execute the bounded tasks below. Escalate a demonstrated GPU scheduling or cross-thread ownership problem with evidence, not an open-ended debugging transcript.
