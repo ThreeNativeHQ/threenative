@@ -292,8 +292,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // scaffold-doc additions; values are from this isolated merge worktree's Received block.
   // Recomputed after the Android presented-viewport transform and explicit touch-rotation
   // fallback entered the playtest capability surface; values are from this tree's Received block.
-  // Recomputed after native diagnostics preflight became target-aware; values are copied from
-  // this tree's failing stability assertion before changing this fixture.
+  // Recomputed after merging current main's target-aware diagnostics preflight with this lane's
+  // Android viewport/rotation and browser dependency identity fixes; values are from this clean
+  // merged tree's scaffold-stability assertion.
   "action-rpg": "d3256b871744c1b36fdf6b83eeb93fc43eb326a3132fc7da621eaf6e03759eb3",
   defense: "5d9d221e37331e4519b5a0865a3575dc2acad02f6f494633259e12e141910bac",
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
