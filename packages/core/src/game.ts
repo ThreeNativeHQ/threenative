@@ -908,6 +908,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 computeAbandoned: report.computeAbandoned,
                 computeUnsupported: report.computeUnsupported,
                 computeTimedOut: report.computeTimedOut,
+                cache: report.cache,
               },
         )}`,
       );
@@ -1400,6 +1401,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 computeAbandoned: report.computeAbandoned,
                 computeUnsupported: report.computeUnsupported,
                 computeTimedOut: report.computeTimedOut,
+                cache: report.cache,
               },
         )}`,
       );

@@ -200,7 +200,7 @@ async function runDevicePlaytestInternal(
     metrics?.start();
     await target.driver.prepare(endpoint, config.mailboxRoot, scenario.viewport);
     await throwIfAborted(target);
-    bridge = await connectPlaytestBridgeTransport(transport, scenario, config.timeoutMs);
+    bridge = await connectPlaytestBridgeTransport(transport, scenario, config.timeoutMs, target.name);
     await throwIfAborted(target);
     if (bridge === undefined) {
       return failureReport(config, scenario, playtestDiagnostic(
@@ -739,7 +739,7 @@ function unsupportedAssertion(
   if (scenario.assert?.diagnostics?.noNetworkErrors === true) {
     return unsupportedDiagnostic(
       "network assertions",
-      `Run this assertion on --target browser; ${targetLabel(target)} device transport has no CDP network observer. Declare "diagnostics": { "noNetworkErrors": false, "networkErrorsOptOutReason": "..." } to say so in the scenario — the default is on, so omitting it asserts the lane rather than waiving it.`,
+      `Run this assertion on --target browser; ${targetLabel(target)} device transport has no CDP network observer. Remove the explicit network assertion, or declare "diagnostics": { "noNetworkErrors": false, "networkErrorsOptOutReason": "..." } to record a scenario-owned waiver.`,
       target,
     );
   }

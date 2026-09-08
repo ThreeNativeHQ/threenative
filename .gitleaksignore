@@ -20,3 +20,8 @@ f9c62d2c7ee0b8ec0f88977afc11113bc79434a1:docs/benchmark/DELTA-2026-08-05.md:gene
 # shared-image cache key in the concurrent-write regression fixture, not a credential.
 # Scope to this historical finding; other keys and future edits remain scanned.
 f66af22303112d84174d7031cf6a2b28502d3095:packages/assets/__tests__/shared-images.spec.ts:generic-api-key:154
+
+# Verified 2026-09-07 at the recorded commit: warm-up-default-test-v1 is the synthetic
+# persistent warm-up cache revision in a core integration test, not a credential. The fixture
+# now uses a lower-entropy value too; scope this exception to the already-published finding.
+e2e871f1feac6fa0f7dc4d372f30d3cb586a8f72:packages/core/__tests__/warmup-default.spec.ts:generic-api-key:115

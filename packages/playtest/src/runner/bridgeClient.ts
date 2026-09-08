@@ -132,6 +132,7 @@ export async function connectPlaytestBridge(
     new PlaywrightTransport(page, timeoutMs),
     scenario,
     bridgeWaitTimeoutMs(timeoutMs),
+    "browser",
   );
 }
 
@@ -158,8 +159,9 @@ export async function connectPlaytestBridgeTransport(
   transport: IBridgeTransport,
   scenario: IPlaytestScenario,
   timeoutMs: number = bridgeWaitTimeoutMs(),
+  target?: string,
 ): Promise<IPlaytestBridgeClient | undefined> {
-  const required = requiredPlaytestCapabilities(scenario);
+  const required = requiredPlaytestCapabilities(scenario, target);
   const bridgeRequired = missingPlaytestCapabilities(required, transport.capabilities);
   const exists = await transport.waitForBridge(timeoutMs);
   if (!exists) {

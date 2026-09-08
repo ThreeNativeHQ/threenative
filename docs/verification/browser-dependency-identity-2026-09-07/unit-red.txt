@@ -1,0 +1,67 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution
+
+ ❯ packages/create-threenative/__tests__/engine-freshness.spec.ts (9 tests | 2 failed) 285ms
+     × uses the game's stateful dependencies in linked packages during serve 115ms
+     × uses the game's stateful dependencies in linked packages during build 151ms
+     ✓ hashes the installed engine dists and changes the hash when they change 2ms
+     ✓ hashes through pnpm's symlinked node_modules layout 2ms
+     ✓ forces dep re-optimization when the engine changed and names the stale live server 3ms
+     ✓ re-optimizes nothing when the installed engine is the recorded build 2ms
+     ✓ records this boot's build, pid and port once the server listens 2ms
+     ✓ removes its marker when the server closes cleanly 3ms
+     ✓ does nothing in a project with no installed engine packages 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/create-threenative/__tests__/engine-freshness.spec.ts > engine dependency identity > uses the game's stateful dependencies in linked packages during serve
+AssertionError: three: expected '/tmp/threenative-browser-peers-QcsHen…' to be '/tmp/threenative-browser-peers-QcsHen…' // Object.is equality
+
+Expected: "/tmp/threenative-browser-peers-QcsHen/game/node_modules/three/index.js"
+Received: "/tmp/threenative-browser-peers-QcsHen/engine/linked-game/node_modules/three/index.js"
+
+ ❯ packages/create-threenative/__tests__/engine-freshness.spec.ts:91:42
+     89|             const fromGame = await server.environments.client.pluginCo…
+     90|             const fromEngine = await server.environments.client.plugin…
+     91|             expect(fromEngine?.id, name).toBe(fromGame?.id);
+       |                                          ^
+     92|             expect(fromGame?.id, name).toBeTruthy();
+     93|           }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  packages/create-threenative/__tests__/engine-freshness.spec.ts > engine dependency identity > uses the game's stateful dependencies in linked packages during build
+AssertionError: expected [ false, false, false, false, …(2) ] to deeply equal [ true, true, true, true, true, true ]
+
+- Expected
++ Received
+
+  [
+-   true,
+-   true,
+-   true,
+-   true,
+-   true,
++   false,
++   false,
++   false,
++   false,
++   false,
+    true,
+  ]
+
+ ❯ packages/create-threenative/__tests__/engine-freshness.spec.ts:100:35
+     98|         await build({ ...config, build: { lib: { entry, formats: ["es"…
+     99|         const result = await import(pathToFileURL(path.join(project, "…
+    100|         expect(result.identities).toEqual(imports.map(() => true));
+       |                                   ^
+    101|       }
+    102|     },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 7 passed (9)
+   Start at  17:16:01
+   Duration  717ms (transform 134ms, setup 0ms, import 296ms, tests 285ms, environment 0ms)
