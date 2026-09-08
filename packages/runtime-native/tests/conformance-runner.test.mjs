@@ -219,7 +219,10 @@ test("the runner applies an active target exclusion before native prerequisites"
     const report = JSON.parse(readFileSync(join(out, "report.json"), "utf8"));
     const row = report.results.find(({ id }) => id === "90-document-window-stubs");
     assert.equal(row?.status, "blocked");
-    assert.match(row?.blockedReason ?? "", /^TN_PARITY_ROW_EXCLUDED: android-hardware-canvas2d-document-window-stubs/u);
+    assert.match(
+      row?.blockedReason ?? "",
+      /^TN_PARITY_ROW_EXCLUDED: android-hardware-canvas2d-document-window-stubs/u,
+    );
   } finally {
     rmSync(out, { force: true, recursive: true });
   }

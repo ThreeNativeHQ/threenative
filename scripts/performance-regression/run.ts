@@ -29,6 +29,17 @@ const REQUIRED_ORDERS: readonly PairOrder[] = [
   "baseline-first",
 ];
 const PHYSICAL_PROVENANCE = "physical-hardware";
+export const PERFORMANCE_QUICK_SUITE_BUDGET_MS = 15 * 60_000;
+
+export function collectorTimeoutMs(
+  deadline = Date.now() + PERFORMANCE_QUICK_SUITE_BUDGET_MS,
+  now = Date.now(),
+): number {
+  const remainingMs = deadline - now;
+  if (remainingMs <= 0)
+    throw new PerformanceLaneRunError("hardware quick-suite exceeded its 15-minute budget");
+  return remainingMs;
+}
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -158,7 +169,7 @@ export function collectorCommand(
   collectorOptions: IPerformanceCollectorOptions = {},
 ): string {
   if (collectorOptions.workload === "moving-l2-l3-16384") {
-    return `pnpm tsx scripts/engine-load-test/cli.ts --arm tn-web --modes L2,L3 --ladder 16384 --repeats 1 --frames 1800 --skip-baseline # cwd=${worktree}`;
+    return `pnpm tsx scripts/engine-load-test/cli.ts --arm tn-web --modes L2,L3 --ladder 16384 --repeats 1 --frames 1800 --source-sha ${sourceSha} --skip-baseline # cwd=${worktree}`;
   }
   return [
     "node",
@@ -419,12 +430,7 @@ async function runCollector(
   prebuiltArtifact?: string,
   collectorOptions: IPerformanceCollectorOptions = {},
 ): Promise<{ readonly command: string; readonly evidence: Record<string, unknown> }> {
-  const remainingMs = Math.min(
-    120_000,
-    (collectorOptions.deadline ?? Date.now() + 120_000) - Date.now(),
-  );
-  if (remainingMs <= 0)
-    throw new PerformanceLaneRunError("hardware quick-suite exceeded its 15-minute budget");
+  const remainingMs = collectorTimeoutMs(collectorOptions.deadline);
   if (collectorOptions.workload === "moving-l2-l3-16384") {
     await execFileAsync(
       "pnpm",
@@ -441,6 +447,8 @@ async function runCollector(
         "1",
         "--frames",
         "1800",
+        "--source-sha",
+        sourceSha,
         "--skip-baseline",
       ],
       { cwd: worktree, timeout: remainingMs, maxBuffer: 32 * 1024 * 1024 },
@@ -667,7 +675,7 @@ export async function runPerformanceLane(
   const candidateWorktree = options.candidateWorktree ?? process.cwd();
   const collectorOptions: IPerformanceCollectorOptions = {
     workload: lane.workload,
-    deadline: Date.now() + 15 * 60_000,
+    deadline: Date.now() + PERFORMANCE_QUICK_SUITE_BUDGET_MS,
     ...(options.device === undefined ? {} : { device: options.device }),
     ...(options.physicalEvidence === undefined
       ? {}

@@ -1263,11 +1263,16 @@ function passedAssertion(report, prefix) {
   return report?.assertionResults?.some(({ id, pass }) => id.startsWith(prefix) && pass === true) === true;
 }
 
+function passedRuntimeReadyAssertion(report) {
+  return report?.assertionResults?.some(({ details, id, pass }) =>
+    pass === true
+      && (id === 'diagnostics.runtimeReady' || (id === 'diagnostics' && details?.policy?.runtimeReady === true))
+  ) === true;
+}
+
 function regressionReadiness(arms, warmupFrames) {
   const reports = allProfileRuns(arms).map(({ report }) => report).filter(Boolean);
-  const ready = reports.length > 0 && reports.every((report) =>
-    passedAssertion(report, 'diagnostics.runtimeReady')
-      || (report?.pass === true && report?.diagnostics?.every(({ code }) => code !== 'TN_PLAYTEST_RUNTIME_NOT_READY')));
+  const ready = reports.length > 0 && reports.every(passedRuntimeReadyAssertion);
   return { ready, sampleReset: regressionWarmupReset(arms, warmupFrames) };
 }
 
