@@ -47,14 +47,14 @@ export function parseArgs(argv) {
   return options;
 }
 
-class ReportingAndroidDriver {
+export class ReportingAndroidDriver {
   constructor(driver) {
     this.driver = driver;
     this.injections = [];
     this.livenessChecks = [];
   }
   captureConsole() { return this.driver.captureConsole(); }
-  prepare(endpoint, mailboxRoot) { return this.driver.prepare(endpoint, mailboxRoot); }
+  prepare(endpoint, mailboxRoot, viewport) { return this.driver.prepare(endpoint, mailboxRoot, viewport); }
   readFile(path) { return this.driver.readFile(path); }
   removeFile(path) { return this.driver.removeFile(path); }
   screenshot(path) { return this.driver.screenshot(path); }
@@ -94,14 +94,20 @@ function stateAfter(report) {
 }
 
 export function validateResults(positive, negative) {
-  if (!positive.pass) throw new Error('Positive multi-touch scenario failed its assertions.');
+  const state = stateAfter(positive);
+  if (!positive.pass) {
+    throw new Error(`Positive multi-touch scenario failed: ${JSON.stringify({
+      assertionResults: positive.assertionResults ?? null,
+      diagnostics: positive.diagnostics ?? [],
+      state,
+    })}.`);
+  }
   if (positive.assertionResults?.some(({ pass }) => !pass) !== false) {
     throw new Error('Positive multi-touch scenario did not evaluate a complete passing assertion set.');
   }
   if (negative.pass || negative.assertionResults === undefined) {
     throw new Error('One-pointer negative control must reach assertions and fail with exit-code-1 semantics.');
   }
-  const state = stateAfter(positive);
   for (const [key, expected] of [
     ['maxPointers', 2],
     ['movedWithTwoPointers', true],
@@ -151,6 +157,11 @@ export async function verifyAndroidMultitouch(options) {
       endpoint: 'http://127.0.0.1:41777/playtest',
       scenarioPath: 'playtests/multitouch.playtest.json',
     }), { driver: positiveDriver });
+    writeFileSync(join(artifactRoot, 'positive-result.json'), `${JSON.stringify({
+      report: positive,
+      injections: positiveDriver.injections,
+      liveness: positiveDriver.livenessChecks,
+    }, null, 2)}\n`);
 
     const negativeDriver = new ReportingAndroidDriver(new AdbAndroidDriver({
       activity: ACTIVITY_CLASS,
@@ -166,6 +177,11 @@ export async function verifyAndroidMultitouch(options) {
       endpoint: 'http://127.0.0.1:41778/playtest',
       scenarioPath: 'playtests/multitouch-one-pointer-negative.playtest.json',
     }), { driver: negativeDriver });
+    writeFileSync(join(artifactRoot, 'negative-result.json'), `${JSON.stringify({
+      report: negative,
+      injections: negativeDriver.injections,
+      liveness: negativeDriver.livenessChecks,
+    }, null, 2)}\n`);
     const latches = validateResults(positive, negative);
     const report = {
       schemaVersion: 1,

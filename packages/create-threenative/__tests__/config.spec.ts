@@ -1,10 +1,13 @@
+import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
 
+const execFileAsync = promisify(execFile);
 const roots: string[] = [];
 
 it("should carry both budget gates through the real config loader into the compiler", async () => {
@@ -70,6 +73,83 @@ async function config(root: string, source: string): Promise<void> {
   await writeFile(path.join(root, "threenative.config.ts"), `${source}\n`);
 }
 
+/**
+ * A quiet 16-bit mono sine as RIFF/WAVE — a real clip the audio pass can decode, well under full
+ * scale so nothing but the container forces a re-encode.
+ */
+function wavClip(frames: number): Buffer {
+  const sampleRate = 44_100;
+  const buffer = Buffer.alloc(44 + frames * 2);
+  buffer.write("RIFF", 0, "ascii");
+  buffer.writeUInt32LE(36 + frames * 2, 4);
+  buffer.write("WAVE", 8, "ascii");
+  buffer.write("fmt ", 12, "ascii");
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write("data", 36, "ascii");
+  buffer.writeUInt32LE(frames * 2, 40);
+  for (let frame = 0; frame < frames; frame += 1) {
+    const value = Math.sin((2 * Math.PI * 440 * frame) / sampleRate) * 0.5;
+    buffer.writeInt16LE(Math.round(value * 32_767), 44 + frame * 2);
+  }
+  return buffer;
+}
+
+/** The bytes a compile actually published for a logical path, read back through its manifest. */
+async function compiledBytes(root: string, logical: string): Promise<Buffer> {
+  const manifest = JSON.parse(
+    await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+  ) as { entries: Record<string, { output?: string }> };
+  const output = manifest.entries[logical]?.output;
+  if (output === undefined) throw new Error(`'${logical}' is not in the compiled manifest`);
+  return await readFile(path.join(root, "public", output));
+}
+
+/**
+ * Typechecks a value the loader already accepted against both packages' published audio types,
+ * with the real compiler. Vitest transpiles, so a published shape that contradicts the parser is
+ * invisible to every other assertion in this file.
+ *
+ * The declarations a game installs, not the source behind them, because that is the surface that
+ * drifted: `IAudioConfig` published `seamThreshold`, which `parseAudioConfig` throws on, and
+ * omitted `seamMaxRatio`, which it accepts. Reading `dist` adds no new prerequisite — this spec's
+ * own `@threenative/assets` import already resolves there.
+ */
+async function expectPublishedTypesAccept(accepted: unknown, rejectedKey: string): Promise<void> {
+  const dir = await makeTempDir("threenative-audio-types-");
+  roots.push(dir);
+  const fixture = path.join(dir, "audio.ts");
+  await writeFile(
+    fixture,
+    `import type { IAudioConfig } from "${path.resolve("packages/assets/dist/index.js")}";
+import type { IThreeNativeAudioConfig } from "${path.resolve("packages/core/dist/index.js")}";
+export const assets: IAudioConfig = ${JSON.stringify(accepted)};
+export const core: IThreeNativeAudioConfig = ${JSON.stringify(accepted)};
+// @ts-expect-error the parser throws on this key, so no published type may offer it.
+export const rejected: IAudioConfig = { ${rejectedKey}: 2 };
+`,
+  );
+  const outcome = (await execFileAsync(process.execPath, [
+    path.resolve("packages/core/node_modules/typescript/bin/tsc"),
+    "--noEmit",
+    "--strict",
+    "--target",
+    "es2022",
+    "--module",
+    "esnext",
+    "--moduleResolution",
+    "bundler",
+    "--skipLibCheck",
+    fixture,
+  ]).catch((error: unknown) => error)) as { readonly stdout?: string };
+  expect(outcome.stdout?.trim() ?? "").toBe("");
+}
+
 async function expectActionableFailure(
   root: string,
   code: string,
@@ -130,19 +210,26 @@ describe("threenative.config.ts", () => {
     });
   });
 
-  it("re-exports the core-owned texture config type", async () => {
+  it("re-exports the core-owned asset config types instead of redeclaring them", async () => {
     const createSource = await readFile(
       path.resolve("packages/create-threenative/src/config.ts"),
       "utf8",
     );
     const coreSource = await readFile(path.resolve("packages/core/src/config.ts"), "utf8");
+    for (const name of ["IThreeNativeTexturesConfig", "IThreeNativeAudioConfig"]) {
+      expect(createSource).toMatch(
+        new RegExp(`export type \\{[^}]*${name}[^}]*\\} from "@threenative/core";`, "su"),
+      );
+      expect(createSource).not.toMatch(new RegExp(`export interface ${name}`, "u"));
+      expect(coreSource.match(new RegExp(`export interface ${name}`, "gu"))).toHaveLength(1);
+    }
+    // The shared parsers, imported rather than reimplemented: PNG for icons, audio for the
+    // conditioning block. A second copy of either is a second answer to the same question.
     expect(createSource).toMatch(
-      /export type \{[^}]*IThreeNativeTexturesConfig[^}]*\} from "@threenative\/core";/su,
+      /import \{[^}]*\bparseAudioConfig\b[^}]*\bparsePng\b[^}]*\} from "@threenative\/assets";/u,
     );
-    expect(createSource).toContain('import { parsePng } from "@threenative/assets";');
-    expect(createSource).not.toMatch(/export interface IThreeNativeTexturesConfig/u);
     expect(createSource).not.toMatch(/const PNG_SIGNATURE =/u);
-    expect(coreSource.match(/export interface IThreeNativeTexturesConfig/gu)).toHaveLength(1);
+    expect(createSource).not.toMatch(/const (?:AUDIO_)?(?:OVERRIDE|SPECTRUM|LOOP)_KEYS =/u);
   });
 
   it("accepts tRNS PNG alpha through the shared parser", async () => {
@@ -622,6 +709,111 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
     await expect(loadConfig(root)).rejects.toThrow(/assets\.concurrency/u);
   });
+
+  it("hands assets.audio to the pipeline that receives it and ships the declared bytes", async () => {
+    // The seam a real game hit: `assets.audio` is a documented compile option that this
+    // validator's key list dropped, so a project asking to ship its cues exactly as authored
+    // could not load its config at all. Both arms compile the same clip; only the config differs.
+    const source = wavClip(4_410);
+
+    const declared = await project();
+    await mkdir(path.join(declared, "assets/audio"), { recursive: true });
+    await writeFile(path.join(declared, "assets/audio/cue.wav"), source);
+    await config(declared, 'export default { assets: { audio: "none" } };');
+    const resolved = await loadConfig(declared);
+    expect(resolved.assets).toEqual({ audio: "none" });
+    await compileAssets({ config: resolved.assets, cwd: declared });
+    expect(await compiledBytes(declared, "audio/cue.wav")).toEqual(source);
+
+    // The control: with the block absent, conditioning runs and re-encodes the clip. Without it
+    // the assertion above would pass on a pipeline that never touches audio at all.
+    const conditioned = await project();
+    await mkdir(path.join(conditioned, "assets/audio"), { recursive: true });
+    await writeFile(path.join(conditioned, "assets/audio/cue.wav"), source);
+    await config(conditioned, "export default {};");
+    await compileAssets({ config: (await loadConfig(conditioned)).assets, cwd: conditioned });
+    expect(await compiledBytes(conditioned, "audio/cue.wav")).not.toEqual(source);
+  });
+
+  it("carries the whole audio block, overrides included, through to the pipeline", async () => {
+    const root = await project();
+    await config(
+      root,
+      `export default {
+        assets: {
+          audio: {
+            normalise: "peak",
+            peakDb: -3,
+            quality: 6,
+            seamMaxRatio: 2,
+            overrides: [
+              {
+                glob: "audio/*-bed.ogg",
+                loop: { crossFadeMs: 120, spliceToleranceMs: 40 },
+                spectrum: { band: "high", minPercent: 10, maxPercent: 60 },
+              },
+              { glob: "audio/step-*.wav", conditioning: "none", positional: true },
+            ],
+          },
+        },
+      };`,
+    );
+    const resolved = await loadConfig(root);
+    // Exact, not a subset: a key silently dropped on the way through is the whole defect.
+    expect(resolved.assets).toEqual({
+      audio: {
+        normalise: "peak",
+        peakDb: -3,
+        quality: 6,
+        seamMaxRatio: 2,
+        overrides: [
+          {
+            glob: "audio/*-bed.ogg",
+            loop: { crossFadeMs: 120, spliceToleranceMs: 40 },
+            spectrum: { band: "high", minPercent: 10, maxPercent: 60 },
+          },
+          { glob: "audio/step-*.wav", conditioning: "none", positional: true },
+        ],
+      },
+    });
+    await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toMatchObject({
+      written: 0,
+    });
+    // Same value, checked by the compiler: the block the parser just accepted has to be assignable
+    // to what both packages publish, and the key the table below rejects must not be offered.
+    await expectPublishedTypesAccept(resolved.assets?.audio, "seamThreshold");
+  });
+
+  it.each([
+    ['audio: "off"', /assets\.audio must be "none" or an object/u],
+    ["audio: { seamThreshold: 2 }", /assets\.audio\.seamThreshold is not recognised/u],
+    ["audio: { normalise: 'loudest' }", /assets\.audio\.normalise must be "ceiling"/u],
+    ["audio: { peakDb: 3 }", /assets\.audio\.peakDb must be a number between -60 and 0 dBFS/u],
+    [
+      "audio: { overrides: [{ glob: '**', loop: { crossFadeMs: 'soon' } }] }",
+      /assets\.audio\.overrides\[0\]\.loop\.crossFadeMs must be a non-negative number/u,
+    ],
+    [
+      "audio: { overrides: [{ glob: '**', spectrum: { band: 'ultrasonic', maxPercent: 10 } }] }",
+      /assets\.audio\.overrides\[0\]\.spectrum\.band must be one of sub, low, mid, high, air/u,
+    ],
+    [
+      "audio: { overrides: [{ glob: '**', spectrum: { band: 'high' } }] }",
+      /neither bounds anything/u,
+    ],
+    [
+      "audio: { overrides: [{ loop: true }] }",
+      /assets\.audio\.overrides\[0\]\.glob must be a non-empty string/u,
+    ],
+  ])(
+    "rejects the malformed audio declaration { %s } with the named code",
+    async (block, detail) => {
+      const root = await project();
+      await config(root, `export default { assets: { ${block} } };`);
+      await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+      await expect(loadConfig(root)).rejects.toThrow(detail);
+    },
+  );
 
   it("rejects an unknown key under assets.models.virtual with the named code", async () => {
     const root = await project();

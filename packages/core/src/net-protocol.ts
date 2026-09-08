@@ -165,26 +165,25 @@ export function decodeStandaloneFrame(bytes: Uint8Array): IDecodedFrame {
   return { kind, channel, payload: bytes.slice(HEADER_BYTES) };
 }
 
-/** Split complete frames off a stream buffer; trailing partial bytes are kept. */
-function splitStreamFrames(buffer: Uint8Array): { frames: IDecodedFrame[]; rest: Uint8Array } {
-  const frames: IDecodedFrame[] = [];
-  let offset = 0;
+/** Decode at most one complete frame; trailing bytes stay as a raw view for later calls. */
+function readStreamFrame(
+  buffer: Uint8Array,
+  limit: number,
+): { frame: IDecodedFrame; rest: Uint8Array } | undefined {
+  if (buffer.length < HEADER_BYTES) return undefined;
   const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-  while (offset + HEADER_BYTES <= buffer.length) {
-    const version = buffer[offset] ?? 0;
-    const kind = buffer[offset + 1] ?? 0;
-    const channel = view.getUint16(offset + 2);
-    const length = view.getUint32(offset + 4);
-    checkFrameHead(version, kind, channel);
-    if (offset + HEADER_BYTES + length > buffer.length) break;
-    frames.push({
-      kind,
-      channel,
-      payload: buffer.slice(offset + HEADER_BYTES, offset + HEADER_BYTES + length),
-    });
-    offset += HEADER_BYTES + length;
-  }
-  return { frames, rest: buffer.slice(offset) };
+  const version = buffer[0] ?? 0;
+  const kind = buffer[1] ?? 0;
+  const channel = view.getUint16(2);
+  const length = view.getUint32(4);
+  checkFrameHead(version, kind, channel);
+  if (length > limit) throw new Error("TN_NET_PROTOCOL: frame exceeds limit");
+  const frameBytes = HEADER_BYTES + length;
+  if (frameBytes > buffer.length) return undefined;
+  return {
+    frame: { kind, channel, payload: buffer.slice(HEADER_BYTES, frameBytes) },
+    rest: buffer.subarray(frameBytes),
+  };
 }
 
 export function webTransportConstructor(): IWebTransportConstructor | undefined {
@@ -292,20 +291,10 @@ export class FrameReader {
   async nextFrame(signal?: AbortSignal): Promise<IDecodedFrame> {
     for (;;) {
       if (signal?.aborted) throw new Error("TN_NET_CANCELLED: aborted");
-      if (this.#buffer.length >= HEADER_BYTES) {
-        const declared = new DataView(
-          this.#buffer.buffer,
-          this.#buffer.byteOffset,
-          this.#buffer.byteLength,
-        ).getUint32(4);
-        if (declared > this.#limit) throw new Error("TN_NET_PROTOCOL: frame exceeds limit");
-      }
-      const split = splitStreamFrames(this.#buffer);
-      if (split.frames.length > 0) {
-        const first = split.frames[0];
-        if (first === undefined) throw new Error("TN_NET_PROTOCOL: missing frame");
-        this.#buffer = split.rest;
-        return first;
+      const decoded = readStreamFrame(this.#buffer, this.#limit);
+      if (decoded !== undefined) {
+        this.#buffer = decoded.rest.length === 0 ? new Uint8Array(0) : decoded.rest;
+        return decoded.frame;
       }
       if (this.#buffer.length > this.#limit + HEADER_BYTES)
         throw new Error("TN_NET_PROTOCOL: frame exceeds limit");
@@ -319,7 +308,8 @@ export class FrameReader {
           ? await this.#reader.read()
           : await Promise.race([this.#reader.read(), abort]);
       if (read.done) throw new Error("TN_NET_PROTOCOL: stream ended");
-      this.#buffer = concatBytes(this.#buffer, asBytes(read.value).slice());
+      const chunk = asBytes(read.value);
+      this.#buffer = this.#buffer.length === 0 ? chunk : concatBytes(this.#buffer, chunk);
     }
   }
 

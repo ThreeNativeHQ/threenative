@@ -29,6 +29,59 @@ export interface IThreeNativeBootSplash {
   readonly image?: string;
 }
 
+/** What a clip is for, stated as a bound on where its energy sits, in the inspector's bands. */
+export interface IThreeNativeAudioSpectrum {
+  readonly band: "air" | "high" | "low" | "mid" | "sub";
+  /** Most of the clip's energy that may sit in the band. */
+  readonly maxPercent?: number;
+  /** Least of the clip's energy that must sit in the band. */
+  readonly minPercent?: number;
+}
+
+/** Loop conditioning for a clip that repeats forever; its seam is cross-faded, then asserted. */
+export interface IThreeNativeAudioLoop {
+  /** Equal-power cross-fade in milliseconds. `0` keeps the clip's own length and still asserts. */
+  readonly crossFadeMs?: number;
+  /** How far the splice may move to find a quiet seam, in milliseconds. */
+  readonly spliceToleranceMs?: number;
+}
+
+/**
+ * Per-glob audio declarations. Which clips loop, which are positional, and what a clip is for are
+ * facts only the game knows, so they are declared and never inferred from a filename.
+ */
+export interface IThreeNativeAudioOverride {
+  /** `"none"` ships these bytes as committed; measurement and a declared loop's assertion run. */
+  readonly conditioning?: "none";
+  /** First matching override wins; matched against the logical path, e.g. `"audio/bed.ogg"`. */
+  readonly glob: string;
+  readonly loop?: boolean | IThreeNativeAudioLoop;
+  readonly normalise?: "ceiling" | "peak";
+  /** Peak ceiling in dBFS, between -60 and 0. */
+  readonly peakDb?: number;
+  /** The clip plays from a place in the world, so it is downmixed to mono. */
+  readonly positional?: boolean;
+  /** Vorbis VBR quality, -1 to 10. */
+  readonly quality?: number;
+  /** The largest wrap-to-neighbourhood step ratio a declared loop may ship with, 1 to 5. */
+  readonly seamMaxRatio?: number;
+  readonly spectrum?: IThreeNativeAudioSpectrum;
+}
+
+/**
+ * Audio conditioning options for the asset compile step; `"none"` ships clips verbatim.
+ *
+ * `"ceiling"` normalisation only ever attenuates, keeping the game's relative mix; `"peak"` also
+ * lifts a quiet clip to the ceiling.
+ */
+export interface IThreeNativeAudioConfig {
+  readonly normalise?: "ceiling" | "peak";
+  readonly overrides?: readonly IThreeNativeAudioOverride[];
+  readonly peakDb?: number;
+  readonly quality?: number;
+  readonly seamMaxRatio?: number;
+}
+
 /** Texture compression options for the asset compile step; `"none"` ships sources verbatim. */
 export interface IThreeNativeTexturesConfig {
   /** Integer at least 4; caps the longest edge, preserving aspect and 4x4 alignment; never upscales. */
@@ -165,6 +218,11 @@ export interface IThreeNativeConfig {
     readonly resizable?: boolean;
   };
   readonly assets?: {
+    /**
+     * Audio conditioning options, or `"none"` to ship every clip exactly as committed. Absent
+     * means conditioning runs with defaults. `"none"` still measures and still reports.
+     */
+    readonly audio?: "none" | IThreeNativeAudioConfig;
     /**
      * Byte ceilings: uncooked defaults to 64,000,000; total defaults to "none". Mobile
      * targets without decoders are exempt from uncooked. A number sets uncooked; "none"

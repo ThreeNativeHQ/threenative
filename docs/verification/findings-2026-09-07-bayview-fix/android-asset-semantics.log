@@ -1,0 +1,11 @@
+models/enemy-terrorist.glb: 3757604 -> 3763508 bytes, sha 795f89b1 -> c9f938d9
+models/player-viewmodel.glb: 7495528 -> 7486876 bytes, sha d8236d3a -> 119bf964
+models/weapon-ak47.glb: 11751004 -> 11751136 bytes, sha c6b71dbc -> 832d39cc
+
+semantic comparison: 1902 accessors, 2415843 numeric values, 180 nodes, 30 primitives, 3 skins, 16 animations / 860 channels, 14 materials, 26 textures (13489566 image bytes)
+interleaved-buffer detector: authored assets/models -> 3 problem(s), stage -> 0
+manifest: 74 entries, 74/74 outputs match the staged source
+audio outputs byte-identical to the authored cue: 30/30
+authored assets/: 75 files, 0 differ from the stage outside the 3 conversions
+
+failures: 0

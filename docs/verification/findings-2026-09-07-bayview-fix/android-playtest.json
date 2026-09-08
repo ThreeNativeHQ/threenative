@@ -1,0 +1,68 @@
+{
+  "after": {
+    "frame": 2,
+    "position": [-4.6715562348254025e-5, 0.8887869119644165, 29.853281021118164],
+    "rotation": [0, 0, 0, 1],
+    "tick": 62
+  },
+  "before": {
+    "frame": 0,
+    "position": [-9.540836003185671e-12, 0.8897753953933716, 32],
+    "rotation": [0, 0, 0, 1],
+    "tick": 26
+  },
+  "diagnostics": [],
+  "diagnosticsPolicy": {
+    "networkErrorsOptOutReason": "Android mailbox transport has no CDP network observer; this scenario proves local packaged asset startup.",
+    "noConsoleErrors": true,
+    "noNetworkErrors": false,
+    "noRuntimeDiagnostics": true,
+    "runtimeReady": true
+  },
+  "distance": 2.1467192069698604,
+  "entity": "player",
+  "expectMoved": true,
+  "frames": 35,
+  "trivialityOptOuts": [],
+  "target": "android",
+  "movementDelta": [-4.671555280741802e-5, -0.0009884834289550781, -2.146718978881836],
+  "artifactDirectory": "/home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution/artifacts/findings-fix/green-playtest-uninterrupted",
+  "assertionResults": [
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "networkErrorsOptOutReason": "Android mailbox transport has no CDP network observer; this scenario proves local packaged asset startup.",
+          "noConsoleErrors": true,
+          "noNetworkErrors": false,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    },
+    {
+      "details": {
+        "distance": 2.1467192069698604,
+        "entity": "player",
+        "minimum": 0.25,
+        "observed": true
+      },
+      "id": "movement.distance",
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "runtime": "native",
+  "scenario": "bayview-manifest-startup-movement",
+  "trivialityOptOutCount": 0,
+  "url": "http://127.0.0.1:41777/playtest",
+  "fullReport": {
+    "file": "android-playtest.full.json.gz",
+    "uncompressedSha256": "c0de26ad8a42a44b5924d1975876ae7dfff4502ca5fc51aacad61d6a683861f8",
+    "note": "Full observations are preserved in the compressed original report."
+  }
+}
