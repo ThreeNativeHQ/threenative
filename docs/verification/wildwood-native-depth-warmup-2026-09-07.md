@@ -30,18 +30,18 @@
 
 ## 3. Confirmed Evidence from Artifacts
 
-1. [`artifacts/wildwood-performance-20260907/native-pinned-probe/native.log`](../../artifacts/wildwood-performance-20260907/native-pinned-probe/native.log):
+1. `artifacts/wildwood-performance-20260907/native-pinned-probe/native.log`:
    - Current Release V8 + Dawn Linux host running Wildwood native bundle.
    - Failure occurs during async shader compilation overlapping gameplay startup.
-2. [`artifacts/wildwood-performance-20260907/native-oldhost-samegame/native.log`](../../artifacts/wildwood-performance-20260907/native-oldhost-samegame/native.log):
+2. `artifacts/wildwood-performance-20260907/native-oldhost-samegame/native.log`:
    - The original Sep 5 packaged executable encounters the exact same depth binding mismatch on extended run.
    - **Conclusion**: Not a proven regression in latest C++ changes; initial shorter runs simply exited before async warmup hit this pass.
-3. [`artifacts/wildwood-performance-20260907/native-depth-trace-packaged/native.log`](../../artifacts/wildwood-performance-20260907/native-depth-trace-packaged/native.log):
+3. `artifacts/wildwood-performance-20260907/native-depth-trace-packaged/native.log`:
    - `TN_DEPTH_BINDING_MISMATCH` shows descriptor itself is already incorrect before crossing into native C++:
      - Layout expects `depth multisampled: false` (sampleCount 1).
      - Bound `GPUTexture` has `sampleCount: 4`.
    - Call stack: `createBindGroup` -> `Bindings.updateForRender` -> `Renderer.compileAsync`.
-4. [`artifacts/wildwood-performance-20260907/native-light-context/native.log`](../../artifacts/wildwood-performance-20260907/native-light-context/native.log):
+4. `artifacts/wildwood-performance-20260907/native-light-context/native.log`:
    - Target material object: `water` (`MeshBasicNodeMaterial`, backside and normal passes).
    - Compilation context: `currentSamples: 0`, `originalRenderTargetSamples: 4`, `needsFrameBufferTarget: true`.
    - Near error marker `3154`: after binding update reports current binding uses sample-1 placeholder, while the earlier `createBindGroup` used sample-4 texture.
@@ -53,7 +53,7 @@
 - **Confirmed cause and repair**:
   - `Bindings._createBindings` used stale `NodeSampledTexture.texture` before its `.update()` phase read the current `textureNode.value`. The Three.js patch now calls `binding.update()` before the first texture/sampler upload and bind-group creation. All three distributed patch copies are identical.
 - **Independent Issue (Not Proven Cause of this Error)**:
-  - `NodeManager` async state overwrite has an isolated reproduction in [the investigation artifacts](../../artifacts/wildwood-performance-20260907/agents/three-async-node-state.spec.ts), but has not been proven to cause this specific Wildwood depth descriptor mismatch.
+  - `NodeManager` async state overwrite has an isolated reproduction in the investigation artifacts (`artifacts/wildwood-performance-20260907/agents/three-async-node-state.spec.ts`), but has not been proven to cause this specific Wildwood depth descriptor mismatch.
 - **Rejected Hypotheses**:
   - *Texture-only candidate reading allocated `sampleCount`*: Caused inverse mismatch (sample-1 placeholder bound when layout expected 4).
   - *Disabling native command recorder*: Caused unrelated open-command-encoder validation errors; restored.
