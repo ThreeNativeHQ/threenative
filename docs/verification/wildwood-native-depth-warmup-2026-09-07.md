@@ -127,3 +127,37 @@ the loading curtain still covered the world. They now wait for the existing `rev
 snapshot instead. This is game-owned display timing; `UiLayer` still connects and sends its ready
 handshake while the HUD is hidden. Three game tests cover preload, reveal, and restart:
 `2 failed / 1 passed` before, `3 passed` after. Wildwood typecheck passed.
+
+
+## 9. Qualified final performance comparison
+
+NVIDIA RTX 2080, 60 Hz display, 1280×720, resolution scale 1, MSAA4, 2,341 trees and 7,600 ferns.
+Both samples use normal real-time forward/backward movement after at least 20 seconds of warm-up.
+The native HUD includes the startup gate from sandbox commit `1182966`.
+
+| Target | Frames / measured time | Mean frame | p50 | p95 | p99 | Worst | >50 ms | Derived FPS |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Native desktop | 2,073 / 35.002 s | 16.885 ms | 16.788 ms | 18.874 ms | 21.514 ms | 34.393 ms | 0 | 59.2 |
+| Browser WebGPU | 2,002 / 35.009 s | 17.487 ms | 16.700 ms | 21.800 ms | 33.900 ms | 164.200 ms | 8 | 57.2 |
+
+Native movement covered 20.6 metres. OS foreground was checked every 250 ms throughout its
+measured interval. No GPU validation or UI buffer errors occurred. `comparison.json`, raw frame
+samples, logs and captures are under `artifacts/wildwood-performance-20260907/`; native final
+receipts are in `native-final-foreground/`, browser receipts in `web-baseline-warmed/`.
+
+These are one qualified run per target, not a native before/after speedup claim. Earlier native
+runs failed validation, lost foreground, or used profiling instrumentation and were excluded.
+The native result is near this display's 60 Hz ceiling. No shader stages, scene detail, MSAA or
+resolution were reduced. A proposed reduction in GPU timestamp readbacks was not retained:
+`mapAsync` timing includes necessary command replay, so moving that cost to the frame boundary
+would not by itself prove a performance gain.
+
+The reviewed executable with the rebuilt HUD is
+`artifacts/wildwood-performance-20260907/final/wildwood`. Launch on this NVIDIA/WebKit machine:
+
+```sh
+artifacts/wildwood-performance-20260907/final/run-wildwood.sh
+```
+
+The launcher sets WebKit's DMA-buffer workaround. The original sandbox executable is preserved;
+this artifact contains the depth fix, complete packaged assets and the rebuilt HUD.
