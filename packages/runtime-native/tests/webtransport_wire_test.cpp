@@ -72,6 +72,7 @@ using namespace mystral::webtransport;
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <deque>
 #include <filesystem>
 #include <cstring>
@@ -81,6 +82,22 @@ using namespace mystral::webtransport;
 namespace {
 
 int g_failures = 0;
+
+void setTestEnvironment(const char* name, const char* value) {
+#ifdef _WIN32
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
+
+void clearTestEnvironment(const char* name) {
+#ifdef _WIN32
+    _putenv_s(name, "");
+#else
+    unsetenv(name);
+#endif
+}
 
 void check(bool condition, const char* what) {
     if (!condition) {
@@ -1420,13 +1437,13 @@ int main() {
     check(parseUrl("https://[2001:db8::1]:4433/path", testH, testPort, testP), "parseUrl valid ipv6 literal");
 
     // Test DNS delay environment parsing
-    setenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "50", 1);
+    setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "50");
     connectSession("https://127.0.0.1:4433/test_dns");
-    setenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "invalid", 1);
+    setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "invalid");
     connectSession("https://127.0.0.1:4433/test_dns2");
-    setenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "5000", 1);
+    setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "5000");
     connectSession("https://127.0.0.1:4433/test_dns3");
-    unsetenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS");
+    clearTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS");
 
     // URL parsing and resolver test seams
     setResolverDelayForTesting(10);
@@ -1463,11 +1480,11 @@ int main() {
                       "a live h3 connection accepts the CONNECT request");
 
                 std::string capacityError;
-                setenv(kMaxDatagramEnv, "not-a-byte-count", 1);
+                setTestEnvironment(kMaxDatagramEnv, "not-a-byte-count");
                 check(refreshDatagramCapacity(requestSession, &capacityError) ==
                           CapacityUpdate::Invalid && !capacityError.empty(),
                       "an invalid datagram clamp fails a live session closed");
-                unsetenv(kMaxDatagramEnv);
+                clearTestEnvironment(kMaxDatagramEnv);
                 requestSession->failed = false;
                 capacityError.clear();
                 const CapacityUpdate capacity =
@@ -1506,8 +1523,8 @@ int main() {
         Resolution options;
         options.host = "networking-test.invalid";
         options.port = 4433;
-        setenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "12", 1);
-        setenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES", "127.0.0.1,::1", 1);
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "12");
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES", "127.0.0.1,::1");
         check(readResolverTestOptions(options) && options.delayMs == 12 &&
                   options.useTestAddresses && options.candidates.size() == 2,
               "resolver test controls accept bounded numeric addresses");
@@ -1515,20 +1532,20 @@ int main() {
         Resolution badDelay;
         badDelay.host = options.host;
         badDelay.port = options.port;
-        setenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "12x", 1);
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "12x");
         check(!readResolverTestOptions(badDelay), "resolver rejects a non-numeric delay");
-        setenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "2001", 1);
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "2001");
         check(!readResolverTestOptions(badDelay), "resolver rejects an excessive delay");
 
         Resolution badAddress;
         badAddress.host = options.host;
         badAddress.port = options.port;
-        setenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "0", 1);
-        setenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES", "127.0.0.1,", 1);
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "0");
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES", "127.0.0.1,");
         check(!readResolverTestOptions(badAddress), "resolver rejects an empty address entry");
 
-        unsetenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS");
-        unsetenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES");
+        clearTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS");
+        clearTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES");
         Resolution ordinary;
         ordinary.host = "example.com";
         ordinary.port = 443;
@@ -1546,8 +1563,8 @@ int main() {
         check(localhostAddresses.size() <= kResolverCandidateLimit,
               "resolver bounds ordinary hostname candidates");
 
-        setenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "1", 1);
-        setenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES", "127.0.0.1", 1);
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "1");
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES", "127.0.0.1");
         auto job = startResolution("networking-test.invalid", 4433);
         check(job != nullptr, "resolver admits a bounded test job");
         if (job != nullptr) {
@@ -1560,8 +1577,8 @@ int main() {
                   "resolver worker completes the bounded address fixture");
             cancelResolution(job);
         }
-        unsetenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS");
-        unsetenv("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES");
+        clearTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS");
+        clearTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES");
     }
 
     if (g_failures != 0) {

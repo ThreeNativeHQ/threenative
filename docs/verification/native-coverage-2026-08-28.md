@@ -8,9 +8,9 @@ targets could not be built and are named below.
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
 | `src/async/` | 73 | 60 | 82.19% |
-| `src/audio/` | 1051 | 882 | 83.92% |
+| `src/audio/` | 1051 | 909 | 86.49% |
 | `src/canvas/` | 1172 | 964 | 82.25% |
-| `src/cli/` | 1609 | 1210 | 75.20% |
+| `src/cli/` | 1612 | 1210 | 75.06% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
 | `src/js/` | 2632 | 2199 | 83.55% |
@@ -21,12 +21,12 @@ targets could not be built and are named below.
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 8227 | 6449 | 78.39% |
+| `src/webgpu/` | 8229 | 6459 | 78.49% |
 | `src/webtransport/` | 1391 | 1081 | 77.71% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **21784** | **17524** | **80.44%** |
+| **TOTAL** | **21789** | **17561** | **80.60%** |
 
-Source digest: `sha256:993e1b2fbd5c6184ba654117ce0623746b77d9155e0670ea984e1f8222d2d0c8`
+Source digest: `sha256:1693a569609c86efd4662bc57c948b1baf741188d791380337d24e766fee8134`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation

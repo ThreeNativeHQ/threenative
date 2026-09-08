@@ -334,62 +334,6 @@ bool testCliSubsystem(const fs::path& tempDir) {
     }
     std::string testScriptStr = testScriptPath.string();
 
-    CLIOptions bannerOpts;
-    bannerOpts.scriptPath = testScriptStr;
-    bannerOpts.width = 256;
-    bannerOpts.height = 256;
-    bannerOpts.maxFps = 60;
-    bannerOpts.headless = true;
-    bannerOpts.quiet = true;
-    setupHeadlessEnvironment(bannerOpts);
-    printRunBanner(bannerOpts, false, false);
-    printRunBanner(bannerOpts, true, false);
-    printRunBanner(bannerOpts, false, true);
-    auto runtime = createConfiguredRuntime(bannerOpts);
-    if (runtime) {
-        wirePlaytestMailboxBridge(runtime);
-    }
-
-#ifndef _WIN32
-    // Fork to run real CLI script in headless mode
-    pid_t pid = fork();
-    if (pid == 0) {
-        char* runArgv[] = {
-            (char*)"mystral",
-            (char*)"run",
-            const_cast<char*>(testScriptStr.c_str()),
-            (char*)"--no-sdl",
-            (char*)"--quiet",
-            nullptr
-        };
-        int rc = mystral::cli::runCli(5, runArgv);
-        _exit(rc);
-    }
-    int status = 0;
-    waitpid(pid, &status, 0);
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        std::cerr << "runScript CLI child process failed with status " << status << "\n";
-        return false;
-    }
-#endif
-
-    // Direct runScript invocations in test mode (MYSTRAL_CLI_NO_MAIN)
-    CLIOptions directRunOpts;
-    directRunOpts.scriptPath = testScriptStr;
-    directRunOpts.noSdl = true;
-    directRunOpts.headless = true;
-    directRunOpts.quiet = true;
-    runScript(directRunOpts);
-
-    CLIOptions directShotOpts = directRunOpts;
-    directShotOpts.screenshotPath = (tempDir / "direct_shot.png").string();
-    directShotOpts.frames = 1;
-    runScript(directShotOpts);
-
-    CLIOptions directVidOpts = directRunOpts;
-    directVidOpts.videoPath = (tempDir / "direct_vid.mp4").string();
-    runScript(directVidOpts);
-
     // Direct test of pngWriteCallback
     std::vector<uint8_t> pngBytes;
     uint8_t sampleData[4] = { 10, 20, 30, 40 };
@@ -676,6 +620,56 @@ bool testCliSubsystem(const fs::path& tempDir) {
         unsetenv("THREENATIVE_CLI_TOOLS");
 #endif
     }
+
+    // All fork/exec probes above finish before any runtime is created. This keeps the child from
+    // inheriting a V8/Dawn worker or a locked runtime mutex.
+    CLIOptions bannerOpts;
+    bannerOpts.scriptPath = testScriptStr;
+    bannerOpts.width = 256;
+    bannerOpts.height = 256;
+    bannerOpts.maxFps = 60;
+    bannerOpts.headless = true;
+    bannerOpts.quiet = true;
+    setupHeadlessEnvironment(bannerOpts);
+    printRunBanner(bannerOpts, false, false);
+    printRunBanner(bannerOpts, true, false);
+    printRunBanner(bannerOpts, false, true);
+    auto runtime = createConfiguredRuntime(bannerOpts);
+    if (!runtime || !wirePlaytestMailboxBridge(runtime)) return false;
+
+    char* runArgv[] = {
+        (char*)"mystral",
+        (char*)"run",
+        const_cast<char*>(testScriptStr.c_str()),
+        (char*)"--no-sdl",
+        (char*)"--quiet",
+        nullptr
+    };
+    if (mystral::cli::runCli(5, runArgv) != 0) return false;
+
+    // Direct runScript invocations in test mode (MYSTRAL_CLI_NO_MAIN)
+    CLIOptions directRunOpts;
+    directRunOpts.scriptPath = testScriptStr;
+    directRunOpts.noSdl = true;
+    directRunOpts.headless = true;
+    directRunOpts.quiet = true;
+    if (runScript(directRunOpts) != 0) return false;
+
+    CLIOptions directShotOpts = directRunOpts;
+    directShotOpts.screenshotPath = (tempDir / "direct_shot.png").string();
+    directShotOpts.frames = 1;
+    // --no-sdl has no presented frame to save; the CLI must fail closed rather than report a
+    // screenshot that was never written.
+    if (runScript(directShotOpts) != 1) return false;
+
+    CLIOptions directVidOpts = directRunOpts;
+    directVidOpts.videoPath = (tempDir / "direct_vid.mp4").string();
+    const int directVideoResult = runScript(directVidOpts);
+#if TN_ENABLE_VIDEO
+    if (directVideoResult != 0) return false;
+#else
+    if (directVideoResult == 0) return false;
+#endif
 
     std::string tempDirStr = tempDir.string();
     std::string lmDirStr = (tempDir / "lm").string();

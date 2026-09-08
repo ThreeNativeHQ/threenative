@@ -677,11 +677,13 @@ bool testRuntimeMethods() {
         exitConfig.height = 64;
         exitConfig.noSdl = true;
         auto exitRuntime = mystral::Runtime::create(exitConfig);
-        if (exitRuntime) {
-            exitRuntime->evalScript("if (typeof process !== 'undefined' && process.exit) { process.exit(42); }", "exit_test.js");
-            if (exitRuntime->getExitCode() != 42) {
-                std::cerr << "Expected exitCode 42, got " << exitRuntime->getExitCode() << "\n";
-            }
+        if (!exitRuntime) return false;
+        if (!exitRuntime->evalScript(
+                "if (typeof process !== 'undefined' && process.exit) { process.exit(42); }",
+                "exit_test.js") ||
+            exitRuntime->getExitCode() != 42) {
+            std::cerr << "process.exit contract did not report exit code 42\n";
+            return false;
         }
     }
 

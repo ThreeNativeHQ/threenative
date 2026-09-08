@@ -560,42 +560,6 @@ constexpr const char* kScript = R"JS((async () => {
     if (ctx.unconfigure) ctx.unconfigure();
   }
 
-  // Direct queue native prototype methods
-  try {
-    const q = device.queue;
-    if (q.__nativeWriteBuffer) {
-      q.__nativeWriteBuffer(uboBuf, 0, new Float32Array([1, 2, 3, 4]));
-      q.__nativeWriteBuffer(vtxBuf, 0, new Float32Array([0, 0, 0]));
-      try { q.__nativeWriteBuffer(); } catch (e) {}
-      try { q.__nativeWriteBuffer(uboBuf, 3, new Float32Array([1])); } catch (e) {}
-      try { q.__nativeWriteBuffer(uboBuf, 0, null); } catch (e) {}
-    }
-    if (q.__nativeWriteTexture) {
-      const p = new Uint8Array(64 * 4).fill(200);
-      q.__nativeWriteTexture(
-        { texture: tex2D, mipLevel: 0, origin: [0, 0, 0], aspect: "all" },
-        p,
-        { bytesPerRow: 64, rowsPerImage: 16 },
-        [4, 4, 1]
-      );
-      try { q.__nativeWriteTexture(); } catch (e) {}
-    }
-    if (q.__nativeCopyExternalImageToTexture) {
-      try {
-        const cv = document.createElement("canvas");
-        cv.width = 4;
-        cv.height = 4;
-        const c2d = cv.getContext("2d");
-        if (c2d) c2d.fillRect(0, 0, 4, 4);
-        q.__nativeCopyExternalImageToTexture(
-          { source: cv, origin: [0, 0], flipY: false },
-          { texture: tex2D, mipLevel: 0, origin: [0, 0, 0] },
-          [4, 4, 1]
-        );
-      } catch (e) {}
-    }
-  } catch (e) {}
-
   // Native WebGPU helpers
   try {
     if (globalThis.__nativeGetContext2D) {
@@ -786,16 +750,47 @@ constexpr const char* kDirectScript = R"JS((() => {
     rp2.setPipeline(globalThis.__renderPipeline);
     rp2.end();
 
-    const dcb = enc.finish();
-    const q = globalThis.__device?.queue;
-    if (q && q.__nativeSubmit && dcb) {
-      q.__nativeSubmit([dcb]);
-    }
+    enc.finish();
     globalThis.__tnDirectEncoderDone = true;
   } catch (err) {
     console.error("DIRECT_ENCODER_ERROR:", err, err?.stack);
     throw err;
   }
+})())JS";
+
+constexpr const char* kDirectQueueScript = R"JS((async () => {
+  const adapter = await navigator.gpu.requestAdapter();
+  const device = await adapter.requestDevice();
+  const buffer = device.createBuffer({
+    size: 256,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC | GPUBufferUsage.MAP_READ,
+  });
+  const texture = device.createTexture({
+    size: [4, 4, 1],
+    format: "rgba8unorm",
+    usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
+  });
+  const bytes = new Uint8Array(4 * 4 * 4).fill(200);
+  device.queue.writeBuffer(buffer, 0, new Uint32Array([1, 2, 3, 4]));
+  device.queue.writeBuffer(buffer, 16, new Uint8Array([5, 6, 7]));
+  device.queue.writeTexture(
+    { texture, origin: [0, 0, 0] }, bytes,
+    { bytesPerRow: 16, rowsPerImage: 4 }, [4, 4, 1],
+  );
+  const image = { width: 4, height: 4, _data: bytes.buffer };
+  device.queue.copyExternalImageToTexture(
+    { source: image, origin: [0, 0], flipY: true },
+    { texture, mipLevel: 0, origin: [0, 0, 0] }, [4, 4, 1],
+  );
+  try { device.queue.writeBuffer(); } catch (error) {}
+  try { device.queue.writeBuffer(buffer, 3, new Uint32Array([1])); } catch (error) {}
+  try { device.queue.writeTexture(); } catch (error) {}
+  try { device.queue.copyExternalImageToTexture(); } catch (error) {}
+  const encoder = device.createCommandEncoder();
+  encoder.clearBuffer(buffer, 0, 16);
+  device.queue.submit([encoder.finish()]);
+  await device.queue.onSubmittedWorkDone();
+  globalThis.__tnDirectQueueDone = true;
 })())JS";
 
 }  // namespace
@@ -812,14 +807,13 @@ int main() {
         return 1;
     }
 
-    if (!runtime->evalScript(kScript, "webgpu_comprehensive_test.js")) {
-        std::cerr << "webgpu comprehensive test script evaluation failed\n";
-        return 1;
-    }
-
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime->getWebGPUBindingsState());
     if (!state || !state->engine) {
         std::cerr << "headless runtime did not expose WebGPU binding state\n";
+        return 1;
+    }
+    if (!runtime->evalScript(kScript, "webgpu_comprehensive_test.js")) {
+        std::cerr << "webgpu comprehensive test script evaluation failed\n";
         return 1;
     }
 
@@ -841,6 +835,40 @@ int main() {
             "if (globalThis.__tnWebgpuDone !== true) throw new Error('webgpu script timed out');",
             "webgpu_comprehensive_assert.js")) {
         std::cerr << "webgpu comprehensive test script did not complete\n";
+        return 1;
+    }
+
+    // Keep the main contract on the production recorder, then exercise the native queue binding
+    // implementation through an isolated internal contract. This tests both routes without
+    // publishing queue escape hatches to game code.
+    mystral::RuntimeConfig directConfig;
+    directConfig.width = 4;
+    directConfig.height = 4;
+    directConfig.noSdl = true;
+    auto directRuntime = mystral::Runtime::create(directConfig);
+    if (!directRuntime) {
+        std::cerr << "could not create direct WebGPU binding contract runtime\n";
+        return 1;
+    }
+    auto* directState = static_cast<mystral::webgpu::BindingsState*>(
+        directRuntime->getWebGPUBindingsState());
+    if (!directState || !directState->engine) {
+        std::cerr << "direct WebGPU binding contract did not expose state\n";
+        return 1;
+    }
+    directState->profiling.disableFrameOpStreamForTesting = true;
+    if (!directRuntime->evalScript(kDirectQueueScript, "direct_queue_bindings.js")) return 1;
+    const auto directDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < directDeadline) {
+        if (!directRuntime->pollEvents()) break;
+        directState->engine->processMicrotasks();
+        if (directState->engine->toBoolean(
+                directState->engine->getGlobalProperty("__tnDirectQueueDone"))) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (!directState->engine->toBoolean(
+            directState->engine->getGlobalProperty("__tnDirectQueueDone"))) {
+        std::cerr << "direct WebGPU binding contract timed out\n";
         return 1;
     }
 
