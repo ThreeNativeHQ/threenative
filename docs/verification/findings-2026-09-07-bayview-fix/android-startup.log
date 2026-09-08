@@ -1,0 +1,3 @@
+09-07 11:34:01.674 19039 19151 I MystralColdStart: TN_COLD_START:{"segment":"process","atMs":0.000}
+09-07 11:34:01.784 19039 19151 I MystralColdStart: TN_COLD_START:{"segment":"game_eval_begin","atMs":110.704}
+09-07 11:34:17.694 19039 19151 I MystralColdStart: TN_COLD_START:{"segment":"first_frame","atMs":16020.007}

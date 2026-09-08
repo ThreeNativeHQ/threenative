@@ -1,0 +1,25 @@
+requested: 3 model(s), 24 texture(s), 30 cue(s) = 57
+manifest:  74 entries
+missing:   0
+
+indexed but not loaded by src/ (17):
+  model   assets/bayview-barrel.glb
+  model   assets/bayview-buoy.glb
+  model   assets/bayview-gutter.glb
+  texture assets/bayview-peeling-normal.jpg
+  texture assets/bayview-peeling-rough.jpg
+  texture assets/bayview-peeling.jpg
+  texture assets/bayview-steel-metal.jpg
+  model   assets/bayview-walllamp.glb
+  model   generated/player-viewmodel-clean.glb
+  texture imported/polyhaven/sky.outdoor-cloudy/environment.jpg
+  other   imported/polyhaven/sky.outdoor-cloudy/provenance.json
+  other   models/enemy-terrorist.provenance.json
+  other   models/player-viewmodel.provenance.json
+  other   models/weapon-ak47.provenance.json
+  texture textures/range-target-face-hit.png
+  texture textures/range-target-face.png
+  texture textures/ue-test-surface.jpg
+
+audio rows the compile conditioned: 0
+entries whose bytes the compile changed: 0

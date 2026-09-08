@@ -74,7 +74,7 @@ export interface IAndroidPointerInjection {
 export interface IAndroidTouchViewport {
   device: { height: number; width: number };
   logical: { bottom: number; left: number; right: number; top: number };
-  orientation: number;
+  orientation: number | undefined;
   physical: { bottom: number; left: number; right: number; top: number };
 }
 
@@ -305,7 +305,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
     for (const pointer of pointers) {
       const [x, y] = this.touchViewport === undefined
         ? rotatedTouchPosition(pointer.x, pointer.y, this.rotation)
-        : touchPositionForViewport(pointer.x, pointer.y, this.touchViewport);
+        : touchPositionForViewport(pointer.x, pointer.y, this.touchViewport, this.options.touchRotation);
       let held = this.touchSlots.get(pointer.id);
       if (held === undefined) {
         const usedSlots = new Set([...this.touchSlots.values()].map(({ slot }) => slot));
@@ -540,14 +540,14 @@ function isPlatformWebViewNoise(text: string): boolean {
 const TOUCH_AXIS_MAX = 32767;
 
 export function parseAndroidTouchViewport(output: string): IAndroidTouchViewport {
-  const match = /Viewport\s+INTERNAL:\s*displayId=0,[\s\S]*?orientation=(\d+),\s*logicalFrame=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\],\s*physicalFrame=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\],\s*deviceSize=\[\s*(\d+),\s*(\d+)\s*\]/u.exec(output);
+  const match = /Viewport\s+INTERNAL:\s*displayId=0,[\s\S]*?(?:orientation=(\d+),\s*)?logicalFrame=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\],\s*physicalFrame=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\],\s*deviceSize=\[\s*(\d+),\s*(\d+)\s*\]/u.exec(output);
   if (match === null) {
     throw new Error(
       "TN_PLAYTEST_ANDROID_TOUCH_VIEWPORT_MISSING: dumpsys input did not report an INTERNAL viewport for display 0.",
     );
   }
+  const orientation = match[1] === undefined ? undefined : Number(match[1]);
   const [
-    orientation,
     logicalLeft,
     logicalTop,
     logicalRight,
@@ -558,8 +558,7 @@ export function parseAndroidTouchViewport(output: string): IAndroidTouchViewport
     physicalBottom,
     deviceWidth,
     deviceHeight,
-  ] = match.slice(1).map(Number) as [
-    number,
+  ] = match.slice(2).map(Number) as [
     number,
     number,
     number,
@@ -571,7 +570,7 @@ export function parseAndroidTouchViewport(output: string): IAndroidTouchViewport
     number,
     number,
   ];
-  if (![0, 1, 2, 3].includes(orientation)) {
+  if (orientation !== undefined && ![0, 1, 2, 3].includes(orientation)) {
     throw new Error(`TN_PLAYTEST_ANDROID_TOUCH_ORIENTATION_INVALID: display 0 reported orientation ${orientation}.`);
   }
   if (logicalRight <= logicalLeft || logicalBottom <= logicalTop
@@ -594,6 +593,7 @@ export function touchPositionForViewport(
   x: number,
   y: number,
   viewport: IAndroidTouchViewport,
+  rotationOverride?: number,
 ): [number, number] {
   const logicalX = viewport.logical.left + clampUnit(x) * (viewport.logical.right - viewport.logical.left);
   const logicalY = viewport.logical.top + clampUnit(y) * (viewport.logical.bottom - viewport.logical.top);
@@ -603,11 +603,28 @@ export function touchPositionForViewport(
   const physicalY = viewport.physical.top
     + (logicalY - viewport.logical.top) * (viewport.physical.bottom - viewport.physical.top)
       / (viewport.logical.bottom - viewport.logical.top);
-  const [rawX, rawY, rawWidth, rawHeight] = viewport.orientation === 0
+  if (rotationOverride !== undefined && ![0, 1, 2, 3].includes(rotationOverride)) {
+    throw new Error(`TN_PLAYTEST_ANDROID_TOUCH_ORIENTATION_INVALID: touch rotation ${rotationOverride}.`);
+  }
+  // `rotationOverride` follows rotatedTouchPosition's content-to-panel convention. The dumpsys
+  // viewport orientation uses the inverse panel-to-content convention, so invert the override
+  // before applying the physical-frame transform.
+  const orientation = rotationOverride === undefined
+    ? viewport.orientation
+    : (4 - rotationOverride) % 4;
+  if (orientation === undefined) {
+    throw new Error(
+      "TN_PLAYTEST_ANDROID_TOUCH_ORIENTATION_UNKNOWN: pass touchRotation when dumpsys input omits the viewport orientation.",
+    );
+  }
+  if (![0, 1, 2, 3].includes(orientation)) {
+    throw new Error(`TN_PLAYTEST_ANDROID_TOUCH_ORIENTATION_INVALID: display 0 reported orientation ${orientation}.`);
+  }
+  const [rawX, rawY, rawWidth, rawHeight] = orientation === 0
     ? [physicalX, physicalY, viewport.device.width, viewport.device.height]
-    : viewport.orientation === 1
+    : orientation === 1
       ? [viewport.device.height - physicalY, physicalX, viewport.device.height, viewport.device.width]
-      : viewport.orientation === 2
+      : orientation === 2
         ? [viewport.device.width - physicalX, viewport.device.height - physicalY, viewport.device.width, viewport.device.height]
         : [physicalY, viewport.device.width - physicalX, viewport.device.height, viewport.device.width];
   return [

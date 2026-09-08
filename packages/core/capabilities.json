@@ -170,6 +170,26 @@
     {
       "aliases": [],
       "constraints": [
+        "returns undefined for `\"none\"`, which drops the audio pass; an absent block returns the defaults",
+        "throws TN_ASSETS_CONFIG_INVALID or TN_ASSETS_CONFIG_UNKNOWN_KEY rather than dropping a key it does not know"
+      ],
+      "example": "const options = parseAudioConfig({ overrides: [{ glob: \"audio/*.ogg\", conditioning: \"none\" }] });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function parseAudioConfig(raw: unknown): IAudioPassOptions | undefined { … }",
+      "situations": [
+        "validate a threenative.config.ts audio block before compiling assets",
+        "ship audio exactly as committed without conditioning it"
+      ],
+      "summary": "Validates a game's declared `assets.audio` block, the one place its keys and ranges are checked.",
+      "supersedes": [],
+      "symbol": "parseAudioConfig"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "non-PNG or truncated bytes return undefined instead of being treated as a valid image"
       ],
       "example": "const png = parsePng(bytes); if (png !== undefined) console.log(png.width, png.height);",
@@ -3876,7 +3896,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
-      "signature": "export function touchPositionForViewport( x: number, y: number, viewport: IAndroidTouchViewport, ): [number, number] { … }",
+      "signature": "export function touchPositionForViewport( x: number, y: number, viewport: IAndroidTouchViewport, rotationOverride?: number, ): [number, number] { … }",
       "situations": [
         "run a scenario on an Android emulator or device",
         "parse Android console diagnostics"

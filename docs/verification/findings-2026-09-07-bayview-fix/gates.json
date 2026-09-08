@@ -1,0 +1,47 @@
+{
+  "commands": [
+    {
+      "command": "pnpm typecheck",
+      "exitCode": 0,
+      "log": "/tmp/findings-integrated-typecheck.log",
+      "sha256": "bd23ac59531d2c5f944b3bb77b690e0faf5cc62545e98948dace90427ae97327"
+    },
+    {
+      "command": "pnpm lint",
+      "exitCode": 0,
+      "log": "/tmp/findings-final-evidence-lint.log",
+      "sha256": "751908ffee51795cba016db01dfeec7871e77505c5776a06a094c2badf55a512"
+    },
+    {
+      "command": "pnpm test",
+      "exitCode": 0,
+      "log": "/tmp/findings-integrated-test.log",
+      "sha256": "45e0ccdebeb5c35fed16a73f88db6f2a5bf857012fff9c3f68372e87df261dea"
+    },
+    {
+      "command": "pnpm build",
+      "exitCode": 0,
+      "log": "/tmp/findings-final-build.log",
+      "sha256": "82f2eb45f8dc09ef6b34121f469f5914936f40a177802edb4278f2a4a7bdc0cb"
+    },
+    {
+      "command": "pnpm budgets",
+      "exitCode": 0,
+      "log": "/tmp/findings-final-budgets.log",
+      "sha256": "24c431d812bc5800180955185de436be0a0bfbe230f0e980b066a281022a4915"
+    },
+    {
+      "command": "pnpm exec tsx scripts/check-evidence-budget.ts",
+      "exitCode": 0,
+      "log": "/tmp/findings-final-evidence-budget.log",
+      "sha256": "9a25bb7795b639b7a3badc5f950f58bd0b0a1030879a980e0473430ef8d69987"
+    }
+  ],
+  "rootVitest": {
+    "filesPassed": 402,
+    "filesSkipped": 2,
+    "testsPassed": 4491,
+    "testsSkipped": 7
+  },
+  "lintWarnings": 652
+}

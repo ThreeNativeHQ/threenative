@@ -3469,3 +3469,13 @@ observed; no causal link is claimed and the cause of the variation is unidentifi
 this lane is dominated by Xvfb present behaviour and carries no meaning; the controller's only
 input is GPU cost. None of this is a hardware performance claim, and no production threshold was
 changed for it.
+
+## Bayview startup after dependency repairs — 2026-09-07
+
+The [working-build handoff](../PRDs/batch-2026-09-05/PRD-360-FOLLOWUP-startup-performance.md)
+records one physical Pixel 8 run: first frame 16,020.007 ms, pipeline compilation
+8,404.781 ms across 93 calls, and frame-stall residual 4,917.275 ms. The retained
+`artifacts/findings-fix/green-host-uninterrupted.log` also reports pump `maxGapMs:15708.693`.
+These are single-run diagnostics, not a qualified three-run first-playable or correlated
+pump acceptance result. APK and log identities are in the [repair proof](findings-2026-09-07-bayview-fix/proof.json).
+PRD-360 remains PARTIAL; the next task is baseline attribution before a bounded optimization.
