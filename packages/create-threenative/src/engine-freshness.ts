@@ -29,11 +29,10 @@ export interface IEngineBuildMarker {
 
 export interface IEngineFreshnessVitePlugin {
   readonly name: string;
-  readonly apply: "serve";
   config(
     config: { readonly root?: string },
     env: { readonly command: string },
-  ): { optimizeDeps: { force: boolean } } | undefined;
+  ): { resolve: { dedupe: string[] }; optimizeDeps?: { force: boolean } };
   configureServer(server: {
     readonly config: { readonly root?: string };
     readonly httpServer?: {
@@ -122,13 +121,16 @@ export function createEngineFreshnessPlugin(): IEngineFreshnessVitePlugin {
     path.resolve(config.root ?? process.cwd());
   return {
     name: "threenative-engine-freshness",
-    apply: "serve",
-    config(config) {
+    config(config, env) {
+      // Linked engine packages otherwise resolve their own Three.js shader state and React
+      // dispatcher. Vite merges this list with the game's entries, including subpath imports.
+      const resolve = { dedupe: ["three", "react", "react-dom"] };
+      if (env.command !== "serve") return { resolve };
       const root = rootOf(config);
       recordedHash = hashEngineDist(root);
       const marker = recordedHash === undefined ? undefined : readMarker(markerPath(root));
       if (recordedHash === undefined || marker === undefined || marker.hash === recordedHash) {
-        return undefined;
+        return { resolve };
       }
       if (processIsAlive(marker.pid)) {
         const where =
@@ -143,7 +145,7 @@ export function createEngineFreshnessPlugin(): IEngineFreshnessVitePlugin {
             `Kill it before playing${how} — its tab renders yesterday's engine.`,
         );
       }
-      return { optimizeDeps: { force: true } };
+      return { resolve, optimizeDeps: { force: true } };
     },
     configureServer(server) {
       const root = rootOf(server.config);

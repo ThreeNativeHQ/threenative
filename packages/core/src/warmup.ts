@@ -32,6 +32,20 @@ export interface IWarmUpProgress {
   readonly total: number;
 }
 
+/** The result of the optional persistent warm-up hint. */
+export type WarmUpCacheStatus = "disabled" | "unavailable" | "miss" | "hit" | "stored";
+
+export interface IWarmUpCacheOptions {
+  /**
+   * A game-owned revision for the scene's materials, shaders and renderer settings.
+   *
+   * The value is a hint that the native driver's own pipeline cache survived a relaunch; it is
+   * not a serialized WebGPU pipeline. Change it whenever those inputs change. A missing or
+   * unavailable localStorage implementation never prevents the warm-up from running.
+   */
+  readonly key: string;
+}
+
 export interface IWarmUpOptions {
   /** Compute kernels to compile in the same bounded startup window as draw pipelines. */
   readonly computeNodes?: readonly unknown[];
@@ -78,6 +92,11 @@ export interface IWarmUpOptions {
    * be a mechanism that turns a 8 s launch into a 15 s one.
    */
   readonly granularity?: "scene" | "object";
+  /**
+   * Remember a completed warm-up so a later launch can trust the driver's persistent cache.
+   * This is opt-in because WebGPU does not expose a portable pipeline-serialization API.
+   */
+  readonly cache?: IWarmUpCacheOptions;
 }
 
 /** What the warm-up did, so a caller can report it rather than assume it. */
@@ -123,6 +142,8 @@ export interface IWarmUpReport {
   readonly computeUnsupported?: boolean;
   /** True when compute warm-up consumed the startup budget. Present only when computeNodes was set. */
   readonly computeTimedOut?: boolean;
+  /** The optional persistent warm-up hint's outcome. */
+  readonly cache?: WarmUpCacheStatus;
 }
 
 /** The narrow slice of the renderer this needs. Structural so a test needs no renderer. */
@@ -135,6 +156,98 @@ export interface IWarmUpRenderer {
 const DEFAULT_SLICE_SIZE = 24;
 const DEFAULT_COMPILE_TIMEOUT_MS = 2000;
 const DEFAULT_BUDGET_MS = 15000;
+const WARM_UP_CACHE_SCHEMA = 1;
+const WARM_UP_CACHE_PREFIX = "threenative:warm-up:";
+
+interface IWarmUpCacheIdentity {
+  readonly key: string;
+  readonly storageKey: string;
+}
+
+interface IWarmUpCacheRecord {
+  readonly schema: number;
+  readonly key: string;
+  readonly pipelines: number;
+  readonly computeNodes: number;
+}
+
+function warmUpCacheIdentity(
+  cache: IWarmUpCacheOptions | undefined,
+): IWarmUpCacheIdentity | undefined {
+  if (cache === undefined) return undefined;
+  if (
+    typeof cache !== "object" ||
+    cache === null ||
+    typeof cache.key !== "string" ||
+    cache.key.trim() === ""
+  ) {
+    throw new Error(
+      "TN_WARMUP_CACHE_INVALID: cache.key must be a non-empty string that changes with the game's render inputs.",
+    );
+  }
+  return { key: cache.key, storageKey: `${WARM_UP_CACHE_PREFIX}${cache.key}` };
+}
+
+function warmUpStorage(): Storage | undefined {
+  try {
+    return typeof globalThis.localStorage === "object" ? globalThis.localStorage : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readWarmUpCache(
+  identity: IWarmUpCacheIdentity | undefined,
+  pipelines: number,
+  computeNodes: number,
+): WarmUpCacheStatus {
+  if (identity === undefined) return "disabled";
+  const storage = warmUpStorage();
+  if (storage === undefined) return "unavailable";
+  try {
+    const raw = storage.getItem(identity.storageKey);
+    if (raw === null) return "miss";
+    const value: unknown = JSON.parse(raw);
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      (value as Partial<IWarmUpCacheRecord>).schema !== WARM_UP_CACHE_SCHEMA ||
+      (value as Partial<IWarmUpCacheRecord>).key !== identity.key ||
+      (value as Partial<IWarmUpCacheRecord>).pipelines !== pipelines ||
+      (value as Partial<IWarmUpCacheRecord>).computeNodes !== computeNodes
+    ) {
+      storage.removeItem(identity.storageKey);
+      return "miss";
+    }
+    return "hit";
+  } catch {
+    return "unavailable";
+  }
+}
+
+function storeWarmUpCache(
+  identity: IWarmUpCacheIdentity | undefined,
+  pipelines: number,
+  computeNodes: number,
+): WarmUpCacheStatus {
+  if (identity === undefined) return "disabled";
+  const storage = warmUpStorage();
+  if (storage === undefined) return "unavailable";
+  try {
+    storage.setItem(
+      identity.storageKey,
+      JSON.stringify({
+        schema: WARM_UP_CACHE_SCHEMA,
+        key: identity.key,
+        pipelines,
+        computeNodes,
+      } satisfies IWarmUpCacheRecord),
+    );
+    return "stored";
+  } catch {
+    return "unavailable";
+  }
+}
 
 export interface IComputeWarmUpReport {
   readonly compiled: number;
@@ -158,24 +271,61 @@ function computeAsyncOf(renderer: IWarmUpRenderer): ((node: unknown) => Promise<
  * Returns whether the work actually finished, because "compiled" and "gave up waiting" are
  * different facts and the report has to be able to tell them apart.
  */
-async function within(work: Promise<unknown>, limitMs: number): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const expiry = new Promise<false>((resolve) => {
-    timer = setTimeout(() => resolve(false), limitMs);
-  });
-  try {
-    // A rejected compile is a pipeline this warm-up could not build, not a reason to fail the
-    // launch: the frame that needs it will try again and fail there, where the error belongs.
-    return await Promise.race([
-      work.then(
-        () => true,
-        () => false,
-      ),
+async function yieldThroughHost(yieldFrame: () => Promise<void>): Promise<void> {
+  // Native async pipeline promises are settled from pollEvents(), so awaiting only the compile
+  // promise from inside a timer or rAF callback can deadlock the host: the callback cannot return
+  // to pollEvents() until the promise settles. Keep the caller's yield signal, and also force one
+  // macrotask so tests and browser shims that resolve their signal immediately cannot starve the
+  // host timer queue while a compile is still pending.
+  await Promise.all([
+    Promise.resolve()
+      .then(yieldFrame)
+      .catch(() => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, 0)),
+  ]);
+}
+
+async function within(
+  work: Promise<unknown>,
+  limitMs: number,
+  yieldFrame: () => Promise<void>,
+  now: () => number,
+): Promise<boolean> {
+  // A rejected compile is a pipeline this warm-up could not build, not a reason to fail the
+  // launch: the frame that needs it will try again and fail there, where the error belongs.
+  let settled: boolean | undefined;
+  const completion = work.then(
+    () => {
+      settled = true;
+      return true;
+    },
+    () => {
+      settled = false;
+      return false;
+    },
+  );
+  // Do not ask the host for a turn when a normal synchronous or already-cached compile has
+  // settled. This preserves the existing slice cadence for fakes and desktop renderers.
+  await Promise.resolve();
+  if (settled !== undefined) return settled;
+  const deadline = now() + limitMs;
+  while (now() < deadline) {
+    if (settled !== undefined) return settled;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const remaining = Math.max(0, deadline - now());
+    const expiry = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), remaining);
+    });
+    const result = await Promise.race([
+      completion.then((value) => ({ kind: "complete" as const, value })),
+      yieldThroughHost(yieldFrame).then(() => ({ kind: "yield" as const })),
       expiry,
     ]);
-  } finally {
     if (timer !== undefined) clearTimeout(timer);
+    if (result === "timeout") return false;
+    if (result.kind === "complete") return result.value;
   }
+  return false;
 }
 
 async function runComputeWarmUp(
@@ -184,6 +334,7 @@ async function runComputeWarmUp(
   compileTimeoutMs: number,
   deadline: number,
   now: () => number,
+  yieldFrame: () => Promise<void>,
 ): Promise<IComputeWarmUpReport> {
   const computeAsync = computeAsyncOf(renderer);
   if (computeAsync === undefined) {
@@ -203,6 +354,8 @@ async function runComputeWarmUp(
     const finished = await within(
       Promise.resolve().then(() => computeAsync(nodes[index])),
       Math.min(compileTimeoutMs, remaining),
+      yieldFrame,
+      now,
     );
     if (finished) compiled += 1;
     else abandoned += 1;
@@ -219,7 +372,7 @@ async function runComputeWarmUp(
 export async function warmUpComputeNodes(
   renderer: IWarmUpRenderer,
   nodes: readonly unknown[],
-  options: Pick<IWarmUpOptions, "budgetMs" | "compileTimeoutMs"> = {},
+  options: Pick<IWarmUpOptions, "budgetMs" | "compileTimeoutMs" | "yieldFrame"> = {},
 ): Promise<IComputeWarmUpReport> {
   const compileTimeoutMs = options.compileTimeoutMs ?? DEFAULT_COMPILE_TIMEOUT_MS;
   const budgetMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
@@ -234,7 +387,14 @@ export async function warmUpComputeNodes(
     }
   }
   const now = (): number => globalThis.performance?.now() ?? Date.now();
-  return runComputeWarmUp(renderer, nodes, compileTimeoutMs, now() + budgetMs, now);
+  return runComputeWarmUp(
+    renderer,
+    nodes,
+    compileTimeoutMs,
+    now() + budgetMs,
+    now,
+    options.yieldFrame ?? yieldToHost,
+  );
 }
 
 function withComputeReport(report: IWarmUpReport, compute: IComputeWarmUpReport): IWarmUpReport {
@@ -384,38 +544,92 @@ export async function warmUpScene(
     }
   }
   const now = (): number => globalThis.performance?.now() ?? Date.now();
+  const yieldFrame = options.yieldFrame ?? yieldToHost;
   const startedAt = now();
   const computeNodes = options.computeNodes ?? [];
+  const pipelines = collectRenderables(scene).length;
+  const cacheIdentity = warmUpCacheIdentity(options.cache);
+  let cacheStatus = readWarmUpCache(cacheIdentity, pipelines, computeNodes.length);
+
+  // A hit means the previous complete warm-up gave the platform a chance to populate its own
+  // persistent driver cache. WebGPU has no portable serialized pipeline to restore, so the marker
+  // only skips the redundant compile walk; a changed game-owned key is a deliberate invalidation.
+  if (cacheStatus === "hit" && typeof renderer.compileAsync === "function") {
+    const computeSupported = computeNodes.length === 0 || computeAsyncOf(renderer) !== undefined;
+    if (computeSupported) {
+      const report: IWarmUpReport = {
+        compiled: 0,
+        pipelines,
+        slices: 0,
+        elapsedMs: now() - startedAt,
+        unsupported: false,
+        abandoned: 0,
+        timedOut: false,
+        cache: "hit",
+        ...(computeNodes.length === 0
+          ? {}
+          : {
+              computeCompiled: 0,
+              computeAbandoned: 0,
+              computeUnsupported: false,
+              computeTimedOut: false,
+            }),
+      };
+      return report;
+    }
+    cacheStatus = "miss";
+  }
   const compute =
     computeNodes.length === 0
       ? undefined
-      : await runComputeWarmUp(renderer, computeNodes, compileTimeoutMs, startedAt + budgetMs, now);
+      : await runComputeWarmUp(
+          renderer,
+          computeNodes,
+          compileTimeoutMs,
+          startedAt + budgetMs,
+          now,
+          yieldFrame,
+        );
 
   if (typeof renderer.compileAsync !== "function") {
     const report: IWarmUpReport = {
       compiled: 0,
-      pipelines: collectRenderables(scene).length,
+      pipelines,
       slices: 0,
       elapsedMs: now() - startedAt,
       unsupported: true,
       abandoned: 0,
       timedOut: false,
+      cache: cacheStatus,
     };
     return compute === undefined ? report : withComputeReport(report, compute);
   }
   const compileAsync = renderer.compileAsync.bind(renderer);
-  const yieldFrame = options.yieldFrame ?? yieldToHost;
+
+  const finish = (report: IWarmUpReport): IWarmUpReport => {
+    const complete =
+      !report.unsupported &&
+      !report.timedOut &&
+      report.abandoned === 0 &&
+      report.computeUnsupported !== true &&
+      report.computeTimedOut !== true &&
+      (report.computeAbandoned ?? 0) === 0;
+    const finalCache =
+      complete && cacheIdentity !== undefined
+        ? storeWarmUpCache(cacheIdentity, pipelines, computeNodes.length)
+        : cacheStatus;
+    return { ...report, cache: finalCache };
+  };
 
   // One call, the whole scene: the default, and the only granularity measured to be affordable.
-  // It buys no progress reporting -- the renderer does not surface any -- so the loop is blocked
-  // for its duration. What it does buy is that the cost is paid here, before the loop is released,
-  // rather than inside the first frame the player is watching.
+  // It buys no per-pipeline progress reporting because the renderer does not surface any, but an
+  // unresolved native promise still yields through `within()` so pollEvents() can settle it. The
+  // cost is paid before the loop is released rather than inside the first frame the player sees.
   if ((options.granularity ?? "scene") === "scene") {
-    const pipelines = collectRenderables(scene).length;
     if (compute === undefined) {
-      const finished = await within(compileAsync(scene, camera), budgetMs);
+      const finished = await within(compileAsync(scene, camera), budgetMs, yieldFrame, now);
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-      return {
+      return finish({
         compiled: finished ? 1 : 0,
         pipelines,
         slices: 1,
@@ -423,22 +637,25 @@ export async function warmUpScene(
         unsupported: false,
         abandoned: finished ? 0 : 1,
         timedOut: !finished,
-      };
+      });
     }
     const remaining = Math.max(0, startedAt + budgetMs - now());
-    const finished = remaining > 0 ? await within(compileAsync(scene, camera), remaining) : false;
+    const finished =
+      remaining > 0 ? await within(compileAsync(scene, camera), remaining, yieldFrame, now) : false;
     options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-    return withComputeReport(
-      {
-        compiled: finished ? 1 : 0,
-        pipelines,
-        slices: 1,
-        elapsedMs: now() - startedAt,
-        unsupported: false,
-        abandoned: finished ? 0 : 1,
-        timedOut: compute.timedOut || (!finished && now() >= startedAt + budgetMs),
-      },
-      compute,
+    return finish(
+      withComputeReport(
+        {
+          compiled: finished ? 1 : 0,
+          pipelines,
+          slices: 1,
+          elapsedMs: now() - startedAt,
+          unsupported: false,
+          abandoned: finished ? 0 : 1,
+          timedOut: compute.timedOut || (!finished && now() >= startedAt + budgetMs),
+        },
+        compute,
+      ),
     );
   }
 
@@ -449,14 +666,14 @@ export async function warmUpScene(
     options.onProgress?.({ done: 0, total: 0 });
     const report: IWarmUpReport = {
       compiled: 0,
-      pipelines: collectRenderables(scene).length,
+      pipelines,
       slices: 0,
       elapsedMs: now() - startedAt,
       unsupported: false,
       abandoned: 0,
       timedOut: false,
     };
-    return compute === undefined ? report : withComputeReport(report, compute);
+    return compute === undefined ? finish(report) : finish(withComputeReport(report, compute));
   }
 
   let slices = 0;
@@ -482,6 +699,8 @@ export async function warmUpScene(
     const finished = await within(
       compileAsync(renderables[index] as Object3D, camera, scene),
       Math.min(compileTimeoutMs, Math.max(0, deadline - now())),
+      yieldFrame,
+      now,
     );
     if (finished) compiled += 1;
     else abandoned += 1;
@@ -506,6 +725,6 @@ export async function warmUpScene(
     timedOut,
   };
   return compute === undefined
-    ? report
-    : withComputeReport({ ...report, timedOut: compute.timedOut || timedOut }, compute);
+    ? finish(report)
+    : finish(withComputeReport({ ...report, timedOut: compute.timedOut || timedOut }, compute));
 }

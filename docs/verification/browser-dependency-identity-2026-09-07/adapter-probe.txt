@@ -1,0 +1,1 @@
+{"display":{"kind":"private-xvfb","screen":"1600x900x24"},"adapter":{"vendor":"nvidia","architecture":"turing","device":"","description":""}}

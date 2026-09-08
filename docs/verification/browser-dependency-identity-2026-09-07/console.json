@@ -1,0 +1,212 @@
+[
+  {
+    "source": "browser-console",
+    "text": "[vite] connecting...",
+    "type": "debug"
+  },
+  {
+    "source": "browser-console",
+    "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "[vite] connected.",
+    "type": "debug"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{}}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FPS_ASSETS_LOADED:enemy(9 clips),viewmodel,sky,town textures,audio(30)",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.Material: parameter 'map' has value of undefined.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FPS_BOOT_MS:{\"load\":1855,\"render-setup\":16,\"town\":1273,\"soldiers\":468,\"effects\":145,\"enterTotal\":1902,\"sinceNavigation\":7484}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_PRD259_ARM:{\"arm\":\"taau\",\"engineHead\":\"fbfb3693e2e643ba7954ad8b8ad3f8a772b1afba\",\"consumerHead\":\"b394778f97830dbc9f61ed541cf82443087a86c6\",\"threeRevision\":\"185\",\"sourceScale\":0.44,\"outputBuffer\":[1280,720],\"sampleCount\":1,\"rendererKind\":\"webgpu\"}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_ALPHA_ANTIALIASING:{\"applied\":false,\"marker\":\"TN_ALPHA_ANTIALIASING\",\"materials\":0,\"reason\":\"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one\",\"sampleCount\":1}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FRAME_HITCH:{\"gapMs\":6283,\"uptimeMs\":11936.3,\"wallClock\":1788826989276}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"renderHook\",\"reason\":\"an object carries its own onBeforeRender/onAfterRender\",\"sourceRenderables\":835,\"resultDrawCandidates\":835,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{}}",
+    "type": "info"
+  }
+]

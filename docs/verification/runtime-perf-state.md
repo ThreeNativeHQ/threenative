@@ -212,6 +212,29 @@ Tests 1 passed | 93 skipped (94)  # after the narrow exemption
 
 ---
 
+## PRD-360 warm-up host turns and relaunch hint — 2026-09-07
+
+The native pipeline pool settles its JavaScript promises from `pollEvents()`. The old warm-up path
+awaited `compileAsync()` directly inside a callback, so a pending compile could hold the pump until
+the warm-up timeout even while the worker pool was active. `packages/core/src/warmup.ts` now gives
+the host one configured yield plus a macrotask while the promise is pending, preserving the existing
+compile and timeout bounds.
+
+The same module now has an opt-in `cache: { key }` hint. A complete warm-up records only a schema,
+game-owned key, pipeline count and compute-node count in `localStorage`; a matching launch reports
+`cache: "hit"` and skips the redundant compile walk. This is not serialized WebGPU pipeline data:
+the native headers expose no portable pipeline-cache object, so the driver remains responsible for
+its own persistent cache. A changed key or count invalidates the marker. The focused red/green and
+game integration evidence is in [the PRD-360 verification record](prd-360-warmup-cache-2026-09-07/README.md).
+
+The physical candidate result that motivated the follow-up was **16,020.007 ms** to first frame,
+with **8,404.781 ms** across 93 pipeline calls and **2.146719 m** of movement. That is roughly
+twice PRD-360's 8-second target, so the 8-second median and the 250 ms pump-silence limit both
+remain open and the PRD stays PARTIAL. No physical cache-hit timing was run because the recorded
+Pixel 8 was unreachable.
+
+---
+
 ## Android: the GPU meter reports on a Pixel 8 — 2026-09-01
 
 **First GPU reading taken from a phone by the instrument rather than by ablation arithmetic.**
