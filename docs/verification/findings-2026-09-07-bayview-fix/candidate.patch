@@ -1,0 +1,61 @@
+diff -ru -x node_modules -x dist -x 'dist-*' -x .threenative -x .asset-backups -x captures -x screenshots -x references -x proof-artifacts -x artifacts -x assets -x public -x pnpm-lock.yaml -x image.png -x capabilities.json -x PRD259-SOURCE-MANIFEST.json -x '*.orig' -x '*-tmp.*' -x .env /home/joao/projects/threenative/sandbox/prd360-bayview-workspace/package.json /home/joao/projects/threenative/sandbox/prd360-bayview-manifest-fix/package.json
+--- /home/joao/projects/threenative/sandbox/prd360-bayview-workspace/package.json	2026-09-07 09:53:49.081068296 -0700
++++ /home/joao/projects/threenative/sandbox/prd360-bayview-manifest-fix/package.json	2026-09-07 10:41:31.199881800 -0700
+@@ -19,9 +19,9 @@
+   },
+   "dependencies": {
+     "@pmndrs/upscaler": "0.2.0",
+-    "@threenative/core": "link:/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-360-ci/packages/core",
+-    "@threenative/physics": "link:/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-360-ci/packages/physics",
+-    "@threenative/ui": "link:/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-360-ci/packages/ui",
++    "@threenative/core": "link:/home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution/packages/core",
++    "@threenative/physics": "link:/home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution/packages/physics",
++    "@threenative/ui": "link:/home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution/packages/ui",
+     "react": "19.2.0",
+     "react-dom": "19.2.0",
+     "react-reconciler": "0.33.0",
+@@ -30,14 +30,14 @@
+   "devDependencies": {
+     "@gltf-transform/cli": "^4.4.2",
+     "@tailwindcss/vite": "4.3.3",
+-    "@threenative/playtest": "link:/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-360-ci/packages/playtest",
+-    "@threenative/runtime-native": "link:/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-360-ci/packages/runtime-native",
++    "@threenative/playtest": "link:/home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution/packages/playtest",
++    "@threenative/runtime-native": "link:/home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution/packages/runtime-native",
+     "@types/react": "19.2.0",
+     "@types/react-dom": "19.2.0",
+     "@types/react-reconciler": "0.32.1",
+     "@types/three": "0.185.3",
+     "@vitejs/plugin-react": "6.0.5",
+-    "create-threenative": "link:/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-360-ci/packages/create-threenative",
++    "create-threenative": "link:/home/joao/projects/threenative/threenative-engine/.worktrees/findings-asset-resolution/packages/create-threenative",
+     "esbuild": "0.27.0",
+     "playwright": "1.62.1",
+     "tailwindcss": "4.3.3",
+diff -ru -x node_modules -x dist -x 'dist-*' -x .threenative -x .asset-backups -x captures -x screenshots -x references -x proof-artifacts -x artifacts -x assets -x public -x pnpm-lock.yaml -x image.png -x capabilities.json -x PRD259-SOURCE-MANIFEST.json -x '*.orig' -x '*-tmp.*' -x .env /home/joao/projects/threenative/sandbox/prd360-bayview-workspace/src/game.ts /home/joao/projects/threenative/sandbox/prd360-bayview-manifest-fix/src/game.ts
+--- /home/joao/projects/threenative/sandbox/prd360-bayview-workspace/src/game.ts	2026-09-05 17:07:40.000000000 -0700
++++ /home/joao/projects/threenative/sandbox/prd360-bayview-manifest-fix/src/game.ts	2026-09-07 10:40:50.322451643 -0700
+@@ -47,10 +47,6 @@
+ 
+ // game.state is the single store: the fixed-step loop writes it, and React/playtests read it.
+ const game = defineGame<GameState, IPhysicsContext>({
+-	// Bayview predates the compiled asset pipeline and keeps its runtime files under
+-	// `public/assets/`. Its loader must use raw-path fallback instead of the unrelated manifest
+-	// generated from the newer `assets/` source tree.
+-	assets: { manifest: "raw-assets.manifest.json" },
+ 	input: {
+ 		// The four directions of `input.vector("move")`.
+ 		move: {
+diff -ru -x node_modules -x dist -x 'dist-*' -x .threenative -x .asset-backups -x captures -x screenshots -x references -x proof-artifacts -x artifacts -x assets -x public -x pnpm-lock.yaml -x image.png -x capabilities.json -x PRD259-SOURCE-MANIFEST.json -x '*.orig' -x '*-tmp.*' -x .env /home/joao/projects/threenative/sandbox/prd360-bayview-workspace/threenative.config.ts /home/joao/projects/threenative/sandbox/prd360-bayview-manifest-fix/threenative.config.ts
+--- /home/joao/projects/threenative/sandbox/prd360-bayview-workspace/threenative.config.ts	2026-09-05 17:07:40.000000000 -0700
++++ /home/joao/projects/threenative/sandbox/prd360-bayview-manifest-fix/threenative.config.ts	2026-09-07 11:06:31.199954929 -0700
+@@ -5,6 +5,9 @@
+ 
+ export default {
+   assets: {
++    // The cues were authored to their final levels; this migration moves them into the compiled
++    // manifest without re-encoding them.
++    audio: "none",
+     models: "none",
+     textures: "none",
+   },

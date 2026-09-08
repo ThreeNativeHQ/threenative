@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "name": "bayview-manifest-startup-movement",
+  "target": "web",
+  "subject": "player",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 2,
+  "steps": [
+    { "press": "ArrowUp", "holdTicks": 30, "release": true, "label": "move" },
+    { "waitTicks": 5, "label": "settle" }
+  ],
+  "artifacts": { "console": true, "screenshots": "after" },
+  "assert": {
+    "movement": { "entity": "player", "minDistance": 0.25 },
+    "diagnostics": {
+      "runtimeReady": true,
+      "noConsoleErrors": true,
+      "noNetworkErrors": false,
+      "networkErrorsOptOutReason": "Android mailbox transport has no CDP network observer; this scenario proves local packaged asset startup."
+    }
+  }
+}
