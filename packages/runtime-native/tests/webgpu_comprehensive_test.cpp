@@ -109,6 +109,7 @@ constexpr const char* kScript = R"JS((async () => {
   device.queue.writeBuffer(uboBuf, 0, writeData.buffer, 0, writeData.byteLength);
   device.queue.writeBuffer(vtxBuf, 0, new Float32Array([0,0,0, 1,0,0, 0,1,0]));
   device.queue.writeBuffer(idxBuf, 0, new Uint16Array([0, 1, 2, 0]));
+  device.queue.writeBuffer(indirectBuf, 0, new Uint32Array([1, 1, 1, 0, 3, 1, 0, 0]));
   // Write with offset and size
   device.queue.writeBuffer(uboBuf, 16, writeData, 1, 2);
 
@@ -454,19 +455,37 @@ constexpr const char* kScript = R"JS((async () => {
   renderPass.setViewport(0, 0, 16, 16, 0.0, 1.0);
   renderPass.setScissorRect(0, 0, 16, 16);
   renderPass.setBlendConstant([0.5, 0.5, 0.5, 1.0]);
+  renderPass.setBlendConstant({ r: 0.5, g: 0.5, b: 0.5, a: 1.0 });
   renderPass.setStencilReference(1);
 
   renderPass.draw(3, 1, 0, 0);
 
   renderPass.drawIndexed(3, 1, 0, 0, 0);
 
-  // indirect buffer setup
-  device.queue.writeBuffer(indirectBuf, 0, new Uint32Array([3, 1, 0, 0, 0, 0, 0, 0]));
-  renderPass.drawIndirect(indirectBuf, 0);
-  renderPass.drawIndexedIndirect(indirectBuf, 0);
+  renderPass.drawIndirect(indirectBuf, 16);
+  renderPass.drawIndexedIndirect(indirectBuf, 16);
 
   renderPass.executeBundles([renderBundle]);
   renderPass.end();
+
+  const tempQSet = device.createQuerySet({ type: "occlusion", count: 2 });
+  encoder.resolveQuerySet(tempQSet, 0, 1, storageBuf, 0);
+
+  // Timestamp writes if available
+  if (tsQuerySet) {
+    const tsEnc = device.createCommandEncoder({ label: "tsEnc" });
+    const tsPass = tsEnc.beginRenderPass({
+      colorAttachments: [{ view: colorView, loadOp: "clear", storeOp: "store" }],
+      timestampWrites: { querySet: tsQuerySet, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 }
+    });
+    tsPass.end();
+    const tsCompPass = tsEnc.beginComputePass({
+      timestampWrites: { querySet: tsQuerySet, beginningOfPassWriteIndex: 2, endOfPassWriteIndex: 3 }
+    });
+    tsCompPass.end();
+    tsEnc.resolveQuerySet(tsQuerySet, 0, 4, storageBuf, 0);
+    device.queue.submit([tsEnc.finish()]);
+  }
 
   const cmdBuf = encoder.finish();
   device.queue.submit([cmdBuf]);
@@ -604,8 +623,62 @@ constexpr const char* kScript = R"JS((async () => {
     }
   } catch (e) {}
 
+  // Resource accounting and descriptor edge cases. These formats exercise the native byte-size
+  // table used by the telemetry contract, while every unsupported optional format remains an
+  // honest validation error on adapters that do not advertise it.
+  for (const format of [
+    "r8unorm", "rg8unorm", "r16float", "rg16float", "r32float", "rg32float",
+    "rgba16float", "rgba32float", "depth16unorm", "depth24plus", "depth32float",
+    "rgb10a2unorm", "rg11b10ufloat", "bc1-rgba-unorm", "etc2-rgba8unorm"
+  ]) {
+    try {
+      const tracked = device.createTexture({
+        size: [8, 8, 2],
+        format,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        mipLevelCount: 3,
+        sampleCount: 1
+      });
+      tracked.createView();
+      tracked.destroy();
+    } catch (e) {}
+  }
+
+  // Call the installed native surfaces with missing and malformed arguments. The JS API must
+  // reject these synchronously or return a failed promise; silently treating an absent descriptor
+  // as a default would make a later GPU error point at the wrong call site.
+  const ignore = (fn) => { try { fn(); } catch (e) {} };
+  ignore(() => adapter.requestDevice({ requiredFeatures: ["feature-that-does-not-exist"] }).catch(() => {}));
+  ignore(() => device.pushErrorScope());
+  ignore(() => device.pushErrorScope("not-a-real-error-filter"));
+  ignore(() => device.popErrorScope());
+  ignore(() => device.queue.submit());
+  ignore(() => device.queue.writeBuffer());
+  ignore(() => device.queue.writeTexture());
+  ignore(() => device.queue.copyExternalImageToTexture());
+  ignore(() => device.queue.onSubmittedWorkDone().catch(() => {}));
+  ignore(() => device.createBuffer({ size: 0, usage: 0 }));
+  ignore(() => device.createTexture({ size: [0, 0, 0], format: "rgba8unorm", usage: 0 }));
+  ignore(() => device.createSampler({ maxAnisotropy: 0 }));
+  ignore(() => device.createBindGroupLayout({ entries: [{ binding: 0 }] }));
+  ignore(() => device.createBindGroup({ layout: null, entries: [] }));
+  ignore(() => device.createPipelineLayout({ bindGroupLayouts: [null] }));
+  ignore(() => device.createRenderBundleEncoder({ colorFormats: ["not-a-format"] }));
+  ignore(() => device.createShaderModule({ code: "not valid wgsl" }));
+  ignore(() => globalThis.__vtxBuf.getMappedRange());
+  ignore(() => globalThis.__vtxBuf.mapAsync(1, 0, 4).catch(() => {}));
+  ignore(() => globalThis.__vtxBuf.mapAsync(1, 0, 4).catch(() => {}));
+  ignore(() => globalThis.__vtxBuf.unmap());
+  ignore(() => globalThis.__tex2D.createView({ dimension: "not-a-dimension" }));
+  ignore(() => globalThis.__renderPipeline.getBindGroupLayout(99));
+  ignore(() => globalThis.__computePipeline.getBindGroupLayout(99));
+
   // Destroy device
   try {
+    try { device.createQuerySet(); } catch (e) {}
+    try { device.createQuerySet({ type: "unknown", count: 1 }); } catch (e) {}
+    try { device.createQuerySet({ type: "occlusion", count: -1 }); } catch (e) {}
+    try { device.createQuerySet({ type: "occlusion", count: 5000 }); } catch (e) {}
     device.destroy();
   } catch (e) {}
 
@@ -801,23 +874,48 @@ int main() {
         mystral::webgpu::requestFrameScreenshot(state);
         mystral::webgpu::compositeCanvas2DToWebGPU(state);
         mystral::webgpu::presentCount(state);
-        mystral::webgpu::setPresentationCapHz(60);
+        if (mystral::webgpu::isSrgbSurfaceFormat(WGPUTextureFormat_RGBA8Unorm)) return 1;
+        if (mystral::webgpu::linearSurfaceFormat(WGPUTextureFormat_RGBA8Unorm) != WGPUTextureFormat_RGBA8Unorm) return 1;
+        if (!mystral::webgpu::setPresentationCapHz(60) || mystral::webgpu::setPresentationCapHz(1001)) return 1;
         mystral::webgpu::setVideoCaptureCallback(state, nullptr, nullptr);
         mystral::webgpu::clearVideoCaptureCallback(state);
         mystral::webgpu::readRenderThreadCpuNs();
 
         // Presentation functions
-        mystral::webgpu::isSrgbSurfaceFormat(WGPUTextureFormat_BGRA8UnormSrgb);
-        mystral::webgpu::linearSurfaceFormat(WGPUTextureFormat_BGRA8UnormSrgb);
+        if (!mystral::webgpu::isSrgbSurfaceFormat(WGPUTextureFormat_BGRA8UnormSrgb) ||
+            mystral::webgpu::linearSurfaceFormat(WGPUTextureFormat_BGRA8UnormSrgb) != WGPUTextureFormat_BGRA8Unorm) return 1;
+        mystral::webgpu::reportSurfaceFormatMarker(WGPUTextureFormat_RGBA8UnormSrgb, WGPUTextureFormat_RGBA8Unorm, true, WGPUPresentMode_Immediate);
+        mystral::webgpu::reportSurfaceFormatMarker(WGPUTextureFormat_RGBA8UnormSrgb, WGPUTextureFormat_RGBA8Unorm, true, WGPUPresentMode_Mailbox);
+        mystral::webgpu::reportSurfaceFormatMarker(WGPUTextureFormat_RGBA8UnormSrgb, WGPUTextureFormat_RGBA8Unorm, true, static_cast<WGPUPresentMode>(999));
+        mystral::webgpu::setPresentationCapHz(0);
         mystral::webgpu::paceToPresentationCap();
+        mystral::webgpu::setPresentationCapHz(1000);
+        mystral::webgpu::paceToPresentationCap();
+        mystral::webgpu::paceToPresentationCap();
+        mystral::webgpu::setPresentationCapHz(60);
         mystral::webgpu::reportPresentTick(state, 60);
         mystral::webgpu::reportSurfaceFormatMarker(WGPUTextureFormat_BGRA8Unorm, WGPUTextureFormat_BGRA8Unorm, false, WGPUPresentMode_Fifo);
         const auto sentinelView = reinterpret_cast<WGPUTextureView>(static_cast<uintptr_t>(1));
+        mystral::webgpu::trackCurrentSurfaceTextureView(nullptr, 998, sentinelView);
+        mystral::webgpu::trackCurrentSurfaceTextureView(state, 998, nullptr);
+        mystral::webgpu::untrackCurrentSurfaceTextureView(state, 998);
+        mystral::webgpu::untrackCurrentSurfaceTextureView(nullptr, 998);
+        if (mystral::webgpu::isCurrentSurfaceTextureView(state, nullptr) ||
+            mystral::webgpu::isCurrentSurfaceTextureView(nullptr, sentinelView)) return 1;
+        mystral::webgpu::releaseCurrentSurfaceTextureViews(nullptr);
         mystral::webgpu::trackCurrentSurfaceTextureView(state, 999, sentinelView);
         if (!mystral::webgpu::isCurrentSurfaceTextureView(state, sentinelView)) return 1;
         mystral::webgpu::untrackCurrentSurfaceTextureView(state, 999);
         mystral::webgpu::releaseCurrentSurfaceTextureViews(state);
         mystral::webgpu::presentPendingSurface(state);
+        const auto capRead = mystral::webgpu::handleWebGpuPresentationCap(state, {}, {});
+        if (engine->toNumber(capRead) != 60) return 1;
+        for (const double invalidCap : {-1.0, 1001.0, 60.5}) {
+            const auto invalid = engine->newNumber(invalidCap);
+            const auto invalidResult = mystral::webgpu::handleWebGpuPresentationCap(state, {}, {invalid});
+            if (!engine->isUndefined(invalidResult) || !engine->hasException()) return 1;
+            engine->getException();
+        }
         auto capNum = engine->newNumber(60);
         mystral::webgpu::handleWebGpuPresentationCap(state, {}, {capNum});
 
@@ -835,6 +933,18 @@ int main() {
         auto rawTex = wgpuDeviceCreateTexture(state->device, &td);
         const uint64_t regTexId = 98765;
         state->registries.textureRegistry[regTexId] = {rawTex, WGPUTextureFormat_RGBA8Unorm, 16, 16};
+
+        const auto trackedView = wgpuTextureCreateView(rawTex, nullptr);
+        if (trackedView) {
+            state->registries.textureViewRegistry[12345] = trackedView;
+            mystral::webgpu::trackCurrentSurfaceTextureView(state, 12345, trackedView);
+            mystral::webgpu::releaseCurrentSurfaceTextureViews(state);
+        }
+
+        const auto savedOffscreenTexture = state->presentation.offscreenTexture;
+        state->presentation.offscreenTexture = nullptr;
+        if (mystral::webgpu::getCurrentSwapchainTexture(state) != nullptr) return 1;
+        state->presentation.offscreenTexture = savedOffscreenTexture;
 
         auto texWrap = mystral::webgpu::createTextureWrapper(state, rawTex, regTexId, 16, 16, "rgba8unorm", false);
         engine->setGlobalProperty("__wrappedTex", texWrap);
@@ -948,6 +1058,10 @@ int main() {
         };
         mystral::webgpu::selectSurfaceFormat(formats, 4, false);
         mystral::webgpu::selectSurfaceFormat(formats, 4, true);
+        const auto emptySelection = mystral::webgpu::selectSurfaceFormat(nullptr, 0, false);
+        if (emptySelection.selectedFormat != WGPUTextureFormat_Undefined || emptySelection.errorCode == nullptr) return 1;
+        const WGPUTextureFormat rgbaFormats[] = {WGPUTextureFormat_RGBA8UnormSrgb, WGPUTextureFormat_R8Unorm};
+        mystral::webgpu::selectSurfaceFormat(rgbaFormats, 2, false);
 
         // Binding table validation failure cases
         mystral::webgpu::installBindingTable(engine, state, mystral::webgpu::bindingTable({}));
@@ -957,6 +1071,21 @@ int main() {
 
     // Direct Context methods
     {
+        mystral::webgpu::Context uninitializedCtx;
+        if (uninitializedCtx.createOffscreenTarget(1, 1) ||
+            uninitializedCtx.configureSurface(1, 1) ||
+            uninitializedCtx.getCurrentTextureView() != nullptr ||
+            uninitializedCtx.saveScreenshot("uninitialized.png")) return 1;
+        uninitializedCtx.resizeSurface(2, 2);
+        uninitializedCtx.present();
+        std::vector<uint8_t> uninitializedPixels;
+        uint32_t uninitializedWidth = 0;
+        uint32_t uninitializedHeight = 0;
+        if (uninitializedCtx.captureFrame(uninitializedPixels, uninitializedWidth, uninitializedHeight)) return 1;
+        if (uninitializedCtx.createSurface(nullptr, 0) ||
+            uninitializedCtx.createSurfaceWithDisplay(nullptr, nullptr, 0) ||
+            uninitializedCtx.rebuildSurface(nullptr, 0)) return 1;
+
         mystral::webgpu::Context standaloneCtx;
         standaloneCtx.initializeHeadless();
         standaloneCtx.createOffscreenTarget(64, 64);

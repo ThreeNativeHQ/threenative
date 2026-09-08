@@ -29,6 +29,7 @@
 #include <chrono>
 #include <cstring>
 #include <atomic>
+#include <cstdlib>
 #include <thread>
 #include <iostream>
 #include <vector>
@@ -36,6 +37,63 @@
 #include <fstream>
 
 namespace fs = std::filesystem;
+
+// Include the binding implementation a second time with a deterministic
+// backend. The production coverage lane normally has only the unavailable
+// stub, which can never reach the validation and resource-tracking branches of
+// the JavaScript surface. This seam keeps those branches on the real source
+// file while leaving the runtime's production symbols untouched.
+namespace mystral::rt {
+
+bool g_coverageFailGeometry = false;
+bool g_coverageFailBLAS = false;
+bool g_coverageFailTLAS = false;
+
+class CoverageRTBackend final : public IRTBackend {
+public:
+    bool isSupported() override { return true; }
+    RTBackendType getBackendType() override { return RTBackendType::Vulkan; }
+    const char* getBackend() override { return "coverage"; }
+
+    RTGeometryHandle createGeometry(const RTGeometryDesc& desc) override {
+        if (g_coverageFailGeometry || desc.vertices == nullptr || desc.vertexCount == 0) {
+            return {};
+        }
+        return {reinterpret_cast<void*>(static_cast<uintptr_t>(0x101)), 0};
+    }
+
+    void destroyGeometry(RTGeometryHandle) override {}
+
+    RTBLASHandle createBLAS(RTGeometryHandle* geometries, size_t count) override {
+        if (g_coverageFailBLAS || geometries == nullptr || count == 0) return {};
+        return {reinterpret_cast<void*>(static_cast<uintptr_t>(0x202)), 0};
+    }
+
+    void destroyBLAS(RTBLASHandle) override {}
+
+    RTTLASHandle createTLAS(const RTTLASInstance* instances, size_t count) override {
+        if (g_coverageFailTLAS || instances == nullptr || count == 0) return {};
+        return {reinterpret_cast<void*>(static_cast<uintptr_t>(0x303)), 0};
+    }
+
+    void updateTLAS(RTTLASHandle, const RTTLASInstance*, size_t) override {}
+    void destroyTLAS(RTTLASHandle) override {}
+    void traceRays(const TraceRaysOptions&) override {}
+};
+
+std::unique_ptr<IRTBackend> coverageCreateRTBackend() {
+    return std::make_unique<CoverageRTBackend>();
+}
+
+}  // namespace mystral::rt
+
+#define createRTBackend coverageCreateRTBackend
+#define initializeRTBindings coverageInitializeRTBindings
+#define cleanupRTBindings coverageCleanupRTBindings
+#include "../src/raytracing/bindings.cpp"
+#undef cleanupRTBindings
+#undef initializeRTBindings
+#undef createRTBackend
 
 namespace {
 
@@ -332,6 +390,81 @@ bool testCliSubsystem(const fs::path& tempDir) {
     directVidOpts.videoPath = (tempDir / "direct_vid.mp4").string();
     runScript(directVidOpts);
 
+    // Direct test of pngWriteCallback
+    std::vector<uint8_t> pngBytes;
+    uint8_t sampleData[4] = { 10, 20, 30, 40 };
+    pngWriteCallback(&pngBytes, sampleData, 4);
+    if (pngBytes.size() != 4 || pngBytes[0] != 10) return false;
+
+    // Test dispatchBuildTool with missing tool
+#ifndef _WIN32
+    char* toolDispatchArgv[] = { (char*)"threenative", (char*)"compile", nullptr };
+    setenv("THREENATIVE_CLI_TOOLS", (tempDir / "nonexistent_tool_exec").string().c_str(), 1);
+    int toolDispatchRc = mystral::cli::dispatchBuildTool(2, toolDispatchArgv);
+    unsetenv("THREENATIVE_CLI_TOOLS");
+    if (toolDispatchRc != 127) {
+        std::cerr << "Expected dispatchBuildTool to return 127 for missing tool, got " << toolDispatchRc << "\n";
+        return false;
+    }
+#endif
+
+    // Test parseArgs with full range of options and unknown flag
+    {
+        std::string tDir = tempDir.string();
+        std::string sPath = testScriptStr;
+        char* edgeArgv[] = {
+            (char*)"mystral",
+            (char*)"run",
+            (char*)"--root", const_cast<char*>(tDir.c_str()),
+            (char*)"--ui", const_cast<char*>(tDir.c_str()),
+            (char*)"--entry", const_cast<char*>(sPath.c_str()),
+            (char*)"--screenshot", (char*)"shot.png",
+            (char*)"--frames", (char*)"5",
+            (char*)"--no-vsync",
+            (char*)"--quiet",
+            (char*)"--headless",
+            (char*)"--no-sdl",
+            (char*)"--watch",
+            (char*)"--bundle-only",
+            (char*)"--video", (char*)"out.mp4",
+            (char*)"--start-frame", (char*)"2",
+            (char*)"--end-frame", (char*)"10",
+            (char*)"--video-fps", (char*)"30",
+            (char*)"--video-quality", (char*)"80",
+            (char*)"--mp4",
+            (char*)"--native-capture",
+            (char*)"--gpu-capture",
+            (char*)"--debug-port", (char*)"9229",
+            (char*)"--debug",
+            (char*)"--resolution", (char*)"512",
+            (char*)"--samples", (char*)"64",
+            (char*)"--bounces", (char*)"2",
+            (char*)"--unknown-option",
+            nullptr
+        };
+        int edgeArgc = static_cast<int>(sizeof(edgeArgv) / sizeof(edgeArgv[0])) - 1;
+        CLIOptions edgeOpts = parseArgs(edgeArgc, edgeArgv);
+        if (!edgeOpts.convertToMp4 || edgeOpts.debugPort != 9229 || edgeOpts.bakeResolution != 512) return false;
+    }
+
+    // Exercise command-specific positional entries and the alternate recording spelling.
+    {
+        char* compileArgv[] = { (char*)"mystral", (char*)"compile", (char*)"compile-entry.js", nullptr };
+        char* bakeArgv[] = { (char*)"mystral", (char*)"bake", (char*)"scene.glb", nullptr };
+        char* recordArgv[] = { (char*)"mystral", (char*)"run", (char*)"game.js", (char*)"--record", (char*)"capture.webp", nullptr };
+        char* shortVideoArgv[] = { (char*)"mystral", (char*)"run", (char*)"game.js", (char*)"--video", (char*)"x", nullptr };
+        char* missingValueArgv[] = { (char*)"mystral", (char*)"run", (char*)"game.js", (char*)"--width", nullptr };
+        const auto compileOpts = parseArgs(3, compileArgv);
+        const auto bakeOpts = parseArgs(3, bakeArgv);
+        const auto recordOpts = parseArgs(5, recordArgv);
+        const auto shortVideoOpts = parseArgs(5, shortVideoArgv);
+        parseArgs(4, missingValueArgv);
+        if (compileOpts.command != "compile" || compileOpts.scriptPath != "compile-entry.js" ||
+            bakeOpts.command != "bake" || bakeOpts.scriptPath != "scene.glb" ||
+            recordOpts.videoPath != "capture.webp" || recordOpts.convertToMp4 ||
+            shortVideoOpts.videoPath != "x") return false;
+    }
+
     // Test applyEmbeddedConfig with bundle
     fs::path configBundle = tempDir / "config_test.bundle";
     fs::path dotTn = tempDir / ".threenative";
@@ -359,6 +492,57 @@ bool testCliSubsystem(const fs::path& tempDir) {
     cfgBundleOpts.quiet = true;
     mystral::cli::compileBundle(cfgBundleOpts);
 
+    // Test compileBundle with real dependency tree
+    fs::path depEntry = tempDir / "dep_entry.js";
+    fs::path depHelper = tempDir / "helper.js";
+    fs::path depData = tempDir / "data.json";
+    {
+        std::ofstream e(depEntry);
+        e << "import { foo } from './helper.js';\n"
+          << "const d = require('./data.json');\n"
+          << "import 'nonexistent-pkg';\n"
+          << "console.log(foo, d);\n";
+    }
+    {
+        std::ofstream h(depHelper);
+        h << "export const foo = 42;\n";
+    }
+    {
+        std::ofstream d(depData);
+        d << "{\"count\": 10}\n";
+    }
+
+    mystral::cli::BundlerOptions depBundleOpts;
+    depBundleOpts.scriptPath = depEntry.string();
+    depBundleOpts.rootDir = tempDir.string();
+    depBundleOpts.outputPath = (tempDir / "dep_test.bundle").string();
+    depBundleOpts.bundleOnly = true;
+    depBundleOpts.quiet = false;
+    mystral::cli::compileBundle(depBundleOpts);
+
+    // Test standalone binary compile (bundleOnly = false)
+    mystral::cli::BundlerOptions binBundleOpts = depBundleOpts;
+    binBundleOpts.outputPath = (tempDir / "dep_test.bin").string();
+    binBundleOpts.bundleOnly = false;
+    binBundleOpts.runtimePath = mystral::vfs::getExecutablePath();
+    mystral::cli::compileBundle(binBundleOpts);
+
+    // Test error cases for compileBundle
+    mystral::cli::BundlerOptions errBundleOpts;
+    errBundleOpts.scriptPath = "";
+    mystral::cli::compileBundle(errBundleOpts);
+
+    errBundleOpts.scriptPath = (tempDir / "missing_entry.js").string();
+    mystral::cli::compileBundle(errBundleOpts);
+
+    errBundleOpts.scriptPath = depEntry.string();
+    errBundleOpts.rootDir = (tempDir / "missing_root").string();
+    mystral::cli::compileBundle(errBundleOpts);
+
+    errBundleOpts.rootDir = (tempDir / "other_root").string();
+    fs::create_directories(tempDir / "other_root");
+    mystral::cli::compileBundle(errBundleOpts);
+
 #ifndef _WIN32
     setenv("MYSTRAL_BUNDLE", configBundle.string().c_str(), 1);
 #else
@@ -370,6 +554,24 @@ bool testCliSubsystem(const fs::path& tempDir) {
     unsetenv("MYSTRAL_BUNDLE");
 #else
     _putenv_s("MYSTRAL_BUNDLE", "");
+#endif
+
+#ifndef _WIN32
+    // The VFS intentionally caches its first bundle lookup. Probe the embedded-config path in a
+    // fresh process so the environment override is present before that cache is initialized.
+    setenv("MYSTRAL_BUNDLE", configBundle.string().c_str(), 1);
+    setenv("TN_CLI_CONFIG_PROBE", "1", 1);
+    const pid_t configPid = fork();
+    if (configPid == 0) {
+        const std::string executable = mystral::vfs::getExecutablePath();
+        execl(executable.c_str(), executable.c_str(), "--config-probe", nullptr);
+        _exit(127);
+    }
+    int configStatus = 0;
+    waitpid(configPid, &configStatus, 0);
+    unsetenv("TN_CLI_CONFIG_PROBE");
+    unsetenv("MYSTRAL_BUNDLE");
+    if (!WIFEXITED(configStatus) || WEXITSTATUS(configStatus) != 0) return false;
 #endif
 
     // Test runToolsCli
@@ -657,6 +859,30 @@ bool testRaytracingAndWebTransport() {
         std::cerr << "unavailable ray tracing became supported through an environment variable\n";
         return false;
     }
+    const auto require = [](bool condition, const char* message) {
+        if (!condition) std::cerr << message << "\n";
+        return condition;
+    };
+    if (!require(backend->getBackend() != nullptr, "ray tracing backend exposes a stable name") ||
+        !require(std::string(mystral::rt::getBackendName(mystral::rt::RTBackendType::None)) == "none",
+                 "ray tracing names the stub backend") ||
+        !require(std::string(mystral::rt::getBackendName(mystral::rt::RTBackendType::DXR)) == "dxr",
+                 "ray tracing names the DXR backend") ||
+        !require(std::string(mystral::rt::getBackendName(mystral::rt::RTBackendType::Vulkan)) == "vulkan",
+                 "ray tracing names the Vulkan backend") ||
+        !require(std::string(mystral::rt::getBackendName(mystral::rt::RTBackendType::Metal)) == "metal",
+                 "ray tracing names the Metal backend")) {
+        return false;
+    }
+    const mystral::rt::RTGeometryDesc emptyGeometry{};
+    auto geometry = backend->createGeometry(emptyGeometry);
+    auto blas = backend->createBLAS(nullptr, 0);
+    auto tlas = backend->createTLAS(nullptr, 0);
+    backend->updateTLAS(tlas, nullptr, 0);
+    backend->traceRays(mystral::rt::TraceRaysOptions{});
+    backend->destroyGeometry(geometry);
+    backend->destroyBLAS(blas);
+    backend->destroyTLAS(tlas);
 
     // Raytracing bindings
     mystral::rt::initializeRTBindings(engine.get());
@@ -719,6 +945,101 @@ bool testRaytracingAndWebTransport() {
     _putenv_s("MYSTRAL_TEST_MOCK_RT", "");
 #endif
 
+    // Re-run the binding source with a deterministic supported backend so the
+    // contract covers argument validation, handle tracking, cleanup, and the
+    // successful geometry/BLAS/TLAS paths that hardware-free CI cannot reach.
+    if (mystral::rt::coverageInitializeRTBindings(nullptr)) {
+        std::cerr << "ray tracing bindings accepted a null engine\n";
+        return false;
+    }
+    if (!mystral::rt::coverageInitializeRTBindings(engine.get())) {
+        std::cerr << "coverage ray tracing bindings failed to initialize\n";
+        return false;
+    }
+    const char* coverageRtScript = R"JS((() => {
+      const vtx = new Float32Array([0,0,0, 1,0,0, 0,1,0]);
+      const idx = new Uint32Array([0, 1, 2]);
+      const identity = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+      const geom = mystralRT.createGeometry({
+        vertices: vtx, indices: idx, vertexStride: 12, vertexOffset: 0
+      });
+      if (!geom || geom._type !== 'geometry') throw new Error('coverage geometry missing');
+      const blas = mystralRT.createBLAS([geom]);
+      if (!blas || blas._type !== 'blas') throw new Error('coverage BLAS missing');
+      const tlas = mystralRT.createTLAS([{
+        blas, transform: identity, instanceId: 7
+      }]);
+      if (!tlas || tlas._type !== 'tlas') throw new Error('coverage TLAS missing');
+      mystralRT.updateTLAS(tlas, [{ blas, transform: new Float32Array([1,2,3]) }]);
+      mystralRT.destroyGeometry(geom);
+      mystralRT.destroyBLAS(blas);
+      mystralRT.destroyTLAS(tlas);
+
+      // Invalid argument and missing-handle paths return the documented null or undefined.
+      if (mystralRT.createGeometry() !== null) throw new Error('missing geometry options accepted');
+      if (mystralRT.createGeometry({ vertices: new Uint8Array([1]) }) !== null) {
+        throw new Error('wrong geometry data accepted');
+      }
+      if (mystralRT.createBLAS() !== null || mystralRT.createBLAS([]) !== null) {
+        throw new Error('invalid BLAS arguments accepted');
+      }
+      if (mystralRT.createTLAS() !== null || mystralRT.createTLAS([]) !== null) {
+        throw new Error('invalid TLAS arguments accepted');
+      }
+      mystralRT.updateTLAS();
+      mystralRT.updateTLAS({}, []);
+      mystralRT.updateTLAS({}, 'not-an-array');
+      mystralRT.destroyGeometry();
+      mystralRT.destroyBLAS();
+      mystralRT.destroyTLAS();
+      mystralRT.destroyGeometry({ _id: 999999 });
+      mystralRT.destroyBLAS({ _id: 999999 });
+      mystralRT.destroyTLAS({ _id: 999999 });
+      if (mystralRT.isSupported() !== false || mystralRT.getBackend() !== 'coverage') {
+        throw new Error('coverage backend query mismatch');
+      }
+      return true;
+    })())JS";
+    if (!engine->evalScript(coverageRtScript, "raytracing_supported_test.js")) {
+        std::cerr << "supported ray tracing binding contract failed\n";
+        return false;
+    }
+
+    // Exercise backend failure returns while the JS surface is still fully initialized.
+    const char* coverageGeometryFailureScript = R"JS((() => {
+      const vtx = new Float32Array([0,0,0, 1,0,0, 0,1,0]);
+      const geom = mystralRT.createGeometry({ vertices: vtx });
+      if (geom !== null) throw new Error('failed geometry was returned');
+      return true;
+    })())JS";
+    const char* coverageBlasFailureScript = R"JS((() => {
+      const vtx = new Float32Array([0,0,0, 1,0,0, 0,1,0]);
+      const validGeom = mystralRT.createGeometry({ vertices: vtx });
+      if (!validGeom) throw new Error('valid geometry missing before BLAS failure');
+      const blas = mystralRT.createBLAS([validGeom]);
+      if (blas !== null) throw new Error('failed BLAS was returned');
+      return true;
+    })())JS";
+    const char* coverageTlasFailureScript = R"JS((() => {
+      const vtx = new Float32Array([0,0,0, 1,0,0, 0,1,0]);
+      const validGeom = mystralRT.createGeometry({ vertices: vtx });
+      const validBlas = mystralRT.createBLAS([validGeom]);
+      if (!validBlas) throw new Error('valid BLAS missing before TLAS failure');
+      const tlas = mystralRT.createTLAS([{ blas: validBlas }]);
+      if (tlas !== null) throw new Error('failed TLAS was returned');
+      return true;
+    })())JS";
+    mystral::rt::g_coverageFailGeometry = true;
+    if (!engine->evalScript(coverageGeometryFailureScript, "raytracing_geometry_failure_test.js")) return false;
+    mystral::rt::g_coverageFailGeometry = false;
+    mystral::rt::g_coverageFailBLAS = true;
+    if (!engine->evalScript(coverageBlasFailureScript, "raytracing_blas_failure_test.js")) return false;
+    mystral::rt::g_coverageFailBLAS = false;
+    mystral::rt::g_coverageFailTLAS = true;
+    if (!engine->evalScript(coverageTlasFailureScript, "raytracing_tlas_failure_test.js")) return false;
+    mystral::rt::g_coverageFailTLAS = false;
+    mystral::rt::coverageCleanupRTBindings();
+
     // WebTransport bindings
     mystral::webtransport::init();
     mystral::webtransport::initBindings(engine.get());
@@ -764,6 +1085,16 @@ bool testRaytracingAndWebTransport() {
 }  // namespace
 
 int main() {
+#ifndef _WIN32
+    if (std::getenv("TN_CLI_CONFIG_PROBE") != nullptr) {
+        CLIOptions probe;
+        applyEmbeddedConfig(probe);
+        if (probe.title != "Configured Title" || probe.iconPath != "icon.png" ||
+            probe.width != 1024 || probe.height != 768 || !probe.maximized ||
+            !probe.resizable || probe.maxFps != 120 || probe.uiRoot != "ui") return 1;
+        return 0;
+    }
+#endif
     fs::path tempDir = fs::temp_directory_path() / "tn_cli_net_fs_test";
     fs::remove_all(tempDir);
     fs::create_directories(tempDir);

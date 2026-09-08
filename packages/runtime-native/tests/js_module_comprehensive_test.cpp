@@ -11,6 +11,12 @@
 
 namespace fs = std::filesystem;
 
+#if defined(MYSTRAL_USE_V8) && MYSTRAL_USE_V8
+namespace mystral::js {
+void mystralSetV8SnapshotBlob(const char* data, size_t size);
+}
+#endif
+
 namespace {
 
 void writeFile(const fs::path& path, const std::string& content) {
@@ -277,12 +283,143 @@ bool testModuleResolverAndSystem(mystral::js::Engine* engine, const fs::path& te
     writeFile(jsonUnclosed, "{\"name\": \"unclosed\", \"arr\": [1, 2");
     resolver.resolve("unclosed", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
 
+    // Resolver matrix: scoped packages, package fallbacks, directory packages and every
+    // public exports/imports shape. These are deliberately separate package roots so the
+    // resolver's package-json cache cannot hide a branch on a later lookup.
+    writeFile(tempDir / "node_modules" / "@scope" / "pkg" / "package.json",
+              R"JSON({"name":"@scope/pkg","main":"index.js"})JSON");
+    writeFile(tempDir / "node_modules" / "@scope" / "pkg" / "index.js", "exports.ok = true;");
+    writeFile(tempDir / "node_modules" / "@scope" / "pkg" / "sub.js", "exports.sub = true;");
+    if (!resolver.resolve("@scope/pkg", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error) ||
+        !resolver.resolve("@scope/pkg/sub", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error)) {
+        std::cerr << "scoped package resolution failed: " << error << "\n";
+        return false;
+    }
+    resolver.resolve("@scope", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    writeFile(tempDir / "node_modules" / "plain-index" / "index.js", "exports.ok = true;");
+    resolver.resolve("plain-index", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    writeFile(tempDir / "node_modules" / "no-main" / "package.json", R"JSON({"name":"no-main"})JSON");
+    writeFile(tempDir / "node_modules" / "no-main" / "index.js", "exports.ok = true;");
+    resolver.resolve("no-main", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    writeFile(tempDir / "node_modules" / "plain-sub" / "package.json", R"JSON({"name":"plain-sub"})JSON");
+    writeFile(tempDir / "node_modules" / "plain-sub" / "extra.js", "exports.ok = true;");
+    resolver.resolve("plain-sub/extra", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    const fs::path directoryPackage = tempDir / "directory-package";
+    writeFile(directoryPackage / "package.json", R"JSON({"main":"main.js"})JSON");
+    writeFile(directoryPackage / "main.js", "exports.ok = true;");
+    resolver.resolve("./directory-package", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("./directory-package", indexJs.string(), mystral::js::ResolveMode::Import, outMod, error);
+
+    const fs::path directoryExports = tempDir / "directory-exports";
+    writeFile(directoryExports / "package.json", R"JSON({"exports":{".":"./entry.js"}})JSON");
+    writeFile(directoryExports / "entry.js", "export const ok = true;");
+    resolver.resolve("./directory-exports", indexJs.string(), mystral::js::ResolveMode::Import, outMod, error);
+
+    const auto addPackage = [&](const std::string& name, const std::string& packageJson,
+                                const std::string& entry = "index.js") {
+        writeFile(tempDir / "node_modules" / name / "package.json", packageJson);
+        if (!entry.empty()) writeFile(tempDir / "node_modules" / name / entry, "exports.ok = true;");
+    };
+    addPackage("array-exports", R"JSON({"exports":[null,"./index.js"]})JSON");
+    resolver.resolve("array-exports", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    addPackage("conditional-exports", R"JSON({"exports":{"browser":"./missing.js","default":"./index.js"}})JSON");
+    resolver.resolve("conditional-exports", indexJs.string(), mystral::js::ResolveMode::Import, outMod, error);
+    addPackage("conditional-array", R"JSON({"exports":{".":[null,{"default":"./index.js"}]}})JSON");
+    resolver.resolve("conditional-array", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    addPackage("invalid-exports", R"JSON({"exports":true})JSON");
+    resolver.resolve("invalid-exports", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    addPackage("bare-exports", R"JSON({"exports":"bare-target"})JSON");
+    resolver.resolve("bare-exports", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    addPackage("no-condition", R"JSON({"exports":{".":{"browser":"./index.js"}}})JSON");
+    resolver.resolve("no-condition", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    addPackage("pattern-exports", R"JSON({"exports":{"./foo/*/bar":"./dist/*.js","./*":"./dist/*.js"}})JSON");
+    writeFile(tempDir / "node_modules" / "pattern-exports" / "dist" / "ok.js", "exports.ok = true;");
+    resolver.resolve("pattern-exports/foo/nope", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("pattern-exports/*", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("pattern-exports/missing", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    const fs::path importPackage = tempDir / "node_modules" / "import-package";
+    writeFile(importPackage / "package.json", R"JSON({"imports":{"#local":"./internal.js","#pkg":"plain-index"}})JSON");
+    writeFile(importPackage / "internal.js", "exports.ok = true;");
+    resolver.resolve("#local", (importPackage / "ref.js").string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("#pkg", (importPackage / "ref.js").string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("#missing", (importPackage / "ref.js").string(), mystral::js::ResolveMode::Require, outMod, error);
+    writeFile(tempDir / "node_modules" / "no-imports" / "package.json", R"JSON({"name":"no-imports"})JSON");
+    resolver.resolve("#missing", (tempDir / "node_modules" / "no-imports" / "ref.js").string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("#missing", (tempDir / "outside-ref.js").string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    // Extension and absolute-path branches.
+    writeFile(tempDir / "late-ext.tsx", "export const ok = true;");
+    resolver.resolve("./late-ext", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    resolver.resolve("./late-ext", indexJs.string(), mystral::js::ResolveMode::Import, outMod, error);
+    resolver.resolve("C:/not-a-real-native-path.js", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    // Parser failures that cannot be reached through the happy-path package fixtures above.
+    const std::vector<std::pair<std::string, std::string>> malformedPackages = {
+        {"trailing-json", "{} trailing"},
+        {"empty-json", ""},
+        {"invalid-value-json", "{\"x\":?}"},
+        {"missing-colon-json", "{\"x\" 1}"},
+        {"missing-comma-json", "{\"x\":1 \"y\":2}"},
+        {"unclosed-object-json", "{\"x\":1"},
+        {"unclosed-object-loop-json", "{\"x\":1, \"y\":2"},
+        {"array-comma-json", "[1 2]"},
+        {"array-end-json", "[1,2"},
+        {"invalid-number-json", "{\"x\":-}"},
+        {"unterminated-string-json", "{\"x\":\"unterminated}"},
+        {"trailing-escape-json", "{\"x\":\"bad\\"},
+        {"short-unicode-json", "{\"x\":\"\\u12\"}"},
+        {"bad-unicode-json", "{\"x\":\"\\u12G4\"}"},
+    };
+    for (const auto& [name, contents] : malformedPackages) {
+        writeFile(tempDir / "node_modules" / name / "package.json", contents);
+        resolver.resolve(name, indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+    }
+    addPackage("hex-json", R"JSON({"name":"hex-json","main":"index.js","low":"\u00af","upper":"\u00AF"})JSON");
+    resolver.resolve("hex-json", indexJs.string(), mystral::js::ResolveMode::Require, outMod, error);
+
+    // Test ModuleResolver helper methods and resolveResolvedPath
+    mystral::js::ModuleResolver emptyRes("");
+    emptyRes.setRootDir("");
+    emptyRes.resolve("", "", mystral::js::ResolveMode::Require, outMod, error);
+    emptyRes.normalizeSpecifier("file:///path/to/script.js");
+    emptyRes.dirname("/a/b/c.js");
+    emptyRes.dirname("script.js");
+
+    mystral::js::ResolvedModule resMod;
+    emptyRes.resolveResolvedPath(indexJs.string(), resMod, error);
+    emptyRes.resolveResolvedPath((tempDir / "nonexistent.mjs").string(), resMod, error);
+    emptyRes.resolveResolvedPath((tempDir / "nonexistent.cjs").string(), resMod, error);
+    emptyRes.resolveResolvedPath((tempDir / "nonexistent.json").string(), resMod, error);
+
+    std::string emptyFileContent;
+    mystral::js::ResolvedPath resPath{ indexJs.string(), false };
+    emptyRes.readFile(resPath, emptyFileContent, error);
+    mystral::js::ResolvedPath badPath{ (tempDir / "nonexistent.js").string(), false };
+    emptyRes.readFile(badPath, emptyFileContent, error);
+
     // Test ModuleSystem with V8 Engine
     mystral::js::ModuleSystem modSys(engine, tempDir.string());
     if (!modSys.loadEntry(indexJs.string())) {
         std::cerr << "failed loadEntry\n";
         return false;
     }
+
+    // Test ESM entry and TypeScript entry
+    fs::path esmEntry = tempDir / "esm_entry.mjs";
+    writeFile(esmEntry, "export const value = 123;");
+    modSys.loadEntry(esmEntry.string());
+
+    modSys.loadEntry(testTs.string());
+
+    // Test loadEntry and require error branches
+    modSys.loadEntry("nonexistent_entry_xyz.js");
+    modSys.loadEntry("");
+    mystral::js::ModuleSystem noEng(nullptr, tempDir.string());
+    noEng.loadEntry("test.js");
+    noEng.require("test.js", "");
 
     auto reqResult = modSys.require("./sub/helper.js", indexJs.string());
     if (!engine->isObject(reqResult)) {
@@ -492,6 +629,28 @@ bool testV8EngineFeatures(mystral::js::Engine* engine) {
     // Task waiting
     engine->supportsBlockingTaskWait();
     engine->wakeTaskWait();
+
+    // Freeze handle
+    auto fzHandle = engine->retainHandle(engine->newString("frozen_test"));
+    engine->freezeHandle(fzHandle);
+
+    // evalWithResult
+    engine->evalWithResult("export const x = 42; x;", "test_esm_mod.js");
+
+    // Syntax error handling in evals
+    engine->eval("syntax error ? ? ?", "bad_eval.js");
+    engine->evalScript("syntax error ? ? ?", "bad_eval_script.js");
+    engine->evalWithResult("syntax error ? ? ?", "bad_eval_with_res.js");
+    engine->evalScriptWithResult("syntax error ? ? ?", "bad_eval_script_with_res.js");
+    if (engine->hasException()) {
+        engine->getException();
+    }
+
+#if defined(MYSTRAL_USE_V8) && MYSTRAL_USE_V8
+    // Snapshot blob helper
+    mystral::js::mystralSetV8SnapshotBlob("dummy_snapshot", 14);
+    mystral::js::mystralSetV8SnapshotBlob(nullptr, 0);
+#endif
 
     engine->throwException("expected test error");
     if (!engine->hasException()) return false;

@@ -10,23 +10,23 @@ targets could not be built and are named below.
 | `src/async/` | 73 | 60 | 82.19% |
 | `src/audio/` | 1051 | 882 | 83.92% |
 | `src/canvas/` | 1172 | 964 | 82.25% |
-| `src/cli/` | 1609 | 1160 | 72.09% |
+| `src/cli/` | 1609 | 1210 | 75.20% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
-| `src/js/` | 2632 | 2048 | 77.81% |
-| `src/platform/` | 1050 | 805 | 76.67% |
-| `src/raytracing/` | 458 | 152 | 33.19% |
-| `src/runtime.cpp` | 2268 | 1759 | 77.56% |
+| `src/js/` | 2632 | 2199 | 83.55% |
+| `src/platform/` | 1050 | 873 | 83.14% |
+| `src/raytracing/` | 458 | 396 | 86.46% |
+| `src/runtime.cpp` | 2268 | 1812 | 79.89% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 8227 | 6410 | 77.91% |
-| `src/webtransport/` | 1391 | 1050 | 75.49% |
+| `src/webgpu/` | 8227 | 6449 | 78.39% |
+| `src/webtransport/` | 1391 | 1081 | 77.71% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **21784** | **16888** | **77.52%** |
+| **TOTAL** | **21784** | **17524** | **80.44%** |
 
-Source digest: `sha256:71f73387270e617ee0f054dd3a02614d6e8e0daa4c5be49652af9c5de68ea369`
+Source digest: `sha256:993e1b2fbd5c6184ba654117ce0623746b77d9155e0670ea984e1f8222d2d0c8`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -193,15 +193,16 @@ contract retains the unsupported-capability assertion:
 PASS: unavailable native ray tracing remains unsupported
 ```
 
-The five added contract targets passed locally, followed by a complete `pnpm native:coverage`
-measurement with all 38 runnable contract targets passing. The generated result above is
-**14,493 / 21,768 lines (66.58%)**, compared with the base commit's committed **9,579 / 21,762
-lines (44.02%)**. No coverage floor was lowered.
+The expanded contract targets passed locally, followed by a complete `pnpm native:coverage`
+measurement with all 38 runnable contract targets passing. The coverage command now provisions
+the repository's `scripts/xvfb.sh` display wrapper on Linux, so the SDL/WebGPU surface paths are
+measured instead of silently skipped. The generated result above is **17,524 / 21,784 lines
+(80.44%)**, compared with the base commit's committed **9,579 / 21,762 lines (44.02%)**. No
+coverage floor was lowered.
 
-This coverage measurement is the Linux clang/V8/Dawn configuration. Physics and video were
-disabled as listed above; the optional SDL window checks skipped because the coverage run
-had no display. It does not establish Windows, macOS, Android, or iOS coverage, and it does
-not meet an 80% total-coverage target. A separate windowed runtime proof follows.
+This coverage measurement is the Linux clang/V8/Dawn configuration. Physics and video remain
+disabled as listed above. It does not establish Windows, macOS, Android, or iOS coverage.
+The 80% target is a Linux desktop measurement only.
 
 
 ## Windowed desktop proof — 2026-09-07
@@ -279,13 +280,14 @@ webgpu comprehensive test did not complete successfully
 The CLI test target now inherits the WebP include directory, timestamp queries require the
 device's feature grant, and the test pumps until completion or an explicit five-second deadline.
 Missing device/encoder state and script errors still fail. The full Linux coverage command
-then rebuilt and executed all 38 runnable native contract targets successfully:
+then rebuilt and executed all 38 runnable native contract targets successfully under the
+repository's display wrapper:
 
 ```text
 CMAKE_BUILD_PARALLEL_LEVEL=2 pnpm --filter @threenative/runtime-native native:coverage
 Configuration: tn-linux-coverage with clang source-based coverage
 Executed 38 native contract targets; 2 configured targets could not be built
-TOTAL: 21768 instrumented lines; 14493 covered; 66.58%
+TOTAL: 21784 instrumented lines; 17524 covered; 80.44%
 ```
 
 The two blocked rows are still the explicitly disabled physics and video targets. Native

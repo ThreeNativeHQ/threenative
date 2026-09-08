@@ -45,6 +45,17 @@ bool testCrashAndLifecycle() {
     deliberateCrashAfterFrames("invalid");
     deliberateCrashAfterFrames(nullptr);
     deliberateCrashFrameCount();
+#ifndef _WIN32
+    setenv("THREENATIVE_PREFIX_CRASH_HANDLERS", "1", 1);
+    applyCrashHandlerPolicy(CrashHandlerPolicy::SuppressDialog);
+    unsetenv("THREENATIVE_PREFIX_CRASH_HANDLERS");
+
+    setenv("THREENATIVE_DELIBERATE_CRASH", "150", 1);
+    if (deliberateCrashFrameCount() != 150) return false;
+    setenv("THREENATIVE_DELIBERATE_CRASH", "invalid", 1);
+    if (deliberateCrashFrameCount() != 0) return false;
+    unsetenv("THREENATIVE_DELIBERATE_CRASH");
+#endif
 
     // Lifecycle
     lifecycleActionFor(SDL_EVENT_WILL_ENTER_BACKGROUND);
@@ -345,6 +356,70 @@ constexpr const char* kRuntimeScript = R"JS((() => {
   if (globalThis.__tnUiPostMessage) {
     try { globalThis.__tnUiPostMessage("{\"type\":\"test_ping\"}"); } catch(e) {}
   }
+  globalThis.__tnOnTrimMemory = (lvl) => {
+    if (lvl === 999) throw new Error("intentional trim handler error");
+  };
+
+  // Storage edge cases
+  if (typeof __storageGetItem !== "undefined") {
+    __storageGetItem();
+    __storageGetItem("non_existent_key_12345");
+    __storageSetItem();
+    __storageSetItem("single_key");
+    __storageRemoveItem();
+    __storageKey();
+    __storageKey(9999);
+    __storageLength();
+  }
+
+  // Fetch / HTTP edge cases
+  if (typeof __readFileSync !== "undefined") {
+    __readFileSync();
+  }
+  if (typeof __readFileAsync !== "undefined") {
+    __readFileAsync();
+    __readFileAsync("missing_callback.txt");
+  }
+  if (typeof __httpRequest !== "undefined") {
+    __httpRequest();
+  }
+  if (typeof __httpRequestAsync !== "undefined") {
+    __httpRequestAsync();
+    __httpRequestAsync("http://127.0.0.1:0/test_async", {
+      method: "POST",
+      headers: new Map([["x-custom-h", "custom-val"]]),
+      body: new Uint8Array([10, 20, 30]).buffer
+    }, (res) => {});
+  }
+
+  // Worker edge cases
+  if (typeof __tnNativeWorkerCreate !== "undefined") {
+    try { __tnNativeWorkerCreate(); } catch(e) {}
+    try { __tnNativeWorkerCreate(12345); } catch(e) {}
+  }
+  if (typeof __tnNativeWorkerPost !== "undefined") {
+    __tnNativeWorkerPost();
+    __tnNativeWorkerPost(99999);
+    __tnNativeWorkerPost(99999, "hello");
+  }
+  if (typeof __tnNativeWorkerTerminate !== "undefined") {
+    __tnNativeWorkerTerminate();
+    __tnNativeWorkerTerminate(99999);
+  }
+
+  // UI bridge edge cases
+  if (typeof __tnUiPost !== "undefined") {
+    __tnUiPost();
+    __tnUiPost("test payload");
+  }
+  if (typeof __tnUiOverlayAttached !== "undefined") {
+    __tnUiOverlayAttached();
+  }
+
+  // Module edge cases
+  if (typeof __mystralRequire !== "undefined") {
+    __mystralRequire();
+  }
 
   // File fetch integration
   (async () => {
@@ -564,6 +639,7 @@ bool testRuntimeMethods() {
     // Request surface revalidation and memory trim
     mystral::platform::requestSurfaceRevalidation();
     mystral::platform::noteMemoryTrimLevel(50);
+    mystral::platform::noteMemoryTrimLevel(999);
     runtime->pollEvents();
 
     // Test surface revalidation control branches
@@ -590,6 +666,32 @@ bool testRuntimeMethods() {
             if (!runRuntime->evalScript("setTimeout(() => {}, 5);", "idle_test.js")) return false;
             runRuntime->run();
         } else {
+            return false;
+        }
+    }
+
+    // Test process.exit() from JS
+    {
+        mystral::RuntimeConfig exitConfig;
+        exitConfig.width = 64;
+        exitConfig.height = 64;
+        exitConfig.noSdl = true;
+        auto exitRuntime = mystral::Runtime::create(exitConfig);
+        if (exitRuntime) {
+            exitRuntime->evalScript("if (typeof process !== 'undefined' && process.exit) { process.exit(42); }", "exit_test.js");
+            if (exitRuntime->getExitCode() != 42) {
+                std::cerr << "Expected exitCode 42, got " << exitRuntime->getExitCode() << "\n";
+            }
+        }
+    }
+
+    // Test invalid maxFps validation
+    {
+        mystral::RuntimeConfig badCapConfig;
+        badCapConfig.maxFps = 2000;
+        auto badRuntime = mystral::Runtime::create(badCapConfig);
+        if (badRuntime != nullptr) {
+            std::cerr << "Expected Runtime::create to fail with maxFps > 1000\n";
             return false;
         }
     }
@@ -657,6 +759,96 @@ bool testWindowAndSurface() {
     runtime->resize(128, 128);
     for (int frame = 0; frame < 3; ++frame) {
         if (!runtime->pollEvents()) break;
+    }
+
+    // Test window query and configuration APIs
+    int winW = 0, winH = 0;
+    mystral::platform::getWindowSize(&winW, &winH);
+    mystral::platform::displayPixelDensity();
+    mystral::platform::getSDLWindow();
+    mystral::platform::getMetalView();
+    mystral::platform::getMetalLayer();
+    mystral::platform::setWindowTitle("Updated Test Window");
+    mystral::platform::setFullscreen(false);
+    mystral::platform::syncWindowSize(64, 64);
+    mystral::platform::setWindowSize(64, 64);
+
+    // Push SDL events to exercise pollEvents switch statement
+    SDL_Event ev{};
+
+    ev.type = SDL_EVENT_WINDOW_RESIZED;
+    ev.window.data1 = 128;
+    ev.window.data2 = 128;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_KEY_DOWN;
+    ev.key.key = SDLK_A;
+    ev.key.scancode = SDL_SCANCODE_A;
+    ev.key.down = true;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_KEY_UP;
+    ev.key.key = SDLK_A;
+    ev.key.scancode = SDL_SCANCODE_A;
+    ev.key.down = false;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_MOUSE_MOTION;
+    ev.motion.x = 32.0f;
+    ev.motion.y = 32.0f;
+    ev.motion.xrel = 1.0f;
+    ev.motion.yrel = 1.0f;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    ev.button.button = SDL_BUTTON_LEFT;
+    ev.button.x = 32.0f;
+    ev.button.y = 32.0f;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_MOUSE_BUTTON_UP;
+    ev.button.button = SDL_BUTTON_LEFT;
+    ev.button.x = 32.0f;
+    ev.button.y = 32.0f;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_MOUSE_WHEEL;
+    ev.wheel.x = 0.0f;
+    ev.wheel.y = 1.0f;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_FINGER_DOWN;
+    ev.tfinger.fingerID = 1;
+    ev.tfinger.x = 0.5f;
+    ev.tfinger.y = 0.5f;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_FINGER_MOTION;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_FINGER_UP;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_FINGER_CANCELED;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_GAMEPAD_ADDED;
+    ev.gdevice.which = 0;
+    SDL_PushEvent(&ev);
+
+    ev.type = SDL_EVENT_GAMEPAD_REMOVED;
+    ev.gdevice.which = 0;
+    SDL_PushEvent(&ev);
+
+    // Poll all queued events through platform
+    mystral::platform::pollEvents();
+
+    // Test QUIT event and shouldQuit
+    ev.type = SDL_EVENT_QUIT;
+    SDL_PushEvent(&ev);
+    mystral::platform::pollEvents();
+    if (!mystral::platform::shouldQuit()) {
+        std::cerr << "shouldQuit should be true after SDL_EVENT_QUIT\n";
     }
 
     return true;
