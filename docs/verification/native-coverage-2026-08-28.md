@@ -2,31 +2,31 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-33 native contract targets; 2 configured
+38 native contract targets; 2 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
-| `src/async/` | 73 | 53 | 72.60% |
-| `src/audio/` | 1051 | 603 | 57.37% |
-| `src/canvas/` | 1172 | 610 | 52.05% |
-| `src/cli/` | 1593 | 0 | 0.00% |
-| `src/fs/` | 235 | 88 | 37.45% |
-| `src/http/` | 410 | 230 | 56.10% |
-| `src/js/` | 2626 | 1043 | 39.72% |
-| `src/platform/` | 1050 | 294 | 28.00% |
-| `src/raytracing/` | 458 | 60 | 13.10% |
-| `src/runtime.cpp` | 2268 | 961 | 42.37% |
+| `src/async/` | 73 | 60 | 82.19% |
+| `src/audio/` | 1051 | 897 | 85.35% |
+| `src/canvas/` | 1172 | 954 | 81.40% |
+| `src/cli/` | 1599 | 820 | 51.28% |
+| `src/fs/` | 235 | 189 | 80.43% |
+| `src/http/` | 410 | 377 | 91.95% |
+| `src/js/` | 2626 | 1693 | 64.47% |
+| `src/platform/` | 1050 | 619 | 58.95% |
+| `src/raytracing/` | 458 | 152 | 33.19% |
+| `src/runtime.cpp` | 2268 | 1548 | 68.25% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
-| `src/storage/` | 327 | 283 | 86.54% |
+| `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
-| `src/vfs/` | 239 | 175 | 73.22% |
-| `src/webgpu/` | 8227 | 3669 | 44.60% |
-| `src/webtransport/` | 1391 | 959 | 68.94% |
+| `src/vfs/` | 239 | 195 | 81.59% |
+| `src/webgpu/` | 8227 | 5161 | 62.73% |
+| `src/webtransport/` | 1391 | 991 | 71.24% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **21762** | **9579** | **44.02%** |
+| **TOTAL** | **21768** | **14493** | **66.58%** |
 
-Source digest: `sha256:9f635906bec7116557ae4dcdbcda605ff3d6674bd6441b04fbb05b80342c0200`
+Source digest: `sha256:9c2349d8a6d5e16cec4aead465c3f069971bf230b2e277ab7fa451a3830c2835`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -167,3 +167,142 @@ RED observed: legacy wrapper shape rejected
 command-encoder-class-table contract: 2 failure(s)
 0% tests passed, 1 tests failed out of 1
 ```
+
+## Coverage expansion verification — 2026-09-07
+
+The reconciled native contract suite executes five additional targets covering Canvas/audio,
+CLI/network/filesystem, JavaScript modules, runtime/platform behavior, and WebGPU. The CLI
+executables delegate to the same entry functions exercised by the contract tests. Assertions
+check script completion as well as evaluation success, and filesystem fixtures use an isolated
+temporary working directory.
+
+The coverage candidate initially made the ray-tracing stub report support when an environment
+variable was set. A compiled negative control exposed that false capability before the
+production override was removed:
+
+```text
+[MystralRT] No hardware RT available, using stub backend
+FAIL: unavailable native ray tracing became supported through an environment variable
+```
+
+After restoring honest stub support reporting, the same compiled probe passed. The new CLI
+contract retains the unsupported-capability assertion:
+
+```text
+[MystralRT] No hardware RT available, using stub backend
+PASS: unavailable native ray tracing remains unsupported
+```
+
+The five added contract targets passed locally, followed by a complete `pnpm native:coverage`
+measurement with all 38 runnable contract targets passing. The generated result above is
+**14,493 / 21,768 lines (66.58%)**, compared with the base commit's committed **9,579 / 21,762
+lines (44.02%)**. No coverage floor was lowered.
+
+This coverage measurement is the Linux clang/V8/Dawn configuration. Physics and video were
+disabled as listed above; the optional SDL window checks skipped because the coverage run
+had no display. It does not establish Windows, macOS, Android, or iOS coverage, and it does
+not meet an 80% total-coverage target. A separate windowed runtime proof follows.
+
+
+## Windowed desktop proof — 2026-09-07
+
+The same changed Linux runtime then passed the existing desktop core verifier on an NVIDIA
+GeForce RTX 2080 using Vulkan. The verifier provisions its own X display, renders exactly
+300 frames, checks one present per frame plus the single capture refresh, verifies the native
+worker lifecycle and ordered startup markers, and checks the saved overlay pixels. The
+1280×720 capture was also visually inspected.
+
+The first run reached all 300 frames but failed because this host's ALSA device was unavailable.
+Setting SDL's existing dummy audio driver allowed the display proof to complete; this run
+does not establish audible output.
+
+```text
+SDL_AUDIODRIVER=dummy node packages/runtime-native/scripts/verify-desktop-core.mjs
+desktop core gate passed: 300 frames, 1280x720
+[WebGPU] Adapter: NVIDIA GeForce RTX 2080
+[WebGPU] Backend: Vulkan
+TN_CAPTURE_REFRESH_PRESENTS:1
+Rendered 300 frames in 13267ms
+TN_PRESENTS:301
+```
+
+Retained receipts: [report](native-coverage-2026-09-07/desktop-linux-report.json),
+[host log](native-coverage-2026-09-07/desktop-linux.txt), and
+[capture](native-coverage-2026-09-07/desktop-core-2026-09-07.png). The report's artifact paths
+name their original runtime output locations. The PNG copy is byte-identical. Biome
+formatted the retained JSON report, and trailing whitespace was removed from the host log;
+the recorded fields and observations are unchanged.
+
+Original host-log SHA-256: `11fa54f8059fc2e8412a6eeed5f03d0dbf988f047963f6ce6b1900aaf100b149`.
+
+Runtime SHA-256: `03637735e2bde54ca5f6c2b8e432047d2abc50784ac3095f63c07314b443216a`.
+Capture SHA-256: `b7f96827af94c7346112d7b01c7b6d622b1fbbd5100606e60d19e2d61adc0bda`.
+
+
+The existing `examples/native-smoke/playtests/loading-screen-desktop.playtest.json` scenario
+also passed against this binary through the desktop playtest driver. Its assertions observe
+the loading surface and readiness during the first-use stall and after startup settles.
+
+```text
+SDL_AUDIODRIVER=dummy sh scripts/xvfb.sh node packages/runtime-native/scripts/verify-desktop-loading.mjs
+desktop loading playtest proof passed: 913920 startup loading pixels, 0 settled loading pixels
+```
+
+Retained loading receipts: [proof](native-coverage-2026-09-07/loading/loading-proof.json),
+[console](native-coverage-2026-09-07/loading/console.json),
+[startup capture](native-coverage-2026-09-07/loading/startup-stall.png),
+[mid-stall capture](native-coverage-2026-09-07/loading/startup-mid-stall.png), and
+[settled capture](native-coverage-2026-09-07/loading/startup-settled.png). The startup and
+settled images were visually inspected. Original output paths remain in the byte-identical
+proof record.
+
+
+## Desktop test portability red-green — 2026-09-08
+
+Hosted run `34170333684` exposed two assumptions in the new native tests. The CLI test
+compiles the real CLI entry source, so it needs the same private WebP headers as the executable.
+The WebGPU test must use only features granted to its device and wait for asynchronous GPU
+completion before asserting the final sentinel. These are engine verification defects; the
+shipping runtime and game appearance are unchanged by this follow-up.
+
+The observed macOS and Windows failures were:
+
+```text
+fatal error: 'webp/encode.h' file not found
+fatal error C1083: Cannot open include file: 'webp/encode.h': No such file or directory
+[WebGPU] adapter feature probe timestamp-query: no
+[error] WEBGPU_TEST_ERROR: createQuerySet: this device was not granted 'timestamp-query'
+[V8] check.js:1: Error: not done
+webgpu comprehensive test did not complete successfully
+```
+
+The CLI test target now inherits the WebP include directory, timestamp queries require the
+device's feature grant, and the test pumps until completion or an explicit five-second deadline.
+Missing device/encoder state and script errors still fail. The full Linux coverage command
+then rebuilt and executed all 38 runnable native contract targets successfully:
+
+```text
+CMAKE_BUILD_PARALLEL_LEVEL=2 pnpm --filter @threenative/runtime-native native:coverage
+Configuration: tn-linux-coverage with clang source-based coverage
+Executed 38 native contract targets; 2 configured targets could not be built
+TOTAL: 21768 instrumented lines; 14493 covered; 66.58%
+```
+
+The two blocked rows are still the explicitly disabled physics and video targets. Native
+coverage floors are unchanged. This is Linux green evidence for the repair; macOS and Windows
+verification must run again on the published follow-up before either platform is claimed green.
+
+## Native diagnostics capability preflight — 2026-09-08
+
+Commit `5e2db7025f9055cd66d973d77abd892828439519` resolves omitted diagnostics for the
+executed target before checking bridge capabilities. An Android scenario that omits
+`noNetworkErrors` therefore records browser network observation as unavailable instead of
+requiring the native bridge to provide `browser.network`; an explicit request remains a
+fail-closed unsupported capability.
+
+An exact semantic revert reproduced `TN_PLAYTEST_CAPABILITY_MISSING browser.network` and failed
+the focused test 1/1. Restoring the target-aware call passed that test 1/1, then
+`device-playtest`, `unobservable-lane`, `bridgeClient`, and `runner-lanes` passed 64/64. The
+resulting generated capability metadata changed all ten scaffold trees; the measured hashes are
+pinned in `packages/create-threenative/__tests__/scaffold.spec.ts`, whose complete suite passed
+55/55.

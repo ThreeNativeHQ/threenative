@@ -11,6 +11,7 @@
 // tests/native-worker-production.test.mjs to require by name.
 
 #include "mystral/runtime.h"
+#include "mystral/workers/worker_thread.h"
 
 #include <chrono>
 #include <iostream>

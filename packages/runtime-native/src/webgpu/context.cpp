@@ -441,6 +441,10 @@ Context::~Context() {
         wgpuTextureRelease((WGPUTexture)offscreenTexture_);
         offscreenTexture_ = nullptr;
     }
+    if (surface_) {
+        wgpuSurfaceRelease(surface_);
+        surface_ = nullptr;
+    }
     if (device_) {
         wgpuDeviceRelease(device_);
         device_ = nullptr;
@@ -448,10 +452,6 @@ Context::~Context() {
     if (adapter_) {
         wgpuAdapterRelease(adapter_);
         adapter_ = nullptr;
-    }
-    if (surface_) {
-        wgpuSurfaceRelease(surface_);
-        surface_ = nullptr;
     }
     if (instance_) {
         wgpuInstanceRelease(instance_);

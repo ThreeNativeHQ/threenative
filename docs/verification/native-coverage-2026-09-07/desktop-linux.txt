@@ -1,0 +1,515 @@
+TN_COLD_START:{"segment":"process","atMs":0.000}
+=== ThreeNative Native Runtime ===
+Version: 0.3.0
+Script: /home/joao/projects/threenative/threenative-engine/.worktrees/native-coverage-80/examples/native-smoke/dist/native-smoke.js
+Window: 1280x720
+Screenshot mode: 300 frames -> /home/joao/projects/threenative/threenative-engine/.worktrees/native-coverage-80/packages/runtime-native/artifacts/desktop-core-2026-09-07.png
+
+[Mystral] Initializing runtime...
+[Mystral] Window: 1280x720
+[Mystral] Presentation cap: 60 fps
+[Window] Creating window: ThreeNative (1280x720)
+[Window] SDL initialized
+[Window] Brand icon unavailable in embedded bundle; using compositor default
+[Window] Actual window size: 1280x720
+[Window] Window created successfully
+[Mystral] Lifecycle watch installed; backgroundMode=pause
+[Mystral] Actual window size: 1280x720
+[WebGPU] Initializing...
+[WebGPU] Instance created
+[Mystral] Using X11 display: 0x56018bee94b0 window: 2097198
+[WebGPU] Creating surface for platform type 4 with display pointer
+[WebGPU] Creating X11 surface with display: 0x56018bee94b0 window: 0x20002e
+[WebGPU] Surface created
+[WebGPU] Adapter acquired successfully
+[WebGPU] Adapter: NVIDIA GeForce RTX 2080
+[WebGPU] Vendor: nvidia
+[WebGPU] Backend: Vulkan
+[WebGPU] adapter feature probe indirect-first-instance: yes
+[WebGPU] Requesting IndirectFirstInstance feature (supported)
+[WebGPU] adapter feature probe texture-compression-bc: yes
+[WebGPU] adapter feature probe texture-compression-etc2: no
+[WebGPU] adapter feature probe texture-compression-astc: no
+[WebGPU] adapter feature probe timestamp-query: yes
+[WebGPU] adapter feature probe rg11b10ufloat-renderable: yes
+[WebGPU] adapter feature probe core-features-and-limits: yes
+[WebGPU] Device acquired successfully
+[WebGPU] TN_WEBGPU_FEATURES:{"timestamp-query":true,"texture-compression-bc":true,"texture-compression-etc2":false,"texture-compression-astc":false,"indirect-first-instance":true,"rg11b10ufloat-renderable":true,"core-features-and-limits":true}
+[WebGPU] Queue acquired
+[WebGPU] configureSurface called: 1280x720
+[WebGPU] surface_=0x56018bfac220, device_=0x56018c3190b0, adapter_=0x56018bf900c0
+[WebGPU] Getting surface capabilities...
+[WebGPU] Got capabilities: formatCount=2
+[WebGPU] Available surface formats:
+  [0] = 27
+  [1] = 28
+[WebGPU] Using surface format: 27
+[WebGPU] Surface configured: 1280x720
+[WebGPU] Present mode: fifo (vsync=true)
+[JS] Creating V8 engine (platform default)
+[V8] Creating engine...
+[V8] Initializing V8 JavaScript engine...
+[V8] V8 initialized successfully
+[V8] Version: 13.1.201.22
+[V8] Engine created successfully
+[Mystral] Using JS engine: V8
+TN_COLD_START:{"segment":"compile_begin","atMs":423.314}
+TN_COLD_START:{"segment":"compile_complete","atMs":424.219}
+TN_COLD_START:{"segment":"execute_begin","atMs":424.226}
+TN_COLD_START:{"segment":"execute_complete","atMs":424.311}
+[Mystral] Fetch API initialized (file://, http://, https://)
+TN_COLD_START:{"segment":"compile_begin","atMs":424.351}
+TN_COLD_START:{"segment":"compile_complete","atMs":424.881}
+TN_COLD_START:{"segment":"execute_begin","atMs":424.888}
+TN_COLD_START:{"segment":"execute_complete","atMs":424.932}
+[Mystral] Web Streams API initialized (ReadableStream/WritableStream/TransformStream)
+TN_COLD_START:{"segment":"compile_begin","atMs":425.045}
+TN_COLD_START:{"segment":"compile_complete","atMs":426.133}
+TN_COLD_START:{"segment":"execute_begin","atMs":426.141}
+TN_COLD_START:{"segment":"execute_complete","atMs":426.184}
+[WorkerRegistry] Initialized
+TN_COLD_START:{"segment":"compile_begin","atMs":426.255}
+TN_COLD_START:{"segment":"compile_complete","atMs":426.756}
+TN_COLD_START:{"segment":"execute_begin","atMs":426.761}
+TN_COLD_START:{"segment":"execute_complete","atMs":426.784}
+[Mystral] URL and native Worker facade initialized
+[DOM] Canvas element created with addEventListener, style, etc.
+TN_COLD_START:{"segment":"compile_begin","atMs":426.985}
+TN_COLD_START:{"segment":"compile_complete","atMs":427.039}
+TN_COLD_START:{"segment":"execute_begin","atMs":427.042}
+TN_COLD_START:{"segment":"execute_complete","atMs":427.050}
+TN_COLD_START:{"segment":"compile_begin","atMs":427.064}
+TN_COLD_START:{"segment":"compile_complete","atMs":427.113}
+TN_COLD_START:{"segment":"execute_begin","atMs":427.116}
+TN_COLD_START:{"segment":"execute_complete","atMs":427.119}
+TN_COLD_START:{"segment":"compile_begin","atMs":427.159}
+TN_COLD_START:{"segment":"compile_complete","atMs":427.279}
+TN_COLD_START:{"segment":"execute_begin","atMs":427.285}
+TN_COLD_START:{"segment":"execute_complete","atMs":427.306}
+TN_COLD_START:{"segment":"compile_begin","atMs":427.374}
+TN_COLD_START:{"segment":"compile_complete","atMs":427.431}
+TN_COLD_START:{"segment":"execute_begin","atMs":427.435}
+[log] [Mystral] WebP format support: YES
+TN_COLD_START:{"segment":"execute_complete","atMs":427.577}
+[Mystral] DOM event system initialized
+[Storage] Loaded 0 entries from /home/joao/.local/share/mystral/storage/native-coverage-80.json
+[Mystral] localStorage initialized: /home/joao/.local/share/mystral/storage/native-coverage-80.json
+TN_COLD_START:{"segment":"compile_begin","atMs":427.699}
+TN_COLD_START:{"segment":"compile_complete","atMs":427.787}
+TN_COLD_START:{"segment":"execute_begin","atMs":427.793}
+TN_COLD_START:{"segment":"execute_complete","atMs":427.931}
+TN_COLD_START:{"segment":"compile_begin","atMs":427.961}
+TN_COLD_START:{"segment":"compile_complete","atMs":428.004}
+TN_COLD_START:{"segment":"execute_begin","atMs":428.008}
+TN_COLD_START:{"segment":"execute_complete","atMs":428.017}
+[Audio] Web Audio API bindings initialized
+TN_SURFACE_FORMAT:{"native":"bgra8unorm","render":"bgra8unorm","bridge":false,"present":"fifo"}
+TN_COLD_START:{"segment":"compile_begin","atMs":428.342}
+TN_COLD_START:{"segment":"compile_complete","atMs":428.439}
+TN_COLD_START:{"segment":"execute_begin","atMs":428.443}
+TN_COLD_START:{"segment":"execute_complete","atMs":428.459}
+[MystralRT] No hardware RT available, using stub backend
+[MystralRT] Bindings initialized (backend: none)
+[EventLoop] libuv 1.51.0 initialized
+[AsyncHttp] Initialized with curl_multi + libuv
+[AsyncFile] Initialized with libuv thread pool
+[FileWatcher] Initialized with libuv fs_event
+[Mystral] Runtime initialized
+TN_COLD_START:{"segment":"runtime_created","atMs":430.863}
+TN_COLD_START:{"segment":"game_eval_begin","atMs":430.868}
+[Mystral] Loading script: /home/joao/projects/threenative/threenative-engine/.worktrees/native-coverage-80/examples/native-smoke/dist/native-smoke.js
+TN_COLD_START:{"segment":"compile_begin","atMs":453.811}
+TN_COLD_START:{"segment":"compile_complete","atMs":562.485}
+TN_COLD_START:{"segment":"execute_begin","atMs":562.590}
+[info] TN_NATIVE_PLATFORM:{"formFactor":"desktop","maxTouchPoints":0,"os":"linux","runtime":"native"}
+[Audio] AudioContext created (sample rate: 44100 Hz)
+[Audio] Decoded audio: 1 frames, 1 channels, 44100 Hz (RIFF/WAVE)
+[info] TN_NATIVE_SMOKE_AUDIO_PROMISE_OK
+TN_COLD_START:{"segment":"execute_complete","atMs":617.085}
+[info] TN_ANDROID_JS_SUBJECT:{"extraDrawControl":false,"frameWindow":300,"frustum":"default","materials":"shared","meshes":0,"pureJsIterations":0,"pureJsObjects":2358,"visibility":1,"warmupFrames":60,"visibleMeshes":0}
+[info] TN_NATIVE_SMOKE_READY:webgpu
+[info] TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":4,"resultDrawCandidates":4,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_COLD_START:{"segment":"compile_begin","atMs":679.525}
+TN_COLD_START:{"segment":"compile_complete","atMs":679.593}
+TN_COLD_START:{"segment":"execute_begin","atMs":679.600}
+TN_COLD_START:{"segment":"execute_complete","atMs":679.615}
+TN_COLD_START:{"segment":"compile_begin","atMs":744.168}
+TN_COLD_START:{"segment":"compile_complete","atMs":744.202}
+TN_COLD_START:{"segment":"execute_begin","atMs":744.207}
+TN_COLD_START:{"segment":"execute_complete","atMs":744.221}
+TN_COLD_START:{"segment":"compile_begin","atMs":784.212}
+TN_COLD_START:{"segment":"compile_complete","atMs":784.247}
+TN_COLD_START:{"segment":"execute_begin","atMs":784.251}
+TN_COLD_START:{"segment":"execute_complete","atMs":784.264}
+TN_SURFACE_FRAME:{"view":true,"present":1}
+TN_COLD_START:{"segment":"first_frame","atMs":830.220}
+TN_PUMP_SILENCE:{"observed":true,"pumpCount":1,"firstPumpAtMs":617.578,"lastPumpAtMs":617.578,"maxGapMs":0.000,"maxGapAtMs":-1.000,"trailingGapMs":212.663,"longGaps":[],"droppedLongGaps":0}
+TN_STALL_SEGMENTS:{"toFirstFrameMs":830.270,"frameBeganAtMs":623.522,"gapMs":206.748,"segments":{"pipelineCompile":{"ms":18.382,"calls":3},"shaderCompile":{"ms":2.440,"calls":4},"textureUpload":{"ms":3.388,"calls":4},"bufferUpload":{"ms":40.214,"calls":15},"queueSubmit":{"ms":0.000,"calls":0}},"attributedMs":64.424,"residualMs":142.324,"attributedShare":0.3116}
+[info] TN_NATIVE_SMOKE_FIRST_FRAME
+TN_SURFACE_FRAME:{"view":true,"present":2}
+TN_SURFACE_FRAME:{"view":true,"present":3}
+[WorkerRegistry] Created worker 1
+TN_NATIVE_WORKER_CREATED:{"id":1,"engine":"V8"}
+[Worker 1] Thread started
+[JS] Creating V8 engine (platform default)
+[V8] Creating engine...
+[V8] Engine created successfully
+[Worker 1] Executing user code...
+[Worker 1] User code executed successfully
+[Worker 1] Entering main loop...
+TN_SURFACE_FRAME:{"view":true,"present":4}
+[info] TN_NATIVE_WORKER_PROOF_STARTED:{"frame":10}
+[info] TN_NATIVE_WORKER_PROOF_COMPUTE_DISPATCH:{"frame":12}
+TN_SURFACE_FRAME:{"view":true,"present":5}
+[Worker 1] Thread finished
+[V8] Destroying engine...
+[WorkerRegistry] Terminated worker 1
+TN_NATIVE_WORKER_TERMINATED:{"id":1}
+[info] TN_NATIVE_WORKER_PROOF_PASS:{"callbacksAfterTerminate":0,"completionOrder":[2],"framesAdvanced":4,"inputChecksum":319126392,"outputChecksum":2110598008,"sourceForm":"classic-blob","workerIdentity":"dedicated-worker"}
+TN_SURFACE_FRAME:{"view":true,"present":6}
+TN_SURFACE_FRAME:{"view":true,"present":7}
+TN_SURFACE_FRAME:{"view":true,"present":8}
+TN_SURFACE_FRAME:{"view":true,"present":9}
+TN_SURFACE_FRAME:{"view":true,"present":10}
+TN_SURFACE_FRAME:{"view":true,"present":11}
+TN_SURFACE_FRAME:{"view":true,"present":12}
+TN_SURFACE_FRAME:{"view":true,"present":13}
+TN_SURFACE_FRAME:{"view":true,"present":14}
+TN_SURFACE_FRAME:{"view":true,"present":15}
+TN_SURFACE_FRAME:{"view":true,"present":16}
+TN_SURFACE_FRAME:{"view":true,"present":17}
+TN_SURFACE_FRAME:{"view":true,"present":18}
+TN_SURFACE_FRAME:{"view":true,"present":19}
+TN_SURFACE_FRAME:{"view":true,"present":20}
+TN_SURFACE_FRAME:{"view":true,"present":21}
+TN_SURFACE_FRAME:{"view":true,"present":22}
+TN_SURFACE_FRAME:{"view":true,"present":23}
+TN_SURFACE_FRAME:{"view":true,"present":24}
+TN_SURFACE_FRAME:{"view":true,"present":25}
+TN_SURFACE_FRAME:{"view":true,"present":26}
+TN_SURFACE_FRAME:{"view":true,"present":27}
+TN_SURFACE_FRAME:{"view":true,"present":28}
+TN_SURFACE_FRAME:{"view":true,"present":29}
+TN_SURFACE_FRAME:{"view":true,"present":30}
+TN_SURFACE_FRAME:{"view":true,"present":31}
+TN_SURFACE_FRAME:{"view":true,"present":32}
+TN_SURFACE_FRAME:{"view":true,"present":33}
+TN_SURFACE_FRAME:{"view":true,"present":34}
+TN_SURFACE_FRAME:{"view":true,"present":35}
+TN_SURFACE_FRAME:{"view":true,"present":36}
+TN_SURFACE_FRAME:{"view":true,"present":37}
+TN_SURFACE_FRAME:{"view":true,"present":38}
+TN_SURFACE_FRAME:{"view":true,"present":39}
+TN_SURFACE_FRAME:{"view":true,"present":40}
+TN_SURFACE_FRAME:{"view":true,"present":41}
+TN_SURFACE_FRAME:{"view":true,"present":42}
+TN_SURFACE_FRAME:{"view":true,"present":43}
+TN_SURFACE_FRAME:{"view":true,"present":44}
+TN_SURFACE_FRAME:{"view":true,"present":45}
+TN_SURFACE_FRAME:{"view":true,"present":46}
+TN_SURFACE_FRAME:{"view":true,"present":47}
+TN_SURFACE_FRAME:{"view":true,"present":48}
+TN_SURFACE_FRAME:{"view":true,"present":49}
+TN_SURFACE_FRAME:{"view":true,"present":50}
+TN_SURFACE_FRAME:{"view":true,"present":51}
+TN_SURFACE_FRAME:{"view":true,"present":52}
+TN_SURFACE_FRAME:{"view":true,"present":53}
+TN_SURFACE_FRAME:{"view":true,"present":54}
+TN_SURFACE_FRAME:{"view":true,"present":55}
+TN_SURFACE_FRAME:{"view":true,"present":56}
+TN_SURFACE_FRAME:{"view":true,"present":57}
+TN_SURFACE_FRAME:{"view":true,"present":58}
+TN_SURFACE_FRAME:{"view":true,"present":59}
+TN_SURFACE_FRAME:{"view":true,"present":60}
+TN_PRESENTS_TICK:{"frames":60,"presents":60,"textureMB":52,"textures":4,"bufferMB":0,"capHz":60}
+TN_GPU_TEXTURES:{"totalMB":52,"count":4,"buckets":[{"k":"1280x720 rgba16float msaa4","n":1,"mb":28},{"k":"1280x720 depth24plus msaa4","n":1,"mb":14},{"k":"1280x720 rgba16float","n":1,"mb":7},{"k":"1280x720 depth24plus","n":1,"mb":3}],"bucketsTotal":4}
+TN_GPU_BUFFERS:{"totalMB":0,"count":15,"buckets":[{"k":"copydst|mapread","n":1,"mb":0},{"k":"copysrc","n":1,"mb":0},{"k":"vertex|copysrc|copydst","n":4,"mb":0},{"k":"uniform|copydst","n":6,"mb":0},{"k":"index|copysrc|copydst","n":3,"mb":0}]}
+[info] TN_ANDROID_JS_WINDOW_START:{"frameWindow":300}
+TN_SURFACE_FRAME:{"view":true,"present":61}
+TN_SURFACE_FRAME:{"view":true,"present":62}
+TN_SURFACE_FRAME:{"view":true,"present":63}
+TN_SURFACE_FRAME:{"view":true,"present":64}
+TN_SURFACE_FRAME:{"view":true,"present":65}
+TN_SURFACE_FRAME:{"view":true,"present":66}
+TN_SURFACE_FRAME:{"view":true,"present":67}
+TN_SURFACE_FRAME:{"view":true,"present":68}
+TN_SURFACE_FRAME:{"view":true,"present":69}
+TN_SURFACE_FRAME:{"view":true,"present":70}
+TN_SURFACE_FRAME:{"view":true,"present":71}
+TN_SURFACE_FRAME:{"view":true,"present":72}
+TN_SURFACE_FRAME:{"view":true,"present":73}
+TN_SURFACE_FRAME:{"view":true,"present":74}
+TN_SURFACE_FRAME:{"view":true,"present":75}
+TN_SURFACE_FRAME:{"view":true,"present":76}
+TN_SURFACE_FRAME:{"view":true,"present":77}
+TN_SURFACE_FRAME:{"view":true,"present":78}
+TN_SURFACE_FRAME:{"view":true,"present":79}
+TN_SURFACE_FRAME:{"view":true,"present":80}
+TN_SURFACE_FRAME:{"view":true,"present":81}
+TN_SURFACE_FRAME:{"view":true,"present":82}
+TN_SURFACE_FRAME:{"view":true,"present":83}
+TN_SURFACE_FRAME:{"view":true,"present":84}
+TN_SURFACE_FRAME:{"view":true,"present":85}
+TN_SURFACE_FRAME:{"view":true,"present":86}
+TN_SURFACE_FRAME:{"view":true,"present":87}
+TN_SURFACE_FRAME:{"view":true,"present":88}
+TN_SURFACE_FRAME:{"view":true,"present":89}
+TN_SURFACE_FRAME:{"view":true,"present":90}
+TN_SURFACE_FRAME:{"view":true,"present":91}
+TN_SURFACE_FRAME:{"view":true,"present":92}
+TN_SURFACE_FRAME:{"view":true,"present":93}
+TN_SURFACE_FRAME:{"view":true,"present":94}
+TN_SURFACE_FRAME:{"view":true,"present":95}
+TN_SURFACE_FRAME:{"view":true,"present":96}
+TN_SURFACE_FRAME:{"view":true,"present":97}
+TN_SURFACE_FRAME:{"view":true,"present":98}
+TN_SURFACE_FRAME:{"view":true,"present":99}
+TN_SURFACE_FRAME:{"view":true,"present":100}
+TN_SURFACE_FRAME:{"view":true,"present":101}
+TN_SURFACE_FRAME:{"view":true,"present":102}
+TN_SURFACE_FRAME:{"view":true,"present":103}
+TN_SURFACE_FRAME:{"view":true,"present":104}
+TN_SURFACE_FRAME:{"view":true,"present":105}
+TN_SURFACE_FRAME:{"view":true,"present":106}
+TN_SURFACE_FRAME:{"view":true,"present":107}
+TN_SURFACE_FRAME:{"view":true,"present":108}
+TN_SURFACE_FRAME:{"view":true,"present":109}
+TN_SURFACE_FRAME:{"view":true,"present":110}
+TN_SURFACE_FRAME:{"view":true,"present":111}
+TN_SURFACE_FRAME:{"view":true,"present":112}
+TN_SURFACE_FRAME:{"view":true,"present":113}
+[info] TN_NATIVE_SMOKE_300_FRAMES:300
+TN_SURFACE_FRAME:{"view":true,"present":114}
+TN_SURFACE_FRAME:{"view":true,"present":115}
+TN_SURFACE_FRAME:{"view":true,"present":116}
+TN_SURFACE_FRAME:{"view":true,"present":117}
+TN_SURFACE_FRAME:{"view":true,"present":118}
+TN_SURFACE_FRAME:{"view":true,"present":119}
+TN_SURFACE_FRAME:{"view":true,"present":120}
+TN_PRESENTS_TICK:{"frames":120,"presents":120,"textureMB":52,"textures":4,"bufferMB":0,"capHz":60}
+TN_SURFACE_FRAME:{"view":true,"present":121}
+TN_SURFACE_FRAME:{"view":true,"present":122}
+TN_SURFACE_FRAME:{"view":true,"present":123}
+TN_SURFACE_FRAME:{"view":true,"present":124}
+TN_SURFACE_FRAME:{"view":true,"present":125}
+TN_SURFACE_FRAME:{"view":true,"present":126}
+TN_SURFACE_FRAME:{"view":true,"present":127}
+TN_SURFACE_FRAME:{"view":true,"present":128}
+TN_SURFACE_FRAME:{"view":true,"present":129}
+TN_SURFACE_FRAME:{"view":true,"present":130}
+TN_SURFACE_FRAME:{"view":true,"present":131}
+TN_SURFACE_FRAME:{"view":true,"present":132}
+TN_SURFACE_FRAME:{"view":true,"present":133}
+TN_SURFACE_FRAME:{"view":true,"present":134}
+TN_SURFACE_FRAME:{"view":true,"present":135}
+TN_SURFACE_FRAME:{"view":true,"present":136}
+TN_SURFACE_FRAME:{"view":true,"present":137}
+TN_SURFACE_FRAME:{"view":true,"present":138}
+TN_SURFACE_FRAME:{"view":true,"present":139}
+TN_SURFACE_FRAME:{"view":true,"present":140}
+TN_SURFACE_FRAME:{"view":true,"present":141}
+TN_SURFACE_FRAME:{"view":true,"present":142}
+TN_SURFACE_FRAME:{"view":true,"present":143}
+TN_SURFACE_FRAME:{"view":true,"present":144}
+TN_SURFACE_FRAME:{"view":true,"present":145}
+TN_SURFACE_FRAME:{"view":true,"present":146}
+TN_SURFACE_FRAME:{"view":true,"present":147}
+TN_SURFACE_FRAME:{"view":true,"present":148}
+TN_SURFACE_FRAME:{"view":true,"present":149}
+TN_SURFACE_FRAME:{"view":true,"present":150}
+TN_SURFACE_FRAME:{"view":true,"present":151}
+TN_SURFACE_FRAME:{"view":true,"present":152}
+TN_SURFACE_FRAME:{"view":true,"present":153}
+TN_SURFACE_FRAME:{"view":true,"present":154}
+TN_SURFACE_FRAME:{"view":true,"present":155}
+TN_SURFACE_FRAME:{"view":true,"present":156}
+TN_SURFACE_FRAME:{"view":true,"present":157}
+TN_SURFACE_FRAME:{"view":true,"present":158}
+TN_SURFACE_FRAME:{"view":true,"present":159}
+TN_SURFACE_FRAME:{"view":true,"present":160}
+TN_SURFACE_FRAME:{"view":true,"present":161}
+TN_SURFACE_FRAME:{"view":true,"present":162}
+TN_SURFACE_FRAME:{"view":true,"present":163}
+TN_SURFACE_FRAME:{"view":true,"present":164}
+TN_SURFACE_FRAME:{"view":true,"present":165}
+TN_SURFACE_FRAME:{"view":true,"present":166}
+TN_SURFACE_FRAME:{"view":true,"present":167}
+TN_SURFACE_FRAME:{"view":true,"present":168}
+TN_SURFACE_FRAME:{"view":true,"present":169}
+TN_SURFACE_FRAME:{"view":true,"present":170}
+TN_SURFACE_FRAME:{"view":true,"present":171}
+TN_SURFACE_FRAME:{"view":true,"present":172}
+TN_SURFACE_FRAME:{"view":true,"present":173}
+TN_SURFACE_FRAME:{"view":true,"present":174}
+TN_SURFACE_FRAME:{"view":true,"present":175}
+TN_SURFACE_FRAME:{"view":true,"present":176}
+TN_SURFACE_FRAME:{"view":true,"present":177}
+TN_SURFACE_FRAME:{"view":true,"present":178}
+TN_SURFACE_FRAME:{"view":true,"present":179}
+TN_SURFACE_FRAME:{"view":true,"present":180}
+TN_PRESENTS_TICK:{"frames":180,"presents":180,"textureMB":52,"textures":4,"bufferMB":0,"capHz":60}
+TN_SURFACE_FRAME:{"view":true,"present":181}
+TN_SURFACE_FRAME:{"view":true,"present":182}
+TN_SURFACE_FRAME:{"view":true,"present":183}
+TN_SURFACE_FRAME:{"view":true,"present":184}
+TN_SURFACE_FRAME:{"view":true,"present":185}
+TN_SURFACE_FRAME:{"view":true,"present":186}
+TN_SURFACE_FRAME:{"view":true,"present":187}
+TN_SURFACE_FRAME:{"view":true,"present":188}
+TN_SURFACE_FRAME:{"view":true,"present":189}
+TN_SURFACE_FRAME:{"view":true,"present":190}
+TN_SURFACE_FRAME:{"view":true,"present":191}
+TN_SURFACE_FRAME:{"view":true,"present":192}
+TN_SURFACE_FRAME:{"view":true,"present":193}
+TN_SURFACE_FRAME:{"view":true,"present":194}
+TN_SURFACE_FRAME:{"view":true,"present":195}
+TN_SURFACE_FRAME:{"view":true,"present":196}
+TN_SURFACE_FRAME:{"view":true,"present":197}
+TN_SURFACE_FRAME:{"view":true,"present":198}
+TN_SURFACE_FRAME:{"view":true,"present":199}
+TN_SURFACE_FRAME:{"view":true,"present":200}
+TN_SURFACE_FRAME:{"view":true,"present":201}
+TN_SURFACE_FRAME:{"view":true,"present":202}
+TN_SURFACE_FRAME:{"view":true,"present":203}
+TN_SURFACE_FRAME:{"view":true,"present":204}
+TN_SURFACE_FRAME:{"view":true,"present":205}
+TN_SURFACE_FRAME:{"view":true,"present":206}
+TN_SURFACE_FRAME:{"view":true,"present":207}
+TN_SURFACE_FRAME:{"view":true,"present":208}
+TN_SURFACE_FRAME:{"view":true,"present":209}
+TN_SURFACE_FRAME:{"view":true,"present":210}
+TN_SURFACE_FRAME:{"view":true,"present":211}
+TN_SURFACE_FRAME:{"view":true,"present":212}
+TN_SURFACE_FRAME:{"view":true,"present":213}
+TN_SURFACE_FRAME:{"view":true,"present":214}
+TN_SURFACE_FRAME:{"view":true,"present":215}
+TN_SURFACE_FRAME:{"view":true,"present":216}
+TN_SURFACE_FRAME:{"view":true,"present":217}
+TN_SURFACE_FRAME:{"view":true,"present":218}
+TN_SURFACE_FRAME:{"view":true,"present":219}
+TN_SURFACE_FRAME:{"view":true,"present":220}
+TN_SURFACE_FRAME:{"view":true,"present":221}
+TN_SURFACE_FRAME:{"view":true,"present":222}
+TN_SURFACE_FRAME:{"view":true,"present":223}
+TN_SURFACE_FRAME:{"view":true,"present":224}
+TN_SURFACE_FRAME:{"view":true,"present":225}
+TN_SURFACE_FRAME:{"view":true,"present":226}
+TN_SURFACE_FRAME:{"view":true,"present":227}
+TN_SURFACE_FRAME:{"view":true,"present":228}
+TN_SURFACE_FRAME:{"view":true,"present":229}
+TN_SURFACE_FRAME:{"view":true,"present":230}
+TN_SURFACE_FRAME:{"view":true,"present":231}
+TN_SURFACE_FRAME:{"view":true,"present":232}
+TN_SURFACE_FRAME:{"view":true,"present":233}
+TN_SURFACE_FRAME:{"view":true,"present":234}
+TN_SURFACE_FRAME:{"view":true,"present":235}
+TN_SURFACE_FRAME:{"view":true,"present":236}
+TN_SURFACE_FRAME:{"view":true,"present":237}
+TN_SURFACE_FRAME:{"view":true,"present":238}
+TN_SURFACE_FRAME:{"view":true,"present":239}
+TN_SURFACE_FRAME:{"view":true,"present":240}
+TN_PRESENTS_TICK:{"frames":240,"presents":240,"textureMB":52,"textures":4,"bufferMB":0,"capHz":60}
+TN_SURFACE_FRAME:{"view":true,"present":241}
+TN_SURFACE_FRAME:{"view":true,"present":242}
+TN_SURFACE_FRAME:{"view":true,"present":243}
+TN_SURFACE_FRAME:{"view":true,"present":244}
+TN_SURFACE_FRAME:{"view":true,"present":245}
+TN_SURFACE_FRAME:{"view":true,"present":246}
+TN_SURFACE_FRAME:{"view":true,"present":247}
+TN_SURFACE_FRAME:{"view":true,"present":248}
+TN_SURFACE_FRAME:{"view":true,"present":249}
+TN_SURFACE_FRAME:{"view":true,"present":250}
+TN_SURFACE_FRAME:{"view":true,"present":251}
+TN_SURFACE_FRAME:{"view":true,"present":252}
+TN_SURFACE_FRAME:{"view":true,"present":253}
+TN_SURFACE_FRAME:{"view":true,"present":254}
+TN_SURFACE_FRAME:{"view":true,"present":255}
+TN_SURFACE_FRAME:{"view":true,"present":256}
+TN_SURFACE_FRAME:{"view":true,"present":257}
+TN_SURFACE_FRAME:{"view":true,"present":258}
+TN_SURFACE_FRAME:{"view":true,"present":259}
+TN_SURFACE_FRAME:{"view":true,"present":260}
+TN_SURFACE_FRAME:{"view":true,"present":261}
+TN_SURFACE_FRAME:{"view":true,"present":262}
+TN_SURFACE_FRAME:{"view":true,"present":263}
+TN_SURFACE_FRAME:{"view":true,"present":264}
+TN_SURFACE_FRAME:{"view":true,"present":265}
+TN_SURFACE_FRAME:{"view":true,"present":266}
+TN_SURFACE_FRAME:{"view":true,"present":267}
+TN_SURFACE_FRAME:{"view":true,"present":268}
+TN_SURFACE_FRAME:{"view":true,"present":269}
+TN_SURFACE_FRAME:{"view":true,"present":270}
+TN_SURFACE_FRAME:{"view":true,"present":271}
+TN_SURFACE_FRAME:{"view":true,"present":272}
+TN_SURFACE_FRAME:{"view":true,"present":273}
+TN_SURFACE_FRAME:{"view":true,"present":274}
+TN_SURFACE_FRAME:{"view":true,"present":275}
+TN_SURFACE_FRAME:{"view":true,"present":276}
+TN_SURFACE_FRAME:{"view":true,"present":277}
+TN_SURFACE_FRAME:{"view":true,"present":278}
+TN_SURFACE_FRAME:{"view":true,"present":279}
+TN_SURFACE_FRAME:{"view":true,"present":280}
+TN_SURFACE_FRAME:{"view":true,"present":281}
+TN_SURFACE_FRAME:{"view":true,"present":282}
+TN_SURFACE_FRAME:{"view":true,"present":283}
+TN_SURFACE_FRAME:{"view":true,"present":284}
+TN_SURFACE_FRAME:{"view":true,"present":285}
+TN_SURFACE_FRAME:{"view":true,"present":286}
+TN_SURFACE_FRAME:{"view":true,"present":287}
+TN_SURFACE_FRAME:{"view":true,"present":288}
+TN_SURFACE_FRAME:{"view":true,"present":289}
+TN_SURFACE_FRAME:{"view":true,"present":290}
+TN_SURFACE_FRAME:{"view":true,"present":291}
+TN_SURFACE_FRAME:{"view":true,"present":292}
+TN_SURFACE_FRAME:{"view":true,"present":293}
+TN_SURFACE_FRAME:{"view":true,"present":294}
+TN_SURFACE_FRAME:{"view":true,"present":295}
+TN_SURFACE_FRAME:{"view":true,"present":296}
+TN_SURFACE_FRAME:{"view":true,"present":297}
+TN_SURFACE_FRAME:{"view":true,"present":298}
+TN_SURFACE_FRAME:{"view":true,"present":299}
+[log] TN_FRAME_BUDGET:{"fps":22.7,"frame":{"max":162.3,"mean":3.86,"p50":2.97,"p95":4.74,"p99":13.32,"samples":300},"frames":300,"hitches":0,"phases":{"hostGap":{"max":50.96,"mean":40.19,"p50":39.9,"p95":45.5,"p99":46.76,"samples":299},"overlay":{"max":26.42,"mean":0.46,"p50":0.35,"p95":0.68,"p99":0.87,"samples":300},"render":{"max":120.49,"mean":2.34,"p50":1.69,"p95":2.92,"p99":10.75,"samples":300},"residual":{"max":15.27,"mean":0.75,"p50":0.59,"p95":1.23,"p99":2.25,"samples":300},"update":{"max":2.46,"mean":0.31,"p50":0.27,"p95":0.5,"p99":1.09,"samples":300}},"presented":{"max":207.84,"mean":44.05,"p50":43.1,"p95":49.31,"p99":55.33,"samples":299},"shares":{"hostGap":0.912,"overlay":0.01,"render":0.053,"residual":0.017,"update":0.007},"substeps":{"max":5,"mean":2.61,"p50":3,"p95":3,"p99":4,"samples":300},"gpuMs":0.52,"gpuAgeFrames":1,"surface":{"atFloor":false,"drawingBufferHeight":720,"drawingBufferWidth":1280,"resolutionScale":1,"sampleCount":4,"scaleSource":"pinned"},"window":1}
+[info] TN_PROJECTION:{"drawsActual":3,"drawsPlanned":4,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":4,"window":1}
+TN_SURFACE_FRAME:{"view":true,"present":300}
+TN_PRESENTS_TICK:{"frames":300,"presents":300,"textureMB":52,"textures":4,"bufferMB":0,"capHz":60}
+TN_SURFACE_FRAME:{"view":true,"present":301}
+TN_FRAME_HITCH:{"window":300,"maxMs":60.733,"maxAtFrame":179,"p99Ms":55.471,"p50Ms":43.168,"pipelineCompileMs":0.000,"pipelineCompileCalls":0}
+TN_HOST_GAP:{"frames":300,"periodP50Ms":43.098,"periodMeanMs":44.061,"segments":{"events":{"p50Ms":0.048,"meanMs":0.051},"io":{"p50Ms":0.289,"meanMs":0.312},"webtransport":{"p50Ms":0.002,"meanMs":0.002},"audio":{"p50Ms":0.000,"meanMs":0.000},"timers":{"p50Ms":0.003,"meanMs":0.055},"microtasks":{"p50Ms":0.005,"meanMs":0.047},"preFrame":{"p50Ms":0.000,"meanMs":0.000},"frameDrain":{"p50Ms":0.002,"meanMs":0.003},"frameReplay":{"p50Ms":0.188,"meanMs":0.491},"present":{"p50Ms":38.600,"meanMs":38.851},"gpuDrain":{"p50Ms":0.000,"meanMs":0.000},"devicePoll":{"p50Ms":0.065,"meanMs":0.242},"endFrameOther":{"p50Ms":0.001,"meanMs":0.002},"storage":{"p50Ms":0.000,"meanMs":0.000},"handles":{"p50Ms":0.037,"meanMs":0.038},"screenshot":{"p50Ms":0.003,"meanMs":0.003}},"sumP50Ms":39.243,"samples":[{"frame":2,"webtransportMs":0.001},{"frame":3,"webtransportMs":0.001},{"frame":4,"webtransportMs":0.002},{"frame":5,"webtransportMs":0.002},{"frame":6,"webtransportMs":0.002},{"frame":7,"webtransportMs":0.001},{"frame":8,"webtransportMs":0.001},{"frame":9,"webtransportMs":0.001},{"frame":10,"webtransportMs":0.011},{"frame":11,"webtransportMs":0.005},{"frame":12,"webtransportMs":0.001},{"frame":13,"webtransportMs":0.004},{"frame":14,"webtransportMs":0.001},{"frame":15,"webtransportMs":0.003},{"frame":16,"webtransportMs":0.002},{"frame":17,"webtransportMs":0.003},{"frame":18,"webtransportMs":0.003},{"frame":19,"webtransportMs":0.001},{"frame":20,"webtransportMs":0.001},{"frame":21,"webtransportMs":0.002},{"frame":22,"webtransportMs":0.001},{"frame":23,"webtransportMs":0.004},{"frame":24,"webtransportMs":0.002},{"frame":25,"webtransportMs":0.002},{"frame":26,"webtransportMs":0.002},{"frame":27,"webtransportMs":0.001},{"frame":28,"webtransportMs":0.001},{"frame":29,"webtransportMs":0.003},{"frame":30,"webtransportMs":0.002},{"frame":31,"webtransportMs":0.001},{"frame":32,"webtransportMs":0.004},{"frame":33,"webtransportMs":0.001},{"frame":34,"webtransportMs":0.004},{"frame":35,"webtransportMs":0.002},{"frame":36,"webtransportMs":0.002},{"frame":37,"webtransportMs":0.002},{"frame":38,"webtransportMs":0.003},{"frame":39,"webtransportMs":0.004},{"frame":40,"webtransportMs":0.002},{"frame":41,"webtransportMs":0.005},{"frame":42,"webtransportMs":0.002},{"frame":43,"webtransportMs":0.004},{"frame":44,"webtransportMs":0.003},{"frame":45,"webtransportMs":0.002},{"frame":46,"webtransportMs":0.002},{"frame":47,"webtransportMs":0.001},{"frame":48,"webtransportMs":0.002},{"frame":49,"webtransportMs":0.004},{"frame":50,"webtransportMs":0.002},{"frame":51,"webtransportMs":0.001},{"frame":52,"webtransportMs":0.001},{"frame":53,"webtransportMs":0.002},{"frame":54,"webtransportMs":0.003},{"frame":55,"webtransportMs":0.001},{"frame":56,"webtransportMs":0.002},{"frame":57,"webtransportMs":0.004},{"frame":58,"webtransportMs":0.003},{"frame":59,"webtransportMs":0.003},{"frame":60,"webtransportMs":0.002},{"frame":61,"webtransportMs":0.003},{"frame":62,"webtransportMs":0.003},{"frame":63,"webtransportMs":0.002},{"frame":64,"webtransportMs":0.001},{"frame":65,"webtransportMs":0.002},{"frame":66,"webtransportMs":0.004},{"frame":67,"webtransportMs":0.004},{"frame":68,"webtransportMs":0.002},{"frame":69,"webtransportMs":0.003},{"frame":70,"webtransportMs":0.003},{"frame":71,"webtransportMs":0.003},{"frame":72,"webtransportMs":0.002},{"frame":73,"webtransportMs":0.002},{"frame":74,"webtransportMs":0.003},{"frame":75,"webtransportMs":0.002},{"frame":76,"webtransportMs":0.003},{"frame":77,"webtransportMs":0.003},{"frame":78,"webtransportMs":0.002},{"frame":79,"webtransportMs":0.004},{"frame":80,"webtransportMs":0.003},{"frame":81,"webtransportMs":0.003},{"frame":82,"webtransportMs":0.002},{"frame":83,"webtransportMs":0.002},{"frame":84,"webtransportMs":0.002},{"frame":85,"webtransportMs":0.002},{"frame":86,"webtransportMs":0.003},{"frame":87,"webtransportMs":0.001},{"frame":88,"webtransportMs":0.003},{"frame":89,"webtransportMs":0.002},{"frame":90,"webtransportMs":0.001},{"frame":91,"webtransportMs":0.002},{"frame":92,"webtransportMs":0.002},{"frame":93,"webtransportMs":0.003},{"frame":94,"webtransportMs":0.003},{"frame":95,"webtransportMs":0.002},{"frame":96,"webtransportMs":0.003},{"frame":97,"webtransportMs":0.003},{"frame":98,"webtransportMs":0.001},{"frame":99,"webtransportMs":0.002},{"frame":100,"webtransportMs":0.002},{"frame":101,"webtransportMs":0.003},{"frame":102,"webtransportMs":0.002},{"frame":103,"webtransportMs":0.003},{"frame":104,"webtransportMs":0.003},{"frame":105,"webtransportMs":0.003},{"frame":106,"webtransportMs":0.002},{"frame":107,"webtransportMs":0.002},{"frame":108,"webtransportMs":0.002},{"frame":109,"webtransportMs":0.001},{"frame":110,"webtransportMs":0.001},{"frame":111,"webtransportMs":0.002},{"frame":112,"webtransportMs":0.002},{"frame":113,"webtransportMs":0.001},{"frame":114,"webtransportMs":0.001},{"frame":115,"webtransportMs":0.002},{"frame":116,"webtransportMs":0.001},{"frame":117,"webtransportMs":0.001},{"frame":118,"webtransportMs":0.002},{"frame":119,"webtransportMs":0.003},{"frame":120,"webtransportMs":0.001},{"frame":121,"webtransportMs":0.001},{"frame":122,"webtransportMs":0.001},{"frame":123,"webtransportMs":0.001},{"frame":124,"webtransportMs":0.001},{"frame":125,"webtransportMs":0.004},{"frame":126,"webtransportMs":0.002},{"frame":127,"webtransportMs":0.002},{"frame":128,"webtransportMs":0.003},{"frame":129,"webtransportMs":0.002},{"frame":130,"webtransportMs":0.001},{"frame":131,"webtransportMs":0.003},{"frame":132,"webtransportMs":0.001},{"frame":133,"webtransportMs":0.003},{"frame":134,"webtransportMs":0.002},{"frame":135,"webtransportMs":0.002},{"frame":136,"webtransportMs":0.008},{"frame":137,"webtransportMs":0.003},{"frame":138,"webtransportMs":0.001},{"frame":139,"webtransportMs":0.003},{"frame":140,"webtransportMs":0.002},{"frame":141,"webtransportMs":0.001},{"frame":142,"webtransportMs":0.002},{"frame":143,"webtransportMs":0.001},{"frame":144,"webtransportMs":0.002},{"frame":145,"webtransportMs":0.002},{"frame":146,"webtransportMs":0.002},{"frame":147,"webtransportMs":0.003},{"frame":148,"webtransportMs":0.001},{"frame":149,"webtransportMs":0.001},{"frame":150,"webtransportMs":0.003},{"frame":151,"webtransportMs":0.003},{"frame":152,"webtransportMs":0.003},{"frame":153,"webtransportMs":0.002},{"frame":154,"webtransportMs":0.003},{"frame":155,"webtransportMs":0.004},{"frame":156,"webtransportMs":0.004},{"frame":157,"webtransportMs":0.003},{"frame":158,"webtransportMs":0.001},{"frame":159,"webtransportMs":0.003},{"frame":160,"webtransportMs":0.001},{"frame":161,"webtransportMs":0.001},{"frame":162,"webtransportMs":0.001},{"frame":163,"webtransportMs":0.001},{"frame":164,"webtransportMs":0.002},{"frame":165,"webtransportMs":0.001},{"frame":166,"webtransportMs":0.001},{"frame":167,"webtransportMs":0.001},{"frame":168,"webtransportMs":0.001},{"frame":169,"webtransportMs":0.003},{"frame":170,"webtransportMs":0.001},{"frame":171,"webtransportMs":0.001},{"frame":172,"webtransportMs":0.002},{"frame":173,"webtransportMs":0.001},{"frame":174,"webtransportMs":0.003},{"frame":175,"webtransportMs":0.004},{"frame":176,"webtransportMs":0.004},{"frame":177,"webtransportMs":0.003},{"frame":178,"webtransportMs":0.002},{"frame":179,"webtransportMs":0.002},{"frame":180,"webtransportMs":0.002},{"frame":181,"webtransportMs":0.003},{"frame":182,"webtransportMs":0.002},{"frame":183,"webtransportMs":0.002},{"frame":184,"webtransportMs":0.002},{"frame":185,"webtransportMs":0.005},{"frame":186,"webtransportMs":0.003},{"frame":187,"webtransportMs":0.004},{"frame":188,"webtransportMs":0.002},{"frame":189,"webtransportMs":0.002},{"frame":190,"webtransportMs":0.002},{"frame":191,"webtransportMs":0.001},{"frame":192,"webtransportMs":0.001},{"frame":193,"webtransportMs":0.003},{"frame":194,"webtransportMs":0.002},{"frame":195,"webtransportMs":0.002},{"frame":196,"webtransportMs":0.002},{"frame":197,"webtransportMs":0.001},{"frame":198,"webtransportMs":0.003},{"frame":199,"webtransportMs":0.001},{"frame":200,"webtransportMs":0.002},{"frame":201,"webtransportMs":0.002},{"frame":202,"webtransportMs":0.001},{"frame":203,"webtransportMs":0.003},{"frame":204,"webtransportMs":0.002},{"frame":205,"webtransportMs":0.003},{"frame":206,"webtransportMs":0.001},{"frame":207,"webtransportMs":0.002},{"frame":208,"webtransportMs":0.002},{"frame":209,"webtransportMs":0.003},{"frame":210,"webtransportMs":0.002},{"frame":211,"webtransportMs":0.002},{"frame":212,"webtransportMs":0.003},{"frame":213,"webtransportMs":0.003},{"frame":214,"webtransportMs":0.003},{"frame":215,"webtransportMs":0.005},{"frame":216,"webtransportMs":0.009},{"frame":217,"webtransportMs":0.002},{"frame":218,"webtransportMs":0.003},{"frame":219,"webtransportMs":0.002},{"frame":220,"webtransportMs":0.001},{"frame":221,"webtransportMs":0.001},{"frame":222,"webtransportMs":0.002},{"frame":223,"webtransportMs":0.003},{"frame":224,"webtransportMs":0.002},{"frame":225,"webtransportMs":0.003},{"frame":226,"webtransportMs":0.003},{"frame":227,"webtransportMs":0.002},{"frame":228,"webtransportMs":0.002},{"frame":229,"webtransportMs":0.003},{"frame":230,"webtransportMs":0.003},{"frame":231,"webtransportMs":0.002},{"frame":232,"webtransportMs":0.002},{"frame":233,"webtransportMs":0.003},{"frame":234,"webtransportMs":0.001},{"frame":235,"webtransportMs":0.002},{"frame":236,"webtransportMs":0.002},{"frame":237,"webtransportMs":0.002},{"frame":238,"webtransportMs":0.002},{"frame":239,"webtransportMs":0.001},{"frame":240,"webtransportMs":0.004},{"frame":241,"webtransportMs":0.002},{"frame":242,"webtransportMs":0.002},{"frame":243,"webtransportMs":0.003},{"frame":244,"webtransportMs":0.002},{"frame":245,"webtransportMs":0.004},{"frame":246,"webtransportMs":0.003},{"frame":247,"webtransportMs":0.002},{"frame":248,"webtransportMs":0.002},{"frame":249,"webtransportMs":0.001},{"frame":250,"webtransportMs":0.001},{"frame":251,"webtransportMs":0.002},{"frame":252,"webtransportMs":0.002},{"frame":253,"webtransportMs":0.001},{"frame":254,"webtransportMs":0.002},{"frame":255,"webtransportMs":0.002},{"frame":256,"webtransportMs":0.001},{"frame":257,"webtransportMs":0.002},{"frame":258,"webtransportMs":0.003},{"frame":259,"webtransportMs":0.002},{"frame":260,"webtransportMs":0.003},{"frame":261,"webtransportMs":0.004},{"frame":262,"webtransportMs":0.001},{"frame":263,"webtransportMs":0.002},{"frame":264,"webtransportMs":0.002},{"frame":265,"webtransportMs":0.004},{"frame":266,"webtransportMs":0.004},{"frame":267,"webtransportMs":0.002},{"frame":268,"webtransportMs":0.004},{"frame":269,"webtransportMs":0.004},{"frame":270,"webtransportMs":0.001},{"frame":271,"webtransportMs":0.002},{"frame":272,"webtransportMs":0.001},{"frame":273,"webtransportMs":0.004},{"frame":274,"webtransportMs":0.004},{"frame":275,"webtransportMs":0.001},{"frame":276,"webtransportMs":0.001},{"frame":277,"webtransportMs":0.003},{"frame":278,"webtransportMs":0.002},{"frame":279,"webtransportMs":0.002},{"frame":280,"webtransportMs":0.001},{"frame":281,"webtransportMs":0.002},{"frame":282,"webtransportMs":0.004},{"frame":283,"webtransportMs":0.001},{"frame":284,"webtransportMs":0.001},{"frame":285,"webtransportMs":0.001},{"frame":286,"webtransportMs":0.003},{"frame":287,"webtransportMs":0.005},{"frame":288,"webtransportMs":0.003},{"frame":289,"webtransportMs":0.003},{"frame":290,"webtransportMs":0.004},{"frame":291,"webtransportMs":0.004},{"frame":292,"webtransportMs":0.002},{"frame":293,"webtransportMs":0.002},{"frame":294,"webtransportMs":0.001},{"frame":295,"webtransportMs":0.002},{"frame":296,"webtransportMs":0.001},{"frame":297,"webtransportMs":0.001},{"frame":298,"webtransportMs":0.002},{"frame":299,"webtransportMs":0.002},{"frame":300,"webtransportMs":0.001},{"frame":301,"webtransportMs":0.001}]}
+TN_STARTUP_CAPTURE_READY:1
+TN_CAPTURE_REFRESH_PRESENTS:1
+[Screenshot] First 16 bytes (BGRA raw): 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+[Screenshot] Middle bytes (BGRA raw): 255 170 68 255 255 170 68 255 255 170 68 255 255 170 68 255
+[Screenshot] Saved: /home/joao/projects/threenative/threenative-engine/.worktrees/native-coverage-80/packages/runtime-native/artifacts/desktop-core-2026-09-07.png (1280x720)
+Screenshot saved: /home/joao/projects/threenative/threenative-engine/.worktrees/native-coverage-80/packages/runtime-native/artifacts/desktop-core-2026-09-07.png
+Rendered 300 frames in 13267ms
+TN_PRESENTS:301
+
+_XSERVTransSocketUNIXCreateListener: ...SocketCreateListener() failed
+_XSERVTransMakeAllCOTSServerListeners: server already running
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Multiple symbols for level 1/group 1 on key <FK23>
+>                   Using F23, ignoring XF86TouchpadOff
+> Warning:          Symbol map for key <FK23> redefined
+>                   Using last definition for conflicting fields
+> Warning:          Symbol map for key <FK24> redefined
+>                   Using last definition for conflicting fields
+> Warning:          Could not resolve keysym XF86ElectronicPrivacyScreenOn
+> Warning:          Could not resolve keysym XF86ElectronicPrivacyScreenOff
+> Warning:          Could not resolve keysym XF86ActionOnSelection
+> Warning:          Could not resolve keysym XF86ContextualInsert
+> Warning:          Could not resolve keysym XF86ContextualQuery
+Errors from xkbcomp are not fatal to the X server
+[Audio] decodeAudioData received an empty or non-ArrayBuffer argument.
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Multiple symbols for level 1/group 1 on key <FK23>
+>                   Using F23, ignoring XF86TouchpadOff
+> Warning:          Symbol map for key <FK23> redefined
+>                   Using last definition for conflicting fields
+> Warning:          Symbol map for key <FK24> redefined
+>                   Using last definition for conflicting fields
+> Warning:          Could not resolve keysym XF86ElectronicPrivacyScreenOn
+> Warning:          Could not resolve keysym XF86ElectronicPrivacyScreenOff
+> Warning:          Could not resolve keysym XF86ActionOnSelection
+> Warning:          Could not resolve keysym XF86ContextualInsert
+> Warning:          Could not resolve keysym XF86ContextualQuery
+Errors from xkbcomp are not fatal to the X server

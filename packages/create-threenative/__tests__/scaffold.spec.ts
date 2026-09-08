@@ -288,17 +288,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-07 after SkeletalMesh3D became the AnimationPlayer returned by setup.
   // Recomputed 2026-09-07 after merging origin/main's networking transport with the PRD-361/362
   // delivery; values are from the current merged scaffold source.
-  // Recomputed 2026-09-07 for PRD-277: `mergeParts` entered the public capability manifest and
-  // generated reference copied by every scaffold; starter also wires its existing hero merge
-  // caller through `Player.ts` so `src/render/` remains framework-free.
-  // Recomputed 2026-09-07 after merging that source with this lane's audio manifest and
-  // scaffold-doc additions; values are from this isolated merge worktree's Received block.
-  // Recomputed after the Android presented-viewport transform and explicit touch-rotation
-  // fallback entered the playtest capability surface; values are from this tree's Received block.
-  // Recomputed 2026-09-08 after merging origin/main 0aa072588 (including PRD-144) into PRD-358;
-  // values below come from this merged tree's scaffold output after regeneration.
+  // Recomputed 2026-09-08 after merging current origin/main 340dcc29 (PRD-140 plus PRD-144)
+  // into PRD-358; values below come from the merged scaffold tree after regeneration.
   "action-rpg": "d3256b871744c1b36fdf6b83eeb93fc43eb326a3132fc7da621eaf6e03759eb3",
   defense: "5d9d221e37331e4519b5a0865a3575dc2acad02f6f494633259e12e141910bac",
+  // Recomputed 2026-09-08 after merging origin/main c315ad343 into the native coverage branch;
+  // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
   minimal: "c890c7478ea8955404cc713973769b5fa8af6abd2987701b8b6f8a407491763c",

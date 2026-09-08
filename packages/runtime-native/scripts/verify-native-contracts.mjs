@@ -180,6 +180,21 @@ export const executionContracts = {
   "threenative-surface-format-selection-test": {
     invocations: [{ args: [], passLine: "surface-format-selection: PASS" }],
   },
+  "threenative-webgpu-comprehensive-test": {
+    invocations: [{ args: [], passLine: "native WebGPU comprehensive contract passed" }],
+  },
+  "threenative-js-module-comprehensive-test": {
+    invocations: [{ args: [], passLine: "native JS module comprehensive contract passed" }],
+  },
+  "threenative-runtime-platform-comprehensive-test": {
+    invocations: [{ args: [], passLine: "native runtime and platform comprehensive contract passed" }],
+  },
+  "threenative-canvas-audio-comprehensive-test": {
+    invocations: [{ args: [], passLine: "native canvas and audio comprehensive contract passed" }],
+  },
+  "threenative-cli-network-fs-test": {
+    invocations: [{ args: [], passLine: "native CLI network and FS comprehensive contract passed" }],
+  },
 };
 
 /**

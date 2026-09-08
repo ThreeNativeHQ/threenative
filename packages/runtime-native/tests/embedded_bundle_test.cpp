@@ -202,6 +202,24 @@ int main() {
     expect(mystral::vfs::normalizeBundlePath("a\\b.txt") == "a/b.txt", "backslash converts");
 #endif
 
+#ifndef _WIN32
+    setenv("MYSTRAL_BUNDLE", bundlePath.c_str(), 1);
+#else
+    _putenv_s("MYSTRAL_BUNDLE", bundlePath.c_str());
+#endif
+    // Exercise executable path, shared bundle, and helper functions with bundle loaded
+    mystral::vfs::getExecutablePath();
+    mystral::vfs::EmbeddedBundle::loadFromExecutable();
+    expect(mystral::vfs::hasEmbeddedBundle(), "hasEmbeddedBundle via env");
+    expect(mystral::vfs::getEmbeddedEntryPath() == "src/game.js", "getEmbeddedEntryPath via env");
+    std::vector<uint8_t> outBytes;
+    expect(mystral::vfs::readEmbeddedFile("assets/ship.glb", outBytes), "readEmbeddedFile via env");
+#ifndef _WIN32
+    unsetenv("MYSTRAL_BUNDLE");
+#else
+    _putenv_s("MYSTRAL_BUNDLE", "");
+#endif
+
     if (failures > 0) {
         std::cerr << failures << " embedded-bundle assertion(s) failed\n";
         return 1;
