@@ -120,3 +120,22 @@ Tests 22 passed (22)
 
 That is the current count on this branch; the 17/21 figures quoted above were recorded before the
 later warm-up test landed and are not re-asserted here.
+
+## Follow-up — target-aware native diagnostics on physical Android
+
+The target-aware diagnostics repair was also exercised through the real Android bridge, rather
+than only its unit tests. `target-aware-android.playtest.json` deliberately omits both
+`noNetworkErrors` and an authored waiver. With runner source at `c5329f658`, Android supplied the
+native-target default, reached the actual assertions, reported zero console/runtime errors, and
+moved the player **2.146690 m** against a 0.25 m minimum. The distinct installed subject was
+`com.threenative.bayview.manifestfix` on the physical Pixel 8; its APK and embedded bundle hashes
+are pinned in `target-aware-android-result.json`. Exit status was 0.
+
+The run discharged from 36% to 35%, so it makes no startup timing or battery-qualified claim. Its
+purpose is narrower: omitting a browser-only network observation on a native target no longer
+blocks the executable diagnostics and movement assertions before the bridge runs.
+
+A separate explicit-scene warm-up APK build cleared the 74-asset preflight after the three known
+models were converted to separate vertex layout. The converted byte hashes exactly match the prior
+2,415,843-value semantic comparison. The urgent closeout interrupted native compilation during
+`:app:buildNativePhysics`, before any APK was produced, so no result from that candidate is claimed.

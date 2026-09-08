@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "bayview-target-aware-android-diagnostics",
+  "target": "web",
+  "subject": "player",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 2,
+  "steps": [
+    {
+      "press": "ArrowUp",
+      "holdTicks": 30,
+      "release": true,
+      "label": "move"
+    },
+    {
+      "waitTicks": 5,
+      "label": "settle"
+    }
+  ],
+  "artifacts": {
+    "console": true,
+    "screenshots": "after"
+  },
+  "assert": {
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.25
+    },
+    "diagnostics": {
+      "runtimeReady": true,
+      "noConsoleErrors": true
+    }
+  }
+}

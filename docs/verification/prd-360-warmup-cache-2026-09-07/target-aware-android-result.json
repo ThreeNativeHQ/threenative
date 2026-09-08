@@ -1,0 +1,63 @@
+{
+  "status": "passed",
+  "date": "2026-09-07",
+  "purpose": "Physical functional proof that native target-aware diagnostics defaults reach real assertions when noNetworkErrors is omitted.",
+  "runnerSourceCommit": "c5329f658aa87a186be87d6d3a2469a2323a637a",
+  "device": {
+    "adbTransport": "192.168.1.192:5555",
+    "hardwareSerial": "37251FDJH0037Z",
+    "model": "Pixel 8",
+    "device": "shiba"
+  },
+  "subject": {
+    "applicationId": "com.threenative.bayview.manifestfix",
+    "apkSha256": "bb79fec94fa3c2c0e226a6ac72952e8101a760a2a2e6a75177027550ad1ee1bf",
+    "embeddedMainJsSha256": "d418c66c723614f63bbd0f961025c050ec004f943d874d6c0870ec685d6ebe73"
+  },
+  "command": "node packages/playtest/dist/runner/cli.js docs/verification/prd-360-warmup-cache-2026-09-07/target-aware-android.playtest.json --target android --device 192.168.1.192:5555 --package com.threenative.bayview.manifestfix --activity com.threenative.runtime.MystralActivity --timeout 60000 --artifacts /tmp/prd360-warmup-scene-evidence-20260907/ad07-target-aware-artifacts",
+  "exitCode": 0,
+  "diagnosticsPolicy": {
+    "runtimeReady": true,
+    "noConsoleErrors": true,
+    "noRuntimeDiagnostics": true,
+    "noNetworkErrors": false,
+    "networkErrorsOptOutReason": "The run target has no network observer; its network observation is hardwired empty, so the default network policy is waived rather than evaluated against nothing."
+  },
+  "assertions": {
+    "diagnostics": {
+      "pass": true,
+      "consoleErrors": 0,
+      "runtimeDiagnostics": 0
+    },
+    "movement.distance": {
+      "pass": true,
+      "entity": "player",
+      "minimumMeters": 0.25,
+      "observedMeters": 2.1466898399531034
+    }
+  },
+  "deviceConditions": {
+    "batteryPercentStart": 36,
+    "batteryPercentEnd": 35,
+    "batteryStatus": 3,
+    "charging": false,
+    "batteryTemperatureCStart": 37.2,
+    "batteryTemperatureCEnd": 37.3,
+    "maxThermalStatus": 0
+  },
+  "localRawArtifacts": {
+    "scenarioSha256": "a44ce113adada4e5ff5d505ba8df9706afd388f5a6e9fe6008658fccabcfd6fa",
+    "afterPngSha256": "14de194b2b7ed621531b5374d2220d6301ab38a1a1d12d117d401749339c8adf",
+    "consoleJsonSha256": "ff6fd4082438a435da3195d5281bc9f36d91eebcd1347bed85fa42be90630ca8",
+    "deviceResponseObservationsJsonSha256": "acc247880227c1bb1530c7d3d33cf8bae46d8df9b3f17a639d7c10f48dd5adf2"
+  },
+  "timingClaim": null,
+  "warmUpSceneCandidateBuild": {
+    "status": "interrupted-for-closeout-before-apk",
+    "assetPreflight": "passed: 74 assets, 283 ok, 87 warnings, 0 failures",
+    "modelConversion": "three authored inputs converted with gltf-transform cp --vertex-layout separate; output hashes match the prior 2,415,843-value semantic comparison",
+    "nativeBuildLastObservedPhase": ":app:buildNativePhysics",
+    "apkProduced": false,
+    "localFinalAttemptLogSha256": "b07962e66c2a60d7ab3913a75b2530c3235856f86456af2abeca0180486a01ee"
+  }
+}
