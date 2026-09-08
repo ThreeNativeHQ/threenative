@@ -20,7 +20,8 @@ export type BenchExitCode = 1 | 2;
 export const REQUIRED_PLATFORM_LANES = [
   "browser-webgpu",
   "native-linux",
-  "native-windows-macos",
+  "native-windows",
+  "native-macos",
   "native-android",
   "native-ios",
 ] as const;

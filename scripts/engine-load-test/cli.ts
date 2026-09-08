@@ -39,6 +39,7 @@ interface ILadderOptions {
   ladder: string;
   modes: string;
   repeats: number;
+  sourceSha?: string;
   warmup: number;
 }
 
@@ -53,12 +54,21 @@ function ladderOptions(): ILadderOptions {
     ladder: flag("ladder") ?? "256,1024,4096,16384",
     modes: flag("modes") ?? "L1,L2",
     repeats: Number(flag("repeats") ?? 3),
+    sourceSha: flag("source-sha"),
     warmup: Number(flag("warmup") ?? 120),
   };
 }
 
 function query(options: ILadderOptions): string {
-  return `frames=${options.frames}&warmup=${options.warmup}&repeats=${options.repeats}&ladder=${options.ladder}&modes=${options.modes}`;
+  const params = new URLSearchParams({
+    frames: String(options.frames),
+    ladder: options.ladder,
+    modes: options.modes,
+    repeats: String(options.repeats),
+    warmup: String(options.warmup),
+  });
+  if (options.sourceSha !== undefined) params.set("sourceSha", options.sourceSha);
+  return params.toString();
 }
 
 function timeoutFor(options: ILadderOptions): number {
@@ -334,7 +344,7 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
+    "usage: pnpm bench:engines --arm <tn-web|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
   );
 }
 

@@ -18,6 +18,13 @@ import {
   createLoadTestHarness,
 } from "./game.js";
 import {
+  type IModuleGraphEntry,
+  extractModuleSpecifiers,
+  hashServedModuleGraph,
+  hashWorkloadModuleGraph,
+  isBenchmarkWorkloadModule,
+} from "./identity.js";
+import {
   FRAMES_PER_RUNG,
   LADDER,
   REPEATS,
@@ -67,6 +74,14 @@ interface ICullingProbe {
 const CULLING_OBJECT_COUNT = 4_096;
 const CULLING_VISIBLE_COUNT = CULLING_OBJECT_COUNT / 4;
 const CULLING_ANCHOR_COUNT = 2_048;
+
+interface IUserAgentData {
+  architecture?: string;
+  brands?: readonly { brand: string; version: string }[];
+  getHighEntropyValues?: (hints: string[]) => Promise<Record<string, unknown>>;
+  model?: string;
+  platform?: string;
+}
 
 const parameters = new URLSearchParams(globalThis.location.search);
 const frames = readInteger("frames", FRAMES_PER_RUNG);
@@ -320,18 +335,132 @@ async function measureCullingRung(
   };
 }
 
+function observed(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim().length === 0)
+    throw new Error(`TN_BENCH_IDENTITY_MISSING:${field}`);
+  return value;
+}
+
+function resolveServedModuleUrl(specifier: string, parentUrl: string): string {
+  let resolved: URL;
+  try {
+    resolved = new URL(specifier, parentUrl);
+  } catch {
+    throw new Error(`TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:${specifier}`);
+  }
+  if (
+    resolved.protocol !== "http:" &&
+    resolved.protocol !== "https:" &&
+    resolved.protocol !== "data:"
+  ) {
+    throw new Error(`TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:${resolved.protocol}`);
+  }
+  return resolved.href;
+}
+
+async function servedModuleGraph(roots: readonly string[]): Promise<IModuleGraphEntry[]> {
+  const pending = [...roots];
+  const seen = new Set<string>();
+  const entries: IModuleGraphEntry[] = [];
+  while (pending.length > 0) {
+    const url = pending.shift();
+    if (url === undefined || seen.has(url)) continue;
+    seen.add(url);
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error(`TN_BENCH_IDENTITY_ARTIFACT_UNAVAILABLE:${response.status}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    entries.push({ bytes, url });
+    const source = new TextDecoder().decode(bytes);
+    for (const specifier of extractModuleSpecifiers(source)) {
+      pending.push(resolveServedModuleUrl(specifier, url));
+    }
+  }
+  return entries;
+}
+
+function inferArchitecture(platform: string): string {
+  if (/x86_64|amd64/i.test(platform)) return "x86_64";
+  if (/aarch64|arm64/i.test(platform)) return "arm64";
+  if (/arm/i.test(platform)) return "arm";
+  if (/x86|i[3-6]86/i.test(platform)) return "x86";
+  throw new Error(`TN_BENCH_IDENTITY_MISSING:architecture:${platform}`);
+}
+
+async function ladderIdentity(adapterLabel: string): Promise<Record<string, string>> {
+  const data = (navigator as unknown as { userAgentData?: IUserAgentData }).userAgentData;
+  const highEntropy =
+    data?.getHighEntropyValues === undefined
+      ? {}
+      : await data.getHighEntropyValues(["architecture", "model", "platform"]);
+  const operatingSystem = observed(
+    highEntropy.platform ?? data?.platform ?? navigator.platform,
+    "operatingSystem",
+  );
+  const architecture = observed(
+    highEntropy.architecture ?? data?.architecture ?? inferArchitecture(operatingSystem),
+    "architecture",
+  );
+  const browser = observed(navigator.userAgent, "browser");
+  const browserBrands = data?.brands?.map(({ brand, version }) => `${brand} ${version}`).join(", ");
+  const jsRuntime = observed(browserBrands || browser, "jsRuntime");
+  const gpu = observed(adapterLabel, "gpu");
+  const device = observed(
+    highEntropy.model || `${operatingSystem}-${architecture}-${gpu}`,
+    "device",
+  );
+  const sourceSha = observed(parameters.get("sourceSha"), "sourceSha");
+  const artifactModules = await servedModuleGraph([new URL(import.meta.url).href]);
+  const workloadGraph = await servedModuleGraph([
+    new URL("./game.ts", import.meta.url).href,
+    new URL("./workload.ts", import.meta.url).href,
+  ]);
+  const workloadModules = workloadGraph.filter(isBenchmarkWorkloadModule);
+  const artifactHash = await hashServedModuleGraph(artifactModules);
+  const workloadHash = await hashWorkloadModuleGraph(
+    workloadModules,
+    {
+      frames,
+      ladder,
+      modes,
+      repeats,
+      warmup,
+      workload: "moving-l2-l3-16384",
+      render: `${VIEWPORT_WIDTH}x${VIEWPORT_HEIGHT}`,
+    },
+    workloadGraph,
+  );
+  return {
+    architecture,
+    artifactHash,
+    browser,
+    device,
+    graphicsBackend: "WebGPU",
+    gpu,
+    instrumentationRevision: "engine-load-test-v2",
+    jsRuntime,
+    // Web reports use the served module identity for the comparator's binary slot.
+    nativeBinaryHash: artifactHash,
+    operatingSystem,
+    presentMode: parameters.get("vsync") === "on" ? "vsync" : "immediate",
+    resolution: `${canvas.width}x${canvas.height}`,
+    sourceSha,
+    workloadHash,
+  };
+}
+
 // Read from the adapter the browser actually handed out, never assumed: a run that silently fell
 // back to a software rasteriser must be visible in the published report (PRD-117 §4.5).
 async function describeAdapter(): Promise<string> {
   const gpu = (navigator as unknown as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
-  if (gpu === undefined) return "no webgpu";
+  if (gpu === undefined) throw new Error("TN_BENCH_IDENTITY_MISSING:gpu");
   const adapter = (await gpu.requestAdapter()) as { info?: Record<string, string> } | null;
   const info = adapter?.info;
-  if (info === undefined || info === null) return "unknown";
+  if (info === undefined || info === null) throw new Error("TN_BENCH_IDENTITY_MISSING:gpu");
   const parts = [info.vendor, info.architecture, info.device, info.description].filter(
     (part) => typeof part === "string" && part.length > 0,
   );
-  return parts.length === 0 ? "unknown" : parts.join(" / ");
+  if (parts.length === 0) throw new Error("TN_BENCH_IDENTITY_MISSING:gpu");
+  return parts.join(" / ");
 }
 
 async function main(): Promise<void> {
@@ -349,6 +478,9 @@ async function main(): Promise<void> {
   }
   const culling = await measureCullingRung(harness.renderer);
   console.info(`TN_CULLING_RUNG:${JSON.stringify(culling)}`);
+  const identity = parameters.has("sourceSha")
+    ? await ladderIdentity(harness.adapterLabel)
+    : undefined;
   const report = {
     arm: "tn-web",
     build: {
@@ -369,6 +501,7 @@ async function main(): Promise<void> {
     driver: { adapter: harness.adapterLabel, renderer: "three/webgpu WebGPURenderer" },
     engine: { name: "threenative", version: readVersion() },
     culling,
+    identity: identity,
     rungs,
   };
   (globalThis as unknown as Record<string, unknown>).__ENGINE_LOAD_TEST__ = report;

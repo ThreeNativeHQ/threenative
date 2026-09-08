@@ -288,8 +288,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-07 after SkeletalMesh3D became the AnimationPlayer returned by setup.
   // Recomputed 2026-09-07 after merging origin/main's networking transport with the PRD-361/362
   // delivery; values are from the current merged scaffold source.
-  // Recomputed 2026-09-08 after merging current origin/main 0aa072588 into the native coverage
-  // branch; values come from the merged scaffold tree after regeneration.
+  // Recomputed 2026-09-08 after merging current origin/main 340dcc29 (PRD-140 plus PRD-144)
+  // into PRD-358; values below come from the merged scaffold tree after regeneration.
   "action-rpg": "d3256b871744c1b36fdf6b83eeb93fc43eb326a3132fc7da621eaf6e03759eb3",
   defense: "5d9d221e37331e4519b5a0865a3575dc2acad02f6f494633259e12e141910bac",
   // Recomputed 2026-09-08 after merging origin/main c315ad343 into the native coverage branch;
