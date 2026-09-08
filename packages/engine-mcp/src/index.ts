@@ -15,6 +15,7 @@ export interface ICapabilityEntry {
   readonly example: string;
   readonly constraints: readonly string[];
   readonly overrides?: readonly string[];
+  readonly requires?: readonly string[];
 }
 
 export interface INotOwnedCapability {
@@ -35,6 +36,7 @@ export interface ICapabilitySearchResult {
   readonly summary: string;
   readonly example: string;
   readonly constraints: readonly string[];
+  readonly requires?: readonly string[];
   readonly matchedSituation: string;
   readonly score: number;
 }
@@ -288,9 +290,12 @@ function validateManifest(value: unknown, file: string): ICapabilityManifest {
       !Array.isArray(raw.situations) ||
       !Array.isArray(raw.aliases) ||
       !Array.isArray(raw.constraints) ||
+      (raw.requires !== undefined && !Array.isArray(raw.requires)) ||
       !raw.situations.every((situation) => typeof situation === "string") ||
       !raw.aliases.every((alias) => typeof alias === "string") ||
-      !raw.constraints.every((constraint) => typeof constraint === "string")
+      !raw.constraints.every((constraint) => typeof constraint === "string") ||
+      (Array.isArray(raw.requires) &&
+        !raw.requires.every((requirement) => typeof requirement === "string"))
     ) {
       throw manifestError(file, `entry ${index} is malformed`);
     }
@@ -654,6 +659,7 @@ export function searchCapabilities(
       example: entry.example,
       importPath: entry.importPath,
       matchedSituation,
+      ...(entry.requires === undefined ? {} : { requires: entry.requires }),
       score,
       summary: entry.summary,
       symbol: entry.symbol,

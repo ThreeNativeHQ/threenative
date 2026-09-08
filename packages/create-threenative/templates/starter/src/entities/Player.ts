@@ -1,4 +1,4 @@
-import type { ICtx } from "@threenative/core";
+import { type ICtx, mergeParts } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { Group, type Mesh, Vector3 } from "three";
 import { type IStarterConventions, preparePlayerConventions } from "../conventions.js";
@@ -46,7 +46,7 @@ export class Player {
     spawn: { readonly x: number; readonly y: number; readonly z: number } = SPAWN,
   ) {
     this.mesh = new Group();
-    this.visual = hero(materials);
+    this.visual = hero(materials, mergeParts);
     this.visual.castShadow = true;
     this.mesh.add(this.visual);
     this.mesh.position.set(spawn.x, spawn.y, spawn.z);

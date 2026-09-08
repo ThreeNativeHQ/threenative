@@ -164,7 +164,7 @@ function validateManifest(value, file) {
     );
   }
   for (const [index, raw] of value.entries.entries()) {
-    if (!isRecord(raw) || typeof raw.symbol !== "string" || typeof raw.package !== "string" || typeof raw.importPath !== "string" || typeof raw.kind !== "string" || typeof raw.signature !== "string" || typeof raw.summary !== "string" || typeof raw.example !== "string" || !Array.isArray(raw.situations) || !Array.isArray(raw.aliases) || !Array.isArray(raw.constraints) || !raw.situations.every((situation) => typeof situation === "string") || !raw.aliases.every((alias) => typeof alias === "string") || !raw.constraints.every((constraint) => typeof constraint === "string")) {
+    if (!isRecord(raw) || typeof raw.symbol !== "string" || typeof raw.package !== "string" || typeof raw.importPath !== "string" || typeof raw.kind !== "string" || typeof raw.signature !== "string" || typeof raw.summary !== "string" || typeof raw.example !== "string" || !Array.isArray(raw.situations) || !Array.isArray(raw.aliases) || !Array.isArray(raw.constraints) || raw.requires !== void 0 && !Array.isArray(raw.requires) || !raw.situations.every((situation) => typeof situation === "string") || !raw.aliases.every((alias) => typeof alias === "string") || !raw.constraints.every((constraint) => typeof constraint === "string") || Array.isArray(raw.requires) && !raw.requires.every((requirement) => typeof requirement === "string")) {
       throw manifestError(file, `entry ${index} is malformed`);
     }
   }
@@ -363,6 +363,7 @@ function searchCapabilities(situation, manifestFile = defaultManifestPath(), sco
     example: entry.example,
     importPath: entry.importPath,
     matchedSituation,
+    ...entry.requires === void 0 ? {} : { requires: entry.requires },
     score,
     summary: entry.summary,
     symbol: entry.symbol

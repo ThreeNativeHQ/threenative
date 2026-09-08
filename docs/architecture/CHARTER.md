@@ -264,7 +264,9 @@ orientation for hitscan streaks; surface cloned per slot, geometry and colour fr
 because canvas-painted images sample black under `WebGPURenderer` — the framework owns the trap,
 never what the sprite shows); **`InstancedBatch`** (transforms gathered before a count exists, one
 `InstancedMesh` built, bounds computed so the culler sees the batch; geometry and material held by
-reference so recolouring the game's material recolours every draw); **`clipPoseError`,
+reference so recolouring the game's material recolours every draw); **`mergeParts`** (placement,
+de-indexing, flat optional colour attributes and null-to-throw merge failure for one baked buffer;
+geometry, placement, colour and material all come from the game); **`clipPoseError`,
 `clipTrackBindings`, `clipBoneCoverage`, `boneContact`** (instruments that drive a clip, read the
 pose and report degrees, names and metres — they select no clip and move nothing); and
 **`Heightfield`** (one row-major buffer, interpolation, normals, and the ordering physics consumes;

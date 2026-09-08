@@ -233,6 +233,32 @@ export type {
   IInstancedPlacement,
 } from "./instanced-batch.js";
 /**
+ * Merge pieces a game authored out of primitives into one buffer, keeping each piece's own colour.
+ *
+ * `InstancedBatch` collapses many copies of one shape; this collapses many *different* shapes that
+ * never move relative to each other — a building, a ship, a character built from boxes. Two things
+ * go wrong every time and neither is about how any of it looks. `mergeGeometries` hands back
+ * `null` on mismatched inputs instead of throwing, and the usual mismatch is invisible: one
+ * `ExtrudeGeometry` is non-indexed while every other primitive is indexed, so the merge fails at
+ * the first piece and the scene never loads. And a merged buffer draws with one surface, so
+ * per-piece colour is gone unless every piece carries a flat `color` attribute written before the
+ * merge. Both are mechanical. Geometry, placement, colour and the surface it draws with all stay
+ * the game's.
+ *
+ * @situation bake a building, ship or character authored out of primitives into one draw call
+ * @situation merge many small geometries and keep each piece's own colour
+ * @situation stop mergeGeometries from silently returning null on an extruded shape
+ * @constraint every part is de-indexed and stripped to position, so UVs and authored normals do not survive; normals are recomputed from the merged buffer
+ * @constraint either every part names a color or none does, and a mix throws
+ * @constraint an empty part list throws, and a merge three.js refuses throws naming the label
+ * @override color is per part and optional; without it no colour attribute is written and the surface alone decides
+ * @example const wall = new Mesh(mergeParts(pieces, { label: "gatehouse" }), stone);
+ * // pieces are meshes, or { geometry, matrix, color } when the colour is per piece:
+ * const banner = mergeParts([{ color: 0x8b2f1a, geometry: cloth, matrix: placement }], { label: "banner" });
+ */
+export { mergeParts } from "./merge-parts.js";
+export type { IMergePart, IMergePartsOptions } from "./merge-parts.js";
+/**
  * Draw a model too detailed for the screen to resolve, without submitting the part it cannot.
  *
  * **This is on, and a game does not call it.** Any primitive of 65,536 triangles or more bakes to a
