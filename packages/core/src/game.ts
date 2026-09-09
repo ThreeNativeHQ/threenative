@@ -854,6 +854,35 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         await warmUp("TN_STARTUP_WARMUP_HELD", Math.round(STARTUP_COMPILE_BUDGET_MS / 3), false);
       },
     });
+    // The held loop starts before an explicit warm-up so the loading surface can animate. A native
+    // frame may therefore arrive while that pass is still awaiting a compile promise; keep first-use
+    // rendering and compute behind the same held boundary until the explicit pass has settled.
+    let explicitWarmUpSettled = !this.#warmUpConfiguredExplicitly();
+    // Once, not once per frame the world is still unrendered: a game that drops its cover at
+    // readiness re-enters this branch, and a marker that repeats stops being a signal.
+    let warmUpSkipReported = false;
+    // A connected UI may be a transparent gameplay HUD. Only the explicitly opaque
+    // CanvasLayer guarantees that deferring the world leaves a loading surface on screen.
+    const startupCoverActive = (): boolean => !startupReadiness.ready && canvasLayer.opaque;
+    /**
+     * The one render the compile walk cannot stand in for, offered only where it is invisible.
+     *
+     * `compileAsync` walks the main render list and nothing else, so the shadow pass and the
+     * output conversion are built the first time a frame actually draws. Drawing that frame while
+     * the startup layer still covers the canvas builds them with the loading surface animating,
+     * instead of inside the frame that used to freeze it.
+     *
+     * `undefined` unless the layer is opaque: a game whose loading surface is a transparent HUD
+     * would have this world frame presented to the player, and an early world is a look change
+     * bought for a compile.
+     */
+    const coveredFirstUseRender = (): (() => void) | undefined =>
+      startupCoverActive()
+        ? () => {
+            updateClusteredMeshes(projection.root, camera, renderer.surface().drawingBufferHeight);
+            renderer.render(projection.root, camera);
+          }
+        : undefined;
     const timeline: { -readonly [K in keyof IStartupTimeline]: IStartupTimeline[K] } = {};
     const now = (): number => globalThis.performance?.now() ?? Date.now();
     // Stamped when the FRAMEWORK is done, which is before `whenReady()` whenever the game has
@@ -887,6 +916,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         report = await warmUpScene(renderer, projection.root, camera, {
           budgetMs,
           computeNodes: this.#computeDriven.warmupNodes,
+          firstUseRender: coveredFirstUseRender(),
         });
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
@@ -908,6 +938,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 computeAbandoned: report.computeAbandoned,
                 computeUnsupported: report.computeUnsupported,
                 computeTimedOut: report.computeTimedOut,
+                firstUseRendered: report.firstUseRendered,
+                firstUseFailure: report.firstUseFailure,
                 cache: report.cache,
               },
         )}`,
@@ -1123,16 +1155,33 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // world pass and projection start together behind the still-opaque layer.
         let worldMetrics: IRenderPerformanceMetrics | undefined;
         const firstWorldPass = !worldRendered && this.#sceneEntered;
+        const explicitWarmUpPending = this.#warmUpConfiguredExplicitly() && !explicitWarmUpSettled;
         const loaderHasPixels = canvasLayer.scene.children.length > 0;
         const mustPresentLoader =
           firstWorldPass && canvasLayer.opaque && loaderHasPixels && !loadingFramePresented;
-        if (firstWorldPass) {
+        if (firstWorldPass && !explicitWarmUpPending) {
           // `startupCompile` is the fallback that compiles inside the readiness gate. When warm-up
           // is on it has already happened behind the loading screen, so running it again here
           // would pay the same cost twice.
-          startupReadiness.start(
-            canvasLayer.opaque && !this.#warmUpConfiguredExplicitly() ? startupCompile : undefined,
-          );
+          const covered = startupCoverActive() && !this.#warmUpConfiguredExplicitly();
+          // A game whose loading surface is a DOM overlay declares nothing to the engine, so the
+          // canvas reads as uncovered and this compile is skipped: without a cover the world draws
+          // on the first frame anyway, and warming up beside it would compile everything twice.
+          //
+          // That skip used to be silent, and the silence cost a device session. Measured on a
+          // Pixel 8: 101 pipelines built synchronously for 8,513 ms with no warm-up in the launch
+          // at all, while every marker in the log looked ordinary. A convention that switches
+          // itself off says so, on the same greppable line the warm-up would have used.
+          if (!covered && !this.#warmUpConfiguredExplicitly() && !warmUpSkipReported) {
+            warmUpSkipReported = true;
+            console.log(
+              `TN_STARTUP_WARMUP:${JSON.stringify({
+                skipped: "no-startup-cover",
+                opaque: canvasLayer.opaque,
+              })}`,
+            );
+          }
+          startupReadiness.start(covered ? startupCompile : undefined);
         }
         // Render-cadence compute is first-use work too: keep it behind an opaque startup layer
         // until readiness settles, or a particle process dispatch compiles in the loader frame.
@@ -1146,14 +1195,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (
           this.#renderer !== undefined &&
           this.#sceneEntered &&
-          (!canvasLayer.opaque || startupReadiness.ready)
+          !explicitWarmUpPending &&
+          (!startupCoverActive() || startupReadiness.ready)
         ) {
           const computeStart = frameBudget === undefined ? 0 : budgetNow();
           this.#computeDriven.processRender(this.#renderer);
           frameBudget?.addRender(budgetNow() - computeStart);
         }
         const waitingForFirstUse =
-          firstWorldPass && canvasLayer.opaque && !startupReadiness.compileSettled;
+          firstWorldPass &&
+          (explicitWarmUpPending || (startupCoverActive() && !startupReadiness.compileSettled));
         if (
           !mustPresentLoader &&
           !waitingForFirstUse &&
@@ -1243,7 +1294,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();
         const computeBlockedByStartup =
-          !worldRendered && canvasLayer.opaque && !this.#warmUpConfiguredExplicitly();
+          !worldRendered &&
+          ((this.#warmUpConfiguredExplicitly() && !explicitWarmUpSettled) ||
+            (startupCoverActive() && !this.#warmUpConfiguredExplicitly()));
         if (this.#renderer !== undefined && this.#sceneEntered && !computeBlockedByStartup)
           this.#computeDriven.process(this.#renderer);
       },
@@ -1379,6 +1432,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         report = await warmUpScene(this.#renderer, projection.root, camera, {
           ...warmUpOptions,
           computeNodes: [...(warmUpOptions.computeNodes ?? []), ...this.#computeDriven.warmupNodes],
+          firstUseRender: warmUpOptions.firstUseRender ?? coveredFirstUseRender(),
         });
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
@@ -1401,10 +1455,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 computeAbandoned: report.computeAbandoned,
                 computeUnsupported: report.computeUnsupported,
                 computeTimedOut: report.computeTimedOut,
+                firstUseRendered: report.firstUseRendered,
+                firstUseFailure: report.firstUseFailure,
                 cache: report.cache,
               },
         )}`,
       );
+      explicitWarmUpSettled = true;
       if (this.#aborted) {
         this.#teardown(ctx);
         return;

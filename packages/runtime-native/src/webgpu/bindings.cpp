@@ -2027,23 +2027,25 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                         "device.lost"
                     );
                     state->engine->setProperty(device, "lost", deviceLostPromise);
-                    // Install the production frame recorder after every native method exists.
-                    // This ordering is deliberate: shared prototypes return early while wrappers
-                    // are built, so pass-local installation was a dead path. The device/queue
-                    // entry points are the stable surface that every command must cross through.
-                    const auto installer = evalEmbeddedRuntimeScriptWithResult(
-                        *state->engine, "frame-op-stream", "frame-op-stream.js");
-                    const auto host = state->engine->newObject();
-                    state->engine->setProperty(host, "device", device);
-                    state->engine->setProperty(host, "queue", queue);
-                    const auto drain = state->engine->call(
-                        installer, state->engine->newUndefined(), {host});
-                    if (!drain.ptr || state->engine->isNull(drain) || state->engine->hasException()) {
-                        state->engine->throwException("frame op stream: production recorder installation failed");
-                        return state->engine->newUndefined();
+                    if (!state->profiling.disableFrameOpStreamForTesting) {
+                        // Install the production frame recorder after every native method exists.
+                        // This ordering is deliberate: shared prototypes return early while wrappers
+                        // are built, so pass-local installation was a dead path. The device/queue
+                        // entry points are the stable surface that every command must cross through.
+                        const auto installer = evalEmbeddedRuntimeScriptWithResult(
+                            *state->engine, "frame-op-stream", "frame-op-stream.js");
+                        const auto host = state->engine->newObject();
+                        state->engine->setProperty(host, "device", device);
+                        state->engine->setProperty(host, "queue", queue);
+                        const auto drain = state->engine->call(
+                            installer, state->engine->newUndefined(), {host});
+                        if (!drain.ptr || state->engine->isNull(drain) || state->engine->hasException()) {
+                            state->engine->throwException("frame op stream: production recorder installation failed");
+                            return state->engine->newUndefined();
+                        }
+                        state->engine->freezeHandle(drain);
+                        state->profiling.frameOpStreamDrain = drain;
                     }
-                    state->engine->freezeHandle(drain);
-                    state->profiling.frameOpStreamDrain = drain;
                     // Install lifecycle wrappers last: destroy must invalidate the JS buffer
                     // immediately while the recorder still orders backend destruction after submit.
                     {

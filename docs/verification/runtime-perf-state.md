@@ -235,6 +235,35 @@ Pixel 8 was unreachable.
 
 ---
 
+## PRD-360 corrected explicit warm-up boundary — 2026-09-08
+
+The one bounded object-granularity validation was repeated after fixing a first-use race in
+`packages/core/src/game.ts:860`, `:1138`, `:1171` and `:1262`. A held native frame could arrive
+after an explicit warm-up began but before it settled; the render path now keeps first-use compute
+and world presentation behind that same boundary. The regression is at
+`packages/core/__tests__/game.spec.ts:545`.
+
+The unchanged Bayview source temporarily selected the existing object granularity. The qualified
+Pixel 8 run used APK SHA-256
+`2a64ede5cf0699580e8e62506b054f0c8e046c7084fb4244f42ea5c6b1394496`, with 81% battery,
+discharging status, thermal status `NONE`, and battery temperature 33.5 °C to 33.9 °C. The
+existing movement scenario passed at **2.146682 m** with zero diagnostics. The full raw receipt is
+[`android-object-corrected-receipt.json.gz`](prd-360-warmup-cache-2026-09-07/android-object-corrected-receipt.json.gz).
+
+| marker | observed |
+| --- | ---: |
+| `TN_WARMUP` compiled / slices / elapsed | 494 / 21 / 11,659 ms |
+| `TN_COLD_START.first_frame` | 19,629.400 ms |
+| `TN_PUMP_SILENCE.maxGapMs` / trailing gap | 2,339.194 / 5,551.419 ms |
+| movement `TN_PUMP_ENDPOINT.maxGapMs` | 5,560.916 ms |
+
+There was one `TN_WARMUP` marker and no `TN_STARTUP_WARMUP` marker, so the duplicate fallback pass
+was removed. The run still misses the 8,000 ms launch and 250 ms pump criteria. It is a corrected
+validation receipt, not a three-launch cold-install median; the object option was removed from the
+sandbox after measurement and remains opt-in.
+
+---
+
 ## Android: the GPU meter reports on a Pixel 8 — 2026-09-01
 
 **First GPU reading taken from a phone by the instrument rather than by ablation arithmetic.**
@@ -3895,7 +3924,7 @@ changed for it.
 
 ## Bayview startup after dependency repairs — 2026-09-07
 
-The [consolidated PRD-360](../PRDs/batch-2026-09-05/PRD-360-android-launch-is-playable-within-eight-seconds.md)
+The [consolidated PRD-360](../PRDs/done/PRD-360-android-launch-is-playable-within-eight-seconds.md)
 records one physical Pixel 8 run: first frame 16,020.007 ms, pipeline compilation
 8,404.781 ms across 93 calls, and frame-stall residual 4,917.275 ms. The retained
 `artifacts/findings-fix/green-host-uninterrupted.log` also reports pump `maxGapMs:15708.693`.
@@ -3943,7 +3972,7 @@ into it on September 8 at the owner's request.
 Read-only inspection of current source, installed sandbox packages and retained experiment logs;
 no new build, phone launch or optimization was executed. The owner requested a consolidated retry
 plan, not retirement of the eight-second criterion. The single execution plan is
-[PRD-360](../PRDs/batch-2026-09-05/PRD-360-android-launch-is-playable-within-eight-seconds.md).
+[PRD-360](../PRDs/done/PRD-360-android-launch-is-playable-within-eight-seconds.md).
 
 ### Build and asset provenance
 
@@ -4018,3 +4047,207 @@ with existing cooking overrides, then choose one supported cooking, scene-constr
 first-use-compilation lever from an aligned critical-path breakdown. Preserve all three rejected
 experiments and their stop rule. Neither an unavoidable hardware floor nor eight-second
 feasibility is established. No new runtime acceptance is claimed by this documentation change.
+
+## PRD-360 Phase 1 retry checkpoint — 2026-09-08
+
+This lane re-established the measurement provenance and ran the available fail-closed checks. It
+did not reach a physical launch, so it claims no scheduler repair, launch timing, pump budget, or
+acceptance result. The source PRD remains the authority for the required three-run phone protocol.
+
+### Subject and artifact provenance
+
+- Engine checkout: `76321e46d93f8ece59528315e83b17a644b7a77b`.
+- Candidate Bayview checkout: `/home/joao/projects/threenative/sandbox/prd360-bayview-live`,
+  `ef71572c59fdaf730e1c037fcba4129ef49876f6`. Its source, asset and package tree is untracked,
+  so it is not a clean A/B subject and no performance number is attributed to it.
+- Retained APKs `artifacts/experiment-3.apk` and `dist-native/fps-framework.apk` are byte-identical:
+  SHA-256 `5f6ac0106868013437b97b00854e50ec69b8162187006cc2693378449b1855df`.
+- Retained game bundle `.threenative/build/game.js`: SHA-256
+  `b11c5753e1b7a4570dfb7e4bf176b52ebb59b89b73cbac9ea36332d69e33c7c0`.
+- The bundle and APK are retained provenance only. The APK is not asserted to carry the current
+  observer or to represent a cold-install candidate.
+
+The engine dependency bootstrap `pnpm install --frozen-lockfile` completed in 4.6 seconds. The
+repository build `pnpm build`, the playtest build
+`pnpm --filter @threenative/playtest build`, and `node packages/playtest/dist/runner/cli.js doctor
+--text` completed successfully. The doctor reported the expected missing `xcrun` warning; Node,
+Playwright, Chromium, display and adb checks passed. Rebuilt package identities were recorded as:
+
+```text
+core       320ba88af5327d386ff42ea8e93e7b7c0b50234e30a2c13a72623d7617d240f5
+assets     e66be010846febca72999eccc7ebed5c8bebcdb75fc9b305354cdc3c68d296ab
+ui         788184bef642849a30baab1abe3a8443f390306a673bd9ec6455eed16a068d89
+playtest   7c8d12185a12656384b934131561d128920e241c5a1140a5816e8e1a2904c233
+create     565bdc999e2377aec098e8fd80ea0e1be42564b39730f55b72e8b40cabc378f1
+```
+
+### Checks that ran without a device
+
+- The focused evaluator suites passed `18/18` tests.
+- The staged validator at
+  `artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/` passed `32/32` cases,
+  including movement, visible-world, pump-correlation, arm-identity, clock, runner, Android-target
+  and preflight negative controls. This validates the evaluator; it is not game evidence.
+- `node packages/runtime-native/scripts/measure-cold-start.mjs --desktop --launches 1` failed
+  closed with `TN_COLD_START_LAUNCHES_INVALID`, as required for an invalid one-launch request.
+- The Android measurement using the recorded serial `192.168.1.192:5555` failed closed with
+  `TN_DEVICE_PREFLIGHT_NO_DEVICE`. `adb devices -l` was empty and the device was unreachable; no
+  install, launch, first frame, movement or pump observation occurred.
+
+The first native-runtime test attempt was setup-blocked by the unbuilt host and produced unrelated
+build-dependent failures. After the opt-in V8 host, all V8 contract targets, and the QuickJS
+cross-engine targets were built, the same package lane passed:
+
+```text
+Test Files  105 passed (105)
+Tests  851 passed | 57 skipped (908)
+packages/physics/__tests__/parity.spec.ts: 29 passed
+Rust physics parity: 14 unit tests + 2 parity tests passed
+publint: All good!
+```
+
+The repository gates then passed `pnpm typecheck`, `pnpm lint` (653 existing warning diagnostics,
+no errors), `pnpm build`, `pnpm budgets`, and `pnpm test` (`406 passed, 2 skipped` files;
+`4,658 passed, 8 skipped` tests). The Android retry still fails closed with
+`TN_DEVICE_PREFLIGHT_NO_DEVICE`; no physical launch occurred. Phase 1 therefore remains open.
+The next actionable step is to choose or rebuild a clean observer-carrying Bayview subject, then
+rerun the prescribed three cold phone launches when a qualified device is reachable. See the
+[PRD-360 protocol](../PRDs/done/PRD-360-android-launch-is-playable-within-eight-seconds.md)
+and the [tracked evaluator source](prd-360-startup-2026-09-05/validate-evaluator.mjs.txt).
+
+## 2026-09-08 startup cost and heat investigation
+
+The user now asks whether launch does avoidable work and why the phone heats; eight seconds is
+not a demonstrated hardware floor. PRD-360 remains PARTIAL. Reproduction and next bounded
+implementation steps are in the [Opus handoff](prd-360-startup-cost-2026-09-08/README.md), with
+[compact raw receipts](prd-360-startup-cost-2026-09-08/receipts.json.gz).
+
+| Observation | Executed evidence | Limit |
+| --- | --- | --- |
+| Pixel first world frame | 16,706.799ms recorded run; 15,490.298ms unrecorded thermal run | Retained package/process launches, not three qualified cold installs |
+| Unrecorded launch cost | 103 synchronous pipelines: 8,788.235ms; shader modules 384.255ms; textures 122.832ms; buffers 120.518ms | Remaining ~3,684ms is unattributed JS/waits/other work, not proven CPU waste |
+| Pump silence | Recorded run: one pump, trailing 16,307ms | `maxGap=0` alone hides a monolithic first draw |
+| CPU startup profile | Pixel, 12s at 99Hz, 2,663 samples, zero lost; Mali 43.77%, V8 27.26%, libc 14.77% sampled cycles | Cycle shares, not wall time; no steady-state profile |
+| Native build | Actual compile commands: -O2, TN_ANDROID_VSYNC=1, busy-loop=0, JS profile=0 | Debug APK does not imply unoptimized C++ |
+| Warm-up coverage | RTX 2080 Vulkan: both warm-up granularities build 2 async mesh + 2 sync PMREM pipelines; first render still builds 2 sync shadow/output pipelines | Tiny matching scene, six runs; Android counts must be measured independently |
+| Warm-up report meaning | Four reported “pipelines” map to two mesh pipelines in the probe | Report counts representative renderables; previous 494 is not 494 native pipelines |
+| Duplication | Six unique pipeline keys and twelve shader modules per probe process, identical across arms; no duplicate key | Does not exclude duplicates in the full game |
+| Visual control | Desktop captures: pixel mismatch 0 and delta-E 0 in both warm arms versus no warm-up | Counts support undercoverage; total warm-up wall was not faster on this GPU |
+| Heat control | 20s idle / 70s game / 90s stopped; median device power 1.104 / 6.443 / 1.1305W; launch sample 9.567W | Whole-device estimate, not app-only heat; already LIGHT thermal status |
+| Temperature | Battery 39.0°C initially, max 39.3°C, final 39.2°C; power back near 1.1W within 10s stopped | Rapid temperature rise not reproduced; battery temperature lags power |
+| Gameplay activity | App ~119–136% CPU, WebView 21–29%, ~45–48 FPS | 100% is one CPU core; maxFps 240 does not mean it rendered 240 |
+
+### 101 pipelines are 96 distinct shader programs — 2026-09-08
+
+[The shape census](prd-360-startup-cost-2026-09-08/pipeline-shapes.md) closes the last framework
+question. Grouping every created pipeline by its vertex/fragment WGSL hash on a physical Pixel 8:
+**101 pipelines, 96 distinct programs**, five programs used twice, and each of those five sees
+exactly one render state. There is no permutation to collapse and nothing to deduplicate.
+
+    8,513 ms  =  96 distinct shader programs -> 101 pipelines  x  ~84 ms of Mali compile each
+
+Scheduling cannot help, deduplication cannot help, and a persistent pipeline cache is unavailable in
+the pinned wgpu-native. What is left is the game's distinct-material count, which decides how it
+looks, and the driver's per-pipeline cost — neither in `packages/`. The eight-second criterion is
+unmet and gated outside the framework.
+
+### Every warm-up shape loses to no warm-up on this device — 2026-09-08
+
+The third lever was measured on the Pixel 8 and lost, closing the handoff's list.
+
+| Warm-up shape | Cost on the Pixel 8 |
+| --- | --- |
+| **none** — the first frame compiles synchronously | **8,513 ms**, 101 pipelines, complete |
+| `scene` granularity | 15,028 ms complete, or 20,988 ms with `{"compiled":0,"abandoned":1,"timedOut":true}` |
+| `object` granularity, 4 in flight | 15,012 ms, `{"compiled":449,"abandoned":45,"timedOut":true}` |
+
+Desktop walked the same object granularity in 2,291 ms and the phone did not finish it in 15,012 ms,
+so the desktop/device contradiction resolves in the device's favour. **three's `compileAsync` is
+slower than the synchronous compilation it exists to replace on this device**, which is a finding
+rather than a tuning problem. How the 15,012 ms splits between the walk and pipeline creation is not
+established — creating the pipelines is 8,513 ms of it, and attributing the rest would need its own
+instrumented run.
+
+Closed with evidence: a persistent driver pipeline cache is not reachable — the pinned wgpu-native
+header has no cache-creation entry point, only `pipelineCaches` as a `WGPURegistryReport` field
+(`packages/runtime-native/third_party/wgpu/include/webgpu/wgpu.h:217`). What is left is fewer
+distinct pipelines, which is a game-side authoring decision about how the game looks, and the
+per-pipeline Mali cost of ~84 ms, which is outside this repository.
+
+### Compile concurrency measured, granularity is the bigger number — 2026-09-08
+
+[Bounded compile concurrency](prd-360-startup-cost-2026-09-08/compile-concurrency.md), the handoff's
+third lever, on the desktop native host with the real Bayview scene.
+
+| Observation | Executed evidence | Limit |
+| --- | --- | --- |
+| Concurrency | object granularity 490 compiled: **2,291 ms at 1 in flight, 2,118 ms at 4** — 7.5 % | Desktop RTX 2080, one run per arm |
+| Granularity | the shipped whole-scene call costs **8,480 ms** against object granularity's 2,291 ms — **3.7×** | Object granularity has measured *worse* on device before (19,629 ms first frame); unresolved |
+| Why the lever exists | three compiles one object at a time while the host pool runs **two** threads, so one worker idles | Verified in source, not inferred |
+
+`compileConcurrency` ships **opt-in at 1** and `granularity` stays `"scene"`; neither default moved,
+because the device measurement that would justify one has not been run. PRD-360 remains PARTIAL.
+
+### Warm-up lever rejected on hardware — 2026-09-08
+
+[The A/B](prd-360-startup-cost-2026-09-08/warm-up-rejected.md) turned the warm-up on by declaring
+the DOM loading surface as a cover, one game-side line, same engine both arms.
+
+| Observation | Executed evidence | Limit |
+| --- | --- | --- |
+| Candidate is worse | Warm-up ran **20,988 ms** and returned `{"compiled":0,"abandoned":1,"timedOut":true}`; an earlier launch gave 15,028 ms and `compiled:1` — against the baseline's 8,513 ms of synchronous first-frame compilation | One cold launch per arm plus one earlier candidate run; no thermal window |
+| Game unaffected | Movement passes identically on both arms, `distance 2.1467 m`, `frames 70` | A launch-cost rejection, not a correctness one |
+| Corrected ranking | `compileAsync`'s serial 490-renderable walk is **slower than the sync compile it replaces**; it is now the only lever left | The census's "no warm-up is worth up to 8,513 ms" was an upper bound and is contradicted |
+
+The census's ranking below is superseded by this row. Nothing was removed to produce a number, and
+the sandbox, its engine and the device were restored to as-found. PRD-360 remains PARTIAL and unmet.
+
+### Pixel 8 pipeline census — 2026-09-08
+
+[The census](prd-360-startup-cost-2026-09-08/pixel-census.md) instrumented the real Bayview build on
+a physical Pixel 8 and re-ranked the whole investigation.
+
+| Observation | Executed evidence | Limit |
+| --- | --- | --- |
+| Composition of the launch compile | 101 pipelines, **101 unique cache keys**, 8,513 ms, all synchronous: main **67 / 7,477 ms**, shadow **31 / 963 ms**, PMREM 2 / 50 ms, output 1 / 23 ms | One cold launch of a debug APK; counts, not a candidate measurement |
+| Duplication | **None** — every pipeline has a distinct cache key | Closes the handoff's duplication question |
+| Async settlement | **0 of 101** went through `compileAsync`'s async path | Explained by the row below, not by wgpu-native |
+| Root cause | **This launch runs no warm-up.** `startupCoverActive()` requires `canvasLayer.opaque`, which a DOM loading surface never sets, so `startupCompile` is never started | Source-derived and covered by an existing test; the fix is not yet made |
+| Prize, ranked | no warm-up **8,513 ms** > shadow/output coverage **986 ms (11.6 %)** > serial scheduling, untestable until a warm-up runs | No A/B was run |
+
+The skip is now reported rather than silent — `TN_STARTUP_WARMUP:{"skipped":"no-startup-cover",…}` —
+with a red/green in `packages/core/__tests__/game.spec.ts`. PRD-360 stays PARTIAL; no launch budget
+is claimed and no candidate build was measured.
+
+### First-use compile coverage — 2026-09-08
+
+One lever from that handoff is implemented and measured on desktop:
+[first-use compile coverage](prd-360-startup-cost-2026-09-08/first-use-coverage.md). `compileAsync`
+walks the main render list only, so the shadow pass and the output conversion were built
+synchronously inside the first drawn frame while the warm-up reported `abandoned: 0,
+timedOut: false`. `warmUpScene` now takes a caller-supplied `firstUseRender`, run once at the end
+of the warm-up window after a yielded frame, and reports whether it ran; `game.ts` supplies it only
+behind an opaque startup layer.
+
+| Observation | Executed evidence | Limit |
+| --- | --- | --- |
+| Coverage moved | RTX 2080 Vulkan, same probe scene: `render-1` builds **2 synchronous pipelines** in the shipped default and **0** with the seam; the warm-up phase goes 4 → 6 pipelines and 13 → 16 passes | Desktop Vulkan only; the Mali per-pipeline cost that makes this matter is unmeasured |
+| Appearance | `pixelMismatchRatio=0`, `perceptualDeltaE=0` against the untouched no-warm control in both arms | One 1280×720 capture per arm |
+| Red/green | `warmup.spec.ts` 5 failed / 19 passed before, 24 passed after; `typecheck`, `lint` (653 pre-existing warnings) and `test` (4,669 passed, 5 skipped) all exit 0 | Unit and probe evidence; no playtest scenario and no device run |
+| Bayview benefit | **None yet.** Its loading surface is a transparent React HUD, so `canvasLayer.opaque` is false and no seam is supplied | The lever cannot be measured on that game until it declares an opaque startup layer |
+
+No device run was made — the phone's owner needed it — so PRD-360 stays PARTIAL and no launch
+budget is claimed. The serial `compileAsync` loop is untouched and remains the other open lever.
+
+The real game has ACES/exposure and no `setOutputNode` post chain. The speculative custom-post
+pipeline hypothesis does not apply. Three's patched compileAsync awaits per-object work serially;
+increasing the native pool alone is not a demonstrated remedy. Investigate actual Pixel coverage,
+bounded overlapping compilation and residual V8 work before claiming the hardware is saturated.
+
+The UI regression is fixed in engine and sandbox source, with red-green evidence and final APK
+identity in the handoff. Android movement passes (2.146126m); its startup-ready observation is
+16,010.673ms. This fixes ordering and honest asset progress, not startup performance acceptance.
+
+Final browser verification passed with `--headed --browser-recipe webgpu`: NVIDIA Turing adapter,
+2.146695m movement, no diagnostics, exit 0. The earlier headless retry selected SwiftShader and
+failed; its movement alone was not accepted. Both outputs and adapter identity are retained.

@@ -72,6 +72,51 @@ List of devices attached
 Because the device was unavailable, no physical cache-hit timing is reported. The new marker is an
 opt-in hint for the platform driver's own persistent cache, not a serialized WebGPU pipeline.
 
+## Corrected object-granularity validation — 2026-09-08
+
+The explicit warm-up caller was temporarily set to `warmUp: { granularity: "object" }` in the
+unchanged Bayview source to exercise the existing object path. The engine lane then fixed the
+first-use race at `packages/core/src/game.ts:860`, `:1138`, `:1171` and `:1262`: while that explicit
+warm-up is pending, the held render path may present the loading layer but cannot start startup
+readiness, compute or the world render. The regression is covered by
+`packages/core/__tests__/game.spec.ts:545`.
+
+The test was red before the fix because the held frame rendered the world:
+
+```text
+FAIL packages/core/__tests__/game.spec.ts > IGame > holds first-use rendering until an explicit warm-up finishes
+AssertionError: received ["overlay", "world", "overlay"]; expected ["overlay", "overlay"]
+```
+
+The focused test is green after the fix:
+
+```text
+pnpm exec vitest run packages/core/__tests__/game.spec.ts -t 'holds first-use rendering until an explicit warm-up finishes'
+✓ 1 passed
+```
+
+The corrected physical receipt used APK SHA-256
+`2a64ede5cf0699580e8e62506b054f0c8e046c7084fb4244f42ea5c6b1394496` on
+Pixel 8 `192.168.1.192:5555`. The device stayed qualified throughout: 81% battery, discharging,
+thermal status `NONE`, and 33.5 °C to 33.9 °C. The existing movement scenario passed with
+**2.146682 m** displacement and zero diagnostics. The raw console and mailbox receipt is retained
+in [`android-object-corrected-receipt.json.gz`](android-object-corrected-receipt.json.gz), whose
+SHA-256 is `eb5da223f8f97ca4100aec10273dc0e9ad11bb6091414f11c02168ad4aaeb763`.
+
+Its timing markers were:
+
+```text
+TN_WARMUP:{"compiled":494,"slices":21,"elapsedMs":11659,"cache":"disabled"}
+TN_COLD_START:{"segment":"first_frame","atMs":19629.400}
+TN_PUMP_SILENCE:{"observed":true,"maxGapMs":2339.194,"trailingGapMs":5551.419}
+TN_PUMP_ENDPOINT:{"requestMethod":"advance","maxGapMs":5560.916}
+```
+
+There was one `TN_WARMUP` marker and no `TN_STARTUP_WARMUP` marker, confirming that the race fix
+removed the duplicate fallback pass. The object path still misses both budgets, so this is a
+corrected validation of the same bounded lever rather than an acceptance sample or a new default.
+The temporary sandbox option was removed after the run.
+
 ## Follow-up — CI fixture hygiene, 2026-09-07
 
 The `supply-chain` job was red on this branch: gitleaks' `generic-api-key` rule matched the

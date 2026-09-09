@@ -93,6 +93,43 @@ export interface IWarmUpOptions {
    */
   readonly granularity?: "scene" | "object";
   /**
+   * Draw one real frame at the end of the warm-up window, for the first-use work a compile walk
+   * cannot reach.
+   *
+   * `compileAsync` walks the main render list only (three 0.185.1,
+   * `build/three.webgpu.js:60185`-`:60245`). Two kinds of pipeline are therefore never reached by
+   * it: the shadow pass, which is rendered from the light's own node update inside `render()`
+   * (`:45416`, `:45521`), and the output conversion that resolves the frame to the canvas. Both
+   * are built synchronously the first time a frame draws — measured on an RTX 2080 with the real
+   * game's render shape, both warm-up granularities compiled 4 pipelines and the first frame
+   * still built 2 more inside itself.
+   *
+   * The seam is the caller's because only the caller knows whether the frame it is about to draw
+   * is hidden. The engine supplies it while an opaque startup layer covers the canvas; a game
+   * whose loading surface is a transparent HUD gets none, because an early world frame there
+   * would be a look change bought for a compile.
+   */
+  /**
+   * How many per-object compiles may be in flight at once. Default 1, which is the serial walk.
+   *
+   * Measured on a Pixel 8: the native host runs a **two-thread** pipeline compile pool
+   * (`packages/runtime-native/src/webgpu/bindings_pipelines.cpp:229`), and three's own
+   * `compileAsync` awaits each object's pipeline promises before starting the next
+   * (`three.webgpu.js:60259`, `:60278`, `:60285`), so one job is ever queued and one worker ever
+   * runs. Raising this issues the next object's compile without waiting for the previous one, so
+   * the pool has something to do.
+   *
+   * **Two is the ceiling that can help.** The pool runs at most two jobs, and one on a host with two
+   * hardware threads or fewer, so anything above that only lengthens the request queue.
+   *
+   * The default is deliberately 1 until a measurement chooses a better one: a default that is a
+   * constant nobody measured is the bug this option exists to avoid shipping. On a Pixel 8 no value
+   * has beaten not warming up at all — see
+   * `docs/verification/prd-360-startup-cost-2026-09-08/compile-concurrency.md`.
+   */
+  readonly compileConcurrency?: number;
+  readonly firstUseRender?: () => void;
+  /**
    * Remember a completed warm-up so a later launch can trust the driver's persistent cache.
    * This is opt-in because WebGPU does not expose a portable pipeline-serialization API.
    */
@@ -142,6 +179,16 @@ export interface IWarmUpReport {
   readonly computeUnsupported?: boolean;
   /** True when compute warm-up consumed the startup budget. Present only when computeNodes was set. */
   readonly computeTimedOut?: boolean;
+  /**
+   * Whether the first-use render ran to completion. Present only when `firstUseRender` was set.
+   *
+   * Reported rather than assumed, because the number this warm-up exists to move is invisible
+   * otherwise: a report of `abandoned: 0, timedOut: false` used to be returned by a warm-up that
+   * left the shadow and output pipelines to the first frame, and nothing in it said so.
+   */
+  readonly firstUseRendered?: boolean;
+  /** Why the first-use render did not complete. Present only when it failed rather than ran. */
+  readonly firstUseFailure?: string;
   /** The optional persistent warm-up hint's outcome. */
   readonly cache?: WarmUpCacheStatus;
 }
@@ -531,6 +578,14 @@ export async function warmUpScene(
       )}.`,
     );
   }
+  const compileConcurrency = options.compileConcurrency ?? 1;
+  if (!Number.isInteger(compileConcurrency) || compileConcurrency < 1) {
+    throw new Error(
+      `TN_WARMUP_CONCURRENCY_INVALID: compileConcurrency must be a whole number of compiles of at least one, received ${String(
+        options.compileConcurrency,
+      )}.`,
+    );
+  }
   const compileTimeoutMs = options.compileTimeoutMs ?? DEFAULT_COMPILE_TIMEOUT_MS;
   const budgetMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
   for (const [name, value] of [
@@ -547,6 +602,37 @@ export async function warmUpScene(
   const yieldFrame = options.yieldFrame ?? yieldToHost;
   const startedAt = now();
   const computeNodes = options.computeNodes ?? [];
+  /**
+   * The compile walk's blind spot, drawn rather than inferred.
+   *
+   * A frame first, so the loading surface presents once more before the work that used to freeze
+   * it; then one render, inside what is left of the budget. Failures are reported, never thrown:
+   * this runs on the launch path, and the one thing a warm-up must never do is stop the game from
+   * starting.
+   */
+  const runFirstUse = async (
+    report?: IWarmUpReport,
+  ): Promise<{ firstUseRendered: boolean; firstUseFailure?: string } | undefined> => {
+    const render = options.firstUseRender;
+    if (render === undefined) return undefined;
+    // A warm-up that already ran out of budget releases the game rather than spending more of it
+    // on a render: the launch must never be worse for having tried to optimize it.
+    const spent =
+      report?.timedOut === true ||
+      report?.computeTimedOut === true ||
+      now() >= startedAt + budgetMs;
+    if (spent) return { firstUseRendered: false };
+    await yieldFrame();
+    try {
+      render();
+    } catch (error) {
+      return {
+        firstUseRendered: false,
+        firstUseFailure: error instanceof Error ? error.message : String(error),
+      };
+    }
+    return { firstUseRendered: true };
+  };
   const pipelines = collectRenderables(scene).length;
   const cacheIdentity = warmUpCacheIdentity(options.cache);
   let cacheStatus = readWarmUpCache(cacheIdentity, pipelines, computeNodes.length);
@@ -557,6 +643,9 @@ export async function warmUpScene(
   if (cacheStatus === "hit" && typeof renderer.compileAsync === "function") {
     const computeSupported = computeNodes.length === 0 || computeAsyncOf(renderer) !== undefined;
     if (computeSupported) {
+      // A hit skips the compile walk, not the first-use work: the driver's own cache may hold
+      // every pipeline this process is about to ask for, and it still has to be asked.
+      const firstUse = await runFirstUse();
       const report: IWarmUpReport = {
         compiled: 0,
         pipelines,
@@ -566,6 +655,7 @@ export async function warmUpScene(
         abandoned: 0,
         timedOut: false,
         cache: "hit",
+        ...(firstUse ?? {}),
         ...(computeNodes.length === 0
           ? {}
           : {
@@ -606,19 +696,24 @@ export async function warmUpScene(
   }
   const compileAsync = renderer.compileAsync.bind(renderer);
 
-  const finish = (report: IWarmUpReport): IWarmUpReport => {
+  const finish = async (report: IWarmUpReport): Promise<IWarmUpReport> => {
+    const firstUse = await runFirstUse(report);
+    const covered = { ...report, ...(firstUse ?? {}) };
+    // A stored hint makes the next launch skip the whole walk. Storing one for a warm-up that
+    // left the first frame to compile shadows would make that launch worse, and silent about it.
     const complete =
-      !report.unsupported &&
-      !report.timedOut &&
-      report.abandoned === 0 &&
-      report.computeUnsupported !== true &&
-      report.computeTimedOut !== true &&
-      (report.computeAbandoned ?? 0) === 0;
+      !covered.unsupported &&
+      !covered.timedOut &&
+      covered.abandoned === 0 &&
+      covered.computeUnsupported !== true &&
+      covered.computeTimedOut !== true &&
+      (covered.computeAbandoned ?? 0) === 0 &&
+      covered.firstUseRendered !== false;
     const finalCache =
       complete && cacheIdentity !== undefined
         ? storeWarmUpCache(cacheIdentity, pipelines, computeNodes.length)
         : cacheStatus;
-    return { ...report, cache: finalCache };
+    return { ...covered, cache: finalCache };
   };
 
   // One call, the whole scene: the default, and the only granularity measured to be affordable.
@@ -629,7 +724,7 @@ export async function warmUpScene(
     if (compute === undefined) {
       const finished = await within(compileAsync(scene, camera), budgetMs, yieldFrame, now);
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-      return finish({
+      return await finish({
         compiled: finished ? 1 : 0,
         pipelines,
         slices: 1,
@@ -643,7 +738,7 @@ export async function warmUpScene(
     const finished =
       remaining > 0 ? await within(compileAsync(scene, camera), remaining, yieldFrame, now) : false;
     options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-    return finish(
+    return await finish(
       withComputeReport(
         {
           compiled: finished ? 1 : 0,
@@ -673,7 +768,9 @@ export async function warmUpScene(
       abandoned: 0,
       timedOut: false,
     };
-    return compute === undefined ? finish(report) : finish(withComputeReport(report, compute));
+    return compute === undefined
+      ? await finish(report)
+      : await finish(withComputeReport(report, compute));
   }
 
   let slices = 0;
@@ -682,12 +779,43 @@ export async function warmUpScene(
   let timedOut = false;
   const deadline = startedAt + budgetMs;
 
-  for (let index = 0; index < total; index += 1) {
+  for (let index = 0; index < total; index += compileConcurrency) {
     if (now() >= deadline) {
       // Out of budget. Everything still unwarmed is abandoned, and says so.
       timedOut = true;
       abandoned += total - index;
       break;
+    }
+    // A group, not one object, when the caller asked for more than one in flight. Each call is
+    // still bounded by `within`, and the group is awaited together so the budget check above stays
+    // the only place the walk can stop.
+    if (compileConcurrency > 1) {
+      // Built with a plain loop rather than an array projection: `constraints.spec.ts` rejects that
+      // method name anywhere in core source, because it is also how a texture reaches a package
+      // that must never own the look.
+      const pending: Array<Promise<boolean>> = [];
+      for (let offset = 0; offset < compileConcurrency && index + offset < total; offset += 1) {
+        pending.push(
+          within(
+            compileAsync(renderables[index + offset] as Object3D, camera, scene),
+            Math.min(compileTimeoutMs, Math.max(0, deadline - now())),
+            yieldFrame,
+            now,
+          ),
+        );
+      }
+      const settled = await Promise.all(pending);
+      for (const finished of settled) {
+        if (finished) compiled += 1;
+        else abandoned += 1;
+      }
+      const done = Math.min(index + compileConcurrency, total);
+      if (done % sliceSize < compileConcurrency || done === total) {
+        slices += 1;
+        options.onProgress?.({ done, total });
+        if (done !== total) await yieldFrame();
+      }
+      continue;
     }
     // Compiled one at a time, against the real scene so lights, fog and environment resolve
     // exactly as they will when the frame draws. `three` caches by material, so only the first
@@ -725,6 +853,8 @@ export async function warmUpScene(
     timedOut,
   };
   return compute === undefined
-    ? finish(report)
-    : finish(withComputeReport({ ...report, timedOut: compute.timedOut || timedOut }, compute));
+    ? await finish(report)
+    : await finish(
+        withComputeReport({ ...report, timedOut: compute.timedOut || timedOut }, compute),
+      );
 }

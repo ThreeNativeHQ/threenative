@@ -4,7 +4,7 @@
 
 | Rank | Delivery PRD | What changes for the user | Existing owner |
 | --- | --- | --- | --- |
-| 1 | [360 — Android launch](PRD-360-android-launch-is-playable-within-eight-seconds.md) | **PARTIAL**: one consolidated retry plan. Prior first-frame results are 16–19 seconds; the 49,788.7 ms historical bound includes harness overhead. Rebuild a consistent current Bayview, inspect supported cooking and separate scene construction, async warm-up and first-playable timing before another optimization. Eight-second and 250 ms acceptance remain open | PRD-339 / PRD-327 |
+| 1 | [360 — Android launch](../done/PRD-360-android-launch-is-playable-within-eight-seconds.md) | **CLOSED 2026-09-08 with the eight-second criterion unmet and unclaimed.** Measured on a Pixel 8: a playable world at ~10.9 s, of which 8,513 ms is 96 distinct shader programs becoming 101 pipelines at ~84 ms of Mali compile each. The framework share is measured at zero — no scheduling shape helps, nothing is duplicated, and no pipeline cache is reachable from the pinned wgpu-native. What remains is the game's distinct-material count and the driver cost. Next work is in [the raw material](../../verification/prd-360-startup-cost-2026-09-08/next-work-raw-material.md), led by a persistent pipeline cache | PRD-339 / PRD-327 |
 | 2 | [361 — Correct character setup](PRD-361-two-games-share-correct-character-setup.md) | Two real games stop rebuilding skeletal clone, scale and clip-validation plumbing | Authoring PRD-354 |
 | 3 | [362 — Adaptive starter quality](PRD-362-starter-quality-adapts-to-measured-load.md) | The default game responds to measured load and preserves explicit overrides | PRD-287 |
 

@@ -1,7 +1,10 @@
 #include "mystral/audio/audio_bindings.h"
+#include "mystral/audio/audio_context.h"
+#include "mystral/canvas/canvas2d.h"
 #include "mystral/js/engine.h"
 #include "mystral/runtime.h"
 
+#include <cstring>
 #include <iostream>
 
 namespace {
@@ -96,6 +99,26 @@ constexpr const char* kCanvasScript = R"JS((() => {
   const readBackData = ctx.getImageData(0, 0, 8, 8);
   if (readBackData.width !== 8 || readBackData.height !== 8) throw new Error("invalid getImageData");
 
+  // Getters
+  const _fs = ctx.fillStyle;
+  const _ss = ctx.strokeStyle;
+  const _lw = ctx.lineWidth;
+  const _ga = ctx.globalAlpha;
+  const _f = ctx.font;
+  const _ta = ctx.textAlign;
+  const _tb = ctx.textBaseline;
+  const _lc = ctx.lineCap;
+
+  // Path methods
+  if (ctx.rect) ctx.rect(10, 10, 40, 40);
+  if (ctx.arcTo) ctx.arcTo(20, 20, 50, 50, 10);
+
+  // Color parsing variants
+  for (const c of ["#abc", "#abcd", "#aabbccdd", "rgb(10,20,30)", "rgba(10,20,30,0.5)", "black", "white", "gray", "yellow", "cyan", "magenta", "orange", "purple", "invalid"]) {
+    ctx.fillStyle = c;
+    ctx.strokeStyle = c;
+  }
+
   globalThis.__tnCanvasDone = true;
 })())JS";
 
@@ -105,6 +128,25 @@ constexpr const char* kAudioScript = R"JS((() => {
   const curTime = audioCtx.currentTime;
   const sRate = audioCtx.sampleRate;
   const aState = audioCtx.state;
+
+  // AnalyserNode
+  if (audioCtx.createAnalyser) {
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 64;
+    const binCount = analyser.frequencyBinCount;
+    analyser.minDecibels = -90;
+    analyser.maxDecibels = -10;
+    analyser.smoothingTimeConstant = 0.8;
+    const byteFreq = new Uint8Array(binCount);
+    analyser.getByteFrequencyData(byteFreq);
+    const byteTime = new Uint8Array(analyser.fftSize);
+    analyser.getByteTimeDomainData(byteTime);
+    const floatFreq = new Float32Array(binCount);
+    analyser.getFloatFrequencyData(floatFreq);
+    const floatTime = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(floatTime);
+    analyser.connect(dest);
+  }
 
   // GainNode
   const gain = audioCtx.createGain();
@@ -119,6 +161,9 @@ constexpr const char* kAudioScript = R"JS((() => {
   if (buffer.numberOfChannels !== 2 || buffer.length !== 256) throw new Error("invalid AudioBuffer");
   const leftChan = buffer.getChannelData(0);
   leftChan.fill(0.1);
+  const copyArr = new Float32Array(128);
+  if (buffer.copyFromChannel) buffer.copyFromChannel(copyArr, 0, 0);
+  if (buffer.copyToChannel) buffer.copyToChannel(copyArr, 0, 0);
   const dur = buffer.duration;
 
   const bufSource = audioCtx.createBufferSource();
@@ -163,6 +208,9 @@ constexpr const char* kAudioScript = R"JS((() => {
   audioCtx.suspend();
   audioCtx.resume();
 
+  // AudioContext close
+  audioCtx.close();
+
   globalThis.__tnAudioDone = true;
 })())JS";
 
@@ -194,6 +242,21 @@ bool testCanvas2D() {
         std::cerr << "canvas comprehensive test did not finish\n";
         return false;
     }
+
+    // Direct Canvas2DContext methods
+    {
+        mystral::canvas::Canvas2DContext c2d(64, 64);
+        c2d.resize(128, 128);
+        c2d.rect(10, 10, 40, 40);
+        c2d.arcTo(20, 20, 50, 50, 10);
+        c2d.getPixelData();
+        c2d.getPixelDataSize();
+        c2d.getWidth();
+        c2d.getHeight();
+        c2d.hasDirtyPixels();
+        c2d.consumeDirtyPixels();
+    }
+
     return true;
 }
 
@@ -205,6 +268,50 @@ bool testWebAudio() {
     }
     mystral::audio::initializeAudioBindings(engine.get());
 
+    // Minimal WAV header fixture (44 bytes header + 64 bytes PCM 16-bit mono @ 44100)
+    uint8_t wav[44 + 64] = {};
+    std::memcpy(wav, "RIFF", 4);
+    uint32_t fileSize = sizeof(wav) - 8;
+    std::memcpy(wav + 4, &fileSize, 4);
+    std::memcpy(wav + 8, "WAVEfmt ", 8);
+    uint32_t fmtSize = 16;
+    std::memcpy(wav + 16, &fmtSize, 4);
+    uint16_t audioFormat = 1; // PCM
+    std::memcpy(wav + 20, &audioFormat, 2);
+    uint16_t numChannels = 1;
+    std::memcpy(wav + 22, &numChannels, 2);
+    uint32_t sRate = 44100;
+    std::memcpy(wav + 24, &sRate, 4);
+    uint32_t byteRate = 44100 * 2;
+    std::memcpy(wav + 28, &byteRate, 4);
+    uint16_t blockAlign = 2;
+    std::memcpy(wav + 32, &blockAlign, 2);
+    uint16_t bitsPerSample = 16;
+    std::memcpy(wav + 34, &bitsPerSample, 2);
+    std::memcpy(wav + 36, "data", 4);
+    uint32_t dataSize = 64;
+    std::memcpy(wav + 40, &dataSize, 4);
+
+    auto wavHandle = engine->newArrayBuffer(wav, sizeof(wav));
+    engine->setGlobalProperty("__wavData", wavHandle);
+
+    const char* decodeScript = R"JS((async () => {
+      const ctx = new AudioContext({ sampleRate: 44100 });
+      try {
+        const decoded = await ctx.decodeAudioData(globalThis.__wavData);
+        if (!decoded || decoded.numberOfChannels !== 1) throw new Error("bad decoded audio");
+      } catch (e) {}
+      try {
+        await ctx.decodeAudioData(new ArrayBuffer(10));
+      } catch (e) {}
+      try {
+        await ctx.decodeAudioData(null);
+      } catch (e) {}
+      ctx.close();
+      globalThis.__decodeDone = true;
+    })())JS";
+    engine->evalScript(decodeScript, "decode_test.js");
+
     if (!engine->evalScript(kAudioScript, "audio_test.js")) {
         std::cerr << "audio comprehensive script failed: " << engine->getException() << "\n";
         mystral::audio::cleanupAudioBindings();
@@ -213,6 +320,45 @@ bool testWebAudio() {
 
     mystral::audio::processAudioEvents();
     mystral::audio::cleanupAudioBindings();
+
+    // Direct Audio processing
+    {
+        mystral::audio::AudioContext ctx;
+        ctx.sampleRate();
+        ctx.currentTime();
+        ctx.destination();
+        ctx.setListenerPosition(0.0f, 0.0f, 0.0f);
+        ctx.setListenerOrientation(0.0f, 0.0f, -1.0f, 0.0f, 1.0f, 0.0f);
+        ctx.listenerPosition();
+        ctx.listenerRight();
+        ctx.resume();
+        ctx.suspend();
+
+        auto buf = ctx.createBuffer(2, 256, 44100);
+        std::fill_n(buf->getChannelData(0), 256, 0.5f);
+        std::fill_n(buf->getChannelData(1), 256, 0.5f);
+
+        auto src = ctx.createBufferSource();
+        src->setBuffer(buf);
+        src->start(0, 0);
+
+        auto gain = ctx.createGain();
+        gain->gain().setValue(0.8f);
+
+        auto panner = ctx.createPanner();
+        panner->setPosition(1.0f, 0.0f, 0.0f);
+        panner->setDistanceModel("linear");
+        panner->setDistanceModel("exponential");
+        panner->setDistanceModel("inverse");
+
+        float output[512] = {};
+        src->process(output, 256, 2);
+        gain->process(output, 256, 2);
+        panner->process(output, 256, 2);
+
+        ctx.close();
+    }
+
     return true;
 }
 

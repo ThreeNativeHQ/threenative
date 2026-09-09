@@ -72,7 +72,9 @@ using namespace mystral::webtransport;
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <deque>
+#include <filesystem>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -80,6 +82,22 @@ using namespace mystral::webtransport;
 namespace {
 
 int g_failures = 0;
+
+void setTestEnvironment(const char* name, const char* value) {
+#ifdef _WIN32
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
+
+void clearTestEnvironment(const char* name) {
+#ifdef _WIN32
+    _putenv_s(name, "");
+#else
+    unsetenv(name);
+#endif
+}
 
 void check(bool condition, const char* what) {
     if (!condition) {
@@ -390,6 +408,12 @@ int main() {
               "unreadable trust file refused");
         check(trustError.find(missingTrust) != std::string::npos,
               "unreadable trust file diagnostic names the path");
+
+        if (std::filesystem::exists("/etc/ssl/certs/ca-certificates.crt")) {
+            trustError.clear();
+            check(applyPeerTrust(trustConfig, "/etc/ssl/certs/ca-certificates.crt", &trustError),
+                  "valid system trust bundle loaded");
+        }
 
         trustError.clear();
         const char* malformedTrust = "webtransport-trust-malformed.pem";
@@ -1388,10 +1412,87 @@ int main() {
     processEvents();
     check(!hasActiveSessions(), "no active sessions after idle pump");
 
+    // Test varintEncodeLength
+    check(varintLength(0) == 1, "varintLength(0)");
+    check(varintLength(63) == 1, "varintLength(63)");
+    check(varintLength(64) == 2, "varintLength(64)");
+    check(varintLength(16383) == 2, "varintLength(16383)");
+    check(varintLength(16384) == 4, "varintLength(16384)");
+    check(varintLength(0x3FFFFFFFull) == 4, "varintLength(0x3FFFFFFFull)");
+    check(varintLength(0x40000000ull) == 8, "varintLength(0x40000000ull)");
+
+    // Test classifyDatagramSend
+    check(classifyDatagramSend(false, 200, 100) == kDatagramInvalidSession, "classifyDatagramSend invalid session");
+    check(classifyDatagramSend(true, 200, 100) == kDatagramAccepted, "classifyDatagramSend accepted");
+    check(classifyDatagramSend(true, 200, 300) == kDatagramTooLarge, "classifyDatagramSend too large");
+
+    // Test parseUrl edge cases
+    std::string testH, testP; int testPort = 0;
+    check(parseUrl("https://example.com:443/test", testH, testPort, testP), "parseUrl valid");
+    check(!parseUrl("http://example.com:443/test", testH, testPort, testP), "parseUrl not https");
+    check(!parseUrl("https://example.com/no_port", testH, testPort, testP), "parseUrl no port");
+    check(!parseUrl("https://example.com:abc/path", testH, testPort, testP), "parseUrl invalid port abc");
+    check(!parseUrl("https://example.com:99999/path", testH, testPort, testP), "parseUrl port overflow");
+    check(!parseUrl("https://[invalid_ipv6]:443/path", testH, testPort, testP), "parseUrl invalid ipv6 literal");
+    check(parseUrl("https://[2001:db8::1]:4433/path", testH, testPort, testP), "parseUrl valid ipv6 literal");
+
+    // Test DNS delay environment parsing
+    setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "50");
+    connectSession("https://127.0.0.1:4433/test_dns");
+    setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "invalid");
+    connectSession("https://127.0.0.1:4433/test_dns2");
+    setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "5000");
+    connectSession("https://127.0.0.1:4433/test_dns3");
+    clearTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS");
+
+    // URL parsing and resolver test seams
+    setResolverDelayForTesting(10);
+    activeResolutionsForTesting();
+    setResolverDelayForTesting(0);
+    connectSession("https://[::1]:4433/ipv6_test");
+    connectSession("https://localhost:4433/host_test");
+    connectSession("http://not_https:4433/bad");
+    connectSession("not_a_url");
+    connectSession("https://" + std::string(260, 'x') + ":4433/too_long");
+
+    // Invalid session query checks
+    sendDatagram(9999, nullptr, 0);
+    createStream(9999, true);
+    createStream(9999, false);
+    streamWrite(9999, 0, nullptr, 0, false);
+    streamShutdown(9999, 0, 0);
+    streamReadCredit(9999, 0, 100);
+    streamReleaseRead(9999, 0);
+
     // Connect session to test socket and session operations
     uint32_t sessId = connectSession("https://127.0.0.1:4433/wt_test");
     if (sessId != 0) {
         check(hasActiveSessions(), "active session after connect");
+        Session* requestSession = findSession(sessId);
+        if (requestSession != nullptr && requestSession->conn != nullptr &&
+            requestSession->h3config != nullptr) {
+            requestSession->h3 =
+                quiche_h3_conn_new_with_transport(requestSession->conn, requestSession->h3config);
+            if (requestSession->h3 != nullptr) {
+                requestSession->h3Created = true;
+                sendConnectRequest(requestSession);
+                check(requestSession->connectStreamId >= 0,
+                      "a live h3 connection accepts the CONNECT request");
+
+                std::string capacityError;
+                setTestEnvironment(kMaxDatagramEnv, "not-a-byte-count");
+                check(refreshDatagramCapacity(requestSession, &capacityError) ==
+                          CapacityUpdate::Invalid && !capacityError.empty(),
+                      "an invalid datagram clamp fails a live session closed");
+                clearTestEnvironment(kMaxDatagramEnv);
+                requestSession->failed = false;
+                capacityError.clear();
+                const CapacityUpdate capacity =
+                    refreshDatagramCapacity(requestSession, &capacityError);
+                check(capacity != CapacityUpdate::Invalid,
+                      "a live session recomputes datagram capacity after the clamp is removed");
+            }
+        }
         uint8_t dgram[] = { 1, 2, 3 };
         sendDatagram(sessId, dgram, sizeof(dgram));
         int64_t bidiId = createStream(sessId, true);
@@ -1414,6 +1515,71 @@ int main() {
     shutdown();
     shutdown();
     check(!hasActiveSessions(), "no active sessions after shutdown");
+
+    // Resolver controls are process-local and intentionally bypass getaddrinfo only for the
+    // named test hostname. Exercise every validation branch and one real worker completion so
+    // this contract proves the bounded resolver rather than only its numeric fast path.
+    {
+        Resolution options;
+        options.host = "networking-test.invalid";
+        options.port = 4433;
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "12");
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES", "127.0.0.1,::1");
+        check(readResolverTestOptions(options) && options.delayMs == 12 &&
+                  options.useTestAddresses && options.candidates.size() == 2,
+              "resolver test controls accept bounded numeric addresses");
+
+        Resolution badDelay;
+        badDelay.host = options.host;
+        badDelay.port = options.port;
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "12x");
+        check(!readResolverTestOptions(badDelay), "resolver rejects a non-numeric delay");
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "2001");
+        check(!readResolverTestOptions(badDelay), "resolver rejects an excessive delay");
+
+        Resolution badAddress;
+        badAddress.host = options.host;
+        badAddress.port = options.port;
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "0");
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES", "127.0.0.1,");
+        check(!readResolverTestOptions(badAddress), "resolver rejects an empty address entry");
+
+        clearTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS");
+        clearTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES");
+        Resolution ordinary;
+        ordinary.host = "example.com";
+        ordinary.port = 443;
+        check(readResolverTestOptions(ordinary) && ordinary.candidates.empty(),
+              "ordinary hostnames do not consume the test-only resolver controls");
+
+        ResolvedPeer ipv4;
+        ResolvedPeer ipv6;
+        check(numericPeer("127.0.0.1", 4433, ipv4) && ipv4.length == sizeof(sockaddr_in),
+              "resolver recognizes IPv4 literals");
+        check(numericPeer("::1", 4433, ipv6) && ipv6.length == sizeof(sockaddr_in6),
+              "resolver recognizes IPv6 literals");
+        check(!numericPeer("not-an-ip", 4433, ipv4), "resolver rejects non-numeric literals");
+        const auto localhostAddresses = resolveAddresses("localhost", 4433);
+        check(localhostAddresses.size() <= kResolverCandidateLimit,
+              "resolver bounds ordinary hostname candidates");
+
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS", "1");
+        setTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES", "127.0.0.1");
+        auto job = startResolution("networking-test.invalid", 4433);
+        check(job != nullptr, "resolver admits a bounded test job");
+        if (job != nullptr) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            while (!job->done.load(std::memory_order_acquire) &&
+                   std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            check(job->done.load(std::memory_order_acquire) && job->candidates.size() == 1,
+                  "resolver worker completes the bounded address fixture");
+            cancelResolution(job);
+        }
+        clearTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_DELAY_MS");
+        clearTestEnvironment("MYSTRAL_WEBTRANSPORT_TEST_DNS_ADDRESSES");
+    }
 
     if (g_failures != 0) {
         std::fprintf(stderr, "webtransport wire contract: %d failure(s)\n", g_failures);

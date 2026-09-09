@@ -1,20 +1,75 @@
 ---
 prd_contract: v1
+Latest investigation: [startup cost and heat handoff](../../verification/prd-360-startup-cost-2026-09-08/README.md). UI ordering fixed; performance remains PARTIAL. The user requested hardware-cost diagnosis and a bounded Opus handoff before broad optimization.
+
 ---
 
 # PRD-360 — Android launch is playable within eight seconds
 
-**Status:** PARTIAL — startup and movement work; eight-second first-playable and 250 ms pump
-acceptance remain unproven. The owner requested renewed investigation and consolidation on
-2026-09-08. This is the only PRD-360 execution plan; the former follow-up is absorbed here.
+**Status:** CLOSED 2026-09-08 by owner decision, with the eight-second criterion **unmet and not
+claimed**. Measured on a physical Pixel 8, the launch reaches a playable world in ~10.9 s, and
+8,513 ms of that is **96 distinct shader programs → 101 pipelines × ~84 ms of Mali compile each**.
+The framework's share of that number is measured at zero: no scheduling shape helps (three
+measured, every one slower than not warming up), there is nothing to deduplicate (96 of 101
+pipelines are unique programs), and no persistent pipeline cache is reachable from the pinned
+wgpu-native. What is left is the game's distinct-material count, which decides how it looks, and the
+driver's per-pipeline cost.
+
+**One attribution is unmeasured and is filed rather than assumed:** several of those fragment
+shaders are ~55 KB of generated WGSL, and whether the ~84 ms tracks shader *size* was never tested.
+If it does, the engine's node graph owns part of that cost. See the follow-up in
+[the startup-cost record](../../verification/prd-360-startup-cost-2026-09-08/pipeline-shapes.md).
+
+This PRD is archived because the framework work it asked for is done and measured, not because the
+criterion was reached. Historical status was PARTIAL — measured on hardware 2026-09-07 and the criterion is **unmet**. Three cold launches of the preserved baseline on a physical Pixel 8 give a preflight-qualified median launch-to-first-playable bound of 49,788.7 ms against the 8,000 ms criterion, with the player moving 2.147 m and a visible world proved. The device blocker that filed this under `requires-physical-device` is resolved, so it returns to its batch. The 2026-09-07 warm-up host turn and opt-in relaunch cache land compile-path progress, not the criterion: the single 16,020.007 ms candidate run is a retained-package launch rather than a cold install, and it misses 8,000 ms by roughly two times. What remains is implementation, not evidence: a build that reaches the criterion, and an observer-carrying artifact for the pump-silence bullet. Evidence: [prd-360-device-2026-09-07](../../verification/prd-360-device-2026-09-07/README.md), [prd-360-warmup-cache-2026-09-07](../../verification/prd-360-warmup-cache-2026-09-07/README.md).
+
+**Latest repaired-game handoff (2026-09-07):** The corrected Bayview starts and moves on the Pixel; one retained-package run reached first frame at 16.020 seconds. This remains above the eight-second criterion. Continue with [the startup-cost raw material](../../verification/prd-360-startup-cost-2026-09-08/next-work-raw-material.md); older blocker notes below are historical.
+
+**Latest bounded follow-up (2026-09-08):** A corrected validation of the existing object-granularity
+path used the unchanged Bayview scene on a qualified Pixel 8. The explicit warm-up race is fixed:
+one `TN_WARMUP` marker completed before first use, with no duplicate `TN_STARTUP_WARMUP` marker.
+The run still reached first frame at **19,629.400 ms** and the movement endpoint recorded a
+**5,560.916 ms** pump gap. Movement passed at **2.146682 m**, but the 8,000 ms and 250 ms criteria
+remain unmet. PRD-360 stays PARTIAL; the raw receipt and red/green regression are linked from the
+[follow-up verification record](../../verification/prd-360-warmup-cache-2026-09-07/README.md).
+
+**Hardware A/B, 2026-09-08:** The launch's compile cost was censused on a physical Pixel 8 — 101
+pipelines, 101 unique cache keys, **8,513 ms, all synchronous**, split main 67 / 7,477 ms, shadow
+31 / 963 ms, PMREM 2 / 50 ms, output 1 / 23 ms, with no duplication to remove. The launch runs no
+warm-up, because a DOM loading surface never declares the canvas covered. Turning the warm-up on
+was measured and **rejected**: 20,988 ms returning `{"compiled":0,"abandoned":1,"timedOut":true}`,
+and 15,028 ms on an earlier launch, against the baseline's 8,513 ms. Movement passes identically on
+both arms at 2.1467 m. What remains is three's serial `compileAsync` walk, which is slower than the
+synchronous compile it replaces. Evidence:
+[pixel-census](../../verification/prd-360-startup-cost-2026-09-08/pixel-census.md),
+[warm-up-rejected](../../verification/prd-360-startup-cost-2026-09-08/warm-up-rejected.md).
+
+
+**All three levers measured and rejected, 2026-09-08:** every warm-up shape costs more than no
+warm-up on this device — none 8,513 ms (complete), `scene` 15,028/20,988 ms, `object` with four
+compiles in flight 15,012 ms with 45 abandoned. three's `compileAsync` is slower than the
+synchronous compilation it replaces here, and the cost is JS-side per-object node building rather
+than GPU pipeline creation. A persistent driver pipeline cache is not reachable from the pinned
+wgpu-native C API. What remains is fewer distinct pipelines — 67 main-material pipelines cost
+7,477 ms, and how many distinct materials the town needs is a game-side decision about how it
+looks — and the ~84 ms per-pipeline Mali cost, which is outside this repository. **The eight-second
+criterion is not reachable by framework-side compile scheduling.** Evidence:
+[compile-concurrency](../../verification/prd-360-startup-cost-2026-09-08/compile-concurrency.md).
+
+
+**Where the cost actually is, 2026-09-08:** the launch's 8,513 ms decomposes with nothing left for
+the framework to take — **101 pipelines from 96 distinct shader programs**, at ~84 ms of Mali
+compile each. Five programs are used twice and each sees one render state, so there is no
+permutation to collapse. Scheduling cannot help (three shapes measured, all slower than no warm-up),
+deduplication cannot help, and a persistent pipeline cache is unreachable from the pinned
+wgpu-native. Reaching 8,000 ms from the measured ~10.9 s needs roughly a third fewer distinct shader
+programs, which is an authoring decision about how the game looks. **The criterion is unmet and
+gated outside `packages/`; this needs an owner decision on scope, not more framework work.**
+Evidence: [pipeline-shapes](../../verification/prd-360-startup-cost-2026-09-08/pipeline-shapes.md).
 **Owner:** [PRD-339](../performance/critical/PRD-339-the-compile-walk-leaves-the-main-thread.md),
-with PRD-327 startup acceptance advanced by this slice.
 **Canonical findings:** [runtime performance state](../../verification/runtime-perf-state.md),
 especially “PRD-360 retry investigation — 2026-09-08.”
 **Complexity:** MEDIUM, core/native/game boundaries. No new package or public API is planned.
-**Next budget:** 60 minutes of provenance and attribution work, excluding builds and device
-qualification. Implementation experiments start only after Phase 1 identifies a measured lever;
-at most three one-change experiments before another stop and hypothesis review.
 
 ## Decision and scope
 
