@@ -49,11 +49,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          successful_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --limit 20 --json status,conclusion,event,headBranch --jq '[.[] | select(.status == "completed" and .conclusion == "success" and .event == "push" and .headBranch == "main")] | length')"
-          test "$successful_runs" -gt 0 || {
-            echo "No completed successful CI push run on main found for $GITHUB_SHA." >&2
-            exit 1
+          set -euo pipefail
+          candidate_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --limit 20 --json databaseId,status,conclusion,event,headBranch,headSha)"
+          candidate_run="$(
+            CANDIDATE_SHA="$GITHUB_SHA" CANDIDATE_RUNS="$candidate_runs" node --input-type=module <<'NODE'
+          const runs = JSON.parse(process.env.CANDIDATE_RUNS ?? "[]");
+          const candidateSha = process.env.CANDIDATE_SHA ?? "";
+          const run = runs.find((entry) =>
+            entry?.status === "completed" &&
+            entry?.conclusion === "success" &&
+            entry?.event === "push" &&
+            entry?.headBranch === "main" &&
+            entry?.headSha === candidateSha &&
+            Number.isSafeInteger(entry?.databaseId) &&
+            entry.databaseId > 0,
+          );
+          if (run === undefined) {
+            throw new Error(`No completed successful CI push run on main found for the exact candidate SHA ${candidateSha}.`);
           }
+          console.log(run.databaseId);
+          NODE
+          )"
+          echo "Using exact successful CI push run $candidate_run for $GITHUB_SHA."
 
   build:
     needs: gates

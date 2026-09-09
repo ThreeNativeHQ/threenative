@@ -971,9 +971,12 @@ describe("CI pipeline structure", () => {
   it("requires native release CI to be a successful push on main", async () => {
     const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
     const gates = jobSections(native).find(([job]) => job === "gates")?.[1];
-    expect(gates).toContain("--json status,conclusion,event,headBranch");
-    expect(gates).toMatch(/\.event == "push"/u);
-    expect(gates).toMatch(/\.headBranch == "main"/u);
+    expect(gates).toContain("--json databaseId,status,conclusion,event,headBranch,headSha");
+    expect(gates).toContain('entry?.event === "push"');
+    expect(gates).toContain('entry?.headBranch === "main"');
+    expect(gates).toContain("entry?.headSha === candidateSha");
+    expect(gates).toContain("Number.isSafeInteger(entry?.databaseId)");
+    expect(gates).toContain("entry.databaseId > 0");
   });
 
   it("desktop parity runs against a captured web reference and fails closed", async () => {
