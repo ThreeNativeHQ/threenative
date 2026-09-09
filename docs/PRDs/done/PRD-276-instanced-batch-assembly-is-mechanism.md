@@ -4,9 +4,10 @@ prd_contract: v1
 
 # PRD-276 — instanced batch assembly is mechanism, and the count cannot be known up front
 
-**Status:** COMPLETE (web) — filed and implemented 2026-08-30 against `9b97d704`. Native lane
-`UNVERIFIED`: the export is portable `three` with no browser global and no platform seam, and core
-carries no export condition, but no `--target desktop` run was executed for it.
+**Status:** DONE — implemented 2026-08-30 against `9b97d704`; native desktop closeout verified
+2026-09-09. Evidence: [PRD-276 native verification](../../verification/prd-276-native-2026-09-09.md).
+The export is portable `three` with no browser global or platform seam, and core carries no export
+condition.
 
 **Goal: a game stops hand-writing the accumulator that `new InstancedMesh` forces on it.** Mined
 from `lumen-hall`, a Gothic-cathedral sandbox game and the best-looking thing built on this
@@ -147,7 +148,11 @@ comment.
 - [x] **AC8 — the capability is discoverable.** `capabilities.json` 171 → 172 entries;
       `tsx scripts/check-capability-docs.ts` reports 78 exports with complete tags, and
       `detect-capability-duplicates.ts` finds no collision.
-- [ ] **AC9 — native.** `UNVERIFIED`. No `--target desktop` run was executed.
+- [x] **AC9 — native.** A freshly scaffolded racing project was packaged with the rebuilt Linux
+      native host and passed its durable `native-racing-instanced-batch` scenario through
+      `--target desktop`. The run observed `runtime: "native"`, moved the player 6.396 m against a
+      0.5 m minimum, measured `normaliseFactor` at 0.66327, and captured a nonblank frame on NVIDIA
+      Vulkan. See the [native verification record](../../verification/prd-276-native-2026-09-09.md).
 
 ## Gates run 2026-08-30
 
@@ -163,3 +168,15 @@ comment.
   temporary directory dropped at 09:06 that imports `packages/assets/src/passes/model.js`, and a new
   `as unknown as` suppression at `packages/assets/src/compile.ts:981`).
 - `pnpm budgets` — passed; the two LOC lines are review triggers, not failures.
+
+## Native closeout 2026-09-09
+
+The racing template now ships `native-playtests/survives.playtest.json` and a `test:native` script,
+so the native proof is repeatable from a generated project. Desktop transport does not provide CDP
+network, visual-metric, or runtime-diagnostic observations; the native scenario therefore asserts
+movement and the game-owned normalization component while retaining an after-frame capture. The
+browser `survives` scenario keeps the stricter browser-only policies.
+
+The native run passed with the rebuilt host: 70 frames, player distance 6.3963455 m, normalization
+factor 0.6632707, zero diagnostics, and a nonblank 1280×720 capture. The host reported NVIDIA
+GeForce RTX 2080 through Vulkan. Android and iOS were not run and remain outside this PRD's claim.

@@ -7,7 +7,7 @@ prd_contract: v1
 **Status:** DONE — implemented 2026-09-07 after a current-main caller census at
 `234a1bfdf0df05d0fa216e5b236455ba3a63d443` found real generated template callers. Evidence:
 [prd-277-merged-geometry-tint-2026-09-07.md](../../../verification/prd-277-merged-geometry-tint-2026-09-07.md).
-Sibling of [PRD-276](../../feature-mining/PRD-276-instanced-batch-assembly-is-mechanism.md),
+Sibling of [PRD-276](../PRD-276-instanced-batch-assembly-is-mechanism.md),
 mined from the same game and judged by the same rules.
 
 **Goal: an agent authoring a building out of primitives gets it into one draw without losing

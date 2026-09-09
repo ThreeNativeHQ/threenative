@@ -1,0 +1,43 @@
+{
+  "name": "native-racing-instanced-batch",
+  "target": "desktop",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "move",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "assert": {
+    "components": [
+      {
+        "allowTrivial": "The vehicle is authored at its real 4.4 m length and normalised down to the conventional 3 m, so the retained factor is below one; either side of one proves normaliseToMetres ran in the generated car.",
+        "component": "normaliseFactor",
+        "entity": "player",
+        "lte": 0.99
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.5
+    }
+  }
+}
