@@ -35,6 +35,24 @@ Cause: the package names did not equal their workspace directories. The implemen
 changed to resolve the actual package entry (`packages/blender-mcp` and `packages/engine-mcp`),
 then rerun with the same scenario.
 
+The PRD-specified package-census negative control was also observed red by temporarily removing
+`@threenative/runtime-native` from `sandboxWorkspacePackages`, then restoring the source before the
+green run:
+
+```bash
+pnpm exec vitest run scripts/__tests__/make-sandbox.spec.ts \
+  -t "packs the native runtime and capability server with the user-facing packages"
+```
+
+```text
+FAIL scripts/__tests__/make-sandbox.spec.ts > genre sandbox > packs the native runtime and capability server with the user-facing packages
+AssertionError: expected [ 'blender-mcp', 'assets', …(7) ] to include 'runtime-native'
+
+Test Files  1 failed (1)
+     Tests  1 failed | 22 skipped (23)
+PHASE_5_NEGATIVE_CONTROL_EXIT=1
+```
+
 Green command and artifact:
 
 ```text

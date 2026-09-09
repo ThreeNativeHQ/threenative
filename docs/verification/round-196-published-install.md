@@ -1,8 +1,11 @@
 # PRD-196 published-install verification
 
-Status: **BLOCKED on release credentials.** The implementation and its gates are green in the tree;
-every remaining criterion needs an `npm publish` and a `runtime-native-v*` release. The PRD is filed
-at `docs/PRDs/BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md`.
+Status: **BLOCKED on candidate-cohort preparation and release credentials.** The implementation and
+its gates are green in the tree, but the source cohort cannot be published as-is: eight package
+versions are immutable on npm and their source moved after publication. A release owner must first
+prepare and commit a fresh coherent eleven-package cohort, then publish it with a matching
+`runtime-native-v*` release. The PRD is filed at
+`docs/PRDs/BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md`.
 
 The sections below are in run order. **Repair round 4 (2026-09-08) is the current state** — it
 re-ran every earlier claim at the lane tip and is the section to read first.
@@ -1065,3 +1068,28 @@ unbuilt contract executable (`... is not built. Run: cmake --build build/tn-linu
 which is the split CI already makes into its own job. The lane's merge-base diff contains no
 native source, so these are the environment, not the change. They are recorded rather than counted
 as green.
+
+## Repair round 5 — independent review corrections, 2026-09-08
+
+The independent review found three evidence defects. The blocker description now names all eight
+immutable package versions and states the required preparation step: bump the changed packages to
+versions absent from npm, repin the complete template/internal dependency cohort, and commit that
+candidate before using publish credentials. The workflow now downloads the pinned official Blender
+`5.2.0` Linux archive, validates its version banner, and exports `THREENATIVE_BLENDER_PATH` before
+the registry verifier runs its real OBJ-to-GLB MCP conversion.
+
+The two phase controls the reviewer requested were executed against temporary removals and restored
+before the green runs. Their exact commands and failing output are retained in the phase records:
+
+```text
+phase 2: pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
+  tests/distribution.test.mjs -t "the native release workflow covers every exported prebuilt key"
+PHASE_2_NEGATIVE_CONTROL_EXIT=1
+
+phase 5: pnpm exec vitest run scripts/__tests__/make-sandbox.spec.ts \
+  -t "packs the native runtime and capability server with the user-facing packages"
+PHASE_5_NEGATIVE_CONTROL_EXIT=1
+```
+
+The current external blocker remains truthful: no candidate cohort was published and no matching
+native prebuilt release exists, so public consumer acceptance is still unexecuted.

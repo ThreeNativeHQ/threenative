@@ -61,6 +61,44 @@ which currently returns HTTP 404. The MCP failure is against the currently publi
 `create-threenative@0.2.3` / `@threenative/core@0.3.0` cohort, whose generated config has only
 three server entries.
 
+The PRD-specified workflow-key negative control was observed red by temporarily removing the
+`linux-x64` entry from the workflow checksum table, then restoring the file before the green run:
+
+```bash
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
+  tests/distribution.test.mjs -t "the native release workflow covers every exported prebuilt key"
+```
+
+```text
+FAIL tests/distribution.test.mjs > the native release workflow covers every exported prebuilt key
+AssertionError: Expected values to be strictly deep-equal:
++ actual - expected ... Lines skipped
+
+  [
+    'android-arm64-v8a-libcxx',
+    'android-arm64-v8a-runtime',
+    'android-arm64-v8a-runtime-v8',
+    'android-arm64-v8a-sdl3',
+    'android-arm64-v8a-v8',
+    'android-arm64-v8a-v8-snapshot',
+    'android-sdl3-aar',
+    'android-x86_64-libcxx',
+    'android-x86_64-runtime',
+    'android-x86_64-runtime-v8',
+    'android-x86_64-sdl3',
+    'android-x86_64-v8',
+    'android-x86_64-v8-snapshot',
+    'darwin-arm64',
+    'ios-simulator-arm64',
+-   'linux-x64',
+    'win32-x64'
+  ]
+
+Test Files  1 failed (1)
+     Tests  1 failed | 20 skipped (21)
+PHASE_2_NEGATIVE_CONTROL_EXIT=1
+```
+
 ## Review checkpoint
 
 Independent reviewer decision: **NEEDS CORRECTION**. A new public cohort, native prebuilt release,

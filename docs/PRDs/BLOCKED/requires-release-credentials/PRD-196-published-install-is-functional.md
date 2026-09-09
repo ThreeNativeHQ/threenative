@@ -4,17 +4,27 @@ prd_contract: v1
 
 # PRD-196 — A stranger's install of ThreeNative is functional
 
-**Status:** BLOCKED — `requires-release-credentials`
+**Status:** BLOCKED — `requires-release-credentials` and candidate-cohort preparation
 
-Filed here on 2026-09-08. The engineering in this PRD is implemented and gated in the tree; every
-remaining acceptance criterion is consumer-scoped and needs two acts no agent lane can perform:
-an `npm publish` of the candidate cohort, and a `runtime-native-v*` GitHub release carrying the
-prebuilt assets. Until both exist the published world cannot satisfy the criteria below, and this
-PRD must not be filed as done. It was previously in `docs/PRDs/done/` from an unrelated bulk move
-(`b45bf21f7`) while still reading `NOT STARTED`; neither state was true.
+Filed here on 2026-09-08. The engineering in this PRD is implemented and gated in the tree, but the
+source tree is not yet a publishable candidate. `pnpm publish:check` reports eight immutable package
+versions whose source moved after publication — `@threenative/assets@0.3.0`,
+`@threenative/core@0.3.0`, `@threenative/physics@0.3.0`, `@threenative/playtest@0.3.0`,
+`@threenative/runtime-native@0.3.0`, `@threenative/ui@0.3.0`, `create-threenative@0.2.3`, and
+`threenative-engine-mcp@0.2.0` — plus the absent matching native prebuilt release. npm versions are
+immutable, so release preparation must first choose and commit a fresh coherent eleven-package
+cohort, bump the changed packages to versions absent from npm, and repin every template and internal
+dependency to that cohort. Only then can the external publish and native-release acts be performed.
+Until that prepared cohort is published with its matching prebuilt assets, the published world cannot
+satisfy the criteria below, and this PRD must not be filed as done. It was previously in
+`docs/PRDs/done/` from an unrelated bulk move (`b45bf21f7`) while still reading `NOT STARTED`; neither
+state was true.
 
-**What unblocks it:** npm publish rights for the eleven-package cohort, and release-upload rights on
-`ThreeNativeHQ/threenative`.
+**What unblocks it:** (1) a committed version-cohort preparation that clears the eight immutable
+package findings and pins the templates to the new versions, (2) a successful
+`runtime-native-v<version>` release built from that exact candidate SHA with its `prebuilt-lock.json`,
+and (3) npm publish rights for the eleven-package cohort plus release-upload rights on
+`ThreeNativeHQ/threenative`. The credentials are needed after preparation; they do not replace it.
 
 **Evidence:** [round-196-published-install.md](../../../verification/round-196-published-install.md)
 and the five phase records it cites —
