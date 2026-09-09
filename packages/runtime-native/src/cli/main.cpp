@@ -1186,9 +1186,7 @@ static int runScreenshotMode(
     mystral::Runtime& host = *runtime;
     auto startTime = std::chrono::high_resolution_clock::now();
     for (int frame = 0; frame < opts.frames; frame++) {
-        // Raised before each frame of a screenshot run so the final presented frame is the
-        // one in the capture buffer at save time. Non-screenshot runs never raise it and
-        // pay neither the framebuffer copy nor its wait.
+        // Request a framebuffer capture before each screenshot frame.
         host.requestFrameScreenshot();
         if (!host.pollEvents()) {
             if (!opts.quiet) {
@@ -1198,7 +1196,6 @@ static int runScreenshotMode(
         }
         // saveScreenshot() owns the GPU readback fence, so no fixed delay is needed here.
     }
-
     // The requested frames are done; the world may still not be on screen. StartupReadiness
     // resolves on five consecutive in-budget frames or, for a host that never produces one — every
     // software rasteriser — only when its bounded window expires. A 300-frame run on llvmpipe
@@ -1237,7 +1234,6 @@ static int runScreenshotMode(
         // Naming them keeps the one-present-per-frame invariant exact instead of loosened.
         std::cout << "TN_CAPTURE_REFRESH_PRESENTS:" << capture.presents << std::endl;
     }
-
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
     bool success = host.saveScreenshot(opts.screenshotPath);
@@ -1252,10 +1248,7 @@ static int runScreenshotMode(
             std::cerr << "Error: Failed to save screenshot!" << std::endl;
         }
     }
-
-    // Finalize native capture without tearing down the host. The immediate exit below is
-    // deliberate: the full runtime destructor can trigger platform cleanup crashes after a
-    // successful screenshot, while the capture itself only needs its compile pool joined.
+    // Finalize capture before the deliberate exit; runtime destruction may crash after screenshots.
 #if TN_ANDROID_JS_PROFILE
     if (mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
 #endif
