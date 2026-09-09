@@ -18,6 +18,7 @@ import {
   expectedReleaseReportReference,
   expectedReleaseReportSubjects,
   normalizedPackageTreeHash,
+  parseGithubRun,
   parseEvidenceReport,
   registryPackageObservation,
   resolveReleaseCandidate,
@@ -328,6 +329,33 @@ describe("release candidate gate", () => {
     expect(result.status).toBe("FAIL");
     expect(result.exitCode).toBe(1);
     expect(result.errors.join("\n")).toContain("resolution must be an object");
+  });
+
+  it("should map the GitHub REST run id into the candidate run identity", () => {
+    expect(
+      parseGithubRun(
+        {
+          id: 204,
+          status: "completed",
+          conclusion: "success",
+          event: "push",
+          head_branch: "main",
+          head_sha: CANDIDATE_SHA,
+          path: ".github/workflows/ci.yml",
+        },
+        204,
+        CANDIDATE_SHA,
+        ".github/workflows/ci.yml",
+      ),
+    ).toEqual({
+      databaseId: 204,
+      status: "completed",
+      conclusion: "success",
+      event: "push",
+      headBranch: "main",
+      headSha: CANDIDATE_SHA,
+      workflowPath: ".github/workflows/ci.yml",
+    });
   });
 
   it("should compare matching registry claims with downloaded tarball observations", async () => {

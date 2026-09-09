@@ -1023,17 +1023,15 @@ function githubJson(repo: string, repository: string, endpoint: string): unknown
   }
 }
 
-function resolveRunFromGithub(
-  repo: string,
-  repository: string,
+export function parseGithubRun(
+  raw: unknown,
   runId: number,
   candidateSha: string,
   workflowPath: string,
 ): IReleaseRun {
-  const raw = githubJson(repo, repository, `actions/runs/${runId}`);
   if (!isRecord(raw)) resolutionFailure(`GitHub run ${runId} returned a non-object response.`);
   const run: unknown = {
-    databaseId: raw.database_id,
+    databaseId: raw.id,
     status: raw.status,
     conclusion: raw.conclusion,
     event: raw.event,
@@ -1042,11 +1040,25 @@ function resolveRunFromGithub(
     workflowPath: raw.path,
   };
   const errors: string[] = [];
-  if (raw.database_id !== runId)
-    errors.push(`GitHub run response ${runId} has a mismatched database ID.`);
+  if (raw.id !== runId) errors.push(`GitHub run response ${runId} has a mismatched database ID.`);
   validateRun(run, `required evidence run ${runId}`, candidateSha, workflowPath, errors);
   if (errors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", errors);
   return run as IReleaseRun;
+}
+
+function resolveRunFromGithub(
+  repo: string,
+  repository: string,
+  runId: number,
+  candidateSha: string,
+  workflowPath: string,
+): IReleaseRun {
+  return parseGithubRun(
+    githubJson(repo, repository, `actions/runs/${runId}`),
+    runId,
+    candidateSha,
+    workflowPath,
+  );
 }
 
 function artifactFilePath(directory: string, artifactPath: string): string {
