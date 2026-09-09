@@ -1,8 +1,8 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { expect, test } from 'vitest';
 
 const workflow = readFileSync(
@@ -173,54 +173,50 @@ test('release gate rejects stale or missing exact candidate CI evidence', () => 
   expect(gate).toBeDefined();
   expect(releaseWorkflow).toContain('--json databaseId,status,conclusion,event,headBranch,headSha');
 
-  const directory = mkdtempSync(join(tmpdir(), 'threenative-prd-078-gate-'));
-  try {
-    const gh = join(directory, 'gh');
-    writeFileSync(gh, '#!/bin/sh\nprintf \'%s\' "$MOCK_GH_RUNS"\n');
-    chmodSync(gh, 0o755);
-    const candidateSha = 'candidate-sha';
-    const run = (runs) => spawnSync('bash', ['-euo', 'pipefail', '-c', gate], {
-      env: {
-        ...process.env,
-        GITHUB_REPOSITORY: 'ThreeNativeHQ/threenative',
-        GITHUB_SHA: candidateSha,
-        MOCK_GH_RUNS: JSON.stringify(runs),
-        PATH: `${directory}:${process.env.PATH}`,
-      },
-      encoding: 'utf8',
-    });
+  const directory = makeTempDirSync('threenative-prd-078-gate-');
+  const gh = join(directory, 'gh');
+  writeFileSync(gh, '#!/bin/sh\nprintf \'%s\' "$MOCK_GH_RUNS"\n');
+  chmodSync(gh, 0o755);
+  const candidateSha = 'candidate-sha';
+  const run = (runs) => spawnSync('bash', ['-euo', 'pipefail', '-c', gate], {
+    env: {
+      ...process.env,
+      GITHUB_REPOSITORY: 'ThreeNativeHQ/threenative',
+      GITHUB_SHA: candidateSha,
+      MOCK_GH_RUNS: JSON.stringify(runs),
+      PATH: `${directory}:${process.env.PATH}`,
+    },
+    encoding: 'utf8',
+  });
 
-    const candidateRun = {
-      status: 'completed',
-      conclusion: 'success',
-      event: 'push',
-      headBranch: 'main',
-      headSha: candidateSha,
-    };
-    expect(run([{ ...candidateRun, databaseId: 123 }]).status).toBe(0);
-    const stale = run([{
-      databaseId: 124,
-      status: 'completed',
-      conclusion: 'success',
-      event: 'push',
-      headBranch: 'main',
-      headSha: 'different-sha',
-    }]);
-    expect(stale.status).not.toBe(0);
-    expect(stale.stderr).toContain(candidateSha);
-    const missing = run([]);
-    expect(missing.status).not.toBe(0);
-    expect(missing.stderr).toContain(candidateSha);
-    for (const databaseId of [null, '123', 0, -1, 1.5]) {
-      const malformed = run([{ ...candidateRun, databaseId }]);
-      expect(malformed.status).not.toBe(0);
-      expect(malformed.stderr).toContain(candidateSha);
-    }
-    const missingDatabaseId = run([candidateRun]);
-    expect(missingDatabaseId.status).not.toBe(0);
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
+  const candidateRun = {
+    status: 'completed',
+    conclusion: 'success',
+    event: 'push',
+    headBranch: 'main',
+    headSha: candidateSha,
+  };
+  expect(run([{ ...candidateRun, databaseId: 123 }]).status).toBe(0);
+  const stale = run([{
+    databaseId: 124,
+    status: 'completed',
+    conclusion: 'success',
+    event: 'push',
+    headBranch: 'main',
+    headSha: 'different-sha',
+  }]);
+  expect(stale.status).not.toBe(0);
+  expect(stale.stderr).toContain(candidateSha);
+  const missing = run([]);
+  expect(missing.status).not.toBe(0);
+  expect(missing.stderr).toContain(candidateSha);
+  for (const databaseId of [null, '123', 0, -1, 1.5]) {
+    const malformed = run([{ ...candidateRun, databaseId }]);
+    expect(malformed.status).not.toBe(0);
+    expect(malformed.stderr).toContain(candidateSha);
   }
+  const missingDatabaseId = run([candidateRun]);
+  expect(missingDatabaseId.status).not.toBe(0);
 });
 
 test('worker idle wake gate ships in the native package suite without requiring CMake', () => {

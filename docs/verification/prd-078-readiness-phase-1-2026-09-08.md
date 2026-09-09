@@ -124,6 +124,34 @@ EXIT_CODE=0
 The retention index was regenerated after the evidence file became tracked. The final local
 `pnpm budgets` run and the strict workflow/docs lane were rerun against this state.
 
+## CI repair
+
+The first PR run exposed one branch-owned unit-shard failure. The repository leak guard found the
+workflow test's direct temporary-directory creator:
+
+```text
+scripts/__tests__/temp-dir-guard.spec.ts > temporary directory guard > requires every test-owned temporary directory to register cleanup
+AssertionError: unregistered temporary directory creators: [
+  "packages/runtime-native/tests/native-platform-workflow.test.mjs"
+]
+Test Files 1 failed | 136 passed (137)
+Tests 1 failed | 1720 passed | 8 skipped (1729)
+Process completed with exit code 1
+```
+
+The test now uses the repository's `makeTempDirSync` helper, which registers the directory with
+the Vitest cleanup guard. The focused controls are green after the repair:
+
+```text
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/native-platform-workflow.test.mjs
+Test Files 1 passed (1)
+Tests 15 passed (15)
+
+pnpm exec vitest run scripts/__tests__/temp-dir-guard.spec.ts
+Test Files 1 passed (1)
+Tests 1 passed (1)
+```
+
 ## Candidate identity boundary
 
 The first current-main CI push run completed with a failure and is not a release prerequisite:
