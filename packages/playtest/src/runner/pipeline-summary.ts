@@ -4,6 +4,7 @@ export const PIPELINE_CAPTURE_VERSION = 1 as const;
 export const PIPELINE_EVENT_MARKER = "TN_PIPELINE_EVENT:";
 const PIPELINE_CAPTURE_MARKER = "TN_PIPELINE_CAPTURE:";
 const PIPELINE_FIRST_PRESENT_MARKER = "TN_PIPELINE_FIRST_PRESENT:";
+const PIPELINE_COMPLETE_MARKER = "TN_PIPELINE_COMPLETE:";
 
 export type PipelineCaptureSource = "browser" | "native";
 export type PipelineCaptureKind = "compute" | "render";
@@ -138,11 +139,13 @@ interface INativeMarkerCapture {
   readonly build?: Readonly<Record<string, unknown>>;
   readonly clock?: Readonly<Record<string, unknown>>;
   readonly events: readonly IPipelineCaptureEvent[];
+  readonly expectedEventCount?: number;
   readonly firstPresentBoundaryMs?: number;
 }
 
 type NativeMarkerLine =
   | { readonly kind: "capture"; readonly value: unknown }
+  | { readonly kind: "complete"; readonly value: unknown }
   | { readonly kind: "event"; readonly value: unknown }
   | { readonly kind: "first-present"; readonly value: unknown };
 
@@ -196,6 +199,7 @@ function parseNativeMarkerCapture(text: string): INativeMarkerCapture {
     ...(state.build === undefined ? {} : { build: state.build }),
     ...(state.clock === undefined ? {} : { clock: state.clock }),
     events: state.events.sort((left, right) => left.sequence - right.sequence),
+    ...(state.expectedEventCount === undefined ? {} : { expectedEventCount: state.expectedEventCount }),
     ...(state.firstPresentBoundaryMs === undefined
       ? {}
       : { firstPresentBoundaryMs: state.firstPresentBoundaryMs }),
@@ -208,6 +212,7 @@ interface INativeMarkerState {
   adapter?: Readonly<Record<string, unknown>>;
   build?: Readonly<Record<string, unknown>>;
   clock?: Readonly<Record<string, unknown>>;
+  expectedEventCount?: number;
   firstPresentBoundaryMs?: number;
 }
 
@@ -218,6 +223,10 @@ function consumeNativeMarker(state: INativeMarkerState, marker: NativeMarkerLine
   }
   if (marker.kind === "first-present") {
     consumeNativeFirstPresent(state, marker.value);
+    return;
+  }
+  if (marker.kind === "complete") {
+    consumeNativeCompletion(state, marker.value);
     return;
   }
   consumeNativeEvent(state, marker.value);
@@ -242,6 +251,15 @@ function consumeNativeFirstPresent(state: INativeMarkerState, value: unknown): v
   state.firstPresentBoundaryMs = boundaryMs;
 }
 
+function consumeNativeCompletion(state: INativeMarkerState, value: unknown): void {
+  validateCaptureVersion(value, "native completion metadata");
+  const metadata = asRecord(value);
+  const eventCount = nonNegativeInteger(metadata?.eventCount, "native completion eventCount");
+  if (state.expectedEventCount !== undefined && state.expectedEventCount !== eventCount)
+    throw malformed("native completion metadata appears with conflicting event counts");
+  state.expectedEventCount = eventCount;
+}
+
 function consumeNativeEvent(state: INativeMarkerState, value: unknown): void {
   validateCaptureVersion(value, "native pipeline event");
   const event = normaliseNativeEvent(value);
@@ -258,6 +276,7 @@ function consumeNativeEvent(state: INativeMarkerState, value: unknown): void {
 function parseNativeMarkerLine(line: string): NativeMarkerLine | undefined {
   const candidates: Array<{ readonly at: number; readonly kind: NativeMarkerLine["kind"]; readonly marker: string }> = [
     { at: line.indexOf(PIPELINE_CAPTURE_MARKER), kind: "capture", marker: PIPELINE_CAPTURE_MARKER },
+    { at: line.indexOf(PIPELINE_COMPLETE_MARKER), kind: "complete", marker: PIPELINE_COMPLETE_MARKER },
     { at: line.indexOf(PIPELINE_FIRST_PRESENT_MARKER), kind: "first-present", marker: PIPELINE_FIRST_PRESENT_MARKER },
     { at: line.indexOf(PIPELINE_EVENT_MARKER), kind: "event", marker: PIPELINE_EVENT_MARKER },
   ];
@@ -513,8 +532,13 @@ function nativeCapture(metadata: INativeMarkerCapture): IPipelineCapture {
   const firstPresent = nativeFirstPresent(metadata.events, metadata.firstPresentBoundaryMs);
   const events = nativeEventsWithBoundary(metadata.events, firstPresent);
   validateEventSequence(events, "native capture", true);
-  const sequence = nativeSequenceSummary(events);
-  const reasons = nativeCaptureReasons(metadata, events, firstPresent, sequence.droppedEvents);
+  const sequence = nativeSequenceSummary(events, metadata.expectedEventCount);
+  const reasons = nativeCaptureReasons(
+    metadata,
+    events,
+    firstPresent,
+    sequence.droppedEvents,
+  );
   const failures = events.filter(({ status }) => status === "failed").length;
   const pending = events.filter(({ status }) => status === "pending").length;
   const counts = {
@@ -568,13 +592,21 @@ function nativeEventsWithBoundary(
   );
 }
 
-function nativeSequenceSummary(events: readonly IPipelineCaptureEvent[]): {
+function nativeSequenceSummary(
+  events: readonly IPipelineCaptureEvent[],
+  expectedEventCount: number | undefined,
+): {
   readonly firstId: number | undefined;
   readonly droppedEvents: number;
 } {
   const firstId = events[0]?.sequence;
   const lastId = events.at(-1)?.sequence;
-  return { firstId, droppedEvents: lastId === undefined ? 0 : Math.max(0, lastId - events.length) };
+  const declaredCount = expectedEventCount ?? lastId;
+  return {
+    firstId,
+    droppedEvents:
+      declaredCount === undefined ? 0 : Math.max(0, declaredCount - events.length),
+  };
 }
 
 function nativeCaptureReasons(
@@ -587,6 +619,13 @@ function nativeCaptureReasons(
   const firstId = events[0]?.sequence;
   if (firstId !== 1) reasons.push(`native event sequence starts at ${firstId ?? "missing"}, expected 1`);
   if (droppedEvents > 0) reasons.push(`${droppedEvents} native pipeline event(s) are missing from the sequence`);
+  if (metadata.expectedEventCount === undefined)
+    reasons.push("native marker capture is missing its completion marker");
+  else if (
+    metadata.expectedEventCount !== events.length ||
+    metadata.expectedEventCount !== (events.at(-1)?.sequence ?? 0)
+  )
+    reasons.push("native pipeline event count does not match the completion marker");
   if (events.length === 0) reasons.push("no native pipeline events observed");
   reasons.push(...nativeMetadataReasons(metadata, firstPresent));
   return reasons;

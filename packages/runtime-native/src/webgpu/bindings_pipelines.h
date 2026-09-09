@@ -22,6 +22,7 @@ void shutdownAsyncPipelineCompiles(BindingsState* state);
 double pipelineClockMs();
 void reportPipelineCaptureMetadata(WGPUAdapter adapter);
 void reportPipelineFirstPresent();
+void reportPipelineCaptureComplete(uint64_t eventCount);
 
 #endif
 

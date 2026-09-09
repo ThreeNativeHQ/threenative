@@ -246,7 +246,12 @@ type RendererInstance = {
     createRenderPipeline?: (...args: unknown[]) => unknown;
     createComputePipeline?: (...args: unknown[]) => unknown;
     get?: (value: unknown) => unknown;
+    gpu?: {
+      requestAdapter?: (options?: unknown) => Promise<unknown> | unknown;
+    };
+    parameters?: { powerPreference?: unknown };
   };
+  xr?: { enabled?: unknown };
   resolveTimestampsAsync?: (type?: string) => Promise<number | undefined>;
   /** Three answers an `antialias` request with a sample count; 0 means one sample per pixel. */
   samples?: number;
@@ -633,6 +638,7 @@ function createRendererPipelineCensus(
   raw: RendererInstance,
   kind: RendererKind,
   options: IRendererOptions,
+  adapterIdentity?: string,
 ): PipelineCensus | undefined {
   if (options.pipelineCensus === false) return undefined;
   const backendName =
@@ -647,9 +653,51 @@ function createRendererPipelineCensus(
     ...(typeof backendName === "string" && backendName.length > 0
       ? { backendIdentity: `${kind}:${backendName}` }
       : {}),
+    ...(kind === "webgpu" ? { adapterIdentity: adapterIdentity ?? "unavailable" } : {}),
   });
   census.installRenderer(raw);
   return census;
+}
+
+async function createWebGpuPipelineCensus(
+  raw: RendererInstance,
+  options: IRendererOptions,
+): Promise<PipelineCensus | undefined> {
+  if (options.pipelineCensus === false) return undefined;
+  const adapterIdentity = await readWebGpuAdapterIdentity(raw);
+  return createRendererPipelineCensus(raw, "webgpu", options, adapterIdentity);
+}
+
+async function readWebGpuAdapterIdentity(raw: RendererInstance): Promise<string | undefined> {
+  const gpu = raw.backend?.gpu;
+  if (gpu === undefined || typeof gpu.requestAdapter !== "function") return undefined;
+  try {
+    const adapter = await gpu.requestAdapter.call(gpu, {
+      featureLevel: "compatibility",
+      powerPreference: raw.backend?.parameters?.powerPreference,
+      xrCompatible: raw.xr?.enabled === true,
+    });
+    if (!isObject(adapter)) return undefined;
+    const infoCandidate = isObject(adapter.info) ? adapter.info : undefined;
+    const legacyInfo =
+      infoCandidate === undefined && typeof adapter.requestAdapterInfo === "function"
+        ? await adapter.requestAdapterInfo()
+        : undefined;
+    const info = infoCandidate ?? (isObject(legacyInfo) ? legacyInfo : undefined);
+    if (info === undefined) return undefined;
+    const fields = ["architecture", "description", "device", "vendor"] as const;
+    const entries = fields.flatMap((field) => {
+      const value = info[field];
+      return typeof value === "string" && value.length > 0
+        ? [[field, encodeURIComponent(value)] as const]
+        : [];
+    });
+    return entries.length === 0
+      ? undefined
+      : `webgpu:${entries.map(([field, value]) => `${field}=${value}`).join("|")}`;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function createRenderer(options: IRendererOptions = {}): Promise<IRendererLike> {
@@ -695,7 +743,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       const instance = raw as RendererInstance;
       await instance.init?.();
       const alphaAntialiasing = arm(instance);
-      const pipelineCensus = createRendererPipelineCensus(instance, "webgpu", options);
+      const pipelineCensus = await createWebGpuPipelineCensus(instance, options);
       installDrawHook(instance, alphaAntialiasing);
       renderer = wrapRenderer(
         instance,
