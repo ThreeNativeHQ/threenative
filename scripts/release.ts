@@ -29,8 +29,11 @@ import path from "node:path";
 import { MCP_SERVERS } from "../packages/core/mcp/servers.mjs";
 import {
   type ICheckPublishOptions,
+  type IPublishPackage,
+  type RegistryLookup,
   checkPublishState,
   formatPublishReport,
+  npmLookup,
   publishSet,
 } from "./check-publish-state.js";
 
@@ -195,6 +198,54 @@ function run(command: string, args: readonly string[], label: string): void {
   }
 }
 
+/** Refuse to publish artifacts produced from package files that are not in the commit. */
+export function assertCleanPackageTree(repo = REPO): void {
+  const dirty = execFileSync("git", ["status", "--porcelain", "--", "packages"], {
+    cwd: repo,
+    encoding: "utf8",
+  }).trim();
+  if (dirty.length > 0)
+    throw new Error(
+      `TN_RELEASE_DIRTY_TREE: packages/ has uncommitted changes, so the published artifact would correspond to no commit:\n${dirty}\nCommit first, then release.`,
+    );
+}
+
+/** Publish only a complete candidate cohort whose exact versions are absent from npm. */
+export function unpublishedReleasePackages(
+  packages: readonly IPublishPackage[],
+  lookup: RegistryLookup,
+): readonly IPublishPackage[] {
+  const states = packages.map((item) => {
+    let facts: ReturnType<RegistryLookup>;
+    try {
+      facts = lookup(item.name, item.version);
+    } catch (error) {
+      throw new Error(
+        `TN_RELEASE_REGISTRY_LOOKUP: could not determine whether ${item.name}@${item.version} exists: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (facts.state === "unreachable")
+      throw new Error(
+        `TN_RELEASE_REGISTRY_UNREACHABLE: could not determine whether ${item.name}@${item.version} exists. Nothing will be published.`,
+      );
+    return { facts, item };
+  });
+  const present = states.filter(({ facts }) => facts.state === "present");
+  if (present.length > 0) {
+    const state = states
+      .map(({ facts, item }) => `${item.name}@${item.version}=${facts.state}`)
+      .join(", ");
+    const code =
+      present.length === states.length
+        ? "TN_RELEASE_COHORT_ALREADY_PUBLISHED"
+        : "TN_RELEASE_COHORT_PARTIAL";
+    throw new Error(
+      `${code}: the exact candidate cohort is ${state}. Refusing to republish an existing version or publish only part of a cohort.`,
+    );
+  }
+  return states.map(({ item }) => item);
+}
+
 async function waitForRegistry(name: string, version: string): Promise<void> {
   // A brand-new scoped package is not readable the instant it is published, and publishing the
   // scaffolder before its dependencies are visible produces an install nobody can reproduce.
@@ -245,14 +296,7 @@ async function main(argv: readonly string[]): Promise<void> {
   // were committed afterwards, so the artifacts on the registry correspond to no commit — and
   // `publish:check` then reports the package as needing a bump, because its source "moved"
   // after the publish. There is no way to tell, later, which source a published tarball was.
-  const dirty = execFileSync("git", ["status", "--porcelain", "--", "packages"], {
-    cwd: REPO,
-    encoding: "utf8",
-  }).trim();
-  if (dirty.length > 0 && publish)
-    throw new Error(
-      `TN_RELEASE_DIRTY_TREE: packages/ has uncommitted changes, so the published artifact would correspond to no commit:\n${dirty}\nCommit first, then release.`,
-    );
+  if (publish) assertCleanPackageTree(REPO);
 
   const packages = publishSet(REPO);
   const cohort = validateReleaseCohort(REPO, packages);
@@ -289,6 +333,20 @@ async function main(argv: readonly string[]): Promise<void> {
   }
   run("pnpm", ["build"], "pnpm build");
 
+  if (publish) {
+    assertCleanPackageTree(REPO);
+    const postBuildReport = await checkPublishState({
+      allowCurrentPublishSetPins: true,
+      allowMissingPrebuilt,
+      repo: REPO,
+    });
+    process.stdout.write(
+      `\nPost-build publish preflight:\n${formatPublishReport(postBuildReport)}`,
+    );
+    if (postBuildReport.exitCode !== 0)
+      throw new Error("TN_RELEASE_POST_BUILD_PREFLIGHT_RED: the built tree is not publishable.");
+  }
+
   if (!publish) {
     await packReleaseSet(packages);
     process.stdout.write(
@@ -308,7 +366,10 @@ async function main(argv: readonly string[]): Promise<void> {
       "\nPublishing without --provenance: npm can only attest a build from CI, and this is not CI.\n",
     );
   }
+  const publishPackages = unpublishedReleasePackages(packages, npmLookup(REPO));
+  const publishNames = new Set(publishPackages.map((item) => item.name));
   for (const name of order) {
+    if (!publishNames.has(name)) continue;
     const version = versions.get(name);
     if (version === undefined) throw new Error(`TN_RELEASE_NO_VERSION: ${name}`);
     run(

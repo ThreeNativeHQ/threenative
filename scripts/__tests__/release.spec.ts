@@ -1,12 +1,15 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
-import { publishSet } from "../check-publish-state.js";
+import { type IPublishPackage, type RegistryLookup, publishSet } from "../check-publish-state.js";
 import {
+  assertCleanPackageTree,
   prepareReleaseCohort,
   releaseOrder,
+  unpublishedReleasePackages,
   validateReleaseCohort,
   validateTemplatePins,
 } from "../release.js";
@@ -33,6 +36,11 @@ async function manifests(
     );
     return { manifest, name: entry.name };
   });
+}
+
+function candidate(name: string, version: string): IPublishPackage {
+  const directory = `/packages/${name.replaceAll("/", "-")}`;
+  return { directory, manifest: path.join(directory, "package.json"), name, version };
 }
 
 describe("pnpm release ordering", () => {
@@ -153,5 +161,81 @@ describe("pnpm release ordering", () => {
         }),
       }),
     ).rejects.toThrow(/TN_RELEASE_COHORT_RED.*@threenative\/core/u);
+  });
+
+  it("refuses a mixed candidate cohort before publishing any package", () => {
+    const packages = [
+      candidate("@threenative/core", "0.3.0"),
+      candidate("@threenative/ui", "0.3.0"),
+    ];
+    const lookup: RegistryLookup = (name) =>
+      name === "@threenative/core" ? { state: "absent" } : { state: "present", version: "0.3.0" };
+
+    expect(() => unpublishedReleasePackages(packages, lookup)).toThrow(
+      /TN_RELEASE_COHORT_PARTIAL.*@threenative\/ui@0\.3\.0/u,
+    );
+  });
+
+  it("returns a cohort only when every candidate version is absent", () => {
+    const packages = [
+      candidate("@threenative/core", "0.3.0"),
+      candidate("@threenative/ui", "0.3.0"),
+    ];
+
+    expect(unpublishedReleasePackages(packages, () => ({ state: "absent" }))).toEqual(packages);
+  });
+
+  it("refuses a complete cohort whose candidate versions are already published", () => {
+    const packages = [
+      candidate("@threenative/core", "0.3.0"),
+      candidate("@threenative/ui", "0.3.0"),
+    ];
+
+    expect(() =>
+      unpublishedReleasePackages(packages, () => ({ state: "present", version: "0.3.0" })),
+    ).toThrow(/TN_RELEASE_COHORT_ALREADY_PUBLISHED/u);
+  });
+
+  it("fails closed when an exact candidate registry lookup is unreachable", () => {
+    const packages = [candidate("@threenative/core", "0.3.0")];
+
+    expect(() => unpublishedReleasePackages(packages, () => ({ state: "unreachable" }))).toThrow(
+      /TN_RELEASE_REGISTRY_UNREACHABLE/u,
+    );
+  });
+
+  it("keeps the post-build cleanliness and preflight gates before publication", async () => {
+    const source = await fs.promises.readFile(
+      path.resolve(import.meta.dirname, "../release.ts"),
+      "utf8",
+    );
+    const build = source.indexOf('run("pnpm", ["build"], "pnpm build")');
+    const clean = source.indexOf("assertCleanPackageTree(REPO);", build);
+    const preflight = source.indexOf("const postBuildReport", build);
+    const cohort = source.indexOf("const publishPackages = unpublishedReleasePackages", preflight);
+    expect(build).toBeGreaterThanOrEqual(0);
+    expect(clean).toBeGreaterThan(build);
+    expect(preflight).toBeGreaterThan(clean);
+    expect(cohort).toBeGreaterThan(preflight);
+  });
+
+  it("rejects tracked package output before publication", async () => {
+    const root = await makeTempDir("threenative-release-dirty-build-");
+    roots.push(root);
+    fs.mkdirSync(path.join(root, "packages/core"), { recursive: true });
+    fs.writeFileSync(path.join(root, "packages/core/package.json"), '{"name":"core"}\n');
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "initial"], { cwd: root });
+    fs.writeFileSync(
+      path.join(root, "packages/core/package.json"),
+      '{"name":"core","version":"0.3.0"}\n',
+    );
+
+    expect(() => assertCleanPackageTree(root)).toThrow(
+      /TN_RELEASE_DIRTY_TREE[\s\S]*package\.json/u,
+    );
   });
 });

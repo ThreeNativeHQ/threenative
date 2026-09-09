@@ -209,6 +209,82 @@ describe("pnpm publish:check", () => {
     expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(2);
   });
 
+  it("counts a package tsconfig change for an already published version", async () => {
+    const root = await makeTempDir("threenative-publish-tsconfig-");
+    const packageRoot = path.join(root, "packages/core");
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({
+        files: ["dist", "README.md"],
+        name: "@threenative/core",
+        version: "0.1.0",
+      }),
+    );
+    write(root, "packages/core/README.md", "# core\n");
+    write(root, "packages/core/src/index.ts", "export const x = 1;\n");
+    write(root, "packages/core/tsconfig.json", '{"extends":"../../tsconfig.base.json"}\n');
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "initial"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+        GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
+      },
+    });
+    write(
+      root,
+      "packages/core/tsconfig.json",
+      '{"extends":"../../tsconfig.base.json","strict":true}\n',
+    );
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-tsconfig"], { cwd: root });
+
+    expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(1);
+  });
+
+  it("counts shared workspace and catalog inputs for every package", async () => {
+    const root = await makeTempDir("threenative-publish-shared-inputs-");
+    const packageRoot = path.join(root, "packages/core");
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({
+        files: ["dist", "README.md"],
+        name: "@threenative/core",
+        version: "0.1.0",
+      }),
+    );
+    write(root, "packages/core/README.md", "# core\n");
+    write(root, "packages/core/src/index.ts", "export const x = 1;\n");
+    write(root, "tsconfig.base.json", '{"compilerOptions":{"strict":true}}\n');
+    write(root, "pnpm-workspace.yaml", "packages: ['packages/*']\ncatalog:\n  three: 0.185.1\n");
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "initial"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+        GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
+      },
+    });
+    write(root, "tsconfig.base.json", '{"compilerOptions":{"strict":false}}\n');
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-shared-tsconfig"], { cwd: root });
+    write(root, "pnpm-workspace.yaml", "packages: ['packages/*']\ncatalog:\n  three: 0.185.2\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-catalog"], { cwd: root });
+
+    expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(2);
+  });
+
   it("does not fail a package that was never published", async () => {
     // A 404 is what this whole lane exists to fix; refusing to publish because of it would make
     // the preflight unsatisfiable.

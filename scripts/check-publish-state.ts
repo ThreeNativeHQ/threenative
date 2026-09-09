@@ -141,11 +141,30 @@ function addPackageScriptInputs(directory: string, scripts: unknown, targets: Se
   }
 }
 
+const TSCONFIG_FILE = /^tsconfig(?:\.[^/]+)?\.json$/u;
+
 function addPackageConfigInputs(directory: string, targets: Set<string>): void {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (!entry.isFile() || !/(?:^|\.)config\.(?:[cm]?[jt]sx?|json)$/u.test(entry.name)) continue;
+    if (
+      !entry.isFile() ||
+      (!TSCONFIG_FILE.test(entry.name) &&
+        !/(?:^|\.)config\.(?:[cm]?[jt]sx?|json)$/u.test(entry.name))
+    )
+      continue;
     targets.add(path.join(directory, entry.name));
   }
+}
+
+function addSharedBuildInputs(repo: string, targets: Set<string>): void {
+  for (const name of ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"]) {
+    const file = path.join(repo, name);
+    if (fs.existsSync(file)) targets.add(file);
+  }
+  for (const entry of fs.readdirSync(repo, { withFileTypes: true })) {
+    if (entry.isFile() && TSCONFIG_FILE.test(entry.name)) targets.add(path.join(repo, entry.name));
+  }
+  const patches = path.join(repo, "patches");
+  if (fs.existsSync(patches)) targets.add(patches);
 }
 
 function addPackageDocuments(directory: string, targets: Set<string>): void {
@@ -173,7 +192,7 @@ function addPackageFiles(
 }
 
 /** Paths that can change the package artifact or the metadata a consumer receives. */
-function publicationInputTargets(directory: string): readonly string[] {
+function publicationInputTargets(repo: string, directory: string): readonly string[] {
   const manifest = path.join(directory, "package.json");
   if (!fs.existsSync(manifest))
     throw new Error(`TN_PUBLISH_MANIFEST_MISSING: ${manifest} does not exist.`);
@@ -188,6 +207,7 @@ function publicationInputTargets(directory: string): readonly string[] {
   if (fs.existsSync(templates)) targets.add(templates);
   addPackageScriptInputs(directory, parsed.scripts, targets);
   addPackageConfigInputs(directory, targets);
+  addSharedBuildInputs(repo, targets);
 
   // npm always includes these package documents when they exist. Explicit `files` entries are
   // added below, including non-src bundles such as core/gpl and core/mcp.
@@ -201,7 +221,7 @@ export type SourceCommits = (directory: string, since: string) => number;
 
 export function gitSourceCommits(repo: string): SourceCommits {
   return (directory, since) => {
-    const targets = publicationInputTargets(directory);
+    const targets = publicationInputTargets(repo, directory);
     const stdout = execFileSync(
       "git",
       [
