@@ -562,6 +562,23 @@ const assets = createAssetLoader({ basePath: "/assets" });
 const rock = await assets.texture("rock.png");
 ```
 
+### `createPipelineCensus`
+
+`function` — Read the renderer's bounded, versioned pipeline capture in a diagnostic or playtest tool.
+
+```ts
+export function createPipelineCensus(options: IPipelineCensusOptions): PipelineCensus { … }
+```
+
+- **Use when:** inspect shader and pipeline creation work during a real launch · correlate pipeline creation with material, object, pass, and shader identities
+- **Constraints:** the capture is bounded and incomplete when the backend cannot expose an observation
+
+```ts
+const capture = game.runtime.pipelineCensus?.();
+The game normally reaches this through `runtime.pipelineCensus`; direct construction exists for
+renderer adapters and contract tests, not for gameplay.
+```
+
 ### `createRandom`
 
 `function` — Create a deterministic random source for portable gameplay.
@@ -939,6 +956,23 @@ export class PathFollow3D { … }
 
 ```ts
 const follower = new PathFollow3D({ points: patrolPoints, loop: true, speed: 3 });
+```
+
+### `PipelineCensus`
+
+`class` — Read the renderer's bounded, versioned pipeline capture in a diagnostic or playtest tool.
+
+```ts
+export class PipelineCensus { … }
+```
+
+- **Use when:** inspect shader and pipeline creation work during a real launch · correlate pipeline creation with material, object, pass, and shader identities
+- **Constraints:** the capture is bounded and incomplete when the backend cannot expose an observation
+
+```ts
+const capture = game.runtime.pipelineCensus?.();
+The game normally reaches this through `runtime.pipelineCensus`; direct construction exists for
+renderer adapters and contract tests, not for gameplay.
 ```
 
 ### `PointerEvents3D`
@@ -2772,6 +2806,21 @@ export function failedDiagnosticsAssertion(policy: IPlaytestDiagnosticsPolicy): 
 const report = await runStandalonePlaytest(options);
 ```
 
+### `formatPipelineSummary`
+
+`function` — Parse and explain bounded shader-compilation captures.
+
+```ts
+export function formatPipelineSummary(summary: IPipelineSummary): string { … }
+```
+
+- **Use when:** diagnose a slow shader-heavy launch from one browser or native capture · reconcile pipeline creation counts and compile timing
+- **Constraints:** incomplete or malformed captures never become a successful empty report
+
+```ts
+summarizePipelineCapture(parsePipelineCapture(captureText));
+```
+
 ### `formatUsage`
 
 `function` — Parse standalone playtest runner configuration.
@@ -2950,6 +2999,36 @@ export function parseLaunchedPid(output: string): string { … }
 
 ```ts
 const driver = new XcrunIosDriver(options);
+```
+
+### `parsePipelineCapture`
+
+`function` — Parse and explain bounded shader-compilation captures.
+
+```ts
+export function parsePipelineCapture(input: string | unknown): IPipelineCapture { … }
+```
+
+- **Use when:** diagnose a slow shader-heavy launch from one browser or native capture · reconcile pipeline creation counts and compile timing
+- **Constraints:** incomplete or malformed captures never become a successful empty report
+
+```ts
+summarizePipelineCapture(parsePipelineCapture(captureText));
+```
+
+### `parsePipelineEventMarkers`
+
+`function` — Parse and explain bounded shader-compilation captures.
+
+```ts
+export function parsePipelineEventMarkers(text: string): IPipelineCaptureEvent[] { … }
+```
+
+- **Use when:** diagnose a slow shader-heavy launch from one browser or native capture · reconcile pipeline creation counts and compile timing
+- **Constraints:** incomplete or malformed captures never become a successful empty report
+
+```ts
+summarizePipelineCapture(parsePipelineCapture(captureText));
 ```
 
 ### `parseStandalonePlaytestArgs`
@@ -3265,6 +3344,21 @@ export function substituteManagedPort(command: string, port: number): string { �
 
 ```ts
 const report = await runStandalonePlaytest(options);
+```
+
+### `summarizePipelineCapture`
+
+`function` — Parse and explain bounded shader-compilation captures.
+
+```ts
+export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSummary { … }
+```
+
+- **Use when:** diagnose a slow shader-heavy launch from one browser or native capture · reconcile pipeline creation counts and compile timing
+- **Constraints:** incomplete or malformed captures never become a successful empty report
+
+```ts
+summarizePipelineCapture(parsePipelineCapture(captureText));
 ```
 
 ### `tapCommand`

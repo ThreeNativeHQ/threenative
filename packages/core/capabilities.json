@@ -697,6 +697,25 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the capture is bounded and incomplete when the backend cannot expose an observation"
+      ],
+      "example": "const capture = game.runtime.pipelineCensus?.();\nThe game normally reaches this through `runtime.pipelineCensus`; direct construction exists for\nrenderer adapters and contract tests, not for gameplay.",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function createPipelineCensus(options: IPipelineCensusOptions): PipelineCensus { … }",
+      "situations": [
+        "inspect shader and pipeline creation work during a real launch",
+        "correlate pipeline creation with material, object, pass, and shader identities"
+      ],
+      "summary": "Read the renderer's bounded, versioned pipeline capture in a diagnostic or playtest tool.",
+      "supersedes": [],
+      "symbol": "createPipelineCensus"
+    },
+    {
+      "aliases": [],
       "constraints": ["use the returned source instead of Math.random for replayable behavior"],
       "example": "const random = createRandom(42);",
       "importPath": "@threenative/core",
@@ -1177,6 +1196,25 @@
       "summary": "Move an object along a Three.js curve with Godot-style path following.",
       "supersedes": [],
       "symbol": "PathFollow3D"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the capture is bounded and incomplete when the backend cannot expose an observation"
+      ],
+      "example": "const capture = game.runtime.pipelineCensus?.();\nThe game normally reaches this through `runtime.pipelineCensus`; direct construction exists for\nrenderer adapters and contract tests, not for gameplay.",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class PipelineCensus { … }",
+      "situations": [
+        "inspect shader and pipeline creation work during a real launch",
+        "correlate pipeline creation with material, object, pass, and shader identities"
+      ],
+      "summary": "Read the renderer's bounded, versioned pipeline capture in a diagnostic or playtest tool.",
+      "supersedes": [],
+      "symbol": "PipelineCensus"
     },
     {
       "aliases": [],
@@ -3342,6 +3380,23 @@
     },
     {
       "aliases": [],
+      "constraints": ["incomplete or malformed captures never become a successful empty report"],
+      "example": "summarizePipelineCapture(parsePipelineCapture(captureText));",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function formatPipelineSummary(summary: IPipelineSummary): string { … }",
+      "situations": [
+        "diagnose a slow shader-heavy launch from one browser or native capture",
+        "reconcile pipeline creation counts and compile timing"
+      ],
+      "summary": "Parse and explain bounded shader-compilation captures.",
+      "supersedes": [],
+      "symbol": "formatPipelineSummary"
+    },
+    {
+      "aliases": [],
       "constraints": ["invalid flags throw a named usage error"],
       "example": "const config = parseStandalonePlaytestArgs(argv);",
       "importPath": "@threenative/playtest/runner",
@@ -3540,6 +3595,40 @@
       "summary": "Drive and inspect iOS simulator playtest transport.",
       "supersedes": [],
       "symbol": "parseLaunchedPid"
+    },
+    {
+      "aliases": [],
+      "constraints": ["incomplete or malformed captures never become a successful empty report"],
+      "example": "summarizePipelineCapture(parsePipelineCapture(captureText));",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function parsePipelineCapture(input: string | unknown): IPipelineCapture { … }",
+      "situations": [
+        "diagnose a slow shader-heavy launch from one browser or native capture",
+        "reconcile pipeline creation counts and compile timing"
+      ],
+      "summary": "Parse and explain bounded shader-compilation captures.",
+      "supersedes": [],
+      "symbol": "parsePipelineCapture"
+    },
+    {
+      "aliases": [],
+      "constraints": ["incomplete or malformed captures never become a successful empty report"],
+      "example": "summarizePipelineCapture(parsePipelineCapture(captureText));",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function parsePipelineEventMarkers(text: string): IPipelineCaptureEvent[] { … }",
+      "situations": [
+        "diagnose a slow shader-heavy launch from one browser or native capture",
+        "reconcile pipeline creation counts and compile timing"
+      ],
+      "summary": "Parse and explain bounded shader-compilation captures.",
+      "supersedes": [],
+      "symbol": "parsePipelineEventMarkers"
     },
     {
       "aliases": [],
@@ -3894,6 +3983,23 @@
       "summary": "Execute scenario steps, assertions, and evidence capture.",
       "supersedes": [],
       "symbol": "substituteManagedPort"
+    },
+    {
+      "aliases": [],
+      "constraints": ["incomplete or malformed captures never become a successful empty report"],
+      "example": "summarizePipelineCapture(parsePipelineCapture(captureText));",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSummary { … }",
+      "situations": [
+        "diagnose a slow shader-heavy launch from one browser or native capture",
+        "reconcile pipeline creation counts and compile timing"
+      ],
+      "summary": "Parse and explain bounded shader-compilation captures.",
+      "supersedes": [],
+      "symbol": "summarizePipelineCapture"
     },
     {
       "aliases": [],

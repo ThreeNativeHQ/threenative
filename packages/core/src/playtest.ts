@@ -17,6 +17,7 @@ import { Object3D, type Object3D as ThreeObject3D, type Vector2 } from "three";
 import { audioRuntimeSnapshot } from "./audio.js";
 import type { EntitySnapshot } from "./entities.js";
 import type { IGameObservationContribution, IGamePluginHooks, IGamePluginRuntime } from "./game.js";
+import { PIPELINE_CENSUS_CAPABILITY } from "./pipeline-census.js";
 import { readRenderChainObservation } from "./render/chain.js";
 import type { ICtx } from "./scene.js";
 import { CORE_VERSION } from "./version.js";
@@ -37,6 +38,7 @@ export function playtest<
   let dispose: (() => void) | undefined;
   let attached: Promise<void> | undefined;
   let startSceneEntered: Promise<void> | undefined;
+  let disposePipelineCensus: (() => void) | undefined;
   let contactHistory: IPlaytestContactObservation[] = [];
   // The tick a contact happened on, and the tick a published value changed on, are the two
   // halves of "the door opened because the plate was pressed". Both are drained per tick rather
@@ -113,6 +115,13 @@ export function playtest<
             : { timeline: runtime.startupTimeline() }),
         }),
       });
+      const pipelineCensus = runtime?.pipelineCensus;
+      if (runtime !== undefined && pipelineCensus !== undefined) {
+        disposePipelineCensus = runtime.observations.contribute({
+          capabilities: [PIPELINE_CENSUS_CAPABILITY],
+          sample: () => ({ pipelineCensus: pipelineCensus() as unknown as JsonValue }),
+        });
+      }
       installRuntimeChannels(installation.bridge, runtime);
       // A runner announced itself before the page loaded: it is the one consumer of per-frame
       // render samples, so collection turns on exactly for playtest runs and stays off for
@@ -122,6 +131,8 @@ export function playtest<
       dispose = installation.dispose;
       attached = holdUntilAttached(installation.bridge, options, () => startSceneEntered);
       const cleanup = () => {
+        disposePipelineCensus?.();
+        disposePipelineCensus = undefined;
         dispose?.();
         dispose = undefined;
         attached = undefined;

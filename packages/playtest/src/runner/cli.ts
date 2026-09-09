@@ -16,6 +16,7 @@ import { diagnoseDevice, diagnoseHarness, formatDoctorReport, readDeviceProbe, r
 import { formatSceneOverview, observeScene, summariseScene } from "./sceneOverview.js";
 import { initStandalonePlaytest } from "./init.js";
 import { perfCommand } from "./perf.js";
+import { formatPipelineSummary, parsePipelineCapture, summarizePipelineCapture, type IPipelineSummary } from "./pipeline-summary.js";
 import { runAndroidPlaytest } from "./androidRunner.js";
 import { runAndroidBrowserPlaytest, runAndroidBrowserPlaytests } from "./androidBrowserRunner.js";
 import { runDesktopPlaytest } from "./desktopRunner.js";
@@ -139,6 +140,7 @@ export function classifyRunnerError(
  */
 export interface IDoctorArgs {
   readonly browserArgs: readonly string[];
+  readonly capture?: string;
   readonly device: string | undefined;
   readonly text: boolean;
   readonly url: string | undefined;
@@ -146,6 +148,7 @@ export interface IDoctorArgs {
 
 export function parseDoctorArgs(argv: readonly string[]): IDoctorArgs {
   const browserArgs: string[] = [];
+  let capture: string | undefined;
   let device: string | undefined;
   let text = false;
   let url: string | undefined;
@@ -155,12 +158,13 @@ export function parseDoctorArgs(argv: readonly string[]): IDoctorArgs {
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--text") text = true;
-    else if (flag === "--device" || flag === "--url") {
+    else if (flag === "--capture" || flag === "--device" || flag === "--url") {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith("--")) {
         throw new PlaytestCliUsageError(`doctor: '${String(flag)}' requires a value. ${usage}`);
       }
-      if (flag === "--device") device = value;
+      if (flag === "--capture") capture = value;
+      else if (flag === "--device") device = value;
       else url = value;
       index += 1;
     } else if (flag === "--browser-arg") {
@@ -175,7 +179,7 @@ export function parseDoctorArgs(argv: readonly string[]): IDoctorArgs {
       throw new PlaytestCliUsageError(`doctor: unknown option '${String(flag)}'. ${usage}`);
     }
   }
-  return { browserArgs, device, text, url };
+  return { browserArgs, device, text, url, ...(capture === undefined ? {} : { capture }) };
 }
 
 /** Extra arguments extend the WebGPU recipe; replacing it would silently reintroduce SwiftShader. */
@@ -184,7 +188,7 @@ export function doctorBrowserArgs(extra: readonly string[]): string[] {
 }
 
 export async function doctorCommand(argv: readonly string[]): Promise<number> {
-  const { browserArgs, device, text, url } = parseDoctorArgs(argv);
+  const { browserArgs, capture, device, text, url } = parseDoctorArgs(argv);
   const machine = diagnoseHarness(readHarnessEnvironment());
   // The device's own condition is reported next to the machine's, as one report: an operator
   // deciding whether to start a measurement asks both questions at the same moment.
@@ -197,24 +201,51 @@ export async function doctorCommand(argv: readonly string[]): Promise<number> {
         checks: [...machine.checks, ...deviceReport.checks],
         pass: machine.pass && deviceReport.pass,
       };
+  let pipeline: IPipelineSummary | undefined;
+  if (capture !== undefined) {
+    try {
+      const source = await readFile(resolve(capture), "utf8");
+      pipeline = summarizePipelineCapture(parsePipelineCapture(source));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const code = message.startsWith("TN_PIPELINE_CAPTURE_MALFORMED")
+        ? "TN_PIPELINE_CAPTURE_MALFORMED"
+        : "TN_PIPELINE_CAPTURE_UNREADABLE";
+      process.stderr.write(`${JSON.stringify({ diagnostics: [{ code, message, severity: "error" }], pass: false }, null, 2)}\n`);
+      process.exitCode = 2;
+      return 2;
+    }
+  }
+  const pass = report.pass && (pipeline?.complete ?? true);
+  const textReport = () => [
+    formatDoctorReport(report),
+    ...(pipeline === undefined ? [] : [formatPipelineSummary(pipeline)]),
+  ].join("\n");
+  const jsonReport = (scene?: unknown): string => `${JSON.stringify({
+    machine: report,
+    ...(scene === undefined ? {} : { scene }),
+    ...(pipeline === undefined ? {} : { pipeline }),
+    pass,
+  }, null, 2)}\n`;
   if (url === undefined) {
-    process.stdout.write(text ? formatDoctorReport(report) : `${JSON.stringify(report, null, 2)}\n`);
-    process.exitCode = report.pass ? 0 : 1;
-    return report.pass ? 0 : 1;
+    process.stdout.write(text ? textReport() : capture === undefined ? `${JSON.stringify(report, null, 2)}\n` : jsonReport());
+    process.exitCode = pass ? 0 : 1;
+    return pass ? 0 : 1;
   }
   if (!report.pass) {
     // Reaching a scene needs the browser the machine checks just said is missing.
-    process.stdout.write(text ? formatDoctorReport(report) : `${JSON.stringify(report, null, 2)}\n`);
+    process.stdout.write(text ? textReport() : jsonReport());
     process.exitCode = 1;
     return 1;
   }
   const overview = summariseScene(await observeScene(url, { browserArgs: doctorBrowserArgs(browserArgs) }));
   process.stdout.write(
     text
-      ? `${formatDoctorReport(report)}\n${formatSceneOverview(overview)}`
-      : `${JSON.stringify({ machine: report, scene: overview }, null, 2)}\n`,
+      ? `${textReport()}\n${formatSceneOverview(overview)}`
+      : jsonReport(overview),
   );
-  return 0;
+  process.exitCode = pass ? 0 : 1;
+  return pass ? 0 : 1;
 }
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {

@@ -449,6 +449,8 @@ export interface IPlaytestObservationSnapshot {
   gameplay?: IPlaytestGameplayObservation;
   physicsDebugSeries?: Array<{ label: string; snapshot: JsonValue; tick: number }>;
   performance?: IPlaytestPerformanceObservation;
+  /** Bounded shader/pipeline creation capture supplied by the engine when diagnostics are enabled. */
+  pipelineCensus?: JsonValue;
   renderChain?: IPlaytestRenderChainObservation;
   runtimeDiagnosticsSeries?: IPlaytestRuntimeDiagnosticsSample[];
   resources?: Record<string, JsonValue>;

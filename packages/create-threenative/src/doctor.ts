@@ -76,7 +76,8 @@ export interface IProjectSnapshot {
   readonly mcpServerHealth?: ReadonlyMap<string, IMcpServerHealth>;
   readonly playtestRunnerPath?: string;
   readonly resolvePackageDirectory?: (name: string) => string | undefined;
-  readonly runPlaytestDoctor?: () => string;
+  /** Runs the same playtest doctor, optionally against the launch capture named by the CLI. */
+  readonly runPlaytestDoctor?: (capturePath?: string) => string;
 }
 
 /** What `resolveBlender` answers, narrowed to what doctor reports. */
@@ -696,22 +697,34 @@ function playtestFailureDetail(error: unknown): string {
   return output.length > 0 ? output : error instanceof Error ? error.message : String(error);
 }
 
-function playtestInvocation(runner: string): {
+function playtestInvocation(
+  runner: string,
+  capturePath?: string,
+): {
   readonly args: readonly string[];
   readonly command: string;
 } {
   if (process.platform !== "win32" || !/\.cmd$/iu.test(runner)) {
-    return { args: ["doctor", "--text"], command: runner };
+    return {
+      args: ["doctor", "--text", ...(capturePath === undefined ? [] : ["--capture", capturePath])],
+      command: runner,
+    };
   }
   const command = process.env.ComSpec ?? process.env.COMSPEC ?? "cmd.exe";
+  const capture =
+    capturePath === undefined ? "" : ` --capture "${capturePath.replaceAll('"', '\\"')}"`;
   return {
-    args: ["/d", "/s", "/c", `"${runner}" doctor --text`],
+    args: ["/d", "/s", "/c", `"${runner}" doctor --text${capture}`],
     command,
   };
 }
 
-function executePlaytestDoctor(runner: string, projectRoot: string | undefined): string {
-  const invocation = playtestInvocation(runner);
+function executePlaytestDoctor(
+  runner: string,
+  projectRoot: string | undefined,
+  capturePath?: string,
+): string {
+  const invocation = playtestInvocation(runner, capturePath);
   return execFileSync(invocation.command, invocation.args, {
     cwd: projectRoot,
     encoding: "utf8",
@@ -720,12 +733,13 @@ function executePlaytestDoctor(runner: string, projectRoot: string | undefined):
   });
 }
 
-function playtestCheck(snapshot: IProjectSnapshot): IDoctorCheck {
+function playtestCheck(snapshot: IProjectSnapshot, capturePath?: string): IDoctorCheck {
   const runner = playtestRunner(snapshot);
   if (runner === undefined) return missingPlaytestCheck(snapshot);
   try {
     const output =
-      snapshot.runPlaytestDoctor?.() ?? executePlaytestDoctor(runner, snapshot.projectRoot);
+      snapshot.runPlaytestDoctor?.(capturePath) ??
+      executePlaytestDoctor(runner, snapshot.projectRoot, capturePath);
     const detail = output.trim();
     return {
       detail:
@@ -1258,7 +1272,10 @@ function blenderCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
   };
 }
 
-export function diagnoseProject(snapshot: IProjectSnapshot): IDoctorReport {
+export function diagnoseProject(
+  snapshot: IProjectSnapshot,
+  options: { readonly capturePath?: string } = {},
+): IDoctorReport {
   if (record(snapshot.packageJson) === undefined) {
     return {
       checks: [
@@ -1276,7 +1293,7 @@ export function diagnoseProject(snapshot: IProjectSnapshot): IDoctorReport {
   const blender = blenderCheck(snapshot);
   const nativeRuntime = nativeRuntimeCheck(snapshot);
   const apkSize = apkSizeCheck(snapshot);
-  const playtest = playtestCheck(snapshot);
+  const playtest = playtestCheck(snapshot, options.capturePath);
   const checks: IDoctorCheck[] = [
     { detail: "readable", name: "package.json", status: "ok" },
     ...dependencyChecks(snapshot),
@@ -1419,7 +1436,8 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
       ? {}
       : {
           playtestRunnerPath,
-          runPlaytestDoctor: () => executePlaytestDoctor(playtestRunnerPath, projectRoot),
+          runPlaytestDoctor: (capturePath) =>
+            executePlaytestDoctor(playtestRunnerPath, projectRoot, capturePath),
         }),
     ...(runtimeRoot === undefined
       ? {}

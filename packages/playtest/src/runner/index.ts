@@ -98,6 +98,14 @@ export * from "./recording.js";
  */
 export * from "./runner.js";
 /**
+ * Parse and explain bounded shader-compilation captures.
+ * @situation diagnose a slow shader-heavy launch from one browser or native capture
+ * @situation reconcile pipeline creation counts and compile timing
+ * @constraint incomplete or malformed captures never become a successful empty report
+ * @example summarizePipelineCapture(parsePipelineCapture(captureText));
+ */
+export * from "./pipeline-summary.js";
+/**
  * Resolve a native device transport and its mailbox paths.
  * @situation connect a native host to the playtest runner
  * @situation validate an Android or iOS device endpoint

@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { diagnoseHarness, type IHarnessEnvironment } from "../src/runner/doctor.js";
@@ -108,6 +111,29 @@ describe("doctor flags", () => {
       url: "http://127.0.0.1:4185",
     });
     expect(parseDoctorArgs([])).toEqual({ browserArgs: [], text: false, url: undefined });
+    expect(parseDoctorArgs(["--capture", "town-capture.json"])).toMatchObject({ capture: "town-capture.json" });
+  });
+
+  it("returns a nonzero diagnostic when a requested capture is malformed", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "tn-doctor-capture-"));
+    const capture = path.join(directory, "malformed.log");
+    await writeFile(capture, "TN_PIPELINE_EVENT:{not-json}\n", "utf8");
+    const { doctorCommand } = await import("../src/runner/cli.js");
+    const errors: string[] = [];
+    const write = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      errors.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    let exitCode: number;
+    try {
+      exitCode = await doctorCommand(["--capture", capture]);
+    } finally {
+      process.stderr.write = write;
+      process.exitCode = 0;
+    }
+    expect(exitCode).toBe(2);
+    expect(errors.join(" ")).toMatch(/TN_PIPELINE_CAPTURE_MALFORMED/u);
   });
 
   it("adds its extra browser arguments to the webgpu ones rather than replacing them", async () => {
