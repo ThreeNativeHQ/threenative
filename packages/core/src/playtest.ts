@@ -105,6 +105,7 @@ export function playtest<
         startup: () => ({
           phase: ctx.startup.phase,
           progress: ctx.startup.progress,
+          ...(ctx.startup.warmup === undefined ? {} : { warmup: ctx.startup.warmup }),
           ...(runtime?.startupCompileSettled === undefined
             ? {}
             : { compileSettled: runtime.startupCompileSettled() }),

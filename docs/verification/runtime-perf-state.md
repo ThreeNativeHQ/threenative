@@ -10,6 +10,58 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## PRD-370 warm-up accounting — 2026-09-09
+
+The engine warm-up now reports renderable candidates, compile attempts and the renderer-owned
+pipeline census separately. The old material/object heuristic no longer decides which objects are
+visited or labels candidates as pipelines. Startup status carries the census result into the
+playtest bridge, scene doctor and every generated loading screen; incomplete or unavailable
+coverage is warned about, doctor fails it, and a known incomplete loading bar stops below 100%.
+The compatibility field `pipelines` remains, documented as the candidate count.
+
+### Red/green evidence
+
+Before the implementation, the shared-material negative control reported two compiles instead of
+four, and the report had no `candidates`, `attempted` or `observed` fields. After the implementation:
+
+```text
+pnpm exec vitest run packages/core/__tests__/warmup.spec.ts
+Test Files  1 passed (1)
+Tests  20 passed (20)
+
+pnpm exec vitest run packages/core/__tests__/warmup.spec.ts packages/core/__tests__/warmup-default.spec.ts packages/core/__tests__/pipeline-census.spec.ts
+Test Files  3 passed (3)
+Tests  28 passed (28)
+
+pnpm exec vitest run packages/playtest/__tests__/scene-overview.spec.ts packages/playtest/__tests__/doctor.spec.ts
+Test Files  2 passed (2)
+Tests  32 passed (32)
+
+pnpm exec vitest run packages/create-threenative/__tests__/loading-screen.spec.ts
+Test Files  1 passed (1)
+Tests  22 passed (22)
+```
+
+The census delta regression proves two shared-material candidates remain two attempts while the
+backend observation reports its independent creation, failure, pending, program and pipeline
+counts. The abandoned-compile regression proves a complete-looking census cannot override failed
+warm-up work. The scene overview regression proves incomplete coverage remains a warning and the
+loading regression proves startup progress does not render as complete while coverage is unknown.
+
+### Gates and limits
+
+`pnpm typecheck` passed for 28 of 29 workspace projects. `pnpm lint` passed with the repository's
+existing warning diagnostics and no errors. The V8/Dawn native host built 403/403 CMake steps, the
+V8 contract aggregate built 83/83 targets, and the QuickJS timestamp, RG11B10 and host targets
+built successfully. The timestamp contract passed 2/2 and the isolated WebTransport fixture suite
+passed 36/36 under `scripts/xvfb.sh`. A concurrent full native Vitest run exposed the existing
+shared `.test-tmp` cleanup race between WebTransport and GPU fetch tests; the WebTransport file
+passed when run alone, so no unrelated native test code changed.
+
+No complete real-town browser/native warm-up capture was run in this lane. Actual platform counts,
+late first-use work after the warm-up boundary and the PRD's independent browser/native acceptance
+remain unverified; this is an implementation checkpoint, not a completed PRD-370 claim.
+
 ## PRD-369 partial material graph reuse — 2026-09-09
 
 The Wildwood game lane at `ThreeNativeHQ/examples`, commit `f8e992c`, now routes imported foliage

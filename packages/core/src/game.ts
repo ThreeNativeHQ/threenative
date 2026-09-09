@@ -35,7 +35,14 @@ import {
 } from "./renderer-config.js";
 import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
 import { ResolutionScaler } from "./resolution-scaler.js";
-import type { ICtx, IStartupTimeline, Scene, SceneConstructor, SceneFrame } from "./scene.js";
+import type {
+  ICtx,
+  IStartupStatus,
+  IStartupTimeline,
+  Scene,
+  SceneConstructor,
+  SceneFrame,
+} from "./scene.js";
 import { Scheduler } from "./schedule.js";
 import {
   STARTUP_COMPILE_BUDGET_MS,
@@ -870,6 +877,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       !startupReadiness.ready &&
       (canvasLayer.opaque || (this.#uiReady && this.#uiBridge?.hasPeer() === true));
     const timeline: { -readonly [K in keyof IStartupTimeline]: IStartupTimeline[K] } = {};
+    let warmUpStatus: IStartupStatus["warmup"];
     const now = (): number => globalThis.performance?.now() ?? Date.now();
     // Stamped when the FRAMEWORK is done, which is before `whenReady()` whenever the game has
     // registered a `startup.hold()`. Two stamps, because one number cannot be both "what the
@@ -906,6 +914,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
+      warmUpStatus =
+        report === undefined
+          ? { status: "unavailable" }
+          : {
+              attempted: report.attempted,
+              candidates: report.candidates,
+              observed: report.observed,
+              status: report.observed.status,
+            };
       if (stamp) timeline.compileSettledMs ??= now();
       console.log(
         `${marker}:${JSON.stringify(
@@ -914,6 +931,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             : {
                 compiled: report.compiled,
                 pipelines: report.pipelines,
+                candidates: report.candidates,
+                attempted: report.attempted,
+                observed: report.observed,
                 slices: report.slices,
                 elapsedMs: Math.round(report.elapsedMs),
                 unsupported: report.unsupported,
@@ -968,6 +988,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       raycast: (options) => picker.raycast(options),
       raycastAll: (options, target) => picker.raycastAll(options, target),
       startup: {
+        get warmup() {
+          return warmUpStatus;
+        },
         get phase() {
           // The projection is reconciled before the first world draw, but readiness is not reported
           // until first-use work and a sustained in-budget window have completed. An opaque loading
@@ -1406,6 +1429,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
+      warmUpStatus =
+        report === undefined
+          ? { status: "unavailable" }
+          : {
+              attempted: report.attempted,
+              candidates: report.candidates,
+              observed: report.observed,
+              status: report.observed.status,
+            };
       // One greppable line on every platform, so a device lane reads what the warm-up did without
       // instrumenting anything -- including the cases where it could do nothing, ran out of
       // budget, or threw.
@@ -1415,6 +1447,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             ? { failed: failure ?? "unknown" }
             : {
                 compiled: report.compiled,
+                pipelines: report.pipelines,
+                candidates: report.candidates,
+                attempted: report.attempted,
+                observed: report.observed,
                 slices: report.slices,
                 elapsedMs: Math.round(report.elapsedMs),
                 unsupported: report.unsupported,

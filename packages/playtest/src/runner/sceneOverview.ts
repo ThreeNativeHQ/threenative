@@ -10,6 +10,7 @@ import type {
   IPlaytestBridgeDescription,
   IPlaytestEntityObservation,
   IPlaytestObservationSnapshot,
+  IPlaytestStartupObservation,
 } from "../protocol.js";
 
 /**
@@ -55,6 +56,7 @@ export interface ISceneObservation {
   /** An earlier sample, so the report can say whether anything is actually moving. */
   readonly previous?: IPlaytestObservationSnapshot;
   readonly snapshot: IPlaytestObservationSnapshot;
+  readonly startup?: IPlaytestStartupObservation;
   readonly startupMs?: number;
   readonly url: string;
 }
@@ -71,6 +73,7 @@ export interface ISceneOverview {
   readonly page?: IScenePageProbe;
   readonly projection?: { batches?: number; projecting?: boolean; reason?: string; reasonCode?: string; renderables?: number };
   readonly screen?: { blank: boolean; brightPixelRatio: number; distinctColors: number };
+  readonly startup?: IPlaytestStartupObservation;
   readonly startupMs?: number;
   readonly warnings: readonly string[];
   readonly extents?: { x: ISceneAxisExtent; y: ISceneAxisExtent; z: ISceneAxisExtent };
@@ -255,6 +258,10 @@ function warningsFor(
   if (observation.page !== undefined && observation.page.canvas === undefined) {
     warnings.push("no canvas in the page — nothing can render at all");
   }
+  const warmup = observation.startup?.warmup;
+  if (warmup !== undefined && warmup.status !== "complete") {
+    warnings.push(`warm-up coverage is ${warmup.status}; pipeline completion is not proven`);
+  }
   for (const error of observation.page?.consoleErrors.slice(0, 3) ?? []) {
     warnings.push(`console error: ${error}`);
   }
@@ -289,6 +296,7 @@ export function summariseScene(observation: ISceneObservation): ISceneOverview {
           },
         }),
     screen: screenVerdict(observation.frame),
+    ...(observation.startup === undefined ? {} : { startup: observation.startup }),
     ...(observation.startupMs === undefined ? {} : { startupMs: observation.startupMs }),
     extents:
       points.length === 0
@@ -351,10 +359,21 @@ function extentLine(extents: ISceneOverview["extents"]): string {
 function startupLine(overview: ISceneOverview): string | undefined {
   const parts: string[] = [];
   if (overview.startupMs !== undefined) parts.push(`bridge answered after ${(overview.startupMs / 1000).toFixed(1)} s`);
+  const warmup = overview.startup?.warmup;
+  if (warmup !== undefined) {
+    const observed = warmup.observed;
+    parts.push(
+      observed === undefined
+        ? `warm-up ${warmup.status}`
+        : `warm-up ${warmup.status}: ${observed.created} created / ${warmup.candidates ?? "?"} candidates`,
+    );
+  }
   const canvas = overview.page?.canvas;
   parts.push(canvas === undefined ? "no canvas" : `canvas ${canvas.width}×${canvas.height} @${canvas.dpr}dpr`);
   if (overview.page?.adapter !== undefined) parts.push(`adapter ${overview.page.adapter}`);
-  return overview.startupMs === undefined && overview.page === undefined ? undefined : `  startup      ${parts.join(" · ")}`;
+  return overview.startupMs === undefined && overview.page === undefined && overview.startup === undefined
+    ? undefined
+    : `  startup      ${parts.join(" · ")}`;
 }
 
 function screenLine(overview: ISceneOverview): string | undefined {
@@ -511,6 +530,7 @@ export async function observeScene(
         "TN_PLAYTEST_BRIDGE_MISSING: the page at this URL installs no playtest bridge, so its scene cannot be read. Install playtest() in defineGame, or installThreePlaytestBridge for a plain Three.js project.",
       );
     }
+    const readiness = await bridge.readiness();
     const startupMs = Date.now() - startedAt;
     const include = ["diagnostics", "entities", "gameplay", "resources", "runtimeDiagnosticsSeries"];
     const previous = await bridge.sample({ include });
@@ -529,6 +549,7 @@ export async function observeScene(
       page: page_,
       previous,
       snapshot,
+      ...(readiness.startup === undefined ? {} : { startup: readiness.startup }),
       startupMs,
       url,
     };

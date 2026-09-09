@@ -44,6 +44,7 @@ import {
 } from "../templates/starter/src/render/loading.js";
 
 const templateRoot = path.resolve("packages/create-threenative/templates");
+type LoadingWarmup = { readonly status: "complete" | "incomplete" | "unavailable" };
 // Read off disk, so a kit added tomorrow is covered by this suite the day it ships its
 // appearance block rather than the day somebody remembers to extend a list here.
 const stampedTemplates = discoverStampedTemplates(templateRoot);
@@ -71,7 +72,11 @@ function host(
     scene,
     // Neither promise resolves: the screen must be correct while it is still up, which is the point.
     renderer: { compileAsync: () => new Promise<void>(() => undefined) },
-    startup: { progress: 0, whenReady: () => new Promise<void>(() => undefined) },
+    startup: {
+      progress: 0,
+      warmup: undefined as LoadingWarmup | undefined,
+      whenReady: () => new Promise<void>(() => undefined),
+    },
     ...(safeArea === undefined ? {} : { viewport: { safeArea } }),
   };
 }
@@ -291,6 +296,19 @@ describe("template loading screen", () => {
       expect(Number.isFinite(fill.scale.x)).toBe(true);
       expect(Number.isFinite(fill.position.x)).toBe(true);
     }
+  });
+
+  it("does not show complete progress when warm-up coverage is unknown", () => {
+    const source = host();
+    source.startup.warmup = { status: "incomplete" };
+    const controller = createLoadingScreen(source);
+    const { track, fill } = quads(source.canvasLayer.scene);
+
+    source.startup.progress = 1;
+    controller.update();
+
+    expect(fill.scale.x).toBeLessThan(track.scale.x);
+    controller.finish();
   });
 
   it.each([

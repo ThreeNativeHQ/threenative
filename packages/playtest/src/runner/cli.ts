@@ -216,7 +216,7 @@ export async function doctorCommand(argv: readonly string[]): Promise<number> {
       return 2;
     }
   }
-  const pass = report.pass && (pipeline?.complete ?? true);
+  let pass = report.pass && (pipeline?.complete ?? true);
   const textReport = () => [
     formatDoctorReport(report),
     ...(pipeline === undefined ? [] : [formatPipelineSummary(pipeline)]),
@@ -239,6 +239,8 @@ export async function doctorCommand(argv: readonly string[]): Promise<number> {
     return 1;
   }
   const overview = summariseScene(await observeScene(url, { browserArgs: doctorBrowserArgs(browserArgs) }));
+  const warmupStatus = overview.startup?.warmup?.status;
+  if (warmupStatus !== undefined && warmupStatus !== "complete") pass = false;
   process.stdout.write(
     text
       ? `${textReport()}\n${formatSceneOverview(overview)}`
