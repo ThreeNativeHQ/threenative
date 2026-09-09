@@ -235,6 +235,35 @@ Pixel 8 was unreachable.
 
 ---
 
+## PRD-360 corrected explicit warm-up boundary — 2026-09-08
+
+The one bounded object-granularity validation was repeated after fixing a first-use race in
+`packages/core/src/game.ts:860`, `:1138`, `:1171` and `:1262`. A held native frame could arrive
+after an explicit warm-up began but before it settled; the render path now keeps first-use compute
+and world presentation behind that same boundary. The regression is at
+`packages/core/__tests__/game.spec.ts:545`.
+
+The unchanged Bayview source temporarily selected the existing object granularity. The qualified
+Pixel 8 run used APK SHA-256
+`2a64ede5cf0699580e8e62506b054f0c8e046c7084fb4244f42ea5c6b1394496`, with 81% battery,
+discharging status, thermal status `NONE`, and battery temperature 33.5 °C to 33.9 °C. The
+existing movement scenario passed at **2.146682 m** with zero diagnostics. The full raw receipt is
+[`android-object-corrected-receipt.json.gz`](prd-360-warmup-cache-2026-09-07/android-object-corrected-receipt.json.gz).
+
+| marker | observed |
+| --- | ---: |
+| `TN_WARMUP` compiled / slices / elapsed | 494 / 21 / 11,659 ms |
+| `TN_COLD_START.first_frame` | 19,629.400 ms |
+| `TN_PUMP_SILENCE.maxGapMs` / trailing gap | 2,339.194 / 5,551.419 ms |
+| movement `TN_PUMP_ENDPOINT.maxGapMs` | 5,560.916 ms |
+
+There was one `TN_WARMUP` marker and no `TN_STARTUP_WARMUP` marker, so the duplicate fallback pass
+was removed. The run still misses the 8,000 ms launch and 250 ms pump criteria. It is a corrected
+validation receipt, not a three-launch cold-install median; the object option was removed from the
+sandbox after measurement and remains opt-in.
+
+---
+
 ## Android: the GPU meter reports on a Pixel 8 — 2026-09-01
 
 **First GPU reading taken from a phone by the instrument rather than by ablation arithmetic.**
@@ -3902,3 +3931,70 @@ records one physical Pixel 8 run: first frame 16,020.007 ms, pipeline compilatio
 These are single-run diagnostics, not a qualified three-run first-playable or correlated
 pump acceptance result. APK and log identities are in the [repair proof](findings-2026-09-07-bayview-fix/proof.json).
 PRD-360 remains PARTIAL; the next task is baseline attribution before a bounded optimization.
+
+## PRD-360 Phase 1 retry checkpoint — 2026-09-08
+
+This lane re-established the measurement provenance and ran the available fail-closed checks. It
+did not reach a physical launch, so it claims no scheduler repair, launch timing, pump budget, or
+acceptance result. The source PRD remains the authority for the required three-run phone protocol.
+
+### Subject and artifact provenance
+
+- Engine checkout: `76321e46d93f8ece59528315e83b17a644b7a77b`.
+- Candidate Bayview checkout: `/home/joao/projects/threenative/sandbox/prd360-bayview-live`,
+  `ef71572c59fdaf730e1c037fcba4129ef49876f6`. Its source, asset and package tree is untracked,
+  so it is not a clean A/B subject and no performance number is attributed to it.
+- Retained APKs `artifacts/experiment-3.apk` and `dist-native/fps-framework.apk` are byte-identical:
+  SHA-256 `5f6ac0106868013437b97b00854e50ec69b8162187006cc2693378449b1855df`.
+- Retained game bundle `.threenative/build/game.js`: SHA-256
+  `b11c5753e1b7a4570dfb7e4bf176b52ebb59b89b73cbac9ea36332d69e33c7c0`.
+- The bundle and APK are retained provenance only. The APK is not asserted to carry the current
+  observer or to represent a cold-install candidate.
+
+The engine dependency bootstrap `pnpm install --frozen-lockfile` completed in 4.6 seconds. The
+repository build `pnpm build`, the playtest build
+`pnpm --filter @threenative/playtest build`, and `node packages/playtest/dist/runner/cli.js doctor
+--text` completed successfully. The doctor reported the expected missing `xcrun` warning; Node,
+Playwright, Chromium, display and adb checks passed. Rebuilt package identities were recorded as:
+
+```text
+core       320ba88af5327d386ff42ea8e93e7b7c0b50234e30a2c13a72623d7617d240f5
+assets     e66be010846febca72999eccc7ebed5c8bebcdb75fc9b305354cdc3c68d296ab
+ui         788184bef642849a30baab1abe3a8443f390306a673bd9ec6455eed16a068d89
+playtest   7c8d12185a12656384b934131561d128920e241c5a1140a5816e8e1a2904c233
+create     565bdc999e2377aec098e8fd80ea0e1be42564b39730f55b72e8b40cabc378f1
+```
+
+### Checks that ran without a device
+
+- The focused evaluator suites passed `18/18` tests.
+- The staged validator at
+  `artifacts/batch-2026-09-05/startup-repack-preparation/first-playable/` passed `32/32` cases,
+  including movement, visible-world, pump-correlation, arm-identity, clock, runner, Android-target
+  and preflight negative controls. This validates the evaluator; it is not game evidence.
+- `node packages/runtime-native/scripts/measure-cold-start.mjs --desktop --launches 1` failed
+  closed with `TN_COLD_START_LAUNCHES_INVALID`, as required for an invalid one-launch request.
+- The Android measurement using the recorded serial `192.168.1.192:5555` failed closed with
+  `TN_DEVICE_PREFLIGHT_NO_DEVICE`. `adb devices -l` was empty and the device was unreachable; no
+  install, launch, first frame, movement or pump observation occurred.
+
+The first native-runtime test attempt was setup-blocked by the unbuilt host and produced unrelated
+build-dependent failures. After the opt-in V8 host, all V8 contract targets, and the QuickJS
+cross-engine targets were built, the same package lane passed:
+
+```text
+Test Files  105 passed (105)
+Tests  851 passed | 57 skipped (908)
+packages/physics/__tests__/parity.spec.ts: 29 passed
+Rust physics parity: 14 unit tests + 2 parity tests passed
+publint: All good!
+```
+
+The repository gates then passed `pnpm typecheck`, `pnpm lint` (653 existing warning diagnostics,
+no errors), `pnpm build`, `pnpm budgets`, and `pnpm test` (`406 passed, 2 skipped` files;
+`4,658 passed, 8 skipped` tests). The Android retry still fails closed with
+`TN_DEVICE_PREFLIGHT_NO_DEVICE`; no physical launch occurred. Phase 1 therefore remains open.
+The next actionable step is to choose or rebuild a clean observer-carrying Bayview subject, then
+rerun the prescribed three cold phone launches when a qualified device is reachable. See the
+[PRD-360 protocol](../PRDs/batch-2026-09-05/PRD-360-android-launch-is-playable-within-eight-seconds.md)
+and the [tracked evaluator source](prd-360-startup-2026-09-05/validate-evaluator.mjs.txt).

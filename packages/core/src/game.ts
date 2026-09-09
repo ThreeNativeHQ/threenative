@@ -854,6 +854,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         await warmUp("TN_STARTUP_WARMUP_HELD", Math.round(STARTUP_COMPILE_BUDGET_MS / 3), false);
       },
     });
+    // The held loop starts before an explicit warm-up so the loading surface can animate. A native
+    // frame may therefore arrive while that pass is still awaiting a compile promise; keep first-use
+    // rendering and compute behind the same held boundary until the explicit pass has settled.
+    let explicitWarmUpSettled = !this.#warmUpConfiguredExplicitly();
+    // A web UI is the loading surface on native and on the web. Its bridge must be both attached
+    // and announced ready: an attached but unrendered web view is not a cover the player can see.
+    // Keep this predicate tied to an actually attached and rendered web UI. The render path still
+    // lets a settled world render behind either kind of cover; only the unresolved first-use work
+    // is held, so a persistent HUD cannot stop the world pass after loading.
+    const startupCoverActive = (): boolean =>
+      !startupReadiness.ready &&
+      (canvasLayer.opaque || (this.#uiReady && this.#uiBridge?.hasPeer() === true));
     const timeline: { -readonly [K in keyof IStartupTimeline]: IStartupTimeline[K] } = {};
     const now = (): number => globalThis.performance?.now() ?? Date.now();
     // Stamped when the FRAMEWORK is done, which is before `whenReady()` whenever the game has
@@ -1123,15 +1135,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // world pass and projection start together behind the still-opaque layer.
         let worldMetrics: IRenderPerformanceMetrics | undefined;
         const firstWorldPass = !worldRendered && this.#sceneEntered;
+        const explicitWarmUpPending = this.#warmUpConfiguredExplicitly() && !explicitWarmUpSettled;
         const loaderHasPixels = canvasLayer.scene.children.length > 0;
         const mustPresentLoader =
           firstWorldPass && canvasLayer.opaque && loaderHasPixels && !loadingFramePresented;
-        if (firstWorldPass) {
+        if (firstWorldPass && !explicitWarmUpPending) {
           // `startupCompile` is the fallback that compiles inside the readiness gate. When warm-up
           // is on it has already happened behind the loading screen, so running it again here
           // would pay the same cost twice.
           startupReadiness.start(
-            canvasLayer.opaque && !this.#warmUpConfiguredExplicitly() ? startupCompile : undefined,
+            startupCoverActive() && !this.#warmUpConfiguredExplicitly()
+              ? startupCompile
+              : undefined,
           );
         }
         // Render-cadence compute is first-use work too: keep it behind an opaque startup layer
@@ -1146,14 +1161,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (
           this.#renderer !== undefined &&
           this.#sceneEntered &&
-          (!canvasLayer.opaque || startupReadiness.ready)
+          !explicitWarmUpPending &&
+          (!startupCoverActive() || startupReadiness.ready)
         ) {
           const computeStart = frameBudget === undefined ? 0 : budgetNow();
           this.#computeDriven.processRender(this.#renderer);
           frameBudget?.addRender(budgetNow() - computeStart);
         }
         const waitingForFirstUse =
-          firstWorldPass && canvasLayer.opaque && !startupReadiness.compileSettled;
+          firstWorldPass &&
+          (explicitWarmUpPending || (startupCoverActive() && !startupReadiness.compileSettled));
         if (
           !mustPresentLoader &&
           !waitingForFirstUse &&
@@ -1243,7 +1260,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();
         const computeBlockedByStartup =
-          !worldRendered && canvasLayer.opaque && !this.#warmUpConfiguredExplicitly();
+          !worldRendered &&
+          ((this.#warmUpConfiguredExplicitly() && !explicitWarmUpSettled) ||
+            (startupCoverActive() && !this.#warmUpConfiguredExplicitly()));
         if (this.#renderer !== undefined && this.#sceneEntered && !computeBlockedByStartup)
           this.#computeDriven.process(this.#renderer);
       },
@@ -1405,6 +1424,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               },
         )}`,
       );
+      explicitWarmUpSettled = true;
       if (this.#aborted) {
         this.#teardown(ctx);
         return;

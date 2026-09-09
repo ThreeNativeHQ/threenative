@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-360 follow-up — finish startup performance on the working Bayview build
 
-**Status:** NOT STARTED. PRD-360 remains PARTIAL.
+**Status:** PARTIAL — the first-use boundary fix and one corrected object-granularity validation are
+complete; PRD-360 remains PARTIAL because the launch and pump budgets still fail.
 **Parent:** [PRD-360](PRD-360-android-launch-is-playable-within-eight-seconds.md).
 **Complexity:** 6 → MEDIUM: async startup across core/native, approximately 6–10 implementation files.
 **Execution budget:** Start with a 60-minute profiling task. At most three measured optimization experiments before reporting results or escalating. No speculative rewrite.
@@ -23,6 +24,7 @@ The startup crashes are fixed; performance is not. [PR #136](https://github.com/
 | First frame, one uninterrupted run | **16,020.007 ms**; not a three-run median or an 8-second acceptance result |
 | Pipeline compilation before that frame | **8,404.781 ms / 93 calls** |
 | Unattributed portion of the measured frame stall | **4,917.275 ms** |
+| Corrected object-granularity validation, physical Pixel 8 | **19,629.400 ms** first frame; 2.146682 m movement; endpoint pump gap **5,560.916 ms** |
 
 The same raw log reports `maxGapMs:15708.693` in pump observations. That is a diagnostic observation, not a completed endpoint-correlated acceptance evaluation. Do not reuse the historical 103-call/8.3-second baseline as if it described this repaired APK.
 
@@ -59,7 +61,7 @@ Do not remove effects, reduce scene content, change resolution, disable validati
 | Change/gate | Existing live caller | Replaces | Old path disposition | Negative control |
 | --- | --- | --- | --- | --- |
 | Trustworthy timing and movement proof | `packages/runtime-native/scripts/measure-cold-start.mjs`; playtest Android runner; existing PRD-360 collector/evaluator | Historical/stale-arm interpretation | Reuse collectors; no competing timing framework | Missing endpoint, wrong APK hash or known-false movement fails |
-| Responsive compilation | `packages/core/src/game.ts:881,915` → `warmUpScene`; `packages/core/src/renderer.ts:389` → upstream `compileAsync` | Only the measured blocking path | Existing caller delegates to the repaired path in the same phase | Reverting the fix restores the measured stall |
+| Responsive compilation | `packages/core/src/game.ts:860,1138,1171,1262` → `warmUpScene`; `packages/core/src/renderer.ts:389` → upstream `compileAsync` | Only the measured blocking path | Existing caller delegates to the repaired path in the same phase | Reverting the fix restores the measured stall |
 | Native pump, only if profiling requires a repair | `packages/runtime-native/src/runtime.cpp:1256` → `pollEvents`; scheduler installation → `scheduler-yield.js` | Only the demonstrated blocking mechanism | No parallel scheduler | Held presentation still permits timers/yields; deliberate blocking fails gap gate |
 
 Resolve final line anchors before each implementation checkpoint. No new exported module is planned. Any added export must have a real caller and an observed removal failure.
@@ -114,6 +116,21 @@ For each experiment: state a predicted improvement; record the baseline red; mak
 
 **Stop rule:** After three failed experiments or 60 minutes without a trustworthy bottleneck, stop and hand the supervising model the hypothesis, diff, raw measurements and doubtful assumption. Do not widen scope silently.
 
+## Bounded experiment checkpoint — 2026-09-08
+
+The existing object granularity was selected in the unchanged Bayview caller for one corrected
+validation run. The engine fix keeps first-use rendering and compute behind the explicit warm-up
+while the loading layer continues to animate. The focused regression was red before the fix and
+green after it; the implementation and test anchors are `packages/core/src/game.ts:860,1138,1171,1262`
+and `packages/core/__tests__/game.spec.ts:545`.
+
+The qualified Pixel 8 receipt passed the movement scenario at **2.146682 m**, but recorded one
+`TN_WARMUP` of 494 pipelines in 11,659 ms, first frame at **19,629.400 ms**, and a movement endpoint
+pump gap of **5,560.916 ms**. The raw receipt is in
+[the existing verification record](../../verification/prd-360-warmup-cache-2026-09-07/README.md).
+This lever therefore fails both performance budgets and remains opt-in. The temporary sandbox
+option was removed after the run; no default, visual, asset or effect change was retained.
+
 ## Phase 3 — acceptance and closure
 
 **Outcome:** The actual game meets every parent criterion; otherwise PRD-360 remains PARTIAL.
@@ -143,9 +160,9 @@ For browser proof use the same scenario against the game's actual dev server wit
 
 | Phase | Required evidence | Current result |
 | --- | --- | --- |
-| 1 | Three qualified baseline receipts, identity checks, ranked attribution and negative measurement control | NOT RUN in this follow-up |
-| 2 | One-lever A/B, real caller anchors, red/green/revert outputs, unchanged appearance | NOT RUN |
-| 3 | Three candidate receipts, ≤8-second median, ≤250-ms pump silence, browser proof, full gates and independent review | NOT RUN |
+| 1 | Three qualified baseline receipts, identity checks, ranked attribution and negative measurement control | PARTIAL — baseline and identity evidence predate this bounded follow-up; the missing negative control remains open |
+| 2 | One-lever A/B, real caller anchors, red/green/revert outputs, unchanged appearance | PARTIAL — corrected object validation and red/green boundary proof pass movement but fail timing and pump budgets |
+| 3 | Three candidate receipts, ≤8-second median, ≤250-ms pump silence, browser proof, full gates and independent review | PARTIAL — browser and movement proofs pass; Android acceptance, full cold median and final gates remain open |
 
 After each implementation phase, an independent reviewer checks integration, actual observations and the negative control. The implementer cannot approve its own phase. Keep summaries to five bullets; put raw output in artifacts. Record new performance findings in `docs/verification/runtime-perf-state.md`, not a new competing performance ledger.
 
@@ -153,4 +170,4 @@ Do not close this follow-up or move PRD-360 to `done/` while any acceptance item
 
 ## Copy/paste handoff
 
-> Read this follow-up and the linked repair evidence. Execute Phase 1 only first, using the real working Bayview candidate. Preserve the APK and native-library identities. Return a ranked timing breakdown, three qualified baseline results, and one proposed experiment. Do not change visuals, rewrite the engine, or claim PRD-360 complete. Escalate after three failed experiments. Use a cheaper worker for bounded edits and an independent reviewer at checkpoints.
+> Read this follow-up and the linked repair evidence. The object-granularity experiment is complete and fails the measured budgets; preserve its receipt and do not make it the default. PRD-360 remains PARTIAL until a separately justified lever produces three qualified cold candidate launches with correlated pump evidence. Do not change visuals, rewrite the engine, or claim completion. Use an independent reviewer at the next checkpoint.
