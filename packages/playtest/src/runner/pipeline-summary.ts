@@ -226,7 +226,12 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
     previousProgram.creations += 1;
     for (const reason of event.reasons) previousProgram.reasons.add(reason);
     programMap.set(event.programIdentity, previousProgram);
-    const bytes = event.vertex?.bytes ?? event.compute?.bytes;
+    const bytes =
+      event.kind === "render"
+        ? event.vertex === undefined || event.fragment === undefined
+          ? undefined
+          : event.vertex.bytes + event.fragment.bytes
+        : event.compute?.bytes;
     if (bytes !== undefined && event.serviceMs !== undefined) {
       sizeSamples += 1;
       const previousSize = sizeMap.get(event.pass) ?? { bytes: 0, serviceMs: 0, samples: 0 };
@@ -341,6 +346,8 @@ function parseBrowserCapture(value: JsonRecord): IPipelineCapture {
   if (value.unsupported === true) reasons.push("pipeline census is unsupported");
   const clock = parseClock(value.clock, reasons);
   const backend = parseBackend(value.backend, reasons);
+  const build = parseBuild(value.build, reasons);
+  const adapter = parseAdapter(value.adapter, reasons);
   const declaredReasons = stringArray(value.incompleteReasons);
   reasons.push(...declaredReasons.filter((reason) => !reasons.includes(reason)));
   const derivedFailures = events.filter(({ status }) => status === "failed").length;
@@ -365,6 +372,7 @@ function parseBrowserCapture(value: JsonRecord): IPipelineCapture {
     reasons.push(`browser event sequence starts at ${events[0].sequence}, expected 1`);
   if (declaredCounts.creations === 0) reasons.push("no pipeline creations observed");
   const firstPresent = parseFirstPresent(value.firstPresent);
+  if (firstPresent === undefined) reasons.push("capture is missing its first-present boundary");
   if (firstPresent !== undefined) {
     const settledAtFirstPresent = events.filter(
       ({ settledMs }) => settledMs !== undefined && settledMs <= firstPresent.boundaryMs,
@@ -385,8 +393,8 @@ function parseBrowserCapture(value: JsonRecord): IPipelineCapture {
     overflowed: value.overflowed === true,
     ...(backend === undefined ? {} : { backend }),
     ...(clock === undefined ? {} : { clock }),
-    ...(recordOrUndefined(value.build) === undefined ? {} : { build: recordOrUndefined(value.build) }),
-    ...(recordOrUndefined(value.adapter) === undefined ? {} : { adapter: recordOrUndefined(value.adapter) }),
+    ...(build === undefined ? {} : { build }),
+    ...(adapter === undefined ? {} : { adapter }),
     ...(firstPresent === undefined ? {} : { firstPresent }),
     counts: declaredCounts,
     events,
@@ -409,6 +417,13 @@ function nativeCapture(events: readonly IPipelineCaptureEvent[]): IPipelineCaptu
   const droppedEvents = lastId === undefined ? 0 : Math.max(0, lastId - ids.length);
   if (droppedEvents > 0) reasons.push(`${droppedEvents} native pipeline event(s) are missing from the sequence`);
   if (events.length === 0) reasons.push("no native pipeline events observed");
+  reasons.push(
+    "native marker capture is missing its build identity",
+    "native marker capture is missing its adapter identity",
+    "native marker capture is missing its thermal identity",
+    "native marker capture is missing its clock origin",
+    "native marker capture is missing its first-present boundary",
+  );
   const failures = events.filter(({ status }) => status === "failed").length;
   const pending = events.filter(({ status }) => status === "pending").length;
   const counts = {
@@ -577,6 +592,8 @@ function normaliseProvenance(value: unknown, label: string): IPipelineCapturePro
   const material = optionalLabel(source.material, `${label} material`);
   const object = optionalLabel(source.object, `${label} object`);
   if (typeof source.unknown !== "boolean") throw malformed(`${label} provenance unknown must be boolean`);
+  if (source.unknown === true && (material !== undefined || object !== undefined))
+    throw malformed(`${label} unknown provenance cannot include material or object`);
   if (source.unknown === false && material === undefined && object === undefined)
     throw malformed(`${label} provenance is not unknown but has no material or object`);
   return { ...(material === undefined ? {} : { material }), ...(object === undefined ? {} : { object }), unknown: source.unknown };
@@ -784,6 +801,36 @@ function parseBackend(
     reasons.push("capture backend kind is invalid");
   if (typeof source.identity !== "string" || source.identity.length === 0)
     reasons.push("capture backend identity is invalid");
+  return source;
+}
+
+function parseBuild(
+  value: unknown,
+  reasons: string[],
+): Readonly<Record<string, unknown>> | undefined {
+  const source = recordOrUndefined(value);
+  if (source === undefined) {
+    reasons.push("capture is missing its build identity");
+    return undefined;
+  }
+  if (typeof source.identity !== "string" || source.identity.length === 0)
+    reasons.push("capture build identity is invalid");
+  return source;
+}
+
+function parseAdapter(
+  value: unknown,
+  reasons: string[],
+): Readonly<Record<string, unknown>> | undefined {
+  const source = recordOrUndefined(value);
+  if (source === undefined) {
+    reasons.push("capture is missing its adapter identity", "capture is missing its thermal identity");
+    return undefined;
+  }
+  if (typeof source.identity !== "string" || source.identity.length === 0)
+    reasons.push("capture adapter identity is invalid");
+  if (typeof source.thermal !== "string" || source.thermal.length === 0)
+    reasons.push("capture thermal identity is invalid");
   return source;
 }
 

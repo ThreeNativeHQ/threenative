@@ -65,6 +65,9 @@ function browserCapture(
     overflowed: false,
     backend: { kind: "webgpu", identity: "webgpu:test" },
     clock: { source: "performance", originMs: 10 },
+    build: { identity: "build:test" },
+    adapter: { identity: "adapter:test", thermal: "unavailable" },
+    firstPresent: { boundaryMs: 4, eventsSettled: events.filter((event) => event.settledMs !== undefined && Number(event.settledMs) <= 4).length },
     counts: {
       lookups: events.length,
       creations: events.length,
@@ -86,12 +89,41 @@ describe("pipeline timing capture", () => {
     const capture = parsePipelineCapture([marker(1, 5, 10, 15), marker(2, 1, 10, 11)].join("\n"));
     const summary = summarizePipelineCapture(capture);
 
-    expect(capture.complete).toBe(true);
+    expect(capture.complete).toBe(false);
     expect(capture.counts).toMatchObject({ creations: 2, recordedEvents: 2, droppedEvents: 0 });
     expect(summary.passTotals.map(({ pass }) => pass)).toEqual(["main", "shadow"]);
     expect(summary.sizeTime.samples).toBe(2);
     expect(summary.warmup.unreported).toBe(2);
     expect(formatPipelineSummary(summary)).toContain("service");
+  });
+
+  it("requires launch metadata before a browser capture can be complete", () => {
+    const input = browserCapture([browserEvent()]);
+    input.build = undefined;
+    input.adapter = undefined;
+    input.firstPresent = undefined;
+
+    const capture = parsePipelineCapture(input);
+
+    expect(capture.complete).toBe(false);
+    expect(capture.incompleteReasons).toEqual(expect.arrayContaining([
+      "capture is missing its build identity",
+      "capture is missing its adapter identity",
+      "capture is missing its thermal identity",
+      "capture is missing its first-present boundary",
+    ]));
+  });
+
+  it("requires both shader stages for render size and service correlation", () => {
+    const summary = summarizePipelineCapture(parsePipelineCapture(marker(1, 0, 4, 4)));
+
+    expect(summary.sizeTime.byPass[0]).toMatchObject({ meanBytes: 302, samples: 1 });
+  });
+
+  it("rejects provenance that is both unknown and attributed", () => {
+    expect(() => parsePipelineCapture(browserCapture([
+      browserEvent({ provenance: { material: { name: "brick" }, unknown: true } }),
+    ]))).toThrow(/unknown provenance cannot include material or object/u);
   });
 
   it("fails closed when one native event is missing from the sequence", () => {
