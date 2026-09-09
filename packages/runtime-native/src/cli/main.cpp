@@ -1253,19 +1253,22 @@ static int runScreenshotMode(
         }
     }
 
-    // Destroy the runtime before returning so native capture emits its completion marker. The
-    // old _exit path skipped the destructor and left every screenshot capture without a
-    // TN_PIPELINE_COMPLETE record, even when all pipeline events had settled successfully.
+    // Finalize native capture without tearing down the host. The immediate exit below is
+    // deliberate: the full runtime destructor can trigger platform cleanup crashes after a
+    // successful screenshot, while the capture itself only needs its compile pool joined.
 #if TN_ANDROID_JS_PROFILE
     if (mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
 #endif
+    host.finalizePipelineCapture();
     std::cout.flush();
     std::cerr.flush();
-    runtime.reset();
 #ifndef MYSTRAL_CLI_NO_MAIN
     dumpLlvmProfile();
-#endif
+    _exit(success ? 0 : 1);
+#else
+    runtime.reset();
     return success ? 0 : 1;
+#endif
 }
 
 #if !TN_ENABLE_VIDEO

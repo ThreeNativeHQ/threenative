@@ -61,9 +61,10 @@ passed when run alone, so no unrelated native test code changed.
 The native capture blocker was then reproduced and fixed. Before the fix, the rebuilt host emitted
 101 created events but the strict parser returned `complete: false` with
 `native marker capture is missing its completion marker`: screenshot mode called `_exit()` before
-the runtime destructor could join the compile pool and emit `TN_PIPELINE_COMPLETE`. The native
-adapter shim also omitted `GPUAdapter.info`, which made the in-process warm-up census report
-`status: incomplete` despite zero failures and zero pending work.
+an explicit capture finalizer could join the compile pool and emit `TN_PIPELINE_COMPLETE`. The
+finalizer now drains late worker completions while preserving the platform-safe immediate exit.
+The native adapter shim also omitted `GPUAdapter.info`, which made the in-process warm-up census
+report `status: incomplete` despite zero failures and zero pending work.
 
 The fix was verified from an isolated current-core Bayview bundle with the supported host command:
 
@@ -71,12 +72,12 @@ The fix was verified from an isolated current-core Bayview bundle with the suppo
 timeout 180s sh scripts/xvfb.sh packages/runtime-native/build/tn-linux/mystral run game.js --headless --screenshot /tmp/prd370-bayview-warmup-native-final.png --frames 300
 exit=0
 adapter: native:vulkan/nvidia/NVIDIA GeForce RTX 2080/turing/NVIDIA: 610.57.04 610.57.4.0
-TN_WARMUP: candidates=835 attempted=1 created=56 failed=0 pending=0 uniquePrograms=51 uniquePipelines=56 status=complete elapsedMs=3435
+TN_WARMUP: candidates=835 attempted=1 created=56 failed=0 pending=0 uniquePrograms=51 uniquePipelines=56 status=complete elapsedMs=8943
 TN_PIPELINE_CAPTURE: native Vulkan/NVIDIA GeForce RTX 2080
-TN_PIPELINE_FIRST_PRESENT: boundaryMs=36.485808
+TN_PIPELINE_FIRST_PRESENT: boundaryMs=88.447030
 TN_PIPELINE_COMPLETE: eventCount=101
 strict pipeline summary: complete=true, creations=101, uniquePrograms=79, uniquePipelines=101, failures=0, pending=0, dropped=0
-PNG: 1280x720, 1693972 bytes
+PNG: 1280x720, 1694010 bytes
 ```
 
 The current-core browser run also completed on the NVIDIA Turing WebGPU adapter: candidates `835`,

@@ -1381,7 +1381,7 @@ void drainAsyncPipelineCompiles(BindingsState* state) {
     }
     js::JSValueGuard settle(*state->engine,
                             state->engine->getGlobalProperty("__tnPipelineSettle"));
-    if (!settle || !state->engine->isFunction(settle.get())) return;
+    const bool canSettle = settle && state->engine->isFunction(settle.get());
     for (auto& completion : finished) {
         state->asyncPipelines.settled += 1;
         js::JSValueGuard thisArg(*state->engine, state->engine->newUndefined());
@@ -1389,13 +1389,21 @@ void drainAsyncPipelineCompiles(BindingsState* state) {
                             state->engine->newNumber(static_cast<double>(completion.requestId)));
         if (!completion.error.empty()) {
             emitPipelineEvent(completion, 0, "async", false, completion.error);
-            js::JSValueGuard nothing(*state->engine, state->engine->newUndefined());
-            js::JSValueGuard error(*state->engine,
-                                   state->engine->newString(completion.error.c_str()));
-            js::JSValueGuard ignored(
-                *state->engine,
-                state->engine->call(settle.get(), thisArg.get(),
-                                    {id.get(), nothing.get(), error.get()}));
+            if (canSettle) {
+                js::JSValueGuard nothing(*state->engine, state->engine->newUndefined());
+                js::JSValueGuard error(*state->engine,
+                                       state->engine->newString(completion.error.c_str()));
+                js::JSValueGuard ignored(
+                    *state->engine,
+                    state->engine->call(settle.get(), thisArg.get(),
+                                        {id.get(), nothing.get(), error.get()}));
+            }
+            continue;
+        }
+        if (!canSettle) {
+            emitPipelineEvent(completion, 0, "async", true);
+            if (completion.renderPipeline != nullptr) wgpuRenderPipelineRelease(completion.renderPipeline);
+            if (completion.computePipeline != nullptr) wgpuComputePipelineRelease(completion.computePipeline);
             continue;
         }
         // Registration is identical to the synchronous path's, and has to happen here rather than
@@ -1427,19 +1435,18 @@ void drainAsyncPipelineCompiles(BindingsState* state) {
 void shutdownAsyncPipelineCompiles(BindingsState* state) {
     if (state == nullptr) return;
     AsyncPipelineCompiles& pool = state->asyncPipelines;
-    if (pool.workers.empty()) {
-        reportPipelineCaptureComplete(pool.nextRequestId - 1);
-        return;
-    }
+    if (pool.finalized) return;
     {
         std::lock_guard<std::mutex> lock(pool.mutex);
         pool.stopping = true;
     }
-    pool.wake.notify_all();
-    for (auto& worker : pool.workers) {
-        if (worker.joinable()) worker.join();
+    if (!pool.workers.empty()) {
+        pool.wake.notify_all();
+        for (auto& worker : pool.workers) {
+            if (worker.joinable()) worker.join();
+        }
+        pool.workers.clear();
     }
-    pool.workers.clear();
     // Jobs the workers never reached still own their descriptor, and an
     // `OwnedRenderPipelineDescriptor` releases a shader module and a pipeline layout when it dies.
     // Left in the queue they would die with `BindingsState` — which is freed *after* the device —
@@ -1449,13 +1456,19 @@ void shutdownAsyncPipelineCompiles(BindingsState* state) {
         std::lock_guard<std::mutex> lock(pool.mutex);
         pool.queue.clear();
     }
+    // A worker can finish after the last pollEvents() call. Drain those completions while the
+    // engine and registries are still alive, so the completion count and event stream reconcile.
+    drainAsyncPipelineCompiles(state);
     // A pipeline that finished after the last drain still holds a backend handle.
-    std::lock_guard<std::mutex> lock(pool.completedMutex);
-    for (auto& completion : pool.completed) {
-        if (completion.renderPipeline != nullptr) wgpuRenderPipelineRelease(completion.renderPipeline);
-        if (completion.computePipeline != nullptr) wgpuComputePipelineRelease(completion.computePipeline);
+    {
+        std::lock_guard<std::mutex> lock(pool.completedMutex);
+        for (auto& completion : pool.completed) {
+            if (completion.renderPipeline != nullptr) wgpuRenderPipelineRelease(completion.renderPipeline);
+            if (completion.computePipeline != nullptr) wgpuComputePipelineRelease(completion.computePipeline);
+        }
+        pool.completed.clear();
     }
-    pool.completed.clear();
+    pool.finalized = true;
     reportPipelineCaptureComplete(pool.nextRequestId - 1);
 }
 
