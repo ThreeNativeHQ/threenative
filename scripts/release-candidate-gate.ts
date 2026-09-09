@@ -1,6 +1,15 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { publicWorkspacePackages } from "./workspace-packages.js";
+
+const REPO = resolve(import.meta.dirname, "..");
+const { PREBUILT_ASSET_NAMES } = (await import(
+  new URL("../packages/runtime-native/scripts/install-prebuilt.mjs", import.meta.url).href
+)) as { readonly PREBUILT_ASSET_NAMES: Readonly<Record<string, string>> };
 
 export const REQUIRED_CREDENTIALS = [
   "npmPublish",
@@ -22,6 +31,11 @@ export const REQUIRED_HOSTED_CAPABILITIES = [
   "timestampService",
 ] as const;
 
+const REQUIRED_RUN_WORKFLOWS = {
+  ci: ".github/workflows/ci.yml",
+  native: ".github/workflows/native-platforms.yml",
+} as const;
+
 type CredentialName = (typeof REQUIRED_CREDENTIALS)[number];
 type HostedCapabilityName = (typeof REQUIRED_HOSTED_CAPABILITIES)[number];
 type RegistryState = "absent" | "matching";
@@ -41,13 +55,18 @@ export interface IReleaseRun {
   readonly event: string;
   readonly headBranch: string;
   readonly headSha: string;
+  readonly workflowPath: string;
 }
 
 export interface IReleaseReport {
   readonly candidateSha: string;
-  readonly verdict?: "PASS";
+  readonly verdict: "PASS";
   readonly reportSha256: string;
-  readonly subjects?: readonly string[];
+  readonly sourceRunId: number;
+  readonly sourceWorkflowPath: string;
+  readonly artifactName: string;
+  readonly artifactPath: string;
+  readonly subjects: readonly string[];
 }
 
 export interface IReleaseCandidate {
@@ -63,6 +82,19 @@ export interface IReleaseCandidate {
   readonly subjects: { readonly github: readonly string[]; readonly npm: readonly string[] };
   readonly credentials: Readonly<Record<CredentialName, boolean>>;
   readonly hostedCapabilities: Readonly<Record<HostedCapabilityName, boolean>>;
+  readonly resolution: IReleaseResolution;
+}
+
+export interface IReleaseResolution {
+  readonly producerRunId: number;
+  readonly source: "release-candidate-workflow";
+  readonly packageSource: "workspace-manifests";
+  readonly githubSubjectSource: "runtime-native-prebuilt-keys";
+  readonly evidenceSource: "github-api-and-artifacts";
+  readonly registrySource: "npm-version-metadata-and-tarballs";
+  readonly availabilitySource: "workflow-inputs";
+  readonly registryVerified: true;
+  readonly evidenceVerified: true;
 }
 
 export type ReleaseCandidateStatus = "PASS" | "FAIL" | "BLOCKED";
@@ -74,12 +106,70 @@ export interface IReleaseCandidateValidation {
   readonly blockers: readonly string[];
 }
 
+export interface IReleaseCandidateRequest {
+  readonly schemaVersion: 1;
+  readonly repository: string;
+  readonly tag: string;
+  readonly candidateSha: string;
+  readonly runtimeVersion: string;
+  readonly requiredRunIds: { readonly ci: number; readonly native: number };
+  readonly reportArtifacts: {
+    readonly parity: IReleaseReportReference;
+    readonly provenance: IReleaseReportReference;
+  };
+}
+
+export interface IReleaseReportReference {
+  readonly runId: number;
+  readonly workflowPath: string;
+  readonly artifactName: string;
+  readonly artifactPath: string;
+}
+
+export interface IReleaseAvailability {
+  readonly credentials: Readonly<Record<CredentialName, boolean>>;
+  readonly hostedCapabilities: Readonly<Record<HostedCapabilityName, boolean>>;
+}
+
+export interface IRegistryObservation {
+  readonly state: RegistryState;
+  readonly integrity?: string;
+  readonly packedSha256?: string;
+}
+
+export interface IReleaseCandidateResolutionOptions {
+  readonly request: unknown;
+  readonly availability: unknown;
+  readonly repo?: string;
+  readonly expectedRepository?: string;
+  readonly invokingSha: string;
+  readonly producerRunId: number;
+  readonly resolveRun?: (
+    repository: string,
+    runId: number,
+    candidateSha: string,
+    workflowPath: string,
+  ) => IReleaseRun | Promise<IReleaseRun>;
+  readonly resolveReport?: (
+    repository: string,
+    candidateSha: string,
+    reference: IReleaseReportReference,
+  ) => IReleaseReport | Promise<IReleaseReport>;
+  readonly registryLookup?: (
+    packageName: string,
+    version: string,
+  ) => IRegistryObservation | Promise<IRegistryObservation>;
+}
+
 type RecordValue = Record<string, unknown>;
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/iu;
 const SHA1_PATTERN = /^[a-f0-9]{40}$/iu;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
 const PACKAGE_NAME_PATTERN = /^\S+$/u;
+const REPOSITORY_PATTERN = /^[^/\s]+\/[^/\s]+$/u;
+const ARTIFACT_NAME_PATTERN = /^[^/\\]+$/u;
+const NPM_INTEGRITY_PATTERN = /^(sha512|sha256)-([A-Za-z0-9+/]+={0,2})$/u;
 
 const CANDIDATE_KEYS = [
   "schemaVersion",
@@ -94,10 +184,49 @@ const CANDIDATE_KEYS = [
   "subjects",
   "credentials",
   "hostedCapabilities",
+  "resolution",
 ];
 const PACKAGE_KEYS = ["name", "version", "registryState", "integrity", "packedSha256"];
-const RUN_KEYS = ["databaseId", "status", "conclusion", "event", "headBranch", "headSha"];
-const REPORT_KEYS = ["candidateSha", "verdict", "reportSha256", "subjects"];
+const RUN_KEYS = [
+  "databaseId",
+  "status",
+  "conclusion",
+  "event",
+  "headBranch",
+  "headSha",
+  "workflowPath",
+];
+const REPORT_KEYS = [
+  "candidateSha",
+  "verdict",
+  "reportSha256",
+  "sourceRunId",
+  "sourceWorkflowPath",
+  "artifactName",
+  "artifactPath",
+  "subjects",
+];
+const RESOLUTION_KEYS = [
+  "producerRunId",
+  "source",
+  "packageSource",
+  "githubSubjectSource",
+  "evidenceSource",
+  "registrySource",
+  "availabilitySource",
+  "registryVerified",
+  "evidenceVerified",
+];
+const REQUEST_KEYS = [
+  "schemaVersion",
+  "repository",
+  "tag",
+  "candidateSha",
+  "runtimeVersion",
+  "requiredRunIds",
+  "reportArtifacts",
+];
+const REPORT_REFERENCE_KEYS = ["runId", "workflowPath", "artifactName", "artifactPath"];
 
 function isRecord(value: unknown): value is RecordValue {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -149,10 +278,50 @@ function sha256Value(value: unknown, where: string, errors: string[]): string | 
   return result;
 }
 
+function positiveId(value: unknown, where: string, errors: string[]): number | undefined {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    errors.push(`${where} must be a positive safe integer.`);
+    return undefined;
+  }
+  return value;
+}
+
+function safeArtifactPath(value: unknown, where: string, errors: string[]): string | undefined {
+  const result = stringValue(value, where, errors);
+  if (result === undefined) return undefined;
+  const normalized = result.replaceAll("\\", "/");
+  if (
+    normalized.startsWith("/") ||
+    /^[A-Za-z]:\//u.test(normalized) ||
+    normalized.split("/").includes("..")
+  ) {
+    errors.push(`${where} must be a relative artifact path without '..'.`);
+    return undefined;
+  }
+  return result;
+}
+
+function safeArtifactName(value: unknown, where: string, errors: string[]): string | undefined {
+  const result = stringValue(value, where, errors);
+  if (result === undefined) return undefined;
+  if (
+    !ARTIFACT_NAME_PATTERN.test(result) ||
+    result === "." ||
+    result === ".." ||
+    [...result].some((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code <= 0x1f || code === 0x7f;
+    })
+  )
+    errors.push(`${where} must be a single safe artifact name.`);
+  return result;
+}
+
 function validateRun(
   value: unknown,
   where: string,
   candidateSha: string | undefined,
+  workflowPath: string,
   errors: string[],
 ): value is IReleaseRun {
   if (!isRecord(value)) {
@@ -163,7 +332,7 @@ function validateRun(
   const databaseId = value.databaseId;
   if (typeof databaseId !== "number" || !Number.isSafeInteger(databaseId) || databaseId <= 0)
     errors.push(`${where}.databaseId must be a positive safe integer.`);
-  for (const field of ["status", "conclusion", "event", "headBranch"] as const)
+  for (const field of ["status", "conclusion", "event", "headBranch", "workflowPath"] as const)
     stringValue(value[field], `${where}.${field}`, errors);
   const headSha = shaValue(value.headSha, `${where}.headSha`, errors);
   if (
@@ -176,6 +345,8 @@ function validateRun(
   if (value.conclusion !== "success") errors.push(`${where}.conclusion must be 'success'.`);
   if (value.event !== "push") errors.push(`${where}.event must be 'push'.`);
   if (value.headBranch !== "main") errors.push(`${where}.headBranch must be 'main'.`);
+  if (value.workflowPath !== workflowPath)
+    errors.push(`${where}.workflowPath must be '${workflowPath}'.`);
   return true;
 }
 
@@ -184,19 +355,12 @@ function validateReport(
   where: string,
   candidateSha: string | undefined,
   errors: string[],
-  requireVerdict: boolean,
-  requireSubjects: boolean,
 ): value is IReleaseReport {
   if (!isRecord(value)) {
     errors.push(`${where} must be an object.`);
     return false;
   }
-  checkKeys(value, REPORT_KEYS, where, errors, [
-    "candidateSha",
-    "reportSha256",
-    ...(requireVerdict ? ["verdict"] : []),
-    ...(requireSubjects ? ["subjects"] : []),
-  ]);
+  checkKeys(value, REPORT_KEYS, where, errors);
   const reportCandidateSha = shaValue(value.candidateSha, `${where}.candidateSha`, errors);
   if (
     reportCandidateSha !== undefined &&
@@ -205,16 +369,47 @@ function validateReport(
   )
     errors.push(`${where}.candidateSha must equal candidateSha.`);
   sha256Value(value.reportSha256, `${where}.reportSha256`, errors);
-  if (requireVerdict && value.verdict !== "PASS") errors.push(`${where}.verdict must be 'PASS'.`);
-  if (requireSubjects) {
-    if (!Array.isArray(value.subjects) || value.subjects.length === 0) {
-      errors.push(`${where}.subjects must contain at least one provenance subject.`);
-    } else {
-      for (const [index, subject] of value.subjects.entries())
-        stringValue(subject, `${where}.subjects[${index}]`, errors);
-    }
+  if (value.verdict !== "PASS") errors.push(`${where}.verdict must be 'PASS'.`);
+  positiveId(value.sourceRunId, `${where}.sourceRunId`, errors);
+  const sourceWorkflowPath = stringValue(
+    value.sourceWorkflowPath,
+    `${where}.sourceWorkflowPath`,
+    errors,
+  );
+  if (
+    sourceWorkflowPath !== undefined &&
+    !Object.values(REQUIRED_RUN_WORKFLOWS).includes(
+      sourceWorkflowPath as (typeof REQUIRED_RUN_WORKFLOWS)[keyof typeof REQUIRED_RUN_WORKFLOWS],
+    )
+  )
+    errors.push(`${where}.sourceWorkflowPath is not an approved evidence workflow.`);
+  safeArtifactName(value.artifactName, `${where}.artifactName`, errors);
+  safeArtifactPath(value.artifactPath, `${where}.artifactPath`, errors);
+  if (!Array.isArray(value.subjects) || value.subjects.length === 0) {
+    errors.push(`${where}.subjects must contain at least one subject.`);
+  } else {
+    for (const [index, subject] of value.subjects.entries())
+      stringValue(subject, `${where}.subjects[${index}]`, errors);
   }
   return true;
+}
+
+function validateReportSource(
+  value: unknown,
+  where: string,
+  evidenceRuns: ReadonlyMap<number, string>,
+  errors: string[],
+): void {
+  if (!isRecord(value)) return;
+  const sourceRunId = value.sourceRunId;
+  const sourceWorkflowPath = value.sourceWorkflowPath;
+  if (typeof sourceRunId !== "number" || typeof sourceWorkflowPath !== "string") return;
+  const expectedWorkflowPath = evidenceRuns.get(sourceRunId);
+  if (expectedWorkflowPath === undefined) {
+    errors.push(`${where}.sourceRunId must refer to one of the required evidence runs.`);
+  } else if (sourceWorkflowPath !== expectedWorkflowPath) {
+    errors.push(`${where}.sourceWorkflowPath must match its source evidence run.`);
+  }
 }
 
 function validateBooleanMap(
@@ -258,6 +453,10 @@ function validatePackageMetadata(
     errors.push(`${where}.integrity must be an npm integrity value.`);
   if (value.packedSha256 !== undefined)
     sha256Value(value.packedSha256, `${where}.packedSha256`, errors);
+  if (registryState === "absent" && value.integrity !== undefined)
+    errors.push(`${where}.integrity must be omitted when the registry version is absent.`);
+  if (registryState === "absent" && value.packedSha256 !== undefined)
+    errors.push(`${where}.packedSha256 must be omitted when the registry version is absent.`);
   if (registryState !== "matching") return;
   if (value.integrity === undefined)
     errors.push(`${where}.integrity is required for matching registry bytes.`);
@@ -297,9 +496,21 @@ function validatePackageEntry(
   };
 }
 
+export function expectedReleasePackages(repo = REPO): readonly IReleasePackage[] {
+  return publicWorkspacePackages(repo).map(({ name, version }) => ({
+    name,
+    version,
+    registryState: "absent",
+  }));
+}
+
+export function expectedGithubSubjects(): readonly string[] {
+  return ["prebuilt-lock.json", ...Object.values(PREBUILT_ASSET_NAMES)].sort();
+}
+
 function validatePackageCohort(
   value: unknown,
-  runtimeVersion: string | undefined,
+  expectedPackages: readonly IReleasePackage[],
   errors: string[],
 ): readonly IReleasePackage[] {
   if (!Array.isArray(value) || value.length === 0) {
@@ -310,11 +521,16 @@ function validatePackageCohort(
   const names = new Set<string>();
   for (const [index, entry] of value.entries()) {
     const packageEntry = validatePackageEntry(entry, index, names, errors);
-    if (packageEntry !== undefined) {
-      if (runtimeVersion !== undefined && packageEntry.version !== runtimeVersion)
-        errors.push(`packageCohort[${index}].version must equal runtimeVersion.`);
-      packages.push(packageEntry);
-    }
+    if (packageEntry !== undefined) packages.push(packageEntry);
+  }
+  const actual = new Map(packages.map((item) => [item.name, item]));
+  const expected = new Map(expectedPackages.map((item) => [item.name, item]));
+  if (JSON.stringify([...actual.keys()].sort()) !== JSON.stringify([...expected.keys()].sort()))
+    errors.push("packageCohort must exactly equal the public workspace package set.");
+  for (const [name, expectedPackage] of expected) {
+    const actualPackage = actual.get(name);
+    if (actualPackage !== undefined && actualPackage.version !== expectedPackage.version)
+      errors.push(`packageCohort.${name} must use workspace version ${expectedPackage.version}.`);
   }
   return packages;
 }
@@ -350,6 +566,8 @@ function validateCandidateIdentity(
   checkKeys(input, CANDIDATE_KEYS, "release candidate", errors);
   if (input.schemaVersion !== 1) errors.push("release candidate.schemaVersion must be 1.");
   const repository = stringValue(input.repository, "repository", errors);
+  if (repository !== undefined && !REPOSITORY_PATTERN.test(repository))
+    errors.push("repository must be an OWNER/REPOSITORY value.");
   if (
     expectedRepository !== undefined &&
     repository !== undefined &&
@@ -375,13 +593,26 @@ function validateRequiredEvidence(
   errors: string[],
   blockers: string[],
 ): void {
+  const evidenceRuns = new Map<number, string>();
   if (isRecord(input.requiredRuns)) {
     checkKeys(input.requiredRuns, ["ci", "native"], "requiredRuns", errors);
-    validateRun(input.requiredRuns.ci, "requiredRuns.ci", candidateSha, errors);
-    validateRun(input.requiredRuns.native, "requiredRuns.native", candidateSha, errors);
+    const ci = input.requiredRuns.ci;
+    const native = input.requiredRuns.native;
+    validateRun(ci, "requiredRuns.ci", candidateSha, REQUIRED_RUN_WORKFLOWS.ci, errors);
+    validateRun(native, "requiredRuns.native", candidateSha, REQUIRED_RUN_WORKFLOWS.native, errors);
+    if (isRecord(ci) && typeof ci.databaseId === "number" && typeof ci.workflowPath === "string")
+      evidenceRuns.set(ci.databaseId, ci.workflowPath);
+    if (
+      isRecord(native) &&
+      typeof native.databaseId === "number" &&
+      typeof native.workflowPath === "string"
+    )
+      evidenceRuns.set(native.databaseId, native.workflowPath);
   } else errors.push("requiredRuns must contain ci and native objects.");
-  validateReport(input.parity, "parity", candidateSha, errors, true, false);
-  validateReport(input.provenance, "provenance", candidateSha, errors, false, true);
+  validateReport(input.parity, "parity", candidateSha, errors);
+  validateReport(input.provenance, "provenance", candidateSha, errors);
+  validateReportSource(input.parity, "parity", evidenceRuns, errors);
+  validateReportSource(input.provenance, "provenance", evidenceRuns, errors);
   validateBooleanMap(input.credentials, "credentials", REQUIRED_CREDENTIALS, errors, blockers);
   validateBooleanMap(
     input.hostedCapabilities,
@@ -390,6 +621,35 @@ function validateRequiredEvidence(
     errors,
     blockers,
   );
+}
+
+function validateResolution(
+  value: unknown,
+  expectedProducerRunId: number | undefined,
+  errors: string[],
+): void {
+  if (!isRecord(value)) {
+    errors.push("resolution must be an object produced by the release-candidate workflow.");
+    return;
+  }
+  checkKeys(value, RESOLUTION_KEYS, "resolution", errors);
+  positiveId(value.producerRunId, "resolution.producerRunId", errors);
+  if (expectedProducerRunId !== undefined && value.producerRunId !== expectedProducerRunId)
+    errors.push("resolution.producerRunId must equal the successful producer run.");
+  const expected: Record<string, string | boolean> = {
+    source: "release-candidate-workflow",
+    packageSource: "workspace-manifests",
+    githubSubjectSource: "runtime-native-prebuilt-keys",
+    evidenceSource: "github-api-and-artifacts",
+    registrySource: "npm-version-metadata-and-tarballs",
+    availabilitySource: "workflow-inputs",
+    registryVerified: true,
+    evidenceVerified: true,
+  };
+  for (const [key, expectedValue] of Object.entries(expected)) {
+    if (value[key] !== expectedValue)
+      errors.push(`resolution.${key} must equal ${JSON.stringify(expectedValue)}.`);
+  }
 }
 
 function validateSubjectSet(
@@ -407,13 +667,16 @@ function validateSubjectSet(
   const expectedNpmSubjects = packages.map((item) => `${item.name}@${item.version}`).sort();
   if (JSON.stringify([...npmSubjects].sort()) !== JSON.stringify(expectedNpmSubjects))
     errors.push("subjects.npm must exactly equal the package cohort versions.");
-  if (githubSubjects.length === 0) errors.push("subjects.github must contain release subjects.");
+  if (JSON.stringify([...githubSubjects].sort()) !== JSON.stringify(expectedGithubSubjects()))
+    errors.push("subjects.github must exactly equal the prebuilt release asset set.");
 }
 
 export function validateReleaseCandidate(
   input: unknown,
   expectedRepository?: string,
   expectedInvokingSha?: string,
+  expectedProducerRunId?: number,
+  repo = REPO,
 ): IReleaseCandidateValidation {
   const errors: string[] = [];
   const blockers: string[] = [];
@@ -425,11 +688,7 @@ export function validateReleaseCandidate(
       blockers: [],
     };
   }
-  const { candidateSha, runtimeVersion } = validateCandidateIdentity(
-    input,
-    expectedRepository,
-    errors,
-  );
+  const { candidateSha } = validateCandidateIdentity(input, expectedRepository, errors);
   const invokingSha =
     expectedInvokingSha === undefined
       ? undefined
@@ -440,13 +699,746 @@ export function validateReleaseCandidate(
     candidateSha.toLowerCase() !== invokingSha.toLowerCase()
   )
     errors.push("candidateSha must equal invoking commit SHA.");
-  const packages = validatePackageCohort(input.packageCohort, runtimeVersion, errors);
+  const expectedPackages = expectedReleasePackages(repo);
+  const runtimePackage = expectedPackages.find(
+    (item) => item.name === "@threenative/runtime-native",
+  );
+  if (
+    runtimePackage !== undefined &&
+    typeof input.runtimeVersion === "string" &&
+    input.runtimeVersion !== runtimePackage.version
+  )
+    errors.push(
+      `runtimeVersion must equal the workspace @threenative/runtime-native version ${runtimePackage.version}.`,
+    );
+  const packages = validatePackageCohort(input.packageCohort, expectedPackages, errors);
   validateRequiredEvidence(input, candidateSha, errors, blockers);
   validateSubjectSet(input.subjects, packages, errors);
+  validateResolution(input.resolution, expectedProducerRunId, errors);
 
   if (errors.length > 0) return { status: "FAIL", exitCode: 1, errors, blockers: [] };
   if (blockers.length > 0) return { status: "BLOCKED", exitCode: 2, errors: [], blockers };
   return { status: "PASS", exitCode: 0, errors: [], blockers: [] };
+}
+
+class ReleaseCandidateResolutionError extends Error {
+  readonly status: "FAIL" | "BLOCKED";
+  readonly details: readonly string[];
+
+  constructor(status: "FAIL" | "BLOCKED", details: readonly string[]) {
+    super(details.join(" "));
+    this.name = "ReleaseCandidateResolutionError";
+    this.status = status;
+    this.details = details;
+  }
+}
+
+function resolutionFailure(...details: string[]): never {
+  throw new ReleaseCandidateResolutionError("FAIL", details);
+}
+
+function resolutionBlocked(...details: string[]): never {
+  throw new ReleaseCandidateResolutionError("BLOCKED", details);
+}
+
+function approvedWorkflowPath(value: string, where: string, errors: string[]): void {
+  if (
+    !Object.values(REQUIRED_RUN_WORKFLOWS).includes(
+      value as (typeof REQUIRED_RUN_WORKFLOWS)[keyof typeof REQUIRED_RUN_WORKFLOWS],
+    )
+  )
+    errors.push(`${where} must name an approved evidence workflow.`);
+}
+
+function parseReportReference(
+  value: unknown,
+  where: string,
+  errors: string[],
+): IReleaseReportReference | undefined {
+  if (!isRecord(value)) {
+    errors.push(`${where} must be an object.`);
+    return undefined;
+  }
+  checkKeys(value, REPORT_REFERENCE_KEYS, where, errors);
+  const runId = positiveId(value.runId, `${where}.runId`, errors);
+  const workflowPath = stringValue(value.workflowPath, `${where}.workflowPath`, errors);
+  if (workflowPath !== undefined)
+    approvedWorkflowPath(workflowPath, `${where}.workflowPath`, errors);
+  const artifactName = safeArtifactName(value.artifactName, `${where}.artifactName`, errors);
+  const artifactPath = safeArtifactPath(value.artifactPath, `${where}.artifactPath`, errors);
+  if (runId === undefined || workflowPath === undefined || artifactName === undefined)
+    return undefined;
+  if (artifactPath === undefined) return undefined;
+  return { runId, workflowPath, artifactName, artifactPath };
+}
+
+interface IParsedRequestIdentity {
+  readonly candidateSha: string | undefined;
+  readonly repository: string | undefined;
+  readonly runtimeVersion: string | undefined;
+  readonly tag: string | undefined;
+}
+
+function parseRequestIdentity(
+  value: RecordValue,
+  expectedRepository: string | undefined,
+  repo: string,
+  errors: string[],
+): IParsedRequestIdentity {
+  if (value.schemaVersion !== 1) errors.push("release candidate request.schemaVersion must be 1.");
+  const repository = stringValue(value.repository, "request.repository", errors);
+  if (repository !== undefined && !REPOSITORY_PATTERN.test(repository))
+    errors.push("request.repository must be an OWNER/REPOSITORY value.");
+  if (
+    expectedRepository !== undefined &&
+    repository !== undefined &&
+    repository !== expectedRepository
+  )
+    errors.push(`request.repository must equal '${expectedRepository}'.`);
+  const tag = stringValue(value.tag, "request.tag", errors);
+  const candidateSha = shaValue(value.candidateSha, "request.candidateSha", errors);
+  const runtimeVersion = stringValue(value.runtimeVersion, "request.runtimeVersion", errors);
+  if (runtimeVersion !== undefined && !VERSION_PATTERN.test(runtimeVersion))
+    errors.push("request.runtimeVersion must be a publishable semantic version.");
+  if (
+    tag !== undefined &&
+    runtimeVersion !== undefined &&
+    tag !== `runtime-native-v${runtimeVersion}`
+  )
+    errors.push("request.tag must equal runtime-native-v<runtimeVersion>.");
+  const runtimePackage = expectedReleasePackages(repo).find(
+    (item) => item.name === "@threenative/runtime-native",
+  );
+  if (runtimePackage === undefined) {
+    errors.push("workspace is missing the public @threenative/runtime-native package.");
+  } else if (runtimeVersion !== undefined && runtimeVersion !== runtimePackage.version) {
+    errors.push(
+      `request.runtimeVersion must equal the workspace @threenative/runtime-native version ${runtimePackage.version}.`,
+    );
+  }
+  return { candidateSha, repository, runtimeVersion, tag };
+}
+
+function parseRequestRunIds(
+  value: unknown,
+  errors: string[],
+): { readonly ci: number | undefined; readonly native: number | undefined } {
+  if (!isRecord(value)) {
+    errors.push("request.requiredRunIds must contain ci and native IDs.");
+    return { ci: undefined, native: undefined };
+  }
+  checkKeys(value, ["ci", "native"], "request.requiredRunIds", errors);
+  return {
+    ci: positiveId(value.ci, "request.requiredRunIds.ci", errors),
+    native: positiveId(value.native, "request.requiredRunIds.native", errors),
+  };
+}
+
+function parseRequestArtifacts(
+  value: unknown,
+  errors: string[],
+): {
+  readonly parity: IReleaseReportReference | undefined;
+  readonly provenance: IReleaseReportReference | undefined;
+} {
+  if (!isRecord(value)) {
+    errors.push("request.reportArtifacts must contain parity and provenance references.");
+    return { parity: undefined, provenance: undefined };
+  }
+  checkKeys(value, ["parity", "provenance"], "request.reportArtifacts", errors);
+  return {
+    parity: parseReportReference(value.parity, "request.reportArtifacts.parity", errors),
+    provenance: parseReportReference(
+      value.provenance,
+      "request.reportArtifacts.provenance",
+      errors,
+    ),
+  };
+}
+
+function parseReleaseCandidateRequest(
+  value: unknown,
+  expectedRepository: string | undefined,
+  repo: string,
+): IReleaseCandidateRequest {
+  const errors: string[] = [];
+  if (!isRecord(value)) resolutionFailure("release candidate request must be a JSON object.");
+  checkKeys(value, REQUEST_KEYS, "release candidate request", errors);
+  const identity = parseRequestIdentity(value, expectedRepository, repo, errors);
+  const requiredRunIds = parseRequestRunIds(value.requiredRunIds, errors);
+  const reportArtifacts = parseRequestArtifacts(value.reportArtifacts, errors);
+  if (errors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", errors);
+  return {
+    schemaVersion: 1,
+    repository: identity.repository as string,
+    tag: identity.tag as string,
+    candidateSha: identity.candidateSha as string,
+    runtimeVersion: identity.runtimeVersion as string,
+    requiredRunIds: { ci: requiredRunIds.ci as number, native: requiredRunIds.native as number },
+    reportArtifacts: {
+      parity: reportArtifacts.parity as IReleaseReportReference,
+      provenance: reportArtifacts.provenance as IReleaseReportReference,
+    },
+  };
+}
+
+function parseReleaseAvailability(value: unknown): IReleaseAvailability {
+  const errors: string[] = [];
+  const blockers: string[] = [];
+  if (!isRecord(value)) resolutionFailure("release availability must be a JSON object.");
+  checkKeys(value, ["credentials", "hostedCapabilities"], "release availability", errors);
+  validateBooleanMap(
+    value.credentials,
+    "availability.credentials",
+    REQUIRED_CREDENTIALS,
+    errors,
+    blockers,
+  );
+  validateBooleanMap(
+    value.hostedCapabilities,
+    "availability.hostedCapabilities",
+    REQUIRED_HOSTED_CAPABILITIES,
+    errors,
+    blockers,
+  );
+  if (errors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", errors);
+  return {
+    credentials: value.credentials as IReleaseAvailability["credentials"],
+    hostedCapabilities: value.hostedCapabilities as IReleaseAvailability["hostedCapabilities"],
+  };
+}
+
+function githubJson(repo: string, repository: string, endpoint: string): unknown {
+  try {
+    const output = execFileSync("gh", ["api", `repos/${repository}/${endpoint}`], {
+      cwd: repo,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return JSON.parse(String(output));
+  } catch {
+    resolutionBlocked(`GitHub API evidence '${endpoint}' could not be read for ${repository}.`);
+  }
+}
+
+function resolveRunFromGithub(
+  repo: string,
+  repository: string,
+  runId: number,
+  candidateSha: string,
+  workflowPath: string,
+): IReleaseRun {
+  const raw = githubJson(repo, repository, `actions/runs/${runId}`);
+  if (!isRecord(raw)) resolutionFailure(`GitHub run ${runId} returned a non-object response.`);
+  const run: unknown = {
+    databaseId: raw.database_id,
+    status: raw.status,
+    conclusion: raw.conclusion,
+    event: raw.event,
+    headBranch: raw.head_branch,
+    headSha: raw.head_sha,
+    workflowPath: raw.path,
+  };
+  const errors: string[] = [];
+  if (raw.database_id !== runId)
+    errors.push(`GitHub run response ${runId} has a mismatched database ID.`);
+  validateRun(run, `required evidence run ${runId}`, candidateSha, workflowPath, errors);
+  if (errors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", errors);
+  return run as IReleaseRun;
+}
+
+function artifactFilePath(directory: string, artifactPath: string): string {
+  const errors: string[] = [];
+  const safePath = safeArtifactPath(artifactPath, "artifactPath", errors);
+  if (safePath === undefined || errors.length > 0)
+    resolutionFailure(...(errors.length > 0 ? errors : ["artifactPath is unsafe."]));
+  const normalized = safePath.replaceAll("\\", "/");
+  const file = resolve(directory, ...normalized.split("/"));
+  const withinDirectory = relative(directory, file);
+  if (
+    isAbsolute(withinDirectory) ||
+    withinDirectory === ".." ||
+    withinDirectory.startsWith(`..${"/"}`)
+  )
+    resolutionFailure(`artifactPath '${artifactPath}' escapes the downloaded artifact directory.`);
+  if (!existsSync(file) || !statSync(file).isFile())
+    resolutionFailure(`downloaded artifact is missing the exact report path '${artifactPath}'.`);
+  return file;
+}
+
+function parseEvidenceReport(
+  contents: Buffer,
+  candidateSha: string,
+  artifactPath: string,
+): { readonly candidateSha: string; readonly subjects: readonly string[] } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents.toString("utf8"));
+  } catch {
+    resolutionFailure(`evidence artifact '${artifactPath}' is not valid JSON.`);
+  }
+  if (!isRecord(parsed))
+    resolutionFailure(`evidence artifact '${artifactPath}' must contain an object.`);
+  const errors: string[] = [];
+  const observedSha = shaValue(parsed.candidateSha, `${artifactPath}.candidateSha`, errors);
+  if (observedSha !== undefined && observedSha.toLowerCase() !== candidateSha.toLowerCase())
+    errors.push(`${artifactPath}.candidateSha must equal the requested candidate SHA.`);
+  if (parsed.verdict !== "PASS") errors.push(`${artifactPath}.verdict must equal 'PASS'.`);
+  const subjects = uniqueStrings(parsed.subjects, `${artifactPath}.subjects`, errors);
+  if (errors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", errors);
+  return { candidateSha, subjects };
+}
+
+function reportFromDownloadedArtifact(
+  repo: string,
+  repository: string,
+  candidateSha: string,
+  reference: IReleaseReportReference,
+): IReleaseReport {
+  const sourceRun = resolveRunFromGithub(
+    repo,
+    repository,
+    reference.runId,
+    candidateSha,
+    reference.workflowPath,
+  );
+  const directory = mkdtempSync(join(tmpdir(), "threenative-release-report-"));
+  try {
+    try {
+      execFileSync(
+        "gh",
+        [
+          "run",
+          "download",
+          String(reference.runId),
+          "--repo",
+          repository,
+          "--name",
+          reference.artifactName,
+          "--dir",
+          directory,
+        ],
+        { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      );
+    } catch {
+      resolutionBlocked(
+        `GitHub artifact '${reference.artifactName}' from run ${reference.runId} could not be downloaded.`,
+      );
+    }
+    const file = artifactFilePath(directory, reference.artifactPath);
+    const contents = readFileSync(file);
+    const report = parseEvidenceReport(contents, candidateSha, reference.artifactPath);
+    return {
+      candidateSha: report.candidateSha,
+      verdict: "PASS",
+      reportSha256: createHash("sha256").update(contents).digest("hex"),
+      sourceRunId: sourceRun.databaseId,
+      sourceWorkflowPath: sourceRun.workflowPath,
+      artifactName: reference.artifactName,
+      artifactPath: reference.artifactPath,
+      subjects: report.subjects,
+    };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function assertResolvedRun(
+  value: unknown,
+  where: string,
+  runId: number,
+  candidateSha: string,
+  workflowPath: string,
+): IReleaseRun {
+  const errors: string[] = [];
+  validateRun(value, where, candidateSha, workflowPath, errors);
+  if (isRecord(value) && value.databaseId !== runId)
+    errors.push(`${where}.databaseId must equal request run ${runId}.`);
+  if (errors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", errors);
+  return value as IReleaseRun;
+}
+
+function assertResolvedReport(
+  value: unknown,
+  where: string,
+  candidateSha: string,
+  reference: IReleaseReportReference,
+): IReleaseReport {
+  const errors: string[] = [];
+  validateReport(value, where, candidateSha, errors);
+  if (isRecord(value) && value.sourceRunId !== reference.runId)
+    errors.push(`${where}.sourceRunId must equal report artifact run ${reference.runId}.`);
+  if (isRecord(value) && value.sourceWorkflowPath !== reference.workflowPath)
+    errors.push(`${where}.sourceWorkflowPath must equal the report artifact workflow.`);
+  if (isRecord(value) && value.artifactName !== reference.artifactName)
+    errors.push(`${where}.artifactName must equal the requested artifact.`);
+  if (isRecord(value) && value.artifactPath !== reference.artifactPath)
+    errors.push(`${where}.artifactPath must equal the requested report path.`);
+  if (errors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", errors);
+  return value as IReleaseReport;
+}
+
+async function fetchRegistryResource(
+  url: string | URL,
+  description: string,
+  missingIsAbsent: boolean,
+): Promise<Response | undefined> {
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch {
+    throw new ReleaseCandidateResolutionError("BLOCKED", [`${description} could not be reached.`]);
+  }
+  if (missingIsAbsent && response.status === 404) return undefined;
+  if (!response.ok)
+    throw new ReleaseCandidateResolutionError("BLOCKED", [
+      `${description} returned HTTP ${response.status}.`,
+    ]);
+  return response;
+}
+
+async function registryJson(response: Response, description: string): Promise<RecordValue> {
+  let value: unknown;
+  try {
+    value = await response.json();
+  } catch {
+    resolutionFailure(`${description} is not valid JSON.`);
+  }
+  if (!isRecord(value)) resolutionFailure(`${description} must be an object.`);
+  return value;
+}
+
+function registryDistribution(
+  metadata: RecordValue,
+  packageName: string,
+  version: string,
+): { readonly integrity: string; readonly tarball: URL } | undefined {
+  const versions = metadata.versions;
+  if (!isRecord(versions))
+    resolutionFailure(`npm registry metadata for ${packageName}@${version} has no versions map.`);
+  if (!Object.hasOwn(versions, version)) return undefined;
+  const published = versions[version];
+  if (!isRecord(published) || !isRecord(published.dist))
+    resolutionFailure(`npm registry metadata for ${packageName}@${version} has no dist record.`);
+  if (published.name !== packageName || published.version !== version)
+    resolutionFailure(`npm registry metadata identity mismatches ${packageName}@${version}.`);
+  const integrity = published.dist.integrity;
+  const tarball = published.dist.tarball;
+  if (typeof integrity !== "string" || !NPM_INTEGRITY_PATTERN.test(integrity))
+    resolutionFailure(
+      `npm registry metadata for ${packageName}@${version} has no valid integrity.`,
+    );
+  if (typeof tarball !== "string")
+    resolutionFailure(`npm registry metadata for ${packageName}@${version} has no tarball URL.`);
+  let tarballUrl: URL;
+  try {
+    tarballUrl = new URL(tarball);
+  } catch {
+    resolutionFailure(
+      `npm registry metadata for ${packageName}@${version} has an invalid tarball URL.`,
+    );
+  }
+  if (tarballUrl.protocol !== "https:" || tarballUrl.hostname !== "registry.npmjs.org")
+    resolutionFailure(
+      `npm registry tarball for ${packageName}@${version} is not an official HTTPS registry URL.`,
+    );
+  return { integrity, tarball: tarballUrl };
+}
+
+function verifiedRegistryBytes(
+  contents: Buffer,
+  integrity: string,
+  packageName: string,
+  version: string,
+): IRegistryObservation {
+  const integrityMatch = integrity.match(NPM_INTEGRITY_PATTERN);
+  if (integrityMatch === null)
+    resolutionFailure(`npm integrity for ${packageName}@${version} is invalid.`);
+  const algorithm = integrityMatch[1] as "sha512" | "sha256";
+  const actualIntegrity = `${algorithm}-${createHash(algorithm).update(contents).digest("base64")}`;
+  if (actualIntegrity !== integrity)
+    resolutionFailure(
+      `npm registry tarball integrity mismatches metadata for ${packageName}@${version}.`,
+    );
+  return {
+    state: "matching",
+    integrity,
+    packedSha256: createHash("sha256").update(contents).digest("hex"),
+  };
+}
+
+export async function registryPackageObservation(
+  packageName: string,
+  version: string,
+): Promise<IRegistryObservation> {
+  const description = `npm registry metadata for ${packageName}@${version}`;
+  const metadataResponse = await fetchRegistryResource(
+    `https://registry.npmjs.org/${encodeURIComponent(packageName)}`,
+    description,
+    true,
+  );
+  if (metadataResponse === undefined) return { state: "absent" };
+  const distribution = registryDistribution(
+    await registryJson(metadataResponse, description),
+    packageName,
+    version,
+  );
+  if (distribution === undefined) return { state: "absent" };
+  const tarballDescription = `npm registry tarball for ${packageName}@${version}`;
+  const tarballResponse = await fetchRegistryResource(
+    distribution.tarball,
+    tarballDescription,
+    false,
+  );
+  if (tarballResponse === undefined) resolutionFailure(`${tarballDescription} was not returned.`);
+  return verifiedRegistryBytes(
+    Buffer.from(await tarballResponse.arrayBuffer()),
+    distribution.integrity,
+    packageName,
+    version,
+  );
+}
+
+function packageFromMatchingObservation(
+  packageName: string,
+  version: string,
+  observation: RecordValue,
+  errors: string[],
+): IReleasePackage {
+  const integrity = observation.integrity;
+  const packedSha256 = observation.packedSha256;
+  if (typeof integrity !== "string" || !NPM_INTEGRITY_PATTERN.test(integrity))
+    errors.push(`registry observation for ${packageName}@${version} has invalid integrity.`);
+  if (typeof packedSha256 !== "string" || !SHA256_PATTERN.test(packedSha256))
+    errors.push(`registry observation for ${packageName}@${version} has invalid tarball SHA-256.`);
+  if (errors.length === 0)
+    return {
+      name: packageName,
+      version,
+      registryState: "matching",
+      integrity: integrity as string,
+      packedSha256: packedSha256 as string,
+    };
+  if (errors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", errors);
+  resolutionFailure(`registry observation for ${packageName}@${version} has no usable state.`);
+}
+
+function packageFromRegistryObservation(
+  packageName: string,
+  version: string,
+  observation: unknown,
+): IReleasePackage {
+  if (!isRecord(observation))
+    throw new ReleaseCandidateResolutionError("FAIL", [
+      `registry observation for ${packageName}@${version} must be an object.`,
+    ]);
+  const errors: string[] = [];
+  const state = registryStateValue(observation.state, `registry.${packageName}.state`, errors);
+  if (state === "absent") {
+    if (observation.integrity !== undefined)
+      errors.push(
+        `registry observation for ${packageName}@${version} has unexpected integrity bytes.`,
+      );
+    if (observation.packedSha256 !== undefined)
+      errors.push(
+        `registry observation for ${packageName}@${version} has unexpected tarball bytes.`,
+      );
+    if (errors.length === 0) return { name: packageName, version, registryState: "absent" };
+  }
+  if (state === "matching")
+    return packageFromMatchingObservation(packageName, version, observation, errors);
+  if (errors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", errors);
+  resolutionFailure(`registry observation for ${packageName}@${version} has no usable state.`);
+}
+
+function compareRegistryObservation(
+  item: IReleasePackage,
+  observation: IRegistryObservation,
+): readonly string[] {
+  const observed = packageFromRegistryObservation(item.name, item.version, observation);
+  if (observed.registryState !== item.registryState)
+    return [
+      `registry state for ${item.name}@${item.version} changed from ${item.registryState} to ${observed.registryState}.`,
+    ];
+  if (observed.registryState === "matching" && observed.integrity !== item.integrity)
+    return [`registry integrity for ${item.name}@${item.version} does not match the candidate.`];
+  if (
+    observed.registryState === "matching" &&
+    observed.packedSha256?.toLowerCase() !== item.packedSha256?.toLowerCase()
+  )
+    return [
+      `registry tarball SHA-256 for ${item.name}@${item.version} does not match the candidate.`,
+    ];
+  return [];
+}
+
+async function verifyRegistryPackage(
+  item: IReleasePackage,
+  lookup: (
+    packageName: string,
+    version: string,
+  ) => IRegistryObservation | Promise<IRegistryObservation>,
+): Promise<Pick<IReleaseCandidateValidation, "errors" | "blockers">> {
+  let observation: IRegistryObservation;
+  try {
+    observation = await lookup(item.name, item.version);
+  } catch (error: unknown) {
+    if (error instanceof ReleaseCandidateResolutionError && error.status === "BLOCKED")
+      return { errors: [], blockers: [...error.details] };
+    if (error instanceof ReleaseCandidateResolutionError)
+      return { errors: [...error.details], blockers: [] };
+    return {
+      errors: [],
+      blockers: [`npm registry observation for ${item.name}@${item.version} failed.`],
+    };
+  }
+  try {
+    return { errors: [...compareRegistryObservation(item, observation)], blockers: [] };
+  } catch (error: unknown) {
+    return {
+      errors:
+        error instanceof ReleaseCandidateResolutionError
+          ? [...error.details]
+          : [`registry observation for ${item.name}@${item.version} is invalid.`],
+      blockers: [],
+    };
+  }
+}
+
+export async function verifyRegistryCohort(
+  candidate: Pick<IReleaseCandidate, "packageCohort">,
+  lookup: (
+    packageName: string,
+    version: string,
+  ) => IRegistryObservation | Promise<IRegistryObservation> = registryPackageObservation,
+): Promise<Pick<IReleaseCandidateValidation, "errors" | "blockers">> {
+  const errors: string[] = [];
+  const blockers: string[] = [];
+  for (const item of candidate.packageCohort) {
+    const result = await verifyRegistryPackage(item, lookup);
+    errors.push(...result.errors);
+    blockers.push(...result.blockers);
+  }
+  return { errors, blockers };
+}
+
+export async function resolveReleaseCandidate(
+  options: IReleaseCandidateResolutionOptions,
+): Promise<IReleaseCandidate> {
+  const repo = resolve(options.repo ?? REPO);
+  const expectedRepository = options.expectedRepository;
+  const request = parseReleaseCandidateRequest(options.request, expectedRepository, repo);
+  const availability = parseReleaseAvailability(options.availability);
+  const identityErrors: string[] = [];
+  const invokingSha = shaValue(options.invokingSha, "invoking commit SHA", identityErrors);
+  const producerRunId = positiveId(options.producerRunId, "producer run ID", identityErrors);
+  if (invokingSha !== undefined && invokingSha.toLowerCase() !== request.candidateSha.toLowerCase())
+    identityErrors.push("request.candidateSha must equal the invoking workflow commit SHA.");
+  if (identityErrors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", identityErrors);
+
+  const registryLookup = options.registryLookup ?? registryPackageObservation;
+  const packageCohort: IReleasePackage[] = [];
+  for (const expectedPackage of expectedReleasePackages(repo)) {
+    let observation: IRegistryObservation;
+    try {
+      observation = await registryLookup(expectedPackage.name, expectedPackage.version);
+    } catch (error: unknown) {
+      if (error instanceof ReleaseCandidateResolutionError) throw error;
+      resolutionBlocked(
+        `registry observation for ${expectedPackage.name}@${expectedPackage.version} failed.`,
+      );
+    }
+    packageCohort.push(
+      packageFromRegistryObservation(expectedPackage.name, expectedPackage.version, observation),
+    );
+  }
+
+  const runResolver =
+    options.resolveRun ??
+    ((repository: string, runId: number, candidateSha: string, workflowPath: string) =>
+      resolveRunFromGithub(repo, repository, runId, candidateSha, workflowPath));
+  const ci = assertResolvedRun(
+    await runResolver(
+      request.repository,
+      request.requiredRunIds.ci,
+      request.candidateSha,
+      REQUIRED_RUN_WORKFLOWS.ci,
+    ),
+    "requiredRuns.ci",
+    request.requiredRunIds.ci,
+    request.candidateSha,
+    REQUIRED_RUN_WORKFLOWS.ci,
+  );
+  const native = assertResolvedRun(
+    await runResolver(
+      request.repository,
+      request.requiredRunIds.native,
+      request.candidateSha,
+      REQUIRED_RUN_WORKFLOWS.native,
+    ),
+    "requiredRuns.native",
+    request.requiredRunIds.native,
+    request.candidateSha,
+    REQUIRED_RUN_WORKFLOWS.native,
+  );
+  const reportResolver =
+    options.resolveReport ??
+    ((repository: string, candidateSha: string, reference: IReleaseReportReference) =>
+      reportFromDownloadedArtifact(repo, repository, candidateSha, reference));
+  const parity = assertResolvedReport(
+    await reportResolver(request.repository, request.candidateSha, request.reportArtifacts.parity),
+    "parity",
+    request.candidateSha,
+    request.reportArtifacts.parity,
+  );
+  const provenance = assertResolvedReport(
+    await reportResolver(
+      request.repository,
+      request.candidateSha,
+      request.reportArtifacts.provenance,
+    ),
+    "provenance",
+    request.candidateSha,
+    request.reportArtifacts.provenance,
+  );
+  const candidate: IReleaseCandidate = {
+    schemaVersion: 1,
+    repository: request.repository,
+    tag: request.tag,
+    candidateSha: request.candidateSha,
+    runtimeVersion: request.runtimeVersion,
+    packageCohort,
+    requiredRuns: { ci, native },
+    parity,
+    provenance,
+    subjects: {
+      github: expectedGithubSubjects(),
+      npm: packageCohort.map((item) => `${item.name}@${item.version}`).sort(),
+    },
+    credentials: availability.credentials,
+    hostedCapabilities: availability.hostedCapabilities,
+    resolution: {
+      producerRunId: producerRunId as number,
+      source: "release-candidate-workflow",
+      packageSource: "workspace-manifests",
+      githubSubjectSource: "runtime-native-prebuilt-keys",
+      evidenceSource: "github-api-and-artifacts",
+      registrySource: "npm-version-metadata-and-tarballs",
+      availabilitySource: "workflow-inputs",
+      registryVerified: true,
+      evidenceVerified: true,
+    },
+  };
+  const validation = validateReleaseCandidate(
+    candidate,
+    request.repository,
+    invokingSha as string,
+    producerRunId,
+    repo,
+  );
+  if (validation.status === "FAIL")
+    throw new ReleaseCandidateResolutionError("FAIL", validation.errors);
+  return candidate;
 }
 
 export function formatReleaseCandidateValidation(result: IReleaseCandidateValidation): string {
@@ -464,54 +1456,198 @@ function cliError(message: string, exitCode: 1 | 2): never {
   throw new Error(message);
 }
 
-export function main(argv: readonly string[] = process.argv.slice(2)): void {
-  if (argv[0] !== "validate")
-    cliError("TN_RELEASE_CANDIDATE_USAGE: expected 'validate --candidate <path>'.", 1);
-  const candidateIndex = argv.indexOf("--candidate");
-  const candidateArgument = candidateIndex >= 0 ? argv[candidateIndex + 1] : undefined;
-  if (candidateArgument === undefined)
-    cliError("TN_RELEASE_CANDIDATE_USAGE: --candidate requires a JSON path.", 1);
-  const unknown = argv.filter(
-    (argument, index) =>
-      argument !== "validate" &&
-      argument !== "--candidate" &&
-      argument !== candidateArgument &&
-      argument !== "--repository" &&
-      (index === 0 || argument !== argv[argv.indexOf("--repository") + 1]),
-  );
-  if (unknown.length > 0)
-    cliError(`TN_RELEASE_CANDIDATE_USAGE: unknown argument '${unknown[0]}'.`, 1);
-  const candidatePath = resolve(candidateArgument);
-  let parsed: unknown;
+interface ICliOptions {
+  readonly values: ReadonlyMap<string, string>;
+  readonly flags: ReadonlySet<string>;
+}
+
+function cliFlagSets(command: "validate" | "resolve"): {
+  readonly booleanFlags: ReadonlySet<string>;
+  readonly valueFlags: ReadonlySet<string>;
+} {
+  return {
+    valueFlags:
+      command === "validate"
+        ? new Set(["--candidate", "--repository", "--producer-run-id"])
+        : new Set(["--request", "--availability", "--output", "--repository"]),
+    booleanFlags: command === "validate" ? new Set(["--verify-registry"]) : new Set<string>(),
+  };
+}
+
+function consumeCliArgument(
+  argv: readonly string[],
+  index: number,
+  valueFlags: ReadonlySet<string>,
+  booleanFlags: ReadonlySet<string>,
+  values: Map<string, string>,
+  flags: Set<string>,
+): number {
+  const argument = argv[index];
+  if (argument === undefined) return index + 1;
+  if (booleanFlags.has(argument)) {
+    if (flags.has(argument)) cliError(`TN_RELEASE_CANDIDATE_USAGE: duplicate '${argument}'.`, 1);
+    flags.add(argument);
+    return index + 1;
+  }
+  if (!valueFlags.has(argument))
+    cliError(`TN_RELEASE_CANDIDATE_USAGE: unknown argument '${argument}'.`, 1);
+  if (values.has(argument)) cliError(`TN_RELEASE_CANDIDATE_USAGE: duplicate '${argument}'.`, 1);
+  const value = argv[index + 1];
+  if (value === undefined || value.startsWith("--"))
+    cliError(`TN_RELEASE_CANDIDATE_USAGE: ${argument} requires a value.`, 1);
+  values.set(argument, value);
+  return index + 2;
+}
+
+function parseCliOptions(argv: readonly string[], command: "validate" | "resolve"): ICliOptions {
+  const { valueFlags, booleanFlags } = cliFlagSets(command);
+  const values = new Map<string, string>();
+  const flags = new Set<string>();
+  let index = 1;
+  while (index < argv.length)
+    index = consumeCliArgument(argv, index, valueFlags, booleanFlags, values, flags);
+  return { values, flags };
+}
+
+function optionValue(options: ICliOptions, name: string, required: boolean): string | undefined {
+  const value = options.values.get(name);
+  if (required && value === undefined)
+    cliError(`TN_RELEASE_CANDIDATE_USAGE: ${name} requires a value.`, 1);
+  return value;
+}
+
+function positiveCliId(value: string | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^\d+$/u.test(value))
+    cliError(`TN_RELEASE_CANDIDATE_USAGE: ${name} must be a positive integer.`, 1);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0)
+    cliError(`TN_RELEASE_CANDIDATE_USAGE: ${name} must be a positive safe integer.`, 1);
+  return parsed;
+}
+
+function readJsonInput(file: string, label: string): unknown {
+  const path = resolve(file);
   try {
-    parsed = JSON.parse(readFileSync(candidatePath, "utf8"));
+    return JSON.parse(readFileSync(path, "utf8"));
   } catch (error: unknown) {
-    const code =
-      typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT"
-        ? 2
-        : 1;
+    const missing =
+      typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
     cliError(
-      code === 2
-        ? `TN_RELEASE_CANDIDATE_BLOCKED: candidate file '${candidatePath}' is missing; prepare releaseCandidateV1 before the tag.`
-        : `TN_RELEASE_CANDIDATE_FAIL: candidate file '${candidatePath}' is not valid JSON.`,
-      code,
+      missing
+        ? `TN_RELEASE_CANDIDATE_BLOCKED: ${label} '${path}' is missing.`
+        : `TN_RELEASE_CANDIDATE_FAIL: ${label} '${path}' is not valid JSON.`,
+      missing ? 2 : 1,
     );
   }
-  const repositoryIndex = argv.indexOf("--repository");
+}
+
+function validationWithRegistry(
+  result: IReleaseCandidateValidation,
+  registry: Pick<IReleaseCandidateValidation, "errors" | "blockers">,
+): IReleaseCandidateValidation {
+  if (registry.errors.length > 0)
+    return { status: "FAIL", exitCode: 1, errors: registry.errors, blockers: [] };
+  if (registry.blockers.length > 0)
+    return {
+      status: "BLOCKED",
+      exitCode: 2,
+      errors: [],
+      blockers: [...result.blockers, ...registry.blockers],
+    };
+  return result;
+}
+
+async function validateCommand(options: ICliOptions): Promise<void> {
+  const candidatePath = optionValue(options, "--candidate", true) as string;
+  const parsed = readJsonInput(candidatePath, "candidate file");
   const expectedRepository =
-    repositoryIndex >= 0 ? argv[repositoryIndex + 1] : process.env.GITHUB_REPOSITORY;
-  const result = validateReleaseCandidate(parsed, expectedRepository, process.env.GITHUB_SHA);
+    optionValue(options, "--repository", false) ?? process.env.GITHUB_REPOSITORY;
+  const producerRunId = positiveCliId(
+    optionValue(options, "--producer-run-id", false),
+    "--producer-run-id",
+  );
+  let result = validateReleaseCandidate(
+    parsed,
+    expectedRepository,
+    process.env.GITHUB_SHA,
+    producerRunId,
+  );
+  if (options.flags.has("--verify-registry") && result.status !== "FAIL" && isRecord(parsed)) {
+    const registry = await verifyRegistryCohort(parsed as Pick<IReleaseCandidate, "packageCohort">);
+    result = validationWithRegistry(result, registry);
+  }
   process.stdout.write(formatReleaseCandidateValidation(result));
   process.exitCode = result.exitCode;
+}
+
+function resolutionCliError(error: unknown): never {
+  if (error instanceof ReleaseCandidateResolutionError)
+    cliError(
+      `TN_RELEASE_CANDIDATE_${error.status}: ${error.details.join(" ")}`,
+      error.status === "BLOCKED" ? 2 : 1,
+    );
+  cliError(
+    `TN_RELEASE_CANDIDATE_FAIL: ${error instanceof Error ? error.message : String(error)}`,
+    1,
+  );
+}
+
+async function resolveCommand(options: ICliOptions): Promise<void> {
+  const requestPath = optionValue(options, "--request", true) as string;
+  const availabilityPath = optionValue(options, "--availability", true) as string;
+  const outputPath = optionValue(options, "--output", true) as string;
+  const invokingSha = process.env.GITHUB_SHA;
+  const producerRunId = positiveCliId(process.env.GITHUB_RUN_ID, "GITHUB_RUN_ID");
+  if (invokingSha === undefined || invokingSha.length === 0)
+    cliError("TN_RELEASE_CANDIDATE_BLOCKED: GITHUB_SHA is required to resolve a candidate.", 2);
+  if (producerRunId === undefined)
+    cliError("TN_RELEASE_CANDIDATE_BLOCKED: GITHUB_RUN_ID is required to resolve a candidate.", 2);
+  const request = readJsonInput(requestPath, "request file");
+  const availability = readJsonInput(availabilityPath, "availability file");
+  const expectedRepository =
+    optionValue(options, "--repository", false) ?? process.env.GITHUB_REPOSITORY;
+  try {
+    const candidate = await resolveReleaseCandidate({
+      request,
+      availability,
+      repo: REPO,
+      expectedRepository,
+      invokingSha,
+      producerRunId,
+    });
+    writeFileSync(resolve(outputPath), `${JSON.stringify(candidate, null, 2)}\n`);
+    const validation = validateReleaseCandidate(
+      candidate,
+      candidate.repository,
+      invokingSha,
+      producerRunId,
+    );
+    process.stdout.write(formatReleaseCandidateValidation(validation));
+    process.exitCode = validation.exitCode;
+  } catch (error: unknown) {
+    resolutionCliError(error);
+  }
+}
+
+export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  const command = argv[0];
+  if (command !== "validate" && command !== "resolve")
+    cliError("TN_RELEASE_CANDIDATE_USAGE: expected 'validate' or 'resolve'.", 1);
+  const options = parseCliOptions(argv, command);
+  if (command === "validate") await validateCommand(options);
+  else await resolveCommand(options);
 }
 
 if (
   process.argv[1] !== undefined &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
-  try {
-    main();
-  } catch {
-    // cliError has already emitted the actionable message and set process.exitCode.
-  }
+  void main().catch((error: unknown) => {
+    if (process.exitCode === undefined)
+      process.stderr.write(
+        `TN_RELEASE_CANDIDATE_FAIL: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    if (process.exitCode === undefined) process.exitCode = 1;
+  });
 }
