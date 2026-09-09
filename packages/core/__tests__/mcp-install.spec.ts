@@ -170,6 +170,37 @@ describe("MCP_SERVERS", () => {
     }
   });
 
+  it("tracks the Blender scripts beside the bundled server", () => {
+    const manifest = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8")) as {
+      files?: string[];
+    };
+    expect(manifest.files, "core package files omit the Blender scripts").toContain("gpl");
+    const tracked = execFileSync("git", ["ls-files", "packages/core/gpl"], {
+      cwd: path.resolve("."),
+      encoding: "utf8",
+    })
+      .split("\n")
+      .filter((line) => line.length > 0);
+    for (const script of [
+      "gpl/LICENSE.GPL",
+      "gpl/convert.py",
+      "gpl/recipes/_common.py",
+      "gpl/recipes/bake_ao.py",
+      "gpl/recipes/decimate.py",
+      "gpl/recipes/retarget.py",
+      "gpl/recipes/unwrap.py",
+    ]) {
+      expect(tracked, `packages/core/${script} is untracked`).toContain(`packages/core/${script}`);
+      expect(existsSync(path.join(packageRoot, script)), `packages/core/${script} is missing`).toBe(
+        true,
+      );
+      expect(
+        readFileSync(path.join(packageRoot, script), "utf8"),
+        `packages/core/${script} drifted`,
+      ).toBe(readFileSync(path.resolve(packageRoot, "..", "blender-mcp", script), "utf8"));
+    }
+  });
+
   it("ships a blender server bundle that serves the recorded tool surface", async () => {
     const bundled = path.join(packageRoot, "mcp", "blender-server.mjs");
     expect(

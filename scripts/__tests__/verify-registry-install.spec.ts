@@ -12,6 +12,7 @@ import {
   checkLockfile,
   cleanRoomEnvironment,
   mcpRequests,
+  registryEnvironment,
   verifyRegistryInstall,
 } from "../verify-registry-install.js";
 
@@ -476,6 +477,12 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
       "--no-install",
     ]);
   });
+
+  it("refuses an empty manager matrix instead of reporting a vacuous pass", () => {
+    expect(() => verifyRegistryInstall({ packageManagers: [] })).toThrow(
+      /TN_REGISTRY_INSTALL_NO_PACKAGE_MANAGERS/u,
+    );
+  });
 });
 
 // pnpm exports its own settings as `npm_config_*`. npm reads them as its own config, warns
@@ -508,5 +515,18 @@ describe("clean room environment", () => {
       expect(name.toLowerCase().startsWith("npm_package_")).toBe(false);
       expect(name.toLowerCase().startsWith("npm_lifecycle_")).toBe(false);
     }
+  });
+
+  it("gives pnpm create and install a private store", () => {
+    const environment = registryEnvironment(
+      { npm_config_store_dir: "/global/store", npm_config_registry: "https://registry.invalid" },
+      "pnpm",
+      "/private/cache",
+      "/private/store",
+    );
+
+    expect(environment.npm_config_store_dir).toBe("/private/store");
+    expect(environment.NPM_CONFIG_CACHE).toBe("/private/cache");
+    expect(environment.npm_config_registry).toBeUndefined();
   });
 });

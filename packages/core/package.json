@@ -26,6 +26,7 @@
   "files": [
     "dist",
     "mcp",
+    "gpl",
     "scripts/apply-three-patch.mjs",
     "scripts/ensure-mcp.mjs",
     "scripts/postinstall.mjs",

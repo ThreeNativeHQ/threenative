@@ -118,6 +118,21 @@ export function cleanRoomEnvironment(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   return cleaned;
 }
 
+/** Build one package-manager environment without inheriting a caller's cache or pnpm store. */
+export function registryEnvironment(
+  base: NodeJS.ProcessEnv,
+  manager: RegistryPackageManager,
+  cache: string,
+  store: string,
+): NodeJS.ProcessEnv {
+  return {
+    ...cleanRoomEnvironment(base),
+    NPM_CONFIG_CACHE: cache,
+    npm_config_cache: cache,
+    ...(manager === "pnpm" ? { npm_config_store_dir: store } : {}),
+  };
+}
+
 /** Supported Node is a package contract, not a warning discovered halfway through installation. */
 export function assertSupportedNodeVersion(version = process.versions.node): void {
   const match = /^(\d+)\.(\d+)\.(\d+)/u.exec(version);
@@ -586,6 +601,10 @@ export function verifyRegistryInstall(
 ): IRegistryInstallReport {
   const template = options.template ?? "starter";
   const managers = [...new Set(options.packageManagers ?? REGISTRY_PACKAGE_MANAGERS)];
+  if (managers.length === 0)
+    throw new Error(
+      "TN_REGISTRY_INSTALL_NO_PACKAGE_MANAGERS: the clean-room matrix is empty; run npm and pnpm.",
+    );
   for (const manager of managers) assertSupportedPackageManager(manager);
   assertSupportedNodeVersion();
   // A private cache and a private store per case, so a package cached from an earlier workspace
@@ -605,12 +624,7 @@ export function verifyRegistryInstall(
       fs.mkdirSync(cache, { recursive: true });
       fs.mkdirSync(store, { recursive: true });
       const run =
-        options.run ??
-        realRunner({
-          ...cleanRoomEnvironment(process.env),
-          NPM_CONFIG_CACHE: cache,
-          npm_config_cache: cache,
-        });
+        options.run ?? realRunner(registryEnvironment(process.env, manager, cache, store));
       const command = manager === "npm" ? "npm" : "pnpm";
       const scaffoldArgs =
         manager === "npm"
