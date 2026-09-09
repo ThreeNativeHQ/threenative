@@ -700,7 +700,7 @@
       "constraints": [
         "the capture is bounded and incomplete when the backend cannot expose an observation"
       ],
-      "example": "const capture = game.runtime.pipelineCensus?.();\nThe game normally reaches this through `runtime.pipelineCensus`; direct construction exists for\nrenderer adapters and contract tests, not for gameplay.",
+      "example": "const capture = game.runtime.pipelineCensus?.();\n// The game normally reaches this through `runtime.pipelineCensus`; direct construction exists\n// for renderer adapters and contract tests, not for gameplay.",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -1202,7 +1202,7 @@
       "constraints": [
         "the capture is bounded and incomplete when the backend cannot expose an observation"
       ],
-      "example": "const capture = game.runtime.pipelineCensus?.();\nThe game normally reaches this through `runtime.pipelineCensus`; direct construction exists for\nrenderer adapters and contract tests, not for gameplay.",
+      "example": "const capture = game.runtime.pipelineCensus?.();\n// The game normally reaches this through `runtime.pipelineCensus`; direct construction exists\n// for renderer adapters and contract tests, not for gameplay.",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [],

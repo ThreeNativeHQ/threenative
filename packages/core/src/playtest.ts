@@ -310,6 +310,7 @@ function addRuntimeObservations(
       result[key] = value;
     }
   }
+  // quality-allow: every contributed value is validated as JSON-safe immediately above.
   return result as unknown as IPlaytestObservationSnapshot;
 }
 function runtimeObservation(

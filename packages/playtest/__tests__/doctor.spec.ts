@@ -1,7 +1,7 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 import { diagnoseHarness, type IHarnessEnvironment } from "../src/runner/doctor.js";
 
@@ -115,7 +115,7 @@ describe("doctor flags", () => {
   });
 
   it("returns a nonzero diagnostic when a requested capture is malformed", async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), "tn-doctor-capture-"));
+    const directory = await makeTempDir("tn-doctor-capture-");
     const capture = path.join(directory, "malformed.log");
     await writeFile(capture, "TN_PIPELINE_EVENT:{not-json}\n", "utf8");
     const { doctorCommand } = await import("../src/runner/cli.js");

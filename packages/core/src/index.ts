@@ -798,9 +798,8 @@ export { prewarm } from "./renderer.js";
  * @situation correlate pipeline creation with material, object, pass, and shader identities
  * @constraint the capture is bounded and incomplete when the backend cannot expose an observation
  * @example const capture = game.runtime.pipelineCensus?.();
- *
- * The game normally reaches this through `runtime.pipelineCensus`; direct construction exists for
- * renderer adapters and contract tests, not for gameplay.
+ * // The game normally reaches this through `runtime.pipelineCensus`; direct construction exists
+ * // for renderer adapters and contract tests, not for gameplay.
  */
 export {
   DEFAULT_PIPELINE_CENSUS_LIMIT,

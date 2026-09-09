@@ -575,8 +575,8 @@ export function createPipelineCensus(options: IPipelineCensusOptions): PipelineC
 
 ```ts
 const capture = game.runtime.pipelineCensus?.();
-The game normally reaches this through `runtime.pipelineCensus`; direct construction exists for
-renderer adapters and contract tests, not for gameplay.
+// The game normally reaches this through `runtime.pipelineCensus`; direct construction exists
+// for renderer adapters and contract tests, not for gameplay.
 ```
 
 ### `createRandom`
@@ -971,8 +971,8 @@ export class PipelineCensus { … }
 
 ```ts
 const capture = game.runtime.pipelineCensus?.();
-The game normally reaches this through `runtime.pipelineCensus`; direct construction exists for
-renderer adapters and contract tests, not for gameplay.
+// The game normally reaches this through `runtime.pipelineCensus`; direct construction exists
+// for renderer adapters and contract tests, not for gameplay.
 ```
 
 ### `PointerEvents3D`
