@@ -3949,9 +3949,23 @@ create     565bdc999e2377aec098e8fd80ea0e1be42564b39730f55b72e8b40cabc378f1
   `TN_DEVICE_PREFLIGHT_NO_DEVICE`. `adb devices -l` was empty and the device was unreachable; no
   install, launch, first frame, movement or pump observation occurred.
 
-The native-runtime test attempt remained setup-blocked by the unbuilt host and produced unrelated
-build-dependent failures; it is not recorded as a passing runtime gate. Phase 1 therefore remains
-open. The next actionable step is to choose or rebuild a clean observer-carrying Bayview subject,
-then rerun the prescribed three cold phone launches when a qualified device is reachable. See the
+The first native-runtime test attempt was setup-blocked by the unbuilt host and produced unrelated
+build-dependent failures. After the opt-in V8 host, all V8 contract targets, and the QuickJS
+cross-engine targets were built, the same package lane passed:
+
+```text
+Test Files  105 passed (105)
+Tests  851 passed | 57 skipped (908)
+packages/physics/__tests__/parity.spec.ts: 29 passed
+Rust physics parity: 14 unit tests + 2 parity tests passed
+publint: All good!
+```
+
+The repository gates then passed `pnpm typecheck`, `pnpm lint` (653 existing warning diagnostics,
+no errors), `pnpm build`, `pnpm budgets`, and `pnpm test` (`406 passed, 2 skipped` files;
+`4,658 passed, 8 skipped` tests). The Android retry still fails closed with
+`TN_DEVICE_PREFLIGHT_NO_DEVICE`; no physical launch occurred. Phase 1 therefore remains open.
+The next actionable step is to choose or rebuild a clean observer-carrying Bayview subject, then
+rerun the prescribed three cold phone launches when a qualified device is reachable. See the
 [PRD-360 protocol](../PRDs/batch-2026-09-05/PRD-360-android-launch-is-playable-within-eight-seconds.md)
 and the [tracked evaluator source](prd-360-startup-2026-09-05/validate-evaluator.mjs.txt).
