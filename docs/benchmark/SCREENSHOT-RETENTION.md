@@ -14,7 +14,7 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
 | `docs/benchmark` | 1583 | 109397932 | 0 |
-| `docs/verification` | 725 | 62206123 | 60 |
+| `docs/verification` | 725 | 62207151 | 60 |
 
 **60 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
@@ -71,7 +71,7 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/loading-screen-leak-2026-08-11-repro-frame-7.png` | 20485 |
 | `docs/verification/native-canvas-presentation-2026-09-05.md` | 20814 |
 | `docs/verification/night-batch-2026-08-26-step0-2026-08-27.md` | 4442 |
-| `docs/verification/prd-078-readiness-phase-1-2026-09-08.md` | 7098 |
+| `docs/verification/prd-078-readiness-phase-1-2026-09-08.md` | 8126 |
 | `docs/verification/prd-219-menu-flow-merged-tree-2026-08-27.md` | 3525 |
 | `docs/verification/prd-243-starter-pixel-after-2026-08-30.png` | 171532 |
 | `docs/verification/prd-354-manifest-import-closure-2026-09-07.md` | 16852 |
