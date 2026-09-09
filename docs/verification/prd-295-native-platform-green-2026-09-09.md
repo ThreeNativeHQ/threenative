@@ -130,7 +130,30 @@ Repository checks completed locally:
 | `pnpm --filter @threenative/runtime-native test` | PASS; 105 files, 857 passed, 57 skipped; physics parity and publint also passed |
 | `pnpm test` | PASS; 411 files, 4,742 tests passed, 2 files and 8 tests skipped |
 
-## Hosted completion
+## Hosted completion — 2026-09-09
 
-The hosted required CI and native platform matrix are the final completion evidence for this PRD.
-This record is updated with the passing run and exact merge commit before the PRD is archived.
+The hosted required CI and native platform matrix passed in
+[Actions run 34404749030](https://github.com/ThreeNativeHQ/threenative/actions/runs/34404749030),
+with source head `d310e87b3dd58108531ddb156475602a7e0845ad`. The pull-request checkout recorded
+merge-ref provenance `931f85c3440366ac1570c17d0903ee254d538986`; the report was clean and the
+source head is the commit above.
+
+| Hosted check | Result |
+| --- | --- |
+| Commit-keyed web reference | PASS — [job 102646317613](https://github.com/ThreeNativeHQ/threenative/actions/runs/34404749030/job/102646317613) |
+| Scaffolded starter desktop artifact | PASS — [job 102646317626](https://github.com/ThreeNativeHQ/threenative/actions/runs/34404749030/job/102646317626) |
+| macOS desktop core | PASS — [job 102646317726](https://github.com/ThreeNativeHQ/threenative/actions/runs/34404749030/job/102646317726) |
+| Windows desktop core | PASS — [job 102646317822](https://github.com/ThreeNativeHQ/threenative/actions/runs/34404749030/job/102646317822) |
+| iOS simulator runtime and consumer handoff | PASS — [job 102646317927](https://github.com/ThreeNativeHQ/threenative/actions/runs/34404749030/job/102646317927) |
+| Android emulator visual parity | PASS — [job 102647349038](https://github.com/ThreeNativeHQ/threenative/actions/runs/34404749030/job/102647349038) |
+| Native collector evidence coverage | PASS — [job 102656784471](https://github.com/ThreeNativeHQ/threenative/actions/runs/34404749030/job/102656784471) |
+| Networking qualification matrix | PASS — [job 102656784428](https://github.com/ThreeNativeHQ/threenative/actions/runs/34404749030/job/102656784428) |
+| Primary CI run summary | PASS — [job 102656930815](https://github.com/ThreeNativeHQ/threenative/actions/runs/34404749030/job/102656930815) |
+
+The Android report at `conformance/android/report.json` validated as **74 passed, 0 failed,
+19 blocked**, exit `2`, with **0 unexpectedly blocked** rows. The 19 blocks are the registry's
+documented missing-reference, unimplemented, Canvas2D, and realism capability cases; the workflow
+accepts exit `2` for those machine capability blocks. The Android multitouch supplement passed.
+The Android performance collector is recorded `BLOCKED` because the conformance exit was `2`, so
+this run makes no Android performance-budget claim. The unlabelled pull request skipped the
+separately gated desktop web/native parity job according to the workflow policy.

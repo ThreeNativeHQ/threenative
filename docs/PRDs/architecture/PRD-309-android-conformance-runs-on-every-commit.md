@@ -12,7 +12,7 @@ reported nothing. Every "runs everywhere" claim this project makes currently res
 last execution covered **0 rows**.
 
 **Depends on:** nothing to start. Overlaps
-[PRD-295](../native/PRD-295-the-native-platform-lane-has-never-been-green.md) (which made the lane
+[PRD-295](../done/PRD-295-the-native-platform-lane-has-never-been-green.md) (which made the lane
 advisory and is fixing its desktop legs) and
 [PRD-303](../CI/PRD-303.md) (which pays for added CI coverage from measured minutes). **This PRD
 owns the Android leg only**; it does not promote the lane to required — that is PRD-295's call —

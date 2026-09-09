@@ -55,5 +55,5 @@ hand.
 Do not restore the `needs:` chains to make the board look green. The board was green-looking for
 months while three gates did nothing; that is the failure mode, not the fix.
 
-Related: [PRD-295](../native/PRD-295-the-native-platform-lane-has-never-been-green.md), which is
+Related: [PRD-295](../done/PRD-295-the-native-platform-lane-has-never-been-green.md), which is
 the `native-platforms` half of this.
