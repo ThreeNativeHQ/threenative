@@ -2074,6 +2074,22 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
 static js::JSValueHandle handleGpuRequestAdapter(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
             // In native runtime, we already have an adapter, so just return a mock adapter object
             auto adapter = state->engine->newObject();
+            // Three's renderer reads adapter.info when the engine records a pipeline census. The
+            // native adapter is backed by the host's real WGPUAdapter, so expose the same identity
+            // fields instead of making the diagnostic report "unavailable" on every native run.
+            WGPUAdapterInfo adapterInfo = {};
+            wgpuAdapterGetInfo(state->adapter, &adapterInfo);
+            auto info = state->engine->newObject();
+            state->engine->setProperty(
+                info, "architecture", state->engine->newString(WGPU_PRINT_STRING_VIEW(adapterInfo.architecture).c_str()));
+            state->engine->setProperty(
+                info, "description", state->engine->newString(WGPU_PRINT_STRING_VIEW(adapterInfo.description).c_str()));
+            state->engine->setProperty(
+                info, "device", state->engine->newString(WGPU_PRINT_STRING_VIEW(adapterInfo.device).c_str()));
+            state->engine->setProperty(
+                info, "vendor", state->engine->newString(WGPU_PRINT_STRING_VIEW(adapterInfo.vendor).c_str()));
+            state->engine->setProperty(adapter, "info", info);
+            wgpuAdapterInfoFreeMembers(adapterInfo);
             // adapter.requestDevice()
             if (!installBindingTable(state->engine, state, bindingTable({
                 {"GPUAdapter", "requestDevice", 0, nullptr,

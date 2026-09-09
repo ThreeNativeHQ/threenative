@@ -1181,14 +1181,16 @@ static bool wirePlaytestMailboxBridge(std::unique_ptr<mystral::Runtime>& runtime
     return true;
 }
 
-static int runScreenshotMode(const CLIOptions& opts, mystral::Runtime& runtime) {
+static int runScreenshotMode(
+    const CLIOptions& opts, std::unique_ptr<mystral::Runtime>& runtime) {
+    mystral::Runtime& host = *runtime;
     auto startTime = std::chrono::high_resolution_clock::now();
     for (int frame = 0; frame < opts.frames; frame++) {
         // Raised before each frame of a screenshot run so the final presented frame is the
         // one in the capture buffer at save time. Non-screenshot runs never raise it and
         // pay neither the framebuffer copy nor its wait.
-        runtime.requestFrameScreenshot();
-        if (!runtime.pollEvents()) {
+        host.requestFrameScreenshot();
+        if (!host.pollEvents()) {
             if (!opts.quiet) {
                 std::cerr << "Warning: Runtime quit early at frame " << frame << std::endl;
             }
@@ -1214,11 +1216,11 @@ static int runScreenshotMode(const CLIOptions& opts, mystral::Runtime& runtime) 
     // lands, so the frame that gets saved postdates readiness.
     constexpr auto kStartupCaptureBudget = std::chrono::seconds(30);
     mystral::ScreenshotGateHooks captureHooks;
-    captureHooks.requestFrameScreenshot = [&runtime] { runtime.requestFrameScreenshot(); };
-    captureHooks.pollEvents = [&runtime] { return runtime.pollEvents(); };
-    captureHooks.isStartupReady = [&runtime] { return runtime.isStartupReady(); };
-    captureHooks.hasCapturedFrame = [&runtime] { return runtime.hasCapturedFrame(); };
-    captureHooks.clearCapturedFrame = [&runtime] { runtime.clearCapturedFrame(); };
+    captureHooks.requestFrameScreenshot = [&host] { host.requestFrameScreenshot(); };
+    captureHooks.pollEvents = [&host] { return host.pollEvents(); };
+    captureHooks.isStartupReady = [&host] { return host.isStartupReady(); };
+    captureHooks.hasCapturedFrame = [&host] { return host.hasCapturedFrame(); };
+    captureHooks.clearCapturedFrame = [&host] { host.clearCapturedFrame(); };
     captureHooks.now = [] { return std::chrono::steady_clock::now(); };
     const mystral::ScreenshotGateResult capture = mystral::awaitStartupCapture(
         captureHooks, std::chrono::steady_clock::now() + kStartupCaptureBudget);
@@ -1238,31 +1240,32 @@ static int runScreenshotMode(const CLIOptions& opts, mystral::Runtime& runtime) 
 
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-    bool success = runtime.saveScreenshot(opts.screenshotPath);
+    bool success = host.saveScreenshot(opts.screenshotPath);
     if (!opts.quiet) {
         if (success) {
             std::cout << "Screenshot saved: " << opts.screenshotPath << std::endl;
             std::cout << "Rendered " << opts.frames << " frames in " << duration.count() << "ms" << std::endl;
             // One present per frame is what lets a second pass -- the canvas-layer overlay --
             // composite onto the world instead of taking a swapchain image of its own.
-            std::cout << "TN_PRESENTS:" << runtime.getPresentCount() << std::endl;
+            std::cout << "TN_PRESENTS:" << host.getPresentCount() << std::endl;
         } else {
             std::cerr << "Error: Failed to save screenshot!" << std::endl;
         }
     }
 
-    // The screenshot is saved, so avoid cleanup crashes that can show the macOS crash dialog.
+    // Destroy the runtime before returning so native capture emits its completion marker. The
+    // old _exit path skipped the destructor and left every screenshot capture without a
+    // TN_PIPELINE_COMPLETE record, even when all pipeline events had settled successfully.
 #if TN_ANDROID_JS_PROFILE
     if (mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
 #endif
     std::cout.flush();
     std::cerr.flush();
+    runtime.reset();
 #ifndef MYSTRAL_CLI_NO_MAIN
     dumpLlvmProfile();
-    _exit(success ? 0 : 1);
-#else
-    return success ? 0 : 1;
 #endif
+    return success ? 0 : 1;
 }
 
 #if !TN_ENABLE_VIDEO
@@ -1691,7 +1694,7 @@ static int runNormalMode(const CLIOptions& opts, mystral::Runtime& runtime) {
 }
 
 static int driveMainLoop(const CLIOptions& opts, std::unique_ptr<mystral::Runtime>& runtime) {
-    if (!opts.screenshotPath.empty()) return runScreenshotMode(opts, *runtime);
+    if (!opts.screenshotPath.empty()) return runScreenshotMode(opts, runtime);
     if (!opts.videoPath.empty()) return runVideoMode(opts, runtime);
     return runNormalMode(opts, *runtime);
 }

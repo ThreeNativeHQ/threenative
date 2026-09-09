@@ -58,9 +58,33 @@ passed 36/36 under `scripts/xvfb.sh`. A concurrent full native Vitest run expose
 shared `.test-tmp` cleanup race between WebTransport and GPU fetch tests; the WebTransport file
 passed when run alone, so no unrelated native test code changed.
 
-No complete real-town browser/native warm-up capture was run in this lane. Actual platform counts,
-late first-use work after the warm-up boundary and the PRD's independent browser/native acceptance
-remain unverified; this is an implementation checkpoint, not a completed PRD-370 claim.
+The native capture blocker was then reproduced and fixed. Before the fix, the rebuilt host emitted
+101 created events but the strict parser returned `complete: false` with
+`native marker capture is missing its completion marker`: screenshot mode called `_exit()` before
+the runtime destructor could join the compile pool and emit `TN_PIPELINE_COMPLETE`. The native
+adapter shim also omitted `GPUAdapter.info`, which made the in-process warm-up census report
+`status: incomplete` despite zero failures and zero pending work.
+
+The fix was verified from an isolated current-core Bayview bundle with the supported host command:
+
+```text
+timeout 180s sh scripts/xvfb.sh packages/runtime-native/build/tn-linux/mystral run game.js --headless --screenshot /tmp/prd370-bayview-warmup-native-final.png --frames 300
+exit=0
+adapter: native:vulkan/nvidia/NVIDIA GeForce RTX 2080/turing/NVIDIA: 610.57.04 610.57.4.0
+TN_WARMUP: candidates=835 attempted=1 created=56 failed=0 pending=0 uniquePrograms=51 uniquePipelines=56 status=complete elapsedMs=3435
+TN_PIPELINE_CAPTURE: native Vulkan/NVIDIA GeForce RTX 2080
+TN_PIPELINE_FIRST_PRESENT: boundaryMs=36.485808
+TN_PIPELINE_COMPLETE: eventCount=101
+strict pipeline summary: complete=true, creations=101, uniquePrograms=79, uniquePipelines=101, failures=0, pending=0, dropped=0
+PNG: 1280x720, 1693972 bytes
+```
+
+The current-core browser run also completed on the NVIDIA Turing WebGPU adapter: candidates `835`,
+attempted `1`, observed `56` creations, `51` unique programs, `56` unique pipelines, zero failures,
+zero pending events, and `status: complete`; its timeline entered at `5303.9 ms`, compile settled at
+`9251.9 ms`, and ready at `10202.2 ms`. These captures prove the real browser/native accounting
+path and backend identity. Late first-use work after the warm-up boundary, the full PRD-360
+reconciliation, and the independent Phase 2 review remain open, so PRD-370 stays PARTIAL.
 
 ## PRD-369 partial material graph reuse — 2026-09-09
 
