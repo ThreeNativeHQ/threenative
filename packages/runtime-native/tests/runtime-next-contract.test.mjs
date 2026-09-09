@@ -882,6 +882,45 @@ test('desktop playtests inject the shared mailbox before game evaluation and ser
   );
 });
 
+test('screenshot mode finalizes pipeline capture before the platform-safe exit path', () => {
+  const cli = read('src/cli/main.cpp');
+  const screenshotStart = cli.indexOf('static int runScreenshotMode');
+  const screenshotEnd = cli.indexOf('\n#if !TN_ENABLE_VIDEO', screenshotStart);
+  assert.ok(screenshotStart >= 0, 'screenshot mode definition is missing');
+  assert.ok(screenshotEnd > screenshotStart, 'screenshot mode boundary is missing');
+  const screenshot = cli.slice(screenshotStart, screenshotEnd);
+  const finalize = screenshot.indexOf('host.finalizePipelineCapture();');
+  const exit = screenshot.indexOf('_exit(success ? 0 : 1);');
+  assert.ok(finalize >= 0, 'screenshot mode must finalize native pipeline capture');
+  assert.ok(exit > finalize, 'capture finalization must precede the immediate exit');
+  assert.match(screenshot, /#ifndef MYSTRAL_CLI_NO_MAIN[\s\S]*_exit\(success \? 0 : 1\);/u);
+  assert.match(screenshot, /#else[\s\S]*runtime\.reset\(\);[\s\S]*return success/u);
+
+  const withoutFinalization = screenshot.replace('host.finalizePipelineCapture();', '');
+  assert.throws(
+    () => assert.match(withoutFinalization, /host\.finalizePipelineCapture\(\);/u),
+    /finalizePipelineCapture/u,
+    'the regression must fail when screenshot mode stops finalizing the capture',
+  );
+});
+
+test('native capture drains completions that finish after the final poll', () => {
+  const pipelines = readCpp('src/webgpu/bindings_pipelines');
+  assert.match(
+    pipelines,
+    /pool\.workers\.clear\(\);[\s\S]*drainAsyncPipelineCompiles\(state\);/u,
+    'shutdown must drain worker completions before emitting the completion marker',
+  );
+  assert.match(pipelines, /if \(pool\.finalized\) return;/u);
+
+  const withoutDrain = pipelines.replace('drainAsyncPipelineCompiles(state);', '');
+  assert.throws(
+    () => assert.match(withoutDrain, /pool\.workers\.clear\(\);[\s\S]*drainAsyncPipelineCompiles\(state\);/u),
+    /drainAsyncPipelineCompiles/u,
+    'the regression must fail when shutdown discards late completions',
+  );
+});
+
 const generatedAndroidBundle = 'android/app/build/generated/threenative/assets/scripts/main.js';
 const generatedAndroidMeta = `${generatedAndroidBundle}.meta.json`;
 

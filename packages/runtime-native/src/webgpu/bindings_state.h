@@ -401,6 +401,7 @@ struct AsyncPipelineCompiles {
     std::vector<PipelineCompileCompletion> completed;
     uint64_t nextRequestId = 1;
     bool stopping = false;
+    bool finalized = false;
     /** Requests started and not yet settled. `TN_WARMUP` reads the difference. */
     uint64_t started = 0;
     uint64_t settled = 0;

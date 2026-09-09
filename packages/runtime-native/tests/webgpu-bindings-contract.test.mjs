@@ -181,6 +181,24 @@ test("feature sets report actual adapter support and device grants", () => {
   assertActualIndirectFeatureSurface(read("src/webgpu/bindings.cpp"));
 });
 
+test("native requestAdapter publishes the real adapter.info identity", () => {
+  const bindings = read("src/webgpu/bindings.cpp");
+  assert.match(bindings, /wgpuAdapterGetInfo\(state->adapter, &adapterInfo\)/u);
+  assert.match(bindings, /setProperty\(adapter, "info", info\)/u);
+  assert.match(bindings, /wgpuAdapterInfoFreeMembers\(adapterInfo\)/u);
+
+  const withoutInfo = bindings.replace(
+    /WGPUAdapterInfo adapterInfo = \{\};[\s\S]*?wgpuAdapterInfoFreeMembers\(adapterInfo\);/u,
+    "",
+  );
+  assert.notEqual(withoutInfo, bindings, "negative control must remove the adapter.info bridge");
+  assert.throws(
+    () => assert.match(withoutInfo, /setProperty\(adapter, "info", info\)/u),
+    /setProperty/u,
+    "the regression must fail when native adapter identity is hidden from the census",
+  );
+});
+
 test("RG11B10UfloatRenderable is mapped for both shipped WebGPU backends", () => {
   assertBothBackendsMapRg11Feature(read("src/webgpu/bindings.cpp"));
 });

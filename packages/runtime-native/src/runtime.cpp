@@ -1593,6 +1593,10 @@ public:
         return webgpu_->saveScreenshot(filename.c_str());
     }
 
+    void finalizePipelineCapture() override {
+        webgpu::shutdownAsyncPipelineCompiles(bindingsState_);
+    }
+
     void requestFrameScreenshot() override {
         if (!webgpu_) return;
         webgpu_->requestFrameScreenshot();
