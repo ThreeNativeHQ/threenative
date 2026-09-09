@@ -18,7 +18,7 @@ shares programs for compatible materials that differ only in values.
 | # | New thing | Live caller / existing anchor | Replaces | Old path disposition | Negative control |
 | --- | --- | --- | --- | --- | --- |
 | M1 | Game-owned shared material construction | Actual PRD-360 town material creation/assignment, resolved in preflight | Measured duplicate structural families | Replace selected factories in same phase; explicit unsupported materials stay authored | Restore old assignments: real town program-reduction gate fails |
-| M2 | Generated material source and convention | `packages/create-threenative/templates/starter/src/scenes/Play.ts`, material use in generated scene | Repeated compatible material construction in that scene | Delegate relevant call sites to generated source | Remove generated call: scaffold scenario detects missing shared behavior |
+| M2 | Extended generated material source and convention | `packages/create-threenative/templates/starter/src/scenes/Play.ts:65`, existing `createMaterials()` call | Only structural duplication demonstrated by the new census | Extend existing factory; no competing material module | Remove factory integration: scaffold scenario detects missing behavior |
 | M3 | Cold-launch and appearance comparison | Existing town playtest scenario and `packages/playtest/src/runner/perf.ts` | Ad hoc material-count claim | Existing runner owns report | Same baseline hash in both arms: comparison refuses |
 
 M1 intentionally has no invented game path: the requested source does not name its material factory.
@@ -80,14 +80,18 @@ tradeoff, record the candidate and keep the PRD partial rather than silently dro
 
 ## Phase 2 — A scaffold inherits the proven material convention
 
-Files: NEW `packages/create-threenative/templates/starter/src/render/materials.ts` (editable source),
+Files: EDIT `packages/create-threenative/templates/starter/src/render/materials.ts` (existing editable source),
 EDIT `packages/create-threenative/templates/starter/src/scenes/Play.ts` (real use),
 `packages/create-threenative/templates/starter/AGENTS.md` (default, override and measurement),
 its generated `CLAUDE.md` mirror, and NEW
 `packages/create-threenative/__tests__/shared-material-source.spec.ts`. Ledger M2.
 
-Port only the reusable game-source pattern proven in Phase 1; retain game-specific parameters in
-the template. Document shared graph use by default, a named authored-material override at the same
+The starter already has `createMaterials()` and value-varying standard materials. Preserve that
+sharing; replacing those with another wrapper is not a reduction. Port only a reusable structural
+pattern proven in Phase 1 and applicable to a real starter material family. If none is applicable,
+limit this slice to executable regression coverage and instructions for the existing factory,
+recording why no material rewrite is warranted. Retain game-specific parameters in the template.
+Document shared graph use by default, a named authored-material override at the same
 object and measurement that still includes overridden materials. Do not add unused factories to
 unrelated templates. Test `should render independent material values when a scaffold shares graph
 structure`; prove assignments through a generated install, not a source-string check. Remove the
