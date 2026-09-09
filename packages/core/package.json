@@ -1,7 +1,7 @@
 {
   "name": "@threenative/core",
   "version": "0.3.0",
-  "license": "MIT",
+  "license": "MIT AND GPL-2.0-or-later",
   "description": "The small vanilla Three.js game runtime foundation.",
   "keywords": [
     "threenative",
@@ -23,7 +23,18 @@
     "directory": "packages/core"
   },
   "type": "module",
-  "files": ["dist", "mcp", "scripts", "patches", "capabilities.json", "README.md"],
+  "files": [
+    "dist",
+    "LICENSE",
+    "mcp",
+    "gpl",
+    "scripts/apply-three-patch.mjs",
+    "scripts/ensure-mcp.mjs",
+    "scripts/postinstall.mjs",
+    "patches",
+    "capabilities.json",
+    "README.md"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

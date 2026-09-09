@@ -15,21 +15,38 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  packageArchivePrefix,
+  workspaceBuildOrder,
+  workspacePackageSourceFlag,
+} from "./workspace-packages.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const PACKAGES = [
-  "assets",
-  "core",
-  "physics",
-  "ui",
-  "playtest",
-  "runtime-native",
-  "engine-mcp",
-] as const;
 const CLI_PACKAGE = "create-threenative";
 const ARMS = ["framework", "vanilla"] as const;
 
-type PackageTarball = (typeof PACKAGES)[number] | typeof CLI_PACKAGE;
+/** A stable tarball key, derived from the package census rather than another package list. */
+function packageKey(name: string): string {
+  if (name.startsWith("@threenative/")) return name.slice("@threenative/".length);
+  return name.startsWith("threenative-") ? name.slice("threenative-".length) : name;
+}
+
+export function sandboxWorkspacePackages(repo = REPO): readonly string[] {
+  return workspaceBuildOrder(repo)
+    .map(({ name }) => name)
+    .filter((name) => name !== CLI_PACKAGE);
+}
+
+/** Resolve a package's actual workspace directory; package names do not always match folder names. */
+export function sandboxPackageDirectory(name: string, repo = REPO): string {
+  const packageEntry = workspaceBuildOrder(repo).find((item) => item.name === name);
+  if (packageEntry === undefined)
+    throw new Error(`TN_SANDBOX_PACKAGE_MISSING: no workspace package named '${name}'.`);
+  return path.relative(repo, packageEntry.directory).replaceAll(path.sep, "/");
+}
+
+export const PACKAGES = Object.freeze(sandboxWorkspacePackages().map(packageKey));
+type PackageTarball = string;
 
 export type SandboxArm = (typeof ARMS)[number];
 
@@ -367,14 +384,10 @@ function frameworkVersion(repo: string): string {
 }
 
 /** Maps a dependency a template declares onto the tarball key that would replace it. */
-function tarballKey(dependency: string): PackageTarball | undefined {
-  if (dependency === CLI_PACKAGE) return CLI_PACKAGE;
-  const packageName = dependency.startsWith("@threenative/")
-    ? dependency.slice("@threenative/".length)
-    : dependency;
-  return ([...PACKAGES] as string[]).includes(packageName)
-    ? (packageName as (typeof PACKAGES)[number])
-    : undefined;
+function tarballKey(dependency: string, repo: string): PackageTarball | undefined {
+  const packageNames = new Set([...sandboxWorkspacePackages(repo), CLI_PACKAGE]);
+  if (!packageNames.has(dependency)) return undefined;
+  return packageKey(dependency);
 }
 
 /**
@@ -405,7 +418,7 @@ export function assertTemplateSourcesCovered(
     ...Object.keys(manifest.devDependencies ?? {}),
   ];
   const uncovered = declared.filter((dependency) => {
-    const key = tarballKey(dependency);
+    const key = tarballKey(dependency, repo);
     return key !== undefined && tarballs[key] === undefined;
   });
   if (uncovered.length > 0)
@@ -549,22 +562,65 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
   for (const dir of [project, staging]) if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
   fs.mkdirSync(staging, { recursive: true });
 
+  const prepare = options.prepare ?? true;
+  // A vanilla fixture with `prepare: false` only needs the bridge tarball path. Keep this
+  // lightweight path usable for tests and callers that provide no package manifests; a real
+  // prepared run still requires the package census below and fails closed when it is missing.
+  const workspaceItems =
+    arm === "vanilla" && !prepare
+      ? []
+      : workspaceBuildOrder(repo).filter(({ name }) => name !== CLI_PACKAGE);
+  const selectedWorkspaceItems =
+    arm === "vanilla"
+      ? workspaceItems.filter(({ name }) => name === "@threenative/playtest")
+      : workspaceItems;
+  const workspaceNames = arm === "vanilla" ? [] : selectedWorkspaceItems.map(({ name }) => name);
+  const workspaceKeys = workspaceNames.map(packageKey);
   const tarballs: Partial<Record<PackageTarball, string>> = {};
   const requiredPackages: readonly PackageTarball[] =
-    arm === "vanilla" ? (["playtest"] as const) : [...PACKAGES, CLI_PACKAGE];
-  if (options.prepare ?? true) {
+    arm === "vanilla" ? [packageKey("@threenative/playtest")] : [...workspaceKeys, CLI_PACKAGE];
+  if (prepare) {
     run("pnpm", ["--filter", "./packages/**", "--if-present", "run", "build"], repo);
-    for (const name of [...PACKAGES, CLI_PACKAGE]) {
-      run("pnpm", ["--filter", `./packages/${name}`, "pack", "--pack-destination", staging], repo);
+    for (const item of selectedWorkspaceItems) {
+      run(
+        "pnpm",
+        [
+          "--filter",
+          `./${path.relative(repo, item.directory).replaceAll(path.sep, "/")}`,
+          "pack",
+          "--pack-destination",
+          staging,
+        ],
+        repo,
+      );
     }
+    if (arm !== "vanilla")
+      run(
+        "pnpm",
+        [
+          "--filter",
+          `./${sandboxPackageDirectory(CLI_PACKAGE, repo)}`,
+          "pack",
+          "--pack-destination",
+          staging,
+        ],
+        repo,
+      );
+    const archivePrefixes = [
+      ...selectedWorkspaceItems.map(({ name }) => name),
+      ...(arm === "vanilla" ? [] : [CLI_PACKAGE]),
+    ].map((name) => ({
+      key: packageKey(name),
+      name,
+      prefix: packageArchivePrefix(name),
+    }));
     for (const file of fs.readdirSync(staging)) {
-      const owner = [...PACKAGES].find((name) => file.startsWith(`threenative-${name}-`));
-      const key = owner ?? (file.startsWith(`${CLI_PACKAGE}-`) ? CLI_PACKAGE : undefined);
-      if (key !== undefined) {
+      const owner = archivePrefixes.find(({ prefix }) => file.startsWith(prefix));
+      if (owner !== undefined) {
         const tarball = path.join(staging, file);
         assertPackedManifestResolved(tarball);
         assertPackedTypesShipped(tarball);
-        tarballs[key] = stampTarball(tarball);
+        tarballs[owner.key] = stampTarball(tarball);
       }
     }
   } else {
@@ -585,8 +641,11 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
     "<target>",
     "--template",
     template,
-    ...PACKAGES.flatMap((name) => [`--${name}-package`, tarballs[name] as string]),
-    "--cli-package",
+    ...workspaceNames.flatMap((name) => [
+      workspacePackageSourceFlag(name),
+      tarballs[packageKey(name)] as string,
+    ]),
+    workspacePackageSourceFlag(CLI_PACKAGE),
     tarballs[CLI_PACKAGE] as string,
   ];
 
@@ -602,7 +661,7 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
   let scaffolded: boolean;
   if (arm === "vanilla") {
     fs.mkdirSync(project, { recursive: true });
-    writeVanillaScaffold(project, tarballs.playtest as string);
+    writeVanillaScaffold(project, tarballs[packageKey("@threenative/playtest")] as string);
     if (install && !bare)
       run("pnpm", ["install", "--store-dir", path.join(out, ".pnpm-store")], project);
     next = bare ? `cd ${project} && pnpm install && pnpm dev` : `cd ${project} && pnpm dev`;
@@ -688,6 +747,24 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
 }
 
 function main(): void {
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    process.stdout.write(
+      [
+        "Usage: pnpm sandbox --genre <genre> [options]",
+        "",
+        "Options:",
+        "  --arm <framework|vanilla>  Choose the installed framework or control arm (default: framework).",
+        "  --bare                    Write scaffold.sh instead of running the scaffold.",
+        "  --genre <genre>           Use the sealed benchmark genre inputs.",
+        "  --name <slug>             Name the one game folder inside the sandbox.",
+        "  --out <directory>         Sandbox destination (default: ../sandbox).",
+        "  --template <template>     Scaffold template (default: starter).",
+        "  --help, -h                Show this help.",
+        "",
+      ].join("\n"),
+    );
+    return;
+  }
   const genre = readFlag("--genre");
   if (genre === undefined) throw new Error("Missing --genre. Use pnpm sandbox --genre <genre>.");
   makeSandbox({

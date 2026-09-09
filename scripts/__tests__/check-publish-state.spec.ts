@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
@@ -11,6 +12,7 @@ import {
   type RegistryLookup,
   type TarballReader,
   checkPublishState,
+  gitSourceCommits,
   missingPackageReadmes,
   pnpmPackReader,
   prebuiltReleaseCensus,
@@ -130,6 +132,197 @@ describe("pnpm publish:check", () => {
     });
     expect(report.findings).toEqual([]);
     expect(report.exitCode).toBe(0);
+  });
+
+  it("counts a changed non-src publication input for an already published version", async () => {
+    const root = await makeTempDir("threenative-publish-source-census-");
+    const packageRoot = path.join(root, "packages/core");
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({
+        files: ["dist", "gpl", "README.md"],
+        name: "@threenative/core",
+        version: "0.1.0",
+      }),
+    );
+    write(root, "packages/core/src/index.ts", "export const x = 1;\n");
+    write(root, "packages/core/gpl/LICENSE.GPL", "GPL text\n");
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "initial"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+        GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
+      },
+    });
+    write(root, "packages/core/gpl/LICENSE.GPL", "GPL text changed\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-gpl"], { cwd: root });
+
+    expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(1);
+  });
+
+  it("counts package-local build configs and helpers for an already published version", async () => {
+    const root = await makeTempDir("threenative-publish-build-inputs-");
+    const packageRoot = path.join(root, "packages/core");
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({
+        files: ["dist", "README.md"],
+        name: "@threenative/core",
+        scripts: {
+          build: "tsup --config tsup.config.ts && node scripts/build-helper.mjs",
+          postinstall: "node scripts/build-helper.mjs",
+        },
+        version: "0.1.0",
+      }),
+    );
+    write(root, "packages/core/README.md", "# core\n");
+    write(root, "packages/core/src/index.ts", "export const x = 1;\n");
+    write(root, "packages/core/tsup.config.ts", "export default {};\n");
+    write(root, "packages/core/scripts/build-helper.mjs", "export {};\n");
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "initial"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+        GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
+      },
+    });
+    write(root, "packages/core/tsup.config.ts", "export default { minify: true };\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-build-config"], { cwd: root });
+    write(root, "packages/core/scripts/build-helper.mjs", "export const helper = true;\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-build-helper"], { cwd: root });
+
+    expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(2);
+  });
+
+  it("counts a package tsconfig change for an already published version", async () => {
+    const root = await makeTempDir("threenative-publish-tsconfig-");
+    const packageRoot = path.join(root, "packages/core");
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({
+        files: ["dist", "README.md"],
+        name: "@threenative/core",
+        version: "0.1.0",
+      }),
+    );
+    write(root, "packages/core/README.md", "# core\n");
+    write(root, "packages/core/src/index.ts", "export const x = 1;\n");
+    write(root, "packages/core/tsconfig.json", '{"extends":"../../tsconfig.base.json"}\n');
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "initial"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+        GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
+      },
+    });
+    write(
+      root,
+      "packages/core/tsconfig.json",
+      '{"extends":"../../tsconfig.base.json","strict":true}\n',
+    );
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-tsconfig"], { cwd: root });
+
+    expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(1);
+  });
+
+  it("counts shared workspace and catalog inputs for every package", async () => {
+    const root = await makeTempDir("threenative-publish-shared-inputs-");
+    const packageRoot = path.join(root, "packages/core");
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({
+        files: ["dist", "README.md"],
+        name: "@threenative/core",
+        version: "0.1.0",
+      }),
+    );
+    write(root, "packages/core/README.md", "# core\n");
+    write(root, "packages/core/src/index.ts", "export const x = 1;\n");
+    write(root, "tsconfig.base.json", '{"compilerOptions":{"strict":true}}\n');
+    write(root, "pnpm-workspace.yaml", "packages: ['packages/*']\ncatalog:\n  three: 0.185.1\n");
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "initial"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+        GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
+      },
+    });
+    write(root, "tsconfig.base.json", '{"compilerOptions":{"strict":false}}\n');
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-shared-tsconfig"], { cwd: root });
+    write(root, "pnpm-workspace.yaml", "packages: ['packages/*']\ncatalog:\n  three: 0.185.2\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-catalog"], { cwd: root });
+
+    expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(2);
+  });
+
+  it("counts changes in a workspace sibling consumed by the package build", async () => {
+    const root = await makeTempDir("threenative-publish-sibling-inputs-");
+    const packageRoot = path.join(root, "packages/core");
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({
+        devDependencies: { "threenative-blender-mcp": "workspace:*" },
+        files: ["dist", "README.md"],
+        name: "@threenative/core",
+        version: "0.1.0",
+      }),
+    );
+    write(root, "packages/core/README.md", "# core\n");
+    write(root, "packages/core/src/index.ts", "export const x = 1;\n");
+    write(
+      root,
+      "packages/blender-mcp/package.json",
+      JSON.stringify({ name: "threenative-blender-mcp", version: "0.1.0" }),
+    );
+    write(root, "packages/blender-mcp/gpl/convert.py", "print('initial')\n");
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "initial"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+        GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
+      },
+    });
+    write(root, "packages/blender-mcp/gpl/convert.py", "print('changed')\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-sibling"], { cwd: root });
+
+    expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(1);
   });
 
   it("does not fail a package that was never published", async () => {
@@ -518,6 +711,23 @@ describe("pnpm publish:check", () => {
     ).rejects.toThrow(/TN_PUBLISH_MODULE_UNREADABLE/u);
   });
 
+  it("names a relative import that escapes the package rather than treating it as a local miss", async () => {
+    const findings = await unresolvableTarballImports(
+      PACKED,
+      tarball({
+        "package.json": JSON.stringify({ name: PACKED.name, version: PACKED.version }),
+        "scripts/consumer.mjs": "import '../../engine/src/index.js';\n",
+      }),
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        detail: expect.stringContaining("outside the package tarball"),
+        severity: "fail",
+      }),
+    ]);
+  });
+
   it("fails when a packed manifest still carries a workspace protocol specifier", () => {
     // `npm pack` leaves catalog:/workspace: verbatim where `pnpm pack` substitutes them. The
     // tarball installs nowhere — EUNSUPPORTEDPROTOCOL on a stranger's machine and nowhere else.
@@ -571,6 +781,20 @@ describe("pnpm publish:check", () => {
     expect(contents.entries).toContain("scripts/asset-preflight.mjs");
     expect(await unresolvableTarballImports(item as IPublishPackage, contents)).toEqual([]);
     expect(unresolvedTarballSpecifiers(item as IPublishPackage, contents)).toEqual([]);
+  }, 120_000);
+
+  it("packs only self-contained core scripts and excludes the VSM development proof", async () => {
+    const repo = path.resolve(import.meta.dirname, "../..");
+    const item = publishSet(repo).find((entry) => entry.name === "@threenative/core");
+    expect(item).toBeDefined();
+    const contents = pnpmPackReader()(item as IPublishPackage);
+
+    expect(contents.entries).toContain("scripts/postinstall.mjs");
+    expect(contents.entries).toContain("LICENSE");
+    expect(contents.entries).toContain("gpl/LICENSE.GPL");
+    expect(contents.entries).not.toContain("scripts/vsm-proof/run.mjs");
+    expect(contents.entries.some((entry) => entry.startsWith("scripts/vsm-proof/"))).toBe(false);
+    expect(await unresolvableTarballImports(item as IPublishPackage, contents)).toEqual([]);
   }, 120_000);
 
   it("refuses an empty publish set rather than reporting nothing to do", async () => {

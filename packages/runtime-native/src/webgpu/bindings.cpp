@@ -2737,6 +2737,7 @@ bool initBindings(BindingsState* state, js::Engine* engine, void* wgpuInstance, 
     state->adapter = (WGPUAdapter)wgpuAdapter;
     state->queue = (WGPUQueue)wgpuQueue;
     state->surface = (WGPUSurface)wgpuSurface;
+    reportPipelineCaptureMetadata(state->adapter);
     state->presentation.presentMode = static_cast<WGPUPresentMode>(presentMode);
 
     // Set canvas dimensions from window size

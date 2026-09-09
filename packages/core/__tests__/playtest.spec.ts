@@ -67,6 +67,7 @@ describe("playtest plugin", () => {
         "runtime.transitions",
         "runtime.audio",
         "runtime.world",
+        "runtime.pipelineCensus",
       ]);
     } finally {
       game.stop();
@@ -116,6 +117,7 @@ describe("playtest plugin", () => {
         "runtime.audio",
         "runtime.world",
         "runtime.components",
+        "runtime.pipelineCensus",
       ]);
       expect(unknownPlaytestCapabilities(description.capabilities)).toEqual([]);
       const request = { label: "after-step" } as IPlaytestSampleRequest & { label: string };
@@ -304,6 +306,7 @@ describe("playtest plugin", () => {
         "runtime.transitions",
         "runtime.audio",
         "runtime.world",
+        "runtime.pipelineCensus",
       ];
 
       expect(description.capabilities).toEqual(expected);

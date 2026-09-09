@@ -22,6 +22,7 @@ import {
   createAfterPhysicsPhase,
 } from "./loop.js";
 import { ScenePicker } from "./picking.js";
+import type { IPipelineCensus } from "./pipeline-census.js";
 import { getPlatform } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
 import { formatProjectionWindow } from "./projection-marker.js";
@@ -34,7 +35,14 @@ import {
 } from "./renderer-config.js";
 import { type IRendererLike, type IRendererOptions, createRenderer } from "./renderer.js";
 import { ResolutionScaler } from "./resolution-scaler.js";
-import type { ICtx, IStartupTimeline, Scene, SceneConstructor, SceneFrame } from "./scene.js";
+import type {
+  ICtx,
+  IStartupStatus,
+  IStartupTimeline,
+  Scene,
+  SceneConstructor,
+  SceneFrame,
+} from "./scene.js";
 import { Scheduler } from "./schedule.js";
 import {
   STARTUP_COMPILE_BUDGET_MS,
@@ -107,6 +115,8 @@ export interface IGamePluginRuntime {
   readonly startupCompileSettled?: () => boolean;
   /** When the startup milestones happened, for the playtest bridge's startup observation. */
   readonly startupTimeline?: () => IStartupTimeline;
+  /** The renderer-owned bounded pipeline capture, when the renderer has not been opted out. */
+  readonly pipelineCensus?: () => IPipelineCensus;
   readonly step: number;
 }
 
@@ -858,32 +868,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // frame may therefore arrive while that pass is still awaiting a compile promise; keep first-use
     // rendering and compute behind the same held boundary until the explicit pass has settled.
     let explicitWarmUpSettled = !this.#warmUpConfiguredExplicitly();
-    // Once, not once per frame the world is still unrendered: a game that drops its cover at
-    // readiness re-enters this branch, and a marker that repeats stops being a signal.
-    let warmUpSkipReported = false;
-    // A connected UI may be a transparent gameplay HUD. Only the explicitly opaque
-    // CanvasLayer guarantees that deferring the world leaves a loading surface on screen.
-    const startupCoverActive = (): boolean => !startupReadiness.ready && canvasLayer.opaque;
-    /**
-     * The one render the compile walk cannot stand in for, offered only where it is invisible.
-     *
-     * `compileAsync` walks the main render list and nothing else, so the shadow pass and the
-     * output conversion are built the first time a frame actually draws. Drawing that frame while
-     * the startup layer still covers the canvas builds them with the loading surface animating,
-     * instead of inside the frame that used to freeze it.
-     *
-     * `undefined` unless the layer is opaque: a game whose loading surface is a transparent HUD
-     * would have this world frame presented to the player, and an early world is a look change
-     * bought for a compile.
-     */
-    const coveredFirstUseRender = (): (() => void) | undefined =>
-      startupCoverActive()
-        ? () => {
-            updateClusteredMeshes(projection.root, camera, renderer.surface().drawingBufferHeight);
-            renderer.render(projection.root, camera);
-          }
-        : undefined;
+    // A web UI is the loading surface on native and on the web. Its bridge must be both attached
+    // and announced ready: an attached but unrendered web view is not a cover the player can see.
+    // Keep this predicate tied to an actually attached and rendered web UI. The render path still
+    // lets a settled world render behind either kind of cover; only the unresolved first-use work
+    // is held, so a persistent HUD cannot stop the world pass after loading.
+    const startupCoverActive = (): boolean =>
+      !startupReadiness.ready &&
+      (canvasLayer.opaque || (this.#uiReady && this.#uiBridge?.hasPeer() === true));
     const timeline: { -readonly [K in keyof IStartupTimeline]: IStartupTimeline[K] } = {};
+    let warmUpStatus: IStartupStatus["warmup"];
     const now = (): number => globalThis.performance?.now() ?? Date.now();
     // Stamped when the FRAMEWORK is done, which is before `whenReady()` whenever the game has
     // registered a `startup.hold()`. Two stamps, because one number cannot be both "what the
@@ -916,11 +910,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         report = await warmUpScene(renderer, projection.root, camera, {
           budgetMs,
           computeNodes: this.#computeDriven.warmupNodes,
-          firstUseRender: coveredFirstUseRender(),
         });
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
+      warmUpStatus =
+        report === undefined
+          ? { status: "unavailable" }
+          : {
+              attempted: report.attempted,
+              candidates: report.candidates,
+              observed: report.observed,
+              status: report.observed.status,
+            };
       if (stamp) timeline.compileSettledMs ??= now();
       console.log(
         `${marker}:${JSON.stringify(
@@ -929,6 +931,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             : {
                 compiled: report.compiled,
                 pipelines: report.pipelines,
+                candidates: report.candidates,
+                attempted: report.attempted,
+                observed: report.observed,
                 slices: report.slices,
                 elapsedMs: Math.round(report.elapsedMs),
                 unsupported: report.unsupported,
@@ -938,8 +943,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 computeAbandoned: report.computeAbandoned,
                 computeUnsupported: report.computeUnsupported,
                 computeTimedOut: report.computeTimedOut,
-                firstUseRendered: report.firstUseRendered,
-                firstUseFailure: report.firstUseFailure,
                 cache: report.cache,
               },
         )}`,
@@ -985,6 +988,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       raycast: (options) => picker.raycast(options),
       raycastAll: (options, target) => picker.raycastAll(options, target),
       startup: {
+        get warmup() {
+          return warmUpStatus;
+        },
         get phase() {
           // The projection is reconciled before the first world draw, but readiness is not reported
           // until first-use work and a sustained in-budget window have completed. An opaque loading
@@ -1163,25 +1169,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // `startupCompile` is the fallback that compiles inside the readiness gate. When warm-up
           // is on it has already happened behind the loading screen, so running it again here
           // would pay the same cost twice.
-          const covered = startupCoverActive() && !this.#warmUpConfiguredExplicitly();
-          // A game whose loading surface is a DOM overlay declares nothing to the engine, so the
-          // canvas reads as uncovered and this compile is skipped: without a cover the world draws
-          // on the first frame anyway, and warming up beside it would compile everything twice.
-          //
-          // That skip used to be silent, and the silence cost a device session. Measured on a
-          // Pixel 8: 101 pipelines built synchronously for 8,513 ms with no warm-up in the launch
-          // at all, while every marker in the log looked ordinary. A convention that switches
-          // itself off says so, on the same greppable line the warm-up would have used.
-          if (!covered && !this.#warmUpConfiguredExplicitly() && !warmUpSkipReported) {
-            warmUpSkipReported = true;
-            console.log(
-              `TN_STARTUP_WARMUP:${JSON.stringify({
-                skipped: "no-startup-cover",
-                opaque: canvasLayer.opaque,
-              })}`,
-            );
-          }
-          startupReadiness.start(covered ? startupCompile : undefined);
+          startupReadiness.start(
+            startupCoverActive() && !this.#warmUpConfiguredExplicitly()
+              ? startupCompile
+              : undefined,
+          );
         }
         // Render-cadence compute is first-use work too: keep it behind an opaque startup layer
         // until readiness settles, or a particle process dispatch compiles in the loader frame.
@@ -1328,6 +1320,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         return entered;
       },
       observations: createRuntimeObservations(),
+      ...(renderer.pipelineCensus === undefined ? {} : { pipelineCensus: renderer.pipelineCensus }),
       tick: gameLoop.tick,
       random,
       rapier: null,
@@ -1432,11 +1425,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         report = await warmUpScene(this.#renderer, projection.root, camera, {
           ...warmUpOptions,
           computeNodes: [...(warmUpOptions.computeNodes ?? []), ...this.#computeDriven.warmupNodes],
-          firstUseRender: warmUpOptions.firstUseRender ?? coveredFirstUseRender(),
         });
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
+      warmUpStatus =
+        report === undefined
+          ? { status: "unavailable" }
+          : {
+              attempted: report.attempted,
+              candidates: report.candidates,
+              observed: report.observed,
+              status: report.observed.status,
+            };
       // One greppable line on every platform, so a device lane reads what the warm-up did without
       // instrumenting anything -- including the cases where it could do nothing, ran out of
       // budget, or threw.
@@ -1446,6 +1447,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             ? { failed: failure ?? "unknown" }
             : {
                 compiled: report.compiled,
+                pipelines: report.pipelines,
+                candidates: report.candidates,
+                attempted: report.attempted,
+                observed: report.observed,
                 slices: report.slices,
                 elapsedMs: Math.round(report.elapsedMs),
                 unsupported: report.unsupported,
@@ -1455,8 +1460,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 computeAbandoned: report.computeAbandoned,
                 computeUnsupported: report.computeUnsupported,
                 computeTimedOut: report.computeTimedOut,
-                firstUseRendered: report.firstUseRendered,
-                firstUseFailure: report.firstUseFailure,
                 cache: report.cache,
               },
         )}`,

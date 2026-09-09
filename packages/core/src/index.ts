@@ -516,7 +516,9 @@ export type {
   IWarmUpProgress,
   IWarmUpRenderer,
   IWarmUpReport,
+  IWarmUpObservation,
   WarmUpCacheStatus,
+  WarmUpObservationStatus,
 } from "./warmup.js";
 export type {
   IGame,
@@ -792,6 +794,32 @@ export type {
  * @example prewarm(tracerPool);
  */
 export { prewarm } from "./renderer.js";
+/**
+ * Read the renderer's bounded, versioned pipeline capture in a diagnostic or playtest tool.
+ * @situation inspect shader and pipeline creation work during a real launch
+ * @situation correlate pipeline creation with material, object, pass, and shader identities
+ * @constraint the capture is bounded and incomplete when the backend cannot expose an observation
+ * @example const capture = game.runtime.pipelineCensus?.();
+ * // The game normally reaches this through `runtime.pipelineCensus`; direct construction exists
+ * // for renderer adapters and contract tests, not for gameplay.
+ */
+export {
+  DEFAULT_PIPELINE_CENSUS_LIMIT,
+  PIPELINE_CENSUS_CAPABILITY,
+  PIPELINE_CENSUS_VERSION,
+  createPipelineCensus,
+  PipelineCensus,
+} from "./pipeline-census.js";
+export type {
+  IPipelineCensus,
+  IPipelineCensusCounts,
+  IPipelineCensusEvent,
+  IPipelineCensusOptions,
+  IPipelineProvenance,
+  IPipelineShaderObservation,
+  PipelineCensusMode,
+  PipelineCensusStatus,
+} from "./pipeline-census.js";
 /**
  * Scale an asset to a real-world measurement and return the applied factor.
  * @situation make a character exactly 1.8 metres tall

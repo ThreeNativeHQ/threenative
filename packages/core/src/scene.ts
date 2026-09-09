@@ -11,6 +11,7 @@ import type { IRendererLike } from "./renderer.js";
 import type { ITweenOptions, ScheduleHandle } from "./schedule.js";
 import type { GameStore } from "./state.js";
 import type { Viewport } from "./viewport.js";
+import type { IWarmUpObservation, WarmUpObservationStatus } from "./warmup.js";
 
 export abstract class Scene<
   TState extends Record<string, unknown> = Record<string, unknown>,
@@ -81,6 +82,13 @@ export interface IStartupTimeline {
 }
 
 export interface IStartupStatus {
+  /** The most recent warm-up accounting, when a warm-up has run. */
+  readonly warmup?: {
+    readonly attempted?: number;
+    readonly candidates?: number;
+    readonly observed?: IWarmUpObservation;
+    readonly status: WarmUpObservationStatus;
+  };
   /**
    * True once first-use compilation has settled — earlier than `phase === "ready"`, which also
    * waits for a sustained in-budget frame window.

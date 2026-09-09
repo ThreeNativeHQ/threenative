@@ -1,5 +1,7 @@
 import type { Camera, Object3D } from "three";
 
+import type { IPipelineCensus } from "./pipeline-census.js";
+
 /**
  * Compiles a scene's pipelines before the first frame, in slices, yielding between them.
  *
@@ -26,9 +28,9 @@ import type { Camera, Object3D } from "three";
 
 /** One renderable's worth of progress, reported as the warm-up advances. */
 export interface IWarmUpProgress {
-  /** Distinct pipelines warmed so far. */
+  /** Renderable candidates handed to the renderer so far. */
   readonly done: number;
-  /** Distinct pipelines the warm-up will build in total. Known before the first slice. */
+  /** Renderable candidates the warm-up will hand to the renderer in total. */
   readonly total: number;
 }
 
@@ -50,7 +52,7 @@ export interface IWarmUpOptions {
   /** Compute kernels to compile in the same bounded startup window as draw pipelines. */
   readonly computeNodes?: readonly unknown[];
   /**
-   * Distinct pipelines compiled between yields. Default 24.
+   * Renderable candidates handed to the renderer between yields. Default 24.
    *
    * The trade is presented frames against total warm-up time: every yield costs one frame's
    * present, and a slice of one would spend more time presenting than compiling. 24 puts a frame
@@ -85,50 +87,11 @@ export interface IWarmUpOptions {
    * for and the only one measured to be affordable: on a Pixel 8 the renderer builds all 107 of
    * this game's pipelines in **8.1 s** that way.
    *
-   * `"object"` walks one representative per pipeline and yields between slices, which is the only
-   * way to show progress — but it was measured at **more than 2 s per call** on the same device,
-   * so warming the same scene would take minutes. It is kept, and kept off, because a scene with
-   * few pipelines can afford it and a progress bar is worth something there; the default may not
-   * be a mechanism that turns a 8 s launch into a 15 s one.
+   * `"object"` walks every renderable candidate and yields between slices, which is the only way
+   * to show candidate progress. The renderer owns cache reuse and actual pipeline identity, so the
+   * warm-up never drops an object based on a material or geometry guess.
    */
   readonly granularity?: "scene" | "object";
-  /**
-   * Draw one real frame at the end of the warm-up window, for the first-use work a compile walk
-   * cannot reach.
-   *
-   * `compileAsync` walks the main render list only (three 0.185.1,
-   * `build/three.webgpu.js:60185`-`:60245`). Two kinds of pipeline are therefore never reached by
-   * it: the shadow pass, which is rendered from the light's own node update inside `render()`
-   * (`:45416`, `:45521`), and the output conversion that resolves the frame to the canvas. Both
-   * are built synchronously the first time a frame draws — measured on an RTX 2080 with the real
-   * game's render shape, both warm-up granularities compiled 4 pipelines and the first frame
-   * still built 2 more inside itself.
-   *
-   * The seam is the caller's because only the caller knows whether the frame it is about to draw
-   * is hidden. The engine supplies it while an opaque startup layer covers the canvas; a game
-   * whose loading surface is a transparent HUD gets none, because an early world frame there
-   * would be a look change bought for a compile.
-   */
-  /**
-   * How many per-object compiles may be in flight at once. Default 1, which is the serial walk.
-   *
-   * Measured on a Pixel 8: the native host runs a **two-thread** pipeline compile pool
-   * (`packages/runtime-native/src/webgpu/bindings_pipelines.cpp:229`), and three's own
-   * `compileAsync` awaits each object's pipeline promises before starting the next
-   * (`three.webgpu.js:60259`, `:60278`, `:60285`), so one job is ever queued and one worker ever
-   * runs. Raising this issues the next object's compile without waiting for the previous one, so
-   * the pool has something to do.
-   *
-   * **Two is the ceiling that can help.** The pool runs at most two jobs, and one on a host with two
-   * hardware threads or fewer, so anything above that only lengthens the request queue.
-   *
-   * The default is deliberately 1 until a measurement chooses a better one: a default that is a
-   * constant nobody measured is the bug this option exists to avoid shipping. On a Pixel 8 no value
-   * has beaten not warming up at all — see
-   * `docs/verification/prd-360-startup-cost-2026-09-08/compile-concurrency.md`.
-   */
-  readonly compileConcurrency?: number;
-  readonly firstUseRender?: () => void;
   /**
    * Remember a completed warm-up so a later launch can trust the driver's persistent cache.
    * This is opt-in because WebGPU does not expose a portable pipeline-serialization API.
@@ -137,15 +100,37 @@ export interface IWarmUpOptions {
 }
 
 /** What the warm-up did, so a caller can report it rather than assume it. */
+export type WarmUpObservationStatus = "complete" | "incomplete" | "unavailable";
+
+export interface IWarmUpObservation {
+  /** Pipeline creations observed between the census snapshots. */
+  readonly created: number;
+  /** Pipeline creations that failed between the census snapshots. */
+  readonly failed: number;
+  /** Pipeline creations still pending at the ending census snapshot, delta-adjusted. */
+  readonly pending: number;
+  /** New shader-program identities observed between the census snapshots. */
+  readonly uniquePrograms: number;
+  /** New backend pipeline identities observed between the census snapshots. */
+  readonly uniquePipelines: number;
+  /** Whether the renderer supplied a complete observation for this warm-up. */
+  readonly status: WarmUpObservationStatus;
+}
+
 export interface IWarmUpReport {
-  /** Distinct pipelines warmed — one representative object each, not one per renderable. */
+  /** Compile calls that settled successfully; retained for compatibility with existing callers. */
   readonly compiled: number;
   /**
-   * Distinct pipelines the scene holds — one representative per material, skinning, instancing
-   * and vertex-layout combination — whether they were compiled one call or one object at a time.
-   * The number an elapsed time has to be read against.
+   * @deprecated Candidate count retained under the old public name. Use `candidates` for its
+   * actual unit and `observed` for backend-created pipelines.
    */
   readonly pipelines: number;
+  /** Renderable objects selected for warm-up, before backend cache identity is known. */
+  readonly candidates: number;
+  /** Number of compileAsync calls attempted, including rejected and timed-out calls. */
+  readonly attempted: number;
+  /** Backend creation counts observed between the warm-up's start and end snapshots. */
+  readonly observed: IWarmUpObservation;
   /** Slices the work was cut into, and therefore the frames the loop got to present. */
   readonly slices: number;
   /** Wall-clock milliseconds the warm-up took, compiling and yielding together. */
@@ -179,16 +164,6 @@ export interface IWarmUpReport {
   readonly computeUnsupported?: boolean;
   /** True when compute warm-up consumed the startup budget. Present only when computeNodes was set. */
   readonly computeTimedOut?: boolean;
-  /**
-   * Whether the first-use render ran to completion. Present only when `firstUseRender` was set.
-   *
-   * Reported rather than assumed, because the number this warm-up exists to move is invisible
-   * otherwise: a report of `abandoned: 0, timedOut: false` used to be returned by a warm-up that
-   * left the shadow and output pipelines to the first frame, and nothing in it said so.
-   */
-  readonly firstUseRendered?: boolean;
-  /** Why the first-use render did not complete. Present only when it failed rather than ran. */
-  readonly firstUseFailure?: string;
   /** The optional persistent warm-up hint's outcome. */
   readonly cache?: WarmUpCacheStatus;
 }
@@ -197,13 +172,14 @@ export interface IWarmUpReport {
 export interface IWarmUpRenderer {
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
   computeAsync?: (node: unknown) => Promise<void>;
+  pipelineCensus?: () => IPipelineCensus;
   raw?: unknown;
 }
 
 const DEFAULT_SLICE_SIZE = 24;
 const DEFAULT_COMPILE_TIMEOUT_MS = 2000;
 const DEFAULT_BUDGET_MS = 15000;
-const WARM_UP_CACHE_SCHEMA = 1;
+const WARM_UP_CACHE_SCHEMA = 2;
 const WARM_UP_CACHE_PREFIX = "threenative:warm-up:";
 
 interface IWarmUpCacheIdentity {
@@ -481,71 +457,18 @@ export const yieldToHost = (): Promise<void> =>
     setTimeout(resolve, 0);
   });
 
-interface IPipelineTraits {
-  material?: unknown;
-  isSkinnedMesh?: boolean;
-  isInstancedMesh?: boolean;
-  isBatchedMesh?: boolean;
-  isPoints?: boolean;
-  isLine?: boolean;
-  isSprite?: boolean;
-  morphTargetInfluences?: unknown;
-  geometry?: { attributes?: Record<string, unknown> };
-}
-
 /**
- * A key for "these two objects compile to the same pipeline".
- *
- * The measurement that shaped this: the Pixel 8 scene had **835 renderables and 107 pipeline
- * compiles**. Compiling every object would make 835 calls to warm 107 pipelines — 728 of them
- * cache lookups whose only effect is to slow the warm-up down and add yields nobody sees. One
- * representative per distinct pipeline does the same work in an eighth of the calls.
- *
- * The traits are the ones `three`'s WebGPU backend actually branches a pipeline on: the material,
- * whether the object is skinned, instanced, batched or a non-mesh primitive, whether it morphs,
- * and which vertex attributes its geometry carries. Keying on the material alone would miss the
- * skinned variant of a shared material, which is a real pipeline and a real compile.
- */
-function pipelineKey(object: Object3D, materialIndex: Map<unknown, number>): string {
-  const traits = object as Object3D & IPipelineTraits;
-  const material = traits.material;
-  let id = materialIndex.get(material);
-  if (id === undefined) {
-    id = materialIndex.size;
-    materialIndex.set(material, id);
-  }
-  const attributes = traits.geometry?.attributes;
-  // Sorted: attribute insertion order is an authoring detail, not a pipeline difference.
-  const layout = attributes === undefined ? "" : Object.keys(attributes).sort().join(",");
-  const flags =
-    `${traits.isSkinnedMesh === true ? "s" : ""}${traits.isInstancedMesh === true ? "i" : ""}` +
-    `${traits.isBatchedMesh === true ? "b" : ""}${traits.isPoints === true ? "p" : ""}` +
-    `${traits.isLine === true ? "l" : ""}${traits.isSprite === true ? "r" : ""}` +
-    `${Array.isArray(traits.morphTargetInfluences) ? "m" : ""}`;
-  return `${id}|${flags}|${layout}`;
-}
-
-/**
- * Collects one representative object per distinct pipeline, in traversal order.
+ * Collects every renderable object in traversal order.
  *
  * Only renderables: a `Group` or a `Bone` carries no material, and compiling it would walk its
  * whole subtree again, turning a linear pass into a quadratic one on a deep scene.
  */
 function collectRenderables(root: Object3D): Object3D[] {
   const found: Object3D[] = [];
-  const seen = new Set<string>();
-  const materialIndex = new Map<unknown, number>();
   const stack: Object3D[] = [root];
   while (stack.length > 0) {
     const object = stack.pop() as Object3D;
-    const candidate = object as Object3D & IPipelineTraits;
-    if (candidate.material !== undefined) {
-      const key = pipelineKey(object, materialIndex);
-      if (!seen.has(key)) {
-        seen.add(key);
-        found.push(object);
-      }
-    }
+    if ((object as Object3D & { material?: unknown }).material !== undefined) found.push(object);
     // A structural stand-in for a scene may carry no children at all; count what is there.
     const children = object.children ?? [];
     for (let index = children.length - 1; index >= 0; index -= 1) {
@@ -553,6 +476,61 @@ function collectRenderables(root: Object3D): Object3D[] {
     }
   }
   return found;
+}
+
+function readPipelineCensus(renderer: IWarmUpRenderer): IPipelineCensus | undefined {
+  if (typeof renderer.pipelineCensus !== "function") return undefined;
+  try {
+    return renderer.pipelineCensus();
+  } catch {
+    return undefined;
+  }
+}
+
+function censusDelta(
+  before: IPipelineCensus | undefined,
+  after: IPipelineCensus | undefined,
+  key: "creations" | "failures" | "pending" | "uniquePrograms" | "uniquePipelines",
+): number {
+  if (after === undefined) return 0;
+  return Math.max(0, after.counts[key] - (before?.counts[key] ?? 0));
+}
+
+function observePipelineCensus(
+  before: IPipelineCensus | undefined,
+  after: IPipelineCensus | undefined,
+): IWarmUpObservation {
+  const status: WarmUpObservationStatus =
+    after === undefined || after.unsupported
+      ? "unavailable"
+      : after.complete
+        ? "complete"
+        : "incomplete";
+  return {
+    created: censusDelta(before, after, "creations"),
+    failed: censusDelta(before, after, "failures"),
+    pending: censusDelta(before, after, "pending"),
+    uniquePrograms: censusDelta(before, after, "uniquePrograms"),
+    uniquePipelines: censusDelta(before, after, "uniquePipelines"),
+    status,
+  };
+}
+
+function reconcileWarmUpObservation(report: IWarmUpReport): IWarmUpReport {
+  const unavailable = report.unsupported || report.computeUnsupported === true;
+  const incomplete =
+    report.abandoned > 0 ||
+    report.timedOut ||
+    report.computeTimedOut === true ||
+    (report.computeAbandoned ?? 0) > 0;
+  const status = unavailable
+    ? "unavailable"
+    : incomplete && report.observed.status === "complete"
+      ? "incomplete"
+      : report.observed.status;
+  return status === report.observed.status
+    ? report
+    : { ...report, observed: { ...report.observed, status } };
 }
 
 /**
@@ -578,14 +556,6 @@ export async function warmUpScene(
       )}.`,
     );
   }
-  const compileConcurrency = options.compileConcurrency ?? 1;
-  if (!Number.isInteger(compileConcurrency) || compileConcurrency < 1) {
-    throw new Error(
-      `TN_WARMUP_CONCURRENCY_INVALID: compileConcurrency must be a whole number of compiles of at least one, received ${String(
-        options.compileConcurrency,
-      )}.`,
-    );
-  }
   const compileTimeoutMs = options.compileTimeoutMs ?? DEFAULT_COMPILE_TIMEOUT_MS;
   const budgetMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
   for (const [name, value] of [
@@ -602,40 +572,11 @@ export async function warmUpScene(
   const yieldFrame = options.yieldFrame ?? yieldToHost;
   const startedAt = now();
   const computeNodes = options.computeNodes ?? [];
-  /**
-   * The compile walk's blind spot, drawn rather than inferred.
-   *
-   * A frame first, so the loading surface presents once more before the work that used to freeze
-   * it; then one render, inside what is left of the budget. Failures are reported, never thrown:
-   * this runs on the launch path, and the one thing a warm-up must never do is stop the game from
-   * starting.
-   */
-  const runFirstUse = async (
-    report?: IWarmUpReport,
-  ): Promise<{ firstUseRendered: boolean; firstUseFailure?: string } | undefined> => {
-    const render = options.firstUseRender;
-    if (render === undefined) return undefined;
-    // A warm-up that already ran out of budget releases the game rather than spending more of it
-    // on a render: the launch must never be worse for having tried to optimize it.
-    const spent =
-      report?.timedOut === true ||
-      report?.computeTimedOut === true ||
-      now() >= startedAt + budgetMs;
-    if (spent) return { firstUseRendered: false };
-    await yieldFrame();
-    try {
-      render();
-    } catch (error) {
-      return {
-        firstUseRendered: false,
-        firstUseFailure: error instanceof Error ? error.message : String(error),
-      };
-    }
-    return { firstUseRendered: true };
-  };
-  const pipelines = collectRenderables(scene).length;
+  const renderables = collectRenderables(scene);
+  const candidates = renderables.length;
+  const censusBefore = readPipelineCensus(renderer);
   const cacheIdentity = warmUpCacheIdentity(options.cache);
-  let cacheStatus = readWarmUpCache(cacheIdentity, pipelines, computeNodes.length);
+  let cacheStatus = readWarmUpCache(cacheIdentity, candidates, computeNodes.length);
 
   // A hit means the previous complete warm-up gave the platform a chance to populate its own
   // persistent driver cache. WebGPU has no portable serialized pipeline to restore, so the marker
@@ -643,19 +584,18 @@ export async function warmUpScene(
   if (cacheStatus === "hit" && typeof renderer.compileAsync === "function") {
     const computeSupported = computeNodes.length === 0 || computeAsyncOf(renderer) !== undefined;
     if (computeSupported) {
-      // A hit skips the compile walk, not the first-use work: the driver's own cache may hold
-      // every pipeline this process is about to ask for, and it still has to be asked.
-      const firstUse = await runFirstUse();
       const report: IWarmUpReport = {
         compiled: 0,
-        pipelines,
+        pipelines: candidates,
+        candidates,
+        attempted: 0,
+        observed: observePipelineCensus(censusBefore, readPipelineCensus(renderer)),
         slices: 0,
         elapsedMs: now() - startedAt,
         unsupported: false,
         abandoned: 0,
         timedOut: false,
         cache: "hit",
-        ...(firstUse ?? {}),
         ...(computeNodes.length === 0
           ? {}
           : {
@@ -682,38 +622,47 @@ export async function warmUpScene(
         );
 
   if (typeof renderer.compileAsync !== "function") {
-    const report: IWarmUpReport = {
+    const report = reconcileWarmUpObservation({
       compiled: 0,
-      pipelines,
+      pipelines: candidates,
+      candidates,
+      attempted: 0,
+      observed: observePipelineCensus(censusBefore, readPipelineCensus(renderer)),
       slices: 0,
       elapsedMs: now() - startedAt,
       unsupported: true,
       abandoned: 0,
       timedOut: false,
       cache: cacheStatus,
-    };
-    return compute === undefined ? report : withComputeReport(report, compute);
+    });
+    return compute === undefined
+      ? report
+      : reconcileWarmUpObservation(withComputeReport(report, compute));
   }
   const compileAsync = renderer.compileAsync.bind(renderer);
+  let attempted = 0;
+  const invokeCompile = (object: Object3D, targetScene?: Object3D): Promise<void> => {
+    attempted += 1;
+    try {
+      return compileAsync(object, camera, targetScene);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
 
-  const finish = async (report: IWarmUpReport): Promise<IWarmUpReport> => {
-    const firstUse = await runFirstUse(report);
-    const covered = { ...report, ...(firstUse ?? {}) };
-    // A stored hint makes the next launch skip the whole walk. Storing one for a warm-up that
-    // left the first frame to compile shadows would make that launch worse, and silent about it.
+  const finish = (report: IWarmUpReport): IWarmUpReport => {
     const complete =
-      !covered.unsupported &&
-      !covered.timedOut &&
-      covered.abandoned === 0 &&
-      covered.computeUnsupported !== true &&
-      covered.computeTimedOut !== true &&
-      (covered.computeAbandoned ?? 0) === 0 &&
-      covered.firstUseRendered !== false;
+      !report.unsupported &&
+      !report.timedOut &&
+      report.abandoned === 0 &&
+      report.computeUnsupported !== true &&
+      report.computeTimedOut !== true &&
+      (report.computeAbandoned ?? 0) === 0;
     const finalCache =
       complete && cacheIdentity !== undefined
-        ? storeWarmUpCache(cacheIdentity, pipelines, computeNodes.length)
+        ? storeWarmUpCache(cacheIdentity, candidates, computeNodes.length)
         : cacheStatus;
-    return { ...covered, cache: finalCache };
+    return reconcileWarmUpObservation({ ...report, cache: finalCache });
   };
 
   // One call, the whole scene: the default, and the only granularity measured to be affordable.
@@ -722,11 +671,14 @@ export async function warmUpScene(
   // cost is paid before the loop is released rather than inside the first frame the player sees.
   if ((options.granularity ?? "scene") === "scene") {
     if (compute === undefined) {
-      const finished = await within(compileAsync(scene, camera), budgetMs, yieldFrame, now);
+      const finished = await within(invokeCompile(scene), budgetMs, yieldFrame, now);
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-      return await finish({
+      return finish({
         compiled: finished ? 1 : 0,
-        pipelines,
+        pipelines: candidates,
+        candidates,
+        attempted,
+        observed: observePipelineCensus(censusBefore, readPipelineCensus(renderer)),
         slices: 1,
         elapsedMs: now() - startedAt,
         unsupported: false,
@@ -736,13 +688,16 @@ export async function warmUpScene(
     }
     const remaining = Math.max(0, startedAt + budgetMs - now());
     const finished =
-      remaining > 0 ? await within(compileAsync(scene, camera), remaining, yieldFrame, now) : false;
+      remaining > 0 ? await within(invokeCompile(scene), remaining, yieldFrame, now) : false;
     options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-    return await finish(
+    return finish(
       withComputeReport(
         {
           compiled: finished ? 1 : 0,
-          pipelines,
+          pipelines: candidates,
+          candidates,
+          attempted,
+          observed: observePipelineCensus(censusBefore, readPipelineCensus(renderer)),
           slices: 1,
           elapsedMs: now() - startedAt,
           unsupported: false,
@@ -754,23 +709,23 @@ export async function warmUpScene(
     );
   }
 
-  const renderables = collectRenderables(scene);
   const total = renderables.length;
   // Nothing to warm up is a real answer, not a reason to skip the report.
   if (total === 0) {
     options.onProgress?.({ done: 0, total: 0 });
-    const report: IWarmUpReport = {
+    const report = reconcileWarmUpObservation({
       compiled: 0,
-      pipelines,
+      pipelines: candidates,
+      candidates,
+      attempted,
+      observed: observePipelineCensus(censusBefore, readPipelineCensus(renderer)),
       slices: 0,
       elapsedMs: now() - startedAt,
       unsupported: false,
       abandoned: 0,
       timedOut: false,
-    };
-    return compute === undefined
-      ? await finish(report)
-      : await finish(withComputeReport(report, compute));
+    });
+    return compute === undefined ? finish(report) : finish(withComputeReport(report, compute));
   }
 
   let slices = 0;
@@ -779,53 +734,20 @@ export async function warmUpScene(
   let timedOut = false;
   const deadline = startedAt + budgetMs;
 
-  for (let index = 0; index < total; index += compileConcurrency) {
+  for (let index = 0; index < total; index += 1) {
     if (now() >= deadline) {
       // Out of budget. Everything still unwarmed is abandoned, and says so.
       timedOut = true;
       abandoned += total - index;
       break;
     }
-    // A group, not one object, when the caller asked for more than one in flight. Each call is
-    // still bounded by `within`, and the group is awaited together so the budget check above stays
-    // the only place the walk can stop.
-    if (compileConcurrency > 1) {
-      // Built with a plain loop rather than an array projection: `constraints.spec.ts` rejects that
-      // method name anywhere in core source, because it is also how a texture reaches a package
-      // that must never own the look.
-      const pending: Array<Promise<boolean>> = [];
-      for (let offset = 0; offset < compileConcurrency && index + offset < total; offset += 1) {
-        pending.push(
-          within(
-            compileAsync(renderables[index + offset] as Object3D, camera, scene),
-            Math.min(compileTimeoutMs, Math.max(0, deadline - now())),
-            yieldFrame,
-            now,
-          ),
-        );
-      }
-      const settled = await Promise.all(pending);
-      for (const finished of settled) {
-        if (finished) compiled += 1;
-        else abandoned += 1;
-      }
-      const done = Math.min(index + compileConcurrency, total);
-      if (done % sliceSize < compileConcurrency || done === total) {
-        slices += 1;
-        options.onProgress?.({ done, total });
-        if (done !== total) await yieldFrame();
-      }
-      continue;
-    }
-    // Compiled one at a time, against the real scene so lights, fog and environment resolve
-    // exactly as they will when the frame draws. `three` caches by material, so only the first
-    // object using a given pipeline pays; the rest are a map lookup. That is what makes
-    // per-object granularity affordable and lets the slice boundary be about presenting, not
-    // about batching the compile.
+    // Compile every candidate against the real scene so lights, fog and environment resolve
+    // exactly as they will when the frame draws. The renderer owns cache reuse and backend
+    // identity; this layer must not guess which objects are safe to drop before it observes them.
     //
     // Bounded, because an unbounded await here is what held a real launch open forever.
     const finished = await within(
-      compileAsync(renderables[index] as Object3D, camera, scene),
+      invokeCompile(renderables[index] as Object3D, scene),
       Math.min(compileTimeoutMs, Math.max(0, deadline - now())),
       yieldFrame,
       now,
@@ -845,7 +767,10 @@ export async function warmUpScene(
 
   const report: IWarmUpReport = {
     compiled,
-    pipelines: total,
+    pipelines: candidates,
+    candidates,
+    attempted,
+    observed: observePipelineCensus(censusBefore, readPipelineCensus(renderer)),
     slices,
     elapsedMs: now() - startedAt,
     unsupported: false,
@@ -853,8 +778,6 @@ export async function warmUpScene(
     timedOut,
   };
   return compute === undefined
-    ? await finish(report)
-    : await finish(
-        withComputeReport({ ...report, timedOut: compute.timedOut || timedOut }, compute),
-      );
+    ? finish(report)
+    : finish(withComputeReport({ ...report, timedOut: compute.timedOut || timedOut }, compute));
 }

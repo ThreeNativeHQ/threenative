@@ -878,7 +878,7 @@ describe("browser-backed DOM visibility isolation", () => {
     }
   });
 
-  test("returns unrendered and cleans isolation when the screenshot throws", async () => {
+  test("fails closed and cleans isolation when the screenshot throws", async () => {
     const page = await browser.newPage({ viewport: { height: 120, width: 160 } });
     try {
       await installVisibilityFixture(page, { csp: false, paintedTarget: true });
@@ -890,9 +890,8 @@ describe("browser-backed DOM visibility isolation", () => {
         },
       }) as Page;
 
-      await expect(sampleElementVisibility(throwingPage, { id: "target" })).resolves.toEqual({
-        bounds: { height: 80, width: 80, x: 0, y: 0 },
-        rendered: false,
+      await expect(sampleElementVisibility(throwingPage, { id: "target" })).rejects.toMatchObject({
+        diagnostic: { code: "TN_PLAYTEST_OBSERVATION_UNAVAILABLE" },
       });
       await expect(temporaryVisibilityArtifacts(page)).resolves.toEqual({ markers: 0, styles: 0 });
     } finally {

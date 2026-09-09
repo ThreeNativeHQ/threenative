@@ -9,7 +9,8 @@
  *
  * It answers four questions, and fails closed on each:
  *  - is every publishable workspace package in the publish set, or is one silently missing?
- *  - has any package's `src/` moved since the version it still carries was published?
+ *  - has any package's build source or declared publication input moved since the version it still
+ *    carries was published?
  *  - did a `catalog:` or `workspace:` specifier survive into a manifest that ships?
  *  - does every publishable package carry a README that its own `files` list would include?
  *  - does every relative import of every shipped script resolve inside the packed tarball?
@@ -27,7 +28,7 @@ import { init, parse } from "es-module-lexer";
 const { releaseManifestUrl } = (await import(
   new URL("../packages/runtime-native/scripts/install-prebuilt.mjs", import.meta.url).href
 )) as { readonly releaseManifestUrl: (version?: string) => string };
-import { publicWorkspacePackages } from "./workspace-packages.js";
+import { publicWorkspacePackages, workspacePackages } from "./workspace-packages.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 
@@ -121,18 +122,133 @@ export function npmLookup(repo: string): RegistryLookup {
   };
 }
 
-/** Commits touching a package's shipped source since a timestamp. */
+const SCRIPT_FILE =
+  /(?:^|[\s"'`])((?:\.\.?\/)*[\w.-]+(?:\/[\w.-]+)*\.(?:[cm]?[jt]sx?|json|mjs|cjs|py|sh))/gu;
+
+function addPackageScriptInputs(directory: string, scripts: unknown, targets: Set<string>): void {
+  const scriptDirectory = path.join(directory, "scripts");
+  if (fs.existsSync(scriptDirectory)) targets.add(scriptDirectory);
+  if (typeof scripts !== "object" || scripts === null || Array.isArray(scripts)) return;
+  for (const command of Object.values(scripts as Record<string, unknown>)) {
+    if (typeof command !== "string") continue;
+    for (const match of command.matchAll(SCRIPT_FILE)) {
+      const relative = match[1];
+      if (relative === undefined) continue;
+      const absolute = path.resolve(directory, relative);
+      if (!absolute.startsWith(`${directory}${path.sep}`) || !fs.existsSync(absolute)) continue;
+      targets.add(absolute);
+    }
+  }
+}
+
+const TSCONFIG_FILE = /^tsconfig(?:\.[^/]+)?\.json$/u;
+const DEPENDENCY_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+] as const;
+
+function addPackageConfigInputs(directory: string, targets: Set<string>): void {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (
+      !entry.isFile() ||
+      (!TSCONFIG_FILE.test(entry.name) &&
+        !/(?:^|\.)config\.(?:[cm]?[jt]sx?|json)$/u.test(entry.name))
+    )
+      continue;
+    targets.add(path.join(directory, entry.name));
+  }
+}
+
+function addSharedBuildInputs(repo: string, targets: Set<string>): void {
+  for (const name of ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"]) {
+    const file = path.join(repo, name);
+    if (fs.existsSync(file)) targets.add(file);
+  }
+  for (const entry of fs.readdirSync(repo, { withFileTypes: true })) {
+    if (entry.isFile() && TSCONFIG_FILE.test(entry.name)) targets.add(path.join(repo, entry.name));
+  }
+  const patches = path.join(repo, "patches");
+  if (fs.existsSync(patches)) targets.add(patches);
+}
+
+function addWorkspaceDependencyInputs(
+  repo: string,
+  directory: string,
+  manifest: Record<string, unknown>,
+  targets: Set<string>,
+): void {
+  const packageDirectories = new Map(
+    workspacePackages(repo).map((item) => [item.name, item.directory]),
+  );
+  for (const field of DEPENDENCY_FIELDS) {
+    const block = manifest[field];
+    if (typeof block !== "object" || block === null || Array.isArray(block)) continue;
+    for (const [name, specifier] of Object.entries(block as Record<string, unknown>)) {
+      if (typeof specifier !== "string" || !specifier.startsWith("workspace:")) continue;
+      const sibling = packageDirectories.get(name);
+      if (sibling === undefined || sibling === directory) continue;
+      // A workspace dependency can be a build input even when it is only a devDependency: assets
+      // and core copy sibling MCP output into their own published tarballs.
+      targets.add(sibling);
+    }
+  }
+}
+
+function addPackageDocuments(directory: string, targets: Set<string>): void {
+  for (const name of ["README.md", "LICENSE", "LICENCE", "NOTICE"]) {
+    const file = path.join(directory, name);
+    if (fs.existsSync(file)) targets.add(file);
+  }
+}
+
+function addPackageFiles(
+  directory: string,
+  manifest: string,
+  files: unknown,
+  targets: Set<string>,
+): void {
+  if (files === undefined) {
+    // Without a files list npm's default allowlist is broad. Watching the package directory is
+    // safer than guessing which default inclusion rule a future npm version will apply.
+    targets.add(directory);
+    return;
+  }
+  if (!Array.isArray(files) || !files.every((entry) => typeof entry === "string"))
+    throw new Error(`TN_PUBLISH_FILES_MALFORMED: ${manifest} has a non-string files list.`);
+  for (const entry of files) targets.add(path.join(directory, entry));
+}
+
+/** Paths that can change the package artifact or the metadata a consumer receives. */
+function publicationInputTargets(repo: string, directory: string): readonly string[] {
+  const manifest = path.join(directory, "package.json");
+  if (!fs.existsSync(manifest))
+    throw new Error(`TN_PUBLISH_MANIFEST_MISSING: ${manifest} does not exist.`);
+  const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as Record<string, unknown>;
+  const targets = new Set<string>([manifest]);
+  const source = path.join(directory, "src");
+  if (fs.existsSync(source)) targets.add(source);
+  const templates = path.join(directory, "templates");
+  if (fs.existsSync(templates)) targets.add(templates);
+  addPackageScriptInputs(directory, parsed.scripts, targets);
+  addPackageConfigInputs(directory, targets);
+  addSharedBuildInputs(repo, targets);
+  addWorkspaceDependencyInputs(repo, directory, parsed, targets);
+
+  // npm always includes these package documents when they exist. Explicit `files` entries are
+  // added below, including non-src bundles such as core/gpl and core/mcp.
+  addPackageDocuments(directory, targets);
+  addPackageFiles(directory, manifest, parsed.files, targets);
+  return [...targets];
+}
+
+/** Commits touching a package's build source or publication inputs since a timestamp. */
 export type SourceCommits = (directory: string, since: string) => number;
 
 export function gitSourceCommits(repo: string): SourceCommits {
   return (directory, since) => {
-    const source = path.join(directory, "src");
-    const targets = [
-      ...(fs.existsSync(source) ? [source] : [directory]),
-      ...(fs.existsSync(path.join(directory, "templates"))
-        ? [path.join(directory, "templates")]
-        : []),
-    ];
+    const targets = publicationInputTargets(repo, directory);
     const stdout = execFileSync(
       "git",
       [
@@ -568,8 +684,11 @@ export async function unresolvableTarballImports(
     for (const specifier of await relativeSpecifiers(file, source)) {
       const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
       if (shipped.has(resolved)) continue;
+      const escaped = resolved === ".." || resolved.startsWith("../");
       findings.push({
-        detail: `${item.name} ships ${file}, which imports '${specifier}', but ${resolved} is not in the tarball. Loading it fails ERR_MODULE_NOT_FOUND on an installed copy.`,
+        detail: escaped
+          ? `${item.name} ships ${file}, which imports '${specifier}' outside the package tarball (${resolved}). An installed copy cannot reach a sibling checkout.`
+          : `${item.name} ships ${file}, which imports '${specifier}', but ${resolved} is not in the tarball. Loading it fails ERR_MODULE_NOT_FOUND on an installed copy.`,
         package: item.name,
         severity: "fail",
       });

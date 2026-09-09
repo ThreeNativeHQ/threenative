@@ -936,12 +936,47 @@ describe("CI pipeline structure", () => {
     expect(publish).toMatch(/\$\{release_state\}" != "ready"/u);
   });
 
+  it("requires the matching native release tag to name the exact candidate commit", async () => {
+    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
+    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
+    expect(publish).toContain('native_tag="runtime-native-v${native_version}"');
+    expect(publish).toContain("scripts/verify-native-release-commit.ts");
+    expect(publish).toContain("native tag and the candidate SHA");
+  });
+
+  it("reuses the already verified native CI result in the guarded release job", async () => {
+    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
+    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
+    expect(publish).toBeDefined();
+    if (publish === undefined) return;
+    expect(publish).toContain("pnpm tsx scripts/release.ts --yes --skip-gates");
+    expect(publish).toContain("pnpm tsx scripts/release.ts --skip-gates");
+  });
+
+  it("provisions the registry verifier before the guarded publish command", async () => {
+    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
+    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
+    expect(publish).toBeDefined();
+    if (publish === undefined) return;
+    const prerequisites = publish.indexOf(
+      "Install the pinned Blender used by the registry verifier",
+    );
+    const release = publish.indexOf("pnpm tsx scripts/release.ts --yes");
+    expect(prerequisites).toBeGreaterThanOrEqual(0);
+    expect(publish).toContain("libvulkan1 mesa-vulkan-drivers");
+    expect(publish).toContain("THREENATIVE_BLENDER_PATH");
+    expect(release).toBeGreaterThan(prerequisites);
+  });
+
   it("requires native release CI to be a successful push on main", async () => {
     const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
     const gates = jobSections(native).find(([job]) => job === "gates")?.[1];
-    expect(gates).toContain("--json status,conclusion,event,headBranch");
-    expect(gates).toMatch(/\.event == "push"/u);
-    expect(gates).toMatch(/\.headBranch == "main"/u);
+    expect(gates).toContain("--json databaseId,status,conclusion,event,headBranch,headSha");
+    expect(gates).toContain('entry?.event === "push"');
+    expect(gates).toContain('entry?.headBranch === "main"');
+    expect(gates).toContain("entry?.headSha === candidateSha");
+    expect(gates).toContain("Number.isSafeInteger(entry?.databaseId)");
+    expect(gates).toContain("entry.databaseId > 0");
   });
 
   it("desktop parity runs against a captured web reference and fails closed", async () => {

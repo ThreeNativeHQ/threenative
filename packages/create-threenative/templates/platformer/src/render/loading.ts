@@ -43,7 +43,11 @@ interface ILoadingHost {
   };
   readonly renderer: { compileAsync(scene: Scene, camera: Camera): Promise<void> };
   readonly scene: Scene;
-  readonly startup: { readonly progress: number; whenReady(): Promise<void> };
+  readonly startup: {
+    readonly progress: number;
+    readonly warmup?: { readonly status: "complete" | "incomplete" | "unavailable" };
+    whenReady(): Promise<void>;
+  };
   readonly viewport?: {
     readonly safeArea: { height: number; width: number; x: number; y: number };
   };
@@ -238,7 +242,13 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
   };
 
   const updateProgress = (value: number): void => {
-    progress = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+    const bounded = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+    // A missing or incomplete backend observation cannot prove that all first-use work is done.
+    // Keep the bar visibly indeterminate until readiness removes the cover; never turn unknown
+    // coverage into a false 100% claim.
+    const observationUnknown =
+      host.startup.warmup !== undefined && host.startup.warmup.status !== "complete";
+    progress = observationUnknown ? Math.min(0.9, bounded) : bounded;
     setFillUv(fill.geometry, progress, fillBaseU);
     status?.update(progress);
     layout();

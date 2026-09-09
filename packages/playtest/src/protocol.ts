@@ -73,6 +73,20 @@ export interface IPlaytestStartupObservation {
   phase: "observing" | "collapsing" | "ready";
   /** 0 while first-use work is pending, then 1. */
   progress: number;
+  /** Candidate and backend observation counts from the most recent engine warm-up. */
+  warmup?: {
+    attempted?: number;
+    candidates?: number;
+    observed?: {
+      created: number;
+      failed: number;
+      pending: number;
+      status: "complete" | "incomplete" | "unavailable";
+      uniquePipelines: number;
+      uniquePrograms: number;
+    };
+    status: "complete" | "incomplete" | "unavailable";
+  };
   /**
    * Whether first-use compilation has settled, which happens strictly before `phase` reaches
    * `"ready"`: readiness additionally requires a sustained in-budget frame window. Reported
@@ -449,6 +463,8 @@ export interface IPlaytestObservationSnapshot {
   gameplay?: IPlaytestGameplayObservation;
   physicsDebugSeries?: Array<{ label: string; snapshot: JsonValue; tick: number }>;
   performance?: IPlaytestPerformanceObservation;
+  /** Bounded shader/pipeline creation capture supplied by the engine when diagnostics are enabled. */
+  pipelineCensus?: JsonValue;
   renderChain?: IPlaytestRenderChainObservation;
   runtimeDiagnosticsSeries?: IPlaytestRuntimeDiagnosticsSample[];
   resources?: Record<string, JsonValue>;

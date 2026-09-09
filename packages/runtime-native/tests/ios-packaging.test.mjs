@@ -13,6 +13,7 @@ import {
   runIosPackageCli,
   stageIosSimulatorApp,
 } from '../scripts/package-ios.mjs';
+import { PREBUILT_ASSET_NAMES } from '../scripts/install-prebuilt.mjs';
 import { minimalGlb } from './fixtures/minimal-glb.mjs';
 
 const roots = [];
@@ -377,7 +378,7 @@ test('release lane locks and launches the packed simulator host with physics con
   );
   for (const token of [
     'build-ios-simulator:',
-    '"ios-simulator-arm64": "threenative-ios-simulator-arm64.zip"',
+    'const names = PREBUILT_ASSET_NAMES',
     'clean-consumer-ios:',
     'build --target ios',
     'physics-wrong-height.playtest.json',
@@ -391,10 +392,11 @@ test('release lane locks and launches the packed simulator host with physics con
   ]) {
     assert.match(workflow, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')));
   }
+  assert.equal(PREBUILT_ASSET_NAMES['ios-simulator-arm64'], 'threenative-ios-simulator-arm64.zip');
   assert.match(workflow, /^permissions:\n {2}contents: read$/mu);
   assert.match(workflow, /publish:[\s\S]*permissions:\n {6}contents: write/u);
   assert.match(workflow, /gh release create[\s\S]*--prerelease[\s\S]*--latest=false/u);
-  assert.match(workflow, /finalize:[\s\S]*needs: \[clean-consumer, clean-consumer-ios\]/u);
+  assert.match(workflow, /finalize:[\s\S]*needs: \[validate-tag, clean-consumer, clean-consumer-ios\]/u);
   assert.match(workflow, /cleanup-failed-release:[\s\S]*gh release delete/u);
 });
 

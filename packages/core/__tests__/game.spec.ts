@@ -405,17 +405,7 @@ describe("IGame", () => {
       expect(events.filter((event) => event === "world").length).toBe(
         worldRendersBeforeStabilityWindow + 4,
       );
-      // Two world renders before the scene's own render hook: the first is the warm-up's hidden
-      // first-use frame, drawn behind the still-opaque layer so the shadow pass and the output
-      // conversion are compiled there instead of inside the loop's first world frame.
-      expect(events.slice(0, 6)).toEqual([
-        "overlay",
-        "compile",
-        "overlay",
-        "world",
-        "world",
-        "scene",
-      ]);
+      expect(events.slice(0, 5)).toEqual(["overlay", "compile", "overlay", "world", "scene"]);
     } finally {
       game.stop();
       if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
@@ -477,14 +467,7 @@ describe("IGame", () => {
       expect(compileRoots).toHaveLength(1);
       expect(compileRoots[0]).not.toBe(authoredRoot);
 
-      for (let flush = 0; flush < 4; flush += 1)
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
       frame(32);
-      // overlay, the warm-up's own hidden world frame, the loop's world frame, overlay: the
-      // warm-up draws the projected root once behind the opaque layer so the shadow and output
-      // pipelines are built there, and the loop's first world frame finds them already built.
-      expect(renderedRoots).toHaveLength(4);
-      expect(renderedRoots[1]).toBe(compileRoots[0]);
       expect(renderedRoots.at(-2)).toBe(compileRoots[0]);
     } finally {
       game.stop();
@@ -493,7 +476,7 @@ describe("IGame", () => {
     }
   });
 
-  it("does not mistake a ready web HUD for an opaque startup cover", async () => {
+  it("warms behind a ready web UI before the first world render", async () => {
     const canvas = testCanvas();
     const compileRoots: unknown[] = [];
     let worldRenders = 0;
@@ -541,10 +524,10 @@ describe("IGame", () => {
       await game.start();
       if (frame === undefined) throw new Error("Game did not start its loop.");
       frame(16);
-      expect(worldRenders).toBe(1);
+      expect(worldRenders).toBe(0);
       for (let flush = 0; flush < 6; flush += 1) await Promise.resolve();
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      expect(compileRoots).toHaveLength(0);
+      expect(compileRoots).toHaveLength(1);
 
       for (let time = 32; time <= 128; time += 16) {
         frame(time);
@@ -750,15 +733,7 @@ describe("IGame", () => {
 
       draws.length = 0;
       for (let flush = 0; flush < 4; flush += 1) await Promise.resolve();
-      for (let settle = 0; settle < 3; settle += 1)
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      // The warm-up's own first-use frame: one world draw behind the still-opaque layer, with no
-      // overlay after it and without running the scene's render hook, so the shadow pass and the
-      // output conversion are compiled here rather than inside the loop's first world frame.
-      expect(draws).toEqual([ctx.scene]);
-      expect(renderHooks).toBe(0);
-
-      draws.length = 0;
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
       frame(32);
       expect(draws).toEqual([ctx.scene, ctx.canvasLayer.scene]);
       expect(renderHooks).toBe(1);
@@ -2253,143 +2228,6 @@ describe("IGame", () => {
       await started;
       game.stop();
     } finally {
-      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
-      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
-    }
-  });
-});
-
-describe("startup warm-up reporting", () => {
-  it("says so when no startup cover was declared, instead of skipping silently", async () => {
-    const canvas = testCanvas();
-    const logs: string[] = [];
-    let frame: ((time: number) => void) | undefined;
-    class WebUiScene extends Scene {
-      static override readonly initialState = {};
-
-      override enter(ctx: ICtx): void {
-        ctx.add(new Mesh());
-      }
-    }
-    const game = defineGame({
-      renderer: {
-        canvas,
-        preferWebGPU: false,
-        webgl2Factory: () => ({
-          compileAsync: () => Promise.resolve(),
-          domElement: canvas,
-          render: () => undefined,
-          setSize: () => undefined,
-        }),
-      },
-      scenes: { test: WebUiScene },
-      start: "test",
-    });
-    const requestFrame = globalThis.requestAnimationFrame;
-    Object.defineProperty(globalThis, "requestAnimationFrame", {
-      configurable: true,
-      value: (callback: (time: number) => void) => {
-        frame = callback;
-        return 1;
-      },
-    });
-    const log = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
-      logs.push(String(line));
-    });
-
-    try {
-      await game.start();
-      if (frame === undefined) throw new Error("Game did not start its loop.");
-      frame(16);
-      for (let flush = 0; flush < 6; flush += 1) await Promise.resolve();
-
-      // Measured on a Pixel 8: this game shape compiled 101 pipelines synchronously for 8,513 ms
-      // because `canvasLayer.opaque` was never set, so the framework warm-up never ran. It was a
-      // silent skip — nothing in any marker said the launch had gone without its warm-up, and
-      // finding out cost a device session. A convention that switches itself off says so.
-      const skipped = logs.filter((line) => line.startsWith("TN_STARTUP_WARMUP:"));
-      expect(skipped).toHaveLength(1);
-      const marker = skipped[0] ?? "";
-      expect(JSON.parse(marker.slice("TN_STARTUP_WARMUP:".length))).toMatchObject({
-        skipped: "no-startup-cover",
-        opaque: false,
-      });
-    } finally {
-      log.mockRestore();
-      game.stop();
-      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
-      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
-    }
-  });
-});
-
-describe("startup cover declared without canvas-layer pixels", () => {
-  it("warms up and defers the world when the loading surface is a DOM overlay", async () => {
-    const canvas = testCanvas();
-    const compileRoots: unknown[] = [];
-    const draws: unknown[] = [];
-    let frame: ((time: number) => void) | undefined;
-    /**
-     * Bayview's shape: the loading screen is React DOM over the canvas, so the CanvasLayer scene
-     * stays empty and only `opaque` says the canvas is covered. Measured on a Pixel 8, not
-     * declaring it cost 8,513 ms of synchronous pipeline creation on the launch path — the whole
-     * warm-up was skipped. This asserts the declaration is enough on its own.
-     */
-    class DomCoverScene extends Scene {
-      static override readonly initialState = {};
-
-      override enter(ctx: ICtx): void {
-        ctx.add(new Mesh(new SphereGeometry(0.1, 3, 2), new MeshBasicMaterial()));
-        ctx.canvasLayer.opaque = true;
-      }
-    }
-    const game = defineGame({
-      renderer: {
-        canvas,
-        preferWebGPU: false,
-        webgl2Factory: () => ({
-          compileAsync: (scene: unknown) => {
-            compileRoots.push(scene);
-            return Promise.resolve();
-          },
-          domElement: canvas,
-          render: (scene: unknown) => draws.push(scene),
-          setSize: () => undefined,
-        }),
-      },
-      scenes: { test: DomCoverScene },
-      start: "test",
-    });
-    const requestFrame = globalThis.requestAnimationFrame;
-    Object.defineProperty(globalThis, "requestAnimationFrame", {
-      configurable: true,
-      value: (callback: (time: number) => void) => {
-        frame = callback;
-        return 1;
-      },
-    });
-
-    try {
-      await game.start();
-      const ctx = game.ctx;
-      if (ctx === undefined || frame === undefined) throw new Error("Game did not start its loop.");
-
-      frame(16);
-      // Nothing drawn: an empty CanvasLayer presents no loader frame, and the world is held.
-      expect(draws).toEqual([]);
-      for (let flush = 0; flush < 6; flush += 1) await Promise.resolve();
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      // The warm-up ran, which is the whole point of the declaration.
-      expect(compileRoots).toHaveLength(1);
-
-      for (let settle = 0; settle < 3; settle += 1)
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      // The first-use render behind the declared cover, then the loop's own world frame.
-      ctx.canvasLayer.opaque = false;
-      frame(32);
-      expect(draws.length).toBeGreaterThan(0);
-    } finally {
-      game.stop();
       if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
       else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
     }

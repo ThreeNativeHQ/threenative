@@ -8,6 +8,7 @@ export const STANDALONE_PLAYTEST_OBSERVATION_FIELDS = [
   "network",
   "physicsDebugSeries",
   "performanceSeries",
+  "pipelineCensus",
   "renderChain",
   "physicsDebugBefore",
   "resources",

@@ -105,15 +105,33 @@ export function mergeMcpServers(existing, format = "mcpServers") {
     throw new Error("MCP config root must be an object.");
   }
   const previous = existing ?? {};
-  const servers = { ...(previous[shape.key] ?? {}) };
+  const existingServers = previous[shape.key];
+  if (
+    existingServers !== undefined &&
+    (typeof existingServers !== "object" ||
+      existingServers === null ||
+      Array.isArray(existingServers))
+  ) {
+    throw new Error(`MCP config '${shape.key}' must be an object.`);
+  }
+  const servers = { ...(existingServers ?? {}) };
+  for (const [name, server] of Object.entries(servers)) {
+    if (typeof server !== "object" || server === null || Array.isArray(server)) {
+      throw new Error(`MCP server '${name}' in '${shape.key}' must be an object.`);
+    }
+  }
   let changed = false;
+  const conflicts = [];
   for (const [name, server] of Object.entries(MCP_SERVERS)) {
     const wanted = shape.entry(server);
-    if (JSON.stringify(servers[name]) === JSON.stringify(wanted)) continue;
+    if (Object.hasOwn(servers, name)) {
+      if (JSON.stringify(servers[name]) !== JSON.stringify(wanted)) conflicts.push(name);
+      continue;
+    }
     servers[name] = wanted;
     changed = true;
   }
-  return { changed, config: { ...previous, [shape.key]: servers } };
+  return { changed, conflicts, config: { ...previous, [shape.key]: servers } };
 }
 
 /** One server as a Codex TOML table. Derived from `MCP_SERVERS` rather than written out beside it:

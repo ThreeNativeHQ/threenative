@@ -110,6 +110,32 @@ describe("scene overview", () => {
     expect(text).toMatch(/61 fps/);
     expect(text.split("\n").length).toBeLessThan(16);
   });
+
+  it("reports incomplete warm-up coverage instead of claiming pipeline completion", () => {
+    const overview = summariseScene({
+      ...OBSERVATION,
+      startup: {
+        phase: "ready",
+        progress: 1,
+        warmup: {
+          candidates: 12,
+          attempted: 12,
+          observed: {
+            created: 4,
+            failed: 0,
+            pending: 1,
+            status: "incomplete",
+            uniquePipelines: 4,
+            uniquePrograms: 3,
+          },
+          status: "incomplete",
+        },
+      },
+    });
+    expect(overview.startup?.warmup?.observed?.created).toBe(4);
+    expect(overview.warnings.join(" ")).toMatch(/pipeline completion is not proven/u);
+    expect(formatSceneOverview(overview)).toMatch(/warm-up incomplete: 4 created \/ 12 candidates/u);
+  });
 });
 
 describe("scene overview, the parts that catch a broken run", () => {

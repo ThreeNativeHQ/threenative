@@ -428,8 +428,8 @@ describe("band definitions", () => {
 describe("ffmpeg WAV parsing", () => {
   function stream(options: { data?: Buffer; dataSize?: number; fmt?: Buffer; extra?: Buffer } = {}): Buffer {
     const fmt = options.fmt ?? (() => {
-      const value = Buffer.alloc(16);
-      value.writeUInt16LE(1, 0);
+      const value = Buffer.alloc(18);
+      value.writeUInt16LE(3, 0);
       value.writeUInt16LE(1, 2);
       value.writeUInt32LE(RATE, 4);
       value.writeUInt16LE(32, 14);
@@ -443,7 +443,11 @@ describe("ffmpeg WAV parsing", () => {
       bytes.copy(result, 8);
       return result;
     };
-    const chunks = [chunk("fmt ", fmt), ...(options.extra === undefined ? [] : [options.extra]), chunk("data", data, options.dataSize)];
+    const chunks = [
+      chunk("fmt ", fmt),
+      ...(options.extra === undefined ? [] : [chunk("LIST", options.extra)]),
+      chunk("data", data, options.dataSize),
+    ];
     return Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WAVE"), ...chunks]);
   }
 
@@ -451,9 +455,10 @@ describe("ffmpeg WAV parsing", () => {
     const data = Buffer.alloc(8);
     data.writeFloatLE(0.25, 0);
     data.writeFloatLE(-0.5, 4);
-    const parsed = parseWav(stream({ data, dataSize: 0 }));
+    const metadata = Buffer.from([0x49, 0x4e, 0x46]);
+    const parsed = parseWav(stream({ data, dataSize: 0, extra: metadata }));
     expect(parsed).toEqual({ channels: [new Float64Array([0.25, -0.5])], sampleRate: RATE });
-    expect(parseWav(stream({ data, dataSize: 0xffffffff })).channels[0]).toEqual(
+    expect(parseWav(stream({ data, dataSize: 0xffffffff, extra: metadata })).channels[0]).toEqual(
       new Float64Array([0.25, -0.5]),
     );
   });

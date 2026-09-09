@@ -226,6 +226,45 @@ describe("createRenderer", () => {
     }
   });
 
+  it("records the actual WebGPU adapter identity in the pipeline census", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const adapter = {
+      info: {
+        architecture: "rdna3",
+        description: "Acme Discrete GPU",
+        device: "gpu-42",
+        vendor: "acme",
+      },
+    };
+    const requestAdapter = vi.fn(async () => adapter);
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: { requestAdapter } },
+    });
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        webgpuFactory: () => ({
+          backend: { gpu: { requestAdapter } },
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+
+      expect(renderer.pipelineCensus?.().adapter.identity).toContain("vendor=acme");
+      expect(renderer.pipelineCensus?.().adapter.identity).toContain("device=gpu-42");
+      expect(renderer.pipelineCensus?.().adapter.identity).not.toBe("webgpu:Object");
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   // A renderer that compiles on first draw needs no warm-up and must not fail one. Throwing here
   // would push a platform branch into every game that calls it.
   it("resolves quietly when the renderer has no compileAsync of its own", async () => {
