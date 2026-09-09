@@ -108,8 +108,8 @@ Two consequences worth stating plainly, because they are what the bad refusals g
 
 ## Later mechanism extraction
 
-[PRD-276 — instanced batch assembly is mechanism](./PRD-276-instanced-batch-assembly-is-mechanism.md)
-is filed here because it extracts a rendering mechanism from `lumen-hall` while leaving every
+[PRD-276 — instanced batch assembly is mechanism](../done/PRD-276-instanced-batch-assembly-is-mechanism.md)
+is archived in `done/` after extracting a rendering mechanism from `lumen-hall` while leaving every
 appearance choice in the game. Its sibling [PRD-277](../done/useful-defaults/PRD-277-merged-geometry-keeps-its-per-part-tint.md)
 is archived in `done/useful-defaults/` because it completed as a useful default, not as a mined
 mechanism record.
