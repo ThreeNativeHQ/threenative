@@ -8,7 +8,7 @@ prepare and commit a fresh coherent eleven-package cohort, then publish it with 
 `runtime-native-v*` release. The PRD is filed at
 `docs/PRDs/BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md`.
 
-The sections below are in run order. **Repair round 6 (2026-09-08) is the current state** — it
+The sections below are in run order. **Repair round 7 (2026-09-08) is the current state** — it
 re-ran every earlier claim at the lane tip and is the section to read first.
 
 Lane: `lane-196`
@@ -875,7 +875,7 @@ test, and workflow files plus this evidence file.
 
 ---
 
-## Repair round 4 — production-readiness lane, 2026-09-08
+## Repair round 4 — production-readiness lane, 2026-09-08 (historical pre-rebase record)
 
 Lane: `linchpin/prd-196-production-readiness-20260908`
 Worktree: `.worktrees/prd-196-production-readiness-20260908`
@@ -960,9 +960,9 @@ as CI splits it:
 
 ```text
 $ TN_SUITE_EXCLUDE_PACKAGES=@threenative/runtime-native pnpm test
-Test Files  407 passed | 2 skipped (409)
-     Tests  4683 passed | 8 skipped (4691)
-  Duration  128.55s
+Test Files  406 passed | 2 skipped (408)
+     Tests  4675 passed | 8 skipped (4683)
+  Duration  105.83s
 TEST EXIT=0
 ```
 
@@ -1134,6 +1134,64 @@ Tests       207 passed (207)
 ```
 
 `pnpm typecheck` and `pnpm --filter @threenative/core build` also pass; the latter reaches
-`publint` with `All good!`. The top of this ledger now identifies repair round 6 as current. The
-older Arm A version table and release observation are explicitly dated historical evidence, and
+`publint` with `All good!`. At that point the top of this ledger identified repair round 6 as
+current. The older Arm A version table and release observation are explicitly dated historical evidence, and
 the unrelated `quiche-owned-v1` release is no longer described as a zero-release repository.
+
+## Repair round 7 — post-rebase census and current evidence, 2026-09-08
+
+Base: `5129de3204afdf7e3e443816fd905c6a8f9262af` (`origin/main`).
+The source-census implementation under test is commit `c224461e9cca3e3154c31fb4164d5d49a9699faf`.
+The pre-rebase round 4 records above remain historical; this section records the current base and
+the outputs after the rebase.
+
+### Build-input census: red, then green
+
+Before the fix, a package whose build script changed only `tsup.config.ts` and
+`scripts/build-helper.mjs` was reported unchanged:
+
+```text
+$ pnpm exec vitest run scripts/__tests__/check-publish-state.spec.ts -t "counts package-local build configs and helpers"
+
+Test Files  1 failed (1)
+Tests       1 failed | 41 skipped (42)
+EXIT=1
+```
+
+The census now watches package-local `scripts/` directories, package-level `*.config.*` files, and
+existing local files named by package scripts, in addition to the manifest, source, templates,
+documents, and declared `files` inputs. The same regression is green, and the full publish-state
+suite remains green:
+
+```text
+$ pnpm exec vitest run scripts/__tests__/check-publish-state.spec.ts -t "counts package-local build configs and helpers"
+Test Files  1 passed (1)
+Tests       1 passed | 41 skipped (42)
+EXIT=0
+
+$ pnpm exec vitest run scripts/__tests__/check-publish-state.spec.ts
+Test Files  1 passed (1)
+Tests       42 passed (42)
+EXIT=0
+```
+
+### Current publish preflight
+
+```text
+$ pnpm publish:check
+Checked 11 package(s): @threenative/assets, @threenative/core, @threenative/physics, @threenative/playtest, @threenative/raw-unreal, @threenative/runtime-native, @threenative/ueformat, @threenative/ui, create-threenative, threenative-blender-mcp, threenative-engine-mcp
+FAIL  @threenative/assets: @threenative/assets still declares 0.3.0, which was published 2026-08-31T17:32:58.330Z, and its source has 15 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  @threenative/core: @threenative/core still declares 0.3.0, which was published 2026-08-31T17:39:14.940Z, and its source has 61 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  @threenative/physics: @threenative/physics still declares 0.3.0, which was published 2026-08-31T17:39:32.396Z, and its source has 6 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  @threenative/playtest: @threenative/playtest still declares 0.3.0, which was published 2026-08-31T17:39:02.466Z, and its source has 33 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  @threenative/runtime-native: @threenative/runtime-native still declares 0.3.0, which was published 2026-08-31T17:39:49.775Z, and its source has 58 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  @threenative/ui: @threenative/ui still declares 0.3.0, which was published 2026-08-31T17:40:12.043Z, and its source has 5 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  create-threenative: create-threenative still declares 0.2.3, which was published 2026-08-31T17:40:25.198Z, and its source has 62 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  threenative-engine-mcp: threenative-engine-mcp still declares 0.2.0, which was published 2026-08-31T17:40:33.480Z, and its source has 6 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  @threenative/runtime-native: No prebuilt release exists at https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.3.0/prebuilt-lock.json; publish runtime-native-v0.3.0 before publishing the runtime package.
+9 finding(s). This tree must not be published as it stands.
+exit 1
+```
+
+The eight immutable versions and the missing native release are the expected external blocker;
+the new census also catches build and lifecycle inputs before a coordinated publish can begin.
