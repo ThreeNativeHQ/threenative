@@ -24,6 +24,20 @@ advisory, while the primary `ci.yml` board did not require it. The native workfl
 and the run summary reports that job. Push, pull-request, and nightly scheduling remain owned by
 `ci.yml`, so the matrix is not run twice.
 
+The first hosted run of that required lane, Actions run `34400099680` at `f89f80e7`, exposed a
+second Linux-only failure after the original SDL linker error was fixed. The scaffolded starter
+desktop leg failed while linking `mystral-tools` with the same `SDL_appid.c.o` relocation; its
+restored compiler cache contained an object compiled before the PIC fix because the restore-key
+prefix ignored the CMake input hash. The completed macOS and Windows legs passed. The hosted
+`budgets` leg also rejected the run because adding this evidence file made the committed retention
+index stale; regenerating the index is included below. Android and iOS were still running when
+this record was first updated.
+
+The follow-up fix makes the Linux preset explicitly position independent and adds the same
+`hashFiles(CMakeLists.txt, CMakePresets.json, **/*.cmake)` expression to every native compiler-cache
+restore prefix in `ci.yml` and `native-platforms.yml`. This prevents a cache entry built against a
+different native configuration from being selected as a warm starting tree.
+
 ## Red controls
 
 Each mutation was restored before the green run.
@@ -40,6 +54,18 @@ Tests       1 failed | 17 passed
 ```
 
 The failing assertion named the missing PIC configuration. Restoring the blocks made the test pass.
+
+For the follow-up fix, the temporary mutation removed `CMAKE_POSITION_INDEPENDENT_CODE` from the
+`tn-linux` preset and removed the CMake hash from every native compiler-cache restore key.
+
+```text
+$ pnpm --filter @threenative/runtime-native exec vitest run tests/native-platform-workflow.test.mjs
+Test Files  1 failed | 0 passed
+Tests       2 failed | 18 passed
+```
+
+The failures named the missing Linux PIC preset and the unqualified native cache restore keys.
+Restoring both controls made the suite pass with 20/20 tests.
 
 ### Required workflow regression
 
@@ -83,6 +109,16 @@ The generated Ninja compile flags for `SDL_appid.c.o` include `-fPIC`; both `mys
 `mystral-tools` link successfully as PIE executables. The workspace package archive loop also
 completed for all 11 packages without the linker error.
 
+The CI-equivalent QuickJS build also passed after configuring its separate tree:
+
+```text
+$ cmake --build build/tn-linux-quickjs --target threenative-timestamp-query-test \
+    --target threenative-rg11b10-renderable-test --target mystral --parallel "$(nproc)"
+[100%] Built target threenative-timestamp-query-test
+[100%] Built target threenative-rg11b10-renderable-test
+[100%] Built target mystral
+```
+
 Repository checks completed locally:
 
 | Gate | Result |
@@ -90,13 +126,9 @@ Repository checks completed locally:
 | `pnpm typecheck` | PASS across all 28 selected workspace projects |
 | `pnpm lint` | PASS, inherited complexity diagnostics are warnings |
 | changed-file Biome check | PASS, one inherited complexity warning in `ci-structure.spec.ts` |
-| `pnpm check:docs` | PASS; 1,745 relative links across 1,023 Markdown files |
-| full `pnpm test` | local setup prerequisite failure; 848 passed, 57 skipped, 8 failed because the explicitly required native V8/QuickJS contract executables were not built |
-
-The full test failure is not attributed to this change: its errors are explicit missing-build
-messages for `threenative-crash-handler-policy-test`, `threenative-rg11b10-renderable-test`,
-`threenative-timestamp-query-test`, `threenative-canvas2d-dirty-test`, and the QuickJS
-`mystral`/contract tree. The focused suites that cover this change are green.
+| `pnpm check:docs` | PASS; 1,746 relative links across 1,024 Markdown files |
+| `pnpm --filter @threenative/runtime-native test` | PASS; 105 files, 857 passed, 57 skipped; physics parity and publint also passed |
+| `pnpm test` | PASS; 411 files, 4,742 tests passed, 2 files and 8 tests skipped |
 
 ## Hosted completion
 

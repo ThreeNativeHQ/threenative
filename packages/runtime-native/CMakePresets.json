@@ -13,6 +13,7 @@
       "binaryDir": "${sourceDir}/build/tn-linux",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
         "MYSTRAL_USE_V8": "ON",
         "MYSTRAL_USE_DAWN": "ON",
         "MYSTRAL_USE_QUICKJS": "OFF",

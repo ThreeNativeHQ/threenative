@@ -13,6 +13,10 @@ const runtimeCmake = readFileSync(
   fileURLToPath(new URL('../CMakeLists.txt', import.meta.url)),
   'utf8',
 );
+const runtimePresets = readFileSync(
+  fileURLToPath(new URL('../CMakePresets.json', import.meta.url)),
+  'utf8',
+);
 const ciWorkflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/ci.yml', import.meta.url)),
   'utf8',
@@ -41,6 +45,23 @@ test('static SDL is position independent for native PIE consumers', () => {
   expect(sdl).toMatch(
     /if\(TARGET SDL_uclibc\)[\s\S]*?set_target_properties\(SDL_uclibc PROPERTIES\s+POSITION_INDEPENDENT_CODE ON\)/u,
   );
+  const linuxPreset = runtimePresets.slice(
+    runtimePresets.indexOf('"name": "tn-linux"'),
+    runtimePresets.indexOf('"name": "tn-windows"'),
+  );
+  expect(linuxPreset).toContain('"CMAKE_POSITION_INDEPENDENT_CODE": "ON"');
+});
+
+test('native compiler caches restore only the current CMake inputs', () => {
+  for (const source of [workflow, ciWorkflow]) {
+    const restoreKeys = [...source.matchAll(/^\s+restore-keys:\s*(native-ccache[^\n]+)$/gmu)].map(
+      (match) => match[1] ?? '',
+    );
+    expect(restoreKeys.length).toBeGreaterThan(0);
+    for (const restoreKey of restoreKeys) {
+      expect(restoreKey).toContain('hashFiles(');
+    }
+  }
 });
 
 test('green native platform lane is required by primary CI', () => {

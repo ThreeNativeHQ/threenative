@@ -287,7 +287,7 @@ jobs:
           # is a namespace; sharing one between jobs that build different things is a cache that
           # reports warm and behaves cold.
           key: native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
-          restore-keys: native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-
+          restore-keys: native-ccache-ci-test-native-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
