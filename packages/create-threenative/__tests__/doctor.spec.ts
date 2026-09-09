@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,6 +26,12 @@ import {
   readProject,
 } from "../src/doctor.js";
 import { MCP_SERVERS } from "../src/mcp-servers.js";
+
+const CORE_PACKAGE_VERSION = (
+  JSON.parse(readFileSync(new URL("../../core/package.json", import.meta.url), "utf8")) as {
+    version: string;
+  }
+).version;
 
 // Built from core's own server table rather than retyped: a hand-written healthy fixture is a
 // fixture that stops being healthy the day a server is added, and the failure reads as a doctor
@@ -283,7 +290,7 @@ describe("threenative doctor", () => {
     );
     const engine = report.checks.find(({ name }) => name.includes("@threenative/core"));
     expect(engine).toMatchObject({ status: "warn" });
-    expect(engine?.detail).toMatch(/@threenative\/core.*0\.3\.0|0\.3\.0.*@threenative\/core/u);
+    expect(engine?.detail).toContain(`@threenative/core@${CORE_PACKAGE_VERSION}`);
   });
 
   it("reports each MCP server separately", () => {

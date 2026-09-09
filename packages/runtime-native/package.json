@@ -1,6 +1,6 @@
 {
   "name": "@threenative/runtime-native",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "ThreeNative-owned native host for desktop, Android, and iOS",
   "keywords": [
     "threenative",

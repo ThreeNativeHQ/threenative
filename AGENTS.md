@@ -45,6 +45,7 @@ pnpm test:templates                        # playtests against each scaffolded t
 pnpm budgets                               # hard invariants fail; LOC triggers only report
 pnpm quality                               # file length, suppressions, lint holes; never fatal
 pnpm sync:agents                           # regenerate CLAUDE.md mirrors
+pnpm release:prepare                       # bump, build, and preflight the full release cohort
 pnpm --filter <example> dev                # there is no root `pnpm dev`
 
 # when a gate fails for a reason that is not the game — no browser, blank screenshot, silent
