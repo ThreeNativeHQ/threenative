@@ -9,6 +9,14 @@ const workflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/native-platforms.yml', import.meta.url)),
   'utf8',
 );
+const runtimeCmake = readFileSync(
+  fileURLToPath(new URL('../CMakeLists.txt', import.meta.url)),
+  'utf8',
+);
+const ciWorkflow = readFileSync(
+  fileURLToPath(new URL('../../../.github/workflows/ci.yml', import.meta.url)),
+  'utf8',
+);
 const releaseWorkflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/native-release.yml', import.meta.url)),
   'utf8',
@@ -21,6 +29,30 @@ const smokeScenario = (name) => JSON.parse(readFileSync(
   fileURLToPath(new URL(`../../../examples/native-smoke/playtests/${name}`, import.meta.url)),
   'utf8',
 ));
+
+test('static SDL is position independent for native PIE consumers', () => {
+  const sdl = runtimeCmake.slice(
+    runtimeCmake.indexOf('# SDL3 - Build from source as static library'),
+    runtimeCmake.indexOf('if(NOT SDL3_FOUND)'),
+  );
+  expect(sdl).toMatch(
+    /add_subdirectory\(\$\{SDL3_SOURCE_DIR\}[\s\S]*?set_target_properties\(SDL3-static PROPERTIES\s+POSITION_INDEPENDENT_CODE ON\)/u,
+  );
+  expect(sdl).toMatch(
+    /if\(TARGET SDL_uclibc\)[\s\S]*?set_target_properties\(SDL_uclibc PROPERTIES\s+POSITION_INDEPENDENT_CODE ON\)/u,
+  );
+});
+
+test('green native platform lane is required by primary CI', () => {
+  const nativeJob = ciWorkflow.match(
+    /\n\x20{2}native-platforms:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(nativeJob).toContain('needs: scope');
+  expect(nativeJob).toContain('uses: ./.github/workflows/native-platforms.yml');
+  expect(nativeJob).not.toMatch(/^\s+continue-on-error:/mu);
+  expect(workflow).toContain('workflow_call:');
+  expect(workflow).not.toMatch(/\n\x20{2}(?:push|pull_request|schedule):/u);
+});
 
 test('desktop platform lanes build and retain executable evidence', () => {
   for (const token of [

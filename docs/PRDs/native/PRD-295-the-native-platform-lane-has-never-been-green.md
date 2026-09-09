@@ -1,8 +1,9 @@
 # PRD-295 — the native platform lane has never been green
 
-**Status: PROPOSED, filed 2026-08-31 at `233165fa`.** Filed at the moment the lane became visible,
-and made advisory in the same commit so it reports instead of blocking. That is a narrowing of what
-CI claims and it is written down here rather than assumed.
+**Status: IN REVIEW, implementation and local gates green 2026-09-09.** Filed at the moment the
+lane became visible and made advisory in the same commit so it reports instead of blocking. Hosted
+required-matrix evidence is pending. The local red/green record is
+[`prd-295-native-platform-green-2026-09-09.md`](../../verification/prd-295-native-platform-green-2026-09-09.md).
 
 ## How a lane runs for the first time after months
 

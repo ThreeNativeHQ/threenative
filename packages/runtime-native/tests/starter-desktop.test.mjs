@@ -357,13 +357,16 @@ test('a frame that was never drawn is named as the capture, not a missing asset'
   assert.throws(() => inspectStarterScreenshot(path), /TN_NATIVE_STARTER_ASSET_NOT_VISIBLE/);
 });
 
-test('the native lane reports on pull requests, not only after a merge', () => {
-  // It ran on push to main only, so the first report of a native break arrived after it had landed.
-  // Reporting is not gating: this lane is deliberately not a required check while it is red.
-  const workflow = readFileSync('../../.github/workflows/native-platforms.yml', 'utf8');
-  const triggers = workflow.slice(workflow.indexOf('\non:'), workflow.indexOf('concurrency:'));
-  assert.match(triggers, /pull_request:\s*\n\s*branches: \[main\]/u);
-  assert.match(triggers, /push:\s*\n\s*branches: \[main\]/u);
+test('primary CI invokes the native lane on pull requests and pushes', () => {
+  const ci = readFileSync('../../.github/workflows/ci.yml', 'utf8');
+  const ciTriggers = ci.slice(ci.indexOf('\non:'), ci.indexOf('concurrency:'));
+  assert.match(ciTriggers, /pull_request:\s*\n\s*branches:\s*\n\s*-\s*main/u);
+  assert.match(ciTriggers, /push:\s*\n\s*branches:\s*\n\s*-\s*main/u);
+
+  const native = readFileSync('../../.github/workflows/native-platforms.yml', 'utf8');
+  const nativeTriggers = native.slice(native.indexOf('\non:'), native.indexOf('concurrency:'));
+  assert.match(nativeTriggers, /workflow_call:/u);
+  assert.doesNotMatch(nativeTriggers, /(?:pull_request|push|schedule):/u);
 });
 
 test('native workflow verifies a freshly scaffolded starter on Linux', () => {

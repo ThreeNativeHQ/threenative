@@ -972,29 +972,14 @@ jobs:
       - run: pnpm quality
       - run: pnpm sync:agents --check
 
-  # The native lane guards targets that any package change can break. native-platforms is NOT
-  # called from here — its own file triggers on pushes to main, pull requests, and the nightly
-  # cron, and since 2026-09-01 every leg of it runs on every one of those events (owner call:
-  # a leg that is skipped on the branch where the work happens is a leg nobody is watching).
-  #
-  # Why: it has never passed. It ran only on main behind `needs: test`, and `test` was red on every
-  # run before 2026-08-31, so it was skipped every single time until the day `test` went green — then
-  # failed on all five legs, twice. Nothing broke it; fixing the jobs in front of it revealed it. A
-  # gate behind a permanently red gate is not a gate.
-  #
-  # What it covers — macOS, Windows, Android and iOS contract tests — is not what this version
-  # claims. ROADMAP.md licenses browser, Linux desktop and the Android emulator with qualifications
-  # and claims nothing for iOS hardware, so a never-green lane over unclaimed platforms cannot be
-  # what blocks the release. `native:build` succeeds on those runners; it is `native:verify:desktop`
-  # that fails, and the release builds artifacts rather than running that.
-  #
-  # `continue-on-error` would have been the smaller change and GitHub does not allow it on a job
-  # that calls a reusable workflow — that attempt is what produced "This run likely failed because
-  # of a workflow file issue" on 33366316333.
-  #
-  # This is not permission to ignore it. The failures are filed in
-  # docs/PRDs/native/PRD-295-the-native-platform-lane-has-never-been-green.md, which requires the
-  # call to come back here in the same commit that fixes them.
+  # The native lane guards targets that any package change can break. Its complete matrix is now a
+  # required reusable workflow after the hosted macOS, Windows, Android-emulator and iOS-simulator
+  # legs passed on the corrected native build.
+  native-platforms:
+    needs: scope
+    if: needs.scope.outputs.selection != 'prose'
+    uses: ./.github/workflows/native-platforms.yml
+
   supply-chain:
     needs: scope
     # PR-only until 2026-09-01 (owner call): a push to main skipped the whole job, so the board
@@ -1074,6 +1059,7 @@ jobs:
   run-summary:
     needs:
       - scope
+      - native-platforms
       - typecheck
       - lint
       - test
