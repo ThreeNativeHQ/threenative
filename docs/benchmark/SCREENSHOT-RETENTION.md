@@ -14,9 +14,9 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
 | `docs/benchmark` | 1583 | 109397932 | 0 |
-| `docs/verification` | 725 | 62207151 | 60 |
+| `docs/verification` | 727 | 62215869 | 62 |
 
-**60 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
+**62 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories
 
@@ -72,6 +72,7 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/native-canvas-presentation-2026-09-05.md` | 20814 |
 | `docs/verification/night-batch-2026-08-26-step0-2026-08-27.md` | 4442 |
 | `docs/verification/prd-078-readiness-phase-1-2026-09-08.md` | 8126 |
+| `docs/verification/prd-196-readiness-phase-1-2026-09-09.md` | 3095 |
 | `docs/verification/prd-219-menu-flow-merged-tree-2026-08-27.md` | 3525 |
 | `docs/verification/prd-243-starter-pixel-after-2026-08-30.png` | 171532 |
 | `docs/verification/prd-354-manifest-import-closure-2026-09-07.md` | 16852 |
@@ -85,5 +86,4 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/prd-360-device-2026-09-07/qualified-b.json` | 2897 |
 | `docs/verification/prd-360-device-2026-09-07/qualified-c.json` | 2897 |
 | `docs/verification/prd-360-warmup-cache-2026-09-07/target-aware-android-result.json` | 2896 |
-| `docs/verification/prd-360-warmup-cache-2026-09-07/target-aware-android.playtest.json` | 634 |
-| …and 10 more | |
+| …and 12 more | |
