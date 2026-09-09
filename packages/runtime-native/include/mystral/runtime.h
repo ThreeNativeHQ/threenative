@@ -183,6 +183,13 @@ public:
     virtual bool saveScreenshot(const std::string& filename) = 0;
 
     /**
+     * Join native pipeline workers and emit the bounded capture completion marker without
+     * tearing down the rest of the host. Screenshot mode uses this before its platform-safe
+     * immediate exit path.
+     */
+    virtual void finalizePipelineCapture() = 0;
+
+    /**
      * Ask for the next presented frame to be captured into the screenshot buffer. Frames nobody
      * requested skip the framebuffer copy and its completion wait entirely, so callers must
      * raise this before waiting on saveScreenshot/captureFrame.

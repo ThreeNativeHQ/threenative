@@ -1181,14 +1181,14 @@ static bool wirePlaytestMailboxBridge(std::unique_ptr<mystral::Runtime>& runtime
     return true;
 }
 
-static int runScreenshotMode(const CLIOptions& opts, mystral::Runtime& runtime) {
+static int runScreenshotMode(
+    const CLIOptions& opts, std::unique_ptr<mystral::Runtime>& runtime) {
+    mystral::Runtime& host = *runtime;
     auto startTime = std::chrono::high_resolution_clock::now();
     for (int frame = 0; frame < opts.frames; frame++) {
-        // Raised before each frame of a screenshot run so the final presented frame is the
-        // one in the capture buffer at save time. Non-screenshot runs never raise it and
-        // pay neither the framebuffer copy nor its wait.
-        runtime.requestFrameScreenshot();
-        if (!runtime.pollEvents()) {
+        // Request a framebuffer capture before each screenshot frame.
+        host.requestFrameScreenshot();
+        if (!host.pollEvents()) {
             if (!opts.quiet) {
                 std::cerr << "Warning: Runtime quit early at frame " << frame << std::endl;
             }
@@ -1196,7 +1196,6 @@ static int runScreenshotMode(const CLIOptions& opts, mystral::Runtime& runtime) 
         }
         // saveScreenshot() owns the GPU readback fence, so no fixed delay is needed here.
     }
-
     // The requested frames are done; the world may still not be on screen. StartupReadiness
     // resolves on five consecutive in-budget frames or, for a host that never produces one — every
     // software rasteriser — only when its bounded window expires. A 300-frame run on llvmpipe
@@ -1214,11 +1213,11 @@ static int runScreenshotMode(const CLIOptions& opts, mystral::Runtime& runtime) 
     // lands, so the frame that gets saved postdates readiness.
     constexpr auto kStartupCaptureBudget = std::chrono::seconds(30);
     mystral::ScreenshotGateHooks captureHooks;
-    captureHooks.requestFrameScreenshot = [&runtime] { runtime.requestFrameScreenshot(); };
-    captureHooks.pollEvents = [&runtime] { return runtime.pollEvents(); };
-    captureHooks.isStartupReady = [&runtime] { return runtime.isStartupReady(); };
-    captureHooks.hasCapturedFrame = [&runtime] { return runtime.hasCapturedFrame(); };
-    captureHooks.clearCapturedFrame = [&runtime] { runtime.clearCapturedFrame(); };
+    captureHooks.requestFrameScreenshot = [&host] { host.requestFrameScreenshot(); };
+    captureHooks.pollEvents = [&host] { return host.pollEvents(); };
+    captureHooks.isStartupReady = [&host] { return host.isStartupReady(); };
+    captureHooks.hasCapturedFrame = [&host] { return host.hasCapturedFrame(); };
+    captureHooks.clearCapturedFrame = [&host] { host.clearCapturedFrame(); };
     captureHooks.now = [] { return std::chrono::steady_clock::now(); };
     const mystral::ScreenshotGateResult capture = mystral::awaitStartupCapture(
         captureHooks, std::chrono::steady_clock::now() + kStartupCaptureBudget);
@@ -1235,32 +1234,32 @@ static int runScreenshotMode(const CLIOptions& opts, mystral::Runtime& runtime) 
         // Naming them keeps the one-present-per-frame invariant exact instead of loosened.
         std::cout << "TN_CAPTURE_REFRESH_PRESENTS:" << capture.presents << std::endl;
     }
-
     auto endTime = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-    bool success = runtime.saveScreenshot(opts.screenshotPath);
+    bool success = host.saveScreenshot(opts.screenshotPath);
     if (!opts.quiet) {
         if (success) {
             std::cout << "Screenshot saved: " << opts.screenshotPath << std::endl;
             std::cout << "Rendered " << opts.frames << " frames in " << duration.count() << "ms" << std::endl;
             // One present per frame is what lets a second pass -- the canvas-layer overlay --
             // composite onto the world instead of taking a swapchain image of its own.
-            std::cout << "TN_PRESENTS:" << runtime.getPresentCount() << std::endl;
+            std::cout << "TN_PRESENTS:" << host.getPresentCount() << std::endl;
         } else {
             std::cerr << "Error: Failed to save screenshot!" << std::endl;
         }
     }
-
-    // The screenshot is saved, so avoid cleanup crashes that can show the macOS crash dialog.
+    // Finalize capture before the deliberate exit; runtime destruction may crash after screenshots.
 #if TN_ANDROID_JS_PROFILE
     if (mystral::js::g_dumpCpuProfile) mystral::js::g_dumpCpuProfile();
 #endif
+    host.finalizePipelineCapture();
     std::cout.flush();
     std::cerr.flush();
 #ifndef MYSTRAL_CLI_NO_MAIN
     dumpLlvmProfile();
     _exit(success ? 0 : 1);
 #else
+    runtime.reset();
     return success ? 0 : 1;
 #endif
 }
@@ -1691,7 +1690,7 @@ static int runNormalMode(const CLIOptions& opts, mystral::Runtime& runtime) {
 }
 
 static int driveMainLoop(const CLIOptions& opts, std::unique_ptr<mystral::Runtime>& runtime) {
-    if (!opts.screenshotPath.empty()) return runScreenshotMode(opts, *runtime);
+    if (!opts.screenshotPath.empty()) return runScreenshotMode(opts, runtime);
     if (!opts.videoPath.empty()) return runVideoMode(opts, runtime);
     return runNormalMode(opts, *runtime);
 }
