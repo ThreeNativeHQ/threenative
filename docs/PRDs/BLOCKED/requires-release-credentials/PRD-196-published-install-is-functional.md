@@ -4,7 +4,25 @@ prd_contract: v1
 
 # PRD-196 — A stranger's install of ThreeNative is functional
 
-**Status:** NOT STARTED
+**Status:** BLOCKED — `requires-release-credentials`
+
+Filed here on 2026-09-08. The engineering in this PRD is implemented and gated in the tree; every
+remaining acceptance criterion is consumer-scoped and needs two acts no agent lane can perform:
+an `npm publish` of the candidate cohort, and a `runtime-native-v*` GitHub release carrying the
+prebuilt assets. Until both exist the published world cannot satisfy the criteria below, and this
+PRD must not be filed as done. It was previously in `docs/PRDs/done/` from an unrelated bulk move
+(`b45bf21f7`) while still reading `NOT STARTED`; neither state was true.
+
+**What unblocks it:** npm publish rights for the eleven-package cohort, and release-upload rights on
+`ThreeNativeHQ/threenative`.
+
+**Evidence:** [round-196-published-install.md](../../../verification/round-196-published-install.md)
+and the five phase records it cites —
+[phase 1](../../../verification/prd-196-readiness-phase-1-2026-09-08.md),
+[phase 2](../../../verification/prd-196-readiness-phase-2-2026-09-08.md),
+[phase 3](../../../verification/prd-196-readiness-phase-3-2026-09-08.md),
+[phase 4](../../../verification/prd-196-readiness-phase-4-2026-09-08.md),
+[phase 5](../../../verification/prd-196-readiness-phase-5-2026-09-08.md).
 
 **Complexity:** +2 for 6–10 files, +2 for multi-package changes, +2 for a new system (release
 plumbing + gate), +1 for external API integration (npm registry, GitHub releases) = **7 → HIGH

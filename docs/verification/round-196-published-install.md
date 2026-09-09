@@ -1,6 +1,11 @@
 # PRD-196 published-install verification
 
-Status: **PARTIAL / UNVERIFIED for the external release checkpoint**
+Status: **BLOCKED on release credentials.** The implementation and its gates are green in the tree;
+every remaining criterion needs an `npm publish` and a `runtime-native-v*` release. The PRD is filed
+at `docs/PRDs/BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md`.
+
+The sections below are in run order. **Repair round 4 (2026-09-08) is the current state** — it
+re-ran every earlier claim at the lane tip and is the section to read first.
 
 Lane: `lane-196`
 Date: 2026-08-23
@@ -863,3 +868,200 @@ git diff --check: exit 0
 No package publication, GitHub release, Android APK, consumer desktop render, or successful
 external MCP call is claimed. The worktree changes for this repair are limited to the five source,
 test, and workflow files plus this evidence file.
+
+---
+
+## Repair round 4 — production-readiness lane, 2026-09-08
+
+Lane: `linchpin/prd-196-production-readiness-20260908`
+Worktree: `.worktrees/prd-196-production-readiness-20260908`
+Base: `76321e46d93f8ece59528315e83b17a644b7a77b` (`origin/main`)
+Lane commits under test: `7f2408937`, `1f43d4f31`, `2f4152b53`, and this repair commit.
+
+This round re-ran every claim in the five phase records against the lane tip rather than against
+the commit they were written at, and repaired what the re-run contradicted. The five records are
+the per-phase evidence and are cited here so the retention gate keeps them:
+
+- [phase 1 — packed core boundary](prd-196-readiness-phase-1-2026-09-08.md)
+- [phase 2 — clean npm and pnpm install matrix](prd-196-readiness-phase-2-2026-09-08.md)
+- [phase 3 — automatic MCP installation](prd-196-readiness-phase-3-2026-09-08.md)
+- [phase 4 — guarded release cohort](prd-196-readiness-phase-4-2026-09-08.md)
+- [phase 5 — installed sandbox package injection](prd-196-readiness-phase-5-2026-09-08.md)
+
+### What the re-run found and this commit repaired
+
+| Defect | Evidence | Repair |
+|---|---|---|
+| `pnpm budgets` was red: the five phase records were added without regenerating the retention index | `retention index is stale at docs/benchmark/SCREENSHOT-RETENTION.md; regenerate it` — exit 1 | `tsx scripts/generate-retention-index.ts`; the delta is exactly those five files and the `docs/verification` row |
+| The five phase records were **uncited**, so the retention lifecycle classed them deletion-eligible | index delta showed them under the uncited list, count 59 → 64 | cited from this ledger and from the PRD |
+| The PRD sat in `docs/PRDs/done/` reading `NOT STARTED`; neither was true | moved there by `b45bf21f7`, an unrelated bulk PRD move | filed as `BLOCKED` under `requires-release-credentials/` with the two acts that unblock it |
+| The dead release host still shipped: `jonit-dev/threenative` survived in a **published** file | `packages/runtime-native/scripts/physical-device-evidence.mjs:476`, and that file is in the package's `files` list | pointed at `ThreeNativeHQ/threenative`; PRD integration proof 1 now returns nothing |
+| Phase records named `7f24089377` as the source under test; two later commits changed the same files | `2f4152b53` changed core packaging, the Blender bundle, `verify-registry-install.ts` and `npm-release.yml` | each record now names the lane tip and the re-measured counts |
+
+### Gates, re-run at the lane tip
+
+```text
+pnpm typecheck                 exit 0
+pnpm lint                      exit 0 (657 report-only warnings)
+pnpm check:docs                exit 0 (1729 links across 1018 files)
+pnpm sync:agents --check       exit 0 (19 CLAUDE.md mirrors)
+pnpm quality                   exit 0 (report-only)
+pnpm budgets                   exit 0
+git diff --check               exit 0
+```
+
+The strict prose-only lane, which is what CI runs for a diff shaped like this one:
+
+```text
+$ pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts \
+    scripts/__tests__/evidence-budget.spec.ts scripts/__tests__/evidence-citations.spec.ts \
+    scripts/__tests__/sync-agent-docs.spec.ts scripts/__tests__/ci-structure.spec.ts \
+    scripts/__tests__/ci-needs.spec.ts
+
+Test Files  6 passed (6)
+     Tests  134 passed (134)
+exit 0
+```
+
+Focused suites for the five changed surfaces, at the tip:
+
+```text
+pnpm exec vitest run scripts/__tests__/check-publish-state.spec.ts \
+  scripts/__tests__/verify-registry-install.spec.ts \
+  packages/core/__tests__/mcp-install.spec.ts \
+  scripts/__tests__/release.spec.ts \
+  scripts/__tests__/make-sandbox.spec.ts
+
+Test Files  5 passed (5)
+     Tests  121 passed (121)
+```
+
+Per file: `check-publish-state` 40, `make-sandbox` 23, `verify-registry-install` 20,
+`mcp-install` 30, `release` 8. The phase records' earlier counts (18 and 29) were taken before
+`2f4152b53` added two verifier cases and one MCP case.
+
+The file this round edited is covered by the runtime package's own suites:
+
+```text
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
+  tests/physical-mobile-qualification.test.mjs tests/distribution.test.mjs
+
+Test Files  2 passed (2)
+     Tests  42 passed (42)
+```
+
+The whole workspace suite is green at the tip, with the native contract package split out exactly
+as CI splits it:
+
+```text
+$ TN_SUITE_EXCLUDE_PACKAGES=@threenative/runtime-native pnpm test
+Test Files  406 passed | 2 skipped (408)
+     Tests  4675 passed | 8 skipped (4683)
+  Duration  105.83s
+TEST EXIT=0
+```
+
+The excluded package is the one recorded as unexecuted below; nothing else was skipped.
+
+### PRD integration proofs
+
+```text
+$ grep -rn "jonit-dev" packages scripts .github \
+    --include='*.mjs' --include='*.ts' --include='*.yml'
+(no output)
+```
+
+Before this commit that grep returned `packages/runtime-native/scripts/physical-device-evidence.mjs:476`.
+
+Widening the search past the PRD's own detector finds seven further occurrences, all in
+`packages/runtime-native/tests/fixtures/prd056-*.json`. They are left as they are, deliberately:
+each is a frozen record of a PRD-056 device run that really happened on the old remote, none is in
+`packages/runtime-native/package.json`'s `files` array so none is published, and rewriting recorded
+history to satisfy a string search would be the aliasing the criterion forbids. The shipped surface
+is clean — `scripts/physical-device-evidence.mjs` was the only file in `files` that named the dead
+host.
+
+```text
+$ grep -rn "writeInstallStatus\|templatePinCensus\|prebuiltReleaseCensus\|RELEASE_REPOSITORY" \
+    packages scripts --include='*.ts' --include='*.mjs' | grep -v __tests__ | grep -v '\.spec\.'
+packages/runtime-native/scripts/install-prebuilt.mjs:10   export const RELEASE_REPOSITORY
+packages/runtime-native/scripts/install-prebuilt.mjs:74   releaseManifestUrl uses it
+packages/runtime-native/scripts/install-prebuilt.mjs:77   export function writeInstallStatus
+packages/runtime-native/scripts/install-prebuilt.mjs:147  install hook, ok:true branch
+packages/runtime-native/scripts/install-prebuilt.mjs:151  install hook, ok:false branch
+scripts/check-publish-state.ts:189                       export function templatePinCensus
+scripts/check-publish-state.ts:279                       export function prebuiltReleaseCensus
+scripts/check-publish-state.ts:681                       templatePinCensus in the report
+scripts/check-publish-state.ts:686                       prebuiltReleaseCensus in the report
+```
+
+Every symbol has a live non-test consumer.
+
+```text
+$ curl -sI ".../releases/download/runtime-native-v0.3.0/prebuilt-lock.json" | head -1
+HTTP/2 404
+```
+
+`ThreeNativeHQ/threenative` has exactly one release, `quiche-owned-v1`. There is no
+`runtime-native-v*` release of any version.
+
+### The clean room, re-run at the lane tip
+
+```text
+$ SHARP_IGNORE_GLOBAL_LIBVIPS=1 pnpm tsx scripts/verify-registry-install.ts
+pass  npm:scaffold      pass  pnpm:scaffold
+pass  npm:install       pass  pnpm:install
+pass  npm:lockfile      pass  pnpm:lockfile
+pass  npm:build         pass  pnpm:build
+pass  npm:test          pass  pnpm:test
+FAIL  npm:doctor        FAIL  pnpm:doctor    Command failed: threenative doctor --text
+FAIL  npm:native        FAIL  pnpm:native    Missing prebuilt runtime for 'linux-x64'
+FAIL  npm:mcp           FAIL  pnpm:mcp       MCP configuration is missing required server
+                                             'threenative-blender'
+The registry install path is broken. This is alpha row A1.
+exit 1
+```
+
+This is an honest red against the **published** cohort, not against this tree. `create-threenative@0.2.3`
+and `@threenative/core@0.3.0` predate the four-server MCP table and the self-contained packing this
+lane implements, and no `runtime-native` prebuilt release exists for any version. The gate is
+reporting the world as published; the source repairs are in this branch and unpublished.
+
+One criterion of the PRD *is* now met by the published cohort: `pnpm test` is green on first run
+in both package managers, with no added flags.
+
+### Release preflight, re-run at the lane tip
+
+```text
+$ pnpm publish:check
+9 finding(s). This tree must not be published as it stands.
+exit 1
+```
+
+Eight findings are immutable already-published versions whose source has moved on
+(`@threenative/assets` +13 commits, `core` +42, `physics` +4, `playtest` +31, `runtime-native` +23,
+`ui` +3, `create-threenative` +43, `threenative-engine-mcp` +5). The ninth is the absent
+`runtime-native-v0.3.0` prebuilt release. This is the gate working: it refuses a tree that cannot
+be published.
+
+**No version was bumped by this lane.** A bump is a release act that belongs with the publish it
+enables: bumping here would clear eight findings, leave the ninth, and leave the tree naming a
+cohort that has no release behind it. The versions and the publish must move together, under
+credentials this lane does not hold.
+
+### Unexecuted boundaries — recorded, not claimed
+
+| Boundary | Why it did not run | What would run it |
+|---|---|---|
+| npm publish of the eleven-package cohort | no registry credentials in this lane; the lane is also forbidden to push | `pnpm release --yes` under a publish token |
+| `runtime-native-v*` GitHub release | no release-upload rights | `native-release.yml` on a `runtime-native-v*` tag |
+| Consumer desktop build and 300-frame render | depends on the prebuilt release above | `threenative build --target desktop` in a scaffolded project |
+| Consumer Android APK | same, plus an Android SDK-only host | `threenative build --target android` |
+| `engine_search_capabilities` through a **published** project's `.mcp.json` | the published cohort has three servers, not four | re-run `verify-registry-install.ts` after the publish |
+| `packages/runtime-native` C++ contract suites | the native host is not built in this worktree; `pnpm native:build` is opt-in and this lane changed no C++, CMake or build file | `pnpm native:build`, then the package suite |
+
+The runtime-native package suite reports `18 failed | 828 passed | 62 skipped`; every failure is an
+unbuilt contract executable (`... is not built. Run: cmake --build build/tn-linux-... --target ...`),
+which is the split CI already makes into its own job. The lane's merge-base diff contains no
+native source, so these are the environment, not the change. They are recorded rather than counted
+as green.
