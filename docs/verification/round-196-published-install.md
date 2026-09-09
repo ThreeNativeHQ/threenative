@@ -960,9 +960,9 @@ as CI splits it:
 
 ```text
 $ TN_SUITE_EXCLUDE_PACKAGES=@threenative/runtime-native pnpm test
-Test Files  406 passed | 2 skipped (408)
-     Tests  4675 passed | 8 skipped (4683)
-  Duration  105.83s
+Test Files  407 passed | 2 skipped (409)
+     Tests  4683 passed | 8 skipped (4691)
+  Duration  128.55s
 TEST EXIT=0
 ```
 
