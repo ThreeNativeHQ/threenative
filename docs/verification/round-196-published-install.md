@@ -8,7 +8,7 @@ prepare and commit a fresh coherent eleven-package cohort, then publish it with 
 `runtime-native-v*` release. The PRD is filed at
 `docs/PRDs/BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md`.
 
-The sections below are in run order. **Repair round 7 (2026-09-08) is the current state** — it
+The sections below are in run order. **Repair round 8 (2026-09-08) is the current state** — it
 re-ran every earlier claim at the lane tip and is the section to read first.
 
 Lane: `lane-196`
@@ -1195,3 +1195,104 @@ exit 1
 
 The eight immutable versions and the missing native release are the expected external blocker;
 the new census also catches build and lifecycle inputs before a coordinated publish can begin.
+
+## Repair round 8 — coordinated release safety and complete build-input census, 2026-09-08
+
+Base: `5129de3204afdf7e3e443816fd905c6a8f9262af` (`origin/main`). The code and regression tests
+are committed as `8f06b8f3` (`fix: harden coordinated release preflight`).
+
+This round closes the three remaining release-review findings. The guarded `--yes` path now
+checks the exact candidate versions on npm as one cohort and refuses both a partially published
+cohort and a cohort whose versions all already exist. It checks package cleanliness again after
+`pnpm build`, then reruns `pnpm publish:check` before the first publish command. The source census
+now includes package `tsconfig*.json`, root `tsconfig*.json`, `pnpm-workspace.yaml`, the lockfile,
+root package metadata, patches, package-local scripts, build configs and script-referenced files.
+
+### Red controls before the repair
+
+The new package-config tests initially showed that the old census saw no commits in those inputs:
+
+```text
+package tsconfig change: expected 1, received 0
+shared tsconfig/catalog changes: expected 2, received 0
+```
+
+The release test also failed because the release module had no package-tree cleanliness helper to
+call. These failures were fixed in the same code/test commit above.
+
+### Green release and census suites
+
+```text
+$ pnpm exec vitest run scripts/__tests__/check-publish-state.spec.ts scripts/__tests__/release.spec.ts
+Test Files  2 passed (2)
+Tests       58 passed (58)
+exit 0
+```
+
+The release suite now covers mixed, fully published and unreachable exact-version states, and
+asserts that the post-build cleanliness and publish preflight checks precede publication. The
+publish-state suite covers package-local and shared build inputs:
+
+```text
+$ pnpm exec vitest run scripts/__tests__/release.spec.ts
+Test Files  1 passed (1)
+Tests       14 passed (14)
+
+$ pnpm exec vitest run scripts/__tests__/check-publish-state.spec.ts
+Test Files  1 passed (1)
+Tests       44 passed (44)
+```
+
+### Cumulative verification at the lane tip
+
+The workspace gates remain green after the repair. The full suite was run with the native package
+excluded because this checkout has no built native executable or pump endpoint:
+
+```text
+$ TN_SUITE_EXCLUDE_PACKAGES='@threenative/runtime-native' pnpm test
+Test Files  407 passed | 2 skipped (409)
+Tests       4692 passed | 8 skipped (4700)
+exit 0
+
+$ pnpm typecheck
+Scope: 28 of 29 workspace projects
+exit 0
+
+$ pnpm lint
+Found 658 warnings.
+exit 0
+
+$ pnpm budgets
+budgets ok: 11 framework packages, 16 example workspaces, 61321/15000 framework LOC, 140358/100000 native runtime LOC, 109 PRD files, largest template 5666 LOC, no compiled texture manifests found
+exit 0
+
+$ pnpm quality
+quality report: 139 findings (39 new, 29 grew, 49 inherited, 22 waived)
+exit 0
+```
+
+The run left the worktree clean and `git diff --check` passed. The native package's own suite
+still has the previously recorded 18 environment-dependent failures when invoked without its
+compiled host; that lane is not claimed here.
+
+### Current publish preflight after the repair
+
+```text
+$ pnpm publish:check
+Checked 11 package(s): @threenative/assets, @threenative/core, @threenative/physics, @threenative/playtest, @threenative/raw-unreal, @threenative/runtime-native, @threenative/ueformat, @threenative/ui, create-threenative, threenative-blender-mcp, threenative-engine-mcp
+FAIL  @threenative/assets: @threenative/assets still declares 0.3.0, which was published 2026-08-31T17:32:58.330Z, and its source has 29 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  @threenative/core: @threenative/core still declares 0.3.0, which was published 2026-08-31T17:39:14.940Z, and its source has 71 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  @threenative/physics: @threenative/physics still declares 0.3.0, which was published 2026-08-31T17:39:32.396Z, and its source has 26 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  @threenative/playtest: @threenative/playtest still declares 0.3.0, which was published 2026-08-31T17:39:02.466Z, and its source has 53 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  @threenative/runtime-native: @threenative/runtime-native still declares 0.3.0, which was published 2026-08-31T17:39:49.775Z, and its source has 82 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  @threenative/ui: @threenative/ui still declares 0.3.0, which was published 2026-08-31T17:40:12.043Z, and its source has 25 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  create-threenative: create-threenative still declares 0.2.3, which was published 2026-08-31T17:40:25.198Z, and its source has 71 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  threenative-engine-mcp: threenative-engine-mcp still declares 0.2.0, which was published 2026-08-31T17:40:33.480Z, and its source has 26 commit(s) since. npm cannot republish a version that exists — bump it.
+FAIL  @threenative/runtime-native: No prebuilt release exists at https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.3.0/prebuilt-lock.json; publish runtime-native-v0.3.0 before publishing the runtime package.
+9 finding(s). This tree must not be published as it stands.
+exit 1
+```
+
+The code gates are now ready for an independent cumulative review. The external blocker remains:
+prepare and commit a fresh coherent eleven-package version cohort, cut the matching native
+release, and run the credentialed registry clean room.
