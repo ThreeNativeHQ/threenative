@@ -162,10 +162,10 @@ describe("scene warm-up", () => {
     expect(report.compiled).toBe(0);
   });
 
-  test("should compile one representative per pipeline, not one per object", async () => {
-    // The Pixel 8 scene had 835 renderables and 107 pipeline compiles. Warming every object would
-    // make 835 calls to build 107 pipelines; the other 728 are cache lookups that only slow the
-    // warm-up down.
+  test("should attempt every renderable, even when values share a material", async () => {
+    // Material identity is not Three's pipeline identity. Every renderable must reach the real
+    // renderer so state-only variants, multi-material geometry and late pass work cannot be
+    // silently dropped by a guessed key.
     const renderer = fakeRenderer();
     const shared = {};
     const scene = group("scene", [
@@ -175,8 +175,105 @@ describe("scene warm-up", () => {
       mesh("water"),
     ]);
     const report = await run(renderer, scene, { yieldFrame: () => Promise.resolve() });
-    expect(report.compiled).toBe(2);
-    expect(renderer.compiled).toEqual(["wall-a", "water"]);
+    expect(report.compiled).toBe(4);
+    expect(report.candidates).toBe(4);
+    expect(report.attempted).toBe(4);
+    expect(renderer.compiled).toEqual(["wall-a", "wall-b", "wall-c", "water"]);
+  });
+
+  test("should report actual pipeline census deltas separately from candidates", async () => {
+    let snapshot = {
+      version: 1 as const,
+      complete: true,
+      overflowed: false,
+      unsupported: false,
+      limit: 512,
+      clock: { originMs: 0, source: "performance" as const },
+      build: { identity: "test" },
+      adapter: { identity: "test-gpu", thermal: "cool" },
+      backend: { kind: "webgpu" as const, identity: "test-backend" },
+      counts: {
+        lookups: 2,
+        creations: 3,
+        failures: 0,
+        pending: 0,
+        uniquePrograms: 2,
+        uniquePipelines: 2,
+        recordedEvents: 3,
+        droppedEvents: 0,
+      },
+      events: [],
+      incompleteReasons: [],
+    };
+    const renderer = {
+      ...fakeRenderer(),
+      pipelineCensus: () => snapshot,
+      compileAsync: (object: unknown) => {
+        snapshot = {
+          ...snapshot,
+          complete: false,
+          counts: {
+            ...snapshot.counts,
+            creations: 5,
+            failures: 1,
+            pending: 1,
+            uniquePrograms: 3,
+            uniquePipelines: 4,
+          },
+        };
+        return Promise.resolve();
+      },
+    };
+    const report = await run(renderer, sceneOf(2), { yieldFrame: () => Promise.resolve() });
+    expect(report).toMatchObject({
+      candidates: 2,
+      attempted: 2,
+      observed: {
+        created: 2,
+        failed: 1,
+        pending: 1,
+        uniquePrograms: 1,
+        uniquePipelines: 2,
+        status: "incomplete",
+      },
+    });
+  });
+
+  test("should not call abandoned work complete when the census itself is complete", async () => {
+    const snapshot = {
+      version: 1 as const,
+      complete: true,
+      overflowed: false,
+      unsupported: false,
+      limit: 512,
+      clock: { originMs: 0, source: "performance" as const },
+      build: { identity: "test" },
+      adapter: { identity: "test-gpu", thermal: "cool" },
+      backend: { kind: "webgpu" as const, identity: "test-backend" },
+      counts: {
+        lookups: 1,
+        creations: 1,
+        failures: 0,
+        pending: 0,
+        uniquePrograms: 1,
+        uniquePipelines: 1,
+        recordedEvents: 1,
+        droppedEvents: 0,
+      },
+      events: [],
+      incompleteReasons: [],
+    };
+    const report = await run(
+      {
+        pipelineCensus: () => snapshot,
+        compileAsync: () => Promise.reject(new Error("compile failed")),
+      },
+      sceneOf(1),
+      { yieldFrame: () => Promise.resolve() },
+    );
+
+    expect(report.abandoned).toBe(1);
+    expect(report.observed.status).toBe("incomplete");
   });
 
   test("should treat a skinned object sharing a material as its own pipeline", async () => {

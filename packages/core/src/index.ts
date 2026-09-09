@@ -516,7 +516,9 @@ export type {
   IWarmUpProgress,
   IWarmUpRenderer,
   IWarmUpReport,
+  IWarmUpObservation,
   WarmUpCacheStatus,
+  WarmUpObservationStatus,
 } from "./warmup.js";
 export type {
   IGame,
