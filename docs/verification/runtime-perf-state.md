@@ -3895,7 +3895,7 @@ changed for it.
 
 ## Bayview startup after dependency repairs — 2026-09-07
 
-The [working-build handoff](../PRDs/batch-2026-09-05/PRD-360-FOLLOWUP-startup-performance.md)
+The [consolidated PRD-360](../PRDs/batch-2026-09-05/PRD-360-android-launch-is-playable-within-eight-seconds.md)
 records one physical Pixel 8 run: first frame 16,020.007 ms, pipeline compilation
 8,404.781 ms across 93 calls, and frame-stall residual 4,917.275 ms. The retained
 `artifacts/findings-fix/green-host-uninterrupted.log` also reports pump `maxGapMs:15708.693`.
@@ -3935,4 +3935,86 @@ made to manufacture a timing result.
 
 The three-experiment stop rule is now satisfied. The records leave a large unattributed startup
 stall after the measured pipeline work; a future optimization needs a new attribution hypothesis
-before another code change. PRD-360 and its follow-up remain PARTIAL and stay in their batch.
+before another code change. PRD-360 remains PARTIAL in its batch; the follow-up was consolidated
+into it on September 8 at the owner's request.
+
+## PRD-360 retry investigation — 2026-09-08
+
+Read-only inspection of current source, installed sandbox packages and retained experiment logs;
+no new build, phone launch or optimization was executed. The owner requested a consolidated retry
+plan, not retirement of the eight-second criterion. The single execution plan is
+[PRD-360](../PRDs/batch-2026-09-05/PRD-360-android-launch-is-playable-within-eight-seconds.md).
+
+### Build and asset provenance
+
+The inspected game is `/home/joao/projects/threenative/sandbox/prd360-bayview-live`.
+Its `threenative.config.ts:4` sets audio, models and textures to `"none"`. Directly extracting
+`assets/game/assets.manifest.json` from `artifacts/experiment-3.apk` found **79 entries, zero
+with applied passes**: 11 models, 32 textures, 30 audio and 6 other entries. SHA-256 of that APK
+matches the recorded experiment: `5f6ac0106868013437b97b00854e50ec69b8162187006cc2693378449b1855df`.
+This proves manifest packaging without these optimization passes; it does not prove that original
+source models were never optimized upstream. For example, the enemy model already declares
+`KHR_mesh_quantization` and `EXT_texture_webp`.
+
+The package.json points to `prd327` tarballs. Resolving the installed core entry reaches the sibling
+`sandbox/fps-framework/node_modules/.pnpm/` tree, so reinstalling through that shared dependency
+tree risks modifying another game. Installed core `dist/index.js` SHA-256 is
+`3f67536ed3270b188fb59f6ad9efba854be1e7ead797d4cd3d202f7c8ae68354`; the local engine build's
+entry is `0161c48c1a9c650fd79cf82943754e179986d63cd234b25f74db4d52bb121c13`.
+Installed UI also differs; physics matches. Local dist was not rebuilt in this inspection:
+these differences establish mixed bytes, not source revision or performance improvement.
+
+Current `packages/assets/src/compile.ts:950` declares Android/iOS KTX2 and Meshopt decoders
+unavailable. It suppresses compressed texture output and Meshopt output, while retaining compatible
+model transforms and native separate vertex buffers (`:1024`). Therefore enabling supported model
+cooking is a valid isolated probe, but removing the texture override cannot enable Android KTX2.
+The game's overrides and the engine's platform restrictions are separate causes. Asset cooking
+does not precompile the game's runtime GPU pipelines.
+
+### Timing and attribution corrections
+
+The [qualified baseline record](prd-360-device-2026-09-07/README.md) already decomposes its
+49,788.7 ms median: first frame is about 15 seconds; roughly 25 seconds are later playtest commands
+and 10 seconds are teardown/capture. The retained evaluator explicitly calls its result a
+coordinator-clock upper bound. A bound above eight seconds does not isolate game latency.
+The new plan requires a host-correlated movement endpoint, with teardown excluded and the old
+bound retained separately. First presentation remains insufficient to prove first playable.
+
+Fresh extraction from the retained `experiment-{1,2,3}-movement/console.json` files:
+
+| Arm | Synchronous pipeline time / calls | Stall residual | Warm-up wall time |
+| --- | ---: | ---: | ---: |
+| 1 | 8,988.686 ms / 103 | 4,992.489 ms | Timed out |
+| 2 | 2,124.165 ms / 49 | 14,653.868 ms | 13,515 ms |
+| 3 | 2,156.301 ms / 49 | 14,860.535 ms | 14,007 ms |
+
+`packages/runtime-native/src/webgpu/bindings_pipelines.cpp:629,726` creates the pipeline stall
+scope only when `!asyncMode`. Async completion is delivered by `drainAsyncPipelineCompiles`
+at `:1153`. Thus the residual is not independent of async warm-up; adding those durations would
+double-count overlapping work. The hypothesis is that much of the residual contains async
+warm-up, but exact attribution still needs aligned submission, worker and completion timestamps.
+The remaining 49 synchronous calls are a concrete next probe; their descriptors and render stages
+have not been attributed.
+
+`packages/core/src/warmup.ts:462` keys representatives by material object identity, flags and
+attribute names; `:550` counts those representatives. Its reported 494 is not an observed native
+pipeline-creation count and cannot establish a fivefold increase over 93/103 driver calls.
+Current automatic startup compilation remains gated on `canvasLayer.opaque` at
+`packages/core/src/game.ts:1134`; the ready-web-UI expansion was reverted. Bayview's current
+`src/game.ts` has no explicit warm-up. Confirm executed markers in the rebuilt candidate before
+assuming that the automatic path runs behind its web UI loading panel.
+
+Scene construction is another separate hypothesis. Bayview `src/scenes/Play.ts:238` implements
+synchronous `enter()`. Experiment 1 reports load 1,095 ms, town 738 ms, soldiers 411 ms, effects
+169 ms and enterTotal 1,320 ms. A separate retained `evidence-candidate-run-2-all.log` reports
+load 2,266 ms and enterTotal 2,630 ms; it is not an experiment-3 timing sample. These are game-clock
+phase observations, not yet correlated proof of a particular host pump gap. They motivate tracing
+scene entry before treating a compile-only fix as sufficient for the 250 ms contract.
+
+### Retry decision
+
+Freeze one game and rebuild a consistent engine/package/native-host set. Measure a current control
+with existing cooking overrides, then choose one supported cooking, scene-construction or
+first-use-compilation lever from an aligned critical-path breakdown. Preserve all three rejected
+experiments and their stop rule. Neither an unavoidable hardware floor nor eight-second
+feasibility is established. No new runtime acceptance is claimed by this documentation change.

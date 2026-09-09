@@ -4,7 +4,7 @@
 
 | Rank | Delivery PRD | What changes for the user | Existing owner |
 | --- | --- | --- | --- |
-| 1 | [360 — Android launch](PRD-360-android-launch-is-playable-within-eight-seconds.md) | Playable within 8 seconds, instead of the recorded 15–35-second startup. **PARTIAL**: measured on a Pixel 8 on 2026-09-07 at a preflight-qualified median 49,788.7 ms against the 8,000 ms criterion — unmet, and now an implementation gap rather than a missing measurement. The 2026-09-07 warm-up host turn and opt-in relaunch cache are compile-path progress, not acceptance: the single 16,020.007 ms retained-package candidate run is not a cold install and still misses 8,000 ms by roughly two times | PRD-339 / PRD-327 |
+| 1 | [360 — Android launch](PRD-360-android-launch-is-playable-within-eight-seconds.md) | **PARTIAL**: one consolidated retry plan. Prior first-frame results are 16–19 seconds; the 49,788.7 ms historical bound includes harness overhead. Rebuild a consistent current Bayview, inspect supported cooking and separate scene construction, async warm-up and first-playable timing before another optimization. Eight-second and 250 ms acceptance remain open | PRD-339 / PRD-327 |
 | 2 | [361 — Correct character setup](PRD-361-two-games-share-correct-character-setup.md) | Two real games stop rebuilding skeletal clone, scale and clip-validation plumbing | Authoring PRD-354 |
 | 3 | [362 — Adaptive starter quality](PRD-362-starter-quality-adapts-to-measured-load.md) | The default game responds to measured load and preserves explicit overrides | PRD-287 |
 
@@ -26,4 +26,4 @@ controls. Execution evidence and remaining gates are in the
 red/green proof; PRD-360's warm-up and cache work landed as partial progress, and its 8-second
 physical-device acceptance and full delivery remain open, as do PRD-361 and PRD-362.
 
-Next action (under 2 minutes): open PRD-360 and read the 2026-09-07 device measurement.
+Next action (under 2 minutes): open PRD-360 and read Phase 1's build-provenance checklist.
