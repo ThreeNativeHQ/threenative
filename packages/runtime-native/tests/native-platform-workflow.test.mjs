@@ -73,6 +73,12 @@ test('green native platform lane is required by primary CI', () => {
   expect(nativeJob).not.toMatch(/^\s+continue-on-error:/mu);
   expect(workflow).toContain('workflow_call:');
   expect(workflow).not.toMatch(/\n\x20{2}(?:push|pull_request|schedule):/u);
+  expect(ciWorkflow).toContain(
+    "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+  );
+  expect(workflow).toContain(
+    "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+  );
 });
 
 test('desktop platform lanes build and retain executable evidence', () => {

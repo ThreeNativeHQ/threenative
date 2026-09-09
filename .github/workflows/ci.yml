@@ -12,7 +12,7 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only. The workflow used to hold Actions write access so a failing job could cancel its own
 # run; that mechanism is gone (see the note above `jobs:`), and nothing else here calls the
