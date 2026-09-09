@@ -649,7 +649,7 @@ describe("CI pipeline structure", () => {
     expect(triggers).toContain("workflow_dispatch:");
     expect(triggers).toContain("workflow_call:");
     expect(triggers).toContain("ios_only:");
-    expect(triggers).toContain("schedule:");
+    expect(triggers).not.toMatch(/\n\s{2}(?:push|pull_request|schedule):/u);
   });
 
   it("does not require skipped performance lanes on a prose-only run", async () => {
@@ -1153,12 +1153,18 @@ describe("CI pipeline structure", () => {
   // actions and Node from, and checks it against a recorded digest, so npm is not in the path of
   // any job and an unexpected binary fails the job rather than running.
   it("bootstraps pnpm from a pinned release digest rather than through npm", async () => {
-    const prTriggered = [".github/workflows/ci.yml", ".github/workflows/native-platforms.yml"];
-    for (const workflow of prTriggered) {
-      const source = await readFile(path.join(repo, workflow), "utf8");
-      expect(triggerSection(source), `${workflow} does not run on pull requests`).toContain(
-        "pull_request:",
-      );
+    const primary = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(triggerSection(primary), "ci.yml does not run on pull requests").toContain(
+      "pull_request:",
+    );
+    for (const [relative, source] of [
+      [".github/workflows/ci.yml", primary],
+      [
+        ".github/workflows/native-platforms.yml",
+        await readFile(path.join(repo, ".github/workflows/native-platforms.yml"), "utf8"),
+      ],
+    ] as const) {
+      const workflow = relative;
       expect(source, `${workflow} still bootstraps pnpm through npm`).not.toContain(
         "pnpm/action-setup",
       );
@@ -1249,13 +1255,15 @@ describe("CI pipeline structure", () => {
     expect(supplyChain).toContain('--log-opts="$TN_GITLEAKS_RANGE"');
   });
 
-  it("a nightly run exists on both gated workflows", async () => {
-    for (const relative of [".github/workflows/ci.yml", ".github/workflows/native-platforms.yml"]) {
-      const source = await readFile(path.join(repo, relative), "utf8");
-      expect(triggerSection(source), relative).toMatch(
-        /schedule:\n\s+- cron: ["']17 3 \* \* \*["']/u,
-      );
-    }
+  it("the primary workflow owns the nightly run and invokes the native lane", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(triggerSection(ci)).toMatch(/schedule:\n\s+- cron: ["']17 3 \* \* \*["']/u);
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    expect(triggerSection(native)).toContain("workflow_call:");
+    expect(triggerSection(native)).not.toMatch(/\n\s{2}(?:push|pull_request|schedule):/u);
   });
 
   it("both emulator lanes share the KVM provisioning commands", async () => {
@@ -2001,11 +2009,9 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("runs every native leg on every event, bar the two that crowd the pool", async () => {
-    // Until 2026-09-01 the platform legs ran only on pushes to main, the nightly cron, and PRs
-    // carrying the `native` label; a PR read skips where the legs should have reported, and on
-    // main the lane cancelled itself before finishing anyway (owner call: run everything,
-    // everywhere, and let a red be a red).
+  it("runs every native leg in the reusable invocation, bar the two that crowd the pool", async () => {
+    // The primary CI workflow owns push, pull-request, and nightly scheduling. Keeping those
+    // triggers in this reusable workflow too would run the same 24-minute matrix twice.
     //
     // Two legs were gated again as of 2026-09-03, and the reason was a measurement the earlier
     // call did not have. `desktop-parity` costs 3173s and `android-emulator-parity` 1858s:
@@ -2060,12 +2066,10 @@ describe("CI pipeline structure", () => {
       );
     }
 
-    // The workflow's own triggers still include the push and the cron, which is what makes the
-    // gate "later" rather than "never".
+    // The reusable workflow is invoked by ci.yml for every non-prose board selection.
     const triggers = triggerSection(native);
-    expect(triggers).toContain("push:");
-    expect(triggers).toContain("branches: [main]");
-    expect(triggers).toContain("schedule:");
+    expect(triggers).toContain("workflow_call:");
+    expect(triggers).not.toMatch(/\n\s{2}(?:push|pull_request|schedule):/u);
 
     const android = requiredJob(native, "android-emulator-parity");
     expect(android).not.toContain("continue-on-error: true");

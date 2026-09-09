@@ -1,8 +1,9 @@
 # PRD-295 — the native platform lane has never been green
 
-**Status: PROPOSED, filed 2026-08-31 at `233165fa`.** Filed at the moment the lane became visible,
-and made advisory in the same commit so it reports instead of blocking. That is a narrowing of what
-CI claims and it is written down here rather than assumed.
+**Status: DONE — hosted required matrix passed 2026-09-09.** Filed at the moment the lane became
+visible and made advisory in the same commit so it reports instead of blocking. The local and
+hosted red/green record is
+[`prd-295-native-platform-green-2026-09-09.md`](../../verification/prd-295-native-platform-green-2026-09-09.md).
 
 ## How a lane runs for the first time after months
 
@@ -58,13 +59,13 @@ paravirtualised Mac.
 
 ## What Done looks like
 
-1. Each of the three targets either passes on the hosted runners or declares, in the registry, that
+1. **Done.** Each of the three targets either passes on the hosted runners or declares, in the registry, that
    it needs a capability those runners lack — the same fail-closed shape
    `conformance/registry.json` already uses, where an unselected row is reported **blocked**, never
    passed and never omitted.
-2. `continue-on-error: true` comes off `native-platforms` in `ci.yml` in the same commit. An
+2. **Done.** `continue-on-error: true` comes off `native-platforms` in `ci.yml` in the same commit. An
    advisory lane that stays advisory becomes noise nobody reads.
-3. The Windows, Android-emulator and iOS-simulator legs get the same treatment; only the macOS leg
+3. **Done.** The Windows, Android-emulator and iOS-simulator legs get the same treatment; only the macOS leg
    is diagnosed above, because it is the one whose log was read.
 
 ## What not to do

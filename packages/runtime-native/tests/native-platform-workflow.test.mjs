@@ -9,6 +9,18 @@ const workflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/native-platforms.yml', import.meta.url)),
   'utf8',
 );
+const runtimeCmake = readFileSync(
+  fileURLToPath(new URL('../CMakeLists.txt', import.meta.url)),
+  'utf8',
+);
+const runtimePresets = readFileSync(
+  fileURLToPath(new URL('../CMakePresets.json', import.meta.url)),
+  'utf8',
+);
+const ciWorkflow = readFileSync(
+  fileURLToPath(new URL('../../../.github/workflows/ci.yml', import.meta.url)),
+  'utf8',
+);
 const releaseWorkflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/native-release.yml', import.meta.url)),
   'utf8',
@@ -21,6 +33,82 @@ const smokeScenario = (name) => JSON.parse(readFileSync(
   fileURLToPath(new URL(`../../../examples/native-smoke/playtests/${name}`, import.meta.url)),
   'utf8',
 ));
+
+test('static SDL is position independent for native PIE consumers', () => {
+  const sdl = runtimeCmake.slice(
+    runtimeCmake.indexOf('# SDL3 - Build from source as static library'),
+    runtimeCmake.indexOf('if(NOT SDL3_FOUND)'),
+  );
+  expect(sdl).toMatch(
+    /add_subdirectory\(\$\{SDL3_SOURCE_DIR\}[\s\S]*?set_target_properties\(SDL3-static PROPERTIES\s+POSITION_INDEPENDENT_CODE ON\)/u,
+  );
+  expect(sdl).toMatch(
+    /if\(TARGET SDL_uclibc\)[\s\S]*?set_target_properties\(SDL_uclibc PROPERTIES\s+POSITION_INDEPENDENT_CODE ON\)/u,
+  );
+  const linuxPreset = runtimePresets.slice(
+    runtimePresets.indexOf('"name": "tn-linux"'),
+    runtimePresets.indexOf('"name": "tn-windows"'),
+  );
+  expect(linuxPreset).toContain('"CMAKE_POSITION_INDEPENDENT_CODE": "ON"');
+});
+
+test('native compiler caches restore only the current CMake inputs', () => {
+  for (const source of [workflow, ciWorkflow]) {
+    const restoreKeys = [...source.matchAll(/^\s+restore-keys:\s*(native-ccache[^\n]+)$/gmu)].map(
+      (match) => match[1] ?? '',
+    );
+    expect(restoreKeys.length).toBeGreaterThan(0);
+    for (const restoreKey of restoreKeys) {
+      expect(restoreKey).toContain('hashFiles(');
+    }
+  }
+});
+
+test('green native platform lane is required by primary CI', () => {
+  const nativeJob = ciWorkflow.match(
+    /\n\x20{2}native-platforms:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(nativeJob).toContain('needs: scope');
+  expect(nativeJob).toContain('uses: ./.github/workflows/native-platforms.yml');
+  expect(nativeJob).not.toMatch(/^\s+continue-on-error:/mu);
+  expect(workflow).toContain('workflow_call:');
+  expect(workflow).not.toMatch(/\n\x20{2}(?:push|pull_request|schedule):/u);
+  expect(ciWorkflow).toContain(
+    "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+  );
+  expect(workflow).toContain(
+    "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+  );
+});
+
+test('native platform failures fail the exact protected build context', () => {
+  const buildJob = ciWorkflow.match(
+    /\n\x20{2}build:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(buildJob).toContain('needs: [scope, native-platforms]');
+  expect(buildJob).toContain(
+    "if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}",
+  );
+  expect(buildJob).toContain(
+    'NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}',
+  );
+  const gate = buildJob.match(
+    /\n\x20{6}- name: Require the native platform lane\n\x20{8}env:\n\x20{10}NATIVE_PLATFORM_RESULT: \$\{\{ needs\.native-platforms\.result \}\}\n\x20{8}run: \|\n([\s\S]*?)(?=\n\x20{6}- )/u,
+  )?.[1];
+  expect(gate).toBeDefined();
+  const script = gate
+    ?.split('\n')
+    .map((line) => line.replace(/^\x20{10}/u, ''))
+    .join('\n');
+  expect(script).toBeDefined();
+  const run = (result) =>
+    spawnSync('bash', ['-euo', 'pipefail', '-c', script], {
+      env: { ...process.env, NATIVE_PLATFORM_RESULT: result },
+      encoding: 'utf8',
+    });
+  expect(run('success').status).toBe(0);
+  expect(run('failure').status).not.toBe(0);
+});
 
 test('desktop platform lanes build and retain executable evidence', () => {
   for (const token of [

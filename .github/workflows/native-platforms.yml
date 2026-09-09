@@ -9,28 +9,9 @@ name: Native platform evidence
 # reason. Path filters also fired push and pull_request together, running the
 # whole 24-minute matrix twice per PR.
 #
-# Triggered here rather than called from ci.yml as of 2026-08-31: the lane reports on every push to
-# main, and its result no longer decides ci.yml's conclusion. See the note where the call used to be
-# in ci.yml, and PRD-295 for the failures that made it advisory.
-#
-# Runs on pull requests as well as pushes since 2026-08-31: a lane that only reports after a merge
-# tells you the thing you needed before it. `push` is pinned to main and `pull_request` to PRs
-# targeting main, so a branch push fires one of them and never both — the double 24-minute matrix
-# the path filters used to cause does not come back. Reporting on a PR is not the same as blocking
-# one: this lane is not a required status check while it is still red, and PRD-295 is explicit that
-# a lane which has never been green must not gate a release.
-#
-# Since 2026-09-01 every platform leg runs on every event. Reporting before a merge matters only
-# when every target actually reports; advisory status controls whether a known-red leg blocks, not
-# whether it runs. PR runs may cancel only when a newer commit supersedes them, while main runs
-# queue until their evidence is complete.
+# This file is a reusable workflow called by ci.yml, where the `native-platforms` job is a required
+# member of the primary board. Manual dispatch remains available for an isolated platform run.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    - cron: "17 3 * * *"
   workflow_dispatch:
     inputs:
       ios_only:
@@ -39,6 +20,11 @@ on:
         type: boolean
         default: false
   workflow_call:
+    inputs:
+      ios_only:
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: native-platforms-${{ github.ref }}
@@ -659,7 +645,7 @@ jobs:
           # `native-ccache-<os>-<arch>-gcc-` each restored whichever sibling finished last and
           # recompiled its own objects against it. See the note in ci.yml's `test` job.
           key: native-ccache-desktop-parity-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
-          restore-keys: native-ccache-desktop-parity-${{ runner.os }}-${{ runner.arch }}-gcc-
+          restore-keys: native-ccache-desktop-parity-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -829,7 +815,7 @@ jobs:
         with:
           path: ${{ github.workspace }}/.cache/ccache
           key: native-ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
-          restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-
+          restore-keys: native-ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.platform }}-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -980,7 +966,7 @@ jobs:
           # `native-ccache-<os>-<arch>-gcc-` each restored whichever sibling finished last and
           # recompiled its own objects against it. See the note in ci.yml's `test` job.
           key: native-ccache-starter-linux-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-${{ github.run_id }}
-          restore-keys: native-ccache-starter-linux-${{ runner.os }}-${{ runner.arch }}-gcc-
+          restore-keys: native-ccache-starter-linux-${{ runner.os }}-${{ runner.arch }}-gcc-${{ hashFiles('packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake') }}-
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:

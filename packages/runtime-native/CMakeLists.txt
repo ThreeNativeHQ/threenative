@@ -309,6 +309,17 @@ if(SDL3_SOURCE_DIRS)
         # Add SDL3 as a subdirectory
         add_subdirectory(${SDL3_SOURCE_DIR} ${CMAKE_BINARY_DIR}/sdl3-build EXCLUDE_FROM_ALL)
 
+        # Native executables are PIE on Linux. SDL's static archive otherwise leaves its
+        # non-PIC .eh_frame relocations for the linker; Ubuntu's GCC 13/binutils rejects the
+        # SDL_appid.c member when mystral-tools pulls it in. SDL_uclibc contributes objects to the
+        # same archive, so keep both static producers position independent.
+        if(TARGET SDL3-static)
+            set_target_properties(SDL3-static PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        endif()
+        if(TARGET SDL_uclibc)
+            set_target_properties(SDL_uclibc PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        endif()
+
         # SDL3 creates SDL3::SDL3-static target
         if(TARGET SDL3::SDL3-static)
             set(SDL3_FOUND ON)
