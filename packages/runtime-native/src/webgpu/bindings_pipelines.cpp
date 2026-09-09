@@ -412,6 +412,11 @@ void reportPipelineFirstPresent() {
               << pipelineClockMs() << "}" << std::endl;
 }
 
+void reportPipelineCaptureComplete(uint64_t eventCount) {
+    std::cout << "TN_PIPELINE_COMPLETE:{\"version\":1,\"eventCount\":"
+              << eventCount << "}" << std::endl;
+}
+
 /** Emit the same bounded event fields that the browser census and perf reader consume. */
 static void emitPipelineEvent(const PipelineCompileCompletion& completion,
                               uint64_t pipelineId, const char* mode, bool success,
@@ -1422,7 +1427,10 @@ void drainAsyncPipelineCompiles(BindingsState* state) {
 void shutdownAsyncPipelineCompiles(BindingsState* state) {
     if (state == nullptr) return;
     AsyncPipelineCompiles& pool = state->asyncPipelines;
-    if (pool.workers.empty()) return;
+    if (pool.workers.empty()) {
+        reportPipelineCaptureComplete(pool.nextRequestId - 1);
+        return;
+    }
     {
         std::lock_guard<std::mutex> lock(pool.mutex);
         pool.stopping = true;
@@ -1448,6 +1456,7 @@ void shutdownAsyncPipelineCompiles(BindingsState* state) {
         if (completion.computePipeline != nullptr) wgpuComputePipelineRelease(completion.computePipeline);
     }
     pool.completed.clear();
+    reportPipelineCaptureComplete(pool.nextRequestId - 1);
 }
 
 js::JSValueHandle handleGpuDeviceCreateShaderModule(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {

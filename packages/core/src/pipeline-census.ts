@@ -358,6 +358,8 @@ export class PipelineCensus {
   snapshot(): IPipelineCensus {
     const incompleteReasons: string[] = [];
     if (this.#unsupported) incompleteReasons.push("backend creation observation unavailable");
+    if (this.#adapterIdentity === "unavailable")
+      incompleteReasons.push("adapter identity unavailable");
     if (this.#overflowed) incompleteReasons.push("bounded event buffer overflowed");
     if (this.#pending > 0) incompleteReasons.push(`${this.#pending} pipeline event(s) are pending`);
     if (this.#failures > 0) incompleteReasons.push(`${this.#failures} pipeline creation(s) failed`);

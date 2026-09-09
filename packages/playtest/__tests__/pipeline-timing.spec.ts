@@ -91,6 +91,10 @@ function nativeMetadata(boundaryMs = 5): string {
   ].join("\n");
 }
 
+function nativeCompletion(eventCount: number): string {
+  return `TN_PIPELINE_COMPLETE:{"version":1,"eventCount":${eventCount}}`;
+}
+
 describe("pipeline timing capture", () => {
   it("separates queue delay from service time when asynchronous jobs overlap", () => {
     const capture = parsePipelineCapture([marker(1, 5, 10, 15), marker(2, 1, 10, 11)].join("\n"));
@@ -142,9 +146,21 @@ describe("pipeline timing capture", () => {
     expect(capture.incompleteReasons.join(" ")).toMatch(/missing/u);
   });
 
+  it("fails closed when the final native event is missing from an otherwise contiguous capture", () => {
+    const capture = parsePipelineCapture([
+      nativeMetadata(),
+      nativeCompletion(2),
+      marker(1, 0, 4, 4),
+    ].join("\n"));
+
+    expect(capture.complete).toBe(false);
+    expect(capture.incompleteReasons).toContain("native pipeline event count does not match the completion marker");
+  });
+
   it("accepts a native marker capture with launch metadata and first-present evidence", () => {
     const capture = parsePipelineCapture([
       nativeMetadata(),
+      nativeCompletion(1),
       marker(1, 0, 4, 4),
     ].join("\n"));
 
