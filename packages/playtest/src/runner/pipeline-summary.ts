@@ -2,6 +2,8 @@
 
 export const PIPELINE_CAPTURE_VERSION = 1 as const;
 export const PIPELINE_EVENT_MARKER = "TN_PIPELINE_EVENT:";
+const PIPELINE_CAPTURE_MARKER = "TN_PIPELINE_CAPTURE:";
+const PIPELINE_FIRST_PRESENT_MARKER = "TN_PIPELINE_FIRST_PRESENT:";
 
 export type PipelineCaptureSource = "browser" | "native";
 export type PipelineCaptureKind = "compute" | "render";
@@ -131,11 +133,24 @@ export interface IPipelineSummary {
 
 type JsonRecord = Record<string, unknown>;
 
+interface INativeMarkerCapture {
+  readonly adapter?: Readonly<Record<string, unknown>>;
+  readonly build?: Readonly<Record<string, unknown>>;
+  readonly clock?: Readonly<Record<string, unknown>>;
+  readonly events: readonly IPipelineCaptureEvent[];
+  readonly firstPresentBoundaryMs?: number;
+}
+
+type NativeMarkerLine =
+  | { readonly kind: "capture"; readonly value: unknown }
+  | { readonly kind: "event"; readonly value: unknown }
+  | { readonly kind: "first-present"; readonly value: unknown };
+
 /** Parse a capture file, either as a JSON browser census or a native log containing markers. */
 export function parsePipelineCapture(input: string | unknown): IPipelineCapture {
   if (typeof input === "string") {
-    const native = parsePipelineEventMarkers(input);
-    if (native.length > 0) return nativeCapture(native);
+    const native = parseNativeMarkerCapture(input);
+    if (native.events.length > 0) return nativeCapture(native);
     let value: unknown;
     try {
       value = JSON.parse(input) as unknown;
@@ -166,30 +181,96 @@ export function parsePipelineCapture(input: string | unknown): IPipelineCapture 
 
 /** Parse only native marker lines, preserving the same malformed-input contract as perf. */
 export function parsePipelineEventMarkers(text: string): IPipelineCaptureEvent[] {
-  const events: IPipelineCaptureEvent[] = [];
-  const seen = new Map<number, string>();
+  return [...parseNativeMarkerCapture(text).events];
+}
+
+function parseNativeMarkerCapture(text: string): INativeMarkerCapture {
+  const state: INativeMarkerState = { events: [], seen: new Map<number, string>() };
   for (const line of text.split("\n")) {
-    const markerAt = line.indexOf(PIPELINE_EVENT_MARKER);
-    if (markerAt === -1) continue;
-    const payload = line.slice(markerAt + PIPELINE_EVENT_MARKER.length).trim();
-    let value: unknown;
-    try {
-      value = JSON.parse(payload) as unknown;
-    } catch (error) {
-      throw malformed(`a ${PIPELINE_EVENT_MARKER.slice(0, -1)} line carries invalid JSON (${payload.slice(0, 100)}): ${errorMessage(error)}`);
-    }
-    validateCaptureVersion(value, "native pipeline event");
-    const event = normaliseNativeEvent(value);
-    const existing = seen.get(event.sequence);
-    const serialised = JSON.stringify(value);
-    if (existing !== undefined) {
-      if (existing !== serialised) throw malformed(`event ${event.sequence} appears with conflicting payloads`);
-      continue;
-    }
-    seen.set(event.sequence, serialised);
-    events.push(event);
+    const marker = parseNativeMarkerLine(line);
+    if (marker === undefined) continue;
+    consumeNativeMarker(state, marker);
   }
-  return events.sort((left, right) => left.sequence - right.sequence);
+  return {
+    ...(state.adapter === undefined ? {} : { adapter: state.adapter }),
+    ...(state.build === undefined ? {} : { build: state.build }),
+    ...(state.clock === undefined ? {} : { clock: state.clock }),
+    events: state.events.sort((left, right) => left.sequence - right.sequence),
+    ...(state.firstPresentBoundaryMs === undefined
+      ? {}
+      : { firstPresentBoundaryMs: state.firstPresentBoundaryMs }),
+  };
+}
+
+interface INativeMarkerState {
+  readonly events: IPipelineCaptureEvent[];
+  readonly seen: Map<number, string>;
+  adapter?: Readonly<Record<string, unknown>>;
+  build?: Readonly<Record<string, unknown>>;
+  clock?: Readonly<Record<string, unknown>>;
+  firstPresentBoundaryMs?: number;
+}
+
+function consumeNativeMarker(state: INativeMarkerState, marker: NativeMarkerLine): void {
+  if (marker.kind === "capture") {
+    consumeNativeCaptureMetadata(state, marker.value);
+    return;
+  }
+  if (marker.kind === "first-present") {
+    consumeNativeFirstPresent(state, marker.value);
+    return;
+  }
+  consumeNativeEvent(state, marker.value);
+}
+
+function consumeNativeCaptureMetadata(state: INativeMarkerState, value: unknown): void {
+  validateCaptureVersion(value, "native pipeline capture metadata");
+  const metadata = nativeCaptureMetadata(value);
+  if (state.build !== undefined || state.adapter !== undefined || state.clock !== undefined)
+    throw malformed("native pipeline capture metadata appears more than once");
+  state.build = metadata.build;
+  state.adapter = metadata.adapter;
+  state.clock = metadata.clock;
+}
+
+function consumeNativeFirstPresent(state: INativeMarkerState, value: unknown): void {
+  validateCaptureVersion(value, "native first-present metadata");
+  const metadata = asRecord(value);
+  const boundaryMs = nonNegativeNumber(metadata?.boundaryMs, "native first-present boundaryMs");
+  if (state.firstPresentBoundaryMs !== undefined && state.firstPresentBoundaryMs !== boundaryMs)
+    throw malformed("native first-present metadata appears with conflicting boundaries");
+  state.firstPresentBoundaryMs = boundaryMs;
+}
+
+function consumeNativeEvent(state: INativeMarkerState, value: unknown): void {
+  validateCaptureVersion(value, "native pipeline event");
+  const event = normaliseNativeEvent(value);
+  const existing = state.seen.get(event.sequence);
+  const serialised = JSON.stringify(value);
+  if (existing !== undefined) {
+    if (existing !== serialised) throw malformed(`event ${event.sequence} appears with conflicting payloads`);
+    return;
+  }
+  state.seen.set(event.sequence, serialised);
+  state.events.push(event);
+}
+
+function parseNativeMarkerLine(line: string): NativeMarkerLine | undefined {
+  const candidates: Array<{ readonly at: number; readonly kind: NativeMarkerLine["kind"]; readonly marker: string }> = [
+    { at: line.indexOf(PIPELINE_CAPTURE_MARKER), kind: "capture", marker: PIPELINE_CAPTURE_MARKER },
+    { at: line.indexOf(PIPELINE_FIRST_PRESENT_MARKER), kind: "first-present", marker: PIPELINE_FIRST_PRESENT_MARKER },
+    { at: line.indexOf(PIPELINE_EVENT_MARKER), kind: "event", marker: PIPELINE_EVENT_MARKER },
+  ];
+  const candidate = candidates
+    .filter(({ at }) => at !== -1)
+    .sort((left, right) => left.at - right.at)[0];
+  if (candidate === undefined) return undefined;
+  const payload = line.slice(candidate.at + candidate.marker.length).trim();
+  try {
+    return { kind: candidate.kind, value: JSON.parse(payload) as unknown };
+  } catch (error) {
+    throw malformed(`a ${candidate.marker.slice(0, -1)} line carries invalid JSON (${payload.slice(0, 100)}): ${errorMessage(error)}`);
+  }
 }
 
 export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSummary {
@@ -318,6 +399,15 @@ export function formatPipelineSummary(summary: IPipelineSummary): string {
     `warm-up: ${summary.warmup.beforeFirstPresent} before first present, ` +
       `${summary.warmup.afterFirstPresent} after, ${summary.warmup.unreported} unreported`,
   );
+  if (summary.sizeTime.byPass.length > 0) {
+    lines.push("shader size/time by pass:");
+    for (const pass of summary.sizeTime.byPass) {
+      lines.push(
+        `  ${pass.pass.padEnd(16)} mean ${pass.meanBytes.toFixed(1)} bytes, ` +
+          `${pass.meanServiceMs.toFixed(3)} ms service (${pass.samples} sample(s))`,
+      );
+    }
+  }
   lines.push(`shader size/time samples: ${summary.sizeTime.samples}; ${summary.sizeTime.statement}`);
   for (const reason of summary.incompleteReasons) lines.push(`FAIL TN_PIPELINE_CAPTURE_INCOMPLETE: ${reason}`);
   return `${lines.join("\n")}\n`;
@@ -402,39 +492,40 @@ function parseBrowserCapture(value: JsonRecord): IPipelineCapture {
   };
 }
 
-function nativeCapture(events: readonly IPipelineCaptureEvent[]): IPipelineCapture {
-  validateEventSequence(events, "native capture", true);
-  const ids = events.map(({ sequence }) => sequence);
+function nativeCaptureMetadata(value: unknown): {
+  readonly adapter: Readonly<Record<string, unknown>>;
+  readonly build: Readonly<Record<string, unknown>>;
+  readonly clock: Readonly<Record<string, unknown>>;
+} {
+  const source = asRecord(value);
+  if (source === undefined) throw malformed("native pipeline capture metadata is not an object");
   const reasons: string[] = [];
-  for (const event of events) {
-    if (event.kind === "render" && event.vertex === undefined)
-      reasons.push("a render pipeline is missing its vertex shader observation");
-    if (event.kind === "compute" && event.compute === undefined)
-      reasons.push("a compute pipeline is missing its shader observation");
-  }
-  if (ids[0] !== 1) reasons.push(`native event sequence starts at ${ids[0] ?? "missing"}, expected 1`);
-  const lastId = ids.at(-1);
-  const droppedEvents = lastId === undefined ? 0 : Math.max(0, lastId - ids.length);
-  if (droppedEvents > 0) reasons.push(`${droppedEvents} native pipeline event(s) are missing from the sequence`);
-  if (events.length === 0) reasons.push("no native pipeline events observed");
-  reasons.push(
-    "native marker capture is missing its build identity",
-    "native marker capture is missing its adapter identity",
-    "native marker capture is missing its thermal identity",
-    "native marker capture is missing its clock origin",
-    "native marker capture is missing its first-present boundary",
-  );
+  const build = parseBuild(source.build, reasons);
+  const adapter = parseAdapter(source.adapter, reasons);
+  const clock = parseClock(source.clock, reasons);
+  if (reasons.length > 0) throw malformed(`native pipeline capture metadata is incomplete: ${reasons.join("; ")}`);
+  if (build === undefined || adapter === undefined || clock === undefined)
+    throw malformed("native pipeline capture metadata is incomplete");
+  return { adapter, build, clock };
+}
+
+function nativeCapture(metadata: INativeMarkerCapture): IPipelineCapture {
+  const firstPresent = nativeFirstPresent(metadata.events, metadata.firstPresentBoundaryMs);
+  const events = nativeEventsWithBoundary(metadata.events, firstPresent);
+  validateEventSequence(events, "native capture", true);
+  const sequence = nativeSequenceSummary(events);
+  const reasons = nativeCaptureReasons(metadata, events, firstPresent, sequence.droppedEvents);
   const failures = events.filter(({ status }) => status === "failed").length;
   const pending = events.filter(({ status }) => status === "pending").length;
   const counts = {
     lookups: 0,
-    creations: events.length + droppedEvents,
+    creations: events.length + sequence.droppedEvents,
     failures,
     pending,
     uniquePrograms: new Set(events.map(({ programIdentity }) => programIdentity)).size,
     uniquePipelines: new Set(events.map(({ pipelineIdentity }) => pipelineIdentity)).size,
     recordedEvents: events.length,
-    droppedEvents,
+    droppedEvents: sequence.droppedEvents,
   };
   if (failures > 0) reasons.push(`${failures} pipeline creation(s) failed`);
   return {
@@ -442,10 +533,87 @@ function nativeCapture(events: readonly IPipelineCaptureEvent[]): IPipelineCaptu
     source: "native",
     complete: reasons.length === 0,
     overflowed: false,
+    ...(metadata.clock === undefined ? {} : { clock: metadata.clock }),
+    ...(metadata.build === undefined ? {} : { build: metadata.build }),
+    ...(metadata.adapter === undefined ? {} : { adapter: metadata.adapter }),
+    ...(firstPresent === undefined ? {} : { firstPresent }),
     counts,
     events,
     incompleteReasons: reasons,
   };
+}
+
+function nativeFirstPresent(
+  events: readonly IPipelineCaptureEvent[],
+  boundaryMs: number | undefined,
+): IPipelineCapture["firstPresent"] | undefined {
+  if (boundaryMs === undefined) return undefined;
+  return {
+    boundaryMs,
+    eventsSettled: events.filter(
+      ({ settledMs }) => settledMs !== undefined && settledMs <= boundaryMs,
+    ).length,
+  };
+}
+
+function nativeEventsWithBoundary(
+  events: readonly IPipelineCaptureEvent[],
+  firstPresent: IPipelineCapture["firstPresent"] | undefined,
+): readonly IPipelineCaptureEvent[] {
+  if (firstPresent === undefined) return events;
+  return events.map((event) =>
+    event.settledMs === undefined
+      ? event
+      : { ...event, beforeFirstPresent: event.settledMs <= firstPresent.boundaryMs },
+  );
+}
+
+function nativeSequenceSummary(events: readonly IPipelineCaptureEvent[]): {
+  readonly firstId: number | undefined;
+  readonly droppedEvents: number;
+} {
+  const firstId = events[0]?.sequence;
+  const lastId = events.at(-1)?.sequence;
+  return { firstId, droppedEvents: lastId === undefined ? 0 : Math.max(0, lastId - events.length) };
+}
+
+function nativeCaptureReasons(
+  metadata: INativeMarkerCapture,
+  events: readonly IPipelineCaptureEvent[],
+  firstPresent: IPipelineCapture["firstPresent"] | undefined,
+  droppedEvents: number,
+): string[] {
+  const reasons = nativeEventReasons(events);
+  const firstId = events[0]?.sequence;
+  if (firstId !== 1) reasons.push(`native event sequence starts at ${firstId ?? "missing"}, expected 1`);
+  if (droppedEvents > 0) reasons.push(`${droppedEvents} native pipeline event(s) are missing from the sequence`);
+  if (events.length === 0) reasons.push("no native pipeline events observed");
+  reasons.push(...nativeMetadataReasons(metadata, firstPresent));
+  return reasons;
+}
+
+function nativeEventReasons(events: readonly IPipelineCaptureEvent[]): string[] {
+  const reasons: string[] = [];
+  for (const event of events) {
+    if (event.kind === "render" && event.vertex === undefined)
+      reasons.push("a render pipeline is missing its vertex shader observation");
+    if (event.kind === "compute" && event.compute === undefined)
+      reasons.push("a compute pipeline is missing its shader observation");
+  }
+  return reasons;
+}
+
+function nativeMetadataReasons(
+  metadata: INativeMarkerCapture,
+  firstPresent: IPipelineCapture["firstPresent"] | undefined,
+): string[] {
+  const reasons: string[] = [];
+  if (metadata.build === undefined) reasons.push("native marker capture is missing its build identity");
+  if (metadata.adapter === undefined) reasons.push("native marker capture is missing its adapter identity");
+  else if (metadata.adapter.thermal === undefined) reasons.push("native marker capture is missing its thermal identity");
+  if (metadata.clock === undefined) reasons.push("native marker capture is missing its clock origin");
+  if (firstPresent === undefined) reasons.push("native marker capture is missing its first-present boundary");
+  return reasons;
 }
 
 function unsupportedCapture(version: number, value: JsonRecord): IPipelineCapture {
@@ -781,7 +949,7 @@ function parseClock(
     reasons.push("capture is missing its clock origin");
     return undefined;
   }
-  if (source.source !== "performance" && source.source !== "date")
+  if (source.source !== "performance" && source.source !== "date" && source.source !== "steady")
     reasons.push("capture clock source is invalid");
   if (typeof source.originMs !== "number" || !Number.isFinite(source.originMs) || source.originMs < 0)
     reasons.push("capture clock origin is invalid");

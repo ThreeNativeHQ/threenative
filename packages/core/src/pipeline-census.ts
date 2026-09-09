@@ -7,6 +7,8 @@
  * pipeline key and makes the same observation useful on browser WebGPU and the native binding.
  */
 
+import { CORE_VERSION } from "./version.js";
+
 export const PIPELINE_CENSUS_VERSION = 1 as const;
 export const PIPELINE_CENSUS_CAPABILITY = "runtime.pipelineCensus" as const;
 export const DEFAULT_PIPELINE_CENSUS_LIMIT = 512;
@@ -84,6 +86,13 @@ export interface IPipelineCensus {
     readonly originMs: number;
     readonly source: "performance" | "date";
   };
+  readonly build: {
+    readonly identity: string;
+  };
+  readonly adapter: {
+    readonly identity: string;
+    readonly thermal: string;
+  };
   readonly backend: {
     readonly kind: "webgpu" | "webgl2";
     readonly identity: string;
@@ -98,10 +107,13 @@ export interface IPipelineCensus {
 }
 
 export interface IPipelineCensusOptions {
+  readonly adapterIdentity?: string;
+  readonly buildIdentity?: string;
   readonly kind: "webgpu" | "webgl2";
   readonly limit?: number;
   readonly now?: () => number;
   readonly backendIdentity?: string;
+  readonly thermalIdentity?: string;
 }
 
 interface IRenderObjectLike {
@@ -203,6 +215,9 @@ export class PipelineCensus {
   readonly #origin: number;
   readonly #clockSource: "performance" | "date";
   readonly #backendIdentity: string;
+  readonly #buildIdentity: string;
+  readonly #adapterIdentity: string;
+  readonly #thermalIdentity: string;
   readonly #events: IMutableCensusEvent[] = [];
   readonly #programs = new Set<string>();
   readonly #pipelines = new Set<string>();
@@ -235,6 +250,9 @@ export class PipelineCensus {
     this.#origin = this.#now();
     this.#clockSource = typeof globalThis.performance?.now === "function" ? "performance" : "date";
     this.#backendIdentity = options.backendIdentity ?? `${options.kind}:renderer`;
+    this.#buildIdentity = options.buildIdentity ?? `@threenative/core@${CORE_VERSION}`;
+    this.#adapterIdentity = options.adapterIdentity ?? this.#backendIdentity;
+    this.#thermalIdentity = options.thermalIdentity ?? "unavailable";
   }
 
   /** Install the backend creation hooks and the render-object context wrapper once. */
@@ -361,6 +379,8 @@ export class PipelineCensus {
       limit: this.#limit,
       clock: { originMs: this.#origin, source: this.#clockSource },
       backend: { kind: this.#kind, identity: this.#backendIdentity },
+      build: { identity: this.#buildIdentity },
+      adapter: { identity: this.#adapterIdentity, thermal: this.#thermalIdentity },
       ...(this.#firstPresentMs === undefined
         ? {}
         : {

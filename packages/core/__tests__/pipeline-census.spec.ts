@@ -97,6 +97,8 @@ describe("pipeline census", () => {
     const report = census.snapshot();
     expect(report.complete).toBe(true);
     expect(report.backend.kind).toBe("webgpu");
+    expect(report.build?.identity).toContain("@threenative/core@");
+    expect(report.adapter).toMatchObject({ identity: "webgpu:renderer", thermal: "unavailable" });
     expect(report.counts).toMatchObject({
       creations: 2,
       failures: 0,

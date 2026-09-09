@@ -3,6 +3,7 @@
 #include "bindings_pipelines.h"
 #include "bindings_resources.h"
 #include "bindings_state.h"
+#include "mystral/runtime.h"
 #include "mystral/stall_budget.h"
 #include "mystral/webgpu/bindings.h"
 #include "mystral/webgpu/checked_handle.h"
@@ -321,7 +322,7 @@ static std::string singleWgslEntryPoint(const std::string& code, const char* sta
 }
 
 /** A process-monotonic origin shared by all pipeline events in one native launch. */
-static double pipelineClockMs() {
+double pipelineClockMs() {
     static const auto origin = std::chrono::steady_clock::now();
     return std::chrono::duration<double, std::milli>(
                std::chrono::steady_clock::now() - origin)
@@ -361,6 +362,54 @@ static std::string pipelineJsonString(const std::string& value) {
     }
     escaped << '"';
     return escaped.str();
+}
+
+static const char* pipelineBackendName(WGPUBackendType backend) {
+    switch (backend) {
+        case WGPUBackendType_Null: return "null";
+        case WGPUBackendType_WebGPU: return "webgpu";
+        case WGPUBackendType_D3D11: return "d3d11";
+        case WGPUBackendType_D3D12: return "d3d12";
+        case WGPUBackendType_Metal: return "metal";
+        case WGPUBackendType_Vulkan: return "vulkan";
+        case WGPUBackendType_OpenGL: return "opengl";
+        case WGPUBackendType_OpenGLES: return "opengles";
+        default: return "unknown";
+    }
+}
+
+void reportPipelineCaptureMetadata(WGPUAdapter adapter) {
+    std::string device;
+    std::string vendor;
+    std::string architecture;
+    std::string description;
+    WGPUBackendType backend = WGPUBackendType_Undefined;
+    if (adapter != nullptr) {
+        WGPUAdapterInfo info = {};
+        wgpuAdapterGetInfo(adapter, &info);
+        device = ownStringView(info.device);
+        vendor = ownStringView(info.vendor);
+        architecture = ownStringView(info.architecture);
+        description = ownStringView(info.description);
+        backend = info.backendType;
+        wgpuAdapterInfoFreeMembers(info);
+    }
+    std::string identity = "native:";
+    identity += pipelineBackendName(backend);
+    for (const std::string& part : {vendor, device, architecture, description}) {
+        if (!part.empty()) identity += "/" + part;
+    }
+    std::cout << "TN_PIPELINE_CAPTURE:{\"version\":1,\"build\":{\"identity\":"
+              << pipelineJsonString(std::string("mystral-native@") + mystral::getVersion())
+              << "},\"adapter\":{\"identity\":" << pipelineJsonString(identity)
+              << ",\"thermal\":\"unavailable\"},\"clock\":{\"source\":\"steady\",\"originMs\":0}}"
+              << std::endl;
+}
+
+void reportPipelineFirstPresent() {
+    std::cout << std::setprecision(17)
+              << "TN_PIPELINE_FIRST_PRESENT:{\"version\":1,\"boundaryMs\":"
+              << pipelineClockMs() << "}" << std::endl;
 }
 
 /** Emit the same bounded event fields that the browser census and perf reader consume. */

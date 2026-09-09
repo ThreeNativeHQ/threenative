@@ -84,6 +84,13 @@ function browserCapture(
   };
 }
 
+function nativeMetadata(boundaryMs = 5): string {
+  return [
+    'TN_PIPELINE_CAPTURE:{"version":1,"build":{"identity":"native:0.3.0"},"adapter":{"identity":"vendor/device","thermal":"unavailable"},"clock":{"source":"steady","originMs":0}}',
+    `TN_PIPELINE_FIRST_PRESENT:{"version":1,"boundaryMs":${boundaryMs}}`,
+  ].join("\n");
+}
+
 describe("pipeline timing capture", () => {
   it("separates queue delay from service time when asynchronous jobs overlap", () => {
     const capture = parsePipelineCapture([marker(1, 5, 10, 15), marker(2, 1, 10, 11)].join("\n"));
@@ -118,6 +125,7 @@ describe("pipeline timing capture", () => {
     const summary = summarizePipelineCapture(parsePipelineCapture(marker(1, 0, 4, 4)));
 
     expect(summary.sizeTime.byPass[0]).toMatchObject({ meanBytes: 302, samples: 1 });
+    expect(formatPipelineSummary(summary)).toContain("mean 302.0 bytes");
   });
 
   it("rejects provenance that is both unknown and attributed", () => {
@@ -132,6 +140,19 @@ describe("pipeline timing capture", () => {
     expect(capture.complete).toBe(false);
     expect(capture.counts.droppedEvents).toBe(1);
     expect(capture.incompleteReasons.join(" ")).toMatch(/missing/u);
+  });
+
+  it("accepts a native marker capture with launch metadata and first-present evidence", () => {
+    const capture = parsePipelineCapture([
+      nativeMetadata(),
+      marker(1, 0, 4, 4),
+    ].join("\n"));
+
+    expect(capture.complete).toBe(true);
+    expect(capture.build).toMatchObject({ identity: "native:0.3.0" });
+    expect(capture.adapter).toMatchObject({ identity: "vendor/device", thermal: "unavailable" });
+    expect(capture.firstPresent).toEqual({ boundaryMs: 5, eventsSettled: 1 });
+    expect(capture.events[0]?.beforeFirstPresent).toBe(true);
   });
 
   it("accepts a browser census and keeps material attribution separate from program identity", () => {
