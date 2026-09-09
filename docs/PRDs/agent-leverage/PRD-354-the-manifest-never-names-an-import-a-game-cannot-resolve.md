@@ -4,8 +4,7 @@ prd_contract: v1
 
 # PRD-354 — the manifest never names an import a scaffolded game cannot resolve
 
-**Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/` from the
-[`ASTRA-BATCH-2026-09-04` provenance index](../ASTRA-BATCH-2026-09-04.md), measured at `dae30759`.
+**Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/`, measured at `dae30759`.
 
 **Complexity:** +3 for 10+ files (ten templates, the generator, the scaffolder, the reference
 doc, the gate and its spec), +2 for multi-package (`create-threenative`, `engine-mcp`,

@@ -4,8 +4,7 @@ prd_contract: v1
 
 # PRD-356 — "the framework stopped a rewrite" is an anecdote; make it a row
 
-**Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/` from the
-[`ASTRA-BATCH-2026-09-04` provenance index](../ASTRA-BATCH-2026-09-04.md), measured at `dae30759`.
+**Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/`, measured at `dae30759`.
 
 **Complexity:** +2 for 6–10 files, +2 for a new module (the scorer and its ledger row), +2 for
 multi-package (`scripts/`, the round ledger, the detector from PRD-355) = **6 → HIGH mode.**
