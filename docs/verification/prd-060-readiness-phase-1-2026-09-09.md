@@ -12,10 +12,10 @@ promotion.
 **Layer:** release orchestration (`scripts/` and `.github/workflows/`). The change protects the
 engine's release boundary; it does not change game or renderer behavior.
 
-**Base:** `66b7ece8e0ee4cec39346597b3e0ed80f65e8c9f` (`origin/main` after PRD-078). The implementation
-was verified on branch `linchpin/prd-060-production-readiness-20260908` at HEAD `e694da5dc`, with
-the working-tree files listed below. No credentials were consumed and no npm/GitHub release state
-was mutated.
+**Base:** `b8b036bf2d2ed3afb131fdce0e9b0ddb653b4b73` (`origin/main` after PRD-368). The implementation
+source and tests were verified on branch `linchpin/prd-060-production-readiness-20260908` at source
+commit `17f9d07544462ecf19c8691601aa32f1cc8fbe27`. No credentials were consumed and no npm/GitHub
+release state was mutated.
 
 ## What is implemented
 
@@ -126,12 +126,12 @@ TN_SUITE_EXCLUDE_PACKAGES='@threenative/runtime-native' pnpm test
 suite temporary directory count: before 1, after 1
 
 pnpm --filter @threenative/runtime-native native:coverage
-38 native contract targets passed; 2 configured targets blocked; 21997 instrumented lines;
-17722 covered; 80.57%
+38 native contract targets passed; 2 configured targets blocked; 22005 instrumented lines;
+17730 covered; 80.57%
 
 pnpm budgets
-budgets ok: 11 framework packages, 16 example workspaces, 62247/15000 framework LOC,
-140720/100000 native runtime LOC
+budgets ok: 11 framework packages, 16 example workspaces, 62297/15000 framework LOC,
+140730/100000 native runtime LOC
 ```
 
 The phase-1 acceptance boundary is therefore proven locally. The remaining release criteria still
