@@ -1,6 +1,6 @@
 # PRD-370 — Warm-up counts what the GPU creates
 
-**Status:** PROPOSED. **Layer:** engine; honest work accounting and backend identity belong to
+**Status:** PARTIAL. **Layer:** engine; honest work accounting and backend identity belong to
 the renderer mechanism. **Complexity:** 2 (6–10 files) + 2 (multiple consumers) = **4 → MEDIUM mode**.
 **Depends on:** [367](PRD-367-doctor-explains-shader-compilation.md) and the
 [shared execution contract](README.md); reconcile PRD-360 source-lane changes first.

@@ -1,6 +1,6 @@
 # PRD-367 — Doctor explains shader compilation
 
-**Status:** PROPOSED. **Layer:** engine; renderer/backend observations cannot be implemented
+**Status:** PARTIAL. **Layer:** engine; renderer/backend observations cannot be implemented
 portably by a game. **Complexity:** 3 (10+ files) + 2 (new observation) + 2 (multiple packages)
 = **7 → HIGH mode**. **Depends on:** the [batch source and execution contract](README.md).
 

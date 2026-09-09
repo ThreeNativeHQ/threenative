@@ -1,9 +1,14 @@
 # PRD-368 — Compiled pipelines survive a relaunch
 
-**Status:** PROPOSED. **Layer:** native engine; only the host can persist backend compiler data.
+**Status:** BLOCKED — requires-pipeline-cache-api, 2026-09-09. **Layer:** native engine; only the host can persist backend compiler data.
 **Complexity:** 3 (10+ files) + 2 (new cache lifecycle) + 2 (concurrency) = **7 → HIGH mode**.
-**Depends on:** [367](PRD-367-doctor-explains-shader-compilation.md) for measured acceptance and
-the [shared execution contract](README.md). Dependency feasibility can run first.
+**Depends on:** [367](../../assets/PRD-367-doctor-explains-shader-compilation.md) for measured acceptance and
+the [shared execution contract](../../assets/README.md). Dependency feasibility can run first.
+
+The feasibility probe [`prd-368-feasibility-2026-09-09.md`](../../../verification/prd-368-feasibility-2026-09-09.md)
+found no supported wgpu-native C API for pipeline-cache creation, serialization, attachment, or
+reuse in the pinned or latest inspected artifacts. Phase 1 is therefore not implementable without
+an owned extension or fork; no cache lifecycle or cache-hit claim is made.
 
 ## Problem and outcome
 

@@ -25,7 +25,7 @@ none claims implementation or new device evidence.
 | PRD | Player/author outcome | Dependency |
 | --- | --- | --- |
 | [367 — doctor explains shader compilation](PRD-367-doctor-explains-shader-compilation.md) | Attribute launch cost to actual programs, passes and materials | First; establishes the common measurement |
-| [368 — compiled pipelines survive a relaunch](PRD-368-compiled-pipelines-survive-a-relaunch.md) | Compatible subsequent launches reuse native compiler work | 367 Phase 1 for timing; dependency feasibility can start independently |
+| [368 — compiled pipelines survive a relaunch](../BLOCKED/requires-pipeline-cache-api/PRD-368-compiled-pipelines-survive-a-relaunch.md) | Compatible subsequent launches reuse native compiler work | 367 Phase 1 for timing; dependency feasibility can start independently |
 | [369 — material variation is data](PRD-369-material-variation-is-data.md) | Reduce first-launch programs through game-owned render source | 367 attribution; independent of 368 |
 | [370 — warm-up counts what the GPU creates](PRD-370-warmup-counts-what-the-gpu-creates.md) | Loading progress and readiness describe observed work accurately | 367 observation; reconcile PRD-360 before editing |
 

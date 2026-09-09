@@ -1,6 +1,6 @@
 # PRD-369 — Material variation is data, not another shader graph
 
-**Status:** PROPOSED. **Layer:** game/generated template render source, because graph structure,
+**Status:** PARTIAL. **Layer:** game/generated template render source, because graph structure,
 texture atlases and material assignments decide appearance. **Complexity:** 3 (10+ files across
 game and templates) + 2 (new generated material source) + 2 (multiple consumers) = **7 → HIGH mode**.
 **Depends on:** [367](PRD-367-doctor-explains-shader-compilation.md) and the
