@@ -1,13 +1,14 @@
 # PRD-196 published-install verification
 
-Status: **BLOCKED on candidate-cohort preparation and release credentials.** The implementation and
-its gates are green in the tree, but the source cohort cannot be published as-is: eight package
-versions are immutable on npm and their source moved after publication. A release owner must first
+Status: **BLOCKED on candidate-cohort preparation and release credentials.** The implementation's
+applicable source gates are green in the tree; the native contract suite remains unbuilt. The source
+cohort cannot be published as-is: eight package versions are immutable on npm and their source moved
+after publication. A release owner must first
 prepare and commit a fresh coherent eleven-package cohort, then publish it with a matching
 `runtime-native-v*` release. The PRD is filed at
 `docs/PRDs/BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md`.
 
-The sections below are in run order. **Repair round 4 (2026-09-08) is the current state** — it
+The sections below are in run order. **Repair round 6 (2026-09-08) is the current state** — it
 re-ran every earlier claim at the lane tip and is the section to read first.
 
 Lane: `lane-196`
@@ -913,7 +914,8 @@ pnpm budgets                   exit 0
 git diff --check               exit 0
 ```
 
-The strict prose-only lane, which is what CI runs for a diff shaped like this one:
+The bounded documentation/workflow contract lane was also run locally. It is not the prose-only CI
+shortcut because this cumulative diff includes executable workflow and package changes:
 
 ```text
 $ pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts \
@@ -1005,8 +1007,8 @@ $ curl -sI ".../releases/download/runtime-native-v0.3.0/prebuilt-lock.json" | he
 HTTP/2 404
 ```
 
-`ThreeNativeHQ/threenative` has exactly one release, `quiche-owned-v1`. There is no
-`runtime-native-v*` release of any version.
+`ThreeNativeHQ/threenative` has one unrelated release, `quiche-owned-v1`; it has no
+`runtime-native-v*` release or `prebuilt-lock.json` asset.
 
 ### The clean room, re-run at the lane tip
 
@@ -1093,3 +1095,45 @@ PHASE_5_NEGATIVE_CONTROL_EXIT=1
 
 The current external blocker remains truthful: no candidate cohort was published and no matching
 native prebuilt release exists, so public consumer acceptance is still unexecuted.
+
+## Repair round 6 — independent review corrections, 2026-09-08
+
+The next independent review found five defects in the prior repair. This round makes the publish
+job install Vulkan and a checksum-validated Blender `5.2.0` before `release.ts --yes` runs its
+registry verifier; the downstream clean-room job keeps its own identical prerequisites. The npm
+workflow now calls `scripts/verify-native-release-commit.ts`, which peels the matching
+`runtime-native-v<version>` tag and refuses a tag whose commit differs from `GITHUB_SHA`.
+
+The immutable-version census now includes `package.json`, `src/`, templates, package metadata, and
+every declared `files` input. A regression test changes only `core/gpl/LICENSE.GPL` and observes the
+changed commit. The core package declares the aggregate `MIT AND GPL-2.0-or-later` SPDX expression,
+ships its MIT `LICENSE`, and documents which bundled files are GPL.
+
+The red controls were run before implementation:
+
+```text
+$ pnpm exec vitest run scripts/__tests__/check-publish-state.spec.ts \
+    scripts/__tests__/verify-native-release-commit.spec.ts \
+    scripts/__tests__/ci-structure.spec.ts -t \
+    "counts a changed non-src publication input|native release commit guard|exact candidate commit|provisions the registry verifier"
+
+Test Files  3 failed (3)
+Tests       4 failed (4)
+```
+
+The green focused run after implementation:
+
+```text
+$ pnpm exec vitest run scripts/__tests__/check-publish-state.spec.ts \
+    scripts/__tests__/verify-native-release-commit.spec.ts scripts/__tests__/ci-structure.spec.ts \
+    scripts/__tests__/release.spec.ts scripts/__tests__/verify-registry-install.spec.ts \
+    packages/core/__tests__/mcp-install.spec.ts scripts/__tests__/make-sandbox.spec.ts
+
+Test Files  7 passed (7)
+Tests       207 passed (207)
+```
+
+`pnpm typecheck` and `pnpm --filter @threenative/core build` also pass; the latter reaches
+`publint` with `All good!`. The top of this ledger now identifies repair round 6 as current. The
+older Arm A version table and release observation are explicitly dated historical evidence, and
+the unrelated `quiche-owned-v1` release is no longer described as a zero-release repository.

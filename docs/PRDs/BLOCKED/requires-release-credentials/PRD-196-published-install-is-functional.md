@@ -59,9 +59,10 @@ a user's disk; a game cannot fix any of it portably.
 
 ### Current behaviour, measured
 
-Two arms were executed. **Arm A** is what a stranger gets today
-(`npx create-threenative@0.2.2 mygame`, registry install, HOME isolated to a scratch dir).
-**Arm B** is what HEAD would ship (`pnpm sandbox`, packed tarballs, no workspace above).
+Two arms were executed on 2026-08-23. **Arm A** records what a stranger received in that
+registry snapshot (`npx create-threenative@0.2.2 mygame`, registry install, HOME isolated to a
+scratch dir). **Arm B** is what that lane's HEAD would ship (`pnpm sandbox`, packed tarballs, no
+workspace above).
 
 **Arm A — the scaffold succeeds, then:**
 
@@ -103,7 +104,8 @@ info: @threenative/runtime-native@0.3.0 is an optional dependency and failed com
 pnpm install exited with code 1.
 ```
 
-**Registry state versus this tree** (`dist-tags.latest`, fetched live):
+**Registry state versus this tree**, observed during the 2026-08-23 Arm A run (`dist-tags.latest`).
+This is a dated historical snapshot, not a current registry claim:
 
 | Package | Registry | This tree |
 | --- | --- | --- |
@@ -116,11 +118,11 @@ pnpm install exited with code 1.
 | `@threenative/assets` | **absent** | 0.3.0 |
 | `threenative-engine-mcp` | **absent** | 0.2.0 |
 
-**Release state:** `install-prebuilt.mjs:53` builds every prebuilt URL from
-`https://github.com/jonit-dev/threenative` — `api.github.com` returns **404** for that repository.
-The live remote is `ThreeNativeHQ/threenative`, which is public (**200**) and has **zero
-releases**. So the prebuilt path is broken twice over: wrong host, and nothing published at the
-right one.
+**Release state in that Arm A snapshot:** `install-prebuilt.mjs:53` built every prebuilt URL from
+`https://github.com/jonit-dev/threenative` — `api.github.com` returned **404** for that repository.
+The intended remote was `ThreeNativeHQ/threenative`, which was public (**200**) and had one
+unrelated release, `quiche-owned-v1`, with no `runtime-native-v*` assets. So the prebuilt path was
+broken twice over: wrong host, and no matching runtime release at the right one.
 
 `pnpm publish:check` already fails on one strand of this and no other:
 
@@ -385,7 +387,7 @@ fails.
 
 **User verification:** run the gate locally against the published set:
 `pnpm tsx scripts/verify-registry-install.ts` — every step green, and running it against
-`create-threenative@0.2.2` reproduces today's failures.
+the dated Arm A run above reproduces the recorded failures.
 
 ---
 

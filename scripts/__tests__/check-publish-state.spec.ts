@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
@@ -11,6 +12,7 @@ import {
   type RegistryLookup,
   type TarballReader,
   checkPublishState,
+  gitSourceCommits,
   missingPackageReadmes,
   pnpmPackReader,
   prebuiltReleaseCensus,
@@ -130,6 +132,39 @@ describe("pnpm publish:check", () => {
     });
     expect(report.findings).toEqual([]);
     expect(report.exitCode).toBe(0);
+  });
+
+  it("counts a changed non-src publication input for an already published version", async () => {
+    const root = await makeTempDir("threenative-publish-source-census-");
+    const packageRoot = path.join(root, "packages/core");
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({
+        files: ["dist", "gpl", "README.md"],
+        name: "@threenative/core",
+        version: "0.1.0",
+      }),
+    );
+    write(root, "packages/core/src/index.ts", "export const x = 1;\n");
+    write(root, "packages/core/gpl/LICENSE.GPL", "GPL text\n");
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "initial"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+        GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
+      },
+    });
+    write(root, "packages/core/gpl/LICENSE.GPL", "GPL text changed\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-gpl"], { cwd: root });
+
+    expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(1);
   });
 
   it("does not fail a package that was never published", async () => {
@@ -597,6 +632,8 @@ describe("pnpm publish:check", () => {
     const contents = pnpmPackReader()(item as IPublishPackage);
 
     expect(contents.entries).toContain("scripts/postinstall.mjs");
+    expect(contents.entries).toContain("LICENSE");
+    expect(contents.entries).toContain("gpl/LICENSE.GPL");
     expect(contents.entries).not.toContain("scripts/vsm-proof/run.mjs");
     expect(contents.entries.some((entry) => entry.startsWith("scripts/vsm-proof/"))).toBe(false);
     expect(await unresolvableTarballImports(item as IPublishPackage, contents)).toEqual([]);

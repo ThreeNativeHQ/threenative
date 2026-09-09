@@ -9,7 +9,8 @@
  *
  * It answers four questions, and fails closed on each:
  *  - is every publishable workspace package in the publish set, or is one silently missing?
- *  - has any package's `src/` moved since the version it still carries was published?
+ *  - has any package's build source or declared publication input moved since the version it still
+ *    carries was published?
  *  - did a `catalog:` or `workspace:` specifier survive into a manifest that ships?
  *  - does every publishable package carry a README that its own `files` list would include?
  *  - does every relative import of every shipped script resolve inside the packed tarball?
@@ -121,18 +122,43 @@ export function npmLookup(repo: string): RegistryLookup {
   };
 }
 
-/** Commits touching a package's shipped source since a timestamp. */
+/** Paths that can change the package artifact or the metadata a consumer receives. */
+function publicationInputTargets(directory: string): readonly string[] {
+  const manifest = path.join(directory, "package.json");
+  if (!fs.existsSync(manifest))
+    throw new Error(`TN_PUBLISH_MANIFEST_MISSING: ${manifest} does not exist.`);
+  const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as { files?: unknown };
+  const targets = new Set<string>([manifest]);
+  const source = path.join(directory, "src");
+  if (fs.existsSync(source)) targets.add(source);
+  const templates = path.join(directory, "templates");
+  if (fs.existsSync(templates)) targets.add(templates);
+
+  // npm always includes these package documents when they exist. Explicit `files` entries are
+  // added below, including non-src bundles such as core/gpl and core/mcp.
+  for (const name of ["README.md", "LICENSE", "LICENCE", "NOTICE"]) {
+    const file = path.join(directory, name);
+    if (fs.existsSync(file)) targets.add(file);
+  }
+
+  if (parsed.files === undefined) {
+    // Without a files list npm's default allowlist is broad. Watching the package directory is
+    // safer than guessing which default inclusion rule a future npm version will apply.
+    targets.add(directory);
+  } else {
+    if (!Array.isArray(parsed.files) || !parsed.files.every((entry) => typeof entry === "string"))
+      throw new Error(`TN_PUBLISH_FILES_MALFORMED: ${manifest} has a non-string files list.`);
+    for (const entry of parsed.files) targets.add(path.join(directory, entry));
+  }
+  return [...targets];
+}
+
+/** Commits touching a package's build source or publication inputs since a timestamp. */
 export type SourceCommits = (directory: string, since: string) => number;
 
 export function gitSourceCommits(repo: string): SourceCommits {
   return (directory, since) => {
-    const source = path.join(directory, "src");
-    const targets = [
-      ...(fs.existsSync(source) ? [source] : [directory]),
-      ...(fs.existsSync(path.join(directory, "templates"))
-        ? [path.join(directory, "templates")]
-        : []),
-    ];
+    const targets = publicationInputTargets(directory);
     const stdout = execFileSync(
       "git",
       [
