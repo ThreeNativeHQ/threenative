@@ -1,5 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { expect, test } from 'vitest';
 
 const workflow = readFileSync(
@@ -158,6 +161,62 @@ test('clean desktop consumer provisions software Vulkan and prints its log on fa
   expect(launch).toContain(`trap 'status=$?; trap - ERR; cat "$log"; exit "$status"' ERR`);
   expect(launch.indexOf('cat "$log"')).toBeLessThan(launch.indexOf('scripts/xvfb.sh'));
   expect(launch).toContain('trap - ERR');
+});
+
+test('release gate rejects stale or missing exact candidate CI evidence', () => {
+  const gate = releaseWorkflow.match(
+    /- name: Require a green CI run for this commit[\s\S]*?\n {8}run: \|\n([\s\S]*?)\n\n {2}build:/u,
+  )?.[1]
+    .split('\n')
+    .map((line) => line.replace(/^ {10}/u, ''))
+    .join('\n');
+  expect(gate).toBeDefined();
+  expect(releaseWorkflow).toContain('--json databaseId,status,conclusion,event,headBranch,headSha');
+
+  const directory = makeTempDirSync('threenative-prd-078-gate-');
+  const gh = join(directory, 'gh');
+  writeFileSync(gh, '#!/bin/sh\nprintf \'%s\' "$MOCK_GH_RUNS"\n');
+  chmodSync(gh, 0o755);
+  const candidateSha = 'candidate-sha';
+  const run = (runs) => spawnSync('bash', ['-euo', 'pipefail', '-c', gate], {
+    env: {
+      ...process.env,
+      GITHUB_REPOSITORY: 'ThreeNativeHQ/threenative',
+      GITHUB_SHA: candidateSha,
+      MOCK_GH_RUNS: JSON.stringify(runs),
+      PATH: `${directory}:${process.env.PATH}`,
+    },
+    encoding: 'utf8',
+  });
+
+  const candidateRun = {
+    status: 'completed',
+    conclusion: 'success',
+    event: 'push',
+    headBranch: 'main',
+    headSha: candidateSha,
+  };
+  expect(run([{ ...candidateRun, databaseId: 123 }]).status).toBe(0);
+  const stale = run([{
+    databaseId: 124,
+    status: 'completed',
+    conclusion: 'success',
+    event: 'push',
+    headBranch: 'main',
+    headSha: 'different-sha',
+  }]);
+  expect(stale.status).not.toBe(0);
+  expect(stale.stderr).toContain(candidateSha);
+  const missing = run([]);
+  expect(missing.status).not.toBe(0);
+  expect(missing.stderr).toContain(candidateSha);
+  for (const databaseId of [null, '123', 0, -1, 1.5]) {
+    const malformed = run([{ ...candidateRun, databaseId }]);
+    expect(malformed.status).not.toBe(0);
+    expect(malformed.stderr).toContain(candidateSha);
+  }
+  const missingDatabaseId = run([candidateRun]);
+  expect(missingDatabaseId.status).not.toBe(0);
 });
 
 test('worker idle wake gate ships in the native package suite without requiring CMake', () => {
