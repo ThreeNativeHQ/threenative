@@ -235,6 +235,35 @@ Pixel 8 was unreachable.
 
 ---
 
+## PRD-360 corrected explicit warm-up boundary — 2026-09-08
+
+The one bounded object-granularity validation was repeated after fixing a first-use race in
+`packages/core/src/game.ts:860`, `:1138`, `:1171` and `:1262`. A held native frame could arrive
+after an explicit warm-up began but before it settled; the render path now keeps first-use compute
+and world presentation behind that same boundary. The regression is at
+`packages/core/__tests__/game.spec.ts:545`.
+
+The unchanged Bayview source temporarily selected the existing object granularity. The qualified
+Pixel 8 run used APK SHA-256
+`2a64ede5cf0699580e8e62506b054f0c8e046c7084fb4244f42ea5c6b1394496`, with 81% battery,
+discharging status, thermal status `NONE`, and battery temperature 33.5 °C to 33.9 °C. The
+existing movement scenario passed at **2.146682 m** with zero diagnostics. The full raw receipt is
+[`android-object-corrected-receipt.json.gz`](prd-360-warmup-cache-2026-09-07/android-object-corrected-receipt.json.gz).
+
+| marker | observed |
+| --- | ---: |
+| `TN_WARMUP` compiled / slices / elapsed | 494 / 21 / 11,659 ms |
+| `TN_COLD_START.first_frame` | 19,629.400 ms |
+| `TN_PUMP_SILENCE.maxGapMs` / trailing gap | 2,339.194 / 5,551.419 ms |
+| movement `TN_PUMP_ENDPOINT.maxGapMs` | 5,560.916 ms |
+
+There was one `TN_WARMUP` marker and no `TN_STARTUP_WARMUP` marker, so the duplicate fallback pass
+was removed. The run still misses the 8,000 ms launch and 250 ms pump criteria. It is a corrected
+validation receipt, not a three-launch cold-install median; the object option was removed from the
+sandbox after measurement and remains opt-in.
+
+---
+
 ## Android: the GPU meter reports on a Pixel 8 — 2026-09-01
 
 **First GPU reading taken from a phone by the instrument rather than by ablation arithmetic.**
