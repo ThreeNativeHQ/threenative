@@ -54,6 +54,8 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build the workspace packages before comparing published bytes
+        run: pnpm build
       - name: Write the request and workflow-derived availability
         env:
           CANDIDATE_REQUEST: ${{ inputs.candidate_request }}

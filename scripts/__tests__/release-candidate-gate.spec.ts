@@ -1,4 +1,8 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   type IRegistryObservation,
@@ -11,6 +15,10 @@ import {
   REQUIRED_HOSTED_CAPABILITIES,
   expectedGithubSubjects,
   expectedReleasePackages,
+  expectedReleaseReportReference,
+  expectedReleaseReportSubjects,
+  normalizedPackageTreeHash,
+  parseEvidenceReport,
   registryPackageObservation,
   resolveReleaseCandidate,
   validateReleaseCandidate,
@@ -18,6 +26,23 @@ import {
 } from "../release-candidate-gate.js";
 
 const CANDIDATE_SHA = "a".repeat(40);
+
+function packageTarball(): Buffer {
+  const root = mkdtempSync(join(tmpdir(), "threenative-release-test-"));
+  try {
+    mkdirSync(join(root, "package"));
+    writeFileSync(
+      join(root, "package", "package.json"),
+      JSON.stringify({ name: "@threenative/core", version: "0.3.0" }),
+    );
+    writeFileSync(join(root, "package", "README.md"), "release fixture\n");
+    const archive = join(root, "package.tgz");
+    execFileSync("tar", ["-czf", archive, "-C", root, "package"]);
+    return readFileSync(archive);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
 
 function candidate(overrides: Partial<IReleaseCandidate> = {}): IReleaseCandidate {
   const packages = expectedReleasePackages().map((item) => ({
@@ -52,24 +77,28 @@ function candidate(overrides: Partial<IReleaseCandidate> = {}): IReleaseCandidat
       },
     },
     parity: {
+      reportSchemaVersion: 1,
+      reportType: "parity",
       candidateSha: CANDIDATE_SHA,
       verdict: "PASS",
       reportSha256: "b".repeat(64),
       sourceRunId: 102,
       sourceWorkflowPath: ".github/workflows/native-platforms.yml",
-      artifactName: "parity-report",
-      artifactPath: "parity.json",
-      subjects: ["parity.json"],
+      artifactName: "native-release-parity",
+      artifactPath: "reports/parity.json",
+      subjects: expectedReleaseReportSubjects("parity"),
     },
     provenance: {
+      reportSchemaVersion: 1,
+      reportType: "provenance",
       candidateSha: CANDIDATE_SHA,
       verdict: "PASS",
       reportSha256: "c".repeat(64),
       sourceRunId: 102,
       sourceWorkflowPath: ".github/workflows/native-platforms.yml",
-      artifactName: "provenance-report",
-      artifactPath: "provenance.json",
-      subjects: ["sbom.json", "provenance.json"],
+      artifactName: "native-release-provenance",
+      artifactPath: "reports/provenance.json",
+      subjects: expectedReleaseReportSubjects("provenance"),
     },
     subjects: {
       github: expectedGithubSubjects(),
@@ -104,6 +133,68 @@ describe("release candidate gate", () => {
       errors: [],
       blockers: [],
     });
+  });
+
+  it("should reject a report wrapper with an arbitrary artifact contract or subject set", () => {
+    const invalid = candidate({
+      parity: {
+        ...candidate().parity,
+        artifactName: "arbitrary-report",
+        artifactPath: "arbitrary.json",
+        subjects: ["arbitrary.json"],
+      },
+    });
+
+    const result = validateReleaseCandidate(invalid, "ThreeNativeHQ/threenative");
+
+    expect(result.status).toBe("FAIL");
+    expect(result.exitCode).toBe(1);
+    expect(result.errors.join("\n")).toMatch(/parity|artifact|subject/i);
+  });
+
+  it("should reject a minimal PASS payload that omits the parity target evidence", () => {
+    const payload = {
+      candidateSha: CANDIDATE_SHA,
+      verdict: "PASS",
+      subjects: expectedReleaseReportSubjects("parity"),
+    };
+
+    expect(() =>
+      parseEvidenceReport(
+        Buffer.from(JSON.stringify(payload)),
+        CANDIDATE_SHA,
+        "reports/parity.json",
+        "parity",
+      ),
+    ).toThrow(/schemaVersion|targetReports|registrySha256/i);
+  });
+
+  it("should reject provenance evidence with an incomplete subject hash set", () => {
+    const subjects = expectedReleaseReportSubjects("provenance");
+    const payload = {
+      schemaVersion: 1,
+      reportType: "provenance",
+      candidateSha: CANDIDATE_SHA,
+      verdict: "PASS",
+      subjects,
+      subjectHashes: Object.fromEntries(
+        subjects.slice(1).map((subject) => [subject, "a".repeat(64)]),
+      ),
+      dependencyLockSha256: "a".repeat(64),
+      sbomSha256: "a".repeat(64),
+      licenseInventorySha256: "a".repeat(64),
+      pnpmLockSha256: "a".repeat(64),
+      cargoLockSha256: "a".repeat(64),
+    };
+
+    expect(() =>
+      parseEvidenceReport(
+        Buffer.from(JSON.stringify(payload)),
+        CANDIDATE_SHA,
+        "reports/provenance.json",
+        "provenance",
+      ),
+    ).toThrow(/subjectHashes/i);
   });
 
   it("should reject unknown missing or secret-bearing release candidate fields", () => {
@@ -246,6 +337,7 @@ describe("release candidate gate", () => {
       state: "matching",
       integrity: "sha512-actual",
       packedSha256: "d".repeat(64),
+      normalizedSha256: "a".repeat(64),
     };
     const invalid = candidate({
       packageCohort: [
@@ -254,6 +346,7 @@ describe("release candidate gate", () => {
           registryState: "matching",
           integrity: "sha512-claimed",
           packedSha256: "e".repeat(64),
+          normalizedSha256: "f".repeat(64),
         },
         ...candidate().packageCohort.slice(1),
       ],
@@ -265,7 +358,7 @@ describe("release candidate gate", () => {
   });
 
   it("should hash the registry tarball against npm integrity metadata", async () => {
-    const contents = Buffer.from("registry tarball fixture");
+    const contents = packageTarball();
     const integrity = `sha512-${createHash("sha512").update(contents).digest("base64")}`;
     const fetchMock = vi.fn(async (input: string | URL) => {
       if (String(input).startsWith("https://registry.npmjs.org/%40threenative%2Fcore"))
@@ -280,7 +373,7 @@ describe("release candidate gate", () => {
             },
           }),
         );
-      return new Response(contents);
+      return new Response(new Uint8Array(contents));
     });
     vi.stubGlobal("fetch", fetchMock);
     try {
@@ -288,6 +381,7 @@ describe("release candidate gate", () => {
         state: "matching",
         integrity,
         packedSha256: createHash("sha256").update(contents).digest("hex"),
+        normalizedSha256: normalizedPackageTreeHash(contents, "@threenative/core", "0.3.0"),
       });
     } finally {
       vi.unstubAllGlobals();
@@ -304,16 +398,10 @@ describe("release candidate gate", () => {
       requiredRunIds: { ci: 201, native: 202 },
       reportArtifacts: {
         parity: {
-          runId: 202,
-          workflowPath: ".github/workflows/native-platforms.yml",
-          artifactName: "parity",
-          artifactPath: "parity.json",
+          ...expectedReleaseReportReference("parity", 202),
         },
         provenance: {
-          runId: 202,
-          workflowPath: ".github/workflows/native-platforms.yml",
-          artifactName: "provenance",
-          artifactPath: "provenance.json",
+          ...expectedReleaseReportReference("provenance", 202),
         },
       },
     };
@@ -341,7 +429,10 @@ describe("release candidate gate", () => {
       _repository: string,
       sha: string,
       reference: IReleaseReportReference,
+      reportType: "parity" | "provenance",
     ): IReleaseReport => ({
+      reportSchemaVersion: 1,
+      reportType,
       candidateSha: sha,
       verdict: "PASS",
       reportSha256: "f".repeat(64),
@@ -349,7 +440,7 @@ describe("release candidate gate", () => {
       sourceWorkflowPath: reference.workflowPath,
       artifactName: reference.artifactName,
       artifactPath: reference.artifactPath,
-      subjects: [reference.artifactPath],
+      subjects: expectedReleaseReportSubjects(reportType),
     });
     const absent = async (): Promise<IRegistryObservation> => ({ state: "absent" });
 
@@ -372,5 +463,80 @@ describe("release candidate gate", () => {
     expect(validateReleaseCandidate(resolved, request.repository, CANDIDATE_SHA, 203).status).toBe(
       "PASS",
     );
+  });
+
+  it("should reject registry bytes whose normalized package tree differs from the workspace", async () => {
+    const request: IReleaseCandidateRequest = {
+      schemaVersion: 1,
+      repository: "ThreeNativeHQ/threenative",
+      tag: "runtime-native-v0.3.0",
+      candidateSha: CANDIDATE_SHA,
+      runtimeVersion: "0.3.0",
+      requiredRunIds: { ci: 201, native: 202 },
+      reportArtifacts: {
+        parity: {
+          ...expectedReleaseReportReference("parity", 202),
+        },
+        provenance: {
+          ...expectedReleaseReportReference("provenance", 202),
+        },
+      },
+    };
+    const availability = {
+      credentials: Object.fromEntries(REQUIRED_CREDENTIALS.map((name) => [name, true])),
+      hostedCapabilities: Object.fromEntries(
+        REQUIRED_HOSTED_CAPABILITIES.map((name) => [name, true]),
+      ),
+    };
+    const run = (
+      _repository: string,
+      runId: number,
+      _sha: string,
+      workflowPath: string,
+    ): IReleaseRun => ({
+      databaseId: runId,
+      status: "completed",
+      conclusion: "success",
+      event: "push",
+      headBranch: "main",
+      headSha: CANDIDATE_SHA,
+      workflowPath,
+    });
+    const report = (
+      _repository: string,
+      sha: string,
+      reference: IReleaseReportReference,
+      reportType: "parity" | "provenance",
+    ): IReleaseReport => ({
+      reportSchemaVersion: 1,
+      reportType,
+      candidateSha: sha,
+      verdict: "PASS",
+      reportSha256: "f".repeat(64),
+      sourceRunId: reference.runId,
+      sourceWorkflowPath: reference.workflowPath,
+      artifactName: reference.artifactName,
+      artifactPath: reference.artifactPath,
+      subjects: expectedReleaseReportSubjects(reportType),
+    });
+    const matching = async (): Promise<IRegistryObservation> => ({
+      state: "matching",
+      integrity: "sha512-actual",
+      packedSha256: "d".repeat(64),
+      normalizedSha256: "e".repeat(64),
+    });
+
+    await expect(
+      resolveReleaseCandidate({
+        request,
+        availability,
+        invokingSha: CANDIDATE_SHA,
+        producerRunId: 203,
+        resolveRun: run,
+        resolveReport: report,
+        registryLookup: matching,
+        workspacePackageHash: async () => "f".repeat(64),
+      }),
+    ).rejects.toThrow(/normalized|workspace|package/i);
   });
 });

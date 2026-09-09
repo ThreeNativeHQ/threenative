@@ -55,6 +55,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The release-candidate gate removes its downloaded report staging directory in finally.",
   ],
   [
+    "scripts/__tests__/release-candidate-gate.spec.ts",
+    "The release-candidate tests remove their tarball fixture staging directory in finally.",
+  ],
+  [
     "scripts/verify-registry-install.ts",
     "The production registry probe removes its parent in finally.",
   ],

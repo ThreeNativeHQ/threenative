@@ -1,9 +1,18 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { gunzipSync } from "node:zlib";
 import { publicWorkspacePackages } from "./workspace-packages.js";
 
 const REPO = resolve(import.meta.dirname, "..");
@@ -40,12 +49,15 @@ type CredentialName = (typeof REQUIRED_CREDENTIALS)[number];
 type HostedCapabilityName = (typeof REQUIRED_HOSTED_CAPABILITIES)[number];
 type RegistryState = "absent" | "matching";
 
+export type ReleaseReportType = "parity" | "provenance";
+
 export interface IReleasePackage {
   readonly name: string;
   readonly version: string;
   readonly registryState: RegistryState;
   readonly integrity?: string;
   readonly packedSha256?: string;
+  readonly normalizedSha256?: string;
 }
 
 export interface IReleaseRun {
@@ -59,6 +71,8 @@ export interface IReleaseRun {
 }
 
 export interface IReleaseReport {
+  readonly reportSchemaVersion: 1;
+  readonly reportType: ReleaseReportType;
   readonly candidateSha: string;
   readonly verdict: "PASS";
   readonly reportSha256: string;
@@ -135,6 +149,7 @@ export interface IRegistryObservation {
   readonly state: RegistryState;
   readonly integrity?: string;
   readonly packedSha256?: string;
+  readonly normalizedSha256?: string;
 }
 
 export interface IReleaseCandidateResolutionOptions {
@@ -154,11 +169,16 @@ export interface IReleaseCandidateResolutionOptions {
     repository: string,
     candidateSha: string,
     reference: IReleaseReportReference,
+    reportType: ReleaseReportType,
   ) => IReleaseReport | Promise<IReleaseReport>;
   readonly registryLookup?: (
     packageName: string,
     version: string,
   ) => IRegistryObservation | Promise<IRegistryObservation>;
+  readonly workspacePackageHash?: (
+    packageName: string,
+    version: string,
+  ) => string | Promise<string>;
 }
 
 type RecordValue = Record<string, unknown>;
@@ -186,7 +206,14 @@ const CANDIDATE_KEYS = [
   "hostedCapabilities",
   "resolution",
 ];
-const PACKAGE_KEYS = ["name", "version", "registryState", "integrity", "packedSha256"];
+const PACKAGE_KEYS = [
+  "name",
+  "version",
+  "registryState",
+  "integrity",
+  "packedSha256",
+  "normalizedSha256",
+];
 const RUN_KEYS = [
   "databaseId",
   "status",
@@ -197,6 +224,8 @@ const RUN_KEYS = [
   "workflowPath",
 ];
 const REPORT_KEYS = [
+  "reportSchemaVersion",
+  "reportType",
   "candidateSha",
   "verdict",
   "reportSha256",
@@ -227,6 +256,15 @@ const REQUEST_KEYS = [
   "reportArtifacts",
 ];
 const REPORT_REFERENCE_KEYS = ["runId", "workflowPath", "artifactName", "artifactPath"];
+
+const PARITY_REPORT_SUBJECTS = ["android", "desktop", "web"] as const;
+const PROVENANCE_REPORT_SHA_FIELDS = [
+  "dependencyLockSha256",
+  "sbomSha256",
+  "licenseInventorySha256",
+  "pnpmLockSha256",
+  "cargoLockSha256",
+] as const;
 
 function isRecord(value: unknown): value is RecordValue {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -354,6 +392,7 @@ function validateReport(
   value: unknown,
   where: string,
   candidateSha: string | undefined,
+  reportType: ReleaseReportType,
   errors: string[],
 ): value is IReleaseReport {
   if (!isRecord(value)) {
@@ -361,6 +400,9 @@ function validateReport(
     return false;
   }
   checkKeys(value, REPORT_KEYS, where, errors);
+  const contract = releaseReportContract(reportType);
+  if (value.reportSchemaVersion !== 1) errors.push(`${where}.reportSchemaVersion must be 1.`);
+  if (value.reportType !== reportType) errors.push(`${where}.reportType must be '${reportType}'.`);
   const reportCandidateSha = shaValue(value.candidateSha, `${where}.candidateSha`, errors);
   if (
     reportCandidateSha !== undefined &&
@@ -376,21 +418,17 @@ function validateReport(
     `${where}.sourceWorkflowPath`,
     errors,
   );
-  if (
-    sourceWorkflowPath !== undefined &&
-    !Object.values(REQUIRED_RUN_WORKFLOWS).includes(
-      sourceWorkflowPath as (typeof REQUIRED_RUN_WORKFLOWS)[keyof typeof REQUIRED_RUN_WORKFLOWS],
-    )
-  )
-    errors.push(`${where}.sourceWorkflowPath is not an approved evidence workflow.`);
-  safeArtifactName(value.artifactName, `${where}.artifactName`, errors);
-  safeArtifactPath(value.artifactPath, `${where}.artifactPath`, errors);
-  if (!Array.isArray(value.subjects) || value.subjects.length === 0) {
-    errors.push(`${where}.subjects must contain at least one subject.`);
-  } else {
-    for (const [index, subject] of value.subjects.entries())
-      stringValue(subject, `${where}.subjects[${index}]`, errors);
-  }
+  if (sourceWorkflowPath !== contract.workflowPath)
+    errors.push(`${where}.sourceWorkflowPath must equal '${contract.workflowPath}'.`);
+  const artifactName = safeArtifactName(value.artifactName, `${where}.artifactName`, errors);
+  if (artifactName !== undefined && artifactName !== contract.artifactName)
+    errors.push(`${where}.artifactName must equal '${contract.artifactName}'.`);
+  const artifactPath = safeArtifactPath(value.artifactPath, `${where}.artifactPath`, errors);
+  if (artifactPath !== undefined && artifactPath !== contract.artifactPath)
+    errors.push(`${where}.artifactPath must equal '${contract.artifactPath}'.`);
+  const subjects = uniqueStrings(value.subjects, `${where}.subjects`, errors);
+  if (JSON.stringify([...subjects].sort()) !== JSON.stringify([...contract.subjects].sort()))
+    errors.push(`${where}.subjects must exactly equal the ${reportType} report subject set.`);
   return true;
 }
 
@@ -453,15 +491,21 @@ function validatePackageMetadata(
     errors.push(`${where}.integrity must be an npm integrity value.`);
   if (value.packedSha256 !== undefined)
     sha256Value(value.packedSha256, `${where}.packedSha256`, errors);
+  if (value.normalizedSha256 !== undefined)
+    sha256Value(value.normalizedSha256, `${where}.normalizedSha256`, errors);
   if (registryState === "absent" && value.integrity !== undefined)
     errors.push(`${where}.integrity must be omitted when the registry version is absent.`);
   if (registryState === "absent" && value.packedSha256 !== undefined)
     errors.push(`${where}.packedSha256 must be omitted when the registry version is absent.`);
+  if (registryState === "absent" && value.normalizedSha256 !== undefined)
+    errors.push(`${where}.normalizedSha256 must be omitted when the registry version is absent.`);
   if (registryState !== "matching") return;
   if (value.integrity === undefined)
     errors.push(`${where}.integrity is required for matching registry bytes.`);
   if (value.packedSha256 === undefined)
     errors.push(`${where}.packedSha256 is required for matching registry bytes.`);
+  if (value.normalizedSha256 === undefined)
+    errors.push(`${where}.normalizedSha256 is required for matching registry bytes.`);
 }
 
 function validatePackageEntry(
@@ -493,6 +537,9 @@ function validatePackageEntry(
     registryState,
     ...(typeof value.integrity === "string" ? { integrity: value.integrity } : {}),
     ...(typeof value.packedSha256 === "string" ? { packedSha256: value.packedSha256 } : {}),
+    ...(typeof value.normalizedSha256 === "string"
+      ? { normalizedSha256: value.normalizedSha256 }
+      : {}),
   };
 }
 
@@ -506,6 +553,52 @@ export function expectedReleasePackages(repo = REPO): readonly IReleasePackage[]
 
 export function expectedGithubSubjects(): readonly string[] {
   return ["prebuilt-lock.json", ...Object.values(PREBUILT_ASSET_NAMES)].sort();
+}
+
+interface IReleaseReportContract {
+  readonly artifactName: string;
+  readonly artifactPath: string;
+  readonly reportType: ReleaseReportType;
+  readonly subjects: readonly string[];
+  readonly workflowPath: string;
+}
+
+const RELEASE_REPORT_CONTRACTS: Readonly<Record<ReleaseReportType, IReleaseReportContract>> = {
+  parity: {
+    artifactName: "native-release-parity",
+    artifactPath: "reports/parity.json",
+    reportType: "parity",
+    subjects: PARITY_REPORT_SUBJECTS,
+    workflowPath: ".github/workflows/native-platforms.yml",
+  },
+  provenance: {
+    artifactName: "native-release-provenance",
+    artifactPath: "reports/provenance.json",
+    reportType: "provenance",
+    subjects: expectedGithubSubjects(),
+    workflowPath: ".github/workflows/native-platforms.yml",
+  },
+};
+
+function releaseReportContract(reportType: ReleaseReportType): IReleaseReportContract {
+  return RELEASE_REPORT_CONTRACTS[reportType];
+}
+
+export function expectedReleaseReportSubjects(reportType: ReleaseReportType): readonly string[] {
+  return [...releaseReportContract(reportType).subjects];
+}
+
+export function expectedReleaseReportReference(
+  reportType: ReleaseReportType,
+  runId: number,
+): IReleaseReportReference {
+  const contract = releaseReportContract(reportType);
+  return {
+    runId,
+    workflowPath: contract.workflowPath,
+    artifactName: contract.artifactName,
+    artifactPath: contract.artifactPath,
+  };
 }
 
 function validatePackageCohort(
@@ -609,8 +702,8 @@ function validateRequiredEvidence(
     )
       evidenceRuns.set(native.databaseId, native.workflowPath);
   } else errors.push("requiredRuns must contain ci and native objects.");
-  validateReport(input.parity, "parity", candidateSha, errors);
-  validateReport(input.provenance, "provenance", candidateSha, errors);
+  validateReport(input.parity, "parity", candidateSha, "parity", errors);
+  validateReport(input.provenance, "provenance", candidateSha, "provenance", errors);
   validateReportSource(input.parity, "parity", evidenceRuns, errors);
   validateReportSource(input.provenance, "provenance", evidenceRuns, errors);
   validateBooleanMap(input.credentials, "credentials", REQUIRED_CREDENTIALS, errors, blockers);
@@ -753,6 +846,7 @@ function approvedWorkflowPath(value: string, where: string, errors: string[]): v
 function parseReportReference(
   value: unknown,
   where: string,
+  reportType: ReleaseReportType,
   errors: string[],
 ): IReleaseReportReference | undefined {
   if (!isRecord(value)) {
@@ -766,6 +860,13 @@ function parseReportReference(
     approvedWorkflowPath(workflowPath, `${where}.workflowPath`, errors);
   const artifactName = safeArtifactName(value.artifactName, `${where}.artifactName`, errors);
   const artifactPath = safeArtifactPath(value.artifactPath, `${where}.artifactPath`, errors);
+  const contract = releaseReportContract(reportType);
+  if (workflowPath !== undefined && workflowPath !== contract.workflowPath)
+    errors.push(`${where}.workflowPath must equal '${contract.workflowPath}'.`);
+  if (artifactName !== undefined && artifactName !== contract.artifactName)
+    errors.push(`${where}.artifactName must equal '${contract.artifactName}'.`);
+  if (artifactPath !== undefined && artifactPath !== contract.artifactPath)
+    errors.push(`${where}.artifactPath must equal '${contract.artifactPath}'.`);
   if (runId === undefined || workflowPath === undefined || artifactName === undefined)
     return undefined;
   if (artifactPath === undefined) return undefined;
@@ -847,10 +948,11 @@ function parseRequestArtifacts(
   }
   checkKeys(value, ["parity", "provenance"], "request.reportArtifacts", errors);
   return {
-    parity: parseReportReference(value.parity, "request.reportArtifacts.parity", errors),
+    parity: parseReportReference(value.parity, "request.reportArtifacts.parity", "parity", errors),
     provenance: parseReportReference(
       value.provenance,
       "request.reportArtifacts.provenance",
+      "provenance",
       errors,
     ),
   };
@@ -966,11 +1068,12 @@ function artifactFilePath(directory: string, artifactPath: string): string {
   return file;
 }
 
-function parseEvidenceReport(
-  contents: Buffer,
-  candidateSha: string,
-  artifactPath: string,
-): { readonly candidateSha: string; readonly subjects: readonly string[] } {
+interface IParsedEvidenceReport {
+  readonly candidateSha: string;
+  readonly subjects: readonly string[];
+}
+
+function parseEvidenceJson(contents: Buffer, artifactPath: string): RecordValue {
   let parsed: unknown;
   try {
     parsed = JSON.parse(contents.toString("utf8"));
@@ -979,12 +1082,118 @@ function parseEvidenceReport(
   }
   if (!isRecord(parsed))
     resolutionFailure(`evidence artifact '${artifactPath}' must contain an object.`);
-  const errors: string[] = [];
+  return parsed;
+}
+
+function validateEvidenceIdentity(
+  parsed: RecordValue,
+  candidateSha: string,
+  artifactPath: string,
+  reportType: ReleaseReportType,
+  errors: string[],
+): readonly string[] {
+  const contract = releaseReportContract(reportType);
+  const expectedKeys =
+    reportType === "parity"
+      ? [
+          "schemaVersion",
+          "reportType",
+          "candidateSha",
+          "verdict",
+          "subjects",
+          "registrySha256",
+          "targetReports",
+        ]
+      : [
+          "schemaVersion",
+          "reportType",
+          "candidateSha",
+          "verdict",
+          "subjects",
+          "subjectHashes",
+          ...PROVENANCE_REPORT_SHA_FIELDS,
+        ];
+  checkKeys(parsed, expectedKeys, `${reportType} evidence report`, errors);
+  if (parsed.schemaVersion !== 1) errors.push(`${artifactPath}.schemaVersion must equal 1.`);
+  if (parsed.reportType !== reportType)
+    errors.push(`${artifactPath}.reportType must equal '${reportType}'.`);
   const observedSha = shaValue(parsed.candidateSha, `${artifactPath}.candidateSha`, errors);
   if (observedSha !== undefined && observedSha.toLowerCase() !== candidateSha.toLowerCase())
     errors.push(`${artifactPath}.candidateSha must equal the requested candidate SHA.`);
   if (parsed.verdict !== "PASS") errors.push(`${artifactPath}.verdict must equal 'PASS'.`);
   const subjects = uniqueStrings(parsed.subjects, `${artifactPath}.subjects`, errors);
+  if (JSON.stringify([...subjects].sort()) !== JSON.stringify([...contract.subjects].sort()))
+    errors.push(
+      `${artifactPath}.subjects must exactly equal the ${reportType} report subject set.`,
+    );
+  return subjects;
+}
+
+function validateParityEvidenceReport(
+  parsed: RecordValue,
+  artifactPath: string,
+  errors: string[],
+): void {
+  sha256Value(parsed.registrySha256, `${artifactPath}.registrySha256`, errors);
+  if (!isRecord(parsed.targetReports)) {
+    errors.push(`${artifactPath}.targetReports must contain android, desktop, and web reports.`);
+    return;
+  }
+  checkKeys(parsed.targetReports, PARITY_REPORT_SUBJECTS, `${artifactPath}.targetReports`, errors);
+  for (const target of PARITY_REPORT_SUBJECTS) {
+    const targetReport = parsed.targetReports[target];
+    if (!isRecord(targetReport)) {
+      errors.push(`${artifactPath}.targetReports.${target} must be an object.`);
+      continue;
+    }
+    checkKeys(
+      targetReport,
+      ["verdict", "reportSha256"],
+      `${artifactPath}.targetReports.${target}`,
+      errors,
+    );
+    if (targetReport.verdict !== "PASS")
+      errors.push(`${artifactPath}.targetReports.${target}.verdict must equal 'PASS'.`);
+    sha256Value(
+      targetReport.reportSha256,
+      `${artifactPath}.targetReports.${target}.reportSha256`,
+      errors,
+    );
+  }
+}
+
+function validateProvenanceEvidenceReport(
+  parsed: RecordValue,
+  artifactPath: string,
+  errors: string[],
+): void {
+  const contract = releaseReportContract("provenance");
+  if (!isRecord(parsed.subjectHashes)) {
+    errors.push(`${artifactPath}.subjectHashes must contain every provenance subject.`);
+  } else {
+    checkKeys(parsed.subjectHashes, contract.subjects, `${artifactPath}.subjectHashes`, errors);
+    for (const subject of contract.subjects)
+      sha256Value(
+        parsed.subjectHashes[subject],
+        `${artifactPath}.subjectHashes.${subject}`,
+        errors,
+      );
+  }
+  for (const field of PROVENANCE_REPORT_SHA_FIELDS)
+    sha256Value(parsed[field], `${artifactPath}.${field}`, errors);
+}
+
+export function parseEvidenceReport(
+  contents: Buffer,
+  candidateSha: string,
+  artifactPath: string,
+  reportType: ReleaseReportType,
+): IParsedEvidenceReport {
+  const parsed = parseEvidenceJson(contents, artifactPath);
+  const errors: string[] = [];
+  const subjects = validateEvidenceIdentity(parsed, candidateSha, artifactPath, reportType, errors);
+  if (reportType === "parity") validateParityEvidenceReport(parsed, artifactPath, errors);
+  else validateProvenanceEvidenceReport(parsed, artifactPath, errors);
   if (errors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", errors);
   return { candidateSha, subjects };
 }
@@ -994,6 +1203,7 @@ function reportFromDownloadedArtifact(
   repository: string,
   candidateSha: string,
   reference: IReleaseReportReference,
+  reportType: ReleaseReportType,
 ): IReleaseReport {
   const sourceRun = resolveRunFromGithub(
     repo,
@@ -1027,8 +1237,10 @@ function reportFromDownloadedArtifact(
     }
     const file = artifactFilePath(directory, reference.artifactPath);
     const contents = readFileSync(file);
-    const report = parseEvidenceReport(contents, candidateSha, reference.artifactPath);
+    const report = parseEvidenceReport(contents, candidateSha, reference.artifactPath, reportType);
     return {
+      reportSchemaVersion: 1,
+      reportType,
       candidateSha: report.candidateSha,
       verdict: "PASS",
       reportSha256: createHash("sha256").update(contents).digest("hex"),
@@ -1063,9 +1275,10 @@ function assertResolvedReport(
   where: string,
   candidateSha: string,
   reference: IReleaseReportReference,
+  reportType: ReleaseReportType,
 ): IReleaseReport {
   const errors: string[] = [];
-  validateReport(value, where, candidateSha, errors);
+  validateReport(value, where, candidateSha, reportType, errors);
   if (isRecord(value) && value.sourceRunId !== reference.runId)
     errors.push(`${where}.sourceRunId must equal report artifact run ${reference.runId}.`);
   if (isRecord(value) && value.sourceWorkflowPath !== reference.workflowPath)
@@ -1106,6 +1319,249 @@ async function registryJson(response: Response, description: string): Promise<Re
   }
   if (!isRecord(value)) resolutionFailure(`${description} must be an object.`);
   return value;
+}
+
+const TAR_BLOCK_SIZE = 512;
+
+function tarField(header: Buffer, offset: number, length: number): string {
+  return header
+    .subarray(offset, offset + length)
+    .toString("utf8")
+    .replace(/\0.*$/u, "");
+}
+
+function tarSize(header: Buffer, packageName: string, version: string): number {
+  const encoded = tarField(header, 124, 12).trim();
+  if (!/^\d+$/u.test(encoded))
+    resolutionFailure(
+      `npm registry tarball for ${packageName}@${version} has an invalid file size.`,
+    );
+  const size = Number.parseInt(encoded, 8);
+  if (!Number.isSafeInteger(size) || size < 0)
+    resolutionFailure(
+      `npm registry tarball for ${packageName}@${version} has an unsafe file size.`,
+    );
+  return size;
+}
+
+interface ITarOverrides {
+  readonly path?: string;
+  readonly size?: number;
+}
+
+function tarPaxFailure(packageName: string, version: string): never {
+  return resolutionFailure(
+    `npm registry tarball for ${packageName}@${version} has malformed PAX data.`,
+  );
+}
+
+function tarPaxRecord(
+  contents: Buffer,
+  offset: number,
+  packageName: string,
+  version: string,
+): { readonly key: string; readonly value: string; readonly nextOffset: number } {
+  const lineEnd = contents.indexOf(0x0a, offset);
+  const separator = contents.indexOf(0x20, offset);
+  if (lineEnd < 0 || separator < 0 || separator >= lineEnd) tarPaxFailure(packageName, version);
+  const length = Number.parseInt(contents.subarray(offset, separator).toString("ascii"), 10);
+  if (!Number.isSafeInteger(length) || length <= 0 || offset + length > contents.length)
+    tarPaxFailure(packageName, version);
+  const record = contents.subarray(offset, offset + length);
+  if (record[record.length - 1] !== 0x0a) tarPaxFailure(packageName, version);
+  const equals = record.indexOf(0x3d, separator - offset);
+  if (equals < 0) tarPaxFailure(packageName, version);
+  return {
+    key: record.subarray(separator - offset + 1, equals).toString("utf8"),
+    value: record.subarray(equals + 1, record.length - 1).toString("utf8"),
+    nextOffset: offset + length,
+  };
+}
+
+function tarOverrides(contents: Buffer, packageName: string, version: string): ITarOverrides {
+  const result: { path?: string; size?: number } = {};
+  for (let offset = 0; offset < contents.length; ) {
+    const record = tarPaxRecord(contents, offset, packageName, version);
+    if (record.key === "path") result.path = record.value;
+    if (record.key === "size") {
+      if (!/^\d+$/u.test(record.value))
+        resolutionFailure(
+          `npm registry tarball for ${packageName}@${version} has an invalid PAX size.`,
+        );
+      result.size = Number.parseInt(record.value, 10);
+      if (!Number.isSafeInteger(result.size) || result.size < 0)
+        resolutionFailure(
+          `npm registry tarball for ${packageName}@${version} has an unsafe PAX size.`,
+        );
+    }
+    offset = record.nextOffset;
+  }
+  return result;
+}
+
+function normalizedArchivePath(
+  value: string,
+  packageName: string,
+  version: string,
+): string | undefined {
+  const normalized = value.replaceAll("\\", "/");
+  if (normalized === "package" || normalized === "package/") return undefined;
+  if (!normalized.startsWith("package/"))
+    resolutionFailure(
+      `npm registry tarball for ${packageName}@${version} contains '${value}' outside package/.`,
+    );
+  const path = normalized.slice("package/".length);
+  if (
+    path.length === 0 ||
+    path.startsWith("/") ||
+    path.split("/").some((part) => part.length === 0 || part === "." || part === "..")
+  )
+    resolutionFailure(
+      `npm registry tarball for ${packageName}@${version} contains an unsafe package path '${value}'.`,
+    );
+  return path;
+}
+
+interface ITarEntry {
+  readonly data: Buffer;
+  readonly nextOffset: number;
+  readonly path: string;
+  readonly type: string;
+}
+
+function tarEntry(
+  archive: Buffer,
+  offset: number,
+  pending: ITarOverrides,
+  packageName: string,
+  version: string,
+): ITarEntry {
+  const header = archive.subarray(offset, offset + TAR_BLOCK_SIZE);
+  const name = tarField(header, 0, 100);
+  const prefix = tarField(header, 345, 155);
+  const headerPath = prefix.length === 0 ? name : `${prefix}/${name}`;
+  const headerSize = tarSize(header, packageName, version);
+  const type = header[156] === 0 ? "0" : String.fromCharCode(header[156] as number);
+  const dataStart = offset + TAR_BLOCK_SIZE;
+  const dataEnd = dataStart + (pending.size ?? headerSize);
+  if (dataEnd > archive.length)
+    resolutionFailure(`npm registry tarball for ${packageName}@${version} is truncated.`);
+  return {
+    data: archive.subarray(dataStart, dataEnd),
+    nextOffset: dataStart + Math.ceil((dataEnd - dataStart) / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE,
+    path:
+      type === "L"
+        ? archive.subarray(dataStart, dataEnd).toString("utf8").replace(/\0.*$/u, "")
+        : (pending.path ?? headerPath),
+    type,
+  };
+}
+
+function consumeTarEntry(
+  files: Map<string, Buffer>,
+  entry: ITarEntry,
+  pending: ITarOverrides,
+  packageName: string,
+  version: string,
+): ITarOverrides {
+  if (entry.type === "x") return tarOverrides(entry.data, packageName, version);
+  if (entry.type === "g") return {};
+  if (entry.type === "L") return { ...pending, path: entry.path };
+  const path = normalizedArchivePath(entry.path, packageName, version);
+  if (path === undefined || entry.type === "5") return {};
+  if (entry.type !== "0")
+    resolutionFailure(
+      `npm registry tarball for ${packageName}@${version} contains unsupported entry '${entry.path}'.`,
+    );
+  if (files.has(path))
+    resolutionFailure(`npm registry tarball for ${packageName}@${version} repeats '${path}'.`);
+  files.set(path, Buffer.from(entry.data));
+  return {};
+}
+
+function packageTreeArchive(
+  archive: Buffer,
+  packageName: string,
+  version: string,
+): ReadonlyMap<string, Buffer> {
+  const files = new Map<string, Buffer>();
+  let offset = 0;
+  let sawEnd = false;
+  let pending: ITarOverrides = {};
+  while (offset + TAR_BLOCK_SIZE <= archive.length) {
+    if (archive.subarray(offset, offset + TAR_BLOCK_SIZE).every((byte) => byte === 0)) {
+      sawEnd = true;
+      break;
+    }
+    const entry = tarEntry(archive, offset, pending, packageName, version);
+    offset = entry.nextOffset;
+    pending = consumeTarEntry(files, entry, pending, packageName, version);
+  }
+  if (!sawEnd || offset > archive.length)
+    resolutionFailure(
+      `npm registry tarball for ${packageName}@${version} has no valid end marker.`,
+    );
+  return files;
+}
+
+function validatePackageTreeMetadata(
+  files: ReadonlyMap<string, Buffer>,
+  packageName: string,
+  version: string,
+): void {
+  const packageJson = files.get("package.json");
+  if (packageJson === undefined)
+    resolutionFailure(`npm registry tarball for ${packageName}@${version} has no package.json.`);
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(packageJson.toString("utf8"));
+  } catch {
+    resolutionFailure(
+      `npm registry tarball for ${packageName}@${version} has invalid package.json.`,
+    );
+  }
+  if (!isRecord(manifest) || manifest.name !== packageName || manifest.version !== version)
+    resolutionFailure(
+      `npm registry tarball for ${packageName}@${version} has mismatched package metadata.`,
+    );
+}
+
+function packageTreeFiles(
+  contents: Buffer,
+  packageName: string,
+  version: string,
+): ReadonlyMap<string, Buffer> {
+  let archive: Buffer;
+  try {
+    archive = gunzipSync(contents);
+  } catch {
+    resolutionFailure(`npm registry tarball for ${packageName}@${version} is not valid gzip data.`);
+  }
+  const files = packageTreeArchive(archive, packageName, version);
+  validatePackageTreeMetadata(files, packageName, version);
+  return files;
+}
+
+/** Hashes the sorted package file tree, excluding tar headers and gzip metadata. */
+export function normalizedPackageTreeHash(
+  contents: Buffer,
+  packageName: string,
+  version: string,
+): string {
+  const files = packageTreeFiles(contents, packageName, version);
+  const hash = createHash("sha256");
+  for (const [path, file] of [...files.entries()].sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    const pathBytes = Buffer.from(path, "utf8");
+    hash.update(`${pathBytes.length}:`);
+    hash.update(pathBytes);
+    hash.update("\0");
+    hash.update(`${file.length}:`);
+    hash.update(file);
+    hash.update("\0");
+  }
+  return hash.digest("hex");
 }
 
 function registryDistribution(
@@ -1164,6 +1620,7 @@ function verifiedRegistryBytes(
     state: "matching",
     integrity,
     packedSha256: createHash("sha256").update(contents).digest("hex"),
+    normalizedSha256: normalizedPackageTreeHash(contents, packageName, version),
   };
 }
 
@@ -1199,6 +1656,41 @@ export async function registryPackageObservation(
   );
 }
 
+function workspacePackageTreeHash(repo: string, packageName: string, version: string): string {
+  const packageDirectory = publicWorkspacePackages(repo).find(
+    (item) => item.name === packageName,
+  )?.directory;
+  if (packageDirectory === undefined)
+    resolutionFailure(`workspace package ${packageName}@${version} is not present.`);
+  const destination = mkdtempSync(join(tmpdir(), "threenative-workspace-package-"));
+  try {
+    try {
+      execFileSync("pnpm", ["--filter", packageName, "pack", "--pack-destination", destination], {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch {
+      resolutionBlocked(`workspace package ${packageName}@${version} could not be packed.`);
+    }
+    const archives = readdirSync(destination).filter((entry) => entry.endsWith(".tgz"));
+    if (archives.length !== 1)
+      resolutionFailure(
+        `workspace package ${packageName}@${version} produced ${archives.length} package archives.`,
+      );
+    const archive = archives[0];
+    if (archive === undefined)
+      resolutionFailure(`workspace package ${packageName}@${version} was not packed.`);
+    return normalizedPackageTreeHash(
+      readFileSync(join(destination, archive)),
+      packageName,
+      version,
+    );
+  } finally {
+    rmSync(destination, { recursive: true, force: true });
+  }
+}
+
 function packageFromMatchingObservation(
   packageName: string,
   version: string,
@@ -1207,10 +1699,15 @@ function packageFromMatchingObservation(
 ): IReleasePackage {
   const integrity = observation.integrity;
   const packedSha256 = observation.packedSha256;
+  const normalizedSha256 = observation.normalizedSha256;
   if (typeof integrity !== "string" || !NPM_INTEGRITY_PATTERN.test(integrity))
     errors.push(`registry observation for ${packageName}@${version} has invalid integrity.`);
   if (typeof packedSha256 !== "string" || !SHA256_PATTERN.test(packedSha256))
     errors.push(`registry observation for ${packageName}@${version} has invalid tarball SHA-256.`);
+  if (typeof normalizedSha256 !== "string" || !SHA256_PATTERN.test(normalizedSha256))
+    errors.push(
+      `registry observation for ${packageName}@${version} has invalid normalized package SHA-256.`,
+    );
   if (errors.length === 0)
     return {
       name: packageName,
@@ -1218,6 +1715,7 @@ function packageFromMatchingObservation(
       registryState: "matching",
       integrity: integrity as string,
       packedSha256: packedSha256 as string,
+      normalizedSha256: normalizedSha256 as string,
     };
   if (errors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", errors);
   resolutionFailure(`registry observation for ${packageName}@${version} has no usable state.`);
@@ -1242,6 +1740,10 @@ function packageFromRegistryObservation(
     if (observation.packedSha256 !== undefined)
       errors.push(
         `registry observation for ${packageName}@${version} has unexpected tarball bytes.`,
+      );
+    if (observation.normalizedSha256 !== undefined)
+      errors.push(
+        `registry observation for ${packageName}@${version} has unexpected normalized package bytes.`,
       );
     if (errors.length === 0) return { name: packageName, version, registryState: "absent" };
   }
@@ -1268,6 +1770,13 @@ function compareRegistryObservation(
   )
     return [
       `registry tarball SHA-256 for ${item.name}@${item.version} does not match the candidate.`,
+    ];
+  if (
+    observed.registryState === "matching" &&
+    observed.normalizedSha256?.toLowerCase() !== item.normalizedSha256?.toLowerCase()
+  )
+    return [
+      `normalized package SHA-256 for ${item.name}@${item.version} does not match the candidate workspace tree.`,
     ];
   return [];
 }
@@ -1322,41 +1831,84 @@ export async function verifyRegistryCohort(
   return { errors, blockers };
 }
 
-export async function resolveReleaseCandidate(
-  options: IReleaseCandidateResolutionOptions,
-): Promise<IReleaseCandidate> {
-  const repo = resolve(options.repo ?? REPO);
-  const expectedRepository = options.expectedRepository;
-  const request = parseReleaseCandidateRequest(options.request, expectedRepository, repo);
-  const availability = parseReleaseAvailability(options.availability);
-  const identityErrors: string[] = [];
-  const invokingSha = shaValue(options.invokingSha, "invoking commit SHA", identityErrors);
-  const producerRunId = positiveId(options.producerRunId, "producer run ID", identityErrors);
-  if (invokingSha !== undefined && invokingSha.toLowerCase() !== request.candidateSha.toLowerCase())
-    identityErrors.push("request.candidateSha must equal the invoking workflow commit SHA.");
-  if (identityErrors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", identityErrors);
-
-  const registryLookup = options.registryLookup ?? registryPackageObservation;
-  const packageCohort: IReleasePackage[] = [];
-  for (const expectedPackage of expectedReleasePackages(repo)) {
-    let observation: IRegistryObservation;
-    try {
-      observation = await registryLookup(expectedPackage.name, expectedPackage.version);
-    } catch (error: unknown) {
-      if (error instanceof ReleaseCandidateResolutionError) throw error;
-      resolutionBlocked(
-        `registry observation for ${expectedPackage.name}@${expectedPackage.version} failed.`,
-      );
-    }
-    packageCohort.push(
-      packageFromRegistryObservation(expectedPackage.name, expectedPackage.version, observation),
+async function observeReleasePackage(
+  expectedPackage: IReleasePackage,
+  registryLookup: (
+    packageName: string,
+    version: string,
+  ) => IRegistryObservation | Promise<IRegistryObservation>,
+  localPackageHash: (packageName: string, version: string) => string | Promise<string>,
+): Promise<IReleasePackage> {
+  let observation: IRegistryObservation;
+  try {
+    observation = await registryLookup(expectedPackage.name, expectedPackage.version);
+  } catch (error: unknown) {
+    if (error instanceof ReleaseCandidateResolutionError) throw error;
+    resolutionBlocked(
+      `registry observation for ${expectedPackage.name}@${expectedPackage.version} failed.`,
     );
   }
+  const packageEntry = packageFromRegistryObservation(
+    expectedPackage.name,
+    expectedPackage.version,
+    observation,
+  );
+  if (packageEntry.registryState !== "matching") return packageEntry;
+  let workspaceHash: string;
+  try {
+    workspaceHash = await localPackageHash(expectedPackage.name, expectedPackage.version);
+  } catch (error: unknown) {
+    if (error instanceof ReleaseCandidateResolutionError) throw error;
+    resolutionBlocked(
+      `workspace package ${expectedPackage.name}@${expectedPackage.version} could not be hashed.`,
+    );
+  }
+  if (!SHA256_PATTERN.test(workspaceHash))
+    resolutionFailure(
+      `workspace package ${expectedPackage.name}@${expectedPackage.version} returned an invalid normalized package SHA-256.`,
+    );
+  if (workspaceHash.toLowerCase() !== packageEntry.normalizedSha256?.toLowerCase())
+    resolutionFailure(
+      `normalized package SHA-256 for ${expectedPackage.name}@${expectedPackage.version} does not match the workspace tree.`,
+    );
+  return packageEntry;
+}
 
-  const runResolver =
+async function resolvePackageCohort(
+  repo: string,
+  options: IReleaseCandidateResolutionOptions,
+): Promise<readonly IReleasePackage[]> {
+  const registryLookup = options.registryLookup ?? registryPackageObservation;
+  const localPackageHash =
+    options.workspacePackageHash ??
+    ((packageName: string, version: string) =>
+      workspacePackageTreeHash(repo, packageName, version));
+  const packages: IReleasePackage[] = [];
+  for (const expectedPackage of expectedReleasePackages(repo))
+    packages.push(await observeReleasePackage(expectedPackage, registryLookup, localPackageHash));
+  return packages;
+}
+
+function resolveRunResolver(
+  repo: string,
+  options: IReleaseCandidateResolutionOptions,
+): (
+  repository: string,
+  runId: number,
+  candidateSha: string,
+  workflowPath: string,
+) => IReleaseRun | Promise<IReleaseRun> {
+  return (
     options.resolveRun ??
     ((repository: string, runId: number, candidateSha: string, workflowPath: string) =>
-      resolveRunFromGithub(repo, repository, runId, candidateSha, workflowPath));
+      resolveRunFromGithub(repo, repository, runId, candidateSha, workflowPath))
+  );
+}
+
+async function resolveRequiredRuns(
+  request: IReleaseCandidateRequest,
+  runResolver: ReturnType<typeof resolveRunResolver>,
+): Promise<{ readonly ci: IReleaseRun; readonly native: IReleaseRun }> {
   const ci = assertResolvedRun(
     await runResolver(
       request.repository,
@@ -1381,26 +1933,77 @@ export async function resolveReleaseCandidate(
     request.candidateSha,
     REQUIRED_RUN_WORKFLOWS.native,
   );
-  const reportResolver =
+  return { ci, native };
+}
+
+function resolveReportResolver(
+  repo: string,
+  options: IReleaseCandidateResolutionOptions,
+): (
+  repository: string,
+  candidateSha: string,
+  reference: IReleaseReportReference,
+  reportType: ReleaseReportType,
+) => IReleaseReport | Promise<IReleaseReport> {
+  return (
     options.resolveReport ??
-    ((repository: string, candidateSha: string, reference: IReleaseReportReference) =>
-      reportFromDownloadedArtifact(repo, repository, candidateSha, reference));
+    ((
+      repository: string,
+      candidateSha: string,
+      reference: IReleaseReportReference,
+      reportType: ReleaseReportType,
+    ) => reportFromDownloadedArtifact(repo, repository, candidateSha, reference, reportType))
+  );
+}
+
+async function resolveReports(
+  request: IReleaseCandidateRequest,
+  reportResolver: ReturnType<typeof resolveReportResolver>,
+): Promise<{ readonly parity: IReleaseReport; readonly provenance: IReleaseReport }> {
   const parity = assertResolvedReport(
-    await reportResolver(request.repository, request.candidateSha, request.reportArtifacts.parity),
+    await reportResolver(
+      request.repository,
+      request.candidateSha,
+      request.reportArtifacts.parity,
+      "parity",
+    ),
     "parity",
     request.candidateSha,
     request.reportArtifacts.parity,
+    "parity",
   );
   const provenance = assertResolvedReport(
     await reportResolver(
       request.repository,
       request.candidateSha,
       request.reportArtifacts.provenance,
+      "provenance",
     ),
     "provenance",
     request.candidateSha,
     request.reportArtifacts.provenance,
+    "provenance",
   );
+  return { parity, provenance };
+}
+
+export async function resolveReleaseCandidate(
+  options: IReleaseCandidateResolutionOptions,
+): Promise<IReleaseCandidate> {
+  const repo = resolve(options.repo ?? REPO);
+  const expectedRepository = options.expectedRepository;
+  const request = parseReleaseCandidateRequest(options.request, expectedRepository, repo);
+  const availability = parseReleaseAvailability(options.availability);
+  const identityErrors: string[] = [];
+  const invokingSha = shaValue(options.invokingSha, "invoking commit SHA", identityErrors);
+  const producerRunId = positiveId(options.producerRunId, "producer run ID", identityErrors);
+  if (invokingSha !== undefined && invokingSha.toLowerCase() !== request.candidateSha.toLowerCase())
+    identityErrors.push("request.candidateSha must equal the invoking workflow commit SHA.");
+  if (identityErrors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", identityErrors);
+
+  const packageCohort = await resolvePackageCohort(repo, options);
+  const requiredRuns = await resolveRequiredRuns(request, resolveRunResolver(repo, options));
+  const reports = await resolveReports(request, resolveReportResolver(repo, options));
   const candidate: IReleaseCandidate = {
     schemaVersion: 1,
     repository: request.repository,
@@ -1408,9 +2011,9 @@ export async function resolveReleaseCandidate(
     candidateSha: request.candidateSha,
     runtimeVersion: request.runtimeVersion,
     packageCohort,
-    requiredRuns: { ci, native },
-    parity,
-    provenance,
+    requiredRuns,
+    parity: reports.parity,
+    provenance: reports.provenance,
     subjects: {
       github: expectedGithubSubjects(),
       npm: packageCohort.map((item) => `${item.name}@${item.version}`).sort(),
