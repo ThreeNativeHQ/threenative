@@ -13,6 +13,10 @@ const releaseWorkflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/native-release.yml', import.meta.url)),
   'utf8',
 );
+const candidateWorkflow = readFileSync(
+  fileURLToPath(new URL('../../../.github/workflows/release-candidate.yml', import.meta.url)),
+  'utf8',
+);
 const smokeScenario = (name) => JSON.parse(readFileSync(
   fileURLToPath(new URL(`../../../examples/native-smoke/playtests/${name}`, import.meta.url)),
   'utf8',
@@ -217,6 +221,62 @@ test('release gate rejects stale or missing exact candidate CI evidence', () => 
   }
   const missingDatabaseId = run([candidateRun]);
   expect(missingDatabaseId.status).not.toBe(0);
+});
+
+test('release side effects require the exact releaseCandidateV1 preflight', () => {
+  const preflight = 'pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json';
+  expect(releaseWorkflow).toContain(preflight);
+  expect(releaseWorkflow).toMatch(
+    /validate-tag:\n {4}outputs:\n {6}candidate_sha: \$\{\{ steps\.release-candidate\.outputs\.candidate_sha \}\}/u,
+  );
+  expect(releaseWorkflow).toContain('id: release-candidate');
+  expect(releaseWorkflow).toContain('echo "candidate_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"');
+
+  const job = (name) => {
+    const start = releaseWorkflow.indexOf(`  ${name}:`);
+    const tail = releaseWorkflow.slice(start + name.length + 3);
+    const next = tail.search(/\n {2}[a-z][a-z0-9-]*:/u);
+    return releaseWorkflow.slice(start, next < 0 ? undefined : start + name.length + 3 + next);
+  };
+  for (const name of [
+    'gates',
+    'build',
+    'build-android',
+    'build-ios-simulator',
+    'publish',
+    'clean-consumer',
+    'clean-consumer-ios',
+    'finalize',
+    'cleanup-failed-release',
+  ]) {
+    expect(job(name), `${name} must depend directly on validate-tag`).toMatch(/needs:[^\n]*validate-tag/u);
+  }
+  expect(releaseWorkflow.indexOf(preflight)).toBeLessThan(
+    releaseWorkflow.indexOf('pnpm --filter @threenative/runtime-native native:build'),
+  );
+  expect(releaseWorkflow.indexOf(preflight)).toBeLessThan(
+    releaseWorkflow.indexOf('gh release create'),
+  );
+});
+
+test('release consumes one successful exact-SHA candidate artifact and verifies registry bytes', () => {
+  expect(candidateWorkflow).toContain('workflow_dispatch:');
+  expect(candidateWorkflow).toContain('candidate_request:');
+  expect(candidateWorkflow).toContain('scripts/release-candidate-gate.ts resolve');
+  expect(candidateWorkflow).toContain('actions/upload-artifact@v7');
+  for (const token of [
+    'secrets.NPM_TOKEN != \'\'',
+    'secrets.WINDOWS_SIGNING_CERTIFICATE != \'\'',
+    'inputs.windows_runner',
+    'inputs.timestamp_service',
+  ]) {
+    expect(candidateWorkflow).toContain(token);
+  }
+  expect(releaseWorkflow).toContain('--workflow release-candidate.yml');
+  expect(releaseWorkflow).toContain('gh run download "$candidate_run"');
+  expect(releaseWorkflow).toContain('release-candidate-$GITHUB_SHA');
+  expect(releaseWorkflow).toContain('--producer-run-id "$PRODUCER_RUN_ID"');
+  expect(releaseWorkflow).toContain('--verify-registry');
 });
 
 test('worker idle wake gate ships in the native package suite without requiring CMake', () => {

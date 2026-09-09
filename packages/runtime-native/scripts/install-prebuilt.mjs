@@ -9,26 +9,29 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const packageVersion = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version;
 export const RELEASE_REPOSITORY = 'ThreeNativeHQ/threenative';
 
+/** Every asset a packaged consumer or native release workflow may request. */
+export const PREBUILT_ASSET_NAMES = Object.freeze({
+  'android-arm64-v8a-runtime': 'threenative-runtime-android-arm64-v8a.so',
+  'android-arm64-v8a-runtime-v8': 'threenative-runtime-android-arm64-v8a-v8.so',
+  'android-arm64-v8a-sdl3': 'threenative-sdl3-android-arm64-v8a.so',
+  'android-arm64-v8a-v8': 'threenative-v8-android-arm64-v8a.so',
+  'android-arm64-v8a-libcxx': 'threenative-libcxx-android-arm64-v8a.so',
+  'android-arm64-v8a-v8-snapshot': 'threenative-v8-snapshot-android-arm64-v8a.bin',
+  'android-sdl3-aar': 'threenative-sdl3-android.aar',
+  'android-x86_64-runtime': 'threenative-runtime-android-x86_64.so',
+  'android-x86_64-runtime-v8': 'threenative-runtime-android-x86_64-v8.so',
+  'android-x86_64-sdl3': 'threenative-sdl3-android-x86_64.so',
+  'android-x86_64-v8': 'threenative-v8-android-x86_64.so',
+  'android-x86_64-libcxx': 'threenative-libcxx-android-x86_64.so',
+  'android-x86_64-v8-snapshot': 'threenative-v8-snapshot-android-x86_64.bin',
+  'darwin-arm64': 'threenative-runtime-darwin-arm64',
+  'ios-simulator-arm64': 'threenative-ios-simulator-arm64.zip',
+  'linux-x64': 'threenative-runtime-linux-x64',
+  'win32-x64': 'threenative-runtime-win32-x64.exe',
+});
+
 /** Every key a packaged consumer or native release workflow may request. */
-export const PREBUILT_KEYS = Object.freeze([
-  'android-arm64-v8a-runtime',
-  'android-arm64-v8a-runtime-v8',
-  'android-arm64-v8a-sdl3',
-  'android-arm64-v8a-v8',
-  'android-arm64-v8a-libcxx',
-  'android-arm64-v8a-v8-snapshot',
-  'android-sdl3-aar',
-  'android-x86_64-runtime',
-  'android-x86_64-runtime-v8',
-  'android-x86_64-sdl3',
-  'android-x86_64-v8',
-  'android-x86_64-libcxx',
-  'android-x86_64-v8-snapshot',
-  'darwin-arm64',
-  'linux-x64',
-  'ios-simulator-arm64',
-  'win32-x64',
-]);
+export const PREBUILT_KEYS = Object.freeze(Object.keys(PREBUILT_ASSET_NAMES));
 
 const supported = new Set(['darwin-arm64', 'linux-x64', 'win32-x64']);
 
@@ -159,8 +162,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         // the native lanes fail closed later, on the missing binary itself.
         if (error instanceof Error && error.code === 'PREBUILT_RELEASE_MISSING') {
           console.warn(
-            `No prebuilt release is published for v${packageVersion} (${reason}). ` +
-              'Continuing without the native runtime; desktop and device lanes fail closed on the missing binary.',
+            `No prebuilt release is published for v${packageVersion} (${reason}). Continuing without the native runtime; desktop and device lanes fail closed on the missing binary.`,
           );
           return;
         }

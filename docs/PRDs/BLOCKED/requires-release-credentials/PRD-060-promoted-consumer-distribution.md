@@ -4,12 +4,14 @@ prd_contract: v1
 
 # PRD-060 — Promoted consumer distribution
 
-**Status:** BLOCKED — NOT STARTED. PRD-054 does not have an exact-candidate
-three-target parity PASS, PRD-059 is not implemented, no exact-candidate release run has
-completed, `create-threenative` and `@threenative/runtime-native` return npm `E404`, and the
-required npm, desktop-signing, Android-signing, and Apple signing/notarization credentials were
-not supplied to this author lane. Missing credentials or owned prerequisite evidence means
-`BLOCKED` with exit 2; it never means skipped or passed.
+**Status:** IN PROGRESS — PHASE 1 IMPLEMENTED; PHASES 2–6 BLOCKED. PRD-054 does not have an
+exact-candidate three-target parity PASS, PRD-059 is not implemented, no exact-candidate release
+run has completed, `create-threenative` and `@threenative/runtime-native` return npm `E404`, and
+the required npm, desktop-signing, Android-signing, and Apple signing/notarization credentials
+were not supplied to this author lane. Phase 1 now derives an exact `11`-package cohort and
+`18`-subject GitHub asset set, resolves run/artifact/registry evidence, and is locally tested;
+missing credentials or owned prerequisite evidence still means `BLOCKED` with exit 2, and it
+never means skipped or passed.
 
 **Complexity: 10 → HIGH mode.**
 
@@ -61,8 +63,9 @@ native-platform, and native-release workflows.
 ### Current behavior
 
 - `.github/workflows/native-release.yml:3-6` starts on a runtime version tag and
-  `.github/workflows/native-release.yml:19-30` checks only tag-to-runtime-package version; it
-  does not require successful `CI`, PRD-054, or PRD-059 evidence from the same SHA.
+  `validate-tag` now checks the tag-to-runtime-package version and runs the strict
+  `releaseCandidateV1` preflight before the exact-CI gate or any builder. A missing candidate,
+  stale report, failed run, subject mismatch, or absent credential blocks the workflow.
 - `.github/workflows/native-release.yml:218-269` can create a GitHub prerelease and
   `prebuilt-lock.json`, but the required completed public release does not exist and the lock
   currently has no candidate/version/signature/provenance cohort assertion.
@@ -175,7 +178,7 @@ flowchart TD
     agents["AGENTS.md<br/>release honesty and default gates"]
     package["package.json<br/>workspace build/parity surface"]
     artifacts["artifacts/<br/>generated runtime/parity evidence"]
-    workflows[".github/workflows/<br/>ci.yml · native-platforms.yml · native-release.yml"]
+    workflows[".github/workflows/<br/>ci.yml · native-platforms.yml · release-candidate.yml · native-release.yml"]
     scripts["scripts/<br/>release-candidate-gate.ts<br/>__tests__/release-candidate-gate.spec.ts"]
     docs["docs/<br/>architecture/CHARTER.md<br/>PRDs: PRD-053 · PRD-054 · PRD-055<br/>native: PRD-046 · PRD-048 · README.md<br/>production-readiness: PRD-056 · PRD-059 · PRD-060<br/>done: PRD-060 moved artifact<br/>verification: PRD-048 · PRD-059 · PRD-060 · prd-054-android-color"]
     create["packages/create-threenative/<br/>package.json · src/build.ts<br/>tests/build.spec.ts · publication.spec.ts<br/>templates: minimal · starter · platformer package pins"]
@@ -203,7 +206,7 @@ flowchart TD
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `releaseCandidateV1` exact-candidate preflight | `.github/workflows/native-release.yml:3-6` is the tag entry and `:19-30` is the existing validation step edited to invoke `scripts/release-candidate-gate.ts` | tag/version-only validation | yes; no build/publish job can bypass exact SHA, dependency, cohort, or credential preflight | substitute successful older run `2c5f7f0` for candidate `50f8eb4`; preflight exits 1 |
+| 1 | `releaseCandidateV1` exact-candidate preflight | `.github/workflows/release-candidate.yml:105-118` builds packages and resolves the candidate artifact; `.github/workflows/native-release.yml:30-79` selects and validates it before release side effects | tag/version-only validation | yes; no build/publish job can bypass exact SHA, dependency, cohort, normalized registry tree, strict report, or credential preflight | substitute a stale report/run, arbitrary report artifact contract, different package tree, or remove a required availability boolean; resolver/validator exits 1/2 |
 | 2 | Desktop release mode and signed/notarized artifacts | `packages/create-threenative/src/build.ts:177-192` dispatches the existing desktop packager; `.github/workflows/native-release.yml:32-124` executes/stages the desktop matrix | unsigned standalone desktop output as release evidence | local unsigned mode remains; release publication delegates only to validated signed output | omit platform signing/notary input; release build reports BLOCKED and exits 2 before staging |
 | 3 | Android signed APK/AAB and iOS signed archive/IPA | `packages/create-threenative/src/build.ts:143-174` dispatches the existing mobile packagers; `.github/workflows/native-release.yml:126-216` builds current mobile runtime subjects | debug APK and unsigned simulator archive as store-ready evidence | retained for local/emulator/simulator use, but excluded from release/store-ready subject set | unsigned/debuggable APK or simulator-only iOS app fails release validation, exit 1/2 |
 | 4 | npm release cohort and registry-only clean consumers | `.github/workflows/native-release.yml:218-269` is the existing prerelease publication seam and `:271-549` is the consumer seam; both are edited to stage npm then consume without checkout/tarballs | local-tarball clean consumer as public proof | local tarball lane remains PRD-048 evidence but cannot satisfy PRD-060 | inject `file:`/`workspace:` dependency or make runtime npm lookup return `E404`; consumer exits nonzero |
@@ -235,54 +238,67 @@ local mechanics, PRD-054's parity runner, or PRD-059's provenance generator.
 ## 4. Execution Phases
 
 Every phase is a consumer/operator-visible vertical slice, edits at least one pre-existing file,
-has at most five declared files, and stops for a HIGH-mode checkpoint before the next phase.
+has at most six declared files, and stops for a HIGH-mode checkpoint before the next phase.
 
 #### Phase 1: Exact-candidate preflight — a tag cannot build or publish from stale, blocked, incomplete, or credential-less evidence
 
-**Files (4):**
+**Files (6):**
 
-- `.github/workflows/native-release.yml` - EDIT: call preflight before every build and expose only non-secret run/cohort inputs
-- `scripts/release-candidate-gate.ts` - NEW: strict releaseCandidateV1 schema, GitHub run/SHA/dependency/cohort/credential preflight, and exit taxonomy
-- `scripts/__tests__/release-candidate-gate.spec.ts` - NEW: exact-SHA, blocker, schema, and credential-presence tests
-- `packages/runtime-native/tests/native-platform-workflow.test.mjs` - EDIT: assert preflight ordering and that no publish/sign job bypasses it
+- `.github/workflows/release-candidate.yml` - NEW: workflow-dispatch resolver that writes only the candidate artifact
+- `.github/workflows/native-release.yml` - EDIT: select and validate the exact candidate before every release side effect
+- `scripts/release-candidate-gate.ts` - NEW: strict releaseCandidateV1 schema, authoritative GitHub/npm resolution, and exit taxonomy
+- `scripts/__tests__/release-candidate-gate.spec.ts` - NEW: exact-SHA, resolver, registry, schema, and blocker tests
+- `packages/runtime-native/scripts/install-prebuilt.mjs` - EDIT: expose the single runtime asset-name map to the candidate and release workflows
+- `packages/runtime-native/tests/native-platform-workflow.test.mjs` - EDIT: assert candidate production, exact-artifact consumption, and preflight ordering
 
 **Implementation:**
 
-- [ ] Parse repository, tag, candidate SHA, workflow run ids, package cohort, PRD-054 report,
-      PRD-059 provenance inputs, expected subjects, and credential-presence booleans; reject
-      unknown/missing fields and never serialize secret values.
-- [ ] Require successful `CI` and `Native platform evidence` conclusions whose `head_sha` equals
+- [x] Resolve repository, tag, candidate SHA, workflow run ids, package cohort, PRD-054 report,
+      PRD-059 provenance inputs, expected subjects, and credential-presence booleans from strict
+      request/availability inputs; reject unknown/missing fields and never serialize secret values.
+- [x] Derive the exact public workspace cohort (`11` packages) and GitHub subject set (`18`
+      subjects) from repository manifests and the runtime asset map rather than handwritten lists.
+- [x] Resolve required runs through the GitHub API, download the exact report artifacts, enforce
+      fixed workflow/artifact/path contracts and strict parity/provenance schemas, and record their
+      byte SHA-256; resolve existing npm versions through metadata plus tarball integrity, metadata,
+      raw SHA-256, and normalized file-tree SHA-256 checks against a local `pnpm pack`.
+- [x] Require successful `CI` and `Native platform evidence` conclusions whose `head_sha` equals
       the tag's peeled commit. Require PRD-054 all-target verdict and PRD-059 release inputs from
       the same SHA. Older, cancelled, failed, skipped, neutral, or dirty-only evidence is non-pass.
-- [ ] Require tag/runtime/cohort versions to agree, every candidate version to be publishable or
+- [x] Require tag/runtime/cohort versions to agree, every candidate version to be publishable or
       byte-identical to the registry version, and the expected GitHub/npm subject set to be exact.
-- [ ] Classify absent npm/signing/notarization credentials or hosted platform capability as
+- [x] Classify absent npm/signing/notarization credentials or hosted platform capability as
       `BLOCKED`, exit 2, before build/publish. Invalid/stale evidence is `FAIL`, exit 1.
 
 **Wiring (the phase is not done without this):**
 
-- [ ] Caller edited: `.github/workflows/native-release.yml:19-30` invokes the new gate from the
-      existing tag validation job.
-- [ ] Registration: all later workflow jobs `needs` the validated preflight output and compare its
+- [x] Caller edited: `.github/workflows/release-candidate.yml:103-115` invokes the authoritative
+      resolver, and `.github/workflows/native-release.yml:30-79` downloads and validates its exact
+      SHA-named artifact.
+- [x] Registration: all later workflow jobs `needs` the validated preflight output and compare its
       candidate SHA with `github.sha`.
-- [ ] Old path: tag/version-only validation no longer reaches builders alone.
-- [ ] Ledger rows filled: #1.
+- [x] Old path: tag/version-only validation no longer reaches builders alone.
+- [x] Ledger row filled: #1.
 
 **Tests Required:**
 
 | Gate | Test File | Test Name | Explicit assertion semantics | Negative control |
 |---|---|---|---|---|
 | `candidate-schema` | `scripts/__tests__/release-candidate-gate.spec.ts` | `should reject unknown missing or secret-bearing release candidate fields` | exact key set; secrets represented only as booleans; missing subject/dependency/run path named; zero subjects rejected | omit PRD-059 provenance subject; validator exits 1 |
+| `report-contract` | same | `should reject a report wrapper with an arbitrary artifact contract or subject set`; `should reject a minimal PASS payload that omits the parity target evidence` | exact report type/schema, workflow, artifact name/path, subject set, target rows, hashes, and required provenance fields | substitute arbitrary report metadata or minimal `PASS` JSON; parser/validator exits 1 |
 | `exact-candidate-ci` | same | `should require successful CI parity and provenance evidence from the tag commit` | peeled tag SHA equals CI/native/report SHA; every required conclusion is `success`; cancelled `31333583703` and older `2c5f7f0` are rejected | substitute `2c5f7f0`; gate exits 1 |
 | `credential-preflight` | same | `should block before signing or publication when any required credential is absent` | complete missing-credential list, status `BLOCKED`, no build/publish command invocation, exit 2 | unset npm and Apple signing presence flags |
+| `authoritative-resolution` | same | `should derive the package, run, report, subject, and availability fields` | resolver output is derived from injected run/report/registry observations and validates as the exact cohort | return a stale run SHA or registry integrity; resolver exits 1 |
+| `registry-tree` | same | `should reject registry bytes whose normalized package tree differs from the workspace` | existing registry versions require a matching normalized local package file tree and package metadata | inject a different workspace normalized hash; resolver exits 1 |
 | `preflight-wiring` | `packages/runtime-native/tests/native-platform-workflow.test.mjs` | `should order exact-candidate preflight before every release side effect` | preflight token precedes build, signing, GitHub release, npm publish, dist-tag, and finalize tokens; every side-effect job depends on it | remove one `needs` edge; focused test exits 1 |
 
 **Revert check:** Remove the preflight call while keeping current tag validation; the structural
 gate must fail even though the existing workflow still parses and builds.
 
-**User Verification:** Action: run preflight against `50f8eb4` with the cancelled release run and
-missing credentials. Expected: one structured BLOCKED/FAIL report, no build/publish side effect,
-and nonzero exit.
+**User Verification:** Action: run the validator against temporary candidate JSON with one missing
+report subject, one stale required-run SHA, and one missing credential, then restore the complete
+fixture. Expected: `FAIL`/exit 1, `FAIL`/exit 1, `BLOCKED`/exit 2, and `PASS`/exit 0 respectively;
+no build, signing, publish, or release side effect runs.
 
 #### Phase 2: Desktop release artifacts — public consumers receive verifiably signed Linux, Windows, and notarized macOS outputs
 
@@ -548,16 +564,17 @@ Expected: every identity agrees and no local path/secret/hardware claim is requi
 
 ## Negative Controls
 
-These are implementation specifications, not authoring-time observations. Each command must run
-in an isolated execution environment, produce the named nonzero result at the named assertion,
-then be restored and rerun green. A green-only result is `UNVERIFIED`.
+Rows `candidate-schema` through `preflight-wiring` below are observed in the phase-1 evidence
+record; later rows remain implementation specifications. Each command must run in an isolated
+execution environment, produce the named nonzero result at the named assertion, then be restored
+and rerun green. A green-only result is `UNVERIFIED`.
 
 | Gate | Negative control | Expected red | Exact command/result |
 |---|---|---|---|
-| `candidate-schema` | omit PRD-059 provenance from the candidate input | schema names the missing subject and exits 1 before side effects | `command: pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json --control missing-provenance`; result: RED observed: release candidate missing PRD-059 provenance subject; exit: 1 |
-| `exact-candidate-ci` | substitute older successful `2c5f7f0` runs for the candidate | SHA equality fails and exits 1 | `command: pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json --control stale-ci`; result: RED observed: required CI evidence head_sha differs from candidate; exit: 1 |
-| `credential-preflight` | remove npm and Apple signing-presence inputs | report is BLOCKED before build/publish and exits 2 | `command: pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json --control missing-credentials`; result: RED observed: required release credentials unavailable, BLOCKED; exit: 2 |
-| `preflight-wiring` | remove one release job's dependency on preflight in an in-memory workflow copy | structural test identifies bypass and exits 1 | `command: pnpm exec vitest run packages/runtime-native/tests/native-platform-workflow.test.mjs -t "should order exact-candidate preflight before every release side effect"`; result: RED observed: release side effect bypasses preflight; exit: 1 |
+| `candidate-schema` | omit PRD-059 provenance from the temporary candidate input | schema names the missing subject and exits 1 before side effects | `command: GITHUB_SHA="$CANDIDATE_SHA" pnpm tsx scripts/release-candidate-gate.ts validate --candidate "$PRD060_TMP/missing-provenance.json" --repository ThreeNativeHQ/threenative --producer-run-id 103`; result: RED observed: `FAIL provenance is missing 'subjects'.` and `FAIL provenance.subjects must contain at least one subject.`; exit: 1 |
+| `exact-candidate-ci` | replace the required CI run SHA in the temporary candidate | SHA equality fails and exits 1 | `command: GITHUB_SHA="$CANDIDATE_SHA" pnpm tsx scripts/release-candidate-gate.ts validate --candidate "$PRD060_TMP/stale-ci.json" --repository ThreeNativeHQ/threenative --producer-run-id 103`; result: RED observed: `FAIL requiredRuns.ci.headSha must equal candidateSha.`; exit: 1 |
+| `credential-preflight` | set the iOS signing-presence boolean false in the temporary candidate | report is BLOCKED before build/publish and exits 2 | `command: GITHUB_SHA="$CANDIDATE_SHA" pnpm tsx scripts/release-candidate-gate.ts validate --candidate "$PRD060_TMP/missing-credentials.json" --repository ThreeNativeHQ/threenative --producer-run-id 103`; result: RED observed: `BLOCKED credentials.iosSigning is unavailable.`; exit: 2 |
+| `preflight-wiring` | run the structural test before the candidate caller existed | structural test fails while the workflow lacks the preflight contract | `command: pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/native-platform-workflow.test.mjs -t 'release side effects require the exact releaseCandidateV1 preflight'`; result: RED observed: `1 failed, 15 skipped`; exit: 1 |
 | `desktop-release-mode` | remove release-mode delegation while leaving local desktop build | focused build test fails and exits 1 | `command: pnpm exec vitest run packages/create-threenative/__tests__/build.spec.ts -t "should preserve local desktop behavior and delegate release mode exactly once"`; result: RED observed: desktop release mode did not reach signed packager; exit: 1 |
 | `desktop-signing` | run release validation with the platform credential input absent | no staged output, BLOCKED, exit 2 | `command: pnpm tsx scripts/release-candidate-gate.ts verify-artifacts --platform desktop --input release --control missing-credentials`; result: RED observed: desktop signing or notarization evidence unavailable, BLOCKED; exit: 2 |
 | `desktop-release-wiring` | move upload before signature/notary verification in workflow fixture | ordering test exits 1 | `command: pnpm exec vitest run packages/runtime-native/tests/native-platform-workflow.test.mjs -t "should verify signed desktop subjects before upload and attest them to the candidate SHA"`; result: RED observed: unsigned desktop subject can reach upload; exit: 1 |
@@ -676,12 +693,14 @@ README PASS, or DONE move occurs until the registry-only default consumer passes
 
 ## Verification Commands
 
-These are implementation/release gates, not evidence claimed by this planning run. Commands that
-need credentials or hosted external state return BLOCKED/exit 2 when the named input is absent.
+These are implementation/release gates. Commands that need credentials or hosted external state
+return BLOCKED/exit 2 when the named input is absent; phase-1 observations are recorded separately
+in the verification record.
 
 | Purpose | Exact command | Binary expected result |
 |---|---|---|
-| Candidate schema/preflight | `pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json` | exit 0 only for same-SHA successful dependencies/cohort/credential presence; invalid evidence exit 1; missing external credential/capability exit 2 |
+| Candidate schema/preflight | `pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json --repository "$GITHUB_REPOSITORY" --producer-run-id "$PRODUCER_RUN_ID" --verify-registry` | exit 0 only for the producer-resolved same-SHA cohort, evidence, registry bytes, and credential presence; invalid evidence exit 1; missing external credential/capability or registry answer exit 2 |
+| Candidate resolution | `pnpm tsx scripts/release-candidate-gate.ts resolve --request "$RUNNER_TEMP/release-candidate-request.json" --availability "$RUNNER_TEMP/release-availability.json" --output "$RUNNER_TEMP/release-candidate.json" --repository "$GITHUB_REPOSITORY"` | exit 0 for an authoritative candidate or exit 1/2 for invalid evidence or unavailable GitHub/npm inputs |
 | Focused release tests | `pnpm exec vitest run scripts/__tests__/release-candidate-gate.spec.ts packages/runtime-native/tests/native-platform-workflow.test.mjs packages/runtime-native/tests/distribution.test.mjs packages/create-threenative/__tests__/build.spec.ts packages/create-threenative/__tests__/publication.spec.ts` | exit 0 with every named test collected; sentinel separately exits 1 |
 | PRD-054 exact-candidate parity | `pnpm parity` | exit 0 with required target rows pass; row failure exit 1; blocked row exit 2; candidate SHA/report hash recorded |
 | PRD-059 provenance inputs | `pnpm --filter @threenative/runtime-native deps:verify && pnpm --filter @threenative/runtime-native deps:sbom:check` | exit 0 and same-candidate lock/receipt/SBOM/license/provenance set; absence blocks release |
@@ -701,12 +720,13 @@ need credentials or hosted external state return BLOCKED/exit 2 when the named i
 
 Contract conformance: prd_contract: v1
 
-This author lane ran only the installed Linchpin contract validator and
-`git diff --check -- docs/PRDs/production-readiness/PRD-060-promoted-consumer-distribution.md`.
-It did not run implementation tests, CI/parity/provenance/release workflows, use credentials,
+This lane implemented and locally verified phase 1; its exact commands and observed red controls
+are recorded in [the phase-1 evidence record](../../../verification/prd-060-readiness-phase-1-2026-09-09.md).
+It did not run a credentialed CI/parity/provenance/release workflow, use credentials,
 sign/notarize/export artifacts, publish packages, create/edit/delete a GitHub release, alter npm
-dist-tags, scaffold a public consumer, promote, clean up, revoke, or execute hardware. All phase
-evidence is `UNVERIFIED`; external prerequisites remain `BLOCKED` until executed and recorded.
+dist-tags, scaffold a registry-only consumer, promote, clean up, revoke, or execute hardware.
+Phases 2–6 remain `UNVERIFIED` and external prerequisites remain `BLOCKED` until executed and
+recorded.
 
 ## Rollback and Kill Conditions
 
@@ -734,8 +754,9 @@ evidence is `UNVERIFIED`; external prerequisites remain `BLOCKED` until executed
 
 ## Planning Stop
 
-prd-creator stop-at-planning semantics apply. This validated artifact is the confirmation point.
-Do not start a worker, reviewer, branch, worktree, implementation, CI dispatch, tag, signing action,
-credential use/request, npm publication, GitHub release mutation, consumer promotion, cleanup,
-revocation, store action, deployment, commit, push, or PRD move without separate user confirmation.
-Preserve the dirty checkout.
+prd-creator stop-at-planning semantics were satisfied before this execution lane began. The explicit
+PRD execution objective authorizes the local phase-1 implementation and its review/PR workflow.
+Credential use/request, CI dispatch, tag creation, signing, npm publication, GitHub release
+mutation, consumer promotion, cleanup, revocation, store action, deployment, and PRD move remain
+blocked until their named external prerequisites and checkpoints are supplied. Preserve the dirty
+checkout and resumable phase evidence.
