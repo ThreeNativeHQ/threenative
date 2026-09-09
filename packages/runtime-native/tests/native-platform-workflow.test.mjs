@@ -219,6 +219,42 @@ test('release gate rejects stale or missing exact candidate CI evidence', () => 
   expect(missingDatabaseId.status).not.toBe(0);
 });
 
+test('release side effects require the exact releaseCandidateV1 preflight', () => {
+  const preflight = 'pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json';
+  expect(releaseWorkflow).toContain(preflight);
+  expect(releaseWorkflow).toMatch(
+    /validate-tag:\n {4}outputs:\n {6}candidate_sha: \$\{\{ steps\.release-candidate\.outputs\.candidate_sha \}\}/u,
+  );
+  expect(releaseWorkflow).toContain('id: release-candidate');
+  expect(releaseWorkflow).toContain('echo "candidate_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"');
+
+  const job = (name) => {
+    const start = releaseWorkflow.indexOf(`  ${name}:`);
+    const tail = releaseWorkflow.slice(start + name.length + 3);
+    const next = tail.search(/\n {2}[a-z][a-z0-9-]*:/u);
+    return releaseWorkflow.slice(start, next < 0 ? undefined : start + name.length + 3 + next);
+  };
+  for (const name of [
+    'gates',
+    'build',
+    'build-android',
+    'build-ios-simulator',
+    'publish',
+    'clean-consumer',
+    'clean-consumer-ios',
+    'finalize',
+    'cleanup-failed-release',
+  ]) {
+    expect(job(name), `${name} must depend directly on validate-tag`).toMatch(/needs:[^\n]*validate-tag/u);
+  }
+  expect(releaseWorkflow.indexOf(preflight)).toBeLessThan(
+    releaseWorkflow.indexOf('pnpm --filter @threenative/runtime-native native:build'),
+  );
+  expect(releaseWorkflow.indexOf(preflight)).toBeLessThan(
+    releaseWorkflow.indexOf('gh release create'),
+  );
+});
+
 test('worker idle wake gate ships in the native package suite without requiring CMake', () => {
   // PRD P2-1: the worker wake regression is a source-level gate so the default
   // repository lane executes it; native compilation stays opt-in.

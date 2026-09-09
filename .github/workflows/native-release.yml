@@ -15,13 +15,18 @@ concurrency:
 
 jobs:
   validate-tag:
+    outputs:
+      candidate_sha: ${{ steps.release-candidate.outputs.candidate_sha }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Match the tag to the runtime package version
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -34,6 +39,13 @@ jobs:
             throw new Error(`Expected tag ${expected}, received ${process.env.RELEASE_TAG}.`);
           }
           NODE
+      - name: Validate the exact release candidate before any release side effect
+        id: release-candidate
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json --repository "$GITHUB_REPOSITORY"
+          echo "candidate_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
   gates:
     needs: validate-tag
@@ -73,7 +85,8 @@ jobs:
           echo "Using exact successful CI push run $candidate_run for $GITHUB_SHA."
 
   build:
-    needs: gates
+    needs: [validate-tag, gates]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     strategy:
       fail-fast: false
       matrix:
@@ -191,7 +204,8 @@ jobs:
           if-no-files-found: error
 
   build-android:
-    needs: gates
+    needs: [validate-tag, gates]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -280,7 +294,8 @@ jobs:
           if-no-files-found: error
 
   build-ios-simulator:
-    needs: gates
+    needs: [validate-tag, gates]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -319,7 +334,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [build, build-android, build-ios-simulator]
+    needs: [validate-tag, build, build-android, build-ios-simulator]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -391,7 +407,8 @@ jobs:
           --generate-notes
 
   clean-consumer:
-    needs: publish
+    needs: [validate-tag, publish]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -540,7 +557,8 @@ jobs:
           if-no-files-found: warn
 
   clean-consumer-ios:
-    needs: publish
+    needs: [validate-tag, publish]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: macos-15
     timeout-minutes: 35
     steps:
@@ -680,7 +698,8 @@ jobs:
           if-no-files-found: warn
 
   finalize:
-    needs: [clean-consumer, clean-consumer-ios]
+    needs: [validate-tag, clean-consumer, clean-consumer-ios]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -697,9 +716,10 @@ jobs:
 
   cleanup-failed-release:
     if: >-
-      ${{ always() && needs.publish.result == 'success' &&
+      ${{ always() && needs.validate-tag.outputs.candidate_sha == github.sha &&
+      needs.publish.result == 'success' &&
       (needs.clean-consumer.result != 'success' || needs.clean-consumer-ios.result != 'success') }}
-    needs: [publish, clean-consumer, clean-consumer-ios]
+    needs: [validate-tag, publish, clean-consumer, clean-consumer-ios]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
