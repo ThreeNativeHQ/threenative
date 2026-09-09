@@ -15,13 +15,48 @@ concurrency:
 
 jobs:
   validate-tag:
+    outputs:
+      candidate_sha: ${{ steps.release-candidate.outputs.candidate_sha }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Fetch the exact release-candidate artifact
+        id: candidate-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          candidate_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release-candidate.yml --commit "$GITHUB_SHA" --limit 20 --json databaseId,status,conclusion,event,headBranch,headSha)"
+          candidate_run="$(CANDIDATE_RUNS="$candidate_runs" CANDIDATE_SHA="$GITHUB_SHA" node --input-type=module <<'NODE'
+          const runs = JSON.parse(process.env.CANDIDATE_RUNS ?? "[]");
+          const candidateSha = process.env.CANDIDATE_SHA ?? "";
+          const matches = runs.filter((run) =>
+            run?.status === "completed" &&
+            run?.conclusion === "success" &&
+            run?.event === "workflow_dispatch" &&
+            run?.headBranch === "main" &&
+            run?.headSha === candidateSha &&
+            Number.isSafeInteger(run?.databaseId) &&
+            run.databaseId > 0,
+          );
+          if (matches.length !== 1) {
+            throw new Error(`Expected exactly one successful release-candidate.yml run for ${candidateSha}; found ${matches.length}.`);
+          }
+          console.log(matches[0].databaseId);
+          NODE
+          )"
+          rm -rf release
+          mkdir -p release
+          gh run download "$candidate_run" --repo "$GITHUB_REPOSITORY" --name "release-candidate-$GITHUB_SHA" --dir release
+          test -s release/release-candidate.json
+          echo "producer_run_id=$candidate_run" >> "$GITHUB_OUTPUT"
       - name: Match the tag to the runtime package version
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -34,6 +69,14 @@ jobs:
             throw new Error(`Expected tag ${expected}, received ${process.env.RELEASE_TAG}.`);
           }
           NODE
+      - name: Validate the exact release candidate before any release side effect
+        id: release-candidate
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PRODUCER_RUN_ID: ${{ steps.candidate-artifact.outputs.producer_run_id }}
+        run: |
+          pnpm tsx scripts/release-candidate-gate.ts validate --candidate release/release-candidate.json --repository "$GITHUB_REPOSITORY" --producer-run-id "$PRODUCER_RUN_ID" --verify-registry
+          echo "candidate_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
   gates:
     needs: validate-tag
@@ -73,7 +116,8 @@ jobs:
           echo "Using exact successful CI push run $candidate_run for $GITHUB_SHA."
 
   build:
-    needs: gates
+    needs: [validate-tag, gates]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     strategy:
       fail-fast: false
       matrix:
@@ -191,7 +235,8 @@ jobs:
           if-no-files-found: error
 
   build-android:
-    needs: gates
+    needs: [validate-tag, gates]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -280,7 +325,8 @@ jobs:
           if-no-files-found: error
 
   build-ios-simulator:
-    needs: gates
+    needs: [validate-tag, gates]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -319,7 +365,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [build, build-android, build-ios-simulator]
+    needs: [validate-tag, build, build-android, build-ios-simulator]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -339,29 +386,11 @@ jobs:
           node --input-type=module <<'NODE'
           import { createHash } from "node:crypto";
           import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-          import { PREBUILT_KEYS, RELEASE_REPOSITORY } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
+          import { PREBUILT_ASSET_NAMES, PREBUILT_KEYS, RELEASE_REPOSITORY } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
           if (process.env.RELEASE_REPOSITORY !== RELEASE_REPOSITORY) {
             throw new Error(`Prebuilt releases must be published by ${RELEASE_REPOSITORY}, received ${process.env.RELEASE_REPOSITORY}.`);
           }
-          const names = {
-            "android-arm64-v8a-runtime": "threenative-runtime-android-arm64-v8a.so",
-            "android-arm64-v8a-runtime-v8": "threenative-runtime-android-arm64-v8a-v8.so",
-            "android-arm64-v8a-sdl3": "threenative-sdl3-android-arm64-v8a.so",
-            "android-arm64-v8a-v8": "threenative-v8-android-arm64-v8a.so",
-            "android-arm64-v8a-libcxx": "threenative-libcxx-android-arm64-v8a.so",
-            "android-arm64-v8a-v8-snapshot": "threenative-v8-snapshot-android-arm64-v8a.bin",
-            "android-sdl3-aar": "threenative-sdl3-android.aar",
-            "android-x86_64-runtime": "threenative-runtime-android-x86_64.so",
-            "android-x86_64-runtime-v8": "threenative-runtime-android-x86_64-v8.so",
-            "android-x86_64-sdl3": "threenative-sdl3-android-x86_64.so",
-            "android-x86_64-v8": "threenative-v8-android-x86_64.so",
-            "android-x86_64-libcxx": "threenative-libcxx-android-x86_64.so",
-            "android-x86_64-v8-snapshot": "threenative-v8-snapshot-android-x86_64.bin",
-            "darwin-arm64": "threenative-runtime-darwin-arm64",
-            "ios-simulator-arm64": "threenative-ios-simulator-arm64.zip",
-            "linux-x64": "threenative-runtime-linux-x64",
-            "win32-x64": "threenative-runtime-win32-x64.exe",
-          };
+          const names = PREBUILT_ASSET_NAMES;
           const expectedKeys = [...PREBUILT_KEYS].sort();
           const actualKeys = Object.keys(names).sort();
           if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys)) {
@@ -391,7 +420,8 @@ jobs:
           --generate-notes
 
   clean-consumer:
-    needs: publish
+    needs: [validate-tag, publish]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -540,7 +570,8 @@ jobs:
           if-no-files-found: warn
 
   clean-consumer-ios:
-    needs: publish
+    needs: [validate-tag, publish]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: macos-15
     timeout-minutes: 35
     steps:
@@ -680,7 +711,8 @@ jobs:
           if-no-files-found: warn
 
   finalize:
-    needs: [clean-consumer, clean-consumer-ios]
+    needs: [validate-tag, clean-consumer, clean-consumer-ios]
+    if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -697,9 +729,10 @@ jobs:
 
   cleanup-failed-release:
     if: >-
-      ${{ always() && needs.publish.result == 'success' &&
+      ${{ always() && needs.validate-tag.outputs.candidate_sha == github.sha &&
+      needs.publish.result == 'success' &&
       (needs.clean-consumer.result != 'success' || needs.clean-consumer-ios.result != 'success') }}
-    needs: [publish, clean-consumer, clean-consumer-ios]
+    needs: [validate-tag, publish, clean-consumer, clean-consumer-ios]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

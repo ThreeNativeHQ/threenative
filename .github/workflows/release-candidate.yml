@@ -1,0 +1,119 @@
+name: Release candidate evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_request:
+        description: JSON release-candidate request for this exact main commit
+        required: true
+        type: string
+      ubuntu_runner:
+        description: Ubuntu runner is available for the release cohort
+        required: true
+        default: true
+        type: boolean
+      windows_runner:
+        description: Windows runner is available for the release cohort
+        required: true
+        default: false
+        type: boolean
+      macos_runner:
+        description: macOS runner is available for the release cohort
+        required: true
+        default: false
+        type: boolean
+      android_sdk:
+        description: Android SDK and NDK are available for the release cohort
+        required: true
+        default: false
+        type: boolean
+      xcode:
+        description: Xcode is available for the release cohort
+        required: true
+        default: false
+        type: boolean
+      timestamp_service:
+        description: Timestamp service is available for signing and attestation
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the workspace packages before comparing published bytes
+        run: pnpm build
+      - name: Write the request and workflow-derived availability
+        env:
+          CANDIDATE_REQUEST: ${{ inputs.candidate_request }}
+          HAS_NPM_PUBLISH: ${{ secrets.NPM_TOKEN != '' }}
+          HAS_LINUX_ATTESTATION: ${{ secrets.SIGSTORE_ID_TOKEN != '' }}
+          HAS_WINDOWS_SIGNING: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE != '' }}
+          HAS_MACOS_SIGNING: ${{ secrets.MACOS_SIGNING_CERTIFICATE != '' }}
+          HAS_MACOS_NOTARIZATION: ${{ secrets.APPLE_NOTARY_API_KEY != '' }}
+          HAS_ANDROID_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+          HAS_IOS_SIGNING: ${{ secrets.APPLE_SIGNING_CERTIFICATE != '' }}
+          HAS_IOS_EXPORT: ${{ secrets.APPLE_EXPORT_OPTIONS != '' }}
+          HAS_UBUNTU_RUNNER: ${{ inputs.ubuntu_runner }}
+          HAS_WINDOWS_RUNNER: ${{ inputs.windows_runner }}
+          HAS_MACOS_RUNNER: ${{ inputs.macos_runner }}
+          HAS_ANDROID_SDK: ${{ inputs.android_sdk }}
+          HAS_XCODE: ${{ inputs.xcode }}
+          HAS_TIMESTAMP_SERVICE: ${{ inputs.timestamp_service }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const boolean = (name) => process.env[name] === "true";
+          if (typeof process.env.CANDIDATE_REQUEST !== "string" || process.env.CANDIDATE_REQUEST.length === 0) {
+            throw new Error("TN_RELEASE_CANDIDATE_REQUEST_MISSING: candidate_request is required.");
+          }
+          writeFileSync(`${process.env.RUNNER_TEMP}/release-candidate-request.json`, process.env.CANDIDATE_REQUEST);
+          writeFileSync(`${process.env.RUNNER_TEMP}/release-availability.json`, `${JSON.stringify({
+            credentials: {
+              npmPublish: boolean("HAS_NPM_PUBLISH"),
+              linuxAttestation: boolean("HAS_LINUX_ATTESTATION"),
+              windowsSigning: boolean("HAS_WINDOWS_SIGNING"),
+              macosSigning: boolean("HAS_MACOS_SIGNING"),
+              macosNotarization: boolean("HAS_MACOS_NOTARIZATION"),
+              androidSigning: boolean("HAS_ANDROID_SIGNING"),
+              iosSigning: boolean("HAS_IOS_SIGNING"),
+              iosExport: boolean("HAS_IOS_EXPORT"),
+            },
+            hostedCapabilities: {
+              ubuntuRunner: boolean("HAS_UBUNTU_RUNNER"),
+              windowsRunner: boolean("HAS_WINDOWS_RUNNER"),
+              macosRunner: boolean("HAS_MACOS_RUNNER"),
+              androidSdk: boolean("HAS_ANDROID_SDK"),
+              xcode: boolean("HAS_XCODE"),
+              timestampService: boolean("HAS_TIMESTAMP_SERVICE"),
+            },
+          }, null, 2)}\n`);
+          NODE
+      - name: Resolve authoritative release evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: >-
+          pnpm tsx scripts/release-candidate-gate.ts resolve
+          --request "$RUNNER_TEMP/release-candidate-request.json"
+          --availability "$RUNNER_TEMP/release-availability.json"
+          --output "$RUNNER_TEMP/release-candidate.json"
+          --repository "$GITHUB_REPOSITORY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/release-candidate.json
+          if-no-files-found: error

@@ -10,6 +10,7 @@ import { afterEach, test } from 'vitest';
 import { PNG } from 'pngjs';
 
 import {
+  PREBUILT_ASSET_NAMES,
   PREBUILT_KEYS,
   RELEASE_REPOSITORY,
   downloadReleaseArtifact,
@@ -198,11 +199,9 @@ test('the native release workflow covers every exported prebuilt key', () => {
     join(import.meta.dirname, '..', '..', '..', '.github', 'workflows', 'native-release.yml'),
     'utf8',
   );
-  assert.match(workflow, /PREBUILT_KEYS/u);
-  const namesBlock = workflow.match(/const names = \{([\s\S]*?)\n\s*\};/u)?.[1];
-  assert.ok(namesBlock, 'native release workflow has no checksum key table');
-  const workflowKeys = [...namesBlock.matchAll(/^\s*"([^"]+)":/gmu)].map((match) => match[1]);
-  assert.deepEqual([...workflowKeys].sort(), [...PREBUILT_KEYS].sort());
+  assert.match(workflow, /PREBUILT_ASSET_NAMES/u);
+  assert.match(workflow, /const names = PREBUILT_ASSET_NAMES/u);
+  assert.deepEqual(Object.keys(PREBUILT_ASSET_NAMES).sort(), [...PREBUILT_KEYS].sort());
 });
 
 test('the installer can bootstrap a remote checksum lock before fetching the runtime', async () => {
