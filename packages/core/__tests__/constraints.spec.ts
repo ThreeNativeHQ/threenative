@@ -58,6 +58,9 @@ describe("core constraints", () => {
           file !== "clustered-mesh.ts" &&
           file !== "clustered-batch.ts" &&
           file !== "gpu-scene-bvh.ts" &&
+          // The census records material/object provenance at the renderer boundary; it observes
+          // appearance inputs without constructing or choosing any visual output.
+          file !== "pipeline-census.ts" &&
           file !== "render/probe-volume.ts" &&
           // The virtual shadow attaches to a light and renders depth through three's own
           // ShadowNode; it creates no material, light, colour or filter of its own.

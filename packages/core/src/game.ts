@@ -22,6 +22,7 @@ import {
   createAfterPhysicsPhase,
 } from "./loop.js";
 import { ScenePicker } from "./picking.js";
+import type { IPipelineCensus } from "./pipeline-census.js";
 import { getPlatform } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
 import { formatProjectionWindow } from "./projection-marker.js";
@@ -107,6 +108,8 @@ export interface IGamePluginRuntime {
   readonly startupCompileSettled?: () => boolean;
   /** When the startup milestones happened, for the playtest bridge's startup observation. */
   readonly startupTimeline?: () => IStartupTimeline;
+  /** The renderer-owned bounded pipeline capture, when the renderer has not been opted out. */
+  readonly pipelineCensus?: () => IPipelineCensus;
   readonly step: number;
 }
 
@@ -1294,6 +1297,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         return entered;
       },
       observations: createRuntimeObservations(),
+      ...(renderer.pipelineCensus === undefined ? {} : { pipelineCensus: renderer.pipelineCensus }),
       tick: gameLoop.tick,
       random,
       rapier: null,

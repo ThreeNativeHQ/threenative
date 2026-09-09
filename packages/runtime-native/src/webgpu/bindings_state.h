@@ -50,6 +50,8 @@ struct TextureInfo {
 struct ShaderModuleMetadata {
     std::string vertexEntryPoint;
     std::string fragmentEntryPoint;
+    std::string hash;
+    size_t bytes = 0;
 };
 
 struct ShaderModuleMetadataStore {
@@ -377,6 +379,16 @@ struct PipelineCompileCompletion {
     WGPURenderPipeline renderPipeline = nullptr;
     WGPUComputePipeline computePipeline = nullptr;
     std::string error;
+    // Shared pipeline-census observation contract. These values are captured on the enqueue,
+    // worker-start and worker-finish clocks; the promise is settled later on the game thread.
+    double enqueuedMs = 0.0;
+    double startedMs = 0.0;
+    double finishedMs = 0.0;
+    std::string vertexHash;
+    std::string fragmentHash;
+    size_t vertexBytes = 0;
+    size_t fragmentBytes = 0;
+    std::string label;
 };
 
 /** The compile pool's shared state. Owned by `BindingsState`, drained on the game thread. */

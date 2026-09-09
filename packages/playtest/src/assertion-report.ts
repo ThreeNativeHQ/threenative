@@ -12,6 +12,7 @@ import type {
   IPlaytestSceneNodesObservation,
   IPlaytestSceneObservation,
   IPlaytestStartupTimeline,
+  JsonValue,
 } from "./protocol.js";
 
 export type Vec3 = [number, number, number];
@@ -68,6 +69,8 @@ export interface IPlaytestObservations {
   physicsDebugBefore?: unknown;
   physicsDebugSeries?: Array<{ label: string; snapshot: unknown; tick: number }>;
   performanceSeries?: unknown[];
+  /** Bounded shader/pipeline creation capture from the engine's renderer boundary. */
+  pipelineCensus?: JsonValue;
   renderChain?: IPlaytestRenderChainObservation;
   resources: Record<string, { after?: unknown; before?: unknown }>;
   /** Lights, materials, fog, background, camera framing and world extent, as the bridge found them. */

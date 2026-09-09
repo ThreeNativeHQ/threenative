@@ -483,6 +483,22 @@ describe("threenative doctor", () => {
     expect(check(report, "playtest").detail).toContain("runner output");
   });
 
+  it("forwards the same launch capture through project doctor", () => {
+    const runner = "/tmp/tn-doctor-playtest/node_modules/.bin/threenative-playtest";
+    execFileSyncMock.mockReturnValue("pipeline census — complete (native)");
+    const report = diagnoseProject(
+      snapshot({ projectRoot: "/tmp/tn-doctor-playtest", playtestRunnerPath: runner } as never),
+      { capturePath: "artifacts/town.log" },
+    );
+
+    expect(execFileSyncMock).toHaveBeenCalledWith(
+      runner,
+      ["doctor", "--text", "--capture", "artifacts/town.log"],
+      expect.objectContaining({ cwd: "/tmp/tn-doctor-playtest" }),
+    );
+    expect(check(report, "playtest").detail).toContain("pipeline census");
+  });
+
   it("executes a Windows .cmd playtest shim through cmd.exe and preserves diagnostics", () => {
     const runner = "C:\\game\\node_modules\\.bin\\threenative-playtest.cmd";
     execFileSyncMock.mockImplementation(() => {

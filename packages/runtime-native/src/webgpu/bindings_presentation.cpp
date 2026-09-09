@@ -2,6 +2,7 @@
 
 #include "ablation.h"
 #include "bindings_frame_stream.h"
+#include "bindings_pipelines.h"
 #include "bindings_presentation.h"
 #include "bindings_state.h"
 #include "mystral/cold_start.h"
@@ -655,6 +656,7 @@ void presentPendingSurface(BindingsState* state) {
             // display, so "first frame" means the player saw something rather than the loop merely ran.
             if (!state->profiling.firstPresentReported) {
                 state->profiling.firstPresentReported = true;
+                reportPipelineFirstPresent();
                 mystral::coldStartMark("first_frame");
                 // PRD-360 bounded endpoint: the trailing pump interval is
                 // measured here, beside first_frame on the same clock.

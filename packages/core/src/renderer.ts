@@ -1,6 +1,11 @@
 import type { Camera, Object3D, WebGLRenderer } from "three";
 import { type PassNode, RenderPipeline } from "three/webgpu";
 import type { IFrameSurfaceState } from "./frame-budget.js";
+import {
+  type IPipelineCensus,
+  type PipelineCensus,
+  createPipelineCensus,
+} from "./pipeline-census.js";
 import { AlphaAntialiasing, type IAlphaAntialiasingReport } from "./render/alpha-antialiasing.js";
 import {
   type IRenderChainBudgetWindow,
@@ -115,6 +120,8 @@ export interface IRendererLike {
   readonly compiling?: boolean;
   /** Compilation starts, including work that settles entirely between rendered frames. */
   readonly compileCount?: number;
+  /** The bounded, fail-closed pipeline observation for this renderer, when enabled. */
+  readonly pipelineCensus?: () => IPipelineCensus;
   /**
    * What alpha antialiasing did with the multisampled surface, and why, when it did nothing.
    *
@@ -217,6 +224,11 @@ export interface IRendererOptions {
   pixelRatio?: number;
   /** Where convention markers go. Defaults to the console, exactly as the render chain reports. */
   report?: (line: string) => void;
+  /**
+   * Bounded pipeline detail for a real launch capture. It is on by default so a town does not
+   * need an instrumented build; pass `false` for an identical-build overhead control.
+   */
+  pipelineCensus?: false | { readonly limit?: number };
   source?: IRendererPlatformSource;
   webgpuFactory?: (
     canvas: HTMLCanvasElement,
@@ -229,7 +241,12 @@ type RendererInstance = {
   autoClear?: boolean;
   /** three's resolved GPU timings; `info.render.timestamp` is milliseconds. */
   info?: { frame?: number; render?: { timestamp?: number } };
-  backend?: { getTimestampFrames?: (type: string) => number[] };
+  backend?: {
+    getTimestampFrames?: (type: string) => number[];
+    createRenderPipeline?: (...args: unknown[]) => unknown;
+    createComputePipeline?: (...args: unknown[]) => unknown;
+    get?: (value: unknown) => unknown;
+  };
   resolveTimestampsAsync?: (type?: string) => Promise<number | undefined>;
   /** Three answers an `antialias` request with a sample count; 0 means one sample per pixel. */
   samples?: number;
@@ -298,6 +315,7 @@ function wrapRenderer(
   state: ISurfaceState,
   reapply: { resize: (() => void) | undefined },
   alphaAntialiasing: AlphaAntialiasing,
+  pipelineCensus: PipelineCensus | undefined,
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
   let outputPass: PassNode | undefined;
@@ -316,6 +334,7 @@ function wrapRenderer(
     get compiling() {
       return activeCompiles > 0;
     },
+    ...(pipelineCensus === undefined ? {} : { pipelineCensus: () => pipelineCensus.snapshot() }),
     gpuFrameMs: () => {
       const timestamp = raw.info?.render?.timestamp;
       return typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0
@@ -455,6 +474,7 @@ function wrapRenderer(
       outputPipeline?.dispose();
       outputPipeline = undefined;
       outputPass = undefined;
+      pipelineCensus?.dispose();
       raw.dispose?.();
     },
     render: (scene, camera) => {
@@ -466,6 +486,7 @@ function wrapRenderer(
         setOutputPipelineRoot(outputPass, scene, camera);
         outputPipeline.render();
       }
+      pipelineCensus?.firstPresent();
     },
     renderOverlay: (scene, camera) => {
       const hadOwnAutoClear = Object.hasOwn(raw, "autoClear");
@@ -608,6 +629,29 @@ interface ISurfaceState {
   scaleSource: "pinned" | "auto" | "auto-pinned";
 }
 
+function createRendererPipelineCensus(
+  raw: RendererInstance,
+  kind: RendererKind,
+  options: IRendererOptions,
+): PipelineCensus | undefined {
+  if (options.pipelineCensus === false) return undefined;
+  const backendName =
+    typeof raw.backend === "object" && raw.backend !== null
+      ? (raw.backend.constructor as { name?: unknown } | undefined)?.name
+      : undefined;
+  const census = createPipelineCensus({
+    kind,
+    ...(options.pipelineCensus === undefined || options.pipelineCensus.limit === undefined
+      ? {}
+      : { limit: options.pipelineCensus.limit }),
+    ...(typeof backendName === "string" && backendName.length > 0
+      ? { backendIdentity: `${kind}:${backendName}` }
+      : {}),
+  });
+  census.installRenderer(raw);
+  return census;
+}
+
 export async function createRenderer(options: IRendererOptions = {}): Promise<IRendererLike> {
   const source = options.source;
   const resolutionScale = options.resolutionScale ?? 1;
@@ -651,8 +695,17 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       const instance = raw as RendererInstance;
       await instance.init?.();
       const alphaAntialiasing = arm(instance);
+      const pipelineCensus = createRendererPipelineCensus(instance, "webgpu", options);
       installDrawHook(instance, alphaAntialiasing);
-      renderer = wrapRenderer(instance, "webgpu", applied, state, reapply, alphaAntialiasing);
+      renderer = wrapRenderer(
+        instance,
+        "webgpu",
+        applied,
+        state,
+        reapply,
+        alphaAntialiasing,
+        pipelineCensus,
+      );
     } catch {
       renderer = undefined;
     }
@@ -665,8 +718,17 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
         : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters })
     ) as RendererInstance;
     const alphaAntialiasing = arm(raw);
+    const pipelineCensus = createRendererPipelineCensus(raw, "webgl2", options);
     installDrawHook(raw, alphaAntialiasing);
-    renderer = wrapRenderer(raw, "webgl2", applied, state, reapply, alphaAntialiasing);
+    renderer = wrapRenderer(
+      raw,
+      "webgl2",
+      applied,
+      state,
+      reapply,
+      alphaAntialiasing,
+      pipelineCensus,
+    );
   }
 
   const resizing = addResizeHandling(renderer, source, state, pixelRatio);

@@ -259,6 +259,9 @@ export function buildReport(
       ...(framebufferCoverage === undefined ? {} : { framebufferCoverage }),
       network: networkEntries,
       ...(performanceSeries === undefined ? {} : { performanceSeries }),
+      ...(afterSnapshot?.pipelineCensus === undefined && beforeSnapshot?.pipelineCensus === undefined
+        ? {}
+        : { pipelineCensus: afterSnapshot?.pipelineCensus ?? beforeSnapshot?.pipelineCensus }),
       ...(afterSnapshot?.renderChain === undefined && beforeSnapshot?.renderChain === undefined
         ? {}
         : { renderChain: afterSnapshot?.renderChain ?? beforeSnapshot?.renderChain }),

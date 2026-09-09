@@ -19,6 +19,9 @@ js::JSValueHandle handleGpuDeviceCreateRenderPipelineAsync(BindingsState* state,
 js::JSValueHandle handleGpuDeviceCreateComputePipelineAsync(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args);
 void drainAsyncPipelineCompiles(BindingsState* state);
 void shutdownAsyncPipelineCompiles(BindingsState* state);
+double pipelineClockMs();
+void reportPipelineCaptureMetadata(WGPUAdapter adapter);
+void reportPipelineFirstPresent();
 
 #endif
 

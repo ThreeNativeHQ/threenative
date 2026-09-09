@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 
 import { discoverAdb } from "./android.js";
 import { PlaytestCliUsageError } from "./config.js";
+import { parsePipelineEventMarkers, type IPipelineCaptureEvent } from "./pipeline-summary.js";
 
 /**
  * `threenative-playtest perf` — read the frame the host already reports, without opening a log by
@@ -118,6 +119,7 @@ export interface IPerfMarkerParse {
   readonly budgets: readonly IFrameBudgetWindowJson[];
   readonly hitches: readonly IHitchWindowJson[];
   readonly hostGaps: readonly IHostGapWindowJson[];
+  readonly pipelineEvents: readonly IPipelineCaptureEvent[];
   readonly presentMode: string | undefined;
   readonly projections: readonly IProjectionWindowJson[];
 }
@@ -127,6 +129,7 @@ export interface IPerfReport {
   readonly discardedWindows: readonly number[];
   readonly hitches: readonly IHitchWindowJson[];
   readonly hostGaps: readonly IHostGapWindowJson[];
+  readonly pipelineEvents?: readonly IPipelineCaptureEvent[];
   readonly pass: boolean;
   readonly presentMode: string | undefined;
   readonly projections: readonly IProjectionWindowJson[];
@@ -181,6 +184,7 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
   const projections: IProjectionWindowJson[] = [];
   const projectionPayloads = new Set<string>();
   let presentMode: string | undefined;
+  const pipelineEvents = parsePipelineEventMarkers(text);
   for (const line of text.split("\n")) {
     const budget = parseMarkerLine<IFrameBudgetWindowJson>(line, FRAME_BUDGET_MARKER);
     if (budget !== undefined) {
@@ -216,7 +220,7 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
     const mode = PRESENT_MODE_PATTERN.exec(line);
     if (mode?.[1] !== undefined) presentMode = mode[1];
   }
-  return { budgets, hitches, hostGaps, presentMode, projections };
+  return { budgets, hitches, hostGaps, pipelineEvents, presentMode, projections };
 }
 
 function parseMarkerLine<T>(line: string, marker: string): T | undefined {
@@ -266,6 +270,7 @@ export function assessPerfMarkers(parse: IPerfMarkerParse, bounds: IPerfBounds, 
     discardedWindows,
     hitches: parse.hitches,
     hostGaps: parse.hostGaps,
+    pipelineEvents: parse.pipelineEvents,
     pass: violations.length === 0 && parse.budgets.length > 0,
     presentMode: parse.presentMode,
     projections: parse.projections,
@@ -423,6 +428,17 @@ function emit(parse: IPerfMarkerParse, args: IPerfArgs, source: string): number 
 
 export function formatPerfReport(report: IPerfReport): string {
   const lines: string[] = [`perf — ${report.budgets.length} window(s) from ${report.source}`];
+  const pipelineEvents = report.pipelineEvents ?? [];
+  if (pipelineEvents.length > 0) {
+    const serviceMs = pipelineEvents.reduce((sum, event) => sum + (event.serviceMs ?? 0), 0);
+    const wallMs = pipelineEvents.reduce((sum, event) => sum + (event.wallMs ?? event.serviceMs ?? 0), 0);
+    lines.push(
+      `pipeline events: ${pipelineEvents.length} observed, ${serviceMs.toFixed(3)} ms summed service, ` +
+        `${wallMs.toFixed(3)} ms summed wall (overlap may make wall lower)`,
+    );
+  } else {
+    lines.push("pipeline events: not reported — this log cannot attribute shader compilation");
+  }
   if (report.presentMode !== undefined) lines.push(`present mode: ${report.presentMode}`);
   // Reported once, from the last window, next to the fps it explains. Named as unreported when
   // absent rather than left off: a reader who sees no scale line must not assume a full-resolution

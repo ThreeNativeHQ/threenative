@@ -3,6 +3,7 @@
 #include "bindings_pipelines.h"
 #include "bindings_resources.h"
 #include "bindings_state.h"
+#include "mystral/runtime.h"
 #include "mystral/stall_budget.h"
 #include "mystral/webgpu/bindings.h"
 #include "mystral/webgpu/checked_handle.h"
@@ -11,10 +12,12 @@
 #include <algorithm>
 #include <deque>
 #include <functional>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -317,6 +320,140 @@ static std::string singleWgslEntryPoint(const std::string& code, const char* sta
     }
     return result;
 }
+
+/** A process-monotonic origin shared by all pipeline events in one native launch. */
+double pipelineClockMs() {
+    static const auto origin = std::chrono::steady_clock::now();
+    return std::chrono::duration<double, std::milli>(
+               std::chrono::steady_clock::now() - origin)
+        .count();
+}
+
+/** Stable source identity; the full WGSL is deliberately never written to a capture. */
+static std::string pipelineSourceHash(const std::string& code) {
+    uint64_t hash = 1469598103934665603ULL;
+    for (const unsigned char character : code) {
+        hash ^= character;
+        hash *= 1099511628211ULL;
+    }
+    std::ostringstream formatted;
+    formatted << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return formatted.str();
+}
+
+static std::string pipelineJsonString(const std::string& value) {
+    std::ostringstream escaped;
+    escaped << '"';
+    for (const unsigned char character : value) {
+        switch (character) {
+            case '"': escaped << "\\\""; break;
+            case '\\': escaped << "\\\\"; break;
+            case '\n': escaped << "\\n"; break;
+            case '\r': escaped << "\\r"; break;
+            case '\t': escaped << "\\t"; break;
+            default:
+                if (character < 0x20) {
+                    escaped << "\\u" << std::hex << std::setw(4) << std::setfill('0')
+                            << static_cast<unsigned int>(character) << std::dec;
+                } else {
+                    escaped << character;
+                }
+        }
+    }
+    escaped << '"';
+    return escaped.str();
+}
+
+static const char* pipelineBackendName(WGPUBackendType backend) {
+    switch (backend) {
+        case WGPUBackendType_Null: return "null";
+        case WGPUBackendType_WebGPU: return "webgpu";
+        case WGPUBackendType_D3D11: return "d3d11";
+        case WGPUBackendType_D3D12: return "d3d12";
+        case WGPUBackendType_Metal: return "metal";
+        case WGPUBackendType_Vulkan: return "vulkan";
+        case WGPUBackendType_OpenGL: return "opengl";
+        case WGPUBackendType_OpenGLES: return "opengles";
+        default: return "unknown";
+    }
+}
+
+void reportPipelineCaptureMetadata(WGPUAdapter adapter) {
+    std::string device;
+    std::string vendor;
+    std::string architecture;
+    std::string description;
+    WGPUBackendType backend = WGPUBackendType_Undefined;
+    if (adapter != nullptr) {
+        WGPUAdapterInfo info = {};
+        wgpuAdapterGetInfo(adapter, &info);
+        device = ownStringView(info.device);
+        vendor = ownStringView(info.vendor);
+        architecture = ownStringView(info.architecture);
+        description = ownStringView(info.description);
+        backend = info.backendType;
+        wgpuAdapterInfoFreeMembers(info);
+    }
+    std::string identity = "native:";
+    identity += pipelineBackendName(backend);
+    for (const std::string& part : {vendor, device, architecture, description}) {
+        if (!part.empty()) identity += "/" + part;
+    }
+    std::cout << "TN_PIPELINE_CAPTURE:{\"version\":1,\"build\":{\"identity\":"
+              << pipelineJsonString(std::string("mystral-native@") + mystral::getVersion())
+              << "},\"adapter\":{\"identity\":" << pipelineJsonString(identity)
+              << ",\"thermal\":\"unavailable\"},\"clock\":{\"source\":\"steady\",\"originMs\":0}}"
+              << std::endl;
+}
+
+void reportPipelineFirstPresent() {
+    std::cout << std::setprecision(17)
+              << "TN_PIPELINE_FIRST_PRESENT:{\"version\":1,\"boundaryMs\":"
+              << pipelineClockMs() << "}" << std::endl;
+}
+
+/** Emit the same bounded event fields that the browser census and perf reader consume. */
+static void emitPipelineEvent(const PipelineCompileCompletion& completion,
+                              uint64_t pipelineId, const char* mode, bool success,
+                              const std::string& error = {}) {
+    static std::mutex outputMutex;
+    std::lock_guard<std::mutex> outputLock(outputMutex);
+    const uint64_t identity = pipelineId == 0 ? completion.requestId : pipelineId;
+    const std::string kind = completion.render ? "render" : "compute";
+    const std::string program = completion.render
+        ? completion.vertexHash + "/" + completion.fragmentHash
+        : completion.vertexHash;
+    const double queueMs = std::max(0.0, completion.startedMs - completion.enqueuedMs);
+    const double serviceMs = std::max(0.0, completion.finishedMs - completion.startedMs);
+    const double wallMs = std::max(0.0, completion.finishedMs - completion.enqueuedMs);
+    std::cout << std::setprecision(17)
+              << "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":" << completion.requestId
+              << ",\"pipelineIdentity\":\"native-" << kind << '-' << identity
+              << "\",\"programIdentity\":" << pipelineJsonString(program)
+              << ",\"kind\":" << pipelineJsonString(kind)
+              << ",\"pass\":" << pipelineJsonString(completion.render ? "unknown" : "compute")
+              << ",\"mode\":" << pipelineJsonString(mode)
+              << ",\"status\":\"" << (success ? "created" : "failed") << "\""
+              << ",\"startedMs\":" << completion.startedMs
+              << ",\"settledMs\":" << completion.finishedMs
+              << ",\"queueMs\":" << queueMs << ",\"serviceMs\":" << serviceMs
+              << ",\"wallMs\":" << wallMs << ",\"provenance\":{\"unknown\":true}";
+    if (!completion.vertexHash.empty()) {
+        std::cout << (completion.render ? ",\"vertex\":{\"hash\":" : ",\"compute\":{\"hash\":")
+                  << pipelineJsonString(completion.vertexHash)
+                  << ",\"bytes\":" << completion.vertexBytes << '}';
+    }
+    if (!completion.fragmentHash.empty()) {
+        std::cout << ",\"fragment\":{\"hash\":"
+                  << pipelineJsonString(completion.fragmentHash)
+                  << ",\"bytes\":" << completion.fragmentBytes << '}';
+    }
+    if (!completion.label.empty())
+        std::cout << ",\"label\":" << pipelineJsonString(completion.label);
+    if (!success) std::cout << ",\"error\":" << pipelineJsonString(error);
+    std::cout << "}\n";
+}
+
 void releaseComputePipelineRegistryEntry(BindingsState* state, uint64_t pipelineId) {
     if (!state) return;
     const auto it = state->registries.computePipelineRegistry.find(pipelineId);
@@ -657,6 +794,16 @@ static js::JSValueHandle createComputePipelineImpl(BindingsState* state, Binding
                             if (!state->engine->isUndefined(entryPointProp)) {
                                 entryPoint = state->engine->toString(entryPointProp);
                             }
+                            const auto computeMetadata =
+                                state->registries.shaderModuleMetadata->entries.find(module);
+                            const std::string computeHash =
+                                computeMetadata == state->registries.shaderModuleMetadata->entries.end()
+                                    ? ""
+                                    : computeMetadata->second.hash;
+                            const size_t computeBytes =
+                                computeMetadata == state->registries.shaderModuleMetadata->entries.end()
+                                    ? 0
+                                    : computeMetadata->second.bytes;
                             // Create pipeline
                             WGPUComputePipelineDescriptor pipelineDesc = {};
                             pipelineDesc.layout = layout;
@@ -667,11 +814,14 @@ static js::JSValueHandle createComputePipelineImpl(BindingsState* state, Binding
                                 // handle, an entry point and a layout. Copying it needs no arena.
                                 const uint64_t requestId = state->asyncPipelines.nextRequestId++;
                                 state->asyncPipelines.started += 1;
+                                const double enqueuedMs = pipelineClockMs();
                                 WGPUDevice device = state->device;
                                 if (module != nullptr) wgpuShaderModuleAddRef(module);
                                 if (layout != nullptr) wgpuPipelineLayoutAddRef(layout);
                                 enqueueCompile(state, [state, device, requestId, module, layout,
-                                                       entryPoint]() {
+                                                       entryPoint, computeHash, computeBytes,
+                                                       enqueuedMs]() {
+                                    const double startedMs = pipelineClockMs();
                                     WGPUComputePipelineDescriptor descriptor = {};
                                     descriptor.layout = layout;
                                     descriptor.compute.module = module;
@@ -679,8 +829,13 @@ static js::JSValueHandle createComputePipelineImpl(BindingsState* state, Binding
                                     PipelineCompileCompletion completion;
                                     completion.requestId = requestId;
                                     completion.render = false;
+                                    completion.enqueuedMs = enqueuedMs;
+                                    completion.startedMs = startedMs;
                                     completion.computePipeline =
                                         wgpuDeviceCreateComputePipeline(device, &descriptor);
+                                    completion.finishedMs = pipelineClockMs();
+                                    completion.vertexHash = computeHash;
+                                    completion.vertexBytes = computeBytes;
                                     if (completion.computePipeline == nullptr) {
                                         completion.error = "Failed to create compute pipeline";
                                     }
@@ -691,8 +846,18 @@ static js::JSValueHandle createComputePipelineImpl(BindingsState* state, Binding
                                 });
                                 return pendingPipelinePromise(state, requestId);
                             }
+                            PipelineCompileCompletion observation;
+                            observation.requestId = state->asyncPipelines.nextRequestId++;
+                            observation.render = false;
+                            observation.enqueuedMs = pipelineClockMs();
+                            observation.startedMs = observation.enqueuedMs;
+                            observation.vertexHash = computeHash;
+                            observation.vertexBytes = computeBytes;
                             WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(state->device, &pipelineDesc);
+                            observation.finishedMs = pipelineClockMs();
                             if (!pipeline) {
+                                emitPipelineEvent(observation, 0, "sync", false,
+                                                   "Failed to create compute pipeline");
                                 state->engine->throwException("Failed to create compute pipeline");
                                 return state->engine->newUndefined();
                             }
@@ -700,6 +865,7 @@ static js::JSValueHandle createComputePipelineImpl(BindingsState* state, Binding
                             uint64_t pipelineId = state->registries.nextComputePipelineId++;
                             state->registries.computePipelineRegistry[pipelineId] = pipeline;
                             auto jsPipeline = createPipelineWrapper(state, pipeline, pipelineId, false);
+                            emitPipelineEvent(observation, pipelineId, "sync", true);
                             if (state->verboseLogging) std::cout << "[WebGPU] Compute pipeline created (id=" << pipelineId << ")" << std::endl;
                             return jsPipeline;
 }
@@ -777,6 +943,29 @@ static js::JSValueHandle createRenderPipelineImpl(BindingsState* state, BindingD
                                     }
                                 }
                             }
+                            const auto fragmentMetadataForCapture =
+                                state->registries.shaderModuleMetadata->entries.find(fsModule);
+                            const std::string vertexHash =
+                                vertexMetadata == state->registries.shaderModuleMetadata->entries.end()
+                                    ? ""
+                                    : vertexMetadata->second.hash;
+                            const size_t vertexBytes =
+                                vertexMetadata == state->registries.shaderModuleMetadata->entries.end()
+                                    ? 0
+                                    : vertexMetadata->second.bytes;
+                            const std::string fragmentHash =
+                                fragmentMetadataForCapture == state->registries.shaderModuleMetadata->entries.end()
+                                    ? ""
+                                    : fragmentMetadataForCapture->second.hash;
+                            const size_t fragmentBytes =
+                                fragmentMetadataForCapture == state->registries.shaderModuleMetadata->entries.end()
+                                    ? 0
+                                    : fragmentMetadataForCapture->second.bytes;
+                            auto labelProp = state->engine->getProperty(descriptor, "label");
+                            const std::string pipelineLabel =
+                                state->engine->isUndefined(labelProp)
+                                    ? ""
+                                    : state->engine->toString(labelProp);
                             // Create pipeline descriptor
                             WGPURenderPipelineDescriptor pipelineDesc = {};
                             // Check for layout property
@@ -1103,14 +1292,27 @@ static js::JSValueHandle createRenderPipelineImpl(BindingsState* state, BindingD
                                 auto owned = ownDescriptor(pipelineDesc);
                                 const uint64_t requestId = state->asyncPipelines.nextRequestId++;
                                 state->asyncPipelines.started += 1;
+                                const double enqueuedMs = pipelineClockMs();
                                 WGPUDevice device = state->device;
                                 enqueueCompile(state, [state, device, requestId,
-                                                       descriptor = std::shared_ptr<OwnedRenderPipelineDescriptor>(std::move(owned))]() {
+                                                       descriptor = std::shared_ptr<OwnedRenderPipelineDescriptor>(std::move(owned)),
+                                                       enqueuedMs, vertexHash, vertexBytes,
+                                                       fragmentHash, fragmentBytes,
+                                                       pipelineLabel]() {
+                                    const double startedMs = pipelineClockMs();
                                     PipelineCompileCompletion completion;
                                     completion.requestId = requestId;
                                     completion.render = true;
+                                    completion.enqueuedMs = enqueuedMs;
+                                    completion.startedMs = startedMs;
+                                    completion.vertexHash = vertexHash;
+                                    completion.vertexBytes = vertexBytes;
+                                    completion.fragmentHash = fragmentHash;
+                                    completion.fragmentBytes = fragmentBytes;
+                                    completion.label = pipelineLabel;
                                     completion.renderPipeline =
                                         wgpuDeviceCreateRenderPipeline(device, &descriptor->descriptor);
+                                    completion.finishedMs = pipelineClockMs();
                                     if (completion.renderPipeline == nullptr) {
                                         completion.error = "Failed to create render pipeline";
                                     }
@@ -1120,9 +1322,22 @@ static js::JSValueHandle createRenderPipelineImpl(BindingsState* state, BindingD
                                 return pendingPipelinePromise(state, requestId);
                             }
                             // Create pipeline
+                            PipelineCompileCompletion observation;
+                            observation.requestId = state->asyncPipelines.nextRequestId++;
+                            observation.render = true;
+                            observation.enqueuedMs = pipelineClockMs();
+                            observation.startedMs = observation.enqueuedMs;
+                            observation.vertexHash = vertexHash;
+                            observation.vertexBytes = vertexBytes;
+                            observation.fragmentHash = fragmentHash;
+                            observation.fragmentBytes = fragmentBytes;
+                            observation.label = pipelineLabel;
                             WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(state->device, &pipelineDesc);
+                            observation.finishedMs = pipelineClockMs();
                             if (!pipeline) {
                                 rollbackBlendStates();
+                                emitPipelineEvent(observation, 0, "sync", false,
+                                                  "Failed to create render pipeline");
                                 state->engine->throwException("Failed to create render pipeline");
                                 return state->engine->newUndefined();
                             }
@@ -1131,6 +1346,7 @@ static js::JSValueHandle createRenderPipelineImpl(BindingsState* state, BindingD
                             state->registries.renderPipelineRegistry[pipelineId] = pipeline;
                             auto jsPipeline = createPipelineWrapper(state, pipeline, pipelineId, true);
                             if (state->engine->hasException()) rollbackBlendStates();
+                            emitPipelineEvent(observation, pipelineId, "sync", true);
                             if (state->verboseLogging) std::cout << "[WebGPU] Render pipeline created (id=" << pipelineId << ")" << std::endl;
                             return jsPipeline;
 }
@@ -1167,6 +1383,7 @@ void drainAsyncPipelineCompiles(BindingsState* state) {
         js::JSValueGuard id(*state->engine,
                             state->engine->newNumber(static_cast<double>(completion.requestId)));
         if (!completion.error.empty()) {
+            emitPipelineEvent(completion, 0, "async", false, completion.error);
             js::JSValueGuard nothing(*state->engine, state->engine->newUndefined());
             js::JSValueGuard error(*state->engine,
                                    state->engine->newString(completion.error.c_str()));
@@ -1188,6 +1405,10 @@ void drainAsyncPipelineCompiles(BindingsState* state) {
             state->registries.computePipelineRegistry[pipelineId] = completion.computePipeline;
             wrapper = createPipelineWrapper(state, completion.computePipeline, pipelineId, false);
         }
+        const uint64_t pipelineId = completion.render
+            ? state->registries.nextRenderPipelineId - 1
+            : state->registries.nextComputePipelineId - 1;
+        emitPipelineEvent(completion, pipelineId, "async", true);
         js::JSValueGuard pipeline(*state->engine, wrapper);
         js::JSValueGuard undefinedError(*state->engine, state->engine->newUndefined());
         js::JSValueGuard ignored(
@@ -1255,6 +1476,8 @@ js::JSValueHandle handleGpuDeviceCreateShaderModule(BindingsState* state, Bindin
                             state->registries.shaderModuleMetadata->entries[shaderModule] = {
                                 singleWgslEntryPoint(code, "vertex"),
                                 singleWgslEntryPoint(code, "fragment"),
+                                pipelineSourceHash(code),
+                                code.size(),
                             };
                             state->engine->registerRelease(
                                 jsShader, [metadata = std::weak_ptr<ShaderModuleMetadataStore>(

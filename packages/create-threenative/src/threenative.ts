@@ -7,7 +7,7 @@ export function cliHelp(command?: PublicCommand): string {
   if (command === "build") return buildHelp();
   if (command === "doctor") {
     return `${[
-      "Usage: threenative doctor [--text]",
+      "Usage: threenative doctor [--text] [--capture <path>]",
       "",
       "Checks this project against what the build and the native host assume about it:",
       "installed and version-matched @threenative packages, a portable entry that",
@@ -15,6 +15,7 @@ export function cliHelp(command?: PublicCommand): string {
       "capability search an authoring agent needs.",
       "",
       "Prints JSON by default; --text prints the same report for a person.",
+      "--capture forwards a browser census JSON or native TN_PIPELINE_EVENT log to the playtest doctor.",
       "Exits 0 when nothing failed, 1 when a check failed.",
     ].join("\n")}\n`;
   }
@@ -40,7 +41,21 @@ export async function runDoctorCommand(
   argv: readonly string[],
   cwd = process.cwd(),
 ): Promise<number> {
-  const report = diagnoseProject(await readProject(cwd));
+  let capturePath: string | undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    const flag = argv[index];
+    if (flag === "--text") continue;
+    if (flag === "--capture") {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("--"))
+        throw new Error("doctor: '--capture' requires a value.");
+      capturePath = value;
+      index += 1;
+      continue;
+    }
+    throw new Error(`doctor: unknown option '${String(flag)}'.`);
+  }
+  const report = diagnoseProject(await readProject(cwd), { capturePath });
   process.stdout.write(
     argv.includes("--text") ? formatDoctorReport(report) : `${JSON.stringify(report, null, 2)}\n`,
   );
