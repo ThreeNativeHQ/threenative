@@ -206,8 +206,8 @@ describe("createRenderer", () => {
         canvas,
         preferWebGPU: false,
         webgl2Factory: () => ({
-          compileAsync: async (scene: unknown, camera: unknown) => {
-            warmed.push([scene, camera]);
+          compileAsync: async (...args: unknown[]) => {
+            warmed.push(args);
           },
           domElement: canvas,
           render: () => undefined,
@@ -216,8 +216,9 @@ describe("createRenderer", () => {
       });
       const scene = {} as never;
       const camera = {} as never;
-      await renderer.compileAsync(scene, camera);
-      expect(warmed).toEqual([[scene, camera]]);
+      const targetScene = {} as never;
+      await renderer.compileAsync(scene, camera, targetScene);
+      expect(warmed).toEqual([[scene, camera, targetScene]]);
       renderer.dispose();
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");

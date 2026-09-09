@@ -110,7 +110,7 @@ export interface IRendererLike {
    * It is on the wrapper for one reason: without it a game must cast through `.raw` to warm up,
    * and a game that cannot warm up without a cast will not warm up.
    */
-  compileAsync(scene: Object3D, camera: Camera): Promise<void>;
+  compileAsync(scene: Object3D, camera: Camera, targetScene?: Object3D): Promise<void>;
   /** A warm-up may outlive its caller's timeout; its render targets must remain alive. */
   readonly compiling?: boolean;
   /** Compilation starts, including work that settles entirely between rendered frames. */
@@ -386,7 +386,7 @@ function wrapRenderer(
         throw new Error(`info is unavailable on the ${kind} renderer.`);
       return info;
     },
-    compileAsync: async (scene, camera) => {
+    compileAsync: async (scene, camera, targetScene) => {
       if (disposed) return;
       // Before the compile, never after: three builds a pipeline from `alphaToCoverage` and
       // rebuilds it when the flag moves, so converting afterwards would throw away the warm-up
@@ -402,15 +402,19 @@ function wrapRenderer(
           if (prewarmedRoots.has(object) && hasHiddenAncestor(object)) hiddenRoots.push(object);
         });
       }
+      const compileTargetScene = targetScene ?? scene;
       activeCompiles += 1;
       compileCount += 1;
       try {
         for (const root of hiddenRoots) {
           if (disposed) return;
-          await raw.compileAsync(root, camera, scene);
+          await raw.compileAsync(root, camera, compileTargetScene);
           prewarmedRoots.delete(root);
         }
-        if (!disposed) await raw.compileAsync(scene, camera);
+        if (!disposed) {
+          if (targetScene === undefined) await raw.compileAsync(scene, camera);
+          else await raw.compileAsync(scene, camera, targetScene);
+        }
       } finally {
         activeCompiles -= 1;
         if (activeCompiles === 0) {
