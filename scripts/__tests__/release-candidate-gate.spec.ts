@@ -27,6 +27,11 @@ import {
 } from "../release-candidate-gate.js";
 
 const CANDIDATE_SHA = "a".repeat(40);
+const RUNTIME_VERSION =
+  expectedReleasePackages().find((item) => item.name === "@threenative/runtime-native")?.version ??
+  (() => {
+    throw new Error("release candidate fixture is missing @threenative/runtime-native");
+  })();
 
 function packageTarball(): Buffer {
   const root = mkdtempSync(join(tmpdir(), "threenative-release-test-"));
@@ -53,9 +58,9 @@ function candidate(overrides: Partial<IReleaseCandidate> = {}): IReleaseCandidat
   return {
     schemaVersion: 1,
     repository: "ThreeNativeHQ/threenative",
-    tag: "runtime-native-v0.3.0",
+    tag: `runtime-native-v${RUNTIME_VERSION}`,
     candidateSha: CANDIDATE_SHA,
-    runtimeVersion: "0.3.0",
+    runtimeVersion: RUNTIME_VERSION,
     packageCohort: packages,
     requiredRuns: {
       ci: {
@@ -420,9 +425,9 @@ describe("release candidate gate", () => {
     const request: IReleaseCandidateRequest = {
       schemaVersion: 1,
       repository: "ThreeNativeHQ/threenative",
-      tag: "runtime-native-v0.3.0",
+      tag: `runtime-native-v${RUNTIME_VERSION}`,
       candidateSha: CANDIDATE_SHA,
-      runtimeVersion: "0.3.0",
+      runtimeVersion: RUNTIME_VERSION,
       requiredRunIds: { ci: 201, native: 202 },
       reportArtifacts: {
         parity: {
@@ -497,9 +502,9 @@ describe("release candidate gate", () => {
     const request: IReleaseCandidateRequest = {
       schemaVersion: 1,
       repository: "ThreeNativeHQ/threenative",
-      tag: "runtime-native-v0.3.0",
+      tag: `runtime-native-v${RUNTIME_VERSION}`,
       candidateSha: CANDIDATE_SHA,
-      runtimeVersion: "0.3.0",
+      runtimeVersion: RUNTIME_VERSION,
       requiredRunIds: { ci: 201, native: 202 },
       reportArtifacts: {
         parity: {
