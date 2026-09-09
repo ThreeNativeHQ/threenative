@@ -206,7 +206,7 @@ flowchart TD
 
 | # | New thing | Live caller (`file:line`, non-test) | Replaces | Old path removed? | Negative control |
 |---|---|---|---|---|---|
-| 1 | `releaseCandidateV1` exact-candidate preflight | `.github/workflows/release-candidate.yml:103-115` resolves the candidate artifact; `.github/workflows/native-release.yml:30-79` selects and validates it before release side effects | tag/version-only validation | yes; no build/publish job can bypass exact SHA, dependency, cohort, registry, or credential preflight | substitute a stale report/run or remove a required availability boolean; resolver/validator exits 1/2 |
+| 1 | `releaseCandidateV1` exact-candidate preflight | `.github/workflows/release-candidate.yml:105-118` builds packages and resolves the candidate artifact; `.github/workflows/native-release.yml:30-79` selects and validates it before release side effects | tag/version-only validation | yes; no build/publish job can bypass exact SHA, dependency, cohort, normalized registry tree, strict report, or credential preflight | substitute a stale report/run, arbitrary report artifact contract, different package tree, or remove a required availability boolean; resolver/validator exits 1/2 |
 | 2 | Desktop release mode and signed/notarized artifacts | `packages/create-threenative/src/build.ts:177-192` dispatches the existing desktop packager; `.github/workflows/native-release.yml:32-124` executes/stages the desktop matrix | unsigned standalone desktop output as release evidence | local unsigned mode remains; release publication delegates only to validated signed output | omit platform signing/notary input; release build reports BLOCKED and exits 2 before staging |
 | 3 | Android signed APK/AAB and iOS signed archive/IPA | `packages/create-threenative/src/build.ts:143-174` dispatches the existing mobile packagers; `.github/workflows/native-release.yml:126-216` builds current mobile runtime subjects | debug APK and unsigned simulator archive as store-ready evidence | retained for local/emulator/simulator use, but excluded from release/store-ready subject set | unsigned/debuggable APK or simulator-only iOS app fails release validation, exit 1/2 |
 | 4 | npm release cohort and registry-only clean consumers | `.github/workflows/native-release.yml:218-269` is the existing prerelease publication seam and `:271-549` is the consumer seam; both are edited to stage npm then consume without checkout/tarballs | local-tarball clean consumer as public proof | local tarball lane remains PRD-048 evidence but cannot satisfy PRD-060 | inject `file:`/`workspace:` dependency or make runtime npm lookup return `E404`; consumer exits nonzero |
@@ -258,9 +258,10 @@ has at most six declared files, and stops for a HIGH-mode checkpoint before the 
       request/availability inputs; reject unknown/missing fields and never serialize secret values.
 - [x] Derive the exact public workspace cohort (`11` packages) and GitHub subject set (`18`
       subjects) from repository manifests and the runtime asset map rather than handwritten lists.
-- [x] Resolve required runs through the GitHub API, download the exact report artifacts, validate
-      their SHA/verdict/source identity, and record their byte SHA-256; resolve existing npm
-      versions through metadata plus tarball integrity/SHA-256 checks.
+- [x] Resolve required runs through the GitHub API, download the exact report artifacts, enforce
+      fixed workflow/artifact/path contracts and strict parity/provenance schemas, and record their
+      byte SHA-256; resolve existing npm versions through metadata plus tarball integrity, metadata,
+      raw SHA-256, and normalized file-tree SHA-256 checks against a local `pnpm pack`.
 - [x] Require successful `CI` and `Native platform evidence` conclusions whose `head_sha` equals
       the tag's peeled commit. Require PRD-054 all-target verdict and PRD-059 release inputs from
       the same SHA. Older, cancelled, failed, skipped, neutral, or dirty-only evidence is non-pass.
@@ -284,9 +285,11 @@ has at most six declared files, and stops for a HIGH-mode checkpoint before the 
 | Gate | Test File | Test Name | Explicit assertion semantics | Negative control |
 |---|---|---|---|---|
 | `candidate-schema` | `scripts/__tests__/release-candidate-gate.spec.ts` | `should reject unknown missing or secret-bearing release candidate fields` | exact key set; secrets represented only as booleans; missing subject/dependency/run path named; zero subjects rejected | omit PRD-059 provenance subject; validator exits 1 |
+| `report-contract` | same | `should reject a report wrapper with an arbitrary artifact contract or subject set`; `should reject a minimal PASS payload that omits the parity target evidence` | exact report type/schema, workflow, artifact name/path, subject set, target rows, hashes, and required provenance fields | substitute arbitrary report metadata or minimal `PASS` JSON; parser/validator exits 1 |
 | `exact-candidate-ci` | same | `should require successful CI parity and provenance evidence from the tag commit` | peeled tag SHA equals CI/native/report SHA; every required conclusion is `success`; cancelled `31333583703` and older `2c5f7f0` are rejected | substitute `2c5f7f0`; gate exits 1 |
 | `credential-preflight` | same | `should block before signing or publication when any required credential is absent` | complete missing-credential list, status `BLOCKED`, no build/publish command invocation, exit 2 | unset npm and Apple signing presence flags |
 | `authoritative-resolution` | same | `should derive the package, run, report, subject, and availability fields` | resolver output is derived from injected run/report/registry observations and validates as the exact cohort | return a stale run SHA or registry integrity; resolver exits 1 |
+| `registry-tree` | same | `should reject registry bytes whose normalized package tree differs from the workspace` | existing registry versions require a matching normalized local package file tree and package metadata | inject a different workspace normalized hash; resolver exits 1 |
 | `preflight-wiring` | `packages/runtime-native/tests/native-platform-workflow.test.mjs` | `should order exact-candidate preflight before every release side effect` | preflight token precedes build, signing, GitHub release, npm publish, dist-tag, and finalize tokens; every side-effect job depends on it | remove one `needs` edge; focused test exits 1 |
 
 **Revert check:** Remove the preflight call while keeping current tag validation; the structural

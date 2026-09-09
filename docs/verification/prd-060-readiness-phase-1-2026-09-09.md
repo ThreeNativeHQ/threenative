@@ -25,10 +25,15 @@ was mutated.
   from `@threenative/runtime-native`.
 - The resolver reads required run metadata through the GitHub API, requires completed successful
   `push` runs on `main` at the requested SHA, downloads the named report artifacts from those runs,
-  validates report SHA/verdict/subjects, and records each report's byte SHA-256 and source identity.
-  It reads npm metadata and downloads each existing exact-version tarball, checking npm integrity and
-  the tarball SHA-256. Missing exact versions are recorded as `absent` so the native release can
-  publish the runtime release before the package cohort.
+  pins their workflow/artifact/path contracts, and validates strict parity/provenance report schemas.
+  Parity requires `web`, `desktop`, and `android` PASS target rows; provenance requires the exact
+  runtime asset subject set and SHA-256 values for every subject plus lock/SBOM/license inputs.
+  It records each report's byte SHA-256 and source identity.
+- It reads npm metadata and downloads each existing exact-version tarball, checking npm integrity,
+  raw tarball SHA-256, package metadata, and a normalized sorted file-tree SHA-256. The resolver
+  packs the local workspace package after `pnpm build` and requires that normalized tree to match.
+  Missing exact versions are recorded as `absent` so the native release can publish the runtime
+  release before the package cohort.
 - `release-candidate.yml` derives credential booleans from secret presence and accepts hosted
   capability availability as explicit operator inputs. It writes only booleans to the candidate;
   the candidate records `availabilitySource: "workflow-inputs"`. Any false value remains a
@@ -74,6 +79,18 @@ PASS: releaseCandidateV1
 Exact candidate, dependency evidence, subject set, and release inputs are ready.
 ```
 
+The repair controls first reproduced the two review findings before the strict contracts existed:
+
+```text
+--- report-contract ---
+15 tests collected; arbitrary parity artifact name/path/subject returned PASS
+RED_CONTROL_EXIT=1
+
+--- registry-tree ---
+resolver returned a candidate when the injected workspace normalized hash differed
+RED_CONTROL_EXIT=1
+```
+
 The exact validator invocations were:
 
 ```sh
@@ -95,13 +112,26 @@ The implementation tests are green:
 
 ```text
 pnpm exec vitest run scripts/__tests__/release-candidate-gate.spec.ts
-1 file / 13 tests passed
+1 file / 17 tests passed
 
 pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/native-platform-workflow.test.mjs
 1 file / 17 tests passed
 
 public package cohort: 11
 GitHub subject set: 18
+
+TN_SUITE_EXCLUDE_PACKAGES='@threenative/runtime-native' pnpm test
+410 files passed / 2 skipped
+4731 tests passed / 8 skipped
+suite temporary directory count: before 1, after 1
+
+pnpm --filter @threenative/runtime-native native:coverage
+38 native contract targets passed; 2 configured targets blocked; 21997 instrumented lines;
+17722 covered; 80.57%
+
+pnpm budgets
+budgets ok: 11 framework packages, 16 example workspaces, 62247/15000 framework LOC,
+140720/100000 native runtime LOC
 ```
 
 The phase-1 acceptance boundary is therefore proven locally. The remaining release criteria still
