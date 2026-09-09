@@ -10,6 +10,33 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## PRD-369 partial material graph reuse — 2026-09-09
+
+The Wildwood game lane at `ThreeNativeHQ/examples`, commit `f8e992c`, now routes imported foliage
+sections through `wildwood/src/render/sharedMaterials.ts`. The factory keeps each section's map,
+colour gain, alpha cutoff, normal map and authored wind values on its material. One wind vertex graph
+is shared by moving sections; its scalar uniforms update from the material while the shadow pass
+retains the last valid value when its generated material has no game fields. The old assignment was
+restored as the negative control by replacing `wildwood/src/render/foliage.ts` with its HEAD source.
+
+Both arms used the complete Wildwood `playtests/survives.playtest.json` scenario with cache disabled,
+the same NVIDIA Turing WebGPU adapter and the temporary PRD-367 census packages. The original arm
+created 272 render pipelines and 244 unique programs; the candidate created 266 pipelines and 239
+unique programs. Each arm had zero failures and one pending census event, so the census was incomplete
+and the counts are a bounded comparison rather than a settled whole-game total. The candidate reduced
+six creations and five unique programs in this paired run.
+
+The candidate passed the real scenario with valley counts of 2,341 trees, 7,600 ferns, 36,300 grass
+instances and 72,200 terrain triangles, movement of 6.88 m, and zero console or runtime diagnostics.
+The focused material test passed, `pnpm typecheck` passed, `pnpm test:render` passed 19/19, the audio
+gate passed 191/191 checks, and the Vite build passed. The candidate screenshot retained the baseline
+daytime appearance within the recorded capture variation; no authored material feature was removed.
+
+This is a partial PRD-369 result. The ≤64-program target, qualified Pixel 8 first-playable median,
+native desktop comparison, steady-state frame-time budget and complete census settlement remain
+unverified. The candidate PR is [examples#3](https://github.com/ThreeNativeHQ/examples/pull/3),
+merged at `b2183b316076f3f918df200d92945acb3b3118a0`.
+
 ## Repair-20 — cross-platform engine-load identity — 2026-09-07
 
 This repair belongs to the `examples/engine-load-test` identity layer, not to a public engine
