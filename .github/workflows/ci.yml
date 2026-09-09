@@ -835,13 +835,23 @@ jobs:
 
   # Building the workspace and checking the entity-registry boundary needs neither the native host
   # nor a browser, so it is a gate the scaffold and benchmark lanes can wait on instead of waiting
-  # ~15 minutes behind the native suite.
+  # ~15 minutes behind the native suite. This is also one of the exact contexts protected by the
+  # `main protection` ruleset, so it projects the native reusable workflow's verdict explicitly.
+  # Without the result assertion, a failed upstream would skip this required job and a skipped
+  # required check would count as satisfied.
   build:
-    needs: scope
-    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    needs: [scope, native-platforms]
+    if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Require the native platform lane
+        env:
+          NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}
+        run: |
+          set -euo pipefail
+          echo "native-platforms: $NATIVE_PLATFORM_RESULT"
+          test "$NATIVE_PLATFORM_RESULT" = "success"
       - uses: actions/checkout@v7
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7

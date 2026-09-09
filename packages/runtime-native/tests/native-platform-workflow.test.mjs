@@ -81,6 +81,35 @@ test('green native platform lane is required by primary CI', () => {
   );
 });
 
+test('native platform failures fail the exact protected build context', () => {
+  const buildJob = ciWorkflow.match(
+    /\n\x20{2}build:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(buildJob).toContain('needs: [scope, native-platforms]');
+  expect(buildJob).toContain(
+    "if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}",
+  );
+  expect(buildJob).toContain(
+    'NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}',
+  );
+  const gate = buildJob.match(
+    /\n\x20{6}- name: Require the native platform lane\n\x20{8}env:\n\x20{10}NATIVE_PLATFORM_RESULT: \$\{\{ needs\.native-platforms\.result \}\}\n\x20{8}run: \|\n([\s\S]*?)(?=\n\x20{6}- )/u,
+  )?.[1];
+  expect(gate).toBeDefined();
+  const script = gate
+    ?.split('\n')
+    .map((line) => line.replace(/^\x20{10}/u, ''))
+    .join('\n');
+  expect(script).toBeDefined();
+  const run = (result) =>
+    spawnSync('bash', ['-euo', 'pipefail', '-c', script], {
+      env: { ...process.env, NATIVE_PLATFORM_RESULT: result },
+      encoding: 'utf8',
+    });
+  expect(run('success').status).toBe(0);
+  expect(run('failure').status).not.toBe(0);
+});
+
 test('desktop platform lanes build and retain executable evidence', () => {
   for (const token of [
     'runner: macos-15',
