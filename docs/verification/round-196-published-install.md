@@ -879,7 +879,7 @@ test, and workflow files plus this evidence file.
 
 Lane: `linchpin/prd-196-production-readiness-20260908`
 Worktree: `.worktrees/prd-196-production-readiness-20260908`
-Base: `76321e46d93f8ece59528315e83b17a644b7a77b` (`origin/main`)
+Historical base: `76321e46d93f8ece59528315e83b17a644b7a77b` (`origin/main` at that time)
 Lane commits under test: `7f2408937`, `1f43d4f31`, `2f4152b53`, and this repair commit.
 
 This round re-ran every claim in the five phase records against the lane tip rather than against
