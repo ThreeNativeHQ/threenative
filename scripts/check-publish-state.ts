@@ -122,34 +122,77 @@ export function npmLookup(repo: string): RegistryLookup {
   };
 }
 
+const SCRIPT_FILE =
+  /(?:^|[\s"'`])((?:\.\.?\/)*[\w.-]+(?:\/[\w.-]+)*\.(?:[cm]?[jt]sx?|json|mjs|cjs|py|sh))/gu;
+
+function addPackageScriptInputs(directory: string, scripts: unknown, targets: Set<string>): void {
+  const scriptDirectory = path.join(directory, "scripts");
+  if (fs.existsSync(scriptDirectory)) targets.add(scriptDirectory);
+  if (typeof scripts !== "object" || scripts === null || Array.isArray(scripts)) return;
+  for (const command of Object.values(scripts as Record<string, unknown>)) {
+    if (typeof command !== "string") continue;
+    for (const match of command.matchAll(SCRIPT_FILE)) {
+      const relative = match[1];
+      if (relative === undefined) continue;
+      const absolute = path.resolve(directory, relative);
+      if (!absolute.startsWith(`${directory}${path.sep}`) || !fs.existsSync(absolute)) continue;
+      targets.add(absolute);
+    }
+  }
+}
+
+function addPackageConfigInputs(directory: string, targets: Set<string>): void {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (!entry.isFile() || !/(?:^|\.)config\.(?:[cm]?[jt]sx?|json)$/u.test(entry.name)) continue;
+    targets.add(path.join(directory, entry.name));
+  }
+}
+
+function addPackageDocuments(directory: string, targets: Set<string>): void {
+  for (const name of ["README.md", "LICENSE", "LICENCE", "NOTICE"]) {
+    const file = path.join(directory, name);
+    if (fs.existsSync(file)) targets.add(file);
+  }
+}
+
+function addPackageFiles(
+  directory: string,
+  manifest: string,
+  files: unknown,
+  targets: Set<string>,
+): void {
+  if (files === undefined) {
+    // Without a files list npm's default allowlist is broad. Watching the package directory is
+    // safer than guessing which default inclusion rule a future npm version will apply.
+    targets.add(directory);
+    return;
+  }
+  if (!Array.isArray(files) || !files.every((entry) => typeof entry === "string"))
+    throw new Error(`TN_PUBLISH_FILES_MALFORMED: ${manifest} has a non-string files list.`);
+  for (const entry of files) targets.add(path.join(directory, entry));
+}
+
 /** Paths that can change the package artifact or the metadata a consumer receives. */
 function publicationInputTargets(directory: string): readonly string[] {
   const manifest = path.join(directory, "package.json");
   if (!fs.existsSync(manifest))
     throw new Error(`TN_PUBLISH_MANIFEST_MISSING: ${manifest} does not exist.`);
-  const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as { files?: unknown };
+  const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as {
+    files?: unknown;
+    scripts?: unknown;
+  };
   const targets = new Set<string>([manifest]);
   const source = path.join(directory, "src");
   if (fs.existsSync(source)) targets.add(source);
   const templates = path.join(directory, "templates");
   if (fs.existsSync(templates)) targets.add(templates);
+  addPackageScriptInputs(directory, parsed.scripts, targets);
+  addPackageConfigInputs(directory, targets);
 
   // npm always includes these package documents when they exist. Explicit `files` entries are
   // added below, including non-src bundles such as core/gpl and core/mcp.
-  for (const name of ["README.md", "LICENSE", "LICENCE", "NOTICE"]) {
-    const file = path.join(directory, name);
-    if (fs.existsSync(file)) targets.add(file);
-  }
-
-  if (parsed.files === undefined) {
-    // Without a files list npm's default allowlist is broad. Watching the package directory is
-    // safer than guessing which default inclusion rule a future npm version will apply.
-    targets.add(directory);
-  } else {
-    if (!Array.isArray(parsed.files) || !parsed.files.every((entry) => typeof entry === "string"))
-      throw new Error(`TN_PUBLISH_FILES_MALFORMED: ${manifest} has a non-string files list.`);
-    for (const entry of parsed.files) targets.add(path.join(directory, entry));
-  }
+  addPackageDocuments(directory, targets);
+  addPackageFiles(directory, manifest, parsed.files, targets);
   return [...targets];
 }
 

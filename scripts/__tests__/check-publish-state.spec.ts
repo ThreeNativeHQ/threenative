@@ -167,6 +167,48 @@ describe("pnpm publish:check", () => {
     expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(1);
   });
 
+  it("counts package-local build configs and helpers for an already published version", async () => {
+    const root = await makeTempDir("threenative-publish-build-inputs-");
+    const packageRoot = path.join(root, "packages/core");
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({
+        files: ["dist", "README.md"],
+        name: "@threenative/core",
+        scripts: {
+          build: "tsup --config tsup.config.ts && node scripts/build-helper.mjs",
+          postinstall: "node scripts/build-helper.mjs",
+        },
+        version: "0.1.0",
+      }),
+    );
+    write(root, "packages/core/README.md", "# core\n");
+    write(root, "packages/core/src/index.ts", "export const x = 1;\n");
+    write(root, "packages/core/tsup.config.ts", "export default {};\n");
+    write(root, "packages/core/scripts/build-helper.mjs", "export {};\n");
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "initial"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+        GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
+      },
+    });
+    write(root, "packages/core/tsup.config.ts", "export default { minify: true };\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-build-config"], { cwd: root });
+    write(root, "packages/core/scripts/build-helper.mjs", "export const helper = true;\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-build-helper"], { cwd: root });
+
+    expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(2);
+  });
+
   it("does not fail a package that was never published", async () => {
     // A 404 is what this whole lane exists to fix; refusing to publish because of it would make
     // the preflight unsatisfiable.
