@@ -21,7 +21,7 @@ picked by hand from a desktop capture.
 
 ## Starter slice — September 5, 2026
 
-[PRD-362](../batch-2026-09-05/PRD-362-starter-quality-adapts-to-measured-load.md) implements the
+[PRD-362](../other/PRD-362-starter-quality-adapts-to-measured-load.md) implements the
 starter slice. Core reports successful GPU-query age beside GPU duration; generated starter
 source owns the hysteresis, tier mapping, explicit override and fallback reason. Its fallback
 uses presented-frame timing as allowed by that delivery slice. No appearance policy moved to core.

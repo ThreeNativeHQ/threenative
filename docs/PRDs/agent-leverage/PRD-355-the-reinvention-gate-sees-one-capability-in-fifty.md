@@ -4,8 +4,7 @@ prd_contract: v1
 
 # PRD-355 — the reinvention gate sees one capability in fifty, and never sees a user's game
 
-**Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/` from the
-[`ASTRA-BATCH-2026-09-04` provenance index](../ASTRA-BATCH-2026-09-04.md), measured at `dae30759`.
+**Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/`, measured at `dae30759`.
 
 **Complexity:** +3 for 10+ files, +2 for a new shipped module (the detector leaves `scripts/`),
 +2 for multi-package (`create-threenative`, `engine-mcp`, `playtest`, `scripts/`) = **7 → HIGH

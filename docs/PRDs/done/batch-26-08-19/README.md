@@ -14,7 +14,7 @@ repository does not have:
 |---|---|---|
 | 3 — a paired result vanilla cannot match | The exit gate asks the paired instrument to demonstrate a capability that instrument is designed to neutralise | **moved** — [PRD-079](../PRD-079-phase-2-exit-criteria.md); the gate was replaced and its first execution is red |
 | 4 — parity is checkable, not asserted | The Android emulator lane had two contradicting ledgers and was red on what turned out to be a harness defect | **moved** — [PRD-160](../PRD-160-android-emulator-lane-repair-and-parity-adjudication.md); adjudicated, one number, still not green |
-| 5 — a toolchain-free user ships from published artifacts | Ten release tags, zero surviving releases; needs a hosted run | **no** — [PRD-078](../../BLOCKED/requires-hosted-run/PRD-078-toolchain-free-consumer-proof.md), stays blocked |
+| 5 — a toolchain-free user ships from published artifacts | Ten release tags, zero surviving releases; needs a hosted run | **no** — [PRD-078](../../production-readiness/PRD-078-toolchain-free-consumer-proof.md), stays blocked |
 
 Two more things were found by running the repository's own commands on `HEAD` while assembling
 this batch, and neither had a PRD:
@@ -91,7 +91,7 @@ What the batch moved, and what it did not:
 |---|---|---|
 | 3 | A Phase 2 exit gate that could not be passed as written | A three-part gate adopted by the owner; its first execution is **RED** and claims no score points. Row still open, now on shipping a capability |
 | 4 | Two contradicting Android ledgers, lane red on a bisected commit | One number: `67/0/0` reproduces, `27/40/0` retired. Row still **not green** — the lane exits `1` on [PRD-166](../../done/PRD-166-camera-parented-overlay-never-marks-on-android.md) |
-| 5 | Untouched by design | Untouched. [PRD-078](../../BLOCKED/requires-hosted-run/PRD-078-toolchain-free-consumer-proof.md) still needs a hosted run |
+| 5 | Untouched by design | Untouched. [PRD-078](../../production-readiness/PRD-078-toolchain-free-consumer-proof.md) still needs a hosted run |
 
 Two instruments were also repaired: `pnpm round:deletions` runs again after being dead since round
 10, and round 11 scored the five round-10 visual gaps that nobody had re-measured.
