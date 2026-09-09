@@ -285,6 +285,46 @@ describe("pnpm publish:check", () => {
     expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(2);
   });
 
+  it("counts changes in a workspace sibling consumed by the package build", async () => {
+    const root = await makeTempDir("threenative-publish-sibling-inputs-");
+    const packageRoot = path.join(root, "packages/core");
+    write(
+      root,
+      "packages/core/package.json",
+      JSON.stringify({
+        devDependencies: { "threenative-blender-mcp": "workspace:*" },
+        files: ["dist", "README.md"],
+        name: "@threenative/core",
+        version: "0.1.0",
+      }),
+    );
+    write(root, "packages/core/README.md", "# core\n");
+    write(root, "packages/core/src/index.ts", "export const x = 1;\n");
+    write(
+      root,
+      "packages/blender-mcp/package.json",
+      JSON.stringify({ name: "threenative-blender-mcp", version: "0.1.0" }),
+    );
+    write(root, "packages/blender-mcp/gpl/convert.py", "print('initial')\n");
+    execFileSync("git", ["init", "--quiet"], { cwd: root });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "initial"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
+        GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
+      },
+    });
+    write(root, "packages/blender-mcp/gpl/convert.py", "print('changed')\n");
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["commit", "--quiet", "-m", "change-sibling"], { cwd: root });
+
+    expect(gitSourceCommits(root)(packageRoot, "2025-01-01T00:00:00Z")).toBe(1);
+  });
+
   it("does not fail a package that was never published", async () => {
     // A 404 is what this whole lane exists to fix; refusing to publish because of it would make
     // the preflight unsatisfiable.

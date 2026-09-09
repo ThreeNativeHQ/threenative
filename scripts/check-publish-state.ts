@@ -28,7 +28,7 @@ import { init, parse } from "es-module-lexer";
 const { releaseManifestUrl } = (await import(
   new URL("../packages/runtime-native/scripts/install-prebuilt.mjs", import.meta.url).href
 )) as { readonly releaseManifestUrl: (version?: string) => string };
-import { publicWorkspacePackages } from "./workspace-packages.js";
+import { publicWorkspacePackages, workspacePackages } from "./workspace-packages.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 
@@ -142,6 +142,12 @@ function addPackageScriptInputs(directory: string, scripts: unknown, targets: Se
 }
 
 const TSCONFIG_FILE = /^tsconfig(?:\.[^/]+)?\.json$/u;
+const DEPENDENCY_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+] as const;
 
 function addPackageConfigInputs(directory: string, targets: Set<string>): void {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -165,6 +171,29 @@ function addSharedBuildInputs(repo: string, targets: Set<string>): void {
   }
   const patches = path.join(repo, "patches");
   if (fs.existsSync(patches)) targets.add(patches);
+}
+
+function addWorkspaceDependencyInputs(
+  repo: string,
+  directory: string,
+  manifest: Record<string, unknown>,
+  targets: Set<string>,
+): void {
+  const packageDirectories = new Map(
+    workspacePackages(repo).map((item) => [item.name, item.directory]),
+  );
+  for (const field of DEPENDENCY_FIELDS) {
+    const block = manifest[field];
+    if (typeof block !== "object" || block === null || Array.isArray(block)) continue;
+    for (const [name, specifier] of Object.entries(block as Record<string, unknown>)) {
+      if (typeof specifier !== "string" || !specifier.startsWith("workspace:")) continue;
+      const sibling = packageDirectories.get(name);
+      if (sibling === undefined || sibling === directory) continue;
+      // A workspace dependency can be a build input even when it is only a devDependency: assets
+      // and core copy sibling MCP output into their own published tarballs.
+      targets.add(sibling);
+    }
+  }
 }
 
 function addPackageDocuments(directory: string, targets: Set<string>): void {
@@ -196,10 +225,7 @@ function publicationInputTargets(repo: string, directory: string): readonly stri
   const manifest = path.join(directory, "package.json");
   if (!fs.existsSync(manifest))
     throw new Error(`TN_PUBLISH_MANIFEST_MISSING: ${manifest} does not exist.`);
-  const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as {
-    files?: unknown;
-    scripts?: unknown;
-  };
+  const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as Record<string, unknown>;
   const targets = new Set<string>([manifest]);
   const source = path.join(directory, "src");
   if (fs.existsSync(source)) targets.add(source);
@@ -208,6 +234,7 @@ function publicationInputTargets(repo: string, directory: string): readonly stri
   addPackageScriptInputs(directory, parsed.scripts, targets);
   addPackageConfigInputs(directory, targets);
   addSharedBuildInputs(repo, targets);
+  addWorkspaceDependencyInputs(repo, directory, parsed, targets);
 
   // npm always includes these package documents when they exist. Explicit `files` entries are
   // added below, including non-src bundles such as core/gpl and core/mcp.

@@ -1296,3 +1296,46 @@ exit 1
 The code gates are now ready for an independent cumulative review. The external blocker remains:
 prepare and commit a fresh coherent eleven-package version cohort, cut the matching native
 release, and run the credentialed registry clean room.
+
+### Repair round 8 continuation — final review corrections, 2026-09-08
+
+The single cumulative review found two release-safety gaps. The publish job was invoking
+`release.ts` without `--skip-gates`, which would rerun the full workspace suite on a runner that
+does not build the native host. It now uses `--skip-gates` after the separate gates job has passed
+the exact commit's native contract job; the release build, package cleanliness check, and
+post-build `pnpm publish:check` still run in the publish job.
+
+The publication-input census also missed sibling workspace packages whose files are copied into a
+published artifact. It now resolves `workspace:` dependencies from the workspace manifests and
+adds each referenced sibling package root to the source census. This covers the Blender GPL input
+copied into `@threenative/assets` and both MCP bundles copied into `@threenative/core`.
+
+### Red controls before the final repair
+
+Both defects were reproduced before the implementation was restored:
+
+```text
+$ pnpm exec vitest run scripts/__tests__/check-publish-state.spec.ts \
+    scripts/__tests__/ci-structure.spec.ts -t \
+    "counts changes in a workspace sibling|reuses the already verified native CI result"
+Test Files  2 failed (2)
+Tests       2 failed | 126 skipped (128)
+exit 1
+  sibling census: expected 1, received 0
+  workflow: expected release.ts --yes --skip-gates
+```
+
+### Green controls after the final repair
+
+```text
+$ pnpm exec vitest run scripts/__tests__/check-publish-state.spec.ts \
+    scripts/__tests__/release.spec.ts scripts/__tests__/ci-structure.spec.ts
+Test Files  3 passed (3)
+Tests       142 passed (142)
+exit 0
+```
+
+The full publish-state suite is 45/45, the release suite is 14/14, and the workflow structure
+suite is 83/83. `git diff --check` is clean. This completes the review repair; the remaining
+unverified boundaries are still the credentialed eleven-package publish, matching native release,
+and consumer clean-room run described above.

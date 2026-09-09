@@ -149,9 +149,12 @@ jobs:
       - name: Run the single guarded release path
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.dry_run }}" == "true" ]]; then
-            pnpm tsx scripts/release.ts
+            pnpm tsx scripts/release.ts --skip-gates
           else
-            pnpm tsx scripts/release.ts --yes
+            # The gates job already required the exact commit's successful CI run, including the
+            # separately provisioned native contract job. Do not rerun pnpm test here: this runner
+            # has no native host executable, and the release's own build/preflight still run below.
+            pnpm tsx scripts/release.ts --yes --skip-gates
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

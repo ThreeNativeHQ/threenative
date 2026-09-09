@@ -944,6 +944,15 @@ describe("CI pipeline structure", () => {
     expect(publish).toContain("native tag and the candidate SHA");
   });
 
+  it("reuses the already verified native CI result in the guarded release job", async () => {
+    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
+    const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
+    expect(publish).toBeDefined();
+    if (publish === undefined) return;
+    expect(publish).toContain("pnpm tsx scripts/release.ts --yes --skip-gates");
+    expect(publish).toContain("pnpm tsx scripts/release.ts --skip-gates");
+  });
+
   it("provisions the registry verifier before the guarded publish command", async () => {
     const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
     const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
