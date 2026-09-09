@@ -80,12 +80,18 @@ export function ensureJsonMcpConfig(target, file, format, seed = undefined) {
       return "unreadable";
     }
   }
-  const { changed, config } = mergeMcpServers(existing, format);
-  if (!changed) return "unchanged";
+  let merged;
+  try {
+    merged = mergeMcpServers(existing, format);
+  } catch {
+    return "unreadable";
+  }
+  const { changed, config, conflicts } = merged;
+  if (!changed) return conflicts.length > 0 ? "conflict" : "unchanged";
   const written = existing === undefined ? { ...seed, ...config } : config;
   mkdirSync(path.dirname(configPath), { recursive: true });
   writeFileSync(configPath, `${JSON.stringify(written, null, 2)}\n`);
-  return existing === undefined ? "created" : "updated";
+  return conflicts.length > 0 ? "conflict" : existing === undefined ? "created" : "updated";
 }
 
 /** Adds the ThreeNative servers to `<target>/.mcp.json`, the config Claude Code reads. */

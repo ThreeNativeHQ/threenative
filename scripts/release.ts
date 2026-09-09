@@ -26,9 +26,124 @@ import fs from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { checkPublishState, formatPublishReport, publishSet } from "./check-publish-state.js";
+import { MCP_SERVERS } from "../packages/core/mcp/servers.mjs";
+import {
+  type ICheckPublishOptions,
+  type IPublishPackage,
+  type RegistryLookup,
+  checkPublishState,
+  formatPublishReport,
+  npmLookup,
+  publishSet,
+} from "./check-publish-state.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
+
+export interface IReleaseCohort {
+  readonly bundledMcpServers: readonly string[];
+  readonly order: readonly string[];
+  readonly templatePins: readonly string[];
+  readonly versions: ReadonlyMap<string, string>;
+}
+
+const DEPENDENCY_FIELDS = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+] as const;
+
+/** Validate the structural identity of one candidate before any registry or publish command runs. */
+export function validateTemplatePins(
+  templateRoot: string,
+  versions: ReadonlyMap<string, string>,
+): readonly string[] {
+  if (!fs.existsSync(templateRoot)) return [];
+  const findings: string[] = [];
+  for (const entry of fs.readdirSync(templateRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const manifest = path.join(templateRoot, entry.name, "package.json");
+    if (!fs.existsSync(manifest)) continue;
+    const parsed = JSON.parse(fs.readFileSync(manifest, "utf8")) as Record<string, unknown>;
+    for (const field of DEPENDENCY_FIELDS) {
+      const block = parsed[field];
+      if (typeof block !== "object" || block === null || Array.isArray(block)) continue;
+      for (const [dependency, specifier] of Object.entries(block as Record<string, unknown>)) {
+        const candidate = versions.get(dependency);
+        if (candidate === undefined || specifier === candidate) continue;
+        findings.push(
+          `templates/${entry.name}/package.json ${field}.${dependency} pins '${String(specifier)}', but the candidate cohort carries '${candidate}'.`,
+        );
+      }
+    }
+  }
+  return findings;
+}
+
+/** The release must carry the shims and the two bundled servers the public MCP table advertises. */
+export function validateReleaseCohort(repo = REPO, packages = publishSet(repo)): IReleaseCohort {
+  const versions = new Map(packages.map((item) => [item.name, item.version]));
+  if (versions.size !== packages.length)
+    throw new Error(
+      "TN_RELEASE_COHORT_DUPLICATE: the publish set contains a duplicate package name.",
+    );
+  for (const [name, version] of versions) {
+    if (!/^\d+\.\d+\.\d+$/u.test(version))
+      throw new Error(`TN_RELEASE_COHORT_VERSION: ${name} has candidate version '${version}'.`);
+  }
+  const pinFindings = validateTemplatePins(
+    path.join(repo, "packages", "create-threenative", "templates"),
+    versions,
+  );
+  if (pinFindings.length > 0)
+    throw new Error(`TN_RELEASE_COHORT_TEMPLATE_PINS: ${pinFindings.join(" | ")}`);
+
+  const core = packages.find((item) => item.name === "@threenative/core");
+  if (core === undefined)
+    throw new Error("TN_RELEASE_COHORT_CORE_MISSING: @threenative/core is not in the publish set.");
+  const coreMcp = path.join(core.directory, "mcp");
+  const requiredBundles = ["engine-server.mjs", "blender-server.mjs"];
+  for (const bundle of requiredBundles) {
+    const file = path.join(coreMcp, bundle);
+    if (!fs.existsSync(file) || fs.statSync(file).size === 0)
+      throw new Error(`TN_RELEASE_COHORT_MCP_BUNDLE: ${file} is missing or empty.`);
+  }
+  const bundledMcpServers = Object.keys(MCP_SERVERS);
+  if (bundledMcpServers.length === 0)
+    throw new Error("TN_RELEASE_COHORT_MCP_TABLE: the public MCP table is empty.");
+  return {
+    bundledMcpServers,
+    order: releaseOrder(packages),
+    templatePins: pinFindings,
+    versions,
+  };
+}
+
+export interface IPrepareReleaseCohortOptions
+  extends Pick<
+    ICheckPublishOptions,
+    | "allowCurrentPublishSetPins"
+    | "allowMissingPrebuilt"
+    | "lookup"
+    | "prebuiltProbe"
+    | "sourceCommits"
+    | "tarballs"
+  > {
+  readonly repo?: string;
+}
+
+/** Run the immutable-version preflight against the exact structural cohort; never publishes. */
+export async function prepareReleaseCohort(
+  options: IPrepareReleaseCohortOptions = {},
+): Promise<IReleaseCohort> {
+  const repo = options.repo ?? REPO;
+  const packages = publishSet(repo);
+  const cohort = validateReleaseCohort(repo, packages);
+  const report = await checkPublishState({ ...options, repo });
+  if (report.exitCode !== 0)
+    throw new Error(`TN_RELEASE_COHORT_RED: ${formatPublishReport(report).trim()}`);
+  return cohort;
+}
 
 /**
  * Dependency order: a package goes out after everything it depends on.
@@ -83,6 +198,54 @@ function run(command: string, args: readonly string[], label: string): void {
   }
 }
 
+/** Refuse to publish artifacts produced from package files that are not in the commit. */
+export function assertCleanPackageTree(repo = REPO): void {
+  const dirty = execFileSync("git", ["status", "--porcelain", "--", "packages"], {
+    cwd: repo,
+    encoding: "utf8",
+  }).trim();
+  if (dirty.length > 0)
+    throw new Error(
+      `TN_RELEASE_DIRTY_TREE: packages/ has uncommitted changes, so the published artifact would correspond to no commit:\n${dirty}\nCommit first, then release.`,
+    );
+}
+
+/** Publish only a complete candidate cohort whose exact versions are absent from npm. */
+export function unpublishedReleasePackages(
+  packages: readonly IPublishPackage[],
+  lookup: RegistryLookup,
+): readonly IPublishPackage[] {
+  const states = packages.map((item) => {
+    let facts: ReturnType<RegistryLookup>;
+    try {
+      facts = lookup(item.name, item.version);
+    } catch (error) {
+      throw new Error(
+        `TN_RELEASE_REGISTRY_LOOKUP: could not determine whether ${item.name}@${item.version} exists: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (facts.state === "unreachable")
+      throw new Error(
+        `TN_RELEASE_REGISTRY_UNREACHABLE: could not determine whether ${item.name}@${item.version} exists. Nothing will be published.`,
+      );
+    return { facts, item };
+  });
+  const present = states.filter(({ facts }) => facts.state === "present");
+  if (present.length > 0) {
+    const state = states
+      .map(({ facts, item }) => `${item.name}@${item.version}=${facts.state}`)
+      .join(", ");
+    const code =
+      present.length === states.length
+        ? "TN_RELEASE_COHORT_ALREADY_PUBLISHED"
+        : "TN_RELEASE_COHORT_PARTIAL";
+    throw new Error(
+      `${code}: the exact candidate cohort is ${state}. Refusing to republish an existing version or publish only part of a cohort.`,
+    );
+  }
+  return states.map(({ item }) => item);
+}
+
 async function waitForRegistry(name: string, version: string): Promise<void> {
   // A brand-new scoped package is not readable the instant it is published, and publishing the
   // scaffolder before its dependencies are visible produces an install nobody can reproduce.
@@ -117,6 +280,7 @@ async function packReleaseSet(packages: readonly { name: string }[]): Promise<vo
 
 async function main(argv: readonly string[]): Promise<void> {
   const publish = argv.includes("--yes");
+  const prepare = argv.includes("--prepare");
   const skipGates = argv.includes("--skip-gates");
   // Publish the runtime package before its prebuilt release exists. A deliberate, named decision:
   // `install-prebuilt.mjs` already treats a missing release as a packaging fact rather than a
@@ -124,7 +288,7 @@ async function main(argv: readonly string[]): Promise<void> {
   // native lane fails closed later on the binary that is not there.
   const allowMissingPrebuilt = argv.includes("--allow-missing-prebuilt");
   const unknown = argv.filter(
-    (arg) => !["--yes", "--skip-gates", "--allow-missing-prebuilt"].includes(arg),
+    (arg) => !["--yes", "--prepare", "--skip-gates", "--allow-missing-prebuilt"].includes(arg),
   );
   if (unknown.length > 0) throw new Error(`TN_RELEASE_UNKNOWN_FLAG: ${unknown.join(", ")}`);
 
@@ -132,17 +296,11 @@ async function main(argv: readonly string[]): Promise<void> {
   // were committed afterwards, so the artifacts on the registry correspond to no commit — and
   // `publish:check` then reports the package as needing a bump, because its source "moved"
   // after the publish. There is no way to tell, later, which source a published tarball was.
-  const dirty = execFileSync("git", ["status", "--porcelain", "--", "packages"], {
-    cwd: REPO,
-    encoding: "utf8",
-  }).trim();
-  if (dirty.length > 0 && publish)
-    throw new Error(
-      `TN_RELEASE_DIRTY_TREE: packages/ has uncommitted changes, so the published artifact would correspond to no commit:\n${dirty}\nCommit first, then release.`,
-    );
+  if (publish) assertCleanPackageTree(REPO);
 
   const packages = publishSet(REPO);
-  const order = releaseOrder(packages);
+  const cohort = validateReleaseCohort(REPO, packages);
+  const order = [...cohort.order];
   const versions = new Map(packages.map((item) => [item.name, item.version]));
 
   process.stdout.write("Release order:\n");
@@ -158,12 +316,36 @@ async function main(argv: readonly string[]): Promise<void> {
   if (report.exitCode !== 0)
     throw new Error("TN_RELEASE_PREFLIGHT_RED: pnpm publish:check refused this tree.");
 
+  if (prepare) {
+    process.stdout.write(
+      `\nPrepared candidate cohort at ${execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: REPO,
+        encoding: "utf8",
+      }).trim()}: ${cohort.bundledMcpServers.length} MCP server(s), ${packages.length} package(s). Nothing was published.\n`,
+    );
+    return;
+  }
+
   if (!skipGates) {
     run("pnpm", ["typecheck"], "pnpm typecheck");
     run("pnpm", ["lint"], "pnpm lint");
     run("pnpm", ["test"], "pnpm test");
   }
   run("pnpm", ["build"], "pnpm build");
+
+  if (publish) {
+    assertCleanPackageTree(REPO);
+    const postBuildReport = await checkPublishState({
+      allowCurrentPublishSetPins: true,
+      allowMissingPrebuilt,
+      repo: REPO,
+    });
+    process.stdout.write(
+      `\nPost-build publish preflight:\n${formatPublishReport(postBuildReport)}`,
+    );
+    if (postBuildReport.exitCode !== 0)
+      throw new Error("TN_RELEASE_POST_BUILD_PREFLIGHT_RED: the built tree is not publishable.");
+  }
 
   if (!publish) {
     await packReleaseSet(packages);
@@ -184,7 +366,10 @@ async function main(argv: readonly string[]): Promise<void> {
       "\nPublishing without --provenance: npm can only attest a build from CI, and this is not CI.\n",
     );
   }
+  const publishPackages = unpublishedReleasePackages(packages, npmLookup(REPO));
+  const publishNames = new Set(publishPackages.map((item) => item.name));
   for (const name of order) {
+    if (!publishNames.has(name)) continue;
     const version = versions.get(name);
     if (version === undefined) throw new Error(`TN_RELEASE_NO_VERSION: ${name}`);
     run(

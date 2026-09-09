@@ -4,7 +4,35 @@ prd_contract: v1
 
 # PRD-196 — A stranger's install of ThreeNative is functional
 
-**Status:** NOT STARTED
+**Status:** BLOCKED — `requires-release-credentials` and candidate-cohort preparation
+
+Filed here on 2026-09-08. The engineering in this PRD is implemented and gated in the tree, but the
+source tree is not yet a publishable candidate. `pnpm publish:check` reports eight immutable package
+versions whose source moved after publication — `@threenative/assets@0.3.0`,
+`@threenative/core@0.3.0`, `@threenative/physics@0.3.0`, `@threenative/playtest@0.3.0`,
+`@threenative/runtime-native@0.3.0`, `@threenative/ui@0.3.0`, `create-threenative@0.2.3`, and
+`threenative-engine-mcp@0.2.0` — plus the absent matching native prebuilt release. npm versions are
+immutable, so release preparation must first choose and commit a fresh coherent eleven-package
+cohort, bump the changed packages to versions absent from npm, and repin every template and internal
+dependency to that cohort. Only then can the external publish and native-release acts be performed.
+Until that prepared cohort is published with its matching prebuilt assets, the published world cannot
+satisfy the criteria below, and this PRD must not be filed as done. It was previously in
+`docs/PRDs/done/` from an unrelated bulk move (`b45bf21f7`) while still reading `NOT STARTED`; neither
+state was true.
+
+**What unblocks it:** (1) a committed version-cohort preparation that clears the eight immutable
+package findings and pins the templates to the new versions, (2) a successful
+`runtime-native-v<version>` release built from that exact candidate SHA with its `prebuilt-lock.json`,
+and (3) npm publish rights for the eleven-package cohort plus release-upload rights on
+`ThreeNativeHQ/threenative`. The credentials are needed after preparation; they do not replace it.
+
+**Evidence:** [round-196-published-install.md](../../../verification/round-196-published-install.md)
+and the five phase records it cites —
+[phase 1](../../../verification/prd-196-readiness-phase-1-2026-09-08.md),
+[phase 2](../../../verification/prd-196-readiness-phase-2-2026-09-08.md),
+[phase 3](../../../verification/prd-196-readiness-phase-3-2026-09-08.md),
+[phase 4](../../../verification/prd-196-readiness-phase-4-2026-09-08.md),
+[phase 5](../../../verification/prd-196-readiness-phase-5-2026-09-08.md).
 
 **Complexity:** +2 for 6–10 files, +2 for multi-package changes, +2 for a new system (release
 plumbing + gate), +1 for external API integration (npm registry, GitHub releases) = **7 → HIGH
@@ -31,9 +59,10 @@ a user's disk; a game cannot fix any of it portably.
 
 ### Current behaviour, measured
 
-Two arms were executed. **Arm A** is what a stranger gets today
-(`npx create-threenative@0.2.2 mygame`, registry install, HOME isolated to a scratch dir).
-**Arm B** is what HEAD would ship (`pnpm sandbox`, packed tarballs, no workspace above).
+Two arms were executed on 2026-08-23. **Arm A** records what a stranger received in that
+registry snapshot (`npx create-threenative@0.2.2 mygame`, registry install, HOME isolated to a
+scratch dir). **Arm B** is what that lane's HEAD would ship (`pnpm sandbox`, packed tarballs, no
+workspace above).
 
 **Arm A — the scaffold succeeds, then:**
 
@@ -75,7 +104,8 @@ info: @threenative/runtime-native@0.3.0 is an optional dependency and failed com
 pnpm install exited with code 1.
 ```
 
-**Registry state versus this tree** (`dist-tags.latest`, fetched live):
+**Registry state versus this tree**, observed during the 2026-08-23 Arm A run (`dist-tags.latest`).
+This is a dated historical snapshot, not a current registry claim:
 
 | Package | Registry | This tree |
 | --- | --- | --- |
@@ -88,11 +118,11 @@ pnpm install exited with code 1.
 | `@threenative/assets` | **absent** | 0.3.0 |
 | `threenative-engine-mcp` | **absent** | 0.2.0 |
 
-**Release state:** `install-prebuilt.mjs:53` builds every prebuilt URL from
-`https://github.com/jonit-dev/threenative` — `api.github.com` returns **404** for that repository.
-The live remote is `ThreeNativeHQ/threenative`, which is public (**200**) and has **zero
-releases**. So the prebuilt path is broken twice over: wrong host, and nothing published at the
-right one.
+**Release state in that Arm A snapshot:** `install-prebuilt.mjs:53` built every prebuilt URL from
+`https://github.com/jonit-dev/threenative` — `api.github.com` returned **404** for that repository.
+The intended remote was `ThreeNativeHQ/threenative`, which was public (**200**) and had one
+unrelated release, `quiche-owned-v1`, with no `runtime-native-v*` assets. So the prebuilt path was
+broken twice over: wrong host, and no matching runtime release at the right one.
 
 `pnpm publish:check` already fails on one strand of this and no other:
 
@@ -357,7 +387,7 @@ fails.
 
 **User verification:** run the gate locally against the published set:
 `pnpm tsx scripts/verify-registry-install.ts` — every step green, and running it against
-`create-threenative@0.2.2` reproduces today's failures.
+the dated Arm A run above reproduces the recorded failures.
 
 ---
 

@@ -473,7 +473,7 @@ export function createEvidenceFixture({ platform = "android", candidateSha = "8b
       evidenceClass: "physical-device",
     },
     source: {
-      remote: "https://github.com/jonit-dev/threenative.git",
+      remote: "https://github.com/ThreeNativeHQ/threenative.git",
       branch: "main",
       headSha: candidateSha,
       worktree: "clean",

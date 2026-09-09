@@ -56,6 +56,24 @@ describe("mergeMcpServers", () => {
   it("refuses a config whose root is not an object", () => {
     expect(() => mergeMcpServers([])).toThrow(/must be an object/u);
   });
+
+  it("refuses a malformed server table rather than spreading or replacing it", () => {
+    expect(() => mergeMcpServers({ mcpServers: null })).toThrow(/mcpServers.*must be an object/u);
+    expect(() => mergeMcpServers({ mcpServers: { mine: "not-a-server" } })).toThrow(
+      /server 'mine'.*must be an object/u,
+    );
+  });
+
+  it("preserves a same-name user server and reports the conflict", () => {
+    const custom = { command: "custom-node", args: ["./my-engine.mjs"] };
+    const result = mergeMcpServers({ mcpServers: { "threenative-engine": custom } }) as ReturnType<
+      typeof mergeMcpServers
+    > & { conflicts: string[] };
+
+    expect(result.config.mcpServers?.["threenative-engine"]).toEqual(custom);
+    expect(result.conflicts).toEqual(["threenative-engine"]);
+    expect(result.changed).toBe(true);
+  });
 });
 
 describe("MCP_SERVERS", () => {
@@ -152,6 +170,37 @@ describe("MCP_SERVERS", () => {
     }
   });
 
+  it("tracks the Blender scripts beside the bundled server", () => {
+    const manifest = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8")) as {
+      files?: string[];
+    };
+    expect(manifest.files, "core package files omit the Blender scripts").toContain("gpl");
+    const tracked = execFileSync("git", ["ls-files", "packages/core/gpl"], {
+      cwd: path.resolve("."),
+      encoding: "utf8",
+    })
+      .split("\n")
+      .filter((line) => line.length > 0);
+    for (const script of [
+      "gpl/LICENSE.GPL",
+      "gpl/convert.py",
+      "gpl/recipes/_common.py",
+      "gpl/recipes/bake_ao.py",
+      "gpl/recipes/decimate.py",
+      "gpl/recipes/retarget.py",
+      "gpl/recipes/unwrap.py",
+    ]) {
+      expect(tracked, `packages/core/${script} is untracked`).toContain(`packages/core/${script}`);
+      expect(existsSync(path.join(packageRoot, script)), `packages/core/${script} is missing`).toBe(
+        true,
+      );
+      expect(
+        readFileSync(path.join(packageRoot, script), "utf8"),
+        `packages/core/${script} drifted`,
+      ).toBe(readFileSync(path.resolve(packageRoot, "..", "blender-mcp", script), "utf8"));
+    }
+  });
+
   it("ships a blender server bundle that serves the recorded tool surface", async () => {
     const bundled = path.join(packageRoot, "mcp", "blender-server.mjs");
     expect(
@@ -244,6 +293,29 @@ describe("ensureMcpConfig", () => {
 
     expect(ensureMcpConfig(directory)).toBe("unreadable");
     expect(readFileSync(configPath, "utf8")).toBe("{ not json");
+  });
+
+  it("does not replace a same-name user server during reinstall", () => {
+    const directory = project();
+    const configPath = path.join(directory, ".mcp.json");
+    const custom = { command: "custom-node", args: ["./my-engine.mjs"] };
+    writeFileSync(configPath, JSON.stringify({ mcpServers: { "threenative-engine": custom } }));
+
+    expect(ensureMcpConfig(directory)).toBe("conflict");
+    const written = JSON.parse(readFileSync(configPath, "utf8")) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(written.mcpServers["threenative-engine"]).toEqual(custom);
+    expect(written.mcpServers["threenative-assets"]).toBeDefined();
+  });
+
+  it("reports a malformed server table without replacing it", () => {
+    const directory = project();
+    const configPath = path.join(directory, ".mcp.json");
+    writeFileSync(configPath, JSON.stringify({ mcpServers: null }));
+
+    expect(ensureMcpConfig(directory)).toBe("unreadable");
+    expect(readFileSync(configPath, "utf8")).toContain('"mcpServers":null');
   });
 });
 
