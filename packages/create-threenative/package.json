@@ -23,6 +23,10 @@
     "directory": "packages/create-threenative"
   },
   "type": "module",
+  "engines": {
+    "node": ">=20.19.0",
+    "pnpm": ">=10.0.0"
+  },
   "files": [
     "dist",
     "templates",

@@ -14,9 +14,12 @@ import {
   makeSandbox,
   readManifest,
   resolveGenre,
+  sandboxPackageDirectory,
+  sandboxWorkspacePackages,
   sealedProofHash,
   stampTarball,
 } from "../make-sandbox";
+import { workspacePackageSourceFlag } from "../workspace-packages.js";
 
 const temporaryRoots: string[] = [];
 
@@ -123,6 +126,14 @@ describe("genre sandbox", () => {
   it("packs the native runtime and capability server with the user-facing packages", () => {
     expect(PACKAGES).toContain("runtime-native");
     expect(PACKAGES).toContain("engine-mcp");
+    expect(PACKAGES).toContain("blender-mcp");
+    expect(PACKAGES).toContain("raw-unreal");
+    expect(sandboxWorkspacePackages()).toContain("@threenative/runtime-native");
+  });
+
+  it("resolves unscoped package names through their actual workspace directories", () => {
+    expect(sandboxPackageDirectory("threenative-engine-mcp")).toBe("packages/engine-mcp");
+    expect(sandboxPackageDirectory("threenative-blender-mcp")).toBe("packages/blender-mcp");
   });
 
   it("defaults to the workspace sandbox and keeps package staging inside it", async () => {
@@ -259,15 +270,17 @@ describe("genre sandbox", () => {
     // Every one of these 404s on the registry today; an unpassed source is a dead scaffold.
     expect(declared).toContain("@threenative/playtest");
     expect(declared).toContain("create-threenative");
-    expect(scaffold).toContain("--runtime-native-package");
-    expect(scaffold).toContain("--engine-mcp-package");
+    expect(scaffold).toContain(workspacePackageSourceFlag("@threenative/runtime-native"));
+    expect(scaffold).toContain(workspacePackageSourceFlag("threenative-engine-mcp"));
     for (const dependency of declared) {
       const flag =
         dependency === "create-threenative"
           ? "--cli-package"
-          : `--${dependency.replace("@threenative/", "")}-package`;
+          : workspacePackageSourceFlag(dependency);
       expect(scaffold, dependency).toContain(flag);
     }
+    expect(scaffold).toContain(workspacePackageSourceFlag("threenative-blender-mcp"));
+    expect(scaffold).toContain(workspacePackageSourceFlag("@threenative/raw-unreal"));
   }, 30_000);
 
   it("refuses a sandbox whose template needs a package the sweep never packed", () => {

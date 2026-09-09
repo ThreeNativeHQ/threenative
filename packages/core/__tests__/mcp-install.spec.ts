@@ -56,6 +56,24 @@ describe("mergeMcpServers", () => {
   it("refuses a config whose root is not an object", () => {
     expect(() => mergeMcpServers([])).toThrow(/must be an object/u);
   });
+
+  it("refuses a malformed server table rather than spreading or replacing it", () => {
+    expect(() => mergeMcpServers({ mcpServers: null })).toThrow(/mcpServers.*must be an object/u);
+    expect(() => mergeMcpServers({ mcpServers: { mine: "not-a-server" } })).toThrow(
+      /server 'mine'.*must be an object/u,
+    );
+  });
+
+  it("preserves a same-name user server and reports the conflict", () => {
+    const custom = { command: "custom-node", args: ["./my-engine.mjs"] };
+    const result = mergeMcpServers({ mcpServers: { "threenative-engine": custom } }) as ReturnType<
+      typeof mergeMcpServers
+    > & { conflicts: string[] };
+
+    expect(result.config.mcpServers?.["threenative-engine"]).toEqual(custom);
+    expect(result.conflicts).toEqual(["threenative-engine"]);
+    expect(result.changed).toBe(true);
+  });
 });
 
 describe("MCP_SERVERS", () => {
@@ -244,6 +262,29 @@ describe("ensureMcpConfig", () => {
 
     expect(ensureMcpConfig(directory)).toBe("unreadable");
     expect(readFileSync(configPath, "utf8")).toBe("{ not json");
+  });
+
+  it("does not replace a same-name user server during reinstall", () => {
+    const directory = project();
+    const configPath = path.join(directory, ".mcp.json");
+    const custom = { command: "custom-node", args: ["./my-engine.mjs"] };
+    writeFileSync(configPath, JSON.stringify({ mcpServers: { "threenative-engine": custom } }));
+
+    expect(ensureMcpConfig(directory)).toBe("conflict");
+    const written = JSON.parse(readFileSync(configPath, "utf8")) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(written.mcpServers["threenative-engine"]).toEqual(custom);
+    expect(written.mcpServers["threenative-assets"]).toBeDefined();
+  });
+
+  it("reports a malformed server table without replacing it", () => {
+    const directory = project();
+    const configPath = path.join(directory, ".mcp.json");
+    writeFileSync(configPath, JSON.stringify({ mcpServers: null }));
+
+    expect(ensureMcpConfig(directory)).toBe("unreadable");
+    expect(readFileSync(configPath, "utf8")).toContain('"mcpServers":null');
   });
 });
 

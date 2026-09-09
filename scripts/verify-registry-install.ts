@@ -20,11 +20,22 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { MCP_SERVERS } from "../packages/core/mcp/servers.mjs";
 
 /** `link:` is pnpm's workspace link; `file:` is a local tarball or directory. Neither ships. */
 const LOCAL_SPECIFIER = /(?:^|["'\s:])(?:file|link):/mu;
 
 export const LOCKFILES = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"] as const;
+
+export const REGISTRY_PACKAGE_MANAGERS = ["npm", "pnpm"] as const;
+export type RegistryPackageManager = (typeof REGISTRY_PACKAGE_MANAGERS)[number];
+
+export interface IMcpRequest {
+  readonly id?: number;
+  readonly jsonrpc: "2.0";
+  readonly method: string;
+  readonly params?: Readonly<Record<string, unknown>>;
+}
 
 export interface IRegistryInstallStep {
   readonly detail: string;
@@ -34,6 +45,7 @@ export interface IRegistryInstallStep {
 
 export interface IRegistryInstallReport {
   readonly exitCode: 0 | 1;
+  readonly managers: readonly RegistryPackageManager[];
   readonly steps: readonly IRegistryInstallStep[];
 }
 
@@ -78,6 +90,7 @@ export type McpRunner = (
   args: readonly string[],
   cwd: string,
   env?: Readonly<Record<string, string>>,
+  requests?: string,
 ) => string;
 
 /**
@@ -105,6 +118,27 @@ export function cleanRoomEnvironment(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   return cleaned;
 }
 
+/** Supported Node is a package contract, not a warning discovered halfway through installation. */
+export function assertSupportedNodeVersion(version = process.versions.node): void {
+  const match = /^(\d+)\.(\d+)\.(\d+)/u.exec(version);
+  const major = Number.parseInt(match?.[1] ?? "-1", 10);
+  const minor = Number.parseInt(match?.[2] ?? "-1", 10);
+  const patch = Number.parseInt(match?.[3] ?? "-1", 10);
+  if (major < 20 || (major === 20 && (minor < 19 || (minor === 19 && patch < 0))))
+    throw new Error(
+      `TN_REGISTRY_INSTALL_NODE_UNSUPPORTED: Node ${version} is below the supported minimum 20.19.0. Install Node 20.19.0 or newer before qualifying a registry install.`,
+    );
+}
+
+export function assertSupportedPackageManager(
+  manager: string,
+): asserts manager is RegistryPackageManager {
+  if (!REGISTRY_PACKAGE_MANAGERS.includes(manager as RegistryPackageManager))
+    throw new Error(
+      `TN_REGISTRY_INSTALL_PACKAGE_MANAGER_UNSUPPORTED: '${manager}' is not supported; use npm or pnpm.`,
+    );
+}
+
 export function realRunner(env: NodeJS.ProcessEnv): CommandRunner {
   return (command, args, cwd) =>
     execFileSync(command, [...args], {
@@ -116,8 +150,44 @@ export function realRunner(env: NodeJS.ProcessEnv): CommandRunner {
     });
 }
 
-function mcpRequests(serverName: string): string {
-  const requests = [
+interface IMcpFixturePaths {
+  readonly source?: string;
+  readonly out?: string;
+}
+
+const MCP_SAFE_TOOLS: Readonly<Record<string, string>> = {
+  "threenative-assets": "asset_search_sources",
+  "threenative-blender": "blender_status",
+  "threenative-engine": "engine_search_capabilities",
+  "threenative-sculpt": "sculpt_grimoire",
+};
+
+function safeOperation(
+  serverName: string,
+  fixture: IMcpFixturePaths,
+): Readonly<Record<string, unknown>> {
+  const name = MCP_SAFE_TOOLS[serverName];
+  if (name === undefined)
+    throw new Error(
+      `TN_REGISTRY_INSTALL_MCP_OPERATION_UNDECLARED: server '${serverName}' is in the packed table but has no safe verification operation.`,
+    );
+  const argumentsValue: Record<string, unknown> =
+    name === "asset_search_sources"
+      ? { category: "all", query: "game" }
+      : name === "sculpt_grimoire"
+        ? { topic: "build/geometry_patterns" }
+        : name === "engine_search_capabilities"
+          ? { scope: "mechanic", situation: "enemy walks around a wall" }
+          : {};
+  return { arguments: argumentsValue, name };
+}
+
+export function mcpRequests(
+  serverName: string,
+  fixture: IMcpFixturePaths = {},
+  operation: Readonly<Record<string, unknown>> = safeOperation(serverName, fixture),
+): string {
+  const requests: IMcpRequest[] = [
     {
       id: 1,
       jsonrpc: "2.0",
@@ -128,20 +198,15 @@ function mcpRequests(serverName: string): string {
         protocolVersion: "2025-06-18",
       },
     },
-    ...(serverName === "threenative-engine"
-      ? [
-          {
-            id: 2,
-            jsonrpc: "2.0",
-            method: "tools/call",
-            params: {
-              arguments: { situation: "enemy walks around a wall" },
-              name: "engine_search_capabilities",
-            },
-          },
-        ]
-      : []),
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    { id: 2, jsonrpc: "2.0", method: "tools/list", params: {} },
+    { id: 3, jsonrpc: "2.0", method: "tools/call", params: operation },
   ];
+  if (serverName === "threenative-blender" && operation.name === "blender_convert") {
+    const argumentsValue = operation.arguments as Record<string, unknown>;
+    argumentsValue.source = fixture.source;
+    argumentsValue.out = fixture.out;
+  }
   return `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`;
 }
 
@@ -188,6 +253,11 @@ interface ICapabilitySearchHit {
   readonly symbol: string;
 }
 
+interface IMcpSession {
+  readonly messages: readonly Record<string, unknown>[];
+  readonly operation: Record<string, unknown>;
+}
+
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -205,12 +275,10 @@ function isCapabilitySearchHit(value: unknown): value is ICapabilitySearchHit {
   );
 }
 
-function assertMcpHandshake(serverName: string, output: string): string {
-  const messages = jsonLines(output, serverName);
-  requireMcpResponse(messages, serverName, 1);
-  if (serverName !== "threenative-engine") return "initialize ok";
-  const response = requireMcpResponse(messages, serverName, 2);
-  const result = response.result as { content?: unknown };
+function toolText(response: Record<string, unknown>, serverName: string): string {
+  const result = response.result as { content?: unknown; isError?: unknown };
+  if (result.isError === true)
+    throw new Error(`MCP server '${serverName}' returned an error from its safe operation.`);
   if (!Array.isArray(result.content))
     throw new Error(`MCP server '${serverName}' returned no tools/call content.`);
   const text = result.content.find(
@@ -221,25 +289,37 @@ function assertMcpHandshake(serverName: string, output: string): string {
       typeof entry.text === "string",
   )?.text;
   if (text === undefined)
-    throw new Error(`MCP server '${serverName}' returned no text search result.`);
-  let hits: unknown;
+    throw new Error(`MCP server '${serverName}' returned no text tool result.`);
+  return text;
+}
+
+function parseToolPayload(response: Record<string, unknown>, serverName: string): unknown {
+  const text = toolText(response, serverName);
   try {
-    hits = JSON.parse(text) as unknown;
+    return JSON.parse(text) as unknown;
   } catch (error) {
     throw new Error(
-      `MCP server '${serverName}' returned malformed capability JSON: ${String(error)}.`,
+      `MCP server '${serverName}' returned malformed tool JSON: ${error instanceof Error ? error.message : String(error)}.`,
     );
   }
-  if (!Array.isArray(hits) || hits.length === 0)
-    throw new Error(
-      `MCP server '${serverName}' returned no capability hits for the plain-words query.`,
-    );
-  const malformedIndex = hits.findIndex((hit) => !isCapabilitySearchHit(hit));
-  if (malformedIndex !== -1)
-    throw new Error(
-      `MCP server '${serverName}' returned malformed capability hit at index ${malformedIndex}; expected non-empty string symbol, importPath, summary, and example fields plus a string-only constraints array.`,
-    );
-  return `initialize ok; engine_search_capabilities returned ${hits.length} hit(s)`;
+}
+
+function assertMcpHandshake(serverName: string, output: string, expectedTool: string): IMcpSession {
+  const messages = jsonLines(output, serverName);
+  requireMcpResponse(messages, serverName, 1);
+  const toolsResponse = requireMcpResponse(messages, serverName, 2);
+  const tools = (toolsResponse.result as { tools?: unknown }).tools;
+  if (!Array.isArray(tools))
+    throw new Error(`MCP server '${serverName}' returned no tools/list array.`);
+  const names = tools.flatMap((tool) =>
+    typeof tool === "object" && tool !== null && "name" in tool && typeof tool.name === "string"
+      ? [tool.name]
+      : [],
+  );
+  if (!names.includes(expectedTool))
+    throw new Error(`MCP server '${serverName}' tools/list does not advertise '${expectedTool}'.`);
+  const operation = requireMcpResponse(messages, serverName, 3);
+  return { messages, operation };
 }
 
 export function realMcpRunner(
@@ -248,12 +328,13 @@ export function realMcpRunner(
   args: readonly string[],
   cwd: string,
   env: Readonly<Record<string, string>> = {},
+  requests?: string,
 ): string {
   return execFileSync(command, [...args], {
     cwd,
     encoding: "utf8",
     env: { ...process.env, ...env },
-    input: mcpRequests(serverName),
+    input: requests ?? mcpRequests(serverName),
     stdio: ["pipe", "pipe", "pipe"],
     timeout: 30_000,
   });
@@ -263,6 +344,7 @@ export interface IVerifyRegistryInstallOptions {
   /** Where the clean room is created. Must have no workspace above it. */
   readonly parent?: string;
   readonly mcp?: McpRunner;
+  readonly packageManagers?: readonly RegistryPackageManager[];
   readonly run?: CommandRunner;
   readonly template?: string;
 }
@@ -328,6 +410,12 @@ function verifyNativeFrames(project: string, runner: CommandRunner): string {
   return `${output}\nVerified ${report.frames} rendered frames.`;
 }
 
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 function mcpStep(project: string, runner: McpRunner): string {
   const configPath = path.join(project, ".mcp.json");
   if (!fs.existsSync(configPath)) throw new Error(`MCP configuration is missing: ${configPath}.`);
@@ -337,8 +425,15 @@ function mcpStep(project: string, runner: McpRunner): string {
   const servers = parsed.mcpServers;
   if (servers === undefined || Object.keys(servers).length === 0)
     throw new Error("MCP configuration declares no servers.");
+  const expected = Object.keys(MCP_SERVERS);
+  for (const name of expected) {
+    if (servers[name] === undefined)
+      throw new Error(`MCP configuration is missing required server '${name}'.`);
+  }
   const results: string[] = [];
-  for (const [name, server] of Object.entries(servers)) {
+  for (const name of expected) {
+    const server = servers[name];
+    if (server === undefined) continue;
     if (typeof server.command !== "string" || !Array.isArray(server.args))
       throw new Error(`MCP server '${name}' has no executable command and argument list.`);
     if (!server.args.every((arg) => typeof arg === "string"))
@@ -352,14 +447,136 @@ function mcpStep(project: string, runner: McpRunner): string {
           )
         : {};
     try {
-      results.push(
-        `${name}: ${assertMcpHandshake(name, runner(name, server.command, server.args as string[], project, env))}`,
+      const fixture: IMcpFixturePaths =
+        name === "threenative-blender"
+          ? {
+              out: path.join(project, ".registry-mcp", "triangle.glb"),
+              source: path.join(project, ".registry-mcp", "triangle.obj"),
+            }
+          : {};
+      if (fixture.source !== undefined && fixture.out !== undefined) {
+        fs.mkdirSync(path.dirname(fixture.source), { recursive: true });
+        fs.writeFileSync(
+          fixture.source,
+          "o registry-triangle\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n",
+        );
+      }
+      const first = assertMcpHandshake(
+        name,
+        runner(
+          name,
+          server.command,
+          server.args as string[],
+          project,
+          env,
+          mcpRequests(name, fixture),
+        ),
+        MCP_SAFE_TOOLS[name] as string,
       );
+      const payload = parseToolPayload(first.operation, name);
+      const record = objectRecord(payload);
+      if (name === "threenative-assets") {
+        if (
+          record === undefined ||
+          !Array.isArray(record.sources) ||
+          typeof record.total !== "number"
+        )
+          throw new Error(
+            "asset_search_sources returned no source directory payload with sources and total.",
+          );
+        results.push(`${name}: initialize, tools/list and asset_search_sources ok`);
+      } else if (name === "threenative-sculpt") {
+        if (
+          record === undefined ||
+          !isNonEmptyString(record.topic) ||
+          !isNonEmptyString(record.text)
+        )
+          throw new Error("sculpt_grimoire returned no technique-safe topic and text.");
+        results.push(`${name}: initialize, tools/list and sculpt_grimoire ok`);
+      } else if (name === "threenative-engine") {
+        if (!Array.isArray(payload) || payload.length === 0)
+          throw new Error(
+            "engine_search_capabilities returned no capability hits for the plain-words query.",
+          );
+        const malformedIndex = payload.findIndex((hit) => !isCapabilitySearchHit(hit));
+        if (malformedIndex !== -1)
+          throw new Error(
+            `engine_search_capabilities returned malformed capability hit at index ${malformedIndex}.`,
+          );
+        const hit = payload[0] as ICapabilitySearchHit;
+        const detailOperation = {
+          arguments: { symbol: hit.symbol },
+          name: "engine_capability_detail",
+        };
+        const detail = assertMcpHandshake(
+          name,
+          runner(
+            name,
+            server.command,
+            server.args as string[],
+            project,
+            env,
+            mcpRequests(name, {}, detailOperation),
+          ),
+          "engine_capability_detail",
+        );
+        const detailPayload = objectRecord(parseToolPayload(detail.operation, name));
+        if (
+          detailPayload === undefined ||
+          !isNonEmptyString(detailPayload.symbol) ||
+          detailPayload.symbol !== hit.symbol
+        )
+          throw new Error(
+            `engine_capability_detail did not return the searched capability '${hit.symbol}'.`,
+          );
+        results.push(
+          `${name}: initialize, tools/list, search and detail ok (${hit.symbol}; ${payload.length} hit(s))`,
+        );
+      } else if (name === "threenative-blender") {
+        if (record === undefined || record.available !== true) {
+          const detail = isNonEmptyString(record?.detail)
+            ? record.detail
+            : "Blender is unavailable";
+          const install = isNonEmptyString(record?.installCommand)
+            ? ` Install it with: ${record.installCommand}`
+            : "";
+          throw new Error(`TN_REGISTRY_INSTALL_BLENDER_UNAVAILABLE: ${detail}.${install}`);
+        }
+        const conversion = assertMcpHandshake(
+          name,
+          runner(
+            name,
+            server.command,
+            server.args as string[],
+            project,
+            env,
+            mcpRequests(name, fixture, {
+              arguments: { out: fixture.out, source: fixture.source },
+              name: "blender_convert",
+            }),
+          ),
+          "blender_convert",
+        );
+        const conversionPayload = objectRecord(parseToolPayload(conversion.operation, name));
+        if (
+          conversionPayload?.ok !== true ||
+          fixture.out === undefined ||
+          !fs.existsSync(fixture.out)
+        )
+          throw new Error("blender_convert did not produce a GLB from the owned OBJ fixture.");
+        results.push(`${name}: initialize, tools/list, status and conversion ok`);
+      }
     } catch (error) {
       throw new Error(
-        `MCP server '${name}' handshake failed: ${error instanceof Error ? error.message : String(error)}`,
+        `MCP server '${name}' verification failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+  for (const [name, server] of Object.entries(servers)) {
+    if (expected.includes(name)) continue;
+    if (typeof server.command !== "string" || !Array.isArray(server.args))
+      throw new Error(`MCP server '${name}' has no executable command and argument list.`);
+    results.push(`${name}: preserved user server (not part of the ThreeNative table)`);
   }
   return results.join("; ");
 }
@@ -368,81 +585,103 @@ export function verifyRegistryInstall(
   options: IVerifyRegistryInstallOptions = {},
 ): IRegistryInstallReport {
   const template = options.template ?? "starter";
-  // A private cache and a private store, so a package cached from an earlier workspace install
-  // cannot stand in for one the registry would have refused to serve.
+  const managers = [...new Set(options.packageManagers ?? REGISTRY_PACKAGE_MANAGERS)];
+  for (const manager of managers) assertSupportedPackageManager(manager);
+  assertSupportedNodeVersion();
+  // A private cache and a private store per case, so a package cached from an earlier workspace
+  // install cannot stand in for one the registry would have refused to serve.
   const parent = fs.mkdtempSync(
     path.join(options.parent ?? os.tmpdir(), "threenative-clean-room-"),
   );
-  const cache = path.join(parent, "npm-cache");
-  fs.mkdirSync(cache, { recursive: true });
-  const project = path.join(parent, "my-game");
-  const run =
-    options.run ??
-    realRunner({
-      ...cleanRoomEnvironment(process.env),
-      NPM_CONFIG_CACHE: cache,
-      npm_config_cache: cache,
-    });
   const mcp = options.mcp ?? realMcpRunner;
   const steps: IRegistryInstallStep[] = [];
   try {
-    // `--no-install`, so the install step below is the one that installs.
-    //
-    // The scaffolder installs with pnpm when it is not told otherwise, and the next step runs
-    // `npm install` — over pnpm's symlinked `node_modules`, which npm cannot read: it fails with
-    // `Cannot read properties of null (reading 'matches')` and reports the registry path as broken
-    // while a plain `npm install` into an empty project succeeds. Scaffolding without installing
-    // makes the two steps mean what their names say, and makes `install` a real test of installing
-    // these packages from the registry rather than of layering one package manager over another.
-    steps.push(
-      step("scaffold", () =>
-        run(
-          "npm",
-          ["create", "threenative@latest", "my-game", "--", "--template", template, "--no-install"],
-          parent,
-        ),
-      ),
-    );
-    if (steps[0]?.ok === true) {
-      steps.push(step("install", () => run("npm", ["install"], project)));
-      if (steps[1]?.ok === true) {
-        steps.push(step("lockfile", () => `Checked ${checkLockfile(project)}; no file: or link:.`));
-        steps.push(step("build", () => run("npm", ["run", "build"], project)));
-        steps.push(step("test", () => run("pnpm", ["test"], project)));
-        steps.push(
-          step("doctor", () =>
-            assertDoctorTargetCensus(run("npx", ["threenative", "doctor", "--text"], project)),
-          ),
-        );
-        steps.push(
-          step("native", () => {
-            const output = run("npm", ["run", "build:desktop"], project);
-            const executable = nativeOutput(project);
-            const proof = verifyNativeFrames(project, run);
-            return `${output}\nExecutable: ${executable}\n${proof}`;
-          }),
-        );
-        steps.push(step("mcp", () => mcpStep(project, mcp)));
-      } else {
-        for (const name of ["lockfile", "build", "test", "doctor", "native", "mcp"])
-          steps.push({
-            detail: "Not run: the install step failed to produce an installed project.",
-            name,
-            ok: false,
-          });
-      }
-    } else {
-      for (const name of ["install", "lockfile", "build", "test", "doctor", "native", "mcp"])
-        steps.push({
-          detail: "Not run: the scaffold step never produced a project.",
-          name,
-          ok: false,
+    for (const manager of managers) {
+      const caseRoot = path.join(parent, manager);
+      const cache = path.join(caseRoot, "npm-cache");
+      const store = path.join(caseRoot, "pnpm-store");
+      const project = path.join(caseRoot, "my-game");
+      fs.mkdirSync(caseRoot, { recursive: true });
+      fs.mkdirSync(cache, { recursive: true });
+      fs.mkdirSync(store, { recursive: true });
+      const run =
+        options.run ??
+        realRunner({
+          ...cleanRoomEnvironment(process.env),
+          NPM_CONFIG_CACHE: cache,
+          npm_config_cache: cache,
         });
+      const command = manager === "npm" ? "npm" : "pnpm";
+      const scaffoldArgs =
+        manager === "npm"
+          ? [
+              "create",
+              "threenative@latest",
+              "my-game",
+              "--",
+              "--template",
+              template,
+              "--no-install",
+            ]
+          : ["create", "threenative@latest", "my-game", "--template", template, "--no-install"];
+      const installArgs =
+        manager === "npm" ? ["install", "--cache", cache] : ["install", "--store-dir", store];
+      const script = (name: string): readonly string[] =>
+        manager === "npm" ? ["run", name] : ["run", name];
+      const testCommand = manager === "npm" ? ["run", "test"] : ["test"];
+      const doctorCommand =
+        manager === "npm"
+          ? ["npx", "--no-install", "threenative", "doctor", "--text"]
+          : ["pnpm", "exec", "threenative", "doctor", "--text"];
+
+      const prefix = (name: string): string => `${manager}:${name}`;
+      const notRun = (name: string, reason: string): void => {
+        steps.push({ detail: `Not run: ${reason}`, name: prefix(name), ok: false });
+      };
+
+      const scaffold = step(prefix("scaffold"), () => run(command, scaffoldArgs, caseRoot));
+      steps.push(scaffold);
+      if (!scaffold.ok) {
+        for (const name of ["install", "lockfile", "build", "test", "doctor", "native", "mcp"])
+          notRun(name, "the scaffold step never produced a project.");
+        continue;
+      }
+      const installed = step(prefix("install"), () => run(command, installArgs, project));
+      steps.push(installed);
+      if (!installed.ok) {
+        for (const name of ["lockfile", "build", "test", "doctor", "native", "mcp"])
+          notRun(
+            name,
+            "the install step failed to produce an installed project; no script-policy bypass was used.",
+          );
+        continue;
+      }
+      steps.push(
+        step(prefix("lockfile"), () => `Checked ${checkLockfile(project)}; no file: or link:.`),
+      );
+      steps.push(step(prefix("build"), () => run(command, script("build"), project)));
+      steps.push(step(prefix("test"), () => run(command, testCommand, project)));
+      steps.push(
+        step(prefix("doctor"), () =>
+          assertDoctorTargetCensus(
+            run(doctorCommand[0] as string, doctorCommand.slice(1), project),
+          ),
+        ),
+      );
+      steps.push(
+        step(prefix("native"), () => {
+          const output = run(command, script("build:desktop"), project);
+          const executable = nativeOutput(project);
+          const proof = verifyNativeFrames(project, run);
+          return `${output}\nExecutable: ${executable}\n${proof}`;
+        }),
+      );
+      steps.push(step(prefix("mcp"), () => mcpStep(project, mcp)));
     }
   } finally {
     fs.rmSync(parent, { force: true, recursive: true });
   }
-  return { exitCode: steps.every((item) => item.ok) ? 0 : 1, steps };
+  return { exitCode: steps.every((item) => item.ok) ? 0 : 1, managers, steps };
 }
 
 function main(): void {

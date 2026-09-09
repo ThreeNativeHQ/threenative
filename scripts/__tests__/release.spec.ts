@@ -3,7 +3,13 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
-import { releaseOrder } from "../release.js";
+import { publishSet } from "../check-publish-state.js";
+import {
+  prepareReleaseCohort,
+  releaseOrder,
+  validateReleaseCohort,
+  validateTemplatePins,
+} from "../release.js";
 
 const roots: string[] = [];
 
@@ -91,5 +97,61 @@ describe("pnpm release ordering", () => {
       "utf8",
     );
     expect(source).toContain("allowCurrentPublishSetPins: true");
+  });
+
+  it("validates the real candidate's template pins and bundled MCP servers", () => {
+    const repo = path.resolve(import.meta.dirname, "../..");
+    const cohort = validateReleaseCohort(repo, publishSet(repo));
+
+    expect(cohort.bundledMcpServers).toEqual([
+      "threenative-assets",
+      "threenative-sculpt",
+      "threenative-engine",
+      "threenative-blender",
+    ]);
+    expect(cohort.templatePins).toEqual([]);
+    expect(cohort.order).toContain("create-threenative");
+  });
+
+  it("rejects a template pin outside the candidate cohort", async () => {
+    const root = await makeTempDir("threenative-release-pins-");
+    roots.push(root);
+    const templates = path.join(root, "templates", "starter");
+    await fs.promises.mkdir(templates, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(templates, "package.json"),
+      JSON.stringify({ dependencies: { "@threenative/core": "0.2.0" } }),
+    );
+    const findings = validateTemplatePins(
+      path.join(root, "templates"),
+      new Map([["@threenative/core", "0.3.0"]]),
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatch(/@threenative\/core.*0\.3\.0/u);
+  });
+
+  it("refuses preparation when a published package changed without a version bump", async () => {
+    const repo = path.resolve(import.meta.dirname, "../..");
+    const packages = publishSet(repo);
+    const versions = new Map(packages.map((item) => [item.name, item.version]));
+    await expect(
+      prepareReleaseCohort({
+        allowCurrentPublishSetPins: true,
+        lookup: (name) => ({
+          published: "2026-08-09T07:32:33.145Z",
+          state: "present",
+          version: versions.get(name) ?? "0.0.0",
+        }),
+        prebuiltProbe: () => "present",
+        repo,
+        sourceCommits: () => 1,
+        tarballs: (item) => ({
+          entries: ["package.json"],
+          text: new Map([
+            ["package.json", JSON.stringify({ name: item.name, version: item.version })],
+          ]),
+        }),
+      }),
+    ).rejects.toThrow(/TN_RELEASE_COHORT_RED.*@threenative\/core/u);
   });
 });

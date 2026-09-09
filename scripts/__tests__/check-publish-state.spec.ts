@@ -518,6 +518,23 @@ describe("pnpm publish:check", () => {
     ).rejects.toThrow(/TN_PUBLISH_MODULE_UNREADABLE/u);
   });
 
+  it("names a relative import that escapes the package rather than treating it as a local miss", async () => {
+    const findings = await unresolvableTarballImports(
+      PACKED,
+      tarball({
+        "package.json": JSON.stringify({ name: PACKED.name, version: PACKED.version }),
+        "scripts/consumer.mjs": "import '../../engine/src/index.js';\n",
+      }),
+    );
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        detail: expect.stringContaining("outside the package tarball"),
+        severity: "fail",
+      }),
+    ]);
+  });
+
   it("fails when a packed manifest still carries a workspace protocol specifier", () => {
     // `npm pack` leaves catalog:/workspace: verbatim where `pnpm pack` substitutes them. The
     // tarball installs nowhere — EUNSUPPORTEDPROTOCOL on a stranger's machine and nowhere else.
@@ -571,6 +588,18 @@ describe("pnpm publish:check", () => {
     expect(contents.entries).toContain("scripts/asset-preflight.mjs");
     expect(await unresolvableTarballImports(item as IPublishPackage, contents)).toEqual([]);
     expect(unresolvedTarballSpecifiers(item as IPublishPackage, contents)).toEqual([]);
+  }, 120_000);
+
+  it("packs only self-contained core scripts and excludes the VSM development proof", async () => {
+    const repo = path.resolve(import.meta.dirname, "../..");
+    const item = publishSet(repo).find((entry) => entry.name === "@threenative/core");
+    expect(item).toBeDefined();
+    const contents = pnpmPackReader()(item as IPublishPackage);
+
+    expect(contents.entries).toContain("scripts/postinstall.mjs");
+    expect(contents.entries).not.toContain("scripts/vsm-proof/run.mjs");
+    expect(contents.entries.some((entry) => entry.startsWith("scripts/vsm-proof/"))).toBe(false);
+    expect(await unresolvableTarballImports(item as IPublishPackage, contents)).toEqual([]);
   }, 120_000);
 
   it("refuses an empty publish set rather than reporting nothing to do", async () => {

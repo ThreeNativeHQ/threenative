@@ -568,8 +568,11 @@ export async function unresolvableTarballImports(
     for (const specifier of await relativeSpecifiers(file, source)) {
       const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
       if (shipped.has(resolved)) continue;
+      const escaped = resolved === ".." || resolved.startsWith("../");
       findings.push({
-        detail: `${item.name} ships ${file}, which imports '${specifier}', but ${resolved} is not in the tarball. Loading it fails ERR_MODULE_NOT_FOUND on an installed copy.`,
+        detail: escaped
+          ? `${item.name} ships ${file}, which imports '${specifier}' outside the package tarball (${resolved}). An installed copy cannot reach a sibling checkout.`
+          : `${item.name} ships ${file}, which imports '${specifier}', but ${resolved} is not in the tarball. Loading it fails ERR_MODULE_NOT_FOUND on an installed copy.`,
         package: item.name,
         severity: "fail",
       });
