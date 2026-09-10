@@ -261,6 +261,7 @@ function reconcilePipelineCaptures(renderer: IPipelineCapture, native: IPipeline
   const incompleteReasons = [...native.incompleteReasons, ...renderer.incompleteReasons];
   return {
     ...native, events, complete: native.complete && renderer.complete,
+    counts: { ...native.counts, lookups: renderer.counts.lookups },
     overflowed: native.overflowed || renderer.overflowed, incompleteReasons,
   };
 }

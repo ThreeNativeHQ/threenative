@@ -22,6 +22,33 @@ integrated with the local canonical PRDs). Game source/assets were hashed before
 untracked game files, not an asserted clean game commit. Only package pins and the separate Android
 application ID changed before the captures below.
 
+### Native reporting follow-up after PR 165
+
+The unchanged candidate APK now completes the actual Android movement scenario; the earlier
+missing-bridge failure did not reproduce, and its cause remains unproven. Its paired capture
+reconciles 104 creations, 86 programs, zero pending/failed/dropped events and 102 renderer lookups.
+Native events do not observe lookups; pairing now preserves the renderer's observed lookup count
+while retaining native authority over creation counts, timing and the capture boundary.
+
+The shared device runner previously discarded `waitForStartupReady()`'s outcome. It now forwards
+that existing startup observation to `buildReport()`, matching the browser runner. A real Pixel
+scenario with `maxReadyMs:8000` now fails on **17,909.374276 ms observed**, with movement and runtime
+diagnostics passing. This is readiness, not first-playable time, and AC charging disqualifies the
+run as performance acceptance. The [receipt and exact invocation](startup-measure-reduce-2026-09-09/reporting-followup/readiness-receipt.json)
+and [scenario](startup-measure-reduce-2026-09-09/reporting-followup/readiness.playtest.json) retain that scope.
+
+Observed red: [lookup count](startup-measure-reduce-2026-09-09/reporting-followup/lookups-red.log)
+expected 7, received 0; [device startup tests](startup-measure-reduce-2026-09-09/reporting-followup/native-startup-red.log)
+failed 2 cases because the timeline was absent. Restored behavior:
+[65 focused tests pass](startup-measure-reduce-2026-09-09/reporting-followup/reporting-green.log),
+and [playtest typecheck exits 0](startup-measure-reduce-2026-09-09/reporting-followup/reporting-typecheck.log).
+Independent review found and then cleared a fixture typing error; it confirmed native authority,
+browser/device parity and missing-observation behavior. Follow-up `pnpm typecheck`, `pnpm lint`,
+`pnpm test` (4,774 root tests passed, 8 skipped), `pnpm build`, `pnpm budgets` and
+`pnpm test:playtest` all exited 0; [bounded gate output](startup-measure-reduce-2026-09-09/reporting-followup/gates.txt)
+retains the results and full-log hashes. This slice changes the report layer; its Android scenario
+uses the unchanged installed candidate APK.
+
 ### Observed defects and bounded repairs
 
 This is the engine observation layer: games cannot portably observe their WebGPU backend and

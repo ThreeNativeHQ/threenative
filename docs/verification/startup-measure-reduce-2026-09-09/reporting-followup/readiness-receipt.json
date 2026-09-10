@@ -1,0 +1,72 @@
+{
+  "pass": false,
+  "runtime": "native",
+  "scenario": "bayview-native-readiness-report",
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "warmup": {
+      "attempted": 1,
+      "candidates": 563,
+      "observed": {
+        "created": 62,
+        "failed": 0,
+        "pending": 0,
+        "uniquePrograms": 57,
+        "uniquePipelines": 62,
+        "status": "complete"
+      },
+      "status": "complete"
+    },
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 383.20105,
+      "enteredMs": 2661.724773,
+      "compileSettledMs": 15393.38518,
+      "frameworkReadyMs": 17909.347217,
+      "readyMs": 17909.374276
+    },
+    "rule": "sustained-frames"
+  },
+  "assertionResults": [
+    {
+      "details": {
+        "expected": 8000,
+        "observed": 17909.374276
+      },
+      "id": "startup.readyMs",
+      "pass": false
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "networkErrorsOptOutReason": "Android mailbox transport has no CDP network observer; this scenario proves local packaged asset startup.",
+          "noConsoleErrors": true,
+          "noNetworkErrors": false,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    },
+    {
+      "details": {
+        "distance": 2.1466912774492233,
+        "entity": "player",
+        "minimum": 0.25,
+        "observed": true
+      },
+      "id": "movement.distance",
+      "pass": true
+    }
+  ],
+  "artifactDirectory": "/home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce/artifacts/startup-measure-reduce/resume-2026-09-09/readiness-red",
+  "qualification": "Unqualified timing: AC charging; functional reporting and movement proof only.",
+  "apkSha256": "373753cd6fa089bc28610e257527051a77e811b479c0a7523761d4d89947d882",
+  "command": "node packages/playtest/dist/runner/cli.js artifacts/startup-measure-reduce/resume-2026-09-09/readiness.playtest.json --target android --device 192.168.1.192:5555 --package com.threenative.bayview.startup --activity com.threenative.runtime.MystralActivity --timeout 60000 --artifacts artifacts/startup-measure-reduce/resume-2026-09-09/readiness-red",
+  "exitCode": 1
+}

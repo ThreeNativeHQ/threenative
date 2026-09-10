@@ -1,0 +1,101 @@
+typecheck: exit 0
+Full log SHA-256: 7323d2cb515e3b58808c1370cb1908dca70c1917c59ea1be3cf2324a85cd590b
+examples/quarry typecheck: Done
+examples/vfx-gallery typecheck: Done
+packages/ui typecheck: Done
+packages/physics typecheck: Done
+examples/fps-friction typecheck$ tsc --noEmit -p tsconfig.json
+examples/native-smoke typecheck$ tsc --noEmit -p tsconfig.json
+packages/create-threenative typecheck$ tsc --noEmit
+examples/prd243-cloth typecheck$ tsc --noEmit -p tsconfig.json
+examples/fps-friction typecheck: Done
+examples/prd243-cloth typecheck: Done
+examples/native-smoke typecheck: Done
+packages/create-threenative typecheck: Done
+examples/abyss-framework typecheck$ tsc --noEmit -p tsconfig.json
+examples/abyss-framework typecheck: Done
+
+lint: exit 0
+Full log SHA-256: b5567a1b47a36490f3e4ce6ea1cfc37037377516836a19eb2e9dd0770c21ed1a
+        │                                                                   ^^^
+    430 │         const page = ctx.state.getState().page;
+    431 │         for (const entity of effectEntities.values()) {
+
+  i Please refactor this function to reduce its complexity score from 16 to the max allowed complexity 15.
+
+
+Skipped 185 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --fix --unsafe
+
+The number of diagnostics exceeds the number allowed by Biome.
+Diagnostics not shown: 646.
+Checked 2074 files in 844ms. No fixes applied.
+Found 666 warnings.
+
+test: exit 0
+Full log SHA-256: 93f8aa0a721c54a65e719e4b0ad6b376b41f81cbb7a8648784aa7fb6457b443c
+ ✓ packages/core/__tests__/webgpu-instance-retention.spec.ts (1 test) 3ms
+ ✓ packages/core/__tests__/ctx-add-type.spec.ts (1 test) 3ms
+ ↓ packages/assets/__tests__/fab-account-lane.spec.ts (1 test | 1 skipped)
+ ✓ packages/playtest/__tests__/preflight-display.spec.ts (4 tests) 4ms
+ ✓ packages/playtest/__tests__/runtime-readouts.spec.ts (2 tests) 3ms
+ ✓ scripts/__tests__/profile-starter.spec.ts (5 tests) 6ms
+ ↓ packages/playtest/__tests__/generated-shooter-input.spec.ts (3 tests | 3 skipped)
+
+ Test Files  411 passed | 2 skipped (413)
+      Tests  4774 passed | 8 skipped (4782)
+   Start at  19:44:35
+   Duration  89.50s (transform 14.78s, setup 0ms, import 80.45s, tests 578.99s, environment 41ms)
+
+suite temporary directory count did not grow in '/tmp/threenative-suite.3yuNPx': before 1, after 1
+
+build: exit 0
+Full log SHA-256: c4b92f0de8fb47efb3a9af6a9a8fcc203fb184a84e7e20f48bef7892ec683a55
+examples/abyss-framework build: dist/assets/dist-kK9Gv_BE.js                             190.76 kB │ gzip:  60.10 kB
+examples/abyss-framework build: dist/assets/three.core-BHhfB8Ca.js                       256.70 kB │ gzip:  67.27 kB
+examples/abyss-framework build: dist/assets/three.module--rOt7XPq.js                     351.05 kB │ gzip:  85.74 kB
+examples/abyss-framework build: dist/assets/recast-navigation.wasm-compat-BWLobtMG.js    726.28 kB │ gzip: 219.84 kB
+examples/abyss-framework build: dist/assets/playtest-d_hCWcqn.js                         921.74 kB │ gzip: 267.52 kB
+examples/abyss-framework build: dist/assets/dist-Daj5i-01.js                           2,273.36 kB │ gzip: 853.48 kB
+examples/abyss-framework build: ✓ built in 418ms
+examples/abyss-framework build: [33m[INEFFECTIVE_DYNAMIC_IMPORT] [0m../../node_modules/.pnpm/three@0.185.1_patch_hash=9ac4c733e5d0fc82e9b89de5e4963a98e6099bb0269dae74041c9d4e22295ef7/node_modules/three/build/three.webgpu.js is dynamically imported by ../../packages/core/dist/index.js but also statically imported by src/scenes/Abyss.ts, ../../node_modules/.pnpm/three-mesh-bvh@0.9.14_three@0.185.1_patch_hash=9ac4c733e5d0fc82e9b89de5e4963a98e6099bb0269dae74041c9d4e22295ef7_/node_modules/three-mesh-bvh/src/webgpu/BVHComputeData.js, ../../node_modules/.pnpm/three-mesh-bvh@0.9.14_three@0.185.1_patch_hash=9ac4c733e5d0fc82e9b89de5e4963a98e6099bb0269dae74041c9d4e22295ef7_/node_modules/three-mesh-bvh/src/webgpu/nodes/NodeProxy.js, ../../node_modules/.pnpm/three-mesh-bvh@0.9.14_three@0.185.1_patch_hash=9ac4c733e5d0fc82e9b89de5e4963a98e6099bb0269dae74041c9d4e22295ef7_/node_modules/three-mesh-bvh/src/webgpu/nodes/WGSLTagFnNode.js, ../../node_modules/.pnpm/three-mesh-bvh@0.9.14_three@0.185.1_patch_hash=9ac4c733e5d0fc82e9b89de5e4963a98e6099bb0269dae74041c9d4e22295ef7_/node_modules/three-mesh-bvh/src/webgpu/tsl/structs.js, ..., dynamic import will not move module into another chunk.
+examples/abyss-framework build: [plugin builtin:vite-reporter]
+examples/abyss-framework build: (!) Some chunks are larger than 500 kB after minification. Consider:
+examples/abyss-framework build: - Using dynamic import() to code-split the application
+examples/abyss-framework build: - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+examples/abyss-framework build: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+examples/abyss-framework build: Done
+
+budgets: exit 0
+Full log SHA-256: 49f9243150e7bfe4eeac70ab5d609426f1487505701c920d5dd90f505fabfc38
+budgets trigger: native runtime LOC review trigger: 141150 lines (trigger 100000, +41150). Justify in the owning PRD and run the kill switch over what was added.
+native census drift: src/ recorded 51,847, measured 51,952 (difference exceeds tolerance 5) — run `pnpm census` to regenerate the Lines column
+native census drift: tests/ recorded 42,308, measured 42,604 (difference exceeds tolerance 5) — run `pnpm census` to regenerate the Lines column
+native census drift: include/ recorded 5,515, measured 5,522 (difference exceeds tolerance 5) — run `pnpm census` to regenerate the Lines column
+native census drift: Root CMakeLists.txt recorded 2,469, measured 2,480 (difference exceeds tolerance 5) — run `pnpm census` to regenerate the Lines column
+budgets ok: 11 framework packages, 16 example workspaces, 62778/15000 framework LOC, 141150/100000 native runtime LOC, 118 PRD files, largest template 5676 LOC, no compiled texture manifests found
+threenative-context supersession table in sync with capabilities.json
+capability reference in sync with capabilities.json
+realism-effects coverage: docs/PRDs/realism-effects/README.md is gone, nothing to update
+realism-effects conformance registry: 13 covered exports registered
+realism-effects platform matrix: docs/verification/realism-effects-matrix-2026-08-30.json is complete
+examples: no superseded constructs across 109 files
+template quality: 10 templates ship src/render/quality.ts, read it, and document it; all agree on the fail-closed tier contract (bbb998efac02)
+MCP host configs current: 10 templates × 7 hosts
+
+playtest: exit 0
+Full log SHA-256: c53ef1b6020777714dbc8ccde9aaebc0f0264d1c17cddaaadeb7d5e848917aaf
+    "progress": 1,
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 520.7000000178814,
+      "enteredMs": 659.5999999940395,
+      "compileSettledMs": 748,
+      "frameworkReadyMs": 748,
+      "readyMs": 748
+    },
+    "rule": "sustained-frames"
+  },
+  "trivialityOptOutCount": 5,
+  "url": "http://127.0.0.1:5180/?streaming"
+}

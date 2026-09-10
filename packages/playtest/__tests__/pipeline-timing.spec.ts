@@ -58,6 +58,7 @@ function browserEvent(overrides: Record<string, unknown> = {}): Record<string, u
 function browserCapture(
   events: readonly Record<string, unknown>[],
   overrides: Record<string, unknown> = {},
+  lookups = events.length,
 ): Record<string, unknown> {
   return {
     version: 1,
@@ -69,7 +70,7 @@ function browserCapture(
     adapter: { identity: "adapter:test", thermal: "unavailable" },
     firstPresent: { boundaryMs: 4, eventsSettled: events.filter((event) => event.settledMs !== undefined && Number(event.settledMs) <= 4).length },
     counts: {
-      lookups: events.length,
+      lookups,
       creations: events.length,
       failures: events.filter((event) => event.status === "failed").length,
       pending: events.filter((event) => event.status === "pending").length,
@@ -104,13 +105,13 @@ function nativeCheckpoint(
   return `TN_PIPELINE_CHECKPOINT:${JSON.stringify({ version: 1, present, requested, emitted, outstanding })}`;
 }
 
-function pairedCapture() {
+function pairedCapture(lookups = 1) {
   const event = browserEvent({ pipelineIdentity: "native-render-7" });
   return {
     version: 1,
     // A one-tuple, so the cases below can reach the single event without a strict-mode guard on
     // an index the helper guarantees.
-    census: { ...browserCapture([event]), events: [event] as [Record<string, unknown>] },
+    census: { ...browserCapture([event], {}, lookups), events: [event] as [Record<string, unknown>] },
     nativeLog: [nativeMetadata(15), marker(1, 2, 10, 12, {
       pipelineIdentity: "native-render-7", programIdentity: "shader-pair", mode: "sync",
       pass: "unknown", vertex: event.vertex, fragment: event.fragment,
@@ -277,6 +278,15 @@ describe("pipeline timing capture", () => {
     expect(summarizePipelineCapture(capture).contributors[0]).toMatchObject({
       label: "material:brick", serviceMs: 10,
     });
+  });
+
+  it("preserves observed renderer lookups when native events only count creations", () => {
+    const input = pairedCapture(7);
+
+    const summary = summarizePipelineCapture(parsePipelineCapture(JSON.stringify(input)));
+
+    expect(summary.counts.lookups).toBe(7);
+    expect(summary.counts.creations).toBe(1);
   });
 
   // `doctor --capture` hands the parser file bytes, never a parsed object. A paired file carries
