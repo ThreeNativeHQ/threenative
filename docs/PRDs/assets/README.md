@@ -16,6 +16,90 @@ flowchart LR
 
 ## Order of execution
 
+### Startup work added 2026-09-08
+
+The asset flow also ends in GPU programs: fewer downloaded bytes do not imply fewer shaders.
+This batch owns the following bounded follow-ups to PRD-360. All four are **PROPOSED**;
+none claims implementation or new device evidence.
+
+| PRD | Player/author outcome | Dependency |
+| --- | --- | --- |
+| [367 — doctor explains shader compilation](PRD-367-doctor-explains-shader-compilation.md) | Attribute launch cost to actual programs, passes and materials | First; establishes the common measurement |
+| [368 — compiled pipelines survive a relaunch](../BLOCKED/requires-pipeline-cache-api/PRD-368-compiled-pipelines-survive-a-relaunch.md) | Compatible subsequent launches reuse native compiler work | 367 Phase 1 for timing; dependency feasibility can start independently |
+| [369 — material variation is data](PRD-369-material-variation-is-data.md) | Reduce first-launch programs through game-owned render source | 367 attribution; independent of 368 |
+| [370 — warm-up counts what the GPU creates](PRD-370-warmup-counts-what-the-gpu-creates.md) | Loading progress and readiness describe observed work accurately | 367 observation; reconcile PRD-360 before editing |
+
+#### Source and limits
+
+Requested source, read on 2026-09-08:
+`.worktrees/prd-360-android-launch-20260908/docs/verification/prd-360-startup-cost-2026-09-08/next-work-raw-material.md`.
+That exact file was supplied by the owner; no other lane was searched. Its findings are transcribed
+here so these plans remain readable after the source checkout is cleaned up. Inspected primary
+checkout: `c268068a2`. Reconcile source-lane changes with the implementation checkout before work.
+
+| Source observation | Planning consequence |
+| --- | --- |
+| Approximately 10.9 s to playable: 2.4 s before scene entry plus 8,513 ms pipeline creation | Separate asset/load, JS graph, driver compile and playable clocks |
+| 96 distinct shader programs; 101 pipelines and 101 unique keys | Object/material count is not pipeline count; no demonstrated duplicate-key win |
+| Main 67 / 7,477 ms; shadow 31 / 963 ms; PMREM 2 / 50 ms; output 1 / 23 ms | Account for all passes; these compile times sum to 8,513 ms |
+| Covered warm-up 20,988 ms and 15,028 ms; object granularity/concurrency 4 took 15,012 ms, timed out | Do not rerun these as proposed total-launch optimizations |
+| Generated fragments approximately 800 B–56 KB | Shader-size/compile-cost relationship remains unmeasured |
+
+The source's “roughly zero” cached cost and “a third fewer programs” are hypotheses, not acceptance
+evidence. Its measurements do not establish that every remaining millisecond is irreducible driver
+work, or that an upgraded wgpu-native C API exposes persistent caches. Record actual adapter/driver
+identity; do not infer it from a device label. Warm-up relocates work; it does not remove that work.
+
+PRD-368 takes ownership of the persistent-cache slice also proposed in
+[the earlier compile-walk PRD](../performance/critical/PRD-339-the-compile-walk-leaves-the-main-thread.md).
+It does not depend on reopening rejected scheduling experiments. PRD-370 owns the remaining
+accounting defect; source-lane skip logging, first-use rendering and concurrency documentation
+must be reconciled and reused if landed. These plans do not close PRD-360 or earlier performance
+acceptance. PRD-369 does not replace 351's compression floor or 352's ingest work.
+
+#### Shared execution and evidence contract for 367–370
+
+Each PRD uses this contract in addition to its phase-specific criteria. Phase file sets are capped
+at five; split a slice before editing if actual wiring needs more. NEW paths are planned, not shipped.
+Before package/source additions or render-stage changes, run `engine_search_capabilities`, then
+`engine_capability_detail` for every hit. Read the closest package/template rules. Reuse existing
+configuration loading, asset receipts, diagnostics, native bindings and playtest transports.
+
+1. Freeze the actual PRD-360 town game revision, assets, package tarballs, host build, scenario,
+   adapter and shader hashes before the first capability phase. Resolve its path from the source
+   record; an unavailable game is a missing proof subject, never permission to substitute a toy.
+   Desktop proves counts; browser and native scenarios prove behavior. Thermally qualified physical
+   Pixel 8 runs prove Pixel 8 timing. Emulator results cannot replace that timing claim.
+2. For every phase, run the named test with a deliberate feature mutation and paste observed red,
+   restore and paste green. Missing observations and unknown assertion fields fail closed. Record
+   non-test caller `file:line`, invocation, output identity, incumbent removal/delegation and the
+   revert control for every ledger row. A green test of an unused helper does not release a phase.
+3. Run `pnpm typecheck && pnpm lint && pnpm test`, `pnpm build`, `pnpm budgets`, and the affected
+   real-game scenario after runtime changes. Use `pnpm test:playtest` and `pnpm test:templates` when
+   those consumers change; native work also runs `pnpm native:build` and
+   `pnpm native:verify:desktop`. Read `packages/playtest/AGENTS.md` for target flags; write the exact
+   resolved game/scenario/target command into phase evidence before executing it. For browser use
+   `--browser-recipe webgpu` and retain adapter identity. No fabricated executable or success output.
+4. An independent reviewer checks each phase's diff, real flow, red/green and ledger before the next
+   phase. Physical performance and appearance acceptance require additional human inspection of
+   the recorded measurements/captures. Keep findings in `docs/verification/runtime-perf-state.md`;
+   cite bounded raw artifacts there and from the PRD. Record command, actual result and artifact
+   for each phase; all implementation gates are **UNVERIFIED** at planning time.
+5. Close only after every acceptance checkbox and platform claim has evidence. Unsupported cache
+   backends are explicit, not fabricated cache hits. Archive each finished PRD per the filing rules;
+   do not archive the still-open assets batch. Do not delete the source lane or evidence as part of
+   implementing these plans.
+
+```mermaid
+flowchart LR
+    A[Source assets] --> B[Existing cook]
+    B --> C[Game-owned material graphs: 369]
+    C --> D[Renderer programs and pipelines]
+    D --> E[Native persistent cache: 368]
+    D --> F[Observed compile census: 367]
+    F --> G[Doctor and warm-up accounting: 370]
+```
+
 | PRD | Wins | Depends on |
 |---|---|---|
 | **[349 — the cook is on by default](../done/PRD-349-the-cook-is-on-by-default.md)** | DONE: Wildwood 304.92 → 51.33 MB, Quarry 29.89 → 4.57 MB; iOS waived | — |
