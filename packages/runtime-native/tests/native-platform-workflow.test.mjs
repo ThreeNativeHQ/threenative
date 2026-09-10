@@ -1,4 +1,4 @@
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -152,6 +152,79 @@ test('Android V8 source is produced once and consumed as a verified artifact', (
   expect(android).toContain('native-android-third-party-');
   expect(prd221Workflow).toContain('packages/runtime-native/third_party/.v8-source/payload');
   expect(prd221Workflow).not.toContain('.v8-source-*/payload');
+});
+
+test('Android V8 interruption leaves time to cache and resume Ninja state', () => {
+  const buildStep = androidV8Action.match(
+    /- name: Build the pinned Android V8 payload[\s\S]*?(?=\n {4}- name: Verify the complete Android V8 payload)/u,
+  )?.[0] ?? '';
+  const script = buildStep.match(/\n {6}run: \|\n([\s\S]*)$/u)?.[1]
+    ?.split('\n')
+    .map((line) => line.replace(/^ {8}/u, ''))
+    .join('\n');
+  expect(script).toContain('timeout --signal=TERM --kill-after=30s 120m');
+  expect(androidV8Action.indexOf('Save resumable V8 source state')).toBeGreaterThan(
+    androidV8Action.indexOf('Build the pinned Android V8 payload'),
+  );
+  expect(androidV8Action).toContain('if: always()');
+  expect(androidV8Action).toContain('third_party/.v8-source');
+
+  const root = makeTempDirSync('tn-v8-resume-action-');
+  const runtime = join(root, 'runtime');
+  const bin = join(root, 'bin');
+  const state = join(
+    runtime,
+    'third_party/.v8-source/buildscripts/v8/out.v8.arm64/build.ninja',
+  );
+  mkdirSync(join(runtime, 'scripts'), { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  const fakeNode = join(bin, 'node');
+  writeFileSync(
+    fakeNode,
+    `#!/bin/sh
+set -eu
+state="$PWD/third_party/.v8-source/buildscripts/v8/out.v8.arm64/build.ninja"
+mkdir -p "$(dirname "$state")"
+if [ "\${TN_V8_RESUME:-0}" = "1" ]; then
+  test -s "$state"
+  printf resumed > "$state"
+  exit 0
+fi
+printf advanced > "$state"
+child=0
+trap 'test "$child" -eq 0 || kill "$child" 2>/dev/null || true; exit 143' TERM INT
+sleep 60 &
+child=$!
+wait "$child"
+`,
+  );
+  chmodSync(fakeNode, 0o755);
+  const env = {
+    ...process.env,
+    ANDROID_NDK_HOME: root,
+    PATH: `${bin}:${process.env.PATH ?? ''}`,
+  };
+  try {
+    // Shorten only this fixture's clock; the extracted command is otherwise the action's exact
+    // build shell. The timeout must fail after the fake Ninja state has been written.
+    const interrupted = spawnSync(
+      'bash',
+      ['-euo', 'pipefail', '-c', script.replace('120m', '1s')],
+      { cwd: runtime, env, encoding: 'utf8' },
+    );
+    expect(interrupted.status).toBe(124);
+    expect(readFileSync(state, 'utf8')).toBe('advanced');
+
+    const resumed = spawnSync(
+      'bash',
+      ['-euo', 'pipefail', '-c', script.replace('120m', '5s')],
+      { cwd: runtime, env: { ...env, TN_V8_RESUME: '1' }, encoding: 'utf8' },
+    );
+    expect(resumed.status).toBe(0);
+    expect(readFileSync(state, 'utf8')).toBe('resumed');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('desktop platform lanes build and retain executable evidence', () => {

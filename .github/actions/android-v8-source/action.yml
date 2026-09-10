@@ -39,7 +39,11 @@ runs:
       run: |
         set -euo pipefail
         : "${ANDROID_NDK_HOME:?ANDROID_NDK_HOME must select the pinned V8 NDK}"
-        node scripts/download-deps.mjs --only v8-android
+        # The producer job is 150 minutes. Keep 30 minutes available after an interrupted
+        # compile for actions/cache/save to archive the prepared checkout and Ninja outputs;
+        # the next run restores this exact recipe and continues instead of starting over.
+        timeout --signal=TERM --kill-after=30s 120m \
+          node scripts/download-deps.mjs --only v8-android
     - name: Verify the complete Android V8 payload
       if: steps.build.outcome == 'success'
       working-directory: ${{ inputs.runtime-root }}
