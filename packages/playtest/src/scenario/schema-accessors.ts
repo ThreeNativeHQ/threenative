@@ -2,6 +2,7 @@ import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { PLAYTEST_FRAME_BUDGET_PHASES } from "../protocol.js";
 import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./errors.js";
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
+import { GENERATED_ASSERTION_FIELD_VALIDATORS } from "./generated-assertion-validators.js";
 import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion,
   IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestStartupAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
@@ -918,45 +919,27 @@ export function hasKey(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
-// CHARTER.md §8, the per-key variant. `rejectUnknownKeys` catches a misspelled key,
-// but a KNOWN key holding a wrong-typed value used to survive it and then get
-// dropped by the `typeof x === "number" ? { x } : {}` spreads in validateAssertions.
-// The assertion object stayed, minus the check the author wrote, and the scenario
-// reported green having proved nothing. `"minDistance": "0.5"` was a silent pass.
-//
-// The registry already declares every field's type, so the check lives here once
-// instead of in each spread. Composite types (objects, arrays, json) are still
-// validated by their own validators; only the scalar contract is enforced here.
-export const ASSERTION_FIELD_TYPE_CHECKS: Readonly<Record<string, (value: unknown) => boolean>> = {
-  "boolean": (value) => typeof value === "boolean",
-  "non-empty string": isNonEmptyString,
-  "non-negative integer": (value) => typeof value === "number" && Number.isInteger(value) && value >= 0,
-  "number": (value) => typeof value === "number" && Number.isFinite(value),
-  "number in [0, 180]": (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 180,
-  "positive integer": (value) => typeof value === "number" && Number.isInteger(value) && value > 0,
-  "positive number": (value) => typeof value === "number" && Number.isFinite(value) && value > 0,
-  "string": isNonEmptyString,
-  "triviality reason": isTrivialityReason,
-};
-
-export function isNonEmptyString(value: unknown): boolean {
-  return typeof value === "string" && value.trim() !== "";
-}
-
-export function isTrivialityReason(value: unknown): boolean {
-  return typeof value === "string"
-    && value.replace(/\s/gu, "").length >= MIN_TRIVIALITY_REASON_LENGTH;
-}
-
+// CHARTER.md §8, the per-key variant. The registry owns the accepted top-level
+// field shape; scripts/generate-assertion-validators.ts turns that registry into
+// the executable predicates below. Composite validators still enforce their
+// nested semantics after this fail-closed type gate.
 export function rejectWrongTypedFields(
+  kind: string,
   fields: readonly { name: string; type: string }[],
   value: Record<string, unknown>,
   scenarioPath: string,
   objectPath: string,
 ): void {
+  const validators = GENERATED_ASSERTION_FIELD_VALIDATORS[kind];
+  if (validators === undefined) {
+    throw new Error(`Generated assertion validators are missing registry kind '${kind}'.`);
+  }
   for (const field of fields) {
-    const check = ASSERTION_FIELD_TYPE_CHECKS[field.type];
-    if (check === undefined || value[field.name] === undefined) continue;
+    if (value[field.name] === undefined) continue;
+    const check = validators[field.name];
+    if (check === undefined) {
+      throw new Error(`Generated assertion validator is missing '${kind}.${field.name}'.`);
+    }
     if (!check(value[field.name])) {
       const expectedType = field.type === "triviality reason"
         ? `a string with at least ${MIN_TRIVIALITY_REASON_LENGTH} non-whitespace characters`
@@ -987,7 +970,7 @@ export function validateAssertionKeys(value: Record<string, unknown>, scenarioPa
       const fields = pathAssertionWithId
         ? entry.fields.filter((field) => !NUMERIC_COMPARISON_KEYS.includes(field.name as (typeof NUMERIC_COMPARISON_KEYS)[number]))
         : entry.fields;
-      rejectWrongTypedFields(fields, item, scenarioPath, `assert.${entry.kind}${suffix}`);
+      rejectWrongTypedFields(entry.kind, fields, item, scenarioPath, `assert.${entry.kind}${suffix}`);
       validateNestedAssertionKeys(entry.kind, item, scenarioPath, suffix);
     });
   }

@@ -144,6 +144,14 @@ export const executionContracts = {
   // PRD-327 Phase 4. Needs no display and no GPU: it drives the header-only launch instruments
   // directly — launch attribution, the post-present per-frame pipelineCompile accumulator, and
   // the TN_FRAME_HITCH payload that names a late synchronous compile.
+  // PRD-368 Phases 1A and 1B. Needs no display: it drives the patched wgpu-native cache API by
+  // hand on a headless device, then drives four pipelines through the host's own JavaScript
+  // bindings and requires the device cache to grow past the bytes an empty one holds. It passes on
+  // a build that has no cache API and on an adapter that does not advertise the feature -- both
+  // print TN_PIPELINE_CACHE_UNAVAILABLE, which is the contract, not a skip.
+  "threenative-pipeline-cache-api-test": {
+    invocations: [{ args: [], passLine: "native pipeline cache contract passed" }],
+  },
   "threenative-stall-budget-hitch-test": {
     invocations: [{ args: [], passLine: "native stall budget hitch contract passed" }],
   },
