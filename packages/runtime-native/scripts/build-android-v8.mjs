@@ -6,7 +6,6 @@ import {
 	existsSync,
 	lstatSync,
 	mkdirSync,
-	mkdtempSync,
 	readFileSync,
 	readdirSync,
 	renameSync,
@@ -271,7 +270,15 @@ export function provisionAndroidV8(
 		);
 	}
 	mkdirSync(dirname(destination), { recursive: true });
-	const work = mkdtempSync(join(dirname(destination), ".v8-source-"));
+	// Keep the prepared checkout and Ninja outputs under a deterministic path. A hosted runner can
+	// time out while compiling one ABI; retaining the exact recipe lets the next producer resume
+	// instead of paying the seven-thousand-object cold build again.
+	const work = join(dirname(destination), ".v8-source");
+	const statePath = join(work, ".recipe.json");
+	const state = `${JSON.stringify({
+		build: ANDROID_V8_BUILD,
+		buildScript: sha256(fileURLToPath(import.meta.url)),
+	}, null, 2)}\n`;
 	const upstream = join(work, "buildscripts");
 	const source = join(upstream, "v8");
 	const depot = join(upstream, "scripts/depot_tools");
@@ -292,93 +299,135 @@ export function provisionAndroidV8(
 		if (actual !== revision)
 			throw new Error(`V8 source revision mismatch: ${actual} != ${revision}`);
 	};
+	let prepared = false;
+	if (existsSync(statePath)) {
+		try {
+			prepared =
+				readFileSync(statePath, "utf8") === state &&
+				existsSync(source) &&
+				existsSync(depot);
+		} catch {
+			prepared = false;
+		}
+	}
 	try {
-		console.log(`Building Android V8 in ${work}`);
-		checkout(
-			upstream,
-			"https://github.com/Kudo/v8-android-buildscripts.git",
-			ANDROID_V8_BUILD.patches,
-		);
-		checkout(
-			depot,
-			"https://chromium.googlesource.com/chromium/tools/depot_tools.git",
-			ANDROID_V8_BUILD.depotTools,
-		);
-		const depotEnv = { ...baseEnv, PATH: `${depot}:${baseEnv.PATH ?? ""}` };
-		run(
-			join(depot, "gclient"),
-			[
-				"config",
-				"--name",
-				"v8",
-				"--unmanaged",
-				"https://chromium.googlesource.com/v8/v8.git",
-			],
-			upstream,
-			depotEnv,
-		);
-		run(
-			join(depot, "gclient"),
-			[
-				"sync",
-				"--revision",
-				`v8@${ANDROID_V8_BUILD.source}`,
-				"--deps=android",
-				"--no-history",
-				"--nohooks",
-			],
-			upstream,
-			depotEnv,
-		);
-		run(join(depot, "gclient"), ["runhooks"], upstream, depotEnv);
-		symlinkSync(ndk, join(source, "android-ndk-r28c"), "dir");
-		replaceOnce(
-			join(upstream, "scripts/env.sh"),
-			'NDK_VERSION="r23c"',
-			'NDK_VERSION="r28c"',
-		);
-		run("bash", ["scripts/patch.sh", "android"]);
+		if (!prepared) {
+			rmSync(work, { recursive: true, force: true });
+			mkdirSync(work, { recursive: true });
+			console.log(`Preparing Android V8 source in ${work}`);
+			checkout(
+				upstream,
+				"https://github.com/Kudo/v8-android-buildscripts.git",
+				ANDROID_V8_BUILD.patches,
+			);
+			checkout(
+				depot,
+				"https://chromium.googlesource.com/chromium/tools/depot_tools.git",
+				ANDROID_V8_BUILD.depotTools,
+			);
+			const depotEnv = { ...baseEnv, PATH: `${depot}:${baseEnv.PATH ?? ""}` };
+			run(
+				join(depot, "gclient"),
+				[
+					"config",
+					"--name",
+					"v8",
+					"--unmanaged",
+					"https://chromium.googlesource.com/v8/v8.git",
+				],
+				upstream,
+				depotEnv,
+			);
+			run(
+				join(depot, "gclient"),
+				[
+					"sync",
+					"--revision",
+					`v8@${ANDROID_V8_BUILD.source}`,
+					"--deps=android",
+					"--no-history",
+					"--nohooks",
+				],
+				upstream,
+				depotEnv,
+			);
+			run(join(depot, "gclient"), ["runhooks"], upstream, depotEnv);
+			replaceOnce(
+				join(upstream, "scripts/env.sh"),
+				'NDK_VERSION="r23c"',
+				'NDK_VERSION="r28c"',
+			);
+			run("bash", ["scripts/patch.sh", "android"]);
 
-		// V8's reviewed char16_t backport restores libc++ 19 compatibility without disabling
-		// the inspector. Depth two retains the parent; a shallow root would diff the whole tree.
-		run("git", ["fetch", "--depth", "2", "https://chromium.googlesource.com/v8/v8.git",
-			ANDROID_V8_BUILD.inspectorFix], source);
-		const upstreamInspectorPatch = execFileSync("git", [
-			"diff", `${ANDROID_V8_BUILD.inspectorFix}^`, ANDROID_V8_BUILD.inspectorFix, "--",
-		], { cwd: source, env: baseEnv, encoding: "utf8", maxBuffer: 1024 * 1024 });
-		if (upstreamInspectorPatch.length === 0)
-			throw new Error("Pinned V8 inspector backport is empty");
-		const inspectorPatch = adaptAndroidV8InspectorPatch(upstreamInspectorPatch);
-		execFileSync("git", ["apply", "--check", "--recount", "-"], {
-			cwd: source,
-			env: baseEnv,
-			input: inspectorPatch,
-		});
-		execFileSync("git", ["apply", "--recount", "-"], {
-			cwd: source,
-			env: baseEnv,
-			input: inspectorPatch,
-		});
-		const clangVersions = readdirSync(join(tools, "lib/clang"));
-		if (clangVersions.length !== 1)
-			throw new Error("Pinned NDK has an ambiguous Clang resource version");
-		replaceOnce(
-			join(source, "build/config/android/BUILD.gn"),
-			"/clang/12.0.9/lib/linux/$arch_dir",
-			`/clang/${clangVersions[0]}/lib/linux/$arch_dir`,
-		);
-		replaceOnce(
-			join(source, "BUILD.gn"),
-			'v8_loadable_module("libv8android") {\n',
-			'v8_loadable_module("libv8android") {\n' +
-				'  ldflags = [ "-Wl,-z,max-page-size=16384", "-Wl,-z,common-page-size=16384" ]\n',
-		);
-		// V8 11 relied on a transitive standard-library include removed by modern host headers.
-		replaceOnce(
-			join(source, "src/heap/cppgc/stats-collector.h"),
-			"#include <atomic>",
-			"#include <algorithm>\n#include <atomic>",
-		);
+			// V8's reviewed char16_t backport restores libc++ 19 compatibility without disabling
+			// the inspector. Depth two retains the parent; a shallow root would diff the whole tree.
+			run(
+				"git",
+				[
+					"fetch",
+					"--depth",
+					"2",
+					"https://chromium.googlesource.com/v8/v8.git",
+					ANDROID_V8_BUILD.inspectorFix,
+				],
+				source,
+			);
+			const upstreamInspectorPatch = execFileSync(
+				"git",
+				[
+					"diff",
+					`${ANDROID_V8_BUILD.inspectorFix}^`,
+					ANDROID_V8_BUILD.inspectorFix,
+					"--",
+				],
+				{ cwd: source, env: baseEnv, encoding: "utf8", maxBuffer: 1024 * 1024 },
+			);
+			if (upstreamInspectorPatch.length === 0)
+				throw new Error("Pinned V8 inspector backport is empty");
+			const inspectorPatch = adaptAndroidV8InspectorPatch(upstreamInspectorPatch);
+			execFileSync("git", ["apply", "--check", "--recount", "-"], {
+				cwd: source,
+				env: baseEnv,
+				input: inspectorPatch,
+			});
+			execFileSync("git", ["apply", "--recount", "-"], {
+				cwd: source,
+				env: baseEnv,
+				input: inspectorPatch,
+			});
+			const clangVersions = readdirSync(join(tools, "lib/clang"));
+			if (clangVersions.length !== 1)
+				throw new Error("Pinned NDK has an ambiguous Clang resource version");
+			replaceOnce(
+				join(source, "build/config/android/BUILD.gn"),
+				"/clang/12.0.9/lib/linux/$arch_dir",
+				`/clang/${clangVersions[0]}/lib/linux/$arch_dir`,
+			);
+			replaceOnce(
+				join(source, "BUILD.gn"),
+				'v8_loadable_module("libv8android") {\n',
+				'v8_loadable_module("libv8android") {\n' +
+					'  ldflags = [ "-Wl,-z,max-page-size=16384", "-Wl,-z,common-page-size=16384" ]\n',
+			);
+			// V8 11 relied on a transitive standard-library include removed by modern host headers.
+			replaceOnce(
+				join(source, "src/heap/cppgc/stats-collector.h"),
+				"#include <atomic>",
+				"#include <algorithm>\n#include <atomic>",
+			);
+			writeFileSync(statePath, state);
+		} else {
+			console.log(`Resuming Android V8 source build in ${work}`);
+		}
+		const ndkLink = join(source, "android-ndk-r28c");
+		try {
+			if (!lstatSync(ndkLink).isSymbolicLink())
+				throw new Error(`Android V8 source has a non-symlink ${ndkLink}`);
+			rmSync(ndkLink);
+		} catch (error) {
+			if (error.code !== "ENOENT") throw error;
+		}
+		symlinkSync(ndk, ndkLink, "dir");
 		for (const abi of ANDROID_16KB_ABIS) {
 			const target = TARGETS[abi];
 			const output = `out.v8.${target.cpu}`;
@@ -450,8 +499,7 @@ export function provisionAndroidV8(
 		return receipt;
 	} catch (error) {
 		throw new Error(
-			`Android V8 source build failed; previous install is unchanged. ` +
-				`Inspect ${work}. ${error.message}`,
+			`Android V8 source build failed; previous install is unchanged. Inspect ${work}. ${error.message}`,
 			{ cause: error },
 		);
 	}

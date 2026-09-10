@@ -480,3 +480,14 @@ test('the NDK 28 recipe pins and adapts the upstream inspector libc++ compatibil
   assert.match(script, /\["apply", "--check", "--recount", "-"\]/u);
   assert.match(script, /\["apply", "--recount", "-"\]/u);
 });
+
+test('the source build keeps a recipe-keyed checkout so interrupted Ninja work can resume', () => {
+  const script = readFileSync(new URL('../scripts/build-android-v8.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(script, /mkdtemp(?:Sync)?\s*\(/u);
+  assert.match(script, /join\(dirname\(destination\), "\.v8-source"\)/u);
+  assert.match(script, /const statePath = join\(work, "\.recipe\.json"\)/u);
+  assert.match(script, /buildScript: sha256\(fileURLToPath\(import\.meta\.url\)\)/u);
+  assert.match(script, /readFileSync\(statePath, "utf8"\) === state/u);
+  assert.match(script, /Resuming Android V8 source build/u);
+  assert.match(script, /writeFileSync\(statePath, state\)/u);
+});

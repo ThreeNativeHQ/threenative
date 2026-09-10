@@ -493,7 +493,7 @@ jobs:
       - run: pnpm test:playtest:ci
 
   golden-path-template:
-    needs: [scope, build]
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection != 'prose' }}
     strategy:
       fail-fast: false
@@ -663,7 +663,7 @@ jobs:
     # Ran only on push/schedule until 2026-09-01 (owner call): every template now proves itself
     # non-visually on every PR too, so a template regression is reported by the PR that caused it
     # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
-    needs: [scope, build]
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection != 'prose' }}
     # One leg per template was one leg per *unit of naming*, not per unit of work: on run
     # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
@@ -716,7 +716,7 @@ jobs:
             pnpm-lock.yaml
             packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
-      # Packed once by `build`. See the note there.
+      # Packed once by `build-artifacts`. See the producer note there.
       - name: Take the packed workspace from build
         uses: actions/download-artifact@v4
         with:
@@ -796,7 +796,7 @@ jobs:
           test "$result" = "success"
 
   benchmark:
-    needs: [scope, build]
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -834,24 +834,15 @@ jobs:
   # AGENTS.md says in as many words: every gate here is blind to how the game looks.
 
   # Building the workspace and checking the entity-registry boundary needs neither the native host
-  # nor a browser, so it is a gate the scaffold and benchmark lanes can wait on instead of waiting
-  # ~15 minutes behind the native suite. This is also one of the exact contexts protected by the
-  # `main protection` ruleset, so it projects the native reusable workflow's verdict explicitly.
-  # Without the result assertion, a failed upstream would skip this required job and a skipped
-  # required check would count as satisfied.
-  build:
-    needs: [scope, native-platforms]
-    if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
+  # nor a browser, so the artifact producer can run beside the native suite instead of putting every
+  # scaffold and benchmark lane ~15 minutes behind it. The protected `build` verdict below waits
+  # for both producers and reports either failure explicitly.
+  build-artifacts:
+    needs: scope
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Require the native platform lane
-        env:
-          NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}
-        run: |
-          set -euo pipefail
-          echo "native-platforms: $NATIVE_PLATFORM_RESULT"
-          test "$NATIVE_PLATFORM_RESULT" = "success"
       - uses: actions/checkout@v7
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
@@ -895,8 +886,27 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  # This exact job is the protected `build` context. It reports both producers explicitly, so a
+  # native cancellation or an artifact failure is red while independent consumers still run.
+  build:
+    needs: [scope, native-platforms, build-artifacts]
+    if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the native platform and workspace artifact lanes
+        env:
+          NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}
+          BUILD_ARTIFACT_RESULT: ${{ needs.build-artifacts.result }}
+        run: |
+          set -euo pipefail
+          echo "native-platforms: $NATIVE_PLATFORM_RESULT"
+          echo "build-artifacts: $BUILD_ARTIFACT_RESULT"
+          test "$NATIVE_PLATFORM_RESULT" = "success"
+          test "$BUILD_ARTIFACT_RESULT" = "success"
+
   performance-contracts:
-    needs: [scope, build]
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection != 'prose' && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -958,7 +968,7 @@ jobs:
           if-no-files-found: warn
 
   budgets:
-    needs: [scope, build]
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1081,6 +1091,7 @@ jobs:
       - template-nonvisual
       - golden-path
       - benchmark
+      - build-artifacts
       - build
       - budgets
       - performance-contracts

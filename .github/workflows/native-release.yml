@@ -238,7 +238,7 @@ jobs:
     needs: [validate-tag, gates]
     if: needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -263,6 +263,7 @@ jobs:
             [ -n "$package_name" ] || continue
             pnpm --filter "$package_name" --if-present run build
           done < <(pnpm tsx scripts/workspace-packages.ts --archives)
+      - uses: ./.github/actions/android-v8-source
       - run: node packages/runtime-native/scripts/download-deps.mjs --android
       - run: node packages/runtime-native/scripts/download-deps.mjs --only stb
       - run: node packages/runtime-native/scripts/download-deps.mjs --only quickjs

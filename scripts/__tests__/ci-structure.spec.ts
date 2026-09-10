@@ -602,6 +602,7 @@ describe("CI pipeline structure", () => {
       "golden-path-template",
       "template-nonvisual",
       "benchmark",
+      "build-artifacts",
       "build",
       "budgets",
       "performance-contracts",
@@ -1419,8 +1420,8 @@ describe("CI pipeline structure", () => {
   // compiles the workspace, so it packs once and the legs download the result.
   it("packs the workspace tarballs once and shares them with every matrix leg", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const build = requiredJob(ci, "build");
-    expect(build, "build does not publish the packed tarballs").toContain(
+    const build = requiredJob(ci, "build-artifacts");
+    expect(build, "build-artifacts does not publish the packed tarballs").toContain(
       "actions/upload-artifact",
     );
     expect(build).toContain("pnpm tsx scripts/workspace-packages.ts --archives");
@@ -1451,6 +1452,14 @@ describe("CI pipeline structure", () => {
     expect(uploaded).toMatch(/^\s+artifacts\/workspace-packages$/mu);
     // An empty upload must fail the job rather than hand every downstream leg a silent nothing.
     expect(uploaded).toContain("if-no-files-found: error");
+
+    const gate = requiredJob(ci, "build");
+    expect(gate).toContain("needs: [scope, native-platforms, build-artifacts]");
+    expect(gate).toContain("NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}");
+    expect(gate).toContain("BUILD_ARTIFACT_RESULT: ${{ needs.build-artifacts.result }}");
+    expect(gate).toContain('test "$NATIVE_PLATFORM_RESULT" = "success"');
+    expect(gate).toContain('test "$BUILD_ARTIFACT_RESULT" = "success"');
+    expect(gate).not.toContain("actions/upload-artifact");
   });
 
   // `test` used to compile the C++ host for 279s before running a single JS test, because one
@@ -1890,9 +1899,11 @@ describe("CI pipeline structure", () => {
           `${name} regained a label gate the web producer does not carry`,
         ).not.toContain(labelGate);
       }
-      expect(section, `${name} is not ordered behind the producer`).toContain(
-        "needs: [scope, web-reference]",
-      );
+      const referenceNeeds =
+        name === "android"
+          ? "needs: [scope, web-reference, android-v8-source]"
+          : "needs: [scope, web-reference]";
+      expect(section, `${name} is not ordered behind the producer`).toContain(referenceNeeds);
       expect(section, `${name} does not download the commit-keyed reference`).toContain(
         "actions/download-artifact",
       );
@@ -2251,7 +2262,7 @@ describe("CI pipeline structure", () => {
 
   it("builds the framework example before a fail-closed bundle boundary check", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const build = jobSections(ci).find(([job]) => job === "build")?.[1];
+    const build = jobSections(ci).find(([job]) => job === "build-artifacts")?.[1];
     if (build === undefined) throw new Error("CI build job was not found.");
 
     const exampleBuild = build.indexOf("pnpm --filter abyss-framework build");

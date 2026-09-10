@@ -25,8 +25,16 @@ const releaseWorkflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/native-release.yml', import.meta.url)),
   'utf8',
 );
+const androidV8Action = readFileSync(
+  fileURLToPath(new URL('../../../.github/actions/android-v8-source/action.yml', import.meta.url)),
+  'utf8',
+);
 const candidateWorkflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/release-candidate.yml', import.meta.url)),
+  'utf8',
+);
+const prd221Workflow = readFileSync(
+  fileURLToPath(new URL('../../../.github/workflows/prd-221-investigation.yml', import.meta.url)),
   'utf8',
 );
 const smokeScenario = (name) => JSON.parse(readFileSync(
@@ -85,15 +93,18 @@ test('native platform failures fail the exact protected build context', () => {
   const buildJob = ciWorkflow.match(
     /\n\x20{2}build:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
   )?.[0] ?? '';
-  expect(buildJob).toContain('needs: [scope, native-platforms]');
+  expect(buildJob).toContain('needs: [scope, native-platforms, build-artifacts]');
   expect(buildJob).toContain(
     "if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}",
   );
   expect(buildJob).toContain(
     'NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}',
   );
+  expect(buildJob).toContain(
+    'BUILD_ARTIFACT_RESULT: ${{ needs.build-artifacts.result }}',
+  );
   const gate = buildJob.match(
-    /\n\x20{6}- name: Require the native platform lane\n\x20{8}env:\n\x20{10}NATIVE_PLATFORM_RESULT: \$\{\{ needs\.native-platforms\.result \}\}\n\x20{8}run: \|\n([\s\S]*?)(?=\n\x20{6}- )/u,
+    /\n\x20{6}- name: Require the native platform and workspace artifact lanes\n\x20{8}env:\n[\s\S]*?\n\x20{8}run: \|\n([\s\S]*?)(?=\n\x20{6}- |\n\x20{2}[a-z0-9-]+:|\s*$)/u,
   )?.[1];
   expect(gate).toBeDefined();
   const script = gate
@@ -101,13 +112,46 @@ test('native platform failures fail the exact protected build context', () => {
     .map((line) => line.replace(/^\x20{10}/u, ''))
     .join('\n');
   expect(script).toBeDefined();
-  const run = (result) =>
+  const run = (result, artifact = result) =>
     spawnSync('bash', ['-euo', 'pipefail', '-c', script], {
-      env: { ...process.env, NATIVE_PLATFORM_RESULT: result },
+      env: {
+        ...process.env,
+        NATIVE_PLATFORM_RESULT: result,
+        BUILD_ARTIFACT_RESULT: artifact,
+      },
       encoding: 'utf8',
     });
   expect(run('success').status).toBe(0);
   expect(run('failure').status).not.toBe(0);
+  expect(run('success', 'failure').status).not.toBe(0);
+});
+
+test('Android V8 source is produced once and consumed as a verified artifact', () => {
+  expect(androidV8Action).toContain('actions/cache/restore@v4');
+  expect(androidV8Action).toContain('actions/cache/save@v4');
+  expect(androidV8Action).toContain('third_party/.v8-source');
+  expect(androidV8Action).toContain('github.run_id');
+  expect(androidV8Action).toContain('github.run_attempt');
+  expect(androidV8Action).toContain('restore-keys:');
+  expect(androidV8Action).toContain('node scripts/download-deps.mjs --only v8-android');
+  expect(androidV8Action).toContain('node scripts/build-android-v8.mjs --verify');
+  const producer = workflow.match(
+    /\n\x20{2}android-v8-source:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(producer).toContain('needs: scope');
+  expect(producer).toContain('uses: ./.github/actions/android-v8-source');
+  expect(producer).toContain('actions/upload-artifact@v7');
+  expect(producer).toContain('name: android-v8-${{ github.sha }}');
+  const android = workflow.match(
+    /\n\x20{2}android-emulator-parity:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(android).toContain('needs: [scope, web-reference, android-v8-source]');
+  expect(android).toContain('needs.android-v8-source.result == \'success\'');
+  expect(android).toContain('actions/download-artifact@v7');
+  expect(android).toContain('name: android-v8-${{ github.sha }}');
+  expect(android).toContain('native-android-third-party-');
+  expect(prd221Workflow).toContain('packages/runtime-native/third_party/.v8-source/payload');
+  expect(prd221Workflow).not.toContain('.v8-source-*/payload');
 });
 
 test('desktop platform lanes build and retain executable evidence', () => {
@@ -181,7 +225,7 @@ test('iOS consumer launches the bundle identifier produced by its packager', () 
 
 test('iOS workflow dispatch can run without unrelated platform cancellation', () => {
   expect(workflow).toContain('ios_only:');
-  expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(4);
+  expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(5);
 });
 
 test('iOS consumer proof is a required gate after the simulator proof passes', () => {

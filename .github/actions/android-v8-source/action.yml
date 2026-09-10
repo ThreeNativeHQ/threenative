@@ -1,0 +1,64 @@
+name: Android V8 source payload
+description: Build, resume, verify, and cache the pinned Android V8 payload.
+
+inputs:
+  runtime-root:
+    description: Runtime package containing the dependency provisioner.
+    required: false
+    default: packages/runtime-native
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the recipe-keyed V8 source state
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ${{ inputs.runtime-root }}/third_party/.v8-source
+          ${{ inputs.runtime-root }}/third_party/v8-android
+        key: >-
+          android-v8-source-${{ runner.os }}-${{ runner.arch }}-
+          ${{ hashFiles(
+            '.github/actions/android-v8-source/action.yml',
+            'packages/runtime-native/scripts/build-android-v8.mjs',
+            'packages/runtime-native/scripts/check-android-16kb-alignment.mjs',
+            'packages/runtime-native/scripts/download-deps.mjs',
+            'packages/runtime-native/android/gradle.properties') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: >-
+          android-v8-source-${{ runner.os }}-${{ runner.arch }}-
+          ${{ hashFiles(
+            '.github/actions/android-v8-source/action.yml',
+            'packages/runtime-native/scripts/build-android-v8.mjs',
+            'packages/runtime-native/scripts/check-android-16kb-alignment.mjs',
+            'packages/runtime-native/scripts/download-deps.mjs',
+            'packages/runtime-native/android/gradle.properties') }}-
+    - name: Build the pinned Android V8 payload
+      id: build
+      working-directory: ${{ inputs.runtime-root }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        : "${ANDROID_NDK_HOME:?ANDROID_NDK_HOME must select the pinned V8 NDK}"
+        node scripts/download-deps.mjs --only v8-android
+    - name: Verify the complete Android V8 payload
+      if: steps.build.outcome == 'success'
+      working-directory: ${{ inputs.runtime-root }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        node scripts/build-android-v8.mjs --verify
+    - name: Save resumable V8 source state
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ${{ inputs.runtime-root }}/third_party/.v8-source
+          ${{ inputs.runtime-root }}/third_party/v8-android
+        key: >-
+          android-v8-source-${{ runner.os }}-${{ runner.arch }}-
+          ${{ hashFiles(
+            '.github/actions/android-v8-source/action.yml',
+            'packages/runtime-native/scripts/build-android-v8.mjs',
+            'packages/runtime-native/scripts/check-android-16kb-alignment.mjs',
+            'packages/runtime-native/scripts/download-deps.mjs',
+            'packages/runtime-native/android/gradle.properties') }}-${{ github.run_id }}-${{ github.run_attempt }}
