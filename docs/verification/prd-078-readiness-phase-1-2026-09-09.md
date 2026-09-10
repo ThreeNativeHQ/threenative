@@ -9,8 +9,8 @@ review remain **NOT RUN**. This record is not a release approval or platform qua
 CI/native-host layer, against main commit
 `6972d87c1881a021afb041f44d4fcddcb469e971`. The supplied specification is
 [PRD-078](../PRDs/production-readiness/PRD-078-toolchain-free-consumer-proof.md).
-Only the existing native-release workflow, its existing workflow test file, and this record
-change. No new publisher, consumer lane, runtime implementation, tag, release, or package
+Only the existing native-release workflow, its existing workflow tests, the CI structure
+consumer test, and this record change. No new publisher, consumer lane, runtime implementation, tag, release, or package
 publication was created. PRD-262 still owns artifact/installation proof; PRD-060 owns promotion.
 
 The original workflow and test snapshots were obtained through the connected GitHub API and
@@ -20,6 +20,7 @@ verified byte-for-byte using Git blob hashes before editing:
 | --- | --- | --- |
 | `.github/workflows/native-release.yml` | `50e230776587dba1362559d7a972b0f7eddf3ec4` | `1554a7659d00048aaedf2a5fde3020782d0c429e` |
 | `packages/runtime-native/tests/native-platform-workflow.test.mjs` | `4a05539bd1dc167cd4b16de59ced829505ab8ec4` | `f5e3f825b47474e6de31ab32d769955da9437d87` |
+| `scripts/__tests__/ci-structure.spec.ts` | `500c50bc98f7508baac5ca3f85f2edba3763b256` | `089ef4df60c9a80ac11b16e0080a1355649d061e` |
 
 ## Hosted observations, not candidate acceptance
 
@@ -120,7 +121,10 @@ failure diagnostics, and sixteen Android shell exit/marker combinations.
 Additional executed checks: `node --check` on the changed test file and both embedded gate
 scripts; YAML parsing; `bash -n` on the gate and every emulator script line; legacy timeout
 and consumer upload assertions; parsed equality for the preserved jobs listed above. All
-passed. These checks do not stand in for the full repository lint/typecheck/test gates.
+passed. The hosted unit shard later exposed one existing CI-structure assertion that treated
+the explicit `repos/$GITHUB_REPOSITORY/...` path of the new paginated `gh api` call as
+repository-less; the assertion now recognizes that API form, and its focused test passes.
+These checks do not stand in for the full repository lint/typecheck/test gates.
 
 ## Required gates and handoff
 
