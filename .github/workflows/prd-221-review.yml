@@ -1,0 +1,31 @@
+name: PRD-221 main delta
+# Temporary read-only review export; removed before the consolidated handoff.
+on:
+  push:
+    branches: [codex/prd-221-android-v8-16kb]
+    paths: [.github/workflows/prd-221-review.yml]
+permissions:
+  contents: read
+jobs:
+  delta:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 2950765d4cf892f1a910e5ff91fa0ce037417c19
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Export the exact concurrent main change
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/prd221-main"
+          test "$(git rev-parse HEAD^)" = 4fa8e773609a69fa3077be462e45f893c928324e
+          git diff --binary --full-index HEAD^ HEAD > "$RUNNER_TEMP/prd221-main/main.patch"
+          git rev-parse HEAD HEAD^{tree} > "$RUNNER_TEMP/prd221-main/identity.txt"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: prd221-main-delta
+          path: ${{ runner.temp }}/prd221-main
+          if-no-files-found: error
+          retention-days: 2
