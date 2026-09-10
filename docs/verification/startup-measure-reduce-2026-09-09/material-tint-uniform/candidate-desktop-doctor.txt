@@ -1,0 +1,41 @@
+✓ node: node 20.19.6
+✓ playwright: /home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce/node_modules/.pnpm/playwright@1.62.1/node_modules/playwright/index.js
+✓ chromium: /home/joao/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome
+✓ display: no DISPLAY, but Xvfb is installed, so headless screenshot runs can get one
+✓ adb: adb is on PATH, so --target android can run
+! xcrun: xcrun is not on PATH, so --target ios cannot run here
+    fix: Install Xcode command line tools (macOS only).
+
+
+pipeline census — complete (native)
+counts: 86 creations, 76 unique program(s), 86 unique pipeline(s), 0 failure(s), 0 pending, 0 lookup(s)
+boundary: live checkpoint at present 2, 86 event(s), 0 still compiling (nothing is claimed about the run after it)
+passes:
+  main-clipped     53 creation(s), 2901.335 ms service (53 sample(s)), 0 before first present
+  shadow           26 creation(s), 489.739 ms service (26 sample(s)), 0 before first present
+  pmrem            2 creation(s), 6.597 ms service (2 sample(s)), 0 before first present
+  output           2 creation(s), 5.567 ms service (2 sample(s)), 1 before first present
+  unknown          2 creation(s), 4.059 ms service (2 sample(s)), 0 before first present
+  main             1 creation(s), 3.115 ms service (1 sample(s)), 0 before first present
+top material/object contributors:
+  material#36                  3 creation(s), 282.079 ms service
+  material#62                  2 creation(s), 260.057 ms service
+  material#39                  2 creation(s), 255.150 ms service
+  material#37                  2 creation(s), 246.987 ms service
+  material#43                  2 creation(s), 246.159 ms service
+distinct programs and observed structural reasons:
+  0627debc3114d1d4/ac1a15b5c3e92640 — 3 creation(s): unknown-structural-difference
+  0511a057d478d770/1b1f642af7da8be6 — 2 creation(s): unknown-structural-difference
+  1f278372a827df2d/df4763adc0ca95c2 — 2 creation(s): map
+  34e46b5f2ace23a4/4cb250e011db9ce6 — 2 creation(s): unknown-structural-difference
+  419de84ac565e160/08b5e86a917df76b — 2 creation(s): unknown-structural-difference
+warm-up: 1 before first present, 85 after, 0 unreported
+shader size/time by pass:
+  main-clipped     mean 57869.2 bytes, 54.742 ms service (53 sample(s))
+  shadow           mean 7947.1 bytes, 18.836 ms service (26 sample(s))
+  pmrem            mean 7286.5 bytes, 3.299 ms service (2 sample(s))
+  main             mean 3807.0 bytes, 3.115 ms service (1 sample(s))
+  output           mean 3380.0 bytes, 2.784 ms service (2 sample(s))
+  unknown          mean 3654.0 bytes, 2.030 ms service (2 sample(s))
+shader size/time samples: 86; Descriptive samples only; shader size and compile time are correlated here, not causal.
+DOCTOR_EXIT=0

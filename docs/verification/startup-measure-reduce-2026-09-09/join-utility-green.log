@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce
+
+ ✓ packages/playtest/__tests__/pipeline-timing.spec.ts (19 tests) 20ms
+
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+   Start at  16:39:00
+   Duration  186ms (transform 52ms, setup 0ms, import 67ms, tests 20ms, environment 0ms)

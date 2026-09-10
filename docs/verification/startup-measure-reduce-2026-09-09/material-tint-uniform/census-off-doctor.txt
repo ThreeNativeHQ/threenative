@@ -1,0 +1,11 @@
+{
+  "diagnostics": [
+    {
+      "code": "TN_PIPELINE_CAPTURE_MALFORMED",
+      "message": "TN_PIPELINE_CAPTURE_MALFORMED: capture is missing its version",
+      "severity": "error"
+    }
+  ],
+  "pass": false
+}
+DOCTOR_EXIT=2

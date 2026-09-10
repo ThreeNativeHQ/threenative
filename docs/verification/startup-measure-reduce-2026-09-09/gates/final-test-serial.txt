@@ -1,0 +1,30 @@
+ ✓ packages/core/__tests__/renderer-pixel-ratio.spec.ts (3 tests) 7ms
+ ✓ packages/runtime-native/__tests__/host-gap-gpu-drain.spec.ts (2 tests) 6ms
+ ✓ packages/playtest/__tests__/cli-classify.spec.ts (13 tests) 7ms
+ ✓ packages/core/__tests__/three-initial-bindings.spec.ts (2 tests) 5ms
+ ✓ packages/core/__tests__/after-physics.spec.ts (2 tests) 4ms
+ ✓ packages/playtest/__tests__/wait-for-resource.spec.ts (3 tests) 5ms
+ ✓ packages/playtest/__tests__/stranded-profile.spec.ts (4 tests) 3ms
+ ✓ packages/core/__tests__/version.spec.ts (1 test) 4ms
+ ✓ packages/playtest/__tests__/preflight-display.spec.ts (4 tests) 4ms
+ ✓ packages/core/__tests__/canvas-layer.spec.ts (1 test) 4ms
+ ✓ scripts/__tests__/prepare-release.spec.ts (4 tests) 5ms
+ ✓ packages/playtest/__tests__/android-console.spec.ts (2 tests) 4ms
+ ✓ scripts/__tests__/verify-native-release-commit.spec.ts (3 tests) 4ms
+ ✓ packages/playtest/__tests__/bridge-client.spec.ts (2 tests) 3ms
+ ✓ scripts/__tests__/realism-effects-docs.spec.ts (3 tests | 1 skipped) 4ms
+ ✓ packages/core/__tests__/startup-ready-bound.spec.ts (2 tests) 4ms
+ ✓ packages/playtest/__tests__/runtime-readouts.spec.ts (2 tests) 3ms
+ ✓ packages/core/__tests__/seed.spec.ts (1 test) 3ms
+ ↓ packages/assets/__tests__/fab-account-lane.spec.ts (1 test | 1 skipped)
+ ✓ packages/core/__tests__/ctx-add-type.spec.ts (1 test) 2ms
+ ✓ packages/core/__tests__/webgpu-instance-retention.spec.ts (1 test) 3ms
+ ✓ scripts/__tests__/profile-starter.spec.ts (5 tests) 5ms
+ ↓ packages/playtest/__tests__/generated-shooter-input.spec.ts (3 tests | 3 skipped)
+
+ Test Files  411 passed | 2 skipped (413)
+      Tests  4772 passed | 8 skipped (4780)
+   Start at  18:03:41
+   Duration  87.92s (transform 14.39s, setup 0ms, import 79.76s, tests 565.70s, environment 41ms)
+
+suite temporary directory count did not grow in '/tmp/threenative-suite.KFMNnq': before 1, after 1

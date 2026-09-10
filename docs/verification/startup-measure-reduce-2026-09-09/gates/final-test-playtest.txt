@@ -1,0 +1,30 @@
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "runtime": "web",
+  "scenario": "streaming-sliced-attach-and-parallel-load",
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 835.3999999761581,
+      "enteredMs": 977.5,
+      "compileSettledMs": 1078.8999999761581,
+      "frameworkReadyMs": 1078.8999999761581,
+      "readyMs": 1079
+    },
+    "rule": "sustained-frames"
+  },
+  "trivialityOptOutCount": 5,
+  "url": "http://127.0.0.1:5180/?streaming"
+}

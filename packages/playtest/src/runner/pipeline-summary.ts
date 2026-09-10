@@ -5,6 +5,7 @@ export const PIPELINE_EVENT_MARKER = "TN_PIPELINE_EVENT:";
 const PIPELINE_CAPTURE_MARKER = "TN_PIPELINE_CAPTURE:";
 const PIPELINE_FIRST_PRESENT_MARKER = "TN_PIPELINE_FIRST_PRESENT:";
 const PIPELINE_COMPLETE_MARKER = "TN_PIPELINE_COMPLETE:";
+const PIPELINE_CHECKPOINT_MARKER = "TN_PIPELINE_CHECKPOINT:";
 
 export type PipelineCaptureSource = "browser" | "native";
 export type PipelineCaptureKind = "compute" | "render";
@@ -57,9 +58,25 @@ export interface IPipelineCaptureCounts {
   readonly droppedEvents: number;
 }
 
+/**
+ * What ended the capture, and therefore what "complete" is allowed to mean.
+ *
+ * `finalized` is a process that exited: the host drained its compile pool and printed a final
+ * count. `checkpoint` is a live snapshot from a present, which is all a run ended by
+ * `am force-stop` can produce — every event up to that present is accounted for and nothing was
+ * still compiling, and the capture claims nothing about the run after it.
+ */
+export interface IPipelineCaptureBoundary {
+  readonly kind: "checkpoint" | "finalized";
+  readonly events: number;
+  readonly outstanding?: number;
+  readonly present?: number;
+}
+
 export interface IPipelineCapture {
   readonly version: number;
   readonly source: PipelineCaptureSource;
+  readonly boundary?: IPipelineCaptureBoundary;
   readonly complete: boolean;
   readonly overflowed: boolean;
   readonly backend?: Readonly<Record<string, unknown>>;
@@ -120,6 +137,7 @@ export interface IPipelineWarmupSummary {
 
 export interface IPipelineSummary {
   readonly adapter?: Readonly<Record<string, unknown>>;
+  readonly boundary?: IPipelineCaptureBoundary;
   readonly build?: Readonly<Record<string, unknown>>;
   readonly complete: boolean;
   readonly counts: IPipelineCaptureCounts;
@@ -134,36 +152,45 @@ export interface IPipelineSummary {
 
 type JsonRecord = Record<string, unknown>;
 
+/** The three counts a live host keeps apart, as printed by `reportPipelineCheckpoint`. */
+interface INativeCheckpoint {
+  readonly emitted: number;
+  readonly outstanding: number;
+  readonly present: number;
+  readonly requested: number;
+}
+
 interface INativeMarkerCapture {
   readonly adapter?: Readonly<Record<string, unknown>>;
   readonly build?: Readonly<Record<string, unknown>>;
+  readonly checkpoint?: INativeCheckpoint;
   readonly clock?: Readonly<Record<string, unknown>>;
   readonly events: readonly IPipelineCaptureEvent[];
+  /** Distinct event lines that arrived after the last checkpoint, which bounds the capture. */
+  readonly eventsAfterCheckpoint: number;
   readonly expectedEventCount?: number;
   readonly firstPresentBoundaryMs?: number;
 }
 
 type NativeMarkerLine =
   | { readonly kind: "capture"; readonly value: unknown }
+  | { readonly kind: "checkpoint"; readonly value: unknown }
   | { readonly kind: "complete"; readonly value: unknown }
   | { readonly kind: "event"; readonly value: unknown }
   | { readonly kind: "first-present"; readonly value: unknown };
 
 /** Parse a capture file, either as a JSON browser census or a native log containing markers. */
 export function parsePipelineCapture(input: string | unknown): IPipelineCapture {
-  if (typeof input === "string") {
-    const native = parseNativeMarkerCapture(input);
-    if (native.events.length > 0) return nativeCapture(native);
-    let value: unknown;
-    try {
-      value = JSON.parse(input) as unknown;
-    } catch (error) {
-      throw malformed(`input is neither JSON nor a native event log (${errorMessage(error)})`);
-    }
-    return parsePipelineCapture(value);
-  }
+  if (typeof input === "string") return parseCaptureDocument(input);
   const root = asRecord(input);
   if (root === undefined) throw malformed("capture must be an object");
+  if (root.nativeLog !== undefined) {
+    if (root.version !== PIPELINE_CAPTURE_VERSION || typeof root.nativeLog !== "string")
+      throw malformed("paired capture requires version 1 and a nativeLog string");
+    const renderer = parsePipelineCapture(root.census);
+    const native = nativeCapture(parseNativeMarkerCapture(root.nativeLog));
+    return reconcilePipelineCaptures(renderer, native);
+  }
   const observations = asRecord(root.observations);
   const nested = firstDefinedRecord(
     root.pipelineCensus,
@@ -182,23 +209,92 @@ export function parsePipelineCapture(input: string | unknown): IPipelineCapture 
   return parseBrowserCapture(value);
 }
 
+/**
+ * Read the bytes of a capture file as the document they are, JSON before markers.
+ *
+ * A paired capture carries its native log as one escaped JSON string, so `TN_PIPELINE_*` occurs
+ * inside a quoted field where it is text rather than a marker line. Sniffing markers first found
+ * those and threw on the escaping before the file was ever parsed as what it is, which is why
+ * `doctor --capture paired.json` exited 2 on a well-formed file. Nothing is lost by the order:
+ * every line of a native log begins with its marker, so a log is never valid JSON, and a log whose
+ * own marker lines are malformed still throws from the reader below.
+ */
+function parseCaptureDocument(text: string): IPipelineCapture {
+  let document: unknown;
+  try {
+    document = JSON.parse(text) as unknown;
+  } catch (error) {
+    const native = parseNativeMarkerCapture(text);
+    if (native.events.length === 0)
+      throw malformed(`input is neither JSON nor a native event log (${errorMessage(error)})`);
+    return nativeCapture(native);
+  }
+  return parsePipelineCapture(document);
+}
+
+/** A paired file must contain observations from the same native process and capture interval. */
+function reconcilePipelineCaptures(renderer: IPipelineCapture, native: IPipelineCapture): IPipelineCapture {
+  const byHandle = new Map<string, IPipelineCaptureEvent>();
+  for (const event of renderer.events) {
+    if (byHandle.has(event.pipelineIdentity)) throw malformed(`duplicate renderer pipeline ${event.pipelineIdentity}`);
+    byHandle.set(event.pipelineIdentity, event);
+  }
+  const events = native.events.map((event) => {
+    const observed = byHandle.get(event.pipelineIdentity);
+    // Texture utilities and host-owned draws can create pipelines outside Three's render-object
+    // walk. Keep that work in the native total with its explicit unknown provenance.
+    if (observed === undefined) return event;
+    byHandle.delete(event.pipelineIdentity);
+    if (observed.kind !== event.kind || observed.status !== event.status || observed.mode !== event.mode)
+      throw malformed(`pipeline creation mismatch for ${event.pipelineIdentity}`);
+    for (const stage of ["vertex", "fragment", "compute"] as const) {
+      const expected = observed[stage];
+      const actual = event[stage];
+      if (expected?.hash !== actual?.hash || expected?.bytes !== actual?.bytes)
+        throw malformed(`shader ${stage} mismatch for ${event.pipelineIdentity}`);
+    }
+    // Native owns the clock, completion boundary and service time. Renderer-side wrapper or
+    // promise latency must not replace those measurements when adding authoring provenance.
+    return { ...event, pass: observed.pass, provenance: observed.provenance, reasons: observed.reasons };
+  });
+  if (byHandle.size > 0) throw malformed(`unmatched renderer pipeline ${byHandle.keys().next().value}`);
+  const incompleteReasons = [...native.incompleteReasons, ...renderer.incompleteReasons];
+  return {
+    ...native, events, complete: native.complete && renderer.complete,
+    overflowed: native.overflowed || renderer.overflowed, incompleteReasons,
+  };
+}
+
 /** Parse only native marker lines, preserving the same malformed-input contract as perf. */
 export function parsePipelineEventMarkers(text: string): IPipelineCaptureEvent[] {
   return [...parseNativeMarkerCapture(text).events];
 }
 
 function parseNativeMarkerCapture(text: string): INativeMarkerCapture {
-  const state: INativeMarkerState = { events: [], seen: new Map<number, string>() };
+  const state: INativeMarkerState = { events: [], eventsAfterCheckpoint: 0, seen: new Map<number, string>() };
   for (const line of text.split("\n")) {
     const marker = parseNativeMarkerLine(line);
     if (marker === undefined) continue;
     consumeNativeMarker(state, marker);
   }
+  if (
+    state.checkpoint !== undefined &&
+    state.expectedEventCount !== undefined &&
+    state.checkpoint.requested > state.expectedEventCount
+  ) {
+    // The finalizer prints the request ids it handed out, and a checkpoint can only have seen a
+    // prefix of them. A checkpoint ahead of the final count means the two disagree about the run.
+    throw malformed(
+      `a native pipeline checkpoint requested ${state.checkpoint.requested}, past the completion marker's ${state.expectedEventCount}`,
+    );
+  }
   return {
     ...(state.adapter === undefined ? {} : { adapter: state.adapter }),
     ...(state.build === undefined ? {} : { build: state.build }),
+    ...(state.checkpoint === undefined ? {} : { checkpoint: state.checkpoint }),
     ...(state.clock === undefined ? {} : { clock: state.clock }),
     events: state.events.sort((left, right) => left.sequence - right.sequence),
+    eventsAfterCheckpoint: state.eventsAfterCheckpoint,
     ...(state.expectedEventCount === undefined ? {} : { expectedEventCount: state.expectedEventCount }),
     ...(state.firstPresentBoundaryMs === undefined
       ? {}
@@ -211,7 +307,9 @@ interface INativeMarkerState {
   readonly seen: Map<number, string>;
   adapter?: Readonly<Record<string, unknown>>;
   build?: Readonly<Record<string, unknown>>;
+  checkpoint?: INativeCheckpoint;
   clock?: Readonly<Record<string, unknown>>;
+  eventsAfterCheckpoint: number;
   expectedEventCount?: number;
   firstPresentBoundaryMs?: number;
 }
@@ -227,6 +325,10 @@ function consumeNativeMarker(state: INativeMarkerState, marker: NativeMarkerLine
   }
   if (marker.kind === "complete") {
     consumeNativeCompletion(state, marker.value);
+    return;
+  }
+  if (marker.kind === "checkpoint") {
+    consumeNativeCheckpoint(state, marker.value);
     return;
   }
   consumeNativeEvent(state, marker.value);
@@ -260,6 +362,55 @@ function consumeNativeCompletion(state: INativeMarkerState, value: unknown): voi
   state.expectedEventCount = eventCount;
 }
 
+/**
+ * Keeps the last checkpoint, and only while the host's own counts hold together.
+ *
+ * The three numbers are maintained separately by the host — ids handed out, lines written,
+ * compiles in flight — so `requested === emitted + outstanding` is a real check rather than a
+ * restatement, and a host that has lost track of its own capture is malformed input, not a capture
+ * to be read leniently. Checkpoints only ever move forward; one that walks back means two runs'
+ * output landed in one log.
+ *
+ * The counts are also checked against where the checkpoint sits in the log. `emitted` is
+ * incremented under the same lock that writes an event line, so every line it counts precedes it;
+ * a checkpoint carrying fewer than the log has already shown is the same contradiction as one that
+ * walks back. Carrying more is a log that was cut, which `nativeBoundaryReasons` reports as
+ * incomplete rather than throwing.
+ */
+function consumeNativeCheckpoint(state: INativeMarkerState, value: unknown): void {
+  validateCaptureVersion(value, "native pipeline checkpoint");
+  const metadata = asRecord(value);
+  const checkpoint: INativeCheckpoint = {
+    emitted: nonNegativeInteger(metadata?.emitted, "native checkpoint emitted"),
+    outstanding: nonNegativeInteger(metadata?.outstanding, "native checkpoint outstanding"),
+    present: nonNegativeInteger(metadata?.present, "native checkpoint present"),
+    requested: nonNegativeInteger(metadata?.requested, "native checkpoint requested"),
+  };
+  if (checkpoint.requested !== checkpoint.emitted + checkpoint.outstanding) {
+    throw malformed(
+      `native pipeline checkpoint counts do not reconcile: ${checkpoint.requested} requested against ${checkpoint.emitted} emitted and ${checkpoint.outstanding} outstanding`,
+    );
+  }
+  const previous = state.checkpoint;
+  if (
+    previous !== undefined &&
+    (checkpoint.present < previous.present ||
+      checkpoint.requested < previous.requested ||
+      checkpoint.emitted < previous.emitted)
+  ) {
+    throw malformed("a native pipeline checkpoint reports fewer than the one before it");
+  }
+  // Distinct events consumed so far, never the highest id seen: async compiles settle in whatever
+  // order the pool finishes them, so ids arrive out of order and the last one is not a count.
+  if (checkpoint.emitted < state.events.length) {
+    throw malformed(
+      `a native pipeline checkpoint counted ${checkpoint.emitted} event(s) after ${state.events.length} had already been written`,
+    );
+  }
+  state.checkpoint = checkpoint;
+  state.eventsAfterCheckpoint = 0;
+}
+
 function consumeNativeEvent(state: INativeMarkerState, value: unknown): void {
   validateCaptureVersion(value, "native pipeline event");
   const event = normaliseNativeEvent(value);
@@ -271,11 +422,13 @@ function consumeNativeEvent(state: INativeMarkerState, value: unknown): void {
   }
   state.seen.set(event.sequence, serialised);
   state.events.push(event);
+  if (state.checkpoint !== undefined) state.eventsAfterCheckpoint += 1;
 }
 
 function parseNativeMarkerLine(line: string): NativeMarkerLine | undefined {
   const candidates: Array<{ readonly at: number; readonly kind: NativeMarkerLine["kind"]; readonly marker: string }> = [
     { at: line.indexOf(PIPELINE_CAPTURE_MARKER), kind: "capture", marker: PIPELINE_CAPTURE_MARKER },
+    { at: line.indexOf(PIPELINE_CHECKPOINT_MARKER), kind: "checkpoint", marker: PIPELINE_CHECKPOINT_MARKER },
     { at: line.indexOf(PIPELINE_COMPLETE_MARKER), kind: "complete", marker: PIPELINE_COMPLETE_MARKER },
     { at: line.indexOf(PIPELINE_FIRST_PRESENT_MARKER), kind: "first-present", marker: PIPELINE_FIRST_PRESENT_MARKER },
     { at: line.indexOf(PIPELINE_EVENT_MARKER), kind: "event", marker: PIPELINE_EVENT_MARKER },
@@ -347,6 +500,7 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
   const source = capture.source;
   return {
     adapter: capture.adapter,
+    ...(capture.boundary === undefined ? {} : { boundary: capture.boundary }),
     build: capture.build,
     complete: capture.complete,
     counts: capture.counts,
@@ -396,6 +550,15 @@ export function formatPipelineSummary(summary: IPipelineSummary): string {
       `${counts.uniquePipelines} unique pipeline(s), ${counts.failures} failure(s), ` +
       `${counts.pending} pending, ${counts.lookups} lookup(s)`,
   );
+  // Say which kind of ending this is, so a live snapshot is never read as a finished run.
+  if (summary.boundary?.kind === "finalized")
+    lines.push(`boundary: process finalized after ${summary.boundary.events} event(s)`);
+  else if (summary.boundary !== undefined)
+    lines.push(
+      `boundary: live checkpoint at present ${summary.boundary.present}, ` +
+        `${summary.boundary.events} event(s), ${summary.boundary.outstanding} still compiling ` +
+        "(nothing is claimed about the run after it)",
+    );
   if (summary.passTotals.length > 0) {
     lines.push("passes:");
     for (const pass of summary.passTotals) {
@@ -532,7 +695,7 @@ function nativeCapture(metadata: INativeMarkerCapture): IPipelineCapture {
   const firstPresent = nativeFirstPresent(metadata.events, metadata.firstPresentBoundaryMs);
   const events = nativeEventsWithBoundary(metadata.events, firstPresent);
   validateEventSequence(events, "native capture", true);
-  const sequence = nativeSequenceSummary(events, metadata.expectedEventCount);
+  const sequence = nativeSequenceSummary(events, declaredEventCount(metadata));
   const reasons = nativeCaptureReasons(
     metadata,
     events,
@@ -540,7 +703,15 @@ function nativeCapture(metadata: INativeMarkerCapture): IPipelineCapture {
     sequence.droppedEvents,
   );
   const failures = events.filter(({ status }) => status === "failed").length;
-  const pending = events.filter(({ status }) => status === "pending").length;
+  const boundary = nativeBoundary(metadata);
+  // A live checkpoint counts compiles the pool started and has not settled. They have no event
+  // line yet — nothing here knows their shader identity or what they will cost, and no event is
+  // invented for them — but they are the host's own observation that work is still in flight, and
+  // reporting `pending: 0` beside a boundary saying otherwise is one capture telling two stories.
+  // A finalized run drained the pool, so there its statuses are the whole account.
+  const pending =
+    events.filter(({ status }) => status === "pending").length +
+    (boundary?.kind === "checkpoint" ? boundary.outstanding ?? 0 : 0);
   const counts = {
     lookups: 0,
     creations: events.length + sequence.droppedEvents,
@@ -555,6 +726,7 @@ function nativeCapture(metadata: INativeMarkerCapture): IPipelineCapture {
   return {
     version: PIPELINE_CAPTURE_VERSION,
     source: "native",
+    ...(boundary === undefined ? {} : { boundary }),
     complete: reasons.length === 0,
     overflowed: false,
     ...(metadata.clock === undefined ? {} : { clock: metadata.clock }),
@@ -619,15 +791,65 @@ function nativeCaptureReasons(
   const firstId = events[0]?.sequence;
   if (firstId !== 1) reasons.push(`native event sequence starts at ${firstId ?? "missing"}, expected 1`);
   if (droppedEvents > 0) reasons.push(`${droppedEvents} native pipeline event(s) are missing from the sequence`);
-  if (metadata.expectedEventCount === undefined)
-    reasons.push("native marker capture is missing its completion marker");
-  else if (
-    metadata.expectedEventCount !== events.length ||
-    metadata.expectedEventCount !== (events.at(-1)?.sequence ?? 0)
-  )
-    reasons.push("native pipeline event count does not match the completion marker");
+  reasons.push(...nativeBoundaryReasons(metadata, events));
   if (events.length === 0) reasons.push("no native pipeline events observed");
   reasons.push(...nativeMetadataReasons(metadata, firstPresent));
+  return reasons;
+}
+
+/** The count a boundary declares, whichever kind of boundary the run managed to print. */
+function declaredEventCount(metadata: INativeMarkerCapture): number | undefined {
+  return metadata.expectedEventCount ?? metadata.checkpoint?.emitted;
+}
+
+/** The boundary the run printed, reported whether or not the capture reaching it was whole. */
+function nativeBoundary(metadata: INativeMarkerCapture): IPipelineCaptureBoundary | undefined {
+  if (metadata.expectedEventCount !== undefined)
+    return { kind: "finalized", events: metadata.expectedEventCount };
+  const checkpoint = metadata.checkpoint;
+  if (checkpoint === undefined) return undefined;
+  return {
+    kind: "checkpoint",
+    events: checkpoint.emitted,
+    outstanding: checkpoint.outstanding,
+    present: checkpoint.present,
+  };
+}
+
+/**
+ * What it takes for a capture to be whole, by the boundary the run actually printed.
+ *
+ * A finalized run says how many requests it handed out and is authoritative. A force-stopped run
+ * has only its last checkpoint, which bounds the capture at a present: it must account for every
+ * event line in the log and leave nothing compiling. That is deliberately stricter than "the last
+ * event looks fine" — an event after the final checkpoint, or fewer lines than it counted, is a
+ * log the kill or the log buffer cut, and a total read off it would be wrong rather than partial.
+ *
+ * The event-after-the-boundary case is counted where the log is read, not inferred from the
+ * totals: a checkpoint that counted two events with only one written before it agrees with the
+ * final tally once the second arrives, and read on totals alone that log looks whole.
+ */
+function nativeBoundaryReasons(
+  metadata: INativeMarkerCapture,
+  events: readonly IPipelineCaptureEvent[],
+): string[] {
+  const lastSequence = events.at(-1)?.sequence ?? 0;
+  if (metadata.expectedEventCount !== undefined) {
+    return metadata.expectedEventCount !== events.length || metadata.expectedEventCount !== lastSequence
+      ? ["native pipeline event count does not match the completion marker"]
+      : [];
+  }
+  const checkpoint = metadata.checkpoint;
+  if (checkpoint === undefined) return ["native marker capture is missing its completion marker"];
+  const reasons: string[] = [];
+  if (checkpoint.outstanding > 0)
+    reasons.push(`native pipeline checkpoint reports ${checkpoint.outstanding} compile(s) still outstanding`);
+  if (checkpoint.emitted !== events.length || checkpoint.emitted !== lastSequence)
+    reasons.push("native pipeline event count does not match the checkpoint");
+  if (metadata.eventsAfterCheckpoint > 0)
+    reasons.push(
+      `${metadata.eventsAfterCheckpoint} native pipeline event(s) were written after the checkpoint that bounds the capture`,
+    );
   return reasons;
 }
 

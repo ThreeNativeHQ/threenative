@@ -116,6 +116,20 @@ verification: one doctor invocation reads the town capture without rebuilding an
 
 ## Acceptance and verification evidence
 
+September 9 retry: the [actual-device repair record](../../verification/runtime-perf-state.md#prd-367-actual-device-census-repair--2026-09-09)
+retains the original Bayview source manifest, package/APK identities, native/renderer captures and
+focused red/green. Browser, desktop and Android functional scenarios passed. The captures exposed
+two direct-device events outside each native renderer census; Android force-stop also bypasses the
+shutdown completion marker. These are engine observation defects, not game material defects.
+
+The identity/hash repair touches core census and its test, native pipeline bindings/header and the
+compiled WebGPU contract (five files). The next native slice uses the same bindings/header,
+`bindings_state.h`, `bindings_presentation.cpp` and the existing compiled contract (five files) to
+provide a live checkpoint without stopping compiler workers. Its parser slice uses the existing
+`pipeline-summary.ts` and `pipeline-timing.spec.ts`. The core slice extends the existing collector
+to direct device calls and preserves explicit unknown provenance; no second observer is introduced.
+All later acceptance depends on re-running the actual game against the integrated build.
+
 - [ ] Town capture is complete, deduplicated by actual backend identity and correlated to materials
   or explicitly unknown provenance, across browser and native desktop.
 - [ ] Pixel 8 timing retains raw observations, thermal/adapter identity, queue versus service time,
@@ -125,4 +139,5 @@ verification: one doctor invocation reads the town capture without rebuilding an
   always-on detail capture if it measurably changes the launch under study. Keep cheap counters and
   explicit detailed capture where needed.
 - [ ] Each phase records command/output/artifact, observed red/green, caller census, independent
-  reviewer result and manual timing review under the shared contract. All currently UNVERIFIED.
+  reviewer result and manual timing review under the shared contract. Focused executed checks are
+  in the repair record; full acceptance remains UNVERIFIED.

@@ -1,10 +1,19 @@
 /**
- * A bounded observation of the pipelines a Three.js renderer actually asked its backend to make.
+ * A bounded observation of the pipelines a Three.js renderer actually asked the GPU device to make.
  *
  * This module deliberately knows the shape of Three's private render object, but not its cache-key
  * algorithm. Three owns the identity; the collector only reads the object at the backend boundary
  * where a cache miss becomes a real device creation. That keeps a material label from becoming a
  * pipeline key and makes the same observation useful on browser WebGPU and the native binding.
+ *
+ * The backend boundary alone is not the whole device, and a census that claims otherwise is
+ * wrong by exactly the pipelines it cannot see: Three's texture pass utils build mipmap transfer
+ * pipelines straight on the device, which is why a Bayview native capture logged 94 device
+ * creations against 92 renderer events. So the device's own creation methods are observed too,
+ * with creations reached through the wrapped backend attributed to their backend event rather
+ * than counted twice, and a direct creation reported with the label the device was given, an
+ * explicitly unknown pass and unknown provenance rather than the render object that happened to
+ * be drawing when a texture uploaded.
  */
 
 import { CORE_VERSION } from "./version.js";
@@ -51,6 +60,8 @@ export interface IPipelineCensusEvent {
   readonly fragment?: IPipelineShaderObservation;
   readonly compute?: IPipelineShaderObservation;
   readonly provenance: IPipelineProvenance;
+  /** The label the device was handed, when one was observed. A label is never read as a pass. */
+  readonly label?: string;
   /** Structural inputs observed beside the generated shader, not a guessed reason. */
   readonly reasons: readonly string[];
   /** Host monotonic milliseconds relative to the capture origin. */
@@ -74,6 +85,13 @@ export interface IPipelineCensusCounts {
   readonly uniquePipelines: number;
   readonly recordedEvents: number;
   readonly droppedEvents: number;
+  /**
+   * Every creation seen at the device, including those attributed to a backend event. Absent
+   * when the device could not be observed at all, so no reader mistakes silence for zero.
+   */
+  readonly deviceCreations?: number;
+  /** Creations seen only at the device, never reached through the wrapped backend methods. */
+  readonly directCreations?: number;
 }
 
 export interface IPipelineCensus {
@@ -144,6 +162,22 @@ interface IBackendLike {
   createRenderPipeline?: (...args: unknown[]) => unknown;
   createComputePipeline?: (...args: unknown[]) => unknown;
   get?: (value: unknown) => unknown;
+  /** The GPU device the backend delegates to, absent until the backend has initialised. */
+  device?: unknown;
+}
+
+/** The device methods that turn a descriptor into a real GPU object. */
+const DEVICE_PIPELINE_METHODS = [
+  ["createRenderPipeline", "render", "sync"],
+  ["createRenderPipelineAsync", "render", "async"],
+  ["createComputePipeline", "compute", "sync"],
+  ["createComputePipelineAsync", "compute", "async"],
+] as const satisfies readonly (readonly [string, "compute" | "render", PipelineCensusMode])[];
+
+interface IInstalledDevice {
+  readonly backend: IBackendLike;
+  readonly device: Record<string, unknown>;
+  readonly restore: readonly (() => void)[];
 }
 
 interface IBackendDataLike {
@@ -176,6 +210,7 @@ interface IMutableCensusEvent {
   fragment?: IPipelineShaderObservation;
   compute?: IPipelineShaderObservation;
   provenance: IPipelineProvenance;
+  label?: string;
   reasons: readonly string[];
   startedMs: number;
   settledMs?: number;
@@ -185,6 +220,11 @@ interface IMutableCensusEvent {
   beforeFirstPresent?: boolean;
   /** Three's logical pipeline object, retained privately for backend data lookup. */
   backendPipeline?: unknown;
+  /** Observed at the device rather than through a backend method, so it carries its own handle. */
+  direct?: boolean;
+  deviceHandle?: unknown;
+  /** Whether this event still owns one of the pending counts, so settling releases exactly one. */
+  pending?: boolean;
 }
 
 interface IInstalledBackend {
@@ -222,17 +262,33 @@ export class PipelineCensus {
   readonly #programs = new Set<string>();
   readonly #pipelines = new Set<string>();
   readonly #installed: IInstalledBackend[] = [];
+  readonly #devices: IInstalledDevice[] = [];
   readonly #pipelineIds = new WeakMap<object, string>();
   readonly #backendPipelineIds = new WeakMap<object, string>();
+  /**
+   * Shader identity by the object that owns the source: Three's programmable stage on the backend
+   * path, the shader module on the device path. Keying by object rather than by text means one
+   * hash per source instead of one per pipeline, and no capture ever retains a shader.
+   */
+  readonly #observations = new WeakMap<object, IPipelineShaderObservation>();
+  /** Device methods that exist but refused their hook, so their creations were never seen. */
+  readonly #deviceRefusals = new Set<string>();
   #activeRenderObject: IActiveRenderObject | undefined;
   #nextSequence = 1;
   #nextBackendPipelineIdentity = 1;
   #nextLogicalPipelineIdentity = 1;
+  #nextDevicePipelineIdentity = 1;
   #lookups = 0;
   #creations = 0;
   #failures = 0;
   #pending = 0;
   #dropped = 0;
+  #deviceCreations = 0;
+  #directCreations = 0;
+  #nestedDeviceCreations = 0;
+  #backendDepth = 0;
+  #backendDeviceCalls = 0;
+  #deviceObserved = false;
   #overflowed = false;
   #unsupported = false;
   #firstPresentMs: number | undefined;
@@ -285,7 +341,9 @@ export class PipelineCensus {
     }
     if (!changed) this.#unsupported = true;
     else this.#installed.push(installed);
+    this.#ensureDevice(backend);
     return () => {
+      this.#restoreDevices(backend);
       if (
         installed.render !== undefined &&
         backend.createRenderPipeline === installed.renderWrapper
@@ -301,6 +359,111 @@ export class PipelineCensus {
       const index = this.#installed.indexOf(installed);
       if (index !== -1) this.#installed.splice(index, 1);
     };
+  }
+
+  /**
+   * Install the device hooks for a backend that has one, once per device. The backend is asked
+   * again on every creation because the device arrives with `init()` and is replaced on a device
+   * loss; a census that only looked at install time would stop observing the moment either
+   * happened. A device whose methods cannot be replaced is left alone and reported unobserved.
+   *
+   * Every method the device actually has must accept its hook. One accepted hook is not the
+   * device: a host that binds `createRenderPipeline` as a non-writable property while leaving
+   * `createComputePipeline` writable would otherwise report a complete census that never saw a
+   * single render creation. A method the device does not have issues no work and is not missing.
+   */
+  #ensureDevice(backend: IBackendLike): void {
+    if (this.#kind !== "webgpu" || !isObject(backend.device)) return;
+    const device = backend.device;
+    if (this.#devices.some((entry) => entry.device === device)) return;
+    const restore: (() => void)[] = [];
+    const refused: string[] = [];
+    this.#patchIfPresent(
+      device,
+      "createShaderModule",
+      (original) =>
+        (...args: unknown[]) =>
+          this.#observeShaderModule(device, original, args),
+      restore,
+      refused,
+    );
+    let observed = 0;
+    for (const [name, kind, mode] of DEVICE_PIPELINE_METHODS) {
+      if (
+        this.#patchIfPresent(
+          device,
+          name,
+          (original) =>
+            (...args: unknown[]) =>
+              this.#observeDeviceCreation(device, original, args, kind, mode),
+          restore,
+          refused,
+        )
+      )
+        observed += 1;
+    }
+    // Nothing observable here: leave the device exactly as found and let it be reported
+    // unobserved rather than partially, so a later retry can still take it.
+    if (observed === 0) {
+      for (const undo of restore) undo();
+      return;
+    }
+    for (const name of refused) this.#deviceRefusals.add(name);
+    this.#devices.push({ backend, device, restore });
+    this.#deviceObserved = true;
+  }
+
+  /** Patch a method the device has, recording a refusal that must invalidate completeness. */
+  #patchIfPresent(
+    device: Record<string, unknown>,
+    name: string,
+    build: (original: (...args: unknown[]) => unknown) => (...args: unknown[]) => unknown,
+    restore: (() => void)[],
+    refused: string[],
+  ): boolean {
+    if (typeof device[name] !== "function") return false;
+    if (this.#patchMethod(device, name, build, restore)) return true;
+    refused.push(name);
+    return false;
+  }
+
+  #patchMethod(
+    target: Record<string, unknown>,
+    name: string,
+    build: (original: (...args: unknown[]) => unknown) => (...args: unknown[]) => unknown,
+    restore: (() => void)[],
+  ): boolean {
+    const original = target[name];
+    if (typeof original !== "function") return false;
+    const previous = original as (...args: unknown[]) => unknown;
+    // A browser device carries these on its prototype and a host binds them to the object itself.
+    // Remember which, so teardown leaves the device exactly as it was found rather than pinning an
+    // own copy of a prototype method.
+    const owned = Object.hasOwn(target, name);
+    const wrapper = build(previous);
+    try {
+      target[name] = wrapper;
+    } catch {
+      return false;
+    }
+    // A host may expose its bindings as non-writable properties; in that case the assignment is
+    // silently or loudly refused and the census must report an unobserved device, not a green one.
+    if (target[name] !== wrapper) return false;
+    restore.push(() => {
+      if (target[name] !== wrapper) return;
+      if (owned) target[name] = previous;
+      else delete target[name];
+    });
+    return true;
+  }
+
+  #restoreDevices(backend: IBackendLike): void {
+    for (let index = this.#devices.length - 1; index >= 0; index -= 1) {
+      const entry = this.#devices[index];
+      if (entry === undefined || entry.backend !== backend) continue;
+      for (const undo of entry.restore) undo();
+      this.#devices.splice(index, 1);
+    }
   }
 
   /** Install every renderer-side hook owned by this capture. */
@@ -358,6 +521,7 @@ export class PipelineCensus {
   snapshot(): IPipelineCensus {
     const incompleteReasons: string[] = [];
     if (this.#unsupported) incompleteReasons.push("backend creation observation unavailable");
+    incompleteReasons.push(...this.#deviceReasons());
     if (this.#adapterIdentity === "unavailable")
       incompleteReasons.push("adapter identity unavailable");
     if (this.#overflowed) incompleteReasons.push("bounded event buffer overflowed");
@@ -400,6 +564,7 @@ export class PipelineCensus {
         uniquePipelines: this.#pipelines.size,
         recordedEvents: this.#events.length,
         droppedEvents: this.#dropped,
+        ...this.#deviceCounts(),
       },
       events,
       incompleteReasons,
@@ -410,17 +575,43 @@ export class PipelineCensus {
     return Math.max(0, this.#now() - this.#origin);
   }
 
+  /**
+   * Three creates pipelines the backend never sees, so a capture that never reached the device
+   * cannot claim it counted them, however many backend events it holds. A creation nested inside
+   * a backend creation is attributed to that backend event, and is reported here so the extra
+   * device call is never quietly dropped from the total. A device observed through some of its
+   * methods is short by whatever went through the rest, and says which method it was.
+   */
+  #deviceReasons(): string[] {
+    const reasons: string[] = [];
+    if (this.#kind === "webgpu" && !this.#deviceObserved)
+      reasons.push("device creation observation unavailable");
+    for (const name of [...this.#deviceRefusals].sort())
+      reasons.push(`device method ${name} could not be observed`);
+    if (this.#nestedDeviceCreations > 0)
+      reasons.push(
+        `${this.#nestedDeviceCreations} device pipeline creation(s) were nested inside a backend creation`,
+      );
+    return reasons;
+  }
+
+  #deviceCounts(): { deviceCreations?: number; directCreations?: number } {
+    if (!this.#deviceObserved) return {};
+    return { deviceCreations: this.#deviceCreations, directCreations: this.#directCreations };
+  }
+
   #observeRenderCreation(
     backend: IBackendLike,
     original: (...args: unknown[]) => unknown,
     args: readonly unknown[],
   ): unknown {
+    this.#ensureDevice(backend);
     const renderObject = isObject(args[0]) ? (args[0] as IRenderObjectLike) : {};
     const pipeline = isObject(renderObject.pipeline)
       ? (renderObject.pipeline as IPipelineLike)
       : undefined;
-    const vertex = shaderObservation(pipeline?.vertexProgram);
-    const fragment = shaderObservation(pipeline?.fragmentProgram);
+    const vertex = this.#programObservation(backend, pipeline?.vertexProgram);
+    const fragment = this.#programObservation(backend, pipeline?.fragmentProgram);
     const event = this.#beginEvent({
       backend,
       kind: "render",
@@ -432,11 +623,12 @@ export class PipelineCensus {
     });
     const started = this.#now();
     try {
-      const result = original.apply(backend, [...args]);
+      const result = this.#throughBackend(() => original.apply(backend, [...args]));
       const promises = asyncPromises(args[1]);
       if (promises.length > 0) {
         event.mode = "async";
         event.status = "pending";
+        event.pending = true;
         this.#pending += 1;
         void Promise.all(promises).then(
           () => this.#settleEvent(backend, event, started, undefined),
@@ -457,8 +649,9 @@ export class PipelineCensus {
     original: (...args: unknown[]) => unknown,
     args: readonly unknown[],
   ): unknown {
+    this.#ensureDevice(backend);
     const pipeline = isObject(args[0]) ? (args[0] as IPipelineLike) : undefined;
-    const compute = shaderObservation(pipeline?.computeProgram);
+    const compute = this.#programObservation(backend, pipeline?.computeProgram);
     const event = this.#beginEvent({
       backend,
       kind: "compute",
@@ -469,7 +662,7 @@ export class PipelineCensus {
     });
     const started = this.#now();
     try {
-      const result = original.apply(backend, [...args]);
+      const result = this.#throughBackend(() => original.apply(backend, [...args]));
       this.#settleEvent(backend, event, started, undefined);
       return result;
     } catch (error) {
@@ -478,8 +671,98 @@ export class PipelineCensus {
     }
   }
 
+  /**
+   * Run a backend creation with its device calls attributed to it. Three reaches the device
+   * synchronously in both paths — `createRenderPipelineAsync` is called before the first `await`
+   * of the promise it hands back — so the depth is enough to tell a delegated creation from a
+   * direct one, and a second device call inside one backend creation is reported rather than lost.
+   */
+  #throughBackend<T>(callback: () => T): T {
+    const previousCalls = this.#backendDeviceCalls;
+    this.#backendDepth += 1;
+    this.#backendDeviceCalls = 0;
+    try {
+      return callback();
+    } finally {
+      if (this.#backendDeviceCalls > 1) this.#nestedDeviceCreations += this.#backendDeviceCalls - 1;
+      this.#backendDepth -= 1;
+      this.#backendDeviceCalls = previousCalls;
+    }
+  }
+
+  #observeShaderModule(
+    device: Record<string, unknown>,
+    original: (...args: unknown[]) => unknown,
+    args: readonly unknown[],
+  ): unknown {
+    const result = original.apply(device, [...args]);
+    const descriptor = isObject(args[0]) ? args[0] : undefined;
+    const code = typeof descriptor?.code === "string" ? descriptor.code : undefined;
+    if (code !== undefined && isObject(result) && !this.#observations.has(result))
+      this.#observations.set(result, { bytes: utf8Bytes(code), hash: hashText(code) });
+    return result;
+  }
+
+  #observeDeviceCreation(
+    device: Record<string, unknown>,
+    original: (...args: unknown[]) => unknown,
+    args: readonly unknown[],
+    kind: "compute" | "render",
+    mode: PipelineCensusMode,
+  ): unknown {
+    this.#deviceCreations += 1;
+    if (this.#backendDepth > 0) {
+      this.#backendDeviceCalls += 1;
+      return original.apply(device, [...args]);
+    }
+    const descriptor = isObject(args[0]) ? args[0] : {};
+    const label = typeof descriptor.label === "string" ? descriptor.label : undefined;
+    const event = this.#beginEvent({
+      kind,
+      pipeline: undefined,
+      ...(kind === "compute"
+        ? { compute: this.#stageObservation(descriptor.compute) }
+        : {
+            vertex: this.#stageObservation(descriptor.vertex),
+            fragment: this.#stageObservation(descriptor.fragment),
+          }),
+      renderObject: undefined,
+      // The mode describes what the call did, not which method was named: an async method that
+      // returns no promise settled synchronously and is timed as the device call it was.
+      mode: "sync",
+      direct: true,
+      ...(label === undefined || label.length === 0 ? {} : { label }),
+    });
+    this.#directCreations += 1;
+    const started = this.#now();
+    try {
+      const result = original.apply(device, [...args]);
+      const promise = mode === "async" && isPromiseLike(result) ? result : undefined;
+      if (promise !== undefined) {
+        event.mode = "async";
+        event.status = "pending";
+        event.pending = true;
+        this.#pending += 1;
+        void promise.then(
+          (handle: unknown) => {
+            event.deviceHandle = handle;
+            this.#settleEvent(undefined, event, started, undefined);
+          },
+          (error: unknown) => this.#settleEvent(undefined, event, started, error),
+        );
+        return result;
+      }
+      event.deviceHandle = result;
+      this.#settleEvent(undefined, event, started, undefined);
+      return result;
+    } catch (error) {
+      this.#settleEvent(undefined, event, started, error);
+      throw error;
+    }
+  }
+
   #beginEvent(input: {
-    readonly backend: IBackendLike;
+    readonly backend?: IBackendLike;
     readonly kind: "compute" | "render";
     readonly pipeline: IPipelineLike | undefined;
     readonly vertex?: IPipelineShaderObservation;
@@ -487,9 +770,16 @@ export class PipelineCensus {
     readonly compute?: IPipelineShaderObservation;
     readonly renderObject: IRenderObjectLike | undefined;
     readonly mode: PipelineCensusMode;
+    readonly direct?: boolean;
+    readonly label?: string;
   }): IMutableCensusEvent {
     this.#creations += 1;
-    const pipelineIdentity = this.#logicalIdentity(input.pipeline);
+    // A direct creation has no logical Three pipeline to be identified by, and one shared
+    // placeholder would make two of them look like one. Each takes its own until its handle lands.
+    const pipelineIdentity =
+      input.direct === true
+        ? `device-pipeline-${this.#nextDevicePipelineIdentity++}`
+        : this.#logicalIdentity(input.pipeline);
     const programIdentity =
       input.kind === "compute"
         ? (input.compute?.hash ?? "unknown")
@@ -501,24 +791,16 @@ export class PipelineCensus {
       programIdentity,
       pipelineIdentity,
       kind: input.kind,
-      pass:
-        input.kind === "compute"
-          ? "compute"
-          : resolvePass(
-              this.#activeRenderObject?.passId,
-              this.#activeRenderObject?.material,
-              this.#activeRenderObject?.clippingContext,
-              input.renderObject?.material,
-            ),
+      ...this.#attribution(input.kind, input.direct === true, input.renderObject),
       mode: input.mode,
       status: input.mode === "async" ? "pending" : "created",
       ...(input.vertex === undefined ? {} : { vertex: input.vertex }),
       ...(input.fragment === undefined ? {} : { fragment: input.fragment }),
       ...(input.compute === undefined ? {} : { compute: input.compute }),
-      provenance: provenance(input.renderObject, this.#activeRenderObject),
-      reasons: structuralReasons(input.renderObject?.object, input.renderObject?.material),
+      ...(input.label === undefined ? {} : { label: input.label }),
       startedMs: this.#clock(),
       backendPipeline: input.pipeline,
+      ...(input.direct === true ? { direct: true } : {}),
     };
     if (this.#events.length < this.#limit) this.#events.push(event);
     else {
@@ -528,8 +810,40 @@ export class PipelineCensus {
     return event;
   }
 
+  /**
+   * Who a creation belongs to. A texture can upload while a mesh is drawing, so the render object
+   * in flight is not a direct creation's author: it reports what it knows — the device label it
+   * already carries — and says the rest is unknown rather than borrowing a pass and a material it
+   * never had.
+   */
+  #attribution(
+    kind: "compute" | "render",
+    direct: boolean,
+    renderObject: IRenderObjectLike | undefined,
+  ): { pass: string; provenance: IPipelineProvenance; reasons: readonly string[] } {
+    if (direct)
+      return {
+        pass: kind === "compute" ? "compute" : "unknown",
+        provenance: { unknown: true },
+        reasons: ["device-direct-creation"],
+      };
+    return {
+      pass:
+        kind === "compute"
+          ? "compute"
+          : resolvePass(
+              this.#activeRenderObject?.passId,
+              this.#activeRenderObject?.material,
+              this.#activeRenderObject?.clippingContext,
+              renderObject?.material,
+            ),
+      provenance: provenance(renderObject, this.#activeRenderObject),
+      reasons: structuralReasons(renderObject?.object, renderObject?.material),
+    };
+  }
+
   #settleEvent(
-    backend: IBackendLike,
+    backend: IBackendLike | undefined,
     event: IMutableCensusEvent,
     started: number,
     error: unknown,
@@ -538,40 +852,95 @@ export class PipelineCensus {
     event.settledMs = settledAt;
     event.beforeFirstPresent =
       this.#firstPresentMs === undefined || settledAt <= this.#firstPresentMs;
-    if (event.mode === "async") {
-      event.promiseMs = Math.max(0, this.#now() - started);
+    if (event.pending === true) {
+      event.pending = false;
       this.#pending = Math.max(0, this.#pending - 1);
-    } else {
-      event.serviceMs = Math.max(0, this.#now() - started);
     }
+    if (event.mode === "async") event.promiseMs = Math.max(0, this.#now() - started);
+    else event.serviceMs = Math.max(0, this.#now() - started);
     if (error !== undefined) {
       event.status = "failed";
       event.error = error instanceof Error ? error.message : String(error);
       this.#failures += 1;
       return;
     }
-    const pipeline = this.#backendPipeline(backend, event.backendPipeline);
-    // Async Three data is installed before its promise resolves. A missing handle means the
-    // promise settled but the backend did not create a usable pipeline; do not report green.
+    // A direct creation carries the handle the device returned; a backend one has to be read back
+    // out of Three's data map, where async data is installed before its promise resolves. Either
+    // way a missing handle means nothing usable was created; do not report green.
+    const pipeline =
+      event.direct === true
+        ? event.deviceHandle
+        : this.#backendPipeline(backend, event.backendPipeline);
     if (pipeline === undefined && this.#kind === "webgpu") {
       event.status = "failed";
-      event.error = `backend did not expose a created ${event.kind} pipeline`;
+      event.error =
+        event.direct === true
+          ? `device did not return a created ${event.kind} pipeline`
+          : `backend did not expose a created ${event.kind} pipeline`;
       this.#failures += 1;
       return;
     }
     if (pipeline !== undefined && this.#kind === "webgpu") {
-      this.#replacePipelineIdentity(event, this.#backendPipelineIdentity(pipeline));
+      this.#replacePipelineIdentity(event, this.#backendPipelineIdentity(pipeline, event.kind));
     }
+    // The identity is recorded, so let the GPU pipeline go; a census must not be why one stays alive.
+    event.deviceHandle = undefined;
     event.status = "created";
   }
 
-  #backendPipeline(backend: IBackendLike, pipeline: unknown): unknown {
+  /**
+   * Shader identity for a Three programmable stage, hashed once per stage rather than per use.
+   *
+   * The module was already hashed when the device made it, and Three keeps that same object at
+   * `backend.get(stage).module.module` — the seam `WebGPUPipelineUtils` reads to build the
+   * pipeline descriptor. Reuse it and the source is never hashed twice. A backend that exposes
+   * no module for the stage (WebGL2, or a device hooked after its modules were built) falls back
+   * to hashing the stage source, still once, cached on the stage object rather than by its text.
+   */
+  #programObservation(
+    backend: IBackendLike | undefined,
+    program: IProgramLike | undefined,
+  ): IPipelineShaderObservation | undefined {
+    if (!isObject(program)) return undefined;
+    const cached = this.#observations.get(program);
+    if (cached !== undefined) return cached;
+    const shared = this.#moduleObservation(backend, program);
+    const observed = shared ?? shaderObservation(program as IProgramLike);
+    if (observed !== undefined) this.#observations.set(program, observed);
+    return observed;
+  }
+
+  /** The observation of the shader module Three built for a stage, when the hooks recorded one. */
+  #moduleObservation(
+    backend: IBackendLike | undefined,
+    program: object,
+  ): IPipelineShaderObservation | undefined {
+    if (typeof backend?.get !== "function") return undefined;
+    let stage: unknown;
+    try {
+      const data = backend.get(program);
+      stage = isObject(data) ? data.module : undefined;
+    } catch {
+      return undefined;
+    }
+    if (!isObject(stage)) return undefined;
+    // Three wraps the module as `{ module, entryPoint }`; tolerate a backend that stores it bare.
+    return this.#observations.get(isObject(stage.module) ? stage.module : stage);
+  }
+
+  /** Shader identity for a device stage descriptor, absent when its module predates the hooks. */
+  #stageObservation(stage: unknown): IPipelineShaderObservation | undefined {
+    const module = isObject(stage) ? stage.module : undefined;
+    return isObject(module) ? this.#observations.get(module) : undefined;
+  }
+
+  #backendPipeline(backend: IBackendLike | undefined, pipeline: unknown): unknown {
     // The event's identity is the logical Three pipeline, while WebGPU's DataMap carries the
     // opaque device handle. Read that data only after creation; a missing handle is a failed
     // creation, not a guessed success. WebGL's fallback has a different backend data shape and is
     // explicitly marked unsupported by the census, so it does not pretend to reconcile GPU keys.
     if (this.#kind !== "webgpu") return pipeline === undefined ? undefined : pipeline;
-    if (typeof backend.get !== "function" || pipeline === undefined) return undefined;
+    if (typeof backend?.get !== "function" || pipeline === undefined) return undefined;
     this.#lookups += 1;
     try {
       const data = backend.get(pipeline);
@@ -597,8 +966,14 @@ export class PipelineCensus {
     return "logical-pipeline-unknown";
   }
 
-  #backendPipelineIdentity(pipeline: unknown): string {
+  #backendPipelineIdentity(pipeline: unknown, kind: "render" | "compute"): string {
     if (!isObject(pipeline)) return "backend-pipeline-unknown";
+    // Native wrappers expose the same handle that their compile events report. Preserve it so
+    // diagnostic tools can join exact creations, including state variants of the same program.
+    const nativeId = pipeline._pipelineId;
+    if (typeof nativeId === "number" && Number.isSafeInteger(nativeId) && nativeId > 0) {
+      return `native-${kind}-${nativeId}`;
+    }
     const existing = this.#backendPipelineIds.get(pipeline);
     if (existing !== undefined) return existing;
     const identity = `backend-pipeline-${this.#nextBackendPipelineIdentity++}`;
@@ -627,8 +1002,9 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function shaderObservation(
   program: IProgramLike | undefined,
 ): IPipelineShaderObservation | undefined {
-  if (typeof program?.code !== "string") return undefined;
-  return { bytes: utf8Bytes(program.code), hash: hashText(program.code) };
+  const code = program?.code;
+  if (typeof code !== "string") return undefined;
+  return { bytes: utf8Bytes(code), hash: hashText(code) };
 }
 
 function utf8Bytes(value: string): number {
@@ -648,6 +1024,10 @@ function hashText(value: string): string {
     hash = BigInt.asUintN(64, hash * 0x100000001b3n);
   }
   return hash.toString(16).padStart(16, "0");
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return isObject(value) && typeof value.then === "function";
 }
 
 function asyncPromises(value: unknown): Promise<unknown>[] {
@@ -777,6 +1157,7 @@ function freezeEvent(event: IMutableCensusEvent): IPipelineCensusEvent {
       ...(event.provenance.object === undefined ? {} : { object: { ...event.provenance.object } }),
       unknown: event.provenance.unknown,
     },
+    ...(event.label === undefined ? {} : { label: event.label }),
     reasons: [...event.reasons],
     startedMs: event.startedMs,
     ...(event.settledMs === undefined ? {} : { settledMs: event.settledMs }),

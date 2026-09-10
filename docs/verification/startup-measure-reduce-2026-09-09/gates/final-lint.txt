@@ -1,0 +1,30 @@
+    193 │
+  > 194 │       return (frameCtx, dt) => {
+        │                             ^^^
+    195 │         if (!started && frameCtx.input.justPressed("start")) started = true;
+    196 │         if (options.mode === "control") {
+
+  i Please refactor this function to reduce its complexity score from 21 to the max allowed complexity 15.
+
+
+./examples/quarry/src/game.ts:125:14 lint/complexity/noExcessiveCognitiveComplexity ━━━━━━━━━━━━━━━━
+
+  ! Excessive complexity of 21 detected (max: 15).
+
+    123 │     }
+    124 │
+  > 125 │     override enter(ctx: ICtx<IQuarryState>): SceneFrame<IQuarryState> {
+        │              ^^^^^
+    126 │       const look = createQuarryLook(ctx.scene, ctx.camera);
+    127 │       const floorModel = this.#floorModel;
+
+  i Please refactor this function to reduce its complexity score from 21 to the max allowed complexity 15.
+
+
+Skipped 185 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --fix --unsafe
+
+The number of diagnostics exceeds the number allowed by Biome.
+Diagnostics not shown: 646.
+Checked 2073 files in 1445ms. No fixes applied.
+Found 666 warnings.

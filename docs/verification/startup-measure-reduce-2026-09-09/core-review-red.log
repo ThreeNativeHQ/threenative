@@ -1,0 +1,81 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce
+
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > records the mipmap pipelines three creates straight on the device 4ms
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > does not double count a device creation reached through the backend 2ms
+ × packages/core/__tests__/pipeline-census.spec.ts > pipeline census > hashes a stage once by reusing the module observation the device already recorded 6ms
+   → expected 8 to be 2 // Object.is equality
+ × packages/core/__tests__/pipeline-census.spec.ts > pipeline census > hashes the stage source when the backend exposes no module for it 1ms
+   → expected 3 to be 1 // Object.is equality
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > fails closed when a device pipeline names a shader module the collector never saw 1ms
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > reports incomplete when a WebGPU backend exposes no observable device 0ms
+ × packages/core/__tests__/pipeline-census.spec.ts > pipeline census > reports incomplete when one device creation method refuses the hook 1ms
+   → expected [] to include 'device method createRenderPipeline co…'
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > stays complete when a device simply has no async creation methods 0ms
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > restores the device hooks it installed on dispose 0ms
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > leaves a browser device carrying no own pipeline methods after dispose 0ms
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > leaves a device method another owner replaced after install alone on dispose 0ms
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > retains native pipeline handles and the UTF-8 shader identity used by the host 1ms
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > reconciles unique programs and pipeline creations across passes 1ms
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > rejects completeness when creation observation is missing or bounded out 1ms
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > fails closed when a created pipeline has no shader observation 1ms
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > marks a bypassed collector as unsupported instead of returning an empty success 0ms
+ ✓ packages/core/__tests__/pipeline-census.spec.ts > pipeline census > classifies main, shadow, PMREM, and output pipeline observations 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/core/__tests__/pipeline-census.spec.ts > pipeline census > hashes a stage once by reusing the module observation the device already recorded
+AssertionError: expected 8 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 8
+
+ ❯ packages/core/__tests__/pipeline-census.spec.ts:223:19
+    221|     );
+    222|
+    223|     expect(reads).toBe(2);
+       |                   ^
+    224|     const { events, counts } = census.snapshot();
+    225|     // The reused identity is the one the fallback hash produces for t…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  packages/core/__tests__/pipeline-census.spec.ts > pipeline census > hashes the stage source when the backend exposes no module for it
+AssertionError: expected 3 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 3
+
+ ❯ packages/core/__tests__/pipeline-census.spec.ts:262:19
+    260|     );
+    261|
+    262|     expect(reads).toBe(1);
+       |                   ^
+    263|     expect(census.snapshot().events[0]?.vertex).toEqual({ bytes: 5, ha…
+    264|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  packages/core/__tests__/pipeline-census.spec.ts > pipeline census > reports incomplete when one device creation method refuses the hook
+AssertionError: expected [] to include 'device method createRenderPipeline co…'
+ ❯ packages/core/__tests__/pipeline-census.spec.ts:329:38
+    327|
+    328|     const report = census.snapshot();
+    329|     expect(report.incompleteReasons).toContain(
+       |                                      ^
+    330|       "device method createRenderPipeline could not be observed",
+    331|     );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 14 passed (17)
+   Start at  17:06:29
+   Duration  202ms (transform 57ms, setup 0ms, import 73ms, tests 21ms, environment 0ms)

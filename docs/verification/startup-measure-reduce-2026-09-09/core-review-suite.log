@@ -1,0 +1,1013 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce
+
+····stdout | packages/core/__tests__/probe-volume.spec.ts > ProbeVolume > normalizes per-axis density and rejects invalid bake camera options
+TN_PROBE_VOLUME:{"atlas":{"depth":42,"height":3,"width":2},"atlasBytes":4032,"bakeBudgetMs":2,"bakeCostMs":0,"bakeProgress":{"completed":0,"fraction":0,"pass":0,"passes":3,"probesCompleted":0,"probesTotal":72,"total":702},"marker":"TN_PROBE_VOLUME","probeCount":24,"samplingIsolated":false,"stale":true,"stalenessFrames":null,"status":"unbaked","unbaked":true}
+TN_PROBE_VOLUME:{"atlas":{"depth":42,"height":3,"width":2},"atlasBytes":4032,"bakeBudgetMs":2,"bakeCostMs":0,"bakeProgress":{"completed":0,"fraction":0,"pass":0,"passes":1,"probesCompleted":0,"probesTotal":24,"total":234},"marker":"TN_PROBE_VOLUME","probeCount":24,"samplingIsolated":false,"stale":true,"stalenessFrames":null,"status":"unbaked","unbaked":true}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > collapses draw candidates without touching the authored graph
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":400,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":400,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > renders the authored scene directly when there is too little to batch
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":4,"resultDrawCandidates":4,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > gives the frame back to the authored scene when an object hooks its own draw
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"renderHook","reason":"an object carries its own onBeforeRender/onAfterRender","sourceRenderables":300,"resultDrawCandidates":300,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > keeps one draw per material and never merges two materials into one
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":400,"resultDrawCandidates":2,"batches":2,"instancedBatches":2,"materialBatches":0,"projectedObjects":400,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > keeps an object three.js semantics cannot batch on a draw of its own
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"instanced":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > renders an authored BatchedMesh directly so every sub-draw stays live
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"unsupportedObject","reason":"an authored BatchedMesh has private per-sub-draw state the mirror cannot reproduce","sourceRenderables":301,"resultDrawCandidates":301,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > mirrors the scene's lights instead of moving them out of the game's scene
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+··········stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > keeps a spotlight's runtime cone and falloff parameters in step
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > carries the scene's own look rather than choosing one
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+·stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > releases what it owns on dispose and leaves the game's scene whole
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > draws every object sharing one geometry and material as a single instanced draw
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":400,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":400,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > should submit fewer batched sub-draws when most objects are behind the camera
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":64,"resultDrawCandidates":2,"batches":2,"instancedBatches":1,"materialBatches":1,"projectedObjects":64,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > keeps forced-visible shader-displaced members in a material batch
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":16,"resultDrawCandidates":3,"batches":3,"instancedBatches":1,"materialBatches":2,"projectedObjects":16,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > keeps large instanced batches on the full buffer after compaction was rejected by measurement
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":1024,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":1024,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > should restore authored objects after projection changes
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > should reuse projected-plan storage across settled frames
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":250,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":250,"exactObjects":0,"exact":{}}
+
+··········stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > should reclassify a material swap in the same frame
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":2,"batches":2,"instancedBatches":2,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+··········stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > should dispose a batch after every member changes its group
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":2,"batches":2,"instancedBatches":2,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection > should retire removed lights with reused membership storage
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":250,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":250,"exactObjects":0,"exact":{}}
+
+···········stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection reconciliation after settling > shows a transform changed on frame 600 on frame 601
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection reconciliation after settling > shows a transform inherited from an ancestor that only starts moving now
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+·······························stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection reconciliation after settling > hides an object the game hides after settling
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/playtest.spec.ts > playtest plugin > reports loop frame timing and active renderer counts
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+·stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection reconciliation after settling > hides an object whose ancestor the game hides after settling
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+··stdout | packages/core/__tests__/clustered-mesh-loader.spec.ts > the virtual-geometry loader seam > returns a ClusteredMesh for a primitive that carries the bake
+prune: Removed types... Accessor (3)
+
+··············stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection reconciliation after settling > draws an object added long after the projection settled
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+············stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection reconciliation after settling > stops drawing an object the game removes, without disturbing the rest
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+·······stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection reconciliation after settling > follows an object the game reparents under a moved group
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection reconciliation after settling > draws a geometry the game streams into without needing to be told
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":299,"exactObjects":1,"exact":{"tooFewToBatch":1}}
+
+··stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection reconciliation after settling > never merges a shadow caster with a non-caster that shares its material
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":2,"batches":2,"instancedBatches":2,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/clustered-mesh-loader.spec.ts > the virtual-geometry loader seam > returns a ClusteredMesh for a primitive that carries the bake
+prune: Removed types... Accessor (2)
+
+········stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection reconciliation after settling > moves an object to its own draw when the game turns its shadow on after settling
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection reconciliation after settling > moves an object to the exact lane when its material turns transparent, and draws it once
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"tooFewToBatch":1}}
+
+·stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection reconciliation after settling > releases what it remembered about an object that leaves the scene
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 8 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+····stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection under the renderer's own matrix pass > keeps an exact-lane object where the game put it
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"instanced":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection under the renderer's own matrix pass > keeps a mirrored light where the game put it
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+································stdout | packages/core/__tests__/clustered-mesh-loader.spec.ts > the virtual-geometry loader seam > returns an ordinary Mesh when the file carries no bake
+prune: Removed types... Accessor (3)
+
+····stdout | packages/core/__tests__/clustered-mesh-loader.spec.ts > the virtual-geometry loader seam > returns an ordinary Mesh when the file carries no bake
+prune: Removed types... Accessor (2)
+
+·stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection under the renderer's own matrix pass > follows a light the game moves after settling
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+··········stdout | packages/core/__tests__/clustered-mesh-loader.spec.ts > the virtual-geometry loader seam > draws the source triangles for a reader that never registered the plugin
+prune: Removed types... Accessor (3)
+
+·················stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection under the renderer's own matrix pass > follows an exact-lane object that moves after settling
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"instanced":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection exact lane corpus > keeps a two-material mesh whole, with both materials and both groups
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"multiMaterial":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection exact lane corpus > keeps every instance of an InstancedMesh
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"instanced":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection exact lane corpus > keeps a mesh whose draw count the GPU writes, indirect attribute and all
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"indirect":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection exact lane corpus > keeps a skinned mesh bound to the game's own skeleton
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"skinned":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection exact lane corpus > keeps a morph-target mesh with its influences live
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"morph":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection exact lane corpus > keeps a geometry that draws only part of its index buffer
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"drawRange":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection exact lane corpus > keeps a sprite and a point cloud as themselves
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":302,"resultDrawCandidates":3,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":2,"exact":{"sprite":1,"points":1}}
+
+········stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection exact lane corpus > keeps an LOD's levels out of one another
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":3,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"lod":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection exact lane corpus > keeps a mesh with a custom depth material off the shared draw
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"customDepthMaterial":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection exact lane corpus > keeps a mesh that asked for its own place in the draw order
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"renderOrder":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection exact lane corpus > mirrors a camera-parented overlay where the camera actually is
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":301,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":1,"exact":{"tooFewToBatch":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection exact lane corpus > isolates one unsafe object without giving up on its neighbours
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":303,"resultDrawCandidates":4,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":3,"exact":{"instanced":1,"sprite":1,"multiMaterial":1}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection refuses to make a scene worse > declines an every-geometry-unique scene by material until packed copies are proven
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"notWorthwhile","reason":"projecting would draw 300 of 300 candidates, which is not worth its own cost","sourceRenderables":300,"resultDrawCandidates":300,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection refuses to make a scene worse > still projects a scene where batching genuinely wins
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection refuses to make a scene worse > names slot exhaustion as slot exhaustion rather than as an unsupported geometry
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":60,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":60,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection refuses to make a scene worse > never returns more draw candidates than the scene it was given
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":2,"batches":2,"instancedBatches":2,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":8,"batches":8,"instancedBatches":8,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":60,"batches":60,"instancedBatches":60,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"notWorthwhile","reason":"projecting would draw 300 of 300 candidates, which is not worth its own cost","sourceRenderables":300,"resultDrawCandidates":300,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection refuses to make a scene worse > should keep projection and authored scene reversible
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"renderHook","reason":"an object carries its own onBeforeRender/onAfterRender","sourceRenderables":300,"resultDrawCandidates":300,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection batches across differing geometries > declines a town of unique geometries instead of drawing it through packed copies
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"notWorthwhile","reason":"projecting would draw 300 of 300 candidates, which is not worth its own cost","sourceRenderables":300,"resultDrawCandidates":300,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection batches across differing geometries > still declines when nothing is shared, not even the material
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"notWorthwhile","reason":"projecting would draw 300 of 300 candidates, which is not worth its own cost","sourceRenderables":300,"resultDrawCandidates":300,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection declined-frame cost > forces no whole-scene matrix pass while settled below the floor
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":4,"resultDrawCandidates":4,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection declined-frame cost > still forces the matrix pass on frames it projects
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection declined-frame cost > re-judges a scene that grew past the floor within the bounded cadence
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":4,"resultDrawCandidates":4,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":204,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":204,"exactObjects":0,"exact":{}}
+
+···············stdout | packages/core/__tests__/renderProjection.spec.ts > SceneRenderProjection declined-frame cost > keeps re-scanning every frame while projecting
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"renderHook","reason":"an object carries its own onBeforeRender/onAfterRender","sourceRenderables":300,"resultDrawCandidates":300,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+·stdout | packages/core/__tests__/clustered-mesh-loader.spec.ts > the virtual-geometry loader seam > draws the source triangles for a reader that never registered the plugin
+prune: Removed types... Accessor (2)
+
+·································stdout | packages/core/__tests__/clustered-mesh-loader.spec.ts > the virtual-geometry loader seam > names the asset when the payload is from an older bake
+prune: Removed types... Accessor (3)
+
+··················stdout | packages/core/__tests__/game.spec.ts > IGame > executes the ordinary no-overlay render path with diagnostics disabled
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > keeps startup compute behind the first rendered world while gameplay keeps running
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > keeps startup compute behind the first rendered world while gameplay keeps running
+TN_STARTUP_WARMUP:{"compiled":1,"pipelines":0,"candidates":0,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":1,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"disabled"}
+
+stdout | packages/core/__tests__/render-velocity.spec.ts > velocity provisioning on the shipped path > gives a skinned character and a moving instance previous-frame data when a temporal stage runs
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":3,"resultDrawCandidates":3,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > runs the scene hook before the world pass when aerial perspective is present
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/render-velocity.spec.ts > velocity provisioning on the shipped path > does not allocate velocity for temporal stages dropped by tier or provider checks
+TN_RENDER_CHAIN:{"applied":{"contributions":[],"dropped":[{"name":"traa","reason":"tier:off"}],"requested":["traa"],"source":"pinned","stages":[],"tier":"off","velocity":{"provisioned":false,"required":true,"source":null}},"marker":"TN_RENDER_CHAIN"}
+TN_RENDER_CHAIN:{"applied":{"contributions":[],"dropped":[{"name":"traa","reason":"provider:missing"}],"requested":["traa"],"source":"pinned","stages":[],"tier":"high","velocity":{"provisioned":false,"required":true,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > does not resolve startup readiness before compile and sustained frames behind an opaque layer
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":1,"resultDrawCandidates":1,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > does not resolve startup readiness before compile and sustained frames behind an opaque layer
+TN_STARTUP_WARMUP:{"compiled":1,"pipelines":1,"candidates":1,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":1,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"disabled"}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > warms the projected root used by the first rendered world
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":400,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":400,"exactObjects":0,"exact":{}}
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > warms the projected root used by the first rendered world
+TN_STARTUP_WARMUP:{"compiled":1,"pipelines":1,"candidates":1,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":1,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"disabled"}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > warms behind a ready web UI before the first world render
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":1,"resultDrawCandidates":1,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > warms behind a ready web UI before the first world render
+TN_STARTUP_WARMUP:{"compiled":1,"pipelines":1,"candidates":1,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":0,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"disabled"}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > holds first-use rendering until an explicit warm-up finishes
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":1,"resultDrawCandidates":1,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > holds first-use rendering until an explicit warm-up finishes
+TN_WARMUP:{"compiled":1,"pipelines":1,"candidates":1,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":1,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"disabled"}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > warms the projected root when explicit warm-up is enabled
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":400,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":400,"exactObjects":0,"exact":{}}
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > warms the projected root when explicit warm-up is enabled
+TN_WARMUP:{"compiled":1,"pipelines":1,"candidates":1,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":1,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"disabled"}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > renders the world behind an opaque CanvasLayer, then draws it last otherwise
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":1,"resultDrawCandidates":1,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > renders the world behind an opaque CanvasLayer, then draws it last otherwise
+TN_STARTUP_WARMUP:{"compiled":1,"pipelines":1,"candidates":1,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":0,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"disabled"}
+
+··························stdout | packages/core/__tests__/game.spec.ts > IGame > hands the renderer the projection, not the authored scene, and draws far fewer objects
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":400,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":400,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > stops projecting the previous scene's objects after goto disposes them
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > stops projecting the previous scene's objects after goto disposes them
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > stops updating detached collapse parts when goto clears the previous scene
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":200,"resultDrawCandidates":2,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":199,"exactObjects":1,"exact":{"tooFewToBatch":1}}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > stops updating detached collapse parts when goto clears the previous scene
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/game.spec.ts > IGame > draws the overlay while the start scene is still loading, without stepping the simulation
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+·····························stdout | packages/core/__tests__/clustered-mesh-loader.spec.ts > the virtual-geometry loader seam > names the asset when the payload is from an older bake
+prune: Removed types... Accessor (2)
+
+········stdout | packages/core/__tests__/clustered-mesh-loader.spec.ts > the virtual-geometry loader seam > cuts the loaded mesh from one call a frame
+prune: Removed types... Accessor (3)
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":2}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":3}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":4}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":5}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":6}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":7}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":8}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":9}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":10}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > resumes automatic scaling on clean windows after between-frame compilation
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":11}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution auto
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution auto
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution auto
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":2}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution auto
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":3}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution auto
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":4}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution auto
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":5}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution auto
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution auto
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":6}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution auto
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":7}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution auto
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":8}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution 0.44
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution 0.44
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution 0.44
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":2}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution 0.44
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":3}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution 0.44
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":4}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution 0.44
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":5}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution 0.44
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution 0.44
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":6}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution 0.44
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":7}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > observes compilation entirely between frames with resolution 0.44
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":8}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > keeps partial compilation-window reporting when resolution is pinned
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > keeps partial compilation-window reporting when resolution is pinned
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > keeps partial compilation-window reporting when resolution is pinned
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":2}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > keeps partial compilation-window reporting when resolution is pinned
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":3}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > keeps partial compilation-window reporting when resolution is pinned
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":4}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > keeps partial compilation-window reporting when resolution is pinned
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":5}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > keeps partial compilation-window reporting when resolution is pinned
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > keeps partial compilation-window reporting when resolution is pinned
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":6}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > keeps partial compilation-window reporting when resolution is pinned
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":7}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > keeps partial compilation-window reporting when resolution is pinned
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":8}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > discards a partly compiled window even when compilation settles before its final frame
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > discards a partly compiled window even when compilation settles before its final frame
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > discards a partly compiled window even when compilation settles before its final frame
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":2}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > discards a partly compiled window even when compilation settles before its final frame
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":3}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > discards a partly compiled window even when compilation settles before its final frame
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":4}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > discards a partly compiled window even when compilation settles before its final frame
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":5}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > discards a partly compiled window even when compilation settles before its final frame
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > discards a partly compiled window even when compilation settles before its final frame
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":6}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > discards a partly compiled window even when compilation settles before its final frame
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":7}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > discards a partly compiled window even when compilation settles before its final frame
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":8}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":2}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":3}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":4}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":5}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":6}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":7}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":8}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":9}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":10}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":11}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":12}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":13}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":14}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":15}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not bank down-steps from frames spent compiling after readiness
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":16}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":2}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":3}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":4}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":5}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":6}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":7}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":8}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":9}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":10}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":11}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":12}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":13}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":14}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":15}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > falls off the ceiling when the presented tail is over the budget
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":16}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":2}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":3}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":4}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":5}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":6}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":7}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":8}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":9}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":10}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":11}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":12}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":13}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":14}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":15}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":16}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":17}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":18}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":19}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":20}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":21}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not move a pinned scale, however far over budget the frame runs
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":22}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > reports atFloor once the scaler has run out of rungs and the frame is still over budget
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":2}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":3}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":4}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":5}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":6}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":7}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":8}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":9}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":10}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":11}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":12}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":13}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":14}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":15}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":16}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":17}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":18}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":19}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":20}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":21}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":22}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":23}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":24}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":25}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":26}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":27}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":28}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":29}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":30}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":2}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":3}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":4}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":5}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":6}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":7}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":8}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":9}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":10}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":11}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":12}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":13}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":14}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":15}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > moves only the 3D drawing buffer: not the camera, the aspect or the CSS surface
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":16}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":2}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":3}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":4}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":5}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":6}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":7}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":8}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":9}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":10}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":11}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":12}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":13}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":14}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":15}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":16}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":17}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":18}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":19}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":20}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_STARTUP_WARMUP_HELD:{"compiled":1,"pipelines":0,"candidates":0,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":1,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"disabled"}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":21}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":22}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":23}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":24}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":25}
+
+stdout | packages/core/__tests__/game-auto-scale.spec.ts > resolutionScale: "auto" > does not sell resolution for frames measured before the world was up
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":26}
+
+stdout | packages/core/__tests__/gpu-scene-bvh.spec.ts > GPUSceneBVH > should return the same hit distance as ScenePicker for sampled rays
+{"cpuImplementation":"ScenePicker.raycast (CPU Raycaster/MeshBVH)","gpuImplementation":"packed bvh.nodes stack walk (CPU mirror of the TSL node layout)","samples":64}
+
+··························stdout | packages/core/__tests__/clustered-mesh-loader.spec.ts > the virtual-geometry loader seam > cuts the loaded mesh from one call a frame
+prune: Removed types... Accessor (2)
+
+··············································stdout | packages/core/__tests__/compute-driven.spec.ts > ComputeDrivenRegistry > defers render cadence until startup is ready
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":1,"resultDrawCandidates":1,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/compute-driven.spec.ts > ComputeDrivenRegistry > defers render cadence until startup is ready
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/compute-driven.spec.ts > ComputeDrivenRegistry > defers render cadence until startup is ready
+TN_STARTUP_WARMUP:{"compiled":1,"pipelines":1,"candidates":1,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":1,"unsupported":false,"abandoned":0,"timedOut":false,"computeCompiled":0,"computeAbandoned":0,"computeUnsupported":true,"computeTimedOut":false,"cache":"disabled"}
+
+stdout | packages/core/__tests__/compute-driven.spec.ts > ComputeDrivenRegistry > keeps GPUParticles3D on render cadence when a frame has zero or multiple fixed updates
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":1,"resultDrawCandidates":1,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/prewarm.spec.ts > prewarm > should compile compute kernels before startup reports ready
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/prewarm.spec.ts > prewarm > should compile compute kernels before startup reports ready
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/prewarm.spec.ts > prewarm > should compile compute kernels before startup reports ready
+TN_STARTUP_WARMUP:{"compiled":1,"pipelines":0,"candidates":0,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":3,"unsupported":false,"abandoned":0,"timedOut":false,"computeCompiled":1,"computeAbandoned":0,"computeUnsupported":false,"computeTimedOut":false,"cache":"disabled"}
+
+stdout | packages/core/__tests__/compute-driven.spec.ts > ComputeDrivenRegistry > holds a destination compute scene until its kernels are warm
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/compute-driven.spec.ts > ComputeDrivenRegistry > holds a destination compute scene until its kernels are warm
+TN_WARMUP:{"compiled":1,"pipelines":0,"candidates":0,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":0,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"disabled"}
+
+stdout | packages/core/__tests__/compute-driven.spec.ts > ComputeDrivenRegistry > holds a destination compute scene until its kernels are warm
+TN_TRANSITION_COMPUTE_WARMUP:{"compiled":2,"abandoned":0,"unsupported":false,"timedOut":false}
+
+···························stdout | packages/core/__tests__/prewarm.spec.ts > prewarm > warms the requested subtree without revealing siblings under a hidden ancestor
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+·································································stdout | packages/core/__tests__/game-frame-budget-surface.spec.ts > the frame budget names the surface the game's own loop drew > carries the applied scale and drawing buffer into every reported window
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":2}
+
+···········stdout | packages/core/__tests__/game-frame-budget-surface.spec.ts > the frame budget names the surface the game's own loop drew > carries a positive GPU timestamp into the reported frame window
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+
+stdout | packages/core/__tests__/game-frame-budget-surface.spec.ts > the frame budget names the surface the game's own loop drew > keeps rendering and omits GPU time when timestamp resolution rejects
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_PROJECTION:{"drawsPlanned":0,"exact":{},"exactObjects":0,"projecting":false,"reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","reasonCode":"belowMeshFloor","sourceRenderables":0,"window":1}
+
+···stdout | packages/core/__tests__/gpu-timestamp-resolve-cadence.spec.ts > GPU timestamp queries are resolved often enough to stay readable > resolves once per rendered frame, not once per frame-budget window
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+································stdout | packages/core/__tests__/projection-marker.spec.ts > projection window marker > should report a per-reason count for every exact-lane object
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":303,"resultDrawCandidates":4,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":3,"exact":{"instanced":1,"skinned":1,"multiMaterial":1}}
+
+stdout | packages/core/__tests__/projection-marker.spec.ts > projection window marker > should report actual draws separately from planned draws
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/projection-marker.spec.ts > projection window marker > should omit the measured count rather than report zero when nothing measured it
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":300,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":300,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/projection-marker.spec.ts > projection window marker > should emit the marker with its reason when the projection declines
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 64 batchable meshes; the mirror would cost more than it saves","sourceRenderables":4,"resultDrawCandidates":4,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+··········stdout | packages/core/__tests__/warmup-default.spec.ts > the warmUp option > runs the pre-start warm-up on an explicit opt-in, on either platform
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":8,"resultDrawCandidates":8,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/warmup-default.spec.ts > the warmUp option > runs the pre-start warm-up on an explicit opt-in, on either platform
+TN_WARMUP:{"compiled":1,"pipelines":8,"candidates":8,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":1,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"disabled"}
+
+stdout | packages/core/__tests__/warmup-default.spec.ts > the warmUp option > runs the pre-start warm-up on an explicit opt-in, on either platform
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":8,"resultDrawCandidates":8,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/warmup-default.spec.ts > the warmUp option > runs the pre-start warm-up on an explicit opt-in, on either platform
+TN_WARMUP:{"compiled":1,"pipelines":8,"candidates":8,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":0,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"disabled"}
+
+stdout | packages/core/__tests__/warmup-default.spec.ts > the warmUp option > uses the persistent warm-up hint on a later launch
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":8,"resultDrawCandidates":8,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/warmup-default.spec.ts > the warmUp option > uses the persistent warm-up hint on a later launch
+TN_WARMUP:{"compiled":1,"pipelines":8,"candidates":8,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":0,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"stored"}
+
+stdout | packages/core/__tests__/warmup-default.spec.ts > the warmUp option > uses the persistent warm-up hint on a later launch
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":8,"resultDrawCandidates":8,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/warmup-default.spec.ts > the warmUp option > uses the persistent warm-up hint on a later launch
+TN_WARMUP:{"compiled":0,"pipelines":8,"candidates":8,"attempted":0,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":0,"elapsedMs":0,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"hit"}
+
+····stdout | packages/core/__tests__/startup-timeline.spec.ts > startup timeline > should stamp load, enter and readiness in order and publish them through ctx.startup
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/startup-timeline.spec.ts > startup timeline > should report the player's wait, not the framework's, when the game holds startup
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":0,"resultDrawCandidates":0,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/startup-timeline.spec.ts > startup timeline > should report the player's wait, not the framework's, when the game holds startup
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/startup-timeline.spec.ts > startup timeline > should report the player's wait, not the framework's, when the game holds startup
+TN_STARTUP_WARMUP_HELD:{"compiled":1,"pipelines":0,"candidates":0,"attempted":1,"observed":{"created":0,"failed":0,"pending":0,"uniquePrograms":0,"uniquePipelines":0,"status":"unavailable"},"slices":1,"elapsedMs":1,"unsupported":false,"abandoned":0,"timedOut":false,"cache":"disabled"}
+
+··········································stdout | packages/core/__tests__/renderer.spec.ts > createRenderer > defers platform resize and reports the old buffer until compilation releases it
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/renderer.spec.ts > createRenderer > stops scheduling hidden-root compilation and deferred resize after disposal
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/renderer.spec.ts > createRenderer > keeps resolution targets alive until pending compilation settles (reject=false)
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/renderer.spec.ts > createRenderer > keeps resolution targets alive until pending compilation settles (reject=true)
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/renderer.spec.ts > createRenderer > forwards compileAsync so a game can warm up pipelines before the first visible frame
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+stdout | packages/core/__tests__/renderer.spec.ts > createRenderer > resolves quietly when the renderer has no compileAsync of its own
+TN_ALPHA_ANTIALIASING:{"applied":false,"marker":"TN_ALPHA_ANTIALIASING","materials":0,"reason":"the surface is single-sampled, so there is no coverage mask for a cutout edge to resolve into; set renderer.antialias (or renderer.android.antialias) true to give it one","sampleCount":1}
+
+·stdout | packages/core/__tests__/renderer.spec.ts > createRenderer > feeds automatic render-chain tiers from the renderer's frame-budget observer
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":false,"name":"bloom"}],"dropped":[],"requested":["bloom"],"source":"auto","stages":["bloom"],"tier":"high","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":false,"name":"bloom"}],"dropped":[],"requested":["bloom"],"source":"auto","stages":["bloom"],"tier":"medium","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+····················stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > uses canonical order and reports the velocity provisioning route
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"ssgi"},{"graphOutputChanged":true,"name":"denoise"},{"graphOutputChanged":true,"name":"traa"}],"dropped":[],"requested":["ssgi","denoise","traa"],"source":"pinned","stages":["ssgi","denoise","traa"],"tier":"high","velocity":{"provisioned":true,"required":true,"source":"mrt"}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > accepts an authored outline stage anchored after bloom
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"ssgi"},{"graphOutputChanged":true,"name":"bloom"},{"graphOutputChanged":true,"name":"outline"}],"dropped":[],"requested":["ssgi","bloom","outline"],"source":"pinned","stages":["ssgi","bloom","outline"],"tier":"high","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > preserves supplied order for authored siblings on one anchor
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"bloom"},{"graphOutputChanged":true,"name":"paint"},{"graphOutputChanged":true,"name":"ink"}],"dropped":[],"requested":["bloom","paint","ink"],"source":"pinned","stages":["bloom","paint","ink"],"tier":"high","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > reports whether each applied stage changed the graph output
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":false,"name":"bloom"},{"graphOutputChanged":true,"name":"outline"}],"dropped":[],"requested":["bloom","outline"],"source":"pinned","stages":["bloom","outline"],"tier":"high","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > reports a requested built-in whose provider is missing
+TN_RENDER_CHAIN:{"applied":{"contributions":[],"dropped":[{"name":"traa","reason":"tier:off"}],"requested":["traa"],"source":"pinned","stages":[],"tier":"off","velocity":{"provisioned":false,"required":true,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > disposes active authored stages exactly once across rebuilds
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"bloom"},{"graphOutputChanged":true,"name":"outline"}],"dropped":[],"requested":["bloom","outline"],"source":"pinned","stages":["bloom","outline"],"tier":"high","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"bloom"},{"graphOutputChanged":true,"name":"outline"}],"dropped":[],"requested":["bloom","outline"],"source":"pinned","stages":["bloom","outline"],"tier":"high","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > places probe-volume irradiance before screen-space GI
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"probeVolume"},{"graphOutputChanged":true,"name":"ssgi"}],"dropped":[],"requested":["probeVolume","ssgi"],"source":"pinned","stages":["probeVolume","ssgi"],"tier":"high","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > passes the authored world pass through the renderer seam
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"bloom"}],"dropped":[],"requested":["bloom"],"source":"pinned","stages":["bloom"],"tier":"high","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > places godRays between ssgi and ssr, and vignette after bloom, whatever was requested
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"ssgi"},{"graphOutputChanged":true,"name":"godRays"},{"graphOutputChanged":true,"name":"ssr"},{"graphOutputChanged":true,"name":"bloom"},{"graphOutputChanged":true,"name":"vignette"}],"dropped":[],"requested":["ssgi","godRays","ssr","bloom","vignette"],"source":"pinned","stages":["ssgi","godRays","ssr","bloom","vignette"],"tier":"high","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > drops a temporal stage when no velocity source is provisioned
+TN_RENDER_CHAIN:{"applied":{"contributions":[],"dropped":[{"name":"traa","reason":"velocity:missing"}],"requested":["traa"],"source":"pinned","stages":[],"tier":"high","velocity":{"provisioned":false,"required":true,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > turns core-owned per-object history on only for an active temporal stage
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"traa"}],"dropped":[],"requested":["traa"],"source":"pinned","stages":["traa"],"tier":"high","velocity":{"provisioned":true,"required":true,"source":"per-object"}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > samples temporal rejection only after a completed frame
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"traa"}],"dropped":[],"requested":["traa"],"source":"pinned","stages":["traa"],"tier":"high","velocity":{"provisioned":true,"required":true,"source":"mrt"}},"marker":"TN_RENDER_CHAIN"}
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"traa"}],"dropped":[],"requested":["traa"],"source":"pinned","stages":["traa"],"tier":"high","velocity":{"provisioned":true,"required":true,"source":"mrt","measurementFrame":7,"rejectionFraction":0.12}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > preserves a temporal result reader when a later velocity stage has none
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"traa"},{"graphOutputChanged":true,"name":"motionBlur"}],"dropped":[],"requested":["traa","motionBlur"],"source":"pinned","stages":["traa","motionBlur"],"tier":"high","velocity":{"provisioned":true,"required":true,"source":"mrt"}},"marker":"TN_RENDER_CHAIN"}
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"traa"},{"graphOutputChanged":true,"name":"motionBlur"}],"dropped":[],"requested":["traa","motionBlur"],"source":"pinned","stages":["traa","motionBlur"],"tier":"high","velocity":{"provisioned":true,"required":true,"source":"mrt","measurementFrame":7,"rejectionFraction":0.25}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > rejects a repeated temporal rejection measurement as stale
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"traa"}],"dropped":[],"requested":["traa"],"source":"pinned","stages":["traa"],"tier":"high","velocity":{"provisioned":true,"required":true,"source":"mrt"}},"marker":"TN_RENDER_CHAIN"}
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"traa"}],"dropped":[],"requested":["traa"],"source":"pinned","stages":["traa"],"tier":"high","velocity":{"provisioned":true,"required":true,"source":"mrt","measurementFrame":2,"rejectionFraction":0.25}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > uses the compatibility rejection callback when the active stage has no fresh result
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"traa"}],"dropped":[],"requested":["traa"],"source":"pinned","stages":["traa"],"tier":"high","velocity":{"provisioned":true,"required":true,"source":"mrt"}},"marker":"TN_RENDER_CHAIN"}
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"traa"}],"dropped":[],"requested":["traa"],"source":"pinned","stages":["traa"],"tier":"high","velocity":{"provisioned":true,"required":true,"source":"mrt","measurementFrame":11,"rejectionFraction":0.2}},"marker":"TN_RENDER_CHAIN"}
+
+stdout | packages/core/__tests__/render-chain.spec.ts > RenderChain > steps down an automatic tier after an over-budget window but never moves a pinned tier
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"ssgi"}],"dropped":[],"requested":["ssgi"],"source":"auto","stages":["ssgi"],"tier":"high","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"ssgi"}],"dropped":[],"requested":["ssgi"],"source":"auto","stages":["ssgi"],"tier":"medium","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+TN_RENDER_CHAIN:{"applied":{"contributions":[{"graphOutputChanged":true,"name":"ssgi"}],"dropped":[],"requested":["ssgi"],"source":"pinned","stages":["ssgi"],"tier":"high","velocity":{"provisioned":false,"required":false,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+·········································stderr | packages/core/__tests__/merge-parts.spec.ts > mergeParts > should merge a non-indexed extrusion with an indexed box (PRD-277 AC4)
+THREE.BufferGeometryUtils: .mergeGeometries() failed with geometry at index 1. All geometries must have compatible attributes; make sure index attribute exists among all geometries, or in none of them.
+
+stderr | packages/core/__tests__/merge-parts.spec.ts > mergeParts > should refuse a merge it cannot normalise, naming the label (PRD-277 AC3)
+THREE.BufferGeometry.toNonIndexed(): BufferGeometry is already non-indexed.
+
+········stderr | packages/core/__tests__/audio.spec.ts > AudioBus > should name the cue shaping this runtime cannot honour
+AudioBus: this runtime cannot honour "lowpassHz"; the cue sounds without it.
+AudioBus: this runtime cannot honour "detune"; the cue sounds without it.
+
+··············································stdout | packages/core/__tests__/batched-velocity.spec.ts > BatchedMesh velocity > falls back to exact proxies when a consumer has not applied the patch
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":16,"resultDrawCandidates":9,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":8,"exactObjects":8,"exact":{"batchVelocityPatchMissing":8}}
+
+stdout | packages/core/__tests__/batched-velocity.spec.ts > BatchedMesh velocity > keeps static and moving sub-draws in separate current/previous matrix frames
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":16,"resultDrawCandidates":2,"batches":2,"instancedBatches":1,"materialBatches":1,"projectedObjects":16,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/batched-velocity.spec.ts > BatchedMesh velocity > initializes a new sub-draw to zero velocity and allocates no storage when disabled
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":16,"resultDrawCandidates":2,"batches":2,"instancedBatches":1,"materialBatches":1,"projectedObjects":16,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":16,"resultDrawCandidates":2,"batches":2,"instancedBatches":1,"materialBatches":1,"projectedObjects":16,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/batched-velocity.spec.ts > BatchedMesh velocity > can turn previous-matrix storage on and off at the chain seam
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":16,"resultDrawCandidates":2,"batches":2,"instancedBatches":1,"materialBatches":1,"projectedObjects":16,"exactObjects":0,"exact":{}}
+
+·················································································································stdout | packages/core/__tests__/render-projection-pipeline.spec.ts > SceneRenderProjection and the installed output pipeline > renders the projected root that carries moved skinned and instance history
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":10,"resultDrawCandidates":3,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":8,"exactObjects":2,"exact":{"skinned":1,"instanced":1}}
+
+··························································································································································stdout | packages/core/__tests__/hot.spec.ts > acceptHotUpdate > should keep the declared default for a newly added key
+ThreeNative hot reload state shape: dropped []; added [c]
+
+··························································································································································································································
+
+ Test Files  108 passed (108)
+      Tests  1197 passed (1197)
+   Start at  17:09:23
+   Duration  6.40s (transform 4.81s, setup 0ms, import 16.84s, tests 20.48s, environment 10ms)

@@ -1,0 +1,2192 @@
+{
+  "version": 1,
+  "complete": true,
+  "overflowed": false,
+  "unsupported": false,
+  "limit": 512,
+  "clock": { "originMs": 506.323567, "source": "performance" },
+  "backend": { "kind": "webgpu", "identity": "webgpu:WebGPUBackend" },
+  "build": { "identity": "@threenative/core@0.3.1" },
+  "adapter": {
+    "identity": "webgpu:architecture=turing|description=NVIDIA%3A%20610.57.04%20610.57.4.0|device=NVIDIA%20GeForce%20RTX%202080|vendor=nvidia",
+    "thermal": "unavailable"
+  },
+  "firstPresent": { "boundaryMs": 62.65267499999993, "eventsSettled": 1 },
+  "counts": {
+    "lookups": 92,
+    "creations": 92,
+    "failures": 0,
+    "pending": 0,
+    "uniquePrograms": 83,
+    "uniquePipelines": 92,
+    "recordedEvents": 92,
+    "droppedEvents": 0
+  },
+  "events": [
+    {
+      "sequence": 1,
+      "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+      "pipelineIdentity": "native-render-1",
+      "kind": "render",
+      "pass": "output",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1299, "hash": "00fc0a8ad03630cc" },
+      "fragment": { "bytes": 1595, "hash": "458120a84b226496" },
+      "provenance": {
+        "material": { "id": 16, "name": "outputColorTransform", "type": "NodeMaterial" },
+        "object": {
+          "id": 21,
+          "name": "Output Color Transform",
+          "uuid": "bd75c9cc-e6da-4cc6-beaf-3d9509cb91d7"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 57.93121199999996,
+      "settledMs": 62.044849,
+      "serviceMs": 4.116117000000031,
+      "beforeFirstPresent": true
+    },
+    {
+      "sequence": 2,
+      "programIdentity": "79e69b7da73745da/e971f258016dd726",
+      "pipelineIdentity": "native-render-3",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1460, "hash": "79e69b7da73745da" },
+      "fragment": { "bytes": 1377, "hash": "e971f258016dd726" },
+      "provenance": {
+        "material": { "id": 560, "type": "NodeMaterial" },
+        "object": { "id": 1514, "uuid": "bbe282c1-32df-4bad-ac54-ea7a2b1cc5c1" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1241.1599609999998,
+      "settledMs": 1245.0220789999998,
+      "serviceMs": 3.8607979999999316,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 3,
+      "programIdentity": "b6024ed9e99e0dec/9431aa30be5bab56",
+      "pipelineIdentity": "native-render-4",
+      "kind": "render",
+      "pass": "main",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2091, "hash": "b6024ed9e99e0dec" },
+      "fragment": { "bytes": 1716, "hash": "9431aa30be5bab56" },
+      "provenance": {
+        "material": { "id": 559, "name": "Background.material", "type": "NodeMaterial" },
+        "object": {
+          "id": 1513,
+          "name": "Background.mesh",
+          "uuid": "97f3ec50-46e3-4308-8a06-235db9628609"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1256.686153,
+      "settledMs": 1259.5704070000002,
+      "serviceMs": 2.884653999999955,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 4,
+      "programIdentity": "987d97458f4b3540/2b7df7e91e8102a9",
+      "pipelineIdentity": "native-render-5",
+      "kind": "render",
+      "pass": "pmrem",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1480, "hash": "987d97458f4b3540" },
+      "fragment": { "bytes": 2266, "hash": "2b7df7e91e8102a9" },
+      "provenance": {
+        "material": { "id": 563, "name": "PMREM_equirect", "type": "NodeMaterial" },
+        "object": { "id": 1523, "uuid": "79da346b-bb1d-43db-b055-70088717c510" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1294.0981109999998,
+      "settledMs": 1296.4344780000001,
+      "serviceMs": 2.3336369999999533,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 5,
+      "programIdentity": "2d6a398210f2a7e7/749f89e5ab1a72b8",
+      "pipelineIdentity": "native-render-6",
+      "kind": "render",
+      "pass": "pmrem",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1525, "hash": "2d6a398210f2a7e7" },
+      "fragment": { "bytes": 9302, "hash": "749f89e5ab1a72b8" },
+      "provenance": {
+        "material": { "id": 562, "name": "PMREM_ggx", "type": "NodeMaterial" },
+        "object": { "id": 1524, "uuid": "6ce3afbb-184f-43e8-9783-3bff578dbcbb" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1312.0327790000001,
+      "settledMs": 1316.0859059999998,
+      "serviceMs": 4.0522269999999025,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 6,
+      "programIdentity": "170ebc593b2bec9c/29285d3511fc3021",
+      "pipelineIdentity": "native-render-7",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12565, "hash": "29285d3511fc3021" },
+      "provenance": {
+        "material": { "id": 36, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 277, "name": "building", "uuid": "b39ae7fc-255a-4ac5-b243-f6a0b45718bf" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1385.114325,
+      "settledMs": 1389.9169980000001,
+      "serviceMs": 4.801742999999988,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 7,
+      "programIdentity": "170ebc593b2bec9c/26a275d3c1fcd04b",
+      "pipelineIdentity": "native-render-8",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12545, "hash": "26a275d3c1fcd04b" },
+      "provenance": {
+        "material": { "id": 37, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 264, "name": "building", "uuid": "a6176302-b37c-4af9-b1ef-47037aa43bc7" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1401.9268000000002,
+      "settledMs": 1406.476904,
+      "serviceMs": 4.550864000000047,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 8,
+      "programIdentity": "170ebc593b2bec9c/f71e70268c7f86a5",
+      "pipelineIdentity": "native-render-9",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12466, "hash": "f71e70268c7f86a5" },
+      "provenance": {
+        "material": { "id": 49, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 439, "name": "crate", "uuid": "da4fa73c-6f1e-4b52-aa99-81db9789d742" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1429.842541,
+      "settledMs": 1435.204331,
+      "serviceMs": 5.363399999999956,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 9,
+      "programIdentity": "0627debc3114d1d4/ac1a15b5c3e92640",
+      "pipelineIdentity": "native-render-10",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1293, "hash": "0627debc3114d1d4" },
+      "fragment": { "bytes": 802, "hash": "ac1a15b5c3e92640" },
+      "provenance": {
+        "material": { "id": 60, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 522,
+          "name": "facade-trim",
+          "uuid": "f8d20621-3929-4ce5-9dcc-e18b09ff33eb"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1438.3236229999998,
+      "settledMs": 1441.5692450000001,
+      "serviceMs": 3.244762000000037,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 10,
+      "programIdentity": "170ebc593b2bec9c/8c2147e46e5bd1fb",
+      "pipelineIdentity": "native-render-11",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12530, "hash": "8c2147e46e5bd1fb" },
+      "provenance": {
+        "material": { "id": 51, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 462, "name": "barrel", "uuid": "c26d4251-2254-441c-a441-faffe6899610" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1454.0571140000002,
+      "settledMs": 1460.01046,
+      "serviceMs": 5.952475999999933,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 11,
+      "programIdentity": "170ebc593b2bec9c/71b16cca1cdf7553",
+      "pipelineIdentity": "native-render-12",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12557, "hash": "71b16cca1cdf7553" },
+      "provenance": {
+        "material": { "id": 41, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 501,
+          "name": "facade-solid",
+          "uuid": "8d39ca67-4964-44a6-a7d1-b91246283197"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1481.6110479999998,
+      "settledMs": 1487.2272659999999,
+      "serviceMs": 5.617267999999967,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 12,
+      "programIdentity": "170ebc593b2bec9c/1d441c7cd6446e1d",
+      "pipelineIdentity": "native-render-13",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12553, "hash": "1d441c7cd6446e1d" },
+      "provenance": {
+        "material": { "id": 40, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 499,
+          "name": "facade-solid",
+          "uuid": "2fd8d814-812c-42dd-84f8-f6abe428be04"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1501.3878960000002,
+      "settledMs": 1508.442376,
+      "serviceMs": 7.053110000000061,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 13,
+      "programIdentity": "170ebc593b2bec9c/29285d3511fc3021",
+      "pipelineIdentity": "native-render-14",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12565, "hash": "29285d3511fc3021" },
+      "provenance": {
+        "material": { "id": 36, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 279,
+          "name": "arch-gateway",
+          "uuid": "8f084a95-08d5-4ce7-af30-7145ed0cc9d5"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1515.666875,
+      "settledMs": 1515.8681729999998,
+      "serviceMs": 0.20137799999997696,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 14,
+      "programIdentity": "6c86dd90d0172126/e67daf920d6cd6d9",
+      "pipelineIdentity": "native-render-15",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2588, "hash": "6c86dd90d0172126" },
+      "fragment": { "bytes": 802, "hash": "e67daf920d6cd6d9" },
+      "provenance": {
+        "material": { "id": 73, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 477,
+          "name": "palm-frond",
+          "uuid": "56271991-2200-4ee0-a54e-8b2322d5ff52"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 1521.104964,
+      "settledMs": 1523.5465599999998,
+      "serviceMs": 2.440795999999864,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 15,
+      "programIdentity": "0eb03cf02c17cc05/e67daf920d6cd6d9",
+      "pipelineIdentity": "native-render-16",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2588, "hash": "0eb03cf02c17cc05" },
+      "fragment": { "bytes": 802, "hash": "e67daf920d6cd6d9" },
+      "provenance": {
+        "material": { "id": 73, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 469,
+          "name": "palm-frond",
+          "uuid": "d4600144-4d7f-46e6-bacf-847f7db4b9a6"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 1526.7257020000002,
+      "settledMs": 1528.8150999999998,
+      "serviceMs": 2.0942280000001574,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 16,
+      "programIdentity": "46a7cb7cd6237a92/e67daf920d6cd6d9",
+      "pipelineIdentity": "native-render-17",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2588, "hash": "46a7cb7cd6237a92" },
+      "fragment": { "bytes": 802, "hash": "e67daf920d6cd6d9" },
+      "provenance": {
+        "material": { "id": 75, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 479,
+          "name": "palm-dates",
+          "uuid": "eb82b50b-cb66-4d75-80b1-00fee6bd7678"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 1531.668584,
+      "settledMs": 1533.4536640000001,
+      "serviceMs": 1.78449999999998,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 17,
+      "programIdentity": "825252b0477e50f8/e67daf920d6cd6d9",
+      "pipelineIdentity": "native-render-18",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2588, "hash": "825252b0477e50f8" },
+      "fragment": { "bytes": 802, "hash": "e67daf920d6cd6d9" },
+      "provenance": {
+        "material": { "id": 75, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 471,
+          "name": "palm-dates",
+          "uuid": "d7981ad2-5c61-4196-ab5f-1ed2f4e9c4be"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 1536.621076,
+      "settledMs": 1538.4411449999998,
+      "serviceMs": 1.8195290000001023,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 18,
+      "programIdentity": "f50542f3e3ab94ed/e67daf920d6cd6d9",
+      "pipelineIdentity": "native-render-19",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2588, "hash": "f50542f3e3ab94ed" },
+      "fragment": { "bytes": 802, "hash": "e67daf920d6cd6d9" },
+      "provenance": {
+        "material": { "id": 74, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 470,
+          "name": "palm-frond-dead",
+          "uuid": "257401ca-0e7e-496b-aba9-2554aa453cea"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 1541.316089,
+      "settledMs": 1542.8866400000002,
+      "serviceMs": 1.5696909999999207,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 19,
+      "programIdentity": "170ebc593b2bec9c/9025ae9e625d1df7",
+      "pipelineIdentity": "native-render-20",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12565, "hash": "9025ae9e625d1df7" },
+      "provenance": {
+        "material": { "id": 43, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 502,
+          "name": "facade-solid",
+          "uuid": "b166c074-4b7a-4fe5-adc0-b587a214a333"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1551.1136529999999,
+      "settledMs": 1555.848767,
+      "serviceMs": 4.733834000000115,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 20,
+      "programIdentity": "e5aa677437703017/e67daf920d6cd6d9",
+      "pipelineIdentity": "native-render-21",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2588, "hash": "e5aa677437703017" },
+      "fragment": { "bytes": 802, "hash": "e67daf920d6cd6d9" },
+      "provenance": {
+        "material": { "id": 74, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 478,
+          "name": "palm-frond-dead",
+          "uuid": "c978ad15-0951-44c2-a2c9-956678a5a718"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 1558.7505700000002,
+      "settledMs": 1560.408241,
+      "serviceMs": 1.6570810000002894,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 21,
+      "programIdentity": "130848a9c05f38f7/e67daf920d6cd6d9",
+      "pipelineIdentity": "native-render-22",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2588, "hash": "130848a9c05f38f7" },
+      "fragment": { "bytes": 802, "hash": "e67daf920d6cd6d9" },
+      "provenance": {
+        "material": { "id": 73, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 473,
+          "name": "palm-frond",
+          "uuid": "70602158-2259-4509-80a2-2b1126736b8b"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 1565.243653,
+      "settledMs": 1567.711449,
+      "serviceMs": 2.4673460000003615,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 22,
+      "programIdentity": "9c60f8dbb92410cc/e67daf920d6cd6d9",
+      "pipelineIdentity": "native-render-23",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2588, "hash": "9c60f8dbb92410cc" },
+      "fragment": { "bytes": 802, "hash": "e67daf920d6cd6d9" },
+      "provenance": {
+        "material": { "id": 75, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 475,
+          "name": "palm-dates",
+          "uuid": "71a1c1c9-7789-4163-a092-06ba12dbdc50"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 1574.906719,
+      "settledMs": 1576.8609470000001,
+      "serviceMs": 1.9531480000000556,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 23,
+      "programIdentity": "96e30d90322c08ef/e67daf920d6cd6d9",
+      "pipelineIdentity": "native-render-24",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2588, "hash": "96e30d90322c08ef" },
+      "fragment": { "bytes": 802, "hash": "e67daf920d6cd6d9" },
+      "provenance": {
+        "material": { "id": 74, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 474,
+          "name": "palm-frond-dead",
+          "uuid": "15eca290-bbc7-41c5-a9d6-88616a217811"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 1579.5325520000001,
+      "settledMs": 1581.1897330000002,
+      "serviceMs": 1.6568409999999858,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 24,
+      "programIdentity": "22eed0668dffd892/e67daf920d6cd6d9",
+      "pipelineIdentity": "native-render-25",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2588, "hash": "22eed0668dffd892" },
+      "fragment": { "bytes": 802, "hash": "e67daf920d6cd6d9" },
+      "provenance": {
+        "material": { "id": 72, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 476,
+          "name": "palm-trunk",
+          "uuid": "58b642c6-03db-4914-9085-425a5b0edc60"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 1585.420219,
+      "settledMs": 1587.213049,
+      "serviceMs": 1.792359999999917,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 25,
+      "programIdentity": "393259c48675dd12/e67daf920d6cd6d9",
+      "pipelineIdentity": "native-render-26",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2588, "hash": "393259c48675dd12" },
+      "fragment": { "bytes": 802, "hash": "e67daf920d6cd6d9" },
+      "provenance": {
+        "material": { "id": 72, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 468,
+          "name": "palm-trunk",
+          "uuid": "01991bbc-65d3-4d85-a5a8-172b57a33805"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 1589.771824,
+      "settledMs": 1591.3488550000002,
+      "serviceMs": 1.5765109999997549,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 26,
+      "programIdentity": "c86d136d3349ef6c/e67daf920d6cd6d9",
+      "pipelineIdentity": "native-render-27",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2588, "hash": "c86d136d3349ef6c" },
+      "fragment": { "bytes": 802, "hash": "e67daf920d6cd6d9" },
+      "provenance": {
+        "material": { "id": 72, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 472,
+          "name": "palm-trunk",
+          "uuid": "484abf48-182a-4afa-ad15-a624ab8a6c88"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 1593.848351,
+      "settledMs": 1595.6340610000002,
+      "serviceMs": 1.7856199999996534,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 27,
+      "programIdentity": "170ebc593b2bec9c/de495c8bae20997b",
+      "pipelineIdentity": "native-render-28",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12565, "hash": "de495c8bae20997b" },
+      "provenance": {
+        "material": { "id": 42, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 516,
+          "name": "facade-trim",
+          "uuid": "2ef05ac8-989b-446a-a1d6-62b33033d041"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1606.860827,
+      "settledMs": 1611.7808490000002,
+      "serviceMs": 4.918741999999838,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 28,
+      "programIdentity": "170ebc593b2bec9c/da4b43708db6ce6e",
+      "pipelineIdentity": "native-render-29",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12525, "hash": "da4b43708db6ce6e" },
+      "provenance": {
+        "material": { "id": 44, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 505,
+          "name": "facade-solid",
+          "uuid": "88bc5c27-62b8-4130-9028-7f1fe6cbcddc"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1621.2782860000002,
+      "settledMs": 1626.0506380000002,
+      "serviceMs": 4.772161999999753,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 29,
+      "programIdentity": "170ebc593b2bec9c/303054d3fb547aa4",
+      "pipelineIdentity": "native-render-30",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12557, "hash": "303054d3fb547aa4" },
+      "provenance": {
+        "material": { "id": 39, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 515,
+          "name": "facade-trim",
+          "uuid": "a483ea2a-dc94-4824-9a20-f6431cb9d2e9"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1638.2250990000002,
+      "settledMs": 1643.1327019999999,
+      "serviceMs": 4.906993000000057,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 30,
+      "programIdentity": "170ebc593b2bec9c/e3073eb7639aac9e",
+      "pipelineIdentity": "native-render-31",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12455, "hash": "e3073eb7639aac9e" },
+      "provenance": {
+        "material": { "id": 62, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 221, "name": "quay-s", "uuid": "e2d429fd-6815-49e5-933a-5d51fa676949" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1653.2256940000002,
+      "settledMs": 1658.064567,
+      "serviceMs": 4.838963000000149,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 31,
+      "programIdentity": "170ebc593b2bec9c/abc2508e1d85091a",
+      "pipelineIdentity": "native-render-32",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12467, "hash": "abc2508e1d85091a" },
+      "provenance": {
+        "material": { "id": 50, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 281,
+          "name": "back-plat",
+          "uuid": "363d6439-d8b9-45a7-807a-9ffe1cc55bd7"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1665.136767,
+      "settledMs": 1669.582382,
+      "serviceMs": 4.445514999999887,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 32,
+      "programIdentity": "0627debc3114d1d4/ac1a15b5c3e92640",
+      "pipelineIdentity": "native-render-33",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1293, "hash": "0627debc3114d1d4" },
+      "fragment": { "bytes": 802, "hash": "ac1a15b5c3e92640" },
+      "provenance": {
+        "material": { "id": 59, "type": "MeshStandardMaterial" },
+        "object": { "id": 225, "name": "bollard", "uuid": "c50511b0-cf83-4ad7-9380-c52e3d16b9e6" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1671.364121,
+      "settledMs": 1671.4716510000003,
+      "serviceMs": 0.10676000000012209,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 33,
+      "programIdentity": "0627debc3114d1d4/ac1a15b5c3e92640",
+      "pipelineIdentity": "native-render-34",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1293, "hash": "0627debc3114d1d4" },
+      "fragment": { "bytes": 802, "hash": "ac1a15b5c3e92640" },
+      "provenance": {
+        "material": { "id": 85, "type": "MeshStandardMaterial" },
+        "object": { "id": 492, "name": "boat", "uuid": "7c3bc102-f8d3-48e6-a67b-6117a06a56a1" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1686.9875630000001,
+      "settledMs": 1688.756723,
+      "serviceMs": 1.7686300000000301,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 34,
+      "programIdentity": "170ebc593b2bec9c/abc2508e1d85091a",
+      "pipelineIdentity": "native-render-35",
+      "kind": "render",
+      "pass": "shadow",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2005, "hash": "170ebc593b2bec9c" },
+      "fragment": { "bytes": 12467, "hash": "abc2508e1d85091a" },
+      "provenance": {
+        "material": { "id": 50, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 494, "name": "boat", "uuid": "a5fa87fd-0ebf-4d1a-a1aa-88b62117153c" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1693.5490560000003,
+      "settledMs": 1693.6629149999999,
+      "serviceMs": 0.11292900000034933,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 35,
+      "programIdentity": "55ddae1893e21865/22d2785000c9f71b",
+      "pipelineIdentity": "native-render-37",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "55ddae1893e21865" },
+      "fragment": { "bytes": 73380, "hash": "22d2785000c9f71b" },
+      "provenance": {
+        "material": { "id": 36, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 278, "name": "building", "uuid": "dc4476ff-de1b-4bdd-b526-bb59f98d9c78" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1723.2032280000003,
+      "settledMs": 1742.8225860000002,
+      "serviceMs": 19.61951799999997,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 36,
+      "programIdentity": "5dfab66a4585efe3/e837119ee69bd38c",
+      "pipelineIdentity": "native-render-38",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "5dfab66a4585efe3" },
+      "fragment": { "bytes": 74698, "hash": "e837119ee69bd38c" },
+      "provenance": {
+        "material": { "id": 63, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 215, "name": "plaza", "uuid": "ce7e4860-9bdb-4cab-9284-1ea235183013" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1828.9563280000002,
+      "settledMs": 1856.79263,
+      "serviceMs": 27.83538200000021,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 37,
+      "programIdentity": "34e46b5f2ace23a4/4cb250e011db9ce6",
+      "pipelineIdentity": "native-render-39",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3352, "hash": "34e46b5f2ace23a4" },
+      "fragment": { "bytes": 56586, "hash": "4cb250e011db9ce6" },
+      "provenance": {
+        "material": { "id": 183, "type": "MeshStandardMaterial" },
+        "object": { "id": 1129, "uuid": "84b57c31-8a27-4319-acb6-2d3e91270fee" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1900.2129140000002,
+      "settledMs": 1914.6090920000001,
+      "serviceMs": 14.394678999999996,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 38,
+      "programIdentity": "419de84ac565e160/2357d86d8e7b2c97",
+      "pipelineIdentity": "native-render-40",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3091, "hash": "419de84ac565e160" },
+      "fragment": { "bytes": 53889, "hash": "2357d86d8e7b2c97" },
+      "provenance": {
+        "material": { "id": 58, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 599,
+          "name": "target-post",
+          "uuid": "a007989a-cae6-4312-aeba-ab9f7237b034"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 1953.149223,
+      "settledMs": 1966.9827850000001,
+      "serviceMs": 13.832452000000103,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 39,
+      "programIdentity": "419de84ac565e160/e44e144baebc3ad6",
+      "pipelineIdentity": "native-render-41",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3091, "hash": "419de84ac565e160" },
+      "fragment": { "bytes": 53985, "hash": "e44e144baebc3ad6" },
+      "provenance": {
+        "material": { "id": 55, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 596,
+          "name": "target-plate",
+          "uuid": "bf292531-cf6b-4014-86be-bf06762338a9"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 2007.4010550000003,
+      "settledMs": 2023.0007070000001,
+      "serviceMs": 15.598971999999776,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 40,
+      "programIdentity": "34e46b5f2ace23a4/4cb250e011db9ce6",
+      "pipelineIdentity": "native-render-42",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3352, "hash": "34e46b5f2ace23a4" },
+      "fragment": { "bytes": 56586, "hash": "4cb250e011db9ce6" },
+      "provenance": {
+        "material": { "id": 83, "type": "MeshStandardMaterial" },
+        "object": { "id": 489, "name": "van", "uuid": "b244bc48-e4a0-48fd-a7a4-75a1f15f62a4" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 2074.165607,
+      "settledMs": 2074.369356,
+      "serviceMs": 0.20226899999988746,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 41,
+      "programIdentity": "6543b005c36e3a0c/2a6cfbd2164435ae",
+      "pipelineIdentity": "native-render-43",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "6543b005c36e3a0c" },
+      "fragment": { "bytes": 73055, "hash": "2a6cfbd2164435ae" },
+      "provenance": {
+        "material": { "id": 62, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 221, "name": "quay-s", "uuid": "e2d429fd-6815-49e5-933a-5d51fa676949" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 2135.698148,
+      "settledMs": 2157.445994,
+      "serviceMs": 21.745915999999852,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 42,
+      "programIdentity": "a46d356765e808f3/9a61589d3ea059a8",
+      "pipelineIdentity": "native-render-44",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 2776, "hash": "a46d356765e808f3" },
+      "fragment": { "bytes": 53731, "hash": "9a61589d3ea059a8" },
+      "provenance": {
+        "material": { "id": 60, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 410,
+          "name": "roof-wire",
+          "uuid": "034ac2fa-df4c-4c00-9118-26f30b6ad8f5"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 2193.956297,
+      "settledMs": 2207.9279380000003,
+      "serviceMs": 13.971780999999737,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 43,
+      "programIdentity": "01bbeba321c7439b/91a6a544c41bfc46",
+      "pipelineIdentity": "native-render-45",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "01bbeba321c7439b" },
+      "fragment": { "bytes": 71438, "hash": "91a6a544c41bfc46" },
+      "provenance": {
+        "material": { "id": 49, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 445, "name": "crate", "uuid": "e4007be0-6442-4dce-952b-4f842f93f5d2" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 2292.253799,
+      "settledMs": 2311.5482500000003,
+      "serviceMs": 19.292191000000003,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 44,
+      "programIdentity": "6543b005c36e3a0c/33c4b239b5ca2028",
+      "pipelineIdentity": "native-render-46",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "6543b005c36e3a0c" },
+      "fragment": { "bytes": 73269, "hash": "33c4b239b5ca2028" },
+      "provenance": {
+        "material": { "id": 51, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 461, "name": "barrel", "uuid": "eabfe736-9914-494b-a183-42ecf7a94c5c" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 2370.540515,
+      "settledMs": 2392.265222,
+      "serviceMs": 21.722516999999698,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 45,
+      "programIdentity": "6543b005c36e3a0c/71aabb910f56d1ee",
+      "pipelineIdentity": "native-render-47",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "6543b005c36e3a0c" },
+      "fragment": { "bytes": 73305, "hash": "71aabb910f56d1ee" },
+      "provenance": {
+        "material": { "id": 37, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 264, "name": "building", "uuid": "a6176302-b37c-4af9-b1ef-47037aa43bc7" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 2443.826469,
+      "settledMs": 2465.376467,
+      "serviceMs": 21.547717999999804,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 46,
+      "programIdentity": "6543b005c36e3a0c/708042bd1051f776",
+      "pipelineIdentity": "native-render-48",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "6543b005c36e3a0c" },
+      "fragment": { "bytes": 73264, "hash": "708042bd1051f776" },
+      "provenance": {
+        "material": { "id": 44, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 505,
+          "name": "facade-solid",
+          "uuid": "88bc5c27-62b8-4130-9028-7f1fe6cbcddc"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 2516.1593390000003,
+      "settledMs": 2537.9588160000003,
+      "serviceMs": 21.79653700000017,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 47,
+      "programIdentity": "5dfab66a4585efe3/bfb8ae37998a23bc",
+      "pipelineIdentity": "native-render-49",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "5dfab66a4585efe3" },
+      "fragment": { "bytes": 74700, "hash": "bfb8ae37998a23bc" },
+      "provenance": {
+        "material": { "id": 64, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 213, "name": "plaza", "uuid": "34f54e6b-6d7a-4e7d-8718-5b5504b37faa" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 2594.469086,
+      "settledMs": 2614.9559090000002,
+      "serviceMs": 20.484933000000183,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 48,
+      "programIdentity": "bb90d01e4cc940a7/cdd623dca8bc8e25",
+      "pipelineIdentity": "native-render-50",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4678, "hash": "bb90d01e4cc940a7" },
+      "fragment": { "bytes": 56745, "hash": "cdd623dca8bc8e25" },
+      "provenance": {
+        "material": { "id": 73, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 469,
+          "name": "palm-frond",
+          "uuid": "d4600144-4d7f-46e6-bacf-847f7db4b9a6"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 2660.9174080000003,
+      "settledMs": 2677.482264,
+      "serviceMs": 16.564176000000316,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 49,
+      "programIdentity": "6543b005c36e3a0c/f2491ea435494fc9",
+      "pipelineIdentity": "native-render-51",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "6543b005c36e3a0c" },
+      "fragment": { "bytes": 73317, "hash": "f2491ea435494fc9" },
+      "provenance": {
+        "material": { "id": 43, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 502,
+          "name": "facade-solid",
+          "uuid": "b166c074-4b7a-4fe5-adc0-b587a214a333"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 2730.288414,
+      "settledMs": 2754.369118,
+      "serviceMs": 24.079803999999967,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 50,
+      "programIdentity": "c572f243f54f1d92/b5f7f5de8557d706",
+      "pipelineIdentity": "native-render-52",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4678, "hash": "c572f243f54f1d92" },
+      "fragment": { "bytes": 56649, "hash": "b5f7f5de8557d706" },
+      "provenance": {
+        "material": { "id": 75, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 479,
+          "name": "palm-dates",
+          "uuid": "eb82b50b-cb66-4d75-80b1-00fee6bd7678"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 2795.451825,
+      "settledMs": 2811.324925,
+      "serviceMs": 15.8740200000002,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 51,
+      "programIdentity": "a51eb2565b90b3da/cdd623dca8bc8e25",
+      "pipelineIdentity": "native-render-53",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4678, "hash": "a51eb2565b90b3da" },
+      "fragment": { "bytes": 56745, "hash": "cdd623dca8bc8e25" },
+      "provenance": {
+        "material": { "id": 73, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 477,
+          "name": "palm-frond",
+          "uuid": "56271991-2200-4ee0-a54e-8b2322d5ff52"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 2839.354406,
+      "settledMs": 2856.362649,
+      "serviceMs": 17.009052999999767,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 52,
+      "programIdentity": "d3429c4bbb1c52bb/cdd623dca8bc8e25",
+      "pipelineIdentity": "native-render-54",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4678, "hash": "d3429c4bbb1c52bb" },
+      "fragment": { "bytes": 56745, "hash": "cdd623dca8bc8e25" },
+      "provenance": {
+        "material": { "id": 74, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 470,
+          "name": "palm-frond-dead",
+          "uuid": "257401ca-0e7e-496b-aba9-2554aa453cea"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 2888.868235,
+      "settledMs": 2905.5336500000003,
+      "serviceMs": 16.665475000000242,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 53,
+      "programIdentity": "d2159dca3d4e4b96/cdd623dca8bc8e25",
+      "pipelineIdentity": "native-render-55",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4685, "hash": "d2159dca3d4e4b96" },
+      "fragment": { "bytes": 56745, "hash": "cdd623dca8bc8e25" },
+      "provenance": {
+        "material": { "id": 74, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 478,
+          "name": "palm-frond-dead",
+          "uuid": "c978ad15-0951-44c2-a2c9-956678a5a718"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 2936.7224530000003,
+      "settledMs": 2952.927062,
+      "serviceMs": 16.20276899999999,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 54,
+      "programIdentity": "b9318cbe6717df8c/b5f7f5de8557d706",
+      "pipelineIdentity": "native-render-56",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4685, "hash": "b9318cbe6717df8c" },
+      "fragment": { "bytes": 56649, "hash": "b5f7f5de8557d706" },
+      "provenance": {
+        "material": { "id": 72, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 468,
+          "name": "palm-trunk",
+          "uuid": "01991bbc-65d3-4d85-a5a8-172b57a33805"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 2980.018128,
+      "settledMs": 2995.627759,
+      "serviceMs": 15.609051000000363,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 55,
+      "programIdentity": "b4d27d161df80e3d/b5f7f5de8557d706",
+      "pipelineIdentity": "native-render-57",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4685, "hash": "b4d27d161df80e3d" },
+      "fragment": { "bytes": 56649, "hash": "b5f7f5de8557d706" },
+      "provenance": {
+        "material": { "id": 75, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 471,
+          "name": "palm-dates",
+          "uuid": "d7981ad2-5c61-4196-ab5f-1ed2f4e9c4be"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 3025.157382,
+      "settledMs": 3043.3827890000002,
+      "serviceMs": 18.224497000000156,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 56,
+      "programIdentity": "6543b005c36e3a0c/4402d68f679fc795",
+      "pipelineIdentity": "native-render-58",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "6543b005c36e3a0c" },
+      "fragment": { "bytes": 73317, "hash": "4402d68f679fc795" },
+      "provenance": {
+        "material": { "id": 42, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 504,
+          "name": "facade-solid",
+          "uuid": "7838d510-e926-4905-bce7-7bcbc2e0caaf"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 3095.115445,
+      "settledMs": 3119.0307900000003,
+      "serviceMs": 23.912674000000152,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 57,
+      "programIdentity": "e4d24344838a82b7/b5f7f5de8557d706",
+      "pipelineIdentity": "native-render-59",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4685, "hash": "e4d24344838a82b7" },
+      "fragment": { "bytes": 56649, "hash": "b5f7f5de8557d706" },
+      "provenance": {
+        "material": { "id": 72, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 476,
+          "name": "palm-trunk",
+          "uuid": "58b642c6-03db-4914-9085-425a5b0edc60"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 3149.612896,
+      "settledMs": 3167.403225,
+      "serviceMs": 17.788548999999875,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 58,
+      "programIdentity": "6543b005c36e3a0c/93575366220df286",
+      "pipelineIdentity": "native-render-60",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "6543b005c36e3a0c" },
+      "fragment": { "bytes": 73302, "hash": "93575366220df286" },
+      "provenance": {
+        "material": { "id": 40, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 511,
+          "name": "facade-trim",
+          "uuid": "04c5bcc5-0cef-48c5-949b-f58ac74beaac"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 3218.485575,
+      "settledMs": 3238.156414,
+      "serviceMs": 19.670168999999987,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 59,
+      "programIdentity": "6543b005c36e3a0c/6f511dcfa59822d3",
+      "pipelineIdentity": "native-render-61",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "6543b005c36e3a0c" },
+      "fragment": { "bytes": 73696, "hash": "6f511dcfa59822d3" },
+      "provenance": {
+        "material": { "id": 38, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 211, "name": "street", "uuid": "b3446453-395e-4ad0-b7ca-939fbd5cd411" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 3292.8287840000003,
+      "settledMs": 3313.129469,
+      "serviceMs": 20.299904000000424,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 60,
+      "programIdentity": "5dfab66a4585efe3/73906b0406ada9e1",
+      "pipelineIdentity": "native-render-62",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "5dfab66a4585efe3" },
+      "fragment": { "bytes": 74694, "hash": "73906b0406ada9e1" },
+      "provenance": {
+        "material": { "id": 65, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 214, "name": "plaza", "uuid": "cef56d18-2db4-4aa5-b819-010144e17106" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 3369.5109190000003,
+      "settledMs": 3392.381079,
+      "serviceMs": 22.868690000000242,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 61,
+      "programIdentity": "6543b005c36e3a0c/7d81d5fa3e98d8b8",
+      "pipelineIdentity": "native-render-63",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "6543b005c36e3a0c" },
+      "fragment": { "bytes": 73309, "hash": "7d81d5fa3e98d8b8" },
+      "provenance": {
+        "material": { "id": 39, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 515,
+          "name": "facade-trim",
+          "uuid": "a483ea2a-dc94-4824-9a20-f6431cb9d2e9"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 3446.3021830000002,
+      "settledMs": 3467.343694,
+      "serviceMs": 21.041911000000255,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 62,
+      "programIdentity": "64c6446cd67515fe/b5f7f5de8557d706",
+      "pipelineIdentity": "native-render-64",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4685, "hash": "64c6446cd67515fe" },
+      "fragment": { "bytes": 56649, "hash": "b5f7f5de8557d706" },
+      "provenance": {
+        "material": { "id": 72, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 472,
+          "name": "palm-trunk",
+          "uuid": "484abf48-182a-4afa-ad15-a624ab8a6c88"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 3499.351532,
+      "settledMs": 3515.914538,
+      "serviceMs": 16.56243600000016,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 63,
+      "programIdentity": "6a391767cff5d480/cdd623dca8bc8e25",
+      "pipelineIdentity": "native-render-65",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4685, "hash": "6a391767cff5d480" },
+      "fragment": { "bytes": 56745, "hash": "cdd623dca8bc8e25" },
+      "provenance": {
+        "material": { "id": 74, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 474,
+          "name": "palm-frond-dead",
+          "uuid": "15eca290-bbc7-41c5-a9d6-88616a217811"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 3550.191014,
+      "settledMs": 3566.6031510000003,
+      "serviceMs": 16.411666999999852,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 64,
+      "programIdentity": "ba74179ad7d65342/cdd623dca8bc8e25",
+      "pipelineIdentity": "native-render-66",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4685, "hash": "ba74179ad7d65342" },
+      "fragment": { "bytes": 56745, "hash": "cdd623dca8bc8e25" },
+      "provenance": {
+        "material": { "id": 73, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 473,
+          "name": "palm-frond",
+          "uuid": "70602158-2259-4509-80a2-2b1126736b8b"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 3594.729801,
+      "settledMs": 3612.2347320000003,
+      "serviceMs": 17.504030999999486,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 65,
+      "programIdentity": "991bd59faac5ff0f/b5f7f5de8557d706",
+      "pipelineIdentity": "native-render-67",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4685, "hash": "991bd59faac5ff0f" },
+      "fragment": { "bytes": 56649, "hash": "b5f7f5de8557d706" },
+      "provenance": {
+        "material": { "id": 75, "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 475,
+          "name": "palm-dates",
+          "uuid": "71a1c1c9-7789-4163-a092-06ba12dbdc50"
+        },
+        "unknown": false
+      },
+      "reasons": ["instancing"],
+      "startedMs": 3644.865217,
+      "settledMs": 3664.1088379999997,
+      "serviceMs": 19.242420999999922,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 66,
+      "programIdentity": "01bbeba321c7439b/bfaed54fb3f009ff",
+      "pipelineIdentity": "native-render-68",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "01bbeba321c7439b" },
+      "fragment": { "bytes": 71439, "hash": "bfaed54fb3f009ff" },
+      "provenance": {
+        "material": { "id": 50, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 327,
+          "name": "stair-step",
+          "uuid": "4ac6a9e4-4844-4cf9-9972-1a70ec05cf7f"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 3718.3484300000005,
+      "settledMs": 3740.5206840000005,
+      "serviceMs": 22.169033999999556,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 67,
+      "programIdentity": "92ade62c34b61264/ef1dbcaa5d9e6a87",
+      "pipelineIdentity": "native-render-69",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3619, "hash": "92ade62c34b61264" },
+      "fragment": { "bytes": 68784, "hash": "ef1dbcaa5d9e6a87" },
+      "provenance": {
+        "material": { "id": 50, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 229,
+          "name": "pier-post",
+          "uuid": "89593c75-a52a-4201-ba86-76294ad9f78d"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 3794.12213,
+      "settledMs": 3812.583636,
+      "serviceMs": 18.461205999999947,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 68,
+      "programIdentity": "01bbeba321c7439b/bfaed54fb3f009ff",
+      "pipelineIdentity": "native-render-70",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "01bbeba321c7439b" },
+      "fragment": { "bytes": 71439, "hash": "bfaed54fb3f009ff" },
+      "provenance": {
+        "material": { "id": 50, "type": "MeshStandardNodeMaterial" },
+        "object": { "id": 494, "name": "boat", "uuid": "a5fa87fd-0ebf-4d1a-a1aa-88b62117153c" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 3866.2399010000004,
+      "settledMs": 3866.4460700000004,
+      "serviceMs": 0.204689000000144,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 69,
+      "programIdentity": "34e46b5f2ace23a4/4c0c06e3811d8a63",
+      "pipelineIdentity": "native-render-71",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3352, "hash": "34e46b5f2ace23a4" },
+      "fragment": { "bytes": 56682, "hash": "4c0c06e3811d8a63" },
+      "provenance": {
+        "material": { "id": 86, "type": "MeshStandardMaterial" },
+        "object": { "id": 491, "name": "boat", "uuid": "9a510412-e0d3-431b-a7b5-c7ba0de0dda6" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 3910.6638399999997,
+      "settledMs": 3926.225481,
+      "serviceMs": 15.561421000000337,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 70,
+      "programIdentity": "6543b005c36e3a0c/acbb759ffcefdea8",
+      "pipelineIdentity": "native-render-72",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3743, "hash": "6543b005c36e3a0c" },
+      "fragment": { "bytes": 73306, "hash": "acbb759ffcefdea8" },
+      "provenance": {
+        "material": { "id": 41, "type": "MeshStandardNodeMaterial" },
+        "object": {
+          "id": 501,
+          "name": "facade-solid",
+          "uuid": "8d39ca67-4964-44a6-a7d1-b91246283197"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 3992.7233140000003,
+      "settledMs": 4014.66592,
+      "serviceMs": 21.94099600000027,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 71,
+      "programIdentity": "ea2fbf101b57e151/9f36ae3584004ecd",
+      "pipelineIdentity": "native-render-73",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 5517, "hash": "ea2fbf101b57e151" },
+      "fragment": { "bytes": 56201, "hash": "9f36ae3584004ecd" },
+      "provenance": {
+        "material": { "id": 27, "name": "arms", "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 187,
+          "name": "Object_10",
+          "uuid": "f50e2e85-5068-4568-8253-066c40984424"
+        },
+        "unknown": false
+      },
+      "reasons": ["skinning", "map", "normal-map"],
+      "startedMs": 4085.545068,
+      "settledMs": 4101.514517,
+      "serviceMs": 15.968778999999813,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 72,
+      "programIdentity": "cc91d38fdd439e72/ace19d05e58b56d2",
+      "pipelineIdentity": "native-render-74",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 5577, "hash": "cc91d38fdd439e72" },
+      "fragment": { "bytes": 56650, "hash": "ace19d05e58b56d2" },
+      "provenance": {
+        "material": { "id": 28, "name": "Rifle", "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 188,
+          "name": "Object_12",
+          "uuid": "ed84e13e-db97-49f4-ad2f-e27cec08bbfe"
+        },
+        "unknown": false
+      },
+      "reasons": ["skinning", "map", "normal-map", "roughness-map", "metalness-map"],
+      "startedMs": 4151.810762,
+      "settledMs": 4168.9315639999995,
+      "serviceMs": 17.11362200000076,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 73,
+      "programIdentity": "8c0fb8a87b9a8788/680ddcd5881c9f69",
+      "pipelineIdentity": "native-render-75",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 5525, "hash": "8c0fb8a87b9a8788" },
+      "fragment": { "bytes": 56194, "hash": "680ddcd5881c9f69" },
+      "provenance": {
+        "material": { "id": 29, "name": "Silencer", "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 189,
+          "name": "Object_13",
+          "uuid": "464e91a1-a5d9-468d-8638-782f69031816"
+        },
+        "unknown": false
+      },
+      "reasons": ["skinning", "map", "normal-map", "roughness-map", "metalness-map"],
+      "startedMs": 4226.05506,
+      "settledMs": 4241.605471999999,
+      "serviceMs": 15.549681999999848,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 74,
+      "programIdentity": "388c5b0455513ac8/1894772f5f5d6079",
+      "pipelineIdentity": "native-render-76",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4447, "hash": "388c5b0455513ac8" },
+      "fragment": { "bytes": 54405, "hash": "1894772f5f5d6079" },
+      "provenance": {
+        "material": { "id": 34, "name": "Exterior", "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 973,
+          "name": "Plane055-0",
+          "uuid": "688f26be-2282-47b3-8da7-2eead0629931"
+        },
+        "unknown": false
+      },
+      "reasons": ["skinning", "map"],
+      "startedMs": 4295.076279,
+      "settledMs": 4309.670945999999,
+      "serviceMs": 14.595107000000098,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 75,
+      "programIdentity": "2d791f6883946402/6d50833111e59c85",
+      "pipelineIdentity": "native-render-77",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4447, "hash": "2d791f6883946402" },
+      "fragment": { "bytes": 54381, "hash": "6d50833111e59c85" },
+      "provenance": {
+        "material": { "id": 34, "name": "Exterior", "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 973,
+          "name": "Plane055-0",
+          "uuid": "688f26be-2282-47b3-8da7-2eead0629931"
+        },
+        "unknown": false
+      },
+      "reasons": ["skinning", "map"],
+      "startedMs": 4350.380034999999,
+      "settledMs": 4365.886017,
+      "serviceMs": 15.504781999999977,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 76,
+      "programIdentity": "b4bc3b5071cbf89e/1894772f5f5d6079",
+      "pipelineIdentity": "native-render-78",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4447, "hash": "b4bc3b5071cbf89e" },
+      "fragment": { "bytes": 54405, "hash": "1894772f5f5d6079" },
+      "provenance": {
+        "material": { "id": 35, "name": "Interior", "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 974,
+          "name": "Plane055-0_1",
+          "uuid": "41091894-9e01-47db-b180-7437c83fdc08"
+        },
+        "unknown": false
+      },
+      "reasons": ["skinning", "map"],
+      "startedMs": 4427.465647999999,
+      "settledMs": 4442.92102,
+      "serviceMs": 15.455892000000858,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 77,
+      "programIdentity": "e5ef1674f57b5918/6d50833111e59c85",
+      "pipelineIdentity": "native-render-79",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4447, "hash": "e5ef1674f57b5918" },
+      "fragment": { "bytes": 54381, "hash": "6d50833111e59c85" },
+      "provenance": {
+        "material": { "id": 35, "name": "Interior", "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 974,
+          "name": "Plane055-0_1",
+          "uuid": "41091894-9e01-47db-b180-7437c83fdc08"
+        },
+        "unknown": false
+      },
+      "reasons": ["skinning", "map"],
+      "startedMs": 4468.528475,
+      "settledMs": 4483.5211899999995,
+      "serviceMs": 14.99161499999991,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 78,
+      "programIdentity": "758d96a520cb82ec/524955f60712b04c",
+      "pipelineIdentity": "native-render-80",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4339, "hash": "758d96a520cb82ec" },
+      "fragment": { "bytes": 54344, "hash": "524955f60712b04c" },
+      "provenance": {
+        "material": { "id": 24, "name": "tm_elite_head_variantE", "type": "MeshStandardMaterial" },
+        "object": { "id": 965, "name": "Object_7", "uuid": "eeb2dfd6-7077-45fd-b3cc-c17168e2aeb8" },
+        "unknown": false
+      },
+      "reasons": ["skinning", "map"],
+      "startedMs": 4529.7815279999995,
+      "settledMs": 4546.237634,
+      "serviceMs": 16.45590599999923,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 79,
+      "programIdentity": "0331eaf76e48fccf/4848537d0c7916a8",
+      "pipelineIdentity": "native-render-81",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4339, "hash": "0331eaf76e48fccf" },
+      "fragment": { "bytes": 54320, "hash": "4848537d0c7916a8" },
+      "provenance": {
+        "material": { "id": 24, "name": "tm_elite_head_variantE", "type": "MeshStandardMaterial" },
+        "object": { "id": 965, "name": "Object_7", "uuid": "eeb2dfd6-7077-45fd-b3cc-c17168e2aeb8" },
+        "unknown": false
+      },
+      "reasons": ["skinning", "map"],
+      "startedMs": 4581.396124999999,
+      "settledMs": 4596.564429,
+      "serviceMs": 15.167374000000564,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 80,
+      "programIdentity": "b2759a9d8cb094e0/b24a9fe346931ce4",
+      "pipelineIdentity": "native-render-82",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4204, "hash": "b2759a9d8cb094e0" },
+      "fragment": { "bytes": 53960, "hash": "b24a9fe346931ce4" },
+      "provenance": {
+        "material": { "id": 19, "name": "Osiris", "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 968,
+          "name": "Object_10",
+          "uuid": "b003783d-27ef-4efb-94fd-062cbfb6c9b7"
+        },
+        "unknown": false
+      },
+      "reasons": ["skinning"],
+      "startedMs": 4648.230836,
+      "settledMs": 4663.021092,
+      "serviceMs": 14.789765999999872,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 81,
+      "programIdentity": "32b4fe618696ae9c/671f4f2a3c915f4c",
+      "pipelineIdentity": "native-render-83",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 4204, "hash": "32b4fe618696ae9c" },
+      "fragment": { "bytes": 53936, "hash": "671f4f2a3c915f4c" },
+      "provenance": {
+        "material": { "id": 19, "name": "Osiris", "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 968,
+          "name": "Object_10",
+          "uuid": "b003783d-27ef-4efb-94fd-062cbfb6c9b7"
+        },
+        "unknown": false
+      },
+      "reasons": ["skinning"],
+      "startedMs": 4701.609543,
+      "settledMs": 4717.109085,
+      "serviceMs": 15.496071999999913,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 82,
+      "programIdentity": "419de84ac565e160/08b5e86a917df76b",
+      "pipelineIdentity": "native-render-84",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3091, "hash": "419de84ac565e160" },
+      "fragment": { "bytes": 53866, "hash": "08b5e86a917df76b" },
+      "provenance": {
+        "material": { "id": 140, "type": "MeshStandardMaterial" },
+        "object": { "id": 1077, "uuid": "436212bb-917e-4ac4-badc-63221c28e5e8" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 4764.262637999999,
+      "settledMs": 4781.044271999999,
+      "serviceMs": 16.780163999999786,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 83,
+      "programIdentity": "5ffcaaf19c9d4b39/7c3eb38d8a3b6c78",
+      "pipelineIdentity": "native-render-85",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1838, "hash": "5ffcaaf19c9d4b39" },
+      "fragment": { "bytes": 3686, "hash": "7c3eb38d8a3b6c78" },
+      "provenance": {
+        "material": { "id": 512, "type": "MeshBasicMaterial" },
+        "object": { "id": 1454, "uuid": "845268f0-00c5-4afe-80b3-89ced21f3ed9" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 4793.130093999999,
+      "settledMs": 4796.1212669999995,
+      "serviceMs": 2.990233000000444,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 84,
+      "programIdentity": "1f278372a827df2d/df4763adc0ca95c2",
+      "pipelineIdentity": "native-render-86",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1972, "hash": "1f278372a827df2d" },
+      "fragment": { "bytes": 4469, "hash": "df4763adc0ca95c2" },
+      "provenance": {
+        "material": { "id": 549, "type": "MeshBasicMaterial" },
+        "object": { "id": 1503, "uuid": "2b09abab-3cb3-45a6-9db6-bd035edf180a" },
+        "unknown": false
+      },
+      "reasons": ["map"],
+      "startedMs": 4806.822695999999,
+      "settledMs": 4809.968008,
+      "serviceMs": 3.143981999999596,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 85,
+      "programIdentity": "419de84ac565e160/08b5e86a917df76b",
+      "pipelineIdentity": "native-render-87",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3091, "hash": "419de84ac565e160" },
+      "fragment": { "bytes": 53866, "hash": "08b5e86a917df76b" },
+      "provenance": {
+        "material": { "id": 54, "type": "MeshStandardMaterial" },
+        "object": { "id": 399, "uuid": "bfcdeeed-a6f0-4ad8-8625-65968d479688" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 4839.943937999999,
+      "settledMs": 4840.150036999999,
+      "serviceMs": 0.20469899999989138,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 86,
+      "programIdentity": "34e46b5f2ace23a4/f5660d8a2e50d5f6",
+      "pipelineIdentity": "native-render-88",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 3352, "hash": "34e46b5f2ace23a4" },
+      "fragment": { "bytes": 56563, "hash": "f5660d8a2e50d5f6" },
+      "provenance": {
+        "material": { "id": 54, "type": "MeshStandardMaterial" },
+        "object": { "id": 396, "uuid": "97919230-b810-469f-b3ed-8a362a3b683c" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 4880.982145,
+      "settledMs": 4898.584575999999,
+      "serviceMs": 17.6021810000002,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 87,
+      "programIdentity": "f99deabf652da0dc/a3d5056479c7ae2b",
+      "pipelineIdentity": "native-render-89",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 5473, "hash": "f99deabf652da0dc" },
+      "fragment": { "bytes": 56392, "hash": "a3d5056479c7ae2b" },
+      "provenance": {
+        "material": { "id": 30, "name": "Scope", "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 190,
+          "name": "Object_14",
+          "uuid": "641b3d8b-95d5-4f57-8844-5db8a501433d"
+        },
+        "unknown": false
+      },
+      "reasons": ["skinning", "map", "normal-map", "roughness-map", "metalness-map"],
+      "startedMs": 4951.665174999999,
+      "settledMs": 4968.928027,
+      "serviceMs": 17.26176200000009,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 88,
+      "programIdentity": "a8d60c05689b258d/c8789ffe48e98d43",
+      "pipelineIdentity": "native-render-90",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 5425, "hash": "a8d60c05689b258d" },
+      "fragment": { "bytes": 56320, "hash": "c8789ffe48e98d43" },
+      "provenance": {
+        "material": { "id": 30, "name": "Scope", "type": "MeshStandardMaterial" },
+        "object": {
+          "id": 190,
+          "name": "Object_14",
+          "uuid": "641b3d8b-95d5-4f57-8844-5db8a501433d"
+        },
+        "unknown": false
+      },
+      "reasons": ["skinning", "map", "normal-map", "roughness-map", "metalness-map"],
+      "startedMs": 5010.226933,
+      "settledMs": 5026.993807,
+      "serviceMs": 16.76639399999931,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 89,
+      "programIdentity": "1f278372a827df2d/91c7708777af3186",
+      "pipelineIdentity": "native-render-91",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1972, "hash": "1f278372a827df2d" },
+      "fragment": { "bytes": 4493, "hash": "91c7708777af3186" },
+      "provenance": {
+        "material": { "id": 284, "type": "MeshBasicMaterial" },
+        "object": { "id": 1230, "uuid": "0e5903f8-e48a-4808-a75c-98c3892cd78e" },
+        "unknown": false
+      },
+      "reasons": ["map"],
+      "startedMs": 5034.5458149999995,
+      "settledMs": 5038.066664,
+      "serviceMs": 3.5216090000003533,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 90,
+      "programIdentity": "5ffcaaf19c9d4b39/7c3eb38d8a3b6c78",
+      "pipelineIdentity": "native-render-92",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1838, "hash": "5ffcaaf19c9d4b39" },
+      "fragment": { "bytes": 3686, "hash": "7c3eb38d8a3b6c78" },
+      "provenance": {
+        "material": { "id": 227, "type": "MeshBasicMaterial" },
+        "object": { "id": 1174, "uuid": "7ec87440-ce1f-4dd2-94e6-97d8483f41ae" },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 5132.054552,
+      "settledMs": 5135.318573,
+      "serviceMs": 3.262431000000106,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 91,
+      "programIdentity": "1f278372a827df2d/df4763adc0ca95c2",
+      "pipelineIdentity": "native-render-93",
+      "kind": "render",
+      "pass": "main-clipped",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1972, "hash": "1f278372a827df2d" },
+      "fragment": { "bytes": 4469, "hash": "df4763adc0ca95c2" },
+      "provenance": {
+        "material": { "id": 187, "type": "MeshBasicMaterial" },
+        "object": { "id": 1134, "uuid": "1441d4ab-5df8-4798-8e98-7254ab08dd9a" },
+        "unknown": false
+      },
+      "reasons": ["map"],
+      "startedMs": 5138.261226,
+      "settledMs": 5141.912646,
+      "serviceMs": 3.650510000000395,
+      "beforeFirstPresent": false
+    },
+    {
+      "sequence": 92,
+      "programIdentity": "256417c25481a203/a84986a61ceffb17",
+      "pipelineIdentity": "native-render-94",
+      "kind": "render",
+      "pass": "output",
+      "mode": "sync",
+      "status": "created",
+      "vertex": { "bytes": 1320, "hash": "256417c25481a203" },
+      "fragment": { "bytes": 2546, "hash": "a84986a61ceffb17" },
+      "provenance": {
+        "material": { "id": 16, "name": "outputColorTransform", "type": "NodeMaterial" },
+        "object": {
+          "id": 21,
+          "name": "Output Color Transform",
+          "uuid": "bd75c9cc-e6da-4cc6-beaf-3d9509cb91d7"
+        },
+        "unknown": false
+      },
+      "reasons": ["unknown-structural-difference"],
+      "startedMs": 5171.965185,
+      "settledMs": 5174.469061,
+      "serviceMs": 2.503185999999914,
+      "beforeFirstPresent": false
+    }
+  ],
+  "incompleteReasons": []
+}

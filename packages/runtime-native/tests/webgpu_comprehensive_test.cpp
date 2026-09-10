@@ -11,7 +11,10 @@
 
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <sstream>
+#include <string>
 #include <thread>
 
 namespace {
@@ -793,9 +796,152 @@ constexpr const char* kDirectQueueScript = R"JS((async () => {
   globalThis.__tnDirectQueueDone = true;
 })())JS";
 
+// One more synchronous compile, so the checkpoint contract is proved against event lines that
+// arrive between two checkpoints rather than against a stream nothing is adding to.
+constexpr const char* kCheckpointCompileScript = R"JS(
+  const module = __device.createShaderModule({
+    code: "@compute @workgroup_size(1) fn main() {}",
+    label: "checkpointModule",
+  });
+  const layout = __device.createPipelineLayout({ bindGroupLayouts: [] });
+  globalThis.__tnCheckpointPipeline = __device.createComputePipeline({
+    layout,
+    compute: { module, entryPoint: "main" },
+  });
+)JS";
+
+/** Reads one flat unsigned field out of a marker payload; these markers write no nested numbers. */
+bool readMarkerField(const std::string& line, const char* key, uint64_t& value) {
+    const std::string needle = std::string("\"") + key + "\":";
+    const size_t at = line.find(needle);
+    if (at == std::string::npos) return false;
+    value = std::strtoull(line.c_str() + at + needle.size(), nullptr, 10);
+    return true;
+}
+
+size_t countMarkers(const std::string& text, const std::string& marker) {
+    size_t count = 0;
+    for (size_t at = text.find(marker); at != std::string::npos; at = text.find(marker, at + 1))
+        count += 1;
+    return count;
+}
+
+struct PipelineCheckpoint {
+    uint64_t present = 0;
+    uint64_t requested = 0;
+    uint64_t emitted = 0;
+    uint64_t outstanding = 0;
+};
+
+bool parseCheckpoint(const std::string& text, PipelineCheckpoint& checkpoint) {
+    const size_t at = text.find("TN_PIPELINE_CHECKPOINT:");
+    if (at == std::string::npos) return false;
+    const std::string line = text.substr(at, text.find('\n', at) - at);
+    return readMarkerField(line, "present", checkpoint.present) &&
+           readMarkerField(line, "requested", checkpoint.requested) &&
+           readMarkerField(line, "emitted", checkpoint.emitted) &&
+           readMarkerField(line, "outstanding", checkpoint.outstanding);
+}
+
+/**
+ * The live capture boundary, proved on a real device without ending the process.
+ *
+ * The Android runner ends a run with `am force-stop`, so the finalizer's `TN_PIPELINE_COMPLETE`
+ * never prints; a checkpoint is only worth reading in its place if its counts are kept apart, if
+ * its line lands after every event line it claims, and if a frame that compiled nothing stays
+ * silent. Nothing below kills the compile pool, and the runtime is left running afterwards.
+ */
+bool checkLivePipelineCheckpoint(mystral::Runtime& runtime, mystral::webgpu::BindingsState* state) {
+    std::ostringstream captured;
+    std::streambuf* const previous = std::cout.rdbuf(captured.rdbuf());
+    // Read beside the checkpoint, never after the compile below: this run keeps handing out
+    // request ids, and comparing a snapshot against a later reading measures the gap, not the count.
+    const uint64_t requestedAtFirst = state->asyncPipelines.nextRequestId - 1;
+    mystral::webgpu::reportPipelineCheckpoint(state, 1);
+    const std::string firstText = captured.str();
+    captured.str("");
+    // A second present that changed nothing: a checkpoint per frame would bury the log it rides in.
+    mystral::webgpu::reportPipelineCheckpoint(state, 2);
+    const std::string unchangedText = captured.str();
+    captured.str("");
+    const bool compiled = runtime.evalScript(kCheckpointCompileScript, "checkpoint_compile.js");
+    mystral::webgpu::reportPipelineCheckpoint(state, 3);
+    const std::string secondText = captured.str();
+    std::cout.rdbuf(previous);
+
+    PipelineCheckpoint first;
+    PipelineCheckpoint second;
+    if (!parseCheckpoint(firstText, first)) {
+        std::cerr << "no live pipeline checkpoint after a present: " << firstText << '\n';
+        return false;
+    }
+    if (first.present != 1 || first.emitted == 0) {
+        std::cerr << "live checkpoint reported present=" << first.present
+                  << " emitted=" << first.emitted << ", expected the presenting frame and the "
+                  << "events this run already wrote\n";
+        return false;
+    }
+    // The three counts are maintained separately; a checkpoint is only evidence while they add up.
+    if (first.requested != first.emitted + first.outstanding ||
+        first.requested != requestedAtFirst) {
+        std::cerr << "live checkpoint counts disagree: requested=" << first.requested
+                  << " emitted=" << first.emitted << " outstanding=" << first.outstanding
+                  << " requestedAtFirst=" << requestedAtFirst << '\n';
+        return false;
+    }
+    if (!unchangedText.empty()) {
+        std::cerr << "a present that compiled nothing printed a checkpoint: " << unchangedText << '\n';
+        return false;
+    }
+    if (!compiled) {
+        std::cerr << "checkpoint compile script did not run\n";
+        return false;
+    }
+    if (!parseCheckpoint(secondText, second)) {
+        std::cerr << "no checkpoint after a present that compiled: " << secondText << '\n';
+        return false;
+    }
+    const size_t events = countMarkers(secondText, "TN_PIPELINE_EVENT:");
+    if (events == 0 || second.emitted != first.emitted + events) {
+        std::cerr << "checkpoint emitted " << second.emitted << " against " << first.emitted
+                  << " plus " << events << " event line(s) written since\n";
+        return false;
+    }
+    if (second.requested != second.emitted + second.outstanding) {
+        std::cerr << "second live checkpoint counts disagree: requested=" << second.requested
+                  << " emitted=" << second.emitted << " outstanding=" << second.outstanding << '\n';
+        return false;
+    }
+    // Every line the checkpoint counts must already be on the stream, or a reader that trusts the
+    // count reads a capture that is still being written.
+    if (secondText.rfind("TN_PIPELINE_EVENT:") > secondText.find("TN_PIPELINE_CHECKPOINT:")) {
+        std::cerr << "a checkpoint preceded an event line it counts: " << secondText << '\n';
+        return false;
+    }
+    if (countMarkers(secondText, "TN_PIPELINE_COMPLETE:") != 0) {
+        std::cerr << "a live checkpoint printed a completion marker: " << secondText << '\n';
+        return false;
+    }
+    return true;
+}
+
 }  // namespace
 
 int main() {
+    // These UTF-8 FNV-1a vectors also pass through the core census in pipeline-census.spec.ts.
+    // A host using a different offset cannot reconcile its timings with material provenance.
+    for (const auto& [source, expected] : {
+             std::pair{"", "cbf29ce484222325"},
+             std::pair{"hello", "a430d84680aabd0b"},
+             std::pair{"hello \xf0\x9f\x8c\x8d", "0e21106f2f89a3cf"},
+         }) {
+        const auto observed = mystral::webgpu::pipelineSourceHash(source);
+        if (observed != expected) {
+            std::cerr << "pipeline source hash mismatch: expected " << expected
+                      << ", observed " << observed << '\n';
+            return 1;
+        }
+    }
     mystral::RuntimeConfig config;
     config.width = 128;
     config.height = 128;
@@ -880,6 +1026,7 @@ int main() {
             std::cerr << "webgpu comprehensive script did not expose its device\n";
             return 1;
         }
+        if (!checkLivePipelineCheckpoint(*runtime, state)) return 1;
         auto nativeEncoder = mystral::webgpu::handleGpuDeviceCreateCommandEncoder(state, deviceHandle, {});
         if (!nativeEncoder.ptr || engine->isUndefined(nativeEncoder) ||
             !engine->setGlobalProperty("__nativeEncoder", nativeEncoder)) {
