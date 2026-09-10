@@ -123,10 +123,61 @@ function toolText(result: Record<string, unknown>): Record<string, unknown> {
  * CI runner rather than the server: `tools/call` runs whatever the tool does — `creature_compile`
  * builds a mesh and writes a GLB — and even `initialize` waits behind a cold Node start. Both have
  * been observed over the old ceiling, `tools/call` at 5,802 ms on CI and `initialize` on a loaded
- * desktop, which is a red that says nothing about the scaffold's MCP wiring. Vitest's own test
- * timeout still bounds the file; this one only has to fire before a hang becomes a silent pass.
+ * desktop, which is a red that says nothing about the scaffold's MCP wiring.
+ *
+ * It sits under the tightest enclosing `it` budget in this file (30 s), because a ceiling above
+ * that one can never fire: vitest would end the test first and report `Test timed out` against the
+ * `it`, naming neither the method nor the server. A ceiling that cannot fire is not a guard.
  */
-const MCP_REPLY_CEILING_MS = 60_000;
+const MCP_REPLY_CEILING_MS = 15_000;
+
+/**
+ * Why a dead server must not wait out that ceiling.
+ *
+ * These tests exist to catch a broken shim, and a shim that crashes on startup answers nothing —
+ * so a timer alone turns the packaging break they hunt into a slow, contentless timeout that
+ * discards the stack trace explaining it. Worse, `stdio: "pipe"` with no stderr reader deadlocks
+ * the child once that pipe fills, which is a hang invented by the harness.
+ *
+ * `scripts/verify-golden-path.ts` already drives this protocol correctly; this is the same shape,
+ * kept local because the two speak to different servers. If a third caller appears, extract it.
+ */
+interface IMcpLiveness {
+  readonly pending: Set<(error: Error) => void>;
+  stderr: string;
+  terminal?: Error;
+}
+
+const mcpLiveness = new WeakMap<ChildProcessWithoutNullStreams, IMcpLiveness>();
+
+function watchMcpChild(child: ChildProcessWithoutNullStreams): IMcpLiveness {
+  const existing = mcpLiveness.get(child);
+  if (existing !== undefined) return existing;
+  const state: IMcpLiveness = { pending: new Set(), stderr: "" };
+  mcpLiveness.set(child, state);
+  const failPending = (error: Error): void => {
+    state.terminal = error;
+    for (const reject of [...state.pending]) reject(error);
+    state.pending.clear();
+  };
+  child.stderr.on("data", (chunk: Buffer | string) => {
+    state.stderr += chunk.toString();
+  });
+  child.once("error", (error: unknown) => {
+    failPending(error instanceof Error ? error : new Error(String(error)));
+  });
+  child.once("exit", (code, signal) => {
+    const detail = state.stderr.trim().slice(-500);
+    failPending(
+      new Error(
+        `MCP server exited before answering (${code ?? `signal ${signal ?? "unknown"}`})${
+          detail.length > 0 ? `: ${detail}` : ""
+        }`,
+      ),
+    );
+  });
+  return state;
+}
 
 async function request(
   child: ChildProcessWithoutNullStreams,
@@ -136,11 +187,26 @@ async function request(
   params: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
   const id = nextId.value++;
+  const liveness = watchMcpChild(child);
+  if (liveness.terminal !== undefined) throw liveness.terminal;
   const response = new Promise<Record<string, unknown>>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`MCP ${method} timed out after ${MCP_REPLY_CEILING_MS} ms`)),
-      MCP_REPLY_CEILING_MS,
-    );
+    const fail = (error: Error): void => {
+      clearTimeout(timer);
+      liveness.pending.delete(fail);
+      lines.off("line", onLine);
+      reject(error);
+    };
+    const timer = setTimeout(() => {
+      const detail = liveness.stderr.trim().slice(-500);
+      fail(
+        new Error(
+          `MCP ${method} timed out after ${MCP_REPLY_CEILING_MS} ms${
+            detail.length > 0 ? `; server stderr: ${detail}` : ""
+          }`,
+        ),
+      );
+    }, MCP_REPLY_CEILING_MS);
+    liveness.pending.add(fail);
     const onLine = (line: string) => {
       let parsed: unknown;
       try {
@@ -152,6 +218,7 @@ async function request(
       const record = parsed as Record<string, unknown>;
       if (record.id !== id) return;
       clearTimeout(timer);
+      liveness.pending.delete(fail);
       lines.off("line", onLine);
       if (record.error !== undefined) reject(new Error(JSON.stringify(record.error)));
       else resolve((record.result ?? {}) as Record<string, unknown>);
