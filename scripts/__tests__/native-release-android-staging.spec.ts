@@ -15,7 +15,7 @@ const workflow = readFileSync(join(root, ".github/workflows/native-release.yml")
 // Asserting the literal matches the packager would only detect the next drift. Requiring the name
 // to be *derived* removes the failure mode instead, so this checks the derivation, that it
 // resolves to a real version, and that download-deps.mjs builds its URL from the same constant.
-test("native release stages the SDL3 Android AAR version owned by the packager", async () => {
+test("native release stages the SDL3 Android AAR version owned by the packager", () => {
   const staging = workflow.match(
     /- name: Stage Android runtime payloads\n[\s\S]*?\n\x20{10}NODE\n/u,
   )?.[0];
@@ -33,10 +33,15 @@ test("native release stages the SDL3 Android AAR version owned by the packager",
     "the AAR filename must derive from SDL3_ANDROID_VERSION, never a literal version",
   );
 
-  const { SDL3_ANDROID_VERSION } = (await import(
-    "../../packages/runtime-native/scripts/package-android.mjs"
-  )) as { SDL3_ANDROID_VERSION: string };
-  assert.match(SDL3_ANDROID_VERSION, /^\d+\.\d+\.\d+$/u);
+  // Read rather than import: package-android.mjs is plain JavaScript with no declaration file, so
+  // importing it is an implicit `any` under this project's noImplicitAny (TS7016).
+  const androidPackager = readFileSync(
+    join(root, "packages/runtime-native/scripts/package-android.mjs"),
+    "utf8",
+  );
+  const version = androidPackager.match(/export const SDL3_ANDROID_VERSION = '([^']+)'/u)?.[1];
+  assert.ok(version, "package-android.mjs must declare SDL3_ANDROID_VERSION");
+  assert.match(version, /^\d+\.\d+\.\d+$/u);
 
   const deps = readFileSync(
     join(root, "packages/runtime-native/scripts/download-deps.mjs"),
