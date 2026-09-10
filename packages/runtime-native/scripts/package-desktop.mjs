@@ -72,7 +72,10 @@ export function parseArgs(args) {
     }
     options[flag.slice(2)] = resolve(value);
   }
-  for (const required of ['bundle', 'output', 'runtime']) {
+  // `--runtime` is optional: a consumer build with no `--runtime` installs the verified
+  // prebuilt from the release manifest via resolveDesktopRuntime. A maintainer build passes
+  // the checkout-built binary explicitly.
+  for (const required of ['bundle', 'output']) {
     if (!options[required]) throw new Error(`Missing --${required}.`);
   }
   return options;
@@ -94,16 +97,9 @@ export function packageDesktop(options) {
     }
     return compileDesktopArtifact(options, options.runtime);
   }
-  const sourceOverride = options.runtimeSource ?? process.env.THREENATIVE_RUNTIME_SOURCE;
-  const runtimePromise = sourceOverride
-    ? Promise.reject(
-      new Error(
-        `Desktop source-checkout preflight is set (THREENATIVE_RUNTIME_SOURCE=${sourceOverride}) but no --runtime was provided. ` +
-          'Pass the checkout-built --runtime explicitly for a maintainer build; consumer builds unset the override and install from the release manifest.',
-      ),
-    )
-    : installPrebuilt({});
-  return runtimePromise.then((runtime) => compileDesktopArtifact(options, runtime));
+  return resolveDesktopRuntime(undefined, { runtimeSource: options.runtimeSource }).then((runtime) =>
+    compileDesktopArtifact(options, runtime),
+  );
 }
 
 function compileDesktopArtifact(options, runtime) {

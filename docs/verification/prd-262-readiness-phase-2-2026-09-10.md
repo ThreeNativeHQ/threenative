@@ -8,13 +8,15 @@ PRD: [matching public native runtime artifacts](../PRDs/production-readiness/PRD
 
 ## Scope and wiring
 
-Engine distribution layer, not game code. Five files in this phase: the existing release
-workflow, both packagers, the distribution suite, and this record.
+Engine distribution layer, not game code. Six files in this phase: the existing release
+workflow, both packagers, the distribution suite, the coverage digest restamp (mechanically
+required — the digest hashes every file under `packages/runtime-native/tests/`), and this
+record. The restamp changes one hex line; no measured coverage or floor moved.
 
 | Existing caller | Change and retained contract |
 | --- | --- |
-| `packages/runtime-native/scripts/package-desktop.mjs:resolveDesktopRuntime` | NEW resolver: explicit `--runtime` keeps the original sync path byte-for-byte; a missing `--runtime` installs from the release manifest via Phase 1 `installPrebuilt`; a set `THREENATIVE_RUNTIME_SOURCE` with no `--runtime` fails naming the override and its fix. The variable stays the decoder-preflight source only — it never selects the runtime binary. |
-| `packages/runtime-native/scripts/package-android.mjs:packageAndroid` | NEW source-checkout guard before the wrapper/manifest checks: a resolved checkout without `{ allowSourceBuild: true }` fails naming the checkout and the opt-in. The existing `THREENATIVE_RUNTIME_SOURCE` maintainer test still passes (env var remains reachable); the guard only fires when the resolved root actually is a checkout. |
+| `packages/runtime-native/scripts/package-desktop.mjs:resolveDesktopRuntime` | NEW resolver, WIRED: explicit `--runtime` keeps the original sync path; a missing `--runtime` installs from the release manifest via Phase 1 `installPrebuilt`; a set `THREENATIVE_RUNTIME_SOURCE` with no `--runtime` fails naming the override and its fix. `parseArgs` no longer requires `--runtime`, and `packageDesktop` delegates the missing-runtime branch to the resolver (review finding 2 fixed). The variable stays the decoder-preflight source only — it never selects the runtime binary. |
+| `packages/runtime-native/scripts/package-android.mjs:packageAndroid` | NEW source-checkout guard before the wrapper/manifest checks: a resolved checkout without `{ allowSourceBuild: true }` fails naming the checkout and the opt-in. CLI gains `--allow-source-build` spelling the opt-in (review finding 3 fixed). The existing `THREENATIVE_RUNTIME_SOURCE` maintainer test still passes; the guard only fires when the resolved root actually is a checkout. |
 | `.github/workflows/native-release.yml:clean-consumer` | Consumer job now asserts provenance: `install-status.json.ok === true` after install, no `CMakeLists.txt` in the consumer install before the Android build, and the toolchain log still absent after each build. Masking, SDK exposure, desktop launch, and emulator steps unchanged. |
 | `packages/runtime-native/tests/distribution.test.mjs` | Four new consumer-gate tests (see below). All 32 pre-existing tests untouched and green. |
 | `docs/verification/native-coverage-2026-08-28.md` | Source digest restamped (`e3325bf1…`), same method as PR #169's `988feab13`: the digest hashes every file under `packages/runtime-native/tests/`, so new Node tests invalidate it. No measured coverage changed; no floors moved. |
@@ -71,7 +73,11 @@ Test Files 4 passed (4); Tests 62 passed (62)   # + ios-packaging
   URL/status/hash verification, and registry-installed (non-workspace) consumer proof:
   not executed. Fixture payloads are synthetic (`payload:<key>`); no public acceptance
   credit is claimed.
-- Independent Phase 2 review decision: **PENDING**. No self-awarded PASS.
+- Independent Phase 2 review decision: first round returned **NEEDS CORRECTION**
+  (dead-code resolver, missing android CLI opt-in, six-vs-five file budget). All three
+  were fixed: resolver wired through `parseArgs` + `packageDesktop`, `--allow-source-build`
+  added, record counts six files. Re-review of the fixes: **PENDING**.
+  No self-awarded PASS.
 
 ## Review checkpoint and remaining work
 

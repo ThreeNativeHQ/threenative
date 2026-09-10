@@ -750,13 +750,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const orientationIndex = process.argv.indexOf('--orientation');
   const configIndex = process.argv.indexOf('--config');
   const uiIndex = process.argv.indexOf('--ui');
+  const allowSourceBuild = process.argv.includes('--allow-source-build');
   if (
     bundleIndex === -1 ||
     !process.argv[bundleIndex + 1] ||
     process.argv[bundleIndex + 1].startsWith('--')
   ) {
     console.error(
-      'Usage: package-android.mjs --bundle FILE [--output FILE] [--assets DIR] [--ui DIR] [--orientation landscape|portrait|sensor] [--config FILE]',
+      'Usage: package-android.mjs --bundle FILE [--output FILE] [--assets DIR] [--ui DIR] [--orientation landscape|portrait|sensor] [--config FILE] [--allow-source-build]',
     );
     process.exitCode = 1;
   } else if (
@@ -795,7 +796,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         assetsIndex === -1 ? undefined : resolve(process.argv[assetsIndex + 1]),
         orientationIndex === -1 ? undefined : process.argv[orientationIndex + 1],
         readAndroidConfig(configPath),
-        uiIndex === -1 ? {} : { ui: resolve(process.argv[uiIndex + 1]) },
+        {
+          ...(uiIndex === -1 ? {} : { ui: resolve(process.argv[uiIndex + 1]) }),
+          // Maintainer route for source-checkout builds: the guard requires an
+          // explicit opt-in, and this flag is its CLI spelling.
+          ...(allowSourceBuild ? { allowSourceBuild: true } : {}),
+        },
       );
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error));
