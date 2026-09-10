@@ -48,9 +48,23 @@ preference; it is the difference between the two outcomes.
    are matching — palette, light direction, silhouette scale, camera height and angle, prop
    density. You cannot match what you have not described.
 
-4. **Build the game**, then loop until it matches: run `pnpm dev` from `../sandbox/<name>`,
-   drive it in the browser, screenshot, compare against the reference, fix the largest
-   visual gap, repeat.
+4. **Lock the reference and use the generated Dream Loop workflow.** Copy the supplied image
+   into one immutable `.dream-loop/<run-id>/target.png`, hash it in `run.json`, and read
+   `agent-docs/dream-loop.md`. Run the existing capture/playtest and performance recipes, give
+   the target and fresh gameplay frame to an independent verifier, then invoke:
+
+   ```sh
+   node scripts/visual-loop.mjs --record .dream-loop/<run-id>/run.json
+   ```
+
+   The validator owns stale-hash, functional-assertion, critic, performance, round, and stop
+   decisions. Do not maintain a second prose-only loop or replace the sealed target to improve
+   a score.
+
+5. **Build the game**, then follow the validator's decision: run `pnpm dev` from
+   `../sandbox/<name>`, drive it in the browser, capture the real frame, fix the largest named
+   visual gap, and record the next round. A supplied target needs no image-service credential;
+   target generation is opt-in through `node scripts/reference.mjs` only.
 
    **Commit and push after every working increment.** The sandbox is a git repository of its
    own — `ThreeNativeHQ/examples`, public, one folder per sample game. Commit when the
@@ -67,7 +81,7 @@ preference; it is the difference between the two outcomes.
    `.gitignore` already excludes them. Do commit your screenshots — they are the record of
    the visual loop.
 
-5. **Archive and measure** the completed build from the repo root:
+6. **Archive and measure** the completed build from the repo root:
 
    ```sh
    pnpm sweep:archive ../sandbox/<name>
@@ -77,7 +91,7 @@ preference; it is the difference between the two outcomes.
    Copy the JSON result into a dated `docs/verification/sweep-<genre>-<date>.md` ledger,
    including every framework API that blocked the build and the workaround used.
 
-6. **Report the visual result**: at which tool call you first wrote game code, whether the
+7. **Report the visual result**: at which tool call you first wrote game code, whether the
    result matches, and the committed ledger path. The comparison and the friction record
    are the point of the exercise.
 

@@ -364,6 +364,14 @@ async function renderTemplate(
 const REFERENCE_BUNDLE_DIRECTORY = "agent-docs";
 const REFERENCE_FILE_NAME = /^[a-z0-9][a-z0-9-]*\.md$/u;
 const AGENT_FILES_DIRECTORY = "agent-files";
+const AUTHORING_GITIGNORE_RULES = [
+  "# ThreeNative local authoring state and dependency secrets",
+  ".dream-loop/",
+  "node_modules/",
+  ".env",
+  ".env.*",
+  "!.env.example",
+] as const;
 /** Backticked paths and Markdown links share one prefix so both readers resolve identically. */
 const REFERENCE_TOKEN_PATTERN =
   /`agent-docs\/([a-z0-9][a-z0-9./-]*\.md)`|\[[^\]]*\]\(agent-docs\/([^)#]+\.md)\)/gu;
@@ -411,10 +419,33 @@ async function copyAgentFiles(target: string, templateRootDirectory: string): Pr
   await cp(source, target, { recursive: true });
 }
 
+/** Installs the same authoring/dependency ignores for every kit without replacing a kit's own
+ * asset rules. A packed npm tarball cannot carry `.gitignore`, so templates keep `gitignore` and
+ * this live scaffold path is the one place that creates the real file. */
+async function installAuthoringGitignore(target: string): Promise<void> {
+  const file = path.join(target, ".gitignore");
+  const existing = existsSync(file) ? await readFile(file, "utf8") : "";
+  const present = new Set(existing.split(/\r?\n/u));
+  const missing = AUTHORING_GITIGNORE_RULES.filter((entry) => !present.has(entry));
+  if (missing.length === 0) return;
+  const prefix = existing.length === 0 || existing.endsWith("\n") ? existing : `${existing}\n`;
+  await writeFile(
+    file,
+    `${prefix}${prefix.length > 0 && !prefix.endsWith("\n\n") ? "\n" : ""}${missing.join("\n")}\n`,
+  );
+}
+
 /** Fails closed: an instruction that names a recipe the project does not ship strands the
  * agent on a link that goes nowhere. Checks both files of the generated pair. */
 async function assertReferenceBundle(target: string): Promise<void> {
-  for (const file of ["AGENTS.md", "CLAUDE.md"]) {
+  for (const file of [
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".agents/skills/threenative-visuals/SKILL.md",
+    ".claude/skills/threenative-visuals/SKILL.md",
+    ".agents/skills/threenative-assets/SKILL.md",
+    ".claude/skills/threenative-assets/SKILL.md",
+  ]) {
     const filePath = path.join(target, file);
     if (existsSync(filePath)) await assertReferenceTargets(target, file, filePath);
   }
@@ -648,6 +679,7 @@ export async function createProject(
   if (existsSync(path.join(target, "gitignore"))) {
     await rename(path.join(target, "gitignore"), path.join(target, ".gitignore"));
   }
+  await installAuthoringGitignore(target);
   const projectName = packageName(target);
   const compactProjectId = projectName.toLowerCase().replace(/[^a-z0-9]+/gu, "") || "game";
   const projectId = /^[a-z]/u.test(compactProjectId) ? compactProjectId : `game${compactProjectId}`;
