@@ -47,15 +47,21 @@ function runStep(script: string, tools: string) {
   }
 }
 
-for (const [platform, installer] of [["Windows", "choco"], ["macOS", "brew"]] as const) {
+for (const [platform, installer] of [
+  ["Windows", "choco"],
+  ["macOS", "brew"],
+] as const) {
   describe(`${platform} compiler cache setup`, () => {
     const script = stepScript(`Install ccache on ${platform}`);
 
     it("reuses a working cache without contacting an unavailable package feed", () => {
-      const result = runStep(script, `
+      const result = runStep(
+        script,
+        `
         ccache() { echo "existing ccache $*"; }
         ${installer}() { echo "unexpected package feed access" >&2; return 97; }
-      `);
+      `,
+      );
       assert.equal(result.status, 0, result.stderr);
       assert.match(result.stdout, /existing ccache --version/u);
       assert.equal(result.stderr, "");
@@ -63,12 +69,15 @@ for (const [platform, installer] of [["Windows", "choco"], ["macOS", "brew"]] as
     });
 
     it("installs a missing cache and verifies it before enabling the launcher", () => {
-      const result = runStep(script, `
+      const result = runStep(
+        script,
+        `
         ${installer}() {
           echo "install $*"
           ccache() { echo "installed ccache $*"; }
         }
-      `);
+      `,
+      );
       assert.equal(result.status, 0, result.stderr);
       assert.match(result.stdout, /install install ccache/u);
       assert.match(result.stdout, /installed ccache --version/u);
@@ -76,7 +85,9 @@ for (const [platform, installer] of [["Windows", "choco"], ["macOS", "brew"]] as
     });
 
     it("retries a transient installation failure", () => {
-      const result = runStep(script, `
+      const result = runStep(
+        script,
+        `
         calls=0
         ${installer}() {
           calls=$((calls + 1))
@@ -84,7 +95,8 @@ for (const [platform, installer] of [["Windows", "choco"], ["macOS", "brew"]] as
           [ "$calls" -gt 1 ] || return 42
           ccache() { echo "installed ccache $*"; }
         }
-      `);
+      `,
+      );
       assert.equal(result.status, 0, result.stderr);
       assert.match(result.stdout, /install-attempt:1/u);
       assert.match(result.stdout, /install-attempt:2/u);
@@ -108,10 +120,13 @@ for (const [platform, installer] of [["Windows", "choco"], ["macOS", "brew"]] as
     });
 
     it("disables an unusable cache when reinstalling cannot repair it", () => {
-      const result = runStep(script, `
+      const result = runStep(
+        script,
+        `
         ccache() { echo "broken ccache" >&2; return 5; }
         ${installer}() { return 0; }
-      `);
+      `,
+      );
       assert.equal(result.status, 0, result.stderr);
       assert.equal(result.githubEnv, "CCACHE_UNAVAILABLE=1\n");
     });
