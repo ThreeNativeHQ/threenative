@@ -405,6 +405,19 @@ struct AsyncPipelineCompiles {
     /** Requests started and not yet settled. `TN_WARMUP` reads the difference. */
     uint64_t started = 0;
     uint64_t settled = 0;
+    /**
+     * Event marker lines this capture has written, counted where they are written.
+     *
+     * Deliberately not derived from `nextRequestId` or from `started - settled`: a checkpoint that
+     * recomputed one of its counts from another could only ever agree with itself. Written under
+     * the pipeline output mutex, after the line is on the stream.
+     */
+    uint64_t emitted = 0;
+    // The last `TN_PIPELINE_CHECKPOINT` printed. A present that changed none of these prints
+    // nothing, so a steady frame costs no line and the last checkpoint in a log is the boundary.
+    uint64_t checkpointRequested = 0;
+    uint64_t checkpointEmitted = 0;
+    uint64_t checkpointOutstanding = 0;
 };
 
 struct BindingsState {

@@ -58,6 +58,7 @@ function browserEvent(overrides: Record<string, unknown> = {}): Record<string, u
 function browserCapture(
   events: readonly Record<string, unknown>[],
   overrides: Record<string, unknown> = {},
+  lookups = events.length,
 ): Record<string, unknown> {
   return {
     version: 1,
@@ -69,7 +70,7 @@ function browserCapture(
     adapter: { identity: "adapter:test", thermal: "unavailable" },
     firstPresent: { boundaryMs: 4, eventsSettled: events.filter((event) => event.settledMs !== undefined && Number(event.settledMs) <= 4).length },
     counts: {
-      lookups: events.length,
+      lookups,
       creations: events.length,
       failures: events.filter((event) => event.status === "failed").length,
       pending: events.filter((event) => event.status === "pending").length,
@@ -95,7 +96,268 @@ function nativeCompletion(eventCount: number): string {
   return `TN_PIPELINE_COMPLETE:{"version":1,"eventCount":${eventCount}}`;
 }
 
+function nativeCheckpoint(
+  present: number,
+  requested: number,
+  emitted: number,
+  outstanding = requested - emitted,
+): string {
+  return `TN_PIPELINE_CHECKPOINT:${JSON.stringify({ version: 1, present, requested, emitted, outstanding })}`;
+}
+
+function pairedCapture(lookups = 1) {
+  const event = browserEvent({ pipelineIdentity: "native-render-7" });
+  return {
+    version: 1,
+    // A one-tuple, so the cases below can reach the single event without a strict-mode guard on
+    // an index the helper guarantees.
+    census: { ...browserCapture([event], {}, lookups), events: [event] as [Record<string, unknown>] },
+    nativeLog: [nativeMetadata(15), marker(1, 2, 10, 12, {
+      pipelineIdentity: "native-render-7", programIdentity: "shader-pair", mode: "sync",
+      pass: "unknown", vertex: event.vertex, fragment: event.fragment,
+    }), nativeCompletion(1)].join("\n"),
+  };
+}
+
+// Metadata and the first two event lines exactly as a desktop host printed them, from
+// docs/verification/startup-measure-reduce-2026-09-09/desktop-baseline-audio/native.log, so the
+// ordering cases run on field shapes a real capture carries rather than on rounded stand-ins.
+const desktopMetadata = [
+  'TN_PIPELINE_CAPTURE:{"version":1,"build":{"identity":"mystral-native@0.3.1"},"adapter":{"identity":"native:vulkan/nvidia/NVIDIA GeForce RTX 2080/turing/NVIDIA: 610.57.04 610.57.4.0","thermal":"unavailable"},"clock":{"source":"steady","originMs":0}}',
+  'TN_PIPELINE_FIRST_PRESENT:{"version":1,"boundaryMs":32.836804000000001}',
+].join("\n");
+
+const desktopEvents = [
+  'TN_PIPELINE_EVENT:{"version":1,"eventId":1,"pipelineIdentity":"native-render-1","programIdentity":"00fc0a8ad03630cc/458120a84b226496","kind":"render","pass":"unknown","mode":"sync","status":"created","startedMs":4.0000000000000003e-05,"settledMs":3.3803109999999998,"queueMs":0,"serviceMs":3.380271,"wallMs":3.380271,"provenance":{"unknown":true},"vertex":{"hash":"00fc0a8ad03630cc","bytes":1299},"fragment":{"hash":"458120a84b226496","bytes":1595},"label":"renderPipeline_outputColorTransform_16"}',
+  'TN_PIPELINE_EVENT:{"version":1,"eventId":2,"pipelineIdentity":"native-render-2","programIdentity":"ecaec2fbce7bdaad/ecaec2fbce7bdaad","kind":"render","pass":"unknown","mode":"sync","status":"created","startedMs":1172.2477919999999,"settledMs":1175.100306,"queueMs":0,"serviceMs":2.8525140000001556,"wallMs":2.8525140000001556,"provenance":{"unknown":true},"vertex":{"hash":"ecaec2fbce7bdaad","bytes":1827},"fragment":{"hash":"ecaec2fbce7bdaad","bytes":1827},"label":"mipmap-rgba8unorm-srgb-2d-array"}',
+] as [string, string];
+
 describe("pipeline timing capture", () => {
+  // The Android runner ends a run with `am force-stop`, so a device capture never reaches the
+  // finalizer that prints TN_PIPELINE_COMPLETE. A checkpoint bounds the same capture from a
+  // present, and is only allowed to do so while its own counts account for every line in the log.
+  it("bounds a force-stopped native capture at its last live checkpoint", () => {
+    const capture = parsePipelineCapture(
+      [nativeMetadata(15), marker(1, 2, 10, 12), marker(2, 1, 4, 5), nativeCheckpoint(9, 2, 2, 0)].join("\n"),
+    );
+    expect(capture.complete).toBe(true);
+    expect(capture.incompleteReasons).toEqual([]);
+    expect(capture.boundary).toEqual({ kind: "checkpoint", events: 2, outstanding: 0, present: 9 });
+    expect(capture.counts.creations).toBe(2);
+    expect(formatPipelineSummary(summarizePipelineCapture(capture))).toContain(
+      "boundary: live checkpoint at present 9",
+    );
+  });
+
+  it("refuses a checkpoint whose compiles have not settled", () => {
+    const capture = parsePipelineCapture(
+      [nativeMetadata(15), marker(1, 2, 10, 12), nativeCheckpoint(9, 3, 1, 2)].join("\n"),
+    );
+    expect(capture.complete).toBe(false);
+    expect(capture.incompleteReasons).toContain(
+      "native pipeline checkpoint reports 2 compile(s) still outstanding",
+    );
+  });
+
+  // The host's own count of compiles it has started and not settled is the only pending evidence a
+  // live checkpoint carries; there are no event lines for them yet. Reporting `pending: 0` next to
+  // a boundary saying one compile is in flight is the same capture telling two stories.
+  it("counts the host's outstanding compiles as pending without inventing events", () => {
+    const capture = parsePipelineCapture(
+      [desktopMetadata, desktopEvents[0], nativeCheckpoint(10, 2, 1, 1)].join("\n"),
+    );
+
+    expect(capture.complete).toBe(false);
+    expect(capture.boundary).toEqual({ kind: "checkpoint", events: 1, outstanding: 1, present: 10 });
+    expect(capture.counts.pending).toBe(1);
+    expect(capture.counts.creations).toBe(1);
+    expect(capture.events).toHaveLength(1);
+    expect(formatPipelineSummary(summarizePipelineCapture(capture))).toContain("1 pending");
+  });
+
+  it("keeps pending on the event statuses once the finalizer has spoken", () => {
+    const capture = parsePipelineCapture(
+      [desktopMetadata, desktopEvents[0], nativeCheckpoint(10, 1, 1, 0), nativeCompletion(1)].join("\n"),
+    );
+
+    expect(capture.complete).toBe(true);
+    expect(capture.boundary).toEqual({ kind: "finalized", events: 1 });
+    expect(capture.counts.pending).toBe(0);
+  });
+
+  it("refuses a capture whose trailing events arrived after its last checkpoint", () => {
+    const capture = parsePipelineCapture(
+      [nativeMetadata(15), marker(1, 2, 10, 12), nativeCheckpoint(9, 1, 1, 0), marker(2, 1, 4, 5)].join("\n"),
+    );
+    expect(capture.complete).toBe(false);
+    expect(capture.incompleteReasons).toContain(
+      "native pipeline event count does not match the checkpoint",
+    );
+  });
+
+  // The counts and the log are one stream: a checkpoint printed under the same lock as the event
+  // lines can only ever have counted lines that already precede it. A checkpoint that counts an
+  // event still to come is either two runs' output in one log or a reader reading a total off a
+  // capture that was cut, and both are wrong to report as whole.
+  it("refuses a checkpoint that counted an event the log had not yet written", () => {
+    const capture = parsePipelineCapture(
+      [desktopMetadata, desktopEvents[0], nativeCheckpoint(10, 2, 2, 0), desktopEvents[1]].join("\n"),
+    );
+
+    expect(capture.complete).toBe(false);
+    expect(capture.incompleteReasons).toContain(
+      "1 native pipeline event(s) were written after the checkpoint that bounds the capture",
+    );
+    expect(capture.boundary).toEqual({ kind: "checkpoint", events: 2, outstanding: 0, present: 10 });
+  });
+
+  it("refuses a checkpoint counting fewer events than the log already carried", () => {
+    expect(() =>
+      parsePipelineCapture(
+        [desktopMetadata, desktopEvents[0], desktopEvents[1], nativeCheckpoint(10, 1, 1, 0)].join("\n"),
+      ),
+    ).toThrow(/checkpoint counted 1 event\(s\) after 2/u);
+  });
+
+  // Async compiles settle in whatever order the pool finishes them, so ids arrive out of order and
+  // the last id is not the count. The checkpoint is reconciled against the lines consumed before
+  // it, which is what the host counted.
+  it("accepts a checkpoint whose events arrived out of id order", () => {
+    const capture = parsePipelineCapture(
+      [desktopMetadata, desktopEvents[1], desktopEvents[0], nativeCheckpoint(10, 2, 2, 0)].join("\n"),
+    );
+
+    expect(capture.complete).toBe(true);
+    expect(capture.incompleteReasons).toEqual([]);
+    expect(capture.events.map(({ sequence }) => sequence)).toEqual([1, 2]);
+  });
+
+  it("refuses a capture truncated between its events and its checkpoint", () => {
+    const capture = parsePipelineCapture(
+      [nativeMetadata(15), marker(1, 2, 10, 12), nativeCheckpoint(9, 4, 4, 0)].join("\n"),
+    );
+    expect(capture.complete).toBe(false);
+    expect(capture.counts.droppedEvents).toBe(3);
+    expect(capture.incompleteReasons).toContain(
+      "3 native pipeline event(s) are missing from the sequence",
+    );
+  });
+
+  it("keeps the finalizer authoritative and rejects a checkpoint that outruns it", () => {
+    const finalized = parsePipelineCapture(
+      [nativeMetadata(15), marker(1, 2, 10, 12), nativeCheckpoint(9, 1, 1, 0), marker(2, 1, 4, 5), nativeCompletion(2)].join("\n"),
+    );
+    expect(finalized.complete).toBe(true);
+    expect(finalized.boundary).toEqual({ kind: "finalized", events: 2 });
+    expect(() =>
+      parsePipelineCapture(
+        [nativeMetadata(15), marker(1, 2, 10, 12), nativeCheckpoint(9, 4, 1, 3), nativeCompletion(1)].join("\n"),
+      ),
+    ).toThrow(/checkpoint/u);
+  });
+
+  it("refuses checkpoints that disagree with themselves or walk backwards", () => {
+    const inconsistent = [nativeMetadata(15), marker(1, 2, 10, 12), nativeCheckpoint(9, 5, 1, 1)].join("\n");
+    expect(() => parsePipelineCapture(inconsistent)).toThrow(/checkpoint counts/u);
+    const backwards = [
+      nativeMetadata(15), marker(1, 2, 10, 12), nativeCheckpoint(9, 2, 2, 0), nativeCheckpoint(10, 1, 1, 0),
+    ].join("\n");
+    expect(() => parsePipelineCapture(backwards)).toThrow(/checkpoint/u);
+  });
+
+  it("joins native service time to renderer provenance by exact pipeline handle", () => {
+    const input = pairedCapture();
+    const capture = parsePipelineCapture(input);
+    expect(capture.complete).toBe(true);
+    expect(capture.source).toBe("native");
+    expect(capture.events[0]).toMatchObject({
+      pipelineIdentity: "native-render-7", pass: "main", serviceMs: 10, queueMs: 2,
+      startedMs: 2, settledMs: 12, provenance: { material: { name: "brick" }, unknown: false },
+    });
+    expect(capture.clock).toEqual({ source: "steady", originMs: 0 });
+    expect(summarizePipelineCapture(capture).contributors[0]).toMatchObject({
+      label: "material:brick", serviceMs: 10,
+    });
+  });
+
+  it("preserves observed renderer lookups when native events only count creations", () => {
+    const input = pairedCapture(7);
+
+    const summary = summarizePipelineCapture(parsePipelineCapture(JSON.stringify(input)));
+
+    expect(summary.counts.lookups).toBe(7);
+    expect(summary.counts.creations).toBe(1);
+  });
+
+  // `doctor --capture` hands the parser file bytes, never a parsed object. A paired file carries
+  // its native log as one escaped JSON string, so the markers inside it are not marker lines and
+  // reading them as such throws on the escaping before the file is parsed as what it is.
+  it("reads a paired capture from its file bytes, not only as an object", () => {
+    const input = pairedCapture();
+
+    const capture = parsePipelineCapture(JSON.stringify(input));
+
+    expect(capture).toEqual(parsePipelineCapture(input));
+    expect(capture.complete).toBe(true);
+    expect(capture.source).toBe("native");
+    expect(capture.events[0]).toMatchObject({
+      pipelineIdentity: "native-render-7", pass: "main", serviceMs: 10,
+      provenance: { material: { name: "brick" }, unknown: false },
+    });
+  });
+
+  it("fails closed on file bytes that are neither valid JSON nor a readable native log", () => {
+    const brokenMarker = pairedCapture();
+    brokenMarker.nativeLog = brokenMarker.nativeLog.replace('"eventId":1,', '"eventId":,');
+    expect(() => parsePipelineCapture(JSON.stringify(brokenMarker))).toThrow(/carries invalid JSON/u);
+    expect(() => parsePipelineCapture('{"version":1,"census":')).toThrow(/neither JSON nor a native event log/u);
+    expect(() => parsePipelineCapture(JSON.stringify({ ...pairedCapture(), version: 2 }))).toThrow(
+      /paired capture requires version 1/u,
+    );
+  });
+
+  it("refuses mismatched shader content and missing pipeline joins", () => {
+    const input = pairedCapture();
+    input.census.events[0].fragment = { hash: "different", bytes: 21 };
+    expect(() => parsePipelineCapture(input)).toThrow(/shader.*mismatch/u);
+    const missing = pairedCapture();
+    missing.census.events[0].pipelineIdentity = "native-render-8";
+    expect(() => parsePipelineCapture(missing)).toThrow(/unmatched.*pipeline/u);
+  });
+
+  it("preserves incomplete native evidence when renderer attribution is complete", () => {
+    const input = pairedCapture();
+    input.nativeLog = input.nativeLog.replace(nativeCompletion(1), "");
+    const capture = parsePipelineCapture(input);
+    expect(capture.complete).toBe(false);
+    expect(capture.incompleteReasons).toContain("native marker capture is missing its completion marker");
+  });
+
+  it("compares shader stages rather than absent-stage program labels", () => {
+    const input = pairedCapture();
+    delete input.census.events[0].fragment;
+    input.census.events[0].programIdentity = "v/unknown";
+    input.nativeLog = [nativeMetadata(15), marker(1, 2, 10, 12, {
+      pipelineIdentity: "native-render-7", programIdentity: "v/", mode: "sync",
+      vertex: input.census.events[0].vertex, fragment: undefined,
+    }), nativeCompletion(1)].join("\n");
+    expect(() => parsePipelineCapture(input)).not.toThrow();
+    expect(parsePipelineCapture(input).complete).toBe(true);
+  });
+
+  it("retains native utility pipelines with explicitly unknown renderer provenance", () => {
+    const input = pairedCapture();
+    input.nativeLog = input.nativeLog.replace(nativeCompletion(1), [marker(2, 0, 2, 2, {
+      pipelineIdentity: "native-render-8", pass: "unknown", label: "mipmap-rgba8unorm",
+    }), nativeCompletion(2)].join("\n"));
+    const capture = parsePipelineCapture(input);
+    expect(capture.complete).toBe(true);
+    expect(capture.counts.creations).toBe(2);
+    expect(capture.events[1]).toMatchObject({
+      pipelineIdentity: "native-render-8", pass: "unknown", provenance: { unknown: true }, serviceMs: 2,
+    });
+  });
+
   it("separates queue delay from service time when asynchronous jobs overlap", () => {
     const capture = parsePipelineCapture([marker(1, 5, 10, 15), marker(2, 1, 10, 11)].join("\n"));
     const summary = summarizePipelineCapture(capture);

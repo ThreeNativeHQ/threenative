@@ -1,0 +1,11 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce
+
+ ✓ packages/core/__tests__/pipeline-census.spec.ts (17 tests) 20ms
+ ✓ scripts/__tests__/quality-json.spec.ts (1 test) 2739ms
+     ✓ should emit only parseable finding records through the documented silent form  2738ms
+
+ Test Files  2 passed (2)
+      Tests  18 passed (18)
+   Start at  17:48:36
+   Duration  2.98s (transform 168ms, setup 0ms, import 207ms, tests 2.76s, environment 0ms)

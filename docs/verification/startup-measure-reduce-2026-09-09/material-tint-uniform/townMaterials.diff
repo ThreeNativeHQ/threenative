@@ -1,0 +1,13 @@
+--- a/src/render/townMaterials.ts
++++ b/src/render/townMaterials.ts
+@@ -78,0 +79 @@
++  uniform,
+@@ -384,2 +385,6 @@
+-  const base = options.tint ?? 0xffffff;
+-  const paint = mix(color(base), color(options.tintAlt ?? base), saturate(patch));
++  // The tint values are per material, so they are carried as uniforms instead
++  // of literals, which leaves materials of one family sharing a node graph.
++  const baseTint = uniform(color(options.tint ?? 0xffffff));
++  const altTint =
++    options.tintAlt === undefined ? baseTint : uniform(color(options.tintAlt));
++  const paint = mix(baseTint, altTint, saturate(patch));

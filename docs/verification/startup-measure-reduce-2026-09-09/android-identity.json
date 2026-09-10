@@ -1,0 +1,9 @@
+{
+  "app": "com.threenative.bayview.startup",
+  "serial": "192.168.1.192:5555",
+  "localApk": "/home/joao/projects/threenative/sandbox/prd360-bayview-live/dist-native/fps-framework.apk",
+  "sha256": "868f162686a02b017aae8ebaed6bdd28cf86da70a123b285325ef273a871916c",
+  "installedHashMatches": true,
+  "charging": true,
+  "qualification": "functional only; USB powered"
+}

@@ -1,0 +1,66 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce
+
+ ❯ packages/playtest/__tests__/pipeline-timing.spec.ts (19 tests | 2 failed) 26ms
+     ✓ joins native service time to renderer provenance by exact pipeline handle 4ms
+     ✓ refuses mismatched shader content and missing pipeline joins 1ms
+     ✓ preserves incomplete native evidence when renderer attribution is complete 1ms
+     × compares shader stages rather than absent-stage program labels 5ms
+     × retains native utility pipelines with explicitly unknown renderer provenance 2ms
+     ✓ separates queue delay from service time when asynchronous jobs overlap 6ms
+     ✓ requires launch metadata before a browser capture can be complete 1ms
+     ✓ requires both shader stages for render size and service correlation 0ms
+     ✓ rejects provenance that is both unknown and attributed 0ms
+     ✓ fails closed when one native event is missing from the sequence 0ms
+     ✓ fails closed when the final native event is missing from an otherwise contiguous capture 0ms
+     ✓ accepts a native marker capture with launch metadata and first-present evidence 0ms
+     ✓ accepts a browser census and keeps material attribution separate from program identity 0ms
+     ✓ requires a version before treating an events object as a browser capture 0ms
+     ✓ marks status/count disagreement incomplete instead of trusting declared counts 0ms
+     ✓ rejects negative or out-of-order browser timing data 1ms
+     ✓ requires the native marker version and keeps service time unavailable distinct 0ms
+     ✓ classifies native Three labels without treating them as stable provenance 0ms
+     ✓ accepts the engine capture nested in a playtest observation report 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/playtest/__tests__/pipeline-timing.spec.ts > pipeline timing capture > compares shader stages rather than absent-stage program labels
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ packages/playtest/__tests__/pipeline-timing.spec.ts:153:50
+    151|     expect(() => parsePipelineCapture(input)).not.toThrow();
+    152|     // Missing observations retain their existing incomplete status th…
+    153|     expect(parsePipelineCapture(input).complete).toBe(false);
+       |                                                  ^
+    154|   });
+    155|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  packages/playtest/__tests__/pipeline-timing.spec.ts > pipeline timing capture > retains native utility pipelines with explicitly unknown renderer provenance
+Error: TN_PIPELINE_CAPTURE_MALFORMED: unmatched native pipeline native-render-8
+ ❯ malformed packages/playtest/src/runner/pipeline-summary.ts:1083:10
+    1081|
+    1082| function malformed(detail: string): Error {
+    1083|   return new Error(`TN_PIPELINE_CAPTURE_MALFORMED: ${detail}`);
+       |          ^
+    1084| }
+    1085|
+ ❯ packages/playtest/src/runner/pipeline-summary.ts:201:39
+ ❯ reconcilePipelineCaptures packages/playtest/src/runner/pipeline-summary.ts:199:32
+ ❯ parsePipelineCapture packages/playtest/src/runner/pipeline-summary.ts:172:12
+ ❯ packages/playtest/__tests__/pipeline-timing.spec.ts:161:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 17 passed (19)
+   Start at  16:38:28
+   Duration  216ms (transform 49ms, setup 0ms, import 62ms, tests 26ms, environment 0ms)

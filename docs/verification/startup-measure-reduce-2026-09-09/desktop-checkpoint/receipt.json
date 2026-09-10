@@ -1,0 +1,13 @@
+{
+  "pass": true,
+  "scenario": "bayview-manifest-startup-movement",
+  "target": "desktop",
+  "distance": 2.146708556452303,
+  "movementDelta": [1.4482513506663963e-5, 0.0020943284034729004, -2.146707534790039],
+  "frames": 35,
+  "diagnostics": [],
+  "hostSha256": "18ec7a3d12b5b51732c60de16e8a773a1614f4e274dd82cfdde0d1654778e588",
+  "executableSha256": "7898989f546f900197eb6449ccc18e7847dea9605046b8cb7c1ca637b04823ab",
+  "corePackage": "earlier installed hash cohort; direct device collector not yet installed",
+  "boundary": "live checkpoint; no completion finalizer required"
+}

@@ -671,6 +671,10 @@ void presentPendingSurface(BindingsState* state) {
             const mystral::StallBudget::PostPresentCompile lateCompile =
                 mystral::stallBudget().takePostPresentPipelineCompile();
             mystral::frameHitches().record(lateCompile.ms, lateCompile.calls);
+            // The pipeline capture's live boundary, taken from a frame that reached the display so
+            // the counts are read at an instant a reader can name. Prints only when they changed,
+            // and says nothing about whether the game is playable — see reportPipelineCheckpoint.
+            reportPipelineCheckpoint(state, state->profiling.presentCount);
         } else {
             std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
         }

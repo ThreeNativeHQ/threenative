@@ -1,0 +1,41 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce
+
+ ❯ packages/core/__tests__/pipeline-census.spec.ts (6 tests | 1 failed) 14ms
+     × retains native pipeline handles and the UTF-8 shader identity used by the host 8ms
+     ✓ reconciles unique programs and pipeline creations across passes 2ms
+     ✓ rejects completeness when creation observation is missing or bounded out 1ms
+     ✓ fails closed when a created pipeline has no shader observation 1ms
+     ✓ marks a bypassed collector as unsupported instead of returning an empty success 0ms
+     ✓ classifies main, shadow, PMREM, and output pipeline observations 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/core/__tests__/pipeline-census.spec.ts > pipeline census > retains native pipeline handles and the UTF-8 shader identity used by the host
+AssertionError: expected [ 'backend-pipeline-1', …(1) ] to deeply equal [ 'native-render-41', …(1) ]
+
+- Expected
++ Received
+
+  [
+-   "native-render-41",
+-   "native-render-42",
++   "backend-pipeline-1",
++   "backend-pipeline-2",
+  ]
+
+ ❯ packages/core/__tests__/pipeline-census.spec.ts:41:59
+     39|     backend.createRenderPipeline(renderObject({ ...pipeline }, {}, {})…
+     40|     const { events, counts } = census.snapshot();
+     41|     expect(events.map((event) => event.pipelineIdentity)).toEqual([
+       |                                                           ^
+     42|       "native-render-41",
+     43|       "native-render-42",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  16:28:21
+   Duration  177ms (transform 43ms, setup 0ms, import 58ms, tests 14ms, environment 0ms)

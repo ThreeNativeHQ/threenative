@@ -10,6 +10,329 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## PRD-368 bounded cache API prototype — 2026-09-09
+
+**API feasibility only; implementation paused for the owner's follow-up handoff.** A four-file
+patch to pinned wgpu-native `v25.0.2.2` exposes the existing Rust cache implementation through C,
+including feature request/mapping, strict import, owned byte export and render/compute descriptor
+attachment. No production dependency, host lifecycle, game or Android APK received this patch.
+The [updated PRD](../PRDs/assets/PRD-368-compiled-pipelines-survive-a-relaunch.md) owns remaining work.
+
+Retained reproduction inputs: [upstream patch](startup-measure-reduce-2026-09-09/pipeline-cache-spike/wgpu-native-v25.0.2.2-cache.patch),
+[C++ probe](startup-measure-reduce-2026-09-09/pipeline-cache-spike/cache_probe.cpp),
+[commands](startup-measure-reduce-2026-09-09/pipeline-cache-spike/commands.txt), and
+[identity/limitations receipt](startup-measure-reduce-2026-09-09/pipeline-cache-spike/receipt.json).
+The [unpatched link fails](startup-measure-reduce-2026-09-09/pipeline-cache-spike/red.log) on missing
+cache symbols; the [patched release build passes](startup-measure-reduce-2026-09-09/pipeline-cache-spike/build-clang18.log)
+using the installed NDK libclang after system libclang 22 produced invalid opaque bindings.
+
+Three separate Linux/Vulkan processes on NVIDIA RTX 2080, driver 610.57.04, produced the
+[raw round-trip result](startup-measure-reduce-2026-09-09/pipeline-cache-spike/roundtrip.log):
+empty attached cache grew from 100 to 13,573 bytes; strict reload accepted those bytes; attachment
+bypass left an empty cache at 100 bytes. All three readbacks are byte-identical. Pipeline creation
+was 7.033701 ms empty, 0.610847 ms loaded, and 0.319588 ms disabled. **The disabled control is faster;
+this does not establish a performance benefit.** The synthetic triangle establishes an executable
+API route, not actual Bayview reuse, a per-pipeline hit, safe app-private persistence or phone timing.
+
+Independent source review identified two required integration controls: the host's async descriptor
+copy strips `nextInChain`, and upstream cache compatibility checks do not checksum payload bytes.
+Preserve the cache extension/handle through worker completion and verify a bounded envelope digest
+before unsafe import. Strict load rejection must lead to an explicit empty-cache miss; a nonnull
+handle alone cannot establish reuse. Corruption, concurrency, device loss and real host proof remain
+unexecuted. The PRD now specifies these next actions; no acceptance box was marked complete.
+
+## PRD-367 actual-device census repair — 2026-09-09
+
+**In progress; no startup improvement or PRD acceptance is claimed.** The owner selected reliable
+measurement, then appearance-preserving Bayview graph reduction, with a bounded native cache patch
+considered only if the measured result still warrants its maintenance. The proof subject is the
+original `/home/joao/projects/threenative/sandbox/prd360-bayview-live`; the Wildwood result below
+does not substitute for its acceptance. The engine checkout starts at `488c05696` (current upstream
+integrated with the local canonical PRDs). Game source/assets were hashed before intervention in
+[the source manifest](startup-measure-reduce-2026-09-09/bayview-source-before.json). These are
+untracked game files, not an asserted clean game commit. Only package pins and the separate Android
+application ID changed before the captures below.
+
+### Native reporting follow-up after PR 165
+
+The unchanged candidate APK now completes the actual Android movement scenario; the earlier
+missing-bridge failure did not reproduce, and its cause remains unproven. Its paired capture
+reconciles 104 creations, 86 programs, zero pending/failed/dropped events and 102 renderer lookups.
+Native events do not observe lookups; pairing now preserves the renderer's observed lookup count
+while retaining native authority over creation counts, timing and the capture boundary.
+
+The shared device runner previously discarded `waitForStartupReady()`'s outcome. It now forwards
+that existing startup observation to `buildReport()`, matching the browser runner. A real Pixel
+scenario with `maxReadyMs:8000` now fails on **17,909.374276 ms observed**, with movement and runtime
+diagnostics passing. This is readiness, not first-playable time, and AC charging disqualifies the
+run as performance acceptance. The [receipt and exact invocation](startup-measure-reduce-2026-09-09/reporting-followup/readiness-receipt.json)
+and [scenario](startup-measure-reduce-2026-09-09/reporting-followup/readiness.playtest.json) retain that scope.
+
+Observed red: [lookup count](startup-measure-reduce-2026-09-09/reporting-followup/lookups-red.log)
+expected 7, received 0; [device startup tests](startup-measure-reduce-2026-09-09/reporting-followup/native-startup-red.log)
+failed 2 cases because the timeline was absent. Restored behavior:
+[65 focused tests pass](startup-measure-reduce-2026-09-09/reporting-followup/reporting-green.log),
+and [playtest typecheck exits 0](startup-measure-reduce-2026-09-09/reporting-followup/reporting-typecheck.log).
+Independent review found and then cleared a fixture typing error; it confirmed native authority,
+browser/device parity and missing-observation behavior. Follow-up `pnpm typecheck`, `pnpm lint`,
+`pnpm test` (4,774 root tests passed, 8 skipped), `pnpm build`, `pnpm budgets` and
+`pnpm test:playtest` all exited 0; [bounded gate output](startup-measure-reduce-2026-09-09/reporting-followup/gates.txt)
+retains the results and full-log hashes. This slice changes the report layer; its Android scenario
+uses the unchanged installed candidate APK.
+
+### Equivalent shaders retained process-wide buffer names
+
+**Engine layer:** Three's WGSL builder overwrote its program-local uniform name with a global
+allocation ID. Independently allocated buffers therefore produced different shader source even
+when their types, lengths and uses matched. The owned Three patch now preserves the base builder's
+unique program-local name; explicitly authored names, buffer objects, visibility and binding order
+remain intact. Both `src/` and the shipped `three/webgpu` bundle carry the fix. Core's existing
+postinstall consumes the patch; the scaffold copy distributes the same bytes.
+
+The [red](startup-measure-reduce-2026-09-09/stable-buffer-names/red.log) compares actual WGSL
+declarations from independently allocated equal-capacity projected batches: only `NodeBuffer_<id>`
+differs. The [focused green](startup-measure-reduce-2026-09-09/stable-buffer-names/green.log) passes
+23 tests. Independent [browser review](startup-measure-reduce-2026-09-09/stable-buffer-names/review-verdict.json)
+observed two shader modules across repeated capacity-16/capacity-48 batches, separate moving/stationary
+buffer contents, correct previous-frame motion and an error-free forced WebGL fallback.
+Raw [WebGPU](startup-measure-reduce-2026-09-09/stable-buffer-names/review-webgpu.json) and
+[fallback](startup-measure-reduce-2026-09-09/stable-buffer-names/review-fallback.json) reports retain those observations.
+
+A preceding storage-buffer experiment was rejected: it did not reduce whole-town program counts,
+retained buffers across repeated batch replacement and failed the fallback draw. Its
+[rejection](startup-measure-reduce-2026-09-09/stable-buffer-names/rejected-storage-verdict.json) is
+retained; no storage-buffer change remains in the accepted source.
+
+| Actual whole-town target | Original programs | Tint uniforms | Tint plus stable buffer names |
+| --- | ---: | ---: | ---: |
+| Browser, NVIDIA/Turing | 79 | 71 | 52 |
+| Native desktop | 84 | 76 | 56 |
+| Pixel 8 | 92 | 86 | 63 |
+
+The browser and desktop meet one-third program reduction; Pixel's 31.5% does not. Receipts:
+[browser](startup-measure-reduce-2026-09-09/stable-buffer-names/browser-receipt.json),
+[desktop](startup-measure-reduce-2026-09-09/stable-buffer-names/desktop-receipt.json),
+[Pixel original](startup-measure-reduce-2026-09-09/stable-buffer-names/android-original-receipt.json),
+[Pixel candidate](startup-measure-reduce-2026-09-09/stable-buffer-names/android-receipt.json).
+The candidate's [paired native capture](startup-measure-reduce-2026-09-09/stable-buffer-names/android-paired.json)
+reconciles 84 creations, 63 programs and zero failures/pending/dropped events. All movement and
+runtime assertions passed. Pixel readiness remained 16,500.797697 ms, failing the 8,000 ms gate.
+Full inputs: [browser census](startup-measure-reduce-2026-09-09/stable-buffer-names/browser-census.json),
+[desktop census](startup-measure-reduce-2026-09-09/stable-buffer-names/desktop-census.json),
+[Pixel census](startup-measure-reduce-2026-09-09/stable-buffer-names/android-census.json) and
+[native events](startup-measure-reduce-2026-09-09/stable-buffer-names/android-native.log).
+These phone runs were AC-charging, and their screenshots carried Android's known debug APK
+alignment notice; they do not prove qualified timing, first-playable time or unobstructed appearance.
+The notice was subsequently acknowledged on the test app for fresh visual checks.
+
+[Package identity](startup-measure-reduce-2026-09-09/stable-buffer-names/cohort.json) and
+[APK identity](startup-measure-reduce-2026-09-09/stable-buffer-names/apk.sha256) freeze the candidate.
+The runtime implementation slice is the root/core patch copies, lockfile and regression test.
+The separate distribution slice is the template patch copy and scaffold hash fixture. Independent
+[scaffold proof](startup-measure-reduce-2026-09-09/stable-buffer-names/scaffold-proof.json) generated
+all ten projects: replacing only the copied patch with its prior version recovered every old tree
+hash. The initial full test run passed 4,774 tests and failed only the expected old scaffold hash
+assertion; after refreshing that fixture, the final full test, build, browser playtest, scaffolded
+template, and native desktop display gates passed against the merged census fixes. The retention
+index and documentation checks are rerun as part of this shipping commit.
+
+### Observed defects and bounded repairs
+
+This is the engine observation layer: games cannot portably observe their WebGPU backend and
+native compiler threads. Native shader hashing used a truncated FNV-1a offset, so the same UTF-8
+source disagreed across JS/native. Native pipeline handles were also replaced by local JS ordinal
+identities, preventing a reliable join. The collector now preserves the native handle and the hash
+uses the correct offset. The actual compiled C++ negative control reported:
+
+```text
+pipeline source hash mismatch: expected cbf29ce484222325, observed 14650fb0739d0383
+```
+
+The rebuilt `threenative-webgpu-comprehensive-test` passed the empty, ASCII and UTF-8 golden vectors
+and its native WebGPU contract. Core identity tests passed `6/6`. The paired parser joins the
+renderer census and native log from one process by native handle, then validates kind, status, mode
+and stage hashes/byte lengths. It retains native clocks and service time, adds observed renderer
+provenance, and keeps unmatched native utility work explicitly unknown. A depth-only pipeline does
+not require a fragment shader. Parser regressions passed `19/19`; dropping a required joined event
+or changing a stage hash fails. Raw [hash red](startup-measure-reduce-2026-09-09/hash-red.log),
+[identity red](startup-measure-reduce-2026-09-09/identity-red.log),
+[identity green](startup-measure-reduce-2026-09-09/identity-green.log),
+[join red](startup-measure-reduce-2026-09-09/join-red.log),
+[utility red](startup-measure-reduce-2026-09-09/join-utility-red.log) and
+[parser green](startup-measure-reduce-2026-09-09/join-utility-green.log) are retained.
+
+### Real-game checks before device-coverage repair
+
+The game used [content-hashed package tarballs](startup-measure-reduce-2026-09-09/packages.json).
+The Android candidate `com.threenative.bayview.startup` was installed alongside the original app;
+the installed APK matched local SHA-256
+`868f162686a02b017aae8ebaed6bdd28cf86da70a123b285325ef273a871916c`.
+Its [identity record](startup-measure-reduce-2026-09-09/android-identity.json) explicitly records
+charging. All three scenarios passed movement and runtime checks, but completeness is narrower
+than the original renderer report claimed:
+
+| Target | Renderer creations / programs | Native device events | Remaining observation gap |
+| --- | --- | --- | --- |
+| Browser, NVIDIA Turing WebGPU | 97 / 78 | unavailable in this collector revision | Direct device utility creations bypass the backend wrapper |
+| Desktop, V8/Dawn | 92 / 83 | 94 | Two mipmap creations omitted; process killed before completion marker |
+| Pixel 8 over Wi-Fi ADB | 108 / 91 | 110 | Two direct creations omitted; force-stop bypasses completion marker |
+
+Retained inputs: [browser census](startup-measure-reduce-2026-09-09/browser-baseline/census.json),
+[desktop census](startup-measure-reduce-2026-09-09/desktop-baseline-audio/census.json),
+[desktop native events](startup-measure-reduce-2026-09-09/desktop-baseline-audio/native.log),
+[Android census](startup-measure-reduce-2026-09-09/android-functional/census.json) and
+[Android native events](startup-measure-reduce-2026-09-09/android-functional/native.log).
+The paired parser correctly returns incomplete for both native logs. Browser's `complete: true`
+describes the old backend-only observation and is not accepted as whole-device completeness.
+The phone was USB powered, so these events support identity/debugging only, not qualified launch
+timing. The first desktop attempt failed because this machine has no ALSA device; the rerun used
+`SDL_AUDIODRIVER=dummy` and passed. Browser used `--browser-recipe webgpu --headed` and the runner's
+private display; the reported adapter was NVIDIA, not SwiftShader.
+
+Opus medium implementation arms are repairing direct-device coverage and live native checkpoint
+validation; Codex owns review and coordinated real-game verification. Acceptance remains open for
+complete captures, observer overhead, doctor integration, qualified Pixel timing, full repository
+gates, and human timing/appearance review. No material graph has changed in Bayview at this point.
+
+### Live native checkpoint reaches the actual town
+
+The rebuilt native host passed the existing desktop movement scenario with the earlier installed
+core package cohort. This independently tests the C++ checkpoint before installing the new device
+collector. It emitted two changed-count checkpoints; the last reported
+`present:2, requested:94, emitted:94, outstanding:0`. Pairing the 92 renderer events with the 94
+native events returned `complete:true`, 84 source programs, zero failures/pending/dropped events,
+and `boundary.kind:checkpoint`; the two native utility creations remain explicitly unknown.
+The real run [receipt](startup-measure-reduce-2026-09-09/desktop-checkpoint/receipt.json),
+[census](startup-measure-reduce-2026-09-09/desktop-checkpoint/census.json),
+[native events](startup-measure-reduce-2026-09-09/desktop-checkpoint/native.log) and
+[summary](startup-measure-reduce-2026-09-09/desktop-checkpoint/summary.json) retain this scope.
+
+```sh
+SDL_AUDIODRIVER=dummy node packages/playtest/dist/runner/cli.js \
+  docs/verification/findings-2026-09-07-bayview-fix/manifest.playtest.json \
+  --target desktop \
+  --executable /home/joao/projects/threenative/sandbox/prd360-bayview-live/dist-native/fps-framework \
+  --timeout 60000 --artifacts artifacts/startup-measure-reduce/desktop-checkpoint
+```
+
+Actual result: exit `0`, report `pass:true`. The source parser consumed the paired object after
+capture; this result does not yet prove `doctor --capture paired.json`. Independent review
+reproduced three parser defects: escaped markers inside a paired JSON file fail parsing; an event
+placed after the checkpoint that already claims it can incorrectly pass; and an outstanding count
+of one is displayed beside `counts.pending:0`. The core partial-hook negative control also reported
+complete after observing one of two device creations. These review cases were repaired before
+the integrated build below. Independent review then passed all 49 focused collector/parser tests
+and parsed the actual paired checkpoint from file bytes with 94 creations, zero outstanding and
+`complete:true`.
+
+### Measured Bayview tint-uniform comparison — 2026-09-09
+
+One integrated observer build was frozen for every capture below: `pnpm build` exit `0`, then
+content-hashed tarballs installed into the live game — core
+`4fbdbc5977a63e01d9810ec4815a2ee5fbfa908a777f690105042257e89b42e9`, playtest
+`4ee2fe099cee0d7a383696a5806d980c468257e8d004a4b5690f0d67ec29b94e`; the repacked runtime-native
+tarball was byte-identical to the installed one, so its pin did not move. The native host stayed
+at `18ec7a3d12b5b51732c60de16e8a773a1614f4e274dd82cfdde0d1654778e588`.
+
+The only game change is [one hunk in `src/render/townMaterials.ts`](startup-measure-reduce-2026-09-09/material-tint-uniform/townMaterials.diff):
+the `paving`/`concreteTrim`/`painted` family carried its `tint` and `tintAlt` hexes as `color()`
+literals, and now carries them as per-material `uniform(color())`. Nothing else moved — no new
+abstraction, flag or material name, and the game's own `tsc --noEmit` passed on both sources.
+Original source is `51f9ef9e8ae45efc433d9494e2deb977d4d5bb37b7b9639ea518da355bc38413`, candidate
+`38c14f4c6ba34793764a1414696e20831b778e26a6a67a7fe68db2cddeab1a6f`.
+
+| Target | Programs, original | Programs, candidate | Creations, original | Creations, candidate |
+| --- | --- | --- | --- | --- |
+| Browser, NVIDIA Turing WebGPU | 79 | 71 | 99 | 91 |
+| Desktop, V8/Dawn, RTX 2080 | 84 | 76 | 94 | 86 |
+
+Fourteen runs are recorded in [the comparison record](startup-measure-reduce-2026-09-09/material-tint-uniform/program-comparison.json)
+and every one of them reported the counts above for its arm: four browser runs of the original,
+three of the candidate, three desktop runs of the original, four of the candidate. Every census was
+complete and non-empty with zero failures, pending and dropped events, and each reported the two
+direct device utility creations the repaired collector now sees. Raw censuses are retained for
+[browser original](startup-measure-reduce-2026-09-09/material-tint-uniform/baseline-browser-census.json),
+[browser candidate](startup-measure-reduce-2026-09-09/material-tint-uniform/candidate-browser-census.json),
+[desktop original](startup-measure-reduce-2026-09-09/material-tint-uniform/baseline-desktop-census.json) and
+[desktop candidate](startup-measure-reduce-2026-09-09/material-tint-uniform/candidate-desktop-census.json).
+The actual built `doctor --capture paired.json --text` consumed the desktop pairs and exited `0` on
+both, reporting a live checkpoint at present 2 with 0 outstanding:
+[original](startup-measure-reduce-2026-09-09/material-tint-uniform/baseline-desktop-doctor.txt),
+[candidate](startup-measure-reduce-2026-09-09/material-tint-uniform/candidate-desktop-doctor.txt).
+
+**The whole reduction is the eight programs the change targets.** Grouping browser programs by
+observed provenance, only one bucket moves: the unnamed `MeshStandardNodeMaterial` bucket falls
+from 29 to 21 unique programs. The glTF `MeshStandardMaterial` bucket (32), the basic, output,
+background and PMREM buckets are unchanged. That is −10.1% of browser programs and −9.5% of desktop
+programs. **The PRD's one-third target is not met** and no launch-time speedup is claimed here.
+
+The negative control restored the exact original file, not an invented perturbation, and reran the
+same browser program gate: it returned to 79 programs and 99 creations, matching the baseline
+exactly, and the candidate then returned to 71/91. The two arms are not the same source measured
+twice.
+
+Appearance was checked at a fixed checkpoint — no input, spawn camera, 1280×720 — because the town
+animates and two runs of one source are not bit-identical.
+[The metrics](startup-measure-reduce-2026-09-09/material-tint-uniform/appearance-checkpoints.json)
+give the same-source noise band as mean channel delta 1.31–1.34 over 5.1–5.4% of pixels; the three
+cross pairs read 1.84, 2.40 and 2.91 over 5.5–6.4%. Mean frame luminance spans 94.26–94.63 across
+all four frames against a 94.26–94.36 same-source spread. So the candidate is **not** proven
+pixel-identical, and it is also not shifted in mean luminance by more than 0.4%. The
+[original](startup-measure-reduce-2026-09-09/material-tint-uniform/appearance-original.png),
+[candidate](startup-measure-reduce-2026-09-09/material-tint-uniform/appearance-candidate.png) and
+[difference](startup-measure-reduce-2026-09-09/material-tint-uniform/appearance-diff.png) frames are
+retained. **Human appearance review has not happened and is required before acceptance.**
+
+Timing is not qualified. Native compile service time summed over all events was 1179.0, 1124.9 and
+1019.6 ms for the original and 3434.4, 858.2, 967.0 and 848.2 ms for the candidate. The 3434.4 ms
+outlier was the first run of a freshly built binary; driver-cache state was not independently
+controlled, so its cause is unproven. Browser `startup.timeline.readyMs` spans 7769–9505 ms across
+runs of the *same* original source and 7529–10643 ms for the candidate. These overlapping ranges
+do not establish a launch improvement. Sum of native compile service, launch wall,
+`firstPresent` and `readyMs` remain distinct meters, and no shipped package has a first-playable
+meter, so the 8-second playable and >5% GPU targets stay open and unmeasured here.
+
+The bounded observation control set `renderer.pipelineCensus: false` on the same integrated
+packages and the same candidate material source, then restored `src/game.ts` to its original
+`9571aced02a4e26da102161d162da7b34cd1838237865df0242c6932e0412a7c`. The run still passed and
+reported warm-up `status: unavailable` with no census, and the actual built doctor
+[failed closed at exit 2](startup-measure-reduce-2026-09-09/material-tint-uniform/census-off-doctor.txt)
+with `TN_PIPELINE_CAPTURE_MALFORMED` on both that run's report and a version-1 envelope carrying no
+census. JS observer overhead could not be separated from `readyMs` noise. This control does not
+disable native C++ hashing or logging, so native observer overhead remains unmeasured; no flag was
+invented for it.
+
+The Android arm is blocked and produced no census. The candidate APK
+`com.threenative.bayview.startup` built and installed (`Success`) on the Wi-Fi device at 60%
+battery, discharging, 32.4 °C, but the run failed with
+`TN_PLAYTEST_BRIDGE_MISSING: Scenario requires semantic capabilities but
+'__THREENATIVE_PLAYTEST_BRIDGE__' is not installed.` — the Android mailbox transport seam, not the
+material change, and the same scenario passes on desktop. The original app was not touched.
+
+### Final local verification
+
+The [gate receipts](startup-measure-reduce-2026-09-09/gates/results.json) retain exact commands,
+exit codes, full-log hashes and bounded output. Final `pnpm typecheck`, `pnpm lint`, `pnpm build`,
+`pnpm test` and `pnpm test:playtest` all exited `0`. The workspace suite reported 411 files passed,
+2 skipped; 4772 tests passed, 8 skipped. Native package tests separately reported 105 files passed,
+861 tests passed and 57 skipped, followed by successful physics parity tests. The desktop gate
+passed under `SDL_AUDIODRIVER=dummy sh scripts/xvfb.sh pnpm native:verify:desktop`, including the
+300-frame capture, gameplay/physics, native contracts and loading-screen checks.
+
+The quality gate first rejected a double cast in the collector's new promise check. A checked
+`PromiseLike` type guard removed that cast while preserving the observation behavior;
+[the red](startup-measure-reduce-2026-09-09/gates/quality-red.txt) and
+[18-test green](startup-measure-reduce-2026-09-09/gates/final-quality-green.txt) are retained.
+The comparison above uses its recorded package cohort, before this final typing cleanup.
+
+Failed setup attempts are not counted as passing gates: three QuickJS executables were initially
+unbuilt and were then built using the shipped preset; an extra gate recorder prevented one suite
+from acquiring its lease; the native CLI contract initially lacked a display and passed with the
+repository wrapper. One workspace run overlapped the desktop gate's package rebuild and failed to
+resolve the playtest peer dependency. Its isolated test passed, then the full suite passed when
+run after the desktop gate. PRD-367 and PRD-369 remain partial: qualified Android launch timing,
+native observer overhead, first-playable/GPU criteria and human appearance acceptance remain open.
+
 ## PRD-370 warm-up accounting — 2026-09-09
 
 The engine warm-up now reports renderable candidates, compile attempts and the renderer-owned

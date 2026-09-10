@@ -1,0 +1,296 @@
+{
+  "fallback": true,
+  "cycles": [
+    {
+      "initial": {
+        "frame": 4,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 144,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 5,
+          "programsSize": 8352,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 1,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 2,
+          "texturesSize": 921600,
+          "uniformBuffers": 7,
+          "uniformBuffersSize": 2544,
+          "total": 933852
+        }
+      },
+      "grown": {
+        "frame": 7,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 144,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 6,
+          "programsSize": 10253,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 1,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 2,
+          "texturesSize": 921600,
+          "uniformBuffers": 9,
+          "uniformBuffersSize": 5696,
+          "total": 938905
+        }
+      },
+      "removed": {
+        "frame": 10,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 144,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 4,
+          "programsSize": 6820,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 1,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 2,
+          "texturesSize": 921600,
+          "uniformBuffers": 7,
+          "uniformBuffersSize": 5488,
+          "total": 935264
+        }
+      },
+      "generated": [
+        {
+          "count": 8,
+          "capacity": 16,
+          "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1],
+          "usage": 35044
+        },
+        {
+          "count": 8,
+          "capacity": 16,
+          "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1],
+          "usage": 35044
+        }
+      ]
+    },
+    {
+      "initial": {
+        "frame": 14,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 144,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 8,
+          "programsSize": 14055,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 2,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 4,
+          "texturesSize": 1843200,
+          "uniformBuffers": 13,
+          "uniformBuffersSize": 7904,
+          "total": 1866515
+        }
+      },
+      "grown": {
+        "frame": 17,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 144,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 9,
+          "programsSize": 15956,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 2,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 4,
+          "texturesSize": 1843200,
+          "uniformBuffers": 15,
+          "uniformBuffersSize": 11056,
+          "total": 1871568
+        }
+      },
+      "removed": {
+        "frame": 20,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 144,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 7,
+          "programsSize": 12523,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 2,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 4,
+          "texturesSize": 1843200,
+          "uniformBuffers": 13,
+          "uniformBuffersSize": 10848,
+          "total": 1867927
+        }
+      },
+      "generated": [
+        {
+          "count": 8,
+          "capacity": 16,
+          "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1],
+          "usage": 35044
+        },
+        {
+          "count": 8,
+          "capacity": 16,
+          "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1],
+          "usage": 35044
+        }
+      ]
+    },
+    {
+      "initial": {
+        "frame": 24,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 144,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 11,
+          "programsSize": 19758,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 3,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 6,
+          "texturesSize": 2764800,
+          "uniformBuffers": 19,
+          "uniformBuffersSize": 13264,
+          "total": 2799178
+        }
+      },
+      "grown": {
+        "frame": 27,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 144,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 12,
+          "programsSize": 21659,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 3,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 6,
+          "texturesSize": 2764800,
+          "uniformBuffers": 21,
+          "uniformBuffersSize": 16416,
+          "total": 2804231
+        }
+      },
+      "removed": {
+        "frame": 30,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 144,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 10,
+          "programsSize": 18226,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 3,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 6,
+          "texturesSize": 2764800,
+          "uniformBuffers": 19,
+          "uniformBuffersSize": 16208,
+          "total": 2800590
+        }
+      },
+      "generated": [
+        {
+          "count": 8,
+          "capacity": 16,
+          "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1],
+          "usage": 35044
+        },
+        {
+          "count": 8,
+          "capacity": 16,
+          "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1],
+          "usage": 35044
+        }
+      ]
+    }
+  ],
+  "records": [],
+  "writes": [],
+  "shaders": [],
+  "adapter": null,
+  "backend": "WebGLBackend",
+  "glError": 0,
+  "beforeRendererDispose": { "live": 0 },
+  "afterRendererDispose": { "live": 0 },
+  "ok": true
+}

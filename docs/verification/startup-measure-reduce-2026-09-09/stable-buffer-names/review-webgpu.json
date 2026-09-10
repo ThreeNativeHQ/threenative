@@ -1,0 +1,511 @@
+{
+  "fallback": false,
+  "cycles": [
+    {
+      "initial": {
+        "frame": 4,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 288,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 4,
+          "programsSize": 6703,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 1,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 2,
+          "texturesSize": 921600,
+          "uniformBuffers": 9,
+          "uniformBuffersSize": 4576,
+          "total": 934379
+        }
+      },
+      "grown": {
+        "frame": 7,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 288,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 5,
+          "programsSize": 9675,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 1,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 2,
+          "texturesSize": 921600,
+          "uniformBuffers": 12,
+          "uniformBuffersSize": 10800,
+          "total": 943575
+        }
+      },
+      "removed": {
+        "frame": 10,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 288,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 3,
+          "programsSize": 6820,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 1,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 2,
+          "texturesSize": 921600,
+          "uniformBuffers": 10,
+          "uniformBuffersSize": 10608,
+          "total": 940528
+        }
+      },
+      "generated": [
+        {
+          "count": 8,
+          "capacity": 16,
+          "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1],
+          "usage": 35044
+        },
+        {
+          "count": 8,
+          "capacity": 16,
+          "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1],
+          "usage": 35044
+        }
+      ]
+    },
+    {
+      "initial": {
+        "frame": 14,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 288,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 5,
+          "programsSize": 9675,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 2,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 4,
+          "texturesSize": 1843200,
+          "uniformBuffers": 19,
+          "uniformBuffersSize": 15184,
+          "total": 1869559
+        }
+      },
+      "grown": {
+        "frame": 17,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 288,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 5,
+          "programsSize": 9675,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 2,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 4,
+          "texturesSize": 1843200,
+          "uniformBuffers": 22,
+          "uniformBuffersSize": 21408,
+          "total": 1875783
+        }
+      },
+      "removed": {
+        "frame": 20,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 288,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 3,
+          "programsSize": 6820,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 2,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 4,
+          "texturesSize": 1843200,
+          "uniformBuffers": 20,
+          "uniformBuffersSize": 21216,
+          "total": 1872736
+        }
+      },
+      "generated": [
+        {
+          "count": 8,
+          "capacity": 16,
+          "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1],
+          "usage": 35044
+        },
+        {
+          "count": 8,
+          "capacity": 16,
+          "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1],
+          "usage": 35044
+        }
+      ]
+    },
+    {
+      "initial": {
+        "frame": 24,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 288,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 5,
+          "programsSize": 9675,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 3,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 6,
+          "texturesSize": 2764800,
+          "uniformBuffers": 29,
+          "uniformBuffersSize": 25792,
+          "total": 2801767
+        }
+      },
+      "grown": {
+        "frame": 27,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 288,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 5,
+          "programsSize": 9675,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 3,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 6,
+          "texturesSize": 2764800,
+          "uniformBuffers": 32,
+          "uniformBuffersSize": 32016,
+          "total": 2807991
+        }
+      },
+      "removed": {
+        "frame": 30,
+        "liveStorage": 0,
+        "storageBytes": 0,
+        "memory": {
+          "attributes": 6,
+          "attributesSize": 1212,
+          "geometries": 3,
+          "indexAttributes": 2,
+          "indexAttributesSize": 288,
+          "indirectStorageAttributes": 0,
+          "indirectStorageAttributesSize": 0,
+          "programs": 3,
+          "programsSize": 6820,
+          "readbackBuffers": 0,
+          "readbackBuffersSize": 0,
+          "renderTargets": 3,
+          "storageAttributes": 0,
+          "storageAttributesSize": 0,
+          "textures": 6,
+          "texturesSize": 2764800,
+          "uniformBuffers": 30,
+          "uniformBuffersSize": 31824,
+          "total": 2804944
+        }
+      },
+      "generated": [
+        {
+          "count": 8,
+          "capacity": 16,
+          "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1],
+          "usage": 35044
+        },
+        {
+          "count": 8,
+          "capacity": 16,
+          "matrix": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1],
+          "usage": 35044
+        }
+      ]
+    }
+  ],
+  "records": [
+    { "id": 0, "size": 288, "usage": 44, "destroyed": false, "frame": 1 },
+    { "id": 1, "size": 288, "usage": 44, "destroyed": false, "frame": 1 },
+    { "id": 2, "size": 144, "usage": 28, "destroyed": false, "frame": 1 },
+    { "id": 3, "size": 128, "usage": 72, "destroyed": false, "frame": 1 },
+    { "id": 4, "size": 80, "usage": 72, "destroyed": false, "frame": 1 },
+    { "id": 5, "size": 1024, "usage": 72, "destroyed": false, "frame": 1 },
+    { "id": 6, "size": 1024, "usage": 72, "destroyed": false, "frame": 1 },
+    { "id": 7, "size": 288, "usage": 44, "destroyed": false, "frame": 1 },
+    { "id": 8, "size": 288, "usage": 44, "destroyed": false, "frame": 1 },
+    { "id": 9, "size": 144, "usage": 28, "destroyed": false, "frame": 1 },
+    { "id": 10, "size": 80, "usage": 72, "destroyed": false, "frame": 1 },
+    { "id": 11, "size": 1024, "usage": 72, "destroyed": false, "frame": 1 },
+    { "id": 12, "size": 1024, "usage": 72, "destroyed": false, "frame": 1 },
+    { "id": 13, "size": 24, "usage": 44, "destroyed": false, "frame": 1 },
+    { "id": 14, "size": 36, "usage": 44, "destroyed": false, "frame": 1 },
+    { "id": 15, "size": 128, "usage": 72, "destroyed": true, "frame": 1 },
+    { "id": 16, "size": 64, "usage": 72, "destroyed": true, "frame": 1 },
+    { "id": 17, "size": 80, "usage": 72, "destroyed": false, "frame": 5 },
+    { "id": 18, "size": 3072, "usage": 72, "destroyed": false, "frame": 5 },
+    { "id": 19, "size": 3072, "usage": 72, "destroyed": false, "frame": 5 },
+    { "id": 20, "size": 128, "usage": 72, "destroyed": false, "frame": 11 },
+    { "id": 21, "size": 80, "usage": 72, "destroyed": false, "frame": 11 },
+    { "id": 22, "size": 1024, "usage": 72, "destroyed": false, "frame": 11 },
+    { "id": 23, "size": 1024, "usage": 72, "destroyed": false, "frame": 11 },
+    { "id": 24, "size": 80, "usage": 72, "destroyed": false, "frame": 11 },
+    { "id": 25, "size": 1024, "usage": 72, "destroyed": false, "frame": 11 },
+    { "id": 26, "size": 1024, "usage": 72, "destroyed": false, "frame": 11 },
+    { "id": 27, "size": 128, "usage": 72, "destroyed": true, "frame": 11 },
+    { "id": 28, "size": 64, "usage": 72, "destroyed": true, "frame": 11 },
+    { "id": 29, "size": 80, "usage": 72, "destroyed": false, "frame": 15 },
+    { "id": 30, "size": 3072, "usage": 72, "destroyed": false, "frame": 15 },
+    { "id": 31, "size": 3072, "usage": 72, "destroyed": false, "frame": 15 },
+    { "id": 32, "size": 128, "usage": 72, "destroyed": false, "frame": 21 },
+    { "id": 33, "size": 80, "usage": 72, "destroyed": false, "frame": 21 },
+    { "id": 34, "size": 1024, "usage": 72, "destroyed": false, "frame": 21 },
+    { "id": 35, "size": 1024, "usage": 72, "destroyed": false, "frame": 21 },
+    { "id": 36, "size": 80, "usage": 72, "destroyed": false, "frame": 21 },
+    { "id": 37, "size": 1024, "usage": 72, "destroyed": false, "frame": 21 },
+    { "id": 38, "size": 1024, "usage": 72, "destroyed": false, "frame": 21 },
+    { "id": 39, "size": 128, "usage": 72, "destroyed": true, "frame": 21 },
+    { "id": 40, "size": 64, "usage": 72, "destroyed": true, "frame": 21 },
+    { "id": 41, "size": 80, "usage": 72, "destroyed": false, "frame": 25 },
+    { "id": 42, "size": 3072, "usage": 72, "destroyed": false, "frame": 25 },
+    { "id": 43, "size": 3072, "usage": 72, "destroyed": false, "frame": 25 }
+  ],
+  "writes": [
+    {
+      "frame": 1,
+      "id": 3,
+      "values": [
+        1.6083801984786987, 0, 0, 0, 0, 2.1445069313049316, 0, 0, 0, 0, -1.001001000404358, -1, 0,
+        0, -0.10010010004043579, 0
+      ]
+    },
+    { "frame": 1, "id": 4, "values": [0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] },
+    { "frame": 1, "id": 5, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.875, -0.5, 0, 1] },
+    { "frame": 1, "id": 6, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.875, -0.5, 0, 1] },
+    { "frame": 1, "id": 10, "values": [0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] },
+    { "frame": 1, "id": 11, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 1, "id": 12, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 1, "id": 15, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1] },
+    { "frame": 1, "id": 16, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
+    { "frame": 2, "id": 5, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.75, -0.5, 0, 1] },
+    { "frame": 2, "id": 6, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.875, -0.5, 0, 1] },
+    { "frame": 2, "id": 11, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 2, "id": 12, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 3, "id": 5, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.625, -0.5, 0, 1] },
+    { "frame": 3, "id": 6, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.75, -0.5, 0, 1] },
+    { "frame": 3, "id": 11, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 3, "id": 12, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 4, "id": 5, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 4, "id": 6, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.625, -0.5, 0, 1] },
+    { "frame": 4, "id": 11, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 4, "id": 12, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 5, "id": 11, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 5, "id": 12, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 5, "id": 17, "values": [0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] },
+    { "frame": 5, "id": 18, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 5, "id": 19, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 6, "id": 11, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 6, "id": 12, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 6, "id": 18, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 6, "id": 19, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 7, "id": 11, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 7, "id": 12, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 7, "id": 18, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 7, "id": 19, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    {
+      "frame": 11,
+      "id": 20,
+      "values": [
+        1.6083801984786987, 0, 0, 0, 0, 2.1445069313049316, 0, 0, 0, 0, -1.001001000404358, -1, 0,
+        0, -0.10010010004043579, 0
+      ]
+    },
+    { "frame": 11, "id": 21, "values": [0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] },
+    { "frame": 11, "id": 22, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.875, -0.5, 0, 1] },
+    { "frame": 11, "id": 23, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.875, -0.5, 0, 1] },
+    { "frame": 11, "id": 24, "values": [0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] },
+    { "frame": 11, "id": 25, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 11, "id": 26, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 11, "id": 27, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1] },
+    { "frame": 11, "id": 28, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
+    { "frame": 12, "id": 22, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.75, -0.5, 0, 1] },
+    { "frame": 12, "id": 23, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.875, -0.5, 0, 1] },
+    { "frame": 12, "id": 25, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 12, "id": 26, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 13, "id": 22, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.625, -0.5, 0, 1] },
+    { "frame": 13, "id": 23, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.75, -0.5, 0, 1] },
+    { "frame": 13, "id": 25, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 13, "id": 26, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 14, "id": 22, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 14, "id": 23, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.625, -0.5, 0, 1] },
+    { "frame": 14, "id": 25, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 14, "id": 26, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 15, "id": 25, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 15, "id": 26, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 15, "id": 29, "values": [0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] },
+    { "frame": 15, "id": 30, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 15, "id": 31, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 16, "id": 25, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 16, "id": 26, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 16, "id": 30, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 16, "id": 31, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 17, "id": 25, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 17, "id": 26, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 17, "id": 30, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 17, "id": 31, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    {
+      "frame": 21,
+      "id": 32,
+      "values": [
+        1.6083801984786987, 0, 0, 0, 0, 2.1445069313049316, 0, 0, 0, 0, -1.001001000404358, -1, 0,
+        0, -0.10010010004043579, 0
+      ]
+    },
+    { "frame": 21, "id": 33, "values": [0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] },
+    { "frame": 21, "id": 34, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.875, -0.5, 0, 1] },
+    { "frame": 21, "id": 35, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.875, -0.5, 0, 1] },
+    { "frame": 21, "id": 36, "values": [0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] },
+    { "frame": 21, "id": 37, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 21, "id": 38, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 21, "id": 39, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1] },
+    { "frame": 21, "id": 40, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
+    { "frame": 22, "id": 34, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.75, -0.5, 0, 1] },
+    { "frame": 22, "id": 35, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.875, -0.5, 0, 1] },
+    { "frame": 22, "id": 37, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 22, "id": 38, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 23, "id": 34, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.625, -0.5, 0, 1] },
+    { "frame": 23, "id": 35, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.75, -0.5, 0, 1] },
+    { "frame": 23, "id": 37, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 23, "id": 38, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 24, "id": 34, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 24, "id": 35, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.625, -0.5, 0, 1] },
+    { "frame": 24, "id": 37, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 24, "id": 38, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 25, "id": 37, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 25, "id": 38, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 25, "id": 41, "values": [0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] },
+    { "frame": 25, "id": 42, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 25, "id": 43, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 26, "id": 37, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 26, "id": 38, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 26, "id": 42, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 26, "id": 43, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 27, "id": 37, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 27, "id": 38, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1] },
+    { "frame": 27, "id": 42, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] },
+    { "frame": 27, "id": 43, "values": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.5, -0.5, 0, 1] }
+  ],
+  "shaders": [
+    {
+      "code": "// Three.js r185 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct nodeUniform0Struct {\n\tvalue : array< mat4x4<f32>, 16 >\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> nodeUniform0 : nodeUniform0Struct;\n\nstruct nodeUniform1Struct {\n\tvalue : array< mat4x4<f32>, 16 >\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> nodeUniform1 : nodeUniform1Struct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform6 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) positionLocal : vec3<f32>,\n\t@location( 1 ) positionPrevious : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar0 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\nfn tsl_inverse_mat3( m : mat3x3<f32> ) -> mat3x3<f32> {\n\n\tlet a00 = m[ 0 ][ 0 ]; let a01 = m[ 0 ][ 1 ]; let a02 = m[ 0 ][ 2 ];\n\tlet a10 = m[ 1 ][ 0 ]; let a11 = m[ 1 ][ 1 ]; let a12 = m[ 1 ][ 2 ];\n\tlet a20 = m[ 2 ][ 0 ]; let a21 = m[ 2 ][ 1 ]; let a22 = m[ 2 ][ 2 ];\n\n\tlet b01 = a22 * a11 - a12 * a21;\n\tlet b11 = - a22 * a10 + a12 * a20;\n\tlet b21 = a21 * a10 - a11 * a20;\n\n\tlet det = a00 * b01 + a01 * b11 + a02 * b21;\n\n\treturn mat3x3<f32>(\n\t\tb01, ( - a22 * a01 + a02 * a21 ), ( a12 * a01 - a02 * a11 ),\n\t\tb11, ( a22 * a00 - a02 * a20 ), ( - a12 * a00 + a02 * a10 ),\n\t\tb21, ( - a21 * a00 + a01 * a20 ), ( a11 * a00 - a01 * a10 )\n\t) * ( 1.0 / det );\n\n}\n\n\n\n@vertex\nfn main( @builtin( instance_index ) instanceIndex : u32,\n\t@location( 0 ) position : vec3<f32>,\n\t@location( 1 ) normal : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.positionLocal = position;\n\tvaryings.positionLocal = ( nodeUniform0.value[ instanceIndex ] * vec4<f32>( varyings.positionLocal, 1.0 ) ).xyz;\n\tvaryings.positionPrevious = position;\n\tvaryings.positionPrevious = ( nodeUniform1.value[ instanceIndex ] * vec4<f32>( varyings.positionPrevious, 1.0 ) ).xyz;\n\tnormalLocal = normal;\n\tnormalLocal = normalize( ( transpose( tsl_inverse_mat3( mat3x3<f32>( nodeUniform0.value[ instanceIndex ][ 0 ].xyz, nodeUniform0.value[ instanceIndex ][ 1 ].xyz, nodeUniform0.value[ instanceIndex ][ 2 ].xyz ) ) ) * normalLocal ) );\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform6 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( varyings.positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar0 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar0;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+      "label": "vertex",
+      "frame": 1
+    },
+    {
+      "code": "// Three.js r185 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputType {\n\t@location( 0 ) m0 : vec4<f32>,\n\t\n};\nvar<private> output : OutputType;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform6 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Output : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) positionLocal : vec3<f32>,\n\t@location( 1 ) positionPrevious : vec3<f32> ) -> OutputType {\n\n\t// flow\n\t// code\n\n\tDiffuseColor = vec4<f32>( object.nodeUniform2, 1.0 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform3 );\n\tDiffuseColor.w = 1.0;\n\tOutput = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\toutput.m0 = Output;\n\n\t// result\n\n\treturn output;\n\n}\n",
+      "label": "fragment",
+      "frame": 1
+    },
+    {
+      "code": "// Three.js r185 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform3 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar3 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform3 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar3 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar3;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+      "label": "vertex_RenderPipeline",
+      "frame": 1
+    },
+    {
+      "code": "// Three.js r185 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> nodeVar2 : vec4<f32>;\n\n// codes\nfn fn1 ( color : vec4<f32> ) -> vec4<f32> {\n\n\tvar nodeVar0 : vec4<f32>;\n\n\n\tif ( ( color.w == 0.0 ) ) {\n\n\t\tnodeVar0 = vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t} else {\n\n\t\tnodeVar0 = vec4<f32>( ( color.xyz / vec3<f32>( color.w ) ), color.w );\n\n\t}\n\n\n\treturn nodeVar0;\n\n}\n\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\nfn fn0 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\treturn vec4<f32>( ( color.xyz * vec3<f32>( color.w ) ), color.w );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, nodeVarying4 );\n\tnodeVar1 = nodeVar0;\n\tnodeVar2 = fn1( vec4<f32>( nodeVar1.xyz, clamp( nodeVar1.w, 0.0, 1.0 ) ) );\n\n\t// result\n\n\toutput.color = fn0( vec4<f32>( sRGBTransferOETF( nodeVar2.xyz ), nodeVar2.w ) );\n\n\treturn output;\n\n}\n",
+      "label": "fragment_RenderPipeline",
+      "frame": 1
+    },
+    {
+      "code": "// Three.js r185 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct nodeUniform0Struct {\n\tvalue : array< mat4x4<f32>, 48 >\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> nodeUniform0 : nodeUniform0Struct;\n\nstruct nodeUniform1Struct {\n\tvalue : array< mat4x4<f32>, 48 >\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> nodeUniform1 : nodeUniform1Struct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : vec3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform6 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) positionLocal : vec3<f32>,\n\t@location( 1 ) positionPrevious : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar0 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\nfn tsl_inverse_mat3( m : mat3x3<f32> ) -> mat3x3<f32> {\n\n\tlet a00 = m[ 0 ][ 0 ]; let a01 = m[ 0 ][ 1 ]; let a02 = m[ 0 ][ 2 ];\n\tlet a10 = m[ 1 ][ 0 ]; let a11 = m[ 1 ][ 1 ]; let a12 = m[ 1 ][ 2 ];\n\tlet a20 = m[ 2 ][ 0 ]; let a21 = m[ 2 ][ 1 ]; let a22 = m[ 2 ][ 2 ];\n\n\tlet b01 = a22 * a11 - a12 * a21;\n\tlet b11 = - a22 * a10 + a12 * a20;\n\tlet b21 = a21 * a10 - a11 * a20;\n\n\tlet det = a00 * b01 + a01 * b11 + a02 * b21;\n\n\treturn mat3x3<f32>(\n\t\tb01, ( - a22 * a01 + a02 * a21 ), ( a12 * a01 - a02 * a11 ),\n\t\tb11, ( a22 * a00 - a02 * a20 ), ( - a12 * a00 + a02 * a10 ),\n\t\tb21, ( - a21 * a00 + a01 * a20 ), ( a11 * a00 - a01 * a10 )\n\t) * ( 1.0 / det );\n\n}\n\n\n\n@vertex\nfn main( @builtin( instance_index ) instanceIndex : u32,\n\t@location( 0 ) position : vec3<f32>,\n\t@location( 1 ) normal : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.positionLocal = position;\n\tvaryings.positionLocal = ( nodeUniform0.value[ instanceIndex ] * vec4<f32>( varyings.positionLocal, 1.0 ) ).xyz;\n\tvaryings.positionPrevious = position;\n\tvaryings.positionPrevious = ( nodeUniform1.value[ instanceIndex ] * vec4<f32>( varyings.positionPrevious, 1.0 ) ).xyz;\n\tnormalLocal = normal;\n\tnormalLocal = normalize( ( transpose( tsl_inverse_mat3( mat3x3<f32>( nodeUniform0.value[ instanceIndex ][ 0 ].xyz, nodeUniform0.value[ instanceIndex ][ 1 ].xyz, nodeUniform0.value[ instanceIndex ][ 2 ].xyz ) ) ) * normalLocal ) );\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform6 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( varyings.positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar0 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar0;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+      "label": "vertex",
+      "frame": 5
+    },
+    {
+      "code": "// Three.js r185 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform3 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar3 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform3 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar3 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar3;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+      "label": "vertex_RenderPipeline",
+      "frame": 11
+    },
+    {
+      "code": "// Three.js r185 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> nodeVar2 : vec4<f32>;\n\n// codes\nfn fn1 ( color : vec4<f32> ) -> vec4<f32> {\n\n\tvar nodeVar0 : vec4<f32>;\n\n\n\tif ( ( color.w == 0.0 ) ) {\n\n\t\tnodeVar0 = vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t} else {\n\n\t\tnodeVar0 = vec4<f32>( ( color.xyz / vec3<f32>( color.w ) ), color.w );\n\n\t}\n\n\n\treturn nodeVar0;\n\n}\n\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\nfn fn0 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\treturn vec4<f32>( ( color.xyz * vec3<f32>( color.w ) ), color.w );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, nodeVarying4 );\n\tnodeVar1 = nodeVar0;\n\tnodeVar2 = fn1( vec4<f32>( nodeVar1.xyz, clamp( nodeVar1.w, 0.0, 1.0 ) ) );\n\n\t// result\n\n\toutput.color = fn0( vec4<f32>( sRGBTransferOETF( nodeVar2.xyz ), nodeVar2.w ) );\n\n\treturn output;\n\n}\n",
+      "label": "fragment_RenderPipeline",
+      "frame": 11
+    },
+    {
+      "code": "// Three.js r185 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform3 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar3 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform3 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar3 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar3;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+      "label": "vertex_RenderPipeline",
+      "frame": 21
+    },
+    {
+      "code": "// Three.js r185 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> nodeVar2 : vec4<f32>;\n\n// codes\nfn fn1 ( color : vec4<f32> ) -> vec4<f32> {\n\n\tvar nodeVar0 : vec4<f32>;\n\n\n\tif ( ( color.w == 0.0 ) ) {\n\n\t\tnodeVar0 = vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t} else {\n\n\t\tnodeVar0 = vec4<f32>( ( color.xyz / vec3<f32>( color.w ) ), color.w );\n\n\t}\n\n\n\treturn nodeVar0;\n\n}\n\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\nfn fn0 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\treturn vec4<f32>( ( color.xyz * vec3<f32>( color.w ) ), color.w );\n\n}\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, nodeVarying4 );\n\tnodeVar1 = nodeVar0;\n\tnodeVar2 = fn1( vec4<f32>( nodeVar1.xyz, clamp( nodeVar1.w, 0.0, 1.0 ) ) );\n\n\t// result\n\n\toutput.color = fn0( vec4<f32>( sRGBTransferOETF( nodeVar2.xyz ), nodeVar2.w ) );\n\n\treturn output;\n\n}\n",
+      "label": "fragment_RenderPipeline",
+      "frame": 21
+    }
+  ],
+  "adapter": { "vendor": "nvidia", "architecture": "turing", "device": "", "description": "" },
+  "backend": "WebGPUBackend",
+  "glError": null,
+  "beforeRendererDispose": { "live": 38 },
+  "afterRendererDispose": { "live": 38 },
+  "ok": true
+}

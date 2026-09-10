@@ -25,7 +25,7 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..81ec551afb3ddc3c5edc173001719ee503b94d52 100644
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..d05599255744ccfca19dbfd0433da612583ce6ea 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -18500,7 +18500,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
@@ -195,7 +195,17 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..81ec551afb3ddc3c5edc173001719ee5
  
  		}
  
-@@ -83814,6 +83866,14 @@ class WebGPUBackend extends Backend {
+@@ -79586,7 +79638,8 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				uniformGPU = buffer;
+ 
+-				uniformNode.name = name ? name : 'NodeBuffer_' + uniformNode.id;
++				// The base builder supplies a unique name within this program. A process-wide
++				// allocation id changes otherwise identical shader source for every buffer.
+ 
+ 			} else {
+ 
+@@ -83814,6 +83867,14 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -210,7 +220,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..81ec551afb3ddc3c5edc173001719ee5
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +83986,9 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +83987,9 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -495,4 +505,18 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..37b5e0be09967e8acbd38e570b71eb20
 +			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
  
  			if ( adapter === null ) {
+ 
+diff --git a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
+index be07536301cd47ef2544e4a54f6abe17407f52af..6144b98ddeb5d53c5cf280bb51401385a4427547 100644
+--- a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
++++ b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
+@@ -1323,7 +1323,8 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 				uniformGPU = buffer;
+ 
+-				uniformNode.name = name ? name : 'NodeBuffer_' + uniformNode.id;
++				// The base builder supplies a unique name within this program. A process-wide
++				// allocation id changes otherwise identical shader source for every buffer.
+ 
+ 			} else {
  

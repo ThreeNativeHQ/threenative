@@ -99,6 +99,27 @@ test("the Android runner samples only after the advertised startup phase is read
   expect(result.pass).toBe(true);
   expect(moving.readinessPhases).toEqual(["collapsing", "collapsing", "collapsing", "ready"]);
   expect(moving.sampledBeforeStartup).toBe(0);
+  expect(result.observations?.startup).toMatchObject({
+    phase: "ready", rule: "sustained-frames", timeline: { readyMs: 1_200 },
+  });
+});
+
+test("native startup assertions use the observed timeline for passing and slow launches", async () => {
+  for (const maxReadyMs of [1_500, 1_000]) {
+    const moving = movingBridge({ startupPolls: 1 });
+    const result = await runDevice(
+      { diagnostics: deviceDiagnosticsOptOut, startup: { maxReadyMs } },
+      new FakeAndroidDriver(moving.bridge),
+      1_000,
+      [{ waitTicks: 1, release: true }],
+    );
+
+    expect(result.pass).toBe(maxReadyMs >= 1_200);
+    expect(result.assertionResults).toContainEqual(
+      expect.objectContaining({ id: "startup.readyMs", pass: maxReadyMs >= 1_200 }),
+    );
+    expect(result.diagnostics?.some(({ code }) => code === "TN_PLAYTEST_STARTUP_UNOBSERVABLE")).toBe(false);
+  }
 });
 
 test("native runner waits on an asynchronously changing resource", async () => {
@@ -832,7 +853,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
             : (() => {
                 const phase = ready ? "ready" : "collapsing";
                 readinessPhases.push(phase);
-                return { startup: { phase, progress: ready ? 1 : 0.5 } };
+                return { startup: { phase, progress: ready ? 1 : 0.5, timeline: { readyMs: 1_200 } } };
               })()),
         };
       },

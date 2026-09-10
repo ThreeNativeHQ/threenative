@@ -21,9 +21,14 @@ shares programs for compatible materials that differ only in values.
 | M2 | Extended generated material source and convention | `packages/create-threenative/templates/starter/src/scenes/Play.ts:65`, existing `createMaterials()` call | Only structural duplication demonstrated by the new census | Extend existing factory; no competing material module | Remove factory integration: scaffold scenario detects missing behavior |
 | M3 | Cold-launch and appearance comparison | Existing town playtest scenario and `packages/playtest/src/runner/perf.ts` | Ad hoc material-count claim | Existing runner owns report | Same baseline hash in both arms: comparison refuses |
 
-M1 intentionally has no invented game path: the requested source does not name its material factory.
-Resolve and record the existing factory, scene and scenario `file:line` before Phase 1 edits; inability
-to recover that production consumer blocks implementation. Do not prove the feature only in starter.
+M1 preflight resolved the actual game to
+`/home/joao/projects/threenative/sandbox/prd360-bayview-live`. Its existing
+`src/render/townMaterials.ts:319` defines `worldSurface`; the returned factory materials are consumed
+by `src/scenes/Play.ts` and the town render source. `playtests/survives.playtest.json` is the browser
+scenario; the existing native manifest scenario is
+`docs/verification/findings-2026-09-07-bayview-fix/manifest.playtest.json` in the engine repository.
+The [source manifest and baseline observations](../../verification/runtime-perf-state.md#prd-367-actual-device-census-repair--2026-09-09)
+retain the subject before any graph edits. Do not substitute the separate Wildwood result.
 
 ## Design decisions
 
@@ -59,9 +64,16 @@ flowchart TD
 
 ## Phase 1 — The actual town renders fewer programs on first install
 
-Files (resolve the four game paths in preflight): EDIT existing town material factory, scene
-material assignment and real playtest scenario; NEW town `src/render/sharedMaterials.ts`;
-EDIT `docs/verification/runtime-perf-state.md`. Ledger M1/M3. At most five files.
+Files: EDIT existing town `src/render/townMaterials.ts`, its actual scenario and
+`docs/verification/runtime-perf-state.md`. Change `src/scenes/Play.ts` only if integration requires
+it. Reuse the existing factory; add no material abstraction for a value-only change. Ledger M1/M3.
+At most five files.
+
+The first candidate is tint uniforms in one compatible paving family. Keep tile scales, maps,
+roughness, noise and zero-valued specializations authored while proving that tint variation shares
+generated source. The native service ranking is diagnostic only while the phone is charging;
+predicted removed work is not measured launch savings. Expand only after the integrated census,
+whole-town appearance and frame cost validate this bounded candidate.
 
 Freeze raw baseline and camera checkpoints. Name selected structural families, expected removals
 and every excluded feature before changing assignments. Build a small compatible family first

@@ -1,0 +1,17 @@
+Run from the owning checkout unless stated otherwise.
+The retained patch is a prototype, not a shipping dependency replacement.
+1. Download the exact v25.0.2.2 source archive and verify receipt.json sourceArchiveSha256.
+2. Extract; copy packages/runtime-native/third_party/wgpu/include/webgpu/webgpu.h into ffi/webgpu-headers/webgpu.h; verify headerSha256.
+3. Apply wgpu-native-v25.0.2.2-cache.patch with patch -p1 in the extracted root.
+4. In the extracted root, executed:
+LIBCLANG_PATH=/home/joao/Android/Sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/linux-x86_64/musl/lib cargo build --release --locked -j 2
+System libclang22 produced opaque structs with bindgen0.72; the installed NDK libclang resolved this without changing dependency pins.
+5. In the parent directory containing cache_probe.cpp and wgpu-native-25.0.2.2, executed:
+c++ -std=c++17 cache_probe.cpp -Iwgpu-native-25.0.2.2/ffi -Iwgpu-native-25.0.2.2/ffi/webgpu-headers -Lwgpu-native-25.0.2.2/target/release -Wl,-rpath,'$ORIGIN/wgpu-native-25.0.2.2/target/release' -lwgpu_native -o cache-probe
+./cache-probe store pipeline.bin
+./cache-probe load pipeline.bin
+./cache-probe disabled pipeline.bin
+cmp store.rgba load.rgba
+cmp store.rgba disabled.rgba
+The red links the same probe against the unmodified packages/runtime-native/third_party/wgpu/lib library; missing cache symbols cause exit1. The patched build and three final probes exit0.
+No arbitrary cache files or mutated driver payloads were imported. Loading remains an unsafe API contract requiring a validated app-private envelope before production use.

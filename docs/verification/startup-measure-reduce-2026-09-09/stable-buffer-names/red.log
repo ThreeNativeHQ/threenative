@@ -1,0 +1,47 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce
+
+stdout | packages/core/__tests__/render-projection-pipeline.spec.ts > SceneRenderProjection and the installed output pipeline > shares generated matrix declarations across independently allocated projection batches
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":8,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":8,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":8,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":8,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/render-projection-pipeline.spec.ts > SceneRenderProjection and the installed output pipeline > renders the projected root that carries moved skinned and instance history
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":10,"resultDrawCandidates":3,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":8,"exactObjects":2,"exact":{"skinned":1,"instanced":1}}
+
+ ❯ packages/core/__tests__/render-projection-pipeline.spec.ts (2 tests | 1 failed) 27ms
+     × shares generated matrix declarations across independently allocated projection batches 21ms
+     ✓ renders the projected root that carries moved skinned and instance history 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/core/__tests__/render-projection-pipeline.spec.ts > SceneRenderProjection and the installed output pipeline > shares generated matrix declarations across independently allocated projection batches
+AssertionError: expected '\nstruct NodeBuffer_1001Struct {\n\tv…' to be '\nstruct NodeBuffer_971Struct {\n\tva…' // Object.is equality
+
+- Expected
++ Received
+
+
+- struct NodeBuffer_971Struct {
++ struct NodeBuffer_1001Struct {
+  	value : array< mat4x4<f32>, 16 >
+  };
+  @binding( 0 ) @group( 0 )
+- var<uniform> NodeBuffer_971 : NodeBuffer_971Struct;
++ var<uniform> NodeBuffer_1001 : NodeBuffer_1001Struct;
+
+ ❯ packages/core/__tests__/render-projection-pipeline.spec.ts:108:29
+    106|     }
+    107|     expect(declarations[0]).toContain("mat4x4<f32>");
+    108|     expect(declarations[1]).toBe(declarations[0]);
+       |                             ^
+    109|   });
+    110|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  19:58:01
+   Duration  331ms (transform 103ms, setup 0ms, import 199ms, tests 27ms, environment 0ms)
+

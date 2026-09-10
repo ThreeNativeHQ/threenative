@@ -20,9 +20,12 @@ js::JSValueHandle handleGpuDeviceCreateComputePipelineAsync(BindingsState* state
 void drainAsyncPipelineCompiles(BindingsState* state);
 void shutdownAsyncPipelineCompiles(BindingsState* state);
 double pipelineClockMs();
+std::string pipelineSourceHash(const std::string& code);
 void reportPipelineCaptureMetadata(WGPUAdapter adapter);
 void reportPipelineFirstPresent();
 void reportPipelineCaptureComplete(uint64_t eventCount);
+// A capture boundary for a process nobody gets to exit. Emitted only when the counts changed.
+void reportPipelineCheckpoint(BindingsState* state, uint64_t presentCount);
 
 #endif
 

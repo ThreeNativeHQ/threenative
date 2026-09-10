@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce
+
+ ✓ packages/core/__tests__/pipeline-census.spec.ts (6 tests) 8ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  16:29:37
+   Duration  180ms (transform 40ms, setup 0ms, import 53ms, tests 8ms, environment 0ms)

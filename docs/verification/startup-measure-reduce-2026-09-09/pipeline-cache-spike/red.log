@@ -1,0 +1,8 @@
+/usr/bin/ld: /tmp/ccBZzA0T.o: in function `main':
+cache_probe.cpp:(.text+0x750): undefined reference to `wgpuDeviceCreatePipelineCache'
+/usr/bin/ld: cache_probe.cpp:(.text+0x785): undefined reference to `wgpuPipelineCacheGetData'
+/usr/bin/ld: cache_probe.cpp:(.text+0x7ba): undefined reference to `wgpuPipelineCacheDataFreeMembers'
+/usr/bin/ld: cache_probe.cpp:(.text+0xf53): undefined reference to `wgpuPipelineCacheGetData'
+/usr/bin/ld: cache_probe.cpp:(.text+0x117a): undefined reference to `wgpuPipelineCacheDataFreeMembers'
+/usr/bin/ld: cache_probe.cpp:(.text+0x1201): undefined reference to `wgpuPipelineCacheRelease'
+collect2: error: ld returned 1 exit status

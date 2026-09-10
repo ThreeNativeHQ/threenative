@@ -1,0 +1,4 @@
+
+> @threenative/playtest@0.3.1 typecheck /home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce/packages/playtest
+> tsc --noEmit
+

@@ -1,0 +1,29 @@
+ FAIL  scripts/__tests__/quality-json.spec.ts > quality JSON command > should emit only parseable finding records through the documented silent form
+AssertionError: quality gate failed: 1 suppression-class finding(s) are new, grew, or lack a waiver reason
+: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ scripts/__tests__/quality-json.spec.ts:15:44
+     13|       });
+     14|
+     15|       expect(result.status, result.stderr).toBe(0);
+       |                                            ^
+     16|       const records = result.stdout
+     17|         .trim()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 410 passed | 2 skipped (413)
+      Tests  1 failed | 4771 passed | 8 skipped (4780)
+   Start at  17:42:30
+   Duration  161.00s (transform 36.78s, setup 0ms, import 169.80s, tests 964.92s, environment 56ms)
+
+suite temporary directory count did not grow in '/tmp/threenative-suite.HACCq8': before 1, after 1
+ ELIFECYCLE  Test failed. See above for more details.
+TEST_EXIT=1

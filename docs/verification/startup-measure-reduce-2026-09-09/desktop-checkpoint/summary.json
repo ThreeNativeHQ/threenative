@@ -1,0 +1,859 @@
+{
+  "adapter": {
+    "identity": "native:vulkan/nvidia/NVIDIA GeForce RTX 2080/turing/NVIDIA: 610.57.04 610.57.4.0",
+    "thermal": "unavailable"
+  },
+  "boundary": { "kind": "checkpoint", "events": 94, "outstanding": 0, "present": 2 },
+  "build": { "identity": "mystral-native@0.3.1" },
+  "complete": true,
+  "counts": {
+    "lookups": 0,
+    "creations": 94,
+    "failures": 0,
+    "pending": 0,
+    "uniquePrograms": 84,
+    "uniquePipelines": 94,
+    "recordedEvents": 94,
+    "droppedEvents": 0
+  },
+  "contributors": [
+    {
+      "label": "material#73",
+      "creations": 6,
+      "failures": 0,
+      "sampleCount": 6,
+      "serviceMs": 67.4780310000001
+    },
+    {
+      "label": "material#75",
+      "creations": 6,
+      "failures": 0,
+      "sampleCount": 6,
+      "serviceMs": 63.14773499999956
+    },
+    {
+      "label": "material#74",
+      "creations": 6,
+      "failures": 0,
+      "sampleCount": 6,
+      "serviceMs": 62.66490800000042
+    },
+    {
+      "label": "material#72",
+      "creations": 6,
+      "failures": 0,
+      "sampleCount": 6,
+      "serviceMs": 58.42583300000024
+    },
+    {
+      "label": "material#50",
+      "creations": 5,
+      "failures": 0,
+      "sampleCount": 5,
+      "serviceMs": 48.56566899999984
+    },
+    {
+      "label": "material:tm_elite_head_variantE",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 38.19538999999986
+    },
+    {
+      "label": "material:Osiris",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 37.67979199999991
+    },
+    {
+      "label": "material:Scope",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 36.36075999999957
+    },
+    {
+      "label": "material:Interior",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 33.988813999999365
+    },
+    {
+      "label": "material#40",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 32.09110399999986
+    },
+    {
+      "label": "material:Exterior",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 31.624547000000348
+    },
+    {
+      "label": "material#39",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 30.857283000000052
+    },
+    {
+      "label": "material#42",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 30.819662000000108
+    },
+    {
+      "label": "material#43",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 28.793184000000338
+    },
+    {
+      "label": "material#44",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 28.775322999999617
+    },
+    {
+      "label": "material#41",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 28.08746800000017
+    },
+    {
+      "label": "material#64",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 27.708480000000236
+    },
+    {
+      "label": "material#36",
+      "creations": 3,
+      "failures": 0,
+      "sampleCount": 3,
+      "serviceMs": 27.247974000000113
+    },
+    {
+      "label": "material#37",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 27.02252399999975
+    },
+    {
+      "label": "material#62",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 26.349177999999938
+    },
+    {
+      "label": "material#51",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 26.22153800000001
+    },
+    {
+      "label": "material#49",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 25.67530200000033
+    },
+    {
+      "label": "material#65",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 24.761947999999848
+    },
+    {
+      "label": "material#63",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 23.200935999999956
+    },
+    {
+      "label": "material:Rifle",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 22.526609000000462
+    },
+    {
+      "label": "material#38",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 20.332792000000154
+    },
+    {
+      "label": "material:Silencer",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 20.12093399999958
+    },
+    {
+      "label": "material#183",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 19.13565000000017
+    },
+    {
+      "label": "material:arms",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 18.820161999999982
+    },
+    {
+      "label": "material#86",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 18.565303000000313
+    },
+    {
+      "label": "material#60",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 17.060390999999754
+    },
+    {
+      "label": "material#54",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 16.819503000000623
+    },
+    {
+      "label": "material#58",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 15.585410000000138
+    },
+    {
+      "label": "material#55",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 15.56939999999986
+    },
+    {
+      "label": "material#140",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 14.746335000000727
+    },
+    {
+      "label": "material:outputColorTransform",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 7.698604999999554
+    },
+    {
+      "label": "material:PMREM_ggx",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 5.681196999999884
+    },
+    {
+      "label": "material#549",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 5.320909000000029
+    },
+    {
+      "label": "unknown provenance",
+      "creations": 2,
+      "failures": 0,
+      "sampleCount": 2,
+      "serviceMs": 5.195629000000054
+    },
+    {
+      "label": "material#284",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 5.018170999999711
+    },
+    {
+      "label": "material:Background.material",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 4.4504450000001725
+    },
+    {
+      "label": "material#560",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 4.386504999999943
+    },
+    {
+      "label": "material:PMREM_equirect",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 3.142121999999972
+    },
+    {
+      "label": "material#512",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 3.128381999999874
+    },
+    {
+      "label": "material#227",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 2.9056229999996503
+    },
+    {
+      "label": "material#187",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 2.838713000000098
+    },
+    {
+      "label": "material#85",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 2.101747999999816
+    },
+    {
+      "label": "material#83",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 0.03921900000023015
+    },
+    {
+      "label": "material#59",
+      "creations": 1,
+      "failures": 0,
+      "sampleCount": 1,
+      "serviceMs": 0.010880000000042855
+    }
+  ],
+  "incompleteReasons": [],
+  "passTotals": [
+    {
+      "pass": "main-clipped",
+      "creations": 58,
+      "failures": 0,
+      "beforeFirstPresent": 0,
+      "serviceSamples": 58,
+      "serviceMs": 995.3884790000002
+    },
+    {
+      "pass": "shadow",
+      "creations": 29,
+      "failures": 0,
+      "beforeFirstPresent": 0,
+      "serviceSamples": 29,
+      "serviceMs": 95.3875430000005
+    },
+    {
+      "pass": "pmrem",
+      "creations": 2,
+      "failures": 0,
+      "beforeFirstPresent": 0,
+      "serviceSamples": 2,
+      "serviceMs": 8.823318999999856
+    },
+    {
+      "pass": "output",
+      "creations": 2,
+      "failures": 0,
+      "beforeFirstPresent": 1,
+      "serviceSamples": 2,
+      "serviceMs": 7.698604999999554
+    },
+    {
+      "pass": "unknown",
+      "creations": 2,
+      "failures": 0,
+      "beforeFirstPresent": 0,
+      "serviceSamples": 2,
+      "serviceMs": 5.195629000000054
+    },
+    {
+      "pass": "main",
+      "creations": 1,
+      "failures": 0,
+      "beforeFirstPresent": 0,
+      "serviceSamples": 1,
+      "serviceMs": 4.4504450000001725
+    }
+  ],
+  "programReasons": [
+    {
+      "programIdentity": "0627debc3114d1d4/ac1a15b5c3e92640",
+      "creations": 3,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "01bbeba321c7439b/bfaed54fb3f009ff",
+      "creations": 2,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "170ebc593b2bec9c/29285d3511fc3021",
+      "creations": 2,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "170ebc593b2bec9c/abc2508e1d85091a",
+      "creations": 2,
+      "reasons": ["unknown-structural-difference"]
+    },
+    { "programIdentity": "1f278372a827df2d/df4763adc0ca95c2", "creations": 2, "reasons": ["map"] },
+    {
+      "programIdentity": "34e46b5f2ace23a4/4cb250e011db9ce6",
+      "creations": 2,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "419de84ac565e160/08b5e86a917df76b",
+      "creations": 2,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "5ffcaaf19c9d4b39/7c3eb38d8a3b6c78",
+      "creations": 2,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "ecaec2fbce7bdaad/ecaec2fbce7bdaad",
+      "creations": 2,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "01bbeba321c7439b/91a6a544c41bfc46",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "0331eaf76e48fccf/4848537d0c7916a8",
+      "creations": 1,
+      "reasons": ["map", "skinning"]
+    },
+    {
+      "programIdentity": "0eb03cf02c17cc05/e67daf920d6cd6d9",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "130848a9c05f38f7/e67daf920d6cd6d9",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "170ebc593b2bec9c/1d441c7cd6446e1d",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "170ebc593b2bec9c/26a275d3c1fcd04b",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "170ebc593b2bec9c/303054d3fb547aa4",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "170ebc593b2bec9c/71b16cca1cdf7553",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "170ebc593b2bec9c/8c2147e46e5bd1fb",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "170ebc593b2bec9c/9025ae9e625d1df7",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "170ebc593b2bec9c/da4b43708db6ce6e",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "170ebc593b2bec9c/de495c8bae20997b",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "170ebc593b2bec9c/e3073eb7639aac9e",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "170ebc593b2bec9c/f71e70268c7f86a5",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    { "programIdentity": "1f278372a827df2d/91c7708777af3186", "creations": 1, "reasons": ["map"] },
+    {
+      "programIdentity": "22eed0668dffd892/e67daf920d6cd6d9",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "256417c25481a203/a84986a61ceffb17",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "2d6a398210f2a7e7/749f89e5ab1a72b8",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "2d791f6883946402/6d50833111e59c85",
+      "creations": 1,
+      "reasons": ["map", "skinning"]
+    },
+    {
+      "programIdentity": "32b4fe618696ae9c/671f4f2a3c915f4c",
+      "creations": 1,
+      "reasons": ["skinning"]
+    },
+    {
+      "programIdentity": "34e46b5f2ace23a4/4c0c06e3811d8a63",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "34e46b5f2ace23a4/f5660d8a2e50d5f6",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "388c5b0455513ac8/1894772f5f5d6079",
+      "creations": 1,
+      "reasons": ["map", "skinning"]
+    },
+    {
+      "programIdentity": "393259c48675dd12/e67daf920d6cd6d9",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "419de84ac565e160/2357d86d8e7b2c97",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "419de84ac565e160/e44e144baebc3ad6",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "46a7cb7cd6237a92/e67daf920d6cd6d9",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "55ddae1893e21865/22d2785000c9f71b",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "5dfab66a4585efe3/73906b0406ada9e1",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "5dfab66a4585efe3/bfb8ae37998a23bc",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "5dfab66a4585efe3/e837119ee69bd38c",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "64c6446cd67515fe/b5f7f5de8557d706",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "6543b005c36e3a0c/2a6cfbd2164435ae",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "6543b005c36e3a0c/33c4b239b5ca2028",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "6543b005c36e3a0c/4402d68f679fc795",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "6543b005c36e3a0c/6f511dcfa59822d3",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "6543b005c36e3a0c/708042bd1051f776",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "6543b005c36e3a0c/71aabb910f56d1ee",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "6543b005c36e3a0c/7d81d5fa3e98d8b8",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "6543b005c36e3a0c/93575366220df286",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "6543b005c36e3a0c/acbb759ffcefdea8",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "6543b005c36e3a0c/f2491ea435494fc9",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "6a391767cff5d480/cdd623dca8bc8e25",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "6c86dd90d0172126/e67daf920d6cd6d9",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "758d96a520cb82ec/524955f60712b04c",
+      "creations": 1,
+      "reasons": ["map", "skinning"]
+    },
+    {
+      "programIdentity": "79e69b7da73745da/e971f258016dd726",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "825252b0477e50f8/e67daf920d6cd6d9",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "8c0fb8a87b9a8788/680ddcd5881c9f69",
+      "creations": 1,
+      "reasons": ["map", "metalness-map", "normal-map", "roughness-map", "skinning"]
+    },
+    {
+      "programIdentity": "92ade62c34b61264/ef1dbcaa5d9e6a87",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "96e30d90322c08ef/e67daf920d6cd6d9",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "987d97458f4b3540/2b7df7e91e8102a9",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "991bd59faac5ff0f/b5f7f5de8557d706",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "9c60f8dbb92410cc/e67daf920d6cd6d9",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "a46d356765e808f3/9a61589d3ea059a8",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "a51eb2565b90b3da/cdd623dca8bc8e25",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "a8d60c05689b258d/c8789ffe48e98d43",
+      "creations": 1,
+      "reasons": ["map", "metalness-map", "normal-map", "roughness-map", "skinning"]
+    },
+    {
+      "programIdentity": "b2759a9d8cb094e0/b24a9fe346931ce4",
+      "creations": 1,
+      "reasons": ["skinning"]
+    },
+    {
+      "programIdentity": "b4bc3b5071cbf89e/1894772f5f5d6079",
+      "creations": 1,
+      "reasons": ["map", "skinning"]
+    },
+    {
+      "programIdentity": "b4d27d161df80e3d/b5f7f5de8557d706",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "b6024ed9e99e0dec/9431aa30be5bab56",
+      "creations": 1,
+      "reasons": ["unknown-structural-difference"]
+    },
+    {
+      "programIdentity": "b9318cbe6717df8c/b5f7f5de8557d706",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "ba74179ad7d65342/cdd623dca8bc8e25",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "bb90d01e4cc940a7/cdd623dca8bc8e25",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "c572f243f54f1d92/b5f7f5de8557d706",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "c86d136d3349ef6c/e67daf920d6cd6d9",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "cc91d38fdd439e72/ace19d05e58b56d2",
+      "creations": 1,
+      "reasons": ["map", "metalness-map", "normal-map", "roughness-map", "skinning"]
+    },
+    {
+      "programIdentity": "d2159dca3d4e4b96/cdd623dca8bc8e25",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "d3429c4bbb1c52bb/cdd623dca8bc8e25",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "e4d24344838a82b7/b5f7f5de8557d706",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "e5aa677437703017/e67daf920d6cd6d9",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "e5ef1674f57b5918/6d50833111e59c85",
+      "creations": 1,
+      "reasons": ["map", "skinning"]
+    },
+    {
+      "programIdentity": "ea2fbf101b57e151/9f36ae3584004ecd",
+      "creations": 1,
+      "reasons": ["map", "normal-map", "skinning"]
+    },
+    {
+      "programIdentity": "f50542f3e3ab94ed/e67daf920d6cd6d9",
+      "creations": 1,
+      "reasons": ["instancing"]
+    },
+    {
+      "programIdentity": "f99deabf652da0dc/a3d5056479c7ae2b",
+      "creations": 1,
+      "reasons": ["map", "metalness-map", "normal-map", "roughness-map", "skinning"]
+    }
+  ],
+  "sizeTime": {
+    "byPass": [
+      {
+        "pass": "main-clipped",
+        "samples": 58,
+        "meanBytes": 59540.206896551725,
+        "meanServiceMs": 17.16187032758621
+      },
+      { "pass": "main", "samples": 1, "meanBytes": 3807, "meanServiceMs": 4.4504450000001725 },
+      { "pass": "pmrem", "samples": 2, "meanBytes": 7286.5, "meanServiceMs": 4.411659499999928 },
+      { "pass": "output", "samples": 2, "meanBytes": 3380, "meanServiceMs": 3.849302499999777 },
+      {
+        "pass": "shadow",
+        "samples": 29,
+        "meanBytes": 8635.068965517241,
+        "meanServiceMs": 3.2892256206896726
+      },
+      { "pass": "unknown", "samples": 2, "meanBytes": 3654, "meanServiceMs": 2.597814500000027 }
+    ],
+    "samples": 94,
+    "statement": "Descriptive samples only; shader size and compile time are correlated here, not causal."
+  },
+  "source": "native",
+  "warmup": {
+    "total": 94,
+    "beforeFirstPresent": 1,
+    "afterFirstPresent": 93,
+    "unreported": 0,
+    "eventsSettledAtFirstPresent": 1
+  }
+}
