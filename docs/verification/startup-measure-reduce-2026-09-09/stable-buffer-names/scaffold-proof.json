@@ -1,1 +1,96 @@
-{"head":"b386effa07aa0a257a3cf28635fc29d5bed71aea","createdAt":"2026-09-10T03:19:35.305Z","generator":"packages/create-threenative/src/index.ts:createProject","install":false,"contractSource":"packages/create-threenative/__tests__/scaffold.spec.ts","contractSourceSha256":"7745f2db2cca36a7898cb733d96ce95bc8ed5baf82c1bc7c770db7b78d36eb56","metadataFilter":"/^(?:node_modules(?:\\/|$)|dist(?:\\/|$)|\\.vite(?:\\/|$)|coverage(?:\\/|$)|pnpm-lock\\.yaml$|package-lock\\.json$|yarn\\.lock$)/u","changedFile":"patches/three@0.185.1.patch","oldPatchSha256":"9ac4c733e5d0fc82e9b89de5e4963a98e6099bb0269dae74041c9d4e22295ef7","newPatchSha256":"c19a119d28a4eea28256121178b99c54497e83496698e5d5af44b9413124cfb1","templates":[{"template":"action-rpg","oldHash":"505e389e0afc8000369e646e07066cdde7abbbc371101f2f4718670efbea454c","newHash":"63056b20ec9d78882f0b13945c14a9d2988f709b6060fb15b61247e85061b12e","expectedBaselineHash":"505e389e0afc8000369e646e07066cdde7abbbc371101f2f4718670efbea454c","verifiedBaseline":true,"onlyPatchChanged":true},{"template":"defense","oldHash":"58c5587a56107f3e1c8884020dcbc49e4fa18836871eaeedfc72797559539a89","newHash":"23036e4c4a9d4a7e07c018d87925d963a2538bed1f15a7c0e776e57c15c65e74","expectedBaselineHash":"58c5587a56107f3e1c8884020dcbc49e4fa18836871eaeedfc72797559539a89","verifiedBaseline":true,"onlyPatchChanged":true},{"template":"minimal","oldHash":"2e666ea6958ad60ef0ca7572f4695b47f23a44a3e580bfd785a0e6b83e384be4","newHash":"af2ba313d7b18800f7ec2b86c8caeed3fa38cd1909fcceb30f173487c73d510a","expectedBaselineHash":"2e666ea6958ad60ef0ca7572f4695b47f23a44a3e580bfd785a0e6b83e384be4","verifiedBaseline":true,"onlyPatchChanged":true},{"template":"platformer","oldHash":"560d30ec0774d50f42e6d0b1b151819e06e2caa2b7df56190d0e9f00cc1fcb70","newHash":"ce43596865c3298d8c3d5ea1ea4063221561c5021850f69798b46260626d926a","expectedBaselineHash":"560d30ec0774d50f42e6d0b1b151819e06e2caa2b7df56190d0e9f00cc1fcb70","verifiedBaseline":true,"onlyPatchChanged":true},{"template":"puzzle","oldHash":"d1924b63557a05800ae4462a0d86f5948e8ed31087e688d9840aff011c5f48f6","newHash":"f17c5b671acaee3ec89144a6982e48d27abc159437031d103b2978b8338ddbb0","expectedBaselineHash":"d1924b63557a05800ae4462a0d86f5948e8ed31087e688d9840aff011c5f48f6","verifiedBaseline":true,"onlyPatchChanged":true},{"template":"racing","oldHash":"9cc6460b85eadc24ab36ce97794179569b1bf865a8ffee4473cc73c961991716","newHash":"af6a66be4d723eebf2e9482f77eeb18b894a41c322454883ba1091ebfc915f91","expectedBaselineHash":"9cc6460b85eadc24ab36ce97794179569b1bf865a8ffee4473cc73c961991716","verifiedBaseline":true,"onlyPatchChanged":true},{"template":"runner","oldHash":"b1ef9cbec62edf80e02594423da6947b7df7d5a6f2413cb1160f63c5efbaebea","newHash":"78ad5f702550c6240bce8562f20715b96922e0bcd24262a6ac55f489d8b2892d","expectedBaselineHash":"b1ef9cbec62edf80e02594423da6947b7df7d5a6f2413cb1160f63c5efbaebea","verifiedBaseline":true,"onlyPatchChanged":true},{"template":"sailing","oldHash":"819dfb12e19882a3088fb53170fe7aaa8641857a307ac626bb57e529bbb60373","newHash":"a136ca4ddf472842d57780af55e332a4a0427ffc6bfd95aed41af750689beb95","expectedBaselineHash":"819dfb12e19882a3088fb53170fe7aaa8641857a307ac626bb57e529bbb60373","verifiedBaseline":true,"onlyPatchChanged":true},{"template":"shooter","oldHash":"afe7297139a4b6c3ea3d29af9540ff213d69a4f9066abe34cb2802d1da7a678d","newHash":"b70763b97e51fee8fbe1f405187f432ea74b593abe745ef00739dcd3acc850e4","expectedBaselineHash":"afe7297139a4b6c3ea3d29af9540ff213d69a4f9066abe34cb2802d1da7a678d","verifiedBaseline":true,"onlyPatchChanged":true},{"template":"starter","oldHash":"4b7fad177463d7bcfe8239b0e30e961b717300c4e89a75d0e936c4eb66f35317","newHash":"54180f882f9a7739dfd15999c2bb2a39f1b322741c348bdf30922049fc3463cd","expectedBaselineHash":"4b7fad177463d7bcfe8239b0e30e961b717300c4e89a75d0e936c4eb66f35317","verifiedBaseline":true,"onlyPatchChanged":true}],"pass":true,"generatedTreesRemoved":true}
+{
+  "head": "b386effa07aa0a257a3cf28635fc29d5bed71aea",
+  "createdAt": "2026-09-10T03:19:35.305Z",
+  "generator": "packages/create-threenative/src/index.ts:createProject",
+  "install": false,
+  "contractSource": "packages/create-threenative/__tests__/scaffold.spec.ts",
+  "contractSourceSha256": "7745f2db2cca36a7898cb733d96ce95bc8ed5baf82c1bc7c770db7b78d36eb56",
+  "metadataFilter": "/^(?:node_modules(?:\\/|$)|dist(?:\\/|$)|\\.vite(?:\\/|$)|coverage(?:\\/|$)|pnpm-lock\\.yaml$|package-lock\\.json$|yarn\\.lock$)/u",
+  "changedFile": "patches/three@0.185.1.patch",
+  "oldPatchSha256": "9ac4c733e5d0fc82e9b89de5e4963a98e6099bb0269dae74041c9d4e22295ef7",
+  "newPatchSha256": "c19a119d28a4eea28256121178b99c54497e83496698e5d5af44b9413124cfb1",
+  "templates": [
+    {
+      "template": "action-rpg",
+      "oldHash": "505e389e0afc8000369e646e07066cdde7abbbc371101f2f4718670efbea454c",
+      "newHash": "63056b20ec9d78882f0b13945c14a9d2988f709b6060fb15b61247e85061b12e",
+      "expectedBaselineHash": "505e389e0afc8000369e646e07066cdde7abbbc371101f2f4718670efbea454c",
+      "verifiedBaseline": true,
+      "onlyPatchChanged": true
+    },
+    {
+      "template": "defense",
+      "oldHash": "58c5587a56107f3e1c8884020dcbc49e4fa18836871eaeedfc72797559539a89",
+      "newHash": "23036e4c4a9d4a7e07c018d87925d963a2538bed1f15a7c0e776e57c15c65e74",
+      "expectedBaselineHash": "58c5587a56107f3e1c8884020dcbc49e4fa18836871eaeedfc72797559539a89",
+      "verifiedBaseline": true,
+      "onlyPatchChanged": true
+    },
+    {
+      "template": "minimal",
+      "oldHash": "2e666ea6958ad60ef0ca7572f4695b47f23a44a3e580bfd785a0e6b83e384be4",
+      "newHash": "af2ba313d7b18800f7ec2b86c8caeed3fa38cd1909fcceb30f173487c73d510a",
+      "expectedBaselineHash": "2e666ea6958ad60ef0ca7572f4695b47f23a44a3e580bfd785a0e6b83e384be4",
+      "verifiedBaseline": true,
+      "onlyPatchChanged": true
+    },
+    {
+      "template": "platformer",
+      "oldHash": "560d30ec0774d50f42e6d0b1b151819e06e2caa2b7df56190d0e9f00cc1fcb70",
+      "newHash": "ce43596865c3298d8c3d5ea1ea4063221561c5021850f69798b46260626d926a",
+      "expectedBaselineHash": "560d30ec0774d50f42e6d0b1b151819e06e2caa2b7df56190d0e9f00cc1fcb70",
+      "verifiedBaseline": true,
+      "onlyPatchChanged": true
+    },
+    {
+      "template": "puzzle",
+      "oldHash": "d1924b63557a05800ae4462a0d86f5948e8ed31087e688d9840aff011c5f48f6",
+      "newHash": "f17c5b671acaee3ec89144a6982e48d27abc159437031d103b2978b8338ddbb0",
+      "expectedBaselineHash": "d1924b63557a05800ae4462a0d86f5948e8ed31087e688d9840aff011c5f48f6",
+      "verifiedBaseline": true,
+      "onlyPatchChanged": true
+    },
+    {
+      "template": "racing",
+      "oldHash": "9cc6460b85eadc24ab36ce97794179569b1bf865a8ffee4473cc73c961991716",
+      "newHash": "af6a66be4d723eebf2e9482f77eeb18b894a41c322454883ba1091ebfc915f91",
+      "expectedBaselineHash": "9cc6460b85eadc24ab36ce97794179569b1bf865a8ffee4473cc73c961991716",
+      "verifiedBaseline": true,
+      "onlyPatchChanged": true
+    },
+    {
+      "template": "runner",
+      "oldHash": "b1ef9cbec62edf80e02594423da6947b7df7d5a6f2413cb1160f63c5efbaebea",
+      "newHash": "78ad5f702550c6240bce8562f20715b96922e0bcd24262a6ac55f489d8b2892d",
+      "expectedBaselineHash": "b1ef9cbec62edf80e02594423da6947b7df7d5a6f2413cb1160f63c5efbaebea",
+      "verifiedBaseline": true,
+      "onlyPatchChanged": true
+    },
+    {
+      "template": "sailing",
+      "oldHash": "819dfb12e19882a3088fb53170fe7aaa8641857a307ac626bb57e529bbb60373",
+      "newHash": "a136ca4ddf472842d57780af55e332a4a0427ffc6bfd95aed41af750689beb95",
+      "expectedBaselineHash": "819dfb12e19882a3088fb53170fe7aaa8641857a307ac626bb57e529bbb60373",
+      "verifiedBaseline": true,
+      "onlyPatchChanged": true
+    },
+    {
+      "template": "shooter",
+      "oldHash": "afe7297139a4b6c3ea3d29af9540ff213d69a4f9066abe34cb2802d1da7a678d",
+      "newHash": "b70763b97e51fee8fbe1f405187f432ea74b593abe745ef00739dcd3acc850e4",
+      "expectedBaselineHash": "afe7297139a4b6c3ea3d29af9540ff213d69a4f9066abe34cb2802d1da7a678d",
+      "verifiedBaseline": true,
+      "onlyPatchChanged": true
+    },
+    {
+      "template": "starter",
+      "oldHash": "4b7fad177463d7bcfe8239b0e30e961b717300c4e89a75d0e936c4eb66f35317",
+      "newHash": "54180f882f9a7739dfd15999c2bb2a39f1b322741c348bdf30922049fc3463cd",
+      "expectedBaselineHash": "4b7fad177463d7bcfe8239b0e30e961b717300c4e89a75d0e936c4eb66f35317",
+      "verifiedBaseline": true,
+      "onlyPatchChanged": true
+    }
+  ],
+  "pass": true,
+  "generatedTreesRemoved": true
+}

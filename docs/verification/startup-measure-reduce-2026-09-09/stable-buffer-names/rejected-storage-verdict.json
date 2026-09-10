@@ -1,1 +1,23 @@
-{"verdict":"reject","adapter":{"vendor":"nvidia","architecture":"turing","device":"","description":""},"cycles":[{"liveStorage":4,"storageBytes":8192},{"liveStorage":8,"storageBytes":16384},{"liveStorage":12,"storageBytes":24576}],"storageDestroys":0,"sourceEqual":false,"sourceEqualAfterIdentifierNormalization":true,"velocityUploads":[{"frame":1,"buffer":5,"x":-1.875},{"frame":1,"buffer":6,"x":-1.875},{"frame":2,"buffer":5,"x":-1.75},{"frame":2,"buffer":6,"x":-1.875},{"frame":3,"buffer":5,"x":-1.625},{"frame":3,"buffer":6,"x":-1.75},{"frame":4,"buffer":5,"x":-1.5},{"frame":4,"buffer":6,"x":-1.625}],"fallbackGlError":1282}
+{
+  "verdict": "reject",
+  "adapter": { "vendor": "nvidia", "architecture": "turing", "device": "", "description": "" },
+  "cycles": [
+    { "liveStorage": 4, "storageBytes": 8192 },
+    { "liveStorage": 8, "storageBytes": 16384 },
+    { "liveStorage": 12, "storageBytes": 24576 }
+  ],
+  "storageDestroys": 0,
+  "sourceEqual": false,
+  "sourceEqualAfterIdentifierNormalization": true,
+  "velocityUploads": [
+    { "frame": 1, "buffer": 5, "x": -1.875 },
+    { "frame": 1, "buffer": 6, "x": -1.875 },
+    { "frame": 2, "buffer": 5, "x": -1.75 },
+    { "frame": 2, "buffer": 6, "x": -1.875 },
+    { "frame": 3, "buffer": 5, "x": -1.625 },
+    { "frame": 3, "buffer": 6, "x": -1.75 },
+    { "frame": 4, "buffer": 5, "x": -1.5 },
+    { "frame": 4, "buffer": 6, "x": -1.625 }
+  ],
+  "fallbackGlError": 1282
+}

@@ -1,1 +1,212 @@
-{"pass":false,"runtime":"native","scenario":"bayview-native-readiness-report","assertionResults":[{"details":{"expected":8000,"observed":20381.774912},"id":"startup.readyMs","pass":false},{"details":{"consoleErrors":0,"networkErrors":0,"policy":{"networkErrorsOptOutReason":"Android mailbox transport has no CDP network observer; this scenario proves local packaged asset startup.","noConsoleErrors":true,"noNetworkErrors":false,"noRuntimeDiagnostics":true,"runtimeReady":true},"runtimeDiagnostics":0},"id":"diagnostics","pass":true},{"details":{"distance":2.1466929556050034,"entity":"player","minimum":0.25,"observed":true},"id":"movement.distance","pass":true}],"startup":{"phase":"ready","progress":1,"warmup":{"attempted":1,"candidates":563,"observed":{"created":66,"failed":0,"pending":0,"uniquePrograms":61,"uniquePipelines":66,"status":"complete"},"status":"complete"},"compileSettled":true,"timeline":{"loadStartedMs":389.134481,"enteredMs":3007.531577,"compileSettledMs":17792.314828,"frameworkReadyMs":20381.747446,"readyMs":20381.774912},"rule":"sustained-frames"},"counts":{"lookups":108,"creations":110,"failures":0,"pending":0,"uniquePrograms":92,"uniquePipelines":110,"recordedEvents":110,"droppedEvents":0,"deviceCreations":110,"directCreations":2},"adapter":{"identity":"webgpu:architecture=unknown|description=v1.r54p3-00eac0.d6609729a0c2466c24fd0530143c8edf|device=Mali-G715|vendor=Mali-G715","thermal":"unavailable"},"deviceMetrics":{"available":true,"errors":[],"samples":[{"at":102,"batteryLevelPercent":66,"batteryStatus":2,"batteryTemperatureC":35.9,"charging":true,"currentMa":{"available":true,"value":834.375},"phase":"before","powerRails":{"available":false,"reason":"no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"},"skinTemperatureC":{"available":true,"value":35.91437},"thermalStatus":0,"thermalStatusName":"NONE"},{"at":5366,"batteryLevelPercent":66,"batteryStatus":4,"batteryTemperatureC":36.3,"charging":true,"currentMa":{"available":true,"value":-389.062},"phase":"during","powerRails":{"available":false,"reason":"no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"},"skinTemperatureC":{"available":true,"value":36.120033},"thermalStatus":0,"thermalStatusName":"NONE"},{"at":10366,"batteryLevelPercent":66,"batteryStatus":4,"batteryTemperatureC":36.3,"charging":true,"currentMa":{"available":true,"value":555.937},"phase":"during","powerRails":{"available":false,"reason":"no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"},"skinTemperatureC":{"available":true,"value":36.487686},"thermalStatus":0,"thermalStatusName":"NONE"},{"at":15366,"batteryLevelPercent":66,"batteryStatus":4,"batteryTemperatureC":36.3,"charging":true,"currentMa":{"available":true,"value":423.125},"phase":"during","powerRails":{"available":false,"reason":"no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"},"skinTemperatureC":{"available":true,"value":37.438164},"thermalStatus":0,"thermalStatusName":"NONE"},{"at":20367,"batteryLevelPercent":66,"batteryStatus":4,"batteryTemperatureC":36.3,"charging":true,"currentMa":{"available":true,"value":681.875},"phase":"during","powerRails":{"available":false,"reason":"no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"},"skinTemperatureC":{"available":true,"value":38.047382},"thermalStatus":0,"thermalStatusName":"NONE"},{"at":25368,"batteryLevelPercent":66,"batteryStatus":4,"batteryTemperatureC":36.3,"charging":true,"currentMa":{"available":true,"value":-2.5},"phase":"during","powerRails":{"available":false,"reason":"no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"},"skinTemperatureC":{"available":true,"value":38.05938},"thermalStatus":0,"thermalStatusName":"NONE"},{"at":26756,"batteryLevelPercent":66,"batteryStatus":4,"batteryTemperatureC":36.3,"charging":true,"currentMa":{"available":true,"value":-230},"phase":"after","powerRails":{"available":false,"reason":"no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"},"skinTemperatureC":{"available":true,"value":38.05938},"thermalStatus":0,"thermalStatusName":"NONE"}],"serial":"192.168.1.192:5555","source":"adb shell dumpsys battery; adb shell dumpsys thermalservice; adb shell cat /sys/class/power_supply/battery/current_now; adb logcat -s pixel-thermal","verdict":{"endTemperatureC":36.3,"endThermalStatus":0,"maxThermalStatus":0,"peakTemperatureC":36.3,"powerRailWindowAdvanced":null,"reasons":["charging"],"startTemperatureC":35.9,"startThermalStatus":0,"temperatureRiseC":0.4,"thermallyConfounded":true}}}
+{
+  "pass": false,
+  "runtime": "native",
+  "scenario": "bayview-native-readiness-report",
+  "assertionResults": [
+    {
+      "details": { "expected": 8000, "observed": 20381.774912 },
+      "id": "startup.readyMs",
+      "pass": false
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "networkErrorsOptOutReason": "Android mailbox transport has no CDP network observer; this scenario proves local packaged asset startup.",
+          "noConsoleErrors": true,
+          "noNetworkErrors": false,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    },
+    {
+      "details": {
+        "distance": 2.1466929556050034,
+        "entity": "player",
+        "minimum": 0.25,
+        "observed": true
+      },
+      "id": "movement.distance",
+      "pass": true
+    }
+  ],
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "warmup": {
+      "attempted": 1,
+      "candidates": 563,
+      "observed": {
+        "created": 66,
+        "failed": 0,
+        "pending": 0,
+        "uniquePrograms": 61,
+        "uniquePipelines": 66,
+        "status": "complete"
+      },
+      "status": "complete"
+    },
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 389.134481,
+      "enteredMs": 3007.531577,
+      "compileSettledMs": 17792.314828,
+      "frameworkReadyMs": 20381.747446,
+      "readyMs": 20381.774912
+    },
+    "rule": "sustained-frames"
+  },
+  "counts": {
+    "lookups": 108,
+    "creations": 110,
+    "failures": 0,
+    "pending": 0,
+    "uniquePrograms": 92,
+    "uniquePipelines": 110,
+    "recordedEvents": 110,
+    "droppedEvents": 0,
+    "deviceCreations": 110,
+    "directCreations": 2
+  },
+  "adapter": {
+    "identity": "webgpu:architecture=unknown|description=v1.r54p3-00eac0.d6609729a0c2466c24fd0530143c8edf|device=Mali-G715|vendor=Mali-G715",
+    "thermal": "unavailable"
+  },
+  "deviceMetrics": {
+    "available": true,
+    "errors": [],
+    "samples": [
+      {
+        "at": 102,
+        "batteryLevelPercent": 66,
+        "batteryStatus": 2,
+        "batteryTemperatureC": 35.9,
+        "charging": true,
+        "currentMa": { "available": true, "value": 834.375 },
+        "phase": "before",
+        "powerRails": {
+          "available": false,
+          "reason": "no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"
+        },
+        "skinTemperatureC": { "available": true, "value": 35.91437 },
+        "thermalStatus": 0,
+        "thermalStatusName": "NONE"
+      },
+      {
+        "at": 5366,
+        "batteryLevelPercent": 66,
+        "batteryStatus": 4,
+        "batteryTemperatureC": 36.3,
+        "charging": true,
+        "currentMa": { "available": true, "value": -389.062 },
+        "phase": "during",
+        "powerRails": {
+          "available": false,
+          "reason": "no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"
+        },
+        "skinTemperatureC": { "available": true, "value": 36.120033 },
+        "thermalStatus": 0,
+        "thermalStatusName": "NONE"
+      },
+      {
+        "at": 10366,
+        "batteryLevelPercent": 66,
+        "batteryStatus": 4,
+        "batteryTemperatureC": 36.3,
+        "charging": true,
+        "currentMa": { "available": true, "value": 555.937 },
+        "phase": "during",
+        "powerRails": {
+          "available": false,
+          "reason": "no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"
+        },
+        "skinTemperatureC": { "available": true, "value": 36.487686 },
+        "thermalStatus": 0,
+        "thermalStatusName": "NONE"
+      },
+      {
+        "at": 15366,
+        "batteryLevelPercent": 66,
+        "batteryStatus": 4,
+        "batteryTemperatureC": 36.3,
+        "charging": true,
+        "currentMa": { "available": true, "value": 423.125 },
+        "phase": "during",
+        "powerRails": {
+          "available": false,
+          "reason": "no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"
+        },
+        "skinTemperatureC": { "available": true, "value": 37.438164 },
+        "thermalStatus": 0,
+        "thermalStatusName": "NONE"
+      },
+      {
+        "at": 20367,
+        "batteryLevelPercent": 66,
+        "batteryStatus": 4,
+        "batteryTemperatureC": 36.3,
+        "charging": true,
+        "currentMa": { "available": true, "value": 681.875 },
+        "phase": "during",
+        "powerRails": {
+          "available": false,
+          "reason": "no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"
+        },
+        "skinTemperatureC": { "available": true, "value": 38.047382 },
+        "thermalStatus": 0,
+        "thermalStatusName": "NONE"
+      },
+      {
+        "at": 25368,
+        "batteryLevelPercent": 66,
+        "batteryStatus": 4,
+        "batteryTemperatureC": 36.3,
+        "charging": true,
+        "currentMa": { "available": true, "value": -2.5 },
+        "phase": "during",
+        "powerRails": {
+          "available": false,
+          "reason": "no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"
+        },
+        "skinTemperatureC": { "available": true, "value": 38.05938 },
+        "thermalStatus": 0,
+        "thermalStatusName": "NONE"
+      },
+      {
+        "at": 26756,
+        "batteryLevelPercent": 66,
+        "batteryStatus": 4,
+        "batteryTemperatureC": 36.3,
+        "charging": true,
+        "currentMa": { "available": true, "value": -230 },
+        "phase": "after",
+        "powerRails": {
+          "available": false,
+          "reason": "no pixel-thermal power rail window in the captured log; per-rail power is Pixel/Google ODPM hardware only"
+        },
+        "skinTemperatureC": { "available": true, "value": 38.05938 },
+        "thermalStatus": 0,
+        "thermalStatusName": "NONE"
+      }
+    ],
+    "serial": "192.168.1.192:5555",
+    "source": "adb shell dumpsys battery; adb shell dumpsys thermalservice; adb shell cat /sys/class/power_supply/battery/current_now; adb logcat -s pixel-thermal",
+    "verdict": {
+      "endTemperatureC": 36.3,
+      "endThermalStatus": 0,
+      "maxThermalStatus": 0,
+      "peakTemperatureC": 36.3,
+      "powerRailWindowAdvanced": null,
+      "reasons": ["charging"],
+      "startTemperatureC": 35.9,
+      "startThermalStatus": 0,
+      "temperatureRiseC": 0.4,
+      "thermallyConfounded": true
+    }
+  }
+}

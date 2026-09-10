@@ -10,6 +10,37 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## PRD-368 bounded cache API prototype — 2026-09-09
+
+**API feasibility only; implementation paused for the owner's follow-up handoff.** A four-file
+patch to pinned wgpu-native `v25.0.2.2` exposes the existing Rust cache implementation through C,
+including feature request/mapping, strict import, owned byte export and render/compute descriptor
+attachment. No production dependency, host lifecycle, game or Android APK received this patch.
+The [updated PRD](../PRDs/assets/PRD-368-compiled-pipelines-survive-a-relaunch.md) owns remaining work.
+
+Retained reproduction inputs: [upstream patch](startup-measure-reduce-2026-09-09/pipeline-cache-spike/wgpu-native-v25.0.2.2-cache.patch),
+[C++ probe](startup-measure-reduce-2026-09-09/pipeline-cache-spike/cache_probe.cpp),
+[commands](startup-measure-reduce-2026-09-09/pipeline-cache-spike/commands.txt), and
+[identity/limitations receipt](startup-measure-reduce-2026-09-09/pipeline-cache-spike/receipt.json).
+The [unpatched link fails](startup-measure-reduce-2026-09-09/pipeline-cache-spike/red.log) on missing
+cache symbols; the [patched release build passes](startup-measure-reduce-2026-09-09/pipeline-cache-spike/build-clang18.log)
+using the installed NDK libclang after system libclang 22 produced invalid opaque bindings.
+
+Three separate Linux/Vulkan processes on NVIDIA RTX 2080, driver 610.57.04, produced the
+[raw round-trip result](startup-measure-reduce-2026-09-09/pipeline-cache-spike/roundtrip.log):
+empty attached cache grew from 100 to 13,573 bytes; strict reload accepted those bytes; attachment
+bypass left an empty cache at 100 bytes. All three readbacks are byte-identical. Pipeline creation
+was 7.033701 ms empty, 0.610847 ms loaded, and 0.319588 ms disabled. **The disabled control is faster;
+this does not establish a performance benefit.** The synthetic triangle establishes an executable
+API route, not actual Bayview reuse, a per-pipeline hit, safe app-private persistence or phone timing.
+
+Independent source review identified two required integration controls: the host's async descriptor
+copy strips `nextInChain`, and upstream cache compatibility checks do not checksum payload bytes.
+Preserve the cache extension/handle through worker completion and verify a bounded envelope digest
+before unsafe import. Strict load rejection must lead to an explicit empty-cache miss; a nonnull
+handle alone cannot establish reuse. Corruption, concurrency, device loss and real host proof remain
+unexecuted. The PRD now specifies these next actions; no acceptance box was marked complete.
+
 ## PRD-367 actual-device census repair — 2026-09-09
 
 **In progress; no startup improvement or PRD acceptance is claimed.** The owner selected reliable
@@ -100,8 +131,10 @@ The runtime implementation slice is the root/core patch copies, lockfile and reg
 The separate distribution slice is the template patch copy and scaffold hash fixture. Independent
 [scaffold proof](startup-measure-reduce-2026-09-09/stable-buffer-names/scaffold-proof.json) generated
 all ten projects: replacing only the copied patch with its prior version recovered every old tree
-hash. Typecheck/lint pass. The first full test run passed 4,774 tests and failed the expected old
-scaffold hash assertion; its distribution update and final full gates remain pending.
+hash. The initial full test run passed 4,774 tests and failed only the expected old scaffold hash
+assertion; after refreshing that fixture, the final full test, build, browser playtest, scaffolded
+template, and native desktop display gates passed against the merged census fixes. The retention
+index and documentation checks are rerun as part of this shipping commit.
 
 ### Observed defects and bounded repairs
 
