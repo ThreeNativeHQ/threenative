@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -150,17 +151,22 @@ function watchMcpChild(child: ChildProcessWithoutNullStreams): IMcpLiveness {
   const state: IMcpLiveness = { pending: new Set(), stderr: "" };
   mcpLiveness.set(child, state);
   const failPending = (error: Error): void => {
+    if (state.terminal !== undefined) return;
     state.terminal = error;
     for (const reject of [...state.pending]) reject(error);
     state.pending.clear();
   };
   child.stderr.on("data", (chunk: Buffer | string) => {
-    state.stderr += chunk.toString();
+    // Drain the pipe without retaining the entire lifetime of a noisy compiler.
+    state.stderr = (state.stderr + chunk.toString()).slice(-4_096);
   });
   child.once("error", (error: unknown) => {
     failPending(error instanceof Error ? error : new Error(String(error)));
   });
-  child.once("exit", (code, signal) => {
+  // A broken stdin emits on the stream, not on ChildProcess (including notifications).
+  child.stdin.on("error", failPending);
+  // exit can precede the last stdout/stderr data; close runs after both pipes drain.
+  child.once("close", (code, signal) => {
     const detail = state.stderr.trim().slice(-500);
     failPending(
       new Error(
@@ -223,6 +229,120 @@ async function request(
   child.stdin.write(`${JSON.stringify({ id, jsonrpc: "2.0", method, params })}\n`);
   return response;
 }
+
+describe("MCP probe liveness", () => {
+  const children: Array<{
+    child: ChildProcessWithoutNullStreams;
+    lines: ReturnType<typeof createInterface>;
+    closed: Promise<void>;
+  }> = [];
+
+  function startServer(source: string, command = process.execPath) {
+    const child = spawn(command, ["-e", source], { stdio: "pipe" });
+    const lines = createInterface({ input: child.stdout });
+    const closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
+    children.push({ child, lines, closed });
+    return { child, lines, closed, state: watchMcpChild(child), nextId: { value: 1 } };
+  }
+
+  afterEach(async () => {
+    await Promise.all(
+      children.splice(0).map(async ({ child, lines, closed }) => {
+        lines.close();
+        if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGKILL");
+        }
+        await closed;
+      }),
+    );
+  });
+
+  it("bounds retained stderr while draining more than a pipe can buffer", async () => {
+    const { child, lines, nextId, state } = startServer(`
+      process.stderr.write("x".repeat(1024 * 1024) + "diagnostic-tail", () => {
+        process.stdout.write(JSON.stringify({ id: 1, result: { ready: true } }) + "\\n");
+      });
+      setInterval(() => {}, 1000);
+    `);
+    assert.deepEqual(await request(child, nextId, lines, "initialize"), { ready: true });
+    assert.ok(state.stderr.length <= 4_096, `retained ${state.stderr.length} characters`);
+    assert.ok(state.stderr.endsWith("diagnostic-tail"));
+    assert.equal(state.pending.size, 0);
+    assert.equal(lines.listenerCount("line"), 0);
+  });
+
+  it("accepts a buffered final response even when the process has already exited", async () => {
+    const { child, lines, nextId } = startServer(`
+      process.stdout.write(JSON.stringify({ id: 1, result: { ready: true } }) + "\\n");
+    `);
+    // Force the valid exit-before-EOF ordering, rather than hoping to win an OS scheduling race.
+    child.stdout.pause();
+    assert.deepEqual(await request(child, nextId, lines, "initialize"), { ready: true });
+  });
+
+  it("includes stderr that drains after process exit in the failure", async () => {
+    const { child, lines, nextId } = startServer(`
+      process.stderr.write("last diagnostic");
+      process.exitCode = 3;
+    `);
+    child.stderr.pause();
+    await assert.rejects(request(child, nextId, lines, "initialize"), /\(3\): last diagnostic/);
+  });
+
+  it("rejects every pending request on exit without waiting for the compile budget", async () => {
+    const { child, lines, nextId, state, closed } = startServer("process.exitCode = 3;");
+    const results = await Promise.allSettled([
+      request(child, nextId, lines, "initialize", {}, MCP_COMPILE_REQUEST_TIMEOUT_MS),
+      request(child, nextId, lines, "tools/list", {}, MCP_COMPILE_REQUEST_TIMEOUT_MS),
+    ]);
+    for (const result of results) {
+      assert.equal(result.status, "rejected");
+      if (result.status === "rejected") assert.match(String(result.reason), /exited.*\(3\)/);
+    }
+    await closed;
+    assert.equal(state.pending.size, 0);
+    assert.equal(lines.listenerCount("line"), 0);
+    await assert.rejects(request(child, nextId, lines, "tools/list"), /exited.*\(3\)/);
+  });
+
+  it("handles stdin errors and preserves the original failure after close", async () => {
+    const { child, lines, nextId, state, closed } = startServer("setInterval(() => {}, 1000);");
+    child.stdin.end();
+    await assert.rejects(request(child, nextId, lines, "initialize"), /write after end/);
+    assert.equal(state.pending.size, 0);
+    assert.equal(lines.listenerCount("line"), 0);
+    child.kill("SIGKILL");
+    await closed;
+    await assert.rejects(request(child, nextId, lines, "tools/list"), /write after end/);
+  });
+
+  it("preserves a failed spawn error rather than replacing it with the close status", async () => {
+    const root = await makeTempDir("threenative-mcp-missing-");
+    temporaryRoots.push(root);
+    const { child, lines, nextId, state, closed } = startServer("", path.join(root, "missing"));
+    await assert.rejects(request(child, nextId, lines, "initialize"), { code: "ENOENT" });
+    await closed;
+    assert.equal(state.pending.size, 0);
+    assert.equal(lines.listenerCount("line"), 0);
+    await assert.rejects(request(child, nextId, lines, "tools/list"), { code: "ENOENT" });
+  });
+
+  it("includes stderr and removes listeners when a live server times out", async () => {
+    const { child, lines, nextId, state } = startServer(`
+      process.stderr.write("still waiting");
+      setInterval(() => {}, 1000);
+    `);
+    // Synchronize on output, not a guessed Node startup delay.
+    await new Promise<void>((resolve) => child.stderr.once("data", () => resolve()));
+    await assert.rejects(
+      request(child, nextId, lines, "initialize", {}, 20),
+      /timed out after 20 ms; server stderr: still waiting/,
+    );
+    assert.equal(state.pending.size, 0);
+    assert.equal(lines.listenerCount("line"), 0);
+    assert.equal(state.terminal, undefined);
+  });
+});
 
 async function probeEngineServer(target: string): Promise<void> {
   const config = JSON.parse(await readFile(path.join(target, ".mcp.json"), "utf8")) as {
