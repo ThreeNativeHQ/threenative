@@ -16,7 +16,16 @@ export function resolveWgpuCacheToolchain({
     throw new Error('TN_WGPU_CACHE_BUILD_HOST: the pinned cache source build requires Linux x64');
   }
   const sdk = env.ANDROID_HOME || env.ANDROID_SDK_ROOT;
-  const ndk = env.ANDROID_NDK_HOME || env.ANDROID_NDK_ROOT || (sdk && join(sdk, 'ndk', WGPU_CACHE_NDK_VERSION));
+  // The pinned path wins over ANDROID_NDK_HOME/ANDROID_NDK_ROOT rather than the other way round.
+  // Hosted runners preset both to whichever NDK ships in the image - 27.3.13750724 today - so
+  // reading them first meant `sdkmanager 'ndk;27.1.12297006'` installed the pin and this resolver
+  // then ignored it:
+  //   TN_WGPU_CACHE_NDK_VERSION: expected 27.1.12297006, got 27.3.13750724
+  // An explicit env var still resolves when the pinned directory is absent, and either way the
+  // revision check below is what actually decides.
+  const pinned = sdk ? join(sdk, 'ndk', WGPU_CACHE_NDK_VERSION) : null;
+  const ndk = (pinned && existsSync(join(pinned, 'source.properties')) ? pinned : null)
+    || env.ANDROID_NDK_HOME || env.ANDROID_NDK_ROOT || pinned;
   if (!ndk || !existsSync(join(ndk, 'source.properties'))) {
     throw new Error(`TN_WGPU_CACHE_NDK_MISSING: install NDK ${WGPU_CACHE_NDK_VERSION} and set ANDROID_NDK_HOME or ANDROID_HOME`);
   }
