@@ -440,6 +440,16 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import { copyFileSync, mkdirSync, statSync } from "node:fs";
+          // The AAR filename carries the SDL version, so it must come from the module that owns
+          // that version rather than being spelled out here. It was hardcoded as SDL3-3.2.8.aar
+          // while package-android.mjs had moved to 3.2.30 - a deliberate bump, because 3.2.8's
+          // 64-bit libraries are not 16 KB LOAD-aligned - so this step failed with
+          //   ENOENT: no such file or directory, copyfile
+          //   'packages/runtime-native/third_party/sdl3-android/SDL3-3.2.8.aar'
+          // on the first run that reached it.
+          const { SDL3_ANDROID_VERSION } = await import(
+            "./packages/runtime-native/scripts/package-android.mjs"
+          );
           const assets = {
             "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libmystral-runtime.so": "release/threenative-runtime-android-arm64-v8a-v8.so",
             "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libv8android.so": "release/threenative-v8-android-arm64-v8a.so",
@@ -451,7 +461,8 @@ jobs:
             "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libSDL3.so": "release/threenative-sdl3-android-arm64-v8a.so",
             "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libmystral-runtime.so": "release/threenative-runtime-android-x86_64-v8.so",
             "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libSDL3.so": "release/threenative-sdl3-android-x86_64.so",
-            "packages/runtime-native/third_party/sdl3-android/SDL3-3.2.8.aar": "release/threenative-sdl3-android.aar",
+            [`packages/runtime-native/third_party/sdl3-android/SDL3-${SDL3_ANDROID_VERSION}.aar`]:
+              "release/threenative-sdl3-android.aar",
           };
           mkdirSync("release", { recursive: true });
           for (const [source, output] of Object.entries(assets)) {

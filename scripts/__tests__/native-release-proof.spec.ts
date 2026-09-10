@@ -400,3 +400,31 @@ for (const change of [
     assert.ok(report.failures.length > 0);
   });
 }
+
+// The staging step copies a third-party AAR whose filename carries the SDL version. Spelled out in
+// the workflow it drifted: `package-android.mjs` moved to 3.2.30 - deliberately, because 3.2.8's
+// 64-bit libraries are not 16 KB LOAD-aligned - while the workflow still asked for SDL3-3.2.8.aar,
+// so the first run that reached this step died with ENOENT on a file that had not existed for some
+// time. Nothing before that point touches the AAR, so no earlier gate could catch it.
+test("stages the SDL Android AAR by the version its owning module declares", async () => {
+  const staging = workflow.match(
+    /- name: Stage Android runtime payloads\n[\s\S]*?\n\x20{10}NODE\n/u,
+  )?.[0];
+  assert.ok(staging, "missing the Android staging step");
+  assert.match(staging, /SDL3-\$\{SDL3_ANDROID_VERSION\}\.aar/u);
+  assert.doesNotMatch(
+    staging,
+    /SDL3-\d+\.\d+\.\d+\.aar"/u,
+    "the AAR filename must derive from SDL3_ANDROID_VERSION, never a literal version",
+  );
+  // And the name it derives has to be the file the download step actually writes.
+  const { SDL3_ANDROID_VERSION } = (await import(
+    "../../packages/runtime-native/scripts/package-android.mjs"
+  )) as { SDL3_ANDROID_VERSION: string };
+  assert.match(SDL3_ANDROID_VERSION, /^\d+\.\d+\.\d+$/u);
+  const deps = readFileSync(
+    join(root, "packages/runtime-native/scripts/download-deps.mjs"),
+    "utf8",
+  );
+  assert.match(deps, /SDL3-devel-\$\{DEPS\['sdl3-android'\]\.version\}-android\.zip/u);
+});
