@@ -21,6 +21,10 @@ const corePackageRoot = path.resolve("packages/core");
 const physicsPackageRoot = path.resolve("packages/physics");
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
+const MCP_REQUEST_TIMEOUT_MS = 2_000;
+// The published creature compiler can spend up to 60 seconds in its bounded operation. Keep
+// ordinary discovery calls fast while allowing the response to arrive after that operation limit.
+const MCP_COMPILE_REQUEST_TIMEOUT_MS = 70_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -122,10 +126,11 @@ async function request(
   lines: ReturnType<typeof createInterface>,
   method: string,
   params: Record<string, unknown> = {},
+  timeoutMs = MCP_REQUEST_TIMEOUT_MS,
 ): Promise<Record<string, unknown>> {
   const id = nextId.value++;
   const response = new Promise<Record<string, unknown>>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`MCP ${method} timed out`)), 2_000);
+    const timer = setTimeout(() => reject(new Error(`MCP ${method} timed out`)), timeoutMs);
     const onLine = (line: string) => {
       let parsed: unknown;
       try {
@@ -424,13 +429,20 @@ describe("scaffolded asset MCP", () => {
       expect(guide.guide).toEqual(expect.stringContaining('"palette"'));
 
       const compile = toolText(
-        await request(child, nextId, lines, "tools/call", {
-          arguments: {
-            outputPath: "assets/creatures/compact.glb",
-            specPath: ".threenative/creatures/compact.json",
+        await request(
+          child,
+          nextId,
+          lines,
+          "tools/call",
+          {
+            arguments: {
+              outputPath: "assets/creatures/compact.glb",
+              specPath: ".threenative/creatures/compact.json",
+            },
+            name: "creature_compile",
           },
-          name: "creature_compile",
-        }),
+          MCP_COMPILE_REQUEST_TIMEOUT_MS,
+        ),
       );
       expect(compile).toMatchObject({
         operation: "creature_compile",
