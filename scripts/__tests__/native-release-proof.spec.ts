@@ -9,7 +9,12 @@ const root = resolve(import.meta.dirname, "../..");
 const workflow = readFileSync(join(root, ".github/workflows/native-release.yml"), "utf8");
 const sha = "a".repeat(40);
 const names = [
-  "typecheck", "lint", "test", "budgets", "build", "test-native",
+  "typecheck",
+  "lint",
+  "test",
+  "budgets",
+  "build",
+  "test-native",
   "native-platforms / Windows desktop core",
   "native-platforms / macOS desktop core",
   "native-platforms / Scaffolded starter desktop artifact",
@@ -28,27 +33,79 @@ function script(name: string): string {
   assert.ok(step, `missing step ${name}`);
   const block = step.split(/\n      - /u)[0]?.split(/\n        run: \|\n/u)[1];
   assert.ok(block, `missing script ${name}`);
-  return block.split("\n").map((line) => line.replace(/^          /u, "")).join("\n");
+  return block
+    .split("\n")
+    .map((line) => line.replace(/^          /u, ""))
+    .join("\n");
 }
 
-function allowed(name: string, event: string, refType: string, results: Record<string, string> = {}): boolean {
+function allowed(
+  name: string,
+  event: string,
+  refType: string,
+  results: Record<string, string> = {},
+): boolean {
   const body = job(name).split("\n    steps:")[0] ?? "";
   const expression = body.match(/\n    if: (?:>-\n)?([\s\S]*?)(?=\n    [a-z]|$)/u)?.[1];
   assert.ok(expression, `missing explicit job condition for ${name}`);
-  const condition = expression.replace(/\$\{\{|\}\}/gu, "").replace(/needs\.([\w-]+)/gu, 'needs["$1"]');
-  const needs = Object.fromEntries(["validate-tag", "gates", "build", "build-android", "publish", "clean-consumer", "clean-consumer-ios"]
-    .map((key) => [key, { result: results[key] ?? "success", outputs: { candidate_sha: sha } }]));
+  const condition = expression
+    .replace(/\$\{\{|\}\}/gu, "")
+    .replace(/needs\.([\w-]+)/gu, 'needs["$1"]');
+  const needs = Object.fromEntries(
+    [
+      "validate-tag",
+      "gates",
+      "build",
+      "build-android",
+      "publish",
+      "clean-consumer",
+      "clean-consumer-ios",
+    ].map((key) => [key, { result: results[key] ?? "success", outputs: { candidate_sha: sha } }]),
+  );
   const validation = needs["validate-tag"];
   assert.ok(validation);
   if (results["validate-tag"] === "skipped") validation.outputs.candidate_sha = "";
-  const evaluate = new Function("github", "needs", "cancelled", "always", "startsWith", `return Boolean(${condition});`);
-  return evaluate({ event_name: event, ref_type: refType, ref: refType === "tag" ? "refs/tags/runtime-native-v0.3.1" : "refs/heads/main", sha }, needs, () => false, () => true, (text: string, prefix: string) => text.startsWith(prefix));
+  const evaluate = new Function(
+    "github",
+    "needs",
+    "cancelled",
+    "always",
+    "startsWith",
+    `return Boolean(${condition});`,
+  );
+  return evaluate(
+    {
+      event_name: event,
+      ref_type: refType,
+      ref: refType === "tag" ? "refs/tags/runtime-native-v0.3.1" : "refs/heads/main",
+      sha,
+    },
+    needs,
+    () => false,
+    () => true,
+    (text: string, prefix: string) => text.startsWith(prefix),
+  );
 }
 
 function runGate(change: "none" | "wrong-sha" | "missing-job" | "skipped-job") {
   const directory = makeTempDirSync("threenative-release-gate-");
-  const run = { databaseId: 123, attempt: 1, status: "completed", conclusion: "success", event: "push", headBranch: "main", headSha: change === "wrong-sha" ? "b".repeat(40) : sha };
-  const jobs = names.map((name, index) => ({ id: index + 1, name, run_id: 123, head_sha: sha, status: "completed", conclusion: "success" }));
+  const run = {
+    databaseId: 123,
+    attempt: 1,
+    status: "completed",
+    conclusion: "success",
+    event: "push",
+    headBranch: "main",
+    headSha: change === "wrong-sha" ? "b".repeat(40) : sha,
+  };
+  const jobs = names.map((name, index) => ({
+    id: index + 1,
+    name,
+    run_id: 123,
+    head_sha: sha,
+    status: "completed",
+    conclusion: "success",
+  }));
   if (change === "missing-job") jobs.pop();
   if (change === "skipped-job") {
     assert.ok(jobs[0]);
@@ -59,12 +116,30 @@ function runGate(change: "none" | "wrong-sha" | "missing-job" | "skipped-job") {
   writeFileSync(join(directory, "jobs.json"), JSON.stringify([{ total_count: jobs.length, jobs }]));
   const bin = join(directory, "bin");
   mkdirSync(bin);
-  writeFileSync(join(bin, "gh"), '#!/bin/sh\ncase "$1 $2" in\n"run list") cat "$FIXTURES/runs.json";;\n"run view") cat "$FIXTURES/run.json";;\n"api --paginate") cat "$FIXTURES/jobs.json";;\n*) exit 91;;\nesac\n');
+  writeFileSync(
+    join(bin, "gh"),
+    '#!/bin/sh\ncase "$1 $2" in\n"run list") cat "$FIXTURES/runs.json";;\n"run view") cat "$FIXTURES/run.json";;\n"api --paginate") cat "$FIXTURES/jobs.json";;\n*) exit 91;;\nesac\n',
+  );
   chmodSync(join(bin, "gh"), 0o755);
-  const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", script("Require a green CI run for this commit")], {
-    cwd: directory, encoding: "utf8", timeout: 10000,
-    env: { ...process.env, FORCE_COLOR: "0", FIXTURES: directory, PATH: `${bin}:${process.env.PATH}`, RUNNER_TEMP: directory, GITHUB_SHA: sha, GITHUB_REPOSITORY: "ThreeNativeHQ/threenative", GITHUB_STEP_SUMMARY: join(directory, "summary.md") },
-  });
+  const result = spawnSync(
+    "bash",
+    ["-e", "-o", "pipefail", "-c", script("Require a green CI run for this commit")],
+    {
+      cwd: directory,
+      encoding: "utf8",
+      timeout: 10000,
+      env: {
+        ...process.env,
+        FORCE_COLOR: "0",
+        FIXTURES: directory,
+        PATH: `${bin}:${process.env.PATH}`,
+        RUNNER_TEMP: directory,
+        GITHUB_SHA: sha,
+        GITHUB_REPOSITORY: "ThreeNativeHQ/threenative",
+        GITHUB_STEP_SUMMARY: join(directory, "summary.md"),
+      },
+    },
+  );
   assert.ifError(result.error);
   return { ...result, directory, evidence: join(directory, "native-release-prerequisites") };
 }
@@ -86,16 +161,35 @@ for (const name of ["validate-tag", "publish", "finalize", "cleanup-failed-relea
 
 for (const name of ["gates", "build", "build-android", "clean-consumer"]) {
   test(`${name} runs proof despite intentionally skipped publishing dependencies`, () => {
-    assert.equal(allowed(name, "pull_request", "branch", { "validate-tag": "skipped", publish: "skipped" }), true);
-    assert.equal(allowed(name, "workflow_dispatch", "branch", { "validate-tag": "skipped", publish: "skipped" }), true);
+    assert.equal(
+      allowed(name, "pull_request", "branch", { "validate-tag": "skipped", publish: "skipped" }),
+      true,
+    );
+    assert.equal(
+      allowed(name, "workflow_dispatch", "branch", {
+        "validate-tag": "skipped",
+        publish: "skipped",
+      }),
+      true,
+    );
   });
 }
 
 test("native builds and consumers refuse failed dependencies rather than treating always as success", () => {
   for (const name of ["build", "build-android"]) {
-    assert.equal(allowed(name, "pull_request", "branch", { "validate-tag": "skipped", gates: "failure" }), false);
+    assert.equal(
+      allowed(name, "pull_request", "branch", { "validate-tag": "skipped", gates: "failure" }),
+      false,
+    );
   }
-  assert.equal(allowed("clean-consumer", "pull_request", "branch", { "validate-tag": "skipped", publish: "skipped", "build-android": "failure" }), false);
+  assert.equal(
+    allowed("clean-consumer", "pull_request", "branch", {
+      "validate-tag": "skipped",
+      publish: "skipped",
+      "build-android": "failure",
+    }),
+    false,
+  );
   assert.equal(allowed("clean-consumer", "push", "tag", { publish: "failure" }), false);
 });
 
@@ -112,12 +206,22 @@ for (const control of ["wrong-sha", "missing-job", "skipped-job"] as const) {
     const result = runGate(control);
     assert.equal(result.status, 1, result.stdout + result.stderr);
     assert.match(readFileSync(join(result.evidence, "status.txt"), "utf8"), /exit_code=1/u);
-    assert.match(result.stderr, control === "wrong-sha" ? /exact candidate SHA/u : control === "missing-job" ? /Android emulator visual parity: 0 result/u : /typecheck: 1 result\(s\), completed\/skipped/u);
+    assert.match(
+      result.stderr,
+      control === "wrong-sha"
+        ? /exact candidate SHA/u
+        : control === "missing-job"
+          ? /Android emulator visual parity: 0 result/u
+          : /typecheck: 1 result\(s\), completed\/skipped/u,
+    );
   });
 }
 
 test("the hosted release entry point executes refusal controls before native work", () => {
-  assert.match(job("gates"), /pnpm exec vitest run scripts\/__tests__\/native-release-proof\.spec\.ts/u);
+  assert.match(
+    job("gates"),
+    /pnpm exec vitest run scripts\/__tests__\/native-release-proof\.spec\.ts/u,
+  );
   assert.match(job("gates"), /pull_request/u);
 });
 
@@ -135,7 +239,9 @@ test("the PR proof is not reported as accepted main release prerequisites", () =
   assert.match(script("Record PR-only proof scope"), /headSha/u);
 });
 
-function runEvidence(change: "complete" | "missing" | "empty" | "wrong-marker" | "wrong-exit" | "wrong-scenario") {
+function runEvidence(
+  change: "complete" | "missing" | "empty" | "wrong-marker" | "wrong-exit" | "wrong-scenario",
+) {
   const directory = makeTempDirSync("threenative-consumer-evidence-");
   const scenarioRoot = join(directory, "examples/native-smoke/playtests");
   mkdirSync(scenarioRoot, { recursive: true });
@@ -146,40 +252,114 @@ function runEvidence(change: "complete" | "missing" | "empty" | "wrong-marker" |
   const packed = join(directory, "package");
   mkdirSync(packed);
   mkdirSync(join(directory, "packages"));
-  writeFileSync(join(packed, "package.json"), JSON.stringify({ name: "@threenative/core", version: "0.3.1" }));
-  assert.equal(spawnSync("tar", ["-czf", join(directory, "packages/core.tgz"), "-C", directory, "package"]).status, 0);
-  for (const args of [["init", "-q"], ["add", "."], ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture"]]) {
+  writeFileSync(
+    join(packed, "package.json"),
+    JSON.stringify({ name: "@threenative/core", version: "0.3.1" }),
+  );
+  assert.equal(
+    spawnSync("tar", ["-czf", join(directory, "packages/core.tgz"), "-C", directory, "package"])
+      .status,
+    0,
+  );
+  for (const args of [
+    ["init", "-q"],
+    ["add", "."],
+    ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture"],
+  ]) {
     assert.equal(spawnSync("git", args, { cwd: directory }).status, 0);
   }
-  const checkout = spawnSync("git", ["rev-parse", "HEAD"], { cwd: directory, encoding: "utf8" }).stdout.trim();
+  const checkout = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: directory,
+    encoding: "utf8",
+  }).stdout.trim();
   const controls = [
     ["positive", "physics", "physics", 0, "normal", ""],
-    ["wrong-height", "physics-wrong-height", "wrong-height", 1, "normal", "TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED"],
-    ["mask-control", "physics-mask", "mask-control", 1, "normal", "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED"],
+    [
+      "wrong-height",
+      "physics-wrong-height",
+      "wrong-height",
+      1,
+      "normal",
+      "TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED",
+    ],
+    [
+      "mask-control",
+      "physics-mask",
+      "mask-control",
+      1,
+      "normal",
+      "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED",
+    ],
     ["mask-positive", "physics-mask", "mask-pass", 0, "masked", ""],
-    ["masked-physics-control", "physics", "masked-physics-control", 1, "masked", "TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED"],
-    ["wrong-gravity", "physics", "wrong-gravity", 1, "wrong-gravity", "TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED"],
+    [
+      "masked-physics-control",
+      "physics",
+      "masked-physics-control",
+      1,
+      "masked",
+      "TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED",
+    ],
+    [
+      "wrong-gravity",
+      "physics",
+      "wrong-gravity",
+      1,
+      "wrong-gravity",
+      "TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED",
+    ],
   ] as const;
   for (const [key, scenario, folder, code, variant, marker] of controls) {
     if (change === "missing" && key === "wrong-gravity") continue;
     const artifactDirectory = join(directory, `packed-android-${folder}`);
     mkdirSync(artifactDirectory);
-    writeFileSync(join(artifactDirectory, "device-response-observations.json"), "{\"observations\":[1]}\n");
+    writeFileSync(
+      join(artifactDirectory, "device-response-observations.json"),
+      '{"observations":[1]}\n',
+    );
     const report = {
-      artifactDirectory, assertionResults: change === "empty" ? [] : [{ id: "positionReach", pass: code === 0 }],
-      diagnostics: marker ? [{ code: change === "wrong-marker" ? "TN_UNRELATED_FAILURE" : marker }] : [],
-      pass: code === 0, runtime: "native", target: "android", frames: 100,
+      artifactDirectory,
+      assertionResults: change === "empty" ? [] : [{ id: "positionReach", pass: code === 0 }],
+      diagnostics: marker
+        ? [{ code: change === "wrong-marker" ? "TN_UNRELATED_FAILURE" : marker }]
+        : [],
+      pass: code === 0,
+      runtime: "native",
+      target: "android",
+      frames: 100,
       scenario: change === "wrong-scenario" ? "unrelated" : scenario,
     };
-    writeFileSync(join(directory, `android-${key}.log`), `startup noise\n${JSON.stringify(report, null, 2)}\n`);
-    writeFileSync(join(directory, `android-${key}.exit`), `${change === "wrong-exit" ? 2 : code}\n`);
-    writeFileSync(join(directory, `android-${variant}-apk.sha256`), `${"c".repeat(64)}  game.apk\n`);
+    writeFileSync(
+      join(directory, `android-${key}.log`),
+      `startup noise\n${JSON.stringify(report, null, 2)}\n`,
+    );
+    writeFileSync(
+      join(directory, `android-${key}.exit`),
+      `${change === "wrong-exit" ? 2 : code}\n`,
+    );
+    writeFileSync(
+      join(directory, `android-${variant}-apk.sha256`),
+      `${"c".repeat(64)}  game.apk\n`,
+    );
   }
-  const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", script("Record packed consumer verification evidence")], {
-    cwd: directory, encoding: "utf8", timeout: 10000,
-    env: { ...process.env, RUNNER_TEMP: directory, GITHUB_WORKSPACE: directory, GITHUB_SHA: checkout,
-      GITHUB_RUN_ID: "123", GITHUB_RUN_ATTEMPT: "1", GITHUB_REF_TYPE: "branch", GITHUB_STEP_SUMMARY: join(directory, "summary.md") },
-  });
+  const result = spawnSync(
+    "bash",
+    ["-e", "-o", "pipefail", "-c", script("Record packed consumer verification evidence")],
+    {
+      cwd: directory,
+      encoding: "utf8",
+      timeout: 10000,
+      env: {
+        ...process.env,
+        RUNNER_TEMP: directory,
+        GITHUB_WORKSPACE: directory,
+        GITHUB_SHA: checkout,
+        GITHUB_RUN_ID: "123",
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_REF_TYPE: "branch",
+        GITHUB_STEP_SUMMARY: join(directory, "summary.md"),
+      },
+    },
+  );
   assert.ifError(result.error);
   return { ...result, directory };
 }
@@ -187,19 +367,34 @@ function runEvidence(change: "complete" | "missing" | "empty" | "wrong-marker" |
 test("consumer evidence records six real outcomes and integrity of the actual packed bytes", () => {
   const result = runEvidence("complete");
   assert.equal(result.status, 0, result.stderr);
-  const report = JSON.parse(readFileSync(join(result.directory, "proof-consumer-evidence.json"), "utf8"));
+  const report = JSON.parse(
+    readFileSync(join(result.directory, "proof-consumer-evidence.json"), "utf8"),
+  );
   assert.equal(report.controls.length, 6);
-  assert.ok(report.controls.every((row: { assertionCount: number; verified: boolean }) => row.assertionCount > 0 && row.verified));
+  assert.ok(
+    report.controls.every(
+      (row: { assertionCount: number; verified: boolean }) =>
+        row.assertionCount > 0 && row.verified,
+    ),
+  );
   assert.equal(report.packages[0].version, "0.3.1");
   assert.match(report.packages[0].integrity, /^sha512-/u);
   assert.equal(report.scope, "same-run-artifacts-not-public-installation");
 });
 
-for (const change of ["missing", "empty", "wrong-marker", "wrong-exit", "wrong-scenario"] as const) {
+for (const change of [
+  "missing",
+  "empty",
+  "wrong-marker",
+  "wrong-exit",
+  "wrong-scenario",
+] as const) {
   test(`consumer evidence refuses ${change} observations and preserves failed rows`, () => {
     const result = runEvidence(change);
     assert.equal(result.status, 1, result.stdout + result.stderr);
-    const report = JSON.parse(readFileSync(join(result.directory, "proof-consumer-evidence.json"), "utf8"));
+    const report = JSON.parse(
+      readFileSync(join(result.directory, "proof-consumer-evidence.json"), "utf8"),
+    );
     assert.equal(report.controls.length, 6);
     assert.ok(report.controls.some((row: { verified: boolean }) => !row.verified));
     assert.ok(report.failures.length > 0);
