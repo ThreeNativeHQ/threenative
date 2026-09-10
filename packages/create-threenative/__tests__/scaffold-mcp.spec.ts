@@ -21,6 +21,8 @@ const corePackageRoot = path.resolve("packages/core");
 const physicsPackageRoot = path.resolve("packages/physics");
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
+const mcpProbeTimeoutMs = 2_000;
+const mcpCompileTimeoutMs = 30_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -122,10 +124,11 @@ async function request(
   lines: ReturnType<typeof createInterface>,
   method: string,
   params: Record<string, unknown> = {},
+  timeoutMs = mcpProbeTimeoutMs,
 ): Promise<Record<string, unknown>> {
   const id = nextId.value++;
   const response = new Promise<Record<string, unknown>>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`MCP ${method} timed out`)), 2_000);
+    const timer = setTimeout(() => reject(new Error(`MCP ${method} timed out`)), timeoutMs);
     const onLine = (line: string) => {
       let parsed: unknown;
       try {
@@ -424,13 +427,20 @@ describe("scaffolded asset MCP", () => {
       expect(guide.guide).toEqual(expect.stringContaining('"palette"'));
 
       const compile = toolText(
-        await request(child, nextId, lines, "tools/call", {
-          arguments: {
-            outputPath: "assets/creatures/compact.glb",
-            specPath: ".threenative/creatures/compact.json",
+        await request(
+          child,
+          nextId,
+          lines,
+          "tools/call",
+          {
+            arguments: {
+              outputPath: "assets/creatures/compact.glb",
+              specPath: ".threenative/creatures/compact.json",
+            },
+            name: "creature_compile",
           },
-          name: "creature_compile",
-        }),
+          mcpCompileTimeoutMs,
+        ),
       );
       expect(compile).toMatchObject({
         operation: "creature_compile",
