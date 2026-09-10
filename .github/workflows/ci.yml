@@ -58,7 +58,7 @@ jobs:
   # had nothing marked failed to re-run. The runner minutes it saved cost the one thing a red
   # run exists to produce: the name of the gate that broke. The matrices already carry
   # `fail-fast: false` for the same reason, and the expensive jobs already `needs:` the gate
-  # they depend on, so a broken `build` still skips them without erasing anything.
+  # they depend on, so broken artifact production still skips its consumers without erasing anything.
   #
   # Every job below checks out and installs for itself, so nothing gains from a shared `install`
   # job that discards its own node_modules — it only added a serial edge in front of the run.
@@ -493,7 +493,7 @@ jobs:
       - run: pnpm test:playtest:ci
 
   golden-path-template:
-    needs: [scope, build]
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection != 'prose' }}
     strategy:
       fail-fast: false
@@ -663,7 +663,7 @@ jobs:
     # Ran only on push/schedule until 2026-09-01 (owner call): every template now proves itself
     # non-visually on every PR too, so a template regression is reported by the PR that caused it
     # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
-    needs: [scope, build]
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection != 'prose' }}
     # One leg per template was one leg per *unit of naming*, not per unit of work: on run
     # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
@@ -796,7 +796,7 @@ jobs:
           test "$result" = "success"
 
   benchmark:
-    needs: [scope, build]
+    needs: scope
     if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -833,25 +833,39 @@ jobs:
   # the thing no automated gate on this runner can judge anyway, which the templates' own
   # AGENTS.md says in as many words: every gate here is blind to how the game looks.
 
-  # Building the workspace and checking the entity-registry boundary needs neither the native host
-  # nor a browser, so it is a gate the scaffold and benchmark lanes can wait on instead of waiting
-  # ~15 minutes behind the native suite. This is also one of the exact contexts protected by the
-  # `main protection` ruleset, so it projects the native reusable workflow's verdict explicitly.
-  # Without the result assertion, a failed upstream would skip this required job and a skipped
-  # required check would count as satisfied.
+  # Keep the exact protected `build` context, but make it a verdict join rather than the
+  # artifact producer. Native evidence still blocks merging; it no longer blocks independent
+  # web/template evidence from running. !cancelled() overrides implicit success(), so a failed
+  # or skipped upstream reaches these assertions instead of silently skipping a required check.
   build:
-    needs: [scope, native-platforms]
+    needs: [scope, build-artifacts, native-platforms]
     if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 2
     steps:
-      - name: Require the native platform lane
+      - name: Require workspace and native platform evidence
         env:
+          CI_SCOPE_RESULT: ${{ needs.scope.result }}
+          WORKSPACE_BUILD_RESULT: ${{ needs.build-artifacts.result }}
           NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}
         run: |
           set -euo pipefail
+          echo "scope: $CI_SCOPE_RESULT"
+          echo "build-artifacts: $WORKSPACE_BUILD_RESULT"
           echo "native-platforms: $NATIVE_PLATFORM_RESULT"
+          test "$CI_SCOPE_RESULT" = "success"
+          test "$WORKSPACE_BUILD_RESULT" = "success"
           test "$NATIVE_PLATFORM_RESULT" = "success"
+
+  # Produce this commit's bundles and freshly packed templates as soon as scope is known.
+  # Consumers need these bytes, not the native matrix's verdict. No verification is omitted:
+  # the protected build join above requires both this producer and the complete native lane.
+  build-artifacts:
+    needs: scope
+    if: ${{ needs.scope.outputs.selection != 'prose' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
@@ -896,7 +910,7 @@ jobs:
           if-no-files-found: error
 
   performance-contracts:
-    needs: [scope, build]
+    needs: scope
     if: ${{ needs.scope.outputs.selection != 'prose' && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -958,7 +972,7 @@ jobs:
           if-no-files-found: warn
 
   budgets:
-    needs: [scope, build]
+    needs: scope
     if: ${{ needs.scope.outputs.selection != 'prose' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1082,6 +1096,7 @@ jobs:
       - golden-path
       - benchmark
       - build
+      - build-artifacts
       - budgets
       - performance-contracts
       - supply-chain
