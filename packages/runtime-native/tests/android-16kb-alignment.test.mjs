@@ -452,6 +452,26 @@ test('source Gradle builds verify the dependency before snapshots while no-NDK p
   assert.ok(gradle.includes(`ndkVersion = "${ANDROID_V8_BUILD.ndk}"`));
 });
 
+test('Android workflows install and select the pinned V8 NDK', () => {
+  const ndk = ANDROID_V8_BUILD.ndk;
+  const gradleProperties = readFileSync(new URL('../android/gradle.properties', import.meta.url), 'utf8');
+  assert.match(gradleProperties, new RegExp(`^android\\.ndkVersion=${ndk}$`, 'mu'));
+
+  for (const path of [
+    '../../../.github/workflows/native-platforms.yml',
+    '../../../.github/workflows/native-release.yml',
+  ]) {
+    const workflow = readFileSync(new URL(path, import.meta.url), 'utf8');
+    assert.ok(workflow.includes(`ndk;${ndk}`), `${path} must install the pinned NDK`);
+    assert.match(
+      workflow,
+      new RegExp(`ANDROID_NDK_HOME=.*ndk/${ndk}`, 'u'),
+      `${path} must explicitly select the pinned NDK`,
+    );
+    assert.doesNotMatch(workflow, /ndk;27\.1\.12297006/u);
+  }
+});
+
 test('the NDK 28 recipe pins and adapts the upstream inspector libc++ compatibility backport', () => {
   assert.equal(ANDROID_V8_BUILD.inspectorFix, '182d9c05e78b1ddb1cb8242cd3628a7855a0336f');
   assert.equal(ANDROID_V8_BUILD.recipe, 4);

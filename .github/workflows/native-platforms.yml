@@ -254,10 +254,10 @@ jobs:
           path: |
             ${{ env.ANDROID_SDK_ROOT }}/platforms/android-35
             ${{ env.ANDROID_SDK_ROOT }}/build-tools/35.0.0
-            ${{ env.ANDROID_SDK_ROOT }}/ndk/27.1.12297006
+            ${{ env.ANDROID_SDK_ROOT }}/ndk/28.2.13676358
             ${{ env.ANDROID_SDK_ROOT }}/system-images/android-35
             ${{ env.ANDROID_SDK_ROOT }}/emulator
-          key: android-sdk-35-ndk27.1.12297006-${{ runner.os }}
+          key: android-sdk-35-ndk28.2.13676358-${{ runner.os }}
       - name: Restore the Gradle caches
         uses: actions/cache@v4
         with:
@@ -296,7 +296,9 @@ jobs:
             packages/runtime-native/artifacts/conformance/web "downloaded web reference"
       - name: Install Android build prerequisites
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006"
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358"
+          export ANDROID_NDK_HOME="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
           # build-native-physics.mjs cross-compiles the Rust physics crate for both ABIs
           # Gradle packages. Without these targets `:app:buildNativePhysics` fails with
           # E0463 can't find crate for `core`, and every conformance row fails at phase
