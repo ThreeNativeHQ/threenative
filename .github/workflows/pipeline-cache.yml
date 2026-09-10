@@ -42,7 +42,7 @@ jobs:
             git rm .github/prd-368.patch
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'fix(native): reconstruct the pinned pipeline-cache ABI on Linux and Android'
+            git commit -m 'feat(native): persist qualified compiled pipeline caches across relaunches'
             git push origin HEAD:feat/prd-368-persistent-pipeline-cache
           fi
           echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -69,6 +69,7 @@ jobs:
           node-version: '22'
       - name: Test pinned toolchain resolution
         run: node --test packages/runtime-native/tests/wgpu-cache-toolchain.test.mjs
+      - uses: android-actions/setup-android@v4
       - name: Provision the pinned NDK and Rust target
         run: |
           sdkmanager 'ndk;27.1.12297006'
