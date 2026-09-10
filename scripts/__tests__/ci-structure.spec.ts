@@ -914,7 +914,7 @@ describe("CI pipeline structure", () => {
             if (!continued) break;
             command += ` ${continuation}`;
           }
-          if (command.includes("--repo")) continue;
+          if (command.includes("--repo") || command.includes("repos/$GITHUB_REPOSITORY/")) continue;
           offenders.push(`${relative} ${job}: ${line.trim()}`);
         }
       }
