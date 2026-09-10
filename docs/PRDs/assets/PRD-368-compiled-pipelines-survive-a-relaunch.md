@@ -1,6 +1,6 @@
 # PRD-368 — Compiled pipelines survive a relaunch
 
-**Status:** PARTIAL — bounded cache API prototype verified on desktop, 2026-09-09; production integration and Android acceptance remain open. **Layer:** native engine; only the host can persist backend compiler data.
+**Status:** PARTIAL — Phase 1A and Phase 1B executed on Linux/Vulkan, 2026-09-09: the host now compiles every pipeline through one device-owned cache. Persistence across restarts, Android, and every timing claim remain open. **Layer:** native engine; only the host can persist backend compiler data.
 **Complexity:** 3 (10+ files) + 2 (new cache lifecycle) + 2 (concurrency) = **7 → HIGH mode**.
 **Depends on:** [367](PRD-367-doctor-explains-shader-compilation.md) for measured acceptance and
 the [shared execution contract](README.md). Dependency feasibility can run first.
@@ -30,15 +30,46 @@ retains the patch, probe, exact commands, hashes and raw results. The local igno
 `artifacts/startup-measure-reduce/pipeline-cache-spike/` in the PR-165 checkout; reconstruct from the
 retained artifacts if that checkout has been removed.
 
+### Phase 1B result — 2026-09-09
+
+The host owns exactly one `WGPUPipelineCache` per device, created in `initBindings` before any
+binding is installed and released in `shutdownAsyncPipelineCompiles` after every worker is joined.
+All four creation paths supply it: synchronous render, synchronous compute, and both worker
+compiles. `ownDescriptor()` still drops `nextInChain`; the worker rebuilds the extension on its own
+stack beside the creation call rather than carrying a pointer it does not own.
+
+**Executed** on Linux/Vulkan (NVIDIA RTX 2080) with the patched wgpu-native, evidence in
+[`pipeline-cache-host/`](../../verification/startup-measure-reduce-2026-09-09/pipeline-cache-host/):
+`threenative-pipeline-cache-api-test` drives four pipelines through the host's own JavaScript
+bindings and the device cache grows from its empty 100 bytes to 32,515, with `renderAttached=2`
+and `computeAttached=2`. The red — attachment removed while the host still reports a cache — leaves
+the cache at 100 bytes and exits 1. `TN_PIPELINE_CACHE=0` is the shipping negative control: same
+binary, nothing attached, nothing serialized, rendering unchanged. 35 of 38 native contract tests
+pass in this configuration; the three failures (`webgpu-comprehensive`,
+`runtime-platform-comprehensive`, `webgpu-bindings-reentrancy`) reproduce identically at the
+Phase 1A commit and are pre-existing gaps in a wgpu-configured Linux build, as are the two targets
+that do not compile there at all (`wgpu-null-handle`, `rg11b10-renderable`, which include Dawn's
+`<webgpu.h>` layout).
+
+Because the cache API exists only in the maintained patch, CMake now defines
+`MYSTRAL_WGPU_PIPELINE_CACHE` by reading the installed `wgpu.h`. A stock prebuilt reports
+`unsupported` and renders exactly as before, which is what keeps an ordinary `pnpm native:build`
+compiling.
+
+**Not proven by this phase:** persistence across process restarts, Android arm64, device loss,
+corrupt or unwritable storage, and any startup saving whatsoever. The host reports a cache *mode*
+and serialized *bytes*; the backend exposes no per-pipeline hit or miss, so nothing here is
+permitted to say a pipeline was reused.
+
 ### Next work, in priority order
 
-1. **Make the patch reproducible and prove a real pipeline.** Review the retained prototype; add the
+1. **DONE (Linux only) — Make the patch reproducible and prove a real pipeline.** Review the retained prototype; add the
    canonical patch/source-build path and compiled API regression. Preserve the pin and ABI; build
    Linux Vulkan and Android arm64. System libclang 22 broke bindgen 0.72; the existing NDK libclang
    built the prototype successfully. Pin/document the build toolchain. Run an actual Bayview pipeline
    with matching descriptors, feature enablement, cache attachment and rendered output before claiming
    Phase 1 complete. Keep unsupported backends explicit.
-2. **Attach one device-owned cache to every supported creation path.** Cover sync render, worker
+2. **DONE (Linux only) — Attach one device-owned cache to every supported creation path.** Cover sync render, worker
    async render, and compute. `ownDescriptor()` currently strips `nextInChain`: preserve the cache
    extension in owned storage or reconstruct it around the worker call. Retain its handle through
    completion; drain workers before snapshot/device teardown. Test rejection, foreign-device caches,
@@ -57,9 +88,10 @@ retained artifacts if that checkout has been removed.
    timing/appearance review. Mark done only after all existing acceptance boxes pass. PRD-369's
    first-install target is separate; this cache primarily addresses compatible repeat launches.
 
-**First action for the next agent:** apply the retained patch to the pinned source and rerun the
-linked round trip using `commands.txt`; then implement Phase 1A below. Avoid more census/reporting
-work unless a missing observation directly blocks this cache proof.
+**First action for the next agent:** Phase 2. Reproduce the Phase 1B green with
+`pipeline-cache-host/commands.txt` first, so you are building on a cache you watched populate, then
+give it bounded app-private storage. The Android arm64 build of the patched dependency is still
+owed from Phase 1A and blocks Phase 3; it does not block Phase 2.
 
 ## Problem and outcome
 
