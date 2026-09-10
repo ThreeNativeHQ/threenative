@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { test } from 'vitest';
 
 import {
@@ -110,6 +111,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	ANDROID_V8_BUILD,
+	adaptAndroidV8InspectorPatch,
 	androidV8GnArgs,
 	createAndroidV8Receipt,
 	verifyAndroidV8Installation,
@@ -298,6 +300,66 @@ test("V8 source GN configuration retains JIT, compressed pointers and per-ABI sn
 	);
 });
 
+test('the adapted inspector backport applies to the pinned String16 source shape', () => {
+  const root = mkdtempSync(join(tmpdir(), 'tn-v8-inspector-patch-'));
+  const header = join(root, 'src/inspector/string-16.h');
+  const parent = [
+    '#include <stdint.h>',
+    '',
+    'using UChar = uint16_t;',
+    '',
+    'class String16 {',
+    ' public:',
+    '  int toInteger(bool* ok = nullptr) const;',
+    '  std::pair<size_t, size_t> getTrimmedOffsetAndLength() const;',
+    '  String16 stripWhiteSpace() const;',
+    '  const UChar* characters16() const { return m_impl.c_str(); }',
+    '  size_t length() const { return m_impl.length(); }',
+    '  bool isEmpty() const { return !m_impl.length(); }',
+    '  UChar operator[](size_t index) const { return m_impl[index]; }',
+    '};',
+    '',
+  ].join('\n');
+  const target = parent
+    .replace('using UChar = uint16_t;', 'using UChar = char16_t;')
+    .replace(
+      '  const UChar* characters16() const { return m_impl.c_str(); }',
+      '  const uint16_t* characters16() const {\n' +
+        '    return reinterpret_cast<const uint16_t*>(m_impl.c_str());\n' +
+        '  }',
+    );
+  const pinned = parent.replace(
+    '  std::pair<size_t, size_t> getTrimmedOffsetAndLength() const;\n',
+    '',
+  );
+  try {
+    mkdirSync(join(root, 'src/inspector'), { recursive: true });
+    writeFileSync(header, parent);
+    execFileSync('git', ['init', '-q'], { cwd: root });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: root });
+    execFileSync('git', ['config', 'user.name', 'ThreeNative test'], { cwd: root });
+    execFileSync('git', ['add', 'src/inspector/string-16.h'], { cwd: root });
+    execFileSync('git', ['commit', '-qm', 'parent'], { cwd: root });
+    writeFileSync(header, target);
+    const upstreamPatch = execFileSync(
+      'git',
+      ['diff', '--', 'src/inspector/string-16.h'],
+      { cwd: root, encoding: 'utf8' },
+    );
+    writeFileSync(header, pinned);
+    const adapted = adaptAndroidV8InspectorPatch(upstreamPatch);
+    assert.doesNotMatch(adapted, /getTrimmedOffsetAndLength/u);
+    assert.doesNotThrow(() =>
+      execFileSync('git', ['apply', '--check', '--recount', '-'], {
+        cwd: root,
+        input: adapted,
+      }),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("V8 payload rejects symlinks, empty files and missing license notices", () => {
 	withV8Payload(({ root, write, options }) => {
 		write("empty.txt", "");
@@ -390,11 +452,12 @@ test('source Gradle builds verify the dependency before snapshots while no-NDK p
   assert.ok(gradle.includes(`ndkVersion = "${ANDROID_V8_BUILD.ndk}"`));
 });
 
-test('the NDK 28 recipe pins the upstream inspector libc++ compatibility backport', () => {
+test('the NDK 28 recipe pins and adapts the upstream inspector libc++ compatibility backport', () => {
   assert.equal(ANDROID_V8_BUILD.inspectorFix, '182d9c05e78b1ddb1cb8242cd3628a7855a0336f');
-  assert.ok(ANDROID_V8_BUILD.recipe >= 3);
+  assert.equal(ANDROID_V8_BUILD.recipe, 4);
   const script = readFileSync(new URL('../scripts/build-android-v8.mjs', import.meta.url), 'utf8');
   assert.match(script, /ANDROID_V8_BUILD\.inspectorFix/u);
-  assert.match(script, /\["apply", "--check", "-"\]/u);
-  assert.match(script, /\["apply", "-"\]/u);
+  assert.match(script, /adaptAndroidV8InspectorPatch/u);
+  assert.match(script, /\["apply", "--check", "--recount", "-"\]/u);
+  assert.match(script, /\["apply", "--recount", "-"\]/u);
 });

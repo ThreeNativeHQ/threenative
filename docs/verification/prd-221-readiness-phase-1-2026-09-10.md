@@ -35,10 +35,13 @@ Source inputs are pinned in `ANDROID_V8_BUILD`: V8 `11.0.226.16` at
 `7999223ca1644726339aae43d9435c721c8a4bb0`, build patches at
 `fc31185d224f9aaddc28765882009591de5ca4d0`, depot_tools at
 `08f3e8c0eb66d6de3a048a757d0ff708dbc8ea34`, and NDK `28.2.13676358`.
-Recipe 3 additionally pins V8's upstream inspector/libc++ compatibility backport
+Recipe 4 additionally pins V8's upstream inspector/libc++ compatibility backport
 `182d9c05e78b1ddb1cb8242cd3628a7855a0336f`. Its parent is fetched and its exact diff
-is checked before applying; an empty patch fails. This backport is prepared, not yet
-qualified by a successful build in the evidence recorded below.
+is adapted only for the pinned source's absent context-only declaration, then checked
+with `git apply --check --recount` before applying; an empty or unexpected patch fails.
+The adaptation is exercised by a real local `git apply --check` against the pinned
+String16 source shape. This backport is prepared, not yet qualified by a successful
+build in the evidence recorded below.
 
 Both ABI libraries and shared STLs are checked for ELF64 architecture and every LOAD
 alignment. A receipt binds their complete file census, headers, distinct ABI snapshots,
@@ -66,8 +69,8 @@ these prove gate mechanics, not V8 execution or Android compatibility.
 2. Before caller wiring, 4 integration tests failed: no live downloader export, no
    read-only CLI, and no source-only Gradle gate. The implemented caller wiring passed.
 3. Before the inspector backport pin, its regression test failed with an undefined
-   pin. The pin and checked patch application passed the contract test. This is not a
-   compiler result for the backport.
+   pin. The pin, pinned-source adaptation, and actual checked patch application passed
+   the contract test. This is not a compiler result for the backport.
 
 Final bounded command (run from `packages/runtime-native`, using the recovered isolated
 Vitest installation because pnpm is absent from this sandbox):

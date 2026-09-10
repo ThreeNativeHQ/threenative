@@ -24,7 +24,7 @@ import {
 // Keep the existing V8 API/ABI and reviewed upstream patches, not an unrelated engine upgrade.
 // The source commit also pins Chromium's build/DEPS inputs. Increment recipe when flags change.
 export const ANDROID_V8_BUILD = Object.freeze({
-	recipe: 3,
+	recipe: 4,
 	version: "11.0.226.16",
 	inspectorFix: "182d9c05e78b1ddb1cb8242cd3628a7855a0336f",
 	source: "7999223ca1644726339aae43d9435c721c8a4bb0",
@@ -226,6 +226,21 @@ function replaceOnce(path, before, after) {
 	writeFileSync(path, text.replace(before, after));
 }
 
+// The reviewed upstream commit was written against a newer V8 parent that already declares
+// String16::getTrimmedOffsetAndLength(). The pinned 11.0.226.16 source predates that unrelated
+// declaration, so retain the commit's edits while removing only its context-only line.
+export function adaptAndroidV8InspectorPatch(patch) {
+	const absentPinnedContext =
+		"   std::pair<size_t, size_t> getTrimmedOffsetAndLength() const;\n";
+	const occurrences = patch.split(absentPinnedContext).length - 1;
+	if (occurrences !== 1) {
+		throw new Error(
+			"Pinned V8 inspector backport context changed; expected one absent declaration",
+		);
+	}
+	return patch.replace(absentPinnedContext, "");
+}
+
 /** Linux x86_64 source-build lane. Consumers continue to use engine-qualified runtime assets. */
 export function provisionAndroidV8(
 	destination,
@@ -328,12 +343,22 @@ export function provisionAndroidV8(
 		// the inspector. Depth two retains the parent; a shallow root would diff the whole tree.
 		run("git", ["fetch", "--depth", "2", "https://chromium.googlesource.com/v8/v8.git",
 			ANDROID_V8_BUILD.inspectorFix], source);
-		const inspectorPatch = execFileSync("git", [
+		const upstreamInspectorPatch = execFileSync("git", [
 			"diff", `${ANDROID_V8_BUILD.inspectorFix}^`, ANDROID_V8_BUILD.inspectorFix, "--",
-		], { cwd: source, env: baseEnv, maxBuffer: 1024 * 1024 });
-		if (inspectorPatch.length === 0) throw new Error("Pinned V8 inspector backport is empty");
-		execFileSync("git", ["apply", "--check", "-"], { cwd: source, env: baseEnv, input: inspectorPatch });
-		execFileSync("git", ["apply", "-"], { cwd: source, env: baseEnv, input: inspectorPatch });
+		], { cwd: source, env: baseEnv, encoding: "utf8", maxBuffer: 1024 * 1024 });
+		if (upstreamInspectorPatch.length === 0)
+			throw new Error("Pinned V8 inspector backport is empty");
+		const inspectorPatch = adaptAndroidV8InspectorPatch(upstreamInspectorPatch);
+		execFileSync("git", ["apply", "--check", "--recount", "-"], {
+			cwd: source,
+			env: baseEnv,
+			input: inspectorPatch,
+		});
+		execFileSync("git", ["apply", "--recount", "-"], {
+			cwd: source,
+			env: baseEnv,
+			input: inspectorPatch,
+		});
 		const clangVersions = readdirSync(join(tools, "lib/clang"));
 		if (clangVersions.length !== 1)
 			throw new Error("Pinned NDK has an ambiguous Clang resource version");
