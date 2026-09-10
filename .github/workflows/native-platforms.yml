@@ -682,7 +682,7 @@ jobs:
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
       - name: Report the compiler cache hit rate
-        if: always()
+        if: always() && env.CCACHE_UNAVAILABLE != '1'
         shell: bash
         run: ccache --show-stats
       - name: Compare the desktop host with browser references
@@ -833,14 +833,46 @@ jobs:
             pnpm --filter "$package_name" --if-present run build
           done < <(pnpm tsx scripts/workspace-packages.ts --archives)
       - run: pnpm --filter threenative-native-smoke build
+      # ccache makes this build faster; it never makes it correct. So a package feed that is slow
+      # or down must not turn a compiler cache into a failed platform leg — which is exactly what
+      # happened on 2026-09-10, when `choco install ccache` timed out after 100 s against
+      # community.chocolatey.org and took `build` and `golden-path`, both required checks, down
+      # with it on a pull request that changed one test file.
+      #
+      # Retry first, because the failure is a network one. If it still will not install, drop the
+      # compiler launcher and build without it: slower, byte-identical output, and the compile and
+      # test assertions below are untouched. `CCACHE_UNAVAILABLE` is the honest record of that,
+      # printed in the step summary rather than swallowed.
       - name: Install ccache on macOS
         if: runner.os == 'macOS'
-        run: brew install ccache
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            brew install ccache && exit 0
+            echo "brew install ccache failed (attempt $attempt)"
+            sleep $((attempt * 15))
+          done
+          echo "CCACHE_UNAVAILABLE=1" >> "$GITHUB_ENV"
+          echo "::warning::ccache unavailable after 3 attempts; building without the compiler cache"
       - name: Install ccache on Windows
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: choco install ccache --yes --no-progress
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            choco install ccache --yes --no-progress && exit 0
+            echo "choco install ccache failed (attempt $attempt)"
+            sleep $((attempt * 15))
+          done
+          echo "CCACHE_UNAVAILABLE=1" >> "$GITHUB_ENV"
+          echo "::warning::ccache unavailable after 3 attempts; building without the compiler cache"
+      - name: Drop the compiler launcher when ccache is unavailable
+        if: env.CCACHE_UNAVAILABLE == '1'
+        shell: bash
+        run: |
+          echo "CMAKE_C_COMPILER_LAUNCHER=" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=" >> "$GITHUB_ENV"
       - name: Zero the compiler cache counters
+        if: env.CCACHE_UNAVAILABLE != '1'
         shell: bash
         run: ccache --zero-stats
       - name: Install Windows HTTP build dependencies
@@ -863,7 +895,7 @@ jobs:
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:build
       - name: Report the compiler cache hit rate
-        if: always()
+        if: always() && env.CCACHE_UNAVAILABLE != '1'
         shell: bash
         run: ccache --show-stats
       # `VsDevCmd.bat` configures the process it runs in, and a `cmd` step's environment dies with
@@ -999,7 +1031,7 @@ jobs:
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
       - name: Report the compiler cache hit rate
-        if: always()
+        if: always() && env.CCACHE_UNAVAILABLE != '1'
         shell: bash
         run: ccache --show-stats
       - name: Scaffold the native starter from local tarballs
