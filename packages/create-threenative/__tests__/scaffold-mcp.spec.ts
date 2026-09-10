@@ -116,6 +116,18 @@ function toolText(result: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(text) as Record<string, unknown>;
 }
 
+/**
+ * A ceiling that catches a server which never answers, not a stopwatch on how fast it does.
+ *
+ * The two seconds this file used to apply to every method was a stopwatch, and it timed a shared
+ * CI runner rather than the server: `tools/call` runs whatever the tool does — `creature_compile`
+ * builds a mesh and writes a GLB — and even `initialize` waits behind a cold Node start. Both have
+ * been observed over the old ceiling, `tools/call` at 5,802 ms on CI and `initialize` on a loaded
+ * desktop, which is a red that says nothing about the scaffold's MCP wiring. Vitest's own test
+ * timeout still bounds the file; this one only has to fire before a hang becomes a silent pass.
+ */
+const MCP_REPLY_CEILING_MS = 60_000;
+
 async function request(
   child: ChildProcessWithoutNullStreams,
   nextId: { value: number },
@@ -125,7 +137,10 @@ async function request(
 ): Promise<Record<string, unknown>> {
   const id = nextId.value++;
   const response = new Promise<Record<string, unknown>>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`MCP ${method} timed out`)), 2_000);
+    const timer = setTimeout(
+      () => reject(new Error(`MCP ${method} timed out after ${MCP_REPLY_CEILING_MS} ms`)),
+      MCP_REPLY_CEILING_MS,
+    );
     const onLine = (line: string) => {
       let parsed: unknown;
       try {
