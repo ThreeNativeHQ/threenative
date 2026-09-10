@@ -1,7 +1,8 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { mkdir, readFile, rm, symlink } from "node:fs/promises";
+import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { staleHostConfigs } from "../../../scripts/sync-mcp-configs.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -19,6 +20,7 @@ const blenderPackageRoot = path.resolve("packages/blender-mcp");
 const corePackageRoot = path.resolve("packages/core");
 const physicsPackageRoot = path.resolve("packages/physics");
 const temporaryRoots: string[] = [];
+const execFileAsync = promisify(execFile);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -75,6 +77,43 @@ async function linkPhysics(target: string): Promise<void> {
   const destination = path.join(target, "node_modules", "@threenative", "physics");
   await mkdir(path.dirname(destination), { recursive: true });
   await symlink(physicsPackageRoot, destination, "dir");
+}
+
+async function linkRegistryAssetMcp(target: string): Promise<void> {
+  const consumer = path.join(target, "asset-mcp-consumer");
+  await mkdir(consumer, { recursive: true });
+  await execFileAsync(
+    "pnpm",
+    [
+      "--dir",
+      consumer,
+      "add",
+      "--ignore-workspace",
+      "--lockfile=false",
+      "threenative-asset-mcp@0.8.0",
+    ],
+    { cwd: path.resolve(".") },
+  );
+  const installed = path.join(consumer, "node_modules", "threenative-asset-mcp");
+  const manifest = JSON.parse(await readFile(path.join(installed, "package.json"), "utf8")) as {
+    name: string;
+    version: string;
+  };
+  expect(manifest.name).toBe("threenative-asset-mcp");
+  expect(manifest.version).toBe("0.8.0");
+  const destination = path.join(target, "node_modules", "threenative-asset-mcp");
+  await mkdir(path.dirname(destination), { recursive: true });
+  await symlink(installed, destination, "dir");
+}
+
+function toolText(result: Record<string, unknown>): Record<string, unknown> {
+  const content = result.content;
+  if (!Array.isArray(content) || typeof content[0] !== "object" || content[0] === null) {
+    throw new Error("MCP tool response has no text content");
+  }
+  const text = (content[0] as Record<string, unknown>).text;
+  if (typeof text !== "string") throw new Error("MCP tool response text is missing");
+  return JSON.parse(text) as Record<string, unknown>;
 }
 
 async function request(
@@ -241,6 +280,159 @@ describe("scaffolded engine MCP", () => {
       await probeEngineServer(target);
     }
   }, 30_000);
+});
+
+describe("scaffolded asset MCP", () => {
+  it("runs the published anyCreature loop through the generated assets shim", async () => {
+    const root = await makeTempDir("threenative-scaffold-asset-");
+    temporaryRoots.push(root);
+    const { target } = await createProject(
+      { install: false, target: "game", template: "minimal" },
+      root,
+    );
+    await mkdir(path.join(target, ".threenative", "creatures"), { recursive: true });
+    await mkdir(path.join(target, "assets", "creatures"), { recursive: true });
+    await writeFile(
+      path.join(target, ".threenative", "creatures", "compact.json"),
+      `${JSON.stringify({
+        height: 0.6,
+        palette: { body: { color: "#888888", rough: 0.8 } },
+        joints: { Root: [0, 0.4, 0], Top: { from: "Root", up: 0.6 } },
+        chains: { body: ["Root", "Top"] },
+        volumes: [
+          {
+            chain: "body",
+            material: "body",
+            sides: 8,
+            smooth_angle: 20,
+            profile: [
+              [0, 0.2, 0.2],
+              [0.5, 0.25, 0.2],
+              [1, 0.1, 0.1],
+            ],
+          },
+        ],
+        animations: {
+          idle: {
+            duration: 1,
+            loop: true,
+            tracks: {
+              Root: {
+                ry: [
+                  [0, -2],
+                  [0.5, 2],
+                  [1, -2],
+                ],
+              },
+            },
+          },
+        },
+      })}\n`,
+    );
+    await linkCore(target);
+    await linkRegistryAssetMcp(target);
+
+    const config = JSON.parse(await readFile(path.join(target, ".mcp.json"), "utf8")) as {
+      mcpServers: Record<string, { args: string[]; command: string }>;
+    };
+    const server = config.mcpServers["threenative-assets"];
+    if (server === undefined) throw new Error("scaffold has no threenative-assets server");
+    expect(server.args[0]).toBe("./node_modules/@threenative/core/mcp/assets.mjs");
+
+    const child = spawn(server.command, server.args, { cwd: target, stdio: "pipe" });
+    const lines = createInterface({ input: child.stdout });
+    const nextId = { value: 1 };
+    try {
+      const initialized = await request(child, nextId, lines, "initialize", {
+        capabilities: {},
+        clientInfo: { name: "scaffold-asset-test", version: "0" },
+        protocolVersion: "2025-06-18",
+      });
+      expect(initialized.serverInfo).toEqual({ name: "threenative-asset-mcp", version: "0.8.0" });
+      child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
+
+      const listed = await request(child, nextId, lines, "tools/list");
+      const toolNames = (listed.tools as Array<{ name: string }>).map((tool) => tool.name);
+      expect(toolNames).toHaveLength(40);
+      expect(toolNames.slice(-3)).toEqual([
+        "creature_compile",
+        "creature_preview",
+        "creature_check",
+      ]);
+      expect(toolNames).toEqual(
+        expect.arrayContaining(["creature_status", "creature_guide", "creature_compile"]),
+      );
+
+      const status = toolText(
+        await request(child, nextId, lines, "tools/call", {
+          arguments: {},
+          name: "creature_status",
+        }),
+      );
+      const statusTooling = status.tooling;
+      const statusOperations = status.operations;
+      expect(isRecord(statusTooling) && isRecord(statusTooling.compiler)).toBe(true);
+      expect((statusTooling as Record<string, unknown>).compiler).toMatchObject({
+        available: true,
+      });
+      expect(isRecord(statusOperations) && isRecord(statusOperations.creature_compile)).toBe(true);
+      expect((statusOperations as Record<string, unknown>).creature_compile).toMatchObject({
+        available: true,
+      });
+
+      const guide = toolText(
+        await request(child, nextId, lines, "tools/call", {
+          arguments: { section: "syntax" },
+          name: "creature_guide",
+        }),
+      );
+      expect(guide.section).toBe("syntax");
+      expect(guide.guide).toEqual(expect.stringContaining('"palette"'));
+
+      const compile = toolText(
+        await request(child, nextId, lines, "tools/call", {
+          arguments: {
+            outputPath: "assets/creatures/compact.glb",
+            specPath: ".threenative/creatures/compact.json",
+          },
+          name: "creature_compile",
+        }),
+      );
+      expect(compile).toMatchObject({
+        operation: "creature_compile",
+        outputPath: "assets/creatures/compact.glb",
+        specPath: ".threenative/creatures/compact.json",
+      });
+      expect(compile.outputSha256).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/u));
+      expect(compile.receiptPath).toEqual(
+        expect.stringMatching(/^\.threenative\/creatures\/receipts\/.+\.json$/u),
+      );
+      const measurements = compile.measurements;
+      expect(isRecord(measurements)).toBe(true);
+      expect((measurements as Record<string, unknown>).vertices).toEqual(expect.any(Number));
+      expect((measurements as Record<string, unknown>).faces).toEqual(expect.any(Number));
+      expect((measurements as Record<string, unknown>).joints).toBe(2);
+
+      const output = await readFile(path.join(target, "assets/creatures/compact.glb"));
+      expect(output.subarray(0, 4).toString("ascii")).toBe("glTF");
+      const receiptPath = compile.receiptPath as string;
+      const receipt = JSON.parse(await readFile(path.join(target, receiptPath), "utf8")) as Record<
+        string,
+        unknown
+      >;
+      expect(receipt).toMatchObject({
+        operation: "creature_compile",
+        outputPath: "assets/creatures/compact.glb",
+        outputSha256: compile.outputSha256,
+      });
+    } finally {
+      lines.close();
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill();
+        await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+      }
+    }
+  }, 120_000);
 });
 
 // A host whose config the scaffold does not write is a host whose agent silently has no asset,
