@@ -28,6 +28,12 @@ the MCP call. Never read, copy, print, or persist browser cookies or tokens. The
 entitlement and accepts only Fab Standard or CC-BY; it never claims or buys. Full arguments:
 `agent-docs/finding-assets.md`.
 
+For a bespoke animated creature, follow `agent-docs/creating-creatures.md`. Call the five
+`creature_*` tools through the project asset server, keep the editable spec and claims in
+`.threenative/creatures/`, compile into the configured `assets/` source, and get independent
+visual review before delivery. `creature_status` distinguishes compile-only availability from
+optional preview/check dependencies; an unavailable renderer is not approval.
+
 Choose the sculpt branch before coding: conventional → asset tools; trivial → portable geometry;
 bespoke with a reference → `sculpt_plan`, `sculpt_spec_gate` until every region passes, one
 factory per pass in `src/render/`, then `sculpt_compare` and `sculpt_pass_gate` against a real
