@@ -11,7 +11,7 @@ import { ANDROID_16KB_ABIS, assertAndroid16KbAlignment } from './check-android-1
 // Keep the existing V8 API/ABI and reviewed upstream patches, not an unrelated engine upgrade.
 // The source commit also pins Chromium's build/DEPS inputs. Increment recipe when flags change.
 export const ANDROID_V8_BUILD = Object.freeze({
-  recipe: 1,
+  recipe: 2,
   version: '11.0.226.16',
   source: '7999223ca1644726339aae43d9435c721c8a4bb0',
   patches: 'fc31185d224f9aaddc28765882009591de5ca4d0',
@@ -30,7 +30,8 @@ export function androidV8GnArgs(abi) {
   return [
     'target_os="android"', `target_cpu="${TARGETS[abi].cpu}"`,
     'is_component_build=false', 'is_debug=false', 'symbol_level=0',
-    'use_custom_libcxx=false', 'use_sysroot=false', 'icu_use_data_file=false',
+    'use_custom_libcxx=false', 'use_custom_libcxx_for_host=true',
+    'use_sysroot=true', 'icu_use_data_file=false',
     'treat_warnings_as_errors=false', 'default_min_sdk_version=21',
     'v8_enable_sandbox=false', 'v8_enable_pointer_compression=true',
     'v8_enable_lite_mode=false', 'v8_use_external_startup_data=true',
@@ -224,7 +225,9 @@ export function provisionAndroidV8(destination, { force = false, env = process.e
       if (existsSync(backup)) renameSync(backup, destination);
       throw error;
     }
-    rmSync(work, { recursive: true, force: true });
+    // Cleanup cannot invalidate a successfully installed, verified payload.
+    try { rmSync(work, { recursive: true, force: true }); }
+    catch (error) { console.warn(`Installed V8; could not clean ${work}: ${error.message}`); }
     console.log(`Installed Android V8 ${receipt.build.version} with verified 16 KB LOAD segments`);
     return receipt;
   } catch (error) {
