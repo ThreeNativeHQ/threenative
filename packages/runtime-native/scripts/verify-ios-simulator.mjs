@@ -2,7 +2,15 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
@@ -314,10 +322,17 @@ run('cmake', [
   '-DTN_ENABLE_NATIVE_PHYSICS=ON',
   '-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO',
 ]);
-const rebuildApp = () =>
+const rebuildApp = () => {
   run('cmake', ['--build', buildRoot, '--config', 'Release', '--target', 'threenative-ios', '--parallel'], {
     stdio: 'inherit',
   });
+  const app = findApp(buildRoot);
+  if (!app) throw new Error('CMake succeeded but threenative-ios.app was not produced.');
+  // Xcode's resource phase does not reliably recopy a generated source file when this same
+  // project is rebuilt for the next proof variant. Synchronize the resource after every build so
+  // each playtest executes the exact bundle just built by Vite.
+  copyFileSync(bundle, join(app, 'native-smoke.js'));
+};
 const rebuildProof = (control, physics) => {
   run('pnpm', ['--filter', 'threenative-native-smoke', 'build'], {
     env: {
