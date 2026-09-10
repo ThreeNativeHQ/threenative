@@ -304,6 +304,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   "action-rpg": "99b81519e99255163ddb7a81e6a1d05bc547be84c812a743fda75acf28a464fe",
   defense: "e994f481a26e872fe91ea2980cfad9adc4977d9e32d83023ef0e86ea3b4a63b6",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
+  // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
+  // authoring reference and its matching agent skill guidance, so all ten trees move together.
   // Recomputed 2026-09-08 after merging origin/main c315ad343 into the native coverage branch;
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
