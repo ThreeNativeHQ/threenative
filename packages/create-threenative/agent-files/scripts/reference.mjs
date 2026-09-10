@@ -366,12 +366,21 @@ function findImagePayload(value, seen = new Set()) {
   return undefined;
 }
 
+function hasImageModality(architecture, key) {
+  return Array.isArray(architecture?.[key])
+    ? architecture[key].some((modality) => typeof modality === "string" && modality === "image")
+    : false;
+}
+
 function capabilitySupportsImages(value, needsInput) {
-  const text = JSON.stringify(value).toLowerCase();
-  const output =
-    /output_modalities[^\]]*image|modalities[^\]]*image|image[^\]]*output_modalities/u.test(text);
-  const input = /input_modalities[^\]]*image|image[^\]]*input_modalities/u.test(text);
-  return output && (!needsInput || input);
+  if (!Array.isArray(value?.data)) return false;
+  return value.data.some((endpoint) => {
+    const architecture = endpoint?.architecture;
+    return (
+      hasImageModality(architecture, "output_modalities") &&
+      (!needsInput || hasImageModality(architecture, "input_modalities"))
+    );
+  });
 }
 
 function capabilityEndpoint(apiEndpoint, model) {

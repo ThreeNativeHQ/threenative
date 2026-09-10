@@ -176,8 +176,21 @@ describe("generated visual-loop validator", () => {
         decision: "replan",
         reason: "repeated-gaps-require-one-replan",
       });
-      const secondResult = await runLoop(root);
-      expect(secondResult.output).toMatchObject({
+      const repeatedCheck = await runLoop(root);
+      expect(repeatedCheck.output).toMatchObject({
+        decision: "replan",
+        reason: "repeated-gaps-require-one-replan",
+      });
+      const recordPath = path.join(root, ".dream-loop/run-1/run.json");
+      const record = JSON.parse(await readFile(recordPath, "utf8")) as {
+        rounds: Array<Record<string, unknown>>;
+        replanRound?: number;
+      };
+      expect(record.replanRound).toBe(2);
+      record.rounds.push({ ...second, round: 3 });
+      await writeFile(recordPath, `${JSON.stringify(record)}\n`);
+      const laterRound = await runLoop(root);
+      expect(laterRound.output).toMatchObject({
         decision: "stalled",
         reason: "replan-did-not-improve-repeated-gaps",
       });

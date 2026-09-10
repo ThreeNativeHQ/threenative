@@ -326,9 +326,13 @@ function applyGapStall(record, result) {
     return result;
   const previous = record.rounds.at(-2);
   if (normalizedGaps(previous?.review?.gaps) !== normalizedGaps(result.gaps)) return result;
+  const latestRound = record.rounds.at(-1).round;
+  if (record.replanUsed === true && record.replanRound === latestRound)
+    return { ...result, decision: "replan", reason: "repeated-gaps-require-one-replan" };
   if (record.replanUsed === true)
     return { ...result, decision: "stalled", reason: "replan-did-not-improve-repeated-gaps" };
   record.replanUsed = true;
+  record.replanRound = latestRound;
   return { ...result, decision: "replan", reason: "repeated-gaps-require-one-replan" };
 }
 

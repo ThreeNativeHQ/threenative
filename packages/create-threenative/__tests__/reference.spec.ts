@@ -31,6 +31,14 @@ async function fixtureServer(
       { message: { images: [{ b64_json: PNG.toString("base64"), mime_type: "image/png" }] } },
     ],
   },
+  capabilities: unknown = {
+    data: [
+      {
+        architecture: { input_modalities: ["text", "image"], output_modalities: ["image"] },
+        supported_parameters: ["modalities"],
+      },
+    ],
+  },
 ): Promise<IServerFixture> {
   const requests: IServerFixture["requests"] = [];
   const server = createServer(async (request: IncomingMessage, responseStream: ServerResponse) => {
@@ -42,16 +50,7 @@ async function fixtureServer(
     });
     responseStream.setHeader("content-type", "application/json");
     if (request.method === "GET") {
-      responseStream.end(
-        JSON.stringify({
-          data: [
-            {
-              architecture: { input_modalities: ["text", "image"], output_modalities: ["image"] },
-              supported_parameters: ["modalities"],
-            },
-          ],
-        }),
-      );
+      responseStream.end(JSON.stringify(capabilities));
       return;
     }
     responseStream.end(JSON.stringify(response));
@@ -229,6 +228,44 @@ describe("generated reference script", () => {
       const outside = await runReference(root, [...args.slice(0, -1), "../target.png"], fixture);
       expect(outside.code, `${outside.stdout}\n${outside.stderr}`).toBe(2);
       expect(fixture.requests.filter(({ method }) => method === "POST")).toHaveLength(1);
+    } finally {
+      await fixture.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("fails closed when a model advertises image input but not image output", async () => {
+    const root = await makeTempDir("threenative-reference-input-only-");
+    const fixture = await fixtureServer(undefined, {
+      data: [
+        {
+          architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
+          supported_parameters: ["modalities"],
+        },
+      ],
+    });
+    try {
+      await runFixture(root);
+      const result = await runReference(
+        root,
+        [
+          "--record",
+          ".dream-loop/run-1/run.json",
+          "--request-id",
+          "target-001",
+          "--prompt-file",
+          ".dream-loop/run-1/prompt.txt",
+          "--out",
+          ".dream-loop/run-1/target.png",
+        ],
+        fixture,
+      );
+      expect(result.code, `${result.stdout}\n${result.stderr}`).toBe(1);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        action: "failed",
+        category: "capability",
+      });
+      expect(fixture.requests.filter(({ method }) => method === "POST")).toHaveLength(0);
     } finally {
       await fixture.close();
       await rm(root, { force: true, recursive: true });
