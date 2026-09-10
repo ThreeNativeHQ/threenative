@@ -8,10 +8,12 @@ on:
     paths:
       - ".github/workflows/native-release.yml"
       - "scripts/__tests__/native-release-proof.spec.ts"
+      - "scripts/__tests__/native-release-android-staging.spec.ts"
   pull_request:
     paths:
       - ".github/workflows/native-release.yml"
       - "scripts/__tests__/native-release-proof.spec.ts"
+      - "scripts/__tests__/native-release-android-staging.spec.ts"
       - "packages/runtime-native/tests/native-platform-workflow.test.mjs"
   workflow_dispatch:
 
@@ -107,7 +109,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/native-release-prerequisites"
-          pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts 2>&1 \
+          pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts scripts/__tests__/native-release-android-staging.spec.ts 2>&1 \
             | tee "$RUNNER_TEMP/native-release-prerequisites/refusal-controls.log"
       - name: Record PR-only proof scope
         if: github.event_name == 'pull_request'
