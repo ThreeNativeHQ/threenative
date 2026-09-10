@@ -19,6 +19,7 @@ const blenderMcp = "threenative-blender-mcp";
 const blenderPackageRoot = path.resolve("packages/blender-mcp");
 const corePackageRoot = path.resolve("packages/core");
 const physicsPackageRoot = path.resolve("packages/physics");
+const MCP_REQUEST_TIMEOUT_MS = 10_000;
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
 
@@ -125,7 +126,10 @@ async function request(
 ): Promise<Record<string, unknown>> {
   const id = nextId.value++;
   const response = new Promise<Record<string, unknown>>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`MCP ${method} timed out`)), 2_000);
+    const timer = setTimeout(
+      () => reject(new Error(`MCP ${method} timed out`)),
+      MCP_REQUEST_TIMEOUT_MS,
+    );
     const onLine = (line: string) => {
       let parsed: unknown;
       try {
