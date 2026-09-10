@@ -34,6 +34,11 @@ const scenario = join(exampleRoot, "playtests", "loading-screen-desktop.playtest
 const LOADING_SETTLE_STEPS = 120;
 const LOADING_SETTLE_STEP_WAIT_MS = 250;
 const LOADING_SETTLE_WAIT_MS = LOADING_SETTLE_STEPS * LOADING_SETTLE_STEP_WAIT_MS;
+// The proof deliberately spends the full settle window in wall-clock waits. The operation that
+// straddles the native first-use compile therefore needs the settle window plus the framework's
+// bounded compile allowance; the normal 30s mailbox budget expires before that operation can reply
+// on a cold Windows runner.
+const LOADING_OPERATION_TIMEOUT_MS = LOADING_SETTLE_WAIT_MS + 15_000;
 const FIXED_STEP_WALL_WAITS_MS = [
   0,
   1_000,
@@ -191,7 +196,11 @@ async function runLoadingPlaytest() {
     executable: binary,
     mailboxRoot,
   });
-  const transport = new playtest.DeviceMailboxTransport(new playtest.LocalDeviceMailbox(), paths, 30_000);
+  const transport = new playtest.DeviceMailboxTransport(
+    new playtest.LocalDeviceMailbox(),
+    paths,
+    LOADING_OPERATION_TIMEOUT_MS,
+  );
   // The scenario stays fixed-tick by contract. This proof-only transport decorator inserts
   // real wall time between native advances so the screenshots cover the asynchronous compile
   // stall; it does not add a wall-clock step to the shared playtest runner.
