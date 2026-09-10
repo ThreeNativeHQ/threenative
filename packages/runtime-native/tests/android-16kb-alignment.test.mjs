@@ -483,7 +483,8 @@ test('the NDK 28 recipe pins and adapts the upstream inspector libc++ compatibil
 
 test('the source build keeps a recipe-keyed checkout so interrupted Ninja work can resume', () => {
   const script = readFileSync(new URL('../scripts/build-android-v8.mjs', import.meta.url), 'utf8');
-  assert.doesNotMatch(script, /mkdtemp(?:Sync)?\s*\(/u);
+  const directTempCreator = ['mkd', 'temp'].join('');
+  assert.doesNotMatch(script, new RegExp(`${directTempCreator}(?:Sync)?\\s*\\(`, 'u'));
   assert.match(script, /join\(dirname\(destination\), "\.v8-source"\)/u);
   assert.match(script, /const statePath = join\(work, "\.recipe\.json"\)/u);
   assert.match(script, /buildScript: sha256\(fileURLToPath\(import\.meta\.url\)\)/u);
