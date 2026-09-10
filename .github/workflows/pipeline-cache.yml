@@ -1,0 +1,39 @@
+name: Pipeline cache verification
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/prd-368-persistent-pipeline-cache]
+    paths:
+      - .github/workflows/pipeline-cache.yml
+      - packages/runtime-native/**
+      - packages/playtest/**
+      - patches/wgpu-native@25.0.2.2.patch
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pipeline-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-evidence:
+    name: Retain verification source (not a correctness gate)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Retain exact tracked source and revision
+        run: |
+          mkdir -p artifacts/pipeline-cache-source
+          git rev-parse HEAD > artifacts/pipeline-cache-source/revision.txt
+          git archive --format=tar.gz HEAD > artifacts/pipeline-cache-source/source.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-cache-source-${{ github.sha }}
+          path: artifacts/pipeline-cache-source
+          retention-days: 7
+          if-no-files-found: error
