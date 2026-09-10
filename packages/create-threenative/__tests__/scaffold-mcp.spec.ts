@@ -283,6 +283,40 @@ describe("scaffolded engine MCP", () => {
 });
 
 describe("scaffolded asset MCP", () => {
+  it("copies the complete creature workflow through the generated agent bundle", async () => {
+    for (const template of templates) {
+      const root = await makeTempDir(`threenative-scaffold-creatures-${template}-`);
+      temporaryRoots.push(root);
+      const { target } = await createProject({ install: false, target: "game", template }, root);
+
+      const recipe = await readFile(
+        path.join(target, "agent-docs", "creating-creatures.md"),
+        "utf8",
+      );
+      expect(recipe).toContain("creature_status");
+      expect(recipe).toContain("creature_guide");
+      expect(recipe).toContain("creature_compile");
+      expect(recipe).toContain("creature_preview");
+      expect(recipe).toContain("creature_check");
+      expect(recipe).toContain("idle");
+      expect(recipe).toContain("move");
+      expect(recipe).toContain("attack");
+      expect(recipe).toContain("independent visual review");
+      expect(recipe).toContain("assets/");
+
+      const findingAssets = await readFile(
+        path.join(target, "agent-docs", "finding-assets.md"),
+        "utf8",
+      );
+      expect(findingAssets).toContain("creating-creatures.md");
+      for (const host of [".agents", ".claude"]) {
+        await expect(
+          readFile(path.join(target, host, "skills", "threenative-assets", "SKILL.md"), "utf8"),
+        ).resolves.toContain("agent-docs/creating-creatures.md");
+      }
+    }
+  }, 30_000);
+
   it("runs the published anyCreature loop through the generated assets shim", async () => {
     const root = await makeTempDir("threenative-scaffold-asset-");
     temporaryRoots.push(root);

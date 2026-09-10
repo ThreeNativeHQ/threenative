@@ -696,6 +696,7 @@ describe("create-threenative", () => {
         "assertion-reference.md",
         "capability-reference.md",
         "capture-the-frame.md",
+        "creating-creatures.md",
         "ctx-cookbook.md",
         "debug-surface.md",
         "dream-loop.md",

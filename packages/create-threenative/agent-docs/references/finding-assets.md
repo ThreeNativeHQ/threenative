@@ -6,8 +6,15 @@ asset tools when the asset is conventional; build anything specific to this game
 
 Installing `@threenative/core` writes the `.mcp.json` that launches `threenative-asset-mcp`, so
 your host lists its tools alongside your own. Your host reads that file from the directory it was
-launched in: start the session in this project, not in a parent of it. It advertises 34; these 8
+launched in: start the session in this project, not in a parent of it. It advertises 40; these 8
 are the loop you will use for nearly everything:
+
+For a bespoke animated creature, use the complete [`creating-creatures.md`](creating-creatures.md)
+recipe. It keeps the editable spec and claims under `.threenative/creatures/`, compiles the GLB
+into the configured `assets/` source, and requires independent preview review before game
+delivery. The five creature tools are `creature_status`, `creature_guide`, `creature_compile`,
+`creature_preview` and `creature_check`; call `creature_status` first because compile can work
+without optional preview dependencies while a complete preview/check loop may not.
 
 1. `asset_search_sources` — start here, never at a provider. It returns every catalogued
    source with its license summary, attribution requirement, browse URL, and whether an agent
