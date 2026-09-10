@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -29,6 +30,14 @@ const MCP_CREATURE_DISCOVERY_TIMEOUT_MS = 15_000;
 // The published creature compiler can spend up to 60 seconds in its bounded operation. Keep
 // ordinary discovery calls fast while allowing the response to arrive after that operation limit.
 const MCP_COMPILE_REQUEST_TIMEOUT_MS = 70_000;
+// `initialize` is the first thing a freshly spawned server answers, so it pays a cold Node start
+// and the server's whole module graph before it can reply — work that has nothing to do with the
+// scaffold wiring under test. Two seconds was enough on an idle desktop and not on a loaded CI
+// shard, where it failed as `MCP initialize timed out after 2000 ms`. Keeping the handshake tight
+// buys nothing now that `watchMcpChild` rejects on `close`/`error` the moment a server actually
+// dies: this budget only has to outlast a cold start and still fire on a server that is alive and
+// silent.
+const MCP_HANDSHAKE_TIMEOUT_MS = 30_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -124,6 +133,60 @@ function toolText(result: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(text) as Record<string, unknown>;
 }
 
+/**
+ * Why a dead server must not wait out its budget.
+ *
+ * The budgets above bound a server that is *slow*. A server that has *died* answers nothing, and a
+ * timer alone cannot tell the two apart — so the broken shim these tests exist to catch arrives as
+ * a slow, contentless `timed out`, with the stack trace that explains it discarded. Worse,
+ * `stdio: "pipe"` with nothing reading stderr deadlocks the child once that pipe fills, which is a
+ * hang invented by the harness rather than found by it.
+ *
+ * `scripts/verify-golden-path.ts:602-626` already drives this protocol this way. Kept local
+ * because the two speak to different servers; if a third caller appears, extract it.
+ */
+interface IMcpLiveness {
+  readonly pending: Set<(error: Error) => void>;
+  stderr: string;
+  terminal?: Error;
+}
+
+const mcpLiveness = new WeakMap<ChildProcessWithoutNullStreams, IMcpLiveness>();
+
+function watchMcpChild(child: ChildProcessWithoutNullStreams): IMcpLiveness {
+  const existing = mcpLiveness.get(child);
+  if (existing !== undefined) return existing;
+  const state: IMcpLiveness = { pending: new Set(), stderr: "" };
+  mcpLiveness.set(child, state);
+  const failPending = (error: Error): void => {
+    if (state.terminal !== undefined) return;
+    state.terminal = error;
+    for (const reject of [...state.pending]) reject(error);
+    state.pending.clear();
+  };
+  child.stderr.on("data", (chunk: Buffer | string) => {
+    // Drain the pipe without retaining the entire lifetime of a noisy compiler.
+    state.stderr = (state.stderr + chunk.toString()).slice(-4_096);
+  });
+  child.once("error", (error: unknown) => {
+    failPending(error instanceof Error ? error : new Error(String(error)));
+  });
+  // A broken stdin emits on the stream, not on ChildProcess (including notifications).
+  child.stdin.on("error", failPending);
+  // exit can precede the last stdout/stderr data; close runs after both pipes drain.
+  child.once("close", (code, signal) => {
+    const detail = state.stderr.trim().slice(-500);
+    failPending(
+      new Error(
+        `MCP server exited before answering (${code ?? `signal ${signal ?? "unknown"}`})${
+          detail.length > 0 ? `: ${detail}` : ""
+        }`,
+      ),
+    );
+  });
+  return state;
+}
+
 async function request(
   child: ChildProcessWithoutNullStreams,
   nextId: { value: number },
@@ -133,8 +196,26 @@ async function request(
   timeoutMs = MCP_REQUEST_TIMEOUT_MS,
 ): Promise<Record<string, unknown>> {
   const id = nextId.value++;
+  const liveness = watchMcpChild(child);
+  if (liveness.terminal !== undefined) throw liveness.terminal;
   const response = new Promise<Record<string, unknown>>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`MCP ${method} timed out`)), timeoutMs);
+    const fail = (error: Error): void => {
+      clearTimeout(timer);
+      liveness.pending.delete(fail);
+      lines.off("line", onLine);
+      reject(error);
+    };
+    const timer = setTimeout(() => {
+      const detail = liveness.stderr.trim().slice(-500);
+      fail(
+        new Error(
+          `MCP ${method} timed out after ${timeoutMs} ms${
+            detail.length > 0 ? `; server stderr: ${detail}` : ""
+          }`,
+        ),
+      );
+    }, timeoutMs);
+    liveness.pending.add(fail);
     const onLine = (line: string) => {
       let parsed: unknown;
       try {
@@ -146,6 +227,7 @@ async function request(
       const record = parsed as Record<string, unknown>;
       if (record.id !== id) return;
       clearTimeout(timer);
+      liveness.pending.delete(fail);
       lines.off("line", onLine);
       if (record.error !== undefined) reject(new Error(JSON.stringify(record.error)));
       else resolve((record.result ?? {}) as Record<string, unknown>);
@@ -155,6 +237,120 @@ async function request(
   child.stdin.write(`${JSON.stringify({ id, jsonrpc: "2.0", method, params })}\n`);
   return response;
 }
+
+describe("MCP probe liveness", () => {
+  const children: Array<{
+    child: ChildProcessWithoutNullStreams;
+    lines: ReturnType<typeof createInterface>;
+    closed: Promise<void>;
+  }> = [];
+
+  function startServer(source: string, command = process.execPath) {
+    const child = spawn(command, ["-e", source], { stdio: "pipe" });
+    const lines = createInterface({ input: child.stdout });
+    const closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
+    children.push({ child, lines, closed });
+    return { child, lines, closed, state: watchMcpChild(child), nextId: { value: 1 } };
+  }
+
+  afterEach(async () => {
+    await Promise.all(
+      children.splice(0).map(async ({ child, lines, closed }) => {
+        lines.close();
+        if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGKILL");
+        }
+        await closed;
+      }),
+    );
+  });
+
+  it("bounds retained stderr while draining more than a pipe can buffer", async () => {
+    const { child, lines, nextId, state } = startServer(`
+      process.stderr.write("x".repeat(1024 * 1024) + "diagnostic-tail", () => {
+        process.stdout.write(JSON.stringify({ id: 1, result: { ready: true } }) + "\\n");
+      });
+      setInterval(() => {}, 1000);
+    `);
+    assert.deepEqual(await request(child, nextId, lines, "initialize"), { ready: true });
+    assert.ok(state.stderr.length <= 4_096, `retained ${state.stderr.length} characters`);
+    assert.ok(state.stderr.endsWith("diagnostic-tail"));
+    assert.equal(state.pending.size, 0);
+    assert.equal(lines.listenerCount("line"), 0);
+  });
+
+  it("accepts a buffered final response even when the process has already exited", async () => {
+    const { child, lines, nextId } = startServer(`
+      process.stdout.write(JSON.stringify({ id: 1, result: { ready: true } }) + "\\n");
+    `);
+    // Force the valid exit-before-EOF ordering, rather than hoping to win an OS scheduling race.
+    child.stdout.pause();
+    assert.deepEqual(await request(child, nextId, lines, "initialize"), { ready: true });
+  });
+
+  it("includes stderr that drains after process exit in the failure", async () => {
+    const { child, lines, nextId } = startServer(`
+      process.stderr.write("last diagnostic");
+      process.exitCode = 3;
+    `);
+    child.stderr.pause();
+    await assert.rejects(request(child, nextId, lines, "initialize"), /\(3\): last diagnostic/);
+  });
+
+  it("rejects every pending request on exit without waiting for the compile budget", async () => {
+    const { child, lines, nextId, state, closed } = startServer("process.exitCode = 3;");
+    const results = await Promise.allSettled([
+      request(child, nextId, lines, "initialize", {}, MCP_COMPILE_REQUEST_TIMEOUT_MS),
+      request(child, nextId, lines, "tools/list", {}, MCP_COMPILE_REQUEST_TIMEOUT_MS),
+    ]);
+    for (const result of results) {
+      assert.equal(result.status, "rejected");
+      if (result.status === "rejected") assert.match(String(result.reason), /exited.*\(3\)/);
+    }
+    await closed;
+    assert.equal(state.pending.size, 0);
+    assert.equal(lines.listenerCount("line"), 0);
+    await assert.rejects(request(child, nextId, lines, "tools/list"), /exited.*\(3\)/);
+  });
+
+  it("handles stdin errors and preserves the original failure after close", async () => {
+    const { child, lines, nextId, state, closed } = startServer("setInterval(() => {}, 1000);");
+    child.stdin.end();
+    await assert.rejects(request(child, nextId, lines, "initialize"), /write after end/);
+    assert.equal(state.pending.size, 0);
+    assert.equal(lines.listenerCount("line"), 0);
+    child.kill("SIGKILL");
+    await closed;
+    await assert.rejects(request(child, nextId, lines, "tools/list"), /write after end/);
+  });
+
+  it("preserves a failed spawn error rather than replacing it with the close status", async () => {
+    const root = await makeTempDir("threenative-mcp-missing-");
+    temporaryRoots.push(root);
+    const { child, lines, nextId, state, closed } = startServer("", path.join(root, "missing"));
+    await assert.rejects(request(child, nextId, lines, "initialize"), { code: "ENOENT" });
+    await closed;
+    assert.equal(state.pending.size, 0);
+    assert.equal(lines.listenerCount("line"), 0);
+    await assert.rejects(request(child, nextId, lines, "tools/list"), { code: "ENOENT" });
+  });
+
+  it("includes stderr and removes listeners when a live server times out", async () => {
+    const { child, lines, nextId, state } = startServer(`
+      process.stderr.write("still waiting");
+      setInterval(() => {}, 1000);
+    `);
+    // Synchronize on output, not a guessed Node startup delay.
+    await new Promise<void>((resolve) => child.stderr.once("data", () => resolve()));
+    await assert.rejects(
+      request(child, nextId, lines, "initialize", {}, 20),
+      /timed out after 20 ms; server stderr: still waiting/,
+    );
+    assert.equal(state.pending.size, 0);
+    assert.equal(lines.listenerCount("line"), 0);
+    assert.equal(state.terminal, undefined);
+  });
+});
 
 async function probeEngineServer(target: string): Promise<void> {
   const config = JSON.parse(await readFile(path.join(target, ".mcp.json"), "utf8")) as {
@@ -166,11 +362,18 @@ async function probeEngineServer(target: string): Promise<void> {
   const lines = createInterface({ input: child.stdout });
   const nextId = { value: 1 };
   try {
-    await request(child, nextId, lines, "initialize", {
-      capabilities: {},
-      clientInfo: { name: "scaffold-mcp-test", version: "0" },
-      protocolVersion: "2025-06-18",
-    });
+    await request(
+      child,
+      nextId,
+      lines,
+      "initialize",
+      {
+        capabilities: {},
+        clientInfo: { name: "scaffold-mcp-test", version: "0" },
+        protocolVersion: "2025-06-18",
+      },
+      MCP_HANDSHAKE_TIMEOUT_MS,
+    );
     child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
     const listed = await request(child, nextId, lines, "tools/list");
     const tools = listed.tools as Array<{ name: string }>;
@@ -386,11 +589,18 @@ describe("scaffolded asset MCP", () => {
     const lines = createInterface({ input: child.stdout });
     const nextId = { value: 1 };
     try {
-      const initialized = await request(child, nextId, lines, "initialize", {
-        capabilities: {},
-        clientInfo: { name: "scaffold-asset-test", version: "0" },
-        protocolVersion: "2025-06-18",
-      });
+      const initialized = await request(
+        child,
+        nextId,
+        lines,
+        "initialize",
+        {
+          capabilities: {},
+          clientInfo: { name: "scaffold-asset-test", version: "0" },
+          protocolVersion: "2025-06-18",
+        },
+        MCP_HANDSHAKE_TIMEOUT_MS,
+      );
       expect(initialized.serverInfo).toEqual({ name: "threenative-asset-mcp", version: "0.8.0" });
       child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
 
@@ -592,11 +802,18 @@ describe("scaffolded blender MCP", () => {
     const lines = createInterface({ input: child.stdout });
     const nextId = { value: 1 };
     try {
-      await request(child, nextId, lines, "initialize", {
-        capabilities: {},
-        clientInfo: { name: "scaffold-blender-test", version: "0" },
-        protocolVersion: "2025-06-18",
-      });
+      await request(
+        child,
+        nextId,
+        lines,
+        "initialize",
+        {
+          capabilities: {},
+          clientInfo: { name: "scaffold-blender-test", version: "0" },
+          protocolVersion: "2025-06-18",
+        },
+        MCP_HANDSHAKE_TIMEOUT_MS,
+      );
       child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
 
       const listed = await request(child, nextId, lines, "tools/list");
