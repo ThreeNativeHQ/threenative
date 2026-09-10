@@ -88,7 +88,7 @@ The starter's painterly look is generated source (`outline.ts`, `kuwahara.ts`, `
 ## One shadow for a big outdoor level
 When one directional light must shadow a whole valley and a 2048² map smudges, set `sun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] })` from `@threenative/core`: camera-centred, texel-snapped clip levels, cached until the window moves and shared through Three's shadow slot. Bias, normal bias, intensity, radius, blur samples, map type and filter stay on `sun.shadow`; map sizes come from the options. For movers call `trackCaster(object)` — tracking or untracking refreshes the cached levels once, then movement draws a per-level mover map every frame without invalidating them; call `invalidateAll()` when static geometry changes. `TN_VIRTUAL_SHADOW` reports rendered, mover-map and cached-level work.
 
-## Budget real time for the look
+## Budget real time for the look — see `agent-docs/dream-loop.md`
 
 The performance skill carries `TN_FRAME_BUDGET`, platform targets, and the `display.maxFps` rule.
 Long recipes shipped in the project: `agent-docs/assertion-reference.md`, `agent-docs/capability-reference.md`, `agent-docs/capture-the-frame.md`, `agent-docs/ctx-cookbook.md`, `agent-docs/debug-surface.md`, `agent-docs/finding-assets.md`, `agent-docs/gameplay-recipes.md`, `agent-docs/menu-screens.md`, `agent-docs/mobile-memory-budget.md`, `agent-docs/sculpt-from-a-reference.md`, `agent-docs/trace-a-slow-frame.md`, `agent-docs/visual-baseline.md`, and `agent-docs/webview-ui.md`.

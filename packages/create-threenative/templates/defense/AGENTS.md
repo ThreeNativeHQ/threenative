@@ -81,6 +81,8 @@ supposed to be touching. Two loading conventions come from `@threenative/core`, 
 
 ## Budget real time for the look
 
+Reference-driven authoring starts at `agent-docs/dream-loop.md`.
+
 Edit `src/render/` directly; `postprocessing.ts` reports stages but decides no game colour. Quality
 tiers live in `src/render/quality.ts`: `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise
 `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER`

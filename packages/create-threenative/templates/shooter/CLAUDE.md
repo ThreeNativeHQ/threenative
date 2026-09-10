@@ -84,7 +84,7 @@ clip per bone in degrees relative to each rig's own bind pose, `clipTrackBinding
 bind nothing (the `<bone>.undefined` failure that plays the bind pose), `clipBoneCoverage` names
 bones the clip does not drive, and `boneContact` reports whether a bone reaches its prop. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches 256 per presented frame so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement.
 
-## Budget real time for the look
+## Budget real time for the look — see `agent-docs/dream-loop.md`
 
 Open a capture after visual changes; a scenario with no assertions or missing observations fails.
 VFX appearance belongs in `src/render/vfx.ts`: its TSL material, geometry, colour, blend, curves,

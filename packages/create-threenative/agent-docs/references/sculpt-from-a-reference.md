@@ -12,8 +12,9 @@ Companion to the short `Building what you cannot download` section in this proje
 - **Bespoke, with a reference image** — an identity-bearing creature, vehicle, hero prop,
   landmark, scenery composition, or environment set piece whose silhouette must match. Use
   the sculpt tools to turn that reference into editable `src/render/` source.
-- **Bespoke, without a reference image** — ask for one, or write it and accept that it will
-  be generic. Do not invent a reference: comparison without evidence is unguided iteration.
+- **Bespoke, without a reference image** — read `agent-docs/dream-loop.md` and acquire one from
+  the user or an explicitly selected host/provider tool. Do not invent a reference: comparison
+  without evidence is unguided iteration.
 
 For a full environment, split the decision: sculpt the signature landmark or bounded scene
 kit that makes the reference recognisable; use the asset tools for interchangeable trees,
