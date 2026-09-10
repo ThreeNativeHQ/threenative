@@ -104,12 +104,10 @@ progress or an indeterminate state, and doctor explains skip/late/incomplete out
 
 ## Acceptance and verification evidence
 
-- [x] Every live report/progress consumer distinguishes candidates, programs and actual pipelines.
-- [x] Shared-value and state-only variants produce the correct observed identities without missed work.
+- [ ] Every live report/progress consumer distinguishes candidates, programs and actual pipelines.
+- [ ] Shared-value and state-only variants produce the correct observed identities without missed work.
 - [ ] Skip, failure, timeout, absent observation and late work cannot masquerade as full coverage.
 - [ ] PRD-360 source-lane fixes are reconciled with explicit commit evidence; no duplicate scheduling
   implementation or rejected launch experiment is introduced.
 - [ ] Both phases have command/output/artifact, actual red/green, caller census and independent
-  review; real browser/native behavior is proven. Phase 1 browser/native captures are now recorded
-  in `docs/verification/runtime-perf-state.md`; late first-use, PRD-360 reconciliation and the
-  independent Phase 2 review remain open.
+  review; real browser/native behavior is proven. All implementation evidence currently UNVERIFIED.
