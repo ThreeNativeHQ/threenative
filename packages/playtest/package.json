@@ -60,7 +60,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "tsup --config tsup.config.ts && publint",
+    "build": "pnpm --workspace-root exec tsx scripts/generate-assertion-validators.ts --check && tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
     "test": "bash __tests__/orphan-cleanup.sh && publint --strict"
   },
