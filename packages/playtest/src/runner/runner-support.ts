@@ -61,7 +61,12 @@ import {
 import { STANDALONE_PLAYTEST_OBSERVATION_FIELDS } from "./observationFields.js";
 // Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 import { componentObservations, buildObservations, collectTrivialityOptOuts } from "./steps.js";
-import { observedMovementSample, entityRotation, resourceObservations, normalizedRuntimeDiagnostics } from "./sampling.js";
+import {
+  entityRotation,
+  normalizedRuntimeDiagnostics,
+  observedMovementSample,
+  resourceObservations,
+} from "./observationSampling.js";
 import { cameraReport, evaluateCamera } from "./camera.js";
 import type { IStandalonePlaytestReport } from "./shared.js";
 import type { ILabeledPlaytestSample, IMovementSampleInterval, IRunnerConsoleEntry } from "./shared.js";

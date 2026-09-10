@@ -83,7 +83,7 @@ describe("MCP_SERVERS", () => {
       devDependencies?: Record<string, string>;
     };
     expect(manifest.dependencies).toMatchObject({
-      "threenative-asset-mcp": "0.7.0",
+      "threenative-asset-mcp": "0.8.0",
       "threenative-sculpt-mcp": "0.1.1",
     });
     // The blender server rides inside core as a built copy, exactly as the engine server does, so

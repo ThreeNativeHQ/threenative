@@ -296,23 +296,29 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // observation and keep unknown coverage below complete progress.
   // Recomputed 2026-09-09 after release preparation repinned every generated package manifest to
   // the fresh npm cohort, which changes the package metadata embedded in every scaffold.
-  // Recomputed 2026-09-09 for stable WGSL buffer names. Replacing only the copied Three patch
-  // recovered every previous tree hash; scaffold-review/proof.json retains the ten controls.
-  "action-rpg": "63056b20ec9d78882f0b13945c14a9d2988f709b6060fb15b61247e85061b12e",
-  defense: "23036e4c4a9d4a7e07c018d87925d963a2538bed1f15a7c0e776e57c15c65e74",
+  // Recomputed 2026-09-09 after the full build regenerated the current capability reference and
+  // PRD-371 validator, with the shared Dream Loop recipe linked from every root AGENTS mirror.
+  // Recomputed 2026-09-09 after formatting the generated reference script and its fixture.
+  // Recomputed 2026-09-09 after consolidating the Dream Loop link in the five longest mirrors.
+  // Recomputed 2026-09-09 after repairing capability output detection and idempotent replans.
+  "action-rpg": "b1e0710be6eb485bc23e0f97e3e685b458f2df1d89646bb90c9a83422ba93333",
+  defense: "daed64cdc9a2beb695849149ae575a6934578fc77cbac0a393f1d2259d5b1088",
+  // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
+  // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
+  // authoring reference and its matching agent skill guidance, so all ten trees move together.
   // Recomputed 2026-09-08 after merging origin/main c315ad343 into the native coverage branch;
   // values come from the merged scaffold tree after regeneration.
   // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
   // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "af2ba313d7b18800f7ec2b86c8caeed3fa38cd1909fcceb30f173487c73d510a",
-  platformer: "ce43596865c3298d8c3d5ea1ea4063221561c5021850f69798b46260626d926a",
-  runner: "78ad5f702550c6240bce8562f20715b96922e0bcd24262a6ac55f489d8b2892d",
-  puzzle: "f17c5b671acaee3ec89144a6982e48d27abc159437031d103b2978b8338ddbb0",
-  racing: "af6a66be4d723eebf2e9482f77eeb18b894a41c322454883ba1091ebfc915f91",
-  shooter: "b70763b97e51fee8fbe1f405187f432ea74b593abe745ef00739dcd3acc850e4",
+  minimal: "03e328433a899de0ea12111f0c19b5217b81051c365550f9baf6b008a258916d",
+  platformer: "5ac97dc904ee7877146c3eba800b3b4c0f4361f975326ab70f541d66f9e3e802",
+  runner: "20118d2e50c6f822c377ca622e181811143883c8278241e020cb605eb9a1aad6",
+  puzzle: "f4a2d782b53c23305d0559bd2ba153eab5576dcf52d78432f7b360e0e4dda447",
+  racing: "7193dfb7f339224b5e5d9952e1a3b468069727721ce9b0f34cb43e3da13920af",
+  shooter: "3269e5e0081b0f049065207bbd0497515353d203625bde7bd4ad091766d6244e",
   // Recomputed 2026-09-02 for PRD-317: starter now starts the fused-ridge Worker on movement,
   // so its labeled look sample can observe the authored preview before the atomic swap.
-  starter: "54180f882f9a7739dfd15999c2bb2a39f1b322741c348bdf30922049fc3463cd",
+  starter: "e50317547418272ce92c87c7cb07ae8a29a64a7a9860ed6f00469a9f7255fe03",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -338,7 +344,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // playtest prove a time-varying field.
   // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "a136ca4ddf472842d57780af55e332a4a0427ffc6bfd95aed41af750689beb95",
+  sailing: "6861266f29b8f5c4cac1ae15c295b7b1eb221e050141b3ac107cf71a5a779b01",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -405,7 +411,9 @@ async function withBrokenTemplateFile<T>(
       });
     }
     await cp(TEMPLATE_ROOT, path.join(root, "templates"), { recursive: true });
-    const file = path.join(root, "templates", relativePath);
+    const file = relativePath.startsWith("agent-files/")
+      ? path.join(root, relativePath)
+      : path.join(root, "templates", relativePath);
     if (content === undefined) await rm(file);
     else await writeFile(file, content);
     return await body(path.join(root, "templates"));
@@ -451,6 +459,8 @@ const STARTER_PATHS = [
   "patches/three@0.185.1.patch",
   "threenative.config.ts",
   "tools/look.mjs",
+  "scripts/reference.mjs",
+  "scripts/visual-loop.mjs",
   "index.html",
   "tailwind.config.ts",
   "tsconfig.json",
@@ -505,6 +515,7 @@ const STARTER_PATHS = [
   "agent-docs/capture-the-frame.md",
   "agent-docs/ctx-cookbook.md",
   "agent-docs/debug-surface.md",
+  "agent-docs/dream-loop.md",
   "agent-docs/finding-assets.md",
   "agent-docs/gameplay-recipes.md",
   "agent-docs/menu-screens.md",
@@ -687,8 +698,10 @@ describe("create-threenative", () => {
         "assertion-reference.md",
         "capability-reference.md",
         "capture-the-frame.md",
+        "creating-creatures.md",
         "ctx-cookbook.md",
         "debug-surface.md",
+        "dream-loop.md",
         "finding-assets.md",
         "gameplay-recipes.md",
         "menu-screens.md",
@@ -711,6 +724,89 @@ describe("create-threenative", () => {
       }
     } finally {
       await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("should expose the shared visual workflow and authoring scripts in a fresh scaffold", async () => {
+    const root = await makeTempDir("threenative-dream-loop-scaffold-");
+    try {
+      const result = await createProject(
+        { install: false, target: "dream-game", template: "starter" },
+        root,
+      );
+      const workflow = await readFile(path.join(result.target, "agent-docs/dream-loop.md"), "utf8");
+      expect(workflow).toContain("node scripts/reference.mjs");
+      expect(workflow).toContain("node scripts/visual-loop.mjs");
+      expect(workflow).toContain("Anshu Chimala");
+      for (const host of [".agents/skills", ".claude/skills"]) {
+        const visual = await readFile(
+          path.join(result.target, host, "threenative-visuals/SKILL.md"),
+          "utf8",
+        );
+        const assets = await readFile(
+          path.join(result.target, host, "threenative-assets/SKILL.md"),
+          "utf8",
+        );
+        expect(visual).toContain("agent-docs/dream-loop.md");
+        expect(assets).toContain("agent-docs/dream-loop.md");
+      }
+      await expect(stat(path.join(result.target, "scripts/reference.mjs"))).resolves.toBeTruthy();
+      await expect(stat(path.join(result.target, "scripts/visual-loop.mjs"))).resolves.toBeTruthy();
+      const gitignore = await readFile(path.join(result.target, ".gitignore"), "utf8");
+      for (const rule of [".dream-loop/", "node_modules/", ".env", ".env.*", "!.env.example"])
+        expect(gitignore).toContain(rule);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it.each([
+    "agent-files/.agents/skills/threenative-visuals/SKILL.md",
+    "agent-files/.claude/skills/threenative-visuals/SKILL.md",
+    "agent-files/.agents/skills/threenative-assets/SKILL.md",
+    "agent-files/.claude/skills/threenative-assets/SKILL.md",
+  ])("should fail when %s names an absent dream-loop recipe", async (relativePath) => {
+    const source = await readFile(
+      path.resolve("packages/create-threenative", relativePath),
+      "utf8",
+    );
+    await withBrokenTemplateFile(
+      relativePath,
+      source.replaceAll("agent-docs/dream-loop.md", "agent-docs/missing-dream-loop.md"),
+      async (root) => {
+        await expect(
+          createProject(
+            { install: false, target: "broken-dream-game", template: "starter" },
+            path.dirname(root),
+            root,
+          ),
+        ).rejects.toThrow(/RED observed: referenced recipe missing/u);
+      },
+    );
+  });
+
+  it("should preserve asset licensing and sculpt gates when target acquisition is used", async () => {
+    const recipe = await readFile(
+      path.resolve("packages/create-threenative/agent-docs/references/sculpt-from-a-reference.md"),
+      "utf8",
+    );
+    expect(recipe).toContain("agent-docs/dream-loop.md");
+    expect(recipe).toContain("CREDITS.md");
+    for (const host of [".agents/skills", ".claude/skills"]) {
+      const assets = await readFile(
+        path.resolve(
+          "packages/create-threenative/agent-files",
+          host,
+          "threenative-assets/SKILL.md",
+        ),
+        "utf8",
+      );
+      expect(assets).toContain("sculpt_plan");
+      expect(assets).toContain("sculpt_spec_gate");
+      expect(assets).toContain("sculpt_compare");
+      expect(assets).toContain("sculpt_pass_gate");
+      expect(assets).toContain("agent-docs/dream-loop.md");
+      expect(assets).toContain("CREDITS.md");
     }
   });
 

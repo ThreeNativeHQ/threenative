@@ -2754,6 +2754,8 @@ bool initBindings(BindingsState* state, js::Engine* engine, void* wgpuInstance, 
     state->queue = (WGPUQueue)wgpuQueue;
     state->surface = (WGPUSurface)wgpuSurface;
     reportPipelineCaptureMetadata(state->adapter);
+    // PRD-368. Before any binding is installed, so no pipeline can be created without it.
+    initPipelineCache(state);
     state->presentation.presentMode = static_cast<WGPUPresentMode>(presentMode);
 
     // Set canvas dimensions from window size
