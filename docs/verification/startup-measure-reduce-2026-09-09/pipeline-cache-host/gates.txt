@@ -1,0 +1,33 @@
+PRD-368 Phase 1B gates, executed 2026-09-09 on branch linchpin/prd-368-phase1a.
+
+pnpm typecheck                                    exit 0
+pnpm lint                                         exit 0 (667 warnings, 0 errors)
+pnpm check:docs                                   exit 0, 1979 links across 1043 files
+pnpm budgets                                      exit 0
+strict prose lane + check-native-coverage +
+  check-build-matrix                              8 files, 152 tests passed
+pnpm census                                       140,730 -> 142,142 across 7 cells
+native:coverage                                   39 targets (was 38); src/webgpu/ 78.83% ->
+                                                  78.87%; total 80.59%
+
+ctest, Dawn (build/tn-linux, the canonical desktop contract lane):
+  100% tests passed out of 40, including threenative-pipeline-cache-api-test
+
+ctest, wgpu-native (build/tn-wgpu, where the cache actually exists):
+  92% tests passed, 3 failed out of 38 — webgpu-comprehensive,
+  runtime-platform-comprehensive and webgpu-bindings-reentrancy. All three fail
+  identically with the Phase 1A sources checked into the same build directory, so
+  they are pre-existing in a wgpu-configured Linux build rather than caused by this
+  phase. Two further targets do not compile there at all — wgpu-null-handle and
+  rg11b10-renderable include Dawn's `<webgpu.h>` layout — and were excluded from the
+  run. No Linux preset in this repository configures wgpu-native, which is why this
+  configuration is uncharted.
+
+pnpm test: 412 files / 4780 tests passed on the run that was left alone. Two earlier
+  runs went red for reasons that were not the diff and are recorded here so nobody
+  re-derives them: one tripped TN_WORKTREE_GUARD_FAILED because a commit landed while
+  the suite was running, and one hit a webtransport temp-file resolution flake
+  (`Directory not found: .test-tmp/webtransport/wt-ready.js`) that passes 36/36 when
+  that file is run on its own.
+
+Not run: Android, iOS, macOS, Windows, any device lane, and any timing measurement.
