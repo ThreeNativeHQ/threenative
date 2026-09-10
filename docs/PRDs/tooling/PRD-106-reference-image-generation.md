@@ -4,9 +4,12 @@ prd_contract: v1
 
 # PRD-106 — A scaffolded project can obtain the reference image its own docs demand
 
-**Status: OPEN, written 2026-08-14.** Nothing below has been executed. Every gate in this file
-is unrun; no phase may be recorded as passing without the negative control beside it going red
-first.
+**Status: PROPOSED — superseded for execution on 2026-09-09 by
+[PRD-371 — Dream Loop authoring](../authoring/PRD-371-dream-loop-authoring.md).** The original
+2026-08-14 plan below is retained as design history, not implementation evidence. Execute
+PRD-371 instead: it owns reference generation, scaffold hygiene, provider qualification and
+cold-agent proof. No phase below has been certified complete. Its old template locations,
+hand-written environment parser and assumed image transport must not be implemented in parallel.
 
 **Complexity: 6 → MEDIUM mode.** 10+ files (+3), new module from scratch (+2), external API
 integration (+1).
