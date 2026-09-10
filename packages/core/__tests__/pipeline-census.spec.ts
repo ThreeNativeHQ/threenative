@@ -356,6 +356,32 @@ describe("pipeline census", () => {
     expect(report.complete).toBe(true);
   });
 
+  it("distinguishes an absent fragment stage from an unobserved fragment stage", () => {
+    const depthOnly = webgpuStub();
+    const depthOnlyCensus = createPipelineCensus({ kind: "webgpu" });
+    depthOnlyCensus.installRenderer({ backend: depthOnly.backend });
+    depthOnly.pipelines.getForRender(
+      renderObject({ vertexProgram: { code: source("depth-only") } }, {}, {}),
+      null,
+    );
+    const depthOnlyReport = depthOnlyCensus.snapshot();
+    expect(depthOnlyReport.complete).toBe(true);
+    expect(depthOnlyReport.events[0]?.fragment).toBeUndefined();
+
+    const unobserved = webgpuStub();
+    const unobservedCensus = createPipelineCensus({ kind: "webgpu" });
+    unobservedCensus.installRenderer({ backend: unobserved.backend });
+    unobserved.pipelines.getForRender(
+      renderObject({ vertexProgram: { code: source("vertex") }, fragmentProgram: {} }, {}, {}),
+      null,
+    );
+    const unobservedReport = unobservedCensus.snapshot();
+    expect(unobservedReport.complete).toBe(false);
+    expect(unobservedReport.incompleteReasons).toEqual([
+      "a render pipeline is missing its fragment shader observation",
+    ]);
+  });
+
   it("restores the device hooks it installed on dispose", () => {
     const { backend, device } = webgpuStub();
     const originalRenderPipeline = device.createRenderPipeline;

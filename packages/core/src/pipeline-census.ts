@@ -208,6 +208,8 @@ interface IMutableCensusEvent {
   status: PipelineCensusStatus;
   vertex?: IPipelineShaderObservation;
   fragment?: IPipelineShaderObservation;
+  /** Whether the render descriptor carried a fragment stage, even when it was not observed. */
+  fragmentStagePresent?: boolean;
   compute?: IPipelineShaderObservation;
   provenance: IPipelineProvenance;
   label?: string;
@@ -531,7 +533,11 @@ export class PipelineCensus {
     for (const event of this.#events) {
       if (event.kind === "render" && event.vertex === undefined)
         incompleteReasons.push("a render pipeline is missing its vertex shader observation");
-      if (event.kind === "render" && event.fragment === undefined)
+      if (
+        event.kind === "render" &&
+        event.fragmentStagePresent === true &&
+        event.fragment === undefined
+      )
         incompleteReasons.push("a render pipeline is missing its fragment shader observation");
       if (event.kind === "compute" && event.compute === undefined)
         incompleteReasons.push("a compute pipeline is missing its shader observation");
@@ -620,6 +626,12 @@ export class PipelineCensus {
       pipeline,
       vertex,
       fragment,
+      ...(pipeline === undefined
+        ? {}
+        : {
+            fragmentStagePresent:
+              pipeline.fragmentProgram !== undefined && pipeline.fragmentProgram !== null,
+          }),
       renderObject,
       mode: args[1] === null ? "sync" : "async",
     });
@@ -727,6 +739,7 @@ export class PipelineCensus {
         : {
             vertex: this.#stageObservation(descriptor.vertex),
             fragment: this.#stageObservation(descriptor.fragment),
+            fragmentStagePresent: descriptor.fragment !== undefined && descriptor.fragment !== null,
           }),
       renderObject: undefined,
       // The mode describes what the call did, not which method was named: an async method that
@@ -769,6 +782,7 @@ export class PipelineCensus {
     readonly pipeline: IPipelineLike | undefined;
     readonly vertex?: IPipelineShaderObservation;
     readonly fragment?: IPipelineShaderObservation;
+    readonly fragmentStagePresent?: boolean;
     readonly compute?: IPipelineShaderObservation;
     readonly renderObject: IRenderObjectLike | undefined;
     readonly mode: PipelineCensusMode;
@@ -798,6 +812,9 @@ export class PipelineCensus {
       status: input.mode === "async" ? "pending" : "created",
       ...(input.vertex === undefined ? {} : { vertex: input.vertex }),
       ...(input.fragment === undefined ? {} : { fragment: input.fragment }),
+      ...(input.fragmentStagePresent === undefined
+        ? {}
+        : { fragmentStagePresent: input.fragmentStagePresent }),
       ...(input.compute === undefined ? {} : { compute: input.compute }),
       ...(input.label === undefined ? {} : { label: input.label }),
       startedMs: this.#clock(),
