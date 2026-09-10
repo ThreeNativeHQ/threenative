@@ -1,99 +1,94 @@
-name: CI efficiency audit
+name: CI efficiency validation
 
 on:
   push:
     branches: [codex/ci-efficiency-2026-09-10]
     paths: [.github/workflows/ci-efficiency-audit.yml]
-  workflow_dispatch:
 
+# Temporary, branch-scoped validation. Writes only immutable Git blob objects after tests;
+# it never updates a branch, opens a PR, publishes a package, or changes a workflow ref.
 permissions:
-  contents: read
-  actions: read
+  contents: write
 
 jobs:
-  audit:
+  validate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Collect recent timing histories and representative raw logs
+      - name: Apply the exact locally tested candidate
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ci-efficiency"
+          python3 - <<'PY'
+          import hashlib, pathlib, subprocess
+          patch = pathlib.Path('.ci-efficiency.patch').read_text().replace('\n diff --git', '\ndiff --git')
+          assert hashlib.sha256(patch.encode()).hexdigest() == 'baea3136086a332d1a317c12e6474683d68b3dcb25f1bfc9a958a273fd70dde2', 'Candidate patch differs from locally verified bytes'
+          subprocess.run(['git', 'apply', '--check', '-'], input=patch, text=True, check=True)
+          subprocess.run(['git', 'apply', '-'], input=patch, text=True, check=True)
+          pathlib.Path('.ci-efficiency.patch').unlink()
+          pathlib.Path('.github/workflows/ci-efficiency-audit.yml').unlink()
+          PY
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/workspace-dist
+      - name: CI structure, dependency, package-list, and fail-closed regression tests
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts scripts/__tests__/ci-efficiency.spec.ts scripts/__tests__/package-list-drift.spec.ts 2>&1 | tee "$RUNNER_TEMP/ci-efficiency/workflow-tests.log"
+      - name: Native conformance-runner regression suite
+        run: |
+          set -euo pipefail
+          pnpm --filter @threenative/runtime-native exec vitest run tests/conformance-runner.test.mjs --maxWorkers 2 2>&1 | tee "$RUNNER_TEMP/ci-efficiency/conformance-tests.log"
+      - name: Check edited tests with the repository-pinned formatter
+        run: |
+          set -euo pipefail
+          pnpm exec biome check scripts/__tests__/ci-efficiency.spec.ts scripts/__tests__/ci-structure.spec.ts packages/runtime-native/tests/conformance-runner.test.mjs 2>&1 | tee "$RUNNER_TEMP/ci-efficiency/lint.log"
+          git diff --check
+      - name: Retain verified immutable candidate blobs without changing any ref
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import collections, concurrent.futures, datetime, json, os, pathlib, statistics, urllib.request, urllib.parse
-          out = pathlib.Path('ci-audit')
-          (out / 'logs').mkdir(parents=True, exist_ok=True)
-          root = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY']
-          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
-          class Redirect(urllib.request.HTTPRedirectHandler):
-              def redirect_request(self, req, fp, code, msg, hdrs, newurl):
-                  redirected = super().redirect_request(req, fp, code, msg, hdrs, newurl)
-                  if redirected is not None and urllib.parse.urlparse(req.full_url).netloc != urllib.parse.urlparse(newurl).netloc:
-                      redirected.remove_header('Authorization')
-                  return redirected
-          opener = urllib.request.build_opener(Redirect())
-          def get(path, raw=False):
-              with opener.open(urllib.request.Request(root + path, headers=headers), timeout=90) as response:
-                  body = response.read()
-              return body if raw else json.loads(body)
-          runs = [r for r in get('/actions/runs?per_page=100')['workflow_runs'] if r['name'] != 'CI efficiency audit']
-          errors = []
-          def jobs_for(run):
-              jobs, page = [], 1
-              try:
-                  while True:
-                      chunk = get(f"/actions/runs/{run['id']}/jobs?filter=latest&per_page=100&page={page}")['jobs']
-                      jobs.extend(chunk)
-                      if len(chunk) < 100: break
-                      page += 1
-                  return jobs
-              except Exception as exc:
-                  errors.append({'run': run['id'], 'error': str(exc)})
-                  return []
-          with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-              jobs = [j for batch in pool.map(jobs_for, runs) for j in batch]
-          def duration(item):
-              a, b = item.get('started_at'), item.get('completed_at')
-              return (datetime.datetime.fromisoformat(b.replace('Z', '+00:00')) - datetime.datetime.fromisoformat(a.replace('Z', '+00:00'))).total_seconds() if a and b else None
-          groups = collections.defaultdict(list)
-          for job in jobs:
-              if job['conclusion'] == 'success' and duration(job) is not None:
-                  groups[job['name']].append(job)
-          selected = {}
-          for entries in groups.values():
-              job = sorted(entries, key=duration)[len(entries)//2]
-              if duration(job) >= 60:
-                  selected[job['id']] = job
-          for job in sorted(jobs, key=lambda j: j['id'], reverse=True):
-              if job['conclusion'] in ('failure', 'timed_out') and not any(j['name'] == job['name'] and j['conclusion'] in ('failure', 'timed_out') for j in selected.values()):
-                  selected[job['id']] = job
-          selected = dict(list(selected.items())[:60])
-          def log_for(job):
-              try:
-                  (out / 'logs' / f"{job['id']}.txt").write_bytes(get(f"/actions/jobs/{job['id']}/logs", raw=True))
-              except Exception as exc:
-                  errors.append({'job': job['id'], 'error': str(exc)})
-          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-              list(pool.map(log_for, selected.values()))
-          (out / 'data.json').write_text(json.dumps({'runs': runs, 'jobs': jobs, 'selected_logs': list(selected.values()), 'errors': errors}, indent=2))
-          lines = [f"Runs: {len(runs)}; jobs: {len(jobs)}; raw logs: {len(list((out / 'logs').glob('*.txt')))}; fetch errors: {len(errors)}", '', '| Job | Successful samples | Median seconds |', '| --- | ---: | ---: |']
-          for name, entries in sorted(groups.items(), key=lambda pair: statistics.median(duration(j) for j in pair[1]), reverse=True):
-              lines.append(f"| {name} | {len(entries)} | {statistics.median(duration(j) for j in entries):.0f} |")
-          text = '\n'.join(lines) + '\n'
-          (out / 'summary.md').write_text(text)
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as handle: handle.write(text)
-          print(text)
-          print('Fetch errors:', json.dumps(errors))
+          import hashlib, json, os, pathlib, subprocess, urllib.request
+          expected = {
+              '.github/workflows/ci.yml': '112b572621871e9469838ff32d7b65fd124bef47',
+              '.github/workflows/native-platforms.yml': '50ef4c7f426f0ca66e49e5f71976790d47f6c48a',
+              'scripts/__tests__/ci-structure.spec.ts': '62d5f00ed0e920011bebaa958e54e9513dba2df4',
+              'packages/runtime-native/tests/conformance-runner.test.mjs': '77b14e4224bb88da195b31d599d43f7bdbdbb514',
+              'scripts/__tests__/ci-efficiency.spec.ts': '48cc279e9f920c9f6ec6c3b5480169a286566e5b',
+          }
+          elements = []
+          for name, expected_sha in expected.items():
+              content = pathlib.Path(name).read_bytes()
+              actual = hashlib.sha1(b'blob ' + str(len(content)).encode() + b'\0' + content).hexdigest()
+              assert actual == expected_sha, f'{name} changed during verification'
+              request = urllib.request.Request(
+                  'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/blobs',
+                  data=json.dumps({'content': content.decode(), 'encoding': 'utf-8'}).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'},
+                  method='POST',
+              )
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  blob = json.load(response)
+              assert blob['sha'] == expected_sha, f'{name} upload mismatch'
+              elements.append({'path': name, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']})
+          for name in ['.ci-efficiency.patch', '.github/workflows/ci-efficiency-audit.yml']:
+              elements.append({'path': name, 'mode': '100644', 'type': 'blob', 'sha': None})
+          result = {'base_commit': os.environ['GITHUB_SHA'], 'base_tree': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(), 'tree_elements': elements, 'patch_sha256': 'baea3136086a332d1a317c12e6474683d68b3dcb25f1bfc9a958a273fd70dde2'}
+          (pathlib.Path(os.environ['RUNNER_TEMP']) / 'ci-efficiency' / 'candidate.json').write_text(json.dumps(result, indent=2))
+          print(json.dumps(result, indent=2))
           PY
-      - name: Retain tracked source without git metadata or credentials
-        run: git archive --format=tar.gz HEAD > ci-audit/sources.tar.gz
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          name: ci-efficiency-audit
-          path: ci-audit
-          retention-days: 3
-          compression-level: 0
+          name: ci-efficiency-validation
+          path: ${{ runner.temp }}/ci-efficiency
           if-no-files-found: error
+          retention-days: 7
