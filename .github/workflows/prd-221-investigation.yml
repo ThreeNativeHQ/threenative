@@ -1,104 +1,72 @@
-name: PRD-221 isolated candidate verification
+name: PRD-221 source candidate verification
 
-# Temporary branch-only preparation; removed from the final diff.
+# Branch-only evidence for the owned Android V8 source build. This workflow never edits or pushes.
 on:
   push:
     branches: [codex/prd-221-android-v8-16kb]
-    paths: [.github/workflows/prd-221-investigation.yml]
+    paths:
+      - .github/workflows/prd-221-investigation.yml
+      - packages/runtime-native/scripts/build-android-v8.mjs
+      - packages/runtime-native/scripts/download-deps.mjs
+      - packages/runtime-native/android/app/build.gradle.kts
+      - packages/runtime-native/tests/android-16kb-alignment.test.mjs
+      - packages/runtime-native/tests/runtime-next-contract.test.mjs
 permissions:
   contents: read
+
 jobs:
-  apply-tested-candidate:
+  focused-tests:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    permissions:
-      contents: write
-    outputs:
-      candidate: ${{ steps.commit.outputs.candidate }}
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: '22.16.0'
-      - name: Apply the exact guarded local candidate
+      - uses: ./.github/actions/pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Run the affected runtime-native suites
+        working-directory: packages/runtime-native
+        run: |
+          pnpm exec vitest run --config vitest.config.ts \
+            tests/android-16kb-alignment.test.mjs \
+            tests/android-packaging.integration.test.mjs \
+            tests/native-platform-workflow.test.mjs \
+            tests/android-webp-provisioning.test.mjs \
+            tests/js-engine-version-skew.test.mjs \
+            tests/dawn-android-option.test.mjs \
+            tests/download-retry.test.mjs \
+            tests/wgpu-version-matrix.test.mjs \
+            tests/workflow-dependency-names.test.mjs
+      - name: Retain exact candidate identity
+        if: always()
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = refs/heads/codex/prd-221-android-v8-16kb
-          python3 - <<'PY'
-          import base64, hashlib, json, lzma, pathlib, subprocess
-          encoded = '''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'''
-          data = lzma.decompress(base64.b64decode(encoded, validate=True))
-          assert hashlib.sha256(data).hexdigest() == 'a329cff50eca21c039918364b2c8f1f3faa78218a6efbc972ef91983c9ea5ab2'
-          payload = json.loads(data)
-          allowed = {
-              'packages/runtime-native/scripts/download-deps.mjs',
-              'packages/runtime-native/android/app/build.gradle.kts',
-              'packages/runtime-native/tests/android-16kb-alignment.test.mjs',
-              'packages/runtime-native/scripts/build-android-v8.mjs',
-              'docs/verification/prd-221-readiness-phase-1-2026-09-10.md',
-          }
-          assert set(payload['expected']) | set(payload['write']) == allowed
-          for path, expected in payload['expected'].items():
-              actual = subprocess.check_output(['git', 'hash-object', path], text=True).strip()
-              assert actual == expected, f'Concurrent edit: {path}: {actual} != {expected}'
-          for line in payload['patch'].splitlines():
-              if line.startswith('+++ b/'):
-                  assert line[6:] in allowed
-          patch = payload['patch'].encode()
-          subprocess.run(['git', 'apply', '--check', '-'], input=patch, check=True)
-          subprocess.run(['git', 'apply', '-'], input=patch, check=True)
-          for path, content in payload['write'].items():
-              destination = pathlib.Path(path)
-              destination.parent.mkdir(parents=True, exist_ok=True)
-              destination.write_text(content)
-          PY
-          git diff --check
-      - name: Install isolated test tools and rerun the affected suites
-        env:
-          CI: 'true'
-          TERM: xterm
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/prd221-tools" "$RUNNER_TEMP/prd221-evidence"
-          cd "$RUNNER_TEMP/prd221-tools"
-          printf '%s\n' '{"private":true,"type":"module"}' > package.json
-          npm install --ignore-scripts --no-audit --no-fund vitest@4.1.10 esbuild@0.27.0 yaml@2.8.1
-          ln -s "$RUNNER_TEMP/prd221-tools/node_modules" "$GITHUB_WORKSPACE/node_modules"
-          cd "$GITHUB_WORKSPACE/packages/runtime-native"
-          node "$RUNNER_TEMP/prd221-tools/node_modules/vitest/vitest.mjs" run --config vitest.config.ts tests/android-16kb-alignment.test.mjs tests/android-packaging.integration.test.mjs tests/native-platform-workflow.test.mjs tests/android-webp-provisioning.test.mjs tests/js-engine-version-skew.test.mjs tests/dawn-android-option.test.mjs tests/download-retry.test.mjs tests/wgpu-version-matrix.test.mjs tests/workflow-dependency-names.test.mjs 2>&1 | tee "$RUNNER_TEMP/prd221-evidence/focused.log"
-      - id: commit
-        name: Commit only the five tested candidate files
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add packages/runtime-native/scripts/download-deps.mjs packages/runtime-native/scripts/build-android-v8.mjs packages/runtime-native/android/app/build.gradle.kts packages/runtime-native/tests/android-16kb-alignment.test.mjs docs/verification/prd-221-readiness-phase-1-2026-09-10.md
-          git diff --cached --check
-          git commit -m 'fix(android): provision pinned 16 KB V8 source candidates and validate staging' -m 'PRD-221 phase 1 preparation. Observed red controls and 80 passing focused tests are retained in the evidence record. Native qualification, final APK gates and 16 KB gameplay remain pending.'
-          git push origin HEAD:refs/heads/codex/prd-221-android-v8-16kb
-          echo "candidate=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/prd221-evidence"
           git rev-parse HEAD > "$RUNNER_TEMP/prd221-evidence/source-sha.txt"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: prd221-candidate-tests-${{ github.sha }}
           path: ${{ runner.temp }}/prd221-evidence
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 2
   source-probe:
-    needs: apply-tested-candidate
+    needs: focused-tests
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.apply-tested-candidate.outputs.candidate }}
+          ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Retry through the existing dependency provisioner
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.16.0'
+      - name: Retry through the supported dependency provisioner
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/prd221-evidence"
@@ -121,7 +89,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: prd221-owned-v8-${{ needs.apply-tested-candidate.outputs.candidate }}
+          name: prd221-owned-v8-${{ github.sha }}
           path: ${{ runner.temp }}/prd221-evidence
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 2
