@@ -20,6 +20,15 @@ For reference matching, solve lighting first: search `engine_search_capabilities
 effects, read `TN_RENDER_CHAIN`, and use `agent-docs/visual-baseline.md` and
 `agent-docs/capture-the-frame.md` for the per-file baseline and capture recipe.
 
+For a supplied or explicitly generated target, read `agent-docs/dream-loop.md`. It is the shared
+workflow for locking the target, preserving its hash, obtaining a fresh gameplay capture, and
+asking the read-only verifier for an independent `PASS`, `REQUEST_CHANGES`, or `NOT_OBSERVED`.
+Run `node scripts/visual-loop.mjs --record <run>/run.json` before and after each round; read its
+JSON `decision` instead of treating exit 0 as acceptance. If a target must be generated or edited,
+use `node scripts/reference.mjs` with a unique `--request-id`, the exact prompt file, and the
+user-selected model. A supplied target works without credentials; missing evidence or a provider
+failure remains unavailable and never becomes a visual pass.
+
 For off-screen diffuse light, add `ProbeVolume` after static geometry/lights, bake on demand, and
 sample it into a game-owned material before screen-space GI. It owns no look; moving lights need a
 new bake. Keep `TN_PROBE_VOLUME`'s stale state, probe count, atlas bytes, progress, and bake cost
