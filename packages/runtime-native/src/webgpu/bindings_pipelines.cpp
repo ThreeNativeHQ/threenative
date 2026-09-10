@@ -330,8 +330,8 @@ double pipelineClockMs() {
 }
 
 /** Stable source identity; the full WGSL is deliberately never written to a capture. */
-static std::string pipelineSourceHash(const std::string& code) {
-    uint64_t hash = 1469598103934665603ULL;
+std::string pipelineSourceHash(const std::string& code) {
+    uint64_t hash = 14695981039346656037ULL;
     for (const unsigned char character : code) {
         hash ^= character;
         hash *= 1099511628211ULL;
@@ -417,12 +417,24 @@ void reportPipelineCaptureComplete(uint64_t eventCount) {
               << eventCount << "}" << std::endl;
 }
 
-/** Emit the same bounded event fields that the browser census and perf reader consume. */
-static void emitPipelineEvent(const PipelineCompileCompletion& completion,
+/** One writer at a time, so no marker line is ever spliced into the middle of another. */
+static std::mutex& pipelineOutputMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+/**
+ * Emit the same bounded event fields that the browser census and perf reader consume.
+ *
+ * `state` is here only to count the line against the capture that wrote it. The stream is shared
+ * by every runtime in the process; the census is not, so the count that a checkpoint reconciles
+ * has to belong to one `BindingsState` the way `nextRequestId` and the pool counters do.
+ */
+static void emitPipelineEvent(BindingsState* state,
+                              const PipelineCompileCompletion& completion,
                               uint64_t pipelineId, const char* mode, bool success,
                               const std::string& error = {}) {
-    static std::mutex outputMutex;
-    std::lock_guard<std::mutex> outputLock(outputMutex);
+    std::lock_guard<std::mutex> outputLock(pipelineOutputMutex());
     const uint64_t identity = pipelineId == 0 ? completion.requestId : pipelineId;
     const std::string kind = completion.render ? "render" : "compute";
     const std::string program = completion.render
@@ -457,6 +469,46 @@ static void emitPipelineEvent(const PipelineCompileCompletion& completion,
         std::cout << ",\"label\":" << pipelineJsonString(completion.label);
     if (!success) std::cout << ",\"error\":" << pipelineJsonString(error);
     std::cout << "}\n";
+    state->asyncPipelines.emitted += 1;
+}
+
+/**
+ * Prints a live snapshot of the capture from a present that reached the display.
+ *
+ * The Android runner ends a run with `am force-stop`, so `shutdownAsyncPipelineCompiles` — and the
+ * `TN_PIPELINE_COMPLETE` it prints — never runs, and a reader cannot tell a whole capture from one
+ * the kill cut in half. Joining the compile pool early to get a boundary would change what is being
+ * measured; this prints the three counts the host already keeps apart instead:
+ *
+ * - `requested`, every request id handed out, sync and async alike;
+ * - `emitted`, every event line this capture actually wrote;
+ * - `outstanding`, compiles the pool has started and not yet settled.
+ *
+ * `requested == emitted + outstanding` at every point where this can run, so a reader that sees the
+ * three disagree, or fewer event lines than `emitted`, is holding a partial capture and must say so
+ * rather than report a total. Nothing here is a verdict about the game: the present this rides on
+ * is only the instant the counts were read, never a claim that compilation is finished or that the
+ * player can play. The finalizer stays exactly as it was and remains the authoritative end of a
+ * process that gets to exit.
+ */
+void reportPipelineCheckpoint(BindingsState* state, uint64_t presentCount) {
+    if (state == nullptr) return;
+    AsyncPipelineCompiles& pool = state->asyncPipelines;
+    // Read every count under the output lock: a line written between reading `emitted` and taking
+    // the lock would be a line this checkpoint claims to cover and does not precede.
+    std::lock_guard<std::mutex> outputLock(pipelineOutputMutex());
+    const uint64_t requested = pool.nextRequestId - 1;
+    const uint64_t emitted = pool.emitted;
+    const uint64_t outstanding = pool.started > pool.settled ? pool.started - pool.settled : 0;
+    if (pool.checkpointRequested == requested && pool.checkpointEmitted == emitted &&
+        pool.checkpointOutstanding == outstanding)
+        return;
+    pool.checkpointRequested = requested;
+    pool.checkpointEmitted = emitted;
+    pool.checkpointOutstanding = outstanding;
+    std::cout << "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":" << presentCount
+              << ",\"requested\":" << requested << ",\"emitted\":" << emitted
+              << ",\"outstanding\":" << outstanding << "}" << std::endl;
 }
 
 void releaseComputePipelineRegistryEntry(BindingsState* state, uint64_t pipelineId) {
@@ -861,7 +913,7 @@ static js::JSValueHandle createComputePipelineImpl(BindingsState* state, Binding
                             WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(state->device, &pipelineDesc);
                             observation.finishedMs = pipelineClockMs();
                             if (!pipeline) {
-                                emitPipelineEvent(observation, 0, "sync", false,
+                                emitPipelineEvent(state, observation, 0, "sync", false,
                                                    "Failed to create compute pipeline");
                                 state->engine->throwException("Failed to create compute pipeline");
                                 return state->engine->newUndefined();
@@ -870,7 +922,7 @@ static js::JSValueHandle createComputePipelineImpl(BindingsState* state, Binding
                             uint64_t pipelineId = state->registries.nextComputePipelineId++;
                             state->registries.computePipelineRegistry[pipelineId] = pipeline;
                             auto jsPipeline = createPipelineWrapper(state, pipeline, pipelineId, false);
-                            emitPipelineEvent(observation, pipelineId, "sync", true);
+                            emitPipelineEvent(state, observation, pipelineId, "sync", true);
                             if (state->verboseLogging) std::cout << "[WebGPU] Compute pipeline created (id=" << pipelineId << ")" << std::endl;
                             return jsPipeline;
 }
@@ -1341,7 +1393,7 @@ static js::JSValueHandle createRenderPipelineImpl(BindingsState* state, BindingD
                             observation.finishedMs = pipelineClockMs();
                             if (!pipeline) {
                                 rollbackBlendStates();
-                                emitPipelineEvent(observation, 0, "sync", false,
+                                emitPipelineEvent(state, observation, 0, "sync", false,
                                                   "Failed to create render pipeline");
                                 state->engine->throwException("Failed to create render pipeline");
                                 return state->engine->newUndefined();
@@ -1351,7 +1403,7 @@ static js::JSValueHandle createRenderPipelineImpl(BindingsState* state, BindingD
                             state->registries.renderPipelineRegistry[pipelineId] = pipeline;
                             auto jsPipeline = createPipelineWrapper(state, pipeline, pipelineId, true);
                             if (state->engine->hasException()) rollbackBlendStates();
-                            emitPipelineEvent(observation, pipelineId, "sync", true);
+                            emitPipelineEvent(state, observation, pipelineId, "sync", true);
                             if (state->verboseLogging) std::cout << "[WebGPU] Render pipeline created (id=" << pipelineId << ")" << std::endl;
                             return jsPipeline;
 }
@@ -1388,7 +1440,7 @@ void drainAsyncPipelineCompiles(BindingsState* state) {
         js::JSValueGuard id(*state->engine,
                             state->engine->newNumber(static_cast<double>(completion.requestId)));
         if (!completion.error.empty()) {
-            emitPipelineEvent(completion, 0, "async", false, completion.error);
+            emitPipelineEvent(state, completion, 0, "async", false, completion.error);
             if (canSettle) {
                 js::JSValueGuard nothing(*state->engine, state->engine->newUndefined());
                 js::JSValueGuard error(*state->engine,
@@ -1401,7 +1453,7 @@ void drainAsyncPipelineCompiles(BindingsState* state) {
             continue;
         }
         if (!canSettle) {
-            emitPipelineEvent(completion, 0, "async", true);
+            emitPipelineEvent(state, completion, 0, "async", true);
             if (completion.renderPipeline != nullptr) wgpuRenderPipelineRelease(completion.renderPipeline);
             if (completion.computePipeline != nullptr) wgpuComputePipelineRelease(completion.computePipeline);
             continue;
@@ -1421,7 +1473,7 @@ void drainAsyncPipelineCompiles(BindingsState* state) {
         const uint64_t pipelineId = completion.render
             ? state->registries.nextRenderPipelineId - 1
             : state->registries.nextComputePipelineId - 1;
-        emitPipelineEvent(completion, pipelineId, "async", true);
+        emitPipelineEvent(state, completion, pipelineId, "async", true);
         js::JSValueGuard pipeline(*state->engine, wrapper);
         js::JSValueGuard undefinedError(*state->engine, state->engine->newUndefined());
         js::JSValueGuard ignored(

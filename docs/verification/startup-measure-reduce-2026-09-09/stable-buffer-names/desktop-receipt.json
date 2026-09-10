@@ -1,0 +1,63 @@
+{
+  "pass": true,
+  "runtime": "native",
+  "scenario": "bayview-manifest-startup-movement",
+  "assertionResults": [
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "networkErrorsOptOutReason": "Android mailbox transport has no CDP network observer; this scenario proves local packaged asset startup.",
+          "noConsoleErrors": true,
+          "noNetworkErrors": false,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    },
+    {
+      "details": {
+        "distance": 2.146708556452303,
+        "entity": "player",
+        "minimum": 0.25,
+        "observed": true
+      },
+      "id": "movement.distance",
+      "pass": true
+    }
+  ],
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 518.448306,
+      "enteredMs": 1617.425017,
+      "compileSettledMs": 6469.550599,
+      "frameworkReadyMs": 6469.555609,
+      "readyMs": 6469.569819
+    },
+    "rule": "sustained-frames"
+  },
+  "counts": {
+    "lookups": 68,
+    "creations": 70,
+    "failures": 0,
+    "pending": 0,
+    "uniquePrograms": 56,
+    "uniquePipelines": 70,
+    "recordedEvents": 70,
+    "droppedEvents": 0,
+    "deviceCreations": 70,
+    "directCreations": 2
+  },
+  "adapter": {
+    "identity": "webgpu:architecture=turing|description=NVIDIA%3A%20610.57.04%20610.57.4.0|device=NVIDIA%20GeForce%20RTX%202080|vendor=nvidia",
+    "thermal": "unavailable"
+  },
+  "deviceMetrics": null
+}

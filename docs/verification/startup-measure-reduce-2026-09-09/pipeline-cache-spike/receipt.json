@@ -1,0 +1,26 @@
+{
+  "status": "API feasibility only; no host integration, persisted app cache or startup acceptance",
+  "source": "https://github.com/gfx-rs/wgpu-native/releases/tag/v25.0.2.2",
+  "sourceArchiveSha256": "cdee831cd5ca39c5f6df6a4dc556b8eb6c2f9c291c07d4f87926d264ad038b5a",
+  "wgpuCoreCommit": "f35cf942af1a3bb6f48aa9185f4d2bcee809f814",
+  "librarySha256": "942a80ce6eb5467115287dfd20fe650999921d7c5bfad02b9ce5c4dcc8cd9154",
+  "headerSha256": "a6fccf7f9f2fa674d1adfe4f6ea89784a876395b2307bfc2b06f2e77cf6cf356",
+  "cacheSha256": "f9115b0f70fbd9c9f008898500eb4882fadfe68d0e13d7fbfb64d9af98153c9f",
+  "rgbaSha256": "dee91dd35442efa1824feb0250eecdc6f5e725c8a35430eaabea3fbf6ace6245",
+  "results": {
+    "storeBytes": 13573,
+    "strictReloadAccepted": true,
+    "disabledBytes": 100,
+    "allThreePixelsByteIdentical": true,
+    "storeCreateMs": 7.033701,
+    "loadCreateMs": 0.610847,
+    "disabledCreateMs": 0.319588
+  },
+  "limits": [
+    "Synthetic triangle, not a Bayview pipeline.",
+    "Separate desktop processes on NVIDIA RTX2080/Vulkan driver610.57.04; Android not executed.",
+    "Disabled control was faster than imported cache. No performance benefit established.",
+    "No corruption, concurrency, async-host, device-loss, persistence-envelope or native-host test executed."
+  ],
+  "localPrototype": "/home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce/artifacts/startup-measure-reduce/pipeline-cache-spike"
+}

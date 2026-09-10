@@ -224,8 +224,9 @@ async function runDevicePlaytestInternal(
     // Same boundary as the browser lane: a fixed-step warmup is a tick count, not the clock the
     // application's launch runs on, so wait for the device to say its world is safe to observe.
     const attached = bridge;
-    if (scenario.awaitStartup !== false)
-      await waitForStartupReady({
+    const startupOutcome = scenario.awaitStartup === false
+      ? undefined
+      : await waitForStartupReady({
         acceptCompileSettled: config.allowSoftwareAdapter === true,
         bridge: attached,
         // A device host can die mid-launch, and its mailbox then simply stops answering. Without
@@ -470,6 +471,10 @@ async function runDevicePlaytestInternal(
       movementSamples,
       setupApplication,
       metrics?.observation(),
+      undefined,
+      startupOutcome === undefined
+        ? undefined
+        : { ...startupOutcome.startup, rule: startupOutcome.rule },
     );
     // Same artifacts as the browser target: a diagnostic that names console.json must find it
     // there whichever target produced the run.

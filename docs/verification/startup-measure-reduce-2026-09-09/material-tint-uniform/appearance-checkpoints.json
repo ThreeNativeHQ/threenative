@@ -1,0 +1,46 @@
+{
+  "scenario": "artifacts/startup-measure-reduce/scenarios/appearance-checkpoint.playtest.json — no input, spawn camera, 10 warm-up + 60 settle ticks, 1280x720",
+  "note": "The town has animated NPCs and effects, so two runs of one source are not bit-identical. The same-source rows are the noise band the cross rows must be read against. No human review has happened.",
+  "pairs": [
+    {
+      "label": "same-source original vs original",
+      "changedRatio": 0.053784,
+      "meanChannelDelta": 1.3375,
+      "maxChannelDelta": 228,
+      "meanLuminanceA": 94.262,
+      "meanLuminanceB": 94.363
+    },
+    {
+      "label": "same-source candidate vs candidate",
+      "changedRatio": 0.050779,
+      "meanChannelDelta": 1.3129,
+      "maxChannelDelta": 245,
+      "meanLuminanceA": 94.631,
+      "meanLuminanceB": 94.467
+    },
+    {
+      "label": "cross original-1 vs candidate-1",
+      "changedRatio": 0.063635,
+      "meanChannelDelta": 2.9065,
+      "maxChannelDelta": 247,
+      "meanLuminanceA": 94.262,
+      "meanLuminanceB": 94.631
+    },
+    {
+      "label": "cross original-1 vs candidate-2",
+      "changedRatio": 0.064028,
+      "meanChannelDelta": 2.4008,
+      "maxChannelDelta": 246,
+      "meanLuminanceA": 94.262,
+      "meanLuminanceB": 94.467
+    },
+    {
+      "label": "cross original-2 vs candidate-2",
+      "changedRatio": 0.055162,
+      "meanChannelDelta": 1.8358,
+      "maxChannelDelta": 245,
+      "meanLuminanceA": 94.363,
+      "meanLuminanceB": 94.467
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "sourceBase": "488c05696d5d2d36478da6b0c67edbca5abfa044",
+  "runs": [
+    {
+      "command": "pnpm typecheck",
+      "exitCode": 0,
+      "log": "artifacts/startup-measure-reduce/arms/final-typecheck.log",
+      "logSha256": "13c728f8f34bd3768019fd5fbad75583dc0d45888ffd7f660c2f9fa709ebaab9",
+      "tail": "final-typecheck.txt"
+    },
+    {
+      "command": "pnpm lint",
+      "exitCode": 0,
+      "log": "artifacts/startup-measure-reduce/arms/final-lint.log",
+      "logSha256": "6996632593c0a7ea9c05b1539c428384bb7f7b716971ddc28deed926b88b62fb",
+      "tail": "final-lint.txt"
+    },
+    {
+      "command": "pnpm build",
+      "exitCode": 0,
+      "log": "artifacts/startup-measure-reduce/arms/final-build.log",
+      "logSha256": "3159624c71a6194d600d99ec512645a4acca2748532332d695a604ebc3ad589d",
+      "tail": "final-build.txt"
+    },
+    {
+      "command": "pnpm test",
+      "exitCode": 0,
+      "log": "artifacts/startup-measure-reduce/arms/final-test-serial.log",
+      "logSha256": "f111f7d2cf70ffdd07a282d0a5416c1ff7d5166489d97f8d8359fb17c640e2f5",
+      "tail": "final-test-serial.txt"
+    },
+    {
+      "command": "pnpm test:playtest",
+      "exitCode": 0,
+      "log": "artifacts/startup-measure-reduce/arms/final-test-playtest.log",
+      "logSha256": "4919b6663c86bf1fb6e6c3fb9abf438f57dee2911a72e123fe525c028ab4ae2a",
+      "tail": "final-test-playtest.txt"
+    },
+    {
+      "command": "SDL_AUDIODRIVER=dummy sh scripts/xvfb.sh pnpm native:verify:desktop",
+      "exitCode": 0,
+      "log": "artifacts/startup-measure-reduce/arms/final-native-display.log",
+      "logSha256": "d4d2f2db404401eaebd1551bdd0eee6e6b26d4fa68ce4cc587f336fd460fa078",
+      "tail": "final-native-display.txt"
+    },
+    {
+      "command": "pnpm exec vitest run packages/core/__tests__/pipeline-census.spec.ts scripts/__tests__/quality-json.spec.ts",
+      "exitCode": 0,
+      "log": "artifacts/startup-measure-reduce/arms/final-quality-green.log",
+      "logSha256": "83a189b51938f7ded10615495d91814c83e28218f71fcfb3e6ec7e2563465aa3",
+      "tail": "final-quality-green.txt"
+    }
+  ],
+  "retainedText": "Trailing whitespace and extra final blank lines normalized in retained text; full-log hashes refer to original logs."
+}

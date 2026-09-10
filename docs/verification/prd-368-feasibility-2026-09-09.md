@@ -84,3 +84,30 @@ storage, or pipeline attachment code was authored, and no cache hit is claimed.
 Continue with the independent PRD-196 installation slice. Revisit PRD-368 only
 after a supported release exposes and executes the required C API on the target
 backend; browser caching remains browser-owned.
+
+## Re-verification 2026-09-10
+
+Latest upstream wgpu-native release is still `v29.0.1.1` (2026-06-23) — no newer
+release since the probe above. Vendored `libwgpu_native.so` (desktop and Android
+arm64) exports zero `pipelinecache` symbols; only `CreateRenderPipeline`,
+`CreateRenderPipelineAsync`, `GetVersion`. Dawn headers expose only the internal
+`WGPUDawnCacheDeviceDescriptor` BlobCache seam, unwired in `context.cpp`, and the
+Android product default is wgpu-native regardless. **Still BLOCKED; no Phase 1
+implementation started.**
+
+## Superseded by the bounded owner route — 2026-09-10
+
+The binary finding above remains true for the unpatched pinned releases: they export no
+pipeline-cache C symbols, and the upstream-only route stays blocked. The owner-approved
+follow-up instead applies a bounded four-file patch to the pinned wgpu-native source. Its
+desktop Linux/Vulkan probe compiled and completed a three-process cache round trip; the
+[revised PRD](../PRDs/assets/PRD-368-compiled-pipelines-survive-a-relaunch.md) now owns that
+route and remains **PARTIAL**.
+
+The [canonical prototype record](runtime-perf-state.md#prd-368-bounded-cache-api-prototype--2026-09-09)
+and its [round-trip receipt](startup-measure-reduce-2026-09-09/pipeline-cache-spike/receipt.json)
+show strict reload and byte-identical readback on the synthetic desktop probe. This does not
+prove production host persistence, actual Bayview reuse, Android support, or a startup saving;
+the disabled control was faster than the loaded control. The prior conclusion is therefore
+superseded as a decision to wait for upstream, while its unpatched-symbol observation remains
+the baseline for the owned patch route.

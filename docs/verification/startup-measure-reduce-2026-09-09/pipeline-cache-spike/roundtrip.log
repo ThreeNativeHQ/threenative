@@ -1,0 +1,15 @@
+=== store.log ===
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+observed RGBA=64,127,191,255
+adapter=NVIDIA GeForce RTX 2080 driver=610.57.04
+{"mode":"store","strictLoadAccepted":false,"attached":true,"inputBytes":0,"beforeBytes":100,"outputBytes":13573,"createMs":7.033701,"pixel":[64,127,191,255]}
+=== load.log ===
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+observed RGBA=64,127,191,255
+adapter=NVIDIA GeForce RTX 2080 driver=610.57.04
+{"mode":"load","strictLoadAccepted":true,"attached":true,"inputBytes":13573,"beforeBytes":13573,"outputBytes":13573,"createMs":0.610847,"pixel":[64,127,191,255]}
+=== disabled.log ===
+error: XDG_RUNTIME_DIR is invalid or not set in the environment.
+observed RGBA=64,127,191,255
+adapter=NVIDIA GeForce RTX 2080 driver=610.57.04
+{"mode":"disabled","strictLoadAccepted":false,"attached":false,"inputBytes":0,"beforeBytes":100,"outputBytes":100,"createMs":0.319588,"pixel":[64,127,191,255]}

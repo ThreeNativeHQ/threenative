@@ -1,0 +1,30 @@
+{
+  "@threenative/assets": {
+    "path": "/home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce/artifacts/startup-measure-reduce/packages/threenative-assets-0.3.1-1b106549d83e.tgz",
+    "sha256": "1b106549d83eb3bf47a6550a8551f2bdb49eac487d2a84b8aa9cc96c0c1f212d"
+  },
+  "@threenative/core": {
+    "path": "/home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce/artifacts/startup-measure-reduce/packages/threenative-core-0.3.1-9c59132fbb03.tgz",
+    "sha256": "9c59132fbb03d7a71fefefc7176a37f95c195af33ec3668f3315e05a250580a6"
+  },
+  "@threenative/physics": {
+    "path": "/home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce/artifacts/startup-measure-reduce/packages/threenative-physics-0.3.1-9a501102e12d.tgz",
+    "sha256": "9a501102e12d35dacc5940296a98d4da621fd3d5c31eb729aab49f323d0d5635"
+  },
+  "@threenative/ui": {
+    "path": "/home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce/artifacts/startup-measure-reduce/packages/threenative-ui-0.3.1-93b34bbd6416.tgz",
+    "sha256": "93b34bbd64161e5833d4bff2dcfb0a08769df3d63a77bb0135fc64208c161b1a"
+  },
+  "@threenative/playtest": {
+    "path": "/home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce/artifacts/startup-measure-reduce/packages/threenative-playtest-0.3.1-4c1db0f1a57a.tgz",
+    "sha256": "4c1db0f1a57a453b972f4fee9045a60708794f39174a1fd68a28b313a8e94ca9"
+  },
+  "@threenative/runtime-native": {
+    "path": "/home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce/artifacts/startup-measure-reduce/packages/threenative-runtime-native-0.3.1-c2a9b0b7beca.tgz",
+    "sha256": "c2a9b0b7beca2bd15eeaff66a18b3af7483feeec837578f66bdcad8dc7a87669"
+  },
+  "create-threenative": {
+    "path": "/home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce/artifacts/startup-measure-reduce/packages/create-threenative-0.2.4-c9754110797f.tgz",
+    "sha256": "c9754110797f7e2a01fba2d7124c63c2d7cbe20461df25d95c1fa18118e17426"
+  }
+}

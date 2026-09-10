@@ -1,0 +1,30 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce
+
+ ✓ packages/playtest/__tests__/pipeline-timing.spec.ts (33 tests) 28ms
+ ✓ packages/playtest/__tests__/startup-assertion.spec.ts (5 tests) 17ms
+ ✓ packages/playtest/__tests__/device-playtest.spec.ts (27 tests) 10049ms
+   ✓ the Android runner samples only after the advertised startup phase is ready  667ms
+   ✓ native startup assertions use the observed timeline for passing and slow launches  837ms
+   ✓ native runner waits on an asynchronously changing resource  522ms
+   ✓ the existing device-smoke scenario reaches its visibility assertion on Android  416ms
+   ✓ the Android runner resolves an omitted network policy before bridge capability validation  363ms
+   ✓ the native lane composes setup overrides and reports the applied receipt  468ms
+   ✓ native screenshot evidence fails closed when the driver does not produce a frame  365ms
+   ✓ buttonless native pointer movement drives anonymous evidence  624ms
+   ✓ buttoned native pointer movement presses before moving and releases  620ms
+   ✓ one device scenario reaches the same semantic evaluator and passes  465ms
+   ✓ anonymous device movement omits the entity selector from bridge samples  776ms
+   ✓ device wait preserves held input classification  885ms
+   ✓ a deliberately wrong value fails on the device path with exit code 1  472ms
+   ✓ an Android runtime error reaches the diagnostics assertion with exit code 1  479ms
+   ✓ Android framebuffer coverage brackets its declared steps and fails closed on unreadable video  523ms
+   ✓ Android multi-pointer steps deliver complete held sets and release in finally  524ms
+   ✓ an Android run records device thermal, power and battery state as an observation  370ms
+   ✓ a deviceMetrics assertion on a device run judges the thermal verdict  371ms
+
+ Test Files  3 passed (3)
+      Tests  65 passed (65)
+   Start at  19:41:34
+   Duration  11.00s (transform 749ms, setup 0ms, import 1.24s, tests 10.09s, environment 0ms)
+

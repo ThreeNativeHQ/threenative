@@ -12,8 +12,8 @@ import {
   SkinnedMesh,
   Uint16BufferAttribute,
 } from "three";
-import { pass } from "three/tsl";
-import { RenderPipeline } from "three/webgpu";
+import { instancedMesh, pass } from "three/tsl";
+import { RenderPipeline, WGSLNodeBuilder, WebGPURenderer } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -74,6 +74,40 @@ function sceneWithSpecializedObjects(): {
 }
 
 describe("SceneRenderProjection and the installed output pipeline", () => {
+  it("shares generated matrix declarations across independently allocated projection batches", () => {
+    const declarations: string[] = [];
+    for (const count of [8, 8]) {
+      const scene = new Scene();
+      const geometry = new BoxGeometry();
+      const material = new MeshBasicMaterial();
+      for (let index = 0; index < count; index += 1) scene.add(new Mesh(geometry, material));
+      const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+      try {
+        projection.reconcile();
+        const mesh = projection.root.children.find((object) => object instanceof InstancedMesh);
+        if (!(mesh instanceof InstancedMesh)) throw new Error("Missing projected instance batch");
+        const renderer = new WebGPURenderer({ canvas: testCanvas() });
+        const capabilities = Reflect.get(renderer.backend, "capabilities");
+        vi.spyOn(capabilities, "getUniformBufferLimit").mockReturnValue(65_536);
+        // Three's declaration omits these existing builder methods; generation runs real Three.
+        const builder = new WGSLNodeBuilder(mesh, renderer) as WGSLNodeBuilder & {
+          setShaderStage(stage: string): void;
+          flowStagesNode(node: unknown, output: string): void;
+          getUniforms(stage: string): string;
+        };
+        builder.setShaderStage("vertex");
+        builder.flowStagesNode(instancedMesh(mesh), "void");
+        declarations.push(builder.getUniforms("vertex"));
+      } finally {
+        projection.dispose();
+        geometry.dispose();
+        material.dispose();
+      }
+    }
+    expect(declarations[0]).toContain("mat4x4<f32>");
+    expect(declarations[1]).toBe(declarations[0]);
+  });
+
   it("renders the projected root that carries moved skinned and instance history", async () => {
     const canvas = testCanvas();
     const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
