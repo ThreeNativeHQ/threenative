@@ -140,9 +140,10 @@ The required `engine_search_capabilities` / `engine_capability_detail` tools wer
 Implemented SHA-256 values, in the same order:
 
 ```text
-8fcc3c85e210b06d206e258635bd725af3a15b29a9bab6f031becf063d0e4080
-e111952c82076fb6e59dbfa524980e9ae23911feff4a7ab4aa6b7018c130dfdb
+829dc1a6154e23e12b2a3fe34fc05713373539f7f350b053218daf1a8fdf5daf
+a8f8f232590a05cc03a4a77f0b94081f05bd9586ec3bbacacb57576884b5b3ee
 45b1ebb7690dd9a63d2d96c1058f273ce414ffa9715f992a6c9420c43701dd24
+77137587bd01a666755b29b28fce15429481cfe9049f94bc639d204bcc04b06d
 ```
 
 ## Review checkpoint and remaining work
