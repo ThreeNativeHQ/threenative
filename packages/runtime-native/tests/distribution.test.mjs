@@ -1029,3 +1029,114 @@ test('release generation preserves encoded candidate version URLs', async () => 
       `${releaseManifestUrl(version).replace('/prebuilt-lock.json', '')}/${PREBUILT_ASSET_NAMES[key]}`);
   }
 });
+
+// PRD-262 Phase 2: the consumer gate fails when a packager consumes a source override
+// without an explicit opt-in. The desktop resolver names the override and its fix.
+test('the desktop consumer gate fails closed on a source override with no runtime', async () => {
+  const { packageDesktop } = await import('../scripts/package-desktop.mjs');
+  const root = makeTempDirSync('threenative-desktop-override-red-');
+  roots.push(root);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default 1;\n');
+  const previous = process.env.THREENATIVE_RUNTIME_SOURCE;
+  process.env.THREENATIVE_RUNTIME_SOURCE = join(root, 'checkout');
+  try {
+    // Observed red: a stale THREENATIVE_RUNTIME_SOURCE must not silently select a
+    // checkout as the runtime. The failure names the override and the fix.
+    await assert.rejects(
+      packageDesktop({ bundle, output: join(root, 'game') }),
+      /source-checkout preflight.*THREENATIVE_RUNTIME_SOURCE/u,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.THREENATIVE_RUNTIME_SOURCE;
+    else process.env.THREENATIVE_RUNTIME_SOURCE = previous;
+  }
+});
+
+test('the desktop consumer gate packages with an explicit runtime and no network', async () => {
+  const { packageDesktop } = await import('../scripts/package-desktop.mjs');
+  const root = makeTempDirSync('threenative-desktop-consumer-');
+  roots.push(root);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default 1;\n');
+  const fakeRuntime = join(root, 'fake-runtime.mjs');
+  writeFileSync(
+    fakeRuntime,
+    '#!/usr/bin/env node\nimport { writeFileSync } from "node:fs";\n' +
+      'const index = process.argv.indexOf("--out");\n' +
+      'if (index >= 0) writeFileSync(process.argv[index + 1], "desktop artifact");\n',
+  );
+  chmodSync(fakeRuntime, 0o755);
+  const output = join(root, 'game');
+  await packageDesktop({ bundle, output, runtime: fakeRuntime });
+  assert.equal(readFileSync(output, 'utf8'), 'desktop artifact');
+});
+
+test('the android consumer gate fails closed on a source checkout without opt-in', async () => {
+  const { packageAndroid } = await import('../scripts/package-android.mjs');
+  const root = makeTempDirSync('threenative-android-source-red-');
+  roots.push(root);
+  // A directory shaped like a source checkout: CMakeLists.txt plus the SDL3 AAR marker
+  // the packager's own sourceCheckout detection requires.
+  mkdirSync(join(root, 'android', 'app'), { recursive: true });
+  writeFileSync(join(root, 'CMakeLists.txt'), '# fake checkout\n');
+  mkdirSync(join(root, 'third_party', 'sdl3-android'), { recursive: true });
+  writeFileSync(join(root, 'third_party', 'sdl3-android', 'SDL3-3.2.30.aar'), 'fake-aar');
+  writeFileSync(join(root, 'android', 'gradlew'), '#!/bin/sh\nexit 0\n');
+  chmodSync(join(root, 'android', 'gradlew'), 0o755);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  // Observed red: resolving a source checkout without an explicit opt-in fails
+  // naming the checkout, instead of silently compiling from it.
+  await assert.rejects(
+    packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+      runtimeRoot: root,
+      ensureGradleWrapper: async () => undefined,
+    }),
+    /source checkout.*explicit opt-in/u,
+  );
+});
+
+test('the android source-checkout failure names the prebuilt path, not the toolchain', async () => {
+  const { packageAndroid } = await import('../scripts/package-android.mjs');
+  const root = makeTempDirSync('threenative-android-source-cause-');
+  roots.push(root);
+  mkdirSync(join(root, 'android', 'app'), { recursive: true });
+  writeFileSync(join(root, 'CMakeLists.txt'), '# fake checkout\n');
+  mkdirSync(join(root, 'third_party', 'sdl3-android'), { recursive: true });
+  writeFileSync(join(root, 'third_party', 'sdl3-android', 'SDL3-3.2.30.aar'), 'fake-aar');
+  writeFileSync(join(root, 'android', 'gradlew'), '#!/bin/sh\nexit 0\n');
+  chmodSync(join(root, 'android', 'gradlew'), 0o755);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  // The masked-compiler shape of the same gate: with toolchain shims (exit 97) on PATH,
+  // a consumer build must still fail on the source-checkout guard before any compiler
+  // could run — the error names the opt-in, never a toolchain invocation.
+  const mask = join(root, 'mask');
+  mkdirSync(mask);
+  for (const command of ['cmake', 'ninja', 'cargo', 'rustc']) {
+    const shim = join(mask, command);
+    writeFileSync(shim, '#!/bin/sh\necho "$0 $*" >> "$TN_TOOLCHAIN_LOG"\nexit 97\n');
+    chmodSync(shim, 0o755);
+  }
+  const log = join(root, 'toolchain.log');
+  const previousPath = process.env.PATH;
+  const previousLog = process.env.TN_TOOLCHAIN_LOG;
+  process.env.PATH = `${mask}${previousPath ? `:${previousPath}` : ''}`;
+  process.env.TN_TOOLCHAIN_LOG = log;
+  try {
+    await assert.rejects(
+      packageAndroid(bundle, undefined, undefined, undefined, undefined, {
+        runtimeRoot: root,
+        ensureGradleWrapper: async () => undefined,
+      }),
+      /explicit opt-in/u,
+    );
+    assert.equal(existsSync(log), false, 'no masked compiler was invoked');
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousLog === undefined) delete process.env.TN_TOOLCHAIN_LOG;
+    else process.env.TN_TOOLCHAIN_LOG = previousLog;
+  }
+});

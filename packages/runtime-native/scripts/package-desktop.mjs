@@ -19,8 +19,33 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { assertNativeAssetsDecodable, deriveDesktopWebpSupport } from './asset-preflight.mjs';
+import { installPrebuilt } from './install-prebuilt.mjs';
 
 const runtimeRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+
+/**
+ * Resolve the desktop runtime binary a consumer build compiles against.
+ *
+ * A published install ships no compiled runtime until the postinstall hook fetches one, so a
+ * missing `--runtime` installs from the release manifest rather than failing with a bare
+ * "missing file". `THREENATIVE_RUNTIME_SOURCE` remains the decoder-preflight source only: it
+ * never selects or substitutes the runtime binary, and no code path here reads a checkout as
+ * the runtime. `options.runtimeSource` is an explicit test seam for the preflight directory.
+ */
+export async function resolveDesktopRuntime(explicit, options = {}) {
+  if (explicit) {
+    if (!existsSync(explicit)) throw new Error(`Missing prebuilt runtime for '${process.platform}-${process.arch}': ${explicit}`);
+    return explicit;
+  }
+  const sourceOverride = options.runtimeSource ?? process.env.THREENATIVE_RUNTIME_SOURCE;
+  if (sourceOverride) {
+    throw new Error(
+      `Desktop source-checkout preflight is set (THREENATIVE_RUNTIME_SOURCE=${sourceOverride}) but no --runtime was provided. ` +
+        'Pass the checkout-built --runtime explicitly for a maintainer build; consumer builds unset the override and install from the release manifest.',
+    );
+  }
+  return installPrebuilt(options.install ?? {});
+}
 
 export const DEFAULT_DESKTOP_CONFIG = {
   app: { id: 'com.threenative.game', name: 'ThreeNative', version: '0.1.0', build: 1 },
@@ -58,9 +83,30 @@ export function packageDesktop(options) {
   if (!['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'win32-x64'].includes(key)) {
     throw new Error(`Unsupported desktop platform '${key}'.`);
   }
-  for (const [label, file] of [['native bundle', options.bundle], ['prebuilt runtime', options.runtime]]) {
-    if (!existsSync(file)) throw new Error(`Missing ${label} for '${key}': ${file}`);
+  if (!options.bundle || !existsSync(options.bundle)) {
+    throw new Error(`Missing native bundle for '${key}': ${options.bundle ?? '(not provided)'}`);
   }
+  // An explicit `--runtime` keeps the original sync body: the preflight failure the
+  // decoder tests assert stays a sync throw. Only the missing-runtime install is async.
+  if (options.runtime) {
+    if (!existsSync(options.runtime)) {
+      throw new Error(`Missing prebuilt runtime for '${key}': ${options.runtime}`);
+    }
+    return compileDesktopArtifact(options, options.runtime);
+  }
+  const sourceOverride = options.runtimeSource ?? process.env.THREENATIVE_RUNTIME_SOURCE;
+  const runtimePromise = sourceOverride
+    ? Promise.reject(
+      new Error(
+        `Desktop source-checkout preflight is set (THREENATIVE_RUNTIME_SOURCE=${sourceOverride}) but no --runtime was provided. ` +
+          'Pass the checkout-built --runtime explicitly for a maintainer build; consumer builds unset the override and install from the release manifest.',
+      ),
+    )
+    : installPrebuilt({});
+  return runtimePromise.then((runtime) => compileDesktopArtifact(options, runtime));
+}
+
+function compileDesktopArtifact(options, runtime) {
   const output = process.platform === 'win32' && !options.output.endsWith('.exe')
     ? `${options.output}.exe`
     : options.output;
@@ -94,7 +140,7 @@ export function packageDesktop(options) {
       '--out',
       output,
     ];
-    const result = spawnSync(options.runtime, args, { encoding: 'utf8', stdio: 'inherit' });
+    const result = spawnSync(runtime, args, { encoding: 'utf8', stdio: 'inherit' });
     if (result.error) throw result.error;
     if (result.status !== 0)
       throw new Error(`Runtime packager exited with code ${result.status ?? 'unknown'}.`);
@@ -193,7 +239,7 @@ export function stageDesktopFiles(
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
-    packageDesktop(parseArgs(process.argv.slice(2)));
+    await packageDesktop(parseArgs(process.argv.slice(2)));
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

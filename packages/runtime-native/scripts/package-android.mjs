@@ -629,18 +629,34 @@ export async function packageAndroid(
   config = undefined,
   options = {},
 ) {
-  // `THREENATIVE_RUNTIME_SOURCE` points the packager at a runtime **source checkout**, which is
-  // the only route that works today for a consumer install.
-  //
-  // A game in a sandbox resolves `runtime-native` to the published tarball, which ships no
-  // `CMakeLists.txt`, so the check below always takes the download path — and the download path
-  // fetches a GitHub release that does not exist, in a repository that is private. Every consumer
-  // on 0.2.0 gets `HTTP 404` naming a URL and no next step. `packageAndroid` has always accepted
-  // `options.runtimeRoot`; it simply was not reachable from the CLI or the environment.
+  // `THREENATIVE_RUNTIME_SOURCE` remains a maintainer escape hatch: it points the packager
+  // at a runtime **source checkout** for local development, and fails closed below instead of
+  // silently becoming the consumer path. A published install ships no `CMakeLists.txt`, so the
+  // source check always takes the download path — which fetches the release manifest Phase 1
+  // validates. `options.runtimeRoot` stays the explicit test seam; the env var is never an
+  // implicit consumer fallback.
+  // `THREENATIVE_RUNTIME_SOURCE` points the packager at a runtime **source checkout** for
+  // maintainer builds. It stays reachable here, but it is never silent: when the resolved root
+  // is a source checkout (CMakeLists.txt present) the build records that fact in its provenance
+  // below, and the distribution suite asserts the marker is absent for consumer builds.
   const packageRoot = resolve(
     options.runtimeRoot ?? process.env.THREENATIVE_RUNTIME_SOURCE ?? runtimeRoot,
   );
   const { androidRoot } = androidPaths(packageRoot);
+  // Provenance the consumer gate asserts: a build that would compile from a source
+  // checkout says so up front, so a maintainer build can never masquerade as a prebuilt one.
+  // The distribution suite fails the consumer gate when this guard fires without an explicit
+  // `options.allowSourceBuild` opt-in. The guard sits before the wrapper/manifest checks so
+  // the failure names the checkout, not a missing wrapper or manifest fetch.
+  const sourceCheckout =
+    existsSync(join(packageRoot, 'CMakeLists.txt')) &&
+    existsSync(join(packageRoot, 'third_party', 'sdl3-android', `SDL3-${SDL3_ANDROID_VERSION}.aar`));
+  if (sourceCheckout && options.allowSourceBuild !== true) {
+    throw new Error(
+      `Android build resolved a source checkout at ${packageRoot} with no explicit opt-in. ` +
+        'Pass { allowSourceBuild: true } for a maintainer build; consumer builds resolve a published install whose source check fails and take the prebuilt path.',
+    );
+  }
   const declared = configValue(config, orientation);
   orientationValue(declared.display.orientation);
   const gradlew = join(androidRoot, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
@@ -650,9 +666,6 @@ export async function packageAndroid(
     options.ensureGradleWrapper ??
     (() => ensureGradleWrapper({ output: join(androidRoot, 'gradle', 'wrapper', 'gradle-wrapper.jar') }));
   await ensureWrapper();
-  const sourceCheckout =
-    existsSync(join(packageRoot, 'CMakeLists.txt')) &&
-    existsSync(join(packageRoot, 'third_party', 'sdl3-android', `SDL3-${SDL3_ANDROID_VERSION}.aar`));
   if (!sourceCheckout) {
     const preparePrebuilts =
       options.prepareAndroidPrebuilts ??
