@@ -21,6 +21,14 @@ const corePackageRoot = path.resolve("packages/core");
 const physicsPackageRoot = path.resolve("packages/physics");
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
+const MCP_REQUEST_TIMEOUT_MS = 2_000;
+// creature_status probes optional Python/Chromium tooling; the published Chromium probe is
+// bounded at 10 seconds. The first guide call can also pay the payload load, so both need a
+// bounded margin beyond the general 2-second MCP request budget.
+const MCP_CREATURE_DISCOVERY_TIMEOUT_MS = 15_000;
+// The published creature compiler can spend up to 60 seconds in its bounded operation. Keep
+// ordinary discovery calls fast while allowing the response to arrive after that operation limit.
+const MCP_COMPILE_REQUEST_TIMEOUT_MS = 70_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -117,30 +125,16 @@ function toolText(result: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
- * A ceiling that catches a server which never answers, not a stopwatch on how fast it does.
+ * Why a dead server must not wait out its budget.
  *
- * The two seconds this file used to apply to every method was a stopwatch, and it timed a shared
- * CI runner rather than the server: `tools/call` runs whatever the tool does — `creature_compile`
- * builds a mesh and writes a GLB — and even `initialize` waits behind a cold Node start. Both have
- * been observed over the old ceiling, `tools/call` at 5,802 ms on CI and `initialize` on a loaded
- * desktop, which is a red that says nothing about the scaffold's MCP wiring.
+ * The budgets above bound a server that is *slow*. A server that has *died* answers nothing, and a
+ * timer alone cannot tell the two apart — so the broken shim these tests exist to catch arrives as
+ * a slow, contentless `timed out`, with the stack trace that explains it discarded. Worse,
+ * `stdio: "pipe"` with nothing reading stderr deadlocks the child once that pipe fills, which is a
+ * hang invented by the harness rather than found by it.
  *
- * It sits under the tightest enclosing `it` budget in this file (30 s), because a ceiling above
- * that one can never fire: vitest would end the test first and report `Test timed out` against the
- * `it`, naming neither the method nor the server. A ceiling that cannot fire is not a guard.
- */
-const MCP_REPLY_CEILING_MS = 15_000;
-
-/**
- * Why a dead server must not wait out that ceiling.
- *
- * These tests exist to catch a broken shim, and a shim that crashes on startup answers nothing —
- * so a timer alone turns the packaging break they hunt into a slow, contentless timeout that
- * discards the stack trace explaining it. Worse, `stdio: "pipe"` with no stderr reader deadlocks
- * the child once that pipe fills, which is a hang invented by the harness.
- *
- * `scripts/verify-golden-path.ts` already drives this protocol correctly; this is the same shape,
- * kept local because the two speak to different servers. If a third caller appears, extract it.
+ * `scripts/verify-golden-path.ts:602-626` already drives this protocol this way. Kept local
+ * because the two speak to different servers; if a third caller appears, extract it.
  */
 interface IMcpLiveness {
   readonly pending: Set<(error: Error) => void>;
@@ -185,6 +179,7 @@ async function request(
   lines: ReturnType<typeof createInterface>,
   method: string,
   params: Record<string, unknown> = {},
+  timeoutMs = MCP_REQUEST_TIMEOUT_MS,
 ): Promise<Record<string, unknown>> {
   const id = nextId.value++;
   const liveness = watchMcpChild(child);
@@ -200,12 +195,12 @@ async function request(
       const detail = liveness.stderr.trim().slice(-500);
       fail(
         new Error(
-          `MCP ${method} timed out after ${MCP_REPLY_CEILING_MS} ms${
+          `MCP ${method} timed out after ${timeoutMs} ms${
             detail.length > 0 ? `; server stderr: ${detail}` : ""
           }`,
         ),
       );
-    }, MCP_REPLY_CEILING_MS);
+    }, timeoutMs);
     liveness.pending.add(fail);
     const onLine = (line: string) => {
       let parsed: unknown;
@@ -480,10 +475,17 @@ describe("scaffolded asset MCP", () => {
       );
 
       const status = toolText(
-        await request(child, nextId, lines, "tools/call", {
-          arguments: {},
-          name: "creature_status",
-        }),
+        await request(
+          child,
+          nextId,
+          lines,
+          "tools/call",
+          {
+            arguments: {},
+            name: "creature_status",
+          },
+          MCP_CREATURE_DISCOVERY_TIMEOUT_MS,
+        ),
       );
       const statusTooling = status.tooling;
       const statusOperations = status.operations;
@@ -497,22 +499,36 @@ describe("scaffolded asset MCP", () => {
       });
 
       const guide = toolText(
-        await request(child, nextId, lines, "tools/call", {
-          arguments: { section: "syntax" },
-          name: "creature_guide",
-        }),
+        await request(
+          child,
+          nextId,
+          lines,
+          "tools/call",
+          {
+            arguments: { section: "syntax" },
+            name: "creature_guide",
+          },
+          MCP_CREATURE_DISCOVERY_TIMEOUT_MS,
+        ),
       );
       expect(guide.section).toBe("syntax");
       expect(guide.guide).toEqual(expect.stringContaining('"palette"'));
 
       const compile = toolText(
-        await request(child, nextId, lines, "tools/call", {
-          arguments: {
-            outputPath: "assets/creatures/compact.glb",
-            specPath: ".threenative/creatures/compact.json",
+        await request(
+          child,
+          nextId,
+          lines,
+          "tools/call",
+          {
+            arguments: {
+              outputPath: "assets/creatures/compact.glb",
+              specPath: ".threenative/creatures/compact.json",
+            },
+            name: "creature_compile",
           },
-          name: "creature_compile",
-        }),
+          MCP_COMPILE_REQUEST_TIMEOUT_MS,
+        ),
       );
       expect(compile).toMatchObject({
         operation: "creature_compile",
