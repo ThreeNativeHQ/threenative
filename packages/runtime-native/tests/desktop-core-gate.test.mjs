@@ -226,7 +226,7 @@ test('desktop screenshot rejects a single-color image and accepts visible pixels
   expect(inspectScreenshot(path)).toEqual({ height: 1, width: 2 });
 });
 
-test('desktop verifier preserves evidence and only forces X11 on Linux', () => {
+test('desktop verifier preserves evidence and scopes its SDL drivers to Linux', () => {
   const source = readFileSync(
     new URL('../scripts/verify-desktop-core.mjs', import.meta.url),
     'utf8',
@@ -234,8 +234,21 @@ test('desktop verifier preserves evidence and only forces X11 on Linux', () => {
   expect(source).toMatch(/desktop-\$\{process\.platform\}-report\.json/);
   expect(source).toMatch(/desktop-\$\{process\.platform\}\.log/);
   expect(source).toMatch(/sha256/);
-  expect(source).toMatch(/if \(process\.platform === 'linux'\) runtimeEnv\.SDL_VIDEODRIVER = 'x11'/);
+  // Both driver overrides live in one `process.platform === 'linux'` branch and nowhere else, so
+  // macOS and Windows keep the drivers SDL picks for them.
+  const linuxBranch = source.match(
+    /if \(process\.platform === 'linux'\) \{\n([\s\S]*?)\n\x20{2}\}/u,
+  )?.[1];
+  expect(linuxBranch).toBeDefined();
+  expect(linuxBranch).toMatch(/runtimeEnv\.SDL_VIDEODRIVER = 'x11'/);
+  // The audio driver is a *default*, not an override: this gate makes no audio assertion, and a
+  // machine with a real device must keep using it. `verify-desktop-audio.mjs` owns the audio
+  // contract and runs before this gate in the same command.
+  expect(linuxBranch).toMatch(/runtimeEnv\.SDL_AUDIODRIVER \?\?= 'dummy'/);
+  expect(source).not.toMatch(/runtimeEnv\.SDL_AUDIODRIVER = 'dummy'/);
+  // Neither may be forced for every platform at the spawn site.
   expect(source).not.toMatch(/env: \{ \.\.\.process\.env, SDL_VIDEODRIVER: 'x11' \}/);
+  expect(source).not.toMatch(/env: \{ \.\.\.process\.env, SDL_AUDIODRIVER: 'dummy' \}/);
 });
 
 test('present ticks fail closed on a missing, malformed, or outrunning count', () => {
