@@ -33,15 +33,15 @@ test("native release stages the SDL3 Android AAR version owned by the packager",
     "the AAR filename must derive from SDL3_ANDROID_VERSION, never a literal version",
   );
 
-  // Read rather than import: package-android.mjs is plain JavaScript with no declaration file, so
-  // importing it is an implicit `any` under this project's noImplicitAny (TS7016).
-  const androidPackager = readFileSync(
+  const packager = readFileSync(
     join(root, "packages/runtime-native/scripts/package-android.mjs"),
     "utf8",
   );
-  const version = androidPackager.match(/export const SDL3_ANDROID_VERSION = '([^']+)'/u)?.[1];
-  assert.ok(version, "package-android.mjs must declare SDL3_ANDROID_VERSION");
-  assert.match(version, /^\d+\.\d+\.\d+$/u);
+  const SDL3_ANDROID_VERSION = packager.match(
+    /export const SDL3_ANDROID_VERSION = '([^']+)'/u,
+  )?.[1];
+  assert.ok(SDL3_ANDROID_VERSION, "package-android.mjs must declare SDL3_ANDROID_VERSION");
+  assert.match(SDL3_ANDROID_VERSION, /^\d+\.\d+\.\d+$/u);
 
   const deps = readFileSync(
     join(root, "packages/runtime-native/scripts/download-deps.mjs"),
