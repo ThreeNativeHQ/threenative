@@ -1,0 +1,97 @@
+name: CI efficiency audit
+
+on:
+  push:
+    branches: [codex/ci-efficiency-2026-09-10]
+    paths: [.github/workflows/ci-efficiency-audit.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Collect recent run timings and representative logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import collections, concurrent.futures, datetime, json, os, pathlib, statistics, urllib.request
+          out = pathlib.Path('ci-audit')
+          (out / 'logs').mkdir(parents=True, exist_ok=True)
+          root = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY']
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
+          def get(path, raw=False):
+              with urllib.request.urlopen(urllib.request.Request(root + path, headers=headers), timeout=90) as r:
+                  body = r.read()
+              return body if raw else json.loads(body)
+          runs = get('/actions/runs?per_page=100')['workflow_runs']
+          runs = [r for r in runs if r['name'] != 'CI efficiency audit']
+          errors = []
+          def jobs_for(run):
+              jobs, page = [], 1
+              try:
+                  while True:
+                      chunk = get(f"/actions/runs/{run['id']}/jobs?filter=latest&per_page=100&page={page}")['jobs']
+                      jobs.extend(chunk)
+                      if len(chunk) < 100: break
+                      page += 1
+                  return jobs
+              except Exception as exc:
+                  errors.append({'run': run['id'], 'error': str(exc)})
+                  return []
+          with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+              jobs = [j for batch in pool.map(jobs_for, runs) for j in batch]
+          def duration(item):
+              a, b = item.get('started_at'), item.get('completed_at')
+              return (datetime.datetime.fromisoformat(b.replace('Z', '+00:00')) - datetime.datetime.fromisoformat(a.replace('Z', '+00:00'))).total_seconds() if a and b else None
+          groups = collections.defaultdict(list)
+          for j in jobs:
+              if j['conclusion'] == 'success' and duration(j) is not None:
+                  groups[j['name']].append(j)
+          selected = {}
+          for name, entries in groups.items():
+              ordered = sorted(entries, key=duration)
+              representative = ordered[len(ordered)//2]
+              if duration(representative) >= 60:
+                  selected[representative['id']] = representative
+          for j in sorted(jobs, key=lambda j: j['id'], reverse=True):
+              if j['conclusion'] in ('failure', 'timed_out') and not any(x['name'] == j['name'] and x['conclusion'] in ('failure', 'timed_out') for x in selected.values()):
+                  selected[j['id']] = j
+          selected = dict(list(selected.items())[:60])
+          def log_for(j):
+              try:
+                  (out / 'logs' / f"{j['id']}.txt").write_bytes(get(f"/actions/jobs/{j['id']}/logs", raw=True))
+              except Exception as exc:
+                  errors.append({'job': j['id'], 'error': str(exc)})
+          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+              list(pool.map(log_for, selected.values()))
+          data = {'runs': runs, 'jobs': jobs, 'selected_logs': list(selected.values()), 'errors': errors}
+          (out / 'data.json').write_text(json.dumps(data, indent=2))
+          lines = [f"Runs: {len(runs)}; jobs: {len(jobs)}; selected logs: {len(selected)}; fetch errors: {len(errors)}", '', '| Job | Successful samples | Median seconds | Slowest median-run steps |', '| --- | ---: | ---: | --- |']
+          for name, entries in sorted(groups.items(), key=lambda pair: statistics.median(duration(j) for j in pair[1]), reverse=True):
+              median_job = sorted(entries, key=duration)[len(entries)//2]
+              steps = sorted([s for s in median_job['steps'] if duration(s) is not None], key=duration, reverse=True)[:3]
+              details = '; '.join(f"{s['name']}: {duration(s):.0f}s" for s in steps)
+              lines.append(f"| {name} | {len(entries)} | {statistics.median(duration(j) for j in entries):.0f} | {details} |")
+          text = '\n'.join(lines) + '\n'
+          (out / 'summary.md').write_text(text)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f: f.write(text)
+          print(text)
+          print('Fetch errors:', json.dumps(errors))
+          PY
+      - name: Retain tracked CI sources for offline regression tests
+        run: |
+          git ls-files -z '.github/**' 'scripts/**' '*AGENTS.md' 'package.json' 'pnpm-workspace.yaml' 'pnpm-lock.yaml' 'vitest*' 'biome*' 'tsconfig*' 'packages/*/package.json' 'packages/runtime-native/scripts/**' 'packages/runtime-native/tests/**' | tar --null -T - -czf ci-audit/sources.tar.gz
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ci-efficiency-audit
+          path: ci-audit
+          retention-days: 3
+          compression-level: 1
+          if-no-files-found: error
