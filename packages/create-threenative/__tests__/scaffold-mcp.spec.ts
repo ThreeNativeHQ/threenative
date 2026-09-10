@@ -21,7 +21,7 @@ const corePackageRoot = path.resolve("packages/core");
 const physicsPackageRoot = path.resolve("packages/physics");
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
-const mcpProbeTimeoutMs = 2_000;
+const mcpProbeTimeoutMs = 10_000;
 const mcpCompileTimeoutMs = 30_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
