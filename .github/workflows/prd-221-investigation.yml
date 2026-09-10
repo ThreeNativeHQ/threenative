@@ -23,6 +23,7 @@ jobs:
           mkdir -p "$SNAPSHOT_DIR"
           git archive --format=tar.gz -o "$SNAPSHOT_DIR/source.tar.gz" HEAD
           git rev-parse HEAD > "$SNAPSHOT_DIR/head.txt"
+          git fetch --no-tags --depth=128 origin +refs/heads/main:refs/remotes/origin/main
           git rev-parse origin/main > "$SNAPSHOT_DIR/main.txt"
           git merge-base HEAD origin/main > "$SNAPSHOT_DIR/merge-base.txt"
           git diff --binary --full-index HEAD origin/main > "$SNAPSHOT_DIR/head-to-main.patch"
@@ -33,6 +34,7 @@ jobs:
           done
           git log -40 --format='%H %s' > "$SNAPSHOT_DIR/history.txt"
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: prd221-review-${{ github.sha }}
           path: ${{ runner.temp }}/prd221-review
