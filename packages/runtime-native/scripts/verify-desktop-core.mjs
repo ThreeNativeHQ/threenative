@@ -313,7 +313,19 @@ export function verifyDesktopCore({ frames = 300 } = {}) {
     ? [join(workspace, 'scripts', 'xvfb.sh'), binary, ...runtimeArgs]
     : runtimeArgs;
   const runtimeEnv = { ...process.env };
-  if (process.platform === 'linux') runtimeEnv.SDL_VIDEODRIVER = 'x11';
+  if (process.platform === 'linux') {
+    runtimeEnv.SDL_VIDEODRIVER = 'x11';
+    // Same reason as the video driver: this gate runs headless on a runner with no sound card, and
+    // SDL aborts before the first frame with
+    //   [Audio] Failed to open audio device: ALSA: Couldn't open audio device: No such file or
+    //   directory
+    // native-platforms.yml's desktop-core matrix is macOS and Windows only, so no Linux run ever
+    // reached this line until native-release.yml's ubuntu-24.04 build executed it. The audio
+    // contract is not weakened: verify-desktop-audio.mjs proves the suspend/resume lifecycle
+    // against real AudioContexts and runs before this gate in the same command. An explicit
+    // SDL_AUDIODRIVER still wins, so a machine with a real device keeps using it.
+    runtimeEnv.SDL_AUDIODRIVER ??= 'dummy';
+  }
   const result = spawnSync(
     command,
     args,
