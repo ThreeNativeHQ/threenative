@@ -3,6 +3,7 @@ import { chromium, type Browser, type Page } from "playwright";
 import { PNG } from "pngjs";
 
 import type { IPlaytestObservationSnapshot, IPlaytestScenario } from "../src/index.js";
+import { sampleElementVisibility, sampleHud } from "../src/runner/sampling.js";
 import {
   entityRotation,
   isRuntimeReadout,
@@ -15,9 +16,7 @@ import {
   positiveFiniteDelta,
   readCaptureProvenance,
   resourceObservations,
-  sampleElementVisibility,
-  sampleHud,
-} from "../src/runner/sampling.js";
+} from "../src/runner/observationSampling.js";
 import type { IMovementSampleInterval } from "../src/runner/shared.js";
 
 function snapshot(

@@ -245,6 +245,11 @@ export function provisionAndroidV8(
 	destination,
 	{ force = false, env = process.env } = {},
 ) {
+	const work = join(dirname(destination), ".v8-source");
+	const backup = join(work, "previous");
+	// A terminated promotion can leave the only prior install in the rollback directory.
+	// Recover it before cache checks or a forced preparation can remove source state.
+	if (!existsSync(destination) && existsSync(backup)) renameSync(backup, destination);
 	if (!force && existsSync(destination)) {
 		try {
 			const receipt = verifyAndroidV8Installation(destination);
@@ -273,7 +278,6 @@ export function provisionAndroidV8(
 	// Keep the prepared checkout and Ninja outputs under a deterministic path. A hosted runner can
 	// time out while compiling one ABI; retaining the exact recipe lets the next producer resume
 	// instead of paying the seven-thousand-object cold build again.
-	const work = join(dirname(destination), ".v8-source");
 	const statePath = join(work, ".recipe.json");
 	const state = `${JSON.stringify({
 		build: ANDROID_V8_BUILD,
@@ -300,7 +304,7 @@ export function provisionAndroidV8(
 			throw new Error(`V8 source revision mismatch: ${actual} != ${revision}`);
 	};
 	let prepared = false;
-	if (existsSync(statePath)) {
+	if (!force && existsSync(statePath)) {
 		try {
 			prepared =
 				readFileSync(statePath, "utf8") === state &&
@@ -433,6 +437,8 @@ export function provisionAndroidV8(
 			if (error.code !== "ENOENT") throw error;
 		}
 		symlinkSync(ndk, ndkLink, "dir");
+		// Resume compiler outputs, never a partially assembled payload or its stale files.
+		rmSync(stage, { recursive: true, force: true });
 		for (const abi of ANDROID_16KB_ABIS) {
 			const target = TARGETS[abi];
 			const output = `out.v8.${target.cpu}`;
@@ -484,7 +490,7 @@ export function provisionAndroidV8(
 		);
 		verifyAndroidV8Installation(stage, options);
 		// Keep the prior payload intact on all download, patch, compiler and validation failures.
-		const backup = join(work, "previous");
+		rmSync(backup, { recursive: true, force: true });
 		if (existsSync(destination)) renameSync(destination, backup);
 		try {
 			renameSync(stage, destination);

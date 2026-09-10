@@ -2,6 +2,104 @@
 
 Status: INCOMPLETE. This is implementation preparation, not Android 16 KB qualification.
 
+## Consolidated resume point — 2026-09-10
+
+Continue only in [PR #167](https://github.com/ThreeNativeHQ/threenative/pull/167), branch
+`codex/prd-221-android-v8-16kb`. The closed slices #171, #172 and #173 are already included;
+no cherry-picking or separate merge order is needed. Their heads
+`c52da662c293f5b84bda1ae161a76d01b84e1cee`, `183e54a9e9963a99de87710c9044ff9cfac421a8`
+and `7cf10bd4ebe5d36cbbfead6d43d818ab9b4e3b7f` passed actual `git merge-base --is-ancestor`
+checks against candidate `190bbe31a0e034aca903a36bac8b84a0d00c6fa5` in
+[the read-only snapshot run](https://github.com/ThreeNativeHQ/threenative/actions/runs/34522985500).
+The review integrates main `4fa8e773609a69fa3077be462e45f893c928324e`; the MCP test conflict
+keeps main's per-operation timeout behavior instead of the older blanket timeout.
+
+### Review fixes and controls
+
+The engine/native-dependency layer owns these fixes. Four new tests execute the actual
+provisioner against a disposable prepared checkout and fake compiler/NDK tools, rather
+than merely matching strings in the script. They do not compile or launch V8.
+
+| Reproduction before the fix | Correction |
+| --- | --- |
+| `--force` reused prepared source and completed instead of attempting the deliberately failing fresh fetch | Discard prepared source state on an explicit forced rebuild; the prior install survives fetch failure |
+| A stray `payload/include/stale.h` was included in the newly sealed install | Recreate only staging before copying current outputs; preserve expensive Ninja work for normal resume |
+| Interrupt between the two promotion renames, then fail a forced retry: the sole previous install was deleted | Recover the prior install from `previous` before cache checks or source-state cleanup |
+| A leftover nonempty rollback directory caused `ENOTEMPTY` at promotion | Remove that leftover only after the newly assembled payload has passed verification |
+
+Removed the branch-only `prd-221-*` workflow. The existing native-platform producer and
+release action remain the build routes. A regression rejects reintroducing the duplicate
+workflow; the normal producer's cache, timeout and artifact handoff tests remain in place.
+Current source recipe is 5, including Chromium's arm64 linker-default override. This
+review does not change the compiler/linker configuration or claim native qualification.
+
+### Executed review verification
+
+Linux x86_64, Node 22.16.0, Vitest 4.1.10. Commands below were executed using the isolated
+Vitest executable at `/mnt/data/prd221-tools/node_modules/vitest/vitest.mjs`, in place of
+`pnpm exec vitest`; pnpm is absent from this sandbox. Test counts are cases, not separately
+instrumented assertion counts. Compiler fixtures prove filesystem/control-flow mechanics.
+
+```sh
+# packages/runtime-native
+pnpm exec vitest run --config vitest.config.ts \
+  tests/android-16kb-alignment.test.mjs tests/android-packaging.integration.test.mjs \
+  tests/native-platform-workflow.test.mjs tests/android-webp-provisioning.test.mjs \
+  tests/js-engine-version-skew.test.mjs tests/dawn-android-option.test.mjs \
+  tests/download-retry.test.mjs tests/wgpu-version-matrix.test.mjs \
+  tests/workflow-dependency-names.test.mjs tests/loading-proof-appearance.test.mjs
+# Repository root
+pnpm exec vitest run scripts/__tests__/android-16kb-alignment.spec.ts \
+  scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts \
+  scripts/__tests__/check-native-coverage.spec.ts
+```
+
+```text
+Initial review red: 52 passed, 4 failed (2 new cache failures, duplicate-workflow control,
+  and the existing test's dependency on the temporary workflow).
+Interrupted-promotion control: 1 failed, other cases deselected.
+Leftover-backup control: 1 failed with ENOTEMPTY, other cases deselected.
+Final focused runtime: 10 files, 93 passed, 0 skipped, exit 0.
+Root CI/alignment contracts: 4 files, 106 passed, 0 skipped, exit 0.
+node --check: builder, downloader and both edited runtime test files, exit 0.
+git diff --check: exit 0.
+```
+
+Raw review logs are retained in the task's `/mnt/data/prd221-review` directory. The full
+workspace `pnpm typecheck`, `pnpm lint`, `pnpm test` and `pnpm budgets` commands each returned
+127 (pnpm missing); none passed. The extended native suite also requires unbuilt native
+executables: four runtime-next-contract cases failed and two were skipped in the baseline.
+The independent native-coverage freshness check returned 1 after the test changes. A real
+`node packages/runtime-native/scripts/measure-native-coverage.mjs` attempt returned 1 at
+CMake configuration (pnpm missing; Dawn/V8 dependencies also absent). The committed coverage
+measurement was not restamped to manufacture freshness. Regenerate it on a provisioned host.
+
+### Resume checklist
+
+1. On a Linux x86_64 build host, install workspace prerequisites, select the pinned NDK,
+   and run the incumbent provisioner. A normal invocation resumes compatible compiler state;
+   `--force` intentionally discards it. Read-only verification must not repair anything.
+
+   ```sh
+   pnpm install --frozen-lockfile
+   sdkmanager "ndk;28.2.13676358"
+   export ANDROID_NDK_HOME="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358"
+   node packages/runtime-native/scripts/download-deps.mjs --only v8-android
+   node packages/runtime-native/scripts/build-android-v8.mjs --verify
+   ```
+
+2. Qualify both ABI V8/STL/snapshot payloads and native host linking, then implement the
+   PRD's final APK/AAB-derived APK ELF and ZIP census and its corruption/omission controls.
+3. Execute starter gameplay, HUD interaction and background/resume on an emulator whose
+   observed `getconf PAGE_SIZE` is 16384. Keep ordinary 4096-byte results separate.
+4. Rerun full workspace gates, regenerate native coverage, and obtain independent review
+   before marking the draft ready. Nothing is merged to main or published by this handoff.
+
+## Historical preparation evidence
+
+The sections below retain the initial preparation and its earlier test/build results.
+They are not fresh qualification for the consolidated candidate.
+
 ## Bounded implementation assignments
 
 Phase 1 is split before caller integration: 1a owns `build-android-v8.mjs`, the existing

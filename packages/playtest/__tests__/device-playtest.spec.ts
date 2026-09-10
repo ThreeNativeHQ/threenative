@@ -199,6 +199,24 @@ test("the Android runner resolves an omitted network policy before bridge capabi
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "diagnostics", pass: true }));
 });
 
+test("the native runner forwards scene-node selectors to bridge samples", async () => {
+  const moving = movingBridge();
+  const result = await runDevice(
+    {
+      diagnostics: deviceDiagnosticsOptOut,
+      sceneNodes: [{ minCount: 1, select: { name: "cube" }, visible: true }],
+    },
+    new FakeAndroidDriver(moving.bridge),
+    1_000,
+    [{ waitTicks: 1, release: true }],
+  );
+
+  expect(result.pass).toBe(true);
+  expect(moving.sampleRequests).toContainEqual(expect.objectContaining({
+    sceneNodes: [{ name: "cube" }],
+  }));
+});
+
 test("the native lane composes setup overrides and reports the applied receipt", async () => {
   const moving = movingBridge({ height: 1.6, setup: true });
   const setup = {
@@ -834,6 +852,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
           "runtime.diagnostics",
           ...(resourceReadyAtTick === undefined ? [] : ["runtime.resources"]),
           ...(options.startupPolls === undefined ? [] : ["runtime.startup"]),
+          "scene.nodes",
         ],
         limits: PLAYTEST_PROTOCOL_LIMITS,
         name: "device-test",
@@ -871,6 +890,22 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
             { bounds: { height: 40, width: 40, x: 300, y: 160 }, id: "cube", visible: true },
           ],
           resources,
+          ...(request.sceneNodes === undefined ? {} : {
+            sceneNodes: request.sceneNodes.map((selector) => ({
+              matched: selector.name === "cube" ? 1 : 0,
+              nodes: selector.name === "cube" ? [{
+                name: "cube",
+                path: "Scene/cube",
+                position: [0, 0, 0],
+                scale: [1, 1, 1],
+                type: "Mesh",
+                visible: true,
+                visibleInTree: true,
+              }] : [],
+              selector,
+              truncated: false,
+            })),
+          }),
         };
       },
     },

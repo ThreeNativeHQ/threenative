@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,10 +33,7 @@ const candidateWorkflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/release-candidate.yml', import.meta.url)),
   'utf8',
 );
-const prd221Workflow = readFileSync(
-  fileURLToPath(new URL('../../../.github/workflows/prd-221-investigation.yml', import.meta.url)),
-  'utf8',
-);
+
 const smokeScenario = (name) => JSON.parse(readFileSync(
   fileURLToPath(new URL(`../../../examples/native-smoke/playtests/${name}`, import.meta.url)),
   'utf8',
@@ -150,8 +147,6 @@ test('Android V8 source is produced once and consumed as a verified artifact', (
   expect(android).toContain('actions/download-artifact@v7');
   expect(android).toContain('name: android-v8-${{ github.sha }}');
   expect(android).toContain('native-android-third-party-');
-  expect(prd221Workflow).toContain('packages/runtime-native/third_party/.v8-source/payload');
-  expect(prd221Workflow).not.toContain('.v8-source-*/payload');
 });
 
 test('Android V8 interruption leaves time to cache and resume Ninja state', () => {
@@ -571,4 +566,9 @@ test('native physics controls assert the parity scene surface', () => {
     'parity.collisionEventSet',
     'parity.control',
   ]);
+});
+
+test('PRD-221 uses the existing native producer rather than a duplicate investigation workflow', () => {
+  const workflows = readdirSync(new URL('../../../.github/workflows/', import.meta.url));
+  expect(workflows.filter((name) => /^prd-221-.*\.yml$/u.test(name))).toEqual([]);
 });
