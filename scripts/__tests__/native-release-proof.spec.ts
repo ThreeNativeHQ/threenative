@@ -25,17 +25,17 @@ const names = [
 function job(name: string): string {
   const start = workflow.indexOf(`\n  ${name}:\n`);
   assert.notEqual(start, -1, `missing job ${name}`);
-  return workflow.slice(start + 1).split(/\n  [\w-]+:\n/u)[0] ?? "";
+  return workflow.slice(start + 1).split(/\n\x20{2}[\w-]+:\n/u)[0] ?? "";
 }
 
 function script(name: string): string {
   const step = workflow.split(`      - name: ${name}\n`)[1];
   assert.ok(step, `missing step ${name}`);
-  const block = step.split(/\n      - /u)[0]?.split(/\n        run: \|\n/u)[1];
+  const block = step.split(/\n\x20{6}- /u)[0]?.split(/\n\x20{8}run: \|\n/u)[1];
   assert.ok(block, `missing script ${name}`);
   return block
     .split("\n")
-    .map((line) => line.replace(/^          /u, ""))
+    .map((line) => line.replace(/^\x20{10}/u, ""))
     .join("\n");
 }
 
@@ -46,7 +46,7 @@ function allowed(
   results: Record<string, string> = {},
 ): boolean {
   const body = job(name).split("\n    steps:")[0] ?? "";
-  const expression = body.match(/\n    if: (?:>-\n)?([\s\S]*?)(?=\n    [a-z]|$)/u)?.[1];
+  const expression = body.match(/\n\x20{4}if: (?:>-\n)?([\s\S]*?)(?=\n\x20{4}[a-z]|$)/u)?.[1];
   assert.ok(expression, `missing explicit job condition for ${name}`);
   const condition = expression
     .replace(/\$\{\{|\}\}/gu, "")
@@ -146,8 +146,8 @@ function runGate(change: "none" | "wrong-sha" | "missing-job" | "skipped-job") {
 
 test("offers non-publishing PR and manual proof entry points in the existing workflow", () => {
   const triggers = workflow.split("\npermissions:")[0] ?? "";
-  assert.match(triggers, /\n  pull_request:/u);
-  assert.match(triggers, /\n  workflow_dispatch:/u);
+  assert.match(triggers, /\n\x20{2}pull_request:/u);
+  assert.match(triggers, /\n\x20{2}workflow_dispatch:/u);
   assert.doesNotMatch(triggers, /pull_request_target/u);
 });
 
