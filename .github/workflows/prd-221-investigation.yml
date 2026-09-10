@@ -5,18 +5,17 @@ on:
   push:
     branches: [codex/prd-221-android-v8-16kb]
     paths: [.github/workflows/prd-221-investigation.yml]
-
 permissions:
   contents: read
-
 jobs:
-  baseline:
+  test-tools:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
           node-version: '22.16.0'
@@ -26,30 +25,83 @@ jobs:
           mkdir -p "$RUNNER_TEMP/prd221" "$RUNNER_TEMP/prd221-tools"
           cd "$RUNNER_TEMP/prd221-tools"
           printf '{"name":"prd221-tools","private":true,"type":"module"}\n' > package.json
-          npm install --ignore-scripts --no-audit --no-fund vitest@4.1.10 esbuild@0.27.0 typescript@5.9.3 tsx@4.20.5 @biomejs/biome@2.2.4
+          pnpm add --ignore-scripts vitest@4.1.10 esbuild@0.27.0 typescript@5.9.3 tsx@4.20.5 @biomejs/biome@2.2.4
           tar -czf "$RUNNER_TEMP/prd221/test-tools.tar.gz" .
-      - name: Retry historical V8 provisioning and source prerequisites
-        if: always()
-        run: |
-          set -uo pipefail
-          mkdir -p "$RUNNER_TEMP/prd221"
-          node packages/runtime-native/scripts/download-deps.mjs --android --only v8-android > "$RUNNER_TEMP/prd221/provision.log" 2>&1
-          printf '%s\n' "$?" > "$RUNNER_TEMP/prd221/provision.exit"
-          cat "$RUNNER_TEMP/prd221/provision.log"
-          git ls-remote https://chromium.googlesource.com/v8/v8.git HEAD > "$RUNNER_TEMP/prd221/v8-source.log" 2>&1
-          printf '%s\n' "$?" > "$RUNNER_TEMP/prd221/v8-source.exit"
-          git ls-remote https://chromium.googlesource.com/chromium/tools/depot_tools.git HEAD > "$RUNNER_TEMP/prd221/depot-tools.log" 2>&1
-          printf '%s\n' "$?" > "$RUNNER_TEMP/prd221/depot-tools.exit"
-          if test -d packages/runtime-native/third_party/v8-android; then
-            tar -czf "$RUNNER_TEMP/prd221/historical-v8.tar.gz" -C packages/runtime-native/third_party v8-android
-          fi
-          command -v java git python3 clang ninja || true
-          printf 'ANDROID_HOME=%s\n' "${ANDROID_HOME:-}" > "$RUNNER_TEMP/prd221/toolchains.txt"
-          ls "${ANDROID_HOME:-/nonexistent}/ndk" >> "$RUNNER_TEMP/prd221/toolchains.txt" 2>&1 || true
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: prd221-baseline-${{ github.sha }}
+          name: prd221-tools-${{ github.sha }}
           path: ${{ runner.temp }}/prd221
+          if-no-files-found: error
+          retention-days: 2
+  source-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      DEPOT_TOOLS_UPDATE: '0'
+      DEPOT_TOOLS_METRICS: '0'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Retry pinned source setup without upstream system installers
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/prd221-source" "$RUNNER_TEMP/prd221-evidence"
+          cd "$RUNNER_TEMP/prd221-source"
+          git init buildscripts
+          git -C buildscripts fetch --depth=1 https://github.com/Kudo/v8-android-buildscripts.git fc31185d224f9aaddc28765882009591de5ca4d0
+          git -C buildscripts checkout --detach FETCH_HEAD
+          git init buildscripts/scripts/depot_tools
+          git -C buildscripts/scripts/depot_tools fetch --depth=1 https://chromium.googlesource.com/chromium/tools/depot_tools.git 08f3e8c0eb66d6de3a048a757d0ff708dbc8ea34
+          git -C buildscripts/scripts/depot_tools checkout --detach FETCH_HEAD
+          cd buildscripts
+          export PATH="$PWD/scripts/depot_tools:$PATH"
+          gclient config --name v8 --unmanaged https://chromium.googlesource.com/v8/v8.git
+          gclient sync --revision v8@7999223ca1644726339aae43d9435c721c8a4bb0 --deps=android --no-history --nohooks 2>&1 | tee "$RUNNER_TEMP/prd221-evidence/sync.log"
+          gclient runhooks 2>&1 | tee "$RUNNER_TEMP/prd221-evidence/hooks.log"
+      - name: Prototype the existing patchset against the aligned NDK
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/prd221-source/buildscripts"
+          ndk="$ANDROID_HOME/ndk/28.2.13676358"
+          test -f "$ndk/source.properties"
+          cat "$ndk/source.properties" > "$RUNNER_TEMP/prd221-evidence/ndk.txt"
+          find "$ndk/toolchains/llvm/prebuilt/linux-x86_64/lib" -name libunwind.a > "$RUNNER_TEMP/prd221-evidence/unwind-paths.txt"
+          ln -s "$ndk" v8/android-ndk-r28c
+          sed -i 's/NDK_VERSION="r23c"/NDK_VERSION="r28c"/' scripts/env.sh
+          bash scripts/patch.sh android 2>&1 | tee "$RUNNER_TEMP/prd221-evidence/patch.log"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          ndk = Path(os.environ['ANDROID_HOME']) / 'ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64'
+          versions = list((ndk / 'lib/clang').iterdir())
+          assert len(versions) == 1, versions
+          config = Path('v8/build/config/android/BUILD.gn')
+          text = config.read_text()
+          assert '/clang/12.0.9/lib/linux/$arch_dir' in text
+          config.write_text(text.replace('/clang/12.0.9/lib/linux/$arch_dir', f'/clang/{versions[0].name}/lib/linux/$arch_dir'))
+          build = Path('v8/BUILD.gn')
+          text = build.read_text()
+          needle = 'v8_loadable_module("libv8android") {\n'
+          assert text.count(needle) == 1
+          build.write_text(text.replace(needle, needle + '  ldflags = [ "-Wl,-z,max-page-size=16384", "-Wl,-z,common-page-size=16384" ]\n'))
+          PY
+          export PATH="$PWD/scripts/depot_tools:$PATH"
+          cd v8
+          for arch in arm64 x64; do
+            out="out.v8.$arch"
+            gn gen "$out" --args="target_os=\"android\" target_cpu=\"$arch\" is_component_build=false is_debug=false symbol_level=0 use_custom_libcxx=false use_sysroot=false icu_use_data_file=false treat_warnings_as_errors=false default_min_sdk_version=21 v8_enable_sandbox=false v8_enable_pointer_compression=true v8_use_external_startup_data=true clang_use_chrome_plugins=false clang_base_path=\"//android-ndk-r28c/toolchains/llvm/prebuilt/linux-x86_64\"" 2>&1 | tee "$RUNNER_TEMP/prd221-evidence/gn-$arch.log"
+            ninja -j3 -C "$out" libv8android run_mksnapshot_default 2>&1 | tee "$RUNNER_TEMP/prd221-evidence/build-$arch.log"
+            cp "$out/args.gn" "$RUNNER_TEMP/prd221-evidence/args-$arch.gn"
+            mkdir -p "$RUNNER_TEMP/prd221-evidence/$arch"
+            cp "$out/libv8android.so" "$out/snapshot_blob.bin" "$RUNNER_TEMP/prd221-evidence/$arch/"
+            "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump" -p "$out/libv8android.so" > "$RUNNER_TEMP/prd221-evidence/$arch/objdump.txt"
+          done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: prd221-source-probe-${{ github.sha }}
+          path: ${{ runner.temp }}/prd221-evidence
           if-no-files-found: error
           retention-days: 2
