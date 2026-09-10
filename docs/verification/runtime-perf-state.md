@@ -49,6 +49,60 @@ browser/device parity and missing-observation behavior. Follow-up `pnpm typechec
 retains the results and full-log hashes. This slice changes the report layer; its Android scenario
 uses the unchanged installed candidate APK.
 
+### Equivalent shaders retained process-wide buffer names
+
+**Engine layer:** Three's WGSL builder overwrote its program-local uniform name with a global
+allocation ID. Independently allocated buffers therefore produced different shader source even
+when their types, lengths and uses matched. The owned Three patch now preserves the base builder's
+unique program-local name; explicitly authored names, buffer objects, visibility and binding order
+remain intact. Both `src/` and the shipped `three/webgpu` bundle carry the fix. Core's existing
+postinstall consumes the patch; the scaffold copy distributes the same bytes.
+
+The [red](startup-measure-reduce-2026-09-09/stable-buffer-names/red.log) compares actual WGSL
+declarations from independently allocated equal-capacity projected batches: only `NodeBuffer_<id>`
+differs. The [focused green](startup-measure-reduce-2026-09-09/stable-buffer-names/green.log) passes
+23 tests. Independent [browser review](startup-measure-reduce-2026-09-09/stable-buffer-names/review-verdict.json)
+observed two shader modules across repeated capacity-16/capacity-48 batches, separate moving/stationary
+buffer contents, correct previous-frame motion and an error-free forced WebGL fallback.
+Raw [WebGPU](startup-measure-reduce-2026-09-09/stable-buffer-names/review-webgpu.json) and
+[fallback](startup-measure-reduce-2026-09-09/stable-buffer-names/review-fallback.json) reports retain those observations.
+
+A preceding storage-buffer experiment was rejected: it did not reduce whole-town program counts,
+retained buffers across repeated batch replacement and failed the fallback draw. Its
+[rejection](startup-measure-reduce-2026-09-09/stable-buffer-names/rejected-storage-verdict.json) is
+retained; no storage-buffer change remains in the accepted source.
+
+| Actual whole-town target | Original programs | Tint uniforms | Tint plus stable buffer names |
+| --- | ---: | ---: | ---: |
+| Browser, NVIDIA/Turing | 79 | 71 | 52 |
+| Native desktop | 84 | 76 | 56 |
+| Pixel 8 | 92 | 86 | 63 |
+
+The browser and desktop meet one-third program reduction; Pixel's 31.5% does not. Receipts:
+[browser](startup-measure-reduce-2026-09-09/stable-buffer-names/browser-receipt.json),
+[desktop](startup-measure-reduce-2026-09-09/stable-buffer-names/desktop-receipt.json),
+[Pixel original](startup-measure-reduce-2026-09-09/stable-buffer-names/android-original-receipt.json),
+[Pixel candidate](startup-measure-reduce-2026-09-09/stable-buffer-names/android-receipt.json).
+The candidate's [paired native capture](startup-measure-reduce-2026-09-09/stable-buffer-names/android-paired.json)
+reconciles 84 creations, 63 programs and zero failures/pending/dropped events. All movement and
+runtime assertions passed. Pixel readiness remained 16,500.797697 ms, failing the 8,000 ms gate.
+Full inputs: [browser census](startup-measure-reduce-2026-09-09/stable-buffer-names/browser-census.json),
+[desktop census](startup-measure-reduce-2026-09-09/stable-buffer-names/desktop-census.json),
+[Pixel census](startup-measure-reduce-2026-09-09/stable-buffer-names/android-census.json) and
+[native events](startup-measure-reduce-2026-09-09/stable-buffer-names/android-native.log).
+These phone runs were AC-charging, and their screenshots carried Android's known debug APK
+alignment notice; they do not prove qualified timing, first-playable time or unobstructed appearance.
+The notice was subsequently acknowledged on the test app for fresh visual checks.
+
+[Package identity](startup-measure-reduce-2026-09-09/stable-buffer-names/cohort.json) and
+[APK identity](startup-measure-reduce-2026-09-09/stable-buffer-names/apk.sha256) freeze the candidate.
+The runtime implementation slice is the root/core patch copies, lockfile and regression test.
+The separate distribution slice is the template patch copy and scaffold hash fixture. Independent
+[scaffold proof](startup-measure-reduce-2026-09-09/stable-buffer-names/scaffold-proof.json) generated
+all ten projects: replacing only the copied patch with its prior version recovered every old tree
+hash. Typecheck/lint pass. The first full test run passed 4,774 tests and failed the expected old
+scaffold hash assertion; its distribution update and final full gates remain pending.
+
 ### Observed defects and bounded repairs
 
 This is the engine observation layer: games cannot portably observe their WebGPU backend and

@@ -1,0 +1,26 @@
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.worktrees/startup-measure-reduce
+
+stdout | packages/core/__tests__/render-velocity.spec.ts > velocity provisioning on the shipped path > gives a skinned character and a moving instance previous-frame data when a temporal stage runs
+TN_RENDER_PROJECTION:{"projecting":false,"reasonCode":"belowMeshFloor","reason":"fewer than 200 batchable meshes; the mirror would cost more than it saves","sourceRenderables":3,"resultDrawCandidates":3,"batches":0,"instancedBatches":0,"materialBatches":0,"projectedObjects":0,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/render-velocity.spec.ts > velocity provisioning on the shipped path > does not allocate velocity for temporal stages dropped by tier or provider checks
+TN_RENDER_CHAIN:{"applied":{"contributions":[],"dropped":[{"name":"traa","reason":"tier:off"}],"requested":["traa"],"source":"pinned","stages":[],"tier":"off","velocity":{"provisioned":false,"required":true,"source":null}},"marker":"TN_RENDER_CHAIN"}
+TN_RENDER_CHAIN:{"applied":{"contributions":[],"dropped":[{"name":"traa","reason":"provider:missing"}],"requested":["traa"],"source":"pinned","stages":[],"tier":"high","velocity":{"provisioned":false,"required":true,"source":null}},"marker":"TN_RENDER_CHAIN"}
+
+ ✓ packages/core/__tests__/three-shadow-override-cache.spec.ts (10 tests) 121ms
+stdout | packages/core/__tests__/render-projection-pipeline.spec.ts > SceneRenderProjection and the installed output pipeline > shares generated matrix declarations across independently allocated projection batches
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":8,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":8,"exactObjects":0,"exact":{}}
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":8,"resultDrawCandidates":1,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":8,"exactObjects":0,"exact":{}}
+
+stdout | packages/core/__tests__/render-projection-pipeline.spec.ts > SceneRenderProjection and the installed output pipeline > renders the projected root that carries moved skinned and instance history
+TN_RENDER_PROJECTION:{"projecting":true,"reasonCode":"projected","sourceRenderables":10,"resultDrawCandidates":3,"batches":1,"instancedBatches":1,"materialBatches":0,"projectedObjects":8,"exactObjects":2,"exact":{"skinned":1,"instanced":1}}
+
+ ✓ packages/core/__tests__/render-projection-pipeline.spec.ts (2 tests) 21ms
+ ✓ packages/core/__tests__/render-velocity.spec.ts (11 tests) 60ms
+
+ Test Files  3 passed (3)
+      Tests  23 passed (23)
+   Start at  19:59:47
+   Duration  362ms (transform 241ms, setup 0ms, import 528ms, tests 202ms, environment 0ms)
+
