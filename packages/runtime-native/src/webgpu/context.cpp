@@ -379,10 +379,11 @@ static void reportGrantedFeatures(WGPUDevice device) {
 }
 
 struct RequiredFeatures {
-    std::array<WGPUFeatureName, 9> names{};
+    std::array<WGPUFeatureName, 10> names{};
     size_t count = 0;
     bool hasIndirectFirstInstance = false;
     bool hasTimestampQuery = false;
+    bool hasPipelineCache = false;
 };
 
 static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
@@ -422,6 +423,13 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
     appendIfSupported(WGPUFeatureName_TextureCompressionASTC, "texture-compression-astc");
     result.hasTimestampQuery =
         appendIfSupported(WGPUFeatureName_TimestampQuery, "timestamp-query");
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+    // PRD-368 Phase 1B: the maintained cache API patch exposes this feature on wgpu-native, and
+    // `MYSTRAL_WGPU_PIPELINE_CACHE` is defined only when the installed header declares it.
+    // Requested only when the adapter advertises it; absence keeps the old no-cache behavior.
+    result.hasPipelineCache = appendIfSupported(
+        static_cast<WGPUFeatureName>(WGPUNativeFeature_PipelineCache), "pipeline-cache");
+#endif
     appendIfSupported(WGPUFeatureName_RG11B10UfloatRenderable, "rg11b10ufloat-renderable");
 #if MYSTRAL_HAS_CORE_FEATURES_AND_LIMITS
     appendIfSupported(WGPUFeatureName_CoreFeaturesAndLimits, "core-features-and-limits");

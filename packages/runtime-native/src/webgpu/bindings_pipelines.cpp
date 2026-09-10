@@ -10,6 +10,7 @@
 #include "mystral/webgpu/wrapper_factories.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <deque>
 #include <functional>
 #include <iomanip>
@@ -25,6 +26,16 @@
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
 #include <webgpu/webgpu.h>
 #include "mystral/webgpu_compat.h"
+#endif
+
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+// The cache API is wgpu-native's own extension, not part of the shared `webgpu.h` surface, and the
+// two distributions place the header differently. `bindings_resources.cpp` probes the same paths.
+#if __has_include(<webgpu/wgpu.h>)
+#include <webgpu/wgpu.h>
+#else
+#include <wgpu/wgpu.h>
+#endif
 #endif
 
 namespace mystral {
@@ -106,9 +117,10 @@ WGPUStringView viewOf(const std::string& owned) {
  *
  * Written against the finished struct rather than woven into the 350-line builder above, so the
  * synchronous path stays exactly the code it was and there is one obvious place to check when a
- * WebGPU version adds a field. `nextInChain` is deliberately dropped: nothing in this host attaches
- * one to a render pipeline descriptor, and silently copying a pointer whose target we do not own
- * would be the bug this whole type exists to prevent.
+ * WebGPU version adds a field. `nextInChain` is deliberately dropped: silently copying a pointer
+ * whose target we do not own would be the bug this whole type exists to prevent. PRD-368 does
+ * attach a pipeline-cache extension to worker compiles, and it obeys the same rule — the worker
+ * rebuilds the extension on its own stack beside the creation call instead of carrying one here.
  */
 std::unique_ptr<OwnedRenderPipelineDescriptor> ownDescriptor(
     const WGPURenderPipelineDescriptor& source) {
@@ -465,6 +477,9 @@ static void emitPipelineEvent(BindingsState* state,
                   << pipelineJsonString(completion.fragmentHash)
                   << ",\"bytes\":" << completion.fragmentBytes << '}';
     }
+    // PRD-368. What the host did, never what the backend found: the cache API reports no
+    // per-pipeline hit or miss, so this says a cache of this mode was in force for the creation.
+    std::cout << ",\"cache\":" << pipelineJsonString(state->pipelineCache.mode);
     if (!completion.label.empty())
         std::cout << ",\"label\":" << pipelineJsonString(completion.label);
     if (!success) std::cout << ",\"error\":" << pipelineJsonString(error);
@@ -509,6 +524,150 @@ void reportPipelineCheckpoint(BindingsState* state, uint64_t presentCount) {
     std::cout << "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":" << presentCount
               << ",\"requested\":" << requested << ",\"emitted\":" << emitted
               << ",\"outstanding\":" << outstanding << "}" << std::endl;
+}
+
+// ============================================================================
+// PRD-368: one device-owned pipeline cache, attached to every creation path
+// ============================================================================
+//
+// The backend compiles the same pipelines from scratch on every launch — 8,513 ms across 101
+// pipelines on a Pixel 8 — because nothing hands it the compiler artifacts the previous run
+// produced. The maintained `patches/wgpu-native@25.0.2.2.patch` exposes wgpu's own pipeline cache
+// through the C API; this owns exactly one of them per device and supplies it to all four creation
+// paths: synchronous render, synchronous compute, and the two worker compiles.
+//
+// Three things this deliberately does not do. It does not persist anything — Phase 2 owns storage,
+// and a cache that lives and dies with the process is still the thing every later phase attaches
+// to. It does not claim hits: the backend reports no per-pipeline hit or miss, so the only honest
+// statements are "a cache was supplied" and "the cache serialized N bytes". And it does not change
+// which pipelines get compiled or when; warm-up scheduling and game materials are untouched.
+//
+// `TN_PIPELINE_CACHE=0` turns attachment off while leaving everything else identical. That is the
+// negative control this phase is verified with, and the same switch Phase 3's measurement needs to
+// separate driver warming from application-cache benefit.
+
+/** Whether the operator turned attachment off for this launch. */
+static bool pipelineCacheDisabledByEnvironment() {
+    const char* setting = std::getenv("TN_PIPELINE_CACHE");
+    return setting != nullptr && std::string(setting) == "0";
+}
+
+void initPipelineCache(BindingsState* state) {
+    if (state == nullptr) return;
+    PipelineCacheState& cache = state->pipelineCache;
+#if !defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+    cache.mode = "unsupported";
+    cache.reason = "this build's WebGPU backend declares no pipeline cache API";
+#else
+    // The granted feature is recorded before the switch is read, so the disabled arm still reports
+    // what the device actually granted. A control that also claimed "no feature" would hide the
+    // one thing it varies.
+    cache.featureGranted =
+        state->device != nullptr &&
+        wgpuDeviceHasFeature(state->device,
+                             static_cast<WGPUFeatureName>(WGPUNativeFeature_PipelineCache)) != 0;
+    if (state->device == nullptr) {
+        cache.mode = "unavailable";
+        cache.reason = "no device";
+    } else if (!cache.featureGranted) {
+        cache.mode = "unavailable";
+        cache.reason = "the device was not granted the pipeline-cache feature";
+    } else if (pipelineCacheDisabledByEnvironment()) {
+        cache.mode = "disabled";
+        cache.reason = "TN_PIPELINE_CACHE=0";
+    } else {
+        WGPUPipelineCacheDescriptor descriptor = {};
+        const std::string label = "threenative-device-pipeline-cache";
+        descriptor.label = {label.c_str(), label.size()};
+        WGPUPipelineCache handle = wgpuDeviceCreatePipelineCache(state->device, &descriptor);
+        if (handle == nullptr) {
+            cache.mode = "unavailable";
+            cache.reason = "the backend refused an empty pipeline cache";
+        } else {
+            cache.handle = const_cast<void*>(static_cast<const void*>(handle));
+            cache.mode = "attached";
+            cache.emptyBytes = pipelineCacheSerializedBytes(state);
+        }
+    }
+#endif
+    reportPipelineCacheState(state, "device");
+}
+
+/**
+ * The handle a creation call should chain, or `nullptr`.
+ *
+ * Read from worker threads as well as the game thread. That is safe because it is written once,
+ * before any pipeline can be requested, and cleared only in `releasePipelineCache`, which
+ * `shutdownAsyncPipelineCompiles` calls after it has joined every worker.
+ */
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+static WGPUPipelineCache livePipelineCache(BindingsState* state) {
+    if (state == nullptr || state->pipelineCache.handle == nullptr) return nullptr;
+    return static_cast<WGPUPipelineCache>(state->pipelineCache.handle);
+}
+
+/**
+ * Fills `extension` with the device cache and returns the chain to hang off a descriptor.
+ *
+ * `extension` has to outlive the creation call it is chained onto, so every caller keeps it on the
+ * stack immediately beside that call. Returns `nullptr` when there is no cache, which leaves the
+ * descriptor's `nextInChain` exactly as it was and the creation exactly as it used to be.
+ */
+static const WGPUChainedStruct* attachPipelineCache(BindingsState* state,
+                                                    WGPUPipelineCacheExtras& extension,
+                                                    bool render) {
+    WGPUPipelineCache handle = livePipelineCache(state);
+    if (handle == nullptr) return nullptr;
+    extension = {};
+    extension.chain.sType = static_cast<WGPUSType>(WGPUSType_PipelineCacheExtras);
+    extension.cache = handle;
+    if (render) {
+        state->pipelineCache.renderAttached += 1;
+    } else {
+        state->pipelineCache.computeAttached += 1;
+    }
+    return &extension.chain;
+}
+#endif
+
+size_t pipelineCacheSerializedBytes(BindingsState* state) {
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+    WGPUPipelineCache handle = livePipelineCache(state);
+    if (handle == nullptr) return 0;
+    WGPUPipelineCacheData data = wgpuPipelineCacheGetData(handle);
+    const size_t size = data.size;
+    wgpuPipelineCacheDataFreeMembers(data);
+    return size;
+#else
+    (void)state;
+    return 0;
+#endif
+}
+
+void releasePipelineCache(BindingsState* state) {
+    if (state == nullptr) return;
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+    WGPUPipelineCache handle = livePipelineCache(state);
+    if (handle == nullptr) return;
+    reportPipelineCacheState(state, "shutdown");
+    state->pipelineCache.handle = nullptr;
+    wgpuPipelineCacheRelease(handle);
+#endif
+}
+
+void reportPipelineCacheState(BindingsState* state, const char* phase) {
+    if (state == nullptr) return;
+    const PipelineCacheState& cache = state->pipelineCache;
+    std::lock_guard<std::mutex> outputLock(pipelineOutputMutex());
+    std::cout << "TN_PIPELINE_CACHE:{\"version\":1,\"phase\":" << pipelineJsonString(phase)
+              << ",\"mode\":" << pipelineJsonString(cache.mode)
+              << ",\"featureGranted\":" << (cache.featureGranted ? "true" : "false")
+              << ",\"renderAttached\":" << cache.renderAttached.load()
+              << ",\"computeAttached\":" << cache.computeAttached.load()
+              << ",\"emptyBytes\":" << cache.emptyBytes
+              << ",\"serializedBytes\":" << pipelineCacheSerializedBytes(state);
+    if (!cache.reason.empty()) std::cout << ",\"reason\":" << pipelineJsonString(cache.reason);
+    std::cout << "}" << std::endl;
 }
 
 void releaseComputePipelineRegistryEntry(BindingsState* state, uint64_t pipelineId) {
@@ -883,6 +1042,13 @@ static js::JSValueHandle createComputePipelineImpl(BindingsState* state, Binding
                                     descriptor.layout = layout;
                                     descriptor.compute.module = module;
                                     WGPU_SET_ENTRY_POINT(descriptor.compute, entryPoint.c_str());
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+                                    // PRD-368. The cache outlives every worker: the pool is joined
+                                    // before `releasePipelineCache` runs.
+                                    WGPUPipelineCacheExtras cacheExtension = {};
+                                    descriptor.nextInChain =
+                                        attachPipelineCache(state, cacheExtension, false);
+#endif
                                     PipelineCompileCompletion completion;
                                     completion.requestId = requestId;
                                     completion.render = false;
@@ -910,6 +1076,11 @@ static js::JSValueHandle createComputePipelineImpl(BindingsState* state, Binding
                             observation.startedMs = observation.enqueuedMs;
                             observation.vertexHash = computeHash;
                             observation.vertexBytes = computeBytes;
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+                            WGPUPipelineCacheExtras cacheExtension = {};
+                            pipelineDesc.nextInChain =
+                                attachPipelineCache(state, cacheExtension, false);
+#endif
                             WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(state->device, &pipelineDesc);
                             observation.finishedMs = pipelineClockMs();
                             if (!pipeline) {
@@ -1367,8 +1538,17 @@ static js::JSValueHandle createRenderPipelineImpl(BindingsState* state, BindingD
                                     completion.fragmentHash = fragmentHash;
                                     completion.fragmentBytes = fragmentBytes;
                                     completion.label = pipelineLabel;
+                                    // PRD-368. `ownDescriptor()` drops `nextInChain` by design, so
+                                    // the cache extension is rebuilt here against storage this
+                                    // frame owns rather than copied out of a pointer nobody owns.
+                                    WGPURenderPipelineDescriptor request = descriptor->descriptor;
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+                                    WGPUPipelineCacheExtras cacheExtension = {};
+                                    request.nextInChain =
+                                        attachPipelineCache(state, cacheExtension, true);
+#endif
                                     completion.renderPipeline =
-                                        wgpuDeviceCreateRenderPipeline(device, &descriptor->descriptor);
+                                        wgpuDeviceCreateRenderPipeline(device, &request);
                                     completion.finishedMs = pipelineClockMs();
                                     if (completion.renderPipeline == nullptr) {
                                         completion.error = "Failed to create render pipeline";
@@ -1389,6 +1569,11 @@ static js::JSValueHandle createRenderPipelineImpl(BindingsState* state, BindingD
                             observation.fragmentHash = fragmentHash;
                             observation.fragmentBytes = fragmentBytes;
                             observation.label = pipelineLabel;
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+                            WGPUPipelineCacheExtras cacheExtension = {};
+                            pipelineDesc.nextInChain =
+                                attachPipelineCache(state, cacheExtension, true);
+#endif
                             WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(state->device, &pipelineDesc);
                             observation.finishedMs = pipelineClockMs();
                             if (!pipeline) {
@@ -1521,6 +1706,9 @@ void shutdownAsyncPipelineCompiles(BindingsState* state) {
         pool.completed.clear();
     }
     pool.finalized = true;
+    // PRD-368. Only now is it safe: a worker still compiling would be reading the handle this
+    // releases. The report it prints is the last statement of what the cache actually did.
+    releasePipelineCache(state);
     reportPipelineCaptureComplete(pool.nextRequestId - 1);
 }
 
