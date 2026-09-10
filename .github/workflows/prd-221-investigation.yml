@@ -20,20 +20,21 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '22.16.0'
-      - name: Retain tracked source and isolated test tools
+      - name: Retain isolated test tools
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/prd221"
-          git rev-parse HEAD > "$RUNNER_TEMP/prd221/source-sha.txt"
-          git archive --format=tar.gz --output="$RUNNER_TEMP/prd221/source.tar.gz" HEAD
-          npm install --prefix "$RUNNER_TEMP/prd221-tools" --ignore-scripts --no-audit --no-fund vitest@4.1.10 esbuild@0.27.0 typescript@5.9.3
-          tar -czf "$RUNNER_TEMP/prd221/test-tools.tar.gz" -C "$RUNNER_TEMP/prd221-tools" .
+          mkdir -p "$RUNNER_TEMP/prd221" "$RUNNER_TEMP/prd221-tools"
+          cd "$RUNNER_TEMP/prd221-tools"
+          printf '{"name":"prd221-tools","private":true,"type":"module"}\n' > package.json
+          npm install --ignore-scripts --no-audit --no-fund vitest@4.1.10 esbuild@0.27.0 typescript@5.9.3 tsx@4.20.5 @biomejs/biome@2.2.4
+          tar -czf "$RUNNER_TEMP/prd221/test-tools.tar.gz" .
       - name: Retry historical V8 provisioning and source prerequisites
+        if: always()
         run: |
           set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/prd221"
           node packages/runtime-native/scripts/download-deps.mjs --android --only v8-android > "$RUNNER_TEMP/prd221/provision.log" 2>&1
-          status=$?
-          printf '%s\n' "$status" > "$RUNNER_TEMP/prd221/provision.exit"
+          printf '%s\n' "$?" > "$RUNNER_TEMP/prd221/provision.exit"
           cat "$RUNNER_TEMP/prd221/provision.log"
           git ls-remote https://chromium.googlesource.com/v8/v8.git HEAD > "$RUNNER_TEMP/prd221/v8-source.log" 2>&1
           printf '%s\n' "$?" > "$RUNNER_TEMP/prd221/v8-source.exit"
