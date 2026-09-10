@@ -67,8 +67,13 @@ function releaseFromManifest(manifest, key) {
   return release;
 }
 
-/** Validate the entire advertised cohort before selecting even one consumer artifact. */
-export function validateReleaseManifest(manifest, options = {}) {
+function isLoopbackFixture(url) {
+  return process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT === '1' &&
+    url.protocol === 'http:' && ['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname) &&
+    !url.username && !url.password;
+}
+
+function validateManifestEnvelope(manifest, options) {
   if (manifest?.schemaVersion !== 1) throw new Error('Unsupported or missing prebuilt manifest schemaVersion.');
   const version = options.version ?? packageVersion;
   if (manifest.version !== version) {
@@ -83,24 +88,29 @@ export function validateReleaseManifest(manifest, options = {}) {
   if (!manifest.artifacts || typeof manifest.artifacts !== 'object' || Array.isArray(manifest.artifacts)) {
     throw new Error('Prebuilt manifest artifacts must be an object.');
   }
+  return version;
+}
+
+function validateManifestArtifact(manifest, key, version) {
+  if (!Object.hasOwn(PREBUILT_ASSET_NAMES, key)) throw new Error(`Unknown prebuilt release key '${key}'.`);
+  const release = releaseFromManifest(manifest, key);
+  if (!Number.isSafeInteger(release.size) || release.size <= 0) {
+    throw new Error(`Prebuilt release size for '${key}' must be a positive integer.`);
+  }
+  const expectedUrl = `${releaseManifestUrl(version).replace('/prebuilt-lock.json', '')}/${PREBUILT_ASSET_NAMES[key]}`;
+  const url = new URL(release.url);
+  if (release.url !== expectedUrl && !isLoopbackFixture(url)) {
+    throw new Error(`Prebuilt release URL for '${key}' must match version ${version}: ${expectedUrl}.`);
+  }
+}
+
+/** Validate the entire advertised cohort before selecting even one consumer artifact. */
+export function validateReleaseManifest(manifest, options = {}) {
+  const version = validateManifestEnvelope(manifest, options);
   // iOS retains its separate release gate; it is not a prerequisite for a non-iOS consumer.
   const requiredKeys = options.requiredKeys ?? PREBUILT_KEYS.filter((key) => !key.startsWith('ios-'));
   for (const key of requiredKeys) releaseFromManifest(manifest, key);
-  for (const key of Object.keys(manifest.artifacts)) {
-    if (!Object.hasOwn(PREBUILT_ASSET_NAMES, key)) throw new Error(`Unknown prebuilt release key '${key}'.`);
-    const release = releaseFromManifest(manifest, key);
-    if (!Number.isSafeInteger(release.size) || release.size <= 0) {
-      throw new Error(`Prebuilt release size for '${key}' must be a positive integer.`);
-    }
-    const expectedUrl = `${releaseManifestUrl(version).replace('/prebuilt-lock.json', '')}/${PREBUILT_ASSET_NAMES[key]}`;
-    const url = new URL(release.url);
-    const loopbackFixture = process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT === '1' &&
-      url.protocol === 'http:' && ['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname) &&
-      !url.username && !url.password;
-    if (release.url !== expectedUrl && !loopbackFixture) {
-      throw new Error(`Prebuilt release URL for '${key}' must match version ${version}: ${expectedUrl}.`);
-    }
-  }
+  for (const key of Object.keys(manifest.artifacts)) validateManifestArtifact(manifest, key, version);
   return manifest;
 }
 
@@ -158,6 +168,46 @@ export function writeInstallStatus(status, statusPath = join(packageRoot, 'prebu
   }
 }
 
+function createInstallPlan(options) {
+  const platform = options.platform ?? process.platform;
+  const key = `${platform}-${options.arch ?? process.arch}`;
+  const filename = platform === 'win32' ? 'threenative-runtime.exe' : 'threenative-runtime';
+  const output = resolve(options.output ?? join(packageRoot, 'prebuilt', key, filename));
+  const statusPath = resolve(options.statusPath ?? (options.output
+    ? join(dirname(output), 'install-status.json')
+    : join(packageRoot, 'prebuilt', 'install-status.json')));
+  if (output === statusPath) throw new Error('Prebuilt output and install status paths must differ.');
+  return { platform, key, output, statusPath,
+    status: { key, url: options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST ??
+      options.manifestUrl ?? releaseManifestUrl(), version: packageVersion } };
+}
+
+function beginInstall(plan, arch) {
+  rmSync(plan.output, { force: true });
+  rmSync(plan.statusPath, { force: true });
+  writeInstallStatus({ ...plan.status, ok: false, reason: 'installing' }, plan.statusPath);
+  platformKey(plan.platform, arch);
+}
+
+function publishInstall(plan, temporary, contents) {
+  mkdirSync(dirname(plan.output), { recursive: true });
+  writeFileSync(temporary, contents, { flag: 'wx' });
+  if (plan.platform !== 'win32') chmodSync(temporary, 0o755);
+  renameSync(temporary, plan.output);
+  writeInstallStatus({ ...plan.status, ok: true, reason: 'installed', sha256: sha256(contents) }, plan.statusPath);
+}
+
+function recordInstallFailure(plan, error) {
+  try {
+    rmSync(plan.output, { force: true });
+    writeInstallStatus({ ...plan.status, ok: false,
+      reason: error instanceof Error ? error.message : String(error) }, plan.statusPath);
+  } catch (statusError) {
+    rmSync(plan.statusPath, { force: true });
+    throw new Error(`Could not invalidate prebuilt install for '${plan.key}': ${statusError instanceof Error ? statusError.message : String(statusError)}`, { cause: error });
+  }
+}
+
 async function fetchRelease(manifestUrl, key) {
   const url = new URL(manifestUrl);
   if (url.protocol !== 'https:' && process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT !== '1') {
@@ -211,40 +261,17 @@ export async function downloadReleaseArtifact(key, options = {}) {
 }
 
 export async function installPrebuilt(options = {}) {
-  const platform = options.platform ?? process.platform;
-  const key = `${platform}-${options.arch ?? process.arch}`;
-  const filename = platform === 'win32' ? 'threenative-runtime.exe' : 'threenative-runtime';
-  const output = resolve(options.output ?? join(packageRoot, 'prebuilt', key, filename));
-  const statusPath = resolve(options.statusPath ?? (options.output
-    ? join(dirname(output), 'install-status.json')
-    : join(packageRoot, 'prebuilt', 'install-status.json')));
-  if (output === statusPath) throw new Error('Prebuilt output and install status paths must differ.');
-  const status = { key, url: options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST ??
-    options.manifestUrl ?? releaseManifestUrl(), version: packageVersion };
-  const temporary = `${output}.${randomUUID()}.tmp`;
+  const plan = createInstallPlan(options);
+  const temporary = `${plan.output}.${randomUUID()}.tmp`;
   try {
     // A failed retry must not leave an earlier binary usable or its old success marker intact.
-    rmSync(output, { force: true });
-    rmSync(statusPath, { force: true });
-    writeInstallStatus({ ...status, ok: false, reason: 'installing' }, statusPath);
-    platformKey(platform, options.arch);
-    const contents = await downloadReleaseArtifact(key, options);
-    mkdirSync(dirname(output), { recursive: true });
-    writeFileSync(temporary, contents, { flag: 'wx' });
-    if (platform !== 'win32') chmodSync(temporary, 0o755);
-    renameSync(temporary, output);
-    writeInstallStatus({ ...status, ok: true, reason: 'installed', sha256: sha256(contents) }, statusPath);
-    console.log(`Installed verified ThreeNative runtime for '${key}'.`);
-    return output;
+    beginInstall(plan, options.arch);
+    const contents = await downloadReleaseArtifact(plan.key, options);
+    publishInstall(plan, temporary, contents);
+    console.log(`Installed verified ThreeNative runtime for '${plan.key}'.`);
+    return plan.output;
   } catch (error) {
-    try {
-      rmSync(output, { force: true });
-      writeInstallStatus({ ...status, ok: false,
-        reason: error instanceof Error ? error.message : String(error) }, statusPath);
-    } catch (statusError) {
-      rmSync(statusPath, { force: true });
-      throw new Error(`Could not invalidate prebuilt install for '${key}': ${statusError instanceof Error ? statusError.message : String(statusError)}`, { cause: error });
-    }
+    recordInstallFailure(plan, error);
     throw error;
   } finally {
     rmSync(temporary, { force: true });

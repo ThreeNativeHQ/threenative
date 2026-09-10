@@ -79,7 +79,7 @@ async function packRuntime(root) {
 }
 
 afterEach(() => {
-  delete process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT;
+  Reflect.deleteProperty(process.env, 'THREENATIVE_ALLOW_INSECURE_PREBUILT');
   for (const root of roots.splice(0)) rmSync(root, { force: true, recursive: true });
 });
 
@@ -276,7 +276,7 @@ test('Android QuickJS prebuilts verify every runtime, SDL, and Java payload befo
     );
     assert.equal(existsSync(rejectedRoot), false);
 
-    delete artifacts['android-x86_64-runtime'];
+    Reflect.deleteProperty(artifacts, 'android-x86_64-runtime');
     writeFileSync(manifest, `${JSON.stringify({ artifacts })}\n`);
     await assert.rejects(
       prepareAndroidPrebuilts({ engine: 'quickjs', manifestPath: manifest, outputRoot: rejectedRoot }),
@@ -366,7 +366,7 @@ test('a clean-room install builds for Android from a fixture manifest, with no e
     );
     assert.equal(existsSync(join(root, 'game.apk')), true);
   } finally {
-    delete process.env.THREENATIVE_PREBUILT_MANIFEST;
+    Reflect.deleteProperty(process.env, 'THREENATIVE_PREBUILT_MANIFEST');
     await release.close();
   }
 }, 300_000);
@@ -396,7 +396,7 @@ test('the clean-room Android build fails loudly on a corrupt fixture manifest', 
     assert.equal(existsSync(outputRoot), false);
 
     release.rewrite((artifacts) => {
-      delete artifacts['android-sdl3-aar'];
+      Reflect.deleteProperty(artifacts, 'android-sdl3-aar');
     });
     await assert.rejects(
       prepareAndroidPrebuilts({ manifestPath: release.manifest, outputRoot }),
@@ -771,13 +771,13 @@ test('a candidate rejects every missing non-iOS key before selecting a desktop a
   const manifestPath = join(root, 'prebuilt-lock.json');
   for (const key of PREBUILT_KEYS.filter((entry) => !entry.startsWith('ios-'))) {
     const manifest = candidateLock(candidateArtifacts());
-    delete manifest.artifacts[key];
+    Reflect.deleteProperty(manifest.artifacts, key);
     writeFileSync(manifestPath, JSON.stringify(manifest));
     assert.throws(() => readRelease(manifestPath, 'linux-x64'),
       (error) => error.message.includes(key), `accepted a candidate without ${key}`);
   }
   const manifest = candidateLock(candidateArtifacts());
-  delete manifest.artifacts['ios-simulator-arm64'];
+  Reflect.deleteProperty(manifest.artifacts, 'ios-simulator-arm64');
   writeFileSync(manifestPath, JSON.stringify(manifest));
   assert.deepEqual(readRelease(manifestPath, 'linux-x64'), manifest.artifacts['linux-x64']);
 });
@@ -788,9 +788,9 @@ test('a candidate rejects wrong version, missing provenance, malformed metadata 
   const manifestPath = join(root, 'prebuilt-lock.json');
   const mutations = [
     [(lock) => { lock.version = '999.0.0'; }, /version/u],
-    [(lock) => { delete lock.sourceSha; }, /source SHA/u],
+    [(lock) => { Reflect.deleteProperty(lock, 'sourceSha'); }, /source SHA/u],
     [(lock) => { lock.sourceSha = 'not-a-commit'; }, /source SHA/u],
-    [(lock) => { delete lock.schemaVersion; }, /schema/u],
+    [(lock) => { Reflect.deleteProperty(lock, 'schemaVersion'); }, /schema/u],
     [(lock) => { lock.schemaVersion = 2; }, /schema/u],
     [(lock) => { lock.artifacts['android-x86_64-v8-snapshot'].sha256 = 'bad'; }, /android-x86_64-v8-snapshot/u],
     [(lock) => { lock.artifacts['android-arm64-v8a-runtime-v8'].size = 0; }, /android-arm64-v8a-runtime-v8/u],
@@ -816,7 +816,7 @@ test('legacy explicit artifact-only pins remain readable', () => {
 test('a remote candidate missing an ABI snapshot fails before any artifact download', async () => {
   let downloads = 0;
   const manifest = candidateLock(candidateArtifacts());
-  delete manifest.artifacts['android-x86_64-v8-snapshot'];
+  Reflect.deleteProperty(manifest.artifacts, 'android-x86_64-v8-snapshot');
   const server = createServer((request, response) => {
     if (request.url === '/prebuilt-lock.json') response.end(JSON.stringify(manifest));
     else { downloads += 1; response.end('candidate runtime'); }
@@ -970,7 +970,7 @@ test('the real publication step emits candidate identity and refuses a removed m
   const step = workflow.split('      - name: Generate the checksum lock from the verified assets\n')[1]
     ?.split('      - name: Publish runtimes and checksum lock\n')[0];
   assert.ok(step, 'the existing publication caller must remain reachable');
-  const match = /node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/u.exec(step);
+  const match = /node --input-type=module <<'NODE'\n([\s\S]*?)\n {10}NODE/u.exec(step);
   assert.ok(match, 'the publication step must execute the lock generator');
   const script = match[1].replace(/^ {10}/gmu, '');
   const root = makeTempDirSync('threenative-publication-step-');

@@ -378,7 +378,8 @@ test('release lane locks and launches the packed simulator host with physics con
   );
   for (const token of [
     'build-ios-simulator:',
-    'const names = PREBUILT_ASSET_NAMES',
+    'generateReleaseManifest',
+    'RELEASE_SHA: ${{ needs.validate-tag.outputs.candidate_sha }}',
     'clean-consumer-ios:',
     'build --target ios',
     'physics-wrong-height.playtest.json',

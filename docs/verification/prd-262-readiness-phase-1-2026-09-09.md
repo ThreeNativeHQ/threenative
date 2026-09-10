@@ -1,6 +1,6 @@
 # PRD-262 phase 1 — candidate manifest and atomic install mechanics
 
-**Date:** 2026-09-09 (task date, America/Vancouver).  
+**Date:** 2026-09-09 (task date, America/Vancouver).
 **Status:** Local mechanics verified; **phase readiness BLOCKED**, independent review **PENDING**. Phase 2 has not started. This is not a public-release or native-platform acceptance record.
 
 PRD: [matching public native runtime artifacts](../PRDs/production-readiness/PRD-262-the-runtime-native-prebuilt-release-exists.md), requested at `7d730126fe38970fd5beda0a0e7ff1f6c72664e9`.
@@ -8,7 +8,7 @@ Implementation base: `6972d87c1881a021afb041f44d4fcddcb469e971`.
 
 ## Scope and wiring
 
-Engine distribution layer, not game code. Four files in this phase: the existing release workflow, installer, distribution tests, and this record. No package version bump, release tag, npm publication, public promotion, or application migration was performed.
+Engine distribution layer, not game code. Five files in this phase: the existing release workflow, installer, distribution tests, the iOS packaging contract test, and this record. No package version bump, release tag, npm publication, public promotion, or application migration was performed.
 
 | Existing caller | Change and retained contract |
 | --- | --- |
@@ -18,6 +18,7 @@ Engine distribution layer, not game code. Four files in this phase: the existing
 | `packages/runtime-native/scripts/install-prebuilt.mjs:161` | Remote lock loading always validates the candidate envelope. A remote artifact-only lock cannot silently downgrade validation. |
 | `packages/runtime-native/scripts/install-prebuilt.mjs:130` | Explicit local artifact-only legacy pins remain readable. A partial modern envelope is not treated as a legacy pin. |
 | `packages/runtime-native/scripts/install-prebuilt.mjs:213` | Installation invalidates the old binary and success marker, writes verified bytes through a temporary sibling and rename, and publishes success last. Failure removes executable/temporary state and records failure. The CLI delegates status handling instead of writing a second result. |
+| `packages/runtime-native/tests/ios-packaging.test.mjs:378` | The existing release-lane consumer contract now asserts the shared checksum generator and exact candidate-SHA binding used by the workflow. |
 
 The advertised matrix is unchanged: Linux x64, macOS arm64, Windows x64; Android arm64-v8a and x86_64 with separate QuickJS/V8 runtime binaries, SDL, V8 libraries, shared STL, per-ABI snapshots, and the SDL AAR. iOS build, consumer, promotion and cleanup gates were retained byte-for-byte outside the checksum step.
 
@@ -131,9 +132,10 @@ The required `engine_search_capabilities` / `engine_capability_detail` tools wer
 
 | File | Original Git blob | Implemented Git blob |
 | --- | --- | --- |
-| `install-prebuilt.mjs` | `1b2e27e945b7982c79a4c102e065c507156a6350` | `1a4a404502074f22b20c23f8b4cb44fdd3cb4320` |
-| `distribution.test.mjs` | `3934e3f052f5b349bb3c81fa4ad8e8ac561243db` | `80d331cae8e144e3a62f1e445249559fb22d9916` |
+| `install-prebuilt.mjs` | `1b2e27e945b7982c79a4c102e065c507156a6350` | `6307a1d96d0ea2700cf42d02a2342c0dabc07d70` |
+| `distribution.test.mjs` | `3934e3f052f5b349bb3c81fa4ad8e8ac561243db` | `ddcebf7ff38c89e1aa121e1f059c2b35b57b7827` |
 | `native-release.yml` | `50e230776587dba1362559d7a972b0f7eddf3ec4` | `2ea53977304695fdd0d1cd44c6e6cae612c34b36` |
+| `ios-packaging.test.mjs` | `26934e68f73187da2e3d207a5e9ac98cc1377e1f` | `94169024f9270b2225bcdc07a23a7d460f41249f` |
 
 Implemented SHA-256 values, in the same order:
 
