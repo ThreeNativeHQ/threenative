@@ -8,7 +8,8 @@ strict prose lane + check-native-coverage +
   check-build-matrix                              8 files, 152 tests passed
 pnpm census                                       140,730 -> 142,142 across 7 cells
 native:coverage                                   39 targets (was 38); src/webgpu/ 78.83% ->
-                                                  78.87%; total 80.59%
+                                                  78.87%; total 80.59% -> 80.60%
+                                                  (run it last: any edit under tests/ restales it)
 
 ctest, Dawn (build/tn-linux, the canonical desktop contract lane):
   100% tests passed out of 40, including threenative-pipeline-cache-api-test
