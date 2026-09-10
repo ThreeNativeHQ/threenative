@@ -1,0 +1,42 @@
+name: PRD-078 wire regression
+
+on:
+  push:
+    branches:
+      - codex/prd-078-nonpublishing-hosted-proof-20260910
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Wire the SDL staging regression into the focused release gate
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/native-release.yml')
+          text = path.read_text()
+          marker = '      - "scripts/__tests__/native-release-proof.spec.ts"\n'
+          replacement = marker + '      - "scripts/__tests__/native-release-android-staging.spec.ts"\n'
+          if text.count(marker) != 2:
+              raise SystemExit(f'expected two path-filter markers, found {text.count(marker)}')
+          text = text.replace(marker, replacement)
+          old = 'pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts 2>&1 \\\n'
+          new = 'pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts scripts/__tests__/native-release-android-staging.spec.ts 2>&1 \\\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one focused-test command, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
+          git rm .github/workflows/prd-078-red-wire.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/native-release.yml
+          git commit -m "test(ci): run Android staging regression in release gate"
+          git push origin HEAD:codex/prd-078-nonpublishing-hosted-proof-20260910
