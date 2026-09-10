@@ -86,15 +86,23 @@ test('native platform failures fail the exact protected build context', () => {
   const buildJob = ciWorkflow.match(
     /\n\x20{2}build:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
   )?.[0] ?? '';
-  expect(buildJob).toContain('needs: [scope, native-platforms]');
+  // `build` is now a fail-closed join of the artifact producer and the native matrix rather than
+  // a job that does the packing itself, so the producer can start as soon as scope is known. What
+  // this test protects is unchanged: a native platform failure must still fail the protected
+  // `build` context, and it is asserted against the real gate shell below.
+  expect(buildJob).toContain('needs: [scope, build-artifacts, native-platforms]');
   expect(buildJob).toContain(
     "if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}",
+  );
+  expect(buildJob).toContain('CI_SCOPE_RESULT: ${{ needs.scope.result }}');
+  expect(buildJob).toContain(
+    'WORKSPACE_BUILD_RESULT: ${{ needs.build-artifacts.result }}',
   );
   expect(buildJob).toContain(
     'NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}',
   );
   const gate = buildJob.match(
-    /\n\x20{6}- name: Require the native platform lane\n\x20{8}env:\n\x20{10}NATIVE_PLATFORM_RESULT: \$\{\{ needs\.native-platforms\.result \}\}\n\x20{8}run: \|\n([\s\S]*?)(?=\n\x20{6}- )/u,
+    /\n\x20{6}- name: Require workspace and native platform evidence\n\x20{8}env:\n(?:\x20{10}[A-Z_]+: [^\n]*\n)+\x20{8}run: \|\n([\s\S]*?)(?=\n\x20{6}- |\n\x20{2}[a-z0-9-]+:|$)/u,
   )?.[1];
   expect(gate).toBeDefined();
   const script = gate
@@ -102,15 +110,34 @@ test('native platform failures fail the exact protected build context', () => {
     .map((line) => line.replace(/^\x20{10}/u, ''))
     .join('\n');
   expect(script).toBeDefined();
-  const run = (result) =>
+  const run = (results) =>
     // NB: never pass -euo as separate argv entries; bash reads the first as $0
     // with `set -u` active and aborts on `$1`.
     spawnSync('bash', ['-c', `set -euo pipefail\n${script}`], {
-      env: { ...process.env, NATIVE_PLATFORM_RESULT: result },
+      env: {
+        ...process.env,
+        CI_SCOPE_RESULT: 'success',
+        WORKSPACE_BUILD_RESULT: 'success',
+        ...results,
+      },
       encoding: 'utf8',
     });
-  expect(run('success').status).toBe(0);
-  expect(run('failure').status).not.toBe(0);
+  expect(run({ NATIVE_PLATFORM_RESULT: 'success' }).status).toBe(0);
+  // Each input fails closed on its own, and on every non-success verdict rather than only on
+  // `failure` - a cancelled or skipped native matrix must never read as a passed merge gate.
+  for (const result of ['failure', 'cancelled', 'skipped', '']) {
+    expect(run({ NATIVE_PLATFORM_RESULT: result }).status, `native ${result}`).not.toBe(0);
+  }
+  for (const result of ['failure', 'cancelled', 'skipped', '']) {
+    expect(
+      run({ NATIVE_PLATFORM_RESULT: 'success', WORKSPACE_BUILD_RESULT: result }).status,
+      `artifacts ${result}`,
+    ).not.toBe(0);
+    expect(
+      run({ NATIVE_PLATFORM_RESULT: 'success', CI_SCOPE_RESULT: result }).status,
+      `scope ${result}`,
+    ).not.toBe(0);
+  }
 });
 
 test('desktop platform lanes build and retain executable evidence', () => {
