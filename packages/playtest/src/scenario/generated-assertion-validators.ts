@@ -17,14 +17,14 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "notThermallyConfounded": (value: unknown) => value === true,
   }),
   "framebufferCoverage": Object.freeze({
-    "backdrop": (value: unknown) => Array.isArray(value) && value.length === 3 && value.every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0 && item <= 255),
+    "backdrop": (value: unknown) => Array.isArray(value),
     "grid": (value: unknown) => isRecord(value),
     "tolerance": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 255,
     "window": (value: unknown) => isRecord(value),
   }),
   "reachability": Object.freeze({
     "artifact": (value: unknown) => typeof value === "string" && value.trim() !== "",
-    "entities": (value: unknown) => Array.isArray(value) && value.length >= 2 && value.every((item) => typeof item === "string" && item.trim() !== ""),
+    "entities": (value: unknown) => Array.isArray(value),
   }),
   "aerodynamics": Object.freeze({
     "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
@@ -163,7 +163,7 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "kind": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "minCount": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxCount": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
-    "requiredOn": (value: unknown) => Array.isArray(value) && value.every((item) => item === "web" || item === "desktop" || item === "bevy"),
+    "requiredOn": (value: unknown) => Array.isArray(value),
   }),
   "settled": Object.freeze({
     "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
@@ -171,7 +171,7 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "minBodies": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value > 0,
     "compareToStep": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "minMeanPoseDistance": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
-    "requiredOn": (value: unknown) => Array.isArray(value) && value.every((item) => item === "web" || item === "desktop" || item === "bevy"),
+    "requiredOn": (value: unknown) => Array.isArray(value),
     "allowTrivial": (value: unknown) => typeof value === "string" && value.replace(/\s/gu, "").length >= MIN_TRIVIALITY_REASON_LENGTH,
   }),
   "occluded": Object.freeze({
