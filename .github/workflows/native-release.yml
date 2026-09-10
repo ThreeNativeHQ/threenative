@@ -83,21 +83,25 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      # `gh run list` infers the repository from the checkout, and this job has none, so it died
-      # on `failed to determine base repo: fatal: not a git repository` before it could ask the
-      # question. The gate has therefore never once evaluated: this workflow runs only on a
-      # `runtime-native-v*` tag, and no such tag had ever been pushed. Pass the repository
-      # explicitly rather than adding a checkout the job otherwise does not need.
+      # This job deliberately has no checkout: every GitHub query names the repository.
+      # Aggregate CI success is not enough; retain and validate the individual prerequisites.
       - name: Require a green CI run for this commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          evidence="$RUNNER_TEMP/native-release-prerequisites"
+          mkdir -p "$evidence"
+          trap 'status=$?; printf "exit_code=%s\n" "$status" > "$evidence/status.txt"' EXIT
           candidate_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --limit 20 --json databaseId,status,conclusion,event,headBranch,headSha)"
+          printf '%s\n' "$candidate_runs" > "$evidence/ci-runs.json"
           candidate_run="$(
             CANDIDATE_SHA="$GITHUB_SHA" CANDIDATE_RUNS="$candidate_runs" node --input-type=module <<'NODE'
           const runs = JSON.parse(process.env.CANDIDATE_RUNS ?? "[]");
           const candidateSha = process.env.CANDIDATE_SHA ?? "";
+          if (!/^[a-f0-9]{40}$/.test(candidateSha) || !Array.isArray(runs)) {
+            throw new Error(`Invalid CI run list or candidate SHA ${candidateSha}.`);
+          }
           const run = runs.find((entry) =>
             entry?.status === "completed" &&
             entry?.conclusion === "success" &&
@@ -113,7 +117,77 @@ jobs:
           console.log(run.databaseId);
           NODE
           )"
-          echo "Using exact successful CI push run $candidate_run for $GITHUB_SHA."
+          gh run view "$candidate_run" --repo "$GITHUB_REPOSITORY" --json databaseId,attempt,status,conclusion,event,headBranch,headSha > "$evidence/ci-run.json"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run/jobs?filter=latest&per_page=100" > "$evidence/ci-jobs.json"
+          CANDIDATE_RUN_ID="$candidate_run" node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+          const directory = join(process.env.RUNNER_TEMP, "native-release-prerequisites");
+          const candidateSha = process.env.GITHUB_SHA;
+          const runId = Number(process.env.CANDIDATE_RUN_ID);
+          const run = JSON.parse(readFileSync(join(directory, "ci-run.json"), "utf8"));
+          const pages = JSON.parse(readFileSync(join(directory, "ci-jobs.json"), "utf8"));
+          if (!Array.isArray(pages) || pages.length === 0 || pages.some((page) => !Array.isArray(page?.jobs))) {
+            throw new Error(`Missing or malformed CI job pages for candidate ${candidateSha}.`);
+          }
+          const jobs = pages.flatMap((page) => page.jobs);
+          const failures = [];
+          if (run?.databaseId !== runId || run?.headSha !== candidateSha ||
+              run?.status !== "completed" || run?.conclusion !== "success" ||
+              run?.event !== "push" || run?.headBranch !== "main" ||
+              !Number.isSafeInteger(run?.attempt) || run.attempt < 1) {
+            failures.push(`Selected CI run no longer proves exact candidate ${candidateSha}.`);
+          }
+          if (pages.some((page) => !Number.isSafeInteger(page.total_count) || page.total_count !== jobs.length)) {
+            failures.push("Incomplete CI job pagination: the observed count does not match total_count.");
+          }
+          if (jobs.some((job) => !Number.isSafeInteger(job?.id) || job.id < 1 ||
+              typeof job?.name !== "string" || job.run_id !== runId || job.head_sha !== candidateSha) ||
+              new Set(jobs.map((job) => job?.id)).size !== jobs.length) {
+            failures.push("Malformed, duplicate or wrong-candidate CI job identity.");
+          }
+          // Existing main-CI job names, not evidence that this release workflow has executed.
+          // iOS release/simulator gates remain separate and unchanged below.
+          const requiredNames = [
+            "typecheck", "lint", "test", "budgets", "build", "test-native",
+            "native-platforms / Windows desktop core",
+            "native-platforms / macOS desktop core",
+            "native-platforms / Scaffolded starter desktop artifact",
+            "native-platforms / Desktop web/native parity",
+            "native-platforms / Android emulator visual parity",
+          ];
+          const runUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${runId}`;
+          const requiredJobs = requiredNames.map((name) => {
+            const matches = jobs.filter((job) => job?.name === name);
+            const job = matches[0];
+            const status = job?.status ?? "missing";
+            const conclusion = job?.conclusion ?? null;
+            if (matches.length !== 1 || status !== "completed" || conclusion !== "success") {
+              failures.push(`${name}: ${matches.length} result(s), ${status}/${conclusion ?? "absent"}.`);
+            }
+            return { name, id: job?.id ?? null, status, conclusion,
+              url: Number.isSafeInteger(job?.id) && job.id > 0 ? `${runUrl}/job/${job.id}` : null };
+          });
+          const report = { candidateSha, run: { ...run, url: runUrl }, requiredJobs, failures };
+          writeFileSync(join(directory, "validation.json"), `${JSON.stringify(report, null, 2)}\n`);
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+              `## Exact-candidate CI prerequisites (not release proof)\n\nSHA: ${candidateSha}\n\n` +
+              `[CI run ${runId}, attempt ${run?.attempt ?? "unknown"}](${runUrl})\n\n` +
+              "| Required job | Status | Conclusion |\n| --- | --- | --- |\n" +
+              requiredJobs.map((job) => `| ${job.url ? `[${job.name}](${job.url})` : job.name} | ${job.status} | ${job.conclusion ?? "absent"} |`).join("\n") +
+              `\n\nValidation: ${failures.length === 0 ? "accepted" : "REFUSED"}.\n`);
+          }
+          if (failures.length > 0) throw new Error(failures.join("\n"));
+          console.log(`Validated ${requiredJobs.length} required jobs in CI run ${runId} for ${candidateSha}.`);
+          NODE
+      - name: Retain exact-candidate prerequisite diagnostics
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: release-prerequisites-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-release-prerequisites/
+          if-no-files-found: error
 
   build:
     needs: [validate-tag, gates]
@@ -229,6 +303,7 @@ jobs:
           path: release/${{ matrix.asset }}
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: evidence-desktop-${{ matrix.key }}
           path: packages/runtime-native/artifacts/
@@ -548,6 +623,7 @@ jobs:
             THREENATIVE_PHYSICS_CONTROL=masked pnpm --dir "$CONSUMER_TARGET" build --target android
             adb install -r "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
             node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics-mask.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-mask-pass" --timeout 30000
+            set +e; node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-masked-physics-control" --timeout 30000 > "$RUNNER_TEMP/android-masked-physics-control.log" 2>&1; status=$?; set -e; cat "$RUNNER_TEMP/android-masked-physics-control.log"; test "$status" -eq 1; grep -F TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/android-masked-physics-control.log"
             THREENATIVE_PHYSICS_CONTROL=wrong-gravity pnpm --dir "$CONSUMER_TARGET" build --target android
             adb install -r "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
             set +e; node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-wrong-gravity" --timeout 30000 > "$RUNNER_TEMP/android-wrong-gravity.log" 2>&1; status=$?; set -e; cat "$RUNNER_TEMP/android-wrong-gravity.log"; test "$status" -eq 1; grep -F TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/android-wrong-gravity.log"
@@ -565,6 +641,7 @@ jobs:
             ${{ runner.temp }}/packed-android-wrong-height/
             ${{ runner.temp }}/packed-android-mask-control/
             ${{ runner.temp }}/packed-android-mask-pass/
+            ${{ runner.temp }}/packed-android-masked-physics-control/
             ${{ runner.temp }}/packed-android-wrong-gravity/
             ${{ runner.temp }}/android-*.log
           if-no-files-found: warn
