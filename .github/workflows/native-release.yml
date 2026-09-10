@@ -96,7 +96,7 @@ jobs:
           candidate_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --limit 20 --json databaseId,status,conclusion,event,headBranch,headSha)"
           printf '%s\n' "$candidate_runs" > "$evidence/ci-runs.json"
           candidate_run="$(
-            CANDIDATE_SHA="$GITHUB_SHA" CANDIDATE_RUNS="$candidate_runs" node --input-type=module <<'NODE'
+            CANDIDATE_SHA="$GITHUB_SHA" CANDIDATE_RUNS="$candidate_runs" FORCE_COLOR=0 node --input-type=module <<'NODE'
           const runs = JSON.parse(process.env.CANDIDATE_RUNS ?? "[]");
           const candidateSha = process.env.CANDIDATE_SHA ?? "";
           if (!/^[a-f0-9]{40}$/.test(candidateSha) || !Array.isArray(runs)) {

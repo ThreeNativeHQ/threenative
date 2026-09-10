@@ -103,7 +103,9 @@ test('native platform failures fail the exact protected build context', () => {
     .join('\n');
   expect(script).toBeDefined();
   const run = (result) =>
-    spawnSync('bash', ['-euo', 'pipefail', '-c', script], {
+    // NB: never pass -euo as separate argv entries; bash reads the first as $0
+    // with `set -u` active and aborts on `$1`.
+    spawnSync('bash', ['-c', `set -euo pipefail\n${script}`], {
       env: { ...process.env, NATIVE_PLATFORM_RESULT: result },
       encoding: 'utf8',
     });
@@ -286,13 +288,15 @@ function runReleaseGate({ runs = [candidateRun], detail = candidateRun, jobs = c
   writeFileSync(join(directory, 'gh'), `#!/bin/sh
 case "$1 $2" in
   'run list') test "$MOCK_GH_FAILURE" != list || exit 42; printf '%s' "$MOCK_GH_RUNS" ;;
-  'run view') test "$3" = 123 || exit 64; test "$MOCK_GH_FAILURE" != view || exit 42; printf '%s' "$MOCK_GH_DETAIL" ;;
-  'api --paginate') test "$3" = --slurp || exit 64; test "$4" = 'repos/ThreeNativeHQ/threenative/actions/runs/123/jobs?filter=latest&per_page=100' || exit 64; test "$MOCK_GH_FAILURE" != jobs || exit 42; printf '%s' "$MOCK_GH_PAGES" ;;
+  'run view') test "$2" = view || exit 64; test "$MOCK_GH_FAILURE" != view || exit 42; printf '%s' "$MOCK_GH_DETAIL" ;;
+  'api --paginate') test "$2" = --paginate || exit 64; test "$3" = --slurp || exit 64; test "$4" = 'repos/ThreeNativeHQ/threenative/actions/runs/123/jobs?filter=latest&per_page=100' || exit 64; test "$MOCK_GH_FAILURE" != jobs || exit 42; printf '%s' "$MOCK_GH_PAGES" ;;
   *) exit 64 ;;
 esac
 `);
   chmodSync(join(directory, 'gh'), 0o755);
-  const result = spawnSync('bash', ['-euo', 'pipefail', '-c', releaseGateScript], {
+  // NB: never pass -euo as separate argv entries; bash reads the first as $0
+  // with `set -u` active and aborts on `$1`. Set options inside the script.
+  const result = spawnSync('bash', ['-c', `set -euo pipefail\n${releaseGateScript}`], {
     env: { ...process.env, GITHUB_REPOSITORY: 'ThreeNativeHQ/threenative',
       GITHUB_SHA: candidateSha, RUNNER_TEMP: directory, GITHUB_STEP_SUMMARY: join(directory, 'summary'),
       MOCK_GH_RUNS: JSON.stringify(runs), MOCK_GH_DETAIL: JSON.stringify(detail),
@@ -426,8 +430,10 @@ test('packed Android retains four specific negative controls and both positive c
     writeFileSync(join(directory, 'node'), '#!/bin/sh\nprintf "%s\\n" "$MOCK_MARKER"\nexit "$MOCK_STATUS"\n');
     chmodSync(join(directory, 'node'), 0o755);
     // This executes the shell guard, not a native frame or a physics simulation.
+    // NB: never pass -euo as separate argv entries; bash reads the first as $0
+    // with `set -u` active and aborts on `$1`.
     for (const [status, output, expected] of [[1, marker, 0], [0, marker, 1], [2, marker, 1], [1, 'TN_UNRELATED_FAILURE', 1]]) {
-      const result = spawnSync('bash', ['-euo', 'pipefail', '-c', command], {
+      const result = spawnSync('bash', ['-c', `set -euo pipefail\n${command}`], {
         env: { ...process.env, RUNNER_TEMP: directory, CONSUMER_TARGET: directory,
           GITHUB_WORKSPACE: directory, MOCK_STATUS: String(status), MOCK_MARKER: output,
           PATH: `${directory}:${process.env.PATH}` }, encoding: 'utf8',
