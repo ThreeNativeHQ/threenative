@@ -22,63 +22,41 @@ const corePackageRoot = path.resolve("packages/core");
 const physicsPackageRoot = path.resolve("packages/physics");
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
-const MCP_REQUEST_TIMEOUT_MS = 2_000;
-// creature_status probes optional Python/Chromium tooling; the published Chromium probe is
-// bounded at 10 seconds. The first guide call can also pay the payload load, so both need a
-// bounded margin beyond the general 2-second MCP request budget.
-const MCP_CREATURE_DISCOVERY_TIMEOUT_MS = 15_000;
-// The published creature compiler can spend up to 60 seconds in its bounded operation. Keep
-// ordinary discovery calls fast while allowing the response to arrive after that operation limit.
-const MCP_COMPILE_REQUEST_TIMEOUT_MS = 70_000;
-// `initialize` is the first thing a freshly spawned server answers, so it pays a cold Node start
-// and the server's whole module graph before it can reply — work that has nothing to do with the
-// scaffold wiring under test. Two seconds was enough on an idle desktop and not on a loaded CI
-// shard, where it failed as `MCP initialize timed out after 2000 ms`. Keeping the handshake tight
-// buys nothing now that `watchMcpChild` rejects on `close`/`error` the moment a server actually
-// dies: this budget only has to outlast a cold start and still fire on a server that is alive and
-// silent.
-const MCP_HANDSHAKE_TIMEOUT_MS = 30_000;
+// Every budget in this file is a hang detector, not a schedule - the rule vitest.config.ts:26
+// already states for `testTimeout`. `watchMcpChild` rejects the instant a server dies, with its
+// stderr attached, so every real failure is reported fast and precisely no matter how large these
+// are. What is left for a wall clock to catch is a server that is alive and silent forever, and
+// the only wrong answer there is a number small enough to fire on a slow machine.
+//
+// One budget covers every method, `initialize` included. Scoping the repair to one method name is
+// what left this defect live twice: #176 raised it at three real-server probes and missed the
+// liveness probes, and scoping it to `initialize` alone still left eight real-server `tools/list`
+// and `tools/call` sites racing a 2 000 ms clock against machine speed - the same class of
+// failure under a different method name.
+const MCP_REQUEST_TIMEOUT_MS = 30_000;
+// The one genuinely long call: the published creature compiler has a 60-second bounded operation
+// of its own, so its budget has to clear that before it can detect a hang at all.
+const MCP_COMPILE_REQUEST_TIMEOUT_MS = 90_000;
 
-// Which budget a call gets is a property of the *method*, not of the caller remembering to pass
-// one. #176 raised the handshake budget at the three real-server probes and left every other
-// `initialize` on the 2-second default, so the identical defect stayed live in the liveness
-// probes — `bounds retained stderr while draining more than a pipe can buffer` writes a mebibyte
-// to stderr before it answers, and it still fails as `MCP initialize timed out after 2000 ms` on
-// a machine slow enough to matter (reproduced at 12 555 ms under 2x CPU oversubscription). Those
-// call sites change least often, so they are exactly the ones a future budget fix will miss
-// again. An explicit argument still wins, which is what the deliberate 20 ms timeout probe needs.
-function defaultBudgetFor(method: string): number {
-  return method === "initialize" ? MCP_HANDSHAKE_TIMEOUT_MS : MCP_REQUEST_TIMEOUT_MS;
-}
-
-// A test's own budget must outlast every MCP budget that test can spend. `probeEngineServer` spent
-// a 30 000 ms handshake budget inside a 30 000 ms test, so vitest always won the race: a genuinely
-// hung server reported as a bare `Test timed out in 30000ms`, discarding the server stderr that
-// the inner timer exists to attach. Deriving one number from the other makes the ordering
-// structural rather than two hand-written constants that drift apart.
-const TEST_BUDGET_MARGIN = 3;
+// A test's own budget must outlast every MCP budget that test can spend, or vitest kills the test
+// first and the failure loses the server stderr the inner timer exists to attach. Deriving one
+// from the other keeps that ordering true by construction instead of by two hand-written numbers.
+const TEST_BUDGET_MARGIN = 2;
 function testBudget(...spent: readonly number[]): number {
   return Math.max(...spent) * TEST_BUDGET_MARGIN;
 }
 
-// Removing several scaffolded project trees is real file I/O, and 10 000 ms is vitest's default
-// for a hook rather than a measurement of this one. Four `Hook timed out in 10000ms` failures
-// came out of the same oversubscribed run.
+// Removing scaffolded project trees is real file I/O, and 10 000 ms is vitest's default for a hook
+// rather than a measurement of this one; an oversubscribed run produced four
+// `Hook timed out in 10000ms`.
 const CLEANUP_HOOK_TIMEOUT_MS = 120_000;
 
-// Each probe's test budget, derived from the largest MCP budget that probe can spend. Measured
-// costs for context — this box on 2 idle cores, and the hosted 2-core runner, which runs the whole
-// file in 23 644 ms:
-//   every-template probe 1 087 ms · creature workflow 326 ms · anyCreature loop 2 796 ms
-const ENGINE_PROBE_TEST_TIMEOUT_MS = testBudget(MCP_HANDSHAKE_TIMEOUT_MS);
-const CREATURE_WORKFLOW_TEST_TIMEOUT_MS = testBudget(MCP_HANDSHAKE_TIMEOUT_MS);
-const ANY_CREATURE_TEST_TIMEOUT_MS = testBudget(
-  MCP_COMPILE_REQUEST_TIMEOUT_MS,
-  MCP_CREATURE_DISCOVERY_TIMEOUT_MS,
-  MCP_HANDSHAKE_TIMEOUT_MS,
-);
-const HOST_CONFIG_TEST_TIMEOUT_MS = testBudget(MCP_HANDSHAKE_TIMEOUT_MS);
-const BLENDER_PROBE_TEST_TIMEOUT_MS = testBudget(MCP_HANDSHAKE_TIMEOUT_MS);
+// Probes that spend an MCP budget derive their test budget from the largest one they can spend.
+const MCP_PROBE_TEST_TIMEOUT_MS = testBudget(MCP_REQUEST_TIMEOUT_MS);
+const COMPILE_PROBE_TEST_TIMEOUT_MS = testBudget(MCP_COMPILE_REQUEST_TIMEOUT_MS);
+// These two spawn no server and call `request` never; their cost is one `createProject` per
+// template, so their budget scales with the template count and not with any MCP budget.
+const SCAFFOLD_ONLY_TEST_TIMEOUT_MS = Math.max(30_000, templates.length * 6_000);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -234,7 +212,7 @@ async function request(
   lines: ReturnType<typeof createInterface>,
   method: string,
   params: Record<string, unknown> = {},
-  timeoutMs = defaultBudgetFor(method),
+  timeoutMs = MCP_REQUEST_TIMEOUT_MS,
 ): Promise<Record<string, unknown>> {
   const id = nextId.value++;
   const liveness = watchMcpChild(child);
@@ -338,21 +316,29 @@ describe("MCP probe liveness", () => {
     await assert.rejects(request(child, nextId, lines, "initialize"), /\(3\): last diagnostic/);
   });
 
-  it("rejects every pending request on exit without waiting for the compile budget", async () => {
-    const { child, lines, nextId, state, closed } = startServer("process.exitCode = 3;");
-    const results = await Promise.allSettled([
-      request(child, nextId, lines, "initialize", {}, MCP_COMPILE_REQUEST_TIMEOUT_MS),
-      request(child, nextId, lines, "tools/list", {}, MCP_COMPILE_REQUEST_TIMEOUT_MS),
-    ]);
-    for (const result of results) {
-      assert.equal(result.status, "rejected");
-      if (result.status === "rejected") assert.match(String(result.reason), /exited.*\(3\)/);
-    }
-    await closed;
-    assert.equal(state.pending.size, 0);
-    assert.equal(lines.listenerCount("line"), 0);
-    await assert.rejects(request(child, nextId, lines, "tools/list"), /exited.*\(3\)/);
-  });
+  it(
+    "rejects every pending request on exit without waiting for the compile budget",
+    async () => {
+      const { child, lines, nextId, state, closed } = startServer("process.exitCode = 3;");
+      const results = await Promise.allSettled([
+        request(child, nextId, lines, "initialize", {}, MCP_COMPILE_REQUEST_TIMEOUT_MS),
+        request(child, nextId, lines, "tools/list", {}, MCP_COMPILE_REQUEST_TIMEOUT_MS),
+      ]);
+      for (const result of results) {
+        assert.equal(result.status, "rejected");
+        if (result.status === "rejected") assert.match(String(result.reason), /exited.*\(3\)/);
+      }
+      await closed;
+      assert.equal(state.pending.size, 0);
+      assert.equal(lines.listenerCount("line"), 0);
+      await assert.rejects(request(child, nextId, lines, "tools/list"), /exited.*\(3\)/);
+      // This test spends the compile budget, which is deliberately larger than vitest's own default.
+      // Without its own budget it inherits `testTimeout: 60_000` (vitest.config.ts:26), so a
+      // regression in the early-`close` rejection - the exact thing this test exists to catch -
+      // would surface as a bare `Test timed out in 60000ms` with the server stderr discarded.
+    },
+    COMPILE_PROBE_TEST_TIMEOUT_MS,
+  );
 
   it("handles stdin errors and preserves the original failure after close", async () => {
     const { child, lines, nextId, state, closed } = startServer("setInterval(() => {}, 1000);");
@@ -376,39 +362,57 @@ describe("MCP probe liveness", () => {
     await assert.rejects(request(child, nextId, lines, "tools/list"), { code: "ENOENT" });
   });
 
-  // The red this exists to hold down: with `timeoutMs = MCP_REQUEST_TIMEOUT_MS` restored on
-  // `request`, this fails as `MCP initialize timed out after 2000 ms`. The delay is a fixed
-  // `setTimeout` inside the server rather than a real cold start, so the test asserts the budget
-  // that is applied and never races the machine it runs on.
-  it("gives initialize its handshake budget even when the caller passes none", async () => {
-    const replyAfterMs = MCP_REQUEST_TIMEOUT_MS + 500;
+  // The red this holds down: restore `MCP_REQUEST_TIMEOUT_MS = 2_000` and this fails as
+  // `MCP initialize timed out after 2000 ms`, the message CI produced. The delay is a fixed
+  // `setTimeout` inside the server rather than a real cold start, so it asserts the budget that is
+  // applied and never races the machine it runs on. `tools/list` is asserted on the same server
+  // because scoping the previous repair to `initialize` alone left every other method racing.
+  it("outlasts a slow server on every method, not only initialize", async () => {
+    const replyAfterMs = 2_500;
     assert.ok(
-      replyAfterMs < MCP_HANDSHAKE_TIMEOUT_MS,
-      `a ${replyAfterMs} ms reply must still fit the ${MCP_HANDSHAKE_TIMEOUT_MS} ms handshake budget`,
+      replyAfterMs < MCP_REQUEST_TIMEOUT_MS,
+      `a ${replyAfterMs} ms reply must fit the ${MCP_REQUEST_TIMEOUT_MS} ms budget`,
     );
     const { child, lines, nextId } = startServer(`
-      setTimeout(() => {
-        process.stdout.write(JSON.stringify({ id: 1, result: { ready: true } }) + "\\n");
-      }, ${replyAfterMs});
+      let id = 0;
+      require("node:readline")
+        .createInterface({ input: process.stdin })
+        .on("line", () => {
+          const current = ++id;
+          setTimeout(() => {
+            process.stdout.write(
+              JSON.stringify({ id: current, result: { ready: true } }) + "\\n",
+            );
+          }, ${replyAfterMs});
+        });
       setInterval(() => {}, 1000);
     `);
     assert.deepEqual(await request(child, nextId, lines, "initialize"), { ready: true });
-    assert.equal(defaultBudgetFor("initialize"), MCP_HANDSHAKE_TIMEOUT_MS);
-    assert.equal(defaultBudgetFor("tools/list"), MCP_REQUEST_TIMEOUT_MS);
+    assert.deepEqual(await request(child, nextId, lines, "tools/list"), { ready: true });
   });
 
-  // Every budget a probe can spend has to be smaller than the budget of the test spending it, or
-  // vitest kills the test first and the failure loses the server's stderr.
-  it("keeps every probe's own budget under the budget of the test that spends it", () => {
-    for (const [name, spent, budget] of [
-      ["engine probe", MCP_HANDSHAKE_TIMEOUT_MS, ENGINE_PROBE_TEST_TIMEOUT_MS],
-      ["creature workflow", MCP_HANDSHAKE_TIMEOUT_MS, CREATURE_WORKFLOW_TEST_TIMEOUT_MS],
-      ["anyCreature loop", MCP_COMPILE_REQUEST_TIMEOUT_MS, ANY_CREATURE_TEST_TIMEOUT_MS],
-      ["host configs", MCP_HANDSHAKE_TIMEOUT_MS, HOST_CONFIG_TEST_TIMEOUT_MS],
-      ["blender probe", MCP_HANDSHAKE_TIMEOUT_MS, BLENDER_PROBE_TEST_TIMEOUT_MS],
-    ] as const) {
-      assert.ok(spent < budget, `${name}: probe budget ${spent} ms must be under ${budget} ms`);
-    }
+  // Load-bearing form of "a probe's budget stays under its test's budget": assert that no `it` in
+  // this file carries a hand-written millisecond literal. Comparing the derived constants against
+  // each other cannot fail - `testBudget` builds the budget from the spend, so every such row
+  // reduces to `x < margin * x` - and it would not notice the regression it names, because pasting
+  // a literal back into an `it(...)` call re-creates exactly the inversion this guards.
+  it("derives every per-test budget instead of hand-writing a millisecond literal", async () => {
+    const source = await readFile(new URL(import.meta.url), "utf8");
+    const literals = [...source.matchAll(/\n\x20{2,4}(\d[\d_]*),\n\x20{2}\);/gu)].map(
+      (match) => match[1] ?? "",
+    );
+    assert.deepEqual(
+      literals,
+      [],
+      `per-test budgets must come from testBudget(); found literal timeout(s): ${literals.join(", ")}`,
+    );
+    // The one budget larger than vitest's own default has to bring its own test budget, or vitest
+    // kills the test first and the server stderr goes with it.
+    assert.ok(
+      MCP_COMPILE_REQUEST_TIMEOUT_MS > 60_000 &&
+        COMPILE_PROBE_TEST_TIMEOUT_MS > MCP_COMPILE_REQUEST_TIMEOUT_MS,
+      `compile budget ${MCP_COMPILE_REQUEST_TIMEOUT_MS} needs a test budget above it, got ${COMPILE_PROBE_TEST_TIMEOUT_MS}`,
+    );
   });
 
   it("includes stderr and removes listeners when a live server times out", async () => {
@@ -438,18 +442,11 @@ async function probeEngineServer(target: string): Promise<void> {
   const lines = createInterface({ input: child.stdout });
   const nextId = { value: 1 };
   try {
-    await request(
-      child,
-      nextId,
-      lines,
-      "initialize",
-      {
-        capabilities: {},
-        clientInfo: { name: "scaffold-mcp-test", version: "0" },
-        protocolVersion: "2025-06-18",
-      },
-      MCP_HANDSHAKE_TIMEOUT_MS,
-    );
+    await request(child, nextId, lines, "initialize", {
+      capabilities: {},
+      clientInfo: { name: "scaffold-mcp-test", version: "0" },
+      protocolVersion: "2025-06-18",
+    });
     child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
     const listed = await request(child, nextId, lines, "tools/list");
     const tools = listed.tools as Array<{ name: string }>;
@@ -572,7 +569,7 @@ describe("scaffolded engine MCP", () => {
       ).resolves.toContain('"name": "@threenative/physics"');
       await probeEngineServer(target);
     },
-    ENGINE_PROBE_TEST_TIMEOUT_MS,
+    MCP_PROBE_TEST_TIMEOUT_MS,
   );
 });
 
@@ -612,7 +609,7 @@ describe("scaffolded asset MCP", () => {
         }
       }
     },
-    CREATURE_WORKFLOW_TEST_TIMEOUT_MS,
+    SCAFFOLD_ONLY_TEST_TIMEOUT_MS,
   );
 
   it(
@@ -677,18 +674,11 @@ describe("scaffolded asset MCP", () => {
       const lines = createInterface({ input: child.stdout });
       const nextId = { value: 1 };
       try {
-        const initialized = await request(
-          child,
-          nextId,
-          lines,
-          "initialize",
-          {
-            capabilities: {},
-            clientInfo: { name: "scaffold-asset-test", version: "0" },
-            protocolVersion: "2025-06-18",
-          },
-          MCP_HANDSHAKE_TIMEOUT_MS,
-        );
+        const initialized = await request(child, nextId, lines, "initialize", {
+          capabilities: {},
+          clientInfo: { name: "scaffold-asset-test", version: "0" },
+          protocolVersion: "2025-06-18",
+        });
         expect(initialized.serverInfo).toEqual({ name: "threenative-asset-mcp", version: "0.8.0" });
         child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
 
@@ -714,7 +704,7 @@ describe("scaffolded asset MCP", () => {
               arguments: {},
               name: "creature_status",
             },
-            MCP_CREATURE_DISCOVERY_TIMEOUT_MS,
+            MCP_REQUEST_TIMEOUT_MS,
           ),
         );
         const statusTooling = status.tooling;
@@ -740,7 +730,7 @@ describe("scaffolded asset MCP", () => {
               arguments: { section: "syntax" },
               name: "creature_guide",
             },
-            MCP_CREATURE_DISCOVERY_TIMEOUT_MS,
+            MCP_REQUEST_TIMEOUT_MS,
           ),
         );
         expect(guide.section).toBe("syntax");
@@ -796,7 +786,7 @@ describe("scaffolded asset MCP", () => {
         }
       }
     },
-    ANY_CREATURE_TEST_TIMEOUT_MS,
+    COMPILE_PROBE_TEST_TIMEOUT_MS,
   );
 });
 
@@ -837,7 +827,7 @@ describe("scaffolded host MCP configs", () => {
         expect(code.servers["threenative-engine"]?.type, template).toBe("stdio");
       }
     },
-    HOST_CONFIG_TEST_TIMEOUT_MS,
+    SCAFFOLD_ONLY_TEST_TIMEOUT_MS,
   );
 });
 
@@ -903,18 +893,11 @@ describe("scaffolded blender MCP", () => {
       const lines = createInterface({ input: child.stdout });
       const nextId = { value: 1 };
       try {
-        await request(
-          child,
-          nextId,
-          lines,
-          "initialize",
-          {
-            capabilities: {},
-            clientInfo: { name: "scaffold-blender-test", version: "0" },
-            protocolVersion: "2025-06-18",
-          },
-          MCP_HANDSHAKE_TIMEOUT_MS,
-        );
+        await request(child, nextId, lines, "initialize", {
+          capabilities: {},
+          clientInfo: { name: "scaffold-blender-test", version: "0" },
+          protocolVersion: "2025-06-18",
+        });
         child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
 
         const listed = await request(child, nextId, lines, "tools/list");
@@ -945,7 +928,7 @@ describe("scaffolded blender MCP", () => {
         }
       }
     },
-    BLENDER_PROBE_TEST_TIMEOUT_MS,
+    MCP_PROBE_TEST_TIMEOUT_MS,
   );
 });
 
