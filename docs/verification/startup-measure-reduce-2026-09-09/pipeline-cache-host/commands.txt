@@ -1,0 +1,63 @@
+PRD-368 Phase 1B — the host's own creation paths compile through one device cache.
+Executed 2026-09-09 in .worktrees/prd-368-phase1a on Linux/Vulkan, NVIDIA RTX 2080.
+This proves host integration and a live cache. It does not prove persistence across
+process restarts (Phase 2) or any startup saving (Phase 3).
+
+Prerequisite: the patched wgpu-native from Phase 1A must be installed, because the
+cache C API exists only in patches/wgpu-native@25.0.2.2.patch:
+  node packages/runtime-native/scripts/download-deps.mjs --only wgpu
+  node packages/runtime-native/scripts/download-deps.mjs --rebuild-wgpu-cache-api \
+    --wgpu-source-archive <v25.0.2.2 tarball, sha256 cdee831c...>
+CMake prints `wgpu-native pipeline cache API: ON` when the installed header carries it;
+on a stock prebuilt it prints OFF and the host reports mode "unsupported" instead.
+
+Configure and build (Ninja; this repository's ninja lives in
+packages/runtime-native/.runtime/tools-venv/bin):
+  cmake -S packages/runtime-native -B packages/runtime-native/build/tn-wgpu -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF \
+    -DMYSTRAL_USE_WGPU=ON -DMYSTRAL_USE_DAWN=OFF \
+    -DTN_ENABLE_CANVAS2D=ON -DTN_ENABLE_VIDEO=OFF -DTN_ENABLE_RAYTRACING=OFF \
+    -DTN_ENABLE_WEBTRANSPORT=ON -DTN_ENABLE_NATIVE_GLTF=OFF -DTN_ENABLE_DRACO=OFF \
+    -DTN_ENABLE_DEBUG_SERVER=OFF -DTN_ENABLE_NATIVE_PHYSICS=OFF
+  cmake --build packages/runtime-native/build/tn-wgpu --target threenative-pipeline-cache-api-test
+
+The contract drives ten pipelines through the host's own JavaScript bindings: one
+synchronous render, one synchronous compute, and eight worker compiles queued before
+any can settle, so both pool threads are inside a creation call on the same cache
+handle at once. Two jobs on two workers can serialise and prove nothing about
+concurrent attachment.
+
+Three arms, one binary each:
+1. attached.log            ./threenative-pipeline-cache-api-test                   exit 0
+2. disabled-control.log    TN_PIPELINE_CACHE=0 ./threenative-pipeline-cache-api-test  exit 0
+3. red-no-attachment.log   attachPipelineCache() forced to return nullptr, rebuilt, run  exit 1
+
+Arm 3 is the red and was reverted immediately: it is the host as it stood before this
+phase, still reporting a cache while supplying none. Arm 2 is the shipping negative
+control, executable on any build and reused as Phase 3's cache-disabled arm.
+
+Read the results with:
+  grep -E 'TN_PIPELINE_CACHE:|host cache mode|FAIL' <log>
+Arm 1: renderAttached=5 computeAttached=5, 100 -> 71,839 serialized bytes.
+Arm 2: renderAttached=0 computeAttached=0, 0 bytes, mode "disabled".
+Arm 3: renderAttached=0 computeAttached=0, stays at 100 bytes, exits 1.
+The same binary on the Dawn build (build/tn-linux) prints TN_PIPELINE_CACHE_UNAVAILABLE
+and passes: an unsupported backend reporting unavailable is the contract, not a skip.
+
+Not executed here: Android arm64, process restarts, corrupt or unwritable storage,
+device loss, and any timing claim. The disabled arm was faster than the imported cache
+in the Phase 1A probe on this desktop; nothing in these logs revises that.
+
+Real game on the real host, same wgpu build, 2026-09-09 (game-attached.log,
+game-disabled.log). `pnpm build` first, so examples/native-smoke has a bundle:
+  SDL_VIDEODRIVER=x11 sh scripts/xvfb.sh \
+    packages/runtime-native/build/tn-wgpu/mystral run \
+    examples/native-smoke/dist/native-smoke.js --screenshot <png> --frames 300
+  (prefix TN_PIPELINE_CACHE=0 for the control arm)
+Both arms exit 0, present 300 of 300 frames, create the same 3 render pipelines and
+write a non-blank 1280x720 screenshot of the same scene. The attached arm stamps every
+event `"cache":"attached"` and serializes 43,728 bytes from an empty 100; the control
+stamps `"cache":"disabled"` and serializes nothing. The screenshots are not byte-equal
+and are not expected to be: the scene animates, so frame 300 lands at a different
+rotation phase in each run. Content, colours and object count match.

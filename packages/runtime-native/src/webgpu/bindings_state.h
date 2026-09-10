@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -420,6 +421,30 @@ struct AsyncPipelineCompiles {
     uint64_t checkpointOutstanding = 0;
 };
 
+/**
+ * The one pipeline cache this device compiles through. PRD-368.
+ *
+ * `handle` is a `WGPUPipelineCache`, held as `void*` because that type is declared only by the
+ * maintained cache patch: this struct has to compile on Dawn and on a stock wgpu-native prebuilt,
+ * where the honest answer is `mode == "unsupported"` and every other field stays zero. Every cast
+ * back sits inside `MYSTRAL_WGPU_PIPELINE_CACHE` in `bindings_pipelines.cpp`.
+ *
+ * The counts are attachments, never hits. The backend reports no per-pipeline hit or miss, so the
+ * host may only say that a cache was supplied to a creation call and how many bytes it serialized
+ * afterwards; calling that a cache hit would be a claim nothing here measured.
+ */
+struct PipelineCacheState {
+    void* handle = nullptr;
+    bool featureGranted = false;
+    /** `unsupported` (no API), `unavailable` (API present, device refused), `disabled`, `attached`. */
+    std::string mode = "unsupported";
+    std::string reason;
+    std::atomic<uint64_t> renderAttached{0};
+    std::atomic<uint64_t> computeAttached{0};
+    /** Bytes the empty cache serialized at device init, the floor a population claim beats. */
+    size_t emptyBytes = 0;
+};
+
 struct BindingsState {
     bool verboseLogging = false;
 
@@ -438,6 +463,7 @@ struct BindingsState {
     Canvas2DComposite canvas2D;
     AsyncBufferMaps asyncBufferMaps;
     AsyncPipelineCompiles asyncPipelines;
+    PipelineCacheState pipelineCache;
 };
 
 void flushUploadStaging(BindingsState* state);

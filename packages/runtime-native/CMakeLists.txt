@@ -459,8 +459,26 @@ if(MYSTRAL_USE_WGPU)
             endif()
             add_compile_definitions(MYSTRAL_WEBGPU_WGPU)
             set(MYSTRAL_WEBGPU_BACKEND_SET ON)
+            # PRD-368. The pipeline cache C API exists only in the maintained patch
+            # (`patches/wgpu-native@25.0.2.2.patch`, installed by
+            # `download-deps.mjs --rebuild-wgpu-cache-api`). A stock prebuilt declares none of it,
+            # so the host's cache path is compiled from what the installed header actually carries
+            # rather than from the backend name — otherwise an ordinary `pnpm native:build` stops
+            # compiling the moment this repository learns about the cache.
+            set(MYSTRAL_WGPU_PIPELINE_CACHE OFF)
+            if(EXISTS ${WGPU_INCLUDE_DIR}/webgpu/wgpu.h)
+                file(READ ${WGPU_INCLUDE_DIR}/webgpu/wgpu.h WGPU_NATIVE_HEADER_TEXT)
+                string(FIND "${WGPU_NATIVE_HEADER_TEXT}" "wgpuDeviceCreatePipelineCache"
+                    WGPU_PIPELINE_CACHE_DECLARED_AT)
+                unset(WGPU_NATIVE_HEADER_TEXT)
+                if(NOT WGPU_PIPELINE_CACHE_DECLARED_AT EQUAL -1)
+                    set(MYSTRAL_WGPU_PIPELINE_CACHE ON)
+                    add_compile_definitions(MYSTRAL_WGPU_PIPELINE_CACHE)
+                endif()
+            endif()
             message(STATUS "Found wgpu-native: ${WGPU_LIBRARY}")
             message(STATUS "wgpu-native includes: ${WGPU_INCLUDE_DIR}")
+            message(STATUS "wgpu-native pipeline cache API: ${MYSTRAL_WGPU_PIPELINE_CACHE}")
         else()
             message(WARNING "wgpu-native not found:")
             message(WARNING "  Library: ${WGPU_LIBRARY}")
@@ -2057,6 +2075,20 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             ${WGPU_INCLUDE_DIR})
     endif()
 
+    add_executable(threenative-pipeline-cache-api-test EXCLUDE_FROM_ALL
+        tests/pipeline_cache_api_test.cpp)
+    target_link_libraries(threenative-pipeline-cache-api-test PRIVATE mystral-runtime)
+    # Same include-only rule as the async entry test above: the runtime already links the
+    # backend, so naming it again reorders `libwgpu_native.a` ahead of `libswc.a` and collides
+    # on `rust_eh_personality`. The patched `wgpu.h` cache declarations arrive via includes.
+    if(MYSTRAL_USE_DAWN)
+        target_include_directories(threenative-pipeline-cache-api-test PRIVATE
+            ${DAWN_INCLUDE_DIR})
+    elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
+        target_include_directories(threenative-pipeline-cache-api-test PRIVATE
+            ${WGPU_INCLUDE_DIR})
+    endif()
+
     add_executable(threenative-stall-budget-hitch-test EXCLUDE_FROM_ALL
         tests/stall_budget_hitch_test.cpp)
     target_link_libraries(threenative-stall-budget-hitch-test PRIVATE mystral-runtime)
@@ -2352,6 +2384,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-timer-delivery-test)
     tn_register_contract_test(threenative-timer-engine-first-test)
     tn_register_contract_test(threenative-async-pipeline-thread-test)
+    tn_register_contract_test(threenative-pipeline-cache-api-test)
     tn_register_contract_test(threenative-stall-budget-hitch-test)
     tn_register_contract_test(threenative-timestamp-query-test)
     if(TN_ENABLE_VIDEO)

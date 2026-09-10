@@ -2,7 +2,7 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-38 native contract targets; 2 configured
+39 native contract targets; 2 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
@@ -21,12 +21,12 @@ targets could not be built and are named below.
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 8492 | 6694 | 78.83% |
+| `src/webgpu/` | 8530 | 6728 | 78.87% |
 | `src/webtransport/` | 1391 | 1081 | 77.71% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **22057** | **17775** | **80.59%** |
+| **TOTAL** | **22095** | **17809** | **80.60%** |
 
-Source digest: `sha256:0d7c195a4bc814e0528eb827e18650dc97e464af847a4bc0b7b7d087e0f6812d`
+Source digest: `sha256:8ee2014422e970a7a284b00fcb09806d49f0569e7b400da1ef0e12f63eaa2bd2`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation

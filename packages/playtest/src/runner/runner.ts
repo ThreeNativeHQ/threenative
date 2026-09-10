@@ -3,7 +3,12 @@ import type { StepInputState } from "./steps.js";
 import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic } from "./runner-support.js";
 import type { IPageLifecycle } from "./server.js";
 import { stopManagedServer, boundedTeardownStep, settledTeardownValue, assertManagedUrlAvailable, startManagedServer, waitForUrl, openPageAndConnectBridge, pageLifecycleDiagnostic, findFreePort, withPort } from "./server.js";
-import { readCaptureProvenance, sampleHud, pairObservations, normalizedRuntimeDiagnostics } from "./sampling.js";
+import { sampleHud } from "./sampling.js";
+import {
+  normalizedRuntimeDiagnostics,
+  pairObservations,
+  readCaptureProvenance,
+} from "./observationSampling.js";
 import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart } from "./shared.js";
 import {
   failedDiagnosticsAssertion,
@@ -108,7 +113,7 @@ interface IVisualPageCapture {
 export { preflightDisplay, buildReport } from './runner-support.js';
 export { captureVisualSurface } from './steps.js';
 export { advanceFixedStep, playtestStepDrivesMovement } from './steps.js';
-export { isRuntimeReadout } from './sampling.js';
+export { isRuntimeReadout } from './observationSampling.js';
 export { ManagedServerError, failedDiagnosticsAssertion } from './shared.js';
 export { resolveManagedServerCommand, substituteManagedPort, boundedTeardownStep, pageLifecycleDiagnostic } from './server.js';
 export type { IStandalonePlaytestReport, ILabeledPlaytestSample, IMovementSampleInterval, IRunStepSamples, IRunnerConsoleEntry } from './shared.js';

@@ -504,4 +504,24 @@ describe("pipeline timing capture", () => {
     expect(capture.source).toBe("browser");
     expect(capture.counts.creations).toBe(1);
   });
+
+  // PRD-368. The host prints what its device pipeline cache did, and stamps each event with the
+  // cache mode in force. Neither is something this reader consumes yet, and neither may make it
+  // refuse a capture: a log that a native run really produces has to parse, or the pipeline census
+  // goes dark on exactly the runs the cache work is measured on.
+  it("reads a capture carrying the host's pipeline cache lines", () => {
+    const cacheLines = [
+      'TN_PIPELINE_CACHE:{"version":1,"phase":"device","mode":"attached","featureGranted":true,"renderAttached":0,"computeAttached":0,"emptyBytes":100,"serializedBytes":100}',
+      'TN_PIPELINE_CACHE:{"version":1,"phase":"shutdown","mode":"attached","featureGranted":true,"renderAttached":2,"computeAttached":2,"emptyBytes":100,"serializedBytes":32515}',
+    ];
+    const cachedEvent = desktopEvents[0].replace('"provenance":{"unknown":true}', '"provenance":{"unknown":true},"cache":"attached"');
+    const capture = parsePipelineCapture(
+      [cacheLines[0], desktopMetadata, cachedEvent, cacheLines[1], nativeCompletion(1)].join("\n"),
+    );
+
+    expect(capture.source).toBe("native");
+    expect(capture.complete).toBe(true);
+    expect(capture.incompleteReasons).toEqual([]);
+    expect(capture.counts.creations).toBe(1);
+  });
 });
