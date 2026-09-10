@@ -280,6 +280,7 @@ test('iOS lane executes simulator proof and negative-control tests on an Apple r
     'pnpm --dir "$IOS_CONSUMER_TARGET" build --target ios',
     'ios-toolchain-invocations.log',
     '--target ios --app "$app"',
+    '--timeout 30000',
     'physics-wrong-height.playtest.json',
     'physics-mask.playtest.json',
     'THREENATIVE_PHYSICS_CONTROL=masked',

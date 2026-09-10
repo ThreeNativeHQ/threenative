@@ -473,12 +473,21 @@ test('Android workflows install and select the pinned V8 NDK', () => {
 
 test('the NDK 28 recipe pins and adapts the upstream inspector libc++ compatibility backport', () => {
   assert.equal(ANDROID_V8_BUILD.inspectorFix, '182d9c05e78b1ddb1cb8242cd3628a7855a0336f');
-  assert.equal(ANDROID_V8_BUILD.recipe, 4);
+  assert.equal(ANDROID_V8_BUILD.recipe, 5);
   const script = readFileSync(new URL('../scripts/build-android-v8.mjs', import.meta.url), 'utf8');
   assert.match(script, /ANDROID_V8_BUILD\.inspectorFix/u);
   assert.match(script, /adaptAndroidV8InspectorPatch/u);
   assert.match(script, /\["apply", "--check", "--recount", "-"\]/u);
   assert.match(script, /\["apply", "--recount", "-"\]/u);
+});
+
+test('the Android V8 source patch overrides Chromium\'s arm64 4 KB linker default', () => {
+  const script = readFileSync(new URL('../scripts/build-android-v8.mjs', import.meta.url), 'utf8');
+  assert.match(script, /join\(source, "build\/config\/android\/BUILD\.gn"\)/u);
+  assert.ok(script.includes("'    ldflags += [ \"-Wl,-z,max-page-size=4096\" ]'"));
+  assert.ok(script.includes(
+    "'    ldflags += [ \"-Wl,-z,max-page-size=16384\", \"-Wl,-z,common-page-size=16384\" ]'",
+  ));
 });
 
 test('the source build keeps a recipe-keyed checkout so interrupted Ninja work can resume', () => {

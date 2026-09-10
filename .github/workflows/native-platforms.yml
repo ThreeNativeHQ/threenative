@@ -1182,6 +1182,7 @@ jobs:
             artifacts=$2
             node packages/playtest/dist/runner/cli.js "$scenario" \
               --target ios --app "$app" --bundle-id "$bundle_id" \
+              --timeout 30000 \
               --artifacts "$artifacts"
           }
           expect_ios_failure() {

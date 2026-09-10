@@ -23,7 +23,7 @@ import {
 // Keep the existing V8 API/ABI and reviewed upstream patches, not an unrelated engine upgrade.
 // The source commit also pins Chromium's build/DEPS inputs. Increment recipe when flags change.
 export const ANDROID_V8_BUILD = Object.freeze({
-	recipe: 4,
+	recipe: 5,
 	version: "11.0.226.16",
 	inspectorFix: "182d9c05e78b1ddb1cb8242cd3628a7855a0336f",
 	source: "7999223ca1644726339aae43d9435c721c8a4bb0",
@@ -402,6 +402,11 @@ export function provisionAndroidV8(
 				join(source, "build/config/android/BUILD.gn"),
 				"/clang/12.0.9/lib/linux/$arch_dir",
 				`/clang/${clangVersions[0]}/lib/linux/$arch_dir`,
+			);
+			replaceOnce(
+				join(source, "build/config/android/BUILD.gn"),
+				'    ldflags += [ "-Wl,-z,max-page-size=4096" ]',
+				'    ldflags += [ "-Wl,-z,max-page-size=16384", "-Wl,-z,common-page-size=16384" ]',
 			);
 			replaceOnce(
 				join(source, "BUILD.gn"),
