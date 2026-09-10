@@ -386,30 +386,17 @@ jobs:
         env:
           RELEASE_REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ needs.validate-tag.outputs.candidate_sha }}
         run: |
           node --input-type=module <<'NODE'
-          import { createHash } from "node:crypto";
-          import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-          import { PREBUILT_ASSET_NAMES, PREBUILT_KEYS, RELEASE_REPOSITORY } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
-          if (process.env.RELEASE_REPOSITORY !== RELEASE_REPOSITORY) {
-            throw new Error(`Prebuilt releases must be published by ${RELEASE_REPOSITORY}, received ${process.env.RELEASE_REPOSITORY}.`);
-          }
-          const names = PREBUILT_ASSET_NAMES;
-          const expectedKeys = [...PREBUILT_KEYS].sort();
-          const actualKeys = Object.keys(names).sort();
-          if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys)) {
-            throw new Error(`Prebuilt key table drift: expected ${expectedKeys.join(", ")}; received ${actualKeys.join(", ")}.`);
-          }
-          const expected = Object.values(names).sort();
-          const actual = readdirSync("release").sort();
-          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-            throw new Error(`Expected ${expected.join(", ")}; received ${actual.join(", ")}.`);
-          }
-          const artifacts = Object.fromEntries(Object.entries(names).map(([key, name]) => [key, {
-            sha256: createHash("sha256").update(readFileSync(`release/${name}`)).digest("hex"),
-            url: `https://github.com/${process.env.RELEASE_REPOSITORY}/releases/download/${process.env.RELEASE_TAG}/${name}`,
-          }]));
-          writeFileSync("release/prebuilt-lock.json", `${JSON.stringify({ artifacts }, null, 2)}\n`);
+          import { writeFileSync } from "node:fs";
+          import { generateReleaseManifest } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
+          const manifest = generateReleaseManifest("release", {
+            repository: process.env.RELEASE_REPOSITORY,
+            tag: process.env.RELEASE_TAG,
+            sourceSha: process.env.RELEASE_SHA,
+          });
+          writeFileSync("release/prebuilt-lock.json", `${JSON.stringify(manifest, null, 2)}\n`);
           NODE
       - name: Publish runtimes and checksum lock
         env:
