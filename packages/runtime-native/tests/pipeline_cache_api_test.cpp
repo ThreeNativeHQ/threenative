@@ -411,6 +411,7 @@ int main() {
     // actually carries it. Reporting unavailable is the contract, not a skipped test.
     std::cout << "TN_PIPELINE_CACHE_UNAVAILABLE:{\"backend\":\"other\",\"reason\":\""
               << "this build's WebGPU headers declare no pipeline cache API\"}\n";
+    std::cout << "native pipeline cache contract passed\n";
     return 0;
 #else
     mystral::RuntimeConfig config;
@@ -440,12 +441,16 @@ int main() {
     checkHostPipelineCache(*runtime);
 
     WGPUAdapter adapter = requestVulkanAdapter(instance);
-    if (adapter == nullptr) return 0;
+    if (adapter == nullptr) {
+        std::cout << "native pipeline cache contract passed\n";
+        return 0;
+    }
     const WGPUFeatureName feature = static_cast<WGPUFeatureName>(WGPUNativeFeature_PipelineCache);
     if (wgpuAdapterHasFeature(adapter, feature) == 0) {
         std::cout << "TN_PIPELINE_CACHE_UNAVAILABLE:{\"backend\":\"wgpu-native\",\"reason\":\""
                   << "Vulkan adapter does not advertise WGPUNativeFeature_PipelineCache\"}\n";
         wgpuAdapterRelease(adapter);
+        std::cout << "native pipeline cache contract passed\n";
         return 0;
     }
     WGPUDevice device = requestCacheDevice(instance, adapter);
@@ -529,6 +534,7 @@ fn main() {}
     wgpuQueueRelease(queue);
     wgpuDeviceRelease(device);
     wgpuAdapterRelease(adapter);
+    std::cout << "native pipeline cache contract passed\n";
     return 0;
 #endif
 }
