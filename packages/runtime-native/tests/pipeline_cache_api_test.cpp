@@ -1,17 +1,32 @@
 // The patched wgpu-native C API must expose a real pipeline cache, not only a handle that can be
 // created. This contract requests the optional feature, attaches one cache to render and compute
 // pipelines, owns the serialized bytes, rejects a corrupt import, and renders after strict reload.
+//
+// PRD-368 Phase 1B adds the half that matters to a player: the *host* must compile through one
+// cache of its own. The API round trip below proves the patch works when a test drives it by hand;
+// it says nothing about whether `device.createRenderPipeline` in a game reaches a cache at all. So
+// the second half drives the host's own JavaScript bindings — synchronous and worker compiles,
+// render and compute — and requires the device cache to grow past the bytes an empty one holds.
+//
+// Its negative control is executable rather than a one-off edit: `TN_PIPELINE_CACHE=0` leaves every
+// other line of the host identical and only skips the attachment, and this contract then requires
+// the opposite result — nothing attached, nothing serialized. Run both arms; a build that populates
+// the cache in both is attaching something other than what it claims.
 
+#include "../src/webgpu/bindings_pipelines.h"
+#include "../src/webgpu/bindings_state.h"
 #include "mystral/runtime.h"
 
 #include <cstdint>
 #include <cstdlib>
+#include <chrono>
 #include <cstring>
 #include <iostream>
+#include <thread>
 #include <string>
 #include <vector>
 
-#if defined(MYSTRAL_WEBGPU_WGPU)
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
 // `wgpuDevicePoll` is wgpu-native's own extension, not part of the shared `webgpu.h` surface, and
 // the two distributions place it differently. `bindings_resources.cpp` probes the same two paths.
 #if __has_include(<webgpu/wgpu.h>)
@@ -23,7 +38,7 @@
 
 namespace {
 
-#if defined(MYSTRAL_WEBGPU_WGPU)
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
 
 void require(bool condition, const char* label) {
     if (!condition) {
@@ -273,6 +288,109 @@ void renderAndReadback(WGPUDevice device, WGPUQueue queue, WGPURenderPipeline re
     wgpuCommandEncoderRelease(encoder);
 }
 
+
+// ============================================================================
+// PRD-368 Phase 1B — the host's own creation paths compile through one cache
+// ============================================================================
+
+/**
+ * Four pipelines through the host's public bindings: sync render, sync compute, and both workers.
+ *
+ * Every shader is salted so no two compiles are the same program. That is not decoration: a
+ * backend that deduplicates an identical pipeline would let this pass while attaching nothing,
+ * because the second creation never reaches the compiler at all.
+ */
+constexpr const char* kHostPipelineScript = R"JS((() => {
+  const renderShader = (salt) => `
+@vertex
+fn vs(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+  let positions = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+  return vec4f(positions[index] * ${salt}.0, 0.0, 1.0);
+}
+@fragment
+fn fs() -> @location(0) vec4f { return vec4f(0.25, 0.5, 0.75, ${salt}.0 / ${salt}.0); }
+`;
+  const computeShader = (salt) => `
+var<private> seed: f32 = ${salt}.0;
+@compute @workgroup_size(1)
+fn main() { seed = seed * 2.0; }
+`;
+  const layout = __device.createPipelineLayout({ bindGroupLayouts: [] });
+  const renderDescriptor = (salt) => ({
+    layout,
+    vertex: { module: __device.createShaderModule({ code: renderShader(salt) }), entryPoint: "vs" },
+    fragment: {
+      module: __device.createShaderModule({ code: renderShader(salt) }),
+      entryPoint: "fs",
+      targets: [{ format: "rgba8unorm" }],
+    },
+    primitive: { topology: "triangle-list" },
+  });
+  const computeDescriptor = (salt) => ({
+    layout,
+    compute: { module: __device.createShaderModule({ code: computeShader(salt) }), entryPoint: "main" },
+  });
+  globalThis.__hostCacheSyncRender = __device.createRenderPipeline(renderDescriptor(11));
+  globalThis.__hostCacheSyncCompute = __device.createComputePipeline(computeDescriptor(12));
+  globalThis.__hostCacheAsyncRender = __device.createRenderPipelineAsync(renderDescriptor(13));
+  globalThis.__hostCacheAsyncCompute = __device.createComputePipelineAsync(computeDescriptor(14));
+  return true;
+})())JS";
+
+/** Settles the worker compiles the script above started, on the thread that owns the engine. */
+void drainHostCompiles(mystral::webgpu::BindingsState* state) {
+    for (int attempt = 0; attempt < 2000; attempt += 1) {
+        mystral::webgpu::drainAsyncPipelineCompiles(state);
+        if (state->asyncPipelines.settled >= state->asyncPipelines.started) return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    require(false, "host worker compiles never settled");
+}
+
+/**
+ * The host populates its device cache — or, under `TN_PIPELINE_CACHE=0`, provably does not.
+ *
+ * The floor is the empty cache's own serialization, not zero: wgpu writes a header into a cache
+ * holding nothing, and "bytes > 0" would pass on a cache no pipeline ever reached.
+ */
+void checkHostPipelineCache(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+    require(state != nullptr, "host bindings state");
+    const auto& cache = state->pipelineCache;
+    const char* disabled = std::getenv("TN_PIPELINE_CACHE");
+    const bool controlArm = disabled != nullptr && std::string(disabled) == "0";
+
+    if (controlArm) {
+        require(cache.mode == "disabled", "TN_PIPELINE_CACHE=0 must report the disabled mode");
+    } else if (cache.mode != "attached") {
+        std::cout << "TN_PIPELINE_CACHE_UNAVAILABLE:{\"backend\":\"wgpu-native\",\"reason\":\""
+                  << "host device cache mode " << cache.mode << "\"}\n";
+        return;
+    }
+
+    const size_t before = mystral::webgpu::pipelineCacheSerializedBytes(state);
+    require(runtime.evalScript(kHostPipelineScript, "pipeline_cache_host_pipelines.js"),
+            "create pipelines through the host bindings");
+    drainHostCompiles(state);
+    const size_t after = mystral::webgpu::pipelineCacheSerializedBytes(state);
+    const uint64_t renderAttached = cache.renderAttached.load();
+    const uint64_t computeAttached = cache.computeAttached.load();
+    std::cerr << "host cache mode=" << cache.mode << " renderAttached=" << renderAttached
+              << " computeAttached=" << computeAttached << " emptyBytes=" << cache.emptyBytes
+              << " before=" << before << " after=" << after << '\n';
+
+    if (controlArm) {
+        require(renderAttached == 0 && computeAttached == 0,
+                "the disabled control attached a cache to a creation call");
+        require(after == 0, "the disabled control serialized cache bytes");
+        return;
+    }
+    require(renderAttached >= 2, "both host render paths must attach the device cache");
+    require(computeAttached >= 2, "both host compute paths must attach the device cache");
+    require(before == cache.emptyBytes, "the pre-compile cache was not the empty one");
+    require(after > before, "the host compiled four pipelines and the device cache did not grow");
+}
+
 size_t serializedData(WGPUPipelineCache cache, std::vector<uint8_t>& bytes) {
     WGPUPipelineCacheData data = wgpuPipelineCacheGetData(cache);
     if (data.size > 0) require(data.data != nullptr, "serialized cache pointer");
@@ -287,9 +405,12 @@ size_t serializedData(WGPUPipelineCache cache, std::vector<uint8_t>& bytes) {
 }  // namespace
 
 int main() {
-#if !defined(MYSTRAL_WEBGPU_WGPU)
-    std::cout << "TN_PIPELINE_CACHE_UNAVAILABLE:{\"backend\":\"dawn\",\"reason\":\""
-              << "the maintained cache API patch targets wgpu-native only\"}\n";
+#if !defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+    // Either a backend that is not wgpu-native, or a stock wgpu-native prebuilt: the maintained
+    // patch is what declares the cache API, and CMake defines this only when the installed header
+    // actually carries it. Reporting unavailable is the contract, not a skipped test.
+    std::cout << "TN_PIPELINE_CACHE_UNAVAILABLE:{\"backend\":\"other\",\"reason\":\""
+              << "this build's WebGPU headers declare no pipeline cache API\"}\n";
     return 0;
 #else
     mystral::RuntimeConfig config;
@@ -307,11 +428,16 @@ int main() {
   if (!adapter) throw new Error("host adapter unavailable");
   const device = adapter.requestDevice();
   if (!device) throw new Error("host device unavailable");
+  globalThis.__device = device;
 })())JS";
     require(runtime->evalScript(kHostSetup, "pipeline_cache_host_setup.js"),
             "initialize host WebGPU instance");
     auto instance = static_cast<WGPUInstance>(runtime->getWGPUInstance());
     require(instance != nullptr, "get host WebGPU instance");
+
+    // PRD-368 Phase 1B first: it reads the host's own cache, and the raw-API probe below creates a
+    // second device whose pipelines must not be mistaken for the host's.
+    checkHostPipelineCache(*runtime);
 
     WGPUAdapter adapter = requestVulkanAdapter(instance);
     if (adapter == nullptr) return 0;
@@ -389,7 +515,8 @@ fn main() {}
     std::vector<uint8_t> reloadedBytes;
     serializedData(reloadedCache, reloadedBytes);
     require(!reloadedBytes.empty(), "serialize reloaded pipeline cache");
-    std::cout << "TN_PIPELINE_CACHE:{\"backend\":\"wgpu-native\",\"featureDiscovered\":true,"
+    std::cout << "TN_PIPELINE_CACHE:{\"version\":1,\"phase\":\"api-probe\","
+              << "\"backend\":\"wgpu-native\",\"featureDiscovered\":true,"
               << "\"featureGranted\":true,\"emptyBytes\":" << emptyBytes.size()
               << ",\"serializedBytes\":" << serialized.size() << ",\"strictReloadAccepted\":true,"
               << "\"corruptImportRejected\":true,\"renderAttached\":true,\"computeAttached\":true}\n";

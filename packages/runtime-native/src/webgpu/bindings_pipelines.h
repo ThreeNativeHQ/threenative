@@ -19,6 +19,15 @@ js::JSValueHandle handleGpuDeviceCreateRenderPipelineAsync(BindingsState* state,
 js::JSValueHandle handleGpuDeviceCreateComputePipelineAsync(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args);
 void drainAsyncPipelineCompiles(BindingsState* state);
 void shutdownAsyncPipelineCompiles(BindingsState* state);
+
+// PRD-368. One cache per device, created before the first pipeline and released after the compile
+// pool has been joined. Both are safe to call on a backend without the cache API: they record why.
+void initPipelineCache(BindingsState* state);
+void releasePipelineCache(BindingsState* state);
+/** Bytes the live cache serializes right now; 0 when there is no cache. */
+size_t pipelineCacheSerializedBytes(BindingsState* state);
+/** The `TN_PIPELINE_CACHE` line: mode, reason, attachments and serialized size. */
+void reportPipelineCacheState(BindingsState* state, const char* phase);
 double pipelineClockMs();
 std::string pipelineSourceHash(const std::string& code);
 void reportPipelineCaptureMetadata(WGPUAdapter adapter);

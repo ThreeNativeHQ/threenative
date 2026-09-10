@@ -423,8 +423,9 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
     appendIfSupported(WGPUFeatureName_TextureCompressionASTC, "texture-compression-astc");
     result.hasTimestampQuery =
         appendIfSupported(WGPUFeatureName_TimestampQuery, "timestamp-query");
-#if defined(MYSTRAL_WEBGPU_WGPU)
-    // PRD-368 Phase 1B: the maintained cache API patch exposes this feature on wgpu-native.
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+    // PRD-368 Phase 1B: the maintained cache API patch exposes this feature on wgpu-native, and
+    // `MYSTRAL_WGPU_PIPELINE_CACHE` is defined only when the installed header declares it.
     // Requested only when the adapter advertises it; absence keeps the old no-cache behavior.
     result.hasPipelineCache = appendIfSupported(
         static_cast<WGPUFeatureName>(WGPUNativeFeature_PipelineCache), "pipeline-cache");
