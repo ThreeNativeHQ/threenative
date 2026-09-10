@@ -266,6 +266,16 @@ val buildNativePhysics by tasks.registering(Exec::class) {
     outputs.dir(layout.projectDirectory.dir("../../.runtime/physics-target"))
 }
 
+// Verify the complete source payload on every build, even when snapshot copying is up-to-date.
+// Published, no-NDK builds must not resolve or execute this development-only source helper.
+if (!usePrebuiltRuntime && nativeJsEngineName == "v8") {
+    val verifyV8Dependency = tasks.register<Exec>("verifyV8Dependency") {
+        workingDir(runtimeRoot.asFile)
+        commandLine("node", runtimeRoot.file("scripts/build-android-v8.mjs").asFile.absolutePath, "--verify")
+    }
+    tasks.named("copyV8Snapshot") { dependsOn(verifyV8Dependency) }
+}
+
 tasks.named("preBuild") {
     dependsOn("copyV8Snapshot")
     if (conformanceBundle.isPresent) dependsOn("buildAndroidConformanceBundle")
@@ -286,7 +296,7 @@ dependencies {
 android {
     namespace = "com.threenative.game"
     compileSdk = 35
-    ndkVersion = "27.1.12297006"
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.threenative.game"

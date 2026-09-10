@@ -25,7 +25,7 @@ import { pipeline } from 'node:stream/promises';
 import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SDL3_ANDROID_VERSION } from './package-android.mjs';
-import { assertAndroid16KbAlignment } from './check-android-16kb-alignment.mjs';
+import { provisionAndroidV8 } from './build-android-v8.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -431,26 +431,11 @@ const DEPS = {
     },
   },
   'v8-android': {
-    // V8 with JIT for Android, from Kudo/v8-android-buildscripts — the same prebuilt React Native
-    // uses. A JIT-less V8 would reproduce the problem PRD-118 measured, so the `-jit` archive is the
-    // one that matters and the name is not incidental.
-    //
-    // Until 2026-08-16 this was not here at all: `third_party/v8-android/` existed on one machine
-    // because somebody unpacked it by hand, while this file is the package's only supported
-    // reconstruction path. A fresh checkout therefore could not build Android V8.
-    //
-    // The archive nests: zip -> dist.tar -> dist/packages/v8-android-jit/{include,snapshot_blob,org},
-    // with the libraries inside an AAR under `org/`. `extractV8Android` below unwinds that.
+    // Owned source and toolchain revisions replace the historical 4 KB-only archive.
+    // The builder validates every cached library, header and ABI-specific snapshot before reuse.
+    // Upstream build-script distribution revision; the V8 commit and recipe are pinned in the builder.
     version: '11.110.1',
-    getUrl: () =>
-      `https://github.com/Kudo/v8-android-buildscripts/releases/download/v${DEPS['v8-android'].version}/v8-android-jit.zip`,
-    sha256: 'b2bc1fc317265163becbf0abe914d44b7d546448bb1aafe921a25e8ba4839a26',
     extractTo: 'v8-android',
-    // Both ABIs the Android build ships. `copyV8Snapshot` in android/app/build.gradle.kts stages one
-    // snapshot per entry and fails the build when one is absent, so provisioning fewer than this is
-    // caught at build time rather than on a device.
-    abis: ['arm64-v8a', 'x86_64'],
-    needsV8AndroidExtraction: true,
   },
   'sdl3-android': {
     // SDL3 Android development package
@@ -828,7 +813,7 @@ async function downloadIosDep(name, dep) {
   }
 }
 
-async function downloadDep(name) {
+export async function downloadDep(name, options = {}) {
   const dep = DEPS[name];
   if (!dep) {
     console.error(`Unknown dependency: ${name}`);
@@ -836,6 +821,19 @@ async function downloadDep(name) {
   }
 
   console.log(`\n=== Downloading ${name} ${dep.version} ===`);
+
+  if (name === 'v8-android') {
+    const destination = join(options.thirdPartyRoot ?? THIRD_PARTY, dep.extractTo);
+    try {
+      await (options.provisionV8 ?? provisionAndroidV8)(destination, {
+        force: options.force ?? process.argv.includes('--force'),
+      });
+      return true;
+    } catch (error) {
+      console.error(`Failed to provision ${name}:`, error.message);
+      return false;
+    }
+  }
 
   // Special handling for iOS dependencies with multiple archives
   if (dep.archives && !dep.getUrl()) {
@@ -883,7 +881,6 @@ async function downloadDep(name) {
     console.log(`${name} already exists at ${destDir}`);
     if (!process.argv.includes('--force')) {
       if (!WGPU_DEPS.has(name)) {
-        if (dep.needsV8AndroidExtraction) verifyV8AndroidAlignment(destDir, dep);
         console.log('Skipping (use --force to re-download)');
         return true;
       }
@@ -991,11 +988,6 @@ async function downloadDep(name) {
       console.log(`Verified ${name} ${manifest.version}: ${manifest.libraries.length} library artifact(s)`);
     }
 
-    if (dep.needsV8AndroidExtraction) {
-      await reshapeV8Android(destDir, dep);
-      verifyV8AndroidAlignment(destDir, dep);
-    }
-
     // Extract AAR if needed (SDL3 Android)
     if (dep.needsAarExtraction) {
       const aarFiles = await import('node:fs/promises').then(fs => fs.readdir(destDir));
@@ -1015,85 +1007,6 @@ async function downloadDep(name) {
     console.error(`Failed to download ${name}:`, error.message);
     return false;
   }
-}
-
-function verifyV8AndroidAlignment(destDir, dep) {
-  const libraries = dep.abis.map((abi) => join(destDir, 'lib', abi, 'libv8android.so'));
-  try {
-    assertAndroid16KbAlignment(libraries);
-  } catch (error) {
-    // `libv8android.so` being 4 KB-only is PRD-221, filed BLOCKED on 2026-08-25 for
-    // `requires-v8-source-toolchain`: every library this repository builds is 16 KB-aligned, and
-    // the upstream it pins (Kudo/v8-android-buildscripts) has shipped no release since 2023, which
-    // is before the requirement existed. There is no version to move to, so failing the dependency
-    // download turns an owned, recorded limitation into a lane that cannot run at all — and the
-    // check had never actually executed until the objdump it shells out to became resolvable.
-    //
-    // Report it by name, keep it visible, and let the build continue. Only the misalignment is
-    // tolerated: a check that could not run is still fatal, because that is a broken instrument
-    // rather than a known fact, and silence there is what hid this for so long.
-    if (error?.code !== 'ANDROID_16KB_MISALIGNED') throw error;
-    console.warn(
-      `PRD-221 (BLOCKED, requires-v8-source-toolchain): ${error.message}\n` +
-        '  This is the pinned third-party V8, not a library this repository builds. An Android ' +
-        'artifact carrying it cannot ride a Play Store submission until PRD-221 closes.',
-    );
-    return;
-  }
-  console.log(`Verified v8-android 16 KB LOAD alignment for ${dep.abis.join(', ')}`);
-}
-
-/**
- * Turns the extracted `v8-android-jit` tree into the layout CMake and Gradle already expect.
- *
- * The archive nests three deep — zip, then `dist.tar`, then an AAR holding the libraries — and the
- * pieces land in three different places inside it. The build reads exactly three things, so this
- * produces exactly those and fails loudly if any is absent:
- *
- *   include/                             <- dist/packages/v8-android-jit/include
- *   lib/<abi>/libv8android.so            <- the AAR's jni/<abi>
- *   snapshot_blob/<abi>/snapshot_blob.bin <- dist/packages/v8-android-jit/snapshot_blob/<abi>
- *
- * A partial install is the failure worth preventing here: the CMake build would find headers, link,
- * and produce an APK whose slice has no snapshot. `copyV8Snapshot` catches that at build time, but
- * only because it was told to — this refuses earlier and says which ABI.
- */
-async function reshapeV8Android(destDir, dep) {
-  const tarball = join(destDir, 'dist.tar');
-  if (!existsSync(tarball)) throw new Error(`v8-android archive has no dist.tar at ${tarball}`);
-  execFileSync('tar', ['xf', tarball, '-C', destDir]);
-  rmSync(tarball);
-
-  const pkg = join(destDir, 'dist', 'packages', 'v8-android-jit');
-  if (!existsSync(pkg)) throw new Error(`v8-android archive is missing ${pkg}`);
-
-  const headers = join(pkg, 'include');
-  if (!existsSync(headers)) throw new Error(`v8-android archive is missing ${headers}`);
-  copyTree(headers, join(destDir, 'include'));
-
-  const aar = findFilesRecursive(join(pkg, 'org'), (file) => file.endsWith('.aar'))[0];
-  if (!aar) throw new Error('v8-android archive contains no AAR to take libraries from');
-  const aarDir = join(destDir, '.aar');
-  await extractArchive(aar, aarDir);
-
-  for (const abi of dep.abis) {
-    const library = join(aarDir, 'jni', abi, 'libv8android.so');
-    if (!existsSync(library)) throw new Error(`v8-android AAR has no libv8android.so for ${abi}`);
-    mkdirSync(join(destDir, 'lib', abi), { recursive: true });
-    copyFileSync(library, join(destDir, 'lib', abi, 'libv8android.so'));
-
-    const snapshot = join(pkg, 'snapshot_blob', abi, 'snapshot_blob.bin');
-    if (!existsSync(snapshot)) throw new Error(`v8-android archive has no snapshot for ${abi}`);
-    mkdirSync(join(destDir, 'snapshot_blob', abi), { recursive: true });
-    copyFileSync(snapshot, join(destDir, 'snapshot_blob', abi, 'snapshot_blob.bin'));
-  }
-
-  // The unpacked tree is ~1 GB of build leftovers, unstripped libraries and ABIs this repository
-  // does not ship. Keeping only what the build reads is the difference between a 100 MB dependency
-  // and a 1 GB one.
-  rmSync(join(destDir, 'dist'), { recursive: true, force: true });
-  rmSync(aarDir, { recursive: true, force: true });
-  console.log(`Installed v8-android ${dep.version} for ${dep.abis.join(', ')}`);
 }
 
 function copyTree(from, to) {
