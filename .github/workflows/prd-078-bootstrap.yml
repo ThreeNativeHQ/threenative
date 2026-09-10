@@ -1,0 +1,29 @@
+name: PRD-078 bootstrap
+
+on:
+  push:
+    branches:
+      - prd-078-final-proof
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  merge-main:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Merge current main and remove bootstrap
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch origin main
+          git merge --no-commit --no-ff origin/main
+          git rm .github/workflows/prd-078-bootstrap.yml
+          git commit -m "chore(ci): merge main into PRD-078 final proof"
+          git push origin HEAD:prd-078-final-proof
