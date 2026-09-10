@@ -6,6 +6,7 @@ on:
     branches: [feat/prd-368-persistent-pipeline-cache]
     paths:
       - .github/workflows/pipeline-cache.yml
+      - .github/prd-368.patch
       - packages/runtime-native/**
       - packages/playtest/**
       - patches/wgpu-native@25.0.2.2.patch
@@ -18,22 +19,147 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  source-evidence:
-    name: Retain verification source (not a correctness gate)
+  prepare:
+    # Temporary delivery bridge for the offline authoring workspace, restricted to this branch.
+    # Removed before review. No main-branch or release write is permitted here.
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      revision: ${{ steps.apply.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: apply
+        name: Apply this task's source patch to its feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/feat/prd-368-persistent-pipeline-cache
+          if test -f .github/prd-368.patch; then
+            git apply --check .github/prd-368.patch
+            git apply --index .github/prd-368.patch
+            git rm .github/prd-368.patch
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'fix(native): reconstruct the pinned pipeline-cache ABI on Linux and Android'
+            git push origin HEAD:feat/prd-368-persistent-pipeline-cache
+          fi
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "Physical performance resource provisioned: ${{ vars.TN_PERF_PHYSICAL_PROVISIONED == 'true' }}"
+
+  patched-backend:
+    needs: prepare
+    name: Patched cache ABI (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [linux-x64, android-arm64]
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/wgpu-cache-${{ matrix.target }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-      - name: Retain exact tracked source and revision
-        run: |
-          mkdir -p artifacts/pipeline-cache-source
-          git rev-parse HEAD > artifacts/pipeline-cache-source/revision.txt
-          git archive --format=tar.gz HEAD > artifacts/pipeline-cache-source/source.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/setup-node@v7
         with:
-          name: pipeline-cache-source-${{ github.sha }}
-          path: artifacts/pipeline-cache-source
+          node-version: '22'
+      - name: Test pinned toolchain resolution
+        run: node --test packages/runtime-native/tests/wgpu-cache-toolchain.test.mjs
+      - name: Provision the pinned NDK and Rust target
+        run: |
+          sdkmanager 'ndk;27.1.12297006'
+          rustup toolchain install 1.90.0 --profile minimal
+          rustup target add --toolchain 1.90.0 aarch64-linux-android
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .cache/wgpu-cache-${{ matrix.target }}
+          key: wgpu-cache-25.0.2.2-rust1.90-ndk27-${{ matrix.target }}-${{ hashFiles('patches/wgpu-native@25.0.2.2.patch') }}
+      - name: Reconstruct the patched backend from the pinned archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/pipeline-cache
+          dep=wgpu
+          if test '${{ matrix.target }}' = android-arm64; then dep=wgpu-android; fi
+          node packages/runtime-native/scripts/download-deps.mjs --only "$dep"
+          node packages/runtime-native/scripts/download-deps.mjs \
+            --rebuild-wgpu-cache-api --wgpu-cache-target '${{ matrix.target }}' \
+            2>&1 | tee artifacts/pipeline-cache/reconstruction.log
+          git rev-parse HEAD > artifacts/pipeline-cache/revision.txt
+          tar czf artifacts/pipeline-cache/backend.tar.gz -C packages/runtime-native/third_party "$dep"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pipeline-cache-backend-${{ matrix.target }}
+          path: artifacts/pipeline-cache
+          retention-days: 7
+          if-no-files-found: error
+
+  host-contract:
+    needs: [prepare, patched-backend]
+    name: Real host cache contract (software Vulkan, not Pixel timing)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: pipeline-cache-backend-linux-x64
+          path: artifacts/backend
+      - uses: actions/cache@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: pipeline-cache-host-deps-${{ runner.os }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs') }}
+      - name: Provision native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libasound2-dev libcurl4-openssl-dev libudev-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxss-dev libxkbcommon-dev libvulkan1 mesa-vulkan-drivers vulkan-tools zlib1g-dev
+          for dep in sdl3 v8 stb webp swc libuv; do
+            node packages/runtime-native/scripts/download-deps.mjs --only "$dep"
+          done
+          mkdir -p packages/runtime-native/third_party
+          tar xzf artifacts/backend/backend.tar.gz -C packages/runtime-native/third_party
+      - name: Build the real linked host contract
+        run: |
+          cmake -S packages/runtime-native -B packages/runtime-native/build/prd368 -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF \
+            -DMYSTRAL_USE_WGPU=ON -DMYSTRAL_USE_DAWN=OFF \
+            -DTN_ENABLE_CANVAS2D=OFF -DTN_ENABLE_WEBTRANSPORT=OFF \
+            -DTN_ENABLE_NATIVE_PHYSICS=OFF -DTN_ENABLE_VIDEO=OFF
+          cmake --build packages/runtime-native/build/prd368 --target threenative-pipeline-cache-api-test -j 2
+      - name: Execute cache-attached and disabled controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/pipeline-cache-host
+          vulkaninfo --summary > artifacts/pipeline-cache-host/adapter.txt 2>&1
+          executable=packages/runtime-native/build/prd368/threenative-pipeline-cache-api-test
+          "$executable" 2>&1 | tee artifacts/pipeline-cache-host/attached.log
+          TN_PIPELINE_CACHE=0 "$executable" 2>&1 | tee artifacts/pipeline-cache-host/disabled.log
+          grep 'host cache mode=attached' artifacts/pipeline-cache-host/attached.log
+          grep 'host cache mode=disabled' artifacts/pipeline-cache-host/disabled.log
+          git rev-parse HEAD > artifacts/pipeline-cache-host/revision.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pipeline-cache-host-contract
+          path: artifacts/pipeline-cache-host
           retention-days: 7
           if-no-files-found: error

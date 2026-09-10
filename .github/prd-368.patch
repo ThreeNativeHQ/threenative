@@ -1,0 +1,127 @@
+diff --git a/packages/runtime-native/scripts/download-deps.mjs b/packages/runtime-native/scripts/download-deps.mjs
+index d7032b0..7f651e0 100644
+--- a/packages/runtime-native/scripts/download-deps.mjs
++++ b/packages/runtime-native/scripts/download-deps.mjs
+@@ -28,6 +28,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
+ import { tmpdir } from 'node:os';
+ import { SDL3_ANDROID_VERSION } from './package-android.mjs';
+ import { assertAndroid16KbAlignment } from './check-android-16kb-alignment.mjs';
++import { resolveWgpuCacheToolchain } from './wgpu-cache-toolchain.mjs';
+ 
+ const __dirname = dirname(fileURLToPath(import.meta.url));
+ const ROOT = join(__dirname, '..');
+@@ -75,8 +76,6 @@ const WGPU_CACHE_LOCAL_ARCHIVE = join(
+   WGPU_CACHE_SOURCE_ARCHIVE_NAME,
+ );
+ const WGPU_CACHE_PATCH_PATH = join(REPO_ROOT, 'patches', 'wgpu-native@25.0.2.2.patch');
+-const WGPU_CACHE_LIBCLANG_PATH =
+-  '/home/joao/Android/Sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/linux-x86_64/musl/lib';
+ const WGPU_DEPS = new Set(['wgpu', 'wgpu-ios', 'wgpu-android']);
+ let wgpuVersionOverride = null;
+ 
+@@ -783,7 +782,11 @@ function wgpuCacheSourceRoot(extractedDir) {
+  * checked-in four-file patch. The local archive used by the Phase 1A receipt is preferred so a
+  * cold local rebuild does not need network access; the exact GitHub archive is the fallback.
+  */
+-export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
++export async function rebuildWgpuCacheApiFromSource({ sourceArchive, target = 'linux-x64' } = {}) {
++  const toolchain = resolveWgpuCacheToolchain({ target });
++  const android = target === 'android-arm64';
++  const dependencyRoot = join(THIRD_PARTY, android ? 'wgpu-android' : 'wgpu');
++  const destination = android ? join(dependencyRoot, 'aarch64') : dependencyRoot;
+   const scratch = mkdtempSync(join(tmpdir(), 'threenative-wgpu-cache-api-'));
+   let downloadedArchive = null;
+   let stageDir = null;
+@@ -813,7 +816,7 @@ export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
+     if (!wgpu.cacheApiPatch || !existsSync(wgpu.cacheApiPatch)) {
+       throw new Error(`TN_WGPU_CACHE_PATCH_MISSING: ${wgpu.cacheApiPatch ?? '(no patch path)'}`);
+     }
+-    const currentHeader = join(THIRD_PARTY, 'wgpu', 'include', 'webgpu', 'webgpu.h');
++    const currentHeader = join(destination, 'include', 'webgpu', 'webgpu.h');
+     if (!existsSync(currentHeader)) {
+       throw new Error(`TN_WGPU_CACHE_HEADER_MISSING: ${currentHeader}`);
+     }
+@@ -823,9 +826,6 @@ export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
+         `TN_WGPU_CACHE_HEADER_CHECKSUM: expected ${WGPU_CACHE_HEADER_SHA256}, got ${currentHeaderSha256}`,
+       );
+     }
+-    if (!existsSync(WGPU_CACHE_LIBCLANG_PATH)) {
+-      throw new Error(`TN_WGPU_CACHE_LIBCLANG_MISSING: ${WGPU_CACHE_LIBCLANG_PATH}`);
+-    }
+ 
+     const extractedDir = join(scratch, 'source');
+     await extractArchive(archivePath, extractedDir);
+@@ -842,14 +842,14 @@ export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
+       stdio: 'inherit',
+     });
+ 
+-    console.log(`Building patched wgpu-native with LIBCLANG_PATH=${WGPU_CACHE_LIBCLANG_PATH}`);
+-    execFileSync('cargo', ['build', '--release', '--locked', '-j', '2'], {
++    console.log(`Building patched wgpu-native ${target} with Rust ${toolchain.rustVersion}, NDK ${toolchain.ndkVersion}`);
++    execFileSync('cargo', toolchain.cargoArgs, {
+       cwd: sourceRoot,
+-      env: { ...process.env, LIBCLANG_PATH: WGPU_CACHE_LIBCLANG_PATH },
++      env: toolchain.env,
+       stdio: 'inherit',
+     });
+ 
+-    const releaseDir = join(sourceRoot, 'target', 'release');
++    const releaseDir = join(toolchain.env.CARGO_TARGET_DIR || join(sourceRoot, 'target'), ...(toolchain.rustTarget ? [toolchain.rustTarget] : []), 'release');
+     const libraryNames = [
+       'libwgpu_native.a',
+       'libwgpu_native.so',
+@@ -872,7 +872,7 @@ export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
+     for (const library of builtLibraries) {
+       copyFileSync(join(releaseDir, library), join(stageDir, 'lib', library));
+     }
+-    const metadata = join(THIRD_PARTY, 'wgpu', 'wgpu-native-meta', 'webgpu.yml');
++    const metadata = join(destination, 'wgpu-native-meta', 'webgpu.yml');
+     if (existsSync(metadata)) copyFileSync(metadata, join(stageDir, 'wgpu-native-meta', 'webgpu.yml'));
+     writeFileSync(
+       join(stageDir, 'wgpu-native-meta', 'wgpu-native-git-tag'),
+@@ -880,7 +880,18 @@ export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
+     );
+     inspectWgpuInstallation('wgpu', stageDir, DEFAULT_WGPU_VERSION);
+ 
+-    const destination = join(THIRD_PARTY, 'wgpu');
++    for (const name of ['LICENSE.APACHE', 'LICENSE.MIT']) {
++      const license = join(sourceRoot, name);
++      if (existsSync(license)) copyFileSync(license, join(stageDir, name));
++    }
++    writeFileSync(join(stageDir, '.threenative-cache-api-build.json'), `${JSON.stringify({
++      schemaVersion: 1, target, version: DEFAULT_WGPU_VERSION,
++      sourceArchiveSha256, headerSha256: currentHeaderSha256,
++      patchSha256: sha256(wgpu.cacheApiPatch), rustVersion: toolchain.rustVersion,
++      ndkVersion: toolchain.ndkVersion,
++      libraries: builtLibraries.map((name) => ({ name, sha256: sha256(join(stageDir, 'lib', name)) })),
++    }, null, 2)}\n`);
++    if (android) assertAndroid16KbAlignment(builtLibraries.filter((name) => name.endsWith('.so')).map((name) => join(stageDir, 'lib', name)));
+     const backup = `${destination}.before-cache-api-${process.pid}-${Date.now()}`;
+     if (existsSync(destination)) renameSync(destination, backup);
+     try {
+@@ -895,7 +906,7 @@ export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
+     } catch (error) {
+       console.warn(`Could not remove the previous wgpu-native dependency backup: ${error.message}`);
+     }
+-    const manifest = verifyAndRecordWgpuInstallation('wgpu', destination, DEFAULT_WGPU_VERSION);
++    const manifest = verifyAndRecordWgpuInstallation(android ? 'wgpu-android' : 'wgpu', dependencyRoot, DEFAULT_WGPU_VERSION);
+     console.log(`Staged patched wgpu-native ${manifest.version} at ${destination}`);
+     return manifest;
+   } finally {
+@@ -1290,6 +1301,8 @@ async function main() {
+   const requestedWgpuVersion = valueAfter(args, '--wgpu-version');
+   const rebuildWgpuCacheApi = args.includes('--rebuild-wgpu-cache-api');
+   const sourceArchive = valueAfter(args, '--wgpu-source-archive');
++  const cacheTarget = valueAfter(args, '--wgpu-cache-target');
++  if (cacheTarget && !rebuildWgpuCacheApi) throw new Error('--wgpu-cache-target requires --rebuild-wgpu-cache-api');
+   if (sourceArchive && !rebuildWgpuCacheApi) {
+     throw new Error('--wgpu-source-archive requires --rebuild-wgpu-cache-api');
+   }
+@@ -1304,6 +1317,7 @@ async function main() {
+     console.log('=========================================================================');
+     const manifest = await rebuildWgpuCacheApiFromSource({
+       ...(sourceArchive ? { sourceArchive } : {}),
++      ...(cacheTarget ? { target: cacheTarget } : {}),
+     });
+     console.log(`  wgpu: OK (${manifest.version}, ${manifest.libraries.length} library artifact(s))`);
+     return;
