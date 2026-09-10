@@ -22,6 +22,10 @@ const physicsPackageRoot = path.resolve("packages/physics");
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
 const MCP_REQUEST_TIMEOUT_MS = 2_000;
+// creature_status probes optional Python/Chromium tooling; the published Chromium probe is
+// bounded at 10 seconds. The first guide call can also pay the payload load, so both need a
+// bounded margin beyond the general 2-second MCP request budget.
+const MCP_CREATURE_DISCOVERY_TIMEOUT_MS = 15_000;
 // The published creature compiler can spend up to 60 seconds in its bounded operation. Keep
 // ordinary discovery calls fast while allowing the response to arrive after that operation limit.
 const MCP_COMPILE_REQUEST_TIMEOUT_MS = 70_000;
@@ -403,10 +407,17 @@ describe("scaffolded asset MCP", () => {
       );
 
       const status = toolText(
-        await request(child, nextId, lines, "tools/call", {
-          arguments: {},
-          name: "creature_status",
-        }),
+        await request(
+          child,
+          nextId,
+          lines,
+          "tools/call",
+          {
+            arguments: {},
+            name: "creature_status",
+          },
+          MCP_CREATURE_DISCOVERY_TIMEOUT_MS,
+        ),
       );
       const statusTooling = status.tooling;
       const statusOperations = status.operations;
@@ -420,10 +431,17 @@ describe("scaffolded asset MCP", () => {
       });
 
       const guide = toolText(
-        await request(child, nextId, lines, "tools/call", {
-          arguments: { section: "syntax" },
-          name: "creature_guide",
-        }),
+        await request(
+          child,
+          nextId,
+          lines,
+          "tools/call",
+          {
+            arguments: { section: "syntax" },
+            name: "creature_guide",
+          },
+          MCP_CREATURE_DISCOVERY_TIMEOUT_MS,
+        ),
       );
       expect(guide.section).toBe("syntax");
       expect(guide.guide).toEqual(expect.stringContaining('"palette"'));
