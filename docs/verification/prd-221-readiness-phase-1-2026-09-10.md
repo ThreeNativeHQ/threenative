@@ -14,6 +14,12 @@ checks against candidate `190bbe31a0e034aca903a36bac8b84a0d00c6fa5` in
 The review integrates main `4fa8e773609a69fa3077be462e45f893c928324e`; the MCP test conflict
 keeps main's per-operation timeout behavior instead of the older blanket timeout.
 
+Main advanced during review to `2950765d4cf892f1a910e5ff91fa0ce037417c19`. The final
+consolidation also integrates that commit: its wgpu pipeline-cache provisioning stays intact,
+its newer native coverage measurement is retained without restamping, and the screenshot
+retention index is regenerated from the combined tree. The temporary delta-export workflow
+is removed; #167 remains the sole resume point.
+
 ### Review fixes and controls
 
 The engine/native-dependency layer owns these fixes. Four new tests execute the actual
