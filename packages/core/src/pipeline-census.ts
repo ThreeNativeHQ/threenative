@@ -531,6 +531,8 @@ export class PipelineCensus {
     for (const event of this.#events) {
       if (event.kind === "render" && event.vertex === undefined)
         incompleteReasons.push("a render pipeline is missing its vertex shader observation");
+      if (event.kind === "render" && event.fragment === undefined)
+        incompleteReasons.push("a render pipeline is missing its fragment shader observation");
       if (event.kind === "compute" && event.compute === undefined)
         incompleteReasons.push("a compute pipeline is missing its shader observation");
     }

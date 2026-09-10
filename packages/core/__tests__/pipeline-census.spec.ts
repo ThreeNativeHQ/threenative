@@ -580,12 +580,19 @@ describe("pipeline census", () => {
     census.installRenderer(raw);
 
     raw.renderObject(renderObject({ fragmentProgram: { code: source("vec4f") } }, {}, {}), null);
+    raw.renderObject(
+      renderObject({ vertexProgram: { code: source("vertex-only") }, fragmentProgram: {} }, {}, {}),
+      null,
+    );
     backend.createComputePipeline?.({});
 
     const report = census.snapshot();
     expect(report.complete).toBe(false);
     expect(report.incompleteReasons).toContain(
       "a render pipeline is missing its vertex shader observation",
+    );
+    expect(report.incompleteReasons).toContain(
+      "a render pipeline is missing its fragment shader observation",
     );
     expect(report.incompleteReasons).toContain(
       "a compute pipeline is missing its shader observation",
