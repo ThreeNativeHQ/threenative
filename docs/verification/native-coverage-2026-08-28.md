@@ -26,7 +26,7 @@ targets could not be built and are named below.
 | `src/workers/` | 615 | 527 | 85.69% |
 | **TOTAL** | **22057** | **17775** | **80.59%** |
 
-Source digest: `sha256:c78aacae2b9b1e62df6a771ec43781d240435d8638f6ee2951932c60a67545cb`
+Source digest: `sha256:aff6b800fd54bd87b7cfc631bffb0853a68973272671c20b44c74c1450709eab`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
