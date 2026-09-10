@@ -1,0 +1,33 @@
+name: PRD-221 candidate application diagnostics
+on:
+  push:
+    branches: [codex/prd-221-android-v8-16kb]
+    paths: [.github/workflows/prd-221-recover.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Diagnose the fixed candidate payload without publishing changes
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/prd221-diagnostics"
+          python3 - <<'PY' 2>&1 | tee "$RUNNER_TEMP/prd221-diagnostics/apply.log"
+          import pathlib, textwrap
+          source = pathlib.Path('.github/workflows/prd-221-investigation.yml').read_text()
+          code = textwrap.dedent(source.split("python3 - <<'PY'\n", 1)[1].split('\n          PY\n', 1)[0])
+          code = code.replace("assert hashlib.sha256(data).hexdigest() ==", "print('PAYLOAD_SHA256', hashlib.sha256(data).hexdigest()); assert hashlib.sha256(data).hexdigest() ==")
+          exec(compile(code, '<guarded-candidate>', 'exec'))
+          print('Candidate application succeeded; no commit created by this read-only job.')
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: prd221-application-diagnostics
+          path: ${{ runner.temp }}/prd221-diagnostics
+          retention-days: 2
