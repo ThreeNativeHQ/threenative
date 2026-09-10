@@ -1,0 +1,353 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index a5f1d39..112b572 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -58,7 +58,7 @@ jobs:
+   # had nothing marked failed to re-run. The runner minutes it saved cost the one thing a red
+   # run exists to produce: the name of the gate that broke. The matrices already carry
+   # `fail-fast: false` for the same reason, and the expensive jobs already `needs:` the gate
+-  # they depend on, so a broken `build` still skips them without erasing anything.
++  # they depend on, so broken artifact production still skips its consumers without erasing anything.
+   #
+   # Every job below checks out and installs for itself, so nothing gains from a shared `install`
+   # job that discards its own node_modules — it only added a serial edge in front of the run.
+@@ -493,7 +493,7 @@ jobs:
+       - run: pnpm test:playtest:ci
+ 
+   golden-path-template:
+-    needs: [scope, build]
++    needs: [scope, build-artifacts]
+     if: ${{ needs.scope.outputs.selection != 'prose' }}
+     strategy:
+       fail-fast: false
+@@ -663,7 +663,7 @@ jobs:
+     # Ran only on push/schedule until 2026-09-01 (owner call): every template now proves itself
+     # non-visually on every PR too, so a template regression is reported by the PR that caused it
+     # instead of by the merge that shipped it. `golden-path` above still owns the visual proof.
+-    needs: [scope, build]
++    needs: [scope, build-artifacts]
+     if: ${{ needs.scope.outputs.selection != 'prose' }}
+     # One leg per template was one leg per *unit of naming*, not per unit of work: on run
+     # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
+@@ -796,7 +796,7 @@ jobs:
+           test "$result" = "success"
+ 
+   benchmark:
+-    needs: [scope, build]
++    needs: scope
+     if: ${{ needs.scope.outputs.selection != 'prose' }}
+     runs-on: ubuntu-latest
+     timeout-minutes: 25
+@@ -833,25 +833,39 @@ jobs:
+   # the thing no automated gate on this runner can judge anyway, which the templates' own
+   # AGENTS.md says in as many words: every gate here is blind to how the game looks.
+ 
+-  # Building the workspace and checking the entity-registry boundary needs neither the native host
+-  # nor a browser, so it is a gate the scaffold and benchmark lanes can wait on instead of waiting
+-  # ~15 minutes behind the native suite. This is also one of the exact contexts protected by the
+-  # `main protection` ruleset, so it projects the native reusable workflow's verdict explicitly.
+-  # Without the result assertion, a failed upstream would skip this required job and a skipped
+-  # required check would count as satisfied.
++  # Keep the exact protected `build` context, but make it a verdict join rather than the
++  # artifact producer. Native evidence still blocks merging; it no longer blocks independent
++  # web/template evidence from running. !cancelled() overrides implicit success(), so a failed
++  # or skipped upstream reaches these assertions instead of silently skipping a required check.
+   build:
+-    needs: [scope, native-platforms]
++    needs: [scope, build-artifacts, native-platforms]
+     if: ${{ !cancelled() && needs.scope.outputs.selection != 'prose' }}
+     runs-on: ubuntu-latest
+-    timeout-minutes: 20
++    timeout-minutes: 2
+     steps:
+-      - name: Require the native platform lane
++      - name: Require workspace and native platform evidence
+         env:
++          CI_SCOPE_RESULT: ${{ needs.scope.result }}
++          WORKSPACE_BUILD_RESULT: ${{ needs.build-artifacts.result }}
+           NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}
+         run: |
+           set -euo pipefail
++          echo "scope: $CI_SCOPE_RESULT"
++          echo "build-artifacts: $WORKSPACE_BUILD_RESULT"
+           echo "native-platforms: $NATIVE_PLATFORM_RESULT"
++          test "$CI_SCOPE_RESULT" = "success"
++          test "$WORKSPACE_BUILD_RESULT" = "success"
+           test "$NATIVE_PLATFORM_RESULT" = "success"
++
++  # Produce this commit's bundles and freshly packed templates as soon as scope is known.
++  # Consumers need these bytes, not the native matrix's verdict. No verification is omitted:
++  # the protected build join above requires both this producer and the complete native lane.
++  build-artifacts:
++    needs: scope
++    if: ${{ needs.scope.outputs.selection != 'prose' }}
++    runs-on: ubuntu-latest
++    timeout-minutes: 20
++    steps:
+       - uses: actions/checkout@v7
+       - uses: ./.github/actions/pnpm
+       - uses: actions/setup-node@v7
+@@ -896,7 +910,7 @@ jobs:
+           if-no-files-found: error
+ 
+   performance-contracts:
+-    needs: [scope, build]
++    needs: scope
+     if: ${{ needs.scope.outputs.selection != 'prose' && !cancelled() }}
+     runs-on: ubuntu-latest
+     timeout-minutes: 2
+@@ -958,7 +972,7 @@ jobs:
+           if-no-files-found: warn
+ 
+   budgets:
+-    needs: [scope, build]
++    needs: scope
+     if: ${{ needs.scope.outputs.selection != 'prose' }}
+     runs-on: ubuntu-latest
+     timeout-minutes: 15
+@@ -1082,6 +1096,7 @@ jobs:
+       - golden-path
+       - benchmark
+       - build
++      - build-artifacts
+       - budgets
+       - performance-contracts
+       - supply-chain
+ diff --git a/.github/workflows/native-platforms.yml b/.github/workflows/native-platforms.yml
+index 1af4074..50ef4c7 100644
+--- a/.github/workflows/native-platforms.yml
++++ b/.github/workflows/native-platforms.yml
+@@ -282,8 +282,9 @@ jobs:
+               'packages/runtime-native/native/physics/Cargo.lock') }}
+           restore-keys: cargo-android-${{ runner.os }}-
+       - run: pnpm install --frozen-lockfile
++      # Restore source-keyed JS bundles; every native build and conformance assertion still runs.
+       - name: Build browser reference workspace imports
+-        run: pnpm tsx scripts/workspace-packages.ts build
++        uses: ./.github/actions/workspace-dist
+       - uses: ./.github/actions/playwright-chromium
+       - name: Capture browser references from the commit-keyed artifact
+         uses: actions/download-artifact@v7
+@@ -655,8 +656,9 @@ jobs:
+         with:
+           python-version: "3.12"
+       - run: pnpm install --frozen-lockfile
++      # Restore source-keyed JS bundles; every native build and conformance assertion still runs.
+       - name: Build browser reference workspace imports
+-        run: pnpm tsx scripts/workspace-packages.ts build
++        uses: ./.github/actions/workspace-dist
+       - uses: ./.github/actions/playwright-chromium
+       - name: Capture browser references from the commit-keyed artifact
+         uses: actions/download-artifact@v7
+ diff --git a/packages/runtime-native/tests/conformance-runner.test.mjs b/packages/runtime-native/tests/conformance-runner.test.mjs
+index c82be52..77b14e4 100644
+--- a/packages/runtime-native/tests/conformance-runner.test.mjs
++++ b/packages/runtime-native/tests/conformance-runner.test.mjs
+@@ -1153,12 +1153,20 @@ test("native workflow runs the complete checksum-locked Android emulator parity
+   assert.doesNotMatch(workflow, /implemented-only/u);
+ });
+ 
+-test("Android browser references build workspace imports before conformance bundling", () => {
++test("parity lanes restore workspace imports before conformance bundling", () => {
+   const workflow = readFileSync(join(root, "../../.github/workflows/native-platforms.yml"), "utf8");
+-  const build = workflow.indexOf("pnpm tsx scripts/workspace-packages.ts build");
+-  const capture = workflow.indexOf("- name: Capture browser references");
+-  assert.ok(build >= 0, "Android parity must build workspace packages before bundling example rows");
+-  assert.ok(build < capture, "workspace package builds must precede browser reference capture");
++  for (const name of ["android-emulator-parity", "desktop-parity"]) {
++    const start = workflow.indexOf(`  ${name}:\n`);
++    assert.ok(start >= 0, `missing parity lane: ${name}`);
++    const tail = workflow.slice(start + `  ${name}:\n`.length);
++    const next = tail.search(/^ {2}[a-z][a-z-]*:\n/mu);
++    const section = next < 0 ? tail : tail.slice(0, next);
++    const build = section.indexOf("uses: ./.github/actions/workspace-dist");
++    const capture = section.indexOf("- name: Capture browser references");
++    assert.ok(build >= 0, `${name} must restore or build its workspace imports`);
++    assert.ok(capture > build, `${name} must have workspace imports before conformance bundling`);
++    assert.doesNotMatch(section, /pnpm tsx scripts\/workspace-packages\.ts build/u);
++  }
+ });
+ 
+ test("the parity registry binds the simultaneous stick-and-jump proof to Android injection", () => {
+ diff --git a/scripts/__tests__/ci-efficiency.spec.ts b/scripts/__tests__/ci-efficiency.spec.ts
+new file mode 100644
+index 0000000..48cc279
+--- /dev/null
++++ b/scripts/__tests__/ci-efficiency.spec.ts
+@@ -0,0 +1,143 @@
++import { spawnSync } from "node:child_process";
++import { readFileSync } from "node:fs";
++import path from "node:path";
++import { describe, expect, it } from "vitest";
++import { ciJobGraph, declaredNeeds, jobSections } from "../ci-workflow.js";
++
++const repo = path.resolve(import.meta.dirname, "../..");
++const source = readFileSync(path.join(repo, ".github/workflows/ci.yml"), "utf8");
++const jobs = new Map(jobSections(source));
++
++function job(name: string): string {
++  const section = jobs.get(name);
++  if (section === undefined) throw new Error(`Missing CI job: ${name}`);
++  return section;
++}
++
++function ancestors(name: string, visited = new Set<string>()): Set<string> {
++  for (const upstream of declaredNeeds(job(name))) {
++    if (visited.has(upstream)) continue;
++    visited.add(upstream);
++    ancestors(upstream, visited);
++  }
++  return visited;
++}
++
++function gateScript(): string {
++  const match = /^ {8}run: \|\n((?:^ {10}.*\n|^\n)+)/mu.exec(job("build"));
++  if (match?.[1] === undefined) throw new Error("build has no executable verdict assertion");
++  return match[1].replace(/^ {10}/gmu, "");
++}
++
++function runGate(overrides: Record<string, string> = {}) {
++  return spawnSync("bash", ["-c", gateScript()], {
++    encoding: "utf8",
++    env: {
++      PATH: process.env.PATH,
++      CI_SCOPE_RESULT: "success",
++      NATIVE_PLATFORM_RESULT: "success",
++      WORKSPACE_BUILD_RESULT: "success",
++      ...overrides,
++    },
++    timeout: 5_000,
++  });
++}
++
++describe("CI efficiency without lost evidence", () => {
++  it("produces workspace artifacts without waiting for native evidence", () => {
++    const producer = job("build-artifacts");
++    expect(declaredNeeds(producer)).toEqual(["scope"]);
++    expect(producer).toContain("needs.scope.outputs.selection != 'prose'");
++    expect(producer).not.toContain("needs.native-platforms");
++    expect(producer).toContain("uses: ./.github/actions/workspace-dist");
++    expect(producer).toContain("pnpm --filter abyss-framework build");
++    expect(producer).toContain("pnpm exec tsx scripts/check-core-boundary.ts");
++    expect(producer).toContain("pnpm tsx scripts/workspace-packages.ts --archives");
++    expect(producer).toContain("name: workspace-packages");
++    expect(producer).toContain("if-no-files-found: error");
++  });
++
++  it("keeps the protected build context as a fail-closed join, not a second build", () => {
++    const gate = job("build");
++    expect(declaredNeeds(gate)).toEqual(["scope", "build-artifacts", "native-platforms"]);
++    expect(gate).toContain("!cancelled() && needs.scope.outputs.selection != 'prose'");
++    expect(gate).toContain("CI_SCOPE_RESULT: ${{ needs.scope.result }}");
++    expect(gate).toContain("WORKSPACE_BUILD_RESULT: ${{ needs.build-artifacts.result }}");
++    expect(gate).toContain("NATIVE_PLATFORM_RESULT: ${{ needs.native-platforms.result }}");
++    expect(gate).not.toMatch(/^ {4}name:/mu);
++    expect(gate).not.toContain("continue-on-error");
++    expect(gate).not.toContain("pnpm install");
++    expect(gate).not.toContain("uses:");
++  });
++
++  it("accepts only a successful scope, workspace build, and native lane", () => {
++    const result = runGate();
++    expect(result.error).toBeUndefined();
++    expect(result.status, result.stdout + result.stderr).toBe(0);
++  });
++
++  for (const variable of ["CI_SCOPE_RESULT", "WORKSPACE_BUILD_RESULT", "NATIVE_PLATFORM_RESULT"]) {
++    it.each(["failure", "cancelled", "skipped", "neutral", "timed_out", ""])(
++      `rejects ${variable}=%s instead of letting a skipped required check pass`,
++      (result) => {
++        const execution = runGate({ [variable]: result });
++        expect(execution.error).toBeUndefined();
++        expect(execution.status).not.toBe(0);
++        expect(execution.status).not.toBeNull();
++      },
++    );
++  }
++
++  it.each(["golden-path-template", "template-nonvisual"])(
++    "%s consumes this run's artifacts without a transitive native gate",
++    (name) => {
++      const consumer = job(name);
++      expect(declaredNeeds(consumer)).toEqual(["scope", "build-artifacts"]);
++      expect(consumer).toContain("actions/download-artifact");
++      expect(consumer).toContain("name: workspace-packages");
++      expect(ancestors(name).has("native-platforms")).toBe(false);
++      expect(ancestors(name).has("build")).toBe(false);
++    },
++  );
++
++  it.each(["benchmark", "budgets", "performance-contracts"])(
++    "%s starts after scope rather than waiting for artifacts it never downloads",
++    (name) => {
++      expect(declaredNeeds(job(name))).toEqual(["scope"]);
++      expect(ancestors(name).has("native-platforms")).toBe(false);
++      if (name !== "performance-contracts") {
++        expect(job(name)).toContain("uses: ./.github/actions/workspace-dist");
++      }
++    },
++  );
++
++  it("reports the new producer as well as every pre-existing job", () => {
++    const graph = ciJobGraph(source);
++    expect([...declaredNeeds(job("run-summary"))].sort()).toEqual(
++      graph
++        .map(({ name }) => name)
++        .filter((name) => name !== "run-summary")
++        .sort(),
++    );
++  });
++
++  it.each(["android-emulator-parity", "desktop-parity"])(
++    "%s restores the verified JS build without caching a native test verdict",
++    (name) => {
++      const native = new Map(
++        jobSections(
++          readFileSync(path.join(repo, ".github/workflows/native-platforms.yml"), "utf8"),
++        ),
++      );
++      const section = native.get(name);
++      if (section === undefined) throw new Error(`Missing native job: ${name}`);
++      expect(section).toContain("uses: ./.github/actions/workspace-dist");
++      expect(section).not.toContain("pnpm tsx scripts/workspace-packages.ts build");
++      expect(section.indexOf("uses: ./.github/actions/workspace-dist")).toBeLessThan(
++        section.indexOf("name: Capture browser references"),
++      );
++      expect(section).toContain("conformance/run-conformance.mjs");
++      expect(section).toContain("check-lane-blocks.mjs");
++    },
++  );
++});
+ diff --git a/scripts/__tests__/ci-structure.spec.ts b/scripts/__tests__/ci-structure.spec.ts
+index 500c50b..62d5f00 100644
+--- a/scripts/__tests__/ci-structure.spec.ts
++++ b/scripts/__tests__/ci-structure.spec.ts
+@@ -804,7 +804,7 @@ describe("CI pipeline structure", () => {
+     // skipped by its `needs:` edge rather than cancelled out from under itself.
+     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+     expect(ci).toContain("fail-fast: false");
+-    expect(ci).toContain("needs: build");
++    expect(requiredJob(ci, "golden-path-template")).toContain("needs: [scope, build-artifacts]");
+   });
+ 
+   it("hands the emulator action a one-line script, so the arguments survive", async () => {
+@@ -1419,7 +1419,7 @@ describe("CI pipeline structure", () => {
+   // compiles the workspace, so it packs once and the legs download the result.
+   it("packs the workspace tarballs once and shares them with every matrix leg", async () => {
+     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+-    const build = requiredJob(ci, "build");
++    const build = requiredJob(ci, "build-artifacts");
+     expect(build, "build does not publish the packed tarballs").toContain(
+       "actions/upload-artifact",
+     );
+@@ -2251,8 +2251,8 @@ describe("CI pipeline structure", () => {
+ 
+   it("builds the framework example before a fail-closed bundle boundary check", async () => {
+     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+-    const build = jobSections(ci).find(([job]) => job === "build")?.[1];
+-    if (build === undefined) throw new Error("CI build job was not found.");
++    const build = jobSections(ci).find(([job]) => job === "build-artifacts")?.[1];
++    if (build === undefined) throw new Error("CI build-artifacts job was not found.");
+ 
+     const exampleBuild = build.indexOf("pnpm --filter abyss-framework build");
+     const boundaryCheck = build.indexOf("name: Enforce entity registry boundaries");
