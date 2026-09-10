@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
 const workflow = readFileSync(
   new URL("../../.github/workflows/native-platforms.yml", import.meta.url),
@@ -23,7 +23,7 @@ function stepScript(name: string): string {
 // Execute the actual workflow script. Functions replace only the external tools; an empty
 // PATH keeps a developer's installed ccache/Chocolatey/Homebrew out of the fixtures.
 function runStep(script: string, tools: string) {
-  const root = mkdtempSync(path.join(tmpdir(), "threenative-ccache-"));
+  const root = makeTempDirSync("threenative-ccache-");
   const envFile = path.join(root, "github-env");
   writeFileSync(envFile, "");
   try {

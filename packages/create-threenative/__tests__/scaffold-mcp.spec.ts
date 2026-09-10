@@ -30,6 +30,14 @@ const MCP_CREATURE_DISCOVERY_TIMEOUT_MS = 15_000;
 // The published creature compiler can spend up to 60 seconds in its bounded operation. Keep
 // ordinary discovery calls fast while allowing the response to arrive after that operation limit.
 const MCP_COMPILE_REQUEST_TIMEOUT_MS = 70_000;
+// `initialize` is the first thing a freshly spawned server answers, so it pays a cold Node start
+// and the server's whole module graph before it can reply — work that has nothing to do with the
+// scaffold wiring under test. Two seconds was enough on an idle desktop and not on a loaded CI
+// shard, where it failed as `MCP initialize timed out after 2000 ms`. Keeping the handshake tight
+// buys nothing now that `watchMcpChild` rejects on `close`/`error` the moment a server actually
+// dies: this budget only has to outlast a cold start and still fire on a server that is alive and
+// silent.
+const MCP_HANDSHAKE_TIMEOUT_MS = 30_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -354,11 +362,18 @@ async function probeEngineServer(target: string): Promise<void> {
   const lines = createInterface({ input: child.stdout });
   const nextId = { value: 1 };
   try {
-    await request(child, nextId, lines, "initialize", {
-      capabilities: {},
-      clientInfo: { name: "scaffold-mcp-test", version: "0" },
-      protocolVersion: "2025-06-18",
-    });
+    await request(
+      child,
+      nextId,
+      lines,
+      "initialize",
+      {
+        capabilities: {},
+        clientInfo: { name: "scaffold-mcp-test", version: "0" },
+        protocolVersion: "2025-06-18",
+      },
+      MCP_HANDSHAKE_TIMEOUT_MS,
+    );
     child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
     const listed = await request(child, nextId, lines, "tools/list");
     const tools = listed.tools as Array<{ name: string }>;
@@ -574,11 +589,18 @@ describe("scaffolded asset MCP", () => {
     const lines = createInterface({ input: child.stdout });
     const nextId = { value: 1 };
     try {
-      const initialized = await request(child, nextId, lines, "initialize", {
-        capabilities: {},
-        clientInfo: { name: "scaffold-asset-test", version: "0" },
-        protocolVersion: "2025-06-18",
-      });
+      const initialized = await request(
+        child,
+        nextId,
+        lines,
+        "initialize",
+        {
+          capabilities: {},
+          clientInfo: { name: "scaffold-asset-test", version: "0" },
+          protocolVersion: "2025-06-18",
+        },
+        MCP_HANDSHAKE_TIMEOUT_MS,
+      );
       expect(initialized.serverInfo).toEqual({ name: "threenative-asset-mcp", version: "0.8.0" });
       child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
 
@@ -780,11 +802,18 @@ describe("scaffolded blender MCP", () => {
     const lines = createInterface({ input: child.stdout });
     const nextId = { value: 1 };
     try {
-      await request(child, nextId, lines, "initialize", {
-        capabilities: {},
-        clientInfo: { name: "scaffold-blender-test", version: "0" },
-        protocolVersion: "2025-06-18",
-      });
+      await request(
+        child,
+        nextId,
+        lines,
+        "initialize",
+        {
+          capabilities: {},
+          clientInfo: { name: "scaffold-blender-test", version: "0" },
+          protocolVersion: "2025-06-18",
+        },
+        MCP_HANDSHAKE_TIMEOUT_MS,
+      );
       child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
 
       const listed = await request(child, nextId, lines, "tools/list");
