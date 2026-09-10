@@ -9,31 +9,25 @@ permissions:
   contents: read
 
 jobs:
-  workspace:
+  toolchain:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/pnpm
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22.16.0
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Export source and installed dependencies, never checkout credentials
+      - name: Export the checksum-verified package manager, without credentials
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/starter-kit-workspace"
-          git archive HEAD | gzip -1 > "$RUNNER_TEMP/starter-kit-workspace/source.tar.gz"
-          find . -type d -name node_modules -prune -print0 > "$RUNNER_TEMP/node-modules.paths"
-          tar --null -T "$RUNNER_TEMP/node-modules.paths" -cf - | gzip -1 > "$RUNNER_TEMP/starter-kit-workspace/dependencies.tar.gz"
-          git rev-parse HEAD > "$RUNNER_TEMP/starter-kit-workspace/source-sha.txt"
+          mkdir -p "$RUNNER_TEMP/starter-kit-toolchain"
+          cp "$(command -v pnpm)" "$RUNNER_TEMP/starter-kit-toolchain/pnpm"
+          pnpm --version > "$RUNNER_TEMP/starter-kit-toolchain/version.txt"
+          sha256sum "$RUNNER_TEMP/starter-kit-toolchain/pnpm" > "$RUNNER_TEMP/starter-kit-toolchain/sha256.txt"
       - uses: actions/upload-artifact@v4
         with:
-          name: starter-kit-workspace
-          path: ${{ runner.temp }}/starter-kit-workspace
+          name: starter-kit-toolchain
+          path: ${{ runner.temp }}/starter-kit-toolchain
           retention-days: 1
-          compression-level: 0
+          compression-level: 6
