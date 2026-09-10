@@ -22,6 +22,12 @@ packages/runtime-native/.runtime/tools-venv/bin):
     -DTN_ENABLE_DEBUG_SERVER=OFF -DTN_ENABLE_NATIVE_PHYSICS=OFF
   cmake --build packages/runtime-native/build/tn-wgpu --target threenative-pipeline-cache-api-test
 
+The contract drives ten pipelines through the host's own JavaScript bindings: one
+synchronous render, one synchronous compute, and eight worker compiles queued before
+any can settle, so both pool threads are inside a creation call on the same cache
+handle at once. Two jobs on two workers can serialise and prove nothing about
+concurrent attachment.
+
 Three arms, one binary each:
 1. attached.log            ./threenative-pipeline-cache-api-test                   exit 0
 2. disabled-control.log    TN_PIPELINE_CACHE=0 ./threenative-pipeline-cache-api-test  exit 0
@@ -33,6 +39,11 @@ control, executable on any build and reused as Phase 3's cache-disabled arm.
 
 Read the results with:
   grep -E 'TN_PIPELINE_CACHE:|host cache mode|FAIL' <log>
+Arm 1: renderAttached=5 computeAttached=5, 100 -> 71,839 serialized bytes.
+Arm 2: renderAttached=0 computeAttached=0, 0 bytes, mode "disabled".
+Arm 3: renderAttached=0 computeAttached=0, stays at 100 bytes, exits 1.
+The same binary on the Dawn build (build/tn-linux) prints TN_PIPELINE_CACHE_UNAVAILABLE
+and passes: an unsupported backend reporting unavailable is the contract, not a skip.
 
 Not executed here: Android arm64, process restarts, corrupt or unwritable storage,
 device loss, and any timing claim. The disabled arm was faster than the imported cache

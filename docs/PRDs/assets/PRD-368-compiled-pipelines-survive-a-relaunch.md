@@ -40,10 +40,12 @@ stack beside the creation call rather than carrying a pointer it does not own.
 
 **Executed** on Linux/Vulkan (NVIDIA RTX 2080) with the patched wgpu-native, evidence in
 [`pipeline-cache-host/`](../../verification/startup-measure-reduce-2026-09-09/pipeline-cache-host/):
-`threenative-pipeline-cache-api-test` drives four pipelines through the host's own JavaScript
-bindings and the device cache grows from its empty 100 bytes to 32,515, with `renderAttached=2`
-and `computeAttached=2`. The red — attachment removed while the host still reports a cache — leaves
-the cache at 100 bytes and exits 1. `TN_PIPELINE_CACHE=0` is the shipping negative control: same
+`threenative-pipeline-cache-api-test` drives ten pipelines through the host's own JavaScript
+bindings — one synchronous render, one synchronous compute, and eight worker compiles queued before
+any can settle, so both pool threads sit inside a creation call on the same cache handle at once —
+and the device cache grows from its empty 100 bytes to 71,839, with `renderAttached=5` and
+`computeAttached=5`. The red — attachment removed while the host still reports a cache — leaves the
+cache at 100 bytes and exits 1. `TN_PIPELINE_CACHE=0` is the shipping negative control: same
 binary, nothing attached, nothing serialized, rendering unchanged. 35 of 38 native contract tests
 pass in this configuration; the three failures (`webgpu-comprehensive`,
 `runtime-platform-comprehensive`, `webgpu-bindings-reentrancy`) reproduce identically at the
@@ -56,8 +58,16 @@ Because the cache API exists only in the maintained patch, CMake now defines
 `unsupported` and renders exactly as before, which is what keeps an ordinary `pnpm native:build`
 compiling.
 
+A stricter reading of the Phase 1B file list: the host proof lives in
+`tests/pipeline_cache_api_test.cpp` rather than `tests/async_pipeline_thread_test.cpp`, because that
+file is the async *entry* contract and this is the cache's. Nothing was added to
+`bindings_pipelines.h`'s subject that does not belong to it.
+
 **Not proven by this phase:** persistence across process restarts, Android arm64, device loss,
-corrupt or unwritable storage, and any startup saving whatsoever. The host reports a cache *mode*
+a cache carried between devices, corrupt or unwritable storage, and any startup saving whatsoever.
+Foreign-device rejection is deliberately left to Phase 2, where the qualified storage envelope is
+what makes the question answerable; asserting it against a raw handle here would test wgpu, not
+this host. The host reports a cache *mode*
 and serialized *bytes*; the backend exposes no per-pipeline hit or miss, so nothing here is
 permitted to say a pipeline was reused.
 

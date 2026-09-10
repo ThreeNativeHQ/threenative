@@ -294,7 +294,8 @@ void renderAndReadback(WGPUDevice device, WGPUQueue queue, WGPURenderPipeline re
 // ============================================================================
 
 /**
- * Four pipelines through the host's public bindings: sync render, sync compute, and both workers.
+ * Ten pipelines through the host's public bindings: sync render, sync compute, and eight worker
+ * compiles queued at once so both pool threads compile against the one cache handle concurrently.
  *
  * Every shader is salted so no two compiles are the same program. That is not decoration: a
  * backend that deduplicates an identical pipeline would let this pass while attaching nothing,
@@ -332,8 +333,14 @@ fn main() { seed = seed * 2.0; }
   });
   globalThis.__hostCacheSyncRender = __device.createRenderPipeline(renderDescriptor(11));
   globalThis.__hostCacheSyncCompute = __device.createComputePipeline(computeDescriptor(12));
-  globalThis.__hostCacheAsyncRender = __device.createRenderPipelineAsync(renderDescriptor(13));
-  globalThis.__hostCacheAsyncCompute = __device.createComputePipelineAsync(computeDescriptor(14));
+  // Eight worker compiles rather than two, queued before any of them can settle, so the pool's
+  // two threads are inside `wgpuDeviceCreate*Pipeline` on the same cache handle at the same time.
+  // Two jobs on two workers can serialise and prove nothing about concurrent attachment.
+  globalThis.__hostCacheAsync = [];
+  for (let index = 0; index < 4; index += 1) {
+    globalThis.__hostCacheAsync.push(__device.createRenderPipelineAsync(renderDescriptor(20 + index)));
+    globalThis.__hostCacheAsync.push(__device.createComputePipelineAsync(computeDescriptor(30 + index)));
+  }
   return true;
 })())JS";
 
@@ -372,6 +379,8 @@ void checkHostPipelineCache(mystral::Runtime& runtime) {
     require(runtime.evalScript(kHostPipelineScript, "pipeline_cache_host_pipelines.js"),
             "create pipelines through the host bindings");
     drainHostCompiles(state);
+    require(state->asyncPipelines.settled == state->asyncPipelines.started,
+            "a worker compile was left unsettled");
     const size_t after = mystral::webgpu::pipelineCacheSerializedBytes(state);
     const uint64_t renderAttached = cache.renderAttached.load();
     const uint64_t computeAttached = cache.computeAttached.load();
@@ -385,8 +394,8 @@ void checkHostPipelineCache(mystral::Runtime& runtime) {
         require(after == 0, "the disabled control serialized cache bytes");
         return;
     }
-    require(renderAttached >= 2, "both host render paths must attach the device cache");
-    require(computeAttached >= 2, "both host compute paths must attach the device cache");
+    require(renderAttached >= 5, "both host render paths must attach the device cache");
+    require(computeAttached >= 5, "both host compute paths must attach the device cache");
     require(before == cache.emptyBytes, "the pre-compile cache was not the empty one");
     require(after > before, "the host compiled four pipelines and the device cache did not grow");
 }
