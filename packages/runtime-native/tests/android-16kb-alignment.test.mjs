@@ -1,3 +1,4 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { test } from 'vitest';
@@ -100,14 +101,12 @@ test('a misaligned library is coded, and an unrunnable check is not', () => {
 
 // PRD-221: these are payload-integrity mechanics, not Android startup qualification.
 import {
-	mkdtempSync,
 	mkdirSync,
 	writeFileSync,
 	readFileSync,
 	rmSync,
 	symlinkSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	ANDROID_V8_BUILD,
@@ -119,7 +118,7 @@ import {
 } from "../scripts/build-android-v8.mjs";
 
 function withV8Payload(run) {
-	const root = mkdtempSync(join(tmpdir(), "tn-v8-16kb-"));
+	const root = makeTempDirSync("tn-v8-16kb-");
 	const write = (path, value) => {
 		mkdirSync(join(root, path, ".."), { recursive: true });
 		writeFileSync(join(root, path), value);
@@ -301,7 +300,7 @@ test("V8 source GN configuration retains JIT, compressed pointers and per-ABI sn
 });
 
 test('the adapted inspector backport applies to the pinned String16 source shape', () => {
-  const root = mkdtempSync(join(tmpdir(), 'tn-v8-inspector-patch-'));
+  const root = makeTempDirSync('tn-v8-inspector-patch-');
   const header = join(root, 'src/inspector/string-16.h');
   const parent = [
     '#include <stdint.h>',
@@ -400,7 +399,7 @@ import * as dependencyInstaller from '../scripts/download-deps.mjs';
 import * as sourceBuilder from '../scripts/build-android-v8.mjs';
 
 test('Android provisioner delegates even an existing legacy cache to the verified V8 builder', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'tn-v8-provision-'));
+  const root = makeTempDirSync('tn-v8-provision-');
   const destination = join(root, 'v8-android');
   mkdirSync(destination);
   let observed;
