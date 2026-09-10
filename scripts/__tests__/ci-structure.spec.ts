@@ -804,7 +804,7 @@ describe("CI pipeline structure", () => {
     // skipped by its `needs:` edge rather than cancelled out from under itself.
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     expect(ci).toContain("fail-fast: false");
-    expect(ci).toContain("needs: build");
+    expect(requiredJob(ci, "golden-path-template")).toContain("needs: [scope, build-artifacts]");
   });
 
   it("hands the emulator action a one-line script, so the arguments survive", async () => {
@@ -1419,7 +1419,7 @@ describe("CI pipeline structure", () => {
   // compiles the workspace, so it packs once and the legs download the result.
   it("packs the workspace tarballs once and shares them with every matrix leg", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const build = requiredJob(ci, "build");
+    const build = requiredJob(ci, "build-artifacts");
     expect(build, "build does not publish the packed tarballs").toContain(
       "actions/upload-artifact",
     );
@@ -2251,8 +2251,8 @@ describe("CI pipeline structure", () => {
 
   it("builds the framework example before a fail-closed bundle boundary check", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const build = jobSections(ci).find(([job]) => job === "build")?.[1];
-    if (build === undefined) throw new Error("CI build job was not found.");
+    const build = jobSections(ci).find(([job]) => job === "build-artifacts")?.[1];
+    if (build === undefined) throw new Error("CI build-artifacts job was not found.");
 
     const exampleBuild = build.indexOf("pnpm --filter abyss-framework build");
     const boundaryCheck = build.indexOf("name: Enforce entity registry boundaries");
