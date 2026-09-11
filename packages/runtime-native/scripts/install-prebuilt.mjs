@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
-import { accessSync, constants, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -260,29 +260,23 @@ export async function downloadReleaseArtifact(key, options = {}) {
   return contents;
 }
 
-/** Reuse only a verified install for this platform, package version and manifest selection. */
-export function findInstalledPrebuilt(options = {}) {
-  const plan = createInstallPlan(options);
+/** Reuse only a complete install for this exact package, platform and manifest selection. */
+function isVerifiedInstall(plan, options) {
   try {
-    platformKey(plan.platform, options.arch);
     const status = JSON.parse(readFileSync(plan.statusPath, 'utf8'));
     if (status.ok !== true || status.key !== plan.key ||
-        status.version !== packageVersion || status.url !== plan.status.url) return undefined;
-    const contents = readFileSync(plan.output);
-    if (contents.length === 0) return undefined;
-    verifyChecksum(contents, status.sha256, plan.key);
-    // An explicit local pin can change in place; do not let its old success record override it.
+        status.version !== plan.status.version || status.url !== plan.status.url) return false;
+    // A caller can replace a local lock without changing its path. That explicit pin must
+    // still authorize these bytes, and a missing/invalid pin must never be bypassed by cache.
     const manifestPath = options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST;
-    if (manifestPath) {
-      const release = readRelease(resolve(manifestPath), plan.key);
-      verifyChecksum(contents, release.sha256, plan.key);
-      if (release.size !== undefined && contents.length !== release.size) return undefined;
-    }
-    if (plan.platform !== 'win32') accessSync(plan.output, constants.X_OK);
-    return plan.output;
+    const pinned = manifestPath ? readRelease(resolve(manifestPath), plan.key) : undefined;
+    if (pinned && pinned.sha256 !== status.sha256) return false;
+    const contents = readFileSync(plan.output);
+    if (contents.length === 0 || (pinned?.size !== undefined && contents.length !== pinned.size)) return false;
+    verifyChecksum(contents, status.sha256, plan.key);
+    return true;
   } catch {
-    // Missing, malformed or tampered installs go through the existing fail-closed installer.
-    return undefined;
+    return false;
   }
 }
 
@@ -290,6 +284,12 @@ export async function installPrebuilt(options = {}) {
   const plan = createInstallPlan(options);
   const temporary = `${plan.output}.${randomUUID()}.tmp`;
   try {
+    // Packaging may reuse verified bytes offline. Explicit install/retry keeps its original
+    // invalidation semantics, including removing an earlier binary on a failed retry.
+    if (options.reuse === true) {
+      platformKey(plan.platform, options.arch);
+      if (isVerifiedInstall(plan, options)) return plan.output;
+    }
     // A failed retry must not leave an earlier binary usable or its old success marker intact.
     beginInstall(plan, options.arch);
     const contents = await downloadReleaseArtifact(plan.key, options);

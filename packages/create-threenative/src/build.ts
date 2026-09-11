@@ -506,8 +506,6 @@ async function buildNative(
       ...(ui === undefined ? [] : ["--ui", ui]),
       "--config",
       configPath,
-      // Only a user-supplied binary is explicit. Otherwise the packager owns verified
-      // cache reuse, installation and rejection of a stale source-checkout override.
       ...(process.env.THREENATIVE_RUNTIME_BINARY
         ? ["--runtime", path.resolve(process.env.THREENATIVE_RUNTIME_BINARY)]
         : []),
@@ -520,7 +518,7 @@ async function buildNative(
 
 export async function build(options: IBuildOptions): Promise<void> {
   if (options.allowSourceBuild && options.target !== "android") {
-    throw new Error("--allow-source-build is only supported with --target android.");
+    throw new Error("--allow-source-build is supported only for --target android.");
   }
   const cwd = path.resolve(options.cwd ?? process.cwd());
   if (options.target === "web") await buildWeb(cwd, options.viteArgs);
@@ -540,7 +538,7 @@ export function buildHelp(): string {
     "",
     "Options:",
     "  --target <target>  Choose web, desktop, android, or ios (default: web).",
-    "  --allow-source-build  Explicitly allow Android maintainer source builds.",
+    "  --allow-source-build  Explicitly allow Android maintainer source compilation.",
     "  --help             Show this help.",
   ].join("\n")}\n`;
 }
@@ -556,11 +554,13 @@ export function parseBuildArgs(argv: readonly string[]): IBuildOptions {
   }
   const allowSourceBuild = argv.includes("--allow-source-build");
   if (allowSourceBuild && value !== "android") {
-    throw new Error("--allow-source-build is only supported with --target android.");
+    throw new Error("--allow-source-build is supported only for --target android.");
   }
   const consumed = new Set([0]);
-  for (let index = 1; index < argv.length; index += 1) {
-    if (argv[index] === "--allow-source-build") consumed.add(index);
+  if (allowSourceBuild) {
+    for (let index = 1; index < argv.length; index += 1) {
+      if (argv[index] === "--allow-source-build") consumed.add(index);
+    }
   }
   if (targetIndex !== -1) {
     consumed.add(targetIndex);

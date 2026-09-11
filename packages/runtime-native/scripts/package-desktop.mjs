@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { assertNativeAssetsDecodable, deriveDesktopWebpSupport } from './asset-preflight.mjs';
-import { findInstalledPrebuilt, installPrebuilt } from './install-prebuilt.mjs';
+import { installPrebuilt } from './install-prebuilt.mjs';
 
 const runtimeRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -44,8 +44,7 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
         'Pass the checkout-built --runtime explicitly for a maintainer build; consumer builds unset the override and install from the release manifest.',
     );
   }
-  const install = options.install ?? {};
-  return findInstalledPrebuilt(install) ?? installPrebuilt(install);
+  return installPrebuilt({ ...options.install, reuse: true });
 }
 
 export const DEFAULT_DESKTOP_CONFIG = {
@@ -98,7 +97,7 @@ export function packageDesktop(options) {
     }
     return compileDesktopArtifact(options, options.runtime);
   }
-  return resolveDesktopRuntime(undefined, { runtimeSource: options.runtimeSource }).then((runtime) =>
+  return resolveDesktopRuntime(undefined, { runtimeSource: options.runtimeSource, install: options.install }).then((runtime) =>
     compileDesktopArtifact(options, runtime),
   );
 }

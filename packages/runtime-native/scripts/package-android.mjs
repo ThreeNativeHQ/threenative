@@ -629,18 +629,24 @@ export async function packageAndroid(
   config = undefined,
   options = {},
 ) {
-  // Source builds are a maintainer opt-in, never a consumer download fallback.
-  // Detect the checkout independently of whether its native dependencies are provisioned.
+  // Source identity must not depend on whether downloaded dependencies are already present.
+  // Otherwise a partially provisioned checkout silently takes the consumer download path.
   const packageRoot = resolve(
     options.runtimeRoot ?? process.env.THREENATIVE_RUNTIME_SOURCE ?? runtimeRoot,
   );
   const { androidRoot } = androidPaths(packageRoot);
-  // Run this guard before wrapper installation, manifest fetches or generated-file writes.
   const sourceCheckout = existsSync(join(packageRoot, 'CMakeLists.txt'));
   if (sourceCheckout && options.allowSourceBuild !== true) {
     throw new Error(
       `Android build resolved a source checkout at ${packageRoot} with no explicit opt-in. ` +
-        'Pass --allow-source-build (or { allowSourceBuild: true } through the API) for a maintainer build; consumer builds use the published prebuilt package instead.',
+        'Pass --allow-source-build (or { allowSourceBuild: true }) for a maintainer build; ' +
+        'consumer builds use the prebuilt path from a published install.',
+    );
+  }
+  if (sourceCheckout && !existsSync(join(packageRoot, 'third_party', 'sdl3-android', `SDL3-${SDL3_ANDROID_VERSION}.aar`))) {
+    throw new Error(
+      `Android source checkout at ${packageRoot} is missing SDL3-${SDL3_ANDROID_VERSION}.aar. ` +
+        'Provision the maintainer dependencies with node scripts/download-deps.mjs --android from the runtime checkout, then retry --allow-source-build.',
     );
   }
   const declared = configValue(config, orientation);
