@@ -6,6 +6,9 @@
 #include <cstddef>
 #include <deque>
 #include <functional>
+#include <future>
+#include <shared_mutex>
+#include "pipeline_cache.h"
 #include <thread>
 #include <cstdint>
 #include <memory>
@@ -443,6 +446,23 @@ struct PipelineCacheState {
     std::atomic<uint64_t> computeAttached{0};
     /** Bytes the empty cache serialized at device init, the floor a population claim beats. */
     size_t emptyBytes = 0;
+    // Written only on the game thread, before any creation request. The source identity is
+    // provided by the entrypoint, not inferred from a shim eval that may precede the game.
+    PipelineCacheIdentity identity;
+    PipelineCachePlayableBoundary playableBoundary;
+    std::shared_ptr<PipelineCacheStore> store;
+    std::string loadOutcome = "unavailable";
+    size_t loadedBytes = 0;
+    size_t serializedBytes = 0;
+    double loadMs = 0;
+    PipelineCacheWrite lastWrite{"not-attempted", "", 0, 0};
+    // Compiles take shared ownership; serialization takes exclusive ownership only around the
+    // backend snapshot, never during disk I/O. Two compiler workers remain concurrent.
+    std::shared_mutex snapshotMutex;
+    std::future<PipelineCacheWrite> persistence;
+    uint64_t observedAttachments = 0;
+    uint64_t attemptedAttachments = 0;
+    bool stopping = false;
 };
 
 struct BindingsState {

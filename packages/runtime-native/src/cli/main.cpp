@@ -13,6 +13,7 @@
 #include "mystral/js/engine.h"
 #include "mystral/cold_start.h"
 #include "mystral/runtime.h"
+#include "../webgpu/pipeline_cache.h"
 #include "mystral/screenshot_gate.h"
 #include "tool_dispatch.h"
 #include "mystral/platform/ui_overlay.h"
@@ -1110,6 +1111,16 @@ static std::unique_ptr<mystral::Runtime> createConfiguredRuntime(const CLIOption
     config.vsync = opts.vsync;
     config.maxFps = opts.maxFps;
     config.debug = debugMode;
+    // An embedded release is one closed source graph. Development module trees and hot reload
+    // deliberately stay memory-only rather than identifying imported shaders by the entry alone.
+    if (!opts.watch && mystral::vfs::hasEmbeddedBundle()) {
+        std::vector<uint8_t> source;
+        if (mystral::vfs::readEmbeddedFile(mystral::vfs::getEmbeddedEntryPath(), source) && !source.empty()) {
+            config.pipelineCacheAppIdentity = mystral::vfs::getExecutablePath();
+            config.pipelineCacheSourceIdentity = mystral::webgpu::pipelineCacheDigest(
+                std::string_view(reinterpret_cast<const char*>(source.data()), source.size()));
+        }
+    }
 
     // `display.backgroundMode` on desktop. Android carries it as manifest metadata; there is no
     // manifest here, so the environment is the seam. Unrecognized values keep the default and say
