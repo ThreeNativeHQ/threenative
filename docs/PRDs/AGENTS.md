@@ -10,6 +10,13 @@ Read `/AGENTS.md` first. This file is about filing, not about how the work gets 
 - `NOT STARTED`, `PARTIAL`, `OPEN`, `SCOPING` and `PROPOSED` stay in their owning batch, even when a
   dependency is not ready.
 
+**Never un-file a finished PRD by rewriting it.** Re-scoping is not a reason to pull a PRD out of
+`done/` and replace it with a fresh plan: that deletes the ticked boxes and the landed commits that
+justified them, and the work reads as never done. If finished work regressed or its scope grew,
+either reopen the *same* file — keeping its ticked boxes and its evidence, adding the new items
+unticked — or open a new PRD that cites the done one. A `git mv` out of `done/` needs a line in the
+commit message naming what specifically regressed, with the commit or gate that shows it.
+
 Grouped batches (`starter-kits/`, `native-performance-fixes/`, dated batch folders) move whole:
 `git mv docs/PRDs/<batch>/ docs/PRDs/done/<batch>/` in the commit that closes the last PRD. Never
 archive a batch while any PRD in it is partial — a blocked criterion is not completion. A PRD that
@@ -32,6 +39,19 @@ the same commit as the change:
 
 If a PRD has no checkboxes and you are working it, add them as you discover the steps, then keep
 them current the same way.
+
+**Every phase carries its own boxes.** Acceptance criteria alone are not a progress record: they
+are the last thing to go green, so a PRD whose only boxes sit under *Acceptance criteria* shows
+zero progress until the whole thing is finished, and nobody ever ticks anything. Give each phase a
+short checklist — the files wired, the required test passing, the observed red, the user
+verification — and tick those as the phase lands. `prd-creator`'s phase template already has them;
+do not compress them away.
+
+**One box, one claim.** A criterion that conjoins several independent facts ("Windows, macOS and
+Linux all do X *and* Y *and* Z") can never move from `[ ]` to `[x]`, because some clause is always
+out of reach. Split it: one box per platform, per artifact, per property. Boxes you cannot reach
+yet — a host you do not own, a credential you do not have — are still separate boxes, each naming
+its blocker on the line below.
 
 ## Try a blocked reason before you believe it
 
