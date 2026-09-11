@@ -20,6 +20,8 @@ import { pathToFileURL } from "node:url";
 // node builtins, so inlining it adds no runtime dependency to the published `create-threenative`.
 import { installCommandFor, resolveBlender } from "threenative-blender-mcp/bridge";
 
+// @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
+import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { loadConfig } from "./config.js";
 import {
   type IMcpPackage,
@@ -185,6 +187,54 @@ export const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = Object.entries(MCP_SE
 const ASSET_DOWNLOAD_DIRECTORIES = ["public/assets", "public/audio"] as const;
 /** The model sources `blenderImportPass` owns; kept equal to `BLENDER_SOURCE_EXTENSIONS`. */
 const BLENDER_SOURCE_SUFFIXES = [".fbx", ".blend", ".obj", ".dae"] as const;
+
+/** The configured name of the server that drives Blender, derived from the one table rather than
+ * spelled again: a renamed server must not leave the conversion check silently probing nothing. */
+const BLENDER_PACKAGE = ((): IMcpPackage => {
+  const declared = MCP_PACKAGES.blender;
+  if (declared === undefined) {
+    throw new Error("TN_DOCTOR_MCP_TABLE: MCP_PACKAGES declares no 'blender' package.");
+  }
+  return declared;
+})();
+
+/** The configured name of the server whose shim is `blender.mjs`, matched on the shim rather than
+ * on the package name: this server resolves to `@threenative/core`, like the engine one, so the
+ * package name identifies neither. Derived from the one table so a rename cannot leave the
+ * conversion check silently probing a server that is no longer there. */
+export const BLENDER_SERVER = ((): string => {
+  const entry = Object.entries(MCP_SERVERS).find(
+    ([, server]) => serverPackageKey(server) === "blender",
+  );
+  if (entry === undefined) {
+    throw new Error("TN_DOCTOR_MCP_TABLE: no configured MCP server launches blender.mjs.");
+  }
+  return entry[0];
+})();
+
+/** The part of one installer host entry doctor reads. */
+interface IMcpHost {
+  readonly file: string;
+  readonly id: string;
+  readonly label: string;
+}
+
+/**
+ * The project-scoped hosts `@threenative/core`'s postinstall writes, read from the installer's own
+ * table rather than retyped. Doctor used to inspect `.mcp.json` alone, so a game opened in VS
+ * Code, Zed or opencode was told capability search was ready on the strength of a file that host
+ * never reads.
+ */
+const MCP_HOST_TABLE: readonly IMcpHost[] = MCP_HOSTS as readonly IMcpHost[];
+
+/** Hosts that read only a machine-wide config, so no project install can wire them. The installer
+ * excludes them by rule; doctor names them so the gap is stated rather than silent. */
+const MANUAL_GLOBAL_MCP_HOSTS: readonly string[] = Object.freeze([
+  "Windsurf",
+  "Cline",
+  "Amp",
+  "the JetBrains assistants",
+]);
 
 type CompositorProbe = (environment: NodeJS.ProcessEnv) => boolean | undefined;
 
@@ -527,10 +577,15 @@ function mcpSummary(serverChecks: readonly IDoctorCheck[]): IDoctorCheck {
   const warned = serverChecks.filter(({ status }) => status === "warn").length;
   const status: DoctorStatus = failed > 0 ? "fail" : warned > 0 ? "warn" : "ok";
   return {
+    // Transport, and only transport. A server that starts is a server that answers `tools/list`;
+    // whether the application one of its tools drives is installed is a separate fact, reported by
+    // `model conversion`. The old wording — "all three configured MCP servers resolve" — claimed a
+    // complete authoring toolchain, and had also been wrong about the count since the fourth
+    // server landed.
     detail:
       status === "ok"
-        ? "all three configured MCP servers resolve"
-        : `${serverChecks.length - failed - warned} server(s) resolve; ${warned} reachable by npx only; ${failed} malformed or missing`,
+        ? `all ${serverChecks.length} configured MCP servers resolve; transport only, external applications are reported separately`
+        : `${serverChecks.length - failed - warned} of ${serverChecks.length} server(s) resolve; ${warned} reachable by npx only; ${failed} malformed or missing; transport only, external applications are reported separately`,
     fix: status === "ok" ? undefined : "Inspect the per-server capability search checks below.",
     name: "capability search",
     status,
@@ -1358,39 +1413,151 @@ function desktopOverlayCheck(probe: IDesktopOverlayProbe): IDoctorCheck {
   };
 }
 
+/** One project-scoped host config, as doctor found it on disk. */
+type HostWiring = "absent" | "incomplete" | "unreadable" | "wired";
+
+/** The manifest the asset pipeline writes beside its outputs; its entries record what was
+ * converted rather than authored, which is the only honest proof a conversion ever ran. */
+const ASSET_MANIFEST = "public/assets.manifest.json";
+
+function hostWiring(snapshot: IProjectSnapshot, host: IMcpHost): HostWiring {
+  if (!snapshot.files.has(host.file)) return "absent";
+  const source = snapshot.readText(host.file);
+  if (source === undefined) return "unreadable";
+  if (host.file.endsWith(".json")) {
+    try {
+      const parsed: unknown = JSON.parse(source);
+      if (record(parsed) === undefined) return "unreadable";
+    } catch {
+      return "unreadable";
+    }
+  }
+  // Every host format writes each server under its own name, so the names are what is looked for.
+  // Reproducing five config shapes here would be a second copy of `SERVER_FORMATS` to keep in step.
+  const missing = MCP_SERVER_SPECS.filter(({ configName }) => !source.includes(configName));
+  return missing.length === 0 ? "wired" : "incomplete";
+}
+
 /**
- * Blender, for the four model formats the asset pipeline converts.
+ * Which agent hosts this project is wired for — a different fact from whether a server starts.
  *
- * **`warn`, never `fail`.** A game with no `.fbx`, `.blend`, `.obj` or `.dae` in it needs no
- * Blender and must stay green — a doctor that failed on a 350 MB dependency the project does not
- * use would be a doctor people stop running. A game that *does* carry one of those sources gets a
- * hard failure where it belongs: in the build, from `blenderImportPass`, naming the same command.
+ * `@threenative/core`'s postinstall writes seven project-scoped configs; doctor used to read
+ * `.mcp.json` alone, so a game opened in VS Code, Zed or opencode was told capability search was
+ * ready on the strength of a file that host never reads. Activation itself is not observable from
+ * here — no probe can tell whether an editor loaded a config it found — so this check reports the
+ * configuration it can see and says plainly that it stops there.
  */
-function blenderCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
+function editorActivationCheck(snapshot: IProjectSnapshot): IDoctorCheck {
+  const wirings = MCP_HOST_TABLE.map((host) => ({ host, wiring: hostWiring(snapshot, host) }));
+  const broken = wirings.filter(({ wiring }) => wiring === "incomplete" || wiring === "unreadable");
+  const wired = wirings.filter(({ wiring }) => wiring === "wired");
+  const manual = `${MANUAL_GLOBAL_MCP_HOSTS.join(", ")} read a machine-wide config only and are wired by hand`;
+  if (broken.length > 0) {
+    const named = broken
+      .map(
+        ({ host, wiring }) =>
+          `${host.file} is ${wiring === "unreadable" ? "unreadable" : "missing ThreeNative servers"}`,
+      )
+      .join("; ");
+    return {
+      // The file is the user's: doctor names it and never rewrites it.
+      detail: `${named} — ${wired.length} of ${MCP_HOST_TABLE.length} host configs are complete`,
+      fix: "Reinstall @threenative/core to rewrite the host configs it owns, or restore the listed file by hand; doctor never edits it.",
+      name: "editor activation",
+      status: "warn",
+    };
+  }
+  if (wired.length === 0) {
+    return {
+      detail: `no project-scoped host config carries the ThreeNative servers (looked for ${MCP_HOST_TABLE.map(({ file }) => file).join(", ")})`,
+      fix: "Reinstall @threenative/core in this project; its postinstall writes every project-scoped host config.",
+      name: "editor activation",
+      status: "fail",
+    };
+  }
+  return {
+    detail: `${wired.length} of ${MCP_HOST_TABLE.length} host configs carry the servers (${wired
+      .map(({ host }) => host.label)
+      .join(", ")}); whether an editor loaded one is not observable from here. ${manual}`,
+    name: "editor activation",
+    status: "ok",
+  };
+}
+
+/** Whether the asset pipeline has actually converted a model here, read from its own manifest. */
+function conversionsExecuted(snapshot: IProjectSnapshot): number | undefined {
+  const source = snapshot.readText(ASSET_MANIFEST);
+  if (source === undefined) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    return undefined;
+  }
+  const entries = record(parsed)?.entries;
+  if (!Array.isArray(entries)) return undefined;
+  return entries.filter((entry) => typeof record(entry)?.importedFrom === "string").length;
+}
+
+/**
+ * Model conversion: four facts, never folded into one.
+ *
+ * The Blender MCP server starting is not the same fact as Blender being installed, which is not
+ * the same fact as a conversion having run. A server that advertises `blender_convert` over a
+ * healthy transport on a machine with no Blender will fail the first time a tool is called, and
+ * before this check the report said "transport initialized and advertised 3 tool(s)" and nothing
+ * else — a complete authoring toolchain claimed on the strength of a process that started.
+ *
+ * **`warn`, never `fail` for a missing application.** A game with no `.fbx`, `.blend`, `.obj` or
+ * `.dae` in it needs no Blender and must stay green — a doctor that failed on a 350 MB dependency
+ * the project does not use would be a doctor people stop running. A game that *does* carry one of
+ * those sources gets a hard failure where it belongs: in the build, from `blenderImportPass`,
+ * naming the same command. A broken transport is a different matter and does fail: that is the
+ * package this project installed, not an application it chose not to have.
+ */
+function modelConversionCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
   const probe = snapshot.blender;
   if (probe === undefined) return undefined;
+  const name = "model conversion";
   const sources = [...snapshot.files].filter((file) =>
     BLENDER_SOURCE_SUFFIXES.some((suffix) => file.toLowerCase().endsWith(suffix)),
   );
-  if (probe.available) {
+  const executed = conversionsExecuted(snapshot);
+  const ran =
+    executed === undefined
+      ? "no bake manifest here, so no conversion is proven"
+      : executed === 0
+        ? "the bake manifest records no converted model"
+        : `the bake manifest records ${executed} converted model(s)`;
+  const transport = snapshot.mcpServerHealth?.get(BLENDER_SERVER);
+  if (transport?.status === "fail") {
     return {
-      detail:
-        probe.version === undefined
-          ? probe.detail
-          : `Blender ${probe.version} converts .fbx, .blend, .obj and .dae on this machine`,
-      name: "blender",
-      status: "ok",
+      detail: `${BLENDER_SERVER} is configured, but ${transport.detail}; no conversion tool is reachable — ${ran}`,
+      fix: `Reinstall @threenative/core and ${BLENDER_PACKAGE.name}, then rerun doctor.`,
+      name,
+      status: "fail",
     };
   }
-  const carried =
-    sources.length === 0
-      ? "no .fbx, .blend, .obj or .dae in this project, so nothing needs it yet"
-      : `${sources.length} source(s) in this project need it: ${sources.slice(0, 3).join(", ")}`;
+  const reachable =
+    transport === undefined
+      ? `${BLENDER_SERVER} was not probed`
+      : `${BLENDER_SERVER} transport is up`;
+  if (!probe.available) {
+    const carried =
+      sources.length === 0
+        ? "no .fbx, .blend, .obj or .dae in this project, so nothing needs it yet"
+        : `${sources.length} source(s) in this project need it: ${sources.slice(0, 3).join(", ")}`;
+    return {
+      detail: `${reachable}, but conversion is unavailable: ${probe.detail} — ${carried}; ${ran}`,
+      fix: `Install Blender when you want to convert those formats: ${probe.installCommand}`,
+      name,
+      status: "warn",
+    };
+  }
   return {
-    detail: `${probe.detail} — ${carried}`,
-    fix: `Install Blender when you want to convert those formats: ${probe.installCommand}`,
-    name: "blender",
-    status: "warn",
+    detail: `${reachable} and Blender ${probe.version ?? "(version unreported)"} converts .fbx, .blend, .obj and .dae on this machine; ${ran}`,
+    name,
+    status: "ok",
   };
 }
 
@@ -1412,7 +1579,7 @@ export function diagnoseProject(
     };
   }
   const hasPlaytests = [...snapshot.files].some((file) => file.endsWith(".playtest.json"));
-  const blender = blenderCheck(snapshot);
+  const blender = modelConversionCheck(snapshot);
   const nativeRuntime = nativeRuntimeCheck(snapshot);
   const apkSize = apkSizeCheck(snapshot);
   const playtest = playtestCheck(snapshot, options.capturePath);
@@ -1447,6 +1614,7 @@ export function diagnoseProject(
           status: "warn",
         },
     ...capabilitySearchChecks(snapshot),
+    editorActivationCheck(snapshot),
     ...(blender === undefined ? [] : [blender]),
   ];
   return { checks, pass: checks.every(({ status }) => status !== "fail") };

@@ -13,9 +13,12 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, execFileSync: execFileSyncMock, spawnSync: spawnSyncMock };
 });
 
+// @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
+import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { assertNativeAssetsCompatible } from "../src/build.js";
 import {
   ANDROID_RELEASE_SIGNING_ENV,
+  BLENDER_SERVER,
   type IProjectSnapshot,
   MCP_SERVER_SPECS,
   detectX11Compositor,
@@ -27,6 +30,8 @@ import {
   readProject,
 } from "../src/doctor.js";
 import { MCP_SERVERS } from "../src/mcp-servers.js";
+
+const MCP_HOST_TABLE = MCP_HOSTS as readonly { readonly file: string; readonly label: string }[];
 
 const CORE_PACKAGE_VERSION = (
   JSON.parse(readFileSync(new URL("../../core/package.json", import.meta.url), "utf8")) as {
@@ -1223,23 +1228,59 @@ describe("threenative doctor edge coverage", () => {
   });
 });
 
-describe("threenative doctor and Blender", () => {
+describe("threenative doctor and model conversion", () => {
+  const ABSENT = {
+    available: false,
+    detail: "No Blender 4.2 or newer was found.",
+    installCommand: "sudo snap install blender --classic",
+  };
+
   it("should warn, not fail, when Blender is absent", () => {
+    const report = diagnoseProject(snapshot({ blender: ABSENT }));
+    const conversion = check(report, "model conversion");
+    expect(conversion.status).toBe("warn");
+    expect(conversion.fix).toContain("sudo snap install blender --classic");
+    // The point of the whole check: a project with no importable source stays green.
+    expect(conversion.detail).toContain("nothing needs it yet");
+    expect(report.pass).toBe(true);
+  });
+
+  it("should report conversion unavailable when the Blender MCP starts but Blender is missing", () => {
     const report = diagnoseProject(
       snapshot({
-        blender: {
-          available: false,
-          detail: "No Blender 4.2 or newer was found.",
-          installCommand: "sudo snap install blender --classic",
-        },
+        blender: ABSENT,
+        mcpServerHealth: new Map([
+          [
+            BLENDER_SERVER,
+            { detail: "transport initialized and advertised 3 tool(s)", status: "ok" as const },
+          ],
+        ]),
       }),
     );
-    const blender = check(report, "blender");
-    expect(blender.status).toBe("warn");
-    expect(blender.fix).toContain("sudo snap install blender --classic");
-    // The point of the whole check: a project with no importable source stays green.
-    expect(blender.detail).toContain("nothing needs it yet");
-    expect(report.pass).toBe(true);
+    const conversion = check(report, "model conversion");
+    // The four facts stay four: a transport that is up, and a conversion that cannot happen.
+    expect(conversion.detail).toContain("transport is up");
+    expect(conversion.detail).toContain("conversion is unavailable");
+    expect(conversion.status).toBe("warn");
+    // And the server check must not be the place a reader learns the toolchain is complete.
+    expect(check(report, "capability search").detail).toContain("transport only");
+  });
+
+  it("should fail when the Blender server's transport is down", () => {
+    const report = diagnoseProject(
+      snapshot({
+        blender: ABSENT,
+        mcpServerHealth: new Map([
+          [
+            BLENDER_SERVER,
+            { detail: "its MCP transport failed to start: exited 1", status: "fail" as const },
+          ],
+        ]),
+      }),
+    );
+    expect(check(report, "model conversion").status).toBe("fail");
+    expect(check(report, "model conversion").detail).toContain("no conversion tool is reachable");
+    expect(report.pass).toBe(false);
   });
 
   it("should report the version when Blender resolves", () => {
@@ -1253,32 +1294,115 @@ describe("threenative doctor and Blender", () => {
         },
       }),
     );
-    expect(check(report, "blender")).toMatchObject({ status: "ok" });
-    expect(check(report, "blender").detail).toContain("5.2.0");
+    expect(check(report, "model conversion")).toMatchObject({ status: "ok" });
+    expect(check(report, "model conversion").detail).toContain("5.2.0");
+  });
+
+  it("should never claim a conversion ran without the bake manifest saying so", () => {
+    const available = {
+      available: true,
+      detail: "Blender 5.2.0 at '/usr/bin/blender'.",
+      installCommand: "sudo snap install blender --classic",
+      version: "5.2.0",
+    };
+    const withoutManifest = diagnoseProject(snapshot({ blender: available }));
+    expect(check(withoutManifest, "model conversion").detail).toContain("no conversion is proven");
+
+    const base = snapshot({ blender: available });
+    const withManifest = diagnoseProject({
+      ...base,
+      files: new Set([...base.files, "public/assets.manifest.json"]),
+      readText: (relative) =>
+        relative === "public/assets.manifest.json"
+          ? JSON.stringify({
+              entries: [{ importedFrom: "fbx", path: "hero.glb" }, { path: "rock.glb" }],
+            })
+          : base.readText(relative),
+    });
+    expect(check(withManifest, "model conversion").detail).toContain("1 converted model(s)");
   });
 
   it("should name the sources that need Blender when the project carries them", () => {
-    const base = snapshot({
-      blender: {
-        available: false,
-        detail: "No Blender 4.2 or newer was found.",
-        installCommand: "sudo snap install blender --classic",
-      },
-    });
+    const base = snapshot({ blender: ABSENT });
     const report = diagnoseProject({
       ...base,
       files: new Set([...base.files, "assets/hero.fbx"]),
     });
-    const blender = check(report, "blender");
-    expect(blender.status).toBe("warn");
-    expect(blender.detail).toContain("assets/hero.fbx");
+    const conversion = check(report, "model conversion");
+    expect(conversion.status).toBe("warn");
+    expect(conversion.detail).toContain("assets/hero.fbx");
     // Still a warning: the hard failure belongs in the build, where the source is actually read.
     expect(report.pass).toBe(true);
   });
 
   it("should omit the check entirely when nothing probed for Blender", () => {
     const report = diagnoseProject(snapshot({}));
-    expect(report.checks.some(({ name }) => name === "blender")).toBe(false);
+    expect(report.checks.some(({ name }) => name === "model conversion")).toBe(false);
+  });
+});
+
+describe("threenative doctor and editor activation", () => {
+  const hostFiles = MCP_HOST_TABLE.map(({ file }) => file);
+
+  function wiredEverywhere(): IProjectSnapshot {
+    const base = snapshot({});
+    return {
+      ...base,
+      files: new Set([...base.files, ...hostFiles]),
+      readText: (relative) => (hostFiles.includes(relative) ? MCP_CONFIG : base.readText(relative)),
+    };
+  }
+
+  it("should count the host configs that carry the servers and stop short of claiming activation", () => {
+    const activation = check(diagnoseProject(wiredEverywhere()), "editor activation");
+    expect(activation.status).toBe("ok");
+    expect(activation.detail).toContain(`${hostFiles.length} of ${hostFiles.length}`);
+    // The fact doctor cannot observe is stated, not implied away.
+    expect(activation.detail).toContain("not observable from here");
+    expect(activation.detail).toContain("Windsurf");
+  });
+
+  it("should warn and name the exact file when a host config is unreadable", () => {
+    const base = wiredEverywhere();
+    const activation = check(
+      diagnoseProject({
+        ...base,
+        readText: (relative) =>
+          relative === ".vscode/mcp.json" ? "{ not json" : base.readText(relative),
+      }),
+      "editor activation",
+    );
+    expect(activation.status).toBe("warn");
+    expect(activation.detail).toContain(".vscode/mcp.json is unreadable");
+    // A config doctor cannot parse is still the user's: it says where, and never rewrites it.
+    expect(activation.fix).toContain("never edits it");
+  });
+
+  it("should warn when a present host config is missing a declared server", () => {
+    const base = wiredEverywhere();
+    const partial = JSON.stringify({
+      mcpServers: { "threenative-engine": { args: [], command: "node" } },
+    });
+    const activation = check(
+      diagnoseProject({
+        ...base,
+        readText: (relative) =>
+          relative === ".zed/settings.json" ? partial : base.readText(relative),
+      }),
+      "editor activation",
+    );
+    expect(activation.status).toBe("warn");
+    expect(activation.detail).toContain(".zed/settings.json is missing ThreeNative servers");
+  });
+
+  it("should fail when no project-scoped host config carries the servers", () => {
+    const base = snapshot({});
+    const report = diagnoseProject({
+      ...base,
+      files: new Set([...base.files].filter((file) => !hostFiles.includes(file))),
+    });
+    expect(check(report, "editor activation").status).toBe("fail");
+    expect(report.pass).toBe(false);
   });
 });
 

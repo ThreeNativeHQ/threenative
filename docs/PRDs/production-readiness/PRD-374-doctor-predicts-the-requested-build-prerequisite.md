@@ -4,9 +4,12 @@ prd_contract: v1
 
 # PRD-374 — Doctor predicts the requested build's prerequisite failure
 
-**Status:** PARTIAL — phase 1 implemented and locally verified (commit `c9dd6288a`, evidence
-[prd-374-readiness-phase-1-2026-09-11](../../verification/prd-374-readiness-phase-1-2026-09-11.md));
-its independent review is still NOT RUN. Phase 2 NOT STARTED. Renumbered 2026-09-11.
+**Status:** PARTIAL — phases 1 and 2 implemented and locally verified (evidence
+[phase 1](../../verification/prd-374-readiness-phase-1-2026-09-11.md),
+[phase 2](../../verification/prd-374-readiness-phase-2-2026-09-11.md)). Both independent reviews
+are the only open boxes; no acceptance box is ticked until they return PASS. Renumbered
+2026-09-11. Phase 1's commits were replayed onto current `main` as a net diff after `main`
+re-applied their base under different SHAs.
 
 This work was drafted on 2026-09-08 as a rewrite of PRD-264, which un-filed that PRD from `done/`
 and deleted its sixteen ticked boxes. The phases below were never part of PRD-264: it shipped
@@ -107,19 +110,25 @@ pnpm exec threenative doctor --target android --mode release --text
 
 **Progress:**
 
-- [ ] Callers wired and building: `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts`, `packages/create-threenative/README.md`
-- [ ] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts`
-- [ ] Observed red recorded, then restored green
-- [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-374-readiness-phase-2-<date>.md`
+- [x] Callers wired and building: `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts`, `packages/create-threenative/README.md` — `pnpm typecheck` exit 0, `pnpm lint` exit 0, `pnpm check:docs` exit 0.
+- [x] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts` — 75 passed (68 before), and the whole package 656 passed across 38 files. Both named cases exist: conversion unavailable when the Blender MCP starts with Blender missing, and a malformed host config preserved while its exact path is reported.
+- [x] Observed red recorded, then restored green — the three incumbent `blender` tests failed on the rename (`3 failed | 65 passed`); in a real project, `.vscode/mcp.json` made unreadable and `threenative-blender` deleted from `.zed/settings.json` gave `5 of 7 host configs are complete`, and `PATH=/usr/bin:/bin` gave `conversion is unavailable`. Restoring both returned the green text.
+- [x] User verification performed on the named platform — linux-x64, real built CLI in two real projects; `examples/engine-load-test` names all seven host paths it looked for, the scaffolded-shape project reports 7 of 7 and says activation is not observable from here.
+- [x] Evidence record written: `docs/verification/prd-374-readiness-phase-2-2026-09-11.md`
 - [ ] Independent reviewer returned PASS
+      NOT RUN — no reviewer subagent has seen this diff.
 
 **Files (maximum five):**
 
 - EDIT `packages/create-threenative/src/doctor.ts` — separate MCP transport and tool prerequisites.
 - EDIT `packages/create-threenative/__tests__/doctor.spec.ts` — Blender/config/script-policy controls.
 - EDIT `packages/create-threenative/README.md` — document exact game-only repair actions.
-- NEW `docs/verification/prd-374-readiness-phase-2-<date>.md` — commands, identities, red/green and reviewer decision.
+- NEW `docs/verification/prd-374-readiness-phase-2-2026-09-11.md` — commands, identities, red/green and reviewer decision.
+
+Four files used. A fifth, `packages/core/mcp/install.d.mts`, was written and reverted: typing the
+installer made two previously untyped consumers type-check for the first time and would have
+widened the phase past its budget. Doctor uses the `@ts-expect-error` import its sibling consumers
+already use.
 
 **Implementation and wiring:** Keep real transport probing from earlier work. Derive current required servers from core table. Distinguish server installed, config loaded by a supported editor, external Blender executable present, and operation executed. Show commands for missing prerequisites without modifying global configuration or silently installing applications. Preserve malformed/unwritable config and report the exact file. Document hosts that need manual global setup.
 
