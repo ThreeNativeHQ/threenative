@@ -354,6 +354,66 @@ succeeded, so the failure is bounded to that copy.
 six Android controls. The emulator repairs recorded above remain untested, and acceptance criterion
 4 still has no evidence.
 
+## Local pre-flight of the whole consumer job, and two more defects it caught
+
+The hosted job costs ~35 minutes to reach `clean-consumer`, so the rest of it was replicated on a
+Linux workstation: the real packed tarballs, the composite action's exact scaffold flags, the same
+loopback manifest serving the **actual payloads from green run 34557447467**, the same twelve
+masked toolchain entry points, and a software-emulated `android-35 google_apis x86_64` AVD.
+
+| Step | Local result |
+| --- | --- |
+| Pack and scaffold from tarballs | pass |
+| Prepare consumer, including the Phase 7 sibling copies | pass |
+| `install-status.ok` | `true`, sha256 `1bef8af5…` |
+| `build --target desktop`, toolchain masked | 147,842,001-byte artifact, 0 toolchain invocations |
+| 300-frame launch: all four markers, non-blank 1280x720 capture | pass |
+| `build --target android`, toolchain masked | 106,148,117-byte APK, 0 toolchain invocations |
+| Six emulator controls | blocked locally, see below |
+
+**Defect: the runtime's own shared libraries were never installed.** `ldd` on the prebuilt this job
+downloads names `libwebkit2gtk-4.1.so.0`, `libjavascriptcoregtk-4.1.so.0`, `libsoup-3.0.so.0` and
+`libgtk-3.so.0`, because the desktop runtime links the UI overlay. The job installed only the Vulkan
+ICD, so run 34559147906 died with
+
+```text
+threenative-runtime: error while loading shared libraries: libwebkit2gtk-4.1.so.0
+Runtime packager exited with code 127.
+```
+
+`libwebkit2gtk-4.1-0` now installs beside the ICD. This is what a real Linux consumer needs as well,
+so it belongs inside the proof rather than around it.
+
+**Defect: every control launched an app that was not installed.** The playtest runner defaults to
+`--package com.mystral.engine` and `--activity .MystralActivity`
+(`packages/playtest/src/runner/config.ts:82,267`). A scaffolded consumer is neither: its application
+id is derived from the target directory, and its launch activity is runtime-owned. Observed on the
+local emulator with the real APK installed:
+
+```text
+Error type 3
+Error: Activity class {com.mystral.engine/com.mystral.engine.MystralActivity} does not exist.
+TN_PLAYTEST_RUNNER_FAILED
+```
+
+`adb shell cmd package resolve-activity --brief com.threenative.consumer` returns
+`com.threenative.runtime.MystralActivity`, and the project's own `threenative.config.ts` declares
+`id: "com.threenative.consumer"`. All six invocations now pass `--package "$CONSUMER_APP_ID"` and
+the runtime-owned activity, with the id read back from the consumer's config rather than assumed, so
+renaming the target directory cannot silently point the controls at an app that is not installed.
+Without this, all six controls fail before asserting anything — the hosted job would have reported
+six red controls rather than a defect in its own invocation.
+
+**Why the six controls are still not closed here.** The local AVD launches the app but reports
+`TN_PLAYTEST_BRIDGE_MISSING`, with no app output in logcat. That is a property of an ad-hoc
+software-GPU AVD on this machine, not of the workflow: the repository's own
+`Android emulator visual parity` leg uses the same `-gpu swiftshader_indirect` and passes. The six
+controls remain owned by the hosted emulator lane, and acceptance criterion 4 stays open.
+
+The emulator boot itself is now measured twice: 474s on a hosted runner
+(`native-platforms.yml:335-341`) and 212,330 ms locally under pure software emulation with no KVM.
+Both exceed this action's 600s default comfortably enough to justify the 900s budget recorded above.
+
 ## Hosted evidence and handoff
 
 At this source-record commit, the new hosted proof has not yet produced native observations. Do not read the isolated results above as hosted acceptance. The workflow retains the following candidate-keyed records, including failure records:

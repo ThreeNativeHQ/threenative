@@ -534,3 +534,36 @@ test("the scaffolded consumer receives every module its entry imports", () => {
     );
   }
 });
+
+test("every packed Android control names the consumer's own package and activity", () => {
+  const emulator =
+    job("clean-consumer").split("- name: Run packed Android physics and negative controls")[1] ??
+    "";
+  const invocations = emulator
+    .split("\n")
+    .filter((line) => line.includes("playtest/dist/runner/cli.js"));
+  assert.equal(
+    invocations.length,
+    6,
+    `expected six control invocations, found ${invocations.length}`,
+  );
+  for (const invocation of invocations) {
+    // The runner defaults to `--package com.mystral.engine` and `--activity .MystralActivity`
+    // (`packages/playtest/src/runner/config.ts:82,267`). A scaffolded consumer is neither: its
+    // application id comes from its own threenative.config.ts, and its launch activity is
+    // runtime-owned. Without both flags every control dies before it asserts anything:
+    //   Error type 3
+    //   Error: Activity class {<app>/<app>.MystralActivity} does not exist.
+    assert.match(invocation, /--package "\$CONSUMER_APP_ID"/u);
+    assert.match(invocation, /--activity com\.threenative\.runtime\.MystralActivity/u);
+  }
+});
+
+test("the consumer's application id is derived, never assumed", () => {
+  const prepare =
+    job("clean-consumer")
+      .split("- name: Prepare the scaffolded consumer proof\n")[1]
+      ?.split("\n      - ")[0] ?? "";
+  assert.match(prepare, /CONSUMER_APP_ID=/u);
+  assert.match(prepare, /threenative\.config\.ts/u);
+});

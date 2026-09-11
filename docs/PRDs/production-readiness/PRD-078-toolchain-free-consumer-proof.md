@@ -61,7 +61,7 @@ sequenceDiagram
 
 ## Execution phases
 
-The seven bounded assignments below are reviewed separately. None is accepted merely because implementation or fixture tests are green. Phases 1 and 2 are the planned work; Phases 3 to 7 each repair one failure the hosted proof reproduced, split out rather than widening an existing assignment. Phases 3-7 record their evidence in Phase 2's record rather than opening three more tracked files, which the evidence budget discourages; each names that record among its own files. The source work from PR #168 is retained, not rewritten to recreate August defects.
+The eight bounded assignments below are reviewed separately. None is accepted merely because implementation or fixture tests are green. Phases 1 and 2 are the planned work; Phases 3 to 8 each repair one failure the hosted proof reproduced, split out rather than widening an existing assignment. Phases 3-8 record their evidence in Phase 2's record rather than opening three more tracked files, which the evidence budget discourages; each names that record among its own files. The source work from PR #168 is retained, not rewritten to recreate August defects.
 
 ### Phase 1 — The actual release job distinguishes old evidence from a runnable candidate
 
@@ -192,6 +192,22 @@ Reproduced on the first run that ever reached `clean-consumer`,
 **Required test:** `scripts/__tests__/native-release-proof.spec.ts`: the scaffolded consumer receives every module its entry imports.
 
 **Observed-red / revert control:** Drop either copy; the test names the missing module. The hosted control is the run above, `UNRESOLVED_IMPORT` on both specifiers.
+
+### Phase 8 — The consumer job could not run what it built
+
+Reproduced on run [34559147906](https://github.com/ThreeNativeHQ/threenative/actions/runs/34559147906) and on a local replica of the job.
+
+**Files (maximum five):**
+
+- EDIT `.github/workflows/native-release.yml` — install the runtime's shared libraries, derive the consumer's application id, and name it plus the runtime-owned activity on every control.
+- EDIT `scripts/__tests__/native-release-proof.spec.ts` — bind all three to the workflow.
+- EDIT `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` — this phase's evidence record.
+
+**Implementation and wiring:** `ldd` on the prebuilt this job downloads names WebKitGTK, so the packager died with `Runtime packager exited with code 127` on a runner that had only the Vulkan ICD. Separately, the playtest runner defaults to `com.mystral.engine` and `.MystralActivity`, while a scaffolded consumer's id comes from its own config and its activity is runtime-owned, so every control launched an app that was not installed. The id is read back from the project rather than assumed.
+
+**Required test:** `scripts/__tests__/native-release-proof.spec.ts`: every packed Android control names the consumer's own package and activity; the consumer's application id is derived, never assumed; the clean consumer installs the runtime's own shared libraries.
+
+**Observed-red / revert control:** Drop the package flag and the control reports `Activity class {…} does not exist`; drop the library and the packager exits 127.
 
 ## Verification contract
 
