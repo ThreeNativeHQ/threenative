@@ -17,6 +17,24 @@ Grouped batches (`starter-kits/`, `native-performance-fixes/`, dated batch folde
 archive a batch while any PRD in it is partial — a blocked criterion is not completion. A PRD that
 finishes ahead of its siblings gets archived on its own.
 
+## Keep the PRD current while you work
+
+The PRD is the live state of the work, not a plan written once. Update it as each piece lands, in
+the same commit as the change:
+
+- **Tick the checkbox** (`- [ ]` → `- [x]`) when that item is done *and* verified. A box ticked on
+  unrun work is the same lie as a claimed gate.
+- **Partial or abandoned** items stay `- [ ]` with a short note on the line below saying what is
+  left or why it stopped — never delete the item to make the list look finished.
+- **Move the status line** (`NOT STARTED` → `PARTIAL` → done, or the phase marker) with the boxes;
+  a PRD whose boxes are all ticked but still reads `NOT STARTED` is drift.
+- **Write the result beside the item** where it carries evidence: the command, the number, the exit
+  code, the artifact path. One line, in the PRD — not a new report file (see Evidence below).
+- Only when every box is ticked and the status says so does the archive move apply above.
+
+If a PRD has no checkboxes and you are working it, add them as you discover the steps, then keep
+them current the same way.
+
 ## Try a blocked reason before you believe it
 
 `BLOCKED/` folders name a missing tool or lane, and several have outlived the condition that put
