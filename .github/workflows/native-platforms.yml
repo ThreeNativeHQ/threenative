@@ -273,6 +273,12 @@ jobs:
     timeout-minutes: 45
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+      # The page size this lane qualifies, as data rather than a literal inside a script step.
+      # `api-level: 35` is an ordinary 4 KB image, and PRD-221's 16 KB qualification is proved on
+      # the local `threenative_ps16k` AVD (`system-images;android-36;google_apis_ps16k;x86_64`),
+      # which reports 16384. Pointing this lane at that image is then a change of these two values,
+      # not a change of code: raise the api-level and set this to 16384.
+      TN_ANDROID_EXPECTED_PAGE_SIZE: "4096"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -436,7 +442,15 @@ jobs:
           # log would be non-empty, carry no marker, and the next step would blame the observer.
           # The conformance status is recorded for the same reason — exit 2 means rows blocked by
           # this machine, and the app may never have launched, which is not an observer failure.
+          # The page size is captured first, before anything can tear the device down. A lane that
+          # reports an Android result without writing down the page size it ran on cannot tell a
+          # 16 KB qualification from an ordinary one afterwards, and PRD-221 turns on exactly that
+          # distinction. Captured on the same folded line for the same reason as the logcat dump:
+          # `android-emulator-runner` destroys the emulator when `script` returns.
           script: >-
+            adb shell getconf PAGE_SIZE > "$RUNNER_TEMP/android-page-size.txt" 2>
+            "$RUNNER_TEMP/android-page-size.err" || echo TN_ADB_PAGE_SIZE_FAILED >>
+            "$RUNNER_TEMP/android-page-size.err";
             node packages/runtime-native/conformance/run-conformance.mjs --target android
             --device emulator-5554 --reference artifacts/conformance/web
             --out artifacts/conformance/android; status=$?; echo "$status" >
@@ -444,6 +458,13 @@ jobs:
             "$RUNNER_TEMP/emulator-logcat.txt" 2> "$RUNNER_TEMP/emulator-logcat.err" || echo
             TN_ADB_LOGCAT_FAILED >> "$RUNNER_TEMP/emulator-logcat.err";
             test "$status" -eq 0 -o "$status" -eq 2
+      - name: Verify the observed Android page size
+        if: always()
+        # Fails closed: a missing observation is a failure, not a skip, so "the emulator lane ran"
+        # can never stand in for "the emulator lane ran on the pages it claims".
+        run: >-
+          node packages/runtime-native/scripts/check-android-page-size.mjs
+          "$RUNNER_TEMP/android-page-size.txt" "$TN_ANDROID_EXPECTED_PAGE_SIZE"
       - name: Verify captured parity ledger
         if: always()
         run: |

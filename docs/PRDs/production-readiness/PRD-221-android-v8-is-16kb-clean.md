@@ -6,9 +6,11 @@ prd_contract: v1
 
 **Status:** PARTIAL — **phase 1's implementation is already on `main`**, merged as PR #167 on
 2026-09-11, and the PRD had recorded none of it: it read 0 of 23 boxes while the provisioner, the
-Gradle staging and the alignment test were all landed. Phase 2's packager census is on this branch.
-Each phase still owes its red/green control and its evidence record, and phase 3's observed 16 KB
-execution has not been run. Prior toolchain blocker retained as history and must be retried. Revised 2026-09-08; planning only. **A 16 KB environment is available locally as of 2026-09-11**: `system-images;android-36;google_apis_ps16k;x86_64` boots headless on KVM and reports `getconf PAGE_SIZE` 16384, so phase 3's observation does not require a flashed physical device. Prove it there before editing the hosted workflow.
+Gradle staging and the alignment test were all landed. Phase 2's packager census is on this branch, and
+phase 3's page-size gate with it: **`getconf PAGE_SIZE` 16384 observed on the local
+`threenative_ps16k` AVD**, with the lane now failing closed when that observation is missing or
+4096. Phases 1 and 2 still owe their red/green controls and evidence records, and phase 3 still
+owes the default starter actually launched on that environment. Prior toolchain blocker retained as history and must be retried. Revised 2026-09-08; planning only. **A 16 KB environment is available locally as of 2026-09-11**: `system-images;android-36;google_apis_ps16k;x86_64` boots headless on KVM and reports `getconf PAGE_SIZE` 16384, so phase 3's observation does not require a flashed physical device. Prove it there before editing the hosted workflow.
 **Complexity:** 8 → HIGH (+3 files, +2 native dependency integration, +2 multi-ABI release coordination, +1 upstream integration).
 **Problem:** The default V8 shared library has documented 4 KB alignment, so successful execution on ordinary devices does not establish Android 16 KB compatibility.
 
@@ -139,18 +141,20 @@ pnpm build:android
 
 **Progress:**
 
-- [ ] Callers wired and building: `.github/workflows/native-platforms.yml`, `packages/runtime-native/tests/native-platform-workflow.test.mjs`
-- [ ] Required test green: `packages/runtime-native/tests/native-platform-workflow.test.mjs`
-- [ ] Observed red recorded, then restored green
+- [x] Callers wired and building: `.github/workflows/native-platforms.yml`, `packages/runtime-native/tests/native-platform-workflow.test.mjs`, and NEW `packages/runtime-native/scripts/check-android-page-size.mjs` — the emulator script captures `getconf PAGE_SIZE` first, and an `if: always()` step verifies it against job-level `TN_ANDROID_EXPECTED_PAGE_SIZE`.
+- [x] Required test green: `packages/runtime-native/tests/native-platform-workflow.test.mjs` — 41 passed (6 new), plus `ci-structure`/`ci-needs`/`ci-efficiency` 175 passed.
+- [x] Observed red recorded, then restored green — the test asserting the lane records its page size failed before the workflow was touched (`AssertionError: The input did not match /getconf PAGE_SIZE/u`, 1 failed | 40 passed), and passes after. The checker was also run against the live device (16384, exit 0), a 4096 observation (`TN_ANDROID_PAGE_SIZE_MISMATCH`, exit 1) and a missing file (`TN_ANDROID_PAGE_SIZE_MISSING`, exit 1).
 - [ ] User verification performed on the named platform
-- [ ] Evidence record written: `docs/verification/prd-221-readiness-phase-3-<date>.md`
+      PARTIAL. The 16 KB environment is observed and recorded: AVD `threenative_ps16k`, `system-images;android-36;google_apis_ps16k;x86_64`, `getconf PAGE_SIZE` **16384**, API 36, x86_64, fingerprint `google/sdk_gphone16k_x86_64/emu64xa16k:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys`. The phase also asks for the default starter launched on it, with HUD and player interaction, a background/resume cycle and a linker check of the logs — **not run**, because it needs a compiled native host and a packaged APK this worktree does not have.
+- [x] Evidence record written: `docs/verification/prd-221-readiness-phase-3-2026-09-11.md`
 - [ ] Independent reviewer returned PASS
 
 **Files (maximum five):**
 
 - EDIT `.github/workflows/native-platforms.yml` — run a 16 KB emulator and real game scenario.
 - EDIT `packages/runtime-native/tests/native-platform-workflow.test.mjs` — require observed page size and selected target.
-- NEW `docs/verification/prd-221-readiness-phase-3-<date>.md` — commands, identities, red/green and reviewer decision.
+- NEW `packages/runtime-native/scripts/check-android-page-size.mjs` — the one function both the workflow and the tests call, so the rule is executable rather than buried in a YAML step.
+- NEW `docs/verification/prd-221-readiness-phase-3-2026-09-11.md` — commands, identities, red/green and reviewer decision.
 
 **Implementation and wiring:** Use the default starter with React UI, physics and assets, not a standalone V8 hello-world. Prove `getconf PAGE_SIZE` is 16384 on the selected emulator and record actual engine, ABI, package ID and APK hash. Take the local 16 KB AVD (`system-images;android-36;google_apis_ps16k;x86_64`) first and record that observation; the workflow edit then wires the same proof into the hosted lane rather than discovering it there. Run the existing Android playtest target; keep an ordinary 4 KB result separate. PRD-366 supplies physical performance proof.
 

@@ -5,6 +5,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { expect, test } from 'vitest';
+import {
+	ANDROID_16KB_PAGE_SIZE,
+	ANDROID_4KB_PAGE_SIZE,
+	assertObservedPageSize,
+} from '../scripts/check-android-page-size.mjs';
 
 const workflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/native-platforms.yml', import.meta.url)),
@@ -761,4 +766,51 @@ test('emulator parity leg publishes gate-schema candidate evidence reports', () 
   expect(job).toContain('reports/parity.json');
   expect(job).toContain('name: native-release-provenance');
   expect(job).toContain('reports/provenance.json');
+});
+
+// --- PRD-221 phase 3: an observed page size, or no 16 KB qualification -------------------------
+
+test('rejects a 16 KB qualification whose page size was never observed', () => {
+	// The whole point of the gate: a lane that never asked the device must not report a pass.
+	expect(() => assertObservedPageSize(undefined)).toThrow(/TN_ANDROID_PAGE_SIZE_MISSING/u);
+	expect(() => assertObservedPageSize('')).toThrow(/TN_ANDROID_PAGE_SIZE_EMPTY/u);
+	expect(() => assertObservedPageSize('   \r\n')).toThrow(/TN_ANDROID_PAGE_SIZE_EMPTY/u);
+});
+
+test('rejects a 16 KB qualification observed on an ordinary 4 KB image', () => {
+	expect(() => assertObservedPageSize('4096')).toThrow(/TN_ANDROID_PAGE_SIZE_MISMATCH/u);
+	// And it says which image would actually qualify, rather than only that the number is wrong.
+	expect(() => assertObservedPageSize('4096')).toThrow(/google_apis_ps16k/u);
+});
+
+test('accepts the 16 KB observation adb actually prints', () => {
+	// adb hands back CRLF from the device shell; an unstripped \r makes Number() NaN.
+	assert.equal(assertObservedPageSize('16384\r\n'), ANDROID_16KB_PAGE_SIZE);
+	assert.equal(assertObservedPageSize('16384'), ANDROID_16KB_PAGE_SIZE);
+});
+
+test('refuses anything that is not a page size, rather than coercing it', () => {
+	for (const junk of ['error: device offline', '16384 bytes', '0', '-1', '1.5e4']) {
+		expect(() => assertObservedPageSize(junk)).toThrow(/TN_ANDROID_PAGE_SIZE_MALFORMED|TN_ANDROID_PAGE_SIZE_MISMATCH/u);
+	}
+	expect(() => assertObservedPageSize(16384)).toThrow(/TN_ANDROID_PAGE_SIZE_MALFORMED/u);
+});
+
+test('the 4 KB lane asserts its own page size with the same function', () => {
+	assert.equal(assertObservedPageSize('4096', ANDROID_4KB_PAGE_SIZE), ANDROID_4KB_PAGE_SIZE);
+	expect(() => assertObservedPageSize('16384', ANDROID_4KB_PAGE_SIZE)).toThrow(
+		/TN_ANDROID_PAGE_SIZE_MISMATCH/u,
+	);
+	// A page size this repository does not qualify is a caller bug, not a device result.
+	expect(() => assertObservedPageSize('8192', 8192)).toThrow(/TN_ANDROID_PAGE_SIZE_EXPECTATION/u);
+});
+
+test('the emulator lane records the page size it ran on', () => {
+	// Without this the workflow can run a 16 KB image and never write down that it did, which is
+	// the same evidentiary hole as running a 4 KB one.
+	assert.match(workflow, /getconf PAGE_SIZE/u);
+	assert.match(workflow, /check-android-page-size\.mjs/u);
+	// The expected size is data on the job, not a literal buried in a script step, so pointing the
+	// lane at a 16 KB image is a value change rather than a code change.
+	assert.match(workflow, /TN_ANDROID_EXPECTED_PAGE_SIZE/u);
 });
