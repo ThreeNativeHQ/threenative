@@ -53,7 +53,7 @@ function compilePopulation(log, expectedMode) {
   const checkpoint = markers(log, 'TN_PIPELINE_CHECKPOINT:').at(-1);
   if (checkpoint?.version !== 1 || checkpoint.emitted !== events.length || checkpoint.requested !== events.length || checkpoint.outstanding !== 0)
     fail('CHECKPOINT_INCOMPLETE');
-  const start = events.reduce((min, event) => Math.min(min, event.startedMs), Infinity);
+  const start = events.reduce((min, event) => Math.min(min, event.startedMs), Number.POSITIVE_INFINITY);
   const end = events.reduce((max, event) => Math.max(max, event.settledMs), 0);
   return {
     pipelineCount: events.length,

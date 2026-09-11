@@ -70,6 +70,8 @@ export async function measurePipelineCachePairs(options, appId) {
   const pairs = [];
   let ownsSwitch = false;
   let failure;
+  let cleanupFailure;
+  let result;
   try {
     const model = execute(['shell', 'getprop', 'ro.product.model']).trim();
     if (model !== 'Pixel 8' || execute(['shell', 'getprop', 'ro.kernel.qemu']).trim() === '1') reject('PHYSICAL_PIXEL_8_REQUIRED');
@@ -114,24 +116,30 @@ export async function measurePipelineCachePairs(options, appId) {
       pairs.push(pair);
       save(join(output, 'pairs.json'), pairs);
     }
-    const result = { ...assessPipelineCachePairs(pairs), artifacts: output, appId, optimization: options.optimization };
-    stop(); asApp(`rm -f ${switchPath}`); ownsSwitch = false;
-    save(reportPath, result);
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    if (!result.pass) process.exitCode = 1;
-    return result;
+    result = { ...assessPipelineCachePairs(pairs), artifacts: output, appId, optimization: options.optimization };
   } catch (error) {
     failure = error;
-    save(join(output, 'failure.json'), { pass: false, message: error.message, completedPairs: pairs.length });
-    throw error;
   } finally {
     if (ownsSwitch) {
       try { stop(); asApp(`rm -f ${switchPath}`); }
       catch (error) {
-        save(join(output, 'cleanup-failure.json'), { message: error.message });
-        save(reportPath, { pass: false, error: 'operator-control-cleanup-failed', artifacts: output });
-        if (!failure) throw error;
+        cleanupFailure = error;
+        if (!failure) failure = error;
       }
     }
   }
+  // Finish cleanup before publishing a result. Throw outside finally so cleanup cannot
+  // replace the primary failure or turn a failed protocol into a successful return.
+  if (cleanupFailure) {
+    save(join(output, 'cleanup-failure.json'), { message: cleanupFailure.message });
+    save(reportPath, { pass: false, error: 'operator-control-cleanup-failed', artifacts: output });
+  }
+  if (failure) {
+    save(join(output, 'failure.json'), { pass: false, message: failure.message, completedPairs: pairs.length });
+    throw failure;
+  }
+  save(reportPath, result);
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  if (!result.pass) process.exitCode = 1;
+  return result;
 }
