@@ -513,7 +513,9 @@ test("the scaffolded consumer receives every module its entry imports", () => {
       ?.split("\n      - ")[0] ?? "";
   assert.ok(prepare.length > 0, "missing the prepare step");
   const copied = new Set(
-    [...prepare.matchAll(/copyFileSync\("([^"]+)"/gu)].map((match) => match[1]),
+    [...prepare.matchAll(/copyFileSync\("([^"]+)"/gu)]
+      .map((match) => match[1])
+      .filter((value): value is string => value !== undefined),
   );
   const entry = [...copied].find((path) => path.endsWith("/game.ts"));
   assert.ok(entry, "the prepare step no longer copies a game entry");
