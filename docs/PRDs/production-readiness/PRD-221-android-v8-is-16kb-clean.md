@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-221 — The default Android V8 distribution is 16 KB compatible
 
-**Status:** PROPOSED — prior toolchain blocker retained as history and must be retried. Revised 2026-09-08; planning only.
+**Status:** PROPOSED — prior toolchain blocker retained as history and must be retried. Revised 2026-09-08; planning only. **A 16 KB environment is available locally as of 2026-09-11**: `system-images;android-36;google_apis_ps16k;x86_64` boots headless on KVM and reports `getconf PAGE_SIZE` 16384, so phase 3's observation does not require a flashed physical device. Prove it there before editing the hosted workflow.
 **Complexity:** 8 → HIGH (+3 files, +2 native dependency integration, +2 multi-ABI release coordination, +1 upstream integration).
 **Problem:** The default V8 shared library has documented 4 KB alignment, so successful execution on ordinary devices does not establish Android 16 KB compatibility.
 
@@ -144,7 +144,7 @@ pnpm build:android
 - EDIT `packages/runtime-native/tests/native-platform-workflow.test.mjs` — require observed page size and selected target.
 - NEW `docs/verification/prd-221-readiness-phase-3-<date>.md` — commands, identities, red/green and reviewer decision.
 
-**Implementation and wiring:** Use the default starter with React UI, physics and assets, not a standalone V8 hello-world. Prove `getconf PAGE_SIZE` is 16384 on the selected emulator and record actual engine, ABI, package ID and APK hash. Run the existing Android playtest target; keep an ordinary 4 KB result separate. PRD-366 supplies physical performance proof.
+**Implementation and wiring:** Use the default starter with React UI, physics and assets, not a standalone V8 hello-world. Prove `getconf PAGE_SIZE` is 16384 on the selected emulator and record actual engine, ABI, package ID and APK hash. Take the local 16 KB AVD (`system-images;android-36;google_apis_ps16k;x86_64`) first and record that observation; the workflow edit then wires the same proof into the hosted lane rather than discovering it there. Run the existing Android playtest target; keep an ordinary 4 KB result separate. PRD-366 supplies physical performance proof.
 
 **Required test:** `packages/runtime-native/tests/native-platform-workflow.test.mjs`: should reject 16 KB qualification when the observed page size is missing or 4096.
 

@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-153 — A consumer can brand launch, loading and packaged apps
 
-**Status:** NOT STARTED — the two open phases are release-artifact appearance, which is new scope.
+**Status:** NOT STARTED — the two open phases are release-artifact appearance, which is new scope. Launcher icon, themed icon and OS splash are observable on the local API 35 emulator as of 2026-09-11; physical OEM appearance stays a separately named observation on a real device.
 Renumbered 2026-09-11.
 
 Drafted 2026-09-08 as a rewrite of PRD-153, which un-filed that PRD from `done/`. Its phase 1 was

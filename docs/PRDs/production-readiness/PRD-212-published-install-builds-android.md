@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-212 — A published game builds signed Android release artifacts
 
-**Status:** PARTIAL — existing packaging/import fixes retained; release artifact work open. Revised 2026-09-08; planning only.
+**Status:** PARTIAL — existing packaging/import fixes retained; release artifact work open. Revised 2026-09-08; planning only. An API 35 emulator runs locally on KVM as of 2026-09-11, so install, launch and manifest inspection of the built artifact are local checks, not hosted ones.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 signing/release-state handling, +1 platform tools).
 **Problem:** The installed Android path depends on absent runtime assets and currently emits only a debug APK with target SDK 35.
 
