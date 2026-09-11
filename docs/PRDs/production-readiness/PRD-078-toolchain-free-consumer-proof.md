@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-078 — Hosted runtime release jobs prove the exact candidate
 
-**Status:** PARTIAL — prior Vulkan/version fixes retained; non-publishing hosted proof implemented, candidate observations and independent acceptance review still required. Revised 2026-09-10.
+**Status:** PARTIAL — the non-publishing hosted proof executes end to end on candidate `6ddf1bc1bc759dd059b2793ca9a2684d565c52b8` ([run 34569827906](https://github.com/ThreeNativeHQ/threenative/actions/runs/34569827906)), with all six packed Android controls verified. Main-route prerequisite validation and independent acceptance review remain open, and public installation stays blocked on PRD-262 publishing the build tool helper. Revised 2026-09-11.
 **Complexity:** 6 → MEDIUM (+2 files, +2 multi-platform integration, +1 external CI API, +1 artifact contract).
 **Problem:** Historical hosted release failures must be retried on the current candidate instead of being treated as permanent blockers.
 
@@ -241,10 +241,12 @@ After every phase, an independent reviewer receives this PRD, diff, commands and
 
 ## Acceptance criteria
 
-- [ ] Prior successful fixes remain intact and are not rewritten merely because old blocked prose exists.
-- [ ] The selected candidate has current hosted native build/gate evidence; each failed, skipped or unavailable row is named.
-- [ ] Wrong-SHA/absent-result controls fail in the existing release entry point.
-- [ ] All four packed Android physics negative controls and their positive control execute on the selected candidate. Any new job repair is bounded, reviewed and hands its result to PRD-262; this PRD does not itself establish public installation.
+- [x] Prior successful fixes remain intact and are not rewritten merely because old blocked prose exists. The Vulkan ICD and runtime-version-stamp repairs are untouched, and PR #168's gate, tests and evidence are retained rather than rewritten.
+- [x] The selected candidate has current hosted native build/gate evidence; each failed, skipped or unavailable row is named. Candidate `6ddf1bc1bc759dd059b2793ca9a2684d565c52b8`, [run 34569827906](https://github.com/ThreeNativeHQ/threenative/actions/runs/34569827906): `gates`, all three desktop rows, `build-android` and `clean-consumer` success; `validate-tag`, `publish`, `finalize`, `clean-consumer-ios` and `build-ios-simulator` skipped, as the non-publishing route requires. No iOS claim is made.
+- [x] Wrong-SHA/absent-result controls fail in the existing release entry point. They execute inside the hosted `gates` job, which extracts the workflow's own inline shell and runs it against wrong-SHA, missing-job, skipped-job and malformed-evidence responses; `gates` is success on this candidate and on four earlier runs.
+- [x] All four packed Android physics negative controls and their positive control execute on the selected candidate. All six ran on run 34569827906 with `failures: 0`, each carrying a non-zero observed assertion count and its required marker, across three distinct APK variants. Repairs were split into bounded Phases 3-9. The unpublished build tool helper is handed to PRD-262; this PRD establishes the packed-consumer path, not public installation.
+
+**Deliberately not established:** public installation. The runtime payloads and the build tool helper came from the proof's own run, and no release publishes the helper at all. The main-route prerequisite validation — the eleven exact-SHA CI rows — has not been exercised, and the independent acceptance review is **PENDING**.
 
 ## Prior work retained
 

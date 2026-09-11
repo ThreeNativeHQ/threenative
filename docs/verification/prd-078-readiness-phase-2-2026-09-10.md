@@ -466,6 +466,68 @@ mapping in the file. Red control: reintroducing the exact duplicate reports
 what the consumer rejects is not a check, which is the same lesson as the earlier evidence in this
 record.
 
+## Hosted proof executed: the packed consumer and all six Android controls
+
+Run [34569827906](https://github.com/ThreeNativeHQ/threenative/actions/runs/34569827906), attempt 1,
+candidate `6ddf1bc1bc759dd059b2793ca9a2684d565c52b8`. **`clean-consumer` succeeded** — the first time
+it has completed on any route in this repository's history, across twenty-plus runs of this
+workflow. Job window 06:44:50Z to 06:52:59Z.
+
+Every job row:
+
+| Job | Result |
+| --- | --- |
+| `gates` | success |
+| `build (linux-x64)` · `(darwin-arm64)` · `(win32-x64)` | success |
+| `build-android` | success |
+| `clean-consumer` | **success** |
+| `validate-tag` · `publish` · `finalize` · `clean-consumer-ios` · `build-ios-simulator` | skipped, as the non-publishing route requires |
+
+Every `clean-consumer` step succeeded, including the four that had never executed anywhere: the
+same-run tool-helper placement, the toolchain-free build, the 300-frame desktop launch and the
+packed Android build.
+
+### The six packed Android controls
+
+From `proof-consumer-evidence.json` in the run's own `clean-consumer-linux-x64` artifact, not from
+step exit codes:
+
+| Control | Scenario | Exit | Expected | Assertions | Required marker | Verified |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| positive | `physics` | 0 | 0 | 16 | — | yes |
+| wrong-height | `physics-wrong-height` | 1 | 1 | 2 | `TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED` | yes |
+| mask-control | `physics-mask` | 1 | 1 | 4 | `TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED` | yes |
+| mask-positive | `physics-mask` | 0 | 0 | 4 | — | yes |
+| masked-physics-control | `physics` | 1 | 1 | 16 | `TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED` | yes |
+| wrong-gravity | `physics` | 1 | 1 | 16 | `TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED` | yes |
+
+`failures: 0`. Every row carries a **non-zero** observed assertion count, so no control passed
+vacuously — the failure mode this PRD exists to prevent. The three variants are distinct builds, not
+one APK relabelled: `sha256` prefixes `d37d064e9bd5cbbc` (normal), `486e77ccf0eb4dec` (masked) and
+`0422348753811380` (wrong-gravity), each control keyed to the variant it belongs to.
+
+### Toolchain-free, and a real frame
+
+`toolchain-invocations.log` is **absent from the artifact**, so none of the twelve masked entry
+points — `cargo`, `cc`, `clang`, `clang++`, `cmake`, `c++`, `g++`, `gcc`, `ndk-build`, `ninja`,
+`rustc`, `xcodebuild` — was invoked while the consumer installed, built its desktop artifact, ran
+300 frames and built three Android APKs.
+
+`threenative-consumer.png` (39,171 bytes) is a genuine render, inspected: a magenta overlay marker,
+an orange box and a blue rotated square on white, at 1280x720. Not a blank frame.
+
+The consumer was scaffolded from eleven packed workspace archives (`create-threenative@0.2.4`,
+`@threenative/assets@0.3.1`, and nine more), installed with a checksum-verified prebuilt
+(`install-status.ok = true`), and served its runtime payloads over loopback from this same run.
+`scope` in the evidence is recorded as `same-run-artifacts-not-public-installation`.
+
+### What this does and does not establish
+
+It establishes that the packed consumer path works end to end and that the four negative controls
+fail exactly as specified while both positives pass. It does **not** establish public installation:
+the runtime payloads and the build tool helper came from this run, and no release publishes the
+helper at all. That gap is recorded above and belongs to PRD-262.
+
 ## Hosted evidence and handoff
 
 At this source-record commit, the new hosted proof has not yet produced native observations. Do not read the isolated results above as hosted acceptance. The workflow retains the following candidate-keyed records, including failure records:
