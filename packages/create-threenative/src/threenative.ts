@@ -1,13 +1,19 @@
 #!/usr/bin/env node
 import { build, buildHelp, parseBuildArgs } from "./build.js";
 import { type PublicCommand, commandSummaries, threenativeCommands } from "./commands.js";
-import { diagnoseProject, formatDoctorReport, readProject } from "./doctor.js";
+import {
+  type IDoctorOptions,
+  diagnoseProject,
+  formatDoctorReport,
+  readProject,
+  validateDoctorOptions,
+} from "./doctor.js";
 
 export function cliHelp(command?: PublicCommand): string {
   if (command === "build") return buildHelp();
   if (command === "doctor") {
     return `${[
-      "Usage: threenative doctor [--text] [--capture <path>]",
+      "Usage: threenative doctor [--text] [--capture <path>] [--target web|desktop|android] [--mode debug|release]",
       "",
       "Checks this project against what the build and the native host assume about it:",
       "installed and version-matched @threenative packages, a portable entry that",
@@ -15,6 +21,9 @@ export function cliHelp(command?: PublicCommand): string {
       "capability search an authoring agent needs.",
       "",
       "Prints JSON by default; --text prints the same report for a person.",
+      "--target scopes build prerequisites; --mode defaults to debug and requires --target.",
+      "Native release packaging/signing is not implemented; release diagnosis fails honestly.",
+      "A passing prerequisite check is not an executed build or a store-ready artifact.",
       "--capture forwards a browser census JSON or native TN_PIPELINE_EVENT log to the playtest doctor.",
       "Exits 0 when nothing failed, 1 when a check failed.",
     ].join("\n")}\n`;
@@ -42,20 +51,29 @@ export async function runDoctorCommand(
   cwd = process.cwd(),
 ): Promise<number> {
   let capturePath: string | undefined;
+  let target: IDoctorOptions["target"];
+  let mode: IDoctorOptions["mode"];
+  const seen = new Set<string>();
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--text") continue;
-    if (flag === "--capture") {
+    if (flag === "--capture" || flag === "--target" || flag === "--mode") {
+      if (seen.has(flag)) throw new Error(`doctor: duplicate option '${flag}'.`);
+      seen.add(flag);
       const value = argv[index + 1];
       if (value === undefined || value.startsWith("--"))
-        throw new Error("doctor: '--capture' requires a value.");
-      capturePath = value;
+        throw new Error(`doctor: '${flag}' requires a value.`);
+      if (flag === "--capture") capturePath = value;
+      else if (flag === "--target") target = value as IDoctorOptions["target"];
+      else mode = value as IDoctorOptions["mode"];
       index += 1;
       continue;
     }
     throw new Error(`doctor: unknown option '${String(flag)}'.`);
   }
-  const report = diagnoseProject(await readProject(cwd), { capturePath });
+  const options = { capturePath, target, mode };
+  validateDoctorOptions(options);
+  const report = diagnoseProject(await readProject(cwd, options), options);
   process.stdout.write(
     argv.includes("--text") ? formatDoctorReport(report) : `${JSON.stringify(report, null, 2)}\n`,
   );

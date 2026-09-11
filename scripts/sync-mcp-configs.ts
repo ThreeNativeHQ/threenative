@@ -17,7 +17,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-// @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
 import { MCP_HOSTS, ensureHostMcpConfigs } from "../packages/core/mcp/install.mjs";
 
 interface IHost {

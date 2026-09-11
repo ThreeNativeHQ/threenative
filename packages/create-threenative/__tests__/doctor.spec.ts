@@ -13,8 +13,9 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, execFileSync: execFileSyncMock, spawnSync: spawnSyncMock };
 });
 
-import { assertNativeAssetsCompatible } from "../src/build.js";
+import { assertNativeAssetsCompatible, buildUi } from "../src/build.js";
 import {
+  type IDoctorOptions,
   type IProjectSnapshot,
   MCP_SERVER_SPECS,
   detectX11Compositor,
@@ -23,6 +24,7 @@ import {
   nativeRuntimeCheck,
   probeAndroidToolchain,
   probeDesktopOverlay,
+  probeRuntimeDownloads,
   readProject,
 } from "../src/doctor.js";
 import { MCP_SERVERS } from "../src/mcp-servers.js";
@@ -1075,6 +1077,10 @@ describe("threenative doctor edge coverage", () => {
       }),
     );
     expect(check(resolved, "capability search")).toMatchObject({ status: "ok" });
+    expect(check(resolved, "capability search").detail).toContain(
+      `all ${MCP_SERVER_SPECS.length} configured`,
+    );
+    expect(check(resolved, "capability search").detail).toContain("PENDING");
 
     await writeFile(
       path.join(root, "node_modules", "@threenative/core", "package.json"),
@@ -1278,5 +1284,423 @@ describe("threenative doctor and Blender", () => {
   it("should omit the check entirely when nothing probed for Blender", () => {
     const report = diagnoseProject(snapshot({}));
     expect(report.checks.some(({ name }) => name === "blender")).toBe(false);
+  });
+});
+
+describe("PRD-264 scoped prerequisite diagnosis", () => {
+  it("rejects a capture combined with target scope rather than silently ignoring it", () => {
+    expect(() =>
+      diagnoseProject(snapshot({}), { target: "web", capturePath: "capture.json" }),
+    ).toThrow(/capture.*cannot.*target/u);
+  });
+  const android: IDoctorOptions = { target: "android", mode: "debug" };
+  const supported = { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "1" };
+  const ready = (overrides: Partial<IProjectSnapshot> = {}) =>
+    snapshot({
+      androidToolchain: supported,
+      buildPrerequisites: {
+        target: "android",
+        checks: [
+          {
+            name: "runtime downloads",
+            status: "ok",
+            detail: "release manifest and Android artifacts reachable",
+          },
+        ],
+      },
+      ...overrides,
+    });
+
+  it("rejects JDK26 even when the Android packager exists, then restores debug readiness", () => {
+    const red = diagnoseProject(
+      ready({ androidToolchain: { ...supported, jdkMajor: 26, jdkVersion: "26" } }),
+      android,
+    );
+    expect(red.pass).toBe(false);
+    expect(check(red, "target android").status).toBe("fail");
+    expect(check(red, "android toolchain").fix).toContain("JDK 17");
+    const green = diagnoseProject(ready(), android);
+    expect(green.pass).toBe(true);
+    expect(check(green, "target android").detail).toContain("buildable");
+    expect(check(green, "target android").detail).toContain("PENDING");
+    expect(green.checks.some(({ name }) => /ios|signing|playtest/u.test(name))).toBe(false);
+  });
+
+  it("rejects a requested Android release with both a runtime HTTP404 and unsupported JDK", () => {
+    const report = diagnoseProject(
+      ready({
+        androidToolchain: { ...supported, jdkMajor: 26, jdkVersion: "26" },
+        buildPrerequisites: {
+          target: "android",
+          checks: [
+            {
+              name: "runtime downloads",
+              status: "fail",
+              detail: "HTTP 404: prebuilt-lock.json",
+              fix: "Install a published runtime cohort.",
+            },
+          ],
+        },
+      }),
+      { target: "android", mode: "release" },
+    );
+    expect(report.pass).toBe(false);
+    expect(check(report, "runtime downloads").detail).toContain("HTTP 404");
+    expect(check(report, "android toolchain").status).toBe("fail");
+    expect(check(report, "target android").status).toBe("fail");
+    expect(report.checks.some(({ name }) => name.includes("ios"))).toBe(false);
+  });
+
+  it.each([
+    undefined,
+    { jdkMajor: 17, jdkVersion: "17" },
+    { ...supported, status: "fail" as const },
+  ])("does not promote an absent or failed toolchain probe to buildable", (androidToolchain) => {
+    const report = diagnoseProject(ready({ androidToolchain }), android);
+    expect(report.pass).toBe(false);
+    expect(check(report, "target android").status).toBe("fail");
+  });
+
+  it.each([
+    undefined,
+    { target: "desktop" as const, checks: [] },
+    { target: "android" as const, checks: [] },
+  ])("requires nonempty observations for the exact target", (buildPrerequisites) => {
+    const report = diagnoseProject(ready({ buildPrerequisites }), android);
+    expect(report.pass).toBe(false);
+    expect(check(report, "target android").status).toBe("fail");
+  });
+
+  it("reports unimplemented native release signing rather than pretending keys make a debug packager release-ready", () => {
+    const report = diagnoseProject(ready(), { target: "android", mode: "release" });
+    expect(report.pass).toBe(false);
+    expect(check(report, "release mode").detail).toMatch(
+      /signing.*not implemented|not implemented.*signing/u,
+    );
+    expect(check(report, "release mode").fix).not.toContain("runtimeSource");
+    expect(diagnoseProject(ready(), android).pass).toBe(true);
+  });
+
+  it("does not require a desktop install receipt for Android downloads", () => {
+    const report = diagnoseProject(
+      ready({ readRuntimeText: () => JSON.stringify({ ok: false, reason: "desktop HTTP 404" }) }),
+      android,
+    );
+    expect(report.pass).toBe(true);
+    expect(report.checks.some(({ name }) => name === "native runtime")).toBe(false);
+  });
+
+  it("fails a requested desktop UI when its overlay observation is missing", () => {
+    const report = diagnoseProject(
+      ready({
+        config: { nativeEntry: "src/game.ts", ui: { renderer: "web" } },
+        buildPrerequisites: {
+          target: "desktop",
+          checks: [{ name: "runtime downloads", detail: "observed", status: "ok" }],
+        },
+        desktopOverlay: undefined,
+      }),
+      { target: "desktop" },
+    );
+    expect(check(report, "desktop overlay").status).toBe("fail");
+    expect(report.pass).toBe(false);
+  });
+
+  it("scopes web away from optional native dependencies, MCP setup, iOS and native entries", () => {
+    const report = diagnoseProject(
+      snapshot({
+        files: new Set(["package.json", "index.html"]),
+        installedVersions: new Map([
+          ["@threenative/core", "0.4.0"],
+          ["@threenative/physics", "0.4.0"],
+        ]),
+        runtimeRoot: undefined,
+        buildPrerequisites: {
+          target: "web",
+          checks: [{ name: "web build", status: "ok", detail: "Vite and index.html present" }],
+        },
+      }),
+      { target: "web", mode: "release" },
+    );
+    expect(report.pass).toBe(true);
+    expect(report.checks.map(({ name }) => name).join(",")).not.toMatch(
+      /ios|native|playtest|capability/u,
+    );
+  });
+
+  it("fails and names malformed configuration instead of silently taking defaults", () => {
+    const report = diagnoseProject(
+      ready({ configError: "threenative.config.ts: app.name must be a string" }),
+      android,
+    );
+    expect(report.pass).toBe(false);
+    expect(check(report, "config").detail).toContain("threenative.config.ts");
+  });
+
+  it("rejects invalid programmatic target and mode input", () => {
+    expect(() => diagnoseProject(ready(), { mode: "release" })).toThrow(/--target/u);
+    expect(() => diagnoseProject(ready(), { target: "ios" } as unknown as IDoctorOptions)).toThrow(
+      /target/u,
+    );
+    expect(() =>
+      diagnoseProject(ready(), {
+        target: "android",
+        mode: "production",
+      } as unknown as IDoctorOptions),
+    ).toThrow(/mode/u);
+  });
+});
+
+describe("PRD-264 authoring evidence", () => {
+  it("never equates a live Blender MCP transport with an installed conversion application", () => {
+    const report = diagnoseProject(
+      snapshot({
+        mcpServerHealth: new Map([
+          [
+            "threenative-blender",
+            { status: "ok", detail: "transport initialized and advertised 3 tool(s)" },
+          ],
+        ]),
+        blender: {
+          available: false,
+          detail: "Blender not found",
+          installCommand: "install Blender",
+        },
+      }),
+    );
+    expect(check(report, "blender").detail).toContain("conversion unavailable");
+    expect(check(report, "blender").detail).toContain("PENDING");
+  });
+
+  it("reports detected Blender separately from actual conversion proof", () => {
+    const report = diagnoseProject(
+      snapshot({
+        blender: {
+          available: true,
+          detail: "Blender 5.2 /usr/bin/blender",
+          version: "5.2",
+          installCommand: "install Blender",
+        },
+      }),
+    );
+    expect(check(report, "blender").detail).toContain("PENDING");
+    expect(check(report, "blender").detail).not.toContain("converts .fbx");
+  });
+
+  it("preserves malformed editor files and names their exact repair location", async () => {
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-editor-prd264-");
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "doctor-editor" }));
+    await mkdir(path.join(root, ".cursor"));
+    const broken = '{"mcpServers": BROKEN';
+    await writeFile(path.join(root, ".mcp.json"), broken);
+    await writeFile(path.join(root, ".cursor/mcp.json"), broken);
+    const report = diagnoseProject(await readProject(root));
+    expect(check(report, "capability search").status).toBe("fail");
+    expect(check(report, "editor: cursor")).toMatchObject({
+      status: "fail",
+      detail: expect.stringContaining(path.join(root, ".cursor/mcp.json")),
+    });
+    expect(await readFile(path.join(root, ".mcp.json"), "utf8")).toBe(broken);
+    expect(await readFile(path.join(root, ".cursor/mcp.json"), "utf8")).toBe(broken);
+  });
+});
+
+describe("PRD-264 installed runtime download contract", () => {
+  async function runtimeFixture() {
+    const { pathToFileURL } = await import("node:url");
+    const runtimeRoot = path.resolve("packages/runtime-native");
+    const installer = await import(
+      pathToFileURL(path.join(runtimeRoot, "scripts/install-prebuilt.mjs")).href
+    );
+    const version = JSON.parse(await readFile(path.join(runtimeRoot, "package.json"), "utf8"))
+      .version as string;
+    const artifacts = Object.fromEntries(
+      Object.entries(installer.PREBUILT_ASSET_NAMES as Record<string, string>)
+        .filter(([key]) => !key.startsWith("ios-"))
+        .map(([key, file]) => [
+          key,
+          {
+            url: `https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v${version}/${file}`,
+            sha256: "a".repeat(64),
+            size: 1,
+          },
+        ]),
+    );
+    const manifest = { schemaVersion: 1, version, sourceSha: "b".repeat(40), artifacts };
+    return {
+      manifest,
+      project: snapshot({
+        runtimeRoot,
+        installedVersions: new Map([["@threenative/runtime-native", version]]),
+      }),
+    };
+  }
+
+  it("uses the installed cohort validator, never demands iOS, and labels bytes as unverified", async () => {
+    const { manifest, project } = await runtimeFixture();
+    const requested: { url: string; method?: string; signal?: AbortSignal | null }[] = [];
+    const request: typeof fetch = async (url, options) => {
+      requested.push({ url: String(url), method: options?.method, signal: options?.signal });
+      return options?.method === "HEAD"
+        ? new Response(null, { status: 200 })
+        : Response.json(manifest);
+    };
+    const result = await probeRuntimeDownloads(project, "android", request);
+    expect(result.status).toBe("ok");
+    expect(result.detail).toContain("PENDING");
+    expect(requested.length).toBeGreaterThan(3);
+    expect(requested.every(({ signal }) => signal instanceof AbortSignal)).toBe(true);
+    expect(requested.some(({ url }) => /ios-/u.test(url))).toBe(false);
+    expect(
+      requested
+        .filter(({ method }) => method === "HEAD")
+        .every(({ url }) => url.includes("android") || url.includes("gradle")),
+    ).toBe(true);
+  });
+
+  it.each(["manifest", "artifact"])(
+    "fails an HTTP404 %s with its URL and a game-only repair",
+    async (missing) => {
+      const { manifest, project } = await runtimeFixture();
+      const request: typeof fetch = async (_url, options) => {
+        if (missing === "manifest" || options?.method === "HEAD")
+          return new Response(null, { status: 404 });
+        return Response.json(manifest);
+      };
+      const result = await probeRuntimeDownloads(project, "android", request);
+      expect(result.status).toBe("fail");
+      expect(result.detail).toContain("HTTP 404");
+      expect(result.detail).toContain("https://");
+      expect(result.fix).not.toMatch(/runtimeSource|source checkout|THREENATIVE_RUNTIME_SOURCE/u);
+    },
+  );
+
+  it("rejects malformed manifests using the same validation as the packager", async () => {
+    const { manifest, project } = await runtimeFixture();
+    const result = await probeRuntimeDownloads(project, "android", async () =>
+      Response.json({ ...manifest, sourceSha: "bad" }),
+    );
+    expect(result.status).toBe("fail");
+    expect(result.detail).toMatch(/sourceSha|source SHA/u);
+  });
+
+  it("reports a bounded timeout as a failed observation", async () => {
+    const { project } = await runtimeFixture();
+    const result = await probeRuntimeDownloads(project, "android", async () => {
+      throw new DOMException("probe timed out", "TimeoutError");
+    });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("timed out");
+  });
+});
+
+describe("PRD-264 project-reader wiring", () => {
+  async function game() {
+    const { makeTempDir } = await import("../../../test-support/temp-dir.js");
+    const root = await makeTempDir("tn-doctor-wiring-");
+    await mkdir(path.join(root, "src/ui"), { recursive: true });
+    await mkdir(path.join(root, "node_modules/.bin"), { recursive: true });
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "doctor-wiring", type: "module" }),
+    );
+    await writeFile(path.join(root, "src/game.ts"), "export default {};");
+    await writeFile(
+      path.join(root, "index.html"),
+      '<script type="module" src="/src/game.ts"></script>',
+    );
+    await writeFile(path.join(root, "node_modules/.bin/vite"), "#!/bin/sh\nexit 0\n", {
+      mode: 0o755,
+    });
+    return root;
+  }
+
+  it("reads actual web prerequisites and ignores absent mobile, playtest and MCP tools", async () => {
+    const root = await game();
+    const report = diagnoseProject(await readProject(root, { target: "web" }), { target: "web" });
+    expect(report.pass).toBe(true);
+    expect(check(report, "target web").detail).toContain("PENDING");
+    expect(report.checks.some(({ name }) => /ios|android|playtest|capability/u.test(name))).toBe(
+      false,
+    );
+  });
+
+  it("fails malformed TypeScript config through the same loader for web and native", async () => {
+    const root = await game();
+    const broken = "export default { app: { name: 42 } };";
+    await writeFile(path.join(root, "threenative.config.ts"), broken);
+    for (const target of ["web", "android"] as const) {
+      const report = diagnoseProject(await readProject(root, { target }), { target });
+      expect(report.pass).toBe(false);
+      expect(check(report, "config").detail).toContain("threenative.config.ts");
+    }
+    expect(await readFile(path.join(root, "threenative.config.ts"), "utf8")).toBe(broken);
+  });
+
+  it("names the missing web UI entry before the same buildUi preflight fails", async () => {
+    const root = await game();
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { ui: { renderer: "web" } };',
+    );
+    const project = await readProject(root, { target: "android" });
+    const report = diagnoseProject(project, { target: "android" });
+    expect(
+      report.checks.some(
+        ({ detail }) =>
+          detail.includes("TN_UI_ENTRY_MISSING") && detail.includes("src/ui/main.tsx"),
+      ),
+    ).toBe(true);
+    const { loadConfig } = await import("../src/config.js");
+    await expect(buildUi(root, await loadConfig(root))).rejects.toThrow(/TN_UI_ENTRY_MISSING/u);
+  });
+
+  it("preserves and reports an unwritable editor file", async () => {
+    const { chmod } = await import("node:fs/promises");
+    const root = await game();
+    const file = path.join(root, ".mcp.json");
+    await writeFile(file, MCP_CONFIG);
+    await chmod(file, 0o444);
+    try {
+      const report = diagnoseProject(await readProject(root));
+      expect(check(report, "editor: claude-code").status).toBe("fail");
+      expect(check(report, "editor: claude-code").detail).toContain(file);
+      expect(await readFile(file, "utf8")).toBe(MCP_CONFIG);
+    } finally {
+      await chmod(file, 0o644);
+    }
+  });
+
+  it("blocks unavailable Blender for nested source assets but respects the compiler exclusion globs", async () => {
+    const root = await game();
+    const directory = path.join(root, "assets/models/characters/hero/source");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, "hero.fbx"), "source model");
+    const project = await readProject(root, { target: "web" });
+    expect(project.blender?.available).toBe(false);
+    const blocked = diagnoseProject(project, { target: "web" });
+    expect(blocked.pass).toBe(false);
+    expect(
+      blocked.checks.some(
+        ({ detail }) => detail.includes("conversion unavailable") && detail.includes("hero.fbx"),
+      ),
+    ).toBe(true);
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { assets: { exclude: ["**/*.fbx"] } };',
+    );
+    expect(
+      diagnoseProject(await readProject(root, { target: "web" }), { target: "web" }).pass,
+    ).toBe(true);
+  });
+
+  it("does not call a failed Java executable supported just because it printed a version", () => {
+    spawnSyncMock.mockReturnValueOnce({
+      status: 1,
+      stderr: 'openjdk version "17.0.1"',
+      stdout: "",
+    });
+    expect(probeAndroidToolchain({}).jdkMajor).toBeUndefined();
   });
 });

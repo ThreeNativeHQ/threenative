@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-264 — Doctor reports the actual consumer prerequisites and limits
 
-**Status:** PARTIAL — existing transport/tool probes retained; readiness semantics reopened. Revised 2026-09-08; planning only.
+**Status:** PARTIAL — scoped readiness and authoring diagnosis implemented; candidate verification and independent/public-consumer checkpoints tracked below. Updated 2026-09-11.
 **Complexity:** 7 → HIGH (+2 files, +2 multi-package, +2 target/prerequisite state, +1 external tool probes).
 **Problem:** A developer can see a target described as available because its packager exists while downloads, UI, signing or SDK prerequisites prevent the intended build.
 
@@ -25,7 +25,7 @@ Engine developer-tool layer. Owns actionable diagnosis only; [PRD-196](../BLOCKE
 
 ## Approach and boundaries
 
-Keep `doctor` as the existing CLI command and reuse runtime install status, build/config validation, the common MCP table and playtest doctor delegation. Add **proposed** optional `--target web|desktop|android` and `--mode debug|release` only to scope prerequisite diagnosis to the intended operation. Preserve legacy unscoped output. Report separate installed/configured/probed/buildable/verified facts in existing check details; do not introduce a second release gate or require iOS on a non-iOS task.
+Keep `doctor` as the existing CLI command and reuse runtime install status, build/config validation, the common MCP table and playtest doctor delegation. Add optional `--target web|desktop|android` and `--mode debug|release` only to scope prerequisite diagnosis to the intended operation. Preserve legacy unscoped output. Report separate installed/configured/probed/buildable/verified facts in existing check details; do not introduce a second release gate or require iOS on a non-iOS task.
 
 Data/migration: no application database migration. New build metadata and evidence extend the existing package/config/artifact contracts; no parallel scene, project or release framework.
 
@@ -58,6 +58,17 @@ sequenceDiagram
 
 ## Execution phases
 
+### 2026-09-11 implementation scope amendment
+
+The current root/PRD instructions require results in this PRD rather than new routine evidence reports. The named evidence-file slot in each phase therefore becomes an edit to this PRD. No publishing, store upload, global editor configuration change or signing-key access is authorized or performed.
+
+Before wiring the host table into TypeScript, split the prerequisite type work into **Phase 0** (five files): new `packages/core/mcp/install.d.mts`; remove the now-obsolete import suppression in `packages/core/__tests__/mcp-install.spec.ts`, `packages/create-threenative/__tests__/scaffold-mcp.spec.ts`, and `scripts/sync-mcp-configs.ts`; edit this PRD. These are type bindings only, not installer behavior changes.
+
+Phase 1 retains its four implementation/test files plus this PRD (five). Phase 2 retains doctor, doctor tests, README and this PRD (four). No runtime, renderer, packaging, CI policy or release-gate behavior is changed. The branch-only verification workflow is temporary and must be absent from the final diff.
+
+The existing native build callers produce debug packages and do not accept a release/signing mode. This PRD diagnoses that limitation, rather than implementing PRD-212/365 or inventing a release gate: native `doctor --mode release` fails explicitly; debug needs no signing credentials. Build execution, signing/submission and editor activation remain separate PENDING evidence. Independent review is not self-awarded.
+
+
 ### Phase 1 — Doctor predicts the requested build prerequisite failure
 
 **Files (maximum five):**
@@ -66,7 +77,7 @@ sequenceDiagram
 - EDIT `packages/create-threenative/src/doctor.ts` — derive requirements from build/runtime evidence.
 - EDIT `packages/create-threenative/__tests__/doctor.spec.ts` — scoped target failure semantics.
 - EDIT `packages/create-threenative/__tests__/cli.spec.ts` — doctor argument validation.
-- NEW `docs/verification/prd-264-readiness-phase-1-<date>.md` — commands, identities, red/green and reviewer decision.
+- EDIT this PRD — commands, identities, red/green and reviewer decision (current root evidence policy).
 
 **Implementation and wiring:** For the requested target/mode, missing binary, overlay capability, supported SDK/JDK or signing prerequisite must prevent a buildable/ready result. A configured but unexecuted store upload is PENDING evidence, not an install prerequisite failure. Reuse PRD-212/365 mode semantics and preserve debug builds without signing keys. Runtime manifest lookup must retain bounded timeout/error status. Do not edit/read engine source as a consumer requirement.
 
@@ -74,11 +85,11 @@ sequenceDiagram
 
 **Observed-red / revert control:** Give doctor a present packager but HTTP404 runtime status and JDK26, then restore supported inputs. Verify non-success followed by correct buildable status; substitute absent signing for release-only red.
 
-**Verification commands** (from repository root unless noted; proposed flags are explicitly identified):
+**Verification commands** (from repository root unless noted; scope flags are implemented):
 
 ```sh
 pnpm exec vitest run packages/create-threenative/__tests__/doctor.spec.ts packages/create-threenative/__tests__/cli.spec.ts
-# PROPOSED, in the installed game after this phase:
+# Implemented scope flags, in the game project:
 pnpm exec threenative doctor --target android --mode release --text
 ```
 
@@ -91,7 +102,7 @@ pnpm exec threenative doctor --target android --mode release --text
 - EDIT `packages/create-threenative/src/doctor.ts` — separate MCP transport and tool prerequisites.
 - EDIT `packages/create-threenative/__tests__/doctor.spec.ts` — Blender/config/script-policy controls.
 - EDIT `packages/create-threenative/README.md` — document exact game-only repair actions.
-- NEW `docs/verification/prd-264-readiness-phase-2-<date>.md` — commands, identities, red/green and reviewer decision.
+- EDIT this PRD — commands, identities, red/green and reviewer decision (current root evidence policy).
 
 **Implementation and wiring:** Keep real transport probing from earlier work. Derive current required servers from core table. Distinguish server installed, config loaded by a supported editor, external Blender executable present, and operation executed. Show commands for missing prerequisites without modifying global configuration or silently installing applications. Preserve malformed/unwritable config and report the exact file. Document hosts that need manual global setup.
 
@@ -99,7 +110,7 @@ pnpm exec threenative doctor --target android --mode release --text
 
 **Observed-red / revert control:** Remove Blender from the probe path while keeping its server bundle and remove one declared MCP entry separately; diagnostics must change and not claim a complete authoring toolchain.
 
-**Verification commands** (from repository root unless noted; proposed flags are explicitly identified):
+**Verification commands** (from repository root unless noted; scope flags are implemented):
 
 ```sh
 pnpm exec vitest run packages/create-threenative/__tests__/doctor.spec.ts
@@ -121,7 +132,20 @@ After every phase, an independent reviewer receives this PRD, diff, commands and
 
 ## Verification evidence
 
-No implementation gate was run by this planning revision. Every new phase is **NOT RUN**. Write each phase to `docs/verification/prd-<id>-readiness-phase-<n>-<date>.md` (the evidence file listed in each phase); use the existing runtime performance ledger for new performance measurements. Fill actual results and non-test `file:line` callers at implementation time; a phase cannot close with placeholders. Acceptance boxes below remain unchecked until all phase checkpoints pass.
+Candidate branch: `codex/prd-264-doctor-readiness`, based on `7e6dffc1e7d67908d0ceb43388db45bb2d16964b`. No package was published and no release/store key was accessed.
+
+- [x] Capability discovery: actual `engine_search_capabilities` queries for Android/JDK/runtime/signing and Blender/MCP/editor prerequisites; no matching build diagnostic capability. The returned unrelated asset-loader hit was inspected with `engine_capability_detail`; it does not replace this CLI layer.
+- [x] Baseline: GitHub Actions run `34618594872` built the CLI dependency closure and passed the existing doctor/CLI tests (65 assertions/tests across two files).
+- [x] Red before implementation: scoped/authoring/CLI cases produced 24 failures against the baseline; five installed-runtime-contract cases separately failed before their probe existed. Missing UI-entry and nested Blender-source controls failed before wiring the file checks.
+- [x] Local restored-control verification: doctor/CLI tests pass, including missing runtime manifest/artifact (HTTP404), malformed release identity, timeout, JDK26, missing SDK/probe, debug versus unsupported release, absent desktop overlay, web isolation, config preservation, read-only editor config and nested/excluded Blender sources. Final counts and candidate CI are recorded in the PR.
+- [ ] Full candidate `typecheck`, `lint`, `budgets`, package/unit and platform CI: not yet established at this revision; inspect the PR checks rather than inferring success from focused tests.
+- [ ] Independent reviewer checkpoint: PENDING, not self-awarded.
+- [ ] Public registry/no-source-override qualification of this exact candidate: PENDING a published candidate; local fixtures and build artifacts prove mechanics only.
+- [ ] Actual editor tool discovery and conversion operation, native release signing and store submission: PENDING/not executed. Native release diagnosis intentionally reports the unsupported build path; no debug artifact is presented as release proof.
+
+Live integration: `packages/create-threenative/src/threenative.ts:runDoctorCommand` validates the scope and passes it to both `readProject` and `diagnoseProject`; `doctor.ts:readBuildPrerequisites` invokes the existing build/config guards and installed-runtime contract; `doctor.ts:editorChecks` consumes core's host table without invoking installer writes. Unscoped `--capture` delegation and real MCP transport probes are retained. No renderer/runtime behavior or permanent CI workflow is changed.
+
+The local source snapshot omitted non-development assets, so the broad core MCP suite's tracked-GPL-script check cannot be counted as a local pass. Candidate CI uses a real Git checkout and is the authority for that packaging assertion. Acceptance boxes below remain unchecked until the independent/public-consumer checkpoints are executed.
 
 ## Acceptance criteria
 

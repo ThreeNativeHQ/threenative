@@ -7,7 +7,6 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { staleHostConfigs } from "../../../scripts/sync-mcp-configs.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-// @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { MCP_SERVERS } from "../../core/mcp/servers.mjs";
 import { createProject, discoverTemplateNames } from "../src/index.js";

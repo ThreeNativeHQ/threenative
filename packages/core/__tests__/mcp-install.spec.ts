@@ -10,7 +10,6 @@ import {
   ensureHostMcpConfigs,
   ensureMcpConfig,
   installTarget,
-  // @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
 } from "../mcp/install.mjs";
 import { MCP_PACKAGES, MCP_SERVERS, mergeMcpServers } from "../mcp/servers.mjs";
 

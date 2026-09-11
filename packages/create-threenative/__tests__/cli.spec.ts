@@ -94,3 +94,28 @@ describe("create-threenative CLI", () => {
     }
   }, 30_000);
 });
+
+describe("PRD-264 doctor CLI scope", () => {
+  it.each([
+    [["--target"], /requires a value/u],
+    [["--target", "web", "--capture", "capture.json"], /capture.*cannot.*target/u],
+    [["--target", "ios"], /target.*web.*desktop.*android/u],
+    [["--target", "android", "--mode"], /requires a value/u],
+    [["--target", "android", "--mode", "production"], /mode.*debug.*release/u],
+    [["--mode", "release"], /requires.*--target/u],
+    [["--target", "android", "--target", "desktop"], /duplicate/u],
+    [["--target", "android", "--mode", "debug", "--mode", "release"], /duplicate/u],
+  ])("rejects invalid scope %j before probing the machine", async (args, error) => {
+    await expect(run(process.execPath, [threenativeCli, "doctor", ...args])).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringMatching(error),
+      stdout: "",
+    });
+  });
+
+  it("documents implemented target and mode flags", async () => {
+    const result = await run(process.execPath, [threenativeCli, "doctor", "--help"]);
+    expect(result.stdout).toContain("--target web|desktop|android");
+    expect(result.stdout).toContain("--mode debug|release");
+  });
+});

@@ -20,7 +20,11 @@ import { pathToFileURL } from "node:url";
 // node builtins, so inlining it adds no runtime dependency to the published `create-threenative`.
 import { installCommandFor, resolveBlender } from "threenative-blender-mcp/bridge";
 
-import { loadConfig } from "./config.js";
+import { globMatch } from "../../assets/src/passes/glob.js";
+import { MCP_HOSTS } from "../../core/mcp/install.mjs";
+import { CODEX_MCP_SERVERS, mergeMcpServers } from "../../core/mcp/servers.mjs";
+import { assertNativeAssetsCompatible, assertNativeUiRendererCompatible } from "./build.js";
+import { type IResolvedThreeNativeConfig, loadConfig } from "./config.js";
 import {
   type IMcpPackage,
   MCP_PACKAGES,
@@ -51,7 +55,19 @@ export interface IDoctorReport {
   readonly pass: boolean;
 }
 
+export interface IDoctorOptions {
+  readonly capturePath?: string;
+  readonly target?: "web" | "desktop" | "android";
+  readonly mode?: "debug" | "release";
+}
+
 export interface IProjectSnapshot {
+  /** Observations made for this exact requested target, never inferred from a packager's presence. */
+  readonly buildPrerequisites?: {
+    readonly target: NonNullable<IDoctorOptions["target"]>;
+    readonly checks: readonly IDoctorCheck[];
+  };
+  readonly configError?: string;
   /** Resolved TypeScript config, or the single sanctioned package.json `nativeEntry`
    *  fallback when TypeScript is absent — the same surfaces the build path reads. */
   readonly config: unknown;
@@ -419,7 +435,7 @@ function mcpServerCheck(
     };
   }
   return {
-    detail: `${spec.configName} resolves ${spec.packageName}@${installedVersion}${health === undefined ? "" : `; ${health.detail}`}`,
+    detail: `${spec.configName} installed=${spec.packageName}@${installedVersion}; configured=.mcp.json; ${health === undefined ? "transport=PENDING (not probed)" : health.detail}; editor activation and operation=PENDING`,
     name,
     status: "ok",
   };
@@ -497,8 +513,8 @@ function mcpSummary(serverChecks: readonly IDoctorCheck[]): IDoctorCheck {
   return {
     detail:
       status === "ok"
-        ? "all three configured MCP servers resolve"
-        : `${serverChecks.length - failed - warned} server(s) resolve; ${warned} reachable by npx only; ${failed} malformed or missing`,
+        ? `all ${serverChecks.length} configured MCP servers resolve; editor activation and operations=PENDING`
+        : `${serverChecks.length - failed - warned} server(s) resolve; ${warned} prerequisite warning(s); ${failed} malformed, missing or failed`,
     fix: status === "ok" ? undefined : "Inspect the per-server capability search checks below.",
     name: "capability search",
     status,
@@ -637,18 +653,18 @@ function androidToolchainStatus(probe: IAndroidToolchainProbe): IDoctorCheck {
   let status: DoctorStatus = probe.status ?? "ok";
   if (probe.jdkVersion === undefined || probe.jdkMajor === undefined) {
     details.push(`JDK not found; Android builds require JDK ${ANDROID_JDK_MAJOR}`);
-    status = "warn";
+    status = status === "fail" ? "fail" : "warn";
   } else if (probe.jdkMajor !== ANDROID_JDK_MAJOR) {
     details.push(
       `JDK ${probe.jdkVersion} found; Android builds support JDK ${ANDROID_JDK_MAJOR} only`,
     );
-    status = "warn";
+    status = status === "fail" ? "fail" : "warn";
   } else {
     details.push(`JDK ${probe.jdkVersion} found (supported JDK ${ANDROID_JDK_MAJOR})`);
   }
   if (probe.sdkVersion === undefined) {
     details.push(`Android SDK platform android-${ANDROID_COMPILE_SDK} not found`);
-    status = "warn";
+    status = status === "fail" ? "fail" : "warn";
   } else {
     details.push(`Android SDK platform android-${ANDROID_COMPILE_SDK} ${probe.sdkVersion} found`);
   }
@@ -902,10 +918,16 @@ function apkSizeCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
   };
 }
 
-function dependencyChecks(snapshot: IProjectSnapshot): IDoctorCheck[] {
-  const declared = declaredDependencies(snapshot.packageJson);
+function dependencyChecks(
+  snapshot: IProjectSnapshot,
+  target?: IDoctorOptions["target"],
+): IDoctorCheck[] {
+  const relevant = (name: string) => target !== "web" || name !== RUNTIME_PACKAGE;
+  const declared = declaredDependencies(snapshot.packageJson).filter(relevant);
   const missing = declared.filter((name) => !snapshot.installedVersions.has(name));
-  const installed = [...snapshot.installedVersions].sort(([a], [b]) => a.localeCompare(b));
+  const installed = [...snapshot.installedVersions]
+    .filter(([name]) => relevant(name))
+    .sort(([a], [b]) => a.localeCompare(b));
   const versions = new Set(installed.map(([, version]) => version));
   return [
     missing.length > 0
@@ -1127,7 +1149,10 @@ export function probeAndroidToolchain(
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 5_000,
     });
-    const parsed = javaVersion(`${result.stdout ?? ""}${result.stderr ?? ""}`);
+    const parsed =
+      result.error === undefined && (result.status === 0 || result.status === undefined)
+        ? javaVersion(`${result.stdout ?? ""}${result.stderr ?? ""}`)
+        : undefined;
     jdkMajor = parsed?.major;
     jdkVersion = parsed?.version;
   } catch {
@@ -1252,10 +1277,7 @@ function blenderCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
   );
   if (probe.available) {
     return {
-      detail:
-        probe.version === undefined
-          ? probe.detail
-          : `Blender ${probe.version} converts .fbx, .blend, .obj and .dae on this machine`,
+      detail: `${probe.detail}; external executable detected${probe.version === undefined ? "" : ` (Blender ${probe.version})`}; conversion operation=PENDING (not executed by doctor)`,
       name: "blender",
       status: "ok",
     };
@@ -1265,17 +1287,337 @@ function blenderCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
       ? "no .fbx, .blend, .obj or .dae in this project, so nothing needs it yet"
       : `${sources.length} source(s) in this project need it: ${sources.slice(0, 3).join(", ")}`;
   return {
-    detail: `${probe.detail} — ${carried}`,
+    detail: `${probe.detail} — conversion unavailable; ${carried}; operation=PENDING, regardless of MCP transport health`,
     fix: `Install Blender when you want to convert those formats: ${probe.installCommand}`,
     name: "blender",
     status: "warn",
   };
 }
 
+/** Only scope prerequisites: this does not execute a build, signing, store upload or editor action. */
+export function validateDoctorOptions(options: IDoctorOptions): void {
+  if (options.capturePath !== undefined && options.target !== undefined)
+    throw new Error(
+      "doctor: --capture cannot be combined with --target; run the unscoped capture check separately.",
+    );
+  if (options.target !== undefined && !["web", "desktop", "android"].includes(options.target))
+    throw new Error("doctor: --target must be web, desktop or android.");
+  if (options.mode !== undefined && !["debug", "release"].includes(options.mode))
+    throw new Error("doctor: --mode must be debug or release.");
+  if (options.mode !== undefined && options.target === undefined)
+    throw new Error("doctor: --mode requires --target.");
+}
+
+function configFailure(detail: string): IDoctorCheck {
+  return {
+    name: "config",
+    status: "fail",
+    detail,
+    fix: "Repair the named project config; doctor has preserved it. Rerun the same command.",
+  };
+}
+
+function scopedBuildReport(snapshot: IProjectSnapshot, options: IDoctorOptions): IDoctorReport {
+  const target = options.target as NonNullable<IDoctorOptions["target"]>;
+  const mode = options.mode ?? "debug";
+  const checks: IDoctorCheck[] = [
+    { name: "package.json", status: "ok", detail: "readable" },
+    ...dependencyChecks(snapshot, target),
+    ...(snapshot.configError === undefined ? [] : [configFailure(snapshot.configError)]),
+  ];
+  const observed = snapshot.buildPrerequisites;
+  if (observed?.target !== target || observed.checks.length === 0) {
+    checks.push({
+      name: "build prerequisites",
+      status: "fail",
+      detail: `${target} prerequisites were not observed`,
+      fix: `Run threenative doctor --target ${target} --mode ${mode} in the game root.`,
+    });
+  } else {
+    checks.push(
+      ...observed.checks.map((check) => ({
+        ...check,
+        status: check.status === "ok" ? ("ok" as const) : ("fail" as const),
+      })),
+    );
+  }
+  if (target !== "web") {
+    checks.push(nativeEntryCheck(snapshot));
+    if (!runtimeFileAvailable(snapshot, `scripts/package-${target}.mjs`))
+      checks.push({
+        name: "packager",
+        status: "fail",
+        detail: `${snapshot.runtimeRoot ?? RUNTIME_PACKAGE}/scripts/package-${target}.mjs is missing`,
+        fix: "Install @threenative/runtime-native in the game project, then rerun doctor.",
+      });
+    if (mode === "release")
+      checks.push({
+        name: "release mode",
+        status: "fail",
+        detail: `${target} release packaging/signing is not implemented by this CLI build path; a debug packager cannot establish release readiness. Store submission evidence=PENDING.`,
+        fix: `Use threenative build --target ${target} for the supported debug build. Release packaging/signing must land before --mode release can pass; do not create or disclose keys to doctor.`,
+      });
+  }
+  if (target === "android") {
+    const toolchain = androidToolchainStatus(snapshot.androidToolchain ?? {});
+    checks.push({ ...toolchain, status: toolchain.status === "ok" ? "ok" : "fail" });
+  }
+  if (target === "desktop" && usesDesktopOverlay(snapshot.config)) {
+    const overlay = snapshot.desktopOverlay ?? {
+      status: "warn",
+      detail: "desktop UI overlay was not probed",
+      fix: "Run doctor in the display session that will host the desktop target.",
+    };
+    checks.push({
+      ...desktopOverlayCheck(overlay),
+      status: overlay.status === "ok" ? "ok" : "fail",
+    });
+  }
+  const failed = checks.find(({ status }) => status === "fail");
+  checks.push({
+    name: `target ${target}`,
+    status: failed === undefined ? "ok" : "fail",
+    detail:
+      failed === undefined
+        ? `${target}/${mode}: buildable prerequisites observed; build execution, runtime behavior and distribution verification=PENDING. This is not a verified artifact or store-ready claim.`
+        : `${target}/${mode}: not buildable — ${failed.name}: ${failed.detail}`,
+    ...(failed === undefined ? {} : { fix: failed.fix }),
+  });
+  return { checks, pass: failed === undefined };
+}
+
+/** Inspect exactly the project's supported host configs; never run the installer or edit a file. */
+function editorChecks(snapshot: IProjectSnapshot): IDoctorCheck[] {
+  const checks: IDoctorCheck[] = [];
+  for (const host of MCP_HOSTS) {
+    if (!snapshot.files.has(host.file)) continue;
+    const location =
+      snapshot.projectRoot === undefined ? host.file : path.join(snapshot.projectRoot, host.file);
+    try {
+      const text = snapshot.readText(host.file);
+      if (text === undefined) throw new Error("could not read config");
+      if (snapshot.projectRoot !== undefined) {
+        accessSync(location, fsConstants.W_OK);
+        if ((statSync(location).mode & 0o222) === 0) throw new Error("config is not writable");
+      }
+      if (host.format === "codex") {
+        const missing = CODEX_MCP_SERVERS.filter(
+          ({ name }) => !text.includes(`[mcp_servers.${name}]`),
+        );
+        if (missing.length > 0)
+          throw new Error(`missing MCP entries: ${missing.map(({ name }) => name).join(", ")}`);
+        checks.push({
+          name: `editor: ${host.id}`,
+          status: "warn",
+          detail: `${location}: MCP sections declared; TOML parsing, editor activation and tool discovery=PENDING (not observed).`,
+          fix: "Open the project in Codex and inspect its MCP tool list; preserve unrelated TOML settings.",
+        });
+      } else {
+        const parsed: unknown = JSON.parse(text);
+        if (record(parsed) === undefined) throw new Error("config root must be an object");
+        const merged = record(mergeMcpServers(parsed, host.format));
+        const conflicts = merged?.conflicts;
+        if (!Array.isArray(conflicts))
+          throw new Error("MCP merge contract did not report conflicts");
+        if (merged?.changed || conflicts.length > 0)
+          throw new Error(
+            `missing or conflicting ThreeNative MCP entries${conflicts.length === 0 ? "" : `: ${conflicts.join(", ")}`}`,
+          );
+        checks.push({
+          name: `editor: ${host.id}`,
+          status: "warn",
+          detail: `${location}: configured for ${host.label}; editor activation and actual tool discovery=PENDING (not observed).`,
+          fix: `Open the game root in ${host.label}, approve the project MCP servers, and inspect its tool list.`,
+        });
+      }
+    } catch (error) {
+      checks.push({
+        name: `editor: ${host.id}`,
+        status: "fail",
+        detail: `${location}: ${error instanceof Error ? error.message : String(error)}; file preserved`,
+        fix: `Repair ${location}, preserving unrelated settings. If install scripts were blocked, review the package manager's script policy and run pnpm rebuild @threenative/core in the game root.`,
+      });
+    }
+  }
+  return checks;
+}
+
+/** Bounded, read-only availability probe. Validation and artifact selection belong to the installed runtime. */
+export async function probeRuntimeDownloads(
+  snapshot: IProjectSnapshot,
+  target: "android" | "desktop",
+  request: typeof fetch = fetch,
+): Promise<IDoctorCheck> {
+  const name = "runtime downloads";
+  let location = snapshot.runtimeRoot ?? RUNTIME_PACKAGE;
+  try {
+    if (snapshot.runtimeRoot === undefined) throw new Error("runtime package is not installed");
+    const installer = record(
+      await import(
+        pathToFileURL(path.join(snapshot.runtimeRoot, "scripts/install-prebuilt.mjs")).href
+      ),
+    );
+    if (
+      typeof installer?.releaseManifestUrl !== "function" ||
+      typeof installer.validateReleaseManifest !== "function"
+    )
+      throw new Error("installed runtime has no release manifest validation contract");
+    location = String(
+      installer.releaseManifestUrl(snapshot.installedVersions.get(RUNTIME_PACKAGE)),
+    );
+    // One deadline covers the manifest AND all artifact probes, not one timeout per artifact.
+    const signal = AbortSignal.timeout(5_000);
+    const response = await request(location, { signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${location}`);
+    const manifest: unknown = await response.json();
+    installer.validateReleaseManifest(manifest, {
+      version: snapshot.installedVersions.get(RUNTIME_PACKAGE),
+    });
+    const artifacts = record(record(manifest)?.artifacts);
+    const urls: string[] = [];
+    let keys: string[];
+    if (target === "android") {
+      const packager = record(
+        await import(
+          pathToFileURL(path.join(snapshot.runtimeRoot, "scripts/package-android.mjs")).href
+        ),
+      );
+      if (
+        typeof packager?.androidPrebuiltAssets !== "function" ||
+        typeof packager.GRADLE_WRAPPER_URL !== "string"
+      )
+        throw new Error("installed Android packager has no artifact contract");
+      keys = Object.keys(packager.androidPrebuiltAssets());
+      urls.push(packager.GRADLE_WRAPPER_URL);
+    } else {
+      if (typeof installer.platformKey !== "function")
+        throw new Error("installed runtime has no platform contract");
+      keys = [String(installer.platformKey())];
+    }
+    for (const key of keys) {
+      const url = record(artifacts?.[key])?.url;
+      if (typeof url !== "string") throw new Error(`missing artifact URL for ${key}`);
+      urls.push(url);
+    }
+    if (keys.length === 0) throw new Error("runtime artifact selection was empty");
+    await Promise.all(
+      urls.map(async (url) => {
+        const response = await request(url, { method: "HEAD", signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${url}`);
+      }),
+    );
+    return {
+      name,
+      status: "ok",
+      detail: `${location}: installed cohort validator passed; ${keys.length} ${target} artifact URL(s) and required wrapper probed. Downloaded bytes/checksums and build execution=PENDING; doctor did not download or install applications.`,
+    };
+  } catch (error) {
+    return {
+      name,
+      status: "fail",
+      detail: `${location}: ${error instanceof Error ? error.message : String(error)}`,
+      fix: "Install a published, matching @threenative/runtime-native cohort in the game project and rerun doctor. Check the named URL/network failure; no engine checkout or source override is required.",
+    };
+  }
+}
+
+async function assertConversionPrerequisites(
+  snapshot: IProjectSnapshot,
+  config: IResolvedThreeNativeConfig | undefined,
+): Promise<void> {
+  const root = path.resolve(snapshot.projectRoot as string, config?.assets?.source ?? "assets");
+  if (!existsSync(root)) return;
+  const inputs = await collectFiles(root, "", 0, Number.POSITIVE_INFINITY);
+  const needed = inputs.filter(
+    (input) =>
+      BLENDER_SOURCE_SUFFIXES.some((suffix) => input.toLowerCase().endsWith(suffix)) &&
+      !(config?.assets?.exclude ?? []).some((glob) => globMatch(glob, input)),
+  );
+  if (needed.length > 0 && snapshot.blender?.available !== true)
+    throw new Error(
+      `Blender conversion unavailable for ${path.join(root, needed[0] as string)}; ${snapshot.blender?.detail ?? "external executable not probed"}. ${snapshot.blender?.installCommand ?? "Install Blender and rerun doctor"}`,
+    );
+}
+
+async function readBuildPrerequisites(
+  snapshot: IProjectSnapshot,
+  target: NonNullable<IDoctorOptions["target"]>,
+): Promise<IDoctorCheck[]> {
+  const root = snapshot.projectRoot as string;
+  const checks: IDoctorCheck[] = [];
+  try {
+    const config = snapshot.config as IResolvedThreeNativeConfig | undefined;
+    if (target === "web") {
+      if (!existsSync(path.join(root, "index.html")))
+        throw new Error(`${root}/index.html is missing`);
+      if (resolveBinaryFrom(root, "vite") === undefined)
+        throw new Error(
+          `${root}/node_modules/.bin/vite is missing; install the project's devDependencies`,
+        );
+    } else {
+      if (config === undefined) throw new Error("resolved build config is missing");
+      assertNativeUiRendererCompatible(target, config.ui.renderer);
+      if (config.ui.renderer === "web" && !existsSync(path.join(root, "src/ui/main.tsx")))
+        throw new Error(
+          `TN_UI_ENTRY_MISSING: ${root}/src/ui/main.tsx is missing; create the web UI entry or set ui.renderer to "native".`,
+        );
+      await assertNativeAssetsCompatible(root, target, config);
+      for (const file of ["scripts/bundle.mjs", `scripts/package-${target}.mjs`]) {
+        if (!runtimeFileAvailable(snapshot, file))
+          throw new Error(`${snapshot.runtimeRoot ?? RUNTIME_PACKAGE}/${file} is missing`);
+      }
+      if (config.ui.renderer === "web" && resolveBinaryFrom(root, "vite") === undefined)
+        throw new Error(`${root}/node_modules/.bin/vite is required to build the web UI`);
+    }
+    await assertConversionPrerequisites(snapshot, config);
+    checks.push({
+      name: "build/config preflight",
+      status: "ok",
+      detail: `${target}: build/config/UI and installed packaging prerequisites checked; compilation=PENDING`,
+    });
+  } catch (error) {
+    checks.push(
+      configFailure(`${root}: ${error instanceof Error ? error.message : String(error)}`),
+    );
+  }
+  if (target === "desktop") {
+    const runtime = nativeRuntimeCheck(snapshot);
+    if (runtime.status === "ok" && snapshot.runtimeRoot !== undefined) {
+      try {
+        const receipt = record(
+          JSON.parse(snapshot.readRuntimeText?.("prebuilt/install-status.json") ?? "null"),
+        );
+        const binary = path.join(
+          snapshot.runtimeRoot,
+          "prebuilt",
+          `${process.platform}-${process.arch}`,
+          nativeRuntimeFilename(),
+        );
+        accessSync(binary, process.platform === "win32" ? fsConstants.R_OK : fsConstants.X_OK);
+        if (statSync(binary).size === 0 || sha256File(binary) !== receipt?.sha256)
+          throw new Error("binary checksum does not match install receipt");
+        checks.push({
+          ...runtime,
+          detail: `${binary}: installed bytes verified against install receipt; runtime execution=PENDING`,
+        });
+      } catch (error) {
+        checks.push({
+          ...runtime,
+          status: "fail",
+          detail: `native runtime: ${error instanceof Error ? error.message : String(error)}`,
+          fix: "Rebuild the runtime install hook in the game: pnpm rebuild @threenative/runtime-native.",
+        });
+      }
+    } else checks.push(runtime);
+  } else if (target === "android") checks.push(await probeRuntimeDownloads(snapshot, target));
+  return checks;
+}
+
 export function diagnoseProject(
   snapshot: IProjectSnapshot,
-  options: { readonly capturePath?: string } = {},
+  options: IDoctorOptions = {},
 ): IDoctorReport {
+  validateDoctorOptions(options);
   if (record(snapshot.packageJson) === undefined) {
     return {
       checks: [
@@ -1289,6 +1631,7 @@ export function diagnoseProject(
       pass: false,
     };
   }
+  if (options.target !== undefined) return scopedBuildReport(snapshot, options);
   const hasPlaytests = [...snapshot.files].some((file) => file.endsWith(".playtest.json"));
   const blender = blenderCheck(snapshot);
   const nativeRuntime = nativeRuntimeCheck(snapshot);
@@ -1297,6 +1640,7 @@ export function diagnoseProject(
   const checks: IDoctorCheck[] = [
     { detail: "readable", name: "package.json", status: "ok" },
     ...dependencyChecks(snapshot),
+    ...(snapshot.configError === undefined ? [] : [configFailure(snapshot.configError)]),
     nativeEntryCheck(snapshot),
     nativeRuntime,
     assetPipelineCheck(snapshot),
@@ -1323,13 +1667,19 @@ export function diagnoseProject(
           status: "warn",
         },
     ...capabilitySearchChecks(snapshot),
+    ...editorChecks(snapshot),
     ...(blender === undefined ? [] : [blender]),
   ];
   return { checks, pass: checks.every(({ status }) => status !== "fail") };
 }
 
-async function collectFiles(root: string, relative = "", depth = 0): Promise<string[]> {
-  if (depth > 3) return [];
+async function collectFiles(
+  root: string,
+  relative = "",
+  depth = 0,
+  maxDepth = 3,
+): Promise<string[]> {
+  if (depth > maxDepth) return [];
   const absolute = path.join(root, relative);
   if (!existsSync(absolute)) return [];
   const entries = await readdir(absolute, { withFileTypes: true });
@@ -1337,7 +1687,7 @@ async function collectFiles(root: string, relative = "", depth = 0): Promise<str
   for (const entry of entries) {
     if (entry.name === "node_modules" || entry.name.startsWith(".git")) continue;
     const next = relative === "" ? entry.name : `${relative}/${entry.name}`;
-    if (entry.isDirectory()) files.push(...(await collectFiles(root, next, depth + 1)));
+    if (entry.isDirectory()) files.push(...(await collectFiles(root, next, depth + 1, maxDepth)));
     else files.push(next);
   }
   return files;
@@ -1368,13 +1718,24 @@ async function runtimeReleaseManifestUrl(
   }
 }
 
-export async function readProject(root: string): Promise<IProjectSnapshot> {
+export async function readProject(
+  root: string,
+  options: IDoctorOptions = {},
+): Promise<IProjectSnapshot> {
+  validateDoctorOptions(options);
   const projectRoot = path.resolve(root);
   const packageJson = await readJson(path.join(projectRoot, "package.json"));
   const typeScriptConfig = path.join(projectRoot, "threenative.config.ts");
-  const config = existsSync(typeScriptConfig)
-    ? await readTypeScriptConfig(projectRoot)
-    : nativeEntryCompat(record(packageJson)?.threenative);
+  let config: unknown = nativeEntryCompat(record(packageJson)?.threenative);
+  let configError: string | undefined;
+  if (existsSync(typeScriptConfig) || options.target !== undefined) {
+    try {
+      config = await loadConfig(projectRoot);
+    } catch (error) {
+      config = undefined;
+      configError = `${typeScriptConfig}: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
   const files = new Set(await collectFiles(projectRoot));
   const installedVersions = new Map<string, string>();
   for (const name of declaredDependencies(packageJson)) {
@@ -1399,15 +1760,16 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
       : await runtimeReleaseManifestUrl(runtimeRoot, runtimeVersion);
   const playtestRunnerPath = resolveBinaryFrom(projectRoot, PLAYTEST_BINARY);
   const mcpServerHealth = new Map<string, IMcpServerHealth>();
-  if (files.has(".mcp.json")) {
+  if (options.target === undefined && files.has(".mcp.json")) {
     for (const spec of MCP_SERVER_SPECS) {
       if (existsSync(path.resolve(projectRoot, spec.expectedArgs))) {
         mcpServerHealth.set(spec.configName, probeMcpServer(projectRoot, spec));
       }
     }
   }
-  return {
+  const snapshot: IProjectSnapshot = {
     config,
+    configError,
     files,
     installedVersions,
     mcpServerHealth,
@@ -1421,7 +1783,10 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
         return undefined;
       }
     },
-    androidToolchain: probeAndroidToolchain(),
+    androidToolchain:
+      options.target === undefined || options.target === "android"
+        ? probeAndroidToolchain()
+        : undefined,
     blender: (() => {
       const status = resolveBlender();
       return {
@@ -1431,7 +1796,9 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
         ...(status.version === undefined ? {} : { version: status.version }),
       };
     })(),
-    ...(usesDesktopOverlay(config) ? { desktopOverlay: probeDesktopOverlay() } : {}),
+    ...((options.target === undefined || options.target === "desktop") && usesDesktopOverlay(config)
+      ? { desktopOverlay: probeDesktopOverlay() }
+      : {}),
     ...(playtestRunnerPath === undefined
       ? {}
       : {
@@ -1454,16 +1821,14 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
           runtimeRoot,
         }),
   };
-}
-
-async function readTypeScriptConfig(root: string): Promise<unknown> {
-  try {
-    return await loadConfig(root);
-  } catch {
-    // Doctor still reports the independent package, entry, and runtime checks when config
-    // validation is already failing; the build path owns the detailed config error.
-    return undefined;
-  }
+  if (options.target === undefined) return snapshot;
+  return {
+    ...snapshot,
+    buildPrerequisites: {
+      target: options.target,
+      checks: await readBuildPrerequisites(snapshot, options.target),
+    },
+  };
 }
 
 export function formatDoctorReport(report: IDoctorReport): string {
