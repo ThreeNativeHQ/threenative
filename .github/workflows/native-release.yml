@@ -484,6 +484,9 @@ jobs:
       - name: Install and build without a native toolchain
         run: |
           pnpm --dir "$CONSUMER_TARGET" install
+          # Provenance the PRD-262 consumer gate asserts: the installed runtime must
+          # record a successful prebuilt install, never a source-checkout build.
+          test "$(node -p "require('$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json').ok")" = "true"
           pnpm --dir "$CONSUMER_TARGET" build --target desktop
           test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Launch the packed desktop game for 300 frames
@@ -520,6 +523,10 @@ jobs:
           pnpm --dir "$CONSUMER_TARGET" build --target android
           apk="$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
           test -s "$apk"
+          # The Android build must have taken the prebuilt path: no source checkout
+          # exists in the consumer install, and no masked compiler was invoked.
+          test ! -e "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/CMakeLists.txt"
+          test ! -e "$TN_TOOLCHAIN_LOG"
           unzip -l "$apk" > "$RUNNER_TEMP/threenative-consumer-android.txt"
           grep -F 'lib/arm64-v8a/libmystral-runtime.so' "$RUNNER_TEMP/threenative-consumer-android.txt"
           grep -F 'lib/arm64-v8a/libSDL3.so' "$RUNNER_TEMP/threenative-consumer-android.txt"

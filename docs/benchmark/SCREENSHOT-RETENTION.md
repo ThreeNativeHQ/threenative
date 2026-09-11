@@ -14,9 +14,9 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | Tree | Tracked files | Bytes | Uncited |
 |---|---:|---:|---:|
 | `docs/benchmark` | 1583 | 109397932 | 0 |
-| `docs/verification` | 825 | 66593515 | 74 |
+| `docs/verification` | 826 | 66600698 | 75 |
 
-**74 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
+**75 artifact(s) are uncited.** Deletion is decided by citation and runs only in PRD-323's owner-checkpointed phases; nothing here removes anything.
 
 ## `docs/benchmark` archive directories
 
@@ -79,11 +79,11 @@ An artifact the scanner cannot read or place fails the gate rather than defaulti
 | `docs/verification/prd-221-readiness-phase-1-2026-09-10.md` | 14725 |
 | `docs/verification/prd-243-starter-pixel-after-2026-08-30.png` | 171532 |
 | `docs/verification/prd-262-readiness-phase-1-2026-09-09.md` | 12218 |
+| `docs/verification/prd-262-readiness-phase-2-2026-09-10.md` | 7183 |
 | `docs/verification/prd-354-manifest-import-closure-2026-09-07.md` | 16852 |
 | `docs/verification/prd-359-task2b-send-2026-09-05.md` | 11167 |
 | `docs/verification/prd-359-task2b-signal-2026-09-05.md` | 9709 |
 | `docs/verification/prd-359-task7clock-7native-2026-09-06.md` | 2109 |
 | `docs/verification/prd-360-device-2026-09-07/evaluation-a.json` | 2930 |
 | `docs/verification/prd-360-device-2026-09-07/evaluation-b.json` | 2930 |
-| `docs/verification/prd-360-device-2026-09-07/evaluation-c.json` | 2932 |
-| …and 24 more | |
+| …and 25 more | |
