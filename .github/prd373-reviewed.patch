@@ -1,0 +1,288 @@
+diff --git a/.github/workflows/native-platforms.yml b/.github/workflows/native-platforms.yml
+index 9d79b17..22db1dd 100644
+--- a/.github/workflows/native-platforms.yml
++++ b/.github/workflows/native-platforms.yml
+@@ -669,8 +669,12 @@ jobs:
+       inputs.ios_only == false
+     runs-on: ubuntu-24.04
+     timeout-minutes: 20
++    env:
++      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+     steps:
+       - uses: actions/checkout@v7
++        with:
++          ref: ${{ needs.scope.outputs.candidate_sha }}
+       - uses: ./.github/actions/pnpm
+       - uses: actions/setup-node@v7
+         with:
+@@ -690,10 +694,14 @@ jobs:
+       - name: Emit gate-schema parity and provenance evidence reports
+         run: |
+           set -euo pipefail
++          test "$(git rev-parse HEAD)" = "$TN_CI_SHA" || {
++            echo "TN_RELEASE_REPORT_CANDIDATE_MISMATCH: report checkout differs from captured candidate" >&2
++            exit 1
++          }
+           node packages/runtime-native/scripts/generate-native-sbom.mjs --out "$RUNNER_TEMP/sbom-evidence"
+           mkdir -p reports
+           node packages/runtime-native/scripts/generate-release-reports.mjs \
+-            --candidate "$GITHUB_SHA" \
++            --candidate "$TN_CI_SHA" \
+             --registry-sha256 "$(sha256sum packages/runtime-native/conformance/registry.json | cut -d' ' -f1)" \
+             --android evidence/android/conformance/android/report.json \
+             --desktop evidence/desktop/conformance/desktop/report.json \
+diff --git a/examples/native-smoke/src/game.ts b/examples/native-smoke/src/game.ts
+index ee37322..b772c66 100644
+--- a/examples/native-smoke/src/game.ts
++++ b/examples/native-smoke/src/game.ts
+@@ -99,6 +99,7 @@ const LOADING_PROOF_OVERLAY_COLOR = 0x000000;
+ const PROOF_BACKDROP_COLOR = 0x101820;
+ const PROOF_ACCENT_COLORS = [0x00ffff, 0xffff00, 0x00ff00, 0xff8800, 0x4488ff, 0xffffff, 0x8800ff];
+ const LOADING_PROOF_COMPILE_TIMEOUT_MS = 3_000;
++const LOADING_PROOF_COMPILE_FRAME_TIMEOUT_MS = 10_000;
+ 
+ export const status: ISmokeStatus = { frames: 0, ready: false };
+ 
+@@ -585,9 +586,28 @@ const loadingProofRenderer = __TN_LOADING_PROOF__
+           // promise is held here only to make the multi-second startup window deterministic: the
+           // native conformance run can sample the same process before and after the gate without
+           // depending on whether this machine's driver resolves compileAsync in milliseconds.
+-          await new Promise<void>((resolve) =>
+-            setTimeout(resolve, LOADING_PROOF_COMPILE_TIMEOUT_MS),
+-          );
++          // A 3s timer alone allowed Windows to finish after only 57 presents, before the
++          // verifier's first 60-frame tick. Hold through 61 frame opportunities as well: RAF
++          // runs before presentation, so the extra callback lets the 60th frame complete.
++          // The verifier still independently requires a real native present tick, not RAFs.
++          await new Promise<void>((resolve, reject) => {
++            let frames = 0;
++            let frame = 0;
++            const timeout = setTimeout(() => {
++              cancelAnimationFrame(frame);
++              reject(new Error(`TN_LOADING_PROOF_FRAME_TIMEOUT:${frames}`));
++            }, LOADING_PROOF_COMPILE_FRAME_TIMEOUT_MS);
++            const observe = () => {
++              frames += 1;
++              if (frames >= 61 && performance.now() - startedAt >= LOADING_PROOF_COMPILE_TIMEOUT_MS) {
++                clearTimeout(timeout);
++                resolve();
++              } else {
++                frame = requestAnimationFrame(observe);
++              }
++            };
++            frame = requestAnimationFrame(observe);
++          });
+           console.info(
+             `TN_LOADING_PROOF_COMPILE_END:${JSON.stringify({
+               elapsedMs: Math.round(performance.now() - startedAt),
+diff --git a/scripts/__tests__/ci-release-report-candidate.spec.ts b/scripts/__tests__/ci-release-report-candidate.spec.ts
+new file mode 100644
+index 0000000..ef76f1f
+--- /dev/null
++++ b/scripts/__tests__/ci-release-report-candidate.spec.ts
+@@ -0,0 +1,98 @@
++import { spawnSync } from "node:child_process";
++import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
++import path from "node:path";
++import { describe, expect, it } from "vitest";
++
++import { makeTempDirSync } from "../../test-support/temp-dir.js";
++import { jobSections } from "../ci-workflow.js";
++
++const repo = path.resolve(import.meta.dirname, "../..");
++const workflow = readFileSync(path.join(repo, ".github/workflows/native-platforms.yml"), "utf8");
++const reportJob = new Map(jobSections(workflow)).get("release-reports") ?? "";
++const step = reportJob.split("      - name: Emit gate-schema parity and provenance evidence reports\n")[1] ?? "";
++const command = (step.split("        run: |\n")[1] ?? "")
++  .split(/^ {6}\S/mu)[0]
++  ?.split("\n")
++  .map((line) => line.slice(10))
++  .join("\n") ?? "";
++
++function fixture() {
++  const root = makeTempDirSync("ci-release-candidate-");
++  const git = (...args: string[]) => {
++    const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
++    expect(result.status, result.stderr).toBe(0);
++    return result.stdout.trim();
++  };
++  git("init", "-q");
++  git("config", "user.name", "CI fixture");
++  git("config", "user.email", "ci@example.invalid");
++  writeFileSync(path.join(root, "seed"), "seed");
++  git("add", "seed");
++  git("commit", "-qm", "candidate");
++  const candidate = git("rev-parse", "HEAD");
++  for (const relative of [
++    "pnpm-lock.yaml",
++    "packages/runtime-native/conformance/registry.json",
++    "packages/runtime-native/native/physics/Cargo.lock",
++  ]) {
++    mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
++    writeFileSync(path.join(root, relative), "fixture");
++  }
++  const bin = path.join(root, "bin");
++  mkdirSync(bin);
++  // Only the report generator boundary is stubbed: execute the real workflow shell, real Git
++  // checkout identity and real sha256sum. Never compile native products to test argument wiring.
++  writeFileSync(path.join(bin, "node"), `#!/bin/sh
++printf '%s\\n' "$*" >> "$CAPTURE"
++case "$1" in
++  */generate-release-reports.mjs)
++    mkdir -p reports
++    printf '{}' > reports/parity.json
++    printf '{}' > reports/provenance.json
++    ;;
++esac
++`, { mode: 0o755 });
++  const capture = path.join(root, "arguments.txt");
++  const run = (sha: string) => spawnSync("bash", ["-c", command], {
++    cwd: root,
++    encoding: "utf8",
++    env: {
++      ...process.env,
++      PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
++      CAPTURE: capture,
++      GITHUB_SHA: "e".repeat(40),
++      RUNNER_TEMP: root,
++      TN_CI_SHA: sha,
++    },
++  });
++  return { candidate, capture, root, run };
++}
++
++describe("PRD-373 native evidence candidate provenance", () => {
++  it("reports the captured checkout, not the scheduled workflow's event SHA", () => {
++    expect(reportJob).toContain("TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}");
++    expect(reportJob).toContain("ref: ${{ needs.scope.outputs.candidate_sha }}");
++    expect(command).toContain("generate-release-reports.mjs");
++    const control = fixture();
++    try {
++      const result = control.run(control.candidate);
++      expect(result.status, result.stderr).toBe(0);
++      const args = readFileSync(control.capture, "utf8");
++      expect(args).toContain(`--candidate ${control.candidate}`);
++      expect(args).not.toContain(`--candidate ${"e".repeat(40)}`);
++    } finally {
++      rmSync(control.root, { recursive: true, force: true });
++    }
++  });
++
++  it("refuses report generation when checkout and captured candidate disagree", () => {
++    const control = fixture();
++    try {
++      const result = control.run("d".repeat(40));
++      expect(result.status).toBe(1);
++      expect(result.stderr).toContain("TN_RELEASE_REPORT_CANDIDATE_MISMATCH");
++    } finally {
++      rmSync(control.root, { recursive: true, force: true });
++    }
++  });
++});
+diff --git a/scripts/__tests__/native-loading-proof.spec.ts b/scripts/__tests__/native-loading-proof.spec.ts
+new file mode 100644
+index 0000000..cbee184
+--- /dev/null
++++ b/scripts/__tests__/native-loading-proof.spec.ts
+@@ -0,0 +1,101 @@
++import { readFileSync } from "node:fs";
++import path from "node:path";
++import { runInNewContext } from "node:vm";
++import ts from "typescript";
++import { describe, expect, it } from "vitest";
++
++const repo = path.resolve(import.meta.dirname, "../..");
++const source = readFileSync(path.join(repo, "examples/native-smoke/src/game.ts"), "utf8");
++
++function loadingFixture() {
++  let now = 0;
++  let nextId = 0;
++  const timers = new Map<number, { at: number; call: () => void }>();
++  const frames = new Map<number, () => void>();
++  const constants = [...source.matchAll(/^const LOADING_PROOF_COMPILE_[A-Z_]+ = [\d_]+;$/gmu)]
++    .map((match) => match[0]).join("\n");
++  // Evaluate the actual fixture expression, not a second implementation. Three.js construction
++  // is the only stub; frame scheduling and wall time are independently controlled below.
++  const start = source.indexOf("const loadingProofRenderer =");
++  const end = source.indexOf("\nconst game:", start);
++  expect(start).toBeGreaterThan(-1);
++  expect(end).toBeGreaterThan(start);
++  const code = ts.transpileModule(`${constants}\n${source.slice(start, end)}\nloadingProofRenderer;`, {
++    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
++  }).outputText;
++  const renderer = runInNewContext(code, {
++    __TN_LOADING_PROOF__: true,
++    WebGPURenderer: class {},
++    performance: { now: () => now },
++    console: { info: () => undefined },
++    setTimeout: (call: () => void, delay: number) => {
++      const id = ++nextId;
++      timers.set(id, { at: now + delay, call });
++      return id;
++    },
++    clearTimeout: (id: number) => timers.delete(id),
++    requestAnimationFrame: (call: () => void) => {
++      const id = ++nextId;
++      frames.set(id, call);
++      return id;
++    },
++    cancelAnimationFrame: (id: number) => frames.delete(id),
++  }) as { webgpuFactory: (canvas: object, options: object) => { compileAsync: () => Promise<void> } };
++  let settled = false;
++  let error = "";
++  const promise = renderer.webgpuFactory({}, {}).compileAsync().then(
++    () => { settled = true; },
++    (failure: Error) => { settled = true; error = failure.message; },
++  );
++  const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
++  const advance = async (milliseconds: number, frameCount = 0) => {
++    now += milliseconds;
++    for (const [id, timer] of [...timers]) {
++      if (timer.at <= now) { timers.delete(id); timer.call(); }
++    }
++    for (let index = 0; index < frameCount; index += 1) {
++      const callbacks = [...frames.values()];
++      frames.clear();
++      for (const call of callbacks) call();
++    }
++    await flush();
++  };
++  return { advance, promise, timers, frames, state: () => ({ settled, error }) };
++}
++
++describe("native loading stall fixture", () => {
++  it("cannot end after three seconds with only 57 frame opportunities", async () => {
++    const fixture = loadingFixture();
++    await fixture.advance(3_000, 57);
++    expect(fixture.state().settled).toBe(false);
++    await fixture.advance(0, 4);
++    await fixture.promise;
++    expect(fixture.state()).toEqual({ settled: true, error: "" });
++    expect(fixture.timers.size).toBe(0);
++    expect(fixture.frames.size).toBe(0);
++  });
++
++  it("retains the minimum stall duration even with a fast frame pump", async () => {
++    const fixture = loadingFixture();
++    await fixture.advance(500, 120);
++    expect(fixture.state().settled).toBe(false);
++    await fixture.advance(2_500, 1);
++    await fixture.promise;
++    expect(fixture.state()).toEqual({ settled: true, error: "" });
++  });
++
++  it("fails within a bounded window and cancels observation if frames stop", async () => {
++    const fixture = loadingFixture();
++    await fixture.advance(10_000);
++    await fixture.promise;
++    expect(fixture.state().error).toContain("TN_LOADING_PROOF_FRAME_TIMEOUT");
++    expect(fixture.timers.size).toBe(0);
++    expect(fixture.frames.size).toBe(0);
++  });
++
++  it("keeps the independent native-present verifier at 60 frames", () => {
++    const verifier = readFileSync(path.join(repo,
++      "packages/runtime-native/scripts/verify-desktop-loading.mjs"), "utf8");
++    expect(verifier).toContain('Number(JSON.parse(line.slice("TN_PRESENTS_TICK:".length)).frames) >= 60');
++  });
++});
