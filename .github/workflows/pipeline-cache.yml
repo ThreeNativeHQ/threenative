@@ -47,6 +47,35 @@ jobs:
           echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "Physical performance resource provisioned: ${{ vars.TN_PERF_PHYSICAL_PROVISIONED == 'true' }}"
 
+  storage-contract:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - name: Execute the real filesystem contract under ASan and UBSan
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/pipeline-cache-storage
+          g++ -std=c++17 -Wall -Wextra -Werror -pthread \
+            -fsanitize=address,undefined -fno-omit-frame-pointer -g \
+            packages/runtime-native/tests/pipeline_cache_test.cpp \
+            packages/runtime-native/src/webgpu/pipeline_cache.cpp \
+            -o artifacts/pipeline-cache-storage/contract
+          ASAN_OPTIONS=detect_leaks=1 artifacts/pipeline-cache-storage/contract \
+            2>&1 | tee artifacts/pipeline-cache-storage/result.log
+          git rev-parse HEAD > artifacts/pipeline-cache-storage/revision.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pipeline-cache-storage-contract
+          path: artifacts/pipeline-cache-storage/*.txt
+          retention-days: 7
+
   patched-backend:
     needs: prepare
     name: Patched cache ABI (${{ matrix.target }})
@@ -149,7 +178,7 @@ jobs:
             -DTN_ENABLE_CANVAS2D=OFF -DTN_ENABLE_WEBTRANSPORT=OFF \
             -DTN_ENABLE_NATIVE_PHYSICS=OFF -DTN_ENABLE_VIDEO=OFF
           cmake --build packages/runtime-native/build/prd368 --target threenative-pipeline-cache-api-test -j 2
-      - name: Execute cache-attached and disabled controls
+      - name: Execute cache-attached, disabled, and independent-process controls
         shell: bash
         run: |
           set -euo pipefail
@@ -160,6 +189,8 @@ jobs:
           TN_PIPELINE_CACHE=0 "$executable" 2>&1 | tee artifacts/pipeline-cache-host/disabled.log
           grep 'host cache mode=attached' artifacts/pipeline-cache-host/attached.log
           grep 'host cache mode=disabled' artifacts/pipeline-cache-host/disabled.log
+          node packages/runtime-native/scripts/verify-pipeline-cache-relaunch.mjs \
+            "$executable" artifacts/pipeline-cache-host/relaunch
           git rev-parse HEAD > artifacts/pipeline-cache-host/revision.txt
       - uses: actions/upload-artifact@v4
         if: always()

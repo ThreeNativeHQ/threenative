@@ -1,0 +1,509 @@
+diff --git a/packages/runtime-native/CMakeLists.txt b/packages/runtime-native/CMakeLists.txt
+index a67c758..0075ecd 100644
+--- a/packages/runtime-native/CMakeLists.txt
++++ b/packages/runtime-native/CMakeLists.txt
+@@ -1425,6 +1425,8 @@ set(MYSTRAL_SOURCES
+     src/webgpu/bindings_commands.cpp
+     src/webgpu/bindings_frame_stream.cpp
+     src/webgpu/bindings_pipelines.cpp
++    src/webgpu/bindings_pipeline_cache.cpp
++    src/webgpu/pipeline_cache.cpp
+     src/webgpu/bindings_presentation.cpp
+     src/webgpu/bindings_resources.cpp
+     src/webgpu/bindings_screenshot.cpp
+@@ -1600,6 +1602,8 @@ target_compile_definitions(mystral-runtime PUBLIC
+     MYSTRAL_WEBGPU_BACKEND="${MYSTRAL_WEBGPU_NAME}"
+ )
+ 
++include(cmake/PipelineCacheIdentity.cmake)
++
+ if(TN_ENABLE_UI_OVERLAY)
+     target_link_libraries(mystral-runtime PRIVATE threenative-ui-overlay)
+     if(UNIX AND NOT APPLE)
+@@ -2075,6 +2079,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
+             ${WGPU_INCLUDE_DIR})
+     endif()
+ 
++    add_executable(threenative-pipeline-cache-test EXCLUDE_FROM_ALL
++        tests/pipeline_cache_test.cpp src/webgpu/pipeline_cache.cpp)
++
+     add_executable(threenative-pipeline-cache-api-test EXCLUDE_FROM_ALL
+         tests/pipeline_cache_api_test.cpp)
+     target_link_libraries(threenative-pipeline-cache-api-test PRIVATE mystral-runtime)
+@@ -2385,6 +2392,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
+     tn_register_contract_test(threenative-timer-engine-first-test)
+     tn_register_contract_test(threenative-async-pipeline-thread-test)
+     tn_register_contract_test(threenative-pipeline-cache-api-test)
++    tn_register_contract_test(threenative-pipeline-cache-test)
+     tn_register_contract_test(threenative-stall-budget-hitch-test)
+     tn_register_contract_test(threenative-timestamp-query-test)
+     if(TN_ENABLE_VIDEO)
+diff --git a/packages/runtime-native/include/mystral/runtime.h b/packages/runtime-native/include/mystral/runtime.h
+index 8aae4ab..f627e9d 100644
+--- a/packages/runtime-native/include/mystral/runtime.h
++++ b/packages/runtime-native/include/mystral/runtime.h
+@@ -29,6 +29,10 @@ struct RuntimeConfig {
+     uint32_t maxFps = 60;
+     // Test-only seam: install timers after JS engine creation. Production callers leave this false.
+     bool testEngineFirstTimers = false;
++    // Native host inputs, not game options. Packaged entrypoints hash the complete bundled source
++    // before device creation. Empty means unqualified (memory-only), never guess from a shim eval.
++    std::string pipelineCacheAppIdentity;
++    std::string pipelineCacheSourceIdentity;
+     // `display.backgroundMode`. Default pauses the loop off-screen; "continue" is the named
+     // override, and it turns pausing off without turning the lifecycle markers off.
+     platform::BackgroundMode backgroundMode = platform::BackgroundMode::Pause;
+diff --git a/packages/runtime-native/scripts/verify-native-contracts.mjs b/packages/runtime-native/scripts/verify-native-contracts.mjs
+index 3fe4eee..98eccda 100644
+--- a/packages/runtime-native/scripts/verify-native-contracts.mjs
++++ b/packages/runtime-native/scripts/verify-native-contracts.mjs
+@@ -21,6 +21,9 @@ const physicsTarget = "threenative-physics-actuation-bindings-test";
+ const videoTarget = "threenative-video-recorder-state-test";
+ 
+ export const executionContracts = {
++  "threenative-pipeline-cache-test": {
++    invocations: [{ args: [], passLine: "pipeline cache filesystem contract passed:" }],
++  },
+   "threenative-audio-decode-ogg-test": {
+     invocations: [{ args: [], passLine: "native Ogg Vorbis decode contract passed on " }],
+   },
+diff --git a/packages/runtime-native/src/cli/main.cpp b/packages/runtime-native/src/cli/main.cpp
+index d6dd1de..056909d 100644
+--- a/packages/runtime-native/src/cli/main.cpp
++++ b/packages/runtime-native/src/cli/main.cpp
+@@ -13,6 +13,7 @@
+ #include "mystral/js/engine.h"
+ #include "mystral/cold_start.h"
+ #include "mystral/runtime.h"
++#include "../webgpu/pipeline_cache.h"
+ #include "mystral/screenshot_gate.h"
+ #include "tool_dispatch.h"
+ #include "mystral/platform/ui_overlay.h"
+@@ -1110,6 +1111,16 @@ static std::unique_ptr<mystral::Runtime> createConfiguredRuntime(const CLIOption
+     config.vsync = opts.vsync;
+     config.maxFps = opts.maxFps;
+     config.debug = debugMode;
++    // An embedded release is one closed source graph. Development module trees and hot reload
++    // deliberately stay memory-only rather than identifying imported shaders by the entry alone.
++    if (!opts.watch && mystral::vfs::hasEmbeddedBundle()) {
++        std::vector<uint8_t> source;
++        if (mystral::vfs::readEmbeddedFile(mystral::vfs::getEmbeddedEntryPath(), source) && !source.empty()) {
++            config.pipelineCacheAppIdentity = mystral::vfs::getExecutablePath();
++            config.pipelineCacheSourceIdentity = mystral::webgpu::pipelineCacheDigest(
++                std::string_view(reinterpret_cast<const char*>(source.data()), source.size()));
++        }
++    }
+ 
+     // `display.backgroundMode` on desktop. Android carries it as manifest metadata; there is no
+     // manifest here, so the environment is the seam. Unrecognized values keep the default and say
+diff --git a/packages/runtime-native/src/platform/android_main.cpp b/packages/runtime-native/src/platform/android_main.cpp
+index 1f97c96..aa5dcfd 100644
+--- a/packages/runtime-native/src/platform/android_main.cpp
++++ b/packages/runtime-native/src/platform/android_main.cpp
+@@ -9,6 +9,7 @@
+ 
+ #include "mystral/runtime.h"
+ #include "mystral/cold_start.h"
++#include "../webgpu/pipeline_cache.h"
+ #include <SDL3/SDL.h>
+ #include <iostream>
+ #include <fstream>
+@@ -184,6 +185,12 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
+ 
+     // Create runtime config
+     mystral::RuntimeConfig config;
++    // The packaged bundle owns its Three.js/WGSL source graph. A loose script may import files
++    // outside it, so only the owned asset entry qualifies for cross-process compiler data.
++    if (scriptPath.find("asset://") == 0 && !scriptContent.empty()) {
++        config.pipelineCacheAppIdentity = scriptPath;
++        config.pipelineCacheSourceIdentity = mystral::webgpu::pipelineCacheDigest(scriptContent);
++    }
+     config.width = 0;   // Use full screen width (0 = auto)
+     config.height = 0;  // Use full screen height (0 = auto)
+     std::string windowTitle = "ThreeNative";
+diff --git a/packages/runtime-native/src/runtime.cpp b/packages/runtime-native/src/runtime.cpp
+index 60ce526..d3eeac9 100644
+--- a/packages/runtime-native/src/runtime.cpp
++++ b/packages/runtime-native/src/runtime.cpp
+@@ -726,6 +726,8 @@ public:
+         // For no-SDL mode, pass nullptr for surface (offscreen rendering uses texture directly)
+         WGPUSurface surface = config_.noSdl ? nullptr : webgpu_->getSurface();
+         bindingsState_ = webgpu::createBindingsState();
++        bindingsState_->pipelineCache.identity.app = config_.pipelineCacheAppIdentity;
++        bindingsState_->pipelineCache.identity.shaders = config_.pipelineCacheSourceIdentity;
+         if (!webgpu::initBindings(bindingsState_, jsEngine_.get(), webgpu_->getInstance(), webgpu_->getDevice(), webgpu_->getQueue(), surface, webgpu_->getPreferredFormat(), webgpu_->getPresentMode(), width_, height_, config_.debug, webgpu_->getAdapter())) {
+             std::cerr << "[Mystral] Failed to initialize WebGPU bindings" << std::endl;
+             webgpu::destroyBindingsState(bindingsState_);
+diff --git a/packages/runtime-native/src/webgpu/bindings_pipelines.cpp b/packages/runtime-native/src/webgpu/bindings_pipelines.cpp
+index f6e3aa3..7ad4b7b 100644
+--- a/packages/runtime-native/src/webgpu/bindings_pipelines.cpp
++++ b/packages/runtime-native/src/webgpu/bindings_pipelines.cpp
+@@ -353,7 +353,7 @@ std::string pipelineSourceHash(const std::string& code) {
+     return formatted.str();
+ }
+ 
+-static std::string pipelineJsonString(const std::string& value) {
++std::string pipelineJsonString(const std::string& value) {
+     std::ostringstream escaped;
+     escaped << '"';
+     for (const unsigned char character : value) {
+@@ -376,7 +376,7 @@ static std::string pipelineJsonString(const std::string& value) {
+     return escaped.str();
+ }
+ 
+-static const char* pipelineBackendName(WGPUBackendType backend) {
++const char* pipelineBackendName(WGPUBackendType backend) {
+     switch (backend) {
+         case WGPUBackendType_Null: return "null";
+         case WGPUBackendType_WebGPU: return "webgpu";
+@@ -430,7 +430,7 @@ void reportPipelineCaptureComplete(uint64_t eventCount) {
+ }
+ 
+ /** One writer at a time, so no marker line is ever spliced into the middle of another. */
+-static std::mutex& pipelineOutputMutex() {
++std::mutex& pipelineOutputMutex() {
+     static std::mutex mutex;
+     return mutex;
+ }
+@@ -526,72 +526,8 @@ void reportPipelineCheckpoint(BindingsState* state, uint64_t presentCount) {
+               << ",\"outstanding\":" << outstanding << "}" << std::endl;
+ }
+ 
+-// ============================================================================
+-// PRD-368: one device-owned pipeline cache, attached to every creation path
+-// ============================================================================
+-//
+-// The backend compiles the same pipelines from scratch on every launch — 8,513 ms across 101
+-// pipelines on a Pixel 8 — because nothing hands it the compiler artifacts the previous run
+-// produced. The maintained `patches/wgpu-native@25.0.2.2.patch` exposes wgpu's own pipeline cache
+-// through the C API; this owns exactly one of them per device and supplies it to all four creation
+-// paths: synchronous render, synchronous compute, and the two worker compiles.
+-//
+-// Three things this deliberately does not do. It does not persist anything — Phase 2 owns storage,
+-// and a cache that lives and dies with the process is still the thing every later phase attaches
+-// to. It does not claim hits: the backend reports no per-pipeline hit or miss, so the only honest
+-// statements are "a cache was supplied" and "the cache serialized N bytes". And it does not change
+-// which pipelines get compiled or when; warm-up scheduling and game materials are untouched.
+-//
+-// `TN_PIPELINE_CACHE=0` turns attachment off while leaving everything else identical. That is the
+-// negative control this phase is verified with, and the same switch Phase 3's measurement needs to
+-// separate driver warming from application-cache benefit.
+-
+-/** Whether the operator turned attachment off for this launch. */
+-static bool pipelineCacheDisabledByEnvironment() {
+-    const char* setting = std::getenv("TN_PIPELINE_CACHE");
+-    return setting != nullptr && std::string(setting) == "0";
+-}
+-
+-void initPipelineCache(BindingsState* state) {
+-    if (state == nullptr) return;
+-    PipelineCacheState& cache = state->pipelineCache;
+-#if !defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+-    cache.mode = "unsupported";
+-    cache.reason = "this build's WebGPU backend declares no pipeline cache API";
+-#else
+-    // The granted feature is recorded before the switch is read, so the disabled arm still reports
+-    // what the device actually granted. A control that also claimed "no feature" would hide the
+-    // one thing it varies.
+-    cache.featureGranted =
+-        state->device != nullptr &&
+-        wgpuDeviceHasFeature(state->device,
+-                             static_cast<WGPUFeatureName>(WGPUNativeFeature_PipelineCache)) != 0;
+-    if (state->device == nullptr) {
+-        cache.mode = "unavailable";
+-        cache.reason = "no device";
+-    } else if (!cache.featureGranted) {
+-        cache.mode = "unavailable";
+-        cache.reason = "the device was not granted the pipeline-cache feature";
+-    } else if (pipelineCacheDisabledByEnvironment()) {
+-        cache.mode = "disabled";
+-        cache.reason = "TN_PIPELINE_CACHE=0";
+-    } else {
+-        WGPUPipelineCacheDescriptor descriptor = {};
+-        const std::string label = "threenative-device-pipeline-cache";
+-        descriptor.label = {label.c_str(), label.size()};
+-        WGPUPipelineCache handle = wgpuDeviceCreatePipelineCache(state->device, &descriptor);
+-        if (handle == nullptr) {
+-            cache.mode = "unavailable";
+-            cache.reason = "the backend refused an empty pipeline cache";
+-        } else {
+-            cache.handle = const_cast<void*>(static_cast<const void*>(handle));
+-            cache.mode = "attached";
+-            cache.emptyBytes = pipelineCacheSerializedBytes(state);
+-        }
+-    }
+-#endif
+-    reportPipelineCacheState(state, "device");
+-}
++// PRD-368. Persistence and lifecycle live in bindings_pipeline_cache.cpp. Attachment stays beside
++// each native creation call. It reports supplies, not hits; warm-up and material choices are intact.
+ 
+ /**
+  * The handle a creation call should chain, or `nullptr`.
+@@ -630,46 +566,6 @@ static const WGPUChainedStruct* attachPipelineCache(BindingsState* state,
+ }
+ #endif
+ 
+-size_t pipelineCacheSerializedBytes(BindingsState* state) {
+-#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+-    WGPUPipelineCache handle = livePipelineCache(state);
+-    if (handle == nullptr) return 0;
+-    WGPUPipelineCacheData data = wgpuPipelineCacheGetData(handle);
+-    const size_t size = data.size;
+-    wgpuPipelineCacheDataFreeMembers(data);
+-    return size;
+-#else
+-    (void)state;
+-    return 0;
+-#endif
+-}
+-
+-void releasePipelineCache(BindingsState* state) {
+-    if (state == nullptr) return;
+-#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+-    WGPUPipelineCache handle = livePipelineCache(state);
+-    if (handle == nullptr) return;
+-    reportPipelineCacheState(state, "shutdown");
+-    state->pipelineCache.handle = nullptr;
+-    wgpuPipelineCacheRelease(handle);
+-#endif
+-}
+-
+-void reportPipelineCacheState(BindingsState* state, const char* phase) {
+-    if (state == nullptr) return;
+-    const PipelineCacheState& cache = state->pipelineCache;
+-    std::lock_guard<std::mutex> outputLock(pipelineOutputMutex());
+-    std::cout << "TN_PIPELINE_CACHE:{\"version\":1,\"phase\":" << pipelineJsonString(phase)
+-              << ",\"mode\":" << pipelineJsonString(cache.mode)
+-              << ",\"featureGranted\":" << (cache.featureGranted ? "true" : "false")
+-              << ",\"renderAttached\":" << cache.renderAttached.load()
+-              << ",\"computeAttached\":" << cache.computeAttached.load()
+-              << ",\"emptyBytes\":" << cache.emptyBytes
+-              << ",\"serializedBytes\":" << pipelineCacheSerializedBytes(state);
+-    if (!cache.reason.empty()) std::cout << ",\"reason\":" << pipelineJsonString(cache.reason);
+-    std::cout << "}" << std::endl;
+-}
+-
+ void releaseComputePipelineRegistryEntry(BindingsState* state, uint64_t pipelineId) {
+     if (!state) return;
+     const auto it = state->registries.computePipelineRegistry.find(pipelineId);
+@@ -1055,7 +951,7 @@ static js::JSValueHandle createComputePipelineImpl(BindingsState* state, Binding
+                                     completion.enqueuedMs = enqueuedMs;
+                                     completion.startedMs = startedMs;
+                                     completion.computePipeline =
+-                                        wgpuDeviceCreateComputePipeline(device, &descriptor);
++                                        createCachedComputePipeline(state, device, &descriptor);
+                                     completion.finishedMs = pipelineClockMs();
+                                     completion.vertexHash = computeHash;
+                                     completion.vertexBytes = computeBytes;
+@@ -1081,7 +977,7 @@ static js::JSValueHandle createComputePipelineImpl(BindingsState* state, Binding
+                             pipelineDesc.nextInChain =
+                                 attachPipelineCache(state, cacheExtension, false);
+ #endif
+-                            WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(state->device, &pipelineDesc);
++                            WGPUComputePipeline pipeline = createCachedComputePipeline(state, state->device, &pipelineDesc);
+                             observation.finishedMs = pipelineClockMs();
+                             if (!pipeline) {
+                                 emitPipelineEvent(state, observation, 0, "sync", false,
+@@ -1548,7 +1444,7 @@ static js::JSValueHandle createRenderPipelineImpl(BindingsState* state, BindingD
+                                         attachPipelineCache(state, cacheExtension, true);
+ #endif
+                                     completion.renderPipeline =
+-                                        wgpuDeviceCreateRenderPipeline(device, &request);
++                                        createCachedRenderPipeline(state, device, &request);
+                                     completion.finishedMs = pipelineClockMs();
+                                     if (completion.renderPipeline == nullptr) {
+                                         completion.error = "Failed to create render pipeline";
+@@ -1574,7 +1470,7 @@ static js::JSValueHandle createRenderPipelineImpl(BindingsState* state, BindingD
+                             pipelineDesc.nextInChain =
+                                 attachPipelineCache(state, cacheExtension, true);
+ #endif
+-                            WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(state->device, &pipelineDesc);
++                            WGPURenderPipeline pipeline = createCachedRenderPipeline(state, state->device, &pipelineDesc);
+                             observation.finishedMs = pipelineClockMs();
+                             if (!pipeline) {
+                                 rollbackBlendStates();
+diff --git a/packages/runtime-native/src/webgpu/bindings_pipelines.h b/packages/runtime-native/src/webgpu/bindings_pipelines.h
+index 7cfc864..f920a90 100644
+--- a/packages/runtime-native/src/webgpu/bindings_pipelines.h
++++ b/packages/runtime-native/src/webgpu/bindings_pipelines.h
+@@ -24,6 +24,15 @@ void shutdownAsyncPipelineCompiles(BindingsState* state);
+ // pool has been joined. Both are safe to call on a backend without the cache API: they record why.
+ void initPipelineCache(BindingsState* state);
+ void releasePipelineCache(BindingsState* state);
++void pollPipelineCachePersistence(BindingsState* state);
++WGPURenderPipeline createCachedRenderPipeline(BindingsState* state, WGPUDevice device,
++                                              const WGPURenderPipelineDescriptor* descriptor);
++WGPUComputePipeline createCachedComputePipeline(BindingsState* state, WGPUDevice device,
++                                                const WGPUComputePipelineDescriptor* descriptor);
++// Shared by the census and persistence reporter, so concurrent marker lines cannot interleave.
++std::string pipelineJsonString(const std::string& value);
++const char* pipelineBackendName(WGPUBackendType backend);
++std::mutex& pipelineOutputMutex();
+ /** Bytes the live cache serializes right now; 0 when there is no cache. */
+ size_t pipelineCacheSerializedBytes(BindingsState* state);
+ /** The `TN_PIPELINE_CACHE` line: mode, reason, attachments and serialized size. */
+diff --git a/packages/runtime-native/src/webgpu/bindings_presentation.cpp b/packages/runtime-native/src/webgpu/bindings_presentation.cpp
+index c81b234..e00ff97 100644
+--- a/packages/runtime-native/src/webgpu/bindings_presentation.cpp
++++ b/packages/runtime-native/src/webgpu/bindings_presentation.cpp
+@@ -675,6 +675,7 @@ void presentPendingSurface(BindingsState* state) {
+             // the counts are read at an instant a reader can name. Prints only when they changed,
+             // and says nothing about whether the game is playable — see reportPipelineCheckpoint.
+             reportPipelineCheckpoint(state, state->profiling.presentCount);
++            pollPipelineCachePersistence(state);
+         } else {
+             std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
+         }
+diff --git a/packages/runtime-native/src/webgpu/bindings_state.h b/packages/runtime-native/src/webgpu/bindings_state.h
+index d7a69f9..c599ed2 100644
+--- a/packages/runtime-native/src/webgpu/bindings_state.h
++++ b/packages/runtime-native/src/webgpu/bindings_state.h
+@@ -6,6 +6,9 @@
+ #include <cstddef>
+ #include <deque>
+ #include <functional>
++#include <future>
++#include <shared_mutex>
++#include "pipeline_cache.h"
+ #include <thread>
+ #include <cstdint>
+ #include <memory>
+@@ -443,6 +446,22 @@ struct PipelineCacheState {
+     std::atomic<uint64_t> computeAttached{0};
+     /** Bytes the empty cache serialized at device init, the floor a population claim beats. */
+     size_t emptyBytes = 0;
++    // Written only on the game thread, before any creation request. The source identity is
++    // provided by the entrypoint, not inferred from a shim eval that may precede the game.
++    PipelineCacheIdentity identity;
++    std::shared_ptr<PipelineCacheStore> store;
++    std::string loadOutcome = "unavailable";
++    size_t loadedBytes = 0;
++    size_t serializedBytes = 0;
++    double loadMs = 0;
++    PipelineCacheWrite lastWrite{"not-attempted", "", 0, 0};
++    // Compiles take shared ownership; serialization takes exclusive ownership only around the
++    // backend snapshot, never during disk I/O. Two compiler workers remain concurrent.
++    std::shared_mutex snapshotMutex;
++    std::future<PipelineCacheWrite> persistence;
++    uint64_t observedAttachments = 0;
++    uint64_t attemptedAttachments = 0;
++    bool stopping = false;
+ };
+ 
+ struct BindingsState {
+diff --git a/packages/runtime-native/tests/pipeline_cache_api_test.cpp b/packages/runtime-native/tests/pipeline_cache_api_test.cpp
+index ed45931..af39207 100644
+--- a/packages/runtime-native/tests/pipeline_cache_api_test.cpp
++++ b/packages/runtime-native/tests/pipeline_cache_api_test.cpp
+@@ -396,8 +396,13 @@ void checkHostPipelineCache(mystral::Runtime& runtime) {
+     }
+     require(renderAttached >= 5, "both host render paths must attach the device cache");
+     require(computeAttached >= 5, "both host compute paths must attach the device cache");
+-    require(before == cache.emptyBytes, "the pre-compile cache was not the empty one");
+-    require(after > before, "the host compiled four pipelines and the device cache did not grow");
++    if (cache.loadOutcome == "accepted") {
++        require(before > cache.emptyBytes, "the accepted host cache carried no compiled data");
++        require(after >= before, "a populated host cache lost compiled data");
++    } else {
++        require(before == cache.emptyBytes, "the pre-compile cache was not the empty one");
++        require(after > before, "the host compiled ten pipelines and the device cache did not grow");
++    }
+ }
+ 
+ size_t serializedData(WGPUPipelineCache cache, std::vector<uint8_t>& bytes) {
+@@ -413,8 +418,13 @@ size_t serializedData(WGPUPipelineCache cache, std::vector<uint8_t>& bytes) {
+ 
+ }  // namespace
+ 
+-int main() {
++int main(int argc, char** argv) {
++    const std::string arm = argc > 1 ? argv[1] : "";
+ #if !defined(MYSTRAL_WGPU_PIPELINE_CACHE)
++    if (!arm.empty()) {
++        std::cerr << "persistent cache proof requires the patched backend, not unsupported\n";
++        return 1;
++    }
+     // Either a backend that is not wgpu-native, or a stock wgpu-native prebuilt: the maintained
+     // patch is what declares the cache API, and CMake defines this only when the installed header
+     // actually carries it. Reporting unavailable is the contract, not a skipped test.
+@@ -427,6 +437,11 @@ int main() {
+     config.width = 1;
+     config.height = 1;
+     config.noSdl = true;
++    if (!arm.empty()) {
++        config.pipelineCacheAppIdentity = "pipeline-cache-host-contract";
++        config.pipelineCacheSourceIdentity = mystral::webgpu::pipelineCacheDigest(
++            std::string(kHostPipelineScript) + (arm == "changed-source" ? "\n// source changed" : ""));
++    }
+     auto runtime = mystral::Runtime::create(config);
+     require(runtime != nullptr, "create headless runtime");
+ 
+@@ -448,6 +463,67 @@ int main() {
+     // PRD-368 Phase 1B first: it reads the host's own cache, and the raw-API probe below creates a
+     // second device whose pipelines must not be mistaken for the host's.
+     checkHostPipelineCache(*runtime);
++    if (!arm.empty()) {
++        using namespace mystral::webgpu;
++        auto* state = static_cast<BindingsState*>(runtime->getWebGPUBindingsState());
++        auto& cache = state->pipelineCache;
++        if (arm == "disabled") {
++            require(cache.mode == "disabled" && cache.loadOutcome == "disabled", "disabled is not a cache miss");
++            require(!cache.store && !cache.persistence.valid(), "disabled launch must not touch disk");
++        } else {
++            require(cache.mode == "attached" && cache.store != nullptr, "persistence identity must be qualified");
++            const std::string expected = arm == "missing" ? "missing" :
++                (arm == "rejected" || arm == "changed-source" || arm == "backend-rejected" ? "rejected" : "accepted");
++            require(cache.loadOutcome == expected, "unexpected persistent cache load outcome");
++            if (arm == "backend-rejected") require(cache.reason == "backend-rejected", "strict backend rejection must be observable");
++            if (arm == "changed-source") require(cache.reason == "identity-mismatch", "changed bundled shaders must invalidate storage");
++            // This headless contract drives the host's boundary counters explicitly. It proves
++            // scheduling/lifetime, NOT a real display or a Pixel first-playable measurement.
++            state->profiling.firstPresentReported = false;
++            state->profiling.presentCount = 1;
++            pollPipelineCachePersistence(state);
++            require(!cache.persistence.valid(), "snapshot must not start before first present");
++            state->profiling.firstPresentReported = true;
++            pollPipelineCachePersistence(state);
++            require(!cache.persistence.valid(), "snapshot must not start on first present");
++            state->profiling.presentCount = 2;
++            pollPipelineCachePersistence(state);
++            require(!cache.persistence.valid(), "observe a stable compile generation before snapshot");
++            state->profiling.presentCount = 3;
++            pollPipelineCachePersistence(state);
++            require(cache.persistence.valid(), "settled cache must save while the process is alive");
++            if (arm == "shutdown") {
++                runtime.reset(); // joins the active snapshot before device/state destruction
++                std::cout << "persistent cache shutdown contract passed\n" << std::flush;
++                return 0;
++            }
++            if (arm == "concurrent") {
++                require(runtime->evalScript(kHostPipelineScript, "concurrent_cache_compiles.js"), "compile while snapshot is active");
++                drainHostCompiles(state);
++            }
++            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
++            do {
++                ++state->profiling.presentCount;
++                pollPipelineCachePersistence(state);
++                if (cache.lastWrite.outcome != "not-attempted" && !cache.persistence.valid() &&
++                    cache.attemptedAttachments == cache.renderAttached.load() + cache.computeAttached.load()) break;
++                std::this_thread::sleep_for(std::chrono::milliseconds(1));
++            } while (std::chrono::steady_clock::now() < deadline);
++            require(!cache.persistence.valid(), "snapshot must finish in bounded time");
++            if (arm == "read-only") {
++                require(cache.lastWrite.outcome == "unavailable", "unwritable storage must fail softly and report failure");
++            } else {
++                require(cache.lastWrite.outcome == "stored", "populated compiler data must be durably stored");
++                require(cache.lastWrite.bytes > cache.emptyBytes, "stored bytes must exceed the empty cache floor");
++                require(cache.store->read().outcome == "validated", "live store must read back a valid envelope");
++            }
++        }
++        std::cout << "persistent cache relaunch contract passed: " << arm << "\n" << std::flush;
++        std::cerr << std::flush;
++        // Deliberately bypass Runtime destruction. A shutdown-only save would fail the next
++        // independent process, just as Android force-stop bypasses ordinary destructors.
++        std::_Exit(0);
++    }
+ 
+     WGPUAdapter adapter = requestVulkanAdapter(instance);
+     if (adapter == nullptr) {
