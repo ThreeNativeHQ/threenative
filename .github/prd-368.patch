@@ -1,0 +1,227 @@
+diff --git a/packages/playtest/src/runner/pipeline-cache-observations.ts b/packages/playtest/src/runner/pipeline-cache-observations.ts
+--- a/packages/playtest/src/runner/pipeline-cache-observations.ts
++++ b/packages/playtest/src/runner/pipeline-cache-observations.ts
+@@ -32,9 +32,14 @@
+     if (record.phase !== "api-probe" && !["attached", "disabled", "unavailable", "unsupported"].includes(String(record.mode))) malformed();
+     if (record.load !== undefined && !["accepted", "missing", "rejected", "unavailable", "disabled"].includes(String(record.load))) malformed();
+     if (record.store !== undefined && !["stored", "not-attempted", "rejected", "unavailable"].includes(String(record.store))) malformed();
+-    for (const field of ["emptyBytes", "serializedBytes", "loadedBytes", "storedBytes", "loadMs", "storeMs", "snapshotMs", "renderAttached", "computeAttached"]) {
++    for (const field of ["emptyBytes", "serializedBytes", "loadedBytes", "storedBytes", "loadMs", "storeMs", "snapshotMs"]) {
+       const number = record[field];
+       if (number !== undefined && (typeof number !== "number" || !Number.isFinite(number) || number < 0)) malformed();
++    }
++    for (const field of ["renderAttached", "computeAttached"]) {
++      const count = record[field];
++      if (count === undefined || (record.phase === "api-probe" && typeof count === "boolean")) continue;
++      if (typeof count !== "number" || !Number.isFinite(count) || count < 0) malformed();
+     }
+     for (const field of ["reason", "storeReason"]) if (record[field] !== undefined && typeof record[field] !== "string") malformed();
+     if (record.identity !== undefined && (typeof record.identity !== "string" || !/^[a-f0-9]{64}$/u.test(record.identity))) malformed();
+diff --git a/packages/playtest/__tests__/pipeline-cache-perf.spec.ts b/packages/playtest/__tests__/pipeline-cache-perf.spec.ts
+--- a/packages/playtest/__tests__/pipeline-cache-perf.spec.ts
++++ b/packages/playtest/__tests__/pipeline-cache-perf.spec.ts
+@@ -20,6 +20,11 @@
+     expect(parsePipelineCacheObservations(`${line}\n09-10 12:00 I MystralStdio: ${line}`)).toHaveLength(1);
+     expect(parsePipelineCacheObservations(`${line}\n${line.replace('"loadedBytes":256', '"loadedBytes":512')}`)).toHaveLength(2);
+   });
++  it("accepts the existing native API-probe boolean attachment schema without calling it a hit", () => {
++    const probe = { version: 1, phase: "api-probe", renderAttached: true, computeAttached: true, serializedBytes: 96 };
++    expect(parsePipelineCacheObservations(`TN_PIPELINE_CACHE:${JSON.stringify(probe)}`)).toEqual([probe]);
++    expect(() => parsePipelineCacheObservations(`TN_PIPELINE_CACHE:${JSON.stringify({ ...record, renderAttached: true })}`)).toThrow("TN_PERF_PIPELINE_CACHE_MALFORMED");
++  });
+   it("reports old memory-only captures as unreported persistence, not cache misses", () => {
+     const old = parsePipelineCacheObservations('TN_PIPELINE_CACHE:{"version":1,"phase":"device","mode":"attached","serializedBytes":32}');
+     expect(old[0]?.load).toBeUndefined();
+diff --git a/packages/runtime-native/CMakeLists.txt b/packages/runtime-native/CMakeLists.txt
+--- a/packages/runtime-native/CMakeLists.txt
++++ b/packages/runtime-native/CMakeLists.txt
+@@ -2409,6 +2409,7 @@
+     tn_register_contract_test(threenative-timer-engine-first-test)
+     tn_register_contract_test(threenative-async-pipeline-thread-test)
+     tn_register_contract_test(threenative-pipeline-cache-api-test)
++    tn_register_contract_test(threenative-pipeline-cache-lifecycle-test)
+     tn_register_contract_test(threenative-pipeline-cache-test)
+     tn_register_contract_test(threenative-stall-budget-hitch-test)
+     tn_register_contract_test(threenative-timestamp-query-test)
+diff --git a/packages/runtime-native/scripts/verify-native-contracts.mjs b/packages/runtime-native/scripts/verify-native-contracts.mjs
+--- a/packages/runtime-native/scripts/verify-native-contracts.mjs
++++ b/packages/runtime-native/scripts/verify-native-contracts.mjs
+@@ -147,6 +147,10 @@
+   // PRD-327 Phase 4. Needs no display and no GPU: it drives the header-only launch instruments
+   // directly — launch attribution, the post-present per-frame pipelineCompile accumulator, and
+   // the TN_FRAME_HITCH payload that names a late synchronous compile.
++  // Header-only CPU drivers can prove envelope/device lifetime, never compiled-data growth.
++  "threenative-pipeline-cache-lifecycle-test": {
++    invocations: [{ args: [], passLine: "native pipeline cache contract passed" }],
++  },
+   // PRD-368 Phases 1A and 1B. Needs no display: it drives the patched wgpu-native cache API by
+   // hand on a headless device, then drives four pipelines through the host's own JavaScript
+   // bindings and requires the device cache to grow past the bytes an empty one holds. It passes on
+diff --git a/docs/PRDs/assets/PRD-368-compiled-pipelines-survive-a-relaunch.md b/docs/PRDs/assets/PRD-368-compiled-pipelines-survive-a-relaunch.md
+--- a/docs/PRDs/assets/PRD-368-compiled-pipelines-survive-a-relaunch.md
++++ b/docs/PRDs/assets/PRD-368-compiled-pipelines-survive-a-relaunch.md
+@@ -1,11 +1,18 @@
+ # PRD-368 — Compiled pipelines survive a relaunch
+ 
+-**Status:** PARTIAL — Phase 1A and Phase 1B executed on Linux/Vulkan, 2026-09-09: the host now compiles every pipeline through one device-owned cache. Persistence across restarts, Android, and every timing claim remain open. **Layer:** native engine; only the host can persist backend compiler data.
++**Status:** PARTIAL — persistence and paired-measurement implementation added on 2026-09-10; Linux/Android dependency reconstruction and filesystem contracts executed. Full host-lifecycle/shared gates are still being verified; physical Pixel 8 timing, visual acceptance, and independent review remain open. See the [current verification record](../../verification/prd-368-persistence-2026-09-10.md). **Layer:** native engine; only the host can persist backend compiler data.
+ **Complexity:** 3 (10+ files) + 2 (new cache lifecycle) + 2 (concurrency) = **7 → HIGH mode**.
+ **Depends on:** [367](PRD-367-doctor-explains-shader-compilation.md) for measured acceptance and
+ the [shared execution contract](README.md). Dependency feasibility can run first.
+ 
+-## Latest decision and handoff — 2026-09-09
++## Current handoff — 2026-09-10
++
++The implementation, reproducible commands, CI evidence, and remaining physical-device acceptance
++are recorded in [PRD-368 persistence verification](../../verification/prd-368-persistence-2026-09-10.md).
++The sections below retain the earlier Phase 1 evidence; their historical “next work” is superseded
++by that record. Do not mark this PRD DONE from an accepted cache envelope or a CPU-driver test.
++
++## Earlier decision and handoff — 2026-09-09
+ 
+ **Continue with a small, version-pinned patch to wgpu-native `v25.0.2.2`, maintained in this
+ repository.** Keep the existing backend and dependency version. The owner selected solving startup
+diff --git a/packages/runtime-native/docs/G5-profiling.md b/packages/runtime-native/docs/G5-profiling.md
+--- a/packages/runtime-native/docs/G5-profiling.md
++++ b/packages/runtime-native/docs/G5-profiling.md
+@@ -141,3 +141,24 @@
+ `scheduler-quickjs-contract.log`). The required native test now executes both host variants;
+ the existing QuickJS CI build additionally builds `mystral`. This extends JS-engine coverage,
+ not platform coverage: physical Android and iOS/JSC remain unexecuted for this change.
++
++
++## PRD-368 qualified compiler-cache persistence — 2026-09-10
++
++The device owner now loads a versioned app/build/shader/adapter/driver/backend/ABI-qualified
++compiler blob before pipeline creation. After settled compiles and later presents, one background
++snapshot writes a bounded, checksum-validated, atomic replacement in existing app-private storage.
++The compile workers and snapshot share device lifetime; teardown joins both. Unsupported backends
++remain explicit. The game’s materials, warm-up choices, and scheduling policy are unchanged.
++
++`TN_PIPELINE_CACHE` now separates load acceptance/rejection, serialized bytes, durable store
++outcome, and load/snapshot/write costs. The owned cold-start CLI accepts `--pipeline-cache-pairs`
++and `--startup-scenario`; the same installed APK runs empty, populated, and disabled-before/after
++controls. Its validator requires complete matching compile populations, observed first-playable
++and movement receipts, and qualified device conditions. A successful blob import is not a hit.
++
++[The verification record](../../../docs/verification/prd-368-persistence-2026-09-10.md) distinguishes
++executed sanitizer/filesystem and pinned dependency builds from host lifetime and physical timing
++evidence still being collected. Hosted Lavapipe serializes only a header: its separate lifecycle
++contract cannot prove compiled-data persistence, a speedup, or Pixel performance. The original
++compiled-data-growth test stays strict. No <=8,000 ms or >=75% startup compile reduction is claimed.
+diff --git a/.github/workflows/pipeline-cache.yml b/.github/workflows/pipeline-cache.yml
+--- a/.github/workflows/pipeline-cache.yml
++++ b/.github/workflows/pipeline-cache.yml
+@@ -1,54 +1,25 @@
+ name: Pipeline cache verification
+ on:
+   workflow_dispatch:
+-  push:
+-    branches: [feat/prd-368-persistent-pipeline-cache]
++  pull_request:
++    branches: [main]
+     paths:
+       - .github/workflows/pipeline-cache.yml
+-      - .github/prd-368.patch
+       - packages/runtime-native/**
+       - packages/playtest/**
+       - patches/wgpu-native@25.0.2.2.patch
+ permissions:
+   contents: read
+ concurrency:
+   group: pipeline-cache-${{ github.ref }}
+-  cancel-in-progress: false
++  cancel-in-progress: true
+ jobs:
+-  prepare:
+-    # Temporary delivery bridge for this feature branch; removed before final review.
+-    runs-on: ubuntu-24.04
+-    timeout-minutes: 5
+-    permissions:
+-      contents: write
+-    outputs:
+-      revision: ${{ steps.apply.outputs.revision }}
+-    steps:
+-      - uses: actions/checkout@v7
+-      - id: apply
+-        shell: bash
+-        run: |
+-          set -euo pipefail
+-          test "$GITHUB_REF" = refs/heads/feat/prd-368-persistent-pipeline-cache
+-          if test -f .github/prd-368.patch; then
+-            git apply --check .github/prd-368.patch
+-            git apply --index .github/prd-368.patch
+-            git rm .github/prd-368.patch
+-            git config user.name 'github-actions[bot]'
+-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+-            git commit -m 'feat(playtest): qualify paired cache startup measurements and Android controls'
+-            git push origin HEAD:feat/prd-368-persistent-pipeline-cache
+-          fi
+-          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+-          echo "Physical performance resource provisioned: ${{ vars.TN_PERF_PHYSICAL_PROVISIONED == 'true' }}"
+   storage-contract:
+-    needs: prepare
+     runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     steps:
+       - uses: actions/checkout@v7
+         with:
+-          ref: ${{ needs.prepare.outputs.revision }}
+           persist-credentials: false
+       - name: Execute filesystem faults under ASan and UBSan
+         shell: bash
+@@ -70,18 +41,17 @@
+   measurement-contract:
+-    needs: prepare
+     runs-on: ubuntu-24.04
+     timeout-minutes: 20
+     steps:
+       - uses: actions/checkout@v7
+         with:
+-          ref: ${{ needs.prepare.outputs.revision }}
+           persist-credentials: false
+       - uses: ./.github/actions/pnpm
+       - uses: actions/setup-node@v7
+         with:
+           node-version: '22'
+           cache: pnpm
+       - run: pnpm install --frozen-lockfile
++      - uses: ./.github/actions/workspace-dist
+       - name: Verify protocol, parser integration, and owned playtest build
+         shell: bash
+         run: |
+@@ -112,19 +82,17 @@
+   patched-backend:
+-    needs: prepare
+     name: Patched cache ABI (${{ matrix.target }})
+     runs-on: ubuntu-24.04
+     timeout-minutes: 45
+     strategy:
+       fail-fast: false
+       matrix:
+         target: [linux-x64, android-arm64]
+     env:
+       CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/wgpu-cache-${{ matrix.target }}
+     steps:
+       - uses: actions/checkout@v7
+         with:
+-          ref: ${{ needs.prepare.outputs.revision }}
+           persist-credentials: false
+       - uses: actions/setup-node@v7
+         with:
+           node-version: '22'
+@@ -190,13 +158,12 @@
+   host-contract:
+-    needs: [prepare, patched-backend]
++    needs: patched-backend
+     name: Real device and storage lifetime (header-only CPU driver, not compiled-data proof)
+     runs-on: ubuntu-24.04
+     timeout-minutes: 45
+     steps:
+       - uses: actions/checkout@v7
+         with:
+-          ref: ${{ needs.prepare.outputs.revision }}
+           persist-credentials: false
+       - uses: ./.github/actions/pnpm
+       - uses: actions/setup-node@v7
+         with:
