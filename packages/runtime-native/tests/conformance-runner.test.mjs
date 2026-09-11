@@ -1153,12 +1153,20 @@ test("native workflow runs the complete checksum-locked Android emulator parity 
   assert.doesNotMatch(workflow, /implemented-only/u);
 });
 
-test("Android browser references build workspace imports before conformance bundling", () => {
+test("parity lanes restore workspace imports before conformance bundling", () => {
   const workflow = readFileSync(join(root, "../../.github/workflows/native-platforms.yml"), "utf8");
-  const build = workflow.indexOf("pnpm tsx scripts/workspace-packages.ts build");
-  const capture = workflow.indexOf("- name: Capture browser references");
-  assert.ok(build >= 0, "Android parity must build workspace packages before bundling example rows");
-  assert.ok(build < capture, "workspace package builds must precede browser reference capture");
+  for (const name of ["android-emulator-parity", "desktop-parity"]) {
+    const start = workflow.indexOf(`  ${name}:\n`);
+    assert.ok(start >= 0, `missing parity lane: ${name}`);
+    const tail = workflow.slice(start + `  ${name}:\n`.length);
+    const next = tail.search(/^ {2}[a-z][a-z-]*:\n/mu);
+    const section = next < 0 ? tail : tail.slice(0, next);
+    const build = section.indexOf("uses: ./.github/actions/workspace-dist");
+    const capture = section.indexOf("- name: Capture browser references");
+    assert.ok(build >= 0, `${name} must restore or build its workspace imports`);
+    assert.ok(capture > build, `${name} must have workspace imports before conformance bundling`);
+    assert.doesNotMatch(section, /pnpm tsx scripts\/workspace-packages\.ts build/u);
+  }
 });
 
 test("the parity registry binds the simultaneous stick-and-jump proof to Android injection", () => {
