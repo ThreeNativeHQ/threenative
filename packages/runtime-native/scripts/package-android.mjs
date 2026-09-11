@@ -16,6 +16,7 @@ import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { downloadReleaseArtifact, releaseManifestUrl, verifyChecksum } from './install-prebuilt.mjs';
 import { assertAndroidAssetsDecodable, deriveAndroidWebpSupport } from './asset-preflight.mjs';
+import { assertAndroidArtifact16KbAlignment } from './check-android-16kb-alignment.mjs';
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const GRADLE_WRAPPER_URL =
@@ -728,7 +729,20 @@ export async function packageAndroid(
       mkdirSync(dirname(output), { recursive: true });
       copyFileSync(apk, output);
     }
-    console.log(`ThreeNative Android APK: ${output}`);
+    // The 16 KB census runs on the artifact that ships, not on the build directory it came from.
+    // Gradle pulls libraries out of AARs and prebuilt sets this file never names, so the only
+    // complete list of what a device will map is the one inside the finished APK.
+    const census = assertAndroidArtifact16KbAlignment(output, options.artifact16Kb ?? {});
+    for (const library of census.libraries) {
+      console.log(
+        `  16 KB ok: ${library.entry} (${library.compression}, offset 0x${library.dataOffset.toString(16)}, ` +
+          `LOAD ${library.alignments.map((value) => `0x${value.toString(16)}`).join(', ')})`,
+      );
+    }
+    console.log(
+      `ThreeNative Android APK: ${output} — ${census.libraries.length} native libraries 16 KB clean` +
+        `${census.zipalign ? `, archive offsets confirmed by ${census.zipalign}` : ''}`,
+    );
     return output;
   } finally {
     restoreFiles();
