@@ -25,15 +25,52 @@ export const PREBUILT_ASSET_NAMES = Object.freeze({
   'android-x86_64-libcxx': 'threenative-libcxx-android-x86_64.so',
   'android-x86_64-v8-snapshot': 'threenative-v8-snapshot-android-x86_64.bin',
   'darwin-arm64': 'threenative-runtime-darwin-arm64',
+  'darwin-arm64-tools': 'threenative-tools-darwin-arm64',
   'ios-simulator-arm64': 'threenative-ios-simulator-arm64.zip',
   'linux-x64': 'threenative-runtime-linux-x64',
+  'linux-x64-tools': 'threenative-tools-linux-x64',
   'win32-x64': 'threenative-runtime-win32-x64.exe',
+  'win32-x64-tools': 'threenative-tools-win32-x64.exe',
 });
 
 /** Every key a packaged consumer or native release workflow may request. */
 export const PREBUILT_KEYS = Object.freeze(Object.keys(PREBUILT_ASSET_NAMES));
 
+/**
+ * Rows this repository builds and verifies on every release run but does not publish.
+ *
+ * Only macOS. Gatekeeper hard-refuses an unsigned, un-notarized bundle downloaded from the web, so
+ * a macOS asset without an Apple Developer Program identity is not a shippable artifact — it is a
+ * support ticket. Windows is different: an unsigned executable runs, SmartScreen only warns, so
+ * `win32-x64` ships unsigned rather than waiting on a certificate.
+ *
+ * The row keeps building and verifying on every release run — a row that stops compiling rots
+ * silently — it is simply not advertised as downloadable, which is the narrowing PRD-262 allows in
+ * place of building every claimed row. Publishing it again is one entry, once the Apple identity
+ * exists. Status and cost of every platform's signing inputs: `docs/RELEASE-SIGNING.md`.
+ */
+export const UNPUBLISHED_PREBUILT_KEYS = Object.freeze(['darwin-arm64', 'darwin-arm64-tools']);
+
+/** The exact cohort a release publishes and a consumer may download. */
+export const PUBLISHED_PREBUILT_KEYS = Object.freeze(
+  PREBUILT_KEYS.filter((key) => !UNPUBLISHED_PREBUILT_KEYS.includes(key)),
+);
+
 const supported = new Set(['darwin-arm64', 'linux-x64', 'win32-x64']);
+
+/**
+ * The desktop runtime dispatches `threenative build --target desktop` to a `mystral-tools` helper
+ * sitting beside its own executable (`src/cli/tool_dispatch.cpp:52`). A consumer that installs only
+ * the runtime gets `build tool helper is missing` and exit 127, so the helper is a published
+ * release asset of its own and is installed beside the runtime by the same atomic install.
+ */
+export function toolsKey(key) {
+  return supported.has(key) ? `${key}-tools` : undefined;
+}
+
+export function toolsFilename(platform = process.platform) {
+  return platform === 'win32' ? 'mystral-tools.exe' : 'mystral-tools';
+}
 
 export function platformKey(platform = process.platform, arch = process.arch) {
   const key = `${platform}-${arch}`;
@@ -53,6 +90,13 @@ export function verifyChecksum(contents, expected, key) {
 }
 
 function releaseFromManifest(manifest, key) {
+  if (UNPUBLISHED_PREBUILT_KEYS.includes(key)) {
+    const error = new Error(
+      `No prebuilt release is published for '${key}'. This platform builds from an engine checkout until its release credentials exist; see PRD-262.`,
+    );
+    error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
+    throw error;
+  }
   const release = manifest?.artifacts?.[key];
   if (!release?.url || !release?.sha256) {
     throw new Error(`No prebuilt release asset is recorded for '${key}'.`);
@@ -108,7 +152,8 @@ function validateManifestArtifact(manifest, key, version) {
 export function validateReleaseManifest(manifest, options = {}) {
   const version = validateManifestEnvelope(manifest, options);
   // iOS retains its separate release gate; it is not a prerequisite for a non-iOS consumer.
-  const requiredKeys = options.requiredKeys ?? PREBUILT_KEYS.filter((key) => !key.startsWith('ios-'));
+  const requiredKeys = options.requiredKeys ??
+    PUBLISHED_PREBUILT_KEYS.filter((key) => !key.startsWith('ios-'));
   for (const key of requiredKeys) releaseFromManifest(manifest, key);
   for (const key of Object.keys(manifest.artifacts)) validateManifestArtifact(manifest, key, version);
   return manifest;
@@ -122,19 +167,20 @@ export function generateReleaseManifest(directory, { repository, tag, sourceSha 
   if (tag !== `runtime-native-v${packageVersion}`) {
     throw new Error(`Prebuilt release tag must be runtime-native-v${packageVersion}, received ${tag}.`);
   }
-  const expected = Object.values(PREBUILT_ASSET_NAMES).sort();
+  const published = PUBLISHED_PREBUILT_KEYS.map((key) => [key, PREBUILT_ASSET_NAMES[key]]);
+  const expected = published.map(([, name]) => name).sort();
   const actual = readdirSync(directory).sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`Incomplete prebuilt release matrix: expected ${expected.join(', ')}; received ${actual.join(', ')}.`);
   }
-  const artifacts = Object.fromEntries(Object.entries(PREBUILT_ASSET_NAMES).map(([key, name]) => {
+  const artifacts = Object.fromEntries(published.map(([key, name]) => {
     const contents = readFileSync(join(directory, name));
     if (contents.length === 0) throw new Error(`Prebuilt release asset '${key}' is empty.`);
     return [key, { sha256: sha256(contents), size: contents.length,
       url: `${releaseManifestUrl().replace('/prebuilt-lock.json', '')}/${name}` }];
   }));
   return validateReleaseManifest({ schemaVersion: 1, version: packageVersion, sourceSha, artifacts },
-    { sourceSha, requiredKeys: PREBUILT_KEYS });
+    { sourceSha, requiredKeys: PUBLISHED_PREBUILT_KEYS });
 }
 
 export function readRelease(manifestPath, key) {
@@ -177,29 +223,47 @@ function createInstallPlan(options) {
     ? join(dirname(output), 'install-status.json')
     : join(packageRoot, 'prebuilt', 'install-status.json')));
   if (output === statusPath) throw new Error('Prebuilt output and install status paths must differ.');
-  return { platform, key, output, statusPath,
+  const toolsOutput = join(dirname(output), toolsFilename(platform));
+  if (toolsOutput === output) throw new Error('Prebuilt runtime and build tool helper paths must differ.');
+  return { platform, key, output, statusPath, toolsOutput, toolsKey: toolsKey(key),
     status: { key, url: options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST ??
       options.manifestUrl ?? releaseManifestUrl(), version: packageVersion } };
 }
 
 function beginInstall(plan, arch) {
   rmSync(plan.output, { force: true });
+  rmSync(plan.toolsOutput, { force: true });
   rmSync(plan.statusPath, { force: true });
   writeInstallStatus({ ...plan.status, ok: false, reason: 'installing' }, plan.statusPath);
   platformKey(plan.platform, arch);
 }
 
-function publishInstall(plan, temporary, contents) {
-  mkdirSync(dirname(plan.output), { recursive: true });
-  writeFileSync(temporary, contents, { flag: 'wx' });
-  if (plan.platform !== 'win32') chmodSync(temporary, 0o755);
-  renameSync(temporary, plan.output);
-  writeInstallStatus({ ...plan.status, ok: true, reason: 'installed', sha256: sha256(contents) }, plan.statusPath);
+function publishBinary(target, contents, platform) {
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  try {
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(temporary, contents, { flag: 'wx' });
+    if (platform !== 'win32') chmodSync(temporary, 0o755);
+    renameSync(temporary, target);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
+// The success marker is written only once both binaries are in place: a desktop build that finds
+// the runtime but not the helper dies inside the packager with exit 127, which is exactly the
+// stale-success shape this install exists to prevent.
+function publishInstall(plan, contents, toolsContents) {
+  publishBinary(plan.output, contents, plan.platform);
+  publishBinary(plan.toolsOutput, toolsContents, plan.platform);
+  writeInstallStatus({ ...plan.status, ok: true, reason: 'installed', sha256: sha256(contents),
+    toolsSha256: sha256(toolsContents) }, plan.statusPath);
 }
 
 function recordInstallFailure(plan, error) {
   try {
     rmSync(plan.output, { force: true });
+    rmSync(plan.toolsOutput, { force: true });
     writeInstallStatus({ ...plan.status, ok: false,
       reason: error instanceof Error ? error.message : String(error) }, plan.statusPath);
   } catch (statusError) {
@@ -274,6 +338,13 @@ function isVerifiedInstall(plan, options) {
     const contents = readFileSync(plan.output);
     if (contents.length === 0 || (pinned?.size !== undefined && contents.length !== pinned.size)) return false;
     verifyChecksum(contents, status.sha256, plan.key);
+    // A cached runtime without its verified helper is not a reusable desktop install.
+    if (typeof status.toolsSha256 !== 'string') return false;
+    const pinnedTools = manifestPath ? readRelease(resolve(manifestPath), plan.toolsKey) : undefined;
+    if (pinnedTools && pinnedTools.sha256 !== status.toolsSha256) return false;
+    const tools = readFileSync(plan.toolsOutput);
+    if (tools.length === 0 || (pinnedTools?.size !== undefined && tools.length !== pinnedTools.size)) return false;
+    verifyChecksum(tools, status.toolsSha256, plan.toolsKey);
     return true;
   } catch {
     return false;
@@ -282,7 +353,6 @@ function isVerifiedInstall(plan, options) {
 
 export async function installPrebuilt(options = {}) {
   const plan = createInstallPlan(options);
-  const temporary = `${plan.output}.${randomUUID()}.tmp`;
   try {
     // Packaging may reuse verified bytes offline. Explicit install/retry keeps its original
     // invalidation semantics, including removing an earlier binary on a failed retry.
@@ -293,14 +363,13 @@ export async function installPrebuilt(options = {}) {
     // A failed retry must not leave an earlier binary usable or its old success marker intact.
     beginInstall(plan, options.arch);
     const contents = await downloadReleaseArtifact(plan.key, options);
-    publishInstall(plan, temporary, contents);
-    console.log(`Installed verified ThreeNative runtime for '${plan.key}'.`);
+    const toolsContents = await downloadReleaseArtifact(plan.toolsKey, options);
+    publishInstall(plan, contents, toolsContents);
+    console.log(`Installed verified ThreeNative runtime and build tool helper for '${plan.key}'.`);
     return plan.output;
   } catch (error) {
     recordInstallFailure(plan, error);
     throw error;
-  } finally {
-    rmSync(temporary, { force: true });
   }
 }
 
@@ -315,7 +384,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         // An unpublished release is a packaging-state fact, not a broken download. The web game
         // this install carries must not lose node_modules/.bin over an optional native binary;
         // the native lanes fail closed later, on the missing binary itself.
-        if (error instanceof Error && error.code === 'PREBUILT_RELEASE_MISSING') {
+        if (error instanceof Error &&
+            ['PREBUILT_RELEASE_MISSING', 'PREBUILT_RELEASE_UNPUBLISHED'].includes(error.code)) {
           console.warn(
             `No prebuilt release is published for v${packageVersion} (${reason}). Continuing without the native runtime; desktop and device lanes fail closed on the missing binary.`,
           );
