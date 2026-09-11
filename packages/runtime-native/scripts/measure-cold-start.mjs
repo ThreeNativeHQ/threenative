@@ -34,6 +34,7 @@ import {
   resolveAdbExecutable,
 } from "./device-preflight.mjs";
 import { readAndroidConfig } from "./package-android.mjs";
+import { measurePipelineCachePairs, validatePairOptions } from "./measure-pipeline-cache.mjs";
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // The identity a game declares in `threenative.config.ts`, which the packaging step already
@@ -134,6 +135,7 @@ function adb(serial, args, timeoutMs = 120_000) {
     timeout: timeoutMs,
   });
   if (result.error) throw new ColdStartError(`TN_COLD_START_ADB_FAILED:${result.error.message}`);
+  if (result.status !== 0) throw new ColdStartError(`TN_COLD_START_ADB_EXIT:${result.status}:${result.stderr ?? ""}`);
   return String(result.stdout ?? "");
 }
 
@@ -240,6 +242,8 @@ const FLAGS = new Map([
   ["--report", { key: "report", read: "value" }],
   ["--optimization", { key: "optimization", read: "value" }],
   ["--config", { key: "config", read: "value" }],
+  ["--pipeline-cache-pairs", { key: "pipelineCachePairs", read: "number" }],
+  ["--startup-scenario", { key: "startupScenario", read: "value" }],
   ["--allow-device-condition", { key: "allowDeviceCondition", read: "flag" }],
   ["--allow-low-battery", { key: "allowDeviceCondition", read: "flag" }],
 ]);
@@ -288,6 +292,8 @@ export function parseArgs(argv) {
   for (const [refuses, code] of REFUSALS) {
     if (refuses(options)) throw new ColdStartError(code, 2);
   }
+  if (options.pipelineCachePairs !== undefined) validatePairOptions(options);
+  else if (options.startupScenario !== undefined) throw new ColdStartError("TN_COLD_START_PAIRS_REQUIRED", 2);
   return options;
 }
 
@@ -430,6 +436,7 @@ async function main() {
   assertPhysicalDevice(options.device);
   const serial = options.device;
   const { appId, activity } = appIdentity(options.config);
+  if (options.pipelineCachePairs !== undefined) return measurePipelineCachePairs(options, appId);
   const deviceCondition = await assertDeviceReady(
     serial,
     {

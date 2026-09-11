@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "pipeline-cache-process-cold-startup-and-movement",
+  "target": "web",
+  "subject": "player",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 2,
+  "steps": [
+    { "press": "ArrowUp", "holdTicks": 30, "release": true, "label": "move" },
+    { "waitTicks": 5, "label": "settle" }
+  ],
+  "artifacts": { "console": true, "screenshots": "after" },
+  "assert": {
+    "movement": { "entity": "player", "minDistance": 0.25 },
+    "diagnostics": {
+      "runtimeReady": true,
+      "noConsoleErrors": true,
+      "noNetworkErrors": false,
+      "networkErrorsOptOutReason": "Native Android mailbox has no CDP network observer; this scenario verifies local packaged startup."
+    },
+    "startup": { "maxReadyMs": 60000 }
+  }
+}

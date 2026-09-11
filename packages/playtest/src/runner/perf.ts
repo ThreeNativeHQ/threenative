@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { discoverAdb } from "./android.js";
+import { formatPipelineCacheObservations, parsePipelineCacheObservations, type IPipelineCacheObservation } from "./pipeline-cache-observations.js";
 import { PlaytestCliUsageError } from "./config.js";
 import { parsePipelineEventMarkers, type IPipelineCaptureEvent } from "./pipeline-summary.js";
 
@@ -120,6 +121,7 @@ export interface IPerfMarkerParse {
   readonly hitches: readonly IHitchWindowJson[];
   readonly hostGaps: readonly IHostGapWindowJson[];
   readonly pipelineEvents: readonly IPipelineCaptureEvent[];
+  readonly pipelineCaches?: readonly IPipelineCacheObservation[];
   readonly presentMode: string | undefined;
   readonly projections: readonly IProjectionWindowJson[];
 }
@@ -130,6 +132,7 @@ export interface IPerfReport {
   readonly hitches: readonly IHitchWindowJson[];
   readonly hostGaps: readonly IHostGapWindowJson[];
   readonly pipelineEvents?: readonly IPipelineCaptureEvent[];
+  readonly pipelineCaches?: readonly IPipelineCacheObservation[];
   readonly pass: boolean;
   readonly presentMode: string | undefined;
   readonly projections: readonly IProjectionWindowJson[];
@@ -220,7 +223,7 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
     const mode = PRESENT_MODE_PATTERN.exec(line);
     if (mode?.[1] !== undefined) presentMode = mode[1];
   }
-  return { budgets, hitches, hostGaps, pipelineEvents, presentMode, projections };
+  return { budgets, hitches, hostGaps, pipelineEvents, pipelineCaches: parsePipelineCacheObservations(text), presentMode, projections };
 }
 
 function parseMarkerLine<T>(line: string, marker: string): T | undefined {
@@ -271,6 +274,7 @@ export function assessPerfMarkers(parse: IPerfMarkerParse, bounds: IPerfBounds, 
     hitches: parse.hitches,
     hostGaps: parse.hostGaps,
     pipelineEvents: parse.pipelineEvents,
+    pipelineCaches: parse.pipelineCaches ?? [],
     pass: violations.length === 0 && parse.budgets.length > 0,
     presentMode: parse.presentMode,
     projections: parse.projections,
@@ -428,6 +432,7 @@ function emit(parse: IPerfMarkerParse, args: IPerfArgs, source: string): number 
 
 export function formatPerfReport(report: IPerfReport): string {
   const lines: string[] = [`perf — ${report.budgets.length} window(s) from ${report.source}`];
+  lines.push(formatPipelineCacheObservations(report.pipelineCaches ?? []));
   const pipelineEvents = report.pipelineEvents ?? [];
   if (pipelineEvents.length > 0) {
     const serviceMs = pipelineEvents.reduce((sum, event) => sum + (event.serviceMs ?? 0), 0);

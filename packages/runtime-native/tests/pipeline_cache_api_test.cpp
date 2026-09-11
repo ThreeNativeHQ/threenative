@@ -360,12 +360,23 @@ void drainHostCompiles(mystral::webgpu::BindingsState* state) {
  * The floor is the empty cache's own serialization, not zero: wgpu writes a header into a cache
  * holding nothing, and "bytes > 0" would pass on a cache no pipeline ever reached.
  */
-void checkHostPipelineCache(mystral::Runtime& runtime) {
+// Scope is compiled into the TEST executable, never a runtime switch. The original target
+// still requires real compiled data. A header-only software driver cannot pass that target.
+#if defined(TN_PIPELINE_CACHE_ENVELOPE_LIFECYCLE_ONLY)
+constexpr bool kRequireCompiledData = false;
+#else
+constexpr bool kRequireCompiledData = true;
+#endif
+bool carriesData(size_t observed, size_t empty) {
+    return kRequireCompiledData ? observed > empty : observed >= empty && observed > 0;
+}
+
+void checkHostPipelineCache(mystral::Runtime& runtime, bool fileControl = false) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
     require(state != nullptr, "host bindings state");
     const auto& cache = state->pipelineCache;
     const char* disabled = std::getenv("TN_PIPELINE_CACHE");
-    const bool controlArm = disabled != nullptr && std::string(disabled) == "0";
+    const bool controlArm = fileControl || (disabled != nullptr && std::string(disabled) == "0");
 
     if (controlArm) {
         require(cache.mode == "disabled", "TN_PIPELINE_CACHE=0 must report the disabled mode");
@@ -396,8 +407,13 @@ void checkHostPipelineCache(mystral::Runtime& runtime) {
     }
     require(renderAttached >= 5, "both host render paths must attach the device cache");
     require(computeAttached >= 5, "both host compute paths must attach the device cache");
-    require(before == cache.emptyBytes, "the pre-compile cache was not the empty one");
-    require(after > before, "the host compiled four pipelines and the device cache did not grow");
+    if (cache.loadOutcome == "accepted") {
+        require(carriesData(before, cache.emptyBytes), "the accepted host cache carried no compiled data");
+        require(after >= before, "a populated host cache lost compiled data");
+    } else {
+        require(before == cache.emptyBytes, "the pre-compile cache was not the empty one");
+        require(carriesData(after, before), "the host compiled ten pipelines and the device cache did not grow");
+    }
 }
 
 size_t serializedData(WGPUPipelineCache cache, std::vector<uint8_t>& bytes) {
@@ -413,8 +429,16 @@ size_t serializedData(WGPUPipelineCache cache, std::vector<uint8_t>& bytes) {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    const std::string arm = argc > 1 ? argv[1] : "";
+#if defined(TN_PIPELINE_CACHE_ENVELOPE_LIFECYCLE_ONLY)
+    std::cout << "TN_PIPELINE_TEST_SCOPE:envelope-lifecycle-only; compiled-data-proof=false\n";
+#endif
 #if !defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+    if (!arm.empty()) {
+        std::cerr << "persistent cache proof requires the patched backend, not unsupported\n";
+        return 1;
+    }
     // Either a backend that is not wgpu-native, or a stock wgpu-native prebuilt: the maintained
     // patch is what declares the cache API, and CMake defines this only when the installed header
     // actually carries it. Reporting unavailable is the contract, not a skipped test.
@@ -427,6 +451,11 @@ int main() {
     config.width = 1;
     config.height = 1;
     config.noSdl = true;
+    if (!arm.empty()) {
+        config.pipelineCacheAppIdentity = "pipeline-cache-host-contract";
+        config.pipelineCacheSourceIdentity = mystral::webgpu::pipelineCacheDigest(
+            std::string(kHostPipelineScript) + (arm == "changed-source" ? "\n// source changed" : ""));
+    }
     auto runtime = mystral::Runtime::create(config);
     require(runtime != nullptr, "create headless runtime");
 
@@ -447,7 +476,69 @@ int main() {
 
     // PRD-368 Phase 1B first: it reads the host's own cache, and the raw-API probe below creates a
     // second device whose pipelines must not be mistaken for the host's.
-    checkHostPipelineCache(*runtime);
+    checkHostPipelineCache(*runtime, arm == "disabled-file");
+    if (!arm.empty()) {
+        using namespace mystral::webgpu;
+        auto* state = static_cast<BindingsState*>(runtime->getWebGPUBindingsState());
+        auto& cache = state->pipelineCache;
+        if (arm == "disabled" || arm == "disabled-file") {
+            require(cache.mode == "disabled" && cache.loadOutcome == "disabled", "disabled is not a cache miss");
+            require(!cache.store && !cache.persistence.valid(), "disabled launch must not touch disk");
+        } else {
+            require(cache.mode == "attached" && cache.store != nullptr, "persistence identity must be qualified");
+            const std::string expected = arm == "missing" ? "missing" :
+                (arm == "rejected" || arm == "changed-source" || arm == "backend-rejected" ? "rejected" : "accepted");
+            require(cache.loadOutcome == expected, "unexpected persistent cache load outcome");
+            if (arm == "backend-rejected") require(cache.reason == "backend-rejected", "strict backend rejection must be observable");
+            if (arm == "changed-source") require(cache.reason == "identity-mismatch", "changed bundled shaders must invalidate storage");
+            // This headless contract drives the host's boundary counters explicitly. It proves
+            // scheduling/lifetime, NOT a real display or a Pixel first-playable measurement.
+            state->profiling.firstPresentReported = false;
+            state->profiling.presentCount = 1;
+            pollPipelineCachePersistence(state);
+            require(!cache.persistence.valid(), "snapshot must not start before first present");
+            state->profiling.firstPresentReported = true;
+            pollPipelineCachePersistence(state);
+            require(!cache.persistence.valid(), "snapshot must not start on first present");
+            state->profiling.presentCount = 2;
+            pollPipelineCachePersistence(state);
+            require(!cache.persistence.valid(), "observe a stable compile generation before snapshot");
+            state->profiling.presentCount = 3;
+            pollPipelineCachePersistence(state);
+            require(cache.persistence.valid(), "settled cache must save while the process is alive");
+            if (arm == "shutdown" || arm == "device-lost") {
+                if (arm == "device-lost") wgpuDeviceDestroy(state->device);
+                runtime.reset(); // joins the active snapshot before device/state destruction
+                std::cout << "persistent cache shutdown contract passed\n" << std::flush;
+                return 0;
+            }
+            if (arm == "concurrent") {
+                require(runtime->evalScript(kHostPipelineScript, "concurrent_cache_compiles.js"), "compile while snapshot is active");
+                drainHostCompiles(state);
+            }
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+            do {
+                ++state->profiling.presentCount;
+                pollPipelineCachePersistence(state);
+                if (cache.lastWrite.outcome != "not-attempted" && !cache.persistence.valid() &&
+                    cache.attemptedAttachments == cache.renderAttached.load() + cache.computeAttached.load()) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            } while (std::chrono::steady_clock::now() < deadline);
+            require(!cache.persistence.valid(), "snapshot must finish in bounded time");
+            if (arm == "read-only") {
+                require(cache.lastWrite.outcome == "unavailable", "unwritable storage must fail softly and report failure");
+            } else {
+                require(cache.lastWrite.outcome == "stored", "populated compiler data must be durably stored");
+                require(carriesData(cache.lastWrite.bytes, cache.emptyBytes), "stored bytes must exceed the empty cache floor");
+                require(cache.store->read().outcome == "validated", "live store must read back a valid envelope");
+            }
+        }
+        std::cout << "persistent cache relaunch contract passed: " << arm << "\n" << std::flush;
+        std::cerr << std::flush;
+        // Deliberately bypass Runtime destruction. A shutdown-only save would fail the next
+        // independent process, just as Android force-stop bypasses ordinary destructors.
+        std::_Exit(0);
+    }
 
     WGPUAdapter adapter = requestVulkanAdapter(instance);
     if (adapter == nullptr) {
