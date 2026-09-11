@@ -34,6 +34,8 @@ import { resolveWgpuCacheToolchain } from './wgpu-cache-toolchain.mjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const THIRD_PARTY = join(ROOT, 'third_party');
+const NATIVE_DEPS_LOCK_PATH = join(ROOT, 'native-deps.lock.json');
+const LOCK_RECEIPT_DIRNAME = '.threenative-receipts';
 const REPO_ROOT = join(ROOT, '..', '..');
 const GRADLE_WRAPPER = join(ROOT, 'android', 'gradle', 'wrapper', 'gradle-wrapper.jar');
 const GRADLE_WRAPPER_URL = 'https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar';
@@ -87,6 +89,7 @@ const DEPS = {
     getUrl: () => {
       // wgpu-native releases: https://github.com/gfx-rs/wgpu-native/releases
       // Windows releases include toolchain suffix: wgpu-windows-x86_64-msvc-release.zip
+      // Asset arches are aarch64/x86_64 (the ARCH_MAP names, not raw ARCH).
       const platform = platformName === 'macos' ? 'macos' : platformName;
       const arch = archName;
       if (platformName === 'windows') {
@@ -694,6 +697,142 @@ function sha256(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+function sha256Bytes(contents) {
+  return createHash('sha256').update(contents).digest('hex');
+}
+
+// PRD-059 Phase 1: the tracked lock is the only authority for which bytes may
+// enter third_party/. Every payload below carries its immutable URL, expected
+// SHA-256, source revision, license evidence and bootstrap source.
+function readNativeDepsLock() {
+  if (!existsSync(NATIVE_DEPS_LOCK_PATH)) {
+    throw new Error(
+      `TN_NATIVE_DEP_LOCK_MISSING: ${NATIVE_DEPS_LOCK_PATH} does not exist; the dependency lock is required before any acquisition.`,
+    );
+  }
+  let lock;
+  try {
+    lock = JSON.parse(readFileSync(NATIVE_DEPS_LOCK_PATH, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `TN_NATIVE_DEP_LOCK_MALFORMED: ${NATIVE_DEPS_LOCK_PATH} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (lock?.schemaVersion !== 1 || !Array.isArray(lock?.components)) {
+    throw new Error(
+      `TN_NATIVE_DEP_LOCK_MALFORMED: ${NATIVE_DEPS_LOCK_PATH} must carry schemaVersion 1 and a components array.`,
+    );
+  }
+  const payloads = new Map();
+  for (const component of lock.components) {
+    if (!Array.isArray(component?.payloads)) {
+      throw new Error(`TN_NATIVE_DEP_LOCK_MALFORMED: component '${component?.name ?? '?'}' has no payloads array.`);
+    }
+    for (const payload of component.payloads) {
+      if (typeof payload?.id !== 'string' || typeof payload?.url !== 'string') {
+        throw new Error('TN_NATIVE_DEP_LOCK_MALFORMED: every payload needs string id and url.');
+      }
+      if (!/^[0-9a-f]{64}$/.test(payload?.sha256 ?? '')) {
+        throw new Error(`TN_NATIVE_DEP_LOCK_MALFORMED: payload '${payload.id}' has no 64-hex sha256.`);
+      }
+      if (payloads.has(payload.id)) {
+        throw new Error(`TN_NATIVE_DEP_LOCK_DUPLICATE: payload id '${payload.id}' appears twice.`);
+      }
+      payloads.set(payload.id, { ...payload, component: component.name, version: component.version });
+    }
+  }
+  return { lock, payloads };
+}
+
+function readNativeDepsLockContext() {
+  const { lock, payloads } = readNativeDepsLock();
+  return { lockHash: sha256Bytes(Buffer.from(JSON.stringify(lock))), payloads };
+}
+
+function lockPayloadForUrl(payloads, url) {
+  for (const payload of payloads.values()) {
+    if (payload.url === url) return payload;
+  }
+  return undefined;
+}
+
+function receiptPathFor(destDir) {
+  return join(destDir, LOCK_RECEIPT_DIRNAME, 'receipt.json');
+}
+
+function readReceipt(destDir, lockHash) {
+  const path = receiptPathFor(destDir);
+  if (!existsSync(path)) return undefined;
+  try {
+    const receipt = JSON.parse(readFileSync(path, 'utf8'));
+    if (receipt?.lockHash !== lockHash) return undefined;
+    return receipt;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeReceipt(destDir, receipt) {
+  const path = receiptPathFor(destDir);
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`);
+  renameSync(temporary, path);
+}
+
+function listInstalledFiles(destDir) {
+  const out = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === LOCK_RECEIPT_DIRNAME) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else out.push(relative(destDir, full).replaceAll('\\', '/'));
+    }
+  };
+  walk(destDir);
+  return out.sort();
+}
+
+function verifyBytesBeforeExtract(kind, id, url, bytes, expected) {
+  const actual = sha256Bytes(bytes);
+  if (actual !== expected) {
+    throw new Error(
+      `TN_NATIVE_DEP_CHECKSUM_MISMATCH: ${kind} '${id}' from ${url}: expected ${expected}, got ${actual}. No extractor ran and no destination was touched.`,
+    );
+  }
+  return actual;
+}
+
+function verifyFinalUrl(id, requested, response) {
+  // GitHub answers archive fetches from same-payload signer hosts on every
+  // request: release assets from a signed release-assets URL (expiry/token
+  // query, never a lockable identity), source archives from codeload. What the
+  // lock pins is the requested URL, and what the digest proves is the bytes.
+  // A redirect anywhere else is still a lock miss.
+  const final = response?.url;
+  if (typeof final !== 'string' || final.length === 0 || final === requested) return;
+  let finalHost = '';
+  try {
+    finalHost = new URL(final).hostname;
+  } catch {
+    finalHost = '';
+  }
+  if (finalHost === 'release-assets.githubusercontent.com') return;
+  if (finalHost === 'codeload.github.com') {
+    let requestedPath = '';
+    try {
+      requestedPath = new URL(requested).pathname;
+    } catch {
+      requestedPath = '';
+    }
+    if (requestedPath.includes('/archive/refs/tags/')) return;
+  }
+  throw new Error(
+    `TN_NATIVE_DEP_URL_MISMATCH: payload '${id}' requested ${requested} but answered from ${final}. Lock the redirect target instead of accepting it silently.`,
+  );
+}
+
 async function ensureGradleWrapper() {
   if (existsSync(GRADLE_WRAPPER) && sha256(GRADLE_WRAPPER) === GRADLE_WRAPPER_SHA256) return;
   if (existsSync(GRADLE_WRAPPER)) rmSync(GRADLE_WRAPPER);
@@ -943,7 +1082,35 @@ function normalizeSwcLayout(destDir) {
   }
 }
 
-async function downloadIosDep(name, dep) {
+async function downloadLockedArchive(payloads, _lockHash, id, url, archivePath, fetchImpl) {
+  // PRD-059 Phase 1 transaction: quarantine, verify redirect + SHA-256, then hand
+  // back verified bytes. The caller extracts; nothing is written to third_party/
+  // before this returns. A mismatch throws and no extractor ever runs.
+  const payload = lockPayloadForUrl(payloads, url);
+  if (!payload) {
+    throw new Error(
+      `TN_NATIVE_DEP_LOCK_MISSING: no lock payload covers ${url} (requested as '${id}'). Refusing an unreviewed download.`,
+    );
+  }
+  mkdirSync(dirname(archivePath), { recursive: true });
+  const response = await (fetchImpl ?? fetch)(url, { redirect: 'follow' });
+  if (!response.ok) {
+    throw new Error(`TN_NATIVE_DEP_FETCH_FAILED: ${url}: HTTP ${response.status}.`);
+  }
+  verifyFinalUrl(payload.id, url, response);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  verifyBytesBeforeExtract('payload', payload.id, url, bytes, payload.sha256);
+  if (payload.bytes !== undefined && bytes.length !== payload.bytes) {
+    throw new Error(
+      `TN_NATIVE_DEP_SIZE_MISMATCH: payload '${payload.id}': lock says ${payload.bytes} bytes, received ${bytes.length}.`,
+    );
+  }
+  writeFileSync(archivePath, bytes);
+  console.log(`Verified ${payload.id} archive checksum (${bytes.length} bytes)`);
+  return payload;
+}
+
+async function downloadIosDep(name, dep, lockContext) {
   // Special handler for iOS dependencies with multiple archives
   const destDir = destinationFor(name, dep);
 
@@ -951,15 +1118,26 @@ async function downloadIosDep(name, dep) {
     console.log(`${name} already exists at ${destDir}`);
     if (!process.argv.includes('--force')) {
       if (!WGPU_DEPS.has(name)) {
-        console.log('Skipping (use --force to re-download)');
-        return true;
-      }
-      try {
-        verifyAndRecordWgpuInstallation(name, destDir, dep.version);
-        console.log(`Verified installed ${name} ${dep.version}`);
-        return true;
-      } catch (error) {
-        console.warn(`${error.message}; replacing the stale dependency cache`);
+        if (lockContext) {
+          const receipt = readReceipt(destDir, lockContext.lockHash);
+          if (!receipt) {
+            console.warn(`${name} has no receipt for the current lock; replacing the stale dependency cache`);
+          } else {
+            console.log('Skipping (use --force to re-download)');
+            return true;
+          }
+        } else {
+          console.log('Skipping (use --force to re-download)');
+          return true;
+        }
+      } else {
+        try {
+          verifyAndRecordWgpuInstallation(name, destDir, dep.version);
+          console.log(`Verified installed ${name} ${dep.version}`);
+          return true;
+        } catch (error) {
+          console.warn(`${error.message}; replacing the stale dependency cache`);
+        }
       }
     }
     rmSync(destDir, { recursive: true });
@@ -968,6 +1146,7 @@ async function downloadIosDep(name, dep) {
   mkdirSync(destDir, { recursive: true });
 
   try {
+    const verified = [];
     for (const [variant, url] of Object.entries(dep.archives)) {
       console.log(`\nDownloading ${name} (${variant})...`);
       const archiveName = url.split('/').pop();
@@ -977,9 +1156,20 @@ async function downloadIosDep(name, dep) {
       const archivePath = join(archiveRoot, archiveName);
       const variantDir = join(destDir, variant);
 
-      await downloadFile(url, archivePath);
-      mkdirSync(variantDir, { recursive: true });
-      await extractArchive(archivePath, variantDir);
+      if (lockContext) {
+        const payload = await downloadLockedArchive(lockContext.payloads, lockContext.lockHash, `${name} (${variant})`, url, archivePath);
+        verified.push(payload.id);
+      } else {
+        await downloadFile(url, archivePath);
+      }
+      const stageDir = mkdtempSync(join(tmpdir(), 'threenative-dep-'));
+      try {
+        await extractArchive(archivePath, stageDir);
+        mkdirSync(variantDir, { recursive: true });
+        execSync(`cp -R "${stageDir}/"* "${variantDir}/"`, { stdio: 'inherit' });
+      } finally {
+        rmSync(stageDir, { force: true, recursive: true });
+      }
       rmSync(archivePath);
 
       console.log(`Extracted ${variant} to ${variantDir}`);
@@ -1004,6 +1194,7 @@ export async function downloadDep(name, options = {}) {
   }
 
   console.log(`\n=== Downloading ${name} ${dep.version} ===`);
+  const lock = options.lockContext ?? readNativeDepsLockContext();
 
   if (name === 'v8-android') {
     const destination = join(options.thirdPartyRoot ?? THIRD_PARTY, dep.extractTo);
@@ -1020,7 +1211,7 @@ export async function downloadDep(name, options = {}) {
 
   // Special handling for iOS dependencies with multiple archives
   if (dep.archives && !dep.getUrl()) {
-    return downloadIosDep(name, dep);
+    return downloadIosDep(name, dep, lock);
   }
 
   const destDir = destinationFor(name, dep);
@@ -1035,16 +1226,34 @@ export async function downloadDep(name, options = {}) {
     mkdirSync(destDir, { recursive: true });
     const missing = dep.headers.filter((header) => !existsSync(join(destDir, header)));
     if (missing.length === 0) {
+      const receipt = readReceipt(destDir, lock.lockHash);
+      if (!receipt) {
+        throw new Error(
+          `TN_NATIVE_DEP_RECEIPT_MISSING: '${name}' has files but no receipt for the current lock; rerun with --force to replace the stale cache.`,
+        );
+      }
       console.log(`${name} already exists at ${destDir}`);
       console.log('Skipping (use --force to re-download)');
       return true;
     }
     try {
+      const verified = [];
       for (const header of missing) {
         const url = `https://raw.githubusercontent.com/nothings/stb/master/${header}`;
-        const destPath = join(destDir, header);
-        await downloadFile(url, destPath);
+        const quarantine = mkdtempSync(join(tmpdir(), 'threenative-dep-'));
+        try {
+          const staged = join(quarantine, header);
+          const payload = await downloadLockedArchive(lock.payloads, lock.lockHash, `stb ${header}`, url, staged);
+          copyFileSync(staged, join(destDir, header));
+          verified.push(payload.id);
+        } finally {
+          rmSync(quarantine, { force: true, recursive: true });
+        }
       }
+      writeReceipt(destDir, {
+        schemaVersion: 1, dependency: name, lockHash: lock.lockHash,
+        payloads: verified, files: listInstalledFiles(destDir),
+      });
       console.log(`Successfully installed ${name}: ${missing.join(', ')}`);
       return true;
     } catch (error) {
@@ -1058,21 +1267,33 @@ export async function downloadDep(name, options = {}) {
     console.warn(`Skipping ${name} - no prebuilt available for this platform`);
     return false;
   }
+  if (!lockPayloadForUrl(lock.payloads, url)) {
+    console.error(
+      `TN_NATIVE_DEP_LOCK_MISSING: no lock payload covers ${url} (requested as '${name}'). Refusing an unreviewed download.`,
+    );
+    return false;
+  }
 
   // Check if already downloaded
   if (existsSync(destDir)) {
     console.log(`${name} already exists at ${destDir}`);
     if (!process.argv.includes('--force')) {
       if (!WGPU_DEPS.has(name)) {
-        console.log('Skipping (use --force to re-download)');
-        return true;
-      }
-      try {
-        verifyAndRecordWgpuInstallation(name, destDir, dep.version);
-        console.log(`Verified installed ${name} ${dep.version}`);
-        return true;
-      } catch (error) {
-        console.warn(`${error.message}; replacing the stale dependency cache`);
+        const receipt = readReceipt(destDir, lock.lockHash);
+        if (!receipt) {
+          console.warn(`${name} has no receipt for the current lock; replacing the stale dependency cache`);
+        } else {
+          console.log('Skipping (use --force to re-download)');
+          return true;
+        }
+      } else {
+        try {
+          verifyAndRecordWgpuInstallation(name, destDir, dep.version);
+          console.log(`Verified installed ${name} ${dep.version}`);
+          return true;
+        } catch (error) {
+          console.warn(`${error.message}; replacing the stale dependency cache`);
+        }
       }
     }
     rmSync(destDir, { recursive: true });
@@ -1089,32 +1310,29 @@ export async function downloadDep(name, options = {}) {
   const archivePath = join(archiveRoot, archiveName);
 
   try {
-    await downloadFile(url, archivePath);
-    // A pinned checksum is what makes "reconstructible" mean the same bytes rather than whatever the
-    // URL serves today. Only dependencies that declare one are checked; the rest are unchanged.
-    if (dep.sha256) {
-      const actual = sha256(archivePath);
-      if (actual !== dep.sha256) {
-        rmSync(archivePath);
-        throw new Error(
-          `${name} checksum mismatch: expected ${dep.sha256}, got ${actual}. Refusing to install.`,
-        );
-      }
-      console.log(`Verified ${name} archive checksum`);
+    const payload = await downloadLockedArchive(lock.payloads, lock.lockHash, name, url, archivePath);
+    const stageDir = mkdtempSync(join(tmpdir(), 'threenative-dep-'));
+    try {
+      await extractArchive(archivePath, stageDir);
+      mkdirSync(destDir, { recursive: true });
+      execSync(`cp -R "${stageDir}/"* "${destDir}/"`, { stdio: 'inherit' });
+    } finally {
+      rmSync(stageDir, { force: true, recursive: true });
     }
-    await extractArchive(archivePath, destDir);
 
     // Clean up archive
     rmSync(archivePath);
 
     // Download headers if needed (e.g., Dawn)
+    const verifiedExtra = [];
     if (dep.needsHeaders && dep.getHeadersUrl) {
       const headersUrl = dep.getHeadersUrl();
       if (headersUrl) {
         console.log(`\nDownloading headers for ${name}...`);
         const headersArchiveName = headersUrl.split('/').pop();
         const headersArchivePath = join(THIRD_PARTY, headersArchiveName);
-        await downloadFile(headersUrl, headersArchivePath);
+        const headerPayload = await downloadLockedArchive(lock.payloads, lock.lockHash, `${name} headers`, headersUrl, headersArchivePath);
+        verifiedExtra.push(headerPayload.id);
         // Extract headers to a temp dir, then merge into destDir
         const headersTempDir = join(THIRD_PARTY, `${name}-headers-temp`);
         await extractArchive(headersArchivePath, headersTempDir);
@@ -1125,6 +1343,10 @@ export async function downloadDep(name, options = {}) {
         console.log(`Headers merged into ${destDir}`);
       }
     }
+    writeReceipt(destDir, {
+      schemaVersion: 1, dependency: name, lockHash: lock.lockHash,
+      payloads: [payload.id, ...verifiedExtra], files: listInstalledFiles(destDir),
+    });
 
     // Post-install fixes
     if (name === 'quickjs') {
@@ -1211,6 +1433,22 @@ async function main() {
 
   // Parse arguments
   const args = process.argv.slice(2);
+  if (args.includes('--check-lock')) {
+    // PRD-059 Phase 1 user verification: report every locked payload without
+    // downloading, extracting, or invoking any toolchain. No network access.
+    const { lock, payloads } = readNativeDepsLock();
+    const byComponent = new Map();
+    for (const payload of payloads.values()) {
+      if (!byComponent.has(payload.component)) byComponent.set(payload.component, []);
+      byComponent.get(payload.component).push(payload.id);
+    }
+    console.log(`Dependency lock: ${NATIVE_DEPS_LOCK_PATH}`);
+    console.log(`Schema: ${lock.schemaVersion}; components: ${lock.components.length}; payloads: ${payloads.size}`);
+    for (const [component, ids] of [...byComponent.entries()].sort()) {
+      console.log(`  ${component}: ${ids.sort().join(', ')}`);
+    }
+    return;
+  }
   const onlyIndex = args.indexOf('--only');
   const requestedWgpuVersion = valueAfter(args, '--wgpu-version');
   const rebuildWgpuCacheApi = args.includes('--rebuild-wgpu-cache-api');
@@ -1321,9 +1559,12 @@ async function main() {
 
   if (depsToDownload.some((name) => androidDeps.includes(name))) await ensureGradleWrapper();
 
+  // The lock is read once per invocation so every selected payload resolves
+  // against the same reviewed bytes. No acquisition runs without it.
+  const lock = readNativeDepsLockContext();
   const results = {};
   for (const dep of depsToDownload) {
-    results[dep] = await downloadDep(dep);
+    results[dep] = await downloadDep(dep, { lockContext: lock });
   }
 
   console.log('\n=== Summary ===');
