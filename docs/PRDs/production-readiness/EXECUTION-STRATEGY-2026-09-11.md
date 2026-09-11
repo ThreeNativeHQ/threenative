@@ -21,6 +21,35 @@ Measured start state (`pnpm prd:progress`, this commit `0022cd9af`):
 
 Total: 11 PRDs, 41 phases, 236 boxes, 28 of them ticked (12%).
 
+## Starting a session from this document
+
+Hand a new session this file and one lane. Everything it needs is here or linked from here; it
+should not need the conversation that produced it.
+
+**Opening prompt for a lane session** — paste it verbatim, swapping the lane line:
+
+> Read `docs/PRDs/production-readiness/EXECUTION-STRATEGY-2026-09-11.md` and follow the repository
+> `AGENTS.md` chain. Work lane 1 (PRD-374) to `done/`: every phase box and every acceptance box
+> ticked with evidence beside it, one draft PR, the `pnpm prd:progress` label applied on each push,
+> and the `git mv` to `docs/PRDs/done/` in the commit that finishes it. Prove each gate locally
+> before pushing. Do not tick a box for anything unrun.
+
+Lanes, each independent enough for its own session:
+
+| Lane | PRD | Worktree | State at handoff |
+| --- | --- | --- | --- |
+| 1 | [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | `.claude/worktrees/prd374-doctor` (already cut, branch `prd374/doctor-target-prerequisites`) | Defect confirmed: `androidTargetCheck` in `packages/create-threenative/src/doctor.ts:1160` returns `available — …` with status `warn` when the JDK is unusable. No code written yet. |
+| 2 | [PRD-212](PRD-212-published-install-builds-android.md) | cut a new one | Not started. Owns `package-android.mjs` after lane 4 hands off. |
+| 3 | [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | use the open PRs' worktrees | `prd:50%`; PRs #193 and #194 carry the rest. Blocked on decision 2 for its user-verification boxes. |
+| 4 | [PRD-221](PRD-221-android-v8-is-16kb-clean.md) | cut a new one | Not started. Phase 3 runs on the local 16 KB AVD. Hands `package-android.mjs` to lane 2 when done. |
+
+**Lanes 2 and 4 must not run at the same time** — they share `packages/runtime-native/scripts/package-android.mjs`
+and the shared-file table in [README](README.md) orders them 221 → 212. Lanes 1 and 3 are disjoint
+from both and from each other.
+
+Answer the two decisions below before any lane starts: decision 1 determines whether a finished PRD
+may move to `done/` at all, and decision 2 determines whether lane 3 can finish.
+
 ## Two decisions only you can make
 
 Everything below branches on these. Both are one-word answers.
