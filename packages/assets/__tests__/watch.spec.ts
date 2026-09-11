@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { join } from "node:path";
 import { NodeIO } from "@gltf-transform/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildFixtureDocument } from "../../../test-support/generate-fixture-model.js";
@@ -17,12 +19,33 @@ import {
 import { unpackGlb } from "../src/passes/shared-images.js";
 
 const DEBOUNCE_MS = 25;
-// The burst test needs a window wider than the burst that is supposed to fit inside it. 60ms was
-// wide enough on an idle machine and not on a loaded CI runner, where five sequential writes to a
-// container filesystem overran it: the watcher then compiled after write 1, and the test failed on
-// the compiled content rather than on the coalescing it exists to check. This is that window with
-// room to spare, and the test measures the burst against it rather than assuming it fits.
-const BURST_DEBOUNCE_MS = 500;
+// The burst test needs a window wider than the burst that is supposed to fit inside it, and a
+// fixed number has now failed that twice: 60ms was wide enough on an idle machine and not on a
+// loaded CI runner, and the 500ms that replaced it was overrun in turn by a 743ms burst
+// ("the burst took 743ms and does not fit the 500ms window"). Each time the watcher compiled after
+// write 1 and the test failed on compiled content rather than on the coalescing it exists to check.
+//
+// A constant is a schedule racing machine speed, so raising it again only moves the machine where
+// it breaks. This measures the very operation that has to fit - five sequential writes, on this
+// machine, on this filesystem - immediately at load, and sizes the window from that. The floor
+// keeps a fast machine from picking a window so tight that scheduling noise alone defeats it.
+const BURST_WRITES = 5;
+
+function measureBurstCostMs(): number {
+  const probeDir = mkdtempSync(join(tmpdir(), "threenative-watch-calibrate-"));
+  const probe = join(probeDir, "probe.bin");
+  try {
+    const started = Date.now();
+    for (let index = 1; index <= BURST_WRITES; index += 1) {
+      writeFileSync(probe, `calibration write ${index}`);
+    }
+    return Date.now() - started;
+  } finally {
+    rmSync(probeDir, { force: true, recursive: true });
+  }
+}
+
+const BURST_DEBOUNCE_MS = Math.max(500, measureBurstCostMs() * 8);
 
 const manifestWriteProbe = vi.hoisted(() => ({
   onPartial: undefined as ((filename: string) => Promise<void>) | undefined,
@@ -445,7 +468,7 @@ describe("watchAssets", () => {
     await openHandles[0]?.ready;
 
     const burstStartedAt = Date.now();
-    for (let index = 1; index <= 5; index += 1) {
+    for (let index = 1; index <= BURST_WRITES; index += 1) {
       writeFileSync(path.join(root, "assets", "rock.png"), `burst write ${index}`);
     }
     const burstMs = Date.now() - burstStartedAt;
