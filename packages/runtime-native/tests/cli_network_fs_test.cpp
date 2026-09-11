@@ -10,6 +10,7 @@
 #include "mystral/fs/file_watcher.h"
 #include "mystral/js/engine.h"
 #include "mystral/webtransport/webtransport.h"
+#include "runtime_scripts.h"
 #include "../src/raytracing/bindings.h"
 #include "../src/raytracing/rt_common.h"
 #include "../src/cli/bundler.h"
@@ -1034,9 +1035,33 @@ bool testRaytracingAndWebTransport() {
     mystral::rt::g_coverageFailTLAS = false;
     mystral::rt::coverageCleanupRTBindings();
 
-    // WebTransport bindings
+    // WebTransport bindings.
+    //
+    // The streams polyfill first, exactly as Runtime::init sequences it: setupFetch() installs
+    // Web Streams before webtransport::initBindings(). The WebTransport polyfill installs nothing
+    // when ReadableStream/WritableStream are absent - deliberately, with a console error - and
+    // webtransport.cpp then reads globalThis.__wtDispatch, finds nothing, and fails:
+    //   [error] [WebTransport] Web Streams not available; WebTransport disabled.
+    //   [WebTransport] __wtDispatch not defined by polyfill
+    // This engine is created bare by createEngine(), so without this the test drove initBindings
+    // outside the prerequisite it documents.
+    {
+        const auto streams = mystral::runtime_scripts::find("streams-polyfill");
+        if (!streams.data) {
+            std::cerr << "embedded streams-polyfill missing" << std::endl;
+            return false;
+        }
+        const std::string streamsSource(streams.data, streams.size);
+        if (!engine->eval(streamsSource.c_str(), "streams-polyfill.js")) {
+            std::cerr << "streams-polyfill eval failed: " << engine->getException() << std::endl;
+            return false;
+        }
+    }
     mystral::webtransport::init();
-    mystral::webtransport::initBindings(engine.get());
+    if (!mystral::webtransport::initBindings(engine.get())) {
+        std::cerr << "webtransport::initBindings failed after installing Web Streams" << std::endl;
+        return false;
+    }
     const char* wtScript = R"JS((() => {
       // Error and boundary cases
       __wtConnect("");
@@ -1073,6 +1098,18 @@ bool testRaytracingAndWebTransport() {
     mystral::webtransport::hasActiveSessions();
     mystral::webtransport::shutdown();
 
+    // Name which half failed. This returned a bare `false` before, so the contract runner could
+    // only report "exited 1" and the cause had to be guessed from surrounding log noise - the
+    // engine prints caught exceptions too, so the loudest line is routinely not the failure. Both
+    // halves are `engine->evalScript`, and a script that throws returns false here.
+    if (!rtPassed) {
+        std::cerr << "TN_CLI_NETWORK_FS_RT_SCRIPT_FAILED: rt_test.js did not evaluate cleanly: "
+                  << engine->getException() << std::endl;
+    }
+    if (!wtPassed) {
+        std::cerr << "TN_CLI_NETWORK_FS_WT_SCRIPT_FAILED: wt_test.js did not evaluate cleanly: "
+                  << engine->getException() << std::endl;
+    }
     return rtPassed && wtPassed;
 }
 

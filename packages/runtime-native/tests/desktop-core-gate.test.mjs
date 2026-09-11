@@ -226,7 +226,7 @@ test('desktop screenshot rejects a single-color image and accepts visible pixels
   expect(inspectScreenshot(path)).toEqual({ height: 1, width: 2 });
 });
 
-test('desktop verifier preserves evidence and only forces X11 on Linux', () => {
+test('desktop verifier preserves evidence and scopes its SDL drivers to Linux', () => {
   const source = readFileSync(
     new URL('../scripts/verify-desktop-core.mjs', import.meta.url),
     'utf8',
@@ -234,8 +234,21 @@ test('desktop verifier preserves evidence and only forces X11 on Linux', () => {
   expect(source).toMatch(/desktop-\$\{process\.platform\}-report\.json/);
   expect(source).toMatch(/desktop-\$\{process\.platform\}\.log/);
   expect(source).toMatch(/sha256/);
-  expect(source).toMatch(/if \(process\.platform === 'linux'\) runtimeEnv\.SDL_VIDEODRIVER = 'x11'/);
+  // Both driver overrides live in one `process.platform === 'linux'` branch and nowhere else, so
+  // macOS and Windows keep the drivers SDL picks for them.
+  const linuxBranch = source.match(
+    /if \(process\.platform === 'linux'\) \{\n([\s\S]*?)\n\x20{2}\}/u,
+  )?.[1];
+  expect(linuxBranch).toBeDefined();
+  expect(linuxBranch).toMatch(/runtimeEnv\.SDL_VIDEODRIVER = 'x11'/);
+  // The audio driver is a *default*, not an override: this gate makes no audio assertion, and a
+  // machine with a real device must keep using it. `verify-desktop-audio.mjs` owns the audio
+  // contract and runs before this gate in the same command.
+  expect(linuxBranch).toMatch(/runtimeEnv\.SDL_AUDIODRIVER \?\?= 'dummy'/);
+  expect(source).not.toMatch(/runtimeEnv\.SDL_AUDIODRIVER = 'dummy'/);
+  // Neither may be forced for every platform at the spawn site.
   expect(source).not.toMatch(/env: \{ \.\.\.process\.env, SDL_VIDEODRIVER: 'x11' \}/);
+  expect(source).not.toMatch(/env: \{ \.\.\.process\.env, SDL_AUDIODRIVER: 'dummy' \}/);
 });
 
 test('present ticks fail closed on a missing, malformed, or outrunning count', () => {
@@ -285,4 +298,28 @@ test('an absent audio device does not fail a run that rendered correctly', () =>
   // The real open failure is still a failure: a device exists and would not open.
   const broken = `${rendered}\n[Audio] Failed to open audio device: device in use`;
   expect(analyzeDesktopLog(broken)).toContain('[Audio] Failed to open audio device: device in use');
+});
+
+test('the native contract lane gets a display like the rest of the desktop chain', () => {
+  const manifest = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  );
+  const chain = manifest.scripts['native:verify:desktop'];
+  expect(chain).toBeDefined();
+  // `verify-desktop-core.mjs` wraps itself, and `verify-desktop-loading.mjs` is wrapped here, but
+  // the contract lane was wrapped by nothing. `native-platforms.yml`'s desktop-core matrix is macOS
+  // and Windows only, so no Linux run reached it until native-release.yml's ubuntu-24.04 build did,
+  // and `testCliSubsystem` creates a window:
+  //   [Window] SDL_Init failed: x11 not available
+  //   [Mystral] Failed to create window
+  //   testCliSubsystem failed
+  // Reproduced locally by running the built target with DISPLAY unset (exit 1, both lines) and
+  // cleared by the same wrapper (exit 0). `scripts/xvfb.sh` is a no-op where a display exists, so
+  // macOS and Windows are unaffected.
+  const contracts = chain
+    .split('&&')
+    .map((part) => part.trim())
+    .find((part) => part.includes('verify-native-contracts.mjs'));
+  expect(contracts).toBeDefined();
+  expect(contracts).toMatch(/^sh \.\.\/\.\.\/scripts\/xvfb\.sh node scripts\/verify-native-contracts\.mjs$/u);
 });

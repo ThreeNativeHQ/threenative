@@ -2334,6 +2334,12 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_compile_definitions(threenative-cli-network-fs-test PRIVATE
         MYSTRAL_TOOLS_NO_MAIN=1)
     target_link_libraries(threenative-cli-network-fs-test PRIVATE mystral-runtime)
+    # The generated runtime_scripts.h, so this test can install the same embedded polyfills the
+    # runtime does. webtransport::initBindings reads globalThis.__wtDispatch, and the WebTransport
+    # polyfill installs nothing without Web Streams, so a bare engine fails it.
+    target_include_directories(threenative-cli-network-fs-test PRIVATE
+        "${CMAKE_CURRENT_BINARY_DIR}/generated")
+    add_dependencies(threenative-cli-network-fs-test threenative-runtime-scripts)
     if(TARGET webp::mux)
         target_include_directories(threenative-cli-network-fs-test PRIVATE ${WEBP_INCLUDE_DIR})
     endif()
