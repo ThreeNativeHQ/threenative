@@ -3,7 +3,34 @@
 Working document for one day of execution. Not a PRD. It plans *how* the eleven PRDs in this
 folder get closed, in what order, on how many lanes; it changes no scope and ticks no box.
 
-Measured start state (`pnpm prd:progress`, this commit `0022cd9af`):
+**Live progress — measured, each PRD on the branch that carries its work.** Re-run
+`pnpm prd:progress <file>` in that branch's worktree; nothing here is hand-counted.
+
+| PRD | Phase boxes | Acceptance | Label | Δ today | Where the work is |
+| --- | --- | --- | --- | --- | --- |
+| [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | **9/12** | 0/5 | `prd:75%` | **0 → 9** | PR #198 |
+| [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | **20/28** | **5/9** | `prd:50%` | 8 → 20 | PR #193 |
+| [PRD-078](PRD-078-toolchain-free-consumer-proof.md) | 20/54 | 4/4 | `prd:25%` | — | main |
+| [PRD-221](PRD-221-android-v8-is-16kb-clean.md) | **8/18** | 0/5 | `prd:25%` | **0 → 8** | PR #197 |
+| [PRD-373](PRD-373-selective-ci-and-develop-promotion.md) | **4/20** | n/a | `prd:25%` | **0 → 4** | PR #199 |
+| [PRD-060](PRD-060-promoted-consumer-distribution.md) | 0/24 | 0/5 | `prd:0%` | — | blocked: credentials, a person |
+| [PRD-212](PRD-212-published-install-builds-android.md) | 0/18 | 0/5 | `prd:0%` | — | not started (checked: genuinely 0) |
+| [PRD-217](PRD-217-webview-ui-layer.md) | 0/30 | 0/5 | `prd:0%` | — | blocked: no Windows/macOS host |
+| [PRD-365](PRD-365-consumer-desktop-distribution.md) | 0/18 | 0/5 | `prd:0%` | — | blocked: hosts, signing |
+| [PRD-366](PRD-366-one-consumer-game-proves-supported-platforms.md) | 0/18 | 0/5 | `prd:0%` | — | blocked: everything above |
+| [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) | 0/12 | 0/5 | `prd:0%` | — | not started |
+
+**61 of 232 phase boxes, plus 9 acceptance boxes — 26%, from 28 boxes (12%) at the start of the
+day.** Four PRDs moved off zero. None has reached `done/`: every one of the four is held by an
+independent review, a device lane or an external blocker, and no box was ticked to make the table
+look better.
+
+Merge queue: **#194 and #195 merged**, **#196 closed as superseded** (its one remaining change was
+a regression `main`'s own test rejects), **#193 rebuilt on `main` and pushed**. The original
+`Measured start state` table this document opened with is preserved below for comparison.
+
+<details>
+<summary>Start of day, 2026-09-11 (commit <code>0022cd9af</code>)</summary>
 
 | PRD | Phases | Boxes | Acceptance | Label |
 | --- | --- | --- | --- | --- |
@@ -19,7 +46,10 @@ Measured start state (`pnpm prd:progress`, this commit `0022cd9af`):
 | [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | 0/2 | 0/12 | 0/5 | `prd:0%` |
 | [PRD-375](PRD-375-release-artifacts-carry-the-game-brand.md) | 0/2 | 0/12 | 0/5 | `prd:0%` |
 
+
 Total: 11 PRDs, 41 phases, 236 boxes, 28 of them ticked (12%).
+
+</details>
 
 ## Starting a session from this document
 
