@@ -402,15 +402,68 @@ restore (`tar` exit 2) and it rebuilt V8 cold. Infrastructure, not the diff — 
 reads 50 pass / 0 fail. #193's four contract reds named in the plan above have cleared on their own.
 **#196 still has two real reds**, `budgets` and `test-native`, undiagnosed.
 
+## The batch's PRDs were not tracking work that had already merged
+
+Asked to check whether merged PRs already carried this work, and two of the four active lanes turned
+out to be recording nothing:
+
+| PRD | What was already on `main` | What the PRD said |
+| --- | --- | --- |
+| PRD-373 | the classifier and the `ci-required` verdict (PR #190) | 0 of 25 boxes |
+| PRD-221 | **phase 1 entirely** — the aligned V8 provisioner, the Gradle staging, the alignment test (PR #167, merged 2026-09-11) | 0 of 23 boxes |
+
+Both are now recorded with evidence, and in both cases a lane was about to rebuild what was already
+there. PRD-373's draft did rebuild it. **PRD-221's lane did not** — its work is phase 2, the packager
+census, which is genuinely absent from `main`. That was worth checking rather than assuming.
+
+Verified for PRD-221 phase 1, on `main` rather than taken on the merged PR's word:
+`download-deps.mjs:31` imports `assertAndroid16KbAlignment` and calls it at `:1019` on every built
+`.so`; `build-android-v8.mjs:147` asserts it on the provisioned V8; `build.gradle.kts:35` records
+the 3.2.30 bump made for 16 KB alignment; `tests/android-16kb-alignment.test.mjs` passes 34.
+
+The remaining nine PRDs were swept the same way. `gh pr list --search` matches loosely, so its
+counts are a lead, not a finding — PRD-060's five "hits" are four PRD-262 PRs and one real one. Each
+still needs the per-PRD check the two above got.
+
+## Lane 4 — PRD-221, rebuilt and verified
+
+Rebuilt on current `main` as a net diff, same as lane 1 (old tip at `backup/prd221-preRebase`). Its
+code is green and the original lane never reported that: `android-packaging.integration.test.mjs`
+with the alignment suite **46 passed**, `distribution.test.mjs` **36 passed**,
+`native-consumer.spec.ts` **33 passed**, `pnpm typecheck` 0, `pnpm lint` 0. Now `prd:25%`, 4 of 18
+boxes.
+
+One trap worth carrying: `packages/runtime-native/vitest.config.ts` collects `tests/**/*.test.mjs`,
+so those run under **vitest from that package**. Run one with `node --test` and it cannot resolve
+`test-support/temp-dir.js` and reads like a broken test. It is not.
+
+## The independent review of PRD-374 phase 1 came back FAIL
+
+Worth recording because it caught a real gate, not a style point.
+
+1. **`pnpm budgets` was red on the branch and green on `main`.** Phase 1's own evidence file took
+   `docs/verification` to 830 tracked files while `docs/benchmark/SCREENSHOT-RETENTION.md` still
+   recorded 829, so `generate-retention-index.ts --check` failed. `budgets` is a retained
+   full-coverage required check and the PRD's own contract names it for executable changes; the
+   evidence record had listed it NOT RUN and the box was ticked on a narrower gate set. Regenerated
+   with the script and committed — `budgets` now exits 0.
+2. **The PRD and evidence record cited commit `c9dd6288a`, which the rebuild replaced.** Both now
+   cite `9d50cb878` and say why it changed.
+
+The reviewer also mutated `doctor.ts` three ways and confirmed a distinct test catches each, and
+reproduced the phase 1 red/green against `examples/abyss-framework` independently. Its remaining
+defects and the phase 2 verdict are still outstanding.
+
 ## The next actions, in order
 
-1. **Both PRD-374 reviews.** A reviewer subagent is running on phases 1 and 2 as separate verdicts.
-   Tick each review box only on a returned PASS. These are the only boxes between #198 and `prd:100%`.
+1. **The rest of the PRD-374 review.** Defects 3 onward were truncated, and the phase 2 verdict has
+   not arrived. Two review boxes are the only thing between #198 and `prd:100%`.
 2. **Merge #195** the moment its last two checks finish, then **#193**.
 3. **#196's two reds.** `budgets` needs a built workspace; `test-native` is genuinely red.
-4. **Lane 4 (PRD-221)** needs the same treatment lane 1 got: rebuild on current `main`, then run its
-   tests and the `threenative_ps16k` emulator. Its code is real and its PRD is at zero — that gap is
-   the lane's whole remaining cost.
+4. **PRD-221 phase 3** — the `threenative_ps16k` emulator run. Now the single largest unrun thing in
+   the batch, and it is runnable at this desk.
+5. **Sweep the remaining nine PRDs** for merged-but-unrecorded work, per-PRD, the way 373 and 221
+   were done.
 
 ## Machine facts this session adds
 
