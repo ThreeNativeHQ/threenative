@@ -8,7 +8,7 @@ folder get closed, in what order, on how many lanes; it changes no scope and tic
 
 | PRD | Phase boxes | Acceptance | Label | Δ today | Where the work is |
 | --- | --- | --- | --- | --- | --- |
-| [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | **9/12** | 0/5 | `prd:75%` | **0 → 9** | PR #198 |
+| [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | **10/12** | 0/5 | `prd:75%` | **0 → 10** | PR #198 |
 | [PRD-262](PRD-262-the-runtime-native-prebuilt-release-exists.md) | **20/28** | **5/9** | `prd:50%` | 8 → 20 | PR #193 |
 | [PRD-078](PRD-078-toolchain-free-consumer-proof.md) | 20/54 | 4/4 | `prd:25%` | — | main |
 | [PRD-221](PRD-221-android-v8-is-16kb-clean.md) | **8/18** | 0/5 | `prd:25%` | **0 → 8** | PR #197 |
@@ -613,3 +613,79 @@ would be a second copy of the installer's `SERVER_FORMATS`.
 - **`packages/runtime-native/tests/` reports 18 failures in a worktree with no compiled host**, all
   `build/tn-linux/<target> is not built`, across `crash-handler-policy`, `pump-silence`,
   `rg11b10-renderable`, `runtime-next-contract` and `timestamp-query`. 994 pass. Environmental.
+
+---
+
+# Session log — 2026-09-11, third execution session
+
+## PR #198's two CI reds were one suppression
+
+`budgets` and `test-unit (2/3)` both failed for the same reason, and neither log said so in its
+own words: `scripts/__tests__/quality-json.spec.ts` asserts the quality gate exits 0, and phase 2's
+`@ts-expect-error` import of `packages/core/mcp/install.mjs` was **one** new suppression-class
+finding. `budgets` runs `pnpm quality` too, so one directive reddened two required checks.
+
+Fixed at the root rather than waived at the site: `packages/core/mcp/install.d.mts` now types the
+installer the way `servers.d.mts` already types `servers.mjs`, and the directive is gone from all
+five of its TypeScript consumers along with two hand-written casts. Commit `199aebed8`.
+Local: `typecheck` 0, `lint` 0, `quality` 0, `budgets` 0, the four affected specs 136 passed.
+
+**The lesson worth carrying:** a `budgets` red that names nothing in its own diff is usually
+`pnpm quality`, which `budgets` runs. Read the tail of the budgets log, not the changed files.
+
+## Both phases reviewed again; both FAIL again; three real defects
+
+Two fresh reviewers, one per phase, each mutation-testing and driving the real built CLI.
+
+| # | Defect | Phase |
+| --- | --- | --- |
+| 1 | The requested target line named only **satisfied** facts: `not buildable — runtime packager installed; JDK 17.0.19 found; android-35 found`, with the real blocker on another line. Every reason it gave was met. | 1 |
+| 2 | Every per-server `capability search` message hardcoded `.mcp.json` while the summary named the host actually read, so a Cursor-only project was told to restore an entry in a file it does not have. | 2 |
+| 3 | `mcpConfig` took the first host config that **parses**, not the one carrying the servers: seven correctly wired hosts plus a user-owned `.mcp.json` reported `0 of 4 server(s) resolve` and exit 1 beside `editor activation: 7 of 7`. | 2 |
+
+All three fixed in `6d3b1b4e8`, each with its own regression test, all three observed red first
+(`3 failed | 81 passed` before, `84 passed` after) and confirmed on the real built CLI.
+
+Defect 1's fix keeps the probed facts rather than deleting them — they move behind `; probed: `,
+because the standing report of what doctor actually saw is still useful; it is the *implication*
+that they are the reasons that was wrong.
+
+## Phase 2's user-verification box is closed, in a real game
+
+The review's stated reason for leaving it open — `mcpServerHealth` is populated only when a shim
+resolves, so every real run printed `threenative-blender was not probed` — no longer holds. Run in
+`../sandbox/caravel`, a real game with `@threenative/core` installed, outside this repository, with
+Blender removed from **both** `PATH` and `HOME`:
+
+```
+! model conversion: threenative-blender transport is up, but conversion is unavailable: No Blender
+  4.2 or newer was found … no bake manifest here, so no conversion is proven
+✓ editor activation: 7 of 7 host configs carry the servers … whether an editor loaded it is not
+  observable from here
+✓ capability search: threenative-sculpt … transport initialized and advertised 5 tool(s)
+```
+
+No `was not probed` line. The same project with Blender present names `Blender 5.2.0`. PRD-374 is
+now **10 of 12 phase boxes**, `prd:75%`; the two open boxes are both "independent reviewer returned
+PASS", and a third round of reviews is running against `6d3b1b4e8`.
+
+**`PATH` alone never removed Blender here** — `resolveBlender` falls back to
+`$HOME/.local/bin/blender` (`packages/blender-mcp/src/detect.ts:104`), which is exactly where it
+lives on this machine. The earlier control recorded as `PATH=/usr/bin:/bin` did not produce the
+output quoted beside it; both records now say `HOME` must be scrubbed too.
+
+## Evidence drift both reviewers found, corrected in the same commit
+
+- The phase-1 record said `pnpm budgets` **NOT RUN** while the PRD box beside it claimed exit 0.
+- Both records carried spec counts that no longer reproduce (68/75 recorded, 84 measured).
+- Both the PRD and the phase-2 record said `install.d.mts` "was written and reverted" — false as of
+  `199aebed8`, and it made the phase's five-file budget wrong. It is now accounted for, including
+  the three one-line directive deletions it enables.
+
+A record written before the fixes it is supposed to evidence is not evidence. Where a record
+describes an earlier commit, it now says which one.
+
+## Merge lane
+
+#196 is closed. #193 is the only non-draft PR left and is still churning its full 45-job board with
+nothing red; #198's re-run started on `199aebed8`. Nothing merged this session.
