@@ -472,3 +472,35 @@ defects and the phase 2 verdict are still outstanding.
   commits onto current `main` instead, and keep the old tip as a backup branch.
 - **A 2-hour CI job that ends in exit 124 is a cache miss, not a test failure.** Check whether the
   restore step reported `tar` failing before reading anything into the diff.
+
+
+## The `prd-manager` audit, 2026-09-11
+
+Run across all 405 PRDs. Findings that touch this batch:
+
+**PRD-060 exists twice, and the copy this batch plans from does not know phase 1 shipped.**
+
+| File | Lines | Status | Boxes | Last touched by |
+| --- | --- | --- | --- | --- |
+| `BLOCKED/requires-release-credentials/PRD-060-…md` | 762 | `IN PROGRESS — PHASE 1 IMPLEMENTED; PHASES 2-6 BLOCKED` | **10 of 68 ticked** | PR #151, merged |
+| `production-readiness/PRD-060-…md` | 227 | `PROPOSED` | 0 of 29 | this batch's re-plan |
+
+This is the failure `docs/PRDs/AGENTS.md` names outright — *"Never un-file a finished PRD by
+rewriting it… that deletes the ticked boxes and the landed commits that justified them, and the
+work reads as never done."* It is the same thing that happened to PRD-264, which this batch already
+had to restore. Ten ticked boxes and a merged PR are currently invisible to anyone reading the
+batch. **Reconciling two 700-line PRDs is an owner call, not an agent's**, so it is recorded here
+rather than done.
+
+**PRD-212 was checked for the same drift and is clean.** Its phase 1 wants the submission SDK at
+API 36; `build.gradle.kts:298,304` and `doctor.ts:113` all still read 35, so 0 boxes is honest. The
+"PARTIAL" in its status line refers to retained earlier fixes, not to phase work.
+
+Repository-wide, for whenever it is worth a pass: **25 duplicate PRD ids**, **15 files in `done/`
+whose status line says `PROPOSED` or `NOT STARTED`**, 3 claiming done while still open, **69 PRDs
+with no phase boxes at all** — the shape that stalls them — and 39 acceptance criteria conjoining
+independent claims, which can never be ticked.
+
+Reading the board costs ~99% fewer tokens than opening the PRDs. Use
+`node ~/.claude/skills/prd-manager/scripts/prd-board.mjs` before touching PRD work, and
+`prd-audit.mjs` before a release.
