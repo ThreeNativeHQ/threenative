@@ -28,6 +28,35 @@ Engine distribution layer. [PRD-078](PRD-078-toolchain-free-consumer-proof.md) o
 
 Reuse native-release.yml, `PREBUILT_KEYS`, install-status/checksum logic and per-platform packagers. Build at the chosen candidate version; do not assume publishing the stale 0.3.0 source is safe. Generate artifact keys from supported matrix, including V8 runtime/library/STL/snapshots per Android ABI. Desktop claims are explicit OS+architecture rows; build each advertised row or narrow documentation before release. iOS remains a separate existing lane; do not weaken its unrelated gates. The non-iOS readiness conclusion consumes only named non-iOS evidence.
 
+Release scope is declared, not assumed. `scripts/release-candidate-gate.ts` used to demand all
+eight credentials and all six hosted capabilities unconditionally, so a repository holding only
+`NPM_TOKEN` produced seven blockers and `BLOCKED` exit 2 on every candidate — measured on
+2026-09-11: `gh secret list` returns `NPM_TOKEN` alone and
+`repos/ThreeNativeHQ/threenative/actions/organization-secrets` returns `total_count: 0`. The
+request now carries an optional `releaseScope: { platforms, signed }`; omitting it parses to the
+historical every-platform signed set, so a stored request or candidate keeps working. An unsigned
+release must say so, and the declaration is recorded in the candidate artifact. `npmPublish` stays
+required at every scope.
+
+What that narrowing does and does not guarantee, stated plainly because it is what the owner
+approved. `platforms` is guarded: it must cover every platform whose binaries the release
+publishes, derived from the `PREBUILT_ASSET_NAMES` key table, and an asset key matching no known
+platform prefix is refused rather than silently uncovered. `signed` is **not** guarded — it is a
+self-declaration by whoever dispatches the release, with no machine check behind it. Nor are the
+hosted capabilities: `release-candidate.yml` derives credentials from `secrets.X != ''`, but its
+capability booleans are operator-typed `workflow_dispatch` inputs. So after this change the only
+machine-verified requirement standing between a commit and a published release is the presence of
+`NPM_TOKEN`. The scope field is a record of what was claimed, not an enforcement of it: no
+workflow, package or report generator reads it today.
+
+The demand was also unbacked. Grepping the seven signing secret names across `.github/`, `scripts/`
+and `packages/` returns exactly two files: `release-candidate.yml`, which reads them only to derive
+availability booleans, and `native-platform-workflow.test.mjs`, which asserts that wiring.
+`native-release.yml` contains no `codesign`, `signtool`, `notarytool`, `attest` or keystore step at
+all. The gate was refusing to publish until credentials were present for signing operations that no
+workflow, script or package in this repository performs. Signing remains PRD-060's to build; this
+PRD stops blocking on evidence of a capability that does not yet exist.
+
 Data/migration: no application database migration. New build metadata and evidence extend the existing package/config/artifact contracts; no parallel scene, project or release framework.
 
 ```mermaid

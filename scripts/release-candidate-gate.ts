@@ -47,6 +47,95 @@ const REQUIRED_RUN_WORKFLOWS = {
 
 type CredentialName = (typeof REQUIRED_CREDENTIALS)[number];
 type HostedCapabilityName = (typeof REQUIRED_HOSTED_CAPABILITIES)[number];
+
+export const RELEASE_PLATFORMS = ["linux", "windows", "macos", "android", "ios"] as const;
+export type ReleasePlatform = (typeof RELEASE_PLATFORMS)[number];
+
+// A release declares which platforms it ships and whether it is signed. Before this existed the
+// gate demanded all eight credentials and all six capabilities unconditionally, so a repository
+// holding only NPM_TOKEN could never publish anything: seven blockers, BLOCKED, exit 2, on every
+// candidate. The narrowing is a declaration rather than a deletion - an unsigned release must say
+// so, it is recorded in the candidate artifact, and `platforms` must still cover every asset the
+// release publishes, so a platform's runner requirement cannot be dropped while its binary ships.
+export interface IReleaseScope {
+  readonly platforms: readonly ReleasePlatform[];
+  readonly signed: boolean;
+}
+
+export const FULL_RELEASE_SCOPE: IReleaseScope = {
+  platforms: RELEASE_PLATFORMS,
+  signed: true,
+};
+
+const PLATFORM_SIGNING_CREDENTIALS: Readonly<Record<ReleasePlatform, readonly CredentialName[]>> = {
+  linux: ["linuxAttestation"],
+  windows: ["windowsSigning"],
+  macos: ["macosSigning", "macosNotarization"],
+  android: ["androidSigning"],
+  ios: ["iosSigning", "iosExport"],
+};
+
+const PLATFORM_HOSTED_CAPABILITIES: Readonly<
+  Record<ReleasePlatform, readonly HostedCapabilityName[]>
+> = {
+  linux: ["ubuntuRunner"],
+  windows: ["windowsRunner"],
+  macos: ["macosRunner"],
+  android: ["ubuntuRunner", "androidSdk"],
+  ios: ["macosRunner", "xcode"],
+};
+
+const PLATFORM_ASSET_PREFIXES: Readonly<Record<ReleasePlatform, string>> = {
+  linux: "linux-",
+  windows: "win32-",
+  macos: "darwin-",
+  android: "android-",
+  ios: "ios-",
+};
+
+function assertDeclaredPlatforms(scope: IReleaseScope): void {
+  // parseReleaseScope rejects an empty list, but these are exported: a caller reaching them
+  // directly must not silently receive a near-empty requirement set.
+  if (scope.platforms.length === 0)
+    throw new Error("TN_RELEASE_SCOPE_EMPTY: a release scope must declare at least one platform.");
+}
+
+export function requiredCredentials(scope: IReleaseScope): readonly CredentialName[] {
+  assertDeclaredPlatforms(scope);
+  const names = new Set<CredentialName>(["npmPublish"]);
+  if (scope.signed)
+    for (const platform of scope.platforms)
+      for (const credential of PLATFORM_SIGNING_CREDENTIALS[platform]) names.add(credential);
+  return REQUIRED_CREDENTIALS.filter((name) => names.has(name));
+}
+
+export function requiredHostedCapabilities(scope: IReleaseScope): readonly HostedCapabilityName[] {
+  assertDeclaredPlatforms(scope);
+  const names = new Set<HostedCapabilityName>();
+  for (const platform of scope.platforms)
+    for (const capability of PLATFORM_HOSTED_CAPABILITIES[platform]) names.add(capability);
+  // Only a signed release needs a trusted countersignature for its signatures.
+  if (scope.signed) names.add("timestampService");
+  return REQUIRED_HOSTED_CAPABILITIES.filter((name) => names.has(name));
+}
+
+/** Platforms whose binaries the release actually publishes, derived from the asset key table. */
+export function platformsCoveringPublishedAssets(): readonly ReleasePlatform[] {
+  const covered = new Set<ReleasePlatform>();
+  for (const key of Object.keys(PREBUILT_ASSET_NAMES)) {
+    const platform = RELEASE_PLATFORMS.find((candidate) =>
+      key.startsWith(PLATFORM_ASSET_PREFIXES[candidate]),
+    );
+    // An asset key matching no prefix would be silently uncovered by the scope check, which is
+    // exactly the input nobody notices adding. Refuse it instead.
+    if (platform === undefined)
+      throw new Error(
+        `TN_RELEASE_ASSET_PLATFORM_UNKNOWN: prebuilt asset key '${key}' matches no release platform prefix.`,
+      );
+    covered.add(platform);
+  }
+  return RELEASE_PLATFORMS.filter((platform) => covered.has(platform));
+}
 type RegistryState = "absent" | "matching";
 
 export type ReleaseReportType = "parity" | "provenance";
@@ -96,6 +185,7 @@ export interface IReleaseCandidate {
   readonly subjects: { readonly github: readonly string[]; readonly npm: readonly string[] };
   readonly credentials: Readonly<Record<CredentialName, boolean>>;
   readonly hostedCapabilities: Readonly<Record<HostedCapabilityName, boolean>>;
+  readonly releaseScope: IReleaseScope;
   readonly resolution: IReleaseResolution;
 }
 
@@ -131,6 +221,8 @@ export interface IReleaseCandidateRequest {
     readonly parity: IReleaseReportReference;
     readonly provenance: IReleaseReportReference;
   };
+  /** Optional on the wire; an omitted scope parses to the historical every-platform signed set. */
+  readonly releaseScope: IReleaseScope;
 }
 
 export interface IReleaseReportReference {
@@ -204,8 +296,11 @@ const CANDIDATE_KEYS = [
   "subjects",
   "credentials",
   "hostedCapabilities",
+  "releaseScope",
   "resolution",
 ];
+/** `releaseScope` is optional: omitted, it means the historical every-platform signed contract. */
+const CANDIDATE_REQUIRED_KEYS = CANDIDATE_KEYS.filter((key) => key !== "releaseScope");
 const PACKAGE_KEYS = [
   "name",
   "version",
@@ -254,7 +349,9 @@ const REQUEST_KEYS = [
   "runtimeVersion",
   "requiredRunIds",
   "reportArtifacts",
+  "releaseScope",
 ];
+const REQUEST_REQUIRED_KEYS = REQUEST_KEYS.filter((key) => key !== "releaseScope");
 const REPORT_REFERENCE_KEYS = ["runId", "workflowPath", "artifactName", "artifactPath"];
 
 const PARITY_REPORT_SUBJECTS = ["android", "desktop", "web"] as const;
@@ -454,6 +551,7 @@ function validateBooleanMap(
   value: unknown,
   where: string,
   expected: readonly string[],
+  required: readonly string[],
   errors: string[],
   blockers: string[],
 ): void {
@@ -461,11 +559,47 @@ function validateBooleanMap(
     errors.push(`${where} must be an object.`);
     return;
   }
+  // Shape is checked against every key so a malformed availability object still fails closed;
+  // only the keys this release's scope actually requires can raise a blocker.
   checkKeys(value, expected, where, errors);
   for (const key of expected) {
     if (typeof value[key] !== "boolean") errors.push(`${where}.${key} must be boolean.`);
-    else if (value[key] === false) blockers.push(`${where}.${key}`);
+    else if (value[key] === false && required.includes(key)) blockers.push(`${where}.${key}`);
   }
+}
+
+function parseReleaseScope(value: unknown, where: string, errors: string[]): IReleaseScope {
+  if (value === undefined) return FULL_RELEASE_SCOPE;
+  if (!isRecord(value)) {
+    errors.push(`${where} must be an object.`);
+    return FULL_RELEASE_SCOPE;
+  }
+  checkKeys(value, ["platforms", "signed"], where, errors);
+  if (typeof value.signed !== "boolean") errors.push(`${where}.signed must be boolean.`);
+  if (!Array.isArray(value.platforms) || value.platforms.length === 0) {
+    errors.push(`${where}.platforms must be a non-empty array.`);
+    return FULL_RELEASE_SCOPE;
+  }
+  const platforms: ReleasePlatform[] = [];
+  for (const entry of value.platforms) {
+    if (typeof entry !== "string" || !RELEASE_PLATFORMS.includes(entry as ReleasePlatform)) {
+      errors.push(`${where}.platforms must name only ${RELEASE_PLATFORMS.join(", ")}.`);
+      continue;
+    }
+    if (platforms.includes(entry as ReleasePlatform))
+      errors.push(`${where}.platforms must not repeat '${entry}'.`);
+    else platforms.push(entry as ReleasePlatform);
+  }
+  // Fail closed on the narrowing itself: a platform whose binary this release publishes cannot
+  // have its runner requirement dropped by leaving it out of the declared scope.
+  const missing = platformsCoveringPublishedAssets().filter(
+    (platform) => !platforms.includes(platform),
+  );
+  if (missing.length > 0)
+    errors.push(
+      `${where}.platforms must cover every published asset platform; missing ${missing.join(", ")}.`,
+    );
+  return { platforms, signed: value.signed === true };
 }
 
 function registryStateValue(
@@ -656,7 +790,7 @@ function validateCandidateIdentity(
   expectedRepository: string | undefined,
   errors: string[],
 ): ICandidateIdentity {
-  checkKeys(input, CANDIDATE_KEYS, "release candidate", errors);
+  checkKeys(input, CANDIDATE_KEYS, "release candidate", errors, CANDIDATE_REQUIRED_KEYS);
   if (input.schemaVersion !== 1) errors.push("release candidate.schemaVersion must be 1.");
   const repository = stringValue(input.repository, "repository", errors);
   if (repository !== undefined && !REPOSITORY_PATTERN.test(repository))
@@ -706,11 +840,20 @@ function validateRequiredEvidence(
   validateReport(input.provenance, "provenance", candidateSha, "provenance", errors);
   validateReportSource(input.parity, "parity", evidenceRuns, errors);
   validateReportSource(input.provenance, "provenance", evidenceRuns, errors);
-  validateBooleanMap(input.credentials, "credentials", REQUIRED_CREDENTIALS, errors, blockers);
+  const scope = parseReleaseScope(input.releaseScope, "releaseScope", errors);
+  validateBooleanMap(
+    input.credentials,
+    "credentials",
+    REQUIRED_CREDENTIALS,
+    requiredCredentials(scope),
+    errors,
+    blockers,
+  );
   validateBooleanMap(
     input.hostedCapabilities,
     "hostedCapabilities",
     REQUIRED_HOSTED_CAPABILITIES,
+    requiredHostedCapabilities(scope),
     errors,
     blockers,
   );
@@ -965,10 +1108,11 @@ function parseReleaseCandidateRequest(
 ): IReleaseCandidateRequest {
   const errors: string[] = [];
   if (!isRecord(value)) resolutionFailure("release candidate request must be a JSON object.");
-  checkKeys(value, REQUEST_KEYS, "release candidate request", errors);
+  checkKeys(value, REQUEST_KEYS, "release candidate request", errors, REQUEST_REQUIRED_KEYS);
   const identity = parseRequestIdentity(value, expectedRepository, repo, errors);
   const requiredRunIds = parseRequestRunIds(value.requiredRunIds, errors);
   const reportArtifacts = parseRequestArtifacts(value.reportArtifacts, errors);
+  const releaseScope = parseReleaseScope(value.releaseScope, "request.releaseScope", errors);
   if (errors.length > 0) throw new ReleaseCandidateResolutionError("FAIL", errors);
   return {
     schemaVersion: 1,
@@ -981,11 +1125,15 @@ function parseReleaseCandidateRequest(
       parity: reportArtifacts.parity as IReleaseReportReference,
       provenance: reportArtifacts.provenance as IReleaseReportReference,
     },
+    releaseScope,
   };
 }
 
 function parseReleaseAvailability(value: unknown): IReleaseAvailability {
   const errors: string[] = [];
+  // Parsing checks shape only. Which absent capability blocks a release depends on the candidate's
+  // declared scope, which validateRequiredEvidence applies; nothing is required here, so these
+  // collected blockers are intentionally discarded.
   const blockers: string[] = [];
   if (!isRecord(value)) resolutionFailure("release availability must be a JSON object.");
   checkKeys(value, ["credentials", "hostedCapabilities"], "release availability", errors);
@@ -993,6 +1141,7 @@ function parseReleaseAvailability(value: unknown): IReleaseAvailability {
     value.credentials,
     "availability.credentials",
     REQUIRED_CREDENTIALS,
+    [],
     errors,
     blockers,
   );
@@ -1000,6 +1149,7 @@ function parseReleaseAvailability(value: unknown): IReleaseAvailability {
     value.hostedCapabilities,
     "availability.hostedCapabilities",
     REQUIRED_HOSTED_CAPABILITIES,
+    [],
     errors,
     blockers,
   );
@@ -2032,6 +2182,7 @@ export async function resolveReleaseCandidate(
     },
     credentials: availability.credentials,
     hostedCapabilities: availability.hostedCapabilities,
+    releaseScope: request.releaseScope,
     resolution: {
       producerRunId: producerRunId as number,
       source: "release-candidate-workflow",
