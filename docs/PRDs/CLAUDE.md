@@ -26,10 +26,11 @@ under that reason; two lanes were once parked for a day on a tool that was on di
 
 ## Evidence
 
-`docs/verification/` is the evidence record: one file per run, naming what executed and what did
-not. A gate result that lives only in a commit message does not exist. The self-improvement loop
-resumes from `docs/verification/round-*.md` — `pnpm round:next` computes the single next action and
-`pnpm round:deletions` reports exports unreached across consecutive rounds.
+Keep routine verification results in the existing PRD, PR or response. Creating or editing a PRD
+does not require a verification report, an evidence ledger, pasted logs or artificial red/green
+checks. Create a separate file only when the user requests one or an existing automated workflow
+consumes it. The self-improvement loop uses `docs/verification/round-*.md`; those workflow records
+are distinct from routine planning and editing.
 
 ## Retention — evidence has a lifecycle, and `pnpm budgets` enforces it
 
@@ -43,19 +44,16 @@ own commit saying why. The report still prints file counts and duplicate-byte me
 cleanup work, but those measurements do not block a change. Generated sweep instruction files,
 Git/read failures and byte overages remain hard failures.
 
-Deleting tracked evidence needs the owner's checkpoint, and `pnpm round:next`, `pnpm
-round:deletions` and `pnpm alpha:bar` must print byte-identical output either side of it.
+Before deleting tracked evidence, obtain owner authorization and check its actual consumers.
+Workflow records need the affected workflow checks; removing an unused planning report does not
+require unrelated round or release gates.
 
-**The one consolidation exception — runtime/core performance records go into
-`docs/verification/runtime-perf-state.md`** (owner decision, 2026-08-27), now one case of the rule
-above: a new performance finding updates that file in place instead of opening another
-`perf`-report file, which keeps the frame ledger, the lever graveyard and the method rules in one
-place. Everything else stays one file per run.
+Runtime/core performance findings update `docs/verification/runtime-perf-state.md` in place
+(owner decision, 2026-08-27). Do not open another report for each run.
 
 Under `docs/benchmark/sweeps/` the generated arm sources are untracked build output; the
 measurements beside them — `proof.json`, `proof-artifacts/`, captures — are the benchmark record
 and stay in git. Three test suites read them by path.
 
-A red-green acceptance criterion states its mutation: which line, reverted, makes the test fail —
-and pastes that failure. Five repair rounds in one batch were spent on reds produced by the wrong
-thing failing; a test whose "red" survives the feature's removal proves nothing.
+For behavior changes, regression evidence must exercise the changed behavior. Planning and prose
+edits do not require deliberate breakage or a separate record of document checks.
