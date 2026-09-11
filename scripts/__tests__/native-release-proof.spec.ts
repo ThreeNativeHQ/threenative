@@ -605,3 +605,28 @@ test("the consumer gets the build tool helper the runtime dispatches to", () => 
     "the helper must be placed before the consumer build",
   );
 });
+
+test("no mapping in the workflow repeats a key", () => {
+  // `yaml.safe_load` and most parsers accept a repeated key silently; GitHub does not, and rejects
+  // the whole file before any job starts. A Phase 9 edit left `if-no-files-found` twice in one
+  // `with:` block, and the next three runs reported "This run likely failed because of a workflow
+  // file issue" with zero jobs, which reads nothing like a duplicate key.
+  const lines = workflow.split("\n");
+  const seen = new Map<number, Set<string>>();
+  const duplicates: string[] = [];
+  lines.forEach((line, index) => {
+    if (/^\s*#/u.test(line) || line.trim() === "") return;
+    const match = line.match(/^(\x20*)(-\x20)?([A-Za-z_][\w.-]*):(\s|$)/u);
+    if (!match) return;
+    const indent = (match[1]?.length ?? 0) + (match[2] ? 2 : 0);
+    const key = match[3] ?? "";
+    // A list item starts a fresh mapping, and so does any dedent.
+    if (match[2]) for (const depth of [...seen.keys()]) if (depth >= indent) seen.delete(depth);
+    for (const depth of [...seen.keys()]) if (depth > indent) seen.delete(depth);
+    const scope = seen.get(indent) ?? new Set<string>();
+    if (scope.has(key)) duplicates.push(`${key} (line ${index + 1})`);
+    scope.add(key);
+    seen.set(indent, scope);
+  });
+  assert.deepEqual(duplicates, [], `repeated keys: ${duplicates.join(", ")}`);
+});

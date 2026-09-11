@@ -412,7 +412,6 @@ jobs:
           name: tools-${{ matrix.key }}
           path: tools/
           if-no-files-found: error
-          if-no-files-found: error
       - uses: actions/upload-artifact@v7
         if: always()
         with:

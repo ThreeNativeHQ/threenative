@@ -452,6 +452,20 @@ Scope note: only `--target desktop` needs the helper. The packed Android build c
 without it, so the six Android controls are blocked by this only because the desktop build runs
 first in the same job.
 
+## Self-inflicted: a duplicate key made GitHub reject the whole workflow
+
+The Phase 9 edit left `if-no-files-found` twice inside one `with:` block. `yaml.safe_load` accepts a
+repeated key silently, so the local check passed; GitHub does not, and rejected the file before any
+job started. Runs 34567513116 and 34568650504 therefore have **zero jobs** and report only "This run
+likely failed because of a workflow file issue", which reads nothing like a duplicate key and cost
+two cycles to attribute.
+
+The duplicate is removed, and an indentation-aware guard now fails on any repeated key in any
+mapping in the file. Red control: reintroducing the exact duplicate reports
+`repeated keys: if-no-files-found (line 415)`; removing it passes 35/35. A parser that tolerates
+what the consumer rejects is not a check, which is the same lesson as the earlier evidence in this
+record.
+
 ## Hosted evidence and handoff
 
 At this source-record commit, the new hosted proof has not yet produced native observations. Do not read the isolated results above as hosted acceptance. The workflow retains the following candidate-keyed records, including failure records:
