@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  FULL_RELEASE_SCOPE,
   type IRegistryObservation,
   type IReleaseCandidate,
   type IReleaseCandidateRequest,
@@ -20,7 +21,10 @@ import {
   normalizedPackageTreeHash,
   parseEvidenceReport,
   parseGithubRun,
+  platformsCoveringPublishedAssets,
   registryPackageObservation,
+  requiredCredentials,
+  requiredHostedCapabilities,
   resolveReleaseCandidate,
   validateReleaseCandidate,
   verifyRegistryCohort,
@@ -116,6 +120,7 @@ function candidate(overrides: Partial<IReleaseCandidate> = {}): IReleaseCandidat
     hostedCapabilities: Object.fromEntries(
       REQUIRED_HOSTED_CAPABILITIES.map((name) => [name, true]),
     ) as IReleaseCandidate["hostedCapabilities"],
+    releaseScope: FULL_RELEASE_SCOPE,
     resolution: {
       producerRunId: 103,
       source: "release-candidate-workflow",
@@ -309,6 +314,122 @@ describe("release candidate gate", () => {
     expect(result.blockers).toEqual(["hostedCapabilities.macosRunner"]);
   });
 
+  it("should publish an explicitly unsigned release without any signing credential", () => {
+    // The repository holds one Actions secret, NPM_TOKEN. Before the release scope existed this
+    // shape produced seven blockers and could never publish anything.
+    const credentials = {
+      ...candidate().credentials,
+      linuxAttestation: false,
+      windowsSigning: false,
+      macosSigning: false,
+      macosNotarization: false,
+      androidSigning: false,
+      iosSigning: false,
+      iosExport: false,
+    };
+    const hostedCapabilities = { ...candidate().hostedCapabilities, timestampService: false };
+    const result = validateReleaseCandidate(
+      candidate({
+        credentials,
+        hostedCapabilities,
+        releaseScope: { platforms: FULL_RELEASE_SCOPE.platforms, signed: false },
+      }),
+      "ThreeNativeHQ/threenative",
+    );
+
+    expect(result).toEqual({ status: "PASS", exitCode: 0, errors: [], blockers: [] });
+  });
+
+  it("should still block an unsigned release when npm publication is unavailable", () => {
+    const credentials = { ...candidate().credentials, npmPublish: false };
+    const result = validateReleaseCandidate(
+      candidate({
+        credentials,
+        releaseScope: { platforms: FULL_RELEASE_SCOPE.platforms, signed: false },
+      }),
+      "ThreeNativeHQ/threenative",
+    );
+
+    expect(result.status).toBe("BLOCKED");
+    expect(result.blockers).toEqual(["credentials.npmPublish"]);
+  });
+
+  it("should still block an unsigned release when a declared platform has no runner", () => {
+    const hostedCapabilities = { ...candidate().hostedCapabilities, windowsRunner: false };
+    const result = validateReleaseCandidate(
+      candidate({
+        hostedCapabilities,
+        releaseScope: { platforms: FULL_RELEASE_SCOPE.platforms, signed: false },
+      }),
+      "ThreeNativeHQ/threenative",
+    );
+
+    expect(result.status).toBe("BLOCKED");
+    expect(result.blockers).toEqual(["hostedCapabilities.windowsRunner"]);
+  });
+
+  it("should reject a scope that drops a platform whose binaries the release publishes", () => {
+    const result = validateReleaseCandidate(
+      candidate({ releaseScope: { platforms: ["linux", "android"], signed: false } }),
+      "ThreeNativeHQ/threenative",
+    );
+
+    expect(result.status).toBe("FAIL");
+    expect(result.errors.join("\n")).toContain("must cover every published asset platform");
+  });
+
+  it("should demand every signing credential again when the release declares itself signed", () => {
+    expect(requiredCredentials({ platforms: FULL_RELEASE_SCOPE.platforms, signed: true })).toEqual(
+      REQUIRED_CREDENTIALS,
+    );
+    expect(
+      requiredHostedCapabilities({ platforms: FULL_RELEASE_SCOPE.platforms, signed: true }),
+    ).toEqual(REQUIRED_HOSTED_CAPABILITIES);
+    expect(requiredCredentials({ platforms: FULL_RELEASE_SCOPE.platforms, signed: false })).toEqual(
+      ["npmPublish"],
+    );
+  });
+
+  it("should accept a candidate with no releaseScope as the historical signed contract", () => {
+    // The field is optional on the wire; omitting it must behave exactly as before it existed.
+    const { releaseScope: _omitted, ...withoutScope } = candidate();
+    const result = validateReleaseCandidate(
+      withoutScope as unknown as IReleaseCandidate,
+      "ThreeNativeHQ/threenative",
+    );
+
+    expect(result).toEqual({ status: "PASS", exitCode: 0, errors: [], blockers: [] });
+  });
+
+  it("should still demand every signing credential when releaseScope is omitted", () => {
+    const { releaseScope: _omitted, ...withoutScope } = candidate({
+      credentials: { ...candidate().credentials, iosSigning: false },
+    });
+    const result = validateReleaseCandidate(
+      withoutScope as unknown as IReleaseCandidate,
+      "ThreeNativeHQ/threenative",
+    );
+
+    expect(result.status).toBe("BLOCKED");
+    expect(result.blockers).toEqual(["credentials.iosSigning"]);
+  });
+
+  it("should refuse a scope that declares no platform at all", () => {
+    expect(() => requiredCredentials({ platforms: [], signed: false })).toThrow(
+      "TN_RELEASE_SCOPE_EMPTY",
+    );
+    expect(() => requiredHostedCapabilities({ platforms: [], signed: false })).toThrow(
+      "TN_RELEASE_SCOPE_EMPTY",
+    );
+  });
+
+  it("should cover every prebuilt asset key with a known release platform", () => {
+    // Guards the scope check itself: an asset key matching no platform prefix would leave that
+    // platform silently uncovered, so the derivation refuses it rather than ignoring it.
+    expect(() => platformsCoveringPublishedAssets()).not.toThrow();
+    expect(platformsCoveringPublishedAssets()).toEqual(FULL_RELEASE_SCOPE.platforms);
+  });
+
   it("should reject a mismatched package subject set or a non-publishable registry state", () => {
     const invalid = candidate({
       packageCohort: [
@@ -428,6 +549,7 @@ describe("release candidate gate", () => {
       tag: `runtime-native-v${RUNTIME_VERSION}`,
       candidateSha: CANDIDATE_SHA,
       runtimeVersion: RUNTIME_VERSION,
+      releaseScope: FULL_RELEASE_SCOPE,
       requiredRunIds: { ci: 201, native: 202 },
       reportArtifacts: {
         parity: {
@@ -505,6 +627,7 @@ describe("release candidate gate", () => {
       tag: `runtime-native-v${RUNTIME_VERSION}`,
       candidateSha: CANDIDATE_SHA,
       runtimeVersion: RUNTIME_VERSION,
+      releaseScope: FULL_RELEASE_SCOPE,
       requiredRunIds: { ci: 201, native: 202 },
       reportArtifacts: {
         parity: {
