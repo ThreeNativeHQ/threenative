@@ -425,7 +425,7 @@ jobs:
       ${{ !cancelled() && needs.gates.result == 'success' &&
       (github.ref_type != 'tag' || needs.validate-tag.outputs.candidate_sha == github.sha) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -438,7 +438,10 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v4
-      - run: sdkmanager "ndk;27.1.12297006" "cmake;3.22.1"
+      - name: Install Android NDK 28.2 and select it for all native steps
+        run: |
+          sdkmanager "ndk;28.2.13676358" "cmake;3.22.1"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358" >> "$GITHUB_ENV"
       - run: rustup target add aarch64-linux-android x86_64-linux-android
       - run: pnpm install --frozen-lockfile
       - name: Build Android proof workspace dependencies
@@ -447,6 +450,7 @@ jobs:
             [ -n "$package_name" ] || continue
             pnpm --filter "$package_name" --if-present run build
           done < <(pnpm tsx scripts/workspace-packages.ts --archives)
+      - uses: ./.github/actions/android-v8-source
       - run: node packages/runtime-native/scripts/download-deps.mjs --android
       - run: node packages/runtime-native/scripts/download-deps.mjs --only stb
       - run: node packages/runtime-native/scripts/download-deps.mjs --only quickjs

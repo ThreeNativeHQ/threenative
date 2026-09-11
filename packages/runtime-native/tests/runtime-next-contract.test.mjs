@@ -1049,10 +1049,12 @@ test('Android preserves native crash evidence and QuickJS reports each evaluatio
   // Until 2026-08-16 `third_party/v8-android/` existed only where somebody had unpacked it by hand,
   // so a fresh checkout could not build Android V8 at all. This file is the only supported
   // reconstruction path, and the pin is what makes "reconstructible" mean the same bytes.
-  assert.match(deps, /'v8-android': \{[\s\S]*?sha256: '[0-9a-f]{64}'/,
-    'the Android V8 dependency must pin a checksum, not just a URL');
-  assert.match(deps, /abis: \['arm64-v8a', 'x86_64'\]/,
-    'the Android V8 dependency must provision every ABI abiFilters ships, or a slice has no snapshot');
+  assert.match(deps, /import \{ provisionAndroidV8 \} from '\.\/build-android-v8\.mjs'/,
+    'Android V8 must use the owned source builder');
+  assert.match(deps, /if \(name === 'v8-android'\) \{[\s\S]*?provisionAndroidV8/,
+    'the supported Android V8 dependency path must delegate to the source builder');
+  assert.doesNotMatch(deps, /v8-android-jit\.zip/,
+    'Android V8 must not fall back to the historical 4 KB archive');
   const nativeBuild = read('scripts/native-build.mjs');
   assert.match(nativeBuild, /VCPKG_INSTALLATION_ROOT[\s\S]*x64-windows-static/,
     'Windows builds must consume the static-CRT HTTP dependencies installed by the platform lane');

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,10 +26,15 @@ const releaseWorkflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/native-release.yml', import.meta.url)),
   'utf8',
 );
+const androidV8Action = readFileSync(
+  fileURLToPath(new URL('../../../.github/actions/android-v8-source/action.yml', import.meta.url)),
+  'utf8',
+);
 const candidateWorkflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/release-candidate.yml', import.meta.url)),
   'utf8',
 );
+
 const smokeScenario = (name) => JSON.parse(readFileSync(
   fileURLToPath(new URL(`../../../examples/native-smoke/playtests/${name}`, import.meta.url)),
   'utf8',
@@ -140,6 +145,105 @@ test('native platform failures fail the exact protected build context', () => {
   }
 });
 
+test('Android V8 source is produced once and consumed as a verified artifact', () => {
+  expect(androidV8Action).toContain('actions/cache/restore@v4');
+  expect(androidV8Action).toContain('actions/cache/save@v4');
+  expect(androidV8Action).toContain('third_party/.v8-source');
+  expect(androidV8Action).toContain('github.run_id');
+  expect(androidV8Action).toContain('github.run_attempt');
+  expect(androidV8Action).toContain('restore-keys:');
+  expect(androidV8Action).toContain('node scripts/download-deps.mjs --only v8-android');
+  expect(androidV8Action).toContain('node scripts/build-android-v8.mjs --verify');
+  const producer = workflow.match(
+    /\n\x20{2}android-v8-source:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(producer).toContain('needs: scope');
+  expect(producer).toContain('uses: ./.github/actions/android-v8-source');
+  expect(producer).toContain('actions/upload-artifact@v7');
+  expect(producer).toContain('name: android-v8-${{ github.sha }}');
+  const android = workflow.match(
+    /\n\x20{2}android-emulator-parity:\n[\s\S]*?(?=\n\x20{2}[a-z0-9-]+:|\s*$)/u,
+  )?.[0] ?? '';
+  expect(android).toContain('needs: [scope, web-reference, android-v8-source]');
+  expect(android).toContain('needs.android-v8-source.result == \'success\'');
+  expect(android).toContain('actions/download-artifact@v7');
+  expect(android).toContain('name: android-v8-${{ github.sha }}');
+  expect(android).toContain('native-android-third-party-');
+});
+
+test('Android V8 interruption leaves time to cache and resume Ninja state', () => {
+  const buildStep = androidV8Action.match(
+    /- name: Build the pinned Android V8 payload[\s\S]*?(?=\n {4}- name: Verify the complete Android V8 payload)/u,
+  )?.[0] ?? '';
+  const script = buildStep.match(/\n {6}run: \|\n([\s\S]*)$/u)?.[1]
+    ?.split('\n')
+    .map((line) => line.replace(/^ {8}/u, ''))
+    .join('\n');
+  expect(script).toContain('timeout --signal=TERM --kill-after=30s 120m');
+  expect(androidV8Action.indexOf('Save resumable V8 source state')).toBeGreaterThan(
+    androidV8Action.indexOf('Build the pinned Android V8 payload'),
+  );
+  expect(androidV8Action).toContain('if: always()');
+  expect(androidV8Action).toContain('third_party/.v8-source');
+
+  const root = makeTempDirSync('tn-v8-resume-action-');
+  const runtime = join(root, 'runtime');
+  const bin = join(root, 'bin');
+  const state = join(
+    runtime,
+    'third_party/.v8-source/buildscripts/v8/out.v8.arm64/build.ninja',
+  );
+  mkdirSync(join(runtime, 'scripts'), { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  const fakeNode = join(bin, 'node');
+  writeFileSync(
+    fakeNode,
+    `#!/bin/sh
+set -eu
+state="$PWD/third_party/.v8-source/buildscripts/v8/out.v8.arm64/build.ninja"
+mkdir -p "$(dirname "$state")"
+if [ "\${TN_V8_RESUME:-0}" = "1" ]; then
+  test -s "$state"
+  printf resumed > "$state"
+  exit 0
+fi
+printf advanced > "$state"
+child=0
+trap 'test "$child" -eq 0 || kill "$child" 2>/dev/null || true; exit 143' TERM INT
+sleep 60 &
+child=$!
+wait "$child"
+`,
+  );
+  chmodSync(fakeNode, 0o755);
+  const env = {
+    ...process.env,
+    ANDROID_NDK_HOME: root,
+    PATH: `${bin}:${process.env.PATH ?? ''}`,
+  };
+  try {
+    // Shorten only this fixture's clock; the extracted command is otherwise the action's exact
+    // build shell. The timeout must fail after the fake Ninja state has been written.
+    const interrupted = spawnSync(
+      'bash',
+      ['-euo', 'pipefail', '-c', script.replace('120m', '1s')],
+      { cwd: runtime, env, encoding: 'utf8' },
+    );
+    expect(interrupted.status).toBe(124);
+    expect(readFileSync(state, 'utf8')).toBe('advanced');
+
+    const resumed = spawnSync(
+      'bash',
+      ['-euo', 'pipefail', '-c', script.replace('120m', '5s')],
+      { cwd: runtime, env: { ...env, TN_V8_RESUME: '1' }, encoding: 'utf8' },
+    );
+    expect(resumed.status).toBe(0);
+    expect(readFileSync(state, 'utf8')).toBe('resumed');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('desktop platform lanes build and retain executable evidence', () => {
   for (const token of [
     'runner: macos-15',
@@ -193,6 +297,7 @@ test('iOS lane executes simulator proof and negative-control tests on an Apple r
     'pnpm --dir "$IOS_CONSUMER_TARGET" build --target ios',
     'ios-toolchain-invocations.log',
     '--target ios --app "$app"',
+    '--timeout 30000',
     'physics-wrong-height.playtest.json',
     'physics-mask.playtest.json',
     'THREENATIVE_PHYSICS_CONTROL=masked',
@@ -211,7 +316,7 @@ test('iOS consumer launches the bundle identifier produced by its packager', () 
 
 test('iOS workflow dispatch can run without unrelated platform cancellation', () => {
   expect(workflow).toContain('ios_only:');
-  expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(4);
+  expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(5);
 });
 
 test('iOS consumer proof is a required gate after the simulator proof passes', () => {
@@ -618,4 +723,9 @@ test('native physics controls assert the parity scene surface', () => {
     'parity.collisionEventSet',
     'parity.control',
   ]);
+});
+
+test('PRD-221 uses the existing native producer rather than a duplicate investigation workflow', () => {
+  const workflows = readdirSync(new URL('../../../.github/workflows/', import.meta.url));
+  expect(workflows.filter((name) => /^prd-221-.*\.yml$/u.test(name))).toEqual([]);
 });
