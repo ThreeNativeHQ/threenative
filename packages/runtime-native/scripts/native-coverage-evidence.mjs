@@ -44,13 +44,41 @@ function visitAllInputs(directory, files) {
   }
 }
 
+/**
+ * `tests/` holds two unrelated populations, and only one of them can move native coverage.
+ *
+ * The 40 `.cpp` files compile into the binaries ctest runs, and the fixtures steer what those
+ * binaries execute - `webgpu_bindings_reentrancy_test.cpp` reads `fixtures/`, so a fixture edit
+ * really can change which branches are covered. Both stay hashed.
+ *
+ * The files vitest collects cannot. `packages/runtime-native/vitest.config.ts` runs
+ * `tests/**\/*.test.{ts,mjs}` under Node; `scripts/measure-native-coverage.mjs` reads nothing from
+ * `tests/` at all - it runs ctest over compiled binaries and parses llvm-cov. Hashing them made
+ * every Node-test edit invalidate a digest whose numbers could not have changed, which forced a
+ * restamp on 7 pull requests in one evening and conflicted them against each other on the one
+ * generated line. The coverage-infrastructure list above still pins `measure-native-coverage.mjs`
+ * and `native-test-lane.mjs` by name, so the machinery that produces the numbers is unchanged.
+ */
+function isVitestCollected(entryPath) {
+  return /\.test\.(?:ts|mjs)$/u.test(entryPath);
+}
+
+function visitCoverageRelevantTestInputs(directory, files) {
+  if (!existsSync(directory)) throw new Error(`native coverage input is missing: ${directory}`);
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const entryPath = join(directory, entry.name);
+    if (entry.isDirectory()) visitCoverageRelevantTestInputs(entryPath, files);
+    else if (!isVitestCollected(entryPath)) files.push(entryPath);
+  }
+}
+
 export function nativeCoverageInputFiles(runtimeRoot) {
   const files = coverageInfrastructure.map((path) => join(runtimeRoot, path));
   visitAllInputs(join(runtimeRoot, "cmake"), files);
   visitNativeInputs(join(runtimeRoot, "include"), files);
   visitAllInputs(join(runtimeRoot, "src", "runtime-scripts"), files);
   visitNativeInputs(join(runtimeRoot, "src"), files);
-  visitAllInputs(join(runtimeRoot, "tests"), files);
+  visitCoverageRelevantTestInputs(join(runtimeRoot, "tests"), files);
   for (const file of files) {
     if (!existsSync(file)) throw new Error(`native coverage input is missing: ${file}`);
   }
