@@ -12,7 +12,7 @@
 | [PRD-078](PRD-078-toolchain-free-consumer-proof.md) | Current exact-candidate hosted runtime build proof | Moved from BLOCKED/; PARTIAL | Current candidate CI; do not reuse old failure diagnosis |
 | [PRD-221](PRD-221-android-v8-is-16kb-clean.md) | Aligned default V8 and real 16 KB Android execution | Moved from BLOCKED/; PROPOSED | Recheck upstream/toolchain access |
 | [PRD-217](PRD-217-webview-ui-layer.md) | Default React HUD on Windows/macOS/Linux sessions | Moved from done/ (already PARTIAL); PARTIAL | None for platform implementation |
-| [PRD-264](PRD-264-doctor-answers-all-three-questions-a-game-author-has.md) | Truthful target/tool/signing prerequisite diagnosis | Moved from done/; PARTIAL | Consumes contracts from 196/212/217/365 |
+| [PRD-374](PRD-374-doctor-predicts-the-requested-build-prerequisite.md) | Target-scoped build prerequisite prediction; Blender/editor separation | NOT STARTED | Extends done [PRD-264](../done/PRD-264-doctor-answers-all-three-questions-a-game-author-has.md); consumes contracts from 196/212/217/365 |
 | [PRD-212](PRD-212-published-install-builds-android.md) | SDK-current signed Android APK/AAB from game project | Moved from mobile/; PARTIAL | 221 inputs; 262 downloaded artifacts |
 | [PRD-365](PRD-365-consumer-desktop-distribution.md) | Complete desktop containers and signing/notarization | NEW; PROPOSED | 217 overlays; 212 mode parsing; 262 binaries |
 | [PRD-153](PRD-153-game-branding-from-launch-to-play.md) | Custom brand in launcher, splash, loading and game | Moved from done/; PARTIAL | 212/365 final artifacts; 217 UI |
@@ -80,7 +80,7 @@ flowchart TD
 | --- | --- | --- |
 | Public versions lag source; package helper imports unpublished siblings; sandbox package completeness | PRD-196 | Extracted tarballs resolve; coherent cohort; sandbox native/MCP proof kept distinct from public consumer gate |
 | npm/pnpm installation, sharp/libvips and Node minimum friction | PRD-196 | Clean minimum-version and package-manager matrix; reproduced environment error and repair; audit reachability triage |
-| MCPs auto-installed/configured; Blender application prerequisite; editor trust | PRD-196 + PRD-264 | All server transports plus real operations; actual editor discovery; missing external app/config tests |
+| MCPs auto-installed/configured; Blender application prerequisite; editor trust | PRD-196 + PRD-374 | All server transports plus real operations; actual editor discovery; missing external app/config tests |
 | Runtime manifest HTTP404 and source-checkout workaround | PRD-078 + PRD-262 | Hosted exact-SHA run including all four original Android physics negative controls, downloadable complete lock, installed no-compiler consumer |
 | Windows/macOS default HUD rejected; Linux session overlay failure | PRD-217 | Real same-UI input, resize/focus, transparent composition and packaged backend per OS/session |
 | Android target SDK35 and debug-only output | PRD-212 | Current SDK and explicit release APK/AAB; real signer/non-debuggable metadata and failure controls |
