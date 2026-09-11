@@ -42,6 +42,83 @@ Existing build-ios-simulator and clean-consumer-ios job comparison: identical
 
 Mutations are executable, not prose: restore the tag-only workflow; feed a different-SHA successful CI run; remove/skip a required job; remove an Android result; empty its assertion set; change its marker, exit or scenario. The corresponding tests must fail when the production guard is removed.
 
+## Correction: the main prerequisite wait could not outlast main CI
+
+The `gates` job waits for the exact-candidate main CI run before validating its eleven required
+rows. That wait was 180 attempts at 20 seconds, a 60 minute budget, inside a job capped at 65
+minutes. Successful `ci.yml` push runs on `main` took 61.2, 62.5, 63.0, 64.8, 70.7, 73.7, 88.5 and
+115.4 minutes on the full board (measured 2026-09-10 from
+`repos/ThreeNativeHQ/threenative/actions/workflows/ci.yml/runs?branch=main&event=push`). The merge
+that enables this proof changes `native-release.yml` and both proof specs, so it takes the full
+board and would have refused its own candidate for elapsed time rather than for its evidence.
+
+The budget is now 150 attempts at 60 seconds inside a 160 minute job, polling three times less
+often. Refusal semantics are unchanged: a red, missing, malformed or non-`main` CI run is still
+refused by the row validation below, never retried to green.
+
+Red then green, executed locally:
+
+```text
+pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts -t "outlasts a full-board"
+
+FAIL scripts/__tests__/native-release-proof.spec.ts > the main prerequisite wait outlasts a full-board main CI run
+AssertionError: the prerequisite wait budget is 60 minutes, under the 115.4 minute worst observed main CI run
+Test Files  1 failed (1)
+Tests  1 failed | 23 skipped (24)
+EXIT_CODE=1
+```
+
+```text
+pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts
+Test Files  1 passed (1)
+Tests  24 passed (24)
+EXIT_CODE=0
+
+pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts scripts/__tests__/native-release-android-staging.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts
+Test Files  4 passed (4)
+Tests  123 passed (123)
+EXIT_CODE=0
+
+pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/native-platform-workflow.test.mjs
+Test Files  1 passed (1)
+Tests  30 passed (30)
+EXIT_CODE=0
+
+pnpm typecheck  EXIT_CODE=0
+pnpm lint       EXIT_CODE=0 (678 pre-existing warnings, 0 errors)
+```
+
+The test parses the workflow's own loop bound, poll interval and job timeout, so a later edit that
+shortens either one fails again rather than silently restoring the false refusal.
+
+## Correction: the CLI contract test could not compile
+
+Commit `4a8fb124b` installed Web Streams before `webtransport::initBindings` in
+`packages/runtime-native/tests/cli_network_fs_test.cpp`, which is the prerequisite that test
+documents, but referenced the embedded script table unqualified and without its generated header.
+All three desktop `build` rows of run
+[34546754768](https://github.com/ThreeNativeHQ/threenative/actions/runs/34546754768) failed inside
+`native:verify:desktop` with the same error:
+
+```text
+packages/runtime-native/tests/cli_network_fs_test.cpp:1049:30: error: 'runtime_scripts' has not been declared
+Error: 1 native contract target(s) failed:
+```
+
+Commits `476a15681` and `6487d0c0e` qualify `mystral::runtime_scripts::find`, include the generated
+`runtime_scripts.h`, guard a missing script and a failed `initBindings`, and give the target its
+generated include directory plus a dependency on `threenative-runtime-scripts`. Verified locally
+against the exact CI compile line taken from `build/tn-linux/compile_commands.json`, with the
+generated include directory added exactly as the CMake change adds it, `-fsyntax-only`:
+
+```text
+4a8fb124b  -> error: 'runtime_scripts' has not been declared   EXIT_CODE=1
+d47457c35  -> no diagnostics                                   EXIT_CODE=0
+```
+
+That is a compile result, not a hosted platform claim. The desktop rows remain owned by the hosted
+run recorded below.
+
 ## Hosted evidence and handoff
 
 At this source-record commit, the new hosted proof has not yet produced native observations. Do not read the isolated results above as hosted acceptance. The workflow retains the following candidate-keyed records, including failure records:
