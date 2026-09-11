@@ -5,12 +5,12 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-// @ts-expect-error — the packager is plain JavaScript so a postinstall can run it unbuilt.
-import { SDL3_ANDROID_VERSION } from "../../runtime-native/scripts/package-android.mjs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, test } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
+// @ts-expect-error — the packager is plain JavaScript so a postinstall can run it unbuilt.
+import { SDL3_ANDROID_VERSION } from "../../runtime-native/scripts/package-android.mjs";
 
 // Exercise the shipped packagers, not a reimplementation of their source/consumer decisions.
 const runtimeRoot = fileURLToPath(new URL("../../runtime-native/", import.meta.url));
@@ -34,7 +34,7 @@ afterEach(async () => {
   }
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
   for (const [key, value] of savedEnv) {
-    if (value === undefined) delete process.env[key];
+    if (value === undefined) Reflect.deleteProperty(process.env, key);
     else process.env[key] = value;
   }
 });
@@ -42,8 +42,8 @@ afterEach(async () => {
 function temporary(): string {
   const root = makeTempDirSync("threenative-consumer-review-");
   roots.push(root);
-  delete process.env.THREENATIVE_RUNTIME_SOURCE;
-  delete process.env.THREENATIVE_PREBUILT_MANIFEST;
+  Reflect.deleteProperty(process.env, "THREENATIVE_RUNTIME_SOURCE");
+  Reflect.deleteProperty(process.env, "THREENATIVE_PREBUILT_MANIFEST");
   return root;
 }
 
@@ -128,28 +128,34 @@ test("desktop refuses an unverified cached runtime when reinstall fails", async 
   assert.equal(JSON.parse(readFileSync(fixture.install.statusPath, "utf8")).ok, false);
 });
 
-test("desktop source override is rejected even when a verified consumer runtime is cached", async () => {
-  const fixture = await installedFixture();
-  process.env.THREENATIVE_RUNTIME_SOURCE = path.join(fixture.root, "checkout");
-  await assert.rejects(
-    desktop.resolveDesktopRuntime(undefined, { install: fixture.install }),
-    /THREENATIVE_RUNTIME_SOURCE.*no --runtime/u,
-  );
-  assert.equal(fixture.requests(), 1);
-  assert.deepEqual(readFileSync(fixture.install.output), fixture.bytes);
-});
+test(
+  "desktop source override is rejected even when a verified consumer runtime is cached",
+  async () => {
+    const fixture = await installedFixture();
+    process.env.THREENATIVE_RUNTIME_SOURCE = path.join(fixture.root, "checkout");
+    await assert.rejects(
+      desktop.resolveDesktopRuntime(undefined, { install: fixture.install }),
+      /THREENATIVE_RUNTIME_SOURCE.*no --runtime/u,
+    );
+    assert.equal(fixture.requests(), 1);
+    assert.deepEqual(readFileSync(fixture.install.output), fixture.bytes);
+  },
+);
 
-test("desktop explicit runtime override remains offline and takes precedence over source preflight", async () => {
-  const root = temporary();
-  const runtime = path.join(root, "runtime");
-  writeFileSync(runtime, "explicit");
-  process.env.THREENATIVE_RUNTIME_SOURCE = path.join(root, "checkout");
-  assert.equal(await desktop.resolveDesktopRuntime(runtime), runtime);
-  await assert.rejects(
-    desktop.resolveDesktopRuntime(path.join(root, "missing")),
-    /Missing prebuilt runtime/u,
-  );
-});
+test(
+  "desktop explicit runtime override remains offline and takes precedence over source preflight",
+  async () => {
+    const root = temporary();
+    const runtime = path.join(root, "runtime");
+    writeFileSync(runtime, "explicit");
+    process.env.THREENATIVE_RUNTIME_SOURCE = path.join(root, "checkout");
+    assert.equal(await desktop.resolveDesktopRuntime(runtime), runtime);
+    await assert.rejects(
+      desktop.resolveDesktopRuntime(path.join(root, "missing")),
+      /Missing prebuilt runtime/u,
+    );
+  },
+);
 
 test("desktop CLI accepts a missing runtime argument but still requires bundle and output", () => {
   assert.equal(desktop.parseArgs(["--bundle", "game.js", "--output", "game"]).runtime, undefined);
@@ -171,31 +177,34 @@ test("desktop explicit packaging still reports a missing bundle synchronously", 
 });
 
 for (const aar of [undefined, "SDL3-0.0.0.aar", `SDL3-${android.SDL3_ANDROID_VERSION}.aar`]) {
-  test(`Android refuses a source checkout before wrapper/network work (${aar ?? "no SDL archive"})`, async () => {
-    const root = temporary();
-    writeFileSync(path.join(root, "CMakeLists.txt"), "# source\n");
-    if (aar) {
-      mkdirSync(path.join(root, "third_party", "sdl3-android"), { recursive: true });
-      writeFileSync(path.join(root, "third_party", "sdl3-android", aar), "fixture");
-    }
-    const calls: string[] = [];
-    await assert.rejects(
-      android.packageAndroid("absent.js", undefined, undefined, undefined, undefined, {
-        runtimeRoot: root,
-        ensureGradleWrapper: async () => {
-          calls.push("wrapper");
-        },
-        prepareAndroidPrebuilts: async () => {
-          calls.push("download");
-        },
-        spawnSync: () => {
-          calls.push("compile");
-        },
-      }),
-      /source checkout.*explicit opt-in/u,
-    );
-    assert.deepEqual(calls, []);
-  });
+  test(
+    `Android refuses a source checkout before wrapper/network work (${aar ?? "no SDL archive"})`,
+    async () => {
+      const root = temporary();
+      writeFileSync(path.join(root, "CMakeLists.txt"), "# source\n");
+      if (aar) {
+        mkdirSync(path.join(root, "third_party", "sdl3-android"), { recursive: true });
+        writeFileSync(path.join(root, "third_party", "sdl3-android", aar), "fixture");
+      }
+      const calls: string[] = [];
+      await assert.rejects(
+        android.packageAndroid("absent.js", undefined, undefined, undefined, undefined, {
+          runtimeRoot: root,
+          ensureGradleWrapper: async () => {
+            calls.push("wrapper");
+          },
+          prepareAndroidPrebuilts: async () => {
+            calls.push("download");
+          },
+          spawnSync: () => {
+            calls.push("compile");
+          },
+        }),
+        /source checkout.*explicit opt-in/u,
+      );
+      assert.deepEqual(calls, []);
+    },
+  );
 }
 
 function androidFixture(source: boolean) {
@@ -273,21 +282,24 @@ test("Android explicit opt-in uses the source route without downloading prebuilt
   assert.deepEqual(readFileSync(manifest), original);
 });
 
-test("Android installed consumers still download prebuilts without opting into source builds", async () => {
-  const fixture = androidFixture(false);
-  assert.equal(
-    await android.packageAndroid(
-      fixture.bundle,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      fixture.options,
-    ),
-    fixture.apk,
-  );
-  assert.deepEqual(fixture.calls, ["wrapper", "download", "gradle"]);
-});
+test(
+  "Android installed consumers still download prebuilts without opting into source builds",
+  async () => {
+    const fixture = androidFixture(false);
+    assert.equal(
+      await android.packageAndroid(
+        fixture.bundle,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        fixture.options,
+      ),
+      fixture.apk,
+    );
+    assert.deepEqual(fixture.calls, ["wrapper", "download", "gradle"]);
+  },
+);
 
 test("Android download failure names the usable public CLI source-build opt-in", async () => {
   const fixture = androidFixture(false);
@@ -328,13 +340,16 @@ test("desktop cache cannot override an explicit manifest changed in place", asyn
   assert.equal(existsSync(fixture.install.output), false);
 });
 
-test("calling the installer explicitly still invalidates an earlier success on failed retry", async () => {
-  const fixture = await installedFixture();
-  await new Promise<void>((resolve) => fixture.server.close(() => resolve()));
-  await assert.rejects(installer.installPrebuilt(fixture.install), /fetch failed/u);
-  assert.equal(existsSync(fixture.install.output), false);
-  assert.equal(JSON.parse(readFileSync(fixture.install.statusPath, "utf8")).ok, false);
-});
+test(
+  "calling the installer explicitly still invalidates an earlier success on failed retry",
+  async () => {
+    const fixture = await installedFixture();
+    await new Promise<void>((resolve) => fixture.server.close(() => resolve()));
+    await assert.rejects(installer.installPrebuilt(fixture.install), /fetch failed/u);
+    assert.equal(existsSync(fixture.install.output), false);
+    assert.equal(JSON.parse(readFileSync(fixture.install.statusPath, "utf8")).ok, false);
+  },
+);
 
 // The executable fixture uses a POSIX shebang; this is not evidence for Windows execution.
 (process.platform === "win32" ? test.skip : test)(
