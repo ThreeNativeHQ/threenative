@@ -1,0 +1,121 @@
+diff --git a/packages/runtime-native/CMakeLists.txt b/packages/runtime-native/CMakeLists.txt
+--- a/packages/runtime-native/CMakeLists.txt
++++ b/packages/runtime-native/CMakeLists.txt
+@@ -2085,15 +2085,32 @@
+     add_executable(threenative-pipeline-cache-api-test EXCLUDE_FROM_ALL
+         tests/pipeline_cache_api_test.cpp)
+     target_link_libraries(threenative-pipeline-cache-api-test PRIVATE mystral-runtime)
++
++    # Separate scope: Lavapipe only serializes a Vulkan header. This target proves actual
++    # device/storage/lifetime behavior, NOT compiled-data population or cache benefit.
++    # The strict API target above retains its >emptyBytes requirement unchanged.
++    add_executable(threenative-pipeline-cache-lifecycle-test EXCLUDE_FROM_ALL
++        tests/pipeline_cache_api_test.cpp)
++    target_link_libraries(threenative-pipeline-cache-lifecycle-test PRIVATE mystral-runtime)
++    target_compile_definitions(threenative-pipeline-cache-lifecycle-test PRIVATE
++        TN_PIPELINE_CACHE_ENVELOPE_LIFECYCLE_ONLY=1)
++    if(MYSTRAL_WGPU_PIPELINE_CACHE)
++        target_compile_definitions(threenative-pipeline-cache-lifecycle-test PRIVATE
++            MYSTRAL_WGPU_PIPELINE_CACHE=1)
++        target_include_directories(threenative-pipeline-cache-lifecycle-test PRIVATE ${WGPU_INCLUDE_DIR})
++    endif()
++
+     # Same include-only rule as the async entry test above: the runtime already links the
+     # backend, so naming it again reorders `libwgpu_native.a` ahead of `libswc.a` and collides
+     # on `rust_eh_personality`. The patched `wgpu.h` cache declarations arrive via includes.
+     if(MYSTRAL_USE_DAWN)
+         target_include_directories(threenative-pipeline-cache-api-test PRIVATE
+             ${DAWN_INCLUDE_DIR})
++        target_include_directories(threenative-pipeline-cache-lifecycle-test PRIVATE ${DAWN_INCLUDE_DIR})
+     elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
+         target_include_directories(threenative-pipeline-cache-api-test PRIVATE
+             ${WGPU_INCLUDE_DIR})
++        target_include_directories(threenative-pipeline-cache-lifecycle-test PRIVATE ${WGPU_INCLUDE_DIR})
+     endif()
+ 
+     add_executable(threenative-stall-budget-hitch-test EXCLUDE_FROM_ALL
+ diff --git a/packages/runtime-native/tests/pipeline_cache_api_test.cpp b/packages/runtime-native/tests/pipeline_cache_api_test.cpp
+--- a/packages/runtime-native/tests/pipeline_cache_api_test.cpp
++++ b/packages/runtime-native/tests/pipeline_cache_api_test.cpp
+@@ -360,6 +360,17 @@
+  * The floor is the empty cache's own serialization, not zero: wgpu writes a header into a cache
+  * holding nothing, and "bytes > 0" would pass on a cache no pipeline ever reached.
+  */
++// Scope is compiled into the TEST executable, never a runtime switch. The original target
++// still requires real compiled data. A header-only software driver cannot pass that target.
++#if defined(TN_PIPELINE_CACHE_ENVELOPE_LIFECYCLE_ONLY)
++constexpr bool kRequireCompiledData = false;
++#else
++constexpr bool kRequireCompiledData = true;
++#endif
++bool carriesData(size_t observed, size_t empty) {
++    return kRequireCompiledData ? observed > empty : observed >= empty && observed > 0;
++}
++
+ void checkHostPipelineCache(mystral::Runtime& runtime) {
+     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+     require(state != nullptr, "host bindings state");
+@@ -397,11 +408,11 @@
+     require(renderAttached >= 5, "both host render paths must attach the device cache");
+     require(computeAttached >= 5, "both host compute paths must attach the device cache");
+     if (cache.loadOutcome == "accepted") {
+-        require(before > cache.emptyBytes, "the accepted host cache carried no compiled data");
++        require(carriesData(before, cache.emptyBytes), "the accepted host cache carried no compiled data");
+         require(after >= before, "a populated host cache lost compiled data");
+     } else {
+         require(before == cache.emptyBytes, "the pre-compile cache was not the empty one");
+-        require(after > before, "the host compiled ten pipelines and the device cache did not grow");
++        require(carriesData(after, before), "the host compiled ten pipelines and the device cache did not grow");
+     }
+ }
+ 
+@@ -420,6 +431,9 @@
+ 
+ int main(int argc, char** argv) {
+     const std::string arm = argc > 1 ? argv[1] : "";
++#if defined(TN_PIPELINE_CACHE_ENVELOPE_LIFECYCLE_ONLY)
++    std::cout << "TN_PIPELINE_TEST_SCOPE:envelope-lifecycle-only; compiled-data-proof=false\n";
++#endif
+ #if !defined(MYSTRAL_WGPU_PIPELINE_CACHE)
+     if (!arm.empty()) {
+         std::cerr << "persistent cache proof requires the patched backend, not unsupported\n";
+@@ -514,7 +528,7 @@
+                 require(cache.lastWrite.outcome == "unavailable", "unwritable storage must fail softly and report failure");
+             } else {
+                 require(cache.lastWrite.outcome == "stored", "populated compiler data must be durably stored");
+-                require(cache.lastWrite.bytes > cache.emptyBytes, "stored bytes must exceed the empty cache floor");
++                require(carriesData(cache.lastWrite.bytes, cache.emptyBytes), "stored bytes must exceed the empty cache floor");
+                 require(cache.store->read().outcome == "validated", "live store must read back a valid envelope");
+             }
+         }
+ diff --git a/packages/runtime-native/scripts/verify-pipeline-cache-relaunch.mjs b/packages/runtime-native/scripts/verify-pipeline-cache-relaunch.mjs
+--- a/packages/runtime-native/scripts/verify-pipeline-cache-relaunch.mjs
++++ b/packages/runtime-native/scripts/verify-pipeline-cache-relaunch.mjs
+@@ -7,7 +7,9 @@
+ import { dirname, join, resolve } from 'node:path';
+ import { spawnSync } from 'node:child_process';
+ 
+-const [executableArg, outputArg] = process.argv.slice(2);
++const [executableArg, outputArg, scopeArg] = process.argv.slice(2);
++const lifecycleOnly = scopeArg === "--envelope-lifecycle-only";
++if (scopeArg && !lifecycleOnly) throw new Error("unknown relaunch scope");
+ if (!executableArg) throw new Error('usage: verify-pipeline-cache-relaunch.mjs <host-contract-executable> [output-directory]');
+ const executable = resolve(executableArg);
+ const output = resolve(outputArg ?? 'artifacts/pipeline-cache-relaunch');
+@@ -27,6 +29,7 @@
+   assert.ifError(child.error);
+   assert.equal(child.status, 0, `${arm} exited ${child.status} (${child.signal}):\n${log.slice(-5000)}`);
+   assert.match(log, /persistent cache (?:relaunch|shutdown) contract passed/);
++  assert.equal(log.includes('TN_PIPELINE_TEST_SCOPE:envelope-lifecycle-only; compiled-data-proof=false'), lifecycleOnly, 'requested scope must match the actual executable');
+   const records = log.split('\n').filter((line) => line.startsWith('TN_PIPELINE_CACHE:'))
+     .map((line) => JSON.parse(line.slice('TN_PIPELINE_CACHE:'.length)));
+   assert.ok(records.length > 0, 'missing real cache observations');
+@@ -63,7 +66,7 @@
+   run('read-only');
+   chmodSync(dirname(file), 0o700);
+   assert.ok(readdirSync(dirname(file)).length <= 3, 'unbounded per-generation files');
+-  writeFileSync(join(output, 'result.json'), `${JSON.stringify({ status: 'passed', processArms: 10, firstPlayableClaim: false, physicalDeviceClaim: false }, null, 2)}\n`);
++  writeFileSync(join(output, 'result.json'), `${JSON.stringify({ status: 'passed', scope: lifecycleOnly ? 'envelope-lifecycle-only' : 'compiled-data-relaunch', compiledDataProof: !lifecycleOnly, processArms: 10, firstPlayableClaim: false, physicalDeviceClaim: false }, null, 2)}\n`);
+ } finally {
+   if (file && existsSync(dirname(file))) chmodSync(dirname(file), 0o700);
+   rmSync(root, { recursive: true, force: true });
