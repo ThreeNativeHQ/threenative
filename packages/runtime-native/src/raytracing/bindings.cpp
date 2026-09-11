@@ -112,6 +112,7 @@ static js::JSValueHandle createTLASJS(js::Engine* engine, uint32_t id) {
  * Get geometry ID from JS object.
  */
 static uint32_t getGeometryId(js::Engine* engine, js::JSValueHandle obj) {
+    if (!engine->isObject(obj)) return 0;
     auto idVal = engine->getProperty(obj, "_id");
     if (engine->isUndefined(idVal)) return 0;
     return static_cast<uint32_t>(engine->toNumber(idVal));
@@ -121,6 +122,7 @@ static uint32_t getGeometryId(js::Engine* engine, js::JSValueHandle obj) {
  * Get BLAS ID from JS object.
  */
 static uint32_t getBLASId(js::Engine* engine, js::JSValueHandle obj) {
+    if (!engine->isObject(obj)) return 0;
     auto idVal = engine->getProperty(obj, "_id");
     if (engine->isUndefined(idVal)) return 0;
     return static_cast<uint32_t>(engine->toNumber(idVal));
@@ -130,6 +132,7 @@ static uint32_t getBLASId(js::Engine* engine, js::JSValueHandle obj) {
  * Get TLAS ID from JS object.
  */
 static uint32_t getTLASId(js::Engine* engine, js::JSValueHandle obj) {
+    if (!engine->isObject(obj)) return 0;
     auto idVal = engine->getProperty(obj, "_id");
     if (engine->isUndefined(idVal)) return 0;
     return static_cast<uint32_t>(engine->toNumber(idVal));

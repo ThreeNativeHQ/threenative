@@ -107,3 +107,26 @@ test("the C++ caller that drives initBindings on a bare engine installs streams 
     "streams-polyfill must be evaluated before webtransport::initBindings, as Runtime::init does",
   );
 });
+
+// The CLI contract exercises RT before WebTransport on the same engine. V8 getProperty
+// records an exception when handed null; a later successful dispatcher call does not erase
+// that diagnostic. Keep invalid RT handles out of property access instead of clearing or
+// suppressing the error in WebTransport. These are source contracts, not native execution.
+for (const helper of ["getGeometryId", "getBLASId", "getTLASId"]) {
+  test(`${helper} rejects non-object handles before reading _id`, () => {
+    const source = readFileSync(
+      new URL("../src/raytracing/bindings.cpp", import.meta.url),
+      "utf8",
+    );
+    const body = source.match(
+      new RegExp(`static uint32_t ${helper}\\([^\\n]+\\) \\{([\\s\\S]*?)\\n\\}`),
+    )?.[1];
+    assert.ok(body, `${helper} must remain covered by this regression`);
+    assert.match(
+      body,
+      /^\s*if\s*\(!engine->isObject\(obj\)\)\s*return 0;/,
+      `${helper} must reject null, undefined and primitives before native property access`,
+    );
+    assert.ok(body.includes('engine->getProperty(obj, "_id")'), "valid object lookup is retained");
+  });
+}
