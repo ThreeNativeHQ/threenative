@@ -1425,6 +1425,8 @@ set(MYSTRAL_SOURCES
     src/webgpu/bindings_commands.cpp
     src/webgpu/bindings_frame_stream.cpp
     src/webgpu/bindings_pipelines.cpp
+    src/webgpu/bindings_pipeline_cache.cpp
+    src/webgpu/pipeline_cache.cpp
     src/webgpu/bindings_presentation.cpp
     src/webgpu/bindings_resources.cpp
     src/webgpu/bindings_screenshot.cpp
@@ -1599,6 +1601,8 @@ target_compile_definitions(mystral-runtime PUBLIC
     MYSTRAL_JS_ENGINE="${MYSTRAL_JS_ENGINE_NAME}"
     MYSTRAL_WEBGPU_BACKEND="${MYSTRAL_WEBGPU_NAME}"
 )
+
+include(cmake/PipelineCacheIdentity.cmake)
 
 if(TN_ENABLE_UI_OVERLAY)
     target_link_libraries(mystral-runtime PRIVATE threenative-ui-overlay)
@@ -2075,18 +2079,38 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             ${WGPU_INCLUDE_DIR})
     endif()
 
+    add_executable(threenative-pipeline-cache-test EXCLUDE_FROM_ALL
+        tests/pipeline_cache_test.cpp src/webgpu/pipeline_cache.cpp)
+
     add_executable(threenative-pipeline-cache-api-test EXCLUDE_FROM_ALL
         tests/pipeline_cache_api_test.cpp)
     target_link_libraries(threenative-pipeline-cache-api-test PRIVATE mystral-runtime)
+
+    # Separate scope: Lavapipe only serializes a Vulkan header. This target proves actual
+    # device/storage/lifetime behavior, NOT compiled-data population or cache benefit.
+    # The strict API target above retains its >emptyBytes requirement unchanged.
+    add_executable(threenative-pipeline-cache-lifecycle-test EXCLUDE_FROM_ALL
+        tests/pipeline_cache_api_test.cpp)
+    target_link_libraries(threenative-pipeline-cache-lifecycle-test PRIVATE mystral-runtime)
+    target_compile_definitions(threenative-pipeline-cache-lifecycle-test PRIVATE
+        TN_PIPELINE_CACHE_ENVELOPE_LIFECYCLE_ONLY=1)
+    if(MYSTRAL_WGPU_PIPELINE_CACHE)
+        target_compile_definitions(threenative-pipeline-cache-lifecycle-test PRIVATE
+            MYSTRAL_WGPU_PIPELINE_CACHE=1)
+        target_include_directories(threenative-pipeline-cache-lifecycle-test PRIVATE ${WGPU_INCLUDE_DIR})
+    endif()
+
     # Same include-only rule as the async entry test above: the runtime already links the
     # backend, so naming it again reorders `libwgpu_native.a` ahead of `libswc.a` and collides
     # on `rust_eh_personality`. The patched `wgpu.h` cache declarations arrive via includes.
     if(MYSTRAL_USE_DAWN)
         target_include_directories(threenative-pipeline-cache-api-test PRIVATE
             ${DAWN_INCLUDE_DIR})
+        target_include_directories(threenative-pipeline-cache-lifecycle-test PRIVATE ${DAWN_INCLUDE_DIR})
     elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
         target_include_directories(threenative-pipeline-cache-api-test PRIVATE
             ${WGPU_INCLUDE_DIR})
+        target_include_directories(threenative-pipeline-cache-lifecycle-test PRIVATE ${WGPU_INCLUDE_DIR})
     endif()
 
     add_executable(threenative-stall-budget-hitch-test EXCLUDE_FROM_ALL
@@ -2310,6 +2334,12 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_compile_definitions(threenative-cli-network-fs-test PRIVATE
         MYSTRAL_TOOLS_NO_MAIN=1)
     target_link_libraries(threenative-cli-network-fs-test PRIVATE mystral-runtime)
+    # The generated runtime_scripts.h, so this test can install the same embedded polyfills the
+    # runtime does. webtransport::initBindings reads globalThis.__wtDispatch, and the WebTransport
+    # polyfill installs nothing without Web Streams, so a bare engine fails it.
+    target_include_directories(threenative-cli-network-fs-test PRIVATE
+        "${CMAKE_CURRENT_BINARY_DIR}/generated")
+    add_dependencies(threenative-cli-network-fs-test threenative-runtime-scripts)
     if(TARGET webp::mux)
         target_include_directories(threenative-cli-network-fs-test PRIVATE ${WEBP_INCLUDE_DIR})
     endif()
@@ -2385,6 +2415,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-timer-engine-first-test)
     tn_register_contract_test(threenative-async-pipeline-thread-test)
     tn_register_contract_test(threenative-pipeline-cache-api-test)
+    tn_register_contract_test(threenative-pipeline-cache-lifecycle-test)
+    tn_register_contract_test(threenative-pipeline-cache-test)
     tn_register_contract_test(threenative-stall-budget-hitch-test)
     tn_register_contract_test(threenative-timestamp-query-test)
     if(TN_ENABLE_VIDEO)

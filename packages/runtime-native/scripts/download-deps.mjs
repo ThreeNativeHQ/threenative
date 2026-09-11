@@ -27,11 +27,15 @@ import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { SDL3_ANDROID_VERSION } from './package-android.mjs';
+import { provisionAndroidV8 } from './build-android-v8.mjs';
 import { assertAndroid16KbAlignment } from './check-android-16kb-alignment.mjs';
+import { resolveWgpuCacheToolchain } from './wgpu-cache-toolchain.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const THIRD_PARTY = join(ROOT, 'third_party');
+const NATIVE_DEPS_LOCK_PATH = join(ROOT, 'native-deps.lock.json');
+const LOCK_RECEIPT_DIRNAME = '.threenative-receipts';
 const REPO_ROOT = join(ROOT, '..', '..');
 const GRADLE_WRAPPER = join(ROOT, 'android', 'gradle', 'wrapper', 'gradle-wrapper.jar');
 const GRADLE_WRAPPER_URL = 'https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar';
@@ -75,8 +79,6 @@ const WGPU_CACHE_LOCAL_ARCHIVE = join(
   WGPU_CACHE_SOURCE_ARCHIVE_NAME,
 );
 const WGPU_CACHE_PATCH_PATH = join(REPO_ROOT, 'patches', 'wgpu-native@25.0.2.2.patch');
-const WGPU_CACHE_LIBCLANG_PATH =
-  '/home/joao/Android/Sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/linux-x86_64/musl/lib';
 const WGPU_DEPS = new Set(['wgpu', 'wgpu-ios', 'wgpu-android']);
 let wgpuVersionOverride = null;
 
@@ -87,6 +89,7 @@ const DEPS = {
     getUrl: () => {
       // wgpu-native releases: https://github.com/gfx-rs/wgpu-native/releases
       // Windows releases include toolchain suffix: wgpu-windows-x86_64-msvc-release.zip
+      // Asset arches are aarch64/x86_64 (the ARCH_MAP names, not raw ARCH).
       const platform = platformName === 'macos' ? 'macos' : platformName;
       const arch = archName;
       if (platformName === 'windows') {
@@ -452,26 +455,11 @@ const DEPS = {
     },
   },
   'v8-android': {
-    // V8 with JIT for Android, from Kudo/v8-android-buildscripts — the same prebuilt React Native
-    // uses. A JIT-less V8 would reproduce the problem PRD-118 measured, so the `-jit` archive is the
-    // one that matters and the name is not incidental.
-    //
-    // Until 2026-08-16 this was not here at all: `third_party/v8-android/` existed on one machine
-    // because somebody unpacked it by hand, while this file is the package's only supported
-    // reconstruction path. A fresh checkout therefore could not build Android V8.
-    //
-    // The archive nests: zip -> dist.tar -> dist/packages/v8-android-jit/{include,snapshot_blob,org},
-    // with the libraries inside an AAR under `org/`. `extractV8Android` below unwinds that.
+    // Owned source and toolchain revisions replace the historical 4 KB-only archive.
+    // The builder validates every cached library, header and ABI-specific snapshot before reuse.
+    // Upstream build-script distribution revision; the V8 commit and recipe are pinned in the builder.
     version: '11.110.1',
-    getUrl: () =>
-      `https://github.com/Kudo/v8-android-buildscripts/releases/download/v${DEPS['v8-android'].version}/v8-android-jit.zip`,
-    sha256: 'b2bc1fc317265163becbf0abe914d44b7d546448bb1aafe921a25e8ba4839a26',
     extractTo: 'v8-android',
-    // Both ABIs the Android build ships. `copyV8Snapshot` in android/app/build.gradle.kts stages one
-    // snapshot per entry and fails the build when one is absent, so provisioning fewer than this is
-    // caught at build time rather than on a device.
-    abis: ['arm64-v8a', 'x86_64'],
-    needsV8AndroidExtraction: true,
   },
   'sdl3-android': {
     // SDL3 Android development package
@@ -709,6 +697,142 @@ function sha256(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+function sha256Bytes(contents) {
+  return createHash('sha256').update(contents).digest('hex');
+}
+
+// PRD-059 Phase 1: the tracked lock is the only authority for which bytes may
+// enter third_party/. Every payload below carries its immutable URL, expected
+// SHA-256, source revision, license evidence and bootstrap source.
+function readNativeDepsLock() {
+  if (!existsSync(NATIVE_DEPS_LOCK_PATH)) {
+    throw new Error(
+      `TN_NATIVE_DEP_LOCK_MISSING: ${NATIVE_DEPS_LOCK_PATH} does not exist; the dependency lock is required before any acquisition.`,
+    );
+  }
+  let lock;
+  try {
+    lock = JSON.parse(readFileSync(NATIVE_DEPS_LOCK_PATH, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `TN_NATIVE_DEP_LOCK_MALFORMED: ${NATIVE_DEPS_LOCK_PATH} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (lock?.schemaVersion !== 1 || !Array.isArray(lock?.components)) {
+    throw new Error(
+      `TN_NATIVE_DEP_LOCK_MALFORMED: ${NATIVE_DEPS_LOCK_PATH} must carry schemaVersion 1 and a components array.`,
+    );
+  }
+  const payloads = new Map();
+  for (const component of lock.components) {
+    if (!Array.isArray(component?.payloads)) {
+      throw new Error(`TN_NATIVE_DEP_LOCK_MALFORMED: component '${component?.name ?? '?'}' has no payloads array.`);
+    }
+    for (const payload of component.payloads) {
+      if (typeof payload?.id !== 'string' || typeof payload?.url !== 'string') {
+        throw new Error('TN_NATIVE_DEP_LOCK_MALFORMED: every payload needs string id and url.');
+      }
+      if (!/^[0-9a-f]{64}$/.test(payload?.sha256 ?? '')) {
+        throw new Error(`TN_NATIVE_DEP_LOCK_MALFORMED: payload '${payload.id}' has no 64-hex sha256.`);
+      }
+      if (payloads.has(payload.id)) {
+        throw new Error(`TN_NATIVE_DEP_LOCK_DUPLICATE: payload id '${payload.id}' appears twice.`);
+      }
+      payloads.set(payload.id, { ...payload, component: component.name, version: component.version });
+    }
+  }
+  return { lock, payloads };
+}
+
+function readNativeDepsLockContext() {
+  const { lock, payloads } = readNativeDepsLock();
+  return { lockHash: sha256Bytes(Buffer.from(JSON.stringify(lock))), payloads };
+}
+
+function lockPayloadForUrl(payloads, url) {
+  for (const payload of payloads.values()) {
+    if (payload.url === url) return payload;
+  }
+  return undefined;
+}
+
+function receiptPathFor(destDir) {
+  return join(destDir, LOCK_RECEIPT_DIRNAME, 'receipt.json');
+}
+
+function readReceipt(destDir, lockHash) {
+  const path = receiptPathFor(destDir);
+  if (!existsSync(path)) return undefined;
+  try {
+    const receipt = JSON.parse(readFileSync(path, 'utf8'));
+    if (receipt?.lockHash !== lockHash) return undefined;
+    return receipt;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeReceipt(destDir, receipt) {
+  const path = receiptPathFor(destDir);
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`);
+  renameSync(temporary, path);
+}
+
+function listInstalledFiles(destDir) {
+  const out = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === LOCK_RECEIPT_DIRNAME) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else out.push(relative(destDir, full).replaceAll('\\', '/'));
+    }
+  };
+  walk(destDir);
+  return out.sort();
+}
+
+function verifyBytesBeforeExtract(kind, id, url, bytes, expected) {
+  const actual = sha256Bytes(bytes);
+  if (actual !== expected) {
+    throw new Error(
+      `TN_NATIVE_DEP_CHECKSUM_MISMATCH: ${kind} '${id}' from ${url}: expected ${expected}, got ${actual}. No extractor ran and no destination was touched.`,
+    );
+  }
+  return actual;
+}
+
+function verifyFinalUrl(id, requested, response) {
+  // GitHub answers archive fetches from same-payload signer hosts on every
+  // request: release assets from a signed release-assets URL (expiry/token
+  // query, never a lockable identity), source archives from codeload. What the
+  // lock pins is the requested URL, and what the digest proves is the bytes.
+  // A redirect anywhere else is still a lock miss.
+  const final = response?.url;
+  if (typeof final !== 'string' || final.length === 0 || final === requested) return;
+  let finalHost = '';
+  try {
+    finalHost = new URL(final).hostname;
+  } catch {
+    finalHost = '';
+  }
+  if (finalHost === 'release-assets.githubusercontent.com') return;
+  if (finalHost === 'codeload.github.com') {
+    let requestedPath = '';
+    try {
+      requestedPath = new URL(requested).pathname;
+    } catch {
+      requestedPath = '';
+    }
+    if (requestedPath.includes('/archive/refs/tags/')) return;
+  }
+  throw new Error(
+    `TN_NATIVE_DEP_URL_MISMATCH: payload '${id}' requested ${requested} but answered from ${final}. Lock the redirect target instead of accepting it silently.`,
+  );
+}
+
 async function ensureGradleWrapper() {
   if (existsSync(GRADLE_WRAPPER) && sha256(GRADLE_WRAPPER) === GRADLE_WRAPPER_SHA256) return;
   if (existsSync(GRADLE_WRAPPER)) rmSync(GRADLE_WRAPPER);
@@ -783,7 +907,11 @@ function wgpuCacheSourceRoot(extractedDir) {
  * checked-in four-file patch. The local archive used by the Phase 1A receipt is preferred so a
  * cold local rebuild does not need network access; the exact GitHub archive is the fallback.
  */
-export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
+export async function rebuildWgpuCacheApiFromSource({ sourceArchive, target = 'linux-x64' } = {}) {
+  const toolchain = resolveWgpuCacheToolchain({ target });
+  const android = target === 'android-arm64';
+  const dependencyRoot = join(THIRD_PARTY, android ? 'wgpu-android' : 'wgpu');
+  const destination = android ? join(dependencyRoot, 'aarch64') : dependencyRoot;
   const scratch = mkdtempSync(join(tmpdir(), 'threenative-wgpu-cache-api-'));
   let downloadedArchive = null;
   let stageDir = null;
@@ -813,7 +941,7 @@ export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
     if (!wgpu.cacheApiPatch || !existsSync(wgpu.cacheApiPatch)) {
       throw new Error(`TN_WGPU_CACHE_PATCH_MISSING: ${wgpu.cacheApiPatch ?? '(no patch path)'}`);
     }
-    const currentHeader = join(THIRD_PARTY, 'wgpu', 'include', 'webgpu', 'webgpu.h');
+    const currentHeader = join(destination, 'include', 'webgpu', 'webgpu.h');
     if (!existsSync(currentHeader)) {
       throw new Error(`TN_WGPU_CACHE_HEADER_MISSING: ${currentHeader}`);
     }
@@ -822,9 +950,6 @@ export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
       throw new Error(
         `TN_WGPU_CACHE_HEADER_CHECKSUM: expected ${WGPU_CACHE_HEADER_SHA256}, got ${currentHeaderSha256}`,
       );
-    }
-    if (!existsSync(WGPU_CACHE_LIBCLANG_PATH)) {
-      throw new Error(`TN_WGPU_CACHE_LIBCLANG_MISSING: ${WGPU_CACHE_LIBCLANG_PATH}`);
     }
 
     const extractedDir = join(scratch, 'source');
@@ -842,14 +967,14 @@ export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
       stdio: 'inherit',
     });
 
-    console.log(`Building patched wgpu-native with LIBCLANG_PATH=${WGPU_CACHE_LIBCLANG_PATH}`);
-    execFileSync('cargo', ['build', '--release', '--locked', '-j', '2'], {
+    console.log(`Building patched wgpu-native ${target} with Rust ${toolchain.rustVersion}, NDK ${toolchain.ndkVersion}`);
+    execFileSync('cargo', toolchain.cargoArgs, {
       cwd: sourceRoot,
-      env: { ...process.env, LIBCLANG_PATH: WGPU_CACHE_LIBCLANG_PATH },
+      env: toolchain.env,
       stdio: 'inherit',
     });
 
-    const releaseDir = join(sourceRoot, 'target', 'release');
+    const releaseDir = join(toolchain.env.CARGO_TARGET_DIR || join(sourceRoot, 'target'), ...(toolchain.rustTarget ? [toolchain.rustTarget] : []), 'release');
     const libraryNames = [
       'libwgpu_native.a',
       'libwgpu_native.so',
@@ -872,7 +997,7 @@ export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
     for (const library of builtLibraries) {
       copyFileSync(join(releaseDir, library), join(stageDir, 'lib', library));
     }
-    const metadata = join(THIRD_PARTY, 'wgpu', 'wgpu-native-meta', 'webgpu.yml');
+    const metadata = join(destination, 'wgpu-native-meta', 'webgpu.yml');
     if (existsSync(metadata)) copyFileSync(metadata, join(stageDir, 'wgpu-native-meta', 'webgpu.yml'));
     writeFileSync(
       join(stageDir, 'wgpu-native-meta', 'wgpu-native-git-tag'),
@@ -880,7 +1005,18 @@ export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
     );
     inspectWgpuInstallation('wgpu', stageDir, DEFAULT_WGPU_VERSION);
 
-    const destination = join(THIRD_PARTY, 'wgpu');
+    for (const name of ['LICENSE.APACHE', 'LICENSE.MIT']) {
+      const license = join(sourceRoot, name);
+      if (existsSync(license)) copyFileSync(license, join(stageDir, name));
+    }
+    writeFileSync(join(stageDir, '.threenative-cache-api-build.json'), `${JSON.stringify({
+      schemaVersion: 1, target, version: DEFAULT_WGPU_VERSION,
+      sourceArchiveSha256, headerSha256: currentHeaderSha256,
+      patchSha256: sha256(wgpu.cacheApiPatch), rustVersion: toolchain.rustVersion,
+      ndkVersion: toolchain.ndkVersion,
+      libraries: builtLibraries.map((name) => ({ name, sha256: sha256(join(stageDir, 'lib', name)) })),
+    }, null, 2)}\n`);
+    if (android) assertAndroid16KbAlignment(builtLibraries.filter((name) => name.endsWith('.so')).map((name) => join(stageDir, 'lib', name)));
     const backup = `${destination}.before-cache-api-${process.pid}-${Date.now()}`;
     if (existsSync(destination)) renameSync(destination, backup);
     try {
@@ -895,7 +1031,7 @@ export async function rebuildWgpuCacheApiFromSource({ sourceArchive } = {}) {
     } catch (error) {
       console.warn(`Could not remove the previous wgpu-native dependency backup: ${error.message}`);
     }
-    const manifest = verifyAndRecordWgpuInstallation('wgpu', destination, DEFAULT_WGPU_VERSION);
+    const manifest = verifyAndRecordWgpuInstallation(android ? 'wgpu-android' : 'wgpu', dependencyRoot, DEFAULT_WGPU_VERSION);
     console.log(`Staged patched wgpu-native ${manifest.version} at ${destination}`);
     return manifest;
   } finally {
@@ -946,7 +1082,35 @@ function normalizeSwcLayout(destDir) {
   }
 }
 
-async function downloadIosDep(name, dep) {
+async function downloadLockedArchive(payloads, _lockHash, id, url, archivePath, fetchImpl) {
+  // PRD-059 Phase 1 transaction: quarantine, verify redirect + SHA-256, then hand
+  // back verified bytes. The caller extracts; nothing is written to third_party/
+  // before this returns. A mismatch throws and no extractor ever runs.
+  const payload = lockPayloadForUrl(payloads, url);
+  if (!payload) {
+    throw new Error(
+      `TN_NATIVE_DEP_LOCK_MISSING: no lock payload covers ${url} (requested as '${id}'). Refusing an unreviewed download.`,
+    );
+  }
+  mkdirSync(dirname(archivePath), { recursive: true });
+  const response = await (fetchImpl ?? fetch)(url, { redirect: 'follow' });
+  if (!response.ok) {
+    throw new Error(`TN_NATIVE_DEP_FETCH_FAILED: ${url}: HTTP ${response.status}.`);
+  }
+  verifyFinalUrl(payload.id, url, response);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  verifyBytesBeforeExtract('payload', payload.id, url, bytes, payload.sha256);
+  if (payload.bytes !== undefined && bytes.length !== payload.bytes) {
+    throw new Error(
+      `TN_NATIVE_DEP_SIZE_MISMATCH: payload '${payload.id}': lock says ${payload.bytes} bytes, received ${bytes.length}.`,
+    );
+  }
+  writeFileSync(archivePath, bytes);
+  console.log(`Verified ${payload.id} archive checksum (${bytes.length} bytes)`);
+  return payload;
+}
+
+async function downloadIosDep(name, dep, lockContext) {
   // Special handler for iOS dependencies with multiple archives
   const destDir = destinationFor(name, dep);
 
@@ -954,15 +1118,26 @@ async function downloadIosDep(name, dep) {
     console.log(`${name} already exists at ${destDir}`);
     if (!process.argv.includes('--force')) {
       if (!WGPU_DEPS.has(name)) {
-        console.log('Skipping (use --force to re-download)');
-        return true;
-      }
-      try {
-        verifyAndRecordWgpuInstallation(name, destDir, dep.version);
-        console.log(`Verified installed ${name} ${dep.version}`);
-        return true;
-      } catch (error) {
-        console.warn(`${error.message}; replacing the stale dependency cache`);
+        if (lockContext) {
+          const receipt = readReceipt(destDir, lockContext.lockHash);
+          if (!receipt) {
+            console.warn(`${name} has no receipt for the current lock; replacing the stale dependency cache`);
+          } else {
+            console.log('Skipping (use --force to re-download)');
+            return true;
+          }
+        } else {
+          console.log('Skipping (use --force to re-download)');
+          return true;
+        }
+      } else {
+        try {
+          verifyAndRecordWgpuInstallation(name, destDir, dep.version);
+          console.log(`Verified installed ${name} ${dep.version}`);
+          return true;
+        } catch (error) {
+          console.warn(`${error.message}; replacing the stale dependency cache`);
+        }
       }
     }
     rmSync(destDir, { recursive: true });
@@ -971,6 +1146,7 @@ async function downloadIosDep(name, dep) {
   mkdirSync(destDir, { recursive: true });
 
   try {
+    const verified = [];
     for (const [variant, url] of Object.entries(dep.archives)) {
       console.log(`\nDownloading ${name} (${variant})...`);
       const archiveName = url.split('/').pop();
@@ -980,9 +1156,20 @@ async function downloadIosDep(name, dep) {
       const archivePath = join(archiveRoot, archiveName);
       const variantDir = join(destDir, variant);
 
-      await downloadFile(url, archivePath);
-      mkdirSync(variantDir, { recursive: true });
-      await extractArchive(archivePath, variantDir);
+      if (lockContext) {
+        const payload = await downloadLockedArchive(lockContext.payloads, lockContext.lockHash, `${name} (${variant})`, url, archivePath);
+        verified.push(payload.id);
+      } else {
+        await downloadFile(url, archivePath);
+      }
+      const stageDir = mkdtempSync(join(tmpdir(), 'threenative-dep-'));
+      try {
+        await extractArchive(archivePath, stageDir);
+        mkdirSync(variantDir, { recursive: true });
+        execSync(`cp -R "${stageDir}/"* "${variantDir}/"`, { stdio: 'inherit' });
+      } finally {
+        rmSync(stageDir, { force: true, recursive: true });
+      }
       rmSync(archivePath);
 
       console.log(`Extracted ${variant} to ${variantDir}`);
@@ -999,7 +1186,7 @@ async function downloadIosDep(name, dep) {
   }
 }
 
-async function downloadDep(name) {
+export async function downloadDep(name, options = {}) {
   const dep = DEPS[name];
   if (!dep) {
     console.error(`Unknown dependency: ${name}`);
@@ -1007,10 +1194,24 @@ async function downloadDep(name) {
   }
 
   console.log(`\n=== Downloading ${name} ${dep.version} ===`);
+  const lock = options.lockContext ?? readNativeDepsLockContext();
+
+  if (name === 'v8-android') {
+    const destination = join(options.thirdPartyRoot ?? THIRD_PARTY, dep.extractTo);
+    try {
+      await (options.provisionV8 ?? provisionAndroidV8)(destination, {
+        force: options.force ?? process.argv.includes('--force'),
+      });
+      return true;
+    } catch (error) {
+      console.error(`Failed to provision ${name}:`, error.message);
+      return false;
+    }
+  }
 
   // Special handling for iOS dependencies with multiple archives
   if (dep.archives && !dep.getUrl()) {
-    return downloadIosDep(name, dep);
+    return downloadIosDep(name, dep, lock);
   }
 
   const destDir = destinationFor(name, dep);
@@ -1025,16 +1226,34 @@ async function downloadDep(name) {
     mkdirSync(destDir, { recursive: true });
     const missing = dep.headers.filter((header) => !existsSync(join(destDir, header)));
     if (missing.length === 0) {
+      const receipt = readReceipt(destDir, lock.lockHash);
+      if (!receipt) {
+        throw new Error(
+          `TN_NATIVE_DEP_RECEIPT_MISSING: '${name}' has files but no receipt for the current lock; rerun with --force to replace the stale cache.`,
+        );
+      }
       console.log(`${name} already exists at ${destDir}`);
       console.log('Skipping (use --force to re-download)');
       return true;
     }
     try {
+      const verified = [];
       for (const header of missing) {
         const url = `https://raw.githubusercontent.com/nothings/stb/master/${header}`;
-        const destPath = join(destDir, header);
-        await downloadFile(url, destPath);
+        const quarantine = mkdtempSync(join(tmpdir(), 'threenative-dep-'));
+        try {
+          const staged = join(quarantine, header);
+          const payload = await downloadLockedArchive(lock.payloads, lock.lockHash, `stb ${header}`, url, staged);
+          copyFileSync(staged, join(destDir, header));
+          verified.push(payload.id);
+        } finally {
+          rmSync(quarantine, { force: true, recursive: true });
+        }
       }
+      writeReceipt(destDir, {
+        schemaVersion: 1, dependency: name, lockHash: lock.lockHash,
+        payloads: verified, files: listInstalledFiles(destDir),
+      });
       console.log(`Successfully installed ${name}: ${missing.join(', ')}`);
       return true;
     } catch (error) {
@@ -1048,22 +1267,33 @@ async function downloadDep(name) {
     console.warn(`Skipping ${name} - no prebuilt available for this platform`);
     return false;
   }
+  if (!lockPayloadForUrl(lock.payloads, url)) {
+    console.error(
+      `TN_NATIVE_DEP_LOCK_MISSING: no lock payload covers ${url} (requested as '${name}'). Refusing an unreviewed download.`,
+    );
+    return false;
+  }
 
   // Check if already downloaded
   if (existsSync(destDir)) {
     console.log(`${name} already exists at ${destDir}`);
     if (!process.argv.includes('--force')) {
       if (!WGPU_DEPS.has(name)) {
-        if (dep.needsV8AndroidExtraction) verifyV8AndroidAlignment(destDir, dep);
-        console.log('Skipping (use --force to re-download)');
-        return true;
-      }
-      try {
-        verifyAndRecordWgpuInstallation(name, destDir, dep.version);
-        console.log(`Verified installed ${name} ${dep.version}`);
-        return true;
-      } catch (error) {
-        console.warn(`${error.message}; replacing the stale dependency cache`);
+        const receipt = readReceipt(destDir, lock.lockHash);
+        if (!receipt) {
+          console.warn(`${name} has no receipt for the current lock; replacing the stale dependency cache`);
+        } else {
+          console.log('Skipping (use --force to re-download)');
+          return true;
+        }
+      } else {
+        try {
+          verifyAndRecordWgpuInstallation(name, destDir, dep.version);
+          console.log(`Verified installed ${name} ${dep.version}`);
+          return true;
+        } catch (error) {
+          console.warn(`${error.message}; replacing the stale dependency cache`);
+        }
       }
     }
     rmSync(destDir, { recursive: true });
@@ -1080,32 +1310,29 @@ async function downloadDep(name) {
   const archivePath = join(archiveRoot, archiveName);
 
   try {
-    await downloadFile(url, archivePath);
-    // A pinned checksum is what makes "reconstructible" mean the same bytes rather than whatever the
-    // URL serves today. Only dependencies that declare one are checked; the rest are unchanged.
-    if (dep.sha256) {
-      const actual = sha256(archivePath);
-      if (actual !== dep.sha256) {
-        rmSync(archivePath);
-        throw new Error(
-          `${name} checksum mismatch: expected ${dep.sha256}, got ${actual}. Refusing to install.`,
-        );
-      }
-      console.log(`Verified ${name} archive checksum`);
+    const payload = await downloadLockedArchive(lock.payloads, lock.lockHash, name, url, archivePath);
+    const stageDir = mkdtempSync(join(tmpdir(), 'threenative-dep-'));
+    try {
+      await extractArchive(archivePath, stageDir);
+      mkdirSync(destDir, { recursive: true });
+      execSync(`cp -R "${stageDir}/"* "${destDir}/"`, { stdio: 'inherit' });
+    } finally {
+      rmSync(stageDir, { force: true, recursive: true });
     }
-    await extractArchive(archivePath, destDir);
 
     // Clean up archive
     rmSync(archivePath);
 
     // Download headers if needed (e.g., Dawn)
+    const verifiedExtra = [];
     if (dep.needsHeaders && dep.getHeadersUrl) {
       const headersUrl = dep.getHeadersUrl();
       if (headersUrl) {
         console.log(`\nDownloading headers for ${name}...`);
         const headersArchiveName = headersUrl.split('/').pop();
         const headersArchivePath = join(THIRD_PARTY, headersArchiveName);
-        await downloadFile(headersUrl, headersArchivePath);
+        const headerPayload = await downloadLockedArchive(lock.payloads, lock.lockHash, `${name} headers`, headersUrl, headersArchivePath);
+        verifiedExtra.push(headerPayload.id);
         // Extract headers to a temp dir, then merge into destDir
         const headersTempDir = join(THIRD_PARTY, `${name}-headers-temp`);
         await extractArchive(headersArchivePath, headersTempDir);
@@ -1116,6 +1343,10 @@ async function downloadDep(name) {
         console.log(`Headers merged into ${destDir}`);
       }
     }
+    writeReceipt(destDir, {
+      schemaVersion: 1, dependency: name, lockHash: lock.lockHash,
+      payloads: [payload.id, ...verifiedExtra], files: listInstalledFiles(destDir),
+    });
 
     // Post-install fixes
     if (name === 'quickjs') {
@@ -1162,11 +1393,6 @@ async function downloadDep(name) {
       console.log(`Verified ${name} ${manifest.version}: ${manifest.libraries.length} library artifact(s)`);
     }
 
-    if (dep.needsV8AndroidExtraction) {
-      await reshapeV8Android(destDir, dep);
-      verifyV8AndroidAlignment(destDir, dep);
-    }
-
     // Extract AAR if needed (SDL3 Android)
     if (dep.needsAarExtraction) {
       const aarFiles = await import('node:fs/promises').then(fs => fs.readdir(destDir));
@@ -1188,85 +1414,6 @@ async function downloadDep(name) {
   }
 }
 
-function verifyV8AndroidAlignment(destDir, dep) {
-  const libraries = dep.abis.map((abi) => join(destDir, 'lib', abi, 'libv8android.so'));
-  try {
-    assertAndroid16KbAlignment(libraries);
-  } catch (error) {
-    // `libv8android.so` being 4 KB-only is PRD-221, filed BLOCKED on 2026-08-25 for
-    // `requires-v8-source-toolchain`: every library this repository builds is 16 KB-aligned, and
-    // the upstream it pins (Kudo/v8-android-buildscripts) has shipped no release since 2023, which
-    // is before the requirement existed. There is no version to move to, so failing the dependency
-    // download turns an owned, recorded limitation into a lane that cannot run at all — and the
-    // check had never actually executed until the objdump it shells out to became resolvable.
-    //
-    // Report it by name, keep it visible, and let the build continue. Only the misalignment is
-    // tolerated: a check that could not run is still fatal, because that is a broken instrument
-    // rather than a known fact, and silence there is what hid this for so long.
-    if (error?.code !== 'ANDROID_16KB_MISALIGNED') throw error;
-    console.warn(
-      `PRD-221 (BLOCKED, requires-v8-source-toolchain): ${error.message}\n` +
-        '  This is the pinned third-party V8, not a library this repository builds. An Android ' +
-        'artifact carrying it cannot ride a Play Store submission until PRD-221 closes.',
-    );
-    return;
-  }
-  console.log(`Verified v8-android 16 KB LOAD alignment for ${dep.abis.join(', ')}`);
-}
-
-/**
- * Turns the extracted `v8-android-jit` tree into the layout CMake and Gradle already expect.
- *
- * The archive nests three deep — zip, then `dist.tar`, then an AAR holding the libraries — and the
- * pieces land in three different places inside it. The build reads exactly three things, so this
- * produces exactly those and fails loudly if any is absent:
- *
- *   include/                             <- dist/packages/v8-android-jit/include
- *   lib/<abi>/libv8android.so            <- the AAR's jni/<abi>
- *   snapshot_blob/<abi>/snapshot_blob.bin <- dist/packages/v8-android-jit/snapshot_blob/<abi>
- *
- * A partial install is the failure worth preventing here: the CMake build would find headers, link,
- * and produce an APK whose slice has no snapshot. `copyV8Snapshot` catches that at build time, but
- * only because it was told to — this refuses earlier and says which ABI.
- */
-async function reshapeV8Android(destDir, dep) {
-  const tarball = join(destDir, 'dist.tar');
-  if (!existsSync(tarball)) throw new Error(`v8-android archive has no dist.tar at ${tarball}`);
-  execFileSync('tar', ['xf', tarball, '-C', destDir]);
-  rmSync(tarball);
-
-  const pkg = join(destDir, 'dist', 'packages', 'v8-android-jit');
-  if (!existsSync(pkg)) throw new Error(`v8-android archive is missing ${pkg}`);
-
-  const headers = join(pkg, 'include');
-  if (!existsSync(headers)) throw new Error(`v8-android archive is missing ${headers}`);
-  copyTree(headers, join(destDir, 'include'));
-
-  const aar = findFilesRecursive(join(pkg, 'org'), (file) => file.endsWith('.aar'))[0];
-  if (!aar) throw new Error('v8-android archive contains no AAR to take libraries from');
-  const aarDir = join(destDir, '.aar');
-  await extractArchive(aar, aarDir);
-
-  for (const abi of dep.abis) {
-    const library = join(aarDir, 'jni', abi, 'libv8android.so');
-    if (!existsSync(library)) throw new Error(`v8-android AAR has no libv8android.so for ${abi}`);
-    mkdirSync(join(destDir, 'lib', abi), { recursive: true });
-    copyFileSync(library, join(destDir, 'lib', abi, 'libv8android.so'));
-
-    const snapshot = join(pkg, 'snapshot_blob', abi, 'snapshot_blob.bin');
-    if (!existsSync(snapshot)) throw new Error(`v8-android archive has no snapshot for ${abi}`);
-    mkdirSync(join(destDir, 'snapshot_blob', abi), { recursive: true });
-    copyFileSync(snapshot, join(destDir, 'snapshot_blob', abi, 'snapshot_blob.bin'));
-  }
-
-  // The unpacked tree is ~1 GB of build leftovers, unstripped libraries and ABIs this repository
-  // does not ship. Keeping only what the build reads is the difference between a 100 MB dependency
-  // and a 1 GB one.
-  rmSync(join(destDir, 'dist'), { recursive: true, force: true });
-  rmSync(aarDir, { recursive: true, force: true });
-  console.log(`Installed v8-android ${dep.version} for ${dep.abis.join(', ')}`);
-}
-
 function copyTree(from, to) {
   mkdirSync(to, { recursive: true });
   for (const entry of readdirSync(from)) {
@@ -1286,10 +1433,28 @@ async function main() {
 
   // Parse arguments
   const args = process.argv.slice(2);
+  if (args.includes('--check-lock')) {
+    // PRD-059 Phase 1 user verification: report every locked payload without
+    // downloading, extracting, or invoking any toolchain. No network access.
+    const { lock, payloads } = readNativeDepsLock();
+    const byComponent = new Map();
+    for (const payload of payloads.values()) {
+      if (!byComponent.has(payload.component)) byComponent.set(payload.component, []);
+      byComponent.get(payload.component).push(payload.id);
+    }
+    console.log(`Dependency lock: ${NATIVE_DEPS_LOCK_PATH}`);
+    console.log(`Schema: ${lock.schemaVersion}; components: ${lock.components.length}; payloads: ${payloads.size}`);
+    for (const [component, ids] of [...byComponent.entries()].sort()) {
+      console.log(`  ${component}: ${ids.sort().join(', ')}`);
+    }
+    return;
+  }
   const onlyIndex = args.indexOf('--only');
   const requestedWgpuVersion = valueAfter(args, '--wgpu-version');
   const rebuildWgpuCacheApi = args.includes('--rebuild-wgpu-cache-api');
   const sourceArchive = valueAfter(args, '--wgpu-source-archive');
+  const cacheTarget = valueAfter(args, '--wgpu-cache-target');
+  if (cacheTarget && !rebuildWgpuCacheApi) throw new Error('--wgpu-cache-target requires --rebuild-wgpu-cache-api');
   if (sourceArchive && !rebuildWgpuCacheApi) {
     throw new Error('--wgpu-source-archive requires --rebuild-wgpu-cache-api');
   }
@@ -1304,6 +1469,7 @@ async function main() {
     console.log('=========================================================================');
     const manifest = await rebuildWgpuCacheApiFromSource({
       ...(sourceArchive ? { sourceArchive } : {}),
+      ...(cacheTarget ? { target: cacheTarget } : {}),
     });
     console.log(`  wgpu: OK (${manifest.version}, ${manifest.libraries.length} library artifact(s))`);
     return;
@@ -1393,9 +1559,12 @@ async function main() {
 
   if (depsToDownload.some((name) => androidDeps.includes(name))) await ensureGradleWrapper();
 
+  // The lock is read once per invocation so every selected payload resolves
+  // against the same reviewed bytes. No acquisition runs without it.
+  const lock = readNativeDepsLockContext();
   const results = {};
   for (const dep of depsToDownload) {
-    results[dep] = await downloadDep(dep);
+    results[dep] = await downloadDep(dep, { lockContext: lock });
   }
 
   console.log('\n=== Summary ===');

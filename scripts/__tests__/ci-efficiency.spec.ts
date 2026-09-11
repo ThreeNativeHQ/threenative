@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { ciJobGraph, declaredNeeds, jobSections } from "../ci-workflow.js";
 
 const repo = path.resolve(import.meta.dirname, "../..");
@@ -340,7 +340,7 @@ describe("PRD-373 fixed full candidates and current package products", () => {
   });
 
   it("accepts a real frozen promotion merge and rejects a changed base", () => {
-    const root = mkdtempSync(path.join(tmpdir(), "ci-promotion-"));
+    const root = makeTempDirSync("ci-promotion-");
     const git = (...args: string[]) => {
       const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
       expect(result.status, result.stderr).toBe(0);
@@ -428,7 +428,7 @@ describe("PRD-373 fixed full candidates and current package products", () => {
   });
 
   it("repacks changed template bytes even when compiled bundles remain unchanged", () => {
-    const root = mkdtempSync(path.join(tmpdir(), "ci-repack-"));
+    const root = makeTempDirSync("ci-repack-");
     try {
       const actualPnpm = spawnSync("bash", ["-c", "command -v pnpm"], {
         encoding: "utf8",

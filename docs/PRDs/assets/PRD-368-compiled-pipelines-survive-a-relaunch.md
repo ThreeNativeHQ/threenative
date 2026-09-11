@@ -1,11 +1,18 @@
 # PRD-368 — Compiled pipelines survive a relaunch
 
-**Status:** PARTIAL — Phase 1A and Phase 1B executed on Linux/Vulkan, 2026-09-09: the host now compiles every pipeline through one device-owned cache. Persistence across restarts, Android, and every timing claim remain open. **Layer:** native engine; only the host can persist backend compiler data.
+**Status:** PARTIAL — persistence and paired-measurement implementation added on 2026-09-10; Linux/Android dependency reconstruction and filesystem contracts executed. Full host-lifecycle/shared gates are still being verified; physical Pixel 8 timing, visual acceptance, and independent review remain open. See the [current verification record](../../verification/prd-368-persistence-2026-09-10.md). **Layer:** native engine; only the host can persist backend compiler data.
 **Complexity:** 3 (10+ files) + 2 (new cache lifecycle) + 2 (concurrency) = **7 → HIGH mode**.
 **Depends on:** [367](PRD-367-doctor-explains-shader-compilation.md) for measured acceptance and
 the [shared execution contract](README.md). Dependency feasibility can run first.
 
-## Latest decision and handoff — 2026-09-09
+## Current handoff — 2026-09-10
+
+The implementation, reproducible commands, CI evidence, and remaining physical-device acceptance
+are recorded in [PRD-368 persistence verification](../../verification/prd-368-persistence-2026-09-10.md).
+The sections below retain the earlier Phase 1 evidence; their historical “next work” is superseded
+by that record. Do not mark this PRD DONE from an accepted cache envelope or a CPU-driver test.
+
+## Earlier decision and handoff — 2026-09-09
 
 **Continue with a small, version-pinned patch to wgpu-native `v25.0.2.2`, maintained in this
 repository.** Keep the existing backend and dependency version. The owner selected solving startup

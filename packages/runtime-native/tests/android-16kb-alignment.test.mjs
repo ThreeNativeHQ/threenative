@@ -1,4 +1,7 @@
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
+import { createHash } from "node:crypto";
+import { execFileSync } from 'node:child_process';
 import { test } from 'vitest';
 
 import {
@@ -95,4 +98,500 @@ test('a misaligned library is coded, and an unrunnable check is not', () => {
     assert.notEqual(error.code, 'ANDROID_16KB_MISALIGNED');
     assert.match(error.message, /could not inspect/u);
   }
+});
+
+// PRD-221: these are payload-integrity mechanics, not Android startup qualification.
+import {
+	chmodSync,
+	cpSync,
+	existsSync,
+	mkdirSync,
+	writeFileSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	symlinkSync,
+} from "node:fs";
+import { join } from "node:path";
+import {
+	ANDROID_V8_BUILD,
+	adaptAndroidV8InspectorPatch,
+	androidV8GnArgs,
+	createAndroidV8Receipt,
+	verifyAndroidV8Installation,
+	resolveAndroidV8Ndk,
+} from "../scripts/build-android-v8.mjs";
+
+function withV8Payload(run) {
+	const temporary = makeTempDirSync("tn-v8-16kb-");
+	const root = join(temporary, "v8-android");
+	const write = (path, value) => {
+		mkdirSync(join(root, path, ".."), { recursive: true });
+		writeFileSync(join(root, path), value);
+	};
+	// Minimal ELF headers exercise ABI validation; injected objdump output deliberately does
+	// not pretend these buffers are a compiled V8 distribution or an observed device launch.
+	for (const [abi, machine] of [
+		["arm64-v8a", 183],
+		["x86_64", 62],
+	]) {
+		const elf = Buffer.alloc(64);
+		Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1]).copy(elf);
+		elf.writeUInt16LE(3, 16);
+		elf.writeUInt16LE(machine, 18);
+		write(`lib/${abi}/libv8android.so`, elf);
+		write(`lib/${abi}/libc++_shared.so`, elf);
+		write(`snapshot_blob/${abi}/snapshot_blob.bin`, `snapshot:${abi}`);
+	}
+	write("include/v8.h", "// fixture header");
+	const names = [
+		"MAJOR_VERSION",
+		"MINOR_VERSION",
+		"BUILD_NUMBER",
+		"PATCH_LEVEL",
+	];
+	write(
+		"include/v8-version.h",
+		ANDROID_V8_BUILD.version
+			.split(".")
+			.map((part, index) => `#define V8_${names[index]} ${part}`)
+			.join("\n"),
+	);
+	for (const name of [
+		"V8-LICENSE",
+		"BUILD-SCRIPTS-LICENSE",
+		"ICU-LICENSE",
+		"NDK-NOTICE",
+	]) {
+		write(`licenses/${name}`, "fixture license");
+	}
+	const options = { runObjdump: () => aligned };
+	try {
+		return run({ root, write, options });
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
+	}
+}
+
+function sealV8Payload(root, options) {
+	const receipt = createAndroidV8Receipt(root, options);
+	writeFileSync(join(root, "build-receipt.json"), JSON.stringify(receipt));
+	return receipt;
+}
+
+test("V8 receipt inspects both ABI libraries and shared STLs and binds separate snapshots", () => {
+	withV8Payload(({ root, options }) => {
+		const seen = [];
+		const receipt = sealV8Payload(root, {
+			runObjdump: (path) => {
+				seen.push(path);
+				return aligned;
+			},
+		});
+		assert.equal(seen.length, 4);
+		assert.equal(receipt.libraries.length, 4);
+		assert.notEqual(
+			receipt.files["snapshot_blob/arm64-v8a/snapshot_blob.bin"],
+			receipt.files["snapshot_blob/x86_64/snapshot_blob.bin"],
+		);
+		assert.deepEqual(verifyAndroidV8Installation(root, options), receipt);
+	});
+});
+
+for (const abi of ["arm64-v8a", "x86_64"]) {
+	for (const name of ["libv8android.so", "libc++_shared.so"]) {
+		test(`V8 receipt rejects historical 4 KB alignment in ${abi}/${name}`, () => {
+			withV8Payload(({ root }) =>
+				assert.throws(
+					() =>
+						createAndroidV8Receipt(root, {
+							runObjdump: (path) =>
+								path.endsWith(`${abi}/${name}`) ? fourKb : aligned,
+						}),
+					(error) =>
+						error.code === "ANDROID_16KB_MISALIGNED" &&
+						error.message.includes(`${abi}/${name}`) &&
+						error.message.includes("0x1000"),
+				),
+			);
+		});
+	}
+	test(`V8 receipt rejects a missing ${abi} snapshot`, () => {
+		withV8Payload(({ root, options }) => {
+			rmSync(join(root, `snapshot_blob/${abi}/snapshot_blob.bin`));
+			assert.throws(
+				() => createAndroidV8Receipt(root, options),
+				/missing .*snapshot_blob/u,
+			);
+		});
+	});
+	test(`V8 receipt rejects a library labeled with the wrong ${abi} machine`, () => {
+		withV8Payload(({ root, write, options }) => {
+			const path = `lib/${abi}/libv8android.so`;
+			const bytes = readFileSync(join(root, path));
+			bytes.writeUInt16LE(abi === "arm64-v8a" ? 62 : 183, 18);
+			write(path, bytes);
+			assert.throws(
+				() => createAndroidV8Receipt(root, options),
+				/invalid ELF class\/type\/machine/u,
+			);
+		});
+	});
+}
+
+test("V8 cache rejects a swapped snapshot even when both files exist", () => {
+	withV8Payload(({ root, write, options }) => {
+		sealV8Payload(root, options);
+		write(
+			"snapshot_blob/x86_64/snapshot_blob.bin",
+			readFileSync(join(root, "snapshot_blob/arm64-v8a/snapshot_blob.bin")),
+		);
+		assert.throws(
+			() => verifyAndroidV8Installation(root, options),
+			/snapshot_blob\/x86_64.*checksum mismatch/u,
+		);
+	});
+});
+
+test("V8 cache rejects a changed header and an unrecorded payload file", () => {
+	withV8Payload(({ root, write, options }) => {
+		sealV8Payload(root, options);
+		write("include/v8.h", "// altered fixture header");
+		assert.throws(
+			() => verifyAndroidV8Installation(root, options),
+			/v8.h checksum mismatch/u,
+		);
+		write("extra.txt", "unrecorded");
+		assert.throws(
+			() => verifyAndroidV8Installation(root, options),
+			/complete payload/u,
+		);
+	});
+});
+
+test("V8 cache rejects stale recipe and pointer-compression configuration", () => {
+	withV8Payload(({ root, write, options }) => {
+		const receipt = sealV8Payload(root, options);
+		receipt.args.x86_64 = receipt.args.x86_64.replace(
+			"v8_enable_pointer_compression=true",
+			"v8_enable_pointer_compression=false",
+		);
+		write("build-receipt.json", JSON.stringify(receipt));
+		assert.throws(
+			() => verifyAndroidV8Installation(root, options),
+			/different build recipe/u,
+		);
+		receipt.args.x86_64 = androidV8GnArgs("x86_64");
+		receipt.build.recipe -= 1;
+		write("build-receipt.json", JSON.stringify(receipt));
+		assert.throws(
+			() => verifyAndroidV8Installation(root, options),
+			/different build recipe/u,
+		);
+	});
+});
+
+test("V8 source GN configuration retains JIT, compressed pointers and per-ABI snapshots", () => {
+	for (const abi of ["arm64-v8a", "x86_64"]) {
+		const args = androidV8GnArgs(abi);
+		assert.match(args, /v8_enable_lite_mode=false/u);
+		assert.match(args, /v8_enable_pointer_compression=true/u);
+		assert.match(args, /v8_use_external_startup_data=true/u);
+		assert.match(args, /use_custom_libcxx=false/u);
+	}
+	assert.throws(
+		() => androidV8GnArgs("armeabi-v7a"),
+		/Unsupported Android V8 ABI/u,
+	);
+});
+
+test('the adapted inspector backport applies to the pinned String16 source shape', () => {
+  const root = makeTempDirSync('tn-v8-inspector-patch-');
+  const header = join(root, 'src/inspector/string-16.h');
+  const parent = [
+    '#include <stdint.h>',
+    '',
+    'using UChar = uint16_t;',
+    '',
+    'class String16 {',
+    ' public:',
+    '  int toInteger(bool* ok = nullptr) const;',
+    '  std::pair<size_t, size_t> getTrimmedOffsetAndLength() const;',
+    '  String16 stripWhiteSpace() const;',
+    '  const UChar* characters16() const { return m_impl.c_str(); }',
+    '  size_t length() const { return m_impl.length(); }',
+    '  bool isEmpty() const { return !m_impl.length(); }',
+    '  UChar operator[](size_t index) const { return m_impl[index]; }',
+    '};',
+    '',
+  ].join('\n');
+  const target = parent
+    .replace('using UChar = uint16_t;', 'using UChar = char16_t;')
+    .replace(
+      '  const UChar* characters16() const { return m_impl.c_str(); }',
+      '  const uint16_t* characters16() const {\n' +
+        '    return reinterpret_cast<const uint16_t*>(m_impl.c_str());\n' +
+        '  }',
+    );
+  const pinned = parent.replace(
+    '  std::pair<size_t, size_t> getTrimmedOffsetAndLength() const;\n',
+    '',
+  );
+  try {
+    mkdirSync(join(root, 'src/inspector'), { recursive: true });
+    writeFileSync(header, parent);
+    execFileSync('git', ['init', '-q'], { cwd: root });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: root });
+    execFileSync('git', ['config', 'user.name', 'ThreeNative test'], { cwd: root });
+    execFileSync('git', ['add', 'src/inspector/string-16.h'], { cwd: root });
+    execFileSync('git', ['commit', '-qm', 'parent'], { cwd: root });
+    writeFileSync(header, target);
+    const upstreamPatch = execFileSync(
+      'git',
+      ['diff', '--', 'src/inspector/string-16.h'],
+      { cwd: root, encoding: 'utf8' },
+    );
+    writeFileSync(header, pinned);
+    const adapted = adaptAndroidV8InspectorPatch(upstreamPatch);
+    assert.doesNotMatch(adapted, /getTrimmedOffsetAndLength/u);
+    assert.doesNotThrow(() =>
+      execFileSync('git', ['apply', '--check', '--recount', '-'], {
+        cwd: root,
+        input: adapted,
+      }),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("V8 payload rejects symlinks, empty files and missing license notices", () => {
+	withV8Payload(({ root, write, options }) => {
+		write("empty.txt", "");
+		assert.throws(
+			() => createAndroidV8Receipt(root, options),
+			/empty or non-regular/u,
+		);
+		rmSync(join(root, "empty.txt"));
+		symlinkSync("v8.h", join(root, "include/link.h"));
+		assert.throws(
+			() => createAndroidV8Receipt(root, options),
+			/must not contain symlinks/u,
+		);
+		rmSync(join(root, "include/link.h"));
+		rmSync(join(root, "licenses/NDK-NOTICE"));
+		assert.throws(
+			() => createAndroidV8Receipt(root, options),
+			/missing licenses\/NDK-NOTICE/u,
+		);
+	});
+});
+
+test("V8 source toolchain requires the exact NDK revision, not a matching prefix", () => {
+	withV8Payload(({ root, write }) => {
+		write("source.properties", `Pkg.Revision = ${ANDROID_V8_BUILD.ndk}0\n`);
+		assert.throws(
+			() => resolveAndroidV8Ndk({ ANDROID_NDK_HOME: root }),
+			/requires NDK/u,
+		);
+		write("source.properties", `Pkg.Revision = ${ANDROID_V8_BUILD.ndk}\n`);
+		assert.equal(resolveAndroidV8Ndk({ ANDROID_NDK_HOME: root }), root);
+	});
+});
+
+// The source builder is reached through the incumbent dependency provisioner, not a second
+// user-facing install route. Inject only that expensive boundary in these no-toolchain tests.
+import * as dependencyInstaller from '../scripts/download-deps.mjs';
+import * as sourceBuilder from '../scripts/build-android-v8.mjs';
+
+test('Android provisioner delegates even an existing legacy cache to the verified V8 builder', async () => {
+  const root = makeTempDirSync('tn-v8-provision-');
+  const destination = join(root, 'v8-android');
+  mkdirSync(destination);
+  let observed;
+  try {
+    const result = await dependencyInstaller.downloadDep('v8-android', {
+      thirdPartyRoot: root,
+      force: false,
+      provisionV8: (path, options) => { observed = { path, options }; },
+    });
+    assert.equal(result, true);
+    assert.deepEqual(observed, { path: destination, options: { force: false } });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('Android provisioner reports a V8 source failure instead of falling back to the historical archive', async () => {
+  let called = 0;
+  const result = await dependencyInstaller.downloadDep('v8-android', {
+    force: true,
+    provisionV8: (_path, options) => {
+      called += 1;
+      assert.equal(options.force, true);
+      throw new Error('fixture: source dependency unavailable');
+    },
+  });
+  assert.equal(called, 1);
+  assert.equal(result, false);
+});
+
+test('Gradle V8 verification is read-only and refuses misspelled or conflicting flags', () => {
+  const root = '/fixture/v8';
+  let verified = 0;
+  const options = {
+    root,
+    verify: (path) => { assert.equal(path, root); verified += 1; return 'checked'; },
+    provision: () => { throw new Error('verification must not fetch or rebuild'); },
+  };
+  assert.equal(sourceBuilder.runAndroidV8Command(['--verify'], options), 'checked');
+  assert.equal(verified, 1);
+  for (const args of [['--verify', '--force'], ['--verfy'], ['--verify', '--verify']]) {
+    assert.throws(() => sourceBuilder.runAndroidV8Command(args, options), /Usage:/u);
+  }
+});
+
+test('source Gradle builds verify the dependency before snapshots while no-NDK prebuilts bypass the source helper', () => {
+  const gradle = readFileSync(new URL('../android/app/build.gradle.kts', import.meta.url), 'utf8');
+  assert.match(gradle, /if \(!usePrebuiltRuntime && nativeJsEngineName == "v8"\) \{[\s\S]*?tasks\.register<Exec>\("verifyV8Dependency"\)/u);
+  assert.match(gradle, /build-android-v8\.mjs[\s\S]*?"--verify"/u);
+  assert.match(gradle, /tasks\.named\("copyV8Snapshot"\)\s*\{\s*dependsOn\(verifyV8Dependency\)/u);
+  assert.ok(gradle.includes(`ndkVersion = "${ANDROID_V8_BUILD.ndk}"`));
+});
+
+test('Android workflows install and select the pinned V8 NDK', () => {
+  const ndk = ANDROID_V8_BUILD.ndk;
+  const gradleProperties = readFileSync(new URL('../android/gradle.properties', import.meta.url), 'utf8');
+  assert.match(gradleProperties, new RegExp(`^android\\.ndkVersion=${ndk}$`, 'mu'));
+
+  for (const path of [
+    '../../../.github/workflows/native-platforms.yml',
+    '../../../.github/workflows/native-release.yml',
+  ]) {
+    const workflow = readFileSync(new URL(path, import.meta.url), 'utf8');
+    assert.ok(workflow.includes(`ndk;${ndk}`), `${path} must install the pinned NDK`);
+    assert.match(
+      workflow,
+      new RegExp(`ANDROID_NDK_HOME=.*ndk/${ndk}`, 'u'),
+      `${path} must explicitly select the pinned NDK`,
+    );
+    assert.doesNotMatch(workflow, /ndk;27\.1\.12297006/u);
+  }
+});
+
+test('the NDK 28 recipe pins and adapts the upstream inspector libc++ compatibility backport', () => {
+  assert.equal(ANDROID_V8_BUILD.inspectorFix, '182d9c05e78b1ddb1cb8242cd3628a7855a0336f');
+  assert.equal(ANDROID_V8_BUILD.recipe, 5);
+  const script = readFileSync(new URL('../scripts/build-android-v8.mjs', import.meta.url), 'utf8');
+  assert.match(script, /ANDROID_V8_BUILD\.inspectorFix/u);
+  assert.match(script, /adaptAndroidV8InspectorPatch/u);
+  assert.match(script, /\["apply", "--check", "--recount", "-"\]/u);
+  assert.match(script, /\["apply", "--recount", "-"\]/u);
+});
+
+test('the Android V8 source patch overrides Chromium\'s arm64 4 KB linker default', () => {
+  const script = readFileSync(new URL('../scripts/build-android-v8.mjs', import.meta.url), 'utf8');
+  assert.match(script, /join\(source, "build\/config\/android\/BUILD\.gn"\)/u);
+  assert.ok(script.includes("'    ldflags += [ \"-Wl,-z,max-page-size=4096\" ]'"));
+  assert.ok(script.includes(
+    "'    ldflags += [ \"-Wl,-z,max-page-size=16384\", \"-Wl,-z,common-page-size=16384\" ]'",
+  ));
+});
+
+test('the source build keeps a recipe-keyed checkout so interrupted Ninja work can resume', () => {
+  const script = readFileSync(new URL('../scripts/build-android-v8.mjs', import.meta.url), 'utf8');
+  const directTempCreator = ['mkd', 'temp'].join('');
+  assert.doesNotMatch(script, new RegExp(`${directTempCreator}(?:Sync)?\\s*\\(`, 'u'));
+  assert.match(script, /join\(dirname\(destination\), "\.v8-source"\)/u);
+  assert.match(script, /const statePath = join\(work, "\.recipe\.json"\)/u);
+  assert.match(script, /buildScript: sha256\(fileURLToPath\(import\.meta\.url\)\)/u);
+  assert.match(script, /readFileSync\(statePath, "utf8"\) === state/u);
+  assert.match(script, /Resuming Android V8 source build/u);
+  assert.match(script, /writeFileSync\(statePath, state\)/u);
+});
+
+// Run the real resumable provisioner against disposable compiler/NDK fixtures. These checks
+// prove retry and staging semantics only, never that the fixture bytes are runnable Android V8.
+function withPreparedV8Source(run) {
+  return withV8Payload(({ root, write, options }) => {
+    const work = join(root, '../.v8-source');
+    const upstream = join(work, 'buildscripts');
+    const source = join(upstream, 'v8');
+    const ndk = join(root, '../ndk');
+    const tools = 'toolchains/llvm/prebuilt/linux-x86_64';
+    const executable = (path, content) => {
+      write(path, `#!/bin/sh\nset -eu\n${content}\n`);
+      chmodSync(join(root, path), 0o755);
+    };
+    write('../.v8-source/.recipe.json', `${JSON.stringify({
+      build: ANDROID_V8_BUILD,
+      buildScript: createHash('sha256').update(readFileSync(
+        new URL('../scripts/build-android-v8.mjs', import.meta.url),
+      )).digest('hex'),
+    }, null, 2)}\n`);
+    mkdirSync(join(upstream, 'scripts/depot_tools'), { recursive: true });
+    executable('../bin/git', 'printf git >> "$TN_V8_TRACE"; exit 71');
+    executable('../bin/ninja', 'printf ninja >> "$TN_V8_TRACE"');
+    executable('../.v8-source/buildscripts/v8/buildtools/linux64/gn', 'printf gn >> "$TN_V8_TRACE"');
+    executable(`../ndk/${tools}/bin/llvm-objdump`, `printf '%s\\n' '${aligned}'`);
+    write('../ndk/source.properties', `Pkg.Revision = ${ANDROID_V8_BUILD.ndk}\n`);
+    write('../ndk/NOTICE', 'fixture NDK notice');
+    write('../.v8-source/buildscripts/LICENSE', 'fixture build scripts license');
+    write('../.v8-source/buildscripts/v8/LICENSE', 'fixture V8 license');
+    write('../.v8-source/buildscripts/v8/third_party/icu/LICENSE', 'fixture ICU license');
+    cpSync(join(root, 'include'), join(source, 'include'), { recursive: true });
+    for (const [abi, cpu, triple] of [
+      ['arm64-v8a', 'arm64', 'aarch64-linux-android'],
+      ['x86_64', 'x64', 'x86_64-linux-android'],
+    ]) {
+      write(`../.v8-source/buildscripts/v8/out.v8.${cpu}/libv8android.so`,
+        readFileSync(join(root, `lib/${abi}/libv8android.so`)));
+      write(`../.v8-source/buildscripts/v8/out.v8.${cpu}/snapshot_blob.bin`,
+        readFileSync(join(root, `snapshot_blob/${abi}/snapshot_blob.bin`)));
+      write(`../ndk/${tools}/sysroot/usr/lib/${triple}/libc++_shared.so`,
+        readFileSync(join(root, `lib/${abi}/libc++_shared.so`)));
+    }
+    const trace = join(root, '../commands.log');
+    const env = { ...process.env, ANDROID_NDK_HOME: ndk, TN_V8_TRACE: trace,
+      PATH: `${join(root, '../bin')}:${process.env.PATH ?? ''}` };
+    return run({ root, work, write, options, env, trace });
+  });
+}
+
+const sourceHostUnavailable = process.platform !== 'linux' || process.arch !== 'x64';
+
+test.skipIf(sourceHostUnavailable)('V8 --force discards prepared source state and preserves the prior install on fetch failure', () => {
+  withPreparedV8Source(({ root, options, env, trace }) => {
+    const previous = sealV8Payload(root, options);
+    assert.throws(() => sourceBuilder.provisionAndroidV8(root, { force: true, env }), /git init/u);
+    assert.equal(readFileSync(trace, 'utf8'), 'git');
+    assert.deepEqual(verifyAndroidV8Installation(root, options), previous);
+  });
+});
+
+test.skipIf(sourceHostUnavailable)('V8 resume rebuilds payload staging without deleting the prepared compiler outputs', () => {
+  withPreparedV8Source(({ root, write, options, env, trace }) => {
+    write('../.v8-source/payload/include/stale.h', 'unrelated interrupted staging file');
+    const receipt = sourceBuilder.provisionAndroidV8(root, { env });
+    assert.equal(readFileSync(trace, 'utf8'), 'gnninjagnninja');
+    assert.equal(existsSync(join(root, 'include/stale.h')), false);
+    assert.equal(Object.hasOwn(receipt.files, 'include/stale.h'), false);
+    assert.deepEqual(verifyAndroidV8Installation(root, options), receipt);
+  });
+});
+
+test.skipIf(sourceHostUnavailable)('V8 retry recovers the prior install after interruption between promotion renames', () => {
+  withPreparedV8Source(({ root, work, options, env }) => {
+    const previous = sealV8Payload(root, options);
+    renameSync(root, join(work, 'previous'));
+    assert.throws(() => sourceBuilder.provisionAndroidV8(root, { force: true, env }), /git init/u);
+    assert.ok(existsSync(root), 'the only prior install must survive a failed retry');
+    assert.deepEqual(verifyAndroidV8Installation(root, options), previous);
+  });
+});
+
+test.skipIf(sourceHostUnavailable)('V8 promotion replaces a leftover rollback directory only after validating the new payload', () => {
+  withPreparedV8Source(({ root, write, options, env }) => {
+    write('../.v8-source/previous/leftover.txt', 'older rollback copy');
+    const receipt = sourceBuilder.provisionAndroidV8(root, { env });
+    assert.deepEqual(verifyAndroidV8Installation(root, options), receipt);
+  });
 });

@@ -127,6 +127,41 @@ jobs:
           path: packages/runtime-native/artifacts/conformance/web
           if-no-files-found: error
 
+  android-v8-source:
+    name: Android V8 source payload
+    needs: scope
+    if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - uses: android-actions/setup-android@v4
+      - name: Restore the pinned Android NDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.2.13676358
+          key: android-v8-ndk-28.2.13676358-${{ runner.os }}
+      - name: Install and select the pinned Android NDK
+        run: |
+          set -euo pipefail
+          sdkmanager "ndk;28.2.13676358"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/android-v8-source
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-v8-${{ needs.scope.outputs.candidate_sha }}
+          path: packages/runtime-native/third_party/v8-android
+          if-no-files-found: error
+          retention-days: 2
+
   performance-coverage:
     name: Native collector evidence coverage
     needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
@@ -206,7 +241,7 @@ jobs:
 
   android-emulator-parity:
     name: Android emulator visual parity
-    needs: [scope, web-reference]
+    needs: [scope, web-reference, android-v8-source]
     # Runs on every event since 2026-09-01 (owner call): the earlier narrowing held the expensive
     # platform legs behind pushes to main and a `native` label, and the lane then spent its runs
     # being cancelled by the next push instead of reporting anything. A leg that is skipped on the
@@ -232,7 +267,8 @@ jobs:
     # scope skip is unrelated and kept.
     if: >-
       needs.scope.outputs.selection == 'full' &&
-      inputs.ios_only != true
+      inputs.ios_only != true &&
+      needs.android-v8-source.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -271,17 +307,22 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/runtime-native/third_party
-          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+          key: >-
+            native-android-third-party-${{ runner.os }}-${{ runner.arch }}-
+            ${{ hashFiles(
+              'packages/runtime-native/scripts/download-deps.mjs',
+              'packages/runtime-native/scripts/build-android-v8.mjs',
+              'packages/runtime-native/scripts/package-android.mjs') }}
       - name: Restore the Android SDK packages
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.ANDROID_SDK_ROOT }}/platforms/android-35
             ${{ env.ANDROID_SDK_ROOT }}/build-tools/35.0.0
-            ${{ env.ANDROID_SDK_ROOT }}/ndk/27.1.12297006
+            ${{ env.ANDROID_SDK_ROOT }}/ndk/28.2.13676358
             ${{ env.ANDROID_SDK_ROOT }}/system-images/android-35
             ${{ env.ANDROID_SDK_ROOT }}/emulator
-          key: android-sdk-35-ndk27.1.12297006-${{ runner.os }}-${{ runner.arch }}
+          key: android-sdk-35-ndk28.2.13676358-${{ runner.os }}-${{ runner.arch }}
       - name: Restore the Gradle caches
         uses: actions/cache@v4
         with:
@@ -319,9 +360,16 @@ jobs:
         run: |
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
             packages/runtime-native/artifacts/conformance/web "downloaded web reference"
+      - name: Take the verified Android V8 payload from its producer
+        uses: actions/download-artifact@v7
+        with:
+          name: android-v8-${{ needs.scope.outputs.candidate_sha }}
+          path: packages/runtime-native/third_party/v8-android
       - name: Install Android build prerequisites
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006"
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358"
+          export ANDROID_NDK_HOME="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
           # build-native-physics.mjs cross-compiles the Rust physics crate for both ABIs
           # Gradle packages. Without these targets `:app:buildNativePhysics` fails with
           # E0463 can't find crate for `core`, and every conformance row fails at phase
@@ -597,6 +645,29 @@ jobs:
           }
           console.log(`TN_PUMP_ANDROID_STRUCTURAL_OK ${JSON.stringify(result.detail)}`);
           NODE
+      - name: Emit gate-schema parity and provenance evidence reports
+        if: always()
+        run: |
+          set +e
+          node packages/runtime-native/scripts/generate-native-sbom.mjs --out /tmp/sbom-evidence >/dev/null 2>&1
+          node packages/runtime-native/scripts/generate-release-reports.mjs \
+            --candidate "$GITHUB_SHA" \
+            --registry-sha256 "$(sha256sum packages/runtime-native/conformance/registry.json | cut -d' ' -f1)" \
+            --android packages/runtime-native/artifacts/conformance/android/report.json \
+            --desktop packages/runtime-native/artifacts/conformance/desktop/report.json \
+            --web packages/runtime-native/artifacts/conformance/web/report.json \
+            --lock packages/runtime-native/native-deps.lock.json \
+            --sbom /tmp/sbom-evidence/native-dependencies.cdx.json \
+            --inventory /tmp/sbom-evidence/native-license-inventory.json \
+            --pnpm-lock-sha "$(sha256sum pnpm-lock.yaml | cut -d' ' -f1)" \
+            --cargo-lock-sha "$(sha256sum packages/runtime-native/native/physics/Cargo.lock | cut -d' ' -f1)" \
+            --out packages/runtime-native/artifacts/reports
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then echo "TN_RELEASE_REPORTS_DEFERRED: conformance reports absent on this leg"; fi
+          mkdir -p reports
+          cp packages/runtime-native/artifacts/reports/parity.json reports/parity.json 2>/dev/null || true
+          cp packages/runtime-native/artifacts/reports/provenance.json reports/provenance.json 2>/dev/null || true
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -606,6 +677,18 @@ jobs:
             packages/runtime-native/artifacts/android/multitouch/
             packages/runtime-native/artifacts/performance-contract/
           if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-release-parity
+          path: reports/parity.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-release-provenance
+          path: reports/provenance.json
+          if-no-files-found: warn
 
   desktop-parity:
     needs: [scope, web-reference]
@@ -1195,6 +1278,7 @@ jobs:
             artifacts=$2
             node packages/playtest/dist/runner/cli.js "$scenario" \
               --target ios --app "$app" --bundle-id "$bundle_id" \
+              --timeout 30000 \
               --artifacts "$artifacts"
           }
           expect_ios_failure() {

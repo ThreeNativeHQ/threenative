@@ -289,3 +289,28 @@ checks never relax during either rollback.
   two new regressions failed before the fix and passed after it. This does not enable native
   compilation for instruction-only changes. The website types/build and 20 unit tests passed
   in that run; browser execution was blocked because the preceding failure skipped installation.
+
+### PR #190 integration repair — 2026-09-11
+
+Merged current main `7e6dffc1e7d67908d0ceb43388db45bb2d16964b` without dropping the
+Android V8 source producer or restoring native label exemptions. The producer now follows the
+validated full selection, checks out the captured candidate, and publishes the same candidate-keyed
+artifact its consumer downloads; the NDK cache also retains the matching version and architecture.
+The parity dependency regression permits additional producers while still requiring scope and the
+web reference.
+
+Reproduced the failed temp-directory guard and moved both CI fixtures to the registered cleanup
+helper. Updated the package-inventory regression to inspect the composite action that now owns
+fresh packing, while retaining the dynamic added/renamed package and literal-enumeration checks.
+Updated the native protected-build assertion for the full selection; its executable negative tests
+still reject missing, failed, skipped, and cancelled producers. Regenerated the retention index with
+its generator after reproducing its stale-output failure; no evidence or budget was removed.
+
+Local focused verification: 204 tests passed across seven CI/workspace/cleanup suites, and all 35
+native-platform workflow tests passed. These are not a claim that the entire native runtime ran
+locally: the unbuilt C++ executables fail closed here and require the hosted lane.
+
+The previous full run's Android row `86-pointer-keyboard-events` failed because adb reported the
+device offline while restoring user rotation (73 passed, one failed, 19 explicitly unsupported
+rows). Its aggregate verdict also rejected a stale event-base/merge-parent pair. Neither guard was
+weakened; a fresh full run on the synchronized branch must establish the final hosted result.

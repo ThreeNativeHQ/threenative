@@ -9,6 +9,7 @@
 
 #include "mystral/runtime.h"
 #include "mystral/cold_start.h"
+#include "../webgpu/pipeline_cache.h"
 #include <SDL3/SDL.h>
 #include <iostream>
 #include <fstream>
@@ -184,6 +185,12 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
 
     // Create runtime config
     mystral::RuntimeConfig config;
+    // The packaged bundle owns its Three.js/WGSL source graph. A loose script may import files
+    // outside it, so only the owned asset entry qualifies for cross-process compiler data.
+    if (scriptPath.find("asset://") == 0 && !scriptContent.empty()) {
+        config.pipelineCacheAppIdentity = scriptPath;
+        config.pipelineCacheSourceIdentity = mystral::webgpu::pipelineCacheDigest(scriptContent);
+    }
     config.width = 0;   // Use full screen width (0 = auto)
     config.height = 0;  // Use full screen height (0 = auto)
     std::string windowTitle = "ThreeNative";

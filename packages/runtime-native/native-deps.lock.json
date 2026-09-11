@@ -1,0 +1,997 @@
+{
+  "schemaVersion": 1,
+  "generatedNote": "PRD-059 Phase 1. All hashes bootstrapped by two agreeing fetch runs 2026-09-11. stb pinned to master@2c980bb5 (mutable upstream; re-pin on update).",
+  "components": [
+    {
+      "name": "wgpu",
+      "version": "v25.0.2.2",
+      "source": {
+        "repository": "gfx-rs/wgpu-native",
+        "revision": "v25.0.2.2"
+      },
+      "license": {
+        "spdx": "Apache-2.0,MPL-2.0",
+        "evidence": {
+          "url": "https://github.com/gfx-rs/wgpu-native/blob/trunk/LICENSE.APACHE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "wgpu-linux-x86_64",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-linux-x86_64-release.zip",
+          "sha256": "78a2a4d90f3a0a67af2ab2634fe09873ced3baceac8822e890cdea34d8ba9834",
+          "bytes": 15613424,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "wgpu-linux-aarch64",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-linux-aarch64-release.zip",
+          "sha256": "da6d953ba4a4c1a69e466e3c6a73c9cda4a8f079c9aa33c2da0bf84c27354c1c",
+          "bytes": 15429757,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "wgpu-macos-x86_64",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-macos-x86_64-release.zip",
+          "sha256": "c6dd12649f13e6fd335147e42671c752a26b25ce0a08392b12fe22576a5ace04",
+          "bytes": 12893128,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "wgpu-macos-aarch64",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-macos-aarch64-release.zip",
+          "sha256": "6e71efc9ef0ff4cea5e29da8a77f6cde1f50acbee6cb178284cd433e5fb308cd",
+          "bytes": 12977803,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "wgpu-windows-x86_64-msvc",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-windows-x86_64-msvc-release.zip",
+          "sha256": "bb465aa66f288f72663905c68604e07a348189a1cfdd4665007df3eb870d47ae",
+          "bytes": 16432651,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "wgpu-windows-aarch64-msvc",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-windows-aarch64-msvc-release.zip",
+          "sha256": "1beb2735cb858c02cc0d49c91a2a6469bbcef50797393e5bbf3fb816e75aa76e",
+          "bytes": 15806936,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "wgpu-regression",
+      "version": "v24.0.3.1",
+      "source": {
+        "repository": "gfx-rs/wgpu-native",
+        "revision": "v24.0.3.1"
+      },
+      "license": {
+        "spdx": "Apache-2.0,MPL-2.0",
+        "evidence": {
+          "url": "https://github.com/gfx-rs/wgpu-native/blob/trunk/LICENSE.APACHE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "wgpu-regression-linux-x86_64",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v24.0.3.1/wgpu-linux-x86_64-release.zip",
+          "sha256": "86f3eb9f74d7f1ac82ee52d9b2ab15e366ef86a932759c750b7472652836ee59",
+          "bytes": 14812816,
+          "targets": [
+            "desktop-wgpu-version-matrix"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "wgpu-regression-macos-aarch64",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v24.0.3.1/wgpu-macos-aarch64-release.zip",
+          "sha256": "f140ff27234ebfa9fcca2b492d0cb499f2e197424b9edc45134bcbad0f8d3a78",
+          "bytes": 12387498,
+          "targets": [
+            "desktop-wgpu-version-matrix"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "wgpu-regression-windows-x86_64-msvc",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v24.0.3.1/wgpu-windows-x86_64-msvc-release.zip",
+          "sha256": "72d3abf74e0b55f9474602e2ce7f20fd0f9b9c46be8405b45a697ec1ee343436",
+          "bytes": 15588809,
+          "targets": [
+            "desktop-wgpu-version-matrix"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "wgpu-ios",
+      "version": "v25.0.2.2",
+      "source": {
+        "repository": "gfx-rs/wgpu-native",
+        "revision": "v25.0.2.2"
+      },
+      "license": {
+        "spdx": "Apache-2.0,MPL-2.0",
+        "evidence": {
+          "url": "https://github.com/gfx-rs/wgpu-native/blob/trunk/LICENSE.APACHE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "wgpu-ios-device",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-ios-aarch64-release.zip",
+          "sha256": "eeddd1adb5975db4ff8104a194f01e7db09872d38f06727b2aa9b114b1209cab",
+          "bytes": 12826108,
+          "targets": [
+            "ios-device"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "wgpu-ios-sim-arm64",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-ios-aarch64-simulator-release.zip",
+          "sha256": "fe91b21615c2c07bdf34de140971033d3e1d0dd6badb74b6ac1f29f6c366b844",
+          "bytes": 12868088,
+          "targets": [
+            "ios-simulator"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "wgpu-ios-sim-x64",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-ios-x86_64-simulator-release.zip",
+          "sha256": "cb8a2728e6bae5a5fa54084c49633d1c1afa64892c89c4ed370ebd0ad31d4d42",
+          "bytes": 12655432,
+          "targets": [
+            "ios-simulator"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "wgpu-android",
+      "version": "v25.0.2.2",
+      "source": {
+        "repository": "gfx-rs/wgpu-native",
+        "revision": "v25.0.2.2"
+      },
+      "license": {
+        "spdx": "Apache-2.0,MPL-2.0",
+        "evidence": {
+          "url": "https://github.com/gfx-rs/wgpu-native/blob/trunk/LICENSE.APACHE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "wgpu-android-aarch64",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-android-aarch64-release.zip",
+          "sha256": "063a221f69529e6af7c8a1dcd5f80ee6949d1d5a0c5a7fd7602ed2874356e0fd",
+          "bytes": 15354989,
+          "targets": [
+            "android"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "wgpu-android-x86_64",
+          "url": "https://github.com/gfx-rs/wgpu-native/releases/download/v25.0.2.2/wgpu-android-x86_64-release.zip",
+          "sha256": "1dd875adf8917c057bbe66bda909a1201328ca80f3a8642a74fc463b8f7804c0",
+          "bytes": 15506190,
+          "targets": [
+            "android"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "dawn",
+      "version": "v20260117.152313",
+      "commit": "d14ae3d97ad74100e9f382efef5e9c0872ddbeb2",
+      "source": {
+        "repository": "google/dawn",
+        "revision": "d14ae3d97ad74100e9f382efef5e9c0872ddbeb2"
+      },
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "evidence": {
+          "url": "https://raw.githubusercontent.com/google/dawn/main/LICENSE",
+          "sha256": "0493f897193af1796d5054659f45ec7d4c5af648fa67a99f01d30e55cc805abc",
+          "bytes": 11829
+        }
+      },
+      "payloads": [
+        {
+          "id": "dawn-ubuntu",
+          "url": "https://github.com/google/dawn/releases/download/v20260117.152313/Dawn-d14ae3d97ad74100e9f382efef5e9c0872ddbeb2-ubuntu-latest-Release.tar.gz",
+          "sha256": "34f042447836b2d36204b05cbc76ec8186eedf9c58fbcdca8c1f0607d8b9826d",
+          "bytes": 28197558,
+          "targets": [
+            "desktop-linux"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "dawn-macos-arm64",
+          "url": "https://github.com/google/dawn/releases/download/v20260117.152313/Dawn-d14ae3d97ad74100e9f382efef5e9c0872ddbeb2-macos-latest-Release.tar.gz",
+          "sha256": "9e5b37856327663994a92f6d28ca4316fe0a31b238ee870653b046704e597480",
+          "bytes": 9192595,
+          "targets": [
+            "desktop-macos-arm64"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "dawn-macos-x64",
+          "url": "https://github.com/google/dawn/releases/download/v20260117.152313/Dawn-d14ae3d97ad74100e9f382efef5e9c0872ddbeb2-macos-15-intel-Release.tar.gz",
+          "sha256": "805a476bf98bc72b3a455d3562a0048641cb911d2ed42c4a3487cfd78c12b0d7",
+          "bytes": 10030205,
+          "targets": [
+            "desktop-macos-x64"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "dawn-windows",
+          "url": "https://github.com/google/dawn/releases/download/v20260117.152313/Dawn-d14ae3d97ad74100e9f382efef5e9c0872ddbeb2-windows-latest-Release.tar.gz",
+          "sha256": "130e07fd919d4044ba03e417b2fa98473f8ce5dbd7e191df8261979b1b7e3776",
+          "bytes": 40113716,
+          "targets": [
+            "desktop-windows"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "dawn-headers",
+          "url": "https://github.com/google/dawn/releases/download/v20260117.152313/dawn-headers-d14ae3d97ad74100e9f382efef5e9c0872ddbeb2.tar.gz",
+          "sha256": "fa2bcd2031bedecb4a45a0bbdd24f03c12394574c4c1344d63775435166a48c3",
+          "bytes": 11375325,
+          "targets": [
+            "desktop-all"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "v8",
+      "version": "v13.1.201.22",
+      "source": {
+        "repository": "kuoruan/libv8",
+        "revision": "v13.1.201.22"
+      },
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "evidence": {
+          "url": "https://chromium.googlesource.com/chromium/src/+/main/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "v8-linux-x64",
+          "url": "https://github.com/kuoruan/libv8/releases/download/v13.1.201.22/v8_Linux_x64.tar.xz",
+          "sha256": "47b9e596c350c1644b67d75ebbda33e8b73b9ec94636b5ec1f4fe49bc9baeb2d",
+          "bytes": 10295760,
+          "targets": [
+            "desktop-linux-x64"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "v8-macos-arm64",
+          "url": "https://github.com/kuoruan/libv8/releases/download/v13.1.201.22/v8_macOS_arm64.tar.xz",
+          "sha256": "0e59cbce8c7b6661558ec80217b0f86fcbc75a3cddd3d49253a5f662d3bd0319",
+          "bytes": 8299280,
+          "targets": [
+            "desktop-macos-arm64"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "v8-macos-x64",
+          "url": "https://github.com/kuoruan/libv8/releases/download/v13.1.201.22/v8_macOS_x64.tar.xz",
+          "sha256": "8476c56a70f4845e7aaf0f3f0ba89861230c10af8b59b6c475ba1245a539ac9c",
+          "bytes": 8992856,
+          "targets": [
+            "desktop-macos-x64"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "v8-windows-x64",
+          "url": "https://github.com/kuoruan/libv8/releases/download/v13.1.201.22/v8_Windows_x64.7z",
+          "sha256": "baaf107cfadf9c464f44b53f29155c59eb71a86a1ff63db5fe25dc76a6c92259",
+          "bytes": 15814693,
+          "targets": [
+            "desktop-windows-x64"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "v8-android",
+      "version": "11.0.226.16-recipe-5-source-build",
+      "source": {
+        "repository": "v8/v8 + chromium build, recipe pinned in scripts/build-android-v8.mjs",
+        "revision": "source:7999223ca1644726339aae43d9435c721c8a4bb0 recipe:5"
+      },
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "evidence": {
+          "url": "https://chromium.googlesource.com/chromium/src/+/main/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "v8-android-source-build",
+          "url": "https://github.com/ThreeNativeHQ/threenative/blob/main/packages/runtime-native/scripts/build-android-v8.mjs",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0,
+          "targets": [
+            "android-arm64-v8a",
+            "android-x86_64"
+          ],
+          "bootstrap": "PRD-221 source-build identity; builder-owned validation, not a fetched archive"
+        }
+      ]
+    },
+    {
+      "name": "quickjs",
+      "version": "0.11.0",
+      "source": {
+        "repository": "quickjs-ng/quickjs",
+        "revision": "v0.11.0"
+      },
+      "license": {
+        "spdx": "MIT",
+        "evidence": {
+          "url": "https://github.com/quickjs-ng/quickjs/blob/master/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "quickjs-source",
+          "url": "https://github.com/quickjs-ng/quickjs/archive/refs/tags/v0.11.0.zip",
+          "sha256": "424e50a6513b0ea9fe72ecbba3cb31e524f78d3a4ce7f8ed894aec4a446ca3b4",
+          "bytes": 826315,
+          "targets": [
+            "desktop-all",
+            "android-quickjs"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "sdl3",
+      "version": "3.2.30",
+      "source": {
+        "repository": "libsdl-org/SDL",
+        "revision": "release-3.2.30"
+      },
+      "license": {
+        "spdx": "Zlib",
+        "evidence": {
+          "url": "https://github.com/libsdl-org/SDL/blob/main/LICENSE.txt"
+        }
+      },
+      "payloads": [
+        {
+          "id": "sdl3-source",
+          "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.2.30/SDL3-3.2.30.tar.gz",
+          "sha256": "4c3b09330d866dc52eb65b66259a6684ad387252ca8c57901b3a2b534eb42e3d",
+          "bytes": 15908113,
+          "targets": [
+            "desktop-all",
+            "android-java"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "sdl3-android",
+      "version": "3.2.30",
+      "source": {
+        "repository": "libsdl-org/SDL",
+        "revision": "release-3.2.30"
+      },
+      "license": {
+        "spdx": "Zlib",
+        "evidence": {
+          "url": "https://github.com/libsdl-org/SDL/blob/main/LICENSE.txt"
+        }
+      },
+      "payloads": [
+        {
+          "id": "sdl3-android-aar",
+          "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.2.30/SDL3-devel-3.2.30-android.zip",
+          "sha256": "0525e4bc9cc1370e6d664ec93c927846e311c19a819de05a232bca452b0e3a7a",
+          "bytes": 15121629,
+          "targets": [
+            "android"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "quiche",
+      "version": "quiche-0.24.6-3",
+      "source": {
+        "repository": "mystralengine/library-builder",
+        "revision": "quiche-0.24.6-3"
+      },
+      "license": {
+        "spdx": "BSD-2-Clause,MIT,Apache-2.0",
+        "evidence": {
+          "url": "https://github.com/libuv/libuv/blob/v1.x/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "quiche-linux-x64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3/quiche-linux-x64.zip",
+          "sha256": "f8d7114f5344c47b9c94df2db946751d5545c46efa13939755a106bfc0455a04",
+          "bytes": 20056144,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "quiche-mac-arm64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3/quiche-mac-arm64.zip",
+          "sha256": "bfb75867965a3f13a740bd3ce886b424023a778abda4462779953bd7da24ff4b",
+          "bytes": 15509176,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "quiche-mac-x86_64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3/quiche-mac-x86_64.zip",
+          "sha256": "570053e970802de5dbb4fd66bc605b6da789c34033d1199f6f85661a72a70da0",
+          "bytes": 16240367,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "quiche-win-x64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3/quiche-win-x64.zip",
+          "sha256": "8177451669222e4c22839e6194842004fe17c56dc6a6a62d106b1d6f7a7c54a1",
+          "bytes": 10282560,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "quiche-ios",
+      "version": "quiche-0.24.6-3",
+      "source": {
+        "repository": "mystralengine/library-builder",
+        "revision": "quiche-0.24.6-3"
+      },
+      "license": {
+        "spdx": "BSD-2-Clause,MIT,Apache-2.0",
+        "evidence": {
+          "url": "https://github.com/libuv/libuv/blob/v1.x/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "quiche-ios-device",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3/quiche-ios-arm64.zip",
+          "sha256": "5b16f292d6f19bc91c85bc2070150f9e1cb78944a128e7ad5152950134e1edff",
+          "bytes": 19868640,
+          "targets": [
+            "ios-device"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "quiche-ios-sim-x64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3/quiche-ios-sim-x64.zip",
+          "sha256": "003d751931015e4518ab038097899c1a1ea5b853eddf46204b1c452389fce259",
+          "bytes": 20873318,
+          "targets": [
+            "ios-simulator"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "quiche-android",
+      "version": "quiche-0.24.6-3",
+      "source": {
+        "repository": "mystralengine/library-builder",
+        "revision": "quiche-0.24.6-3"
+      },
+      "license": {
+        "spdx": "BSD-2-Clause,MIT,Apache-2.0",
+        "evidence": {
+          "url": "https://github.com/libuv/libuv/blob/v1.x/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "quiche-android-arm64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3/quiche-android-arm64.zip",
+          "sha256": "6e7958d93cc718fe42db93435c5e07b7a44dc202f1a9a166b5e112f0bdf48b34",
+          "bytes": 15811992,
+          "targets": [
+            "android-arm64"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "quiche-android-armv7",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3/quiche-android-armv7.zip",
+          "sha256": "a79ac1c32ecfbfd6ecb7b22cdbdbb320d8e970878252cbf69f96926d8858cf02",
+          "bytes": 14687287,
+          "targets": [
+            "android-armv7"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "quiche-android-x64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3/quiche-android-x64.zip",
+          "sha256": "9203da07df5f0d6a3d53273d374c9c095f8769b34a0d56ef356dcaa286fab27a",
+          "bytes": 16106391,
+          "targets": [
+            "android-x64"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "stb",
+      "version": "master@2c980bb59875b0d32144a71867fbdebb2f77cd20",
+      "source": {
+        "repository": "nothings/stb",
+        "revision": "2c980bb59875b0d32144a71867fbdebb2f77cd20"
+      },
+      "license": {
+        "spdx": "MIT OR Unlicense",
+        "evidence": {
+          "url": "https://raw.githubusercontent.com/nothings/stb/master/LICENSE",
+          "sha256": "bebfe904b14301657e4e5d655c811d51fd31b97c455b9cc2d8600d6bac6cff63",
+          "bytes": 2510
+        }
+      },
+      "payloads": [
+        {
+          "id": "stb-stb_image.h",
+          "url": "https://raw.githubusercontent.com/nothings/stb/master/stb_image.h",
+          "sha256": "594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3",
+          "bytes": 283010,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11-pinned-to-master-2c980bb5"
+        },
+        {
+          "id": "stb-stb_image_write.h",
+          "url": "https://raw.githubusercontent.com/nothings/stb/master/stb_image_write.h",
+          "sha256": "cbd5f0ad7a9cf4468affb36354a1d2338034f2c12473cf1a8e32053cb6914a05",
+          "bytes": 71221,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11-pinned-to-master-2c980bb5"
+        },
+        {
+          "id": "stb-stb_vorbis.c",
+          "url": "https://raw.githubusercontent.com/nothings/stb/master/stb_vorbis.c",
+          "sha256": "4c7cb2ff1f7011e9d67950446b7eb9ca044f2e464d76bfbb0b84dd2e23e65636",
+          "bytes": 192790,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11-pinned-to-master-2c980bb5"
+        }
+      ]
+    },
+    {
+      "name": "webp",
+      "version": "1.5.0",
+      "source": {
+        "repository": "webmproject/libwebp",
+        "revision": "v1.5.0"
+      },
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "evidence": {
+          "url": "https://raw.githubusercontent.com/webmproject/libwebp/main/COPYING",
+          "sha256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf",
+          "bytes": 1496
+        }
+      },
+      "payloads": [
+        {
+          "id": "webp-linux",
+          "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.5.0-linux-x86-64.tar.gz",
+          "sha256": "f4bf49f85991f50e86a5404d16f15b72a053bb66768ed5cc0f6d042277cc2bb8",
+          "bytes": 11685676,
+          "targets": [
+            "desktop-linux"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "webp-mac-arm64",
+          "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.5.0-mac-arm64.tar.gz",
+          "sha256": "0fa3d7fb64a2b2849115c2f1052b7068b3fbadcb7263e3f1840fcd8c798ea9c2",
+          "bytes": 5278456,
+          "targets": [
+            "desktop-macos-arm64"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "webp-mac-x64",
+          "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.5.0-mac-x86-64.tar.gz",
+          "sha256": "f8917c9d193dd13ae2266272e1b491436a846fc328922affad572ec0e8d73d87",
+          "bytes": 6312172,
+          "targets": [
+            "desktop-macos-x64"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "webp-windows",
+          "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.5.0-windows-x64.zip",
+          "sha256": "e8fe3bc7eb09774e69261a42bf9fa8a37ab5f3eecaab199f6420e6f9e822090c",
+          "bytes": 4058920,
+          "targets": [
+            "desktop-windows"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "webp-source",
+      "version": "1.5.0",
+      "source": {
+        "repository": "webmproject/libwebp",
+        "revision": "v1.5.0"
+      },
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "evidence": {
+          "url": "https://raw.githubusercontent.com/webmproject/libwebp/main/COPYING",
+          "sha256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf",
+          "bytes": 1496
+        }
+      },
+      "payloads": [
+        {
+          "id": "webp-upstream-source",
+          "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.5.0.tar.gz",
+          "sha256": "7d6fab70cf844bf6769077bd5d7a74893f8ffd4dfb42861745750c63c2a5c92c",
+          "bytes": 4267494,
+          "targets": [
+            "android",
+            "ios"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "skia",
+      "version": "chrome/m145",
+      "source": {
+        "repository": "olilarkin/skia-builder",
+        "revision": "chrome/m145"
+      },
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "evidence": {
+          "url": "https://github.com/google/skia/blob/main/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "skia-linux",
+          "url": "https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-linux-x64-gpu-release.zip",
+          "sha256": "a573d400fdc94649609e88984226474aff789c112699d749e50808a34ba78bac",
+          "bytes": 41541204,
+          "targets": [
+            "desktop-linux"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "skia-mac-arm64",
+          "url": "https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-mac-arm64-gpu-release.zip",
+          "sha256": "d4b2ca45973001db8ef043a422609c4995b7dd61e2086883df83f9ce8f3f9134",
+          "bytes": 29846309,
+          "targets": [
+            "desktop-macos-arm64"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "skia-mac-x64",
+          "url": "https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-mac-x86_64-gpu-release.zip",
+          "sha256": "f0fffd78e88c88d971561064bdfba0f0b28f716d0fc544dbb4d5cbca65b66530",
+          "bytes": 31487054,
+          "targets": [
+            "desktop-macos-x64"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "skia-win",
+          "url": "https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-win-x64-gpu-release.zip",
+          "sha256": "25fe1617744ce02272597eb47038b4a46b3dd174b420263c50ca0e517c72d178",
+          "bytes": 41619735,
+          "targets": [
+            "desktop-windows"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "skia-ios",
+      "version": "chrome/m145",
+      "source": {
+        "repository": "olilarkin/skia-builder",
+        "revision": "chrome/m145"
+      },
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "evidence": {
+          "url": "https://github.com/google/skia/blob/main/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "skia-ios-device",
+          "url": "https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-ios-device-arm64-gpu-release.zip",
+          "sha256": "d138ee0d691a56e2e5edb2b5ae0d3a0837cd2d152d4b26e89362a028a13ad838",
+          "bytes": 39429013,
+          "targets": [
+            "ios-device"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "skia-ios-simulator",
+          "url": "https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145/skia-build-ios-simulator-arm64-x86_64-gpu-release.zip",
+          "sha256": "0fe9eeaa30dd79e80be4a8d84abf99f9036f407dc0c23e7ef0267630b9d38ed1",
+          "bytes": 56735540,
+          "targets": [
+            "ios-simulator"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "skia-win-static",
+      "version": "skia-win-dawn-v1",
+      "source": {
+        "repository": "mystralengine/library-builder",
+        "revision": "skia-win-dawn-v1"
+      },
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "evidence": {
+          "url": "https://github.com/google/skia/blob/main/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "skia-win-static",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/skia-win-dawn-v1/skia-build-win-x64-static-gpu-release.zip",
+          "sha256": "9feaa10691420836cf4771fe89034d139df9f6d1c1d11a662b64c6550e907fe6",
+          "bytes": 42347046,
+          "targets": [
+            "desktop-windows-only"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "swc",
+      "version": "swc-11",
+      "source": {
+        "repository": "mystralengine/library-builder",
+        "revision": "swc-11"
+      },
+      "license": {
+        "spdx": "Apache-2.0",
+        "evidence": {
+          "url": "https://github.com/libuv/libuv/blob/v1.x/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "swc-linux-x64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/swc-11/swc-linux-x64.zip",
+          "sha256": "de7cb4162d463ee7433a97d45fc7a280ad68f70c1b0df6742182337c3dc62c89",
+          "bytes": 13120704,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "swc-mac-arm64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/swc-11/swc-mac-arm64.zip",
+          "sha256": "6935eabf5e110c06076ae6b8e072e223caf9078ec47e88173a67951b69e87887",
+          "bytes": 11731635,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "swc-mac-x86_64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/swc-11/swc-mac-x86_64.zip",
+          "sha256": "23e2f9086a4e5948aa0393db490635d0be53df2c6979f746105546cd7d74d19c",
+          "bytes": 11757746,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "swc-win-x64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/swc-11/swc-win-x64.zip",
+          "sha256": "7c847ffdff9e610b7e80c9e3bdf1069ecbe5c4d2611d363ef1c52087d622fb43",
+          "bytes": 13513184,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "libuv",
+      "version": "libuv-1.51.0-5",
+      "source": {
+        "repository": "mystralengine/library-builder",
+        "revision": "libuv-1.51.0-5"
+      },
+      "license": {
+        "spdx": "MIT",
+        "evidence": {
+          "url": "https://github.com/libuv/libuv/blob/v1.x/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "libuv-linux-x64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/libuv-1.51.0-5/libuv-linux-x64.zip",
+          "sha256": "f3905269d1c093d678dec89f816db45e07410b4f7209b8e5fe0a873848c689fe",
+          "bytes": 163941,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "libuv-mac-arm64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/libuv-1.51.0-5/libuv-mac-arm64.zip",
+          "sha256": "7e6d95b29fdacda5161c2d32878e92daea1d4a78010ff4979e5c1575046c4f2b",
+          "bytes": 142349,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "libuv-mac-x86_64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/libuv-1.51.0-5/libuv-mac-x86_64.zip",
+          "sha256": "accd587d93d5f526538873d4b1112503badfd50db28410f6d13aec884bc63b9a",
+          "bytes": 141985,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "libuv-win-x64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/libuv-1.51.0-5/libuv-win-x64.zip",
+          "sha256": "0be04945de713353244be1ca178bcb75e481d2fbc983c1648ab37ab0fb7db89a",
+          "bytes": 298248,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "libuv-source",
+      "version": "1.51.0",
+      "source": {
+        "repository": "libuv/libuv",
+        "revision": "v1.51.0"
+      },
+      "license": {
+        "spdx": "MIT",
+        "evidence": {
+          "url": "https://github.com/libuv/libuv/blob/v1.x/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "libuv-upstream-source",
+          "url": "https://github.com/libuv/libuv/archive/refs/tags/v1.51.0.tar.gz",
+          "sha256": "27e55cf7083913bfb6826ca78cde9de7647cded648d35f24163f2d31bb9f51cd",
+          "bytes": 1352232,
+          "targets": [
+            "sanitizer"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11"
+        }
+      ]
+    },
+    {
+      "name": "gradle-wrapper",
+      "version": "8.5.0",
+      "source": {
+        "repository": "gradle/gradle",
+        "revision": "v8.5.0"
+      },
+      "license": {
+        "spdx": "Apache-2.0",
+        "evidence": {
+          "url": "https://github.com/gradle/gradle/blob/master/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "gradle-wrapper-jar",
+          "url": "https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar",
+          "sha256": "d3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd",
+          "bytes": 43462,
+          "targets": [
+            "android"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-11-matches-inline-pin"
+        }
+      ]
+    }
+  ]
+}

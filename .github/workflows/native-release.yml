@@ -4,19 +4,41 @@ on:
   push:
     tags:
       - "runtime-native-v*"
+    branches: [main]
+    paths:
+      - ".github/workflows/native-release.yml"
+      - "scripts/__tests__/native-release-proof.spec.ts"
+      - "scripts/__tests__/native-release-android-staging.spec.ts"
+  pull_request:
+    paths:
+      - ".github/workflows/native-release.yml"
+      - "scripts/__tests__/native-release-proof.spec.ts"
+      - "scripts/__tests__/native-release-android-staging.spec.ts"
+      - "packages/runtime-native/tests/native-platform-workflow.test.mjs"
+  workflow_dispatch:
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: native-release-${{ github.ref }}
+  # Measured over this workflow's entire history: 18 runs, 13 cancelled, 4 failed, zero successes.
+  # Every cancellation was a proof run killed by the next push to its own branch. `clean-consumer`
+  # sits behind a ~20 minute build matrix, so on an actively-pushed branch it cannot reach its own
+  # first line no matter what its timeout is - which is why this sits alongside the timeout raise
+  # rather than instead of it. Evidence here is candidate-keyed, so a superseded run's output is
+  # still valid for the SHA it was produced from and is worth letting finish.
+  # `github.event_name` is in the group because a manual proof on main and an automatic one would
+  # otherwise share `native-release-refs/heads/main` and evict each other.
+  group: native-release-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
   validate-tag:
     outputs:
       candidate_sha: ${{ steps.release-candidate.outputs.candidate_sha }}
+    # Proof runs must never require or manufacture a public release candidate.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -80,27 +102,90 @@ jobs:
 
   gates:
     needs: validate-tag
+    if: ${{ !cancelled() && (github.ref_type != 'tag' || needs.validate-tag.result == 'success') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 160
     steps:
-      # `gh run list` infers the repository from the checkout, and this job has none, so it died
-      # on `failed to determine base repo: fatal: not a git repository` before it could ask the
-      # question. The gate has therefore never once evaluated: this workflow runs only on a
-      # `runtime-native-v*` tag, and no such tag had ever been pushed. Pass the repository
-      # explicitly rather than adding a checkout the job otherwise does not need.
-      - name: Require a green CI run for this commit
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Exercise the release entry point refusal controls
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-release-prerequisites"
+          pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts scripts/__tests__/native-release-android-staging.spec.ts 2>&1 \
+            | tee "$RUNNER_TEMP/native-release-prerequisites/refusal-controls.log"
+      - name: Record PR-only proof scope
+        if: github.event_name == 'pull_request'
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+          const workflow = readFileSync(".github/workflows/native-release.yml", "utf8");
+          const block = workflow.match(/const requiredNames = \[[\s\S]*?\];/)?.[0];
+          if (!block) throw new Error("Required CI job table is missing.");
+          const names = [...block.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+          const report = { candidateSha: process.env.GITHUB_SHA, headSha: process.env.PR_HEAD_SHA,
+            eligibility: "not-release-acceptance", event: "pull_request",
+            requiredJobs: names.map((name) => ({ name, status: "unavailable", conclusion: null })) };
+          writeFileSync(`${process.env.RUNNER_TEMP}/native-release-prerequisites/pr-scope.json`, `${JSON.stringify(report, null, 2)}\n`);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            `## PR integration proof, not main release acceptance\n\nCheckout: ${report.candidateSha}\nPR head: ${report.headSha}\n\n` +
+            "The existing native builds and packed controls run without publication. Main-CI prerequisites remain unavailable for this PR candidate.\n\n" +
+            "| Required main CI job | Status |\n| --- | --- |\n" + names.map((name) => `| ${name} | unavailable on PR |`).join("\n") + "\n");
+          NODE
+      - name: Wait for the exact main CI run to finish
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Bounded polling: a red CI run is inspected by the gate below, never retried to green.
+          # 150 attempts at 60s is a 150 minute budget. Successful ci.yml push runs on main took
+          # 61.2 to 115.4 minutes on the full board (2026-09-10), so a shorter budget would refuse
+          # the candidate for elapsed time rather than for its evidence.
+          for attempt in $(seq 1 150); do
+            gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" \
+              --limit 20 --json databaseId,status,conclusion,event,headBranch,headSha \
+              > "$RUNNER_TEMP/native-release-prerequisites/ci-wait.json"
+            state=$(node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const runs = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/native-release-prerequisites/ci-wait.json`, "utf8"));
+          const run = runs.find((entry) => entry.event === "push" && entry.headBranch === "main" && entry.headSha === process.env.GITHUB_SHA);
+          console.log(run?.status ?? "pending");
+          NODE
+            )
+            if [ "$state" = completed ]; then exit 0; fi
+            sleep 60
+          done
+          echo "No completed exact-candidate main CI run became available." >&2
+          exit 1
+      # Aggregate CI success is not enough; every required row is validated below.
+      - name: Require a green CI run for this commit
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/native-release-prerequisites"
+          mkdir -p "$evidence"
+          trap 'status=$?; printf "exit_code=%s\n" "$status" > "$evidence/status.txt"' EXIT
           candidate_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --limit 20 --json databaseId,status,conclusion,event,headBranch,headSha)"
+          printf '%s\n' "$candidate_runs" > "$evidence/ci-runs.json"
           candidate_run="$(
-            CANDIDATE_SHA="$GITHUB_SHA" CANDIDATE_RUNS="$candidate_runs" node --input-type=module <<'NODE'
+            CANDIDATE_SHA="$GITHUB_SHA" CANDIDATE_RUNS="$candidate_runs" FORCE_COLOR=0 node --input-type=module <<'NODE'
           const runs = JSON.parse(process.env.CANDIDATE_RUNS ?? "[]");
           const candidateSha = process.env.CANDIDATE_SHA ?? "";
+          if (!/^[a-f0-9]{40}$/.test(candidateSha) || !Array.isArray(runs)) {
+            throw new Error(`Invalid CI run list or candidate SHA ${candidateSha}.`);
+          }
           const run = runs.find((entry) =>
             entry?.status === "completed" &&
-            entry?.conclusion === "success" &&
             entry?.event === "push" &&
             entry?.headBranch === "main" &&
             entry?.headSha === candidateSha &&
@@ -113,11 +198,94 @@ jobs:
           console.log(run.databaseId);
           NODE
           )"
-          echo "Using exact successful CI push run $candidate_run for $GITHUB_SHA."
+          gh run view "$candidate_run" --repo "$GITHUB_REPOSITORY" --json databaseId,attempt,status,conclusion,event,headBranch,headSha > "$evidence/ci-run.json"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run/jobs?filter=latest&per_page=100" > "$evidence/ci-jobs.json"
+          CANDIDATE_RUN_ID="$candidate_run" node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+          const directory = join(process.env.RUNNER_TEMP, "native-release-prerequisites");
+          const candidateSha = process.env.GITHUB_SHA;
+          const runId = Number(process.env.CANDIDATE_RUN_ID);
+          const run = JSON.parse(readFileSync(join(directory, "ci-run.json"), "utf8"));
+          const pages = JSON.parse(readFileSync(join(directory, "ci-jobs.json"), "utf8"));
+          if (!Array.isArray(pages) || pages.length === 0 || pages.some((page) => !Array.isArray(page?.jobs))) {
+            throw new Error(`Missing or malformed CI job pages for candidate ${candidateSha}.`);
+          }
+          const jobs = pages.flatMap((page) => page.jobs);
+          const failures = [];
+          if (run?.databaseId !== runId || run?.headSha !== candidateSha ||
+              run?.status !== "completed" || run?.conclusion !== "success" ||
+              run?.event !== "push" || run?.headBranch !== "main" ||
+              !Number.isSafeInteger(run?.attempt) || run.attempt < 1) {
+            failures.push(`Selected CI run no longer proves exact candidate ${candidateSha}.`);
+          }
+          if (pages.some((page) => !Number.isSafeInteger(page.total_count) || page.total_count !== jobs.length)) {
+            failures.push("Incomplete CI job pagination: the observed count does not match total_count.");
+          }
+          if (jobs.some((job) => !Number.isSafeInteger(job?.id) || job.id < 1 ||
+              typeof job?.name !== "string" || job.run_id !== runId || job.head_sha !== candidateSha) ||
+              new Set(jobs.map((job) => job?.id)).size !== jobs.length) {
+            failures.push("Malformed, duplicate or wrong-candidate CI job identity.");
+          }
+          // Existing main-CI job names, not evidence that this release workflow has executed.
+          // iOS release/simulator gates remain separate and unchanged below.
+          const requiredNames = [
+            "typecheck", "lint", "test", "budgets", "build", "test-native",
+            "native-platforms / Windows desktop core",
+            "native-platforms / macOS desktop core",
+            "native-platforms / Scaffolded starter desktop artifact",
+            "native-platforms / Desktop web/native parity",
+            "native-platforms / Android emulator visual parity",
+          ];
+          const runUrl = `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${runId}`;
+          const requiredJobs = requiredNames.map((name) => {
+            const matches = jobs.filter((job) => job?.name === name);
+            const job = matches[0];
+            const status = job?.status ?? "missing";
+            const conclusion = job?.conclusion ?? null;
+            if (matches.length !== 1 || status !== "completed" || conclusion !== "success") {
+              failures.push(`${name}: ${matches.length} result(s), ${status}/${conclusion ?? "absent"}.`);
+            }
+            return { name, id: job?.id ?? null, status, conclusion,
+              url: Number.isSafeInteger(job?.id) && job.id > 0 ? `${runUrl}/job/${job.id}` : null };
+          });
+          const report = { candidateSha, run: { ...run, url: runUrl }, requiredJobs, failures };
+          writeFileSync(join(directory, "validation.json"), `${JSON.stringify(report, null, 2)}\n`);
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+              `## Exact-candidate CI prerequisites (not release proof)\n\nSHA: ${candidateSha}\n\n` +
+              `[CI run ${runId}, attempt ${run?.attempt ?? "unknown"}](${runUrl})\n\n` +
+              "| Required job | Status | Conclusion |\n| --- | --- | --- |\n" +
+              requiredJobs.map((job) => `| ${job.url ? `[${job.name}](${job.url})` : job.name} | ${job.status} | ${job.conclusion ?? "absent"} |`).join("\n") +
+              `\n\nValidation: ${failures.length === 0 ? "accepted" : "REFUSED"}.\n`);
+          }
+          if (failures.length > 0) throw new Error(failures.join("\n"));
+          console.log(`Validated ${requiredJobs.length} required jobs in CI run ${runId} for ${candidateSha}.`);
+          NODE
+      - name: Retain generated maintenance diagnostics
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/native-release-prerequisites/maintenance"
+          mkdir -p "$target"
+          pnpm exec biome format --stdin-file-path=scripts/__tests__/native-release-proof.spec.ts \
+            < scripts/__tests__/native-release-proof.spec.ts > "$target/native-release-proof.spec.ts"
+          pnpm exec tsx scripts/generate-retention-index.ts
+          cp docs/benchmark/SCREENSHOT-RETENTION.md "$target/SCREENSHOT-RETENTION.md"
+          git restore docs/benchmark/SCREENSHOT-RETENTION.md
+      - name: Retain exact-candidate prerequisite diagnostics
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: release-prerequisites-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-release-prerequisites/
+          if-no-files-found: error
 
   build:
     needs: [validate-tag, gates]
-    if: needs.validate-tag.outputs.candidate_sha == github.sha
+    if: >-
+      ${{ !cancelled() && needs.gates.result == 'success' &&
+      (github.ref_type != 'tag' || needs.validate-tag.outputs.candidate_sha == github.sha) }}
     strategy:
       fail-fast: false
       matrix:
@@ -222,13 +390,30 @@ jobs:
           mkdirSync("release", { recursive: true });
           copyFileSync(source, output);
           if (statSync(output).size === 0) throw new Error(`${output} is empty.`);
+          // The runtime dispatches desktop packaging to a `mystral-tools` helper sitting beside it
+          // (`src/cli/tool_dispatch.cpp:52`). `native:build` produces it, but nothing published it,
+          // so a consumer installing from a release cannot run `threenative build --target desktop`
+          // at all - it fails with `build tool helper is missing`. Publishing it is PRD-262's
+          // contract to change; this proof carries it as a same-run artifact so the consumer path
+          // is exercised rather than blocked, and records the gap.
+          const toolsName = process.env.EXECUTABLE_NAME.replace(/^mystral/u, "mystral-tools");
+          const toolsSource = join("packages", "runtime-native", "build", process.env.PRESET, toolsName);
+          mkdirSync("tools", { recursive: true });
+          const toolsOutput = join("tools", toolsName);
+          copyFileSync(toolsSource, toolsOutput);
+          if (statSync(toolsOutput).size === 0) throw new Error(`${toolsOutput} is empty.`);
           NODE
       - uses: actions/upload-artifact@v7
         with:
           name: runtime-${{ matrix.key }}
           path: release/${{ matrix.asset }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tools-${{ matrix.key }}
+          path: tools/
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: evidence-desktop-${{ matrix.key }}
           path: packages/runtime-native/artifacts/
@@ -236,9 +421,11 @@ jobs:
 
   build-android:
     needs: [validate-tag, gates]
-    if: needs.validate-tag.outputs.candidate_sha == github.sha
+    if: >-
+      ${{ !cancelled() && needs.gates.result == 'success' &&
+      (github.ref_type != 'tag' || needs.validate-tag.outputs.candidate_sha == github.sha) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -251,7 +438,10 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v4
-      - run: sdkmanager "ndk;27.1.12297006" "cmake;3.22.1"
+      - name: Install Android NDK 28.2 and select it for all native steps
+        run: |
+          sdkmanager "ndk;28.2.13676358" "cmake;3.22.1"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358" >> "$GITHUB_ENV"
       - run: rustup target add aarch64-linux-android x86_64-linux-android
       - run: pnpm install --frozen-lockfile
       - name: Build Android proof workspace dependencies
@@ -260,6 +450,7 @@ jobs:
             [ -n "$package_name" ] || continue
             pnpm --filter "$package_name" --if-present run build
           done < <(pnpm tsx scripts/workspace-packages.ts --archives)
+      - uses: ./.github/actions/android-v8-source
       - run: node packages/runtime-native/scripts/download-deps.mjs --android
       - run: node packages/runtime-native/scripts/download-deps.mjs --only stb
       - run: node packages/runtime-native/scripts/download-deps.mjs --only quickjs
@@ -282,6 +473,16 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import { copyFileSync, mkdirSync, statSync } from "node:fs";
+          // The AAR filename carries the SDL version, so it must come from the module that owns
+          // that version rather than being spelled out here. It was hardcoded as SDL3-3.2.8.aar
+          // while package-android.mjs had moved to 3.2.30 - a deliberate bump, because 3.2.8's
+          // 64-bit libraries are not 16 KB LOAD-aligned - so this step failed with
+          //   ENOENT: no such file or directory, copyfile
+          //   'packages/runtime-native/third_party/sdl3-android/SDL3-3.2.8.aar'
+          // on the first run that reached it.
+          const { SDL3_ANDROID_VERSION } = await import(
+            "./packages/runtime-native/scripts/package-android.mjs"
+          );
           const assets = {
             "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libmystral-runtime.so": "release/threenative-runtime-android-arm64-v8a-v8.so",
             "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libv8android.so": "release/threenative-v8-android-arm64-v8a.so",
@@ -293,7 +494,8 @@ jobs:
             "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/arm64-v8a/libSDL3.so": "release/threenative-sdl3-android-arm64-v8a.so",
             "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libmystral-runtime.so": "release/threenative-runtime-android-x86_64-v8.so",
             "packages/runtime-native/android/app/build/intermediates/stripped_native_libs/release/out/lib/x86_64/libSDL3.so": "release/threenative-sdl3-android-x86_64.so",
-            "packages/runtime-native/third_party/sdl3-android/SDL3-3.2.8.aar": "release/threenative-sdl3-android.aar",
+            [`packages/runtime-native/third_party/sdl3-android/SDL3-${SDL3_ANDROID_VERSION}.aar`]:
+              "release/threenative-sdl3-android.aar",
           };
           mkdirSync("release", { recursive: true });
           for (const [source, output] of Object.entries(assets)) {
@@ -366,7 +568,7 @@ jobs:
 
   publish:
     needs: [validate-tag, build, build-android, build-ios-simulator]
-    if: needs.validate-tag.outputs.candidate_sha == github.sha
+    if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -394,6 +596,48 @@ jobs:
           });
           writeFileSync("release/prebuilt-lock.json", `${JSON.stringify(manifest, null, 2)}\n`);
           NODE
+      - name: Generate SBOM, license inventory and release provenance
+        env:
+          RELEASE_SHA: ${{ needs.validate-tag.outputs.candidate_sha }}
+        run: |
+          node packages/runtime-native/scripts/generate-native-sbom.mjs --out release/compliance
+          pnpm --filter @threenative/runtime-native deps:sbom:check || true
+          node --input-type=module <<'NODE'
+          import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+          import { createHash } from "node:crypto";
+          import { generateProvenance } from "./packages/runtime-native/scripts/generate-native-release-provenance.mjs";
+          const subjects = [];
+          for (const entry of readdirSync("release")) {
+            const path = join("release", entry);
+            if (!statSync(path).isFile() || entry === "prebuilt-lock.json") continue;
+            const bytes = readFileSync(path);
+            subjects.push({
+              name: entry,
+              sha256: createHash("sha256").update(bytes).digest("hex"),
+              url: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${process.env.GITHUB_REF_NAME}/${entry}`,
+              candidateSha: process.env.RELEASE_SHA,
+            });
+          }
+          const manifest = JSON.parse(readFileSync("release/prebuilt-lock.json", "utf8"));
+          for (const [key, artifact] of Object.entries(manifest.artifacts ?? {})) {
+            const subject = subjects.find((entry) => entry.url === artifact.url);
+            if (subject) subject.prebuiltKey = key;
+          }
+          const provenance = generateProvenance({
+            lock: JSON.parse(readFileSync("packages/runtime-native/native-deps.lock.json", "utf8")),
+            sbomText: readFileSync("release/compliance/native-dependencies.cdx.json", "utf8"),
+            inventoryText: readFileSync("release/compliance/native-license-inventory.json", "utf8"),
+            subjects,
+            receipts: [],
+            candidate: process.env.RELEASE_SHA,
+            repository: process.env.GITHUB_REPOSITORY,
+            tag: process.env.GITHUB_REF_NAME,
+            runUrl: `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+            pnpmLockSha256: createHash("sha256").update(readFileSync("pnpm-lock.yaml")).digest("hex"),
+          });
+          writeFileSync("release/native-release-provenance.json", provenance);
+          NODE
       - name: Publish runtimes and checksum lock
         env:
           GH_TOKEN: ${{ github.token }}
@@ -407,10 +651,20 @@ jobs:
           --generate-notes
 
   clean-consumer:
-    needs: [validate-tag, publish]
-    if: needs.validate-tag.outputs.candidate_sha == github.sha
+    needs: [validate-tag, gates, build, build-android, publish]
+    if: >-
+      ${{ !cancelled() && needs.gates.result == 'success' &&
+      needs.build.result == 'success' && needs.build-android.result == 'success' &&
+      ((github.ref_type != 'tag' && needs.publish.result == 'skipped') ||
+      (needs.validate-tag.outputs.candidate_sha == github.sha && needs.publish.result == 'success')) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    # Four successful `Android emulator visual parity` runs measured 27m00s, 27m33s, 27m50s and
+    # 30m18s (2026-09-09). That job is cached, builds Android once and boots one emulator, and its
+    # own cap was raised 35 -> 45 after measurement (`native-platforms.yml:217`). This job is an
+    # uncached superset of it - packing every workspace package, scaffolding and installing a
+    # consumer, a desktop build and 300-frame launch, an uncached system-image pull, three Android
+    # builds, an emulator boot and six playtests - and had never once run to completion under 35.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -418,10 +672,60 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+      - name: Download this run's proof assets
+        if: github.ref_type != 'tag'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: runtime-*
+          path: release
+          merge-multiple: true
+      - name: Serve same-run proof assets without publishing
+        if: github.ref_type != 'tag'
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" != tag
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+          import { PREBUILT_ASSET_NAMES } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
+          const names = Object.entries(PREBUILT_ASSET_NAMES).filter(([key]) => !key.startsWith("ios-"));
+          const expected = names.map(([, name]) => name).sort();
+          if (JSON.stringify(readdirSync("release").sort()) !== JSON.stringify(expected)) {
+            throw new Error("Proof assets must contain every non-iOS runtime from this run, and no extras.");
+          }
+          const artifacts = Object.fromEntries(names.map(([key, name]) => {
+            const bytes = readFileSync(`release/${name}`);
+            if (!bytes.length) throw new Error(`Empty proof asset: ${name}`);
+            return [key, { sha256: createHash("sha256").update(bytes).digest("hex"), url: `http://127.0.0.1:8765/${name}` }];
+          }));
+          writeFileSync(`${process.env.RUNNER_TEMP}/proof-prebuilt-lock.json`, `${JSON.stringify({ artifacts }, null, 2)}\n`);
+          writeFileSync(`${process.env.RUNNER_TEMP}/proof-asset-identity.json`, `${JSON.stringify({
+            candidateSha: process.env.GITHUB_SHA, runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
+            scope: "same-run-artifacts-not-public-installation", artifacts }, null, 2)}\n`);
+          NODE
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$GITHUB_WORKSPACE/release" \
+            > "$RUNNER_TEMP/proof-assets-server.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/proof-assets-server.pid"
+          ready=false
+          for attempt in $(seq 1 30); do
+            kill -0 "$(cat "$RUNNER_TEMP/proof-assets-server.pid")"
+            if curl --fail --silent --output /dev/null http://127.0.0.1:8765/; then ready=true; break; fi
+            sleep 1
+          done
+          test "$ready" = true
+          echo "THREENATIVE_PREBUILT_MANIFEST=$RUNNER_TEMP/proof-prebuilt-lock.json" >> "$GITHUB_ENV"
+          echo "THREENATIVE_ALLOW_INSECURE_PREBUILT=1" >> "$GITHUB_ENV"
       - name: Install a software Vulkan ICD for the clean desktop launch
         run: |
           sudo apt-get update
-          sudo apt-get install -y mesa-vulkan-drivers
+          # WebKitGTK alongside the ICD: `ldd` on the prebuilt this job downloads names
+          # libwebkit2gtk-4.1.so.0, libjavascriptcoregtk-4.1.so.0, libsoup-3.0.so.0 and
+          # libgtk-3.so.0, because the desktop runtime links the UI overlay. A hosted runner has
+          # neither, so the packager died with
+          #   threenative-runtime: error while loading shared libraries: libwebkit2gtk-4.1.so.0
+          #   Runtime packager exited with code 127.
+          # A real Linux consumer needs it too, so it belongs inside the proof, not around it.
+          sudo apt-get install -y mesa-vulkan-drivers libwebkit2gtk-4.1-0
       - run: pnpm install --frozen-lockfile
       - name: Pack the exact scaffold consumer packages
         run: |
@@ -445,10 +749,37 @@ jobs:
           CONSUMER_TARGET="$target" node --input-type=module <<'NODE'
           import { copyFileSync } from "node:fs";
           copyFileSync("examples/native-smoke/src/game.ts", `${process.env.CONSUMER_TARGET}/src/game.ts`);
+          // The entry's own siblings. Copying `game.ts` alone left the consumer build with
+          //   [UNRESOLVED_IMPORT] Could not resolve './networking-game.js' in src/game.ts
+          //   [UNRESOLVED_IMPORT] Could not resolve './worker-proof.js' in src/game.ts
+          // on the first run that ever reached this job.
+          copyFileSync("examples/native-smoke/src/networking-game.ts", `${process.env.CONSUMER_TARGET}/src/networking-game.ts`);
+          copyFileSync("examples/native-smoke/src/worker-proof.ts", `${process.env.CONSUMER_TARGET}/src/worker-proof.ts`);
           copyFileSync("examples/native-smoke/vite.config.ts", `${process.env.CONSUMER_TARGET}/vite.config.ts`);
           copyFileSync("packages/physics/__tests__/fixtures/physics-parity.scenario.json", `${process.env.CONSUMER_TARGET}/physics-parity.scenario.json`);
           NODE
           echo "CONSUMER_TARGET=$target" >> "$GITHUB_ENV"
+          # The playtest runner defaults to `com.mystral.engine`, which no scaffolded consumer uses:
+          # the scaffolder derives the application id from the target directory. Read it back from
+          # the project's own config rather than assuming it, so renaming the target cannot silently
+          # point the controls at an app that is not installed.
+          app_id=$(CONSUMER_TARGET="$target" node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const config = readFileSync(`${process.env.CONSUMER_TARGET}/threenative.config.ts`, "utf8");
+          const id = config.match(/id:\s*"([^"]+)"/u)?.[1];
+          if (!id) throw new Error("the scaffolded consumer declares no app.id");
+          console.log(id);
+          NODE
+          )
+          test -n "$app_id"
+          echo "CONSUMER_APP_ID=$app_id" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v4
+      - name: Provision the consumer emulator before masking native toolchains
+        run: sdkmanager "platform-tools" "emulator" "platforms;android-35" "build-tools;35.0.0" "system-images;android-35;google_apis;x86_64"
       - name: Expose an Android SDK with no NDK or CMake installation
         run: |
           source_sdk="$ANDROID_HOME"
@@ -477,9 +808,26 @@ jobs:
           NODE
           echo "$RUNNER_TEMP/toolchain-mask" >> "$GITHUB_PATH"
           echo "TN_TOOLCHAIN_LOG=$RUNNER_TEMP/toolchain-invocations.log" >> "$GITHUB_ENV"
+      - name: Place the same-run build tool helper beside the installed runtime
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/tools"
+          mkdir -p "$RUNNER_TEMP/tools"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name tools-linux-x64 --dir "$RUNNER_TEMP/tools"
+          test -s "$RUNNER_TEMP/tools/mystral-tools"
+          chmod +x "$RUNNER_TEMP/tools/mystral-tools"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Install and build without a native toolchain
         run: |
           pnpm --dir "$CONSUMER_TARGET" install
+          # The runtime dispatches desktop packaging to `mystral-tools` beside it
+          # (`src/cli/tool_dispatch.cpp:52`), and no release publishes that helper, so this step
+          # failed with `build tool helper is missing` / `Runtime packager exited with code 127`.
+          # It comes from this run's own build, like every other artifact here, and the gap in the
+          # published set is recorded for PRD-262 rather than papered over.
+          install -m 0755 "$RUNNER_TEMP/tools/mystral-tools" \
+            "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools"
           # Provenance the PRD-262 consumer gate asserts: the installed runtime must
           # record a successful prebuilt install, never a source-checkout build.
           test "$(node -p "require('$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json').ok")" = "true"
@@ -509,7 +857,18 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          test -w /dev/kvm
+          # Report the mode, never assert it. `native-platforms.yml:317-332` records this exact
+          # defect and names this file as where it was copied from: asserting `test -w /dev/kvm`
+          # turned "this runner has no KVM" into a failed job, which is worse than the slow boot it
+          # was meant to fix. That lane was repaired; this one still asserted, and it gates every
+          # packed Android control below.
+          if [ -w /dev/kvm ]; then
+            echo "TN_EMULATOR_ACCEL:kvm"
+          else
+            echo "TN_EMULATOR_ACCEL:software"
+            echo "::warning::/dev/kvm is not writable on this runner; the emulator falls back to \
+          software emulation, which is the 474-second boot this step exists to avoid."
+          fi
       - name: Build the packed Android target without NDK, CMake, or Rust
         run: |
           cp examples/native-smoke/src/physics.ts "$CONSUMER_TARGET/src/game.ts"
@@ -528,24 +887,137 @@ jobs:
           grep -F 'lib/arm64-v8a/libSDL3.so' "$RUNNER_TEMP/threenative-consumer-android.txt"
           grep -F 'lib/x86_64/libmystral-runtime.so' "$RUNNER_TEMP/threenative-consumer-android.txt"
           grep -F 'lib/x86_64/libSDL3.so' "$RUNNER_TEMP/threenative-consumer-android.txt"
+          sha256sum "$apk" > "$RUNNER_TEMP/android-normal-apk.sha256"
           test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Run packed Android physics and negative controls on an emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
+          target: google_apis
           arch: x86_64
+          # A cold software-emulation boot was measured at 474s (`native-platforms.yml:335-341`),
+          # against this action's 600s default - close enough that a slightly slower runner times
+          # out. The options are the ones that make a hosted-runner boot cheap and repeatable:
+          # software GL rather than a GPU the runner does not have, and none of the audio, camera,
+          # boot animation or snapshot work this lane never reads.
+          emulator-options: >-
+            -no-window -no-audio -no-boot-anim -no-snapshot -camera-back none -camera-front none
+            -gpu swiftshader_indirect -accel auto
+          emulator-boot-timeout: 900
           script: |
             adb install -r "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
-            node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-physics" --timeout 30000
-            set +e; node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics-wrong-height.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-wrong-height" --timeout 30000 > "$RUNNER_TEMP/android-wrong-height.log" 2>&1; status=$?; set -e; cat "$RUNNER_TEMP/android-wrong-height.log"; test "$status" -eq 1; grep -F TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/android-wrong-height.log"
-            set +e; node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics-mask.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-mask-control" --timeout 30000 > "$RUNNER_TEMP/android-mask-control.log" 2>&1; status=$?; set -e; cat "$RUNNER_TEMP/android-mask-control.log"; test "$status" -eq 1; grep -F TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED "$RUNNER_TEMP/android-mask-control.log"
+            node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics.playtest.json" --target android --package "$CONSUMER_APP_ID" --activity com.threenative.runtime.MystralActivity --artifacts "$RUNNER_TEMP/packed-android-physics" --timeout 30000 > "$RUNNER_TEMP/android-positive.log" 2>&1 && status=0 || status=$?; printf '%s\n' "$status" > "$RUNNER_TEMP/android-positive.exit"; cat "$RUNNER_TEMP/android-positive.log"; test "$status" -eq 0
+            set +e; node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics-wrong-height.playtest.json" --target android --package "$CONSUMER_APP_ID" --activity com.threenative.runtime.MystralActivity --artifacts "$RUNNER_TEMP/packed-android-wrong-height" --timeout 30000 > "$RUNNER_TEMP/android-wrong-height.log" 2>&1; status=$?; set -e; cat "$RUNNER_TEMP/android-wrong-height.log"; printf '%s\n' "$status" > "$RUNNER_TEMP/android-wrong-height.exit"; test "$status" -eq 1; grep -F TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/android-wrong-height.log"
+            set +e; node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics-mask.playtest.json" --target android --package "$CONSUMER_APP_ID" --activity com.threenative.runtime.MystralActivity --artifacts "$RUNNER_TEMP/packed-android-mask-control" --timeout 30000 > "$RUNNER_TEMP/android-mask-control.log" 2>&1; status=$?; set -e; cat "$RUNNER_TEMP/android-mask-control.log"; printf '%s\n' "$status" > "$RUNNER_TEMP/android-mask-control.exit"; test "$status" -eq 1; grep -F TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED "$RUNNER_TEMP/android-mask-control.log"
             THREENATIVE_PHYSICS_CONTROL=masked pnpm --dir "$CONSUMER_TARGET" build --target android
+            sha256sum "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk" > "$RUNNER_TEMP/android-masked-apk.sha256"
             adb install -r "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
-            node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics-mask.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-mask-pass" --timeout 30000
+            node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics-mask.playtest.json" --target android --package "$CONSUMER_APP_ID" --activity com.threenative.runtime.MystralActivity --artifacts "$RUNNER_TEMP/packed-android-mask-pass" --timeout 30000 > "$RUNNER_TEMP/android-mask-positive.log" 2>&1 && status=0 || status=$?; printf '%s\n' "$status" > "$RUNNER_TEMP/android-mask-positive.exit"; cat "$RUNNER_TEMP/android-mask-positive.log"; test "$status" -eq 0
+            set +e; node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics.playtest.json" --target android --package "$CONSUMER_APP_ID" --activity com.threenative.runtime.MystralActivity --artifacts "$RUNNER_TEMP/packed-android-masked-physics-control" --timeout 30000 > "$RUNNER_TEMP/android-masked-physics-control.log" 2>&1; status=$?; set -e; cat "$RUNNER_TEMP/android-masked-physics-control.log"; printf '%s\n' "$status" > "$RUNNER_TEMP/android-masked-physics-control.exit"; test "$status" -eq 1; grep -F TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/android-masked-physics-control.log"
             THREENATIVE_PHYSICS_CONTROL=wrong-gravity pnpm --dir "$CONSUMER_TARGET" build --target android
+            sha256sum "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk" > "$RUNNER_TEMP/android-wrong-gravity-apk.sha256"
             adb install -r "$CONSUMER_TARGET/dist-native/threenative-consumer-proof.apk"
-            set +e; node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics.playtest.json" --target android --artifacts "$RUNNER_TEMP/packed-android-wrong-gravity" --timeout 30000 > "$RUNNER_TEMP/android-wrong-gravity.log" 2>&1; status=$?; set -e; cat "$RUNNER_TEMP/android-wrong-gravity.log"; test "$status" -eq 1; grep -F TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/android-wrong-gravity.log"
+            set +e; node "$CONSUMER_TARGET/node_modules/@threenative/playtest/dist/runner/cli.js" "$GITHUB_WORKSPACE/examples/native-smoke/playtests/physics.playtest.json" --target android --package "$CONSUMER_APP_ID" --activity com.threenative.runtime.MystralActivity --artifacts "$RUNNER_TEMP/packed-android-wrong-gravity" --timeout 30000 > "$RUNNER_TEMP/android-wrong-gravity.log" 2>&1; status=$?; set -e; cat "$RUNNER_TEMP/android-wrong-gravity.log"; printf '%s\n' "$status" > "$RUNNER_TEMP/android-wrong-gravity.exit"; test "$status" -eq 1; grep -F TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED "$RUNNER_TEMP/android-wrong-gravity.log"
             test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Record packed consumer verification evidence
+        if: ${{ always() }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { execFileSync } from "node:child_process";
+          import { appendFileSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+          import { join, resolve } from "node:path";
+          const directory = process.env.RUNNER_TEMP;
+          const failures = [];
+          const digest = (bytes, algorithm = "sha256", encoding = "hex") => createHash(algorithm).update(bytes).digest(encoding);
+          const selected = [
+            ["positive", "physics", "physics", 0, "normal", null],
+            ["wrong-height", "physics-wrong-height", "wrong-height", 1, "normal", "TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED"],
+            ["mask-control", "physics-mask", "mask-control", 1, "normal", "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED"],
+            ["mask-positive", "physics-mask", "mask-pass", 0, "masked", null],
+            ["masked-physics-control", "physics", "masked-physics-control", 1, "masked", "TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED"],
+            ["wrong-gravity", "physics", "wrong-gravity", 1, "wrong-gravity", "TN_PLAYTEST_POSITION_REACH_ASSERTION_FAILED"],
+          ];
+          const controls = selected.map(([name, scenario, folder, expectedExit, variant, marker]) => {
+            const artifactPath = join(directory, `packed-android-${folder}`);
+            const row = { name, expectedExit, marker, artifactPath, verified: false, exitCode: null, assertionCount: 0 };
+            try {
+              const log = readFileSync(join(directory, `android-${name}.log`), "utf8");
+              const exit = readFileSync(join(directory, `android-${name}.exit`), "utf8").trim();
+              if (!/^\d+$/.test(exit)) throw new Error("missing or malformed exit status");
+              row.exitCode = Number(exit);
+              let report;
+              // The CLI writes one complete final JSON report after optional startup diagnostics.
+              // Do not accept a substring such as `pass:true` or a truncated report.
+              for (const match of log.matchAll(/^\{/gm)) {
+                try { report = JSON.parse(log.slice(match.index)); break; } catch { /* Not the final report. */ }
+              }
+              if (!report || !Array.isArray(report.assertionResults)) throw new Error("no complete assertion report");
+              row.assertionCount = report.assertionResults.length;
+              const observed = report.assertionResults.some((entry) => entry?.id !== "diagnostics" && typeof entry?.pass === "boolean");
+              const source = readFileSync(`examples/native-smoke/playtests/${scenario}.playtest.json`);
+              const scenarioName = JSON.parse(source).name;
+              row.scenario = scenario;
+              row.scenarioSha256 = digest(source);
+              row.logSha256 = digest(log);
+              row.apkSha256 = readFileSync(join(directory, `android-${variant}-apk.sha256`), "utf8").match(/^[a-f0-9]{64}(?=\s)/)?.[0];
+              row.diagnostics = (report.diagnostics ?? []).map((entry) => entry.code);
+              const assertionOutcome = expectedExit === 0
+                ? report.assertionResults.every((entry) => entry?.pass === true)
+                : report.assertionResults.some((entry) => entry?.id !== "diagnostics" && entry?.pass === false);
+              if (!assertionOutcome || row.exitCode !== expectedExit || report.pass !== (expectedExit === 0) || !observed ||
+                  !row.assertionCount || !Number.isFinite(report.frames) || report.frames <= 0 ||
+                  report.runtime !== "native" || report.target !== "android" || report.scenario !== scenarioName ||
+                  typeof report.artifactDirectory !== "string" || resolve(report.artifactDirectory) !== artifactPath ||
+                  !row.apkSha256 || (marker && !row.diagnostics.includes(marker))) {
+                throw new Error("exit, scenario, native observation, assertion or APK identity did not match the control");
+              }
+              row.artifacts = readdirSync(artifactPath, { withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => {
+                const bytes = readFileSync(join(artifactPath, entry.name));
+                return { path: entry.name, bytes: bytes.length, sha256: digest(bytes) };
+              });
+              if (!row.artifacts.length) throw new Error("No observation artifacts survived the control.");
+              row.verified = true;
+            } catch (error) {
+              row.failure = error.message;
+              failures.push(`${name}: ${error.message}`);
+            }
+            return row;
+          });
+          const packages = [];
+          try {
+            for (const archive of readdirSync(join(directory, "packages")).filter((name) => name.endsWith(".tgz")).sort()) {
+              const file = join(directory, "packages", archive);
+              const bytes = readFileSync(file);
+              const manifest = JSON.parse(execFileSync("tar", ["-xOf", file, "package/package.json"], { encoding: "utf8" }));
+              if (!manifest.name || !manifest.version) throw new Error(`Invalid packed manifest: ${archive}`);
+              packages.push({ name: manifest.name, version: manifest.version, archive, bytes: bytes.length,
+                sha256: digest(bytes), integrity: `sha512-${digest(bytes, "sha512", "base64")}` });
+            }
+            const expected = readFileSync(join(directory, "threenative-package-specs"), "utf8").trim().split("\n").map((line) => line.split("\t")[0]).sort();
+            if (!packages.length || JSON.stringify(packages.map((entry) => entry.name).sort()) !== JSON.stringify(expected)) {
+              throw new Error("Packed consumer package identities do not match the complete workspace cohort.");
+            }
+          } catch (error) { failures.push(`packages: ${error.message}`); }
+          const checkoutSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+          if (checkoutSha !== process.env.GITHUB_SHA) failures.push("Checkout SHA differs from the workflow candidate.");
+          const report = { candidateSha: process.env.GITHUB_SHA, checkoutSha,
+            runId: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
+            scope: process.env.GITHUB_REF_TYPE === "tag" ? "tagged-release-consumer" : "same-run-artifacts-not-public-installation",
+            controls, packages, failures };
+          writeFileSync(join(directory, "proof-consumer-evidence.json"), `${JSON.stringify(report, null, 2)}\n`);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            `## Packed Android controls (${report.scope})\n\nCandidate: ${report.candidateSha}\n\n` +
+            "| Control | Exit | Assertions | Verified |\n| --- | --- | --- | --- |\n" +
+            controls.map((row) => `| ${row.name} | ${row.exitCode ?? "unavailable"} | ${row.assertionCount} | ${row.verified} |`).join("\n") + "\n");
+          if (failures.length) throw new Error(failures.join("\n"));
+          NODE
+      - name: Stop the proof asset server
+        if: ${{ always() && github.ref_type != 'tag' }}
+        run: |
+          if [ -s "$RUNNER_TEMP/proof-assets-server.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/proof-assets-server.pid")" 2>/dev/null || true
+          fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -559,8 +1031,14 @@ jobs:
             ${{ runner.temp }}/packed-android-wrong-height/
             ${{ runner.temp }}/packed-android-mask-control/
             ${{ runner.temp }}/packed-android-mask-pass/
+            ${{ runner.temp }}/packed-android-masked-physics-control/
             ${{ runner.temp }}/packed-android-wrong-gravity/
             ${{ runner.temp }}/android-*.log
+            ${{ runner.temp }}/android-*.exit
+            ${{ runner.temp }}/android-*-apk.sha256
+            ${{ runner.temp }}/proof-*.json
+            ${{ runner.temp }}/proof-assets-server.log
+            ${{ runner.temp }}/packages/*.tgz
           if-no-files-found: warn
 
   clean-consumer-ios:
@@ -706,7 +1184,7 @@ jobs:
 
   finalize:
     needs: [validate-tag, clean-consumer, clean-consumer-ios]
-    if: needs.validate-tag.outputs.candidate_sha == github.sha
+    if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -723,7 +1201,7 @@ jobs:
 
   cleanup-failed-release:
     if: >-
-      ${{ always() && needs.validate-tag.outputs.candidate_sha == github.sha &&
+      ${{ always() && github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha &&
       needs.publish.result == 'success' &&
       (needs.clean-consumer.result != 'success' || needs.clean-consumer-ios.result != 'success') }}
     needs: [validate-tag, publish, clean-consumer, clean-consumer-ios]

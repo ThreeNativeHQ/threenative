@@ -157,6 +157,16 @@ test('iOS executable verifier builds and exercises native physics fail closed', 
   assert.match(verifier, /TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED/u);
 });
 
+test('iOS proof refreshes the generated bundle after every incremental app rebuild', () => {
+  const verifier = readFileSync(join(root, 'scripts/verify-ios-simulator.mjs'), 'utf8');
+  const rebuild = verifier.slice(
+    verifier.indexOf('const rebuildApp ='),
+    verifier.indexOf('const rebuildProof ='),
+  );
+  assert.match(rebuild, /const app = findApp\(buildRoot\);/u);
+  assert.match(rebuild, /copyFileSync\(bundle, join\(app, 'native-smoke\.js'\)\);/u);
+});
+
 // The iOS leg failed on a launch, not a build: `simctl install` had put the app on disk and
 // SpringBoard still answered FBSOpenApplicationErrorDomain code 4 ("NotFound"), because
 // LaunchServices had not registered the bundle yet. The verifier now waits for registration, and

@@ -84,13 +84,18 @@ describe("workspace package derivation", () => {
       path.join(process.cwd(), ".github/actions/scaffold-from-tarballs/action.yml"),
       "utf8",
     );
-    expect(workflow).toContain("scripts/workspace-packages.ts --archives");
-    expect(workflow).toContain("while IFS=$'\\t' read -r package_name archive_prefix");
-    expect(workflow).toContain('pnpm --filter "$package_name"');
+    const workspaceAction = await readFile(
+      path.join(process.cwd(), ".github/actions/workspace-dist/action.yml"),
+      "utf8",
+    );
+    expect(workflow).toContain("uses: ./.github/actions/workspace-dist");
+    expect(workspaceAction).toContain("scripts/workspace-packages.ts --archives");
+    expect(workspaceAction).toContain("while IFS=$'\\t' read -r package_name _");
+    expect(workspaceAction).toContain('pnpm --filter "$package_name"');
     expect(workflow).toContain("uses: ./.github/actions/scaffold-from-tarballs");
     expect(scaffoldAction).toContain('find "$TN_SCAFFOLD_ARCHIVES" -name "${archive_prefix}*.tgz"');
-    // The workflow is inspected directly by the L1 scan, while these assertions keep its
-    // package/archive stream visibly tied to the derivation helper.
+    // The L1 scan still inspects the workflow; these assertions follow its composite action
+    // to keep the package/archive stream tied to the derivation helper.
     expect(findLiteralPackageEnumerationViolations(process.cwd())).toEqual([]);
   }, 30_000);
 

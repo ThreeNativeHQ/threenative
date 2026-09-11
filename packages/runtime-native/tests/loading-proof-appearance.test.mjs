@@ -18,3 +18,8 @@ test("the deliberate loading stall uses a black overlay instead of the magenta c
   expect(verifier).not.toMatch(/0xff00ff|magenta/u);
   expect(verifier).toMatch(/const LOADING_PROOF_BACKDROP_COLOR = 0x101820;/u);
 });
+
+test("the loading proof gives its deliberate stall an operation budget beyond the settle window", () => {
+  expect(verifier).toMatch(/const LOADING_OPERATION_TIMEOUT_MS = LOADING_SETTLE_WAIT_MS \+ 15_000;/u);
+  expect(verifier).toMatch(/paths,\s*LOADING_OPERATION_TIMEOUT_MS,\s*\n\s*\);/u);
+});
