@@ -21,6 +21,9 @@ const physicsTarget = "threenative-physics-actuation-bindings-test";
 const videoTarget = "threenative-video-recorder-state-test";
 
 export const executionContracts = {
+  "threenative-pipeline-cache-test": {
+    invocations: [{ args: [], passLine: "pipeline cache filesystem contract passed:" }],
+  },
   "threenative-audio-decode-ogg-test": {
     invocations: [{ args: [], passLine: "native Ogg Vorbis decode contract passed on " }],
   },

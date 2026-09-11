@@ -1425,6 +1425,8 @@ set(MYSTRAL_SOURCES
     src/webgpu/bindings_commands.cpp
     src/webgpu/bindings_frame_stream.cpp
     src/webgpu/bindings_pipelines.cpp
+    src/webgpu/bindings_pipeline_cache.cpp
+    src/webgpu/pipeline_cache.cpp
     src/webgpu/bindings_presentation.cpp
     src/webgpu/bindings_resources.cpp
     src/webgpu/bindings_screenshot.cpp
@@ -1599,6 +1601,8 @@ target_compile_definitions(mystral-runtime PUBLIC
     MYSTRAL_JS_ENGINE="${MYSTRAL_JS_ENGINE_NAME}"
     MYSTRAL_WEBGPU_BACKEND="${MYSTRAL_WEBGPU_NAME}"
 )
+
+include(cmake/PipelineCacheIdentity.cmake)
 
 if(TN_ENABLE_UI_OVERLAY)
     target_link_libraries(mystral-runtime PRIVATE threenative-ui-overlay)
@@ -2075,6 +2079,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             ${WGPU_INCLUDE_DIR})
     endif()
 
+    add_executable(threenative-pipeline-cache-test EXCLUDE_FROM_ALL
+        tests/pipeline_cache_test.cpp src/webgpu/pipeline_cache.cpp)
+
     add_executable(threenative-pipeline-cache-api-test EXCLUDE_FROM_ALL
         tests/pipeline_cache_api_test.cpp)
     target_link_libraries(threenative-pipeline-cache-api-test PRIVATE mystral-runtime)
@@ -2385,6 +2392,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-timer-engine-first-test)
     tn_register_contract_test(threenative-async-pipeline-thread-test)
     tn_register_contract_test(threenative-pipeline-cache-api-test)
+    tn_register_contract_test(threenative-pipeline-cache-test)
     tn_register_contract_test(threenative-stall-budget-hitch-test)
     tn_register_contract_test(threenative-timestamp-query-test)
     if(TN_ENABLE_VIDEO)

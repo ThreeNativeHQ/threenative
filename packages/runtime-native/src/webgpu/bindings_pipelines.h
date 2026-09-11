@@ -24,6 +24,15 @@ void shutdownAsyncPipelineCompiles(BindingsState* state);
 // pool has been joined. Both are safe to call on a backend without the cache API: they record why.
 void initPipelineCache(BindingsState* state);
 void releasePipelineCache(BindingsState* state);
+void pollPipelineCachePersistence(BindingsState* state);
+WGPURenderPipeline createCachedRenderPipeline(BindingsState* state, WGPUDevice device,
+                                              const WGPURenderPipelineDescriptor* descriptor);
+WGPUComputePipeline createCachedComputePipeline(BindingsState* state, WGPUDevice device,
+                                                const WGPUComputePipelineDescriptor* descriptor);
+// Shared by the census and persistence reporter, so concurrent marker lines cannot interleave.
+std::string pipelineJsonString(const std::string& value);
+const char* pipelineBackendName(WGPUBackendType backend);
+std::mutex& pipelineOutputMutex();
 /** Bytes the live cache serializes right now; 0 when there is no cache. */
 size_t pipelineCacheSerializedBytes(BindingsState* state);
 /** The `TN_PIPELINE_CACHE` line: mode, reason, attachments and serialized size. */
