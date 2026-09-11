@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { installedApkPath, playtestArguments, validatePairOptions } from '../scripts/measure-pipeline-cache.mjs';
 const options = { device: '192.168.1.2:44555', pipelineCachePairs: 3, report: 'out.json', startupScenario: 'real.json', optimization: '-O2' };
 test('qualifies a Wi-Fi physical protocol without provisional timing overrides', () => assert.doesNotThrow(() => validatePairOptions(options)));

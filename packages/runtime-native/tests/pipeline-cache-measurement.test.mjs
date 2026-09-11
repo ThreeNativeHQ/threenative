@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import { assessPipelineCachePairs, parsePipelineCacheRun } from '../scripts/pipeline-cache-measurement.mjs';
 
 // Synthetic fixtures exercise refusal/arithmetic only; these are not GPU or Pixel measurements.

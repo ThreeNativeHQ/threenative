@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import { test } from 'vitest';
 import { resolveWgpuCacheToolchain, WGPU_CACHE_NDK_VERSION, WGPU_CACHE_RUST_VERSION } from '../scripts/wgpu-cache-toolchain.mjs';
 
 function fixture() {
