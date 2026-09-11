@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-262 — Matching public native runtime artifacts are available
 
-**Status:** PROPOSED — earlier blocker assumptions must be rechecked. Revised 2026-09-08; planning only.
+**Status:** PARTIAL — Phase 1 (candidate manifest + atomic installs, PR #169) and Phase 2 (consumer builds without engine compilers, PR #182, merged 2026-09-11) are implemented, independently reviewed PASS, and CI-green. Final acceptance is owned downstream: PRD-078 hosted build proof, PRD-221 V8 inputs, and PRD-060 candidate staging/publication/promotion, against a pushed `runtime-native-v*` tag that does not yet exist.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-platform integration, +2 release-state coordination, +1 GitHub integration).
 **Problem:** An installed runtime version has no downloadable prebuilt manifest, so public native builds fail before a game can ship.
 
