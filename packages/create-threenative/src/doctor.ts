@@ -20,7 +20,6 @@ import { pathToFileURL } from "node:url";
 // node builtins, so inlining it adds no runtime dependency to the published `create-threenative`.
 import { installCommandFor, resolveBlender } from "threenative-blender-mcp/bridge";
 
-// @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { loadConfig } from "./config.js";
 import {

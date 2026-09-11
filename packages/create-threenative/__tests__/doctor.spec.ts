@@ -13,7 +13,6 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, execFileSync: execFileSyncMock, spawnSync: spawnSyncMock };
 });
 
-// @ts-expect-error — the installer is plain JavaScript so a postinstall can run it unbuilt.
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { assertNativeAssetsCompatible } from "../src/build.js";
 import {
