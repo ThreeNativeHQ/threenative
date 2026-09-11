@@ -1046,7 +1046,7 @@ bool testRaytracingAndWebTransport() {
     // This engine is created bare by createEngine(), so without this the test drove initBindings
     // outside the prerequisite it documents.
     {
-        const auto streams = runtime_scripts::find("streams-polyfill");
+        const auto streams = mystral::runtime_scripts::find("streams-polyfill");
         if (!streams.data) {
             std::cerr << "embedded streams-polyfill missing" << std::endl;
             return false;

@@ -97,7 +97,11 @@ test("the C++ caller that drives initBindings on a bare engine installs streams 
     .join("\n");
   const webtransportAt = code.indexOf("webtransport::initBindings(engine");
   assert.ok(webtransportAt > 0, "cli_network_fs_test.cpp no longer calls initBindings");
-  const streamsAt = code.indexOf('runtime_scripts::find("streams-polyfill")');
+  // Fully qualified: runtime.cpp can say `runtime_scripts::find` because it sits inside
+  // `namespace mystral`, but this test file is at file scope, where the unqualified name does not
+  // resolve - `error: use of undeclared identifier 'runtime_scripts'`, which is how it broke all
+  // three platform builds.
+  const streamsAt = code.indexOf('mystral::runtime_scripts::find("streams-polyfill")');
   assert.ok(
     streamsAt > 0 && streamsAt < webtransportAt,
     "streams-polyfill must be evaluated before webtransport::initBindings, as Runtime::init does",
