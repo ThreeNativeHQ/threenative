@@ -656,7 +656,14 @@ jobs:
       - name: Install a software Vulkan ICD for the clean desktop launch
         run: |
           sudo apt-get update
-          sudo apt-get install -y mesa-vulkan-drivers
+          # WebKitGTK alongside the ICD: `ldd` on the prebuilt this job downloads names
+          # libwebkit2gtk-4.1.so.0, libjavascriptcoregtk-4.1.so.0, libsoup-3.0.so.0 and
+          # libgtk-3.so.0, because the desktop runtime links the UI overlay. A hosted runner has
+          # neither, so the packager died with
+          #   threenative-runtime: error while loading shared libraries: libwebkit2gtk-4.1.so.0
+          #   Runtime packager exited with code 127.
+          # A real Linux consumer needs it too, so it belongs inside the proof, not around it.
+          sudo apt-get install -y mesa-vulkan-drivers libwebkit2gtk-4.1-0
       - run: pnpm install --frozen-lockfile
       - name: Pack the exact scaffold consumer packages
         run: |

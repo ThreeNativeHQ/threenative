@@ -384,6 +384,13 @@ Runtime packager exited with code 127.
 `libwebkit2gtk-4.1-0` now installs beside the ICD. This is what a real Linux consumer needs as well,
 so it belongs inside the proof rather than around it.
 
+This repair was written once, lost before it was committed - the worktree is shared and was
+reset between applying it and committing - and landed only on the second attempt. Run
+[34562254905](https://github.com/ThreeNativeHQ/threenative/actions/runs/34562254905) therefore
+still shows the same `exited with code 127`, with its apt step running
+`sudo apt-get install -y mesa-vulkan-drivers` alone. The package-and-activity repair below did
+land in that run; only this one was missing.
+
 **Defect: every control launched an app that was not installed.** The playtest runner defaults to
 `--package com.mystral.engine` and `--activity .MystralActivity`
 (`packages/playtest/src/runner/config.ts:82,267`). A scaffolded consumer is neither: its application

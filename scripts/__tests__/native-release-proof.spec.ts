@@ -567,3 +567,14 @@ test("the consumer's application id is derived, never assumed", () => {
   assert.match(prepare, /CONSUMER_APP_ID=/u);
   assert.match(prepare, /threenative\.config\.ts/u);
 });
+
+test("the clean consumer installs the runtime's own shared libraries", () => {
+  const consumer = job("clean-consumer");
+  const apt =
+    consumer.split("- name: Install a software Vulkan ICD")[1]?.split("\n      - ")[0] ?? "";
+  assert.ok(apt.length > 0, "missing the consumer's apt step");
+  // `ldd` on the prebuilt this job downloads names these: the desktop runtime links the UI overlay,
+  // which links WebKitGTK. A hosted runner has the Vulkan ICD installed here but not WebKit, so the
+  // packager died with "Runtime packager exited with code 127".
+  assert.match(apt, /libwebkit2gtk-4\.1-0/u);
+});
