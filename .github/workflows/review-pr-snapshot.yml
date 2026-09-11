@@ -1,4 +1,4 @@
-name: Validate review fixes and stage Git trees
+name: Validate review fixes and stage Git blobs
 on:
   push:
     branches: [review/prs-167-180-183-20260911]
@@ -6,15 +6,23 @@ permissions:
   contents: read
 jobs:
   validate:
-    name: Validate PR 180 staging and evidence fixes
+    name: Validate PR ${{ matrix.pr }} final fixes
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pr: 180
+            head: 0dcadaada4f45a347fe6a79200f5a358e8da4d8a
+          - pr: 183
+            head: b751635441d626bdd53fe39a7458fa1d218b935b
     env:
       CI: '1'
       NODE_OPTIONS: --max-old-space-size=4096
-      REVIEW_PR: '180'
+      REVIEW_PR: ${{ matrix.pr }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -25,24 +33,25 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import base64, gzip, hashlib, json, os, pathlib
-          record = next(r for r in json.load(open('.github/review/fixes.json')) if r['pr'] == 180)
+          record = next(r for r in json.load(open('.github/review/fixes.json')) if str(r['pr']) == os.environ['REVIEW_PR'])
           encoded = record.pop('patch')
-          for before, after in [('AcnIhzszCEV','AcnIhzszBEV'),('nNrJKLLtao','nNrJKLtao')]:
+          for before, after in [('AcnIhzszCEV','AcnIhzszBEV'),('nNrJKLLtao','nNrJKLtao'),('qTlnyqTnEm','qTlnyqPnEm'),('EUmMxII8T','EUmMxI8T'),('ldXIP10vRrZZ/w','ldXIP10vRrZ/w'),('NrapZKK+x','NrapZK+x')]:
               encoded = encoded.replace(before, after)
           patch = gzip.decompress(base64.b64decode(encoded, validate=True))
           assert hashlib.sha256(patch).hexdigest() == record['sha256'], 'patch SHA-256 mismatch'
-          extra = pathlib.Path('.github/review/staging.patch').read_bytes()
-          record['staging_sha256'] = '9e16860d44f51580f01b0fdbb35142f4cb22d2d83cdcdaecfcb0c1457f19fc5d'
-          assert hashlib.sha256(extra).hexdigest() == record['staging_sha256'], 'staging patch SHA-256 mismatch'
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          if record['pr'] == 180:
+              extra = pathlib.Path('.github/review/staging.patch').read_bytes()
+              record['staging_sha256'] = '9e16860d44f51580f01b0fdbb35142f4cb22d2d83cdcdaecfcb0c1457f19fc5d'
+              assert hashlib.sha256(extra).hexdigest() == record['staging_sha256'], 'staging patch SHA-256 mismatch'
+              (root / 'staging.patch').write_bytes(extra)
           (root / 'review.patch').write_bytes(patch)
-          (root / 'staging.patch').write_bytes(extra)
           (root / 'review-record.json').write_text(json.dumps(record))
           (root / 'review-result').mkdir()
           PY
       - uses: actions/checkout@v7
         with:
-          ref: 0dcadaada4f45a347fe6a79200f5a358e8da4d8a
+          ref: ${{ matrix.head }}
           persist-credentials: false
       - name: Apply only the reviewed file changes
         shell: bash
@@ -50,8 +59,10 @@ jobs:
           set -euo pipefail
           git apply --index --check "$RUNNER_TEMP/review.patch"
           git apply --index "$RUNNER_TEMP/review.patch"
-          git apply --index --check "$RUNNER_TEMP/staging.patch"
-          git apply --index "$RUNNER_TEMP/staging.patch"
+          if [ "$REVIEW_PR" = 180 ]; then
+            git apply --index --check "$RUNNER_TEMP/staging.patch"
+            git apply --index "$RUNNER_TEMP/staging.patch"
+          fi
           git diff --cached --check
           python3 - <<'PY'
           import json, os, subprocess
@@ -79,10 +90,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts scripts/__tests__/native-release-android-staging.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts > "$RUNNER_TEMP/review-result/root-tests.log" 2>&1
-          cd packages/runtime-native
-          pnpm exec vitest run --config vitest.config.ts tests/desktop-core-gate.test.mjs tests/native-platform-workflow.test.mjs tests/webtransport-polyfill-prerequisites.test.mjs > "$RUNNER_TEMP/review-result/native-tests.log" 2>&1
-      - name: Upload tested Git tree only; do not move any branch
+          if [ "$REVIEW_PR" = 180 ]; then
+            pnpm exec vitest run scripts/__tests__/native-release-proof.spec.ts scripts/__tests__/native-release-android-staging.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts > "$RUNNER_TEMP/review-result/root-tests.log" 2>&1
+            cd packages/runtime-native
+            pnpm exec vitest run --config vitest.config.ts tests/desktop-core-gate.test.mjs tests/native-platform-workflow.test.mjs tests/webtransport-polyfill-prerequisites.test.mjs > "$RUNNER_TEMP/review-result/native-tests.log" 2>&1
+          else
+            pnpm exec vitest run packages/playtest/__tests__/pipeline-cache-perf.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts > "$RUNNER_TEMP/review-result/root-tests.log" 2>&1
+            cd packages/runtime-native
+            pnpm exec vitest run --config vitest.config.ts tests/pipeline-cache-measurement.test.mjs tests/pipeline-cache-protocol.test.mjs tests/wgpu-cache-toolchain.test.mjs > "$RUNNER_TEMP/review-result/native-tests.log" 2>&1
+          fi
+      - name: Upload tested Git blobs only; do not create a tree or move branches
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -90,31 +107,26 @@ jobs:
           set -euo pipefail
           git diff --exit-code
           python3 - <<'PY'
-          import json, os, pathlib, subprocess
+          import base64, json, os, pathlib, subprocess
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
           record = json.loads((root / 'review-record.json').read_text())
-          tree = []
+          record['tree'] = subprocess.check_output(['git','write-tree'], text=True).strip()
+          record['base_tree'] = subprocess.check_output(['git','rev-parse','HEAD^{tree}'], text=True).strip()
+          record['blobs'] = {}
           for path in record['files']:
-              data = subprocess.check_output(['git','show', ':' + path]).decode('utf-8')
-              tree.append({'path':path, 'mode':'100644', 'type':'blob', 'content':data})
-          base = subprocess.check_output(['git','rev-parse','HEAD^{tree}'], text=True).strip()
-          (root / 'tree-input.json').write_text(json.dumps({'base_tree':base,'tree':tree}))
-          PY
-          gh api --method POST "repos/$GITHUB_REPOSITORY/git/trees" --input "$RUNNER_TEMP/tree-input.json" > "$RUNNER_TEMP/tree-response.json"
-          python3 - <<'PY'
-          import json, os, pathlib, subprocess
-          root = pathlib.Path(os.environ['RUNNER_TEMP'])
-          record = json.loads((root / 'review-record.json').read_text())
-          record['tree'] = json.loads((root / 'tree-response.json').read_text())['sha']
-          assert record['tree'] == subprocess.check_output(['git','write-tree'], text=True).strip(), 'staged tree mismatch'
-          record['blobs'] = {p:subprocess.check_output(['git','rev-parse', ':' + p], text=True).strip() for p in record['files']}
+              data = subprocess.check_output(['git','show', ':' + path])
+              payload = json.dumps({'content':base64.b64encode(data).decode(), 'encoding':'base64'})
+              result = subprocess.check_output(['gh','api','--method','POST','repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/blobs','--input','-'], input=payload.encode())
+              blob = json.loads(result)['sha']
+              assert blob == subprocess.check_output(['git','rev-parse', ':' + path], text=True).strip(), 'blob SHA mismatch'
+              record['blobs'][path] = blob
           record['run'] = os.environ['GITHUB_RUN_ID']
           (root / 'review-result/result.json').write_text(json.dumps(record, indent=2) + '\n')
           PY
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: review-fix-tree-180-staging
+          name: review-final-blobs-${{ matrix.pr }}
           path: ${{ runner.temp }}/review-result
           retention-days: 2
           if-no-files-found: error
