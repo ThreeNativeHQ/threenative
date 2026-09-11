@@ -12,6 +12,7 @@ function fixture(arm = 'populated', service = 20, readyMs = 7000) {
     emptyBytes: 32, serializedBytes: 100, renderAttached: 0, computeAttached: 0, store: 'not-attempted' };
   const lines = [
     ['TN_COLD_START:', { segment: 'process', atMs: 0 }],
+    ['TN_COLD_START:', { segment: 'first_playable', atMs: readyMs }],
     ['TN_PIPELINE_CAPTURE:', { version: 1, adapter: { identity: 'native:vulkan/physical-test-fixture' }, build: { identity: 'fixture-build' } }],
     ['TN_PIPELINE_CACHE:', cache],
     ['TN_PIPELINE_EVENT:', { version: 1, eventId: 1, status: 'created', mode: 'async', kind: 'render', pass: 'main', programIdentity: 'fixture-program', pipelineIdentity: 'fixture-pipeline', startedMs: 10, settledMs: 10 + service, serviceMs: service, wallMs: service, cache: cache.mode }],
@@ -87,4 +88,20 @@ test('the shared minimum battery policy is enforced, not a weaker private thresh
 test('the real native requested/emitted checkpoint fields detect missing events', () => {
   const v = fixture(); v.log = v.log.replace('"requested":1', '"requested":2');
   assert.throws(() => parsePipelineCacheRun(v), /CHECKPOINT_INCOMPLETE/);
+});
+
+test('first playable uses the native process clock, not the later-created JavaScript clock', () => {
+  const v = fixture(); v.receipt.startup.timeline.readyMs = 5000;
+  const observation = parsePipelineCacheRun(v);
+  assert.equal(observation.readyMs, 7000);
+  assert.equal(observation.javascriptReadyMs, 5000);
+});
+test('missing or reversed native first-playable boundaries fail closed', () => {
+  for (const atMs of [null, -1]) {
+    const v = fixture();
+    v.log = v.log.replace('"segment":"first_playable","atMs":7000', `"segment":"first_playable","atMs":${atMs}`);
+    assert.throws(() => parsePipelineCacheRun(v), /FIRST_PLAYABLE_NATIVE_CLOCK/);
+  }
+  const v = fixture(); v.log = v.log.split('\n').filter((line) => !line.includes('first_playable')).join('\n');
+  assert.throws(() => parsePipelineCacheRun(v), /FIRST_PLAYABLE_NATIVE_CLOCK/);
 });

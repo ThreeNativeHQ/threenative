@@ -1,5 +1,6 @@
 // PRD-368: device-owned compiler data, qualified before ingestion and persisted off the main loop.
 #include "bindings_pipelines.h"
+#include "mystral/cold_start.h"
 #include "../storage/local_storage.h"
 #include <chrono>
 #include <cstdlib>
@@ -196,9 +197,18 @@ size_t pipelineCacheSerializedBytes(BindingsState* state) {
 }
 
 void pollPipelineCachePersistence(BindingsState* state) {
-#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
     if (state == nullptr) return;
     auto& cache = state->pipelineCache;
+    // This boundary is also required in disabled controls: never derive process-to-playable
+    // from the later-created JavaScript performance clock. The caller has actually presented.
+    if (!cache.playableBoundary.reported() && state->engine != nullptr &&
+        state->profiling.firstPresentReported) {
+        auto ready = state->engine->getGlobalProperty("__TN_STARTUP_READY__");
+        const bool isReady = state->engine->isBoolean(ready) && state->engine->toBoolean(ready);
+        if (cache.playableBoundary.observe(isReady, state->profiling.presentCount))
+            coldStartMark("first_playable");
+    }
+#if defined(MYSTRAL_WGPU_PIPELINE_CACHE)
     if (cache.stopping || !cache.store || !cache.handle) return;
     if (cache.persistence.valid()) {
         if (cache.persistence.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;

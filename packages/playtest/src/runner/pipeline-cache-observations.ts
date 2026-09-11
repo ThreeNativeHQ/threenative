@@ -32,9 +32,14 @@ export function parsePipelineCacheObservations(text: string): IPipelineCacheObse
     if (record.phase !== "api-probe" && !["attached", "disabled", "unavailable", "unsupported"].includes(String(record.mode))) malformed();
     if (record.load !== undefined && !["accepted", "missing", "rejected", "unavailable", "disabled"].includes(String(record.load))) malformed();
     if (record.store !== undefined && !["stored", "not-attempted", "rejected", "unavailable"].includes(String(record.store))) malformed();
-    for (const field of ["emptyBytes", "serializedBytes", "loadedBytes", "storedBytes", "loadMs", "storeMs", "snapshotMs", "renderAttached", "computeAttached"]) {
+    for (const field of ["emptyBytes", "serializedBytes", "loadedBytes", "storedBytes", "loadMs", "storeMs", "snapshotMs"]) {
       const number = record[field];
       if (number !== undefined && (typeof number !== "number" || !Number.isFinite(number) || number < 0)) malformed();
+    }
+    for (const field of ["renderAttached", "computeAttached"]) {
+      const count = record[field];
+      if (count === undefined || (record.phase === "api-probe" && typeof count === "boolean")) continue;
+      if (typeof count !== "number" || !Number.isFinite(count) || count < 0) malformed();
     }
     for (const field of ["reason", "storeReason"]) if (record[field] !== undefined && typeof record[field] !== "string") malformed();
     if (record.identity !== undefined && (typeof record.identity !== "string" || !/^[a-f0-9]{64}$/u.test(record.identity))) malformed();

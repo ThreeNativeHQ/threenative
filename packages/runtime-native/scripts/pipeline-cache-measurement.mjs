@@ -86,9 +86,14 @@ export function parsePipelineCacheRun({ arm, log, receipt, apkSha256, before, af
   const capture = markers(log, 'TN_PIPELINE_CAPTURE:');
   if (capture.length !== 1 || capture[0].version !== 1 || !capture[0].build?.identity ||
       typeof capture[0].adapter?.identity !== 'string' || !capture[0].adapter.identity.startsWith('native:vulkan/') || /llvmpipe|lavapipe|swiftshader|software/iu.test(capture[0].adapter.identity)) fail('CACHE_OBSERVATION_ADAPTER');
-  const processMarkers = markers(log, 'TN_COLD_START:').filter((value) => value.segment === 'process');
+  const coldStart = markers(log, 'TN_COLD_START:');
+  const processMarkers = coldStart.filter((value) => value.segment === 'process');
   if (processMarkers.length !== 1 || !finite(processMarkers[0].atMs)) fail('PROCESS_COLD_UNPROVED');
-  return { arm, apkSha256, identity: device.identity, readyMs: readiness(receipt),
+  const playableMarkers = coldStart.filter((value) => value.segment === 'first_playable');
+  if (playableMarkers.length !== 1 || !finite(playableMarkers[0].atMs) ||
+      playableMarkers[0].atMs <= processMarkers[0].atMs) fail('FIRST_PLAYABLE_NATIVE_CLOCK');
+  const readyMs = playableMarkers[0].atMs - processMarkers[0].atMs;
+  return { arm, apkSha256, identity: device.identity, readyMs, javascriptReadyMs: readiness(receipt),
     ...compilePopulation(log, mode), cache: caches, before, after };
 }
 const median = (values) => {

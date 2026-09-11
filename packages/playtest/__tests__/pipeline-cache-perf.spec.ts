@@ -20,6 +20,11 @@ describe("native pipeline persistence observations", () => {
     expect(parsePipelineCacheObservations(`${line}\n09-10 12:00 I MystralStdio: ${line}`)).toHaveLength(1);
     expect(parsePipelineCacheObservations(`${line}\n${line.replace('"loadedBytes":256', '"loadedBytes":512')}`)).toHaveLength(2);
   });
+  it("accepts the existing native API-probe boolean attachment schema without calling it a hit", () => {
+    const probe = { version: 1, phase: "api-probe", renderAttached: true, computeAttached: true, serializedBytes: 96 };
+    expect(parsePipelineCacheObservations(`TN_PIPELINE_CACHE:${JSON.stringify(probe)}`)).toEqual([probe]);
+    expect(() => parsePipelineCacheObservations(`TN_PIPELINE_CACHE:${JSON.stringify({ ...record, renderAttached: true })}`)).toThrow("TN_PERF_PIPELINE_CACHE_MALFORMED");
+  });
   it("reports old memory-only captures as unreported persistence, not cache misses", () => {
     const old = parsePipelineCacheObservations('TN_PIPELINE_CACHE:{"version":1,"phase":"device","mode":"attached","serializedBytes":32}');
     expect(old[0]?.load).toBeUndefined();

@@ -28,6 +28,15 @@ int main() {
     require(pipelineCacheDigest("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "SHA-256 empty vector");
     require(pipelineCacheDigest("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "SHA-256 abc vector");
     require(pipelineCacheDigest(std::string(1000000, 'a')) == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0", "SHA-256 multi-block vector");
+    PipelineCachePlayableBoundary readyBoundary;
+    require(!readyBoundary.observe(true, 0), "no present is not first playable");
+    require(!readyBoundary.observe(false, 1), "loading frame is not first playable");
+    require(!readyBoundary.observe(true, 2), "first readiness observation needs a later present");
+    require(!readyBoundary.observe(true, 2), "polling the same present does not advance readiness");
+    require(!readyBoundary.observe(false, 3), "readiness reset clears the observed boundary");
+    require(!readyBoundary.observe(true, 4), "new ready observation rearms the boundary");
+    require(readyBoundary.observe(true, 5), "later present crosses first-playable boundary");
+    require(!readyBoundary.observe(true, 6), "first-playable boundary is emitted exactly once");
 #ifndef _WIN32
     char temporary[] = "/tmp/tn-pipeline-cache-XXXXXX";
     char* made = mkdtemp(temporary);

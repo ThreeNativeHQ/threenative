@@ -371,12 +371,12 @@ bool carriesData(size_t observed, size_t empty) {
     return kRequireCompiledData ? observed > empty : observed >= empty && observed > 0;
 }
 
-void checkHostPipelineCache(mystral::Runtime& runtime) {
+void checkHostPipelineCache(mystral::Runtime& runtime, bool fileControl = false) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
     require(state != nullptr, "host bindings state");
     const auto& cache = state->pipelineCache;
     const char* disabled = std::getenv("TN_PIPELINE_CACHE");
-    const bool controlArm = disabled != nullptr && std::string(disabled) == "0";
+    const bool controlArm = fileControl || (disabled != nullptr && std::string(disabled) == "0");
 
     if (controlArm) {
         require(cache.mode == "disabled", "TN_PIPELINE_CACHE=0 must report the disabled mode");
@@ -476,7 +476,7 @@ int main(int argc, char** argv) {
 
     // PRD-368 Phase 1B first: it reads the host's own cache, and the raw-API probe below creates a
     // second device whose pipelines must not be mistaken for the host's.
-    checkHostPipelineCache(*runtime);
+    checkHostPipelineCache(*runtime, arm == "disabled-file");
     if (!arm.empty()) {
         using namespace mystral::webgpu;
         auto* state = static_cast<BindingsState*>(runtime->getWebGPUBindingsState());

@@ -449,6 +449,7 @@ struct PipelineCacheState {
     // Written only on the game thread, before any creation request. The source identity is
     // provided by the entrypoint, not inferred from a shim eval that may precede the game.
     PipelineCacheIdentity identity;
+    PipelineCachePlayableBoundary playableBoundary;
     std::shared_ptr<PipelineCacheStore> store;
     std::string loadOutcome = "unavailable";
     size_t loadedBytes = 0;

@@ -2409,6 +2409,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-timer-engine-first-test)
     tn_register_contract_test(threenative-async-pipeline-thread-test)
     tn_register_contract_test(threenative-pipeline-cache-api-test)
+    tn_register_contract_test(threenative-pipeline-cache-lifecycle-test)
     tn_register_contract_test(threenative-pipeline-cache-test)
     tn_register_contract_test(threenative-stall-budget-hitch-test)
     tn_register_contract_test(threenative-timestamp-query-test)

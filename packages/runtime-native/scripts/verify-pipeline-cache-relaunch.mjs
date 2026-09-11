@@ -29,6 +29,7 @@ function run(arm, disabled = false) {
   assert.ifError(child.error);
   assert.equal(child.status, 0, `${arm} exited ${child.status} (${child.signal}):\n${log.slice(-5000)}`);
   assert.match(log, /persistent cache (?:relaunch|shutdown) contract passed/);
+  if (arm.startsWith('disabled')) assert.match(log, /host cache mode=disabled renderAttached=0 computeAttached=0/, 'disabled controls must actually compile through the host');
   assert.equal(log.includes('TN_PIPELINE_TEST_SCOPE:envelope-lifecycle-only; compiled-data-proof=false'), lifecycleOnly, 'requested scope must match the actual executable');
   const records = log.split('\n').filter((line) => line.startsWith('TN_PIPELINE_CACHE:'))
     .map((line) => JSON.parse(line.slice('TN_PIPELINE_CACHE:'.length)));
