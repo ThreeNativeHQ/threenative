@@ -504,3 +504,82 @@ independent claims, which can never be ticked.
 Reading the board costs ~99% fewer tokens than opening the PRDs. Use
 `node ~/.claude/skills/prd-manager/scripts/prd-board.mjs` before touching PRD work, and
 `prd-audit.mjs` before a release.
+
+
+---
+
+# Live status — 2026-09-11, later
+
+| Lane | PR | Label | State |
+| --- | --- | --- | --- |
+| PRD-374 | #198 draft | `prd:75%` | Both phases built. **Both reviews came back FAIL**; 11 of 14 defects fixed, the rest triaged below. |
+| PRD-221 | #197 draft | `prd:25%` | Phase 1 recorded from `main`, phase 2 verified, **phase 3's page-size gate built and observed at 16384**. 8 of 18 boxes. |
+| PRD-373 | #199 draft | `prd:25%` | Closed as a finding. 4 of 20 boxes. |
+| **#195** | — | — | **MERGED** 20:48Z, after its reds proved to be a 2h cache-miss timeout. |
+| #193 | — | — | 51 pass, 4 pending. Next to merge. |
+| #196 | — | — | Two real reds, undiagnosed: `budgets` and `test-native`. |
+
+## PRD-221 phase 3 — the lane never wrote down the pages it ran on
+
+Neither `native-platforms.yml` nor `native-platform-workflow.test.mjs` contained the string
+`PAGE_SIZE`. "We ran on Android 15" is not "we ran with 16 KB pages": an ordinary image reports 4096
+and passes every other check here, so a 16 KB qualification was a claim rather than a measurement.
+
+`packages/runtime-native/scripts/check-android-page-size.mjs` is now one function the workflow and
+the tests both call — executable, rather than logic buried in a YAML step. It fails closed: a
+**missing** observation is a failure, not a skip. The workflow captures `getconf PAGE_SIZE` as the
+first thing inside the emulator script and verifies it on `if: always()` against job-level
+`TN_ANDROID_EXPECTED_PAGE_SIZE`, set to `4096` — which is what `api-level: 35` actually is. Pointing
+the hosted lane at the 16 KB image is now two values, not code.
+
+Observed on the local `threenative_ps16k` AVD, booted on KVM:
+
+```
+getconf PAGE_SIZE  ->  16384          sdk 36, release 16, abi x86_64
+fingerprint: google/sdk_gphone16k_x86_64/emu64xa16k:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys
+```
+
+Red first, as the rules require: the test asserting the lane records its page size failed on exactly
+that regex before the workflow was touched (`1 failed | 40 passed`), and passes after (`41 passed`).
+The checker was separately run against the live device (exit 0), a 4096 observation and a missing
+file (both exit 1).
+
+**Still open, and said so in the box:** the default starter actually launched on that environment,
+with HUD interaction and a background/resume cycle. It needs a compiled native host and a packaged
+APK this worktree does not have. The page size is observed; the game running on it is not.
+
+## What the two FAIL verdicts were worth
+
+Fourteen defects across the two phases. Two were bugs a user would hit:
+
+- **A correctly wired Cursor-only project got exit 1.** Only the new check had been widened to seven
+  hosts; `mcpConfig` and the probe gate still keyed on `.mcp.json`, so one report read *"no
+  .mcp.json"* directly above *"1 of 7 host configs carry the servers (Cursor)"*. Fixed and verified
+  on the real CLI against an actual Cursor-only project.
+- **Severity was inverted**: corrupting a config *downgraded* `editor activation` from `fail` to
+  `warn`, because "some config is broken" was tested before "nothing is wired".
+
+Plus: satisfied prerequisites printed as blockers; a desktop request ignoring the overlay
+prerequisite; the requested target reading `available` beside `not buildable`; `--mode release`
+forecasting a build path that does not exist; a stale retention index breaking `pnpm budgets`; and
+a dead commit SHA cited in two documents.
+
+**One box was unticked.** Phase 2's user-verification claimed the four facts read separately in a
+real run. They do not — every real run reports `threenative-blender was not probed`, so the headline
+separation is proven by unit fixture only.
+
+Three defects are deliberately not fixed, and each is recorded where it belongs: the requested
+target's wording blocks acceptance criterion 1 rather than the implementation (the reviewer's own
+call, accepted); `MANUAL_GLOBAL_MCP_HOSTS` cannot be derived because it is prose in the installer,
+so a module-load guard now throws if that ever stops being true; and the four non-`mcpServers` host
+formats are reported by name presence rather than validated by shape, because reproducing them here
+would be a second copy of the installer's `SERVER_FORMATS`.
+
+## Two more machine facts
+
+- **The retention index restales on every evidence edit, not only on a new file.** It records
+  tracked *bytes*, so editing an evidence record invalidates it again. Regenerate it as the last
+  step before committing anything under `docs/verification/`, or `budgets` goes red one commit later.
+- **`packages/runtime-native/tests/` reports 18 failures in a worktree with no compiled host**, all
+  `build/tn-linux/<target> is not built`, across `crash-handler-policy`, `pump-silence`,
+  `rg11b10-renderable`, `runtime-next-contract` and `timestamp-query`. 994 pass. Environmental.
