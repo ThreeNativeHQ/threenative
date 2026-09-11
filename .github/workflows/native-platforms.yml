@@ -669,8 +669,12 @@ jobs:
       inputs.ios_only == false
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -690,10 +694,14 @@ jobs:
       - name: Emit gate-schema parity and provenance evidence reports
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$TN_CI_SHA" || {
+            echo "TN_RELEASE_REPORT_CANDIDATE_MISMATCH: report checkout differs from captured candidate" >&2
+            exit 1
+          }
           node packages/runtime-native/scripts/generate-native-sbom.mjs --out "$RUNNER_TEMP/sbom-evidence"
           mkdir -p reports
           node packages/runtime-native/scripts/generate-release-reports.mjs \
-            --candidate "$GITHUB_SHA" \
+            --candidate "$TN_CI_SHA" \
             --registry-sha256 "$(sha256sum packages/runtime-native/conformance/registry.json | cut -d' ' -f1)" \
             --android evidence/android/conformance/android/report.json \
             --desktop evidence/desktop/conformance/desktop/report.json \

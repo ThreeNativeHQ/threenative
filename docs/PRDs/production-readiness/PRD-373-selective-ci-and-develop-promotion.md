@@ -1,9 +1,10 @@
 # PRD-373 — Selective CI and develop-to-main promotion
 
-Status: PARTIAL — phases 1 and 2 are implemented and wired on `main` (PR #190) with their tests
-green locally; each still owes a re-executed red/green control and a narrowed selection observed on
-a real PR, which needs the `develop` branch phase 5 creates. Phases 3-5 are repository settings and
-a protected-branch cutover, not code. Reviewed 2026-09-11 against `main` at `30f749f12`.
+Status: PARTIAL — classifier/verdict negative controls re-executed. PR #199 repairs
+release-report candidate binding and the native-loading proof fixture. Daily qualification
+and cache safeguards are staged code, not merely repository settings. Protected develop,
+real narrowed feature PRs, promotion/cutover proof and equivalent cold/warm measurements
+remain outstanding. No protection, default branch or cutover variable was changed.
 
 A parallel draft implementation of these two phases (`scripts/ci-check-families.mjs`,
 `scripts/ci-required-verdict.mjs`, branch `backup/prd373-lane3-draft`) was written from a base that
@@ -35,8 +36,8 @@ Reduce unnecessary execution and queue pressure; increasing PR size is not the s
 
 - [x] Implemented and wired: `scripts/ci-change-scope.mjs` classifies from the merge-base diff (deletions and both rename sides) — landed on `main` in PR #190; both workflows consume it (`ci.yml:55`, `native-platforms.yml:75`).
 - [x] Required test green — `scripts/__tests__/ci-structure.spec.ts`, `ci-needs.spec.ts`, `ci-efficiency.spec.ts`, `ci-local.spec.ts`, `ci-fast.spec.ts`: 188 passed across 5 files, run locally 2026-09-11 against `main` at `30f749f12`.
-- [ ] Observed red recorded, then restored green
-      NOT RUN by this session. The implementation landed through PR #190; no red/green control for it has been re-executed and recorded here, so the box stays open rather than being ticked on someone else's word.
+- [x] Observed red recorded, then restored green
+      Re-executed 2026-09-11: malformed classifier plans exit 2; restored plans exit 0. Real Git controls cover both rename endpoints, deletions, symlinks, unknown/native/shared inputs, dirty trees and full overrides.
 - [ ] Verified on a real PR, not only locally
       PARTIAL, and honestly not enough. Run 34622294627 (a real `pull_request` on `work/prd-373-selective-ci`) shows the `Change scope` job emitting a validated plan with a per-job reason, and `ci-required` succeeding. But it classified `selection=full` under the "target main requires complete verification" policy, so a *narrowed* selection has not been observed on a real PR. That needs a feature PR targeting `develop`, which does not exist until the phase 5 cutover.
 
@@ -63,10 +64,10 @@ fail visibly. Preserve an explicit manual full-run option. Do not use an LLM to 
 
 **Progress:**
 
-- [x] Implemented and wired: `ci.yml` and `native-platforms.yml` consume the same selection; `ci-required` verdict always evaluated — `ci.yml:1142` runs `scripts/ci-required.mjs`, which re-validates the plan, asserts the verdict executes the classified candidate SHA, and fails closed on a selected job that is missing, cancelled or unexpectedly skipped.
+- [x] Implemented and wired: `ci.yml` and `native-platforms.yml` consume the same selection; `ci-required` verdict always evaluated — `ci.yml:1160` runs `scripts/ci-required.mjs`, which re-validates the plan, asserts the verdict executes the classified candidate SHA, and fails closed on a selected job that is missing, cancelled or unexpectedly skipped.
 - [x] Required test green — the same 188 tests above cover the workflow shape and the needs graph (`ci-structure.spec.ts`, `ci-needs.spec.ts`).
-- [ ] Observed red recorded, then restored green
-      NOT RUN by this session, for the same reason as phase 1.
+- [x] Observed red recorded, then restored green
+      Re-executed 2026-09-11: selected failed/cancelled/skipped/missing jobs each make the actual verdict exit 1; restored success exits 0. Stale base/candidate, failed scope, forged exemptions and unmapped jobs fail closed.
 - [ ] Verified on a real PR, not only locally
       PARTIAL — `ci-required` reported `success` on run 34622294627, a real PR. It has not been observed going red on a selected job that failed, which is the half of the contract that matters.
 
@@ -91,8 +92,8 @@ shorter. Preserve diagnostics when one selected job fails.
 **Progress:**
 
 - [ ] Implemented and wired: daily qualification job and protected `develop` -> `main` promotion
-- [ ] Required test green
-- [ ] Observed red recorded, then restored green
+- [x] Required test green — Actions run 34653691910: 262 passing tests across 10 files.
+- [x] Observed red recorded, then restored green — run 34651109589 failed the captured-checkout regression (187/188 passed); this run restores it. New shell tests reject a mismatched checkout while accepting a different event SHA.
 - [ ] Verified on a real PR, not only locally
 
 
@@ -122,8 +123,8 @@ SHA and failures in the existing Actions summary. Fix integration failures befor
 
 **Progress:**
 
-- [ ] Implemented and wired: caches keyed so no stale product or test verdict is reused
-- [ ] Required test green
+- [x] Implemented and wired: caches keyed so no stale product or test verdict is reused — existing cache wiring audited below; CI efficiency contracts and actual repack tests pass. Equivalent cold/warm measurements remain open.
+- [x] Required test green — Actions run 34653691910: 262 passing tests across 10 files.
 - [ ] Observed red recorded, then restored green
 - [ ] Verified on a real PR, not only locally
 
@@ -165,11 +166,11 @@ Update main protection and agent/tool defaults as part of the same cutover. Inve
 open PRs and active worktrees; migrate each deliberately without resetting local work or
 mass-retargeting active PRs. Rollback restores full selection and the previous protected flow.
 
-## Acceptance checks
+## Acceptance criteria
 
 - [ ] Real feature PRs for inert docs and isolated website changes omit native jobs, report why,
   and can merge into protected develop after their selected checks pass.
-- [ ] Regression fixtures for shared-core/native dependencies, renames, deletions, lockfile
+- [x] Regression fixtures for shared-core/native dependencies, renames, deletions, lockfile
   changes and unknown paths select the necessary coverage. A selected failed, missing,
   cancelled or unexpectedly skipped job makes `ci-required` fail.
 - [ ] A daily develop run executes one fixed SHA. A promotion cannot merge with failed or stale
@@ -366,3 +367,34 @@ The previous full run's Android row `86-pointer-keyboard-events` failed because 
 device offline while restoring user rotation (73 passed, one failed, 19 explicitly unsupported
 rows). Its aggregate verdict also rejected a stale event-base/merge-parent pair. Neither guard was
 weakened; a fresh full run on the synchronized branch must establish the final hosted result.
+
+## PR #199 verification follow-up — 2026-09-11
+
+Actions run 34653691910: 262 passing tests across 10 files.
+
+The original five CI suites were red at 187/188 in run 34651109589: the release-reports
+worker used the event SHA rather than the captured candidate. Checkout and report
+arguments are now pinned to the scope candidate, with a real Git identity assertion before
+report generation. New tests execute the actual workflow shell; only report-generator
+commands are stubbed. Native/npm release authorization remains unchanged.
+
+The session executed 28 local controls against byte-identical classifier/verdict blobs
+`2ae8c413d9cbd14d2eeb9f352117d3cdb0526c05` and
+`f8e2fb7bbaebacf16b5ded2faa26e23962a0cd0c`. Failed, cancelled, skipped and missing selected
+jobs were observed red, then restored green; invalid plans, stale base/candidate identity
+and moving promotion refs also failed closed. These are local contracts, not evidence
+of protected-develop scheduling or real merge authorization.
+
+Windows artifact 10280857827 from full CI run 34640887143 recorded only 57 surface
+presents during the compile stall; the first 60-frame tick followed compile-end. The
+example fixture now waits at least three seconds AND 61 frame opportunities, with a
+ten-second failure bound and observer cleanup. The native verifier still independently
+requires a real 60-frame present tick. This changes the fixture, not runtime rendering.
+The new tests evaluate its actual expression with independent time/frame controls. Four
+of six new regressions failed before the fix; all six passed afterward in the local Node
+assertion adapter, and the actual hosted Vitest results are recorded above.
+
+The retention index is regenerated and checked, not hand-edited. The acceptance heading
+now matches the progress parser, which counts all five acceptance criteria. Full CI and
+the actual Windows loading replay still need verification on the final committed
+candidate; these targeted tests do not substitute for platform qualification.
