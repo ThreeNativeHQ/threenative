@@ -463,6 +463,10 @@ test('packed Android retains four specific negative controls and both positive c
       const result = spawnSync('bash', ['-c', `set -euo pipefail\n${command}`], {
         env: { ...process.env, RUNNER_TEMP: directory, CONSUMER_TARGET: directory,
           GITHUB_WORKSPACE: directory, MOCK_STATUS: String(status), MOCK_MARKER: output,
+          // The control commands pass `--package "$CONSUMER_APP_ID"`. The guard runs under
+          // `set -u`, so leaving it unset aborts the shell before the assertion it is meant to
+          // exercise and every case fails on the harness rather than on the guard.
+          CONSUMER_APP_ID: 'com.threenative.proof',
           PATH: `${directory}:${process.env.PATH}` }, encoding: 'utf8',
       });
       assert.equal(result.error, undefined);
