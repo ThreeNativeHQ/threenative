@@ -74,10 +74,10 @@ jobs:
           # tests/**/*.test.{ts,mjs}, so these files are part of the runtime-native suite and a
           # second runner invoking them directly makes their runner import ambiguous. Under
           # `node --test` a vitest-imported file reports zero tests and exits 1.
-          pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts \
+          (cd packages/runtime-native && pnpm exec vitest run --config vitest.config.ts \
             tests/pipeline-cache-measurement.test.mjs \
             tests/pipeline-cache-protocol.test.mjs \
-            tests/wgpu-cache-toolchain.test.mjs \
+            tests/wgpu-cache-toolchain.test.mjs) \
             2>&1 | tee artifacts/pipeline-cache-measurement/node.log
           pnpm exec vitest run packages/playtest/__tests__/pipeline-cache-perf.spec.ts \
             packages/playtest/__tests__/perf.spec.ts \
@@ -123,9 +123,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Same runner as the suite that owns the file; see the note on the measurement step.
-      - run: >-
-          pnpm --filter @threenative/runtime-native exec vitest run
-          --config vitest.config.ts tests/wgpu-cache-toolchain.test.mjs
+      - working-directory: packages/runtime-native
+        run: pnpm exec vitest run --config vitest.config.ts tests/wgpu-cache-toolchain.test.mjs
       - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools

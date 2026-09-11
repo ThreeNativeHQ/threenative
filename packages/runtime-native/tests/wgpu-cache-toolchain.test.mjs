@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import { test } from 'vitest';
 import { resolveWgpuCacheToolchain, WGPU_CACHE_NDK_VERSION, WGPU_CACHE_RUST_VERSION } from '../scripts/wgpu-cache-toolchain.mjs';
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'tn-cache-ndk-'));
+  const root = makeTempDirSync('tn-cache-ndk-');
   const llvm = join(root, 'toolchains/llvm/prebuilt/linux-x86_64');
   for (const folder of ['musl/lib', 'bin', 'sysroot']) mkdirSync(join(llvm, folder), { recursive: true });
   for (const name of ['musl/lib/libclang.so', 'bin/aarch64-linux-android21-clang', 'bin/llvm-ar']) writeFileSync(join(llvm, name), 'fixture');
@@ -54,8 +54,8 @@ test('missing toolchain or unsupported targets are explicit rather than silently
 //   TN_WGPU_CACHE_NDK_VERSION: expected 27.1.12297006, got 27.3.13750724
 // even though the pinned toolchain was installed and correct.
 test('prefers the pinned SDK install over a preset ANDROID_NDK_HOME from the runner image', () => {
-  const sdk = mkdtempSync(join(tmpdir(), 'tn-cache-sdk-'));
-  const preset = mkdtempSync(join(tmpdir(), 'tn-cache-image-ndk-'));
+  const sdk = makeTempDirSync('tn-cache-sdk-');
+  const preset = makeTempDirSync('tn-cache-image-ndk-');
   try {
     // The image's NDK: a different revision, complete enough to be chosen if it were consulted.
     mkdirSync(join(preset, 'toolchains/llvm/prebuilt/linux-x86_64/musl/lib'), { recursive: true });
