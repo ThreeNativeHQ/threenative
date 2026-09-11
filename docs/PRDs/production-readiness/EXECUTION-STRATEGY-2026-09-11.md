@@ -290,9 +290,23 @@ worktrees hold the work either way:
 | 3 | PRD-373 phases 1-2 (selective CI) | `.claude/worktrees/prd373-ci` | `prd373/selective-ci` |
 | 4 | PRD-221 (Android V8 16 KB) | `.claude/worktrees/prd221-16kb` | `prd221/android-v8-16kb` |
 
-**Before resuming either, check what is actually there** — `git -C <worktree> log --oneline -5` and
-`git -C <worktree> status --short`. A WIP-prefixed commit means the lane stopped mid-change. Lane 4
-opened PR #197; read that PR body for its own account of state. Lane 3 had not opened a PR.
+Neither lane reported back before it was cut off, so **nothing in either worktree is verified**.
+
+- **Lane 4** committed `f5c1a4ead`, "feat(runtime-native): census the finished Android APK for 16 KB
+  alignment", and opened **PR #197**. Read that PR body for its own account; the lane never
+  confirmed what it had proven, and never said whether it ran the `threenative_ps16k` emulator.
+- **Lane 3** was still mid-edit. The coordinating session committed its working tree as
+  `28e3226c1`, `WIP(PRD-373): lane 3's uncommitted state at the session restart`, and pushed
+  `prd373/selective-ci`. Ten files: `scripts/ci-change-scope.mjs`, new `scripts/ci-check-families.mjs`
+  and `scripts/ci-required-verdict.mjs` (plus `.d.mts` pairs), both workflow files and three CI
+  specs. **Treat all of it as an unread draft.** No PR was opened.
+
+**Check PRD-373 is not already done before touching lane 3 again.** `origin/main` carries PR #190,
+"feat(ci): stage selective develop checks and frozen main promotion (PRD-373)", which landed the
+staged classifier and the `ci-required` verdict — and the root `AGENTS.md` now documents the
+cutover. Lane 3 was cut from a base that already had that, so some or all of its draft may be
+duplicate work. Re-read the PRD's boxes against `main` first; the honest outcome may be that
+phases 1-2 are already closed and only the repository-settings phases remain.
 
 Lane 4 owns `packages/runtime-native/scripts/package-android.mjs` until PRD-221 is finished; lane 2
 (PRD-212) still cannot start until that file is free. That serialization is unchanged.
