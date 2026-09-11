@@ -1587,7 +1587,9 @@ describe("threenative doctor --target/--mode", () => {
     expect(target.status).toBe("fail");
     expect(target.detail).not.toMatch(/^available/u);
     expect(target.detail).toMatch(/^not buildable — .*overlay cannot start/u);
-    expect(target.detail).toMatch(/; probed: /u);
+    // The desktop line's own facts are `available (linux-x64)`; the probe list must carry the key
+    // itself, not the surviving parentheses, which read as a truncation.
+    expect(target.detail).toMatch(/; probed: [^(]/u);
   });
 
   it("should not call the requested target available while its build cannot start", () => {

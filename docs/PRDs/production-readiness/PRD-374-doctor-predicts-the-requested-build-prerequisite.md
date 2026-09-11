@@ -206,8 +206,13 @@ found a real defect in every round so far, including one *after* these criteria 
       `doctor --target web` on linux-x64 prints `✓ requested build: buildable — web` while iOS
       stays in the report demoted to a warning
       (`! target ios: unavailable — iOS simulator packaging requires darwin-arm64; received
-      linux-x64`), and the desktop 404 goes `✗` → `!` in the same run. The unscoped report is
-      byte-unchanged and carries no `requested build` line, pinned by its own regression test.
+      linux-x64`), and the desktop 404 goes `✗` → `!` in the same run. **That run exits 0** — the
+      number that matters, and the one the fourth review caught missing from this evidence: the
+      same command exited 1 until the exit code itself was scoped, because `native runtime` and
+      `desktop overlay` carried the same facts one level down and kept voting. Measured now in
+      `../sandbox/prd221-16kb-starter`: `--target web` exit **0**, `--target desktop` exit **1**,
+      unscoped exit **1**. The unscoped report is byte-unchanged and carries no `requested build`
+      line, pinned by its own regression test.
 - [ ] Malformed inputs and missing observations fail honestly; documents name only flags implemented by these phases.
       `--target bogus` exits 1, `--mode release` without a target exits 1, and `--target` with no
       value exits 1 — verified on the built CLI by two independent reviewers as well as here. A

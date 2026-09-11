@@ -1509,8 +1509,11 @@ function requestedTarget(
   // `✗ requested build: not buildable — desktop: no compositor is running` — the exact
   // contradiction this function exists to remove, on the one target whose prerequisite (the
   // overlay) fails most often.
-  const probed = /^available(?: — | )(?<facts>.+)$/su.exec(check.detail)?.groups?.facts;
-  if (probed === undefined) return check;
+  // `available (linux-x64)` keeps its parentheses through a naive capture, so the desktop line read
+  // `probed: (linux-x64)` — a truncation rather than a fact. Unwrap that shape.
+  const probed = /^available(?: — (?<facts>.+)| \((?<key>[^)]+)\))$/su.exec(check.detail)?.groups;
+  const facts = probed?.facts ?? probed?.key;
+  if (facts === undefined) return check;
   // The blockers lead. This line's own facts are what was *probed*, met and unmet alike, so
   // "not buildable — JDK 17.0.19 found; android-35 found" reads as a prediction nobody can act
   // on: every reason it names is satisfied. They stay, behind the word `probed`, because the
@@ -1521,7 +1524,7 @@ function requestedTarget(
     requestedBuild.detail;
   return {
     ...check,
-    detail: `not buildable — ${blockers}; probed: ${probed}`,
+    detail: `not buildable — ${blockers}; probed: ${facts}`,
     fix: requestedBuild.fix ?? check.fix,
     status: "fail",
   };
