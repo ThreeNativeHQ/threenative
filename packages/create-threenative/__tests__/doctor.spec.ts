@@ -1580,6 +1580,14 @@ describe("threenative doctor --target/--mode", () => {
     expect(requested.status).toBe("fail");
     expect(requested.detail).toContain("overlay cannot start");
     expect(report.pass).toBe(false);
+    // The desktop target line borrows the native runtime's `available (linux-x64)` wording rather
+    // than the `available — …` the other targets use, and matching only the latter left this one
+    // line still reading `available` beside the verdict above.
+    const target = check(report, "target desktop");
+    expect(target.status).toBe("fail");
+    expect(target.detail).not.toMatch(/^available/u);
+    expect(target.detail).toMatch(/^not buildable — .*overlay cannot start/u);
+    expect(target.detail).toMatch(/; probed: /u);
   });
 
   it("should not call the requested target available while its build cannot start", () => {

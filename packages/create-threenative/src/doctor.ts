@@ -1489,7 +1489,14 @@ function requestedTarget(
   requestedBuild: IDoctorCheck | undefined,
 ): IDoctorCheck {
   if (requestedBuild?.status !== "fail") return check;
-  if (!check.detail.startsWith("available — ")) return check;
+  // Two shapes say "available": `available — <facts>` for web, Android and iOS, and
+  // `available (linux-x64)` for desktop, which borrows the native runtime's own line. Matching
+  // only the first left `✓ target desktop: available (linux-x64)` standing beside
+  // `✗ requested build: not buildable — desktop: no compositor is running` — the exact
+  // contradiction this function exists to remove, on the one target whose prerequisite (the
+  // overlay) fails most often.
+  const probed = /^available(?: — | )(?<facts>.+)$/su.exec(check.detail)?.groups?.facts;
+  if (probed === undefined) return check;
   // The blockers lead. This line's own facts are what was *probed*, met and unmet alike, so
   // "not buildable — JDK 17.0.19 found; android-35 found" reads as a prediction nobody can act
   // on: every reason it names is satisfied. They stay, behind the word `probed`, because the
@@ -1500,7 +1507,7 @@ function requestedTarget(
     requestedBuild.detail;
   return {
     ...check,
-    detail: `not buildable — ${blockers}; probed: ${check.detail.slice("available — ".length)}`,
+    detail: `not buildable — ${blockers}; probed: ${probed}`,
     fix: requestedBuild.fix ?? check.fix,
     status: "fail",
   };

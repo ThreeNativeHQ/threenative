@@ -77,7 +77,15 @@ sequenceDiagram
 - [x] Callers wired and building: `packages/create-threenative/src/threenative.ts`, `packages/create-threenative/src/doctor.ts`, `packages/create-threenative/__tests__/doctor.spec.ts` (+1 more) — commits `9d50cb878` (wiring; was `c9dd6288a` before the branch was rebuilt on current `main`, same net diff), `c037860f2` (six defects from the first independent review) and the second review's blocker fix in this commit; `pnpm typecheck` exit 0, `pnpm lint` exit 0, and `pnpm budgets` exit 0 after the retention index was regenerated (it was red — the reviewer found it, and regenerating `docs/benchmark/SCREENSHOT-RETENTION.md` fixed it).
 - [x] Required test green: `packages/create-threenative/__tests__/doctor.spec.ts` — **84 passed** (68 when the phase first landed, then the review fixes), plus `cli.spec.ts` 5 passed for the argument validation. Whole package **665 passed across 38 files**.
 - [x] Observed red recorded, then restored green — `examples/abyss-framework` with JDK 26.0.2 and no install status: `requested build: not buildable — android release: …` exit 1; the same command with `JAVA_HOME=java-17-openjdk` and the four signing properties drops exactly those two blockers.
-- [x] User verification performed on the named platform — linux-x64, real built CLI in two real projects; `examples/engine-load-test --target web` prints `buildable — web` and demotes the broken desktop target to `warn`.
+- [x] User verification performed on the named platform — linux-x64, real built CLI in three real
+      projects. `examples/engine-load-test --target web` prints `✓ requested build: buildable — web`,
+      and the unscoped report carries no `requested build` line at all. The **demotion** is observed
+      in `../sandbox/prd221-16kb-starter`, a real scaffolded game whose runtime prebuilt 404s:
+      unscoped it reads `✗ target desktop: unavailable — linux-x64: Prebuilt release manifest fetch
+      failed … HTTP 404`, and under `--target web` the same line reads `!`. The third independent
+      review corrected this box: the earlier evidence cited `engine-load-test`, whose desktop target
+      is `unknown — no install status recorded` and therefore **already** `warn`, so that run showed
+      no demotion and the record annotating it `(demoted from fail to warn)` was wrong.
 - [x] Evidence record written: `docs/verification/prd-374-readiness-phase-1-2026-09-11.md`
 - [ ] Independent reviewer returned PASS
       Two reviews run, both **FAIL**, both acted on. Review 1 (2026-09-11) found `pnpm budgets` red on the branch and a dead commit SHA; fixed in `811eae6ef`. Review 2 found the requested target line naming only *satisfied* facts (`not buildable — JDK 17.0.19 found; android-35 found`) while the real blocker sat on another line; fixed in this commit, with `should name the blocker on the requested target line, not only satisfied probes` pinning it. **A third review has not seen the fix**, so this box stays open.

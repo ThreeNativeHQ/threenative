@@ -72,7 +72,7 @@ the control that matters: the verdict moves per input, not per code path.
 ```
 node packages/create-threenative/dist/threenative.js doctor --target web --text
 ✓ requested build: buildable — web
-! target desktop: unavailable — no install status recorded     (demoted from fail to warn)
+! target desktop: unavailable — no install status recorded     (already warn here — see below)
 ```
 
 That project still exits 1 on three failures of its own (`capability search`, `playtest`,
@@ -90,3 +90,24 @@ That project still exits 1 on three failures of its own (`capability search`, `p
   (a stale `docs/benchmark/SCREENSHOT-RETENTION.md`, regenerated in `811eae6ef`). Re-run against
   the review fixes: exit 0.
 - Phase 2 (tool discovery / Blender / editor activation) NOT STARTED.
+
+## Correction, third independent review — the demotion was never observed here
+
+The annotation above originally read `(demoted from fail to warn)`. It was wrong, and the reviewer
+proved it by running both forms: `examples/engine-load-test`'s desktop target is
+`unknown — no install status recorded`, which is **already** `warn`, so the scoped and unscoped
+reports print the identical line. The mechanism is real and unit-covered (`unrequestedTarget`,
+`doctor.spec.ts`), but this project could never demonstrate it.
+
+Observed instead in `../sandbox/prd221-16kb-starter`, a real scaffolded game whose runtime prebuilt
+404s, so its desktop target genuinely fails:
+
+```
+unscoped        ✗ target desktop: unavailable — linux-x64: Prebuilt release manifest fetch failed
+                  for 'linux-x64' at …/runtime-native-v0.3.1/prebuilt-lock.json: HTTP 404.
+--target web    ! target desktop: unavailable — linux-x64: … HTTP 404.
+                ✓ requested build: buildable — web
+```
+
+Same project, same line, `✗` to `!` — a web request stops a broken desktop runtime voting on the
+exit code, without hiding it.
