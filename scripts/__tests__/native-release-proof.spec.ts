@@ -578,3 +578,30 @@ test("the clean consumer installs the runtime's own shared libraries", () => {
   // packager died with "Runtime packager exited with code 127".
   assert.match(apt, /libwebkit2gtk-4\.1-0/u);
 });
+
+test("the consumer gets the build tool helper the runtime dispatches to", () => {
+  // `src/cli/tool_dispatch.cpp:52` requires a `mystral-tools` binary beside the runtime for desktop
+  // packaging, and PREBUILT_ASSET_NAMES publishes no such asset, so a consumer installing from a
+  // release cannot run `threenative build --target desktop`:
+  //   Error: build tool helper is missing: .../prebuilt/linux-x64/mystral-tools
+  //   Runtime packager exited with code 127.
+  // Publishing it belongs to PRD-262. Until then the proof carries it from its own run, exactly as
+  // it carries every runtime payload, so the consumer path is exercised rather than blocked.
+  const build = job("build");
+  assert.match(build, /name: tools-\$\{\{ matrix\.key \}\}/u);
+  assert.match(build, /mystral-tools/u);
+  const consumer = job("clean-consumer");
+  assert.match(consumer, /--name tools-linux-x64/u);
+  assert.match(
+    consumer,
+    /install -m 0755 "\$RUNNER_TEMP\/tools\/mystral-tools"/u,
+    "the helper must be placed beside the installed runtime before the desktop build",
+  );
+  // Order matters: placing it after the build would not help.
+  const placeAt = consumer.indexOf("Place the same-run build tool helper");
+  const buildAt = consumer.indexOf("Install and build without a native toolchain");
+  assert.ok(
+    placeAt > 0 && placeAt < buildAt,
+    "the helper must be placed before the consumer build",
+  );
+});

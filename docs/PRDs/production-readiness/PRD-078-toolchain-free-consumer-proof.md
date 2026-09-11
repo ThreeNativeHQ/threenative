@@ -61,7 +61,7 @@ sequenceDiagram
 
 ## Execution phases
 
-The eight bounded assignments below are reviewed separately. None is accepted merely because implementation or fixture tests are green. Phases 1 and 2 are the planned work; Phases 3 to 8 each repair one failure the hosted proof reproduced, split out rather than widening an existing assignment. Phases 3-8 record their evidence in Phase 2's record rather than opening three more tracked files, which the evidence budget discourages; each names that record among its own files. The source work from PR #168 is retained, not rewritten to recreate August defects.
+The nine bounded assignments below are reviewed separately. None is accepted merely because implementation or fixture tests are green. Phases 1 and 2 are the planned work; Phases 3 to 9 each repair one failure the hosted proof reproduced, split out rather than widening an existing assignment. Phases 3-9 record their evidence in Phase 2's record rather than opening three more tracked files, which the evidence budget discourages; each names that record among its own files. The source work from PR #168 is retained, not rewritten to recreate August defects.
 
 ### Phase 1 — The actual release job distinguishes old evidence from a runnable candidate
 
@@ -208,6 +208,22 @@ Reproduced on run [34559147906](https://github.com/ThreeNativeHQ/threenative/act
 **Required test:** `scripts/__tests__/native-release-proof.spec.ts`: every packed Android control names the consumer's own package and activity; the consumer's application id is derived, never assumed; the clean consumer installs the runtime's own shared libraries.
 
 **Observed-red / revert control:** Drop the package flag and the control reports `Activity class {…} does not exist`; drop the library and the packager exits 127.
+
+### Phase 9 — The consumer could not package what it installed
+
+Reproduced on run [34564200217](https://github.com/ThreeNativeHQ/threenative/actions/runs/34564200217).
+
+**Files (maximum five):**
+
+- EDIT `.github/workflows/native-release.yml` — stage and upload the build tool helper, and place it beside the installed runtime before the consumer build.
+- EDIT `scripts/__tests__/native-release-proof.spec.ts` — bind the upload, the placement and its ordering.
+- EDIT `docs/verification/prd-078-readiness-phase-2-2026-09-10.md` — this phase's evidence record.
+
+**Implementation and wiring:** `src/cli/tool_dispatch.cpp:52` dispatches desktop packaging to a `mystral-tools` binary beside the runtime. `native:build` produces it, nothing published it, and `PREBUILT_ASSET_NAMES` declares no such asset, so a consumer installing from a release cannot run `threenative build --target desktop`. Publishing it is PRD-262's contract; this phase carries it as a same-run artifact so the consumer path is exercised, and records that public installation remains blocked until PRD-262 ships it.
+
+**Required test:** `scripts/__tests__/native-release-proof.spec.ts`: the consumer gets the build tool helper the runtime dispatches to.
+
+**Observed-red / revert control:** Remove the placement step and the consumer build fails with `build tool helper is missing` and `Runtime packager exited with code 127`.
 
 ## Verification contract
 

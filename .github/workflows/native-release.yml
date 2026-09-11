@@ -390,11 +390,28 @@ jobs:
           mkdirSync("release", { recursive: true });
           copyFileSync(source, output);
           if (statSync(output).size === 0) throw new Error(`${output} is empty.`);
+          // The runtime dispatches desktop packaging to a `mystral-tools` helper sitting beside it
+          // (`src/cli/tool_dispatch.cpp:52`). `native:build` produces it, but nothing published it,
+          // so a consumer installing from a release cannot run `threenative build --target desktop`
+          // at all - it fails with `build tool helper is missing`. Publishing it is PRD-262's
+          // contract to change; this proof carries it as a same-run artifact so the consumer path
+          // is exercised rather than blocked, and records the gap.
+          const toolsName = process.env.EXECUTABLE_NAME.replace(/^mystral/u, "mystral-tools");
+          const toolsSource = join("packages", "runtime-native", "build", process.env.PRESET, toolsName);
+          mkdirSync("tools", { recursive: true });
+          const toolsOutput = join("tools", toolsName);
+          copyFileSync(toolsSource, toolsOutput);
+          if (statSync(toolsOutput).size === 0) throw new Error(`${toolsOutput} is empty.`);
           NODE
       - uses: actions/upload-artifact@v7
         with:
           name: runtime-${{ matrix.key }}
           path: release/${{ matrix.asset }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tools-${{ matrix.key }}
+          path: tools/
+          if-no-files-found: error
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         if: always()
@@ -746,9 +763,26 @@ jobs:
           NODE
           echo "$RUNNER_TEMP/toolchain-mask" >> "$GITHUB_PATH"
           echo "TN_TOOLCHAIN_LOG=$RUNNER_TEMP/toolchain-invocations.log" >> "$GITHUB_ENV"
+      - name: Place the same-run build tool helper beside the installed runtime
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/tools"
+          mkdir -p "$RUNNER_TEMP/tools"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name tools-linux-x64 --dir "$RUNNER_TEMP/tools"
+          test -s "$RUNNER_TEMP/tools/mystral-tools"
+          chmod +x "$RUNNER_TEMP/tools/mystral-tools"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Install and build without a native toolchain
         run: |
           pnpm --dir "$CONSUMER_TARGET" install
+          # The runtime dispatches desktop packaging to `mystral-tools` beside it
+          # (`src/cli/tool_dispatch.cpp:52`), and no release publishes that helper, so this step
+          # failed with `build tool helper is missing` / `Runtime packager exited with code 127`.
+          # It comes from this run's own build, like every other artifact here, and the gap in the
+          # published set is recorded for PRD-262 rather than papered over.
+          install -m 0755 "$RUNNER_TEMP/tools/mystral-tools" \
+            "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools"
           # Provenance the PRD-262 consumer gate asserts: the installed runtime must
           # record a successful prebuilt install, never a source-checkout build.
           test "$(node -p "require('$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json').ok")" = "true"

@@ -421,6 +421,37 @@ The emulator boot itself is now measured twice: 474s on a hosted runner
 (`native-platforms.yml:335-341`) and 212,330 ms locally under pure software emulation with no KVM.
 Both exceed this action's 600s default comfortably enough to justify the 900s budget recorded above.
 
+## Blocking product gap: no release publishes the build tool helper
+
+Run [34564200217](https://github.com/ThreeNativeHQ/threenative/actions/runs/34564200217) cleared the
+shared-library failure and reached the next one:
+
+```text
+Error: build tool helper is missing:
+  .../node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools
+Runtime packager exited with code 127.
+```
+
+This is not a CI defect. `src/cli/tool_dispatch.cpp:52` has the runtime dispatch desktop packaging
+to a `mystral-tools` binary sitting beside it. `native:build` produces that binary, but the build
+matrix staged only `release/<asset>`, and `PREBUILT_ASSET_NAMES` declares no tools asset at all, so
+nothing has ever published it.
+
+**Consequence, stated plainly: a consumer installing `@threenative/runtime-native` from a published
+release cannot run `threenative build --target desktop`.** It fails on the helper before it reaches
+any of its own code. Finding exactly this is what a toolchain-free consumer proof is for.
+
+Ownership: publishing a new runtime asset is PRD-262's contract, not this PRD's, so the durable fix
+is handed there rather than taken here. Meanwhile the proof carries the helper as a **same-run**
+artifact, which is the model this job already uses for every runtime payload it serves over
+loopback, and the placement is asserted before the consumer build rather than after it. The claim
+this supports is therefore "the packaged consumer path works when the helper is present", not "a
+public installation works" — the latter stays false until PRD-262 publishes it.
+
+Scope note: only `--target desktop` needs the helper. The packed Android build completed locally
+without it, so the six Android controls are blocked by this only because the desktop build runs
+first in the same job.
+
 ## Hosted evidence and handoff
 
 At this source-record commit, the new hosted proof has not yet produced native observations. Do not read the isolated results above as hosted acceptance. The workflow retains the following candidate-keyed records, including failure records:
