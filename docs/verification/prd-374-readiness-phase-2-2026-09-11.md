@@ -60,6 +60,10 @@ record. Phase 1's evidence file took `docs/verification` to 830 tracked files wh
 hand-edited, as the retention rules require — and committed. The lesson is the reviewer's, and it is
 the gate the PRD's own verification contract names for executable changes.
 
+**It stales on every edit, not only on a new file.** The index records tracked *bytes* as well as
+counts, so editing this very record invalidates it again. Regenerate it as the last step before
+committing anything under `docs/verification/`, or `pnpm budgets` goes red one commit later.
+
 `doctor.spec.ts` went 68 → 75 tests; with `cli.spec.ts`, 73 → 80.
 
 ## Observed red, then restored green
