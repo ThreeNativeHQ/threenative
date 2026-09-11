@@ -105,3 +105,33 @@ test('missing or reversed native first-playable boundaries fail closed', () => {
   const v = fixture(); v.log = v.log.split('\n').filter((line) => !line.includes('first_playable')).join('\n');
   assert.throws(() => parsePipelineCacheRun(v), /FIRST_PLAYABLE_NATIVE_CLOCK/);
 });
+
+// Contradictory or malformed compiler-cache observations must never qualify a control.
+for (const field of ['loadedBytes', 'storedBytes']) {
+  for (const value of ['"100"', '1e999', '100.5']) {
+    test(`refuses ${field}=${value} rather than coercing it into compiled-data proof`, () => {
+      const v = fixture();
+      v.log = v.log.replaceAll(`"${field}":100`, `"${field}":${value}`);
+      assert.throws(() => parsePipelineCacheRun(v), /CACHE_OBSERVATION_INVALID/);
+    });
+  }
+}
+for (const field of ['renderAttached', 'computeAttached']) {
+  test(`disabled control refuses a nonzero ${field} even if events say disabled`, () => {
+    const v = fixture('disabled-after');
+    v.log = v.log.replaceAll(`"${field}":0`, `"${field}":1`);
+    assert.throws(() => parsePipelineCacheRun(v), /CACHE_LOAD_DISABLED_IO/);
+  });
+}
+test('stored compiler data must use the supported observation version', () => {
+  const v = fixture();
+  v.log = v.log.replace('"version":1,"phase":"store"', '"version":2,"phase":"store"');
+  assert.throws(() => parsePipelineCacheRun(v), /CACHE_OBSERVATION_INVALID/);
+});
+for (const field of ['apkSha256', 'identity', 'programs', 'pipelineCount']) {
+  test(`matching absent ${field} is not qualified pair identity`, () => {
+    const pairs = [pair(), pair(), pair()];
+    for (const p of pairs) for (const sample of Object.values(p)) delete sample[field];
+    assert.throws(() => assessPipelineCachePairs(pairs), /PAIR_IDENTITY_MISSING/);
+  });
+}

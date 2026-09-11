@@ -102,7 +102,8 @@ jobs:
   patched-backend:
     name: Patched cache ABI (${{ matrix.target }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # PRD-221's resumable V8 producer reserves 120 minutes plus cache-save time.
+    timeout-minutes: ${{ matrix.target == 'android-arm64' && 180 || 45 }}
     strategy:
       fail-fast: false
       matrix:
@@ -155,6 +156,22 @@ jobs:
             --wgpu-cache-target '${{ matrix.target }}' 2>&1 | tee artifacts/pipeline-cache/reconstruction.log
           git rev-parse HEAD > artifacts/pipeline-cache/revision.txt
           tar czf artifacts/pipeline-cache/backend.tar.gz -C packages/runtime-native/third_party "$dep"
+      - name: Select the Android host NDK from Gradle
+        if: matrix.target == 'android-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Bindgen owns its NDK above; the host and V8/STL must use Gradle's recipe.
+          version=$(sed -n 's/^android.ndkVersion=//p' packages/runtime-native/android/gradle.properties)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          sdkmanager "ndk;$version"
+          ndk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/ndk/$version"
+          printf 'ANDROID_NDK_HOME=%s\nANDROID_NDK_ROOT=%s\n' "$ndk" "$ndk" >> "$GITHUB_ENV"
+      - name: Reuse the resumable V8 source producer when installed
+        # This source producer arrives with PRD-221. Do not fall back after it fails;
+        # before that change, the existing dependency provisioner remains authoritative.
+        if: matrix.target == 'android-arm64' && hashFiles('packages/runtime-native/scripts/build-android-v8.mjs') != ''
+        uses: ./.github/actions/android-v8-source
       - name: Compile Android host against reconstructed backend
         if: matrix.target == 'android-arm64'
         shell: bash

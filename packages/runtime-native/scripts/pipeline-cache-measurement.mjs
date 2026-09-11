@@ -76,9 +76,16 @@ export function parsePipelineCacheRun({ arm, log, receipt, apkSha256, before, af
   const load = disabled ? 'disabled' : arm === 'empty' ? 'missing' : 'accepted';
   const mode = disabled ? 'disabled' : 'attached';
   if (device.load !== load || device.mode !== mode) fail('CACHE_LOAD_WRONG_ARM');
-  for (const cache of caches) if (cache.identity !== device.identity) fail('CACHE_OBSERVATION_CONFLICT');
+  for (const cache of caches) {
+    if (cache.version !== 1 || !['device', 'store', 'shutdown'].includes(cache.phase) ||
+        ['emptyBytes', 'loadedBytes', 'serializedBytes', 'renderAttached', 'computeAttached'].some(
+          (field) => !Number.isSafeInteger(cache[field]) || cache[field] < 0) ||
+        (cache.phase === 'store' && (!Number.isSafeInteger(cache.storedBytes) || cache.storedBytes < 0)))
+      fail('CACHE_OBSERVATION_INVALID');
+    if (cache.identity !== device.identity || cache.mode !== mode || cache.load !== load) fail('CACHE_OBSERVATION_CONFLICT');
+  }
   if (disabled) {
-    if (device.loadedBytes !== 0 || caches.some((value) => value.phase === 'store' || value.store === 'stored')) fail('CACHE_LOAD_DISABLED_IO');
+    if (device.loadedBytes !== 0 || caches.some((value) => value.phase === 'store' || value.store === 'stored' || value.renderAttached !== 0 || value.computeAttached !== 0)) fail('CACHE_LOAD_DISABLED_IO');
   } else {
     if (!finite(device.emptyBytes) || (arm === 'populated' && !(device.loadedBytes > device.emptyBytes))) fail('CACHE_LOAD_EMPTY_DATA');
     if (!caches.some((value) => value.phase === 'store' && value.store === 'stored' && value.storedBytes > device.emptyBytes)) fail('CACHE_STORE_UNPROVED');
@@ -107,7 +114,9 @@ export function assessPipelineCachePairs(pairs) {
   for (const pair of pairs) {
     for (const [key, arm] of [['empty', 'empty'], ['populated', 'populated'], ['disabledBefore', 'disabled-before'], ['disabledAfter', 'disabled-after']]) {
       const sample = pair?.[key];
-      if (sample?.arm !== arm || !finite(sample.serviceMs) || !finite(sample.readyMs)) fail('PAIR_INCOMPLETE');
+      if (sample?.arm !== arm || !finite(sample.serviceMs) || !finite(sample.readyMs) || sample.readyMs === 0) fail('PAIR_INCOMPLETE');
+      if (!sha(sample.apkSha256) || !sha(sample.identity) || typeof sample.programs !== 'string' || !sample.programs ||
+          !Number.isSafeInteger(sample.pipelineCount) || sample.pipelineCount <= 0) fail('PAIR_IDENTITY_MISSING');
       for (const field of ['apkSha256', 'identity', 'programs', 'pipelineCount'])
         if (sample[field] !== reference[field]) fail('PAIR_IDENTITY_MISMATCH');
     }
