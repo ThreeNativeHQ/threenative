@@ -16,12 +16,12 @@ jobs:
         with:
           ref: e0d1bc31f4d63b2403dec72e512de8647abfb26c
           persist-credentials: false
-      - name: Reconstruct hash-checked edits and store only an unreferenced Git tree
+      - name: Reconstruct exact source and store unreferenced source blobs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import base64, bz2, hashlib, json, os, subprocess, urllib.request
+          import base64, bz2, hashlib, json, os, subprocess, urllib.request, urllib.error
           from pathlib import Path
           base = 'e0d1bc31f4d63b2403dec72e512de8647abfb26c'
           expected_tree = 'b8cf745e29e4c97f64d61b8e7e5e2caf992f47f8'
@@ -30,8 +30,12 @@ jobs:
           api = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY']
           def request(path, data=None):
               req = urllib.request.Request(api + path, data=None if data is None else json.dumps(data).encode(), headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28'})
-              with urllib.request.urlopen(req, timeout=60) as response:
-                  return json.load(response)
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  print(error.read().decode())
+                  raise
           compressed = b''.join(base64.b64decode(request('/git/blobs/' + sha)['content']) for sha in parts)
           raw = bz2.decompress(compressed)
           assert hashlib.sha256(raw).hexdigest() == expected_json, 'edit payload hash mismatch'
@@ -56,29 +60,37 @@ jobs:
               path.write_text(''.join(lines))
               path.chmod(int(entry['mode'][-3:], 8))
               subprocess.run(['git', 'add', '--', str(path)], check=True)
-              entries.append({'path': str(path), 'mode': entry['mode'], 'type': 'blob', 'content': path.read_text()})
+              sha = subprocess.check_output(['git', 'hash-object', str(path)], text=True).strip()
+              entries.append({'path': str(path), 'mode': entry['mode'], 'type': 'blob', 'sha': sha})
           tree = subprocess.check_output(['git', 'write-tree'], text=True).strip()
           assert tree == expected_tree, (tree, expected_tree)
           assert not Path('.github/workflows/prd-373-workspace-snapshot.yml').exists()
           base_tree = subprocess.check_output(['git', 'rev-parse', base + '^{tree}'], text=True).strip()
-          stored = request('/git/trees', {'base_tree': base_tree, 'tree': entries})
-          assert stored['sha'] == expected_tree, stored['sha']
-          # No commit, ref, branch, protection, release or publication endpoint is called here.
           directory = Path(os.environ['RUNNER_TEMP']) / 'delivery'
           directory.mkdir()
           patch = subprocess.check_output(['git', 'diff', '--cached', '--binary', base])
           (directory / 'candidate.patch').write_bytes(patch)
-          manifest = {'base': base, 'tree': tree, 'patch_sha256': hashlib.sha256(patch).hexdigest(), 'files': [e['path'] for e in entries]}
+          manifest = {'base': base, 'base_tree': base_tree, 'tree': tree, 'patch_sha256': hashlib.sha256(patch).hexdigest(), 'entries': entries, 'blobs_stored': False}
+          (directory / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+          # No trees, commits, refs, branches, protection, release or publication writes.
+          # The authorized connector commits workflow changes after checking this manifest.
+          for entry in entries:
+              stored = request('/git/blobs', {'content': Path(entry['path']).read_text(), 'encoding': 'utf-8'})
+              assert stored['sha'] == entry['sha'], entry['path']
+          manifest['blobs_stored'] = True
           (directory / 'manifest.json').write_text(json.dumps(manifest, indent=2))
           print(json.dumps(manifest, indent=2))
           PY
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: prd373-candidate
           path: ${{ runner.temp }}/delivery
+          if-no-files-found: error
           retention-days: 7
   verification:
     needs: delivery
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
