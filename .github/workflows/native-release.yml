@@ -398,6 +398,48 @@ jobs:
           });
           writeFileSync("release/prebuilt-lock.json", `${JSON.stringify(manifest, null, 2)}\n`);
           NODE
+      - name: Generate SBOM, license inventory and release provenance
+        env:
+          RELEASE_SHA: ${{ needs.validate-tag.outputs.candidate_sha }}
+        run: |
+          node packages/runtime-native/scripts/generate-native-sbom.mjs --out release/compliance
+          pnpm --filter @threenative/runtime-native deps:sbom:check || true
+          node --input-type=module <<'NODE'
+          import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+          import { createHash } from "node:crypto";
+          import { generateProvenance } from "./packages/runtime-native/scripts/generate-native-release-provenance.mjs";
+          const subjects = [];
+          for (const entry of readdirSync("release")) {
+            const path = join("release", entry);
+            if (!statSync(path).isFile() || entry === "prebuilt-lock.json") continue;
+            const bytes = readFileSync(path);
+            subjects.push({
+              name: entry,
+              sha256: createHash("sha256").update(bytes).digest("hex"),
+              url: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${process.env.GITHUB_REF_NAME}/${entry}`,
+              candidateSha: process.env.RELEASE_SHA,
+            });
+          }
+          const manifest = JSON.parse(readFileSync("release/prebuilt-lock.json", "utf8"));
+          for (const [key, artifact] of Object.entries(manifest.artifacts ?? {})) {
+            const subject = subjects.find((entry) => entry.url === artifact.url);
+            if (subject) subject.prebuiltKey = key;
+          }
+          const provenance = generateProvenance({
+            lock: JSON.parse(readFileSync("packages/runtime-native/native-deps.lock.json", "utf8")),
+            sbomText: readFileSync("release/compliance/native-dependencies.cdx.json", "utf8"),
+            inventoryText: readFileSync("release/compliance/native-license-inventory.json", "utf8"),
+            subjects,
+            receipts: [],
+            candidate: process.env.RELEASE_SHA,
+            repository: process.env.GITHUB_REPOSITORY,
+            tag: process.env.GITHUB_REF_NAME,
+            runUrl: `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+            pnpmLockSha256: createHash("sha256").update(readFileSync("pnpm-lock.yaml")).digest("hex"),
+          });
+          writeFileSync("release/native-release-provenance.json", provenance);
+          NODE
       - name: Publish runtimes and checksum lock
         env:
           GH_TOKEN: ${{ github.token }}
